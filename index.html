@@ -1,0 +1,82 @@
+<!Doctype html>
+<html>
+    <head>
+        <title>grapnel ninja</title>
+        <meta charset = "UTF-8">
+        <style>
+            body 
+            {
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+                background-color: 0;
+            }
+        </style>
+        <script src = "konva.min.js"></script>
+    </head>
+    <body>
+        <script src = "gameoptions.js"></script>
+        <script src = "collision.js"></script>
+        <script src = "sprite.js"></script>
+        <script src = "physics.js"></script>
+        <script src = "sides.js"></script>
+        <div id = "container"></div>
+        <script>
+            'use strict'
+            let stage = new Konva.Stage({
+                container: 'container',
+                width: width,
+                height: height
+            })
+            
+            let ninjaLayer = new Konva.Layer()
+            let staticLayer = new Konva.Layer()
+            let grapnelLayer = new Konva.Layer()
+            stage.add(staticLayer)
+            stage.add(ninjaLayer)
+            stage.add(grapnelLayer)
+            
+            
+            let ninja = new Ninja(new Konva.Circle({
+                x: 0.2 * width,
+                y: 0.2 * height,
+                radius: 20,
+                fill: '#0000ff',
+                stroke: '#000000',
+                strokeWidth: 2
+            }))
+            
+            let grapnel = new Konva.Line({
+                points: [0, 0, 0, 0],
+                stroke: 'red',
+                strokeWidth: 5,
+                lineJoin: 'round'
+            })
+            
+            ninjaLayer.add(ninja.object)
+            staticLayer.add(sprites[0].object, sprites[1].object)
+            grapnelLayer.add(grapnel)
+            staticLayer.draw()
+            
+            stage.on('mousedown', function ()
+            {
+                ninja.grappleCoords = stage.getPointerPosition()
+                grapnel.attrs.points = [ninja.x, ninja.y, ninja.grappleCoords.x, ninja.grappleCoords.y]
+                console.log(ninja.grappleCoords)
+            })
+            function gameLoop()
+            {
+                physics()
+                ninjaLayer.draw()
+                //staticLayer.draw()
+                if (ninja.grappleCoords)
+                {
+                    grapnelLayer.draw()
+                    grapnel.attrs.points = [ninja.x, ninja.y, ninja.grappleCoords.x, ninja.grappleCoords.y]
+                }
+                requestAnimationFrame(gameLoop)
+            }
+            requestAnimationFrame(gameLoop)
+        </script>
+    </body>
+</html>
