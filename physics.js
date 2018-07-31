@@ -5,4 +5,6 @@ function physics()
     ninja.speedY += gravity
     ninja.move()
     ninja.collision()
+    
+    grapnel.move()
 }

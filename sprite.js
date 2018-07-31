@@ -1,4 +1,5 @@
 let sprites = []
+const grapnelSpeed = 15
 
 class Sprite
 {
@@ -26,7 +27,7 @@ class Ninja extends Sprite
     {
         super(object)
         this.radius = object.attrs.radius
-        this.grappleCoords = null
+        
     }
     collision()
     {
@@ -47,16 +48,29 @@ class Ninja extends Sprite
     {
         return collisionCircleWithLine(x1, y1, x2, y2, this.x, this.y, this.radius)
     }
-    grapple()
-    {
-        
-    }
 }
 class Grapnel extends Sprite
 {
     constructor(object)
     {
         super(object)
+    }
+    move()
+    {
+        this.x += this.speedX
+        this.y += this.speedY
+        this.object.attrs.points = [ninja.x, ninja.y, this.x, this.y]
+    }
+    calcSpeed(direction)
+    {
+        let dx = direction.x - ninja.x
+        let dy = direction.y - ninja.y
+        let distance = Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2))
         
+        let sin = dy / distance
+        let cos = dx / distance
+        
+        this.speedY = sin * grapnelSpeed
+        this.speedX = cos * grapnelSpeed
     }
 }

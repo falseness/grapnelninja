@@ -46,34 +46,31 @@
                 strokeWidth: 2
             }))
             
-            let grapnel = new Konva.Line({
+            let grapnel = new Grapnel(new Konva.Line({
                 points: [0, 0, 0, 0],
                 stroke: 'red',
                 strokeWidth: 5,
                 lineJoin: 'round'
-            })
+            }))
             
             ninjaLayer.add(ninja.object)
             staticLayer.add(sprites[0].object, sprites[1].object)
-            grapnelLayer.add(grapnel)
+            grapnelLayer.add(grapnel.object)
             staticLayer.draw()
+            
             
             stage.on('mousedown', function ()
             {
-                ninja.grappleCoords = stage.getPointerPosition()
-                grapnel.attrs.points = [ninja.x, ninja.y, ninja.grappleCoords.x, ninja.grappleCoords.y]
-                console.log(ninja.grappleCoords)
+                grapnel.x = ninja.x
+                grapnel.y = ninja.y
+                grapnel.calcSpeed(stage.getPointerPosition())
             })
             function gameLoop()
             {
                 physics()
                 ninjaLayer.draw()
                 //staticLayer.draw()
-                if (ninja.grappleCoords)
-                {
-                    grapnelLayer.draw()
-                    grapnel.attrs.points = [ninja.x, ninja.y, ninja.grappleCoords.x, ninja.grappleCoords.y]
-                }
+                grapnelLayer.draw()
                 requestAnimationFrame(gameLoop)
             }
             requestAnimationFrame(gameLoop)
