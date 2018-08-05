@@ -100,7 +100,10 @@
             })
             function gameLoop()
             {
-                physics()
+                for (let i = 0; i < cyclesPerTick; ++i)
+                {
+                    physics()
+                }
                 grapnelLayer.draw()
                 ninjaLayer.draw()
                 //staticLayer.draw()

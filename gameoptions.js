@@ -1,2 +1,4 @@
-let width = window.innerWidth
-let height = window.innerHeight
+const width = window.innerWidth
+const height = window.innerHeight
+
+const cyclesPerTick = 1
