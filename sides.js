@@ -17,13 +17,16 @@ let sides =
 ]
 for (let i = 0; i < sides.length; ++i)
 {
-    sprites.push(new Sprite(new Konva.Rect(
-    {
-        x: sides[i].x,
-        y: sides[i].y,
-        width: sides[i].width,
-        height: sides[i].height,
-        fill: objectsColor,
+    sprites.push(new Sprite(new Konva.Line({
+      points: [sides[i].x, sides[i].y, 
+              sides[i].x + sides[i].width, sides[i].y, 
+              sides[i].x + sides[i].width, sides[i].y + sides[i].height,
+              sides[i].x, sides[i].y + sides[i].height],
+      fill: objectsColor,
+      stroke: 'black',
+      strokeWidth: 1,
+      closed: true
     })))
 }
-delete sides
+
+
