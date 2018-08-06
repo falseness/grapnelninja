@@ -42,12 +42,14 @@
             let ninjaLayer = new Konva.Layer()
             let staticLayer = new Konva.Layer()
             let obstaclesLayer = new Konva.Layer()
+            let mechanicsLayer = new Konva.Layer()
             
             stage.add(grapnelLayer)
             stage.add(staticLayer)
             stage.add(ninjaLayer)
             stage.add(obstaclesLayer)
             
+            stage.add(mechanicsLayer)
             
             let ninja = new Ninja(new Konva.Circle({
                 x: 0.2 * width,
@@ -68,9 +70,36 @@
             ninjaLayer.add(ninja.object)
             staticLayer.add(sprites[0].object, sprites[1].object)
             grapnelLayer.add(grapnel.object)
+            
+            mechanicsLayer.add(new Konva.Line({
+                points: [whereMoveScreen, 0.2 * height, whereMoveScreen, 0.8 * height],
+                stroke: 'green',
+                strokeWidth: 3,
+                lineJoin: 'round'
+            }))
+            mechanicsLayer.add(new Konva.Line({
+                points: [whenceMoveScreen, 0.2 * height, whenceMoveScreen, 0.8 * height],
+                stroke: 'green',
+                strokeWidth: 3,
+                lineJoin: 'round',
+                opacity: 0.5
+            }))
+            mechanicsLayer.add(new Konva.Line({
+                points: [prelastBarrierMoveScreen, 0.2 * height, prelastBarrierMoveScreen, 0.8 * height],
+                stroke: 'green',
+                strokeWidth: 5,
+                lineJoin: 'round'
+            }))
+            mechanicsLayer.add(new Konva.Line({
+                points: [lastBarrierMoveScreen, 0.2 * height, lastBarrierMoveScreen, 0.8 * height],
+                stroke: 'green',
+                strokeWidth: 5,
+                lineJoin: 'round',
+                opacity: 0.5
+            }))
             staticLayer.draw()
             
-            let x = 0.5 * width
+            let x = 0.4 * width
             for (let i = 0; i < 5; ++i)
             {
                 generateObstacle(x + (obstacleIndent + obstacleWidth) * i)
@@ -109,6 +138,8 @@
                 //staticLayer.draw()
                 
                 obstaclesLayer.draw()
+                
+                mechanicsLayer.draw()
                 
                 requestAnimationFrame(gameLoop)
             }
