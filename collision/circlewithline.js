@@ -1,5 +1,15 @@
 function collisionCircleWithLine(x1, y1, x2, y2, x0, y0, r)
 {
+    if (x1 == x2)
+    {
+        if (y1 > y2)
+        {
+            let t = y2
+            y2 = y1
+            y1 = t
+        }
+        return collisionCalculation(r, x1, x0, y0, y1, y2)
+    }
     let k = (y1 - y2) / (x1 - x2)
     let b = y1 - k * x1
     /*
@@ -20,6 +30,24 @@ function collisionCircleWithLine(x1, y1, x2, y2, x0, y0, r)
             root1 < x1 && x2 < root1 ||
             root2 < x1 && x2 < root2)
             return true
+    }
+    return false
+}
+    
+function collisionCalculation(r, coord, coord0, coordUnknow0, lineBegin, lineEnd)
+{
+    let c = Math.pow(r, 2) - Math.pow((coord - coord0), 2) - Math.pow(coordUnknow0, 2)
+    let D = Math.pow(2 * coordUnknow0, 2) + 4 * c
+    if (D >= 0)
+    {
+        D = Math.sqrt(D)
+        let root1 = (2 * coordUnknow0 - D) / 2
+        let root2 = (2 * coordUnknow0 + D) / 2
+        {
+            if (lineBegin <= root1 && root1 <= lineEnd
+               || lineBegin <= root2 && root2 <= lineEnd)
+                return true
+        }
     }
     return false
 }

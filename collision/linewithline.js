@@ -5,15 +5,24 @@ function pointOnLine(x, x1, x2)
 function collisionVerticalWithLine(vertical, line)
 {
     let y = line.k  * vertical.x + line.b
-    return (pointOnLine(y, vertical.y1, vertical.y2) && pointOnLine(vertical.x, line.x1, line.x2))
+    if (pointOnLine(y, vertical.y1, vertical.y2) && pointOnLine(vertical.x, line.x1, line.x2))
+        return {x: vertical.x, y: y}
+    return false
 }
 function collisionVerticalWithVertical(vertical1, vertical2)
 {
-    return (vertical1.x == vertical2.x && 
-            (pointOnLine(vertical1.y1, vertical2.y1, vertical2.y2) || 
-             pointOnLine(vertical1.y2, vertical2.y1, vertical2.y2) || 
-             pointOnLine(vertical2.y1, vertical1.y1, vertical1.y2) ||
-             pointOnLine(vertical2.y2, vertical1.y1, vertical1.y2)))
+    if (vertical1.x == vertical2.x)
+    {
+        if (pointOnLine(vertical1.y1, vertical2.y1, vertical2.y2))
+            return {x: vertical1.x, y: vertical1.y}
+        if (pointOnLine(vertical1.y2, vertical2.y1, vertical2.y2))
+            return {x: vertical1.x, y: vertical1.y2}
+        if (pointOnLine(vertical2.y1, vertical1.y1, vertical1.y2))
+            return {x: vertical1.x, y: vertical2.y1}
+        if (pointOnLine(vertical2.y2, vertical1.y1, vertical1.y2))
+            return {x: vertical1.x, y: vertical2.y2}
+    }
+    return false
 }
 function collisionLineWithLine(line1, line2)
 {
@@ -25,7 +34,7 @@ function collisionLineWithLine(line1, line2)
         if (pointOnLine(x, line1.x1, line1.x2) && pointOnLine(x, line2.x1, line2.x2))
         {
             //&& pointOnLine(y, line1.y1, line2.y2) && pointOnLine(x, line2.y1, line2.y2))
-            return true
+            return {x: x, y: y}
         }
     }
     return false

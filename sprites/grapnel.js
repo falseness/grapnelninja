@@ -1,5 +1,5 @@
-const grapnelSpeed = 15
-const grappleSpeed = 0.2
+const grapnelSpeed = 0.018891687657430732 * height
+const grappleSpeed = 0.00025188916876574307 * height
 
 class Grapnel extends Sprite
 {
@@ -7,15 +7,24 @@ class Grapnel extends Sprite
     {
         super(object)
         this.throwed = false
+        
+        this.grappled = false
     }
     move()
     {
-        this.x += this.speedX
-        this.y += this.speedY
-        this.object.attrs.points = [ninja.x, ninja.y, this.x, this.y]
+        if (this.throwed)
+        {
+            this.x += this.speedX
+            this.y += this.speedY
+            if (this.grappled)
+            {
+                this.y += this.grappled.speedY
+            }
+        }
     }
     calcSpeed(direction)
     {
+        console.log(direction.x, stage.x(), ninja.x, "ok")
         let dx = direction.x - ninja.x
         let dy = direction.y - ninja.y
         let distance = Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2))
@@ -32,29 +41,29 @@ class Grapnel extends Sprite
                                 this.object.attrs.points[2], this.object.attrs.points[3])
         for (let i = 0; i < sprites.length; ++i)
         {
-            let points = sprites[i].object.attrs.points
+            let points = sprites[i].points
             
             for (let j = 0; j <= points.length / 2; j += 2)
             {
                 let line = lineFormula(points[j], points[j + 1],
                                 points[j + 2], points[j + 3])
-                if (linesCollision(grapnelLine, line))
-                    this.grapple()
+                this.grapple(linesCollision(grapnelLine, line), sprites[i])
             }
             let line = lineFormula(points[points.length - 2], points[points.length - 1],
                                 points[0], points[1])
-            if (linesCollision(grapnelLine, line))
-                this.grapple()
+            this.grapple(linesCollision(grapnelLine, line), sprites[i])
                 
         }
     }
-    grapple()
+    grapple(coords, sprite)
     {
-        this.speedX = 0
-        this.speedY = 0
-    }
-    grappled()
-    {
-        return (this.speedX == 0 && this.speedY == 0 && grapnel.throwed)
+        if (coords)
+        {
+            this.x = coords.x
+            this.y = coords.y
+            this.speedX = 0
+            this.speedY = 0
+            this.grappled = sprite
+        }
     }
 }
