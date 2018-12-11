@@ -2,9 +2,11 @@ let draw =
 {
     ninja: new Konva.Animation(function(frame) 
     {
+        ninja.speedY += GRAVITY
+        ninja.move()
         ninja.object.setX(Math.floor(ninja.x))
         ninja.object.setY(Math.floor(ninja.y))
-    }, layer.ninja),
+    }, layer.ninja)/*,
     grapnel: new Konva.Animation(function(frame)
     {
         grapnel.object.points(
@@ -14,6 +16,7 @@ let draw =
     {
         if (!screen.speed)
             return false
+        
         obstacles.setX(deltaX)
     }, layer.obstacles),
     enemies: new Konva.Animation(function(frame)
@@ -22,12 +25,12 @@ let draw =
         {
             sprites[i].moveObject()
         }
-        //enemies.setX(deltaX)
+        enemies.setX(deltaX)
     }, layer.enemies),
     trampolines: new Konva.Animation(function(frame)
     {
         trampolines.setX(deltaX)
-    }, layer.trampolines)
+    }, layer.trampolines)*/
 }
 function drawStaticLayers()
 {
