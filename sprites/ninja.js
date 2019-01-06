@@ -8,12 +8,13 @@ class Ninja
         this.speedX = 0
         this.speedY = 0
         this.radius = object.radius
+        this.mass   = Math.PI * Math.pow(this.radius, 2) * blueSpriteDensity
         
         this.fill   = object.fill
         this.stroke = object.stroke
         
-        this.line = new NinjaLine(this.radius)
-        this.line.addPos(this.x, this.y)
+        this.track = (trackEnabled)?(new TrackLine(this.radius * 1.5, this.fill, 100)):(new Empty())
+        this.track.addPos(this.x, this.y)
     }
     collision()
     {
@@ -52,7 +53,7 @@ class Ninja
         this.x += this.speedX
         this.y += this.speedY
         
-        this.line.addPos(this.x, this.y)
+        this.track.addPos(this.x, this.y)
         
         this.collision()
     }
@@ -71,20 +72,20 @@ class Ninja
         ctx.closePath()
     }
 }
-class NinjaLine
+class TrackLine
 {
-    constructor(r)
+    constructor(width, stroke, pointsLimit)
     {
         this.pos        = []
-        this.radius     = r
-        this.lineWidth  = 15
+        this.lineWidth  = width
+        this.stroke     = stroke
+        this.pointsLimit= pointsLimit
     }
     delete()
     {
-        const maxPos = 100
-        if (this.pos.length > maxPos)
+        if (this.pos.length > this.pointsLimit)
         {
-            this.pos.splice(0, this.pos.length - maxPos)
+            this.pos.splice(0, this.pos.length - this.pointsLimit)
         }
     }
     addPos(x, y)
@@ -96,7 +97,7 @@ class NinjaLine
     {
         ctx.beginPath()
 
-        ctx.lineCap = 'round'
+        ctx.lineCap = 'butt'
         ctx.moveTo(this.pos[0].x + screen.x, this.pos[0].y + screen.y)
         
         for (let i = 1; i < this.pos.length; ++i)
@@ -106,7 +107,7 @@ class NinjaLine
         ctx.lineWidth = this.lineWidth
         
         ctx.globalAlpha = 0.5
-        ctx.strokeStyle = ninja.fill//ninja.stroke
+        ctx.strokeStyle = this.stroke
         //ctx.fillStyle   = ninja.fill
         
         //ctx.fill()
@@ -115,8 +116,7 @@ class NinjaLine
         ctx.globalAlpha = 1
         
         ctx.lineWidth = 1
-        ctx.lineCap = 'butt'
         
-        ctx.closePath()   
+        ctx.closePath()  
     }
 }

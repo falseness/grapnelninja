@@ -57,11 +57,25 @@ class Trampoline extends Element
     {
         let res = []
         for (let i = 0; i < this.points.length; ++i)
-            res.push({x: this.points[i].x + this.x, y: this.points[i].y + this.y})
+            res.push({x: this.points[i].x + this.x, y: this.points[i].y + this.y, curvature: this.points[i].curvature})
         return res
     }
     collision(who, line)
     {
+        /*let points = this.getPoints()
+        for (let i = 0; i < points.length; ++i)
+        {
+            if (points[i].x == line.x1 && points[i].y == line.y1)
+            {
+                this.points[(i + 1) % this.points.length].curvature =
+                {
+                    x: who.x + who.mass * who.speedX,
+                    y: who.y + who.mass * who.speedY
+                }
+            }
+        }*/
+        
+        
         if (line.type == 'vertical')
         {
             who.speedX *= -1
@@ -88,5 +102,29 @@ class Trampoline extends Element
         }
         else
             console.log('collision with trampoline error')
+    }
+    draw()
+    {
+        ctx.beginPath()
+        
+        let points = this.getPoints()
+        
+        ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
+        for (let i = 0; i < points.length; ++i)
+        {
+            if (points[i].curvature)
+                ctx.quadraticCurveTo(points[i].curvature.x + screen.x, points[i].curvature.y + screen.y, 
+                                     points[i].x + screen.x, points[i].y + screen.y)
+            else
+                ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+        }
+        
+        ctx.fillStyle   = this.fill
+        ctx.fill()
+        
+        ctx.strokeStyle = this.stroke
+        ctx.stroke()
+        
+        ctx.closePath()
     }
 }

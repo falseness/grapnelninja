@@ -4,8 +4,8 @@ class Screen
     {
         this.borderX        = 0.35 * width
         
-        this.topBorderY     = 0.4 * height
-        this.bottomBorderY  = height * 0.6
+        this.topBorderY     = 0.5 * height
+        this.bottomBorderY  = height * 0.5
         
         this.speedX         = 0
         this.speedY         = 0

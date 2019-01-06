@@ -85,7 +85,7 @@ class Grapnel
     }
     grapple(coords, element, index)
     {
-        if (coords.x && coords.y)
+        if (coords)
         {
             const correctCornerEps = 6
             const firstPointEps = 50

@@ -1,7 +1,16 @@
  function draw()
 {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ninja.line.draw()
+    
+    if (trackEnabled)
+    {
+        for (let i = 0; i < floors.length; ++i)
+        {
+            floors[i].drawTracks()
+        }
+        ninja.track.draw()
+    }
+
     grapnel.draw()
     
     

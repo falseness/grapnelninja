@@ -17,6 +17,8 @@ class Triangle extends Element
             min: object.yMin,
             max: object.yMax
         }
+        this.track = (trackEnabled)?(new MultipointTrackLine(this.side, this.fill, 75)):(new Empty())
+        this.track.addPos(this.getPoints())
     }
     getCircumscribedCircle()
     {
@@ -26,6 +28,10 @@ class Triangle extends Element
     {
         this.changeSpeed()
         this.y += this.speedY
+        
+        this.track.addPos(this.getPoints())
+        
+            
     }
     getRightPointX()
     {
@@ -62,30 +68,53 @@ class Triangle extends Element
             this.speedY *= -1
     }
 }
-/*const radius = height * 0.15 / Math.sqrt(3)
-const triangleRestriction = 
-{
-    top: area[0].y + area[0].height + 0.01 * height,
-    bottom: area[1].y - 0.01 * height
-}
 
-function generateTriangle(x)
-{    
-    
-    let model = 
+class MultipointTrackLine extends TrackLine
+{
+    constructor(width, stroke, pointsLimit)
     {
-        x: x + radius * Math.sqrt(3)                                                    ,
-        y: random(triangleRestriction.top + radius * 1.5 / 3, triangleRestriction.bottom - radius),
-        radius: radius
+        super(width, stroke, pointsLimit)
     }
-    
-    elements.push(new Triangle(createTriangleByModel(model)))
-    if (random() < 50)
+    addPos(point)
     {
-        elements[elements.length - 1].speedY *= -1
+        this.pos.push(point)
+        this.delete()
     }
-    
-    
-    let generatedElementsNumber = 1
-    return generatedElementsNumber
-}*/
+    draw()
+    {
+        ctx.beginPath()
+        
+        //Работает только в частном случае
+        let min0, min1, max0, max1, max2
+        
+        let extremum =
+        [
+            {min: this.pos[0][0].y, max: this.pos[0][0].y},
+            {min: this.pos[0][1].y, max: this.pos[0][1].y},
+            {min: this.pos[0][2].y, max: this.pos[0][2].y}
+        ]
+        for (let i = 0; i < this.pos.length; ++i)
+        {
+            for (let j = 0; j < this.pos[i].length; ++j)
+            {
+                if (this.pos[i][j].y < extremum[j].min)
+                    extremum[j].min = this.pos[i][j].y
+                if (this.pos[i][j].y > extremum[j].max)
+                    extremum[j].max = this.pos[i][j].y
+            }
+        }
+        ctx.moveTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
+        ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].max + screen.y)
+        ctx.lineTo(this.pos[0][2].x + screen.x, extremum[2].max + screen.y)
+        ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].max + screen.y)
+        ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].min + screen.y)
+        ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
+        
+        ctx.globalAlpha = 0.5
+        ctx.fillStyle = this.stroke
+        ctx.fill()
+        ctx.globalAlpha = 1
+        
+        ctx.closePath()  
+    }
+}

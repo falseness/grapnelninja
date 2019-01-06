@@ -10,6 +10,8 @@ class Element
 
         this.fill   = object.fill
         this.stroke = object.stroke
+        
+        this.track  = new Empty()
     }
     isToRightThanEdgeOfScreen()
     {

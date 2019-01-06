@@ -73,6 +73,16 @@ class Floor
             this.elements[i].draw()
         }
     }
+    drawTracks()
+    {
+        if (trackEnabled)
+        {
+            for (let i = 0; i < this.elements.length; ++i)
+            {
+                this.elements[i].track.draw()
+            }
+        }
+    }
 }
 class SideFloor extends Floor
 {
