@@ -1,35 +1,48 @@
 function createEvents()
 {
-    function throwGrapnel()
+    function mouseCoords(event)
     {
-        grapnel.x = ninja.x
-        grapnel.y = ninja.y
-        
-        direction = stage.getPointerPosition()
-        direction.x -= stage.x()
-        
-        let ratio = grapnel.calcSpeed(direction)
+        let rect = canvas.getBoundingClientRect()
+        return {x: event.clientX - rect.left - screen.x, y: event.clientY - rect.top - screen.y}
+    }
+    
+    function throwGrapnel(event)
+    {
+        grapnel.pos = [[ninja.x, ninja.y, new Empty()]]
+        let ratio = grapnel.calcSpeed(mouseCoords(event))
         grapnel.speedY = ratio.sin * grapnelSpeed// + ninja.speedY
-        grapnel.speedX = ratio.cos * grapnelSpeed + ninja.speedX
-        
-        layer.grapnel.add(grapnel.object)        
+        grapnel.speedX = ratio.cos * grapnelSpeed// + ninja.speedX    
         
         grapnel.throwed = true
-        grapnel.grappled = false    
+        grapnel.setGrappled(false)   
+    }
+    function PCThrowEvent(event)
+    {
+        throwGrapnel(event)
+    }
+    function mobileThrowEvent(event)
+    {
+        if (!grapnel.throwed)
+        {
+            throwGrapnel(event.changedTouches[0])
+        }
     }
     function pickUpGrapnel()
-    {
-        //grapnel.x = NaN
-        //grapnel.y = NaN
-        
-        grapnel.object.remove()
-        
+    {   
+        grapnel.setGrappled(false)
         grapnel.throwed = false
     }
     
-    stage.on('mousedown', throwGrapnel)
-    stage.on('mouseup', pickUpGrapnel)
+    document.addEventListener('mousedown', PCThrowEvent)
+    document.addEventListener('mouseup', pickUpGrapnel)
     
-    stage.on('touchstart', throwGrapnel)
-    stage.on('touchend', pickUpGrapnel)
+    document.addEventListener('touchstart', mobileThrowEvent)
+    document.addEventListener('touchend', pickUpGrapnel)
+    
+    document.addEventListener('keydown', function(event)
+    {
+        if (event.keyCode == 27)
+            screen.drawEnable = !screen.drawEnable
+    })
 }
+

@@ -2,7 +2,6 @@
 <html>
     <head>
         <title>grapnel ninja</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
         <meta charset = "UTF-8">
         <style>
             body 
@@ -13,117 +12,109 @@
                 background-color: 0;
             }
         </style>
-        <script src = "konva.min.js"></script>
     </head>
     <body>
+        <canvas id = "canvas"></canvas>
         <script src = "gameoptions.js"></script>
         
-        <script src = "createObjectsByModel/createLineObject.js"></script>
-        
-        <script src = "collision/circlewithline.js"></script>
+        <script src = "collision/circlewithcircle.js"></script>
         <script src = "collision/linewithline.js"></script>
+        <script src = "collision/circlewithline.js"></script>
         
-        <script src = "sprites/sprite.js"></script>
+        <script src = "elements/factory.js"></script>
+        <script src = "sprites/floor.js"></script>
+        
+        <script src = "sprites/empty.js"></script>
         <script src = "sprites/element.js"></script>
+        
         <script src = "sprites/ninja.js"></script>
         <script src = "sprites/grapnel.js"></script>
+        
+        <script src = "sprites/rect.js"></script>
+        <script src = "sprites/jumpingcube.js"></script>
+        
         <script src = "sprites/create.js"></script>
-        <script src = "sprites/obstacle.js"></script>
-        <script src = "sprites/enemy.js"></script>
+
+        <script src = "sprites/triangle.js"></script>
         <script src = "sprites/trampoline.js"></script>
+        <script src = "sprites/side.js"></script>
         
         <script src = "physics.js"></script>
         
-        <script src = "obstacles/generate.js"></script>
-        
-        <script src = "enemies/generate.js"></script>
-        
-        <script src = "trampoline/generate.js"></script>
-        
-        <script src = "elements/generate.js"></script>
-        <script src = "elements/delete.js"></script>
-        
         <script src = "moveScreen.js"></script>
         
-        <script src = "render/layers.js"></script>
         <script src = "render/draw.js"></script>
         
         <script src = "events.js"></script>
-        <div id = "container"></div>
         <script>
             'use strict'
-            let stage = new Konva.Stage({
-                container: 'container',
-                width: width,
-                height: height
-            })
+            let canvas = document.getElementById('canvas')
+            let ctx = canvas.getContext('2d')
+            
+            canvas.width = width
+            canvas.height = height
+            let floors =
+            [
+                new GroundFloor(1.9 * height, 2.2 * height),
+                new Floor(1 * height, 1.9 * height, {min: 0.3 * width, max: 0.3 * width}, 
+                [
+                    {type: 'horizontalTopRect' , chance: 20      },
+                    {type: 'verticalGroundRect', chance: 40 },
+                    {type: 'jumpingCube', chance: 40}
+                    
+                ]),
+                new Floor(0, height, {min: 0.3 * width, max: 0.4 * width},
+                [
+                    {type: 'triangle', chance: 100}
+                ])
+            ]
+            let elementsFactory = new ElementsFactory
             
             window.onload = startGame()
             
-            
-            
             function reStart()
             {
-                stage.x(0)
-                
-                grapnel.x = NaN
-                grapnel.y = NaN
+                screen.x = 0
+                screen.y = screenY
+                grapnel.pos = []
                 grapnel.speedX = 0
                 grapnel.speedY = 0
                 grapnel.throwed = false
                 
-                ninja.x = Math.floor(0.2 * width)
-                ninja.y = Math.floor(0.2 * height)
+                ninja.x = 0.2 * width
+                ninja.y = ninjaY
                 ninja.speedX = 0
                 ninja.speedY = 0
-                for (let i = sides.length; i < sprites.length; ++i)
-                {
-                    sprites[i].object.destroy()
-                }
-                sprites.splice(sides.length, sprites.length - 2)
                 
                 scoreText.count = 0
-                scoreText.setText('score: ' + scoreText.count)
-                layer.scoreText.draw()
                 
-                deltaX = 0
-                obstacles.setX(deltaX)
-                enemies.setX(deltaX)
-                trampolines.setX(deltaX)
                 
-                generatePrimaryElements()
-                drawElementsFirstTime()
+                
+                for (let i = 0; i < floors.length; ++i)
+                {
+                    floors[i].elements = []
+
+                    floors[i].generatePrimaryElements()
+                }
             }
             function startGame()
-            {
-                Konva.pixelRatio = 1
+            {  
+                //generatePrimaryElements()
                 
-                addLayersToStage()
-                addSpritesToLayers()
-                
-                //drawMechanicsLines()
-                drawStaticLayers()
-                
-                
-                generatePrimaryElements()
+                for (let i = 0; i < floors.length; ++i)
+                {
+                    floors[i].generatePrimaryElements()
+                }
                 
                 createEvents()
                 
-                startDrawAnimations()
-                
-                
-                /*ninjaAnim = new Konva.Animation(function(frame)
-                {
-                    ninja.move()
-                    ninja.collision()
-                }, layer.ninja)*/
-               // requestAnimationFrame(gameLoop)
+                requestAnimationFrame(gameLoop)
             }
 
             function gameLoop()
             {
                 physics()
-
+                draw()
                 
                 requestAnimationFrame(gameLoop)
             }

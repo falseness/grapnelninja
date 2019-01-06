@@ -1,43 +1,61 @@
-class Ninja extends Sprite
+class Ninja
 {
     constructor(object)
     {
-        super(object)
-        this.radius = object.attrs.radius
+        this.x      = object.x
+        this.y      = object.y
         
+        this.speedX = 0
+        this.speedY = 0
+        this.radius = object.radius
+        
+        this.fill   = object.fill
+        this.stroke = object.stroke
     }
     collision()
     {
-        for (let i = 0; i < sprites.length; ++i)
+        for (let k = 0; k < floors.length; ++k)
         {
-            let points = sprites[i].points
-            for (let j = 0; j < points.length; j += 2)
+            for (let i = 0; i < floors[k].elements.length; ++i)
             {
-                if (this.collisionNinjaWithLine(points[j], points[j + 1], points[j + 2], points[j + 3]))
-                    sprites[i].collision(this, lineFormula(points[j], points[j + 1], points[j + 2], points[j + 3]))
+                if (twoCirclesIntersect(this.x, this.y, this.radius, floors[k].elements[i].getCircumscribedCircle()))
+                {
+                    let lines = floors[k].elements[i].getLines()
+                    for (let j = 0; j < lines.length; ++j)
+                    {
+                        if (this.collisionNinjaWithLine(lines[j]))
+                            floors[k].elements[i].collision(this, lines[j])
+                    }
+                }
             }
-            if (this.collisionNinjaWithLine(points[points.length - 2], points[points.length - 1], points[0], points[1]))
-                sprites[i].collision(this, lineFormula(points[points.length - 2], points[points.length - 1], points[0], points[1]))
-          /* if (this.collisionNinjaWithLine(sprites[i].x, sprites[i].y, 
-                                           sprites[i].x + sprites[i].width, sprites[i].y) ||
-                this.collisionNinjaWithLine(sprites[i].x, sprites[i].y + sprites[i].height,
-                                          sprites[i].x + sprites[i].width, sprites[i].y + sprites[i].height) ||
-                this.collisionNinjaWithLine(sprites[i].x, sprites[i].y,
-                                          sprites[i].x, sprites[i].y + sprites[i].height) ||
-                this.collisionNinjaWithLine(sprites[i].x + sprites[i].width, sprites[i].y,
-                                          sprites[i].x + sprites[i].width, sprites[i].y + sprites[i].height))
-               console.log('collision')*/
         }
     }
-    collisionNinjaWithLine(x1, y1, x2, y2)
+    collisionNinjaWithLine(line)
     {
-        return collisionCircleWithLine(x1, y1, x2, y2, this.x, this.y, this.radius)
+        return collisionCircleWithLine(line, this.x, this.y, this.radius)
     }
     move()
     {
+        const maxSpeed = 0.02 * height
+        if (this.speedY > maxSpeed)
+            this.speedY = maxSpeed
+        if (this.speedY < -maxSpeed)
+            this.speedY = -maxSpeed
         this.x += this.speedX
         this.y += this.speedY
-        /*this.object.setX(Math.floor(this.x))
-        this.object.setY(Math.floor(this.y))*/
+    }
+    draw()
+    {
+        ctx.beginPath()
+    
+        ctx.arc(this.x + screen.x, this.y + screen.y, this.radius, 0, Math.PI * 2, false)
+        
+        ctx.fillStyle = this.fill
+        ctx.fill()
+        
+        ctx.strokeStyle = this.stroke
+        ctx.stroke()
+        
+        ctx.closePath()
     }
 }

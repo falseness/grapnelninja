@@ -1,51 +1,49 @@
-function collisionCircleWithLine(x1, y1, x2, y2, x0, y0, r)
+function collisionCircleWithLine(line, x0, y0, r)
 {
-    if (x1 == x2)
+    if (twoCirclesIntersect(x0, y0, r, line.circle))
     {
-        if (y1 > y2)
+        if (line.type == 'vertical')
         {
-            let t = y2
-            y2 = y1
-            y1 = t
+            //y2 < y1
+            return collisionCircleWithVertical(x0, y0, r, line)
         }
-        return collisionCalculation(r, x1, x0, y0, y1, y2)
-    }
-    let k = (y1 - y2) / (x1 - x2)
-    let b = y1 - k * x1
-    /*
-    ax^2 + bx + c = 0
-    */
-    let a = k * k + 1
-    let c = x0 * x0 + b * b - 2 * y0 * b + y0 * y0 - r * r
-    b = 2 * k * b - 2 * x0 - 2 * y0 * k
-    let D = b * b - 4 * a * c
-    if (D >= 0)
-    {
-        D = Math.sqrt(D)
-        let root1 = (-b - D) / (2 * a)
-        let root2 = (-b + D) / (2 * a)
-        // x2 > x1
-        if (root1 < x2 && x1 < root1 || 
-            root2 < x2 && x1 < root2 ||
-            root1 < x1 && x2 < root1 ||
-            root2 < x1 && x2 < root2)
-            return true
+        let k = (line.y1 - line.y2) / (line.x1 - line.x2)
+        let b = line.y1 - k * line.x1
+        /*
+        ax^2 + bx + c = 0
+        */
+        let a = Math.pow(k, 2) + 1
+        let c = Math.pow(x0, 2) + Math.pow(b, 2) - (y0 * b * 2) + Math.pow(y0, 2) - Math.pow(r, 2)
+        b = (k * b - x0 - y0 * k) * 2
+        let D = Math.pow(b, 2) - ((a * c) * 4)
+        if (D >= 0)
+        {
+            D = Math.sqrt(D)
+            let a2 = a * 2
+            let root1 = (-b - D) / (a2)
+            let root2 = (-b + D) / (a2)
+            // x2 > x1
+            if (pointOnLine(root1, line.x1, line.x2) ||
+                pointOnLine(root2, line.x1, line.x2))
+                return true
+        }
     }
     return false
 }
     
-function collisionCalculation(r, coord, coord0, coordUnknow0, lineBegin, lineEnd)
+function collisionCircleWithVertical(coord0, coordUnknow0, r, vertical)
 {
-    let c = Math.pow(r, 2) - Math.pow((coord - coord0), 2) - Math.pow(coordUnknow0, 2)
-    let D = Math.pow(2 * coordUnknow0, 2) + 4 * c
+    let c = Math.pow(r, 2) - Math.pow((vertical.x1 - coord0), 2) - Math.pow(coordUnknow0, 2)
+    coordUnknow02 = coordUnknow0 * 2
+    let D = Math.pow(coordUnknow02, 2) + 4 * c
     if (D >= 0)
     {
         D = Math.sqrt(D)
-        let root1 = (2 * coordUnknow0 - D) / 2
-        let root2 = (2 * coordUnknow0 + D) / 2
+        let root1 = (coordUnknow02 - D) / 2
+        let root2 = (coordUnknow02 + D) / 2
         {
-            if (lineBegin <= root1 && root1 <= lineEnd
-               || lineBegin <= root2 && root2 <= lineEnd)
+            if (pointOnLine(root1, vertical.y1, vertical.y2)
+               || pointOnLine(root2, vertical.y1, vertical.y2))
                 return true
         }
     }

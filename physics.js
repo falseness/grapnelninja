@@ -4,18 +4,13 @@ function physics()
 {
     ninja.speedY += GRAVITY
     
+    if (screen.shouldStartMove())
+        screen.move()
     
-   
-    /*screen.shouldStartMoveByBarrier()*/
-    screen.shouldStartMove()
-    
-    
-    screen.move()
-    for (let i = 0; i < sprites.length; ++i)
+    for (let i = 0; i < floors.length; ++i)
     {
-        sprites[i].move()
+        floors[i].moveElements()
     }
-    
     
     ninja.move()
     ninja.collision()
@@ -23,28 +18,18 @@ function physics()
     grapnel.move()
     if (grapnel.throwed)
     {
-        if (grapnel.speedX == 0 && grapnel.speedY == 0)
+        if (grapnel.isGrappled())
         {
-            let ratio = grapnel.calcSpeed({x: grapnel.x, y: grapnel.y})
+            let ratio = grapnel.calcSpeed({x: grapnel.pos[grapnel.pos.length - 1][0], y: grapnel.pos[grapnel.pos.length - 1][1]})
             ninja.speedX += grappleSpeed * ratio.cos
             ninja.speedY += grappleSpeed * ratio.sin
         }
-        else if (!grapnel.grappled)
-            grapnel.collision()
+        grapnel.collision()
     }
-    deleteObstacles(obstacles)
+    
+    for (let i = 0; i < floors.length; ++i)
+    {
+        floors[i].deleteElements()
+    }
 }
 
-/*
-function calcFiniteAcceleration(v, v0, s)
-{
-    // s = (v^2 - v0^2) / (2 * a)
-    //a = (v^2 - v0^2) / (2 * s)
-    return ((Math.pow(v, 2) - Math.pow(v0, 2)) / (2 * s))
-}
-function calcPrimaryAcceleration(t, v0, s)
-{
-    // s = v0 * t + (a * t ^ 2) / 2
-    // a = 2 * (s - v0 * t) / t ^ 2
-    return (2 * (s - v0 * t) / Math.pow(t, 2))
-}*/
