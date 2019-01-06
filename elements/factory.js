@@ -1,7 +1,7 @@
 function changeScoreText()
 {
-    if (++scoreText.count > scoreText.record)
-        scoreText.record = scoreText.count
+    if (++scoreText.count[version] > scoreText.record[version])
+        scoreText.record[version] = scoreText.count[version]
 }
 class ElementsFactory
 {
@@ -13,6 +13,7 @@ class ElementsFactory
             side                : new SideFactory()                 ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
+            verticalPairRects   : new VerticalPairRectsFactory()    ,
             trampoline          : new TrampolineFactory()           ,
             triangle            : new TriangleFactory()             ,
             jumpingCube         : new JumpingCubeFactory()
@@ -40,7 +41,7 @@ class GroundFactory
             points  : [{x: 0, y: 0}, {x: 0, y: h}, {x: this.width, y: h}, {x: this.width, y: 0}]
         }
         
-        return new Ground(model)
+        return [new Ground(model)]
     }
 }
 class SideFactory
@@ -61,7 +62,7 @@ class SideFactory
             fill    : '#f0f0f0' ,
             stroke  : 'black'
         }
-        return new Side(model)
+        return [new Side(model)]
     }
 }
 class HorizontalRectFactory
@@ -100,7 +101,7 @@ class HorizontalRectFactory
             points  : this.getPoints(w, h)
         }
         
-        return new Trampoline(model)
+        return [new Trampoline(model)]
     }
 }
 class HorizontalTopRectFactory extends HorizontalRectFactory
@@ -111,11 +112,11 @@ class HorizontalTopRectFactory extends HorizontalRectFactory
     }
     create(x, y)
     {
-        return super.create(random(x.min, x.max), y.min, 
-            random(this.width.min, this.width.max), random(this.height.min, this.height.max))
+        return [...super.create(random(x.min, x.max), y.min, 
+            random(this.width.min, this.width.max), random(this.height.min, this.height.max))]
     }
 }
-class VerticalRectFactory 
+class RectFactory 
 {
     constructor()
     {
@@ -130,22 +131,50 @@ class VerticalRectFactory
             max: 0.5 * height
         }
     }
-    create(x, y, w, h)
+    create(x, y, w, h, isPairElement)
     {
         let model =
         {
-            x       : x                                 ,
-            y       : y                                 ,
-            width   : w                                 ,
-            height  : h                                 ,
-            fill    : '#f0f0f0'                         ,    
-            stroke  : 'black'
+            x               : x             ,
+            y               : y             ,
+            width           : w             ,
+            height          : h             ,
+            fill            : '#f0f0f0'     ,    
+            stroke          : 'black'       ,
+            isPairElement   : isPairElement
         }
         
         return new Rect(model)
     }
 }
-class VerticalGroundRectFactory extends VerticalRectFactory
+class VerticalPairRectsFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        this.width = 0.05 * width
+    }
+    create(x, y)
+    {
+        x = random(x.min, x.max)
+        let wayHeight = (y.max - y.min) * 3 / 8
+        let rectHeight = random(0, y.max - y.min - wayHeight)
+
+        let model1 = 
+        [
+            x, y.min, this.width, rectHeight,
+        ]
+        let model2 =
+        [
+            x, y.min + rectHeight + wayHeight,
+            this.width, y.max - y.min - rectHeight - wayHeight
+        ]
+
+        return [super.create(...model1, function(){return true}), super.create(...model2, function(){return true})]
+    }
+}
+
+class VerticalGroundRectFactory extends RectFactory
 {
     constructor()
     {
@@ -156,7 +185,7 @@ class VerticalGroundRectFactory extends VerticalRectFactory
         let w = random(this.width.min, this.width.max)
         let h = random(this.height.min, this.height.max)
         
-        return super.create(random(x.min, x.max), y.max - h, w, h)
+        return [super.create(random(x.min, x.max), y.max - h, w, h)]
     }
 }
 class TrampolineFactory
@@ -201,7 +230,7 @@ class TrampolineFactory
             stroke  : 'black'
         }
         
-        return new Trampoline(model)
+        return [new Trampoline(model)]
     }
 }
 class JumpingCubeFactory
@@ -230,7 +259,7 @@ class JumpingCubeFactory
             height  : w                     ,
             fill    : 'blue'
         }
-        return new JumpingCube(model)
+        return [new JumpingCube(model)]
     }
 }
 class TriangleFactory
@@ -258,7 +287,7 @@ class TriangleFactory
             stroke  :'black'
         }
         
-        return new Triangle(model)
+        return [new Triangle(model)]
     }
 }
 

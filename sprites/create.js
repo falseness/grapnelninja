@@ -1,9 +1,17 @@
 let scoreText = 
 {
     text: 'score: '                     ,
-    count: 0                            ,
+    count: 
+    {
+        bad     : 0,
+        classic : 0
+    }                                   ,                
     rtext: 'record: '                   ,
-    record: 0                           ,
+    record: 
+    {
+        bad     : 0,
+        classic : 0
+    }                                   ,
     x: Math.floor(0.1 * width)          ,
     rx: 0.8 * width                     ,
     y: Math.floor(0.1 * height / 2)     ,
@@ -15,7 +23,7 @@ let scoreText =
         ctx.fillStyle = this.fill
         ctx.textBaseline = 'middle'
         ctx.font = this.fontSize + 'px ' + this.fontFamily
-        ctx.fillText(this.text + this.count, this.x, this.y)
-        ctx.fillText(this.rtext + this.record, this.rx, this.y)
+        ctx.fillText(this.text + this.count[version], this.x, this.y)
+        ctx.fillText(this.rtext + this.record[version], this.rx, this.y)
     }
 }

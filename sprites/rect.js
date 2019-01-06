@@ -10,6 +10,7 @@ class Rect extends Element
         
         this.fill   = this.fill     || '#f0f0f0'
         this.stroke = this.stroke   || 'black'
+        this.isPairElement = object.isPairElement || function() {return false}
         
         this.circle =
         {
@@ -51,10 +52,6 @@ class Rect extends Element
     getLeftPointX()
     {
         return this.getX()
-    }
-    isPairElement()
-    {
-        return true
     }
     draw()
     {

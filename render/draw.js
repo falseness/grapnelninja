@@ -23,4 +23,6 @@
     
     screen.draw()
     ninja.draw()
+    
+    menu.button.draw()
 }

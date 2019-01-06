@@ -55,60 +55,51 @@
             ctx.lineCap = 'butt'
             let trackEnabled = true
             let menu = new Menu(width, height)
-            let ninja, grapnel, floors, elementsFactory, screen, ninjaY, screenY
+            let ninja, grapnel, floors, elementsFactory, screen, version
             
             canvas.width = width
             canvas.height = height
             
-            window.onload = startGame()
+            window.onload = start()
             
+            function startGame(_v)
+            {
+                version = _v
+                
+                chooseVersion()
+                
+                requestAnimationFrame(gameLoop)
+            }
+            function chooseVersion()
+            {
+                scoreText.count[version] = 0
+                
+                if (version == 'classic')
+                    startClassicVersion()
+                else if (version == 'bad')
+                    startBadVersion()
+                else
+                    console.log('error version in startGame()')
+            }
             function reStart()
             {
-                screen.x = 0
-                screen.y = screenY
-                grapnel.pos = []
-                grapnel.speedX = 0
-                grapnel.speedY = 0
-                grapnel.throwed = false
-
-                
-                ninja.x = 0.2 * width
-                ninja.y = ninjaY
-                ninja.speedX = 0
-                ninja.speedY = 0
-                ninja.track.pos = [{x: ninja.x, y: ninja.y}]
-                
-                scoreText.count = 0
-                
-                
-                
-                for (let i = 0; i < floors.length; ++i)
-                {
-                    floors[i].elements = []
-
-                    floors[i].generatePrimaryElements()
-                }
+                chooseVersion()
             }
             function startClassicVersion()
             {
-                menu.visible = false
-                
+                menu.visible    = false
+
                 elementsFactory = new ElementsFactory
                 floors =
                 [
                     new SideFloor(0, 0.1 * height, [{type: 'side', chance: 100}]),
-                    new Floor(1 * height, 1.9 * height, {min: 0.3 * width, max: 0.3 * width}, 
+                    new Floor(0.1 * height, 0.9 * height, {min: 0.2 * width, max: 0.4 * width}, 
                     [
-                        {type: 'horizontalTopRect' , chance: 20 },
-                        {type: 'verticalGroundRect', chance: 20 },
-                        {type: 'jumpingCube', chance: 60        }
-                        //20 20 40
+                        {type: 'verticalPairRects', chance: 40 },
+                        {type: 'triangle', chance: 35},
+                        {type: 'trampoline', chance: 25}
                     ]),
-                    new Floor(0, height, {min: 0.3 * width, max: 0.4 * width},
-                    [
-                        {type: 'triangle', chance: 100}
-                    ]),
-                    new SideFloor(0.9 * height, 0, [{type: 'side', chance: 100}])
+                    new SideFloor(0.9 * height, height, [{type: 'side', chance: 100}])
                 ]
                 
                 screen = new Screen(false)
@@ -132,23 +123,20 @@
                 {
                     floors[i].generatePrimaryElements()
                 }
-                
-                requestAnimationFrame(gameLoop)
             }
             function startBadVersion()
             {
-                menu.visible = false
+                menu.visible    = false
                 
                 elementsFactory = new ElementsFactory
                 floors =
                 [
                     new SideFloor(1.9 * height, 2.4 * height, [{type: 'ground', chance: 100}]),
-                    new Floor(1 * height, 1.9 * height, {min: 0.3 * width, max: 0.3 * width}, 
+                    new Floor(1 * height, 1.9 * height, {min: 0.2 * width, max: 0.4 * width}, 
                     [
                         {type: 'horizontalTopRect' , chance: 20 },
                         {type: 'verticalGroundRect', chance: 20 },
                         {type: 'jumpingCube', chance: 60        }
-                        //20 20 40
                     ]),
                     new Floor(0, height, {min: 0.3 * width, max: 0.4 * width},
                     [
@@ -178,10 +166,8 @@
                 {
                     floors[i].generatePrimaryElements()
                 }
-                
-                requestAnimationFrame(gameLoop)
             }
-            function startGame()
+            function start()
             {  
                 //generatePrimaryElements()
                 menu.draw()
@@ -194,10 +180,15 @@
 
             function gameLoop()
             {
-                //menu.draw()
-                physics()
-                draw()
-                
+                if (menu.gamePaused)
+                {
+                    menu.pause()
+                }
+                else
+                {
+                    physics()
+                    draw()
+                }
                 requestAnimationFrame(gameLoop)
             }
             

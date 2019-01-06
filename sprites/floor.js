@@ -20,7 +20,14 @@ class Floor
         for (let i = 0; i < primaryElementsQuantity; ++i)
         {
             this.generateElements(nextElementX)
+            try
+            {
             nextElementX = this.elements[this.elements.length - 1].getRightPointX()
+            }
+            catch(e)
+            {
+                console.log('err')
+            }
         }
     }
     generateElements(x)
@@ -30,16 +37,17 @@ class Floor
         let sumChances = 0
         for (let i = 0; i < this.creations.length; ++i)
         {
-            if (num < this.creations[i].chance + sumChances)
+            if (num <= this.creations[i].chance + sumChances)
             {
-                this.elements.push(elementsFactory.create(
+                this.elements.push(...elementsFactory.create(
                     {min: x + this.elementsIntervalX.min, max: x + this.elementsIntervalX.max}, 
                     {min: this.top, max: this.bottom}   , this.creations[i].type))
                 
-                break
+                return
             }
             sumChances += this.creations[i].chance
         }
+        console.log('generation element on floor error')
     }
     deleteElements()
     {
@@ -48,7 +56,13 @@ class Floor
         {
             if (this.elements[i].getRightPointX() + screen.x < 0)
             {
-                this.elements.splice(i, 1)
+                if (this.elements[i].isPairElement())
+                {
+                    this.elements.splice(i, 2)
+                    ++newElements
+                }
+                else
+                    this.elements.splice(i, 1)
                 
                 this.generateElements(this.elements[this.elements.length - 1].getRightPointX())
                 

@@ -39,7 +39,10 @@ function createEvents()
             menu.click({x: event.clientX, y: event.clientY})
         }
         else
-            PCThrowEvent(event)
+        {
+            if (!menu.button.isClickOnButton({x: event.clientX, y: event.clientY}))
+                PCThrowEvent(event)
+        }
     }
     function mobileclick(event)
     {
@@ -48,7 +51,10 @@ function createEvents()
             menu.click({x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY})
         }
         else
-            mobileThrowEvent(event)
+        {
+            if (!menu.button.isClickOnButton({x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY}))
+                mobileThrowEvent(event)
+        }
     }
     function offclick()
     {
