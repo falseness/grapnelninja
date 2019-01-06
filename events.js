@@ -32,12 +32,33 @@ function createEvents()
         grapnel.setGrappled(false)
         grapnel.throwed = false
     }
+    function click(event)
+    {
+        if (menu.visible)
+        {
+            menu.click({x: event.clientX, y: event.clientY})
+        }
+        else
+            PCThrowEvent(event)
+    }
+    function mobileclick(event)
+    {
+        if (menu.visible)
+        {
+            menu.click({x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY})
+        }
+        else
+            mobileThrowEvent(event)
+    }
+    function offclick()
+    {
+        pickUpGrapnel()
+    }
+    document.addEventListener('mousedown', click)
+    document.addEventListener('mouseup', offclick)
     
-    document.addEventListener('mousedown', PCThrowEvent)
-    document.addEventListener('mouseup', pickUpGrapnel)
-    
-    document.addEventListener('touchstart', mobileThrowEvent)
-    document.addEventListener('touchend', pickUpGrapnel)
+    document.addEventListener('touchstart', mobileclick)
+    document.addEventListener('touchend', offclick)
     
     document.addEventListener('keydown', function(event)
     {

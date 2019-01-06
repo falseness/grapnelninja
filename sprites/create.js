@@ -1,18 +1,3 @@
-let ninja = new Ninja(
-{
-    x: 0.2 * width,
-    y: ninjaY,
-    radius: 0.01 * height,
-    fill: '#0000ff',
-    stroke: '#000000'
-})
-
-let grapnel = new Grapnel(
-{
-    points: [0, 0, 0, 0],
-    stroke: 'red'
-})
-
 let scoreText = 
 {
     text: 'score: '                     ,

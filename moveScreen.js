@@ -1,6 +1,6 @@
 class Screen
 {
-    constructor()
+    constructor(yAxisMotion, screenY)
     {
         this.borderX        = 0.35 * width
         
@@ -10,8 +10,11 @@ class Screen
         this.speedX         = 0
         this.speedY         = 0
         
+        this.yAxisMotion = yAxisMotion
+        
         this.x = 0
-        this.y = screenY
+        this.y = (yAxisMotion)?screenY:0
+        
         
         this.drawEnable = false
     }
@@ -40,17 +43,20 @@ class Screen
     }
     shouldStartMoveY()
     {
-        if (ninja.y > this.bottomBorderY - screen.y && ninja.speedY > 0)
+        if (this.yAxisMotion)
         {
-            this.speedY = -ninja.speedY
-            return true
+            if (ninja.y > this.bottomBorderY - screen.y && ninja.speedY > 0)
+            {
+                this.speedY = -ninja.speedY
+                return true
+            }
+            if (ninja.y < this.topBorderY - screen.y && ninja.speedY < 0)
+            {
+                this.speedY = -ninja.speedY
+                return true
+            }
+            this.speedY = 0
         }
-        if (ninja.y < this.topBorderY - screen.y && ninja.speedY < 0)
-        {
-            this.speedY = -ninja.speedY
-            return true
-        }
-        this.speedY = 0
         return false
     }
     draw()
@@ -74,7 +80,5 @@ class Screen
         }
     }
 }
-
-let screen = new Screen()
 
 

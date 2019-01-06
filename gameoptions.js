@@ -22,7 +22,3 @@ function abs(a)
     return Math.abs(a)
 }
 const blueSpriteDensity = 0.001
-
-const ninjaY    = 1.2 * height
-const screenY   = -height
-let trackEnabled= true
