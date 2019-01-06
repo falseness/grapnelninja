@@ -1,10 +1,6 @@
 const width = window.innerWidth
 const height = window.innerHeight
 
-const cyclesPerTick = 1
-
-const minimumDeltaRealNumber = 0.0001
-
 function random(min, max)
 {
     min = min || 0
@@ -27,4 +23,4 @@ function abs(a)
 }
 
 const ninjaY    = 1.2 * height
-const screenY   = -height//height
+const screenY   = -height

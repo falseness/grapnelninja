@@ -13,7 +13,6 @@ function physics()
     }
     
     ninja.move()
-    ninja.collision()
     
     grapnel.move()
     if (grapnel.throwed)

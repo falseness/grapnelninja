@@ -55,7 +55,7 @@
             canvas.height = height
             let floors =
             [
-                new GroundFloor(1.9 * height, 2.2 * height),
+                new SideFloor(1.9 * height, 2.3 * height, [{type: 'ground', chance: 100}]),
                 new Floor(1 * height, 1.9 * height, {min: 0.3 * width, max: 0.3 * width}, 
                 [
                     {type: 'horizontalTopRect' , chance: 20      },
@@ -66,7 +66,8 @@
                 new Floor(0, height, {min: 0.3 * width, max: 0.4 * width},
                 [
                     {type: 'triangle', chance: 100}
-                ])
+                ]),
+                new SideFloor(-0.4 * height, 0, [{type: 'side', chance: 100}])
             ]
             let elementsFactory = new ElementsFactory
             
@@ -80,11 +81,13 @@
                 grapnel.speedX = 0
                 grapnel.speedY = 0
                 grapnel.throwed = false
+
                 
                 ninja.x = 0.2 * width
                 ninja.y = ninjaY
                 ninja.speedX = 0
                 ninja.speedY = 0
+                ninja.line.pos = [{x: ninja.x, y: ninja.y}]
                 
                 scoreText.count = 0
                 

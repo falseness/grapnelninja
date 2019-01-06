@@ -10,10 +10,6 @@ class Floor
         
         this.elements           = []
     }
-    /*onThisFloor(y)
-    {
-        return this.top < y && y <= this.bottom
-    }    */
     generatePrimaryElements()
     {
         const firstPrimaryElementX      = 0.2 * width
@@ -78,11 +74,11 @@ class Floor
         }
     }
 }
-class GroundFloor extends Floor
+class SideFloor extends Floor
 {
-    constructor(bottomBorder, topBorder)
+    constructor(bottomBorder, topBorder, creations)
     {
-        super(bottomBorder, topBorder, {min: 0, max: 0}, [{type: 'ground', chance: 100}])
+        super(bottomBorder, topBorder, {min: 0, max: 0}, creations)
         
         this.leftPointX = -2 * width
     }

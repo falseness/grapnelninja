@@ -1,6 +1,7 @@
 function changeScoreText()
 {
-    scoreText.count++
+    if (++scoreText.count > scoreText.record)
+        scoreText.record = scoreText.count
 }
 class ElementsFactory
 {
@@ -8,7 +9,8 @@ class ElementsFactory
     {
         this.factories = 
         {
-            ground              : new GroundFactory()               ,
+            ground              : new GroundFactory()               , 
+            side                : new SideFactory()                 ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             trampoline          : new TrampolineFactory()           ,
@@ -30,14 +32,35 @@ class GroundFactory
     }
     create(x, y)
     {
-        let height = y.max - y.min
+        let h = y.max - y.min
         let model =
         {
             x       : x.min         , 
             y       : y.min         ,
-            points  : [{x: 0, y: 0}, {x: 0, y: height}, {x: this.width, y: height}, {x: this.width, y: 0}]
+            points  : [{x: 0, y: 0}, {x: 0, y: h}, {x: this.width, y: h}, {x: this.width, y: 0}]
         }
         
+        return new Ground(model)
+    }
+}
+class SideFactory
+{
+    constructor()
+    {
+        this.width = width
+    }
+    create(x, y)
+    {
+        let h = y.max - y.min
+        let model = 
+        {
+            x       : x.min     ,
+            y       : y.min     ,
+            width   : this.width,
+            height  : h         ,
+            fill    : '#f0f0f0' ,
+            stroke  : 'black'
+        }
         return new Side(model)
     }
 }

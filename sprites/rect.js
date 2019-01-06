@@ -65,32 +65,3 @@ class Rect extends Element
         ctx.fillRect(this.x + screen.x, this.y + screen.y, this.width, this.height)
     }
 }
-const rectWidth = 0.05 * width
-const rectIndent = 0.3 * width
-
-function generateRect(x)
-{
-    const wayHeight = 0.3 * height
-    let rectHeight = random(0, height - area[1].height - area[0].height - wayHeight)
-    
-    let rectModel = 
-    {
-        x: x, 
-        y: area[0].height, 
-        width: rectWidth,
-        height: rectHeight
-    }
-    
-    elements.push(new Rect(createRectByModel(rectModel)))
-    
-    
-    
-    
-    rectModel.y += rectHeight + wayHeight
-    rectModel.height = height - rectModel.y - area[1].height
-
-    elements.push(new Rect(createRectByModel(rectModel)))
-    
-    const generatedElementsNumber = 2
-    return generatedElementsNumber
-}

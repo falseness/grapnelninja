@@ -2,11 +2,10 @@ class Screen
 {
     constructor()
     {
-        //constants
         this.borderX        = 0.35 * width
         
-        this.topBorderY     = 0.3 * height
-        this.bottomBorderY  = height * 0.7
+        this.topBorderY     = 0.4 * height
+        this.bottomBorderY  = height * 0.6
         
         this.speedX         = 0
         this.speedY         = 0
@@ -24,28 +23,6 @@ class Screen
     {
         this.x += this.speedX
         this.y += this.speedY
-        
-        /*for (let i = sides.length; i < elements.length; ++i)
-        {
-            elements[i].x += this.speedX
-            elements[i].y += this.speedY
-            
-            elements[i].moveY() // оптимизация
-           // elements[i].moveY(this.speedY) 
-        }
-        for (let i = 0; i < sides.length; ++i)
-            elements[i].y += this.speedY
-         
-        ninja.x += this.speedX
-        ninja.y += this.speedY
-        
-        
-        for (let i = 0; i < grapnel.pos.length; ++i)
-        {
-            grapnel.pos[i][0] += this.speedX
-            grapnel.pos[i][1] += this.speedY
-        }*/
-        
     }
     shouldStartMove()
     {
