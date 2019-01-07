@@ -8,14 +8,7 @@ function createEvents()
     
     function throwGrapnel(event)
     {
-        try
-        {
         grapnel.pos = [[ninja.x, ninja.y, new Empty()]]
-        }
-        catch(e)
-        {
-            console.log('grapnel throw event')
-        }
         let ratio = grapnel.calcSpeed(mouseCoords(event))
         grapnel.speedY = ratio.sin * grapnelSpeed// + ninja.speedY
         grapnel.speedX = ratio.cos * grapnelSpeed// + ninja.speedX    
@@ -41,26 +34,36 @@ function createEvents()
     }
     function click(event)
     {
-        menu.button.isClickOnButton({x: event.clientX, y: event.clientY})
-        
         if (!(menu.gamePaused || menu.visible))
             PCThrowEvent(event)
-        
-        menu.click({x: event.clientX, y: event.clientY})
     }
     function mobileclick(event)
-    {
-        menu.button.isClickOnButton({x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY})
-        
+    {   
         if (!(menu.gamePaused || menu.visible))
                 mobileThrowEvent(event)
-        
-        menu.click({x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY})
     }
     function offclick()
     {
         if (!menu.visible)
             pickUpGrapnel()
+    }
+    function justclick(event)
+    {
+        let coords = 
+        {
+            x: event.clientX,
+            y: event.clientY
+        }
+        if (typeof event.changedTouches != 'undefined')
+        {
+            coords = 
+            {
+                x: event.changedTouches[0].clientX,
+                y: event.changedTouches[0].clientY
+            }
+        }
+        menu.button.isClickOnButton(coords)
+        menu.click(coords)
     }
     document.addEventListener('mousedown', click)
     document.addEventListener('mouseup', offclick)
@@ -68,10 +71,13 @@ function createEvents()
     document.addEventListener('touchstart', mobileclick)
     document.addEventListener('touchend', offclick)
     
+    document.addEventListener('click', justclick)
+    
     document.addEventListener('keydown', function(event)
     {
         if (!!screen && event.keyCode == 27)//screen != undefined
             screen.drawEnable = !screen.drawEnable
     })
 }
+
 

@@ -314,9 +314,10 @@ class Menu
     {
         this.classicVersionButton.isClickOnButton(coord)
         this.badVersionButton.isClickOnButton(coord)
-        this.visualEffectsCheckbox.isClickOnButton(coord)
         
         this.resume.isClickOnButton(coord)
+        this.visualEffectsCheckbox.isClickOnButton(coord)
+        
         this.backToMenu.isClickOnButton(coord)
     }
     setVisible(visible)
