@@ -5,15 +5,15 @@ class Ninja
         this.x      = object.x
         this.y      = object.y
         
-        this.speedX = 0
-        this.speedY = 0
+        this.speedX = object.speedX || 0
+        this.speedY = object.speedY || 0
         this.radius = object.radius
         this.mass   = Math.PI * Math.pow(this.radius, 2) * blueSpriteDensity
         
         this.fill   = object.fill
         this.stroke = object.stroke
         
-        this.track = (trackEnabled)?(new TrackLine(this.radius * 1.5, this.fill, 100)):(new Empty())
+        this.track = new TrackLine(this.radius * 1.5, this.fill, 100)
         this.track.addPos(this.x, this.y)
     }
     collision()
@@ -83,40 +83,49 @@ class TrackLine
     }
     delete()
     {
-        if (this.pos.length > this.pointsLimit)
+        if (trackEnabled)
         {
-            this.pos.splice(0, this.pos.length - this.pointsLimit)
+            if (this.pos.length > this.pointsLimit)
+            {
+                this.pos.splice(0, this.pos.length - this.pointsLimit)
+            }
         }
     }
     addPos(x, y)
     {
-        this.pos.push({x, y})
-        this.delete()
+        if (trackEnabled)
+        {
+            this.pos.push({x, y})
+            this.delete()
+        }
     }
     draw()
     {
-        ctx.beginPath()
-
-        ctx.lineCap = 'butt'
-        ctx.moveTo(this.pos[0].x + screen.x, this.pos[0].y + screen.y)
-        
-        for (let i = 1; i < this.pos.length; ++i)
+        if (trackEnabled)
         {
-            ctx.lineTo(this.pos[i].x + screen.x, this.pos[i].y + screen.y)
+            ctx.beginPath()
+
+            ctx.lineCap = 'butt'
+            ctx.moveTo(this.pos[0].x + screen.x, this.pos[0].y + screen.y)
+
+            for (let i = 1; i < this.pos.length; ++i)
+            {
+                ctx.lineTo(this.pos[i].x + screen.x, this.pos[i].y + screen.y)
+            }
+            ctx.lineWidth = this.lineWidth
+
+            ctx.globalAlpha = 0.5
+            ctx.strokeStyle = this.stroke
+            //ctx.fillStyle   = ninja.fill
+
+            //ctx.fill()
+            ctx.stroke()
+
+            ctx.globalAlpha = 1
+
+            ctx.lineWidth = 1
+
+            ctx.closePath() 
         }
-        ctx.lineWidth = this.lineWidth
-        
-        ctx.globalAlpha = 0.5
-        ctx.strokeStyle = this.stroke
-        //ctx.fillStyle   = ninja.fill
-        
-        //ctx.fill()
-        ctx.stroke()
-        
-        ctx.globalAlpha = 1
-        
-        ctx.lineWidth = 1
-        
-        ctx.closePath()  
     }
 }

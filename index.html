@@ -3,6 +3,7 @@
     <head>
         <title>grapnel ninja</title>
         <meta charset = "UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
         <style>
             body 
             {
@@ -57,6 +58,8 @@
             let menu = new Menu(width, height)
             let ninja, grapnel, floors, elementsFactory, screen, version
             
+            let game
+            
             canvas.width = width
             canvas.height = height
             
@@ -68,11 +71,12 @@
                 
                 chooseVersion()
                 
-                requestAnimationFrame(gameLoop)
+                game = requestAnimationFrame(gameLoop)
             }
             function chooseVersion()
             {
                 scoreText.count[version] = 0
+                menu.setVisible(false)
                 
                 if (version == 'classic')
                     startClassicVersion()
@@ -87,8 +91,6 @@
             }
             function startClassicVersion()
             {
-                menu.visible    = false
-
                 elementsFactory = new ElementsFactory
                 floors =
                 [
@@ -126,12 +128,11 @@
             }
             function startBadVersion()
             {
-                menu.visible    = false
                 
                 elementsFactory = new ElementsFactory
                 floors =
                 [
-                    new SideFloor(1.9 * height, 2.4 * height, [{type: 'ground', chance: 100}]),
+                    new SideFloor(1.9 * height, 2 * height, [{type: 'ground', chance: 100}]),
                     new Floor(1 * height, 1.9 * height, {min: 0.2 * width, max: 0.4 * width}, 
                     [
                         {type: 'horizontalTopRect' , chance: 20 },
@@ -142,7 +143,7 @@
                     [
                         {type: 'triangle', chance: 100}
                     ]),
-                    new SideFloor(-0.5 * height, 0, [{type: 'side', chance: 100}])
+                    new SideFloor(-0.1 * height, 0, [{type: 'side', chance: 100}])
                 ]
                 
                 screen = new Screen(true, -height)
@@ -166,6 +167,10 @@
                 {
                     floors[i].generatePrimaryElements()
                 }
+                
+                const screenMargin = 0.1 * height
+                screen.min = -(1.9 * height - height + screenMargin)
+                screen.max = -(0 - screenMargin)
             }
             function start()
             {  
@@ -189,7 +194,7 @@
                     physics()
                     draw()
                 }
-                requestAnimationFrame(gameLoop)
+                game = requestAnimationFrame(gameLoop)
             }
             
             

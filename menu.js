@@ -14,6 +14,11 @@ class Text
             y: object.alignY || 'middle'
         }
     }
+    getWidth()
+    {
+        ctx.font = this.fontSize + 'px ' + 'Calibri'
+        return ctx.measureText(this.text).width
+    }
     draw()
     {
         ctx.fillStyle   = this.fill
@@ -41,6 +46,11 @@ class Button
         text.y          = background.y
         text.fontSize   = this.background.height
         
+        if (typeof background.clickable == "undefined")
+            this.clickable = true
+        else
+            this.clickable  = background.clickable
+        
         this.text = new Text(text)
         
         this.image = image
@@ -62,11 +72,14 @@ class Button
     }
     isClickOnButton(click)
     {
-        if (this.background.x < click.x && click.x < this.background.x + this.background.width &&
-            this.background.y < click.y && click.y < this.background.y + this.background.height)
+        if (this.clickable)
         {
-            this.click()
-            return true
+            if (this.background.x < click.x && click.x < this.background.x + this.background.width &&
+                this.background.y < click.y && click.y < this.background.y + this.background.height)
+            {
+                this.click()
+                return true
+            }
         }
         return false
     }
@@ -138,9 +151,26 @@ class Menu
             text    : 'record: ' + scoreText.record.bad
         })
         
+        let checkMark = 
+        {
+            x: 0.645 * width,
+            y: 0.67 * height,
+            p1:
+            {
+                x: 0.025 * width,
+                y: 0.05 * height
+            },
+            p2:
+            {
+                x: 0.058 * width,
+                y: -0.05 * height
+            },
+            lineWidth: 0.03 * height,
+            fill: 'blue'
+        }
         this.visualEffectsText = new Text(
         {
-            x       : 0.3 * this.width  ,
+            x       : this.center.x - 0.2 * this.width  ,
             y       : 0.7 * this.height,
             fontSize: 0.1 * this.height , 
             fill    : 'blue'            ,
@@ -149,7 +179,7 @@ class Menu
         })
         this.visualEffectsCheckbox = new Button(
         {
-            x       : 0.67 * this.width ,
+            x       : Math.max(this.center.x + 0.17 * this.width, 0.05 * this.width + this.visualEffectsText.getWidth()),
             y       : 0.7 * this.height,
             width   : 0.1 * this.height ,
             height  : 0.1 * this.height
@@ -160,7 +190,17 @@ class Menu
         function()
         {
             trackEnabled = !trackEnabled
-            menu.draw()
+            ctx.clearRect(Math.min(menu.visualEffectsCheckbox.background.x, checkMark.x - checkMark.lineWidth),
+                          Math.min(menu.visualEffectsCheckbox.background.y, checkMark.y - checkMark.lineWidth,
+                                  checkMark.y - checkMark.lineWidth + checkMark.p1.y, 
+                                   checkMark.y - checkMark.lineWidth + checkMark.p2.y), 
+                          Math.max(menu.visualEffectsCheckbox.background.width,
+                                  checkMark.p1.x + checkMark.lineWidth, checkMark.p2.x + checkMark.lineWidth + checkMark.x - Math.min(menu.visualEffectsCheckbox.background.x, checkMark.x - checkMark.lineWidth)),
+                          Math.max(menu.visualEffectsCheckbox.background.height,
+                                  checkMark.p1.y + checkMark.lineWidth, checkMark.p2.y + checkMark.lineWidth))
+            
+            menu.visualEffectsCheckbox.draw()
+                
         }, 
         {
             draw: function()
@@ -169,16 +209,16 @@ class Menu
                 {
                     ctx.beginPath()
                     
-                    let x = 0.645 * width
-                    let y = 0.67 * height
+                    let x = checkMark.x//0.645 * width
+                    let y = checkMark.y
 
                     ctx.moveTo(x, y)
-                    ctx.lineTo(x + 0.025 * width, y + 0.05 * height)
-                    ctx.lineTo(x + 0.058 * width, y - 0.05 * height)
+                    ctx.lineTo(x + checkMark.p1.x, y + checkMark.p1.y)
+                    ctx.lineTo(x + checkMark.p2.x, y + checkMark.p2.y)
 
 
-                    ctx.lineWidth = 0.03 * height
-                    ctx.strokeStyle = 'blue'
+                    ctx.lineWidth = checkMark.lineWidth
+                    ctx.strokeStyle = checkMark.fill
                     ctx.stroke()
                     ctx.lineWidth = 1
                     ctx.closePath()
@@ -228,16 +268,76 @@ class Menu
                 ctx.closePath()
             }
         })
+        this.resume = new Button(
+        {
+            x: this.center.x        ,
+            y: 0.35 * this.height   ,
+            width: 0.4 * this.width ,
+            clickable:false         ,
+            height: 0.1 * this.height
+        },
+        {
+            text: 'resume',
+            fill: 'green'
+        }, function()
+        {
+            menu.changeGamePause(false)
+        })
+        this.backToMenu = new Button(
+        {
+            x: this.center.x        ,
+            y: 0.52 * this.height   ,
+            width: 0.4 * this.width ,
+            clickable: false        ,
+            height: 0.1 * this.height
+        },
+        {
+            fill: 'blue'            ,
+            text: 'back to menu'    ,
+            fill: 'red'
+        },
+        function()
+        {
+            menu.changeGamePause(false)
+    
+            menu.setVisible(true)
+           
+            menu.classicRecord.text = scoreText.rtext    + scoreText.record.classic
+            menu.badRecord.text     = scoreText.rtext   + scoreText.record.bad
+            
+            menu.draw()
+            
+            cancelAnimationFrame(game)
+        })
     }
     click(coord)
     {
         this.classicVersionButton.isClickOnButton(coord)
         this.badVersionButton.isClickOnButton(coord)
         this.visualEffectsCheckbox.isClickOnButton(coord)
+        
+        this.resume.isClickOnButton(coord)
+        this.backToMenu.isClickOnButton(coord)
+    }
+    setVisible(visible)
+    {
+        this.visible = visible
+        
+        this.classicVersionButton.clickable     = visible
+        this.badVersionButton.clickable         = visible
+        this.visualEffectsCheckbox.clickable    = visible
+    }
+    changeGamePause(isPaused)
+    {
+        this.gamePaused = isPaused
+        
+        this.visualEffectsCheckbox.clickable    = isPaused
+        this.resume.clickable                   = isPaused
+        this.backToMenu.clickable               = isPaused
     }
     startPause()
     {
-        this.gamePaused = true
+        this.changeGamePause(true)
         
         ctx.fillStyle = 'rgba(245, 245, 245, 0.52)'
         ctx.fillRect(0, 0, this.width, this.height)
@@ -251,6 +351,14 @@ class Menu
         
         this.visualEffectsText.draw()
         this.visualEffectsCheckbox.draw()
+        
+        this.resume.draw()
+        this.backToMenu.draw()
+        
+    }
+    unPause()
+    {
+        menu.changeGamePause(false)
     }
     pause()
     {

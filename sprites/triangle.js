@@ -77,44 +77,50 @@ class MultipointTrackLine extends TrackLine
     }
     addPos(point)
     {
-        this.pos.push(point)
-        this.delete()
+        if (trackEnabled)
+        {
+            this.pos.push(point)
+            this.delete()
+        }
     }
     draw()
     {
-        ctx.beginPath()
-        
-        //Работает только в частном случае
-        let min0, min1, max0, max1, max2
-        
-        let extremum =
-        [
-            {min: this.pos[0][0].y, max: this.pos[0][0].y},
-            {min: this.pos[0][1].y, max: this.pos[0][1].y},
-            {min: this.pos[0][2].y, max: this.pos[0][2].y}
-        ]
-        for (let i = 0; i < this.pos.length; ++i)
+        if (trackEnabled)
         {
-            for (let j = 0; j < this.pos[i].length; ++j)
+            ctx.beginPath()
+
+            //Работает только в частном случае
+            let min0, min1, max0, max1, max2
+
+            let extremum =
+            [
+                {min: this.pos[0][0].y, max: this.pos[0][0].y},
+                {min: this.pos[0][1].y, max: this.pos[0][1].y},
+                {min: this.pos[0][2].y, max: this.pos[0][2].y}
+            ]
+            for (let i = 0; i < this.pos.length; ++i)
             {
-                if (this.pos[i][j].y < extremum[j].min)
-                    extremum[j].min = this.pos[i][j].y
-                if (this.pos[i][j].y > extremum[j].max)
-                    extremum[j].max = this.pos[i][j].y
+                for (let j = 0; j < this.pos[i].length; ++j)
+                {
+                    if (this.pos[i][j].y < extremum[j].min)
+                        extremum[j].min = this.pos[i][j].y
+                    if (this.pos[i][j].y > extremum[j].max)
+                        extremum[j].max = this.pos[i][j].y
+                }
             }
+            ctx.moveTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
+            ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].max + screen.y)
+            ctx.lineTo(this.pos[0][2].x + screen.x, extremum[2].max + screen.y)
+            ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].max + screen.y)
+            ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].min + screen.y)
+            ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
+
+            ctx.globalAlpha = 0.5
+            ctx.fillStyle = this.stroke
+            ctx.fill()
+            ctx.globalAlpha = 1
+
+            ctx.closePath()  
         }
-        ctx.moveTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
-        ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].max + screen.y)
-        ctx.lineTo(this.pos[0][2].x + screen.x, extremum[2].max + screen.y)
-        ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].max + screen.y)
-        ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].min + screen.y)
-        ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
-        
-        ctx.globalAlpha = 0.5
-        ctx.fillStyle = this.stroke
-        ctx.fill()
-        ctx.globalAlpha = 1
-        
-        ctx.closePath()  
     }
 }

@@ -1,5 +1,6 @@
-const width = window.innerWidth
-const height = window.innerHeight
+const widthHeightRatio = 1.8250950570342206
+const height    = window.innerHeight
+const width     = window.innerWidth//height * widthHeightRatio
 
 function random(min, max)
 {
@@ -11,6 +12,16 @@ function isEqually(a, b, eps)
 {
     eps = eps || 1
     return (Math.abs(a - b) < eps)
+}
+function isMore(a, b, eps)
+{
+    eps = eps || 1
+    return (a - b > -eps)
+}
+function isLess(a, b, eps)
+{
+    eps = eps || 1
+    return (a - b < eps)
 }
 function isPointsEqually(p1, p2, eps)
 {

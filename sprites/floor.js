@@ -130,6 +130,6 @@ class SideFloor extends Floor
     }
     moveElements()
     {
-        
+
     }
 }

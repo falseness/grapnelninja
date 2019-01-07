@@ -8,7 +8,14 @@ function createEvents()
     
     function throwGrapnel(event)
     {
+        try
+        {
         grapnel.pos = [[ninja.x, ninja.y, new Empty()]]
+        }
+        catch(e)
+        {
+            console.log('grapnel throw event')
+        }
         let ratio = grapnel.calcSpeed(mouseCoords(event))
         grapnel.speedY = ratio.sin * grapnelSpeed// + ninja.speedY
         grapnel.speedX = ratio.cos * grapnelSpeed// + ninja.speedX    
@@ -34,31 +41,26 @@ function createEvents()
     }
     function click(event)
     {
-        if (menu.visible)
-        {
-            menu.click({x: event.clientX, y: event.clientY})
-        }
-        else
-        {
-            if (!menu.button.isClickOnButton({x: event.clientX, y: event.clientY}))
-                PCThrowEvent(event)
-        }
+        menu.button.isClickOnButton({x: event.clientX, y: event.clientY})
+        
+        if (!(menu.gamePaused || menu.visible))
+            PCThrowEvent(event)
+        
+        menu.click({x: event.clientX, y: event.clientY})
     }
     function mobileclick(event)
     {
-        if (menu.visible)
-        {
-            menu.click({x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY})
-        }
-        else
-        {
-            if (!menu.button.isClickOnButton({x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY}))
+        menu.button.isClickOnButton({x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY})
+        
+        if (!(menu.gamePaused || menu.visible))
                 mobileThrowEvent(event)
-        }
+        
+        menu.click({x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY})
     }
     function offclick()
     {
-        pickUpGrapnel()
+        if (!menu.visible)
+            pickUpGrapnel()
     }
     document.addEventListener('mousedown', click)
     document.addEventListener('mouseup', offclick)
@@ -68,7 +70,7 @@ function createEvents()
     
     document.addEventListener('keydown', function(event)
     {
-        if (event.keyCode == 27)
+        if (!!screen && event.keyCode == 27)//screen != undefined
             screen.drawEnable = !screen.drawEnable
     })
 }

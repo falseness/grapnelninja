@@ -5,7 +5,7 @@ class JumpingCube extends Rect
         super(object)
         this.mass = this.height * this.width * blueSpriteDensity
         
-        this.track = (trackEnabled)?(new TrackLine(this.width, this.fill, 50)):(new Empty())
+        this.track = new TrackLine(this.width, this.fill, 50)
         this.track.addPos(this.x + this.circle.x, this.y)
         
         let cycles = random()
