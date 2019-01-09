@@ -2,6 +2,12 @@ const widthHeightRatio = 1.8250950570342206
 const height    = window.innerHeight
 const width     = window.innerWidth//height * widthHeightRatio
 
+let scale = 
+{
+    classic : 1     ,
+    bad     : 1 / 2 ,
+}
+
 function random(min, max)
 {
     min = min || 0

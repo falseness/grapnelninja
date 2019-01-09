@@ -36,7 +36,7 @@
         <script src = "sprites/rect.js"></script>
         <script src = "sprites/jumpingcube.js"></script>
         
-        <script src = "sprites/create.js"></script>
+        <script src = "sprites/scoretext.js"></script>
 
         <script src = "sprites/triangle.js"></script>
         <script src = "sprites/trampoline.js"></script>
@@ -53,16 +53,13 @@
             'use strict'
             let canvas = document.getElementById('canvas')
             let ctx = canvas.getContext('2d')
-            
+            let ok = false
             ctx.lineCap = 'butt'
             let trackEnabled = true
             let menu = new Menu(width, height)
             let ninja, grapnel, floors, elementsFactory, screen, version
             
             let game
-            
-            canvas.width = width
-            canvas.height = height
             
             window.onload = start()
             
@@ -76,6 +73,20 @@
             }
             function chooseVersion()
             {
+                scoreText.x         = scoreTextX        / scale[version]
+                scoreText.rx        = scoreTextRx       / scale[version]
+                scoreText.y         = scoreTextY        / scale[version]
+                scoreText.fontSize  = scoreTextFontSize / scale[version]
+                
+                menu.button = new Button(
+                {
+                    x       : menu.constButton.x        / scale[version],
+                    y       : menu.constButton.y        / scale[version],
+                    width   : menu.constButton.width    / scale[version],
+                    height  : menu.constButton.height   / scale[version]
+                },
+                ...menu.args)
+                
                 scoreText.count[version] = 0
                 menu.setVisible(false)
                 
@@ -140,14 +151,14 @@
                         {type: 'verticalGroundRect', chance: 20 },
                         {type: 'jumpingCube', chance: 60        }
                     ]),
-                    new Floor(0, height, {min: 0.3 * width, max: 0.4 * width},
+                    new Floor(0.1 * height, 1 * height, {min: 0.3 * width, max: 0.4 * width},
                     [
                         {type: 'triangle', chance: 100}
                     ]),
-                    new SideFloor(-0.1 * height, 0, [{type: 'side', chance: 100}])
+                    new SideFloor(0, 0.1 * height, [{type: 'side', chance: 100}])
                 ]
                 
-                screen = new Screen(true, -height)
+                screen = new Screen(false, 0)
                 
                 ninja = new Ninja(
                 {
@@ -175,6 +186,9 @@
             }
             function start()
             {  
+                canvas.width = width
+                canvas.height = height
+                
                 //generatePrimaryElements()
                 menu.draw()
                 

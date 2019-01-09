@@ -88,7 +88,7 @@ function pointIsOnStraight(point, line)
     }
     else if (line.type == 'line')
     {
-        const eps = 0.1
+        const eps = 0
         return (isEqually(point.y, line.k * point.x + line.b, eps))
     }
     else

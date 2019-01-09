@@ -2,6 +2,8 @@
 {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     
+    ctx.scale(scale[version], scale[version])
+    
     if (trackEnabled)
     {
         for (let i = 0; i < floors.length; ++i)
@@ -25,4 +27,6 @@
     ninja.draw()
     
     menu.button.draw()
+    
+    ctx.scale(1 / scale[version], 1 / scale[version])
 }

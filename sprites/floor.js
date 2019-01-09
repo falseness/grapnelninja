@@ -13,7 +13,7 @@ class Floor
     generatePrimaryElements()
     {
         const firstPrimaryElementX      = 0.2 * width
-        const primaryElementsQuantity   = 4
+        const primaryElementsQuantity   = 6
         
         let nextElementX                = firstPrimaryElementX
         
@@ -109,7 +109,7 @@ class SideFloor extends Floor
     generatePrimaryElements()
     {
         const firstPrimaryElementX      = this.leftPointX
-        const primaryElementsQuantity   = 4
+        const primaryElementsQuantity   = 6
         
         let nextElementX                = firstPrimaryElementX
         

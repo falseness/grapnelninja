@@ -226,48 +226,51 @@ class Menu
             }
         })
         
-        this.button = new Button(
-        {
-            x       : 0.96  * this.width    ,
-            y       : 0.05 * this.height    ,
-            width   : 0.1  * this.height   ,
-            height  : 0.09  * this.height   ,
-            fill    : 'rgb(0, 0, 0, 0)'
-        },
-        {
-            text: ''
-        },
-        function()
-        {
-            menu.startPause()
-        },
-        {
-            draw: function(x, y, w, h)
+        this.args = 
+        [
             {
-                ctx.beginPath()
-                
-                ctx.lineWidth = Math.round(0.05 * h)
-                
-                let x1 = x + 0.1 * w, x2 = x + 0.9 * w
-                let y1 = y + 0.3 * h
-                let dy = 0.2 * h
-                ctx.moveTo(x1, y1)
-                ctx.lineTo(x2, y1)
-                
-                ctx.moveTo(x1, y1 + dy)
-                ctx.lineTo(x2, y1 + dy)
-                
-                ctx.moveTo(x1, y1 + dy * 2)
-                ctx.lineTo(x2, y1 + dy * 2)
-            
-                ctx.strokeStyle = 'blue'
-                ctx.stroke()
-                
-                ctx.lineWidth = 1
-                
-                ctx.closePath()
+                text: ''
+            },
+            function()
+            {
+                menu.startPause()
+            },
+            {
+                draw: function(x, y, w, h)
+                {
+                    ctx.beginPath()
+
+                    ctx.lineWidth = Math.round(0.05 * h)
+
+                    let x1 = x + 0.1 * w, x2 = x + 0.9 * w
+                    let y1 = y + 0.3 * h
+                    let dy = 0.2 * h
+                    ctx.moveTo(x1, y1)
+                    ctx.lineTo(x2, y1)
+
+                    ctx.moveTo(x1, y1 + dy)
+                    ctx.lineTo(x2, y1 + dy)
+
+                    ctx.moveTo(x1, y1 + dy * 2)
+                    ctx.lineTo(x2, y1 + dy * 2)
+
+                    ctx.strokeStyle = 'blue'
+                    ctx.stroke()
+
+                    ctx.lineWidth = 1
+
+                    ctx.closePath()
+                }
             }
-        })
+        ]
+        this.constButton = 
+        {
+            x       : 0.96  * this.width,
+            y       : 0.05 * this.height,
+            width   : 0.1  * this.height,
+            height  : 0.09  * this.height,
+            fill    : 'rgb(0, 0, 0, 0)'
+        }
         this.resume = new Button(
         {
             x: this.center.x        ,
