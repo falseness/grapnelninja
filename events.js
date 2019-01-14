@@ -83,7 +83,13 @@ function createEvents()
     function offtouch()
     {
         if (TouchList.length == 0)
-            unTouch = false
+        {
+            setTimeout(function()
+            {
+                unTouch = false
+            },
+            100)
+        }
         offclick()
     }
     document.addEventListener('mousedown', click)
