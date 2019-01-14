@@ -59,10 +59,14 @@ function createEvents()
     }
     function click(event)
     {
-        if (startEvent())
+        if (!unTouch && startEvent())
         {
             //Элегантный костыль:
             unTouch = true
+            setTimeout(function()
+            {
+                unTouch = false
+            }, 100)
             return
         }
         if (!(menu.opened()))
@@ -70,7 +74,7 @@ function createEvents()
     }
     function touch(event)
     {       
-        if (!grapnel.throwed && !unTouch)
+        if (!grapnel.throwed)
         {
             click(event)
         }
@@ -82,14 +86,6 @@ function createEvents()
     }
     function offtouch()
     {
-        if (TouchList.length == 0)
-        {
-            setTimeout(function()
-            {
-                unTouch = false
-            },
-            100)
-        }
         offclick()
     }
     document.addEventListener('mousedown', click)
