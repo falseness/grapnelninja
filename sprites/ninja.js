@@ -14,7 +14,7 @@ class Ninja
         this.stroke = object.stroke
         
         this.track = new TrackLine(this.radius * 1.5, this.fill, 100)
-        this.track.addPos(this.x, this.y)
+        this.track.addPos(this.x, this.y, true)
     }
     collision()
     {
@@ -91,9 +91,9 @@ class TrackLine
             }
         }
     }
-    addPos(x, y)
+    addPos(x, y, mustAdd)
     {
-        if (trackEnabled)
+        if (trackEnabled && firstCycleInThisTick || mustAdd)
         {
             this.pos.push({x, y})
             this.delete()

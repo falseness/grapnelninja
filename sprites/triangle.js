@@ -4,7 +4,7 @@ class Triangle extends Element
     {
         super(object)
     
-        this.speedY =   0.005 * height
+        this.speedY =   0.005 * height / cyclesPerTick
         if (random() < 50)
             this.speedY *= -1
         
@@ -18,7 +18,7 @@ class Triangle extends Element
             max: object.yMax
         }
         this.track = (trackEnabled)?(new MultipointTrackLine(this.side, this.fill, 75)):(new Empty())
-        this.track.addPos(this.getPoints())
+        this.track.addPos(this.getPoints(), true)
     }
     getCircumscribedCircle()
     {
@@ -75,9 +75,9 @@ class MultipointTrackLine extends TrackLine
     {
         super(width, stroke, pointsLimit)
     }
-    addPos(point)
+    addPos(point, mustAdd)
     {
-        if (trackEnabled)
+        if (trackEnabled && firstCycleInThisTick || mustAdd)
         {
             this.pos.push(point)
             this.delete()

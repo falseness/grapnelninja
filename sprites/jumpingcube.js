@@ -6,9 +6,9 @@ class JumpingCube extends Rect
         this.mass = this.height * this.width * blueSpriteDensity
         
         this.track = new TrackLine(this.width, this.fill, 50)
-        this.track.addPos(this.x + this.circle.x, this.y)
+        this.track.addPos(this.x + this.circle.x, this.y, true)
         
-        let cycles = random()
+        let cycles = random() * cyclesPerTick
         for (let i = 0; i < cycles; ++i)
         {
             this.move()

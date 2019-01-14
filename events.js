@@ -53,6 +53,8 @@ function createEvents()
             isButtonClicked         |= menu.click(coords)
             return isButtonClicked
         }
+        coords.x /= scale[version]
+        coords.y /= scale[version]
         return menu.clickToPause(coords)
     }
     function click(event)

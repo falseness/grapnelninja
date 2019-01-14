@@ -1,5 +1,5 @@
-const grapnelSpeed = 0.018891687657430732 * height * 2
-const grappleSpeed = 0.00025188916876574307 * height
+const grapnelSpeed = 0.018891687657430732 * height * 2 / cyclesPerTick
+const grappleSpeed = 0.00025188916876574307 * height / Math.pow(cyclesPerTick, 2)
 
 class Grapnel
 {
