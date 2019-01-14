@@ -60,13 +60,17 @@ function createEvents()
     function click(event)
     {
         if (startEvent())
+        {
+            //Элегантный костыль:
+            unTouch = true
             return
+        }
         if (!(menu.opened()))
             throwGrapnel(event)
     }
     function touch(event)
     {       
-        if (!grapnel.throwed)
+        if (!grapnel.throwed && !unTouch)
         {
             click(event)
         }
@@ -76,11 +80,17 @@ function createEvents()
         if (!menu.visible)
             pickUpGrapnel()
     }
+    function offtouch()
+    {
+        if (TouchList.length == 0)
+            unTouch = false
+        offclick()
+    }
     document.addEventListener('mousedown', click)
     document.addEventListener('mouseup', offclick)
     
     document.addEventListener('touchstart', touch)
-    document.addEventListener('touchend', offclick)
+    document.addEventListener('touchend', offtouch)
     
     
     document.addEventListener('keydown', function(event)

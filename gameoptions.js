@@ -8,7 +8,7 @@ let scale =
     bad     : 1 / 2 ,
 }
 
-const cyclesPerTick = 50
+const cyclesPerTick = 10
 
 function random(min, max)
 {

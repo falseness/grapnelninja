@@ -190,12 +190,12 @@ class Menu
         function()
         {
             trackEnabled = !trackEnabled
-            ctx.clearRect(Math.min(menu.visualEffectsCheckbox.background.x, checkMark.x - checkMark.lineWidth),
+            ctx.clearRect(Math.min(menu.visualEffectsCheckbox.background.x, checkMark.x - checkMark.lineWidth * 2),
                           Math.min(menu.visualEffectsCheckbox.background.y, checkMark.y - checkMark.lineWidth,
                                   checkMark.y - checkMark.lineWidth + checkMark.p1.y, 
                                    checkMark.y - checkMark.lineWidth + checkMark.p2.y), 
                           Math.max(menu.visualEffectsCheckbox.background.width,
-                                  checkMark.p1.x + checkMark.lineWidth, checkMark.p2.x + checkMark.lineWidth + checkMark.x - Math.min(menu.visualEffectsCheckbox.background.x, checkMark.x - checkMark.lineWidth)),
+                                  checkMark.p1.x + checkMark.lineWidth, checkMark.p2.x + checkMark.lineWidth + checkMark.x - Math.min(menu.visualEffectsCheckbox.background.x, checkMark.x - checkMark.lineWidth * 2)),
                           Math.max(menu.visualEffectsCheckbox.background.height,
                                   checkMark.p1.y + checkMark.lineWidth, checkMark.p2.y + checkMark.lineWidth))
             
