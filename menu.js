@@ -315,13 +315,15 @@ class Menu
     }
     click(coord)
     {
-        this.classicVersionButton.isClickOnButton(coord)
-        this.badVersionButton.isClickOnButton(coord)
-        
-        this.resume.isClickOnButton(coord)
-        this.visualEffectsCheckbox.isClickOnButton(coord)
-        
-        this.backToMenu.isClickOnButton(coord)
+        return  this.classicVersionButton.isClickOnButton(coord)    ||
+                this.badVersionButton.isClickOnButton(coord)        ||
+                this.resume.isClickOnButton(coord)                  ||
+                this.visualEffectsCheckbox.isClickOnButton(coord)   ||
+                this.backToMenu.isClickOnButton(coord)
+    }
+    clickToPause(coord)
+    {
+        return (this.visible)?false:this.button.isClickOnButton(coord)   
     }
     setVisible(visible)
     {
@@ -363,6 +365,10 @@ class Menu
     unPause()
     {
         menu.changeGamePause(false)
+    }
+    opened()
+    {
+        return menu.gamePaused || menu.visible
     }
     pause()
     {

@@ -1,6 +1,6 @@
 function createEvents()
 {
-    function correctCoords(event)
+    function getCoords(event)
     {
         let coord
         if (typeof event.changedTouches != 'undefined')
@@ -21,18 +21,18 @@ function createEvents()
         }
         return coord
     }
-    function mouseCoords(event)
+    function getRealCoords(event)
     {
         let rect = canvas.getBoundingClientRect()
         
-        let coord = correctCoords(event)
+        let coord = getCoords(event)
         
         return {x: coord.x / scale[version] - rect.left - screen.x, y: coord.y / scale[version] - rect.top - screen.y}
     }
     function throwGrapnel(event)
     {
         grapnel.pos = [[ninja.x, ninja.y, new Empty()]]
-        let ratio = grapnel.calcSpeed(mouseCoords(event))
+        let ratio = grapnel.calcSpeed(getRealCoords(event))
         grapnel.speedY = ratio.sin * grapnelSpeed// + ninja.speedY
         grapnel.speedX = ratio.cos * grapnelSpeed// + ninja.speedX    
         
@@ -46,32 +46,24 @@ function createEvents()
     }
     function startEvent()
     {
-        let coords = (menu.visible || menu.gamePaused)?correctCoords(event):mouseCoords(event)
-        
-        if (!(menu.visible || menu.gamePaused))
-            coords.x += screen.x
-        
-        let res = false
-        if (!menu.visible)
-            res = menu.button.isClickOnButton(coords)
-        menu.click(coords)
-        
-        return res
+        let coords = getCoords(event)
+        if (menu.opened())
+        {
+            let isButtonClicked     = false
+            isButtonClicked         |= menu.click(coords)
+            return isButtonClicked
+        }
+        return menu.clickToPause(coords)
     }
     function click(event)
     {
-        let eventStarted = startEvent()
-        if (eventStarted)
+        if (startEvent())
             return
-        if (!(menu.gamePaused || menu.visible))
+        if (!(menu.opened()))
             throwGrapnel(event)
     }
     function touch(event)
-    {   
-        let eventStarted = startEvent()
-        if (eventStarted)
-            return
-            
+    {       
         if (!grapnel.throwed)
         {
             click(event)
@@ -81,10 +73,6 @@ function createEvents()
     {
         if (!menu.visible)
             pickUpGrapnel()
-    }
-    function justclick(event)
-    {
-        
     }
     document.addEventListener('mousedown', click)
     document.addEventListener('mouseup', offclick)
