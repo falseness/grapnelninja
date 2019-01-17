@@ -11,10 +11,11 @@ class Ground extends Trampoline
         //Чтобы не было "швов"
         ctx.beginPath()
         
+        ctx.lineWidth = 10
         ctx.moveTo(this.x + screen.x, this.y + screen.y + 1)
-        ctx.lineTo(this.x + screen.x, this.y + this.points[1].y + screen.y)
+        ctx.lineTo(this.x + screen.x, this.y + this.points[1].y + screen.y - 1)
         
-        ctx.lineWidth = 5
+        
         ctx.strokeStyle = this.fill
         ctx.stroke()
         
@@ -36,10 +37,11 @@ class Side extends Rect
         //Чтобы не было "швов"
         ctx.beginPath()
         
+        ctx.lineWidth = 10
         ctx.moveTo(this.x + screen.x, this.y + screen.y + 1)
-        ctx.lineTo(this.x + screen.x, this.y + this.height + screen.y)
+        ctx.lineTo(this.x + screen.x, this.y + this.height + screen.y - 1)
         
-        ctx.lineWidth = 5
+        
         ctx.strokeStyle = this.fill
         ctx.stroke()
         
