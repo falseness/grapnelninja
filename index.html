@@ -146,18 +146,19 @@
                 elementsFactory = new ElementsFactory
                 floors =
                 [
-                    new SideFloor(1.9 * height, 2 * height, [{type: 'ground', chance: 100}]),
-                    new Floor(1 * height, 1.9 * height, {min: 0.2 * width, max: 0.4 * width}, 
+                    new SideFloor(2 * height, 2.2 * height, [{type: 'ground', chance: 100}]),
+                    new Floor(1.1 * height, 2 * height, {min: 0.2 * width, max: 0.4 * width}, 
                     [
-                        {type: 'horizontalTopRect' , chance: 20 },
-                        {type: 'verticalGroundRect', chance: 20 },
-                        {type: 'jumpingCube', chance: 60        }
+                        {type: 'horizontalTopRect' , chance: 15     }, //20 20 20 40
+                        {type: 'verticalGroundRect', chance: 20     },
+                        {type: 'jumpingCubeWithCeiling', chance: 25 },
+                        {type: 'jumpingCube', chance: 40            }
                     ]),
-                    new Floor(0.1 * height, 1 * height, {min: 0.3 * width, max: 0.4 * width},
+                    new Floor(0.2 * height, 1.1 * height, {min: 0.35 * width, max: 0.45 * width},
                     [
                         {type: 'triangle', chance: 100}
                     ]),
-                    new SideFloor(0, 0.1 * height, [{type: 'side', chance: 100}])
+                    new SideFloor(0, 0.2 * height, [{type: 'side', chance: 100}])
                 ]
                 
                 screen = new Screen(false, 0)

@@ -14,7 +14,7 @@ class Ground extends Trampoline
         ctx.moveTo(this.x + screen.x, this.y + screen.y + 1)
         ctx.lineTo(this.x + screen.x, this.y + this.points[1].y + screen.y)
         
-        ctx.lineWidth = 3
+        ctx.lineWidth = Math.round(0.0063371356147021544 * height)
         ctx.strokeStyle = this.fill
         ctx.stroke()
         
@@ -39,7 +39,7 @@ class Side extends Rect
         ctx.moveTo(this.x + screen.x, this.y + screen.y + 1)
         ctx.lineTo(this.x + screen.x, this.y + this.height + screen.y)
         
-        ctx.lineWidth = 3
+        ctx.lineWidth = Math.round(0.0063371356147021544 * height)
         ctx.strokeStyle = this.fill
         ctx.stroke()
         

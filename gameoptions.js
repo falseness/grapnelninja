@@ -4,8 +4,8 @@ const width     = window.innerWidth//height * widthHeightRatio
 
 let scale = 
 {
-    classic : 1     ,
-    bad     : 1 / 2 ,
+    classic : 1         ,
+    bad     : 1 / 2.2   ,
 }
 
 const cyclesPerTick = 10

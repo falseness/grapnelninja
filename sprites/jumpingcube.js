@@ -52,12 +52,11 @@ class JumpingCube extends Rect
                             if (linesCollision(lines[j], cubeLines[q]))
                             {
                                 //тупо:
-                                if (this.y < Math.min(lines[j].y1, lines[j].y2))
-                                {
-                                    this.speedY = -abs(this.speedY + abs(GRAVITY))
-                                }
+                                this.speedY *= -1
+                                if (this.speedY > 0)
+                                    this.speedY += GRAVITY
                                 else
-                                    this.speedY = abs(this.speedY + abs(GRAVITY))
+                                    this.speedY -= GRAVITY
 
                                 return
                             }

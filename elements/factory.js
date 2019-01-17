@@ -16,7 +16,8 @@ class ElementsFactory
             verticalPairRects   : new VerticalPairRectsFactory()    ,
             trampoline          : new TrampolineFactory()           ,
             triangle            : new TriangleFactory()             ,
-            jumpingCube         : new JumpingCubeFactory()
+            jumpingCube         : new JumpingCubeFactory()          ,
+            jumpingCubeWithCeiling: new JumpingCubeWithHorizontalTopRectFactory()
         }
     }
     create(x, y, type)
@@ -248,7 +249,7 @@ class JumpingCubeFactory
             max: 0.3 * height
         }
     }
-    create(x, y)
+    create(x, y, isOnMiddle)
     {
         let w = random(this.width.min, this.width.max)
         let model =
@@ -259,7 +260,41 @@ class JumpingCubeFactory
             height  : w                     ,
             fill    : 'blue'
         }
+        if (isOnMiddle)
+            model.x -= model.width / 2
         return [new JumpingCube(model)]
+    }
+}
+class JumpingCubeWithHorizontalTopRectFactory
+{
+    constructor()
+    {
+        
+    }
+    create(x, y)
+    {
+        let rect = elementsFactory.factories.horizontalTopRect.create(x, y)[0]
+        
+        let points = rect.getPoints()
+        let yMin = points[0].y
+        for (let i = 1; i < points.length; ++i)
+        {
+            if (points[i].y > yMin)
+                yMin = points[i].y
+        }
+        
+        x = 
+        {
+            min: (rect.getLeftPointX() + rect.getRightPointX()) / 2
+        }
+        x.max = x.min
+        y.min = yMin
+        
+        
+        let cube = elementsFactory.factories.jumpingCube.create(x, y, true)[0]
+        let maxCubeSpeedY = Math.sqrt(2 * GRAVITY * (y.max - y.min - cube.height))
+        cube.speedY = (cube.speedY > 0)?maxCubeSpeedY:-maxCubeSpeedY
+        return [cube, rect]
     }
 }
 class TriangleFactory

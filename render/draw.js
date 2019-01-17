@@ -16,11 +16,14 @@
     grapnel.draw()
     
     
-    
-    for (let i = 0; i < floors.length; ++i)
+    for (let i = 1; i < floors.length - 1; ++i)
     {
         floors[i].draw()
     }
+    floors[0].draw()
+    floors[floors.length - 1].draw()
+    
+    
     scoreText.draw()
     
     screen.draw()
