@@ -13,7 +13,7 @@ class Floor
     generatePrimaryElements()
     {
         const firstPrimaryElementX      = 0.2 * width
-        const primaryElementsQuantity   = 6
+        const primaryElementsQuantity   = 8
         
         let nextElementX                = firstPrimaryElementX
         
@@ -54,7 +54,16 @@ class Floor
         let newElements = 0
         for (let i = 0; i < this.elements.length - newElements; ++i)
         {
-            if (this.elements[i].getRightPointX() + screen.x < 0)
+            if (!this.elements[i].scored && 
+                this.elements[i].getRightPointX() + screen.x < 0)
+            {
+                this.elements[i].scored = true
+                if (this.elements[i].isPairElement)
+                    this.elements[++i].scored = true
+                
+                changeScoreText()
+            }
+            else if (this.elements[i].getRightPointX() + screen.x < screen.getDeletionBorder())
             {
                 if (this.elements[i].isPairElement())
                 {
@@ -68,8 +77,6 @@ class Floor
                 
                 ++newElements
                 --i
-                
-                changeScoreText()
             }
         }
     }
@@ -104,7 +111,7 @@ class SideFloor extends Floor
     {
         super(bottomBorder, topBorder, {min: 0, max: 0}, creations)
         
-        this.leftPointX = -2 * width
+        this.leftPointX = screen.getDeletionBorder()
     }
     generatePrimaryElements()
     {

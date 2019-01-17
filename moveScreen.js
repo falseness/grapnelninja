@@ -16,8 +16,15 @@ class Screen
         this.x = 0
         this.y = (yAxisMotion)?screenY:0
         
+        this.deletionBorder = -width
         
         this.drawEnable = false
+        
+        this.maxX = 1048576//4294967296 скорее всего в этом нет необходимости, не буду добавлять
+    }
+    getDeletionBorder()
+    {
+        return this.deletionBorder
     }
     isMoving()
     {

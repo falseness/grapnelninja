@@ -12,6 +12,8 @@ class Element
         this.stroke = object.stroke
         
         this.track  = new Empty()
+        
+        this.scored = false
     }
     isToRightThanEdgeOfScreen()
     {

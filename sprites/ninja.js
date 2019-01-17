@@ -56,6 +56,9 @@ class Ninja
         this.track.addPos(this.x, this.y)
         
         this.collision()
+        
+        if (this.x + screen.x < screen.getDeletionBorder())
+            reStart()
     }
     draw()
     {

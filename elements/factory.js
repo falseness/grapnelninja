@@ -294,6 +294,9 @@ class JumpingCubeWithHorizontalTopRectFactory
         let cube = elementsFactory.factories.jumpingCube.create(x, y, true)[0]
         let maxCubeSpeedY = Math.sqrt(2 * GRAVITY * (y.max - y.min - cube.height))
         cube.speedY = (cube.speedY > 0)?maxCubeSpeedY:-maxCubeSpeedY
+        
+        cube.isPairElement = function(){return true}
+        
         return [cube, rect]
     }
 }
