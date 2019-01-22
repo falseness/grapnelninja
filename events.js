@@ -44,7 +44,7 @@ function createEvents()
         grapnel.setGrappled(false)
         grapnel.throwed = false
     }
-    function startEvent()
+    function startEvent(event)
     {
         let coords = getCoords(event)
         if (menu.opened())
@@ -59,7 +59,7 @@ function createEvents()
     }
     function click(event)
     {
-        if (!unTouch && startEvent())
+        if (!unTouch && startEvent(event))
         {
             //Элегантный костыль:
             unTouch = true
