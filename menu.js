@@ -1,3 +1,26 @@
+function reuseTimeInGame() {
+    time = Math.floor(new Date().getTime() / 1000)
+}
+function pauseTimeInGame() {
+    let thisTime = Math.floor(new Date().getTime() / 1000)
+    let delta = Math.floor(thisTime - time)
+
+    let newTime = delta
+    if (!!localStorage.getItem('time')) {
+        let oldTime = Number(localStorage.getItem('time'))
+        newTime += oldTime
+    }
+    localStorage.setItem('time', newTime)
+    console.log(newTime)
+}
+function getTimeInGame() {
+    let t = 0
+    if (!!localStorage.getItem('time')) {
+        t += Number(localStorage.getItem('time'))
+    }
+    return Math.floor(t / 60)
+}
+
 class Text
 {
     constructor(object)
@@ -150,7 +173,16 @@ class Menu
             fill    : 'rgba(0, 0, 0, 0.5)'              ,
             text    : 'record: ' + scoreText.record.bad
         })
-        
+
+        this.timeInGame = new Text(
+            {
+            x       : this.center.x                     ,
+            y       : 0.8 * this.height                ,
+            fontSize: 0.05 * this.height                ,
+            fill    : 'rgba(0, 0, 0, 0.5)'              ,
+            text    : 'time spent in game: ' + getTimeInGame() + ' minutes'
+        })
+
         let checkMark = 
         {
             x: 0.645 * width,
@@ -343,6 +375,9 @@ class Menu
     }
     startPause()
     {
+        pauseTimeInGame()
+        this.timeInGame.text = 'time spent in game: ' + getTimeInGame() + ' minutes'
+
         this.changeGamePause(true)
         
         ctx.fillStyle = 'rgba(245, 245, 245, 0.52)'
@@ -364,6 +399,7 @@ class Menu
     }
     unPause()
     {
+        reuseTimeInGame()
         menu.changeGamePause(false)
     }
     opened()
@@ -390,6 +426,8 @@ class Menu
         
         this.badVersionButton.draw()
         this.badRecord.draw()
+
+        this.timeInGame.draw()
         
         this.visualEffectsText.draw()
         this.visualEffectsCheckbox.draw()

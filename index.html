@@ -54,6 +54,7 @@
             let canvas = document.getElementById('canvas')
             let ctx = canvas.getContext('2d')
             let ok = false
+            let time
             ctx.lineCap = 'butt'
             let trackEnabled = true
             let menu = new Menu(width, height)
@@ -65,6 +66,7 @@
             
             function startGame(_v)
             {
+                reuseTimeInGame()
                 version = _v
                 
                 chooseVersion()
@@ -212,8 +214,13 @@
                 }
                 game = requestAnimationFrame(gameLoop)
             }
-            
-            
+
+            window.onblur = function() {
+                if (!menu.visible) {
+                    //menu.startPause()
+                    //menuBack()
+                }
+            }
             
         </script>
     </body>

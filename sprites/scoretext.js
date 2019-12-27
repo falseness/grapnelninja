@@ -3,7 +3,7 @@ let scoreText =
     text: 'score: '                     ,
     count: 
     {
-        bad     : 0,
+        bad     : 0                     ,
         classic : 0
     }                                   ,                
     rtext: 'record: '                   ,
@@ -12,9 +12,9 @@ let scoreText =
         bad     : 0,
         classic : 0
     }                                   ,
-    x: Math.floor(0.1 * width)          ,
+    x: Math.floor(0.1 * width)       ,
     rx: 0.8 * width                     ,
-    y: Math.floor(0.1 * height / 2)     ,
+    y: Math.floor(0.1 * height / 2)  ,
     fontSize: 0.05 * height ,
     fontFamily: 'Calibri'               ,
     fill: 'blue'                        ,
