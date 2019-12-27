@@ -16,8 +16,10 @@ class ElementsFactory
             verticalPairRects   : new VerticalPairRectsFactory()    ,
             trampoline          : new TrampolineFactory()           ,
             triangle            : new TriangleFactory()             ,
+            harmlessTriangle    : new HarmlessTriangleFactory()     ,
             jumpingCube         : new JumpingCubeFactory()          ,
-            jumpingCubeWithCeiling: new JumpingCubeWithHorizontalTopRectFactory()
+            jumpingCubeWithCeiling: new JumpingCubeWithHorizontalTopRectFactory(),
+            twoTrampolines      : new VerticalPairTrampolineFactory()
         }
     }
     create(x, y, type)
@@ -158,8 +160,8 @@ class VerticalPairRectsFactory extends RectFactory
     create(x, y)
     {
         x = random(x.min, x.max)
-        let wayHeight = (y.max - y.min) * 3 / 8
-        let rectHeight = random(0, y.max - y.min - wayHeight)
+        let wayHeight = (y.max - y.min) * 4 / 8
+        let rectHeight = random(0.1 * height, y.max - y.min - wayHeight - 0.1 * height)
 
         let model1 = 
         [
@@ -174,6 +176,8 @@ class VerticalPairRectsFactory extends RectFactory
         return [super.create(...model1, function(){return true}), super.create(...model2, function(){return true})]
     }
 }
+
+
 
 class VerticalGroundRectFactory extends RectFactory
 {
@@ -195,8 +199,8 @@ class TrampolineFactory
     {
         this.width = 
         {
-            min: 0.2 * width,
-            max: 0.3 * width
+            min: 0.3 * width,
+            max: 0.4 * width
         }
         this.height =
         {
@@ -222,18 +226,77 @@ class TrampolineFactory
     }
     create(x, y)
     {
-        let model = 
-        {
-            x       : random(x.min, x.max)  , 
+        let model = {
+            x       : random(x.min, x.max)  ,
             y       : y.max                 ,
             points  : this.generatePoints() ,
             fill    : '#3e1170'             ,
             stroke  : 'black'
         }
+
         
         return [new Trampoline(model)]
     }
 }
+
+class VerticalPairTrampolineFactory extends TrampolineFactory {
+    constructor() {
+        super()
+        this.width =
+        {
+            min: 2 * width,
+            max: 2.5 * width
+        }
+    }
+    create(x, y) {
+        let wayHeight = (y.max - y.min) * 4 / 8
+        let rectHeight = random(0.1 * height, y.max - y.min - wayHeight - 0.1 * height)
+
+        this.height.min = this.height.max = rectHeight
+
+        let trampoline1 = super.create(x, y)[0]
+        //return [trampoline1]
+        let dt = -(y.max - (-trampoline1.y + wayHeight))
+
+        let _x = trampoline1.points[2].x
+        let _y = trampoline1.points[1].y// - wayHeight - rectHeight
+
+        let points =
+        [
+            {x: 0,  y: 0 },
+            {x: 0,  y: _y + dt   },
+            {x: _x, y: _y + dt  },
+            {x: _x, y: 0    }
+        ]
+
+
+        let model = {
+            x       : trampoline1.x                         ,
+            y       : trampoline1.y - wayHeight - rectHeight,
+            points  : points                                ,
+            fill    : '#3e1170'                             ,
+            stroke  : 'black'
+        }
+
+        let trampoline2 = new Trampoline(model)
+
+        trampoline1.isPairElement = trampoline2.isPairElement = function() {return true}
+        return [trampoline1, trampoline2]//[trampoline1, trampoline2]
+        /*
+        let model1 =
+            [
+                x, y.min, this.width, rectHeight,
+            ]
+        let model2 =
+            [
+                x, y.min + rectHeight + wayHeight,
+                this.width, y.max - y.min - rectHeight - wayHeight
+            ]
+
+        return [super.create(...model1, function(){return true}), super.create(...model2, function(){return true})]*/
+    }
+}
+
 class JumpingCubeFactory
 {
     constructor()
@@ -306,17 +369,15 @@ class TriangleFactory
     {
         this.radius =  height * 0.25 / Math.sqrt(3)
     }
-    create(x, y)
-    {
-        let yPositionMin = y.min + 0.01 * height 
+    getModel(x, y) {
+        let yPositionMin = y.min + 0.01 * height
         let yPositionMax = y.max - 0.01 * height
-        
+
         let yGenerateMin = yPositionMin + this.radius * 0.5
         let yGenerateMax = yPositionMax - this.radius
-        
-        let model = 
-        {
-            x       : random(x.min, x.max) + this.radius * Math.sqrt(3)  , 
+
+        return {
+            x       : random(x.min, x.max) + this.radius * Math.sqrt(3)  ,
             y       : random(yGenerateMin, yGenerateMax)            ,
             radius  : this.radius                                   ,
             yMin    : yPositionMin                                  ,
@@ -324,8 +385,20 @@ class TriangleFactory
             fill    :'#ff0000'                                      ,
             stroke  :'black'
         }
+    }
+    create(x, y)
+    {
+        let model = this.getModel(x, y)
         
         return [new Triangle(model)]
+    }
+}
+class HarmlessTriangleFactory extends TriangleFactory {
+    create(x, y) {
+        let model = this.getModel(x, y)
+        model.fill = '#30d5c8'
+
+        return [new HarmlessTriangle(model)]
     }
 }
 

@@ -69,6 +69,12 @@ class Triangle extends Element
     }
 }
 
+class HarmlessTriangle extends Triangle{
+    collision() {
+
+    }
+}
+
 class MultipointTrackLine extends TrackLine
 {
     constructor(width, stroke, pointsLimit)

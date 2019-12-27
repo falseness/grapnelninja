@@ -3,6 +3,8 @@ class Trampoline extends Element
     constructor(object)
     {
         super(object)
+
+        this.isPairElement = object.isPairElement || function() {return false}
         
         this.stroke = this.stroke   || 'black'
         this.fill   = this.fill     || '#7bd17b'
