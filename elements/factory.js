@@ -250,8 +250,7 @@ class VerticalPairTrampolineFactory extends TrampolineFactory {
     }
     create(x, y) {
         let wayHeight = (y.max - y.min) * 4 / 8
-        let rectHeight = random(0.1 * height, y.max - y.min - wayHeight - 0.1 * height)
-
+        let rectHeight = random(0.25 * height, y.max - y.min - wayHeight - 0.1 * height)
         this.height.min = this.height.max = rectHeight
 
         let trampoline1 = super.create(x, y)[0]
