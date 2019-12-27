@@ -11,7 +11,6 @@ function pauseTimeInGame() {
         newTime += oldTime
     }
     localStorage.setItem('time', newTime)
-    console.log(newTime)
 }
 function getTimeInGame() {
     let t = 0

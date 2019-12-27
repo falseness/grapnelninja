@@ -39,7 +39,7 @@ class Grapnel
         
         let sin = dy / distance
         let cos = dx / distance
-        
+
         return {sin: sin, cos: cos}
         
     }
