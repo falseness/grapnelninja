@@ -38,8 +38,9 @@
         
         <script src = "sprites/scoretext.js"></script>
 
-        <script src = "sprites/triangle.js"></script>
+        
         <script src = "sprites/trampoline.js"></script>
+        <script src = "sprites/triangle.js"></script>
         <script src = "sprites/side.js"></script>
         
         <script src = "physics.js"></script>
@@ -63,6 +64,8 @@
             let game
             
             window.onload = start()
+
+            const physicsLoopsPerCycle = 10
             
             function startGame(_v)
             {
@@ -151,18 +154,18 @@
                 floors =
                 [
                     new SideFloor(2 * height, 2.2 * height, [{type: 'ground', chance: 100}]),
-                    new Floor(1.1 * height, 2 * height, {min: 0.2 * width, max: 0.4 * width}, 
-                    [
-                        {type: 'horizontalTopRect' , chance: 20     }, //15 20 25 40
-                        {type: 'verticalGroundRect', chance: 20     },
-                        {type: 'jumpingCubeWithCeiling', chance: 20 },
-                        {type: 'jumpingCube', chance: 40            }
-                    ]),
+                    // new Floor(1.1 * height, 2 * height, {min: 0.2 * width, max: 0.4 * width}, 
+                    // [
+                    //     {type: 'horizontalTopRect' , chance: 30     }, //15 20 25 40
+                    //     // {type: 'verticalGroundRect', chance: 20     },
+                    //     {type: 'jumpingCubeWithCeiling', chance: 30 },
+                    //     {type: 'jumpingCube', chance: 40            }
+                    // ]),
                    new Floor(0.2 * height, 1.1 * height, {min: 0.35 * width, max: 0.45 * width},
                     [
                         {type: 'triangle', chance: 100}
                     ]),
-                    new SideFloor(0, 0.2 * height, [{type: 'side', chance: 100}])
+                    // new SideFloor(0, 0.2 * height, [{type: 'ground', chance: 100}])
                 ]
                 ninja = new Ninja(
                 {
