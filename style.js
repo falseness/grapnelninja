@@ -75,6 +75,14 @@ const STYLE = Object.freeze({
         trailPoints: 100,
         cubeTrailPoints: 50,
         triangleTrailPoints: 75
+    }),
+    features: Object.freeze({
+        background: true,
+        lightmap: true,
+        particles: true,
+        playerTrail: true,
+        screenEffects: true,
+        uiStyling: true
     })
 })
 

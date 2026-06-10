@@ -1,1 +1,2 @@
 TASK-001: Added central STYLE/QUALITY config, routed current visual constants through it, verified both game versions in browser, and saved screenshots/TASK-001.png. Gotcha: Playwright needed Node-12-compatible package in /tmp plus Chromium deps libgbm1/libasound2.
+TASK-002: Added isolated visual renderer/effects classes, delegated draw() through quality-gated visual hooks, verified classic/bad startup plus quality toggles, and saved screenshots/TASK-002.png. Gotcha: current lightmap/particles/screen effects are intentionally no-op hooks for later visual tasks.

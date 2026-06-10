@@ -23,11 +23,11 @@
   {
     "id": "TASK-002",
     "title": "Introduce isolated renderer and effects classes",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-001"
     ],
-    "description": "Add dedicated visual-only classes for background rendering, lightmap rendering, particles, player trail, screen effects, and UI styling hooks. Keep these classes easy to disable and separate from gameplay logic.",
+    "description": "Add dedicated visual-only classes for background rendering, lightmap rendering, particles, player trail, screen effects, and UI styling hooks. Keep these classes easy to disable and separate from gameplay logic.\nImplemented: Added isolated visual effect renderer classes and delegated the draw path through quality-gated visual hooks without moving gameplay ownership.",
     "acceptance_criteria": [
       "Background, lightmap, particles, player trail, screen effects, and UI styling each live in their own class or clearly isolated module.",
       "The new classes expose small draw/update-style methods and read game state without owning physics, collision, spawning, or scoring decisions.",

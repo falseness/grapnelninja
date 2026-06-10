@@ -47,6 +47,7 @@
         
         <script src = "moveScreen.js"></script>
         
+        <script src = "render/effects.js"></script>
         <script src = "render/draw.js"></script>
         
         <script src = "events.js"></script>
@@ -59,7 +60,7 @@
             ctx.lineCap = 'butt'
             let trackEnabled = true
             let menu = new Menu(width, height)
-            let ninja, grapnel, floors, elementsFactory, screen, version, firstCycleInThisTick = true, unTouch = false
+            let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             
             let game
             
@@ -193,6 +194,7 @@
             {  
                 canvas.width = width
                 canvas.height = height
+                visualEffects = new VisualEffects(ctx, canvas)
                 
                 //generatePrimaryElements()
                 menu.draw()
