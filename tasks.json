@@ -1,0 +1,441 @@
+[
+  {
+    "id": "TASK-001",
+    "title": "Add central neon style constants and quality config",
+    "status": "pending",
+    "dependencies": [],
+    "description": "Add a central STYLE constants object for all neon arcade colors and visual settings, plus a quality config for disabling expensive effects. Do not change gameplay logic.",
+    "acceptance_criteria": [
+      "A single central STYLE object defines the dark background colors, cyan player color, blue cube color, red hazard color, ground line color, UI colors, alpha values, stroke widths, light sizes, particle caps, and timing values.",
+      "A quality config exists and can independently disable lightmap, particles, player trail, background motion, and screen shake.",
+      "The constants are available to render/effect code without coupling them to physics or collision logic.",
+      "Gameplay behavior, object spawning, collision geometry, score behavior, and menu behavior are unchanged.",
+      "A screenshot is saved at screenshots/TASK-001.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start both classic and bad versions and confirm the game still starts and plays.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-001.png.",
+      "Confirm screenshots/TASK-001.png exists."
+    ]
+  },
+  {
+    "id": "TASK-002",
+    "title": "Introduce isolated renderer and effects classes",
+    "status": "pending",
+    "dependencies": [
+      "TASK-001"
+    ],
+    "description": "Add dedicated visual-only classes for background rendering, lightmap rendering, particles, player trail, screen effects, and UI styling hooks. Keep these classes easy to disable and separate from gameplay logic.",
+    "acceptance_criteria": [
+      "Background, lightmap, particles, player trail, screen effects, and UI styling each live in their own class or clearly isolated module.",
+      "The new classes expose small draw/update-style methods and read game state without owning physics, collision, spawning, or scoring decisions.",
+      "Each visual feature can be bypassed through STYLE or quality config.",
+      "Existing gameplay behavior remains unchanged.",
+      "A screenshot is saved at screenshots/TASK-002.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start both classic and bad versions and confirm gameplay still works.",
+      "Confirm toggling visual effects or quality flags does not break game startup.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-002.png.",
+      "Confirm screenshots/TASK-002.png exists."
+    ]
+  },
+  {
+    "id": "TASK-003",
+    "title": "Split rendering into named layers",
+    "status": "pending",
+    "dependencies": [
+      "TASK-002"
+    ],
+    "description": "Refactor the main draw path into ordered visual layers: background, lights, world, particles/trails, and UI. Preserve current gameplay and render order where it affects readability.",
+    "acceptance_criteria": [
+      "The main draw function clearly renders background, lights, world objects, particles/trails, and UI in separate ordered sections or methods.",
+      "World object drawing still uses the same gameplay state and positions.",
+      "Score text, record text, and menu button remain visible and clickable.",
+      "Collision geometry, object dimensions, spawn timing, physics, and scoring are unchanged.",
+      "A screenshot is saved at screenshots/TASK-003.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start classic and bad versions and confirm all world objects and UI are visible.",
+      "Play long enough to score at least one point and confirm scoring still changes.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-003.png.",
+      "Confirm screenshots/TASK-003.png exists."
+    ]
+  },
+  {
+    "id": "TASK-004",
+    "title": "Add dark gradient background and vignette",
+    "status": "pending",
+    "dependencies": [
+      "TASK-003"
+    ],
+    "description": "Replace the flat white playfield background with a minimalist dark blue/purple Canvas 2D gradient and cheap vignette.",
+    "acceptance_criteria": [
+      "The playfield background is dark blue/purple rather than white.",
+      "A subtle vignette darkens the screen edges without hiding gameplay objects.",
+      "The implementation uses Canvas 2D drawing and gradients only.",
+      "No blur filters or heavy libraries are introduced.",
+      "A screenshot is saved at screenshots/TASK-004.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start a game and verify the dark gradient and vignette are visible.",
+      "Confirm gameplay objects and UI remain readable over the background.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-004.png.",
+      "Confirm screenshots/TASK-004.png exists."
+    ]
+  },
+  {
+    "id": "TASK-005",
+    "title": "Add Super Hexagon inspired geometric background",
+    "status": "pending",
+    "dependencies": [
+      "TASK-004"
+    ],
+    "description": "Add faint rotating hexagon outlines and diagonal motion streaks inspired by Super Hexagon. Keep the effect subtle and visual-only.",
+    "acceptance_criteria": [
+      "Faint hexagon outlines appear in the background and rotate or animate over time.",
+      "Diagonal motion streaks move subtly across the background.",
+      "The geometric background is readable but not noisy or distracting.",
+      "The effect can be disabled through quality config.",
+      "A screenshot is saved at screenshots/TASK-005.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start a game and observe that hexagon outlines and diagonal streaks render behind gameplay objects.",
+      "Confirm disabling background motion removes or freezes the animated background effect without breaking gameplay.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-005.png.",
+      "Confirm screenshots/TASK-005.png exists."
+    ]
+  },
+  {
+    "id": "TASK-006",
+    "title": "Restyle world objects with neon outlines",
+    "status": "pending",
+    "dependencies": [
+      "TASK-003"
+    ],
+    "description": "Restyle player, cubes, platforms, grapnel, and triangle hazards with dark fills and bright neon outlines. Do not change their collision geometry or gameplay behavior.",
+    "acceptance_criteria": [
+      "The player renders as a bright cyan neon object with a dark fill or readable cyan core.",
+      "Cubes and platforms render with dark fills and blue/cyan neon outlines.",
+      "Triangle hazards render with dark fills and red neon outlines.",
+      "The grapnel line is restyled to fit the neon palette.",
+      "Object dimensions, points, collision radii, spawn logic, movement, and scoring remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-006.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start classic and bad versions and verify player, cubes/platforms, grapnel, and triangles use neon styling.",
+      "Collide with at least one hazard and confirm restart behavior is unchanged.",
+      "Play long enough to score at least one point and confirm scoring still works.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-006.png.",
+      "Confirm screenshots/TASK-006.png exists."
+    ]
+  },
+  {
+    "id": "TASK-007",
+    "title": "Add neon ground line treatment",
+    "status": "pending",
+    "dependencies": [
+      "TASK-006"
+    ],
+    "description": "Restyle floor and side-floor visuals into readable neon ground and edge lines. Keep all collision and scoring behavior unchanged.",
+    "acceptance_criteria": [
+      "The main ground or floor boundary reads as a bright neon line.",
+      "Side-floor and boundary visuals match the neon arcade style.",
+      "Floor objects retain their original collision bounds and generated positions.",
+      "The ground treatment remains readable against the dark background.",
+      "A screenshot is saved at screenshots/TASK-007.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start classic and bad versions and verify floor and side-floor visuals use neon line styling.",
+      "Confirm player collisions with floors and platforms still behave the same.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-007.png.",
+      "Confirm screenshots/TASK-007.png exists."
+    ]
+  },
+  {
+    "id": "TASK-008",
+    "title": "Add low resolution offscreen lightmap",
+    "status": "pending",
+    "dependencies": [
+      "TASK-002",
+      "TASK-003"
+    ],
+    "description": "Add a cheap low-resolution offscreen Canvas 2D lightmap layer and composite it into the main canvas.",
+    "acceptance_criteria": [
+      "A dedicated lightmap class owns an offscreen canvas smaller than the main canvas.",
+      "The lightmap can be cleared, drawn into, and composited into the main canvas during the lights layer.",
+      "The implementation avoids Canvas blur filters and realistic shadow calculations.",
+      "The lightmap can be disabled through quality config.",
+      "A screenshot is saved at screenshots/TASK-008.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start a game and confirm the lightmap does not break object visibility or UI.",
+      "Disable the lightmap through quality config and confirm the game still renders.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-008.png.",
+      "Confirm screenshots/TASK-008.png exists."
+    ]
+  },
+  {
+    "id": "TASK-009",
+    "title": "Add radial emission for player cubes and hazards",
+    "status": "pending",
+    "dependencies": [
+      "TASK-008"
+    ],
+    "description": "Make the player, blue cubes/platforms, and red triangle hazards emit cheap radial light through the centralized lightmap.",
+    "acceptance_criteria": [
+      "The player emits cyan radial light.",
+      "Cubes and platforms emit blue or cyan radial light.",
+      "Triangle hazards emit red radial light.",
+      "All light emission is routed through the lightmap class rather than scattered one-off rendering.",
+      "Emission remains readable and not overly noisy.",
+      "A screenshot is saved at screenshots/TASK-009.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start classic and bad versions and verify player, cubes/platforms, and triangle hazards emit colored light.",
+      "Disable lightmap quality and confirm the game remains playable with lights off.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-009.png.",
+      "Confirm screenshots/TASK-009.png exists."
+    ]
+  },
+  {
+    "id": "TASK-010",
+    "title": "Add smooth cyan player trail",
+    "status": "pending",
+    "dependencies": [
+      "TASK-002",
+      "TASK-003",
+      "TASK-006"
+    ],
+    "description": "Add a smooth cyan visual trail for the player, replacing or visually extending the current track effect without changing movement or physics.",
+    "acceptance_criteria": [
+      "The player leaves a smooth cyan trail while moving.",
+      "The trail fades cleanly and does not obscure hazards or platforms.",
+      "The trail is visual-only and does not affect collision, movement, score, or restart behavior.",
+      "The trail can be disabled through quality config.",
+      "A screenshot is saved at screenshots/TASK-010.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Move or jump with the player and verify the cyan trail appears behind the player.",
+      "Disable the trail through quality config and confirm gameplay and rendering still work.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-010.png.",
+      "Confirm screenshots/TASK-010.png exists."
+    ]
+  },
+  {
+    "id": "TASK-011",
+    "title": "Add capped square particle system",
+    "status": "pending",
+    "dependencies": [
+      "TASK-002",
+      "TASK-003",
+      "TASK-009"
+    ],
+    "description": "Add a visual-only square particle system for player movement, cube glow, and hazard sparks. Keep it cheap, capped, and disableable.",
+    "acceptance_criteria": [
+      "A dedicated particle system manages square particles with position, velocity, color, life, and size.",
+      "Player movement can emit cyan square particles.",
+      "Cubes and platforms can emit subtle blue glow particles.",
+      "Triangle hazards can emit subtle red spark particles.",
+      "The particle count never exceeds the cap defined in STYLE.",
+      "Particles can be disabled through quality config.",
+      "A screenshot is saved at screenshots/TASK-011.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start a game and verify square particles appear for player movement, cubes/platforms, and hazards.",
+      "Play for at least 30 seconds and confirm the game remains responsive and particles do not grow unbounded.",
+      "Disable particles through quality config and confirm particles stop without breaking gameplay.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-011.png.",
+      "Confirm screenshots/TASK-011.png exists."
+    ]
+  },
+  {
+    "id": "TASK-012",
+    "title": "Add pulsing red hazard glow",
+    "status": "pending",
+    "dependencies": [
+      "TASK-009"
+    ],
+    "description": "Add a pulsing red visual glow to triangle hazards only. Keep the pulse visual-only and subtle.",
+    "acceptance_criteria": [
+      "Triangle hazards have a visible red glow pulse over time.",
+      "The pulse does not change triangle movement, collision, scoring, or restart behavior.",
+      "The pulse uses STYLE timing and intensity constants.",
+      "The pulse remains readable without making the screen noisy.",
+      "A screenshot is saved at screenshots/TASK-012.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe red triangle hazards pulsing.",
+      "Confirm triangle movement and collision behavior are unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-012.png.",
+      "Confirm screenshots/TASK-012.png exists."
+    ]
+  },
+  {
+    "id": "TASK-013",
+    "title": "Add player visual rotation while moving and jumping",
+    "status": "pending",
+    "dependencies": [
+      "TASK-006"
+    ],
+    "description": "Add visual rotation to the player while moving and jumping. The rotation must not affect the player's circular collision model or physics.",
+    "acceptance_criteria": [
+      "The player visibly rotates while moving or jumping.",
+      "Player collision radius, position, movement, speed, and physics are unchanged.",
+      "The rotation is applied only during drawing.",
+      "The player remains visually readable as the bright cyan player object.",
+      "A screenshot is saved at screenshots/TASK-013.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start a game and move or jump long enough to observe player rotation.",
+      "Confirm collisions with platforms and hazards still behave the same.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-013.png.",
+      "Confirm screenshots/TASK-013.png exists."
+    ]
+  },
+  {
+    "id": "TASK-014",
+    "title": "Add death shockwave and small screen shake",
+    "status": "pending",
+    "dependencies": [
+      "TASK-002",
+      "TASK-003",
+      "TASK-006"
+    ],
+    "description": "Add a brief visual shockwave and small screen shake on player death or restart. Do not delay or alter restart behavior.",
+    "acceptance_criteria": [
+      "A small visual shockwave appears when the player dies or the game restarts from collision/out-of-bounds.",
+      "A short, subtle screen shake occurs on death or restart.",
+      "The effect does not delay restart, pause, menu behavior, score reset, or gameplay flow.",
+      "Screen shake can be disabled through quality config.",
+      "A screenshot is saved at screenshots/TASK-014.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start a game and intentionally collide with a hazard or trigger a restart.",
+      "Verify a brief shockwave and small shake occur without delaying restart.",
+      "Disable screen shake through quality config and confirm restart still works.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-014.png.",
+      "Confirm screenshots/TASK-014.png exists."
+    ]
+  },
+  {
+    "id": "TASK-015",
+    "title": "Redesign in-game UI styling",
+    "status": "pending",
+    "dependencies": [
+      "TASK-001",
+      "TASK-003"
+    ],
+    "description": "Restyle score, record, menu, pause UI, and menu button with a monospace or pixel-like neon arcade look. Preserve all UI behavior.",
+    "acceptance_criteria": [
+      "Score and record text use a monospace or pixel-like font stack and bright neon coloring.",
+      "The menu button is restyled as a neon outlined control.",
+      "Main menu and pause menu text/buttons match the neon arcade style.",
+      "All existing menu, pause, resume, back-to-menu, version selection, and visual-effects toggle click behavior remains unchanged.",
+      "UI text remains readable over the dark background.",
+      "A screenshot is saved at screenshots/TASK-015.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Verify the main menu uses neon arcade styling.",
+      "Start a game and verify score, record, and menu button styling.",
+      "Pause and resume the game, then return to menu, confirming all buttons still work.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-015.png.",
+      "Confirm screenshots/TASK-015.png exists."
+    ]
+  },
+  {
+    "id": "TASK-016",
+    "title": "Final readability and performance pass",
+    "status": "pending",
+    "dependencies": [
+      "TASK-004",
+      "TASK-005",
+      "TASK-006",
+      "TASK-007",
+      "TASK-008",
+      "TASK-009",
+      "TASK-010",
+      "TASK-011",
+      "TASK-012",
+      "TASK-013",
+      "TASK-014",
+      "TASK-015"
+    ],
+    "description": "Tune the full neon arcade restyle for readability, minimalism, and performance. Keep effects cheap and ensure weak-device quality settings work.",
+    "acceptance_criteria": [
+      "The final game matches the target minimalist neon arcade style: dark blue/purple background, bright cyan player, blue glowing cubes, red glowing triangle hazards, neon ground line, and simple geometric background.",
+      "Effects remain readable and not too noisy during active play.",
+      "Quality config can disable expensive effects on weak devices.",
+      "No heavy libraries are introduced.",
+      "The implementation uses Canvas 2D only and avoids blur filters.",
+      "Particle counts remain capped.",
+      "Gameplay logic remains unchanged from before the visual restyle.",
+      "A screenshot is saved at screenshots/TASK-016.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Play classic version for at least 30 seconds and confirm visuals are readable and gameplay works.",
+      "Play bad version for at least 30 seconds and confirm visuals are readable and gameplay works.",
+      "Disable expensive quality settings and confirm the game remains playable with reduced effects.",
+      "Confirm the browser console has no new errors.",
+      "Confirm no new heavy dependency files or libraries were added.",
+      "Capture a final screenshot and save it as screenshots/TASK-016.png.",
+      "Confirm screenshots/TASK-016.png exists."
+    ]
+  },
+  {
+    "id": "TASK-017",
+    "title": "Compare bad version screenshots against concept art",
+    "status": "pending",
+    "dependencies": [
+      "TASK-016"
+    ],
+    "description": "Open the game with bad version, play it, make screenshots, place them into screenshots/TASK-017, then compare the result with /opt/grapnelninja/screenshots/concept_art.png. If the result differs drastically from the concept art, add more pending tickets to tasks.json describing the missing visual work.",
+    "acceptance_criteria": [
+      "The bad version is opened and played long enough to show player movement, cubes/platforms, triangle hazards, ground line, background, lighting, particles/trails, and UI.",
+      "Multiple screenshots are saved under screenshots/TASK-017/.",
+      "The screenshots are compared against /opt/grapnelninja/screenshots/concept_art.png for overall style, palette, neon outlines, lighting, background geometry, UI treatment, and readability.",
+      "If the result differs drastically from the concept art, new pending follow-up tickets are appended to tasks.json with clear acceptance criteria and test steps.",
+      "If the result is close enough to the concept art, the task description is updated with a one-line note explaining that no follow-up tickets were needed."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Select bad version and play for at least 30 seconds.",
+      "Capture multiple representative screenshots during play and save them under screenshots/TASK-017/.",
+      "Confirm screenshots/TASK-017/ exists and contains the captured screenshots.",
+      "Open /opt/grapnelninja/screenshots/concept_art.png and compare it with the captured screenshots.",
+      "If the result differs drastically, append new pending follow-up tickets to tasks.json before marking this task to-verify.",
+      "Confirm tasks.json remains valid JSON."
+    ]
+  }
+]
