@@ -39,9 +39,9 @@ const STYLE = Object.freeze({
             red: '#ff3d71'
         }),
         ground: Object.freeze({
-            fill: '#f0f0f0',
-            stroke: '#000000',
-            line: '#f0f0f0'
+            fill: '#050914',
+            stroke: '#30d5c8',
+            line: '#8ffcff'
         }),
         ui: Object.freeze({
             title: '#0000ff',

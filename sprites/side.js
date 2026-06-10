@@ -22,6 +22,31 @@ class Ground extends Trampoline
         ctx.lineWidth = STYLE.strokes.defaultWidth
         
         ctx.closePath()
+
+        this.drawNeonBoundary()
+    }
+    drawNeonBoundary()
+    {
+        const boundaryY = this.y > height / 2 ? this.y : this.y + this.points[1].y
+
+        ctx.save()
+        ctx.beginPath()
+
+        ctx.lineWidth = STYLE.strokes.neonGlowWidth
+        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.moveTo(this.x + screen.x, boundaryY + screen.y)
+        ctx.lineTo(this.x + this.points[2].x + screen.x, boundaryY + screen.y)
+        ctx.stroke()
+
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.shadowBlur = 0
+        ctx.stroke()
+
+        ctx.closePath()
+        ctx.restore()
     }
 }
 class Side extends Rect
@@ -48,5 +73,30 @@ class Side extends Rect
         ctx.lineWidth = STYLE.strokes.defaultWidth
         
         ctx.closePath()
+
+        this.drawNeonBoundary()
+    }
+    drawNeonBoundary()
+    {
+        const boundaryY = this.y > height / 2 ? this.y : this.y + this.height
+
+        ctx.save()
+        ctx.beginPath()
+
+        ctx.lineWidth = STYLE.strokes.neonGlowWidth
+        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.moveTo(this.x + screen.x, boundaryY + screen.y)
+        ctx.lineTo(this.x + this.width + screen.x, boundaryY + screen.y)
+        ctx.stroke()
+
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.shadowBlur = 0
+        ctx.stroke()
+
+        ctx.closePath()
+        ctx.restore()
     }
 }

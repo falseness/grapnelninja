@@ -145,11 +145,11 @@
   {
     "id": "TASK-007",
     "title": "Add neon ground line treatment",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-006"
     ],
-    "description": "Restyle floor and side-floor visuals into readable neon ground and edge lines. Keep all collision and scoring behavior unchanged.",
+    "description": "Restyle floor and side-floor visuals into readable neon ground and edge lines. Keep all collision and scoring behavior unchanged.\nImplemented: Restyled ground and side-floor fills to dark neon surfaces with bright cyan boundary lines while preserving collision shapes and generated positions.",
     "acceptance_criteria": [
       "The main ground or floor boundary reads as a bright neon line.",
       "Side-floor and boundary visuals match the neon arcade style.",
