@@ -101,7 +101,9 @@ class HorizontalRectFactory
         {
             x       : x                     ,     
             y       : y                     ,
-            points  : this.getPoints(w, h)
+            points  : this.getPoints(w, h)  ,
+            fill    : STYLE.colors.cube.platformFill,
+            stroke  : STYLE.colors.cube.stroke
         }
         
         return [new Trampoline(model)]
@@ -396,8 +398,8 @@ class HarmlessTriangleFactory extends TriangleFactory {
     create(x, y) {
         let model = this.getModel(x, y)
         model.fill = STYLE.colors.hazard.harmlessFill
+        model.stroke = STYLE.colors.hazard.harmlessStroke
 
         return [new HarmlessTriangle(model)]
     }
 }
-

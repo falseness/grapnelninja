@@ -55,10 +55,15 @@ class Rect extends Element
     }
     draw()
     {
+        ctx.save()
         ctx.fillStyle   = this.fill
         ctx.strokeStyle = this.stroke
         
-        ctx.strokeRect(this.x + screen.x, this.y + screen.y, this.width, this.height) 
         ctx.fillRect(this.x + screen.x, this.y + screen.y, this.width, this.height)
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.shadowColor = this.stroke
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.strokeRect(this.x + screen.x, this.y + screen.y, this.width, this.height)
+        ctx.restore()
     }
 }

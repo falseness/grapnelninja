@@ -119,11 +119,11 @@
   {
     "id": "TASK-006",
     "title": "Restyle world objects with neon outlines",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-003"
     ],
-    "description": "Restyle player, cubes, platforms, grapnel, and triangle hazards with dark fills and bright neon outlines. Do not change their collision geometry or gameplay behavior.",
+    "description": "Restyle player, cubes, platforms, grapnel, and triangle hazards with dark fills and bright neon outlines. Do not change their collision geometry or gameplay behavior.\nImplemented: Restyled player, cubes/platforms, grapnel, and triangle hazards with dark fills, neon outlines, and unchanged geometry/gameplay behavior.",
     "acceptance_criteria": [
       "The player renders as a bright cyan neon object with a dark fill or readable cyan core.",
       "Cubes and platforms render with dark fills and blue/cyan neon outlines.",

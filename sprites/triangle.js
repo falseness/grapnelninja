@@ -17,7 +17,7 @@ class Triangle extends Element
             min: object.yMin,
             max: object.yMax
         }
-        this.track = (trackEnabled)?(new MultipointTrackLine(this.side, this.fill, STYLE.timing.triangleTrailPoints)):(new Empty())
+        this.track = (trackEnabled)?(new MultipointTrackLine(this.side, this.stroke, STYLE.timing.triangleTrailPoints)):(new Empty())
         this.track.addPos(this.getPoints(), true)
     }
     getCircumscribedCircle()

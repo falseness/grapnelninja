@@ -143,8 +143,9 @@ class Grapnel
     {
         if (this.throwed)
         {
+            ctx.save()
             ctx.beginPath()
-            
+
             ctx.moveTo(this.pos[0][0] + screen.x, this.pos[0][1] + screen.y)
             
             for (let i = 1; i < this.pos.length; ++i)
@@ -152,14 +153,22 @@ class Grapnel
                 ctx.lineTo(this.pos[i][0] + screen.x, this.pos[i][1] + screen.y)
             }
             ctx.lineTo(ninja.x + screen.x, ninja.y + screen.y)
-            ctx.strokeStyle = this.stroke
-            
+
             const strokeWidth = Math.round(STYLE.strokes.grapnelWidthRatio * height)
+
+            ctx.strokeStyle = this.stroke
+            ctx.lineWidth = strokeWidth + STYLE.strokes.neonGlowWidth
+            ctx.globalAlpha = 0.35
+            ctx.shadowColor = this.stroke
+            ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+            ctx.stroke()
+
+            ctx.globalAlpha = STYLE.alpha.full
             ctx.lineWidth = strokeWidth
             ctx.stroke()
-            ctx.lineWidth = STYLE.strokes.defaultWidth
-            
+
             ctx.closePath()
+            ctx.restore()
         }
-    }     
+    }
 }

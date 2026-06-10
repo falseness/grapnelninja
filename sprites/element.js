@@ -62,8 +62,11 @@ class Element
     }
     draw()
     {
+        const strokeWidth = STYLE.strokes.neonWidth
+
+        ctx.save()
         ctx.beginPath()
-        
+
         let points = this.getPoints()
         ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
         for (let i = 0; i < points.length; ++i)
@@ -73,10 +76,14 @@ class Element
         
         ctx.fillStyle   = this.fill
         ctx.fill()
-        
+
         ctx.strokeStyle = this.stroke
+        ctx.lineWidth = strokeWidth
+        ctx.shadowColor = this.stroke
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.stroke()
-        
+
         ctx.closePath()
+        ctx.restore()
     }
 }

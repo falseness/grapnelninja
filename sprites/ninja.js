@@ -13,7 +13,7 @@ class Ninja
         this.fill   = object.fill
         this.stroke = object.stroke
         
-        this.track = new TrackLine(this.radius * 1.5, this.fill, STYLE.timing.trailPoints)
+        this.track = new TrackLine(this.radius * 1.5, STYLE.colors.player.trail, STYLE.timing.trailPoints)
         this.track.addPos(this.x, this.y, true)
     }
     collision()
@@ -62,17 +62,31 @@ class Ninja
     }
     draw()
     {
+        ctx.save()
         ctx.beginPath()
-    
+
         ctx.arc(this.x + screen.x, this.y + screen.y, this.radius, 0, Math.PI * 2, false)
-        
+
         ctx.fillStyle = this.fill
         ctx.fill()
-        
+
         ctx.strokeStyle = this.stroke
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.shadowColor = this.stroke
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.stroke()
-        
+
         ctx.closePath()
+        ctx.shadowBlur = 0
+
+        ctx.beginPath()
+        ctx.arc(this.x + screen.x, this.y + screen.y, this.radius * 0.45, 0, Math.PI * 2, false)
+        ctx.fillStyle = STYLE.colors.player.core
+        ctx.globalAlpha = 0.8
+        ctx.fill()
+        ctx.closePath()
+
+        ctx.restore()
     }
 }
 class TrackLine

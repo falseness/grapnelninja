@@ -15,23 +15,28 @@ const STYLE = Object.freeze({
             streak: 'rgba(48, 213, 200, 0.11)'
         }),
         player: Object.freeze({
-            fill: '#0000ff',
-            stroke: '#000000',
-            trail: '#0000ff',
+            fill: '#06151d',
+            stroke: '#30d5c8',
+            core: '#8ffcff',
+            trail: '#30d5c8',
             cyan: '#30d5c8'
         }),
         cube: Object.freeze({
-            fill: '#0000ff',
-            platformFill: '#f0f0f0',
-            trampolineFill: '#3e1170',
-            stroke: '#000000',
-            blue: '#0000ff'
+            fill: '#071425',
+            platformFill: '#09111e',
+            trampolineFill: '#120b22',
+            stroke: '#30d5c8',
+            accentStroke: '#1f7aff',
+            trail: '#30d5c8',
+            blue: '#1f7aff'
         }),
         hazard: Object.freeze({
-            fill: '#ff0000',
-            harmlessFill: '#30d5c8',
-            stroke: '#000000',
-            red: '#ff0000'
+            fill: '#21070f',
+            harmlessFill: '#06201d',
+            stroke: '#ff3d71',
+            harmlessStroke: '#30d5c8',
+            trail: '#ff3d71',
+            red: '#ff3d71'
         }),
         ground: Object.freeze({
             fill: '#f0f0f0',
@@ -62,6 +67,8 @@ const STYLE = Object.freeze({
     strokes: Object.freeze({
         defaultWidth: 1,
         seamWidth: 10,
+        neonWidth: 2,
+        neonGlowWidth: 6,
         grapnelWidthRatio: 0.006,
         menuIconWidthRatio: 0.05,
         checkMarkWidthRatio: 0.03

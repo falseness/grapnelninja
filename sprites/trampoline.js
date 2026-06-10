@@ -107,8 +107,9 @@ class Trampoline extends Element
     }
     draw()
     {
+        ctx.save()
         ctx.beginPath()
-        
+
         let points = this.getPoints()
         
         ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
@@ -123,10 +124,14 @@ class Trampoline extends Element
         
         ctx.fillStyle   = this.fill
         ctx.fill()
-        
+
         ctx.strokeStyle = this.stroke
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.shadowColor = this.stroke
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.stroke()
-        
+
         ctx.closePath()
+        ctx.restore()
     }
 }
