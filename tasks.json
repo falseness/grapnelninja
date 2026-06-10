@@ -95,11 +95,11 @@
   {
     "id": "TASK-005",
     "title": "Add Super Hexagon inspired geometric background",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-004"
     ],
-    "description": "Add faint rotating hexagon outlines and diagonal motion streaks inspired by Super Hexagon. Keep the effect subtle and visual-only.",
+    "description": "Add faint rotating hexagon outlines and diagonal motion streaks inspired by Super Hexagon. Keep the effect subtle and visual-only.\nImplemented: Added subtle rotating hexagon outlines and diagonal background streaks to the background renderer, gated by QUALITY.backgroundMotion.",
     "acceptance_criteria": [
       "Faint hexagon outlines appear in the background and rotate or animate over time.",
       "Diagonal motion streaks move subtly across the background.",

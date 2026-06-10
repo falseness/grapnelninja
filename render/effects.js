@@ -23,6 +23,8 @@ class BackgroundRenderer
         this.ctx.fillStyle = gradient
         this.ctx.fillRect(0, 0, width, height)
 
+        this.drawGeometry(width, height)
+
         const radius = Math.sqrt(width * width + height * height) * 0.58
         const vignette = this.ctx.createRadialGradient(
             width / 2,
@@ -36,6 +38,90 @@ class BackgroundRenderer
         vignette.addColorStop(1, background.vignetteEdge)
         this.ctx.fillStyle = vignette
         this.ctx.fillRect(0, 0, width, height)
+    }
+    getAnimationTime()
+    {
+        if (!QUALITY.backgroundMotion)
+            return 0
+
+        return performance.now()
+    }
+    drawGeometry(width, height)
+    {
+        const geometry = STYLE.backgroundGeometry
+        const time = this.getAnimationTime()
+
+        this.drawHexagons(width, height, geometry, time)
+        this.drawStreaks(width, height, geometry, time)
+    }
+    drawHexagons(width, height, geometry, time)
+    {
+        const minSize = Math.min(width, height)
+        const centerX = width / 2
+        const centerY = height / 2
+        const baseRadius = minSize * geometry.hexagonRadiusRatio
+        const radiusStep = minSize * geometry.hexagonRadiusStepRatio
+        const rotation = (time % STYLE.timing.backgroundRotationMs) / STYLE.timing.backgroundRotationMs * Math.PI * 2
+
+        this.ctx.save()
+        this.ctx.lineWidth = geometry.hexagonLineWidth
+
+        for (let i = 0; i < geometry.hexagonCount; ++i)
+        {
+            const radius = baseRadius + radiusStep * i
+            const direction = i % 2 == 0 ? 1 : -1
+            const angle = rotation * direction + i * Math.PI / 12
+
+            this.ctx.strokeStyle = i % 2 == 0
+                ? STYLE.colors.background.hexagonStroke
+                : STYLE.colors.background.hexagonAccentStroke
+            this.drawHexagon(centerX, centerY, radius, angle)
+        }
+
+        this.ctx.restore()
+    }
+    drawHexagon(centerX, centerY, radius, rotation)
+    {
+        this.ctx.beginPath()
+
+        for (let i = 0; i < 6; ++i)
+        {
+            const angle = rotation + Math.PI / 6 + i * Math.PI / 3
+            const x = centerX + Math.cos(angle) * radius
+            const y = centerY + Math.sin(angle) * radius
+
+            if (i == 0)
+                this.ctx.moveTo(x, y)
+            else
+                this.ctx.lineTo(x, y)
+        }
+
+        this.ctx.closePath()
+        this.ctx.stroke()
+    }
+    drawStreaks(width, height, geometry, time)
+    {
+        const diagonal = Math.sqrt(width * width + height * height)
+        const spacing = Math.max(width, height) * geometry.streakSpacingRatio
+        const length = diagonal * geometry.streakLengthRatio
+        const offset = (time % STYLE.timing.backgroundStreakMs) / STYLE.timing.backgroundStreakMs * spacing
+
+        this.ctx.save()
+        this.ctx.strokeStyle = STYLE.colors.background.streak
+        this.ctx.lineWidth = geometry.streakLineWidth
+
+        for (let i = -2; i < geometry.streakCount; ++i)
+        {
+            const x = i * spacing + offset - spacing * 2
+            const y = height + spacing
+
+            this.ctx.beginPath()
+            this.ctx.moveTo(x, y)
+            this.ctx.lineTo(x + length, y - length)
+            this.ctx.stroke()
+        }
+
+        this.ctx.restore()
     }
 }
 

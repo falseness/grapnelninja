@@ -9,7 +9,10 @@ const STYLE = Object.freeze({
             gradientMiddle: '#0a1638',
             gradientBottom: '#190a2e',
             vignetteCenter: 'rgba(0, 0, 0, 0)',
-            vignetteEdge: 'rgba(0, 0, 0, 0.58)'
+            vignetteEdge: 'rgba(0, 0, 0, 0.58)',
+            hexagonStroke: 'rgba(48, 213, 200, 0.13)',
+            hexagonAccentStroke: 'rgba(255, 61, 113, 0.08)',
+            streak: 'rgba(48, 213, 200, 0.11)'
         }),
         player: Object.freeze({
             fill: '#0000ff',
@@ -79,7 +82,19 @@ const STYLE = Object.freeze({
         inputUntouchMs: 100,
         trailPoints: 100,
         cubeTrailPoints: 50,
-        triangleTrailPoints: 75
+        triangleTrailPoints: 75,
+        backgroundRotationMs: 18000,
+        backgroundStreakMs: 5200
+    }),
+    backgroundGeometry: Object.freeze({
+        hexagonCount: 5,
+        hexagonRadiusRatio: 0.16,
+        hexagonRadiusStepRatio: 0.115,
+        hexagonLineWidth: 2,
+        streakCount: 12,
+        streakSpacingRatio: 0.14,
+        streakLengthRatio: 0.28,
+        streakLineWidth: 1.5
     }),
     features: Object.freeze({
         background: true,
