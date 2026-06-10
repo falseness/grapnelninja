@@ -47,11 +47,11 @@
   {
     "id": "TASK-003",
     "title": "Split rendering into named layers",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-002"
     ],
-    "description": "Refactor the main draw path into ordered visual layers: background, lights, world, particles/trails, and UI. Preserve current gameplay and render order where it affects readability.",
+    "description": "Refactor the main draw path into ordered visual layers: background, lights, world, particles/trails, and UI. Preserve current gameplay and render order where it affects readability.\nImplemented: Split the canvas draw path into named background, lights, world, particles/trails, and UI layer functions without changing gameplay state ownership.",
     "acceptance_criteria": [
       "The main draw function clearly renders background, lights, world objects, particles/trails, and UI in separate ordered sections or methods.",
       "World object drawing still uses the same gameplay state and positions.",
