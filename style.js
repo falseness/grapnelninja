@@ -4,7 +4,12 @@ const STYLE = Object.freeze({
             page: 'black',
             canvas: 'white',
             dark: '#050713',
-            darkAccent: '#12102a'
+            darkAccent: '#12102a',
+            gradientTop: '#050713',
+            gradientMiddle: '#0a1638',
+            gradientBottom: '#190a2e',
+            vignetteCenter: 'rgba(0, 0, 0, 0)',
+            vignetteEdge: 'rgba(0, 0, 0, 0.58)'
         }),
         player: Object.freeze({
             fill: '#0000ff',

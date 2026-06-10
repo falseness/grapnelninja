@@ -71,11 +71,11 @@
   {
     "id": "TASK-004",
     "title": "Add dark gradient background and vignette",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-003"
     ],
-    "description": "Replace the flat white playfield background with a minimalist dark blue/purple Canvas 2D gradient and cheap vignette.",
+    "description": "Replace the flat white playfield background with a minimalist dark blue/purple Canvas 2D gradient and cheap vignette.\nImplemented: Added a Canvas 2D dark blue/purple gradient background with a cheap radial vignette in the isolated background renderer.",
     "acceptance_criteria": [
       "The playfield background is dark blue/purple rather than white.",
       "A subtle vignette darkens the screen edges without hiding gameplay objects.",
