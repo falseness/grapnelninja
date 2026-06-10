@@ -66,7 +66,7 @@ function createEvents()
             setTimeout(function()
             {
                 unTouch = false
-            }, 100)
+            }, STYLE.timing.inputUntouchMs)
             return
         }
         if (!(menu.opened()))

@@ -1,0 +1,1 @@
+TASK-001: Added central STYLE/QUALITY config, routed current visual constants through it, verified both game versions in browser, and saved screenshots/TASK-001.png. Gotcha: Playwright needed Node-12-compatible package in /tmp plus Chromium deps libgbm1/libasound2.

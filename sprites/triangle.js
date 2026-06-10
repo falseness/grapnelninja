@@ -17,7 +17,7 @@ class Triangle extends Element
             min: object.yMin,
             max: object.yMax
         }
-        this.track = (trackEnabled)?(new MultipointTrackLine(this.side, this.fill, 75)):(new Empty())
+        this.track = (trackEnabled)?(new MultipointTrackLine(this.side, this.fill, STYLE.timing.triangleTrailPoints)):(new Empty())
         this.track.addPos(this.getPoints(), true)
     }
     getCircumscribedCircle()
@@ -83,7 +83,7 @@ class MultipointTrackLine extends TrackLine
     }
     addPos(point, mustAdd)
     {
-        if (trackEnabled && firstCycleInThisTick || mustAdd)
+        if ((trackEnabled && QUALITY.playerTrail && firstCycleInThisTick) || mustAdd)
         {
             this.pos.push(point)
             this.delete()
@@ -91,7 +91,7 @@ class MultipointTrackLine extends TrackLine
     }
     draw()
     {
-        if (trackEnabled)
+        if (trackEnabled && QUALITY.playerTrail)
         {
             ctx.beginPath()
 
@@ -121,10 +121,10 @@ class MultipointTrackLine extends TrackLine
             ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].min + screen.y)
             ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
 
-            ctx.globalAlpha = 0.5
+            ctx.globalAlpha = STYLE.alpha.multipointTrack
             ctx.fillStyle = this.stroke
             ctx.fill()
-            ctx.globalAlpha = 1
+            ctx.globalAlpha = STYLE.alpha.full
 
             ctx.closePath()  
         }

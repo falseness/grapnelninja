@@ -4,7 +4,7 @@
     
     ctx.scale(scale[version], scale[version])
     
-    if (trackEnabled)
+    if (trackEnabled && QUALITY.playerTrail)
     {
         for (let i = 0; i < floors.length; ++i)
         {

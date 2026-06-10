@@ -122,7 +122,7 @@ class Screen
             ctx.moveTo(0, this.bottomBorderY)
             ctx.lineTo(this.borderX, this.bottomBorderY)
             
-            ctx.strokeStyle = 'green'
+            ctx.strokeStyle = STYLE.colors.ui.debug
             ctx.stroke()
             
             ctx.closePath()
@@ -132,7 +132,7 @@ class Screen
             ctx.moveTo(0, this.centerBorderY)
             ctx.lineTo(this.borderX, this.centerBorderY)
             
-            ctx.strokeStyle = 'red'
+            ctx.strokeStyle = STYLE.colors.ui.debugAccent
             ctx.stroke()
             
             ctx.closePath()

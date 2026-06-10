@@ -17,7 +17,7 @@ let scoreText =
     y: Math.floor(0.1 * height / 2)  ,
     fontSize: 0.05 * height ,
     fontFamily: 'Calibri'               ,
-    fill: 'blue'                        ,
+    fill: STYLE.colors.ui.score         ,
     draw: function()
     {
         ctx.fillStyle = this.fill

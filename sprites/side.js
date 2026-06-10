@@ -11,7 +11,7 @@ class Ground extends Trampoline
         //Чтобы не было "швов"
         ctx.beginPath()
         
-        ctx.lineWidth = 10
+        ctx.lineWidth = STYLE.strokes.seamWidth
         ctx.moveTo(this.x + screen.x, this.y + screen.y + 1)
         ctx.lineTo(this.x + screen.x, this.y + this.points[1].y + screen.y - 1)
         
@@ -19,7 +19,7 @@ class Ground extends Trampoline
         ctx.strokeStyle = this.fill
         ctx.stroke()
         
-        ctx.lineWidth = 1
+        ctx.lineWidth = STYLE.strokes.defaultWidth
         
         ctx.closePath()
     }
@@ -37,7 +37,7 @@ class Side extends Rect
         //Чтобы не было "швов"
         ctx.beginPath()
         
-        ctx.lineWidth = 10
+        ctx.lineWidth = STYLE.strokes.seamWidth
         ctx.moveTo(this.x + screen.x, this.y + screen.y + 1)
         ctx.lineTo(this.x + screen.x, this.y + this.height + screen.y - 1)
         
@@ -45,7 +45,7 @@ class Side extends Rect
         ctx.strokeStyle = this.fill
         ctx.stroke()
         
-        ctx.lineWidth = 1
+        ctx.lineWidth = STYLE.strokes.defaultWidth
         
         ctx.closePath()
     }

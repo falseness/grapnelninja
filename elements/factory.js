@@ -62,8 +62,8 @@ class SideFactory
             y       : y.min     ,
             width   : this.width,
             height  : h         ,
-            fill    : '#f0f0f0' ,
-            stroke  : 'black'
+            fill    : STYLE.colors.ground.fill,
+            stroke  : STYLE.colors.ground.stroke
         }
         return [new Side(model)]
     }
@@ -142,8 +142,8 @@ class RectFactory
             y               : y             ,
             width           : w             ,
             height          : h             ,
-            fill            : '#f0f0f0'     ,    
-            stroke          : 'black'       ,
+            fill            : STYLE.colors.cube.platformFill,
+            stroke          : STYLE.colors.cube.stroke,
             isPairElement   : isPairElement
         }
         
@@ -230,8 +230,8 @@ class TrampolineFactory
             x       : random(x.min, x.max)  ,
             y       : y.max                 ,
             points  : this.generatePoints() ,
-            fill    : '#3e1170'             ,
-            stroke  : 'black'
+            fill    : STYLE.colors.cube.trampolineFill,
+            stroke  : STYLE.colors.cube.stroke
         }
 
         
@@ -273,8 +273,8 @@ class VerticalPairTrampolineFactory extends TrampolineFactory {
             x       : trampoline1.x                         ,
             y       : trampoline1.y - wayHeight - rectHeight,
             points  : points                                ,
-            fill    : '#3e1170'                             ,
-            stroke  : 'black'
+            fill    : STYLE.colors.cube.trampolineFill,
+            stroke  : STYLE.colors.cube.stroke
         }
 
         let trampoline2 = new Trampoline(model)
@@ -320,7 +320,7 @@ class JumpingCubeFactory
             y       : y.min                 ,
             width   : w                     ,
             height  : w                     ,
-            fill    : 'blue'
+            fill    : STYLE.colors.cube.fill
         }
         if (isOnMiddle)
             model.x -= model.width / 2
@@ -381,8 +381,8 @@ class TriangleFactory
             radius  : this.radius                                   ,
             yMin    : yPositionMin                                  ,
             yMax    : yPositionMax                                  ,
-            fill    :'#ff0000'                                      ,
-            stroke  :'black'
+            fill    : STYLE.colors.hazard.fill                      ,
+            stroke  : STYLE.colors.hazard.stroke
         }
     }
     create(x, y)
@@ -395,10 +395,9 @@ class TriangleFactory
 class HarmlessTriangleFactory extends TriangleFactory {
     create(x, y) {
         let model = this.getModel(x, y)
-        model.fill = '#30d5c8'
+        model.fill = STYLE.colors.hazard.harmlessFill
 
         return [new HarmlessTriangle(model)]
     }
 }
 
-    

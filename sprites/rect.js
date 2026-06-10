@@ -8,8 +8,8 @@ class Rect extends Element
         this.height = object.height
         
         
-        this.fill   = this.fill     || '#f0f0f0'
-        this.stroke = this.stroke   || 'black'
+        this.fill   = this.fill     || STYLE.colors.cube.platformFill
+        this.stroke = this.stroke   || STYLE.colors.cube.stroke
         this.isPairElement = object.isPairElement || function() {return false}
         
         this.circle =

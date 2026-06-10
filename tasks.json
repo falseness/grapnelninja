@@ -2,9 +2,9 @@
   {
     "id": "TASK-001",
     "title": "Add central neon style constants and quality config",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [],
-    "description": "Add a central STYLE constants object for all neon arcade colors and visual settings, plus a quality config for disabling expensive effects. Do not change gameplay logic.",
+    "description": "Add a central STYLE constants object for all neon arcade colors and visual settings, plus a quality config for disabling expensive effects. Do not change gameplay logic.\nImplemented: Added central STYLE and QUALITY config and routed existing visual defaults through it without gameplay changes.",
     "acceptance_criteria": [
       "A single central STYLE object defines the dark background colors, cyan player color, blue cube color, red hazard color, ground line color, UI colors, alpha values, stroke widths, light sizes, particle caps, and timing values.",
       "A quality config exists and can independently disable lightmap, particles, player trail, background motion, and screen shake.",

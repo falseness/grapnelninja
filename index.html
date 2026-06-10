@@ -17,8 +17,9 @@
     </head>
     <body>
         <canvas id = "canvas"></canvas>
+        <script src = "style.js"></script>
         <script src = "gameoptions.js"></script>
-        <script src = 'menu.js'></script>    
+        <script src = 'menu.js'></script>
     
         <script src = "collision/circlewithcircle.js"></script>
         <script src = "collision/linewithline.js"></script>
@@ -128,13 +129,13 @@
                     x: 0.2 * width,
                     y: 0.2 * height,
                     radius: 0.01 * height,
-                    fill: '#0000ff',
-                    stroke: '#000000'
+                    fill: STYLE.colors.player.fill,
+                    stroke: STYLE.colors.player.stroke
                 })
                 grapnel = new Grapnel(
                 {
                     points: [0, 0, 0, 0],
-                    stroke: 'red'
+                    stroke: STYLE.colors.hazard.red
                 })
 
                 
@@ -169,13 +170,13 @@
                     x: 0.2 * width,
                     y: 1.2 * height,
                     radius: 0.01 * height,
-                    fill: '#0000ff',
-                    stroke: '#000000'
+                    fill: STYLE.colors.player.fill,
+                    stroke: STYLE.colors.player.stroke
                 })
                 grapnel = new Grapnel(
                 {
                     points: [0, 0, 0, 0],
-                    stroke: 'red'
+                    stroke: STYLE.colors.hazard.red
                 })
 
                 

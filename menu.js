@@ -61,8 +61,8 @@ class Button
         this.background.y       = background.y - background.height  / 2
         this.background.width   = background.width
         this.background.height  = background.height
-        this.background.fill    = background.fill   || 'white'
-        this.background.stroke  = background.stroke || 'black'
+        this.background.fill    = background.fill   || STYLE.colors.ui.buttonFill
+        this.background.stroke  = background.stroke || STYLE.colors.ui.buttonStroke
         
         text.x          = background.x
         text.y          = background.y
@@ -125,7 +125,7 @@ class Menu
         
         this.mainText = new Text(
         {
-            fill    : 'blue'            ,
+            fill    : STYLE.colors.ui.title,
             fontSize: 0.075 * this.width,
             text    : 'Grapnel ninja'   ,
             x       : this.center.x     ,
@@ -140,7 +140,7 @@ class Menu
             height: 0.1 * this.height
         },
         {
-            fill: 'green'         ,
+            fill: STYLE.colors.ui.primary,
             text: 'classic version'
         },
         function(){startGame('classic')})
@@ -149,7 +149,7 @@ class Menu
             x       : this.center.x                     ,
             y       : 0.43 * this.height                ,
             fontSize: 0.05 * this.height                ,
-            fill    : 'rgba(0, 0, 0, 0.5)'              ,
+            fill    : STYLE.colors.ui.mutedText         ,
             text    : 'record: ' + scoreText.record.classic
         })
         this.badVersionButton = new Button(
@@ -160,7 +160,7 @@ class Menu
             height: 0.1 * this.height
         },
         {
-            fill: 'red'            ,
+            fill: STYLE.colors.ui.danger,
             text: 'bad version'
         },
         function(){startGame('bad')})
@@ -169,7 +169,7 @@ class Menu
             x       : this.center.x                     ,
             y       : 0.60 * this.height                ,
             fontSize: 0.05 * this.height                ,
-            fill    : 'rgba(0, 0, 0, 0.5)'              ,
+            fill    : STYLE.colors.ui.mutedText         ,
             text    : 'record: ' + scoreText.record.bad
         })
 
@@ -178,7 +178,7 @@ class Menu
             x       : this.center.x                     ,
             y       : 0.8 * this.height                ,
             fontSize: 0.05 * this.height                ,
-            fill    : 'rgba(0, 0, 0, 0.5)'              ,
+            fill    : STYLE.colors.ui.mutedText         ,
             text    : 'time spent in game: ' + getTimeInGame() + ' minutes'
         })
 
@@ -196,15 +196,15 @@ class Menu
                 x: 0.058 * width,
                 y: -0.05 * height
             },
-            lineWidth: 0.03 * height,
-            fill: 'blue'
+            lineWidth: STYLE.strokes.checkMarkWidthRatio * height,
+            fill: STYLE.colors.ui.text
         }
         this.visualEffectsText = new Text(
         {
             x       : this.center.x - 0.2 * this.width  ,
             y       : 0.7 * this.height,
             fontSize: 0.1 * this.height , 
-            fill    : 'blue'            ,
+            fill    : STYLE.colors.ui.text,
             text    : 'visual effects'  ,
             alignX  : 'start'
         })
@@ -251,7 +251,7 @@ class Menu
                     ctx.lineWidth = checkMark.lineWidth
                     ctx.strokeStyle = checkMark.fill
                     ctx.stroke()
-                    ctx.lineWidth = 1
+                    ctx.lineWidth = STYLE.strokes.defaultWidth
                     ctx.closePath()
                 }
             }
@@ -271,7 +271,7 @@ class Menu
                 {
                     ctx.beginPath()
 
-                    ctx.lineWidth = Math.round(0.05 * h)
+                    ctx.lineWidth = Math.round(STYLE.strokes.menuIconWidthRatio * h)
 
                     let x1 = x + 0.1 * w, x2 = x + 0.9 * w
                     let y1 = y + 0.3 * h
@@ -285,10 +285,10 @@ class Menu
                     ctx.moveTo(x1, y1 + dy * 2)
                     ctx.lineTo(x2, y1 + dy * 2)
 
-                    ctx.strokeStyle = 'blue'
+                    ctx.strokeStyle = STYLE.colors.ui.text
                     ctx.stroke()
 
-                    ctx.lineWidth = 1
+                    ctx.lineWidth = STYLE.strokes.defaultWidth
 
                     ctx.closePath()
                 }
@@ -300,7 +300,7 @@ class Menu
             y       : 0.05 * this.height,
             width   : 0.1  * this.height,
             height  : 0.09  * this.height,
-            fill    : 'rgb(0, 0, 0, 0)'
+            fill    : STYLE.colors.ui.transparent
         }
         this.resume = new Button(
         {
@@ -312,7 +312,7 @@ class Menu
         },
         {
             text: 'resume',
-            fill: 'green'
+            fill: STYLE.colors.ui.primary
         }, function()
         {
             menu.changeGamePause(false)
@@ -326,9 +326,9 @@ class Menu
             height: 0.1 * this.height
         },
         {
-            fill: 'blue'            ,
+            fill: STYLE.colors.ui.text,
             text: 'back to menu'    ,
-            fill: 'red'
+            fill: STYLE.colors.ui.danger
         },
         function()
         {
@@ -379,11 +379,11 @@ class Menu
 
         this.changeGamePause(true)
         
-        ctx.fillStyle = 'rgba(245, 245, 245, 0.52)'
+        ctx.fillStyle = STYLE.colors.ui.pauseOverlay
         ctx.fillRect(0, 0, this.width, this.height)
         
-        ctx.fillStyle   = 'white'
-        ctx.strokeStyle = 'black'
+        ctx.fillStyle   = STYLE.colors.ui.pausePanelFill
+        ctx.strokeStyle = STYLE.colors.ui.buttonStroke
         ctx.fillRect(this.width * 0.28, this.height * 0.1, this.width * 0.44, this.height * 0.7)
         ctx.strokeRect(this.width * 0.28, this.height * 0.1, this.width * 0.44, this.height * 0.7)
         

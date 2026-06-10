@@ -13,7 +13,7 @@ class Ninja
         this.fill   = object.fill
         this.stroke = object.stroke
         
-        this.track = new TrackLine(this.radius * 1.5, this.fill, 100)
+        this.track = new TrackLine(this.radius * 1.5, this.fill, STYLE.timing.trailPoints)
         this.track.addPos(this.x, this.y, true)
     }
     collision()
@@ -86,7 +86,7 @@ class TrackLine
     }
     delete()
     {
-        if (trackEnabled)
+        if (trackEnabled && QUALITY.playerTrail)
         {
             if (this.pos.length > this.pointsLimit)
             {
@@ -96,7 +96,7 @@ class TrackLine
     }
     addPos(x, y, mustAdd)
     {
-        if (trackEnabled && firstCycleInThisTick || mustAdd)
+        if ((trackEnabled && QUALITY.playerTrail && firstCycleInThisTick) || mustAdd)
         {
             this.pos.push({x, y})
             this.delete()
@@ -104,7 +104,7 @@ class TrackLine
     }
     draw()
     {
-        if (trackEnabled)
+        if (trackEnabled && QUALITY.playerTrail)
         {
             ctx.beginPath()
 
@@ -117,16 +117,16 @@ class TrackLine
             }
             ctx.lineWidth = this.lineWidth
 
-            ctx.globalAlpha = 0.5
+            ctx.globalAlpha = STYLE.alpha.track
             ctx.strokeStyle = this.stroke
             //ctx.fillStyle   = ninja.fill
 
             //ctx.fill()
             ctx.stroke()
 
-            ctx.globalAlpha = 1
+            ctx.globalAlpha = STYLE.alpha.full
 
-            ctx.lineWidth = 1
+            ctx.lineWidth = STYLE.strokes.defaultWidth
 
             ctx.closePath() 
         }

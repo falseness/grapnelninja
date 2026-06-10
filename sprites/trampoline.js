@@ -6,8 +6,8 @@ class Trampoline extends Element
 
         this.isPairElement = object.isPairElement || function() {return false}
         
-        this.stroke = this.stroke   || 'black'
-        this.fill   = this.fill     || '#7bd17b'
+        this.stroke = this.stroke   || STYLE.colors.ground.stroke
+        this.fill   = this.fill     || STYLE.colors.ground.fill
         
         this.circle = 
         {
