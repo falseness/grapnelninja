@@ -169,12 +169,12 @@
   {
     "id": "TASK-008",
     "title": "Add low resolution offscreen lightmap",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-002",
       "TASK-003"
     ],
-    "description": "Add a cheap low-resolution offscreen Canvas 2D lightmap layer and composite it into the main canvas.",
+    "description": "Add a cheap low-resolution offscreen Canvas 2D lightmap layer and composite it into the main canvas.\nImplemented: Added a low-resolution offscreen Canvas 2D lightmap with clear, radial draw, and composite support gated by QUALITY.lightmap.",
     "acceptance_criteria": [
       "A dedicated lightmap class owns an offscreen canvas smaller than the main canvas.",
       "The lightmap can be cleared, drawn into, and composited into the main canvas during the lights layer.",

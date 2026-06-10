@@ -127,27 +127,84 @@ class BackgroundRenderer
 
 class LightmapRenderer
 {
-    constructor()
+    constructor(context, targetCanvas)
     {
+        this.ctx = context
+        this.canvas = targetCanvas
+        this.scale = STYLE.lights.resolutionScale
         this.enabled = true
+        this.lightCanvas = document.createElement('canvas')
+        this.lightCtx = this.lightCanvas.getContext('2d')
+        this.resize()
     }
     shouldDraw()
     {
         return this.enabled && STYLE.features.lightmap && QUALITY.lightmap
     }
+    resize()
+    {
+        const nextWidth = Math.max(1, Math.ceil(this.canvas.width * this.scale))
+        const nextHeight = Math.max(1, Math.ceil(this.canvas.height * this.scale))
+
+        if (this.lightCanvas.width == nextWidth && this.lightCanvas.height == nextHeight)
+            return
+
+        this.lightCanvas.width = nextWidth
+        this.lightCanvas.height = nextHeight
+    }
     clear()
     {
-
+        this.resize()
+        this.lightCtx.clearRect(0, 0, this.lightCanvas.width, this.lightCanvas.height)
     }
-    draw()
+    drawRadialLight(x, y, radius, color, alpha)
+    {
+        const lightX = x * this.scale
+        const lightY = y * this.scale
+        const lightRadius = radius * this.scale
+        const gradient = this.lightCtx.createRadialGradient(lightX, lightY, 0, lightX, lightY, lightRadius)
+
+        gradient.addColorStop(0, color)
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
+
+        this.lightCtx.save()
+        this.lightCtx.globalAlpha = alpha
+        this.lightCtx.globalCompositeOperation = 'lighter'
+        this.lightCtx.fillStyle = gradient
+        this.lightCtx.fillRect(lightX - lightRadius, lightY - lightRadius, lightRadius * 2, lightRadius * 2)
+        this.lightCtx.restore()
+    }
+    draw(gameState)
     {
         if (!this.shouldDraw())
             return
+
+        const viewWidth = this.canvas.width / scale[version]
+        const viewHeight = this.canvas.height / scale[version]
+        const radius = Math.max(viewWidth, viewHeight) * STYLE.lights.ambientRadiusRatio
+
+        this.drawRadialLight(
+            viewWidth * 0.5,
+            viewHeight * 0.45,
+            radius,
+            STYLE.colors.cube.blue,
+            STYLE.lights.ambientAlpha
+        )
     }
     composite()
     {
         if (!this.shouldDraw())
             return
+
+        const viewWidth = this.canvas.width / scale[version]
+        const viewHeight = this.canvas.height / scale[version]
+
+        this.ctx.save()
+        this.ctx.globalAlpha = STYLE.lights.compositeAlpha
+        this.ctx.globalCompositeOperation = 'lighter'
+        this.ctx.imageSmoothingEnabled = true
+        this.ctx.drawImage(this.lightCanvas, 0, 0, viewWidth, viewHeight)
+        this.ctx.restore()
     }
 }
 
@@ -231,7 +288,7 @@ class VisualEffects
     constructor(context, targetCanvas)
     {
         this.background = new BackgroundRenderer(context, targetCanvas)
-        this.lightmap = new LightmapRenderer()
+        this.lightmap = new LightmapRenderer(context, targetCanvas)
         this.particles = new ParticleSystem()
         this.playerTrail = new PlayerTrailRenderer()
         this.screenEffects = new ScreenEffects()

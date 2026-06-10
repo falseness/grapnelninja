@@ -74,11 +74,15 @@ const STYLE = Object.freeze({
         checkMarkWidthRatio: 0.03
     }),
     lights: Object.freeze({
+        resolutionScale: 0.25,
         playerRadius: 120,
         cubeRadius: 120,
         hazardRadius: 140,
         groundRadius: 80,
-        alpha: 0.45
+        alpha: 0.45,
+        ambientRadiusRatio: 0.62,
+        ambientAlpha: 0.18,
+        compositeAlpha: 0.85
     }),
     particles: Object.freeze({
         maxCount: 120,
