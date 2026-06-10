@@ -179,6 +179,12 @@ class LightmapRenderer
         if (!this.shouldDraw())
             return
 
+        this.drawAmbientLight()
+        this.drawPlayerLight(gameState.ninja)
+        this.drawWorldLights(gameState.floors)
+    }
+    drawAmbientLight()
+    {
         const viewWidth = this.canvas.width / scale[version]
         const viewHeight = this.canvas.height / scale[version]
         const radius = Math.max(viewWidth, viewHeight) * STYLE.lights.ambientRadiusRatio
@@ -190,6 +196,72 @@ class LightmapRenderer
             STYLE.colors.cube.blue,
             STYLE.lights.ambientAlpha
         )
+    }
+    drawPlayerLight(player)
+    {
+        this.drawRadialLight(
+            player.x + screen.x,
+            player.y + screen.y,
+            STYLE.lights.playerRadius,
+            STYLE.colors.player.cyan,
+            STYLE.lights.alpha
+        )
+    }
+    drawWorldLights(floors)
+    {
+        for (let i = 0; i < floors.length; ++i)
+        {
+            for (let j = 0; j < floors[i].elements.length; ++j)
+            {
+                this.drawElementLight(floors[i].elements[j])
+            }
+        }
+    }
+    drawElementLight(element)
+    {
+        if (this.isHazard(element))
+        {
+            this.drawElementCircleLight(
+                element,
+                STYLE.lights.hazardRadius,
+                STYLE.colors.hazard.red,
+                STYLE.lights.alpha
+            )
+            return
+        }
+
+        if (this.isCubeOrPlatform(element))
+        {
+            this.drawElementCircleLight(
+                element,
+                STYLE.lights.cubeRadius,
+                STYLE.colors.cube.blue,
+                STYLE.lights.alpha
+            )
+        }
+    }
+    drawElementCircleLight(element, radius, color, alpha)
+    {
+        const circle = element.getCircumscribedCircle()
+
+        this.drawRadialLight(
+            circle.x + screen.x,
+            circle.y + screen.y,
+            Math.max(radius, circle.radius),
+            color,
+            alpha
+        )
+    }
+    isHazard(element)
+    {
+        return element instanceof Triangle && !(element instanceof HarmlessTriangle)
+    }
+    isCubeOrPlatform(element)
+    {
+        if (element instanceof Ground || element instanceof Side)
+            return false
+
+        return element instanceof Rect || element instanceof Trampoline || element instanceof HarmlessTriangle
     }
     composite()
     {

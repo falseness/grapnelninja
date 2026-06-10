@@ -194,11 +194,11 @@
   {
     "id": "TASK-009",
     "title": "Add radial emission for player cubes and hazards",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-008"
     ],
-    "description": "Make the player, blue cubes/platforms, and red triangle hazards emit cheap radial light through the centralized lightmap.",
+    "description": "Make the player, blue cubes/platforms, and red triangle hazards emit cheap radial light through the centralized lightmap.\nImplemented: Added centralized lightmap radial emitters for the player, blue/cyan cube and platform objects, and red triangle hazards.",
     "acceptance_criteria": [
       "The player emits cyan radial light.",
       "Cubes and platforms emit blue or cyan radial light.",
