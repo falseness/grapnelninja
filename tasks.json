@@ -1849,7 +1849,7 @@
     "id": "TASK-072",
     "category": "functional",
     "priority": "normal",
-    "description": "Make decorative background triangle color depend on the local background color, matching screenshots/concept_art.png. Triangles on the left side should read blue-toned, while triangles on the right side should read red/magenta-toned.",
+    "description": "Make decorative background triangle color depend on the local background color, matching screenshots/concept_art.png. Triangles on the left side should read blue-toned, while triangles on the right side should read red/magenta-toned.\nImplemented: Added wash-position-based decorative triangle palettes so left-side silhouettes use blue tones and right-side silhouettes use magenta/red tones.",
     "acceptance_criteria": [
       "Decorative background triangles on the left side use blue-toned fill or stroke colors.",
       "Decorative background triangles on the right side use red or magenta-toned fill or stroke colors.",
@@ -1869,7 +1869,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-073",

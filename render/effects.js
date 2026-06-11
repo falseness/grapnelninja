@@ -406,8 +406,6 @@ class BackgroundRenderer
             : 0
 
         this.ctx.save()
-        this.ctx.fillStyle = STYLE.colors.background.triangleSilhouetteFill
-        this.ctx.strokeStyle = STYLE.colors.background.triangleSilhouetteStroke
         this.ctx.lineWidth = geometry.triangleSilhouetteLineWidth
 
         for (let i = 0; i < triangles.length; ++i)
@@ -418,12 +416,49 @@ class BackgroundRenderer
             const y = triangle.y * height + shift.y * (0.28 + i * 0.03)
             const radius = triangle.radius * sizeScale
             const rotation = triangle.rotation + motion * direction
+            const palette = this.getTrianglePalette(triangle, geometry, x / width)
+            const colors = this.getTrianglePaletteColors(palette)
 
             this.ctx.globalAlpha = triangle.alpha
+            this.ctx.fillStyle = colors.fill
+            this.ctx.strokeStyle = colors.stroke
             this.drawDecorativeTriangle(x, y, radius, rotation, triangle.points)
         }
 
         this.ctx.restore()
+    }
+    getTrianglePalette(triangle, geometry, screenXRatio)
+    {
+        if (triangle.palette)
+            return triangle.palette
+
+        const split = typeof geometry.triangleColorSplitRatio == 'number'
+            ? geometry.triangleColorSplitRatio
+            : (typeof geometry.flashColorSplitRatio == 'number'
+                ? geometry.flashColorSplitRatio
+                : ((geometry.washLeftXRatio || 0) + (geometry.washRightXRatio || 1)) / 2)
+        const xRatio = typeof screenXRatio == 'number'
+            ? screenXRatio
+            : triangle.x
+
+        return xRatio < split ? 'blue' : 'magenta'
+    }
+    getTrianglePaletteColors(palette)
+    {
+        const colors = STYLE.colors.background
+
+        if (palette == 'magenta')
+        {
+            return {
+                fill: colors.triangleSilhouetteMagentaFill || colors.triangleSilhouetteFill,
+                stroke: colors.triangleSilhouetteMagentaStroke || colors.triangleSilhouetteStroke
+            }
+        }
+
+        return {
+            fill: colors.triangleSilhouetteBlueFill || colors.triangleSilhouetteFill,
+            stroke: colors.triangleSilhouetteBlueStroke || colors.triangleSilhouetteStroke
+        }
     }
     drawDecorativeTriangle(centerX, centerY, radius, rotation, points)
     {
