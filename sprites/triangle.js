@@ -201,14 +201,22 @@ class MultipointTrackLine extends TrackLine
         ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].min + screen.y)
         ctx.closePath()
 
-        ctx.fillStyle = this.stroke
         ctx.shadowColor = this.stroke
-        ctx.shadowBlur = config.glowBlur
         ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
             ? STYLE.visualStability.effectCompositeOperation
             : 'lighter'
-        ctx.globalAlpha = STYLE.alpha.multipointTrack
-        ctx.fill()
+
+        ctx.strokeStyle = this.stroke
+        ctx.lineJoin = 'round'
+        ctx.lineWidth = config.envelopeGlowWidth
+        ctx.shadowBlur = config.glowBlur
+        ctx.globalAlpha = config.envelopeGlowAlpha
+        ctx.stroke()
+
+        ctx.shadowBlur = 0
+        ctx.lineWidth = config.envelopeLineWidth
+        ctx.globalAlpha = config.envelopeAlpha
+        ctx.stroke()
         ctx.restore()
     }
     getPointExtremes()

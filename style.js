@@ -178,6 +178,10 @@ const STYLE = Object.freeze({
             minAlpha: 0.04,
             maxAlpha: 0.22,
             outlineAlpha: 0.36,
+            envelopeAlpha: 0.16,
+            envelopeGlowAlpha: 0.18,
+            envelopeLineWidth: 1.5,
+            envelopeGlowWidth: 5,
             glowBlur: 8,
             sampleStep: 3
         })
