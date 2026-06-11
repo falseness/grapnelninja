@@ -193,7 +193,57 @@ class BackgroundRenderer
             background.depthHexagonStroke
         )
         this.drawStreakSet(width, height, geometry, geometryTime, background.depthStreak, -height * 0.08 + totalShift.y, totalShift.x)
+        this.drawDiagonalFlashes(width, height, geometry, geometryTime)
         this.drawRectangleAccents(width, height, geometry, geometryTime, totalShift)
+        this.ctx.restore()
+    }
+    drawDiagonalFlashes(width, height, geometry, time)
+    {
+        const flashes = geometry.flashes || []
+
+        if (!flashes.length)
+            return
+
+        const colors = STYLE.colors.background
+        const diagonal = Math.sqrt(width * width + height * height)
+        const animationOffset = QUALITY.backgroundMotion && !STYLE.visualStability.freezeBadVersionBackground
+            ? Math.sin(time / STYLE.timing.backgroundStreakMs * Math.PI * 2) * width * 0.018
+            : 0
+        const stableMultiplier = STYLE.visualStability.stableBrightness
+            ? geometry.stableFlashAlpha
+            : geometry.flashAlpha
+
+        this.ctx.save()
+        this.ctx.lineCap = 'square'
+
+        for (let i = 0; i < flashes.length; ++i)
+        {
+            const flash = flashes[i]
+            const length = diagonal * (flash.length || geometry.flashLengthRatio)
+            const startX = flash.x * width + animationOffset
+            const startY = flash.y * height
+            const endX = startX + length
+            const endY = startY - length
+            const stroke = flash.color == 'blue' ? colors.flashBlue : colors.flashMagenta
+            const glow = flash.color == 'blue' ? colors.flashBlueGlow : colors.flashMagentaGlow
+
+            this.ctx.globalAlpha = stableMultiplier
+            this.ctx.strokeStyle = glow
+            this.ctx.lineWidth = geometry.flashGlowWidth
+            this.ctx.beginPath()
+            this.ctx.moveTo(startX, startY)
+            this.ctx.lineTo(endX, endY)
+            this.ctx.stroke()
+
+            this.ctx.globalAlpha = Math.min(1, stableMultiplier * 1.45)
+            this.ctx.strokeStyle = stroke
+            this.ctx.lineWidth = geometry.flashLineWidth
+            this.ctx.beginPath()
+            this.ctx.moveTo(startX, startY)
+            this.ctx.lineTo(endX, endY)
+            this.ctx.stroke()
+        }
+
         this.ctx.restore()
     }
     getParallaxShift(width, height, geometry)

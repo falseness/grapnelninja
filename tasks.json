@@ -1002,7 +1002,7 @@
     "id": "TASK-040",
     "category": "functional",
     "priority": "normal",
-    "description": "Add bright diagonal background flashes like screenshots/concept_art.png. The flashes should be visual-only, behind gameplay objects, and strong enough to read as neon streak accents without overpowering hazards, platforms, player, or UI.",
+    "description": "Add bright diagonal background flashes like screenshots/concept_art.png. The flashes should be visual-only, behind gameplay objects, and strong enough to read as neon streak accents without overpowering hazards, platforms, player, or UI.\nImplemented: Added bad-version-only blue and magenta diagonal background flash bands with glow, kept behind gameplay and gated by background quality/freeze controls.",
     "acceptance_criteria": [
       "Bright diagonal magenta and blue background flashes appear behind gameplay, similar to screenshots/concept_art.png.",
       "The flashes are brighter and clearer than the current faint background line details.",
@@ -1022,7 +1022,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-041",
