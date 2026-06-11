@@ -244,24 +244,25 @@ const STYLE = Object.freeze({
         streakLengthRatio: 0.28,
         streakLineWidth: 1.5,
         badVersion: Object.freeze({
-            hexagonCount: 8,
-            hexagonRadiusRatio: 0.11,
-            hexagonRadiusStepRatio: 0.085,
-            hexagonLineWidth: 2.35,
-            secondaryHexagonCount: 4,
+            hexagonCount: 2,
+            hexagonRadiusRatio: 0.18,
+            hexagonRadiusStepRatio: 0.125,
+            hexagonLineWidth: 2.15,
+            secondaryHexagonCount: 0,
             secondaryHexagonRadiusRatio: 0.09,
             secondaryHexagonRadiusStepRatio: 0.12,
-            streakCount: 18,
-            streakSpacingRatio: 0.105,
-            streakLengthRatio: 0.42,
-            streakLineWidth: 1.8,
+            streakCount: 8,
+            streakSpacingRatio: 0.19,
+            streakLengthRatio: 0.34,
+            streakLineWidth: 1.45,
             parallaxShiftRatio: 0.04,
             accentLineWidth: 1.2,
-            accents: Object.freeze([
-                Object.freeze({x: 0.16, y: 0.22, radius: 72, sides: 3, rotation: 0.2, danger: false}),
-                Object.freeze({x: 0.82, y: 0.30, radius: 92, sides: 4, rotation: 0.72, danger: true}),
-                Object.freeze({x: 0.28, y: 0.78, radius: 118, sides: 5, rotation: 0.05, danger: false}),
-                Object.freeze({x: 0.72, y: 0.68, radius: 76, sides: 3, rotation: 1.1, danger: false})
+            rectangles: Object.freeze([
+                Object.freeze({x: 0.18, y: 0.24, width: 12, height: 5, rotation: 0.15, danger: true}),
+                Object.freeze({x: 0.34, y: 0.70, width: 9, height: 4, rotation: -0.35, danger: false}),
+                Object.freeze({x: 0.52, y: 0.28, width: 6, height: 6, rotation: 0.1, danger: false}),
+                Object.freeze({x: 0.73, y: 0.62, width: 14, height: 5, rotation: 0.58, danger: true}),
+                Object.freeze({x: 0.86, y: 0.34, width: 7, height: 7, rotation: -0.2, danger: false})
             ])
         })
     }),

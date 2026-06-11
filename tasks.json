@@ -684,5 +684,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-028",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Simplify the background composition so it is closer to the concept art in Image #5. Replace the current cluttered overlapping geometry with a cleaner composition using two main hexagons, small rectangles, flashes or diagonal streaks, and restrained decorative detail behind gameplay.\nImplemented: Simplified the bad-version background to a two-hexagon composition with fewer diagonal streaks and small rectangle accents behind gameplay.",
+    "acceptance_criteria": [
+      "The background shows a clean composition with about two main hexagon outlines rather than many overlapping polygon layers.",
+      "Small rectangles and flash or diagonal streak details are present behind gameplay.",
+      "Background geometry stays subtle and does not compete with hazards, objects, player, or UI.",
+      "The result is closer to Image #5 than to the cluttered current background examples.",
+      "A screenshot is saved at screenshots/TASK-028.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play until the background is clearly visible behind gameplay.",
+      "Capture a screenshot and save it as screenshots/TASK-028.png.",
+      "Compare the screenshot with Image #5 and confirm the background is cleaner, less overlapped, and closer to the concept art.",
+      "Confirm gameplay objects and UI remain readable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

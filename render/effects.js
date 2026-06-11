@@ -51,11 +51,14 @@ class BackgroundRenderer
         const geometry = STYLE.backgroundGeometry
         const time = this.getAnimationTime()
 
+        if (this.isBadVersion())
+        {
+            this.drawBadVersionDepth(width, height, geometry.badVersion, time)
+            return
+        }
+
         this.drawHexagons(width, height, geometry, time)
         this.drawStreaks(width, height, geometry, time)
-
-        if (this.isBadVersion())
-            this.drawBadVersionDepth(width, height, geometry.badVersion, time)
     }
     drawHexagons(width, height, geometry, time)
     {
@@ -153,8 +156,8 @@ class BackgroundRenderer
             height,
             geometry,
             time,
-            width * 0.56 + shift.x,
-            height * 0.52 + shift.y,
+            width * 0.52 + shift.x,
+            height * 0.50 + shift.y,
             background.depthHexagonStroke,
             background.depthHexagonAccentStroke
         )
@@ -177,7 +180,7 @@ class BackgroundRenderer
             background.depthHexagonStroke
         )
         this.drawStreakSet(width, height, geometry, time, background.depthStreak, -height * 0.08)
-        this.drawPolygonAccents(width, height, geometry, time)
+        this.drawRectangleAccents(width, height, geometry, time)
         this.ctx.restore()
     }
     getParallaxShift(width, height, geometry)
@@ -231,6 +234,43 @@ class BackgroundRenderer
         this.ctx.lineWidth = lineWidth
         this.ctx.fill()
         this.ctx.stroke()
+        this.ctx.restore()
+    }
+    drawRectangleAccents(width, height, geometry, time)
+    {
+        const rectangles = geometry.rectangles || []
+
+        for (let i = 0; i < rectangles.length; ++i)
+        {
+            const rect = rectangles[i]
+            const sizeScale = Math.min(width, height) / 720
+            const rotation = rect.rotation + time / STYLE.timing.backgroundRotationMs * Math.PI * 0.14 * (i % 2 == 0 ? 1 : -1)
+            const x = rect.x * width
+            const y = rect.y * height
+
+            this.drawRectangleAccent(
+                x,
+                y,
+                rect.width * sizeScale,
+                rect.height * sizeScale,
+                rotation,
+                rect.danger,
+                geometry.accentLineWidth
+            )
+        }
+    }
+    drawRectangleAccent(centerX, centerY, width, height, rotation, danger, lineWidth)
+    {
+        const colors = STYLE.colors.background
+
+        this.ctx.save()
+        this.ctx.translate(centerX, centerY)
+        this.ctx.rotate(rotation)
+        this.ctx.fillStyle = danger ? colors.polygonDangerFill : colors.polygonAccentFill
+        this.ctx.strokeStyle = danger ? colors.polygonDangerStroke : colors.polygonAccentStroke
+        this.ctx.lineWidth = lineWidth
+        this.ctx.fillRect(-width / 2, -height / 2, width, height)
+        this.ctx.strokeRect(-width / 2, -height / 2, width, height)
         this.ctx.restore()
     }
     isBadVersion()
