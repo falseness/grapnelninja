@@ -177,6 +177,8 @@ const STYLE = Object.freeze({
             thinStrokeWidth: 1.35,
             outerGlowWidth: 7,
             accentInsetRatio: 0.08,
+            innerCopyInsetRatio: 0.16,
+            innerCopyFillAlpha: 0.18,
             hazardFill: 'rgba(36, 4, 16, 0.72)',
             hazardCoreFill: 'rgba(255, 61, 113, 0.14)',
             cubeFill: 'rgba(3, 9, 20, 0.82)',

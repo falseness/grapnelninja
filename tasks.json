@@ -885,5 +885,33 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-036",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Modify the shell styling for rectangle objects so blue cubes and gray obstacles show a smaller full copy of the rectangle inside the object, matching the triangle copy-style visual instead of only showing an upper cap. Apply the visual fix to both classic and bad versions without changing collision geometry.\nImplemented: Replaced rectangle top-cap shell styling with a complete inset rectangle copy for classic and bad blue/gray rectangles while preserving triangle copy drawing and geometry.",
+    "acceptance_criteria": [
+      "Blue cubes show a smaller full rectangle copy inside the object.",
+      "Gray obstacles show a smaller full rectangle copy inside the object.",
+      "The inner rectangle copy is visible as a complete object copy, not only an upper shell or cap.",
+      "The old upper-only shell effect is no longer the dominant rectangle styling.",
+      "Triangle hazard copy-style drawing remains intact.",
+      "Collision geometry, movement, spawning, scoring, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-036.png before marking this task to-verify.",
+      "LOOK AT THE ACTUAL SCREENSHOT AND CHECK IF THE TASK ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and play until blue cubes and gray obstacles are visible.",
+      "Start the bad version and play until blue cubes and gray obstacles are visible.",
+      "Capture a screenshot with rectangle objects visible and save it as screenshots/TASK-036.png.",
+      "Inspect the screenshot and confirm each rectangle shell is a smaller full rectangle copy inside the object.",
+      "Confirm triangle hazards still use their copy-style drawing.",
+      "Confirm rectangle collisions and gameplay behavior remain unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

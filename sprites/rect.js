@@ -55,9 +55,12 @@ class Rect extends Element
     }
     draw()
     {
+        const x = this.x + screen.x
+        const y = this.y + screen.y
+
         if (version == 'bad')
         {
-            this.drawBadVersionRect()
+            this.drawBadVersionRect(x, y)
             return
         }
 
@@ -65,32 +68,27 @@ class Rect extends Element
         ctx.fillStyle   = this.fill
         ctx.strokeStyle = this.stroke
         
-        ctx.fillRect(this.x + screen.x, this.y + screen.y, this.width, this.height)
+        ctx.fillRect(x, y, this.width, this.height)
         ctx.lineWidth = STYLE.strokes.neonWidth
         ctx.shadowColor = this.stroke
         ctx.shadowBlur = STYLE.strokes.neonGlowWidth
-        ctx.strokeRect(this.x + screen.x, this.y + screen.y, this.width, this.height)
+        ctx.strokeRect(x, y, this.width, this.height)
+        this.drawInnerRectangleCopy(x, y, STYLE.badVersionEffects.obstacles.innerCopyInsetRatio, this.stroke, this.stroke)
         ctx.restore()
     }
-    drawBadVersionRect()
+    drawBadVersionRect(x, y)
     {
         const obstacleStyle = STYLE.badVersionEffects.obstacles
-        const x = this.x + screen.x
-        const y = this.y + screen.y
-        const accentInset = Math.min(this.width, this.height) * obstacleStyle.accentInsetRatio
         const isGreenSafe = this.stroke == STYLE.colors.cube.greenStroke || this.stroke == STYLE.colors.hazard.harmlessStroke
         const isGray = this.stroke == STYLE.colors.cube.grayStroke
         const fill = isGreenSafe ? obstacleStyle.greenFill : (isGray ? obstacleStyle.grayFill : obstacleStyle.cubeFill)
-        const highlightFill = isGreenSafe
+        const copyFill = isGreenSafe
             ? obstacleStyle.greenHighlightFill
             : (isGray ? obstacleStyle.grayHighlightFill : obstacleStyle.cubeHighlightFill)
 
         ctx.save()
         ctx.fillStyle = fill
         ctx.fillRect(x, y, this.width, this.height)
-
-        ctx.fillStyle = highlightFill
-        ctx.fillRect(x + accentInset, y + accentInset, Math.max(0, this.width - accentInset * 2), Math.max(0, this.height * 0.32))
 
         ctx.strokeStyle = this.stroke
         ctx.lineWidth = obstacleStyle.outerGlowWidth
@@ -104,10 +102,30 @@ class Rect extends Element
         ctx.shadowBlur = 0
         ctx.strokeRect(x, y, this.width, this.height)
 
-        ctx.globalAlpha = obstacleStyle.innerHighlightAlpha
-        ctx.strokeStyle = this.stroke
-        ctx.strokeRect(x + accentInset, y + accentInset, Math.max(0, this.width - accentInset * 2), Math.max(0, this.height - accentInset * 2))
+        this.drawInnerRectangleCopy(x, y, obstacleStyle.innerCopyInsetRatio, copyFill, this.stroke)
 
+        ctx.restore()
+    }
+    drawInnerRectangleCopy(x, y, insetRatio, fillStyle, strokeStyle)
+    {
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
+        const inset = Math.min(this.width, this.height) * insetRatio
+        const width = Math.max(0, this.width - inset * 2)
+        const height = Math.max(0, this.height - inset * 2)
+
+        if (width <= 0 || height <= 0)
+            return
+
+        ctx.save()
+        ctx.shadowBlur = 0
+        ctx.fillStyle = fillStyle
+        ctx.globalAlpha = obstacleStyle.innerCopyFillAlpha
+        ctx.fillRect(x + inset, y + inset, width, height)
+
+        ctx.globalAlpha = obstacleStyle.innerHighlightAlpha
+        ctx.strokeStyle = strokeStyle
+        ctx.lineWidth = version == 'bad' ? obstacleStyle.thinStrokeWidth : STYLE.strokes.neonWidth
+        ctx.strokeRect(x + inset, y + inset, width, height)
         ctx.restore()
     }
 }
