@@ -6,20 +6,20 @@ const STYLE = Object.freeze({
             dark: '#050713',
             darkAccent: '#12102a',
             gradientTop: '#050713',
-            gradientMiddle: '#0a1638',
-            gradientBottom: '#190a2e',
+            gradientMiddle: '#07102a',
+            gradientBottom: '#120720',
             vignetteCenter: 'rgba(0, 0, 0, 0)',
-            vignetteEdge: 'rgba(0, 0, 0, 0.58)',
+            vignetteEdge: 'rgba(0, 0, 0, 0.66)',
             hexagonStroke: 'rgba(48, 213, 200, 0.10)',
             hexagonAccentStroke: 'rgba(255, 61, 113, 0.06)',
             streak: 'rgba(48, 213, 200, 0.08)',
-            depthHexagonStroke: 'rgba(48, 213, 200, 0.16)',
-            depthHexagonAccentStroke: 'rgba(255, 61, 113, 0.09)',
-            depthStreak: 'rgba(143, 252, 255, 0.13)',
-            polygonAccentFill: 'rgba(31, 122, 255, 0.045)',
-            polygonAccentStroke: 'rgba(48, 213, 200, 0.18)',
-            polygonDangerFill: 'rgba(255, 61, 113, 0.035)',
-            polygonDangerStroke: 'rgba(255, 61, 113, 0.12)'
+            depthHexagonStroke: 'rgba(48, 213, 200, 0.095)',
+            depthHexagonAccentStroke: 'rgba(255, 61, 113, 0.055)',
+            depthStreak: 'rgba(143, 252, 255, 0.075)',
+            polygonAccentFill: 'rgba(31, 122, 255, 0.025)',
+            polygonAccentStroke: 'rgba(48, 213, 200, 0.11)',
+            polygonDangerFill: 'rgba(255, 61, 113, 0.022)',
+            polygonDangerStroke: 'rgba(255, 61, 113, 0.075)'
         }),
         player: Object.freeze({
             fill: '#06151d',
@@ -176,13 +176,13 @@ const STYLE = Object.freeze({
             shadow: 'rgba(0, 0, 0, 0.32)'
         }),
         lights: Object.freeze({
-            radiusMultiplier: 1.34,
-            alphaMultiplier: 1.24,
-            hazardRadiusMultiplier: 1.18,
-            hazardAlphaMultiplier: 1.16,
-            bloomRadiusMultiplier: 1.76,
-            bloomAlphaMultiplier: 0.34,
-            compositeAlphaMultiplier: 1.12
+            radiusMultiplier: 1.08,
+            alphaMultiplier: 0.92,
+            hazardRadiusMultiplier: 1.02,
+            hazardAlphaMultiplier: 0.9,
+            bloomRadiusMultiplier: 1.24,
+            bloomAlphaMultiplier: 0.2,
+            compositeAlphaMultiplier: 0.86
         }),
         particles: Object.freeze({
             playerEmitMultiplier: 3,
@@ -259,6 +259,12 @@ const STYLE = Object.freeze({
                 Object.freeze({x: 0.72, y: 0.68, radius: 76, sides: 3, rotation: 1.1, danger: false})
             ])
         })
+    }),
+    visualStability: Object.freeze({
+        stableBrightness: true,
+        freezeHazardPulse: true,
+        freezeBackgroundParallax: true,
+        backgroundCompositeOperation: 'source-over'
     }),
     features: Object.freeze({
         background: true,

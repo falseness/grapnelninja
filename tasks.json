@@ -636,5 +636,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-026",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Disable color and brightness changes caused by movement or progress. Keep the game's dark visual brightness closer to the first dark version shown in Image #4, without progressive palette shifts or brightening during play.\nImplemented: Added stable visual brightness flags, darker bad-version glow/background defaults, fixed hazard glow strength, and non-additive background depth compositing.",
+    "acceptance_criteria": [
+      "Object, background, and UI colors do not shift because of player movement or progress.",
+      "The default dark version remains close to the darker brightness shown in Image #4.",
+      "The screen does not progressively brighten or change palette during normal play.",
+      "Gameplay behavior, scoring, collision, spawning, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-026.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play for at least 30 seconds while moving and progressing.",
+      "Capture a screenshot and save it as screenshots/TASK-026.png.",
+      "Compare the screenshot with Image #4 and confirm the brightness remains dark and stable.",
+      "Confirm no progress-based color cycling or movement-based palette shift is visible.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

@@ -145,7 +145,9 @@ class BackgroundRenderer
         const shift = this.getParallaxShift(width, height, geometry)
 
         this.ctx.save()
-        this.ctx.globalCompositeOperation = 'lighter'
+        this.ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.backgroundCompositeOperation
+            : 'lighter'
         this.drawHexagonSet(
             width,
             height,
@@ -180,7 +182,7 @@ class BackgroundRenderer
     }
     getParallaxShift(width, height, geometry)
     {
-        if (!QUALITY.backgroundMotion)
+        if (!QUALITY.backgroundMotion || STYLE.visualStability.freezeBackgroundParallax)
             return {x: 0, y: 0}
 
         const ratio = geometry.parallaxShiftRatio
@@ -396,6 +398,9 @@ class LightmapRenderer
     }
     getPulseRatio(durationMs)
     {
+        if (STYLE.visualStability.freezeHazardPulse)
+            return 0.5
+
         const duration = Math.max(1, durationMs)
         const phase = (performance.now() % duration) / duration
 
