@@ -147,18 +147,19 @@ class BackgroundRenderer
             return
 
         const background = STYLE.colors.background
-        const stableTime = 0
-        const shift = STYLE.visualStability.freezeBadVersionBackground
+        const freezeMotion = this.shouldFreezeBadVersionBackgroundMotion()
+        const geometryTime = freezeMotion ? 0 : time * geometry.motionTimeScale
+        const streakTime = freezeMotion ? 0 : time * geometry.streakTimeScale
+        const shift = freezeMotion
             ? {x: 0, y: 0}
             : this.getParallaxShift(width, height, geometry)
-        const cameraShift = STYLE.visualStability.freezeBadVersionBackground
+        const cameraShift = freezeMotion
             ? {x: 0, y: 0}
             : this.getCameraParallaxShift(geometry)
         const totalShift = {
             x: shift.x + cameraShift.x,
             y: shift.y + cameraShift.y
         }
-        const geometryTime = STYLE.visualStability.freezeBadVersionBackground ? stableTime : time
 
         this.ctx.save()
         this.ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
@@ -192,11 +193,16 @@ class BackgroundRenderer
             background.depthHexagonAccentStroke,
             background.depthHexagonStroke
         )
-        this.drawStreakSet(width, height, geometry, geometryTime, background.depthStreak, -height * 0.08 + totalShift.y, totalShift.x)
+        this.drawStreakSet(width, height, geometry, streakTime, background.depthStreak, -height * 0.08 + totalShift.y, totalShift.x)
         this.drawDiagonalFlashes(width, height, geometry, geometryTime)
         this.drawDecorativeTriangles(width, height, geometry, geometryTime, totalShift)
         this.drawRectangleAccents(width, height, geometry, geometryTime, totalShift)
         this.ctx.restore()
+    }
+    shouldFreezeBadVersionBackgroundMotion()
+    {
+        return STYLE.visualStability.freezeBadVersionBackground
+            && !STYLE.visualStability.useDistantBackgroundMotion
     }
     drawDiagonalFlashes(width, height, geometry, time)
     {
@@ -207,8 +213,8 @@ class BackgroundRenderer
 
         const colors = STYLE.colors.background
         const diagonal = Math.sqrt(width * width + height * height)
-        const animationOffset = QUALITY.backgroundMotion && !STYLE.visualStability.freezeBadVersionBackground
-            ? Math.sin(time / STYLE.timing.backgroundStreakMs * Math.PI * 2) * width * 0.018
+        const animationOffset = QUALITY.backgroundMotion && !this.shouldFreezeBadVersionBackgroundMotion()
+            ? Math.sin(time / STYLE.timing.backgroundStreakMs * Math.PI * 2) * width * geometry.flashMotionRatio
             : 0
         const stableMultiplier = STYLE.visualStability.stableBrightness
             ? geometry.stableFlashAlpha
@@ -256,8 +262,8 @@ class BackgroundRenderer
             return
 
         const sizeScale = Math.min(width, height) / 720
-        const motion = QUALITY.backgroundMotion && !STYLE.visualStability.freezeBadVersionBackground
-            ? time / STYLE.timing.backgroundRotationMs * Math.PI * 0.18
+        const motion = QUALITY.backgroundMotion && !this.shouldFreezeBadVersionBackgroundMotion()
+            ? time / STYLE.timing.backgroundRotationMs * Math.PI * geometry.triangleRotationScale
             : 0
 
         this.ctx.save()
@@ -302,7 +308,8 @@ class BackgroundRenderer
     }
     getParallaxShift(width, height, geometry)
     {
-        if (!QUALITY.backgroundMotion || STYLE.visualStability.freezeBackgroundParallax)
+        if (!QUALITY.backgroundMotion
+            || (STYLE.visualStability.freezeBackgroundParallax && !STYLE.visualStability.useDistantBackgroundMotion))
             return {x: 0, y: 0}
 
         const ratio = geometry.parallaxShiftRatio
@@ -376,7 +383,7 @@ class BackgroundRenderer
         {
             const rect = rectangles[i]
             const sizeScale = Math.min(width, height) / 720
-            const rotation = rect.rotation + time / STYLE.timing.backgroundRotationMs * Math.PI * 0.14 * (i % 2 == 0 ? 1 : -1)
+            const rotation = rect.rotation + time / STYLE.timing.backgroundRotationMs * Math.PI * geometry.rectangleRotationScale * (i % 2 == 0 ? 1 : -1)
             const x = rect.x * width + shift.x
             const y = rect.y * height + shift.y
 

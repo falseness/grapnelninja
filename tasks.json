@@ -1055,7 +1055,7 @@
     "id": "TASK-042",
     "category": "functional",
     "priority": "normal",
-    "description": "Make background movement much slower so the background feels far away from the player. Reduce parallax, animation, and scrolling speed for background-only geometry without changing foreground gameplay movement.",
+    "description": "Make background movement much slower so the background feels far away from the player. Reduce parallax, animation, and scrolling speed for background-only geometry without changing foreground gameplay movement.\nImplemented: Re-enabled only distant bad-version background motion with tiny camera parallax ratios and slow animation multipliers while leaving foreground gameplay untouched.",
     "acceptance_criteria": [
       "Background geometry moves much more slowly than the player, platforms, hazards, and floor.",
       "The background creates a distant parallax illusion instead of appearing attached to the foreground world.",
@@ -1075,7 +1075,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-043",
