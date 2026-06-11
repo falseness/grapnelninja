@@ -23,7 +23,7 @@ let scoreText =
     {
         const viewWidth = width / scale[version]
         const viewHeight = height / scale[version]
-        const topY = viewHeight * STYLE.ui.hudTopRatio
+        const topY = getHudCenterY(viewHeight, version)
         const fontSize = viewHeight * STYLE.ui.hudFontRatio
 
         ctx.save()

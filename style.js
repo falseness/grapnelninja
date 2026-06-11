@@ -351,6 +351,15 @@ const STYLE = Object.freeze({
     })
 })
 
+function getHudCenterY(viewHeight, selectedVersion)
+{
+    const ratio = selectedVersion == 'bad'
+        ? STYLE.ui.hudClearTopRatio / 2
+        : STYLE.ui.hudTopRatio
+
+    return viewHeight * ratio
+}
+
 const QUALITY = {
     lightmap: true,
     particles: true,
