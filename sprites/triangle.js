@@ -76,26 +76,33 @@ class Triangle extends Element
         }
 
         const obstacleStyle = STYLE.badVersionEffects.obstacles
+        const isHarmless = this instanceof HarmlessTriangle
         this.drawBadVersionPolygon(
-            this instanceof HarmlessTriangle ? STYLE.colors.hazard.harmlessFill : obstacleStyle.hazardFill,
+            isHarmless ? STYLE.colors.hazard.harmlessFill : obstacleStyle.hazardFill,
             this.stroke,
             {
                 lineWidth: obstacleStyle.thinStrokeWidth,
                 glowWidth: obstacleStyle.outerGlowWidth,
-                innerStrokeStyle: STYLE.colors.hazard.red
+                innerStrokeStyle: this.stroke
             }
         )
 
+        this.drawBadVersionInnerTreatment()
+    }
+    drawBadVersionInnerTreatment()
+    {
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
         const points = this.getPoints()
         const centerX = this.x + screen.x
         const centerY = this.y + screen.y
+        const scale = obstacleStyle.hazardInnerScale
 
         ctx.save()
         ctx.beginPath()
         for (let i = 0; i < points.length; ++i)
         {
-            const x = centerX + (points[i].x - this.x) * 0.58
-            const y = centerY + (points[i].y - this.y) * 0.58
+            const x = centerX + (points[i].x - this.x) * scale
+            const y = centerY + (points[i].y - this.y) * scale
 
             if (i == 0)
                 ctx.moveTo(x, y)
@@ -103,8 +110,10 @@ class Triangle extends Element
                 ctx.lineTo(x, y)
         }
         ctx.closePath()
-        ctx.fillStyle = obstacleStyle.hazardCoreFill
-        ctx.fill()
+        ctx.strokeStyle = this.stroke
+        ctx.lineWidth = obstacleStyle.thinStrokeWidth
+        ctx.globalAlpha = obstacleStyle.hazardInnerStrokeAlpha
+        ctx.stroke()
         ctx.restore()
     }
 }

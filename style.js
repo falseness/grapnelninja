@@ -181,6 +181,8 @@ const STYLE = Object.freeze({
             groundCapAlpha: 0.18,
             highlightAlpha: 0.74,
             innerHighlightAlpha: 0.18,
+            hazardInnerScale: 0.58,
+            hazardInnerStrokeAlpha: 0.46,
             thinStrokeWidth: 1.35,
             outerGlowWidth: 7,
             accentInsetRatio: 0.08,

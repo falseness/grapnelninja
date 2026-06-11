@@ -1081,7 +1081,7 @@
     "id": "TASK-043",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix the broken red spot, glow, or interior fill on triangle hazards shown in screenshots/TASK-035.png. Triangle hazards should have a clean red neon outline and readable red inner treatment without the current broken spot artifact.",
+    "description": "Fix the broken red spot, glow, or interior fill on triangle hazards shown in screenshots/TASK-035.png. Triangle hazards should have a clean red neon outline and readable red inner treatment without the current broken spot artifact.\nImplemented: Replaced the bad-version solid mini-triangle hazard fill with a clean inset stroke using each triangle's own hazard color.",
     "acceptance_criteria": [
       "Red triangle hazards no longer show the broken red spot or incorrect interior artifact visible in screenshots/TASK-035.png.",
       "Triangle hazard outline, glow, and inner shape render cleanly and consistently across visible hazards.",
@@ -1101,7 +1101,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-044",
