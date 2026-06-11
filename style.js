@@ -114,7 +114,7 @@ const STYLE = Object.freeze({
         compositeAlpha: 0.72
     }),
     particles: Object.freeze({
-        maxCount: 90,
+        maxCount: 140,
         spawnBurst: 12,
         lifetimeMs: 360,
         playerEmitCount: 1,
@@ -138,6 +138,34 @@ const STYLE = Object.freeze({
             maxAlpha: 0.48,
             coreAlpha: 0.72,
             minSegmentRatio: 0
+        })
+    }),
+    badVersionEffects: Object.freeze({
+        lights: Object.freeze({
+            radiusMultiplier: 1.34,
+            alphaMultiplier: 1.24,
+            hazardRadiusMultiplier: 1.18,
+            hazardAlphaMultiplier: 1.16,
+            bloomRadiusMultiplier: 1.76,
+            bloomAlphaMultiplier: 0.34,
+            compositeAlphaMultiplier: 1.12
+        }),
+        particles: Object.freeze({
+            playerEmitMultiplier: 3,
+            worldChanceMultiplier: 1.75,
+            hazardChanceMultiplier: 1.35,
+            hazardEmitCount: 2,
+            alphaMultiplier: 1.25,
+            sizeMultiplier: 1.18,
+            speedMultiplier: 1.2,
+            lifetimeMultiplier: 1.18
+        }),
+        trails: Object.freeze({
+            widthMultiplier: 1.36,
+            glowWidthMultiplier: 1.85,
+            alphaMultiplier: 1.28,
+            chunkCount: 6,
+            tailPortion: 0.4
         })
     }),
     playerVisuals: Object.freeze({

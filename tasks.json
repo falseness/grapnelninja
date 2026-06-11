@@ -466,11 +466,11 @@
   {
     "id": "TASK-019",
     "title": "Increase neon glow and particle richness toward concept art",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-017"
     ],
-    "description": "Tune the bad-version visual effects so active play has brighter object halos, denser but capped square particles, more visible player trail arcs, and stronger colored light blooms similar to the concept art while staying Canvas 2D only.",
+    "description": "Tune the bad-version visual effects so active play has brighter object halos, denser but capped square particles, more visible player trail arcs, and stronger colored light blooms similar to the concept art while staying Canvas 2D only.\nImplemented: Added bad-version glow, bloom, particle density, and trail multipliers while preserving quality-disable paths and Canvas 2D rendering.",
     "acceptance_criteria": [
       "Player movement produces a more visible cyan arc trail and square particle scatter similar to the concept art.",
       "Cubes and platforms have stronger blue/cyan glow blooms without obscuring their collision silhouettes.",

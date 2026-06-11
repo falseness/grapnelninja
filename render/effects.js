@@ -199,12 +199,21 @@ class LightmapRenderer
     }
     drawPlayerLight(player)
     {
+        const badLights = this.getBadVersionLights()
+
         this.drawRadialLight(
             player.x + screen.x,
             player.y + screen.y,
-            STYLE.lights.playerRadius,
+            STYLE.lights.playerRadius * badLights.radiusMultiplier,
             STYLE.colors.player.cyan,
-            STYLE.lights.alpha
+            this.clampAlpha(STYLE.lights.alpha * badLights.alphaMultiplier)
+        )
+
+        this.drawBadVersionBloom(
+            player.x + screen.x,
+            player.y + screen.y,
+            STYLE.lights.playerRadius,
+            STYLE.colors.player.cyan
         )
     }
     drawWorldLights(floors)
@@ -227,26 +236,45 @@ class LightmapRenderer
 
         if (this.isCubeOrPlatform(element))
         {
+            const badLights = this.getBadVersionLights()
+            const circle = element.getCircumscribedCircle()
+
             this.drawElementCircleLight(
                 element,
-                STYLE.lights.cubeRadius,
+                STYLE.lights.cubeRadius * badLights.radiusMultiplier,
                 STYLE.colors.cube.blue,
-                STYLE.lights.alpha
+                this.clampAlpha(STYLE.lights.alpha * badLights.alphaMultiplier)
+            )
+            this.drawBadVersionBloom(
+                circle.x + screen.x,
+                circle.y + screen.y,
+                Math.max(STYLE.lights.cubeRadius, circle.radius),
+                STYLE.colors.cube.blue
             )
         }
     }
     drawHazardPulseLight(element)
     {
+        const badLights = this.getBadVersionLights()
         const pulse = this.getPulseRatio(STYLE.timing.hazardPulseMs)
         const alpha = STYLE.lights.hazardPulseMinAlpha
             + (STYLE.lights.hazardPulseMaxAlpha - STYLE.lights.hazardPulseMinAlpha) * pulse
-        const radius = STYLE.lights.hazardRadius + STYLE.lights.hazardPulseRadiusBoost * pulse
+        const radius = (STYLE.lights.hazardRadius + STYLE.lights.hazardPulseRadiusBoost * pulse)
+            * badLights.hazardRadiusMultiplier
 
         this.drawElementCircleLight(
             element,
             radius,
             STYLE.colors.hazard.red,
-            alpha
+            this.clampAlpha(alpha * badLights.hazardAlphaMultiplier)
+        )
+
+        const circle = element.getCircumscribedCircle()
+        this.drawBadVersionBloom(
+            circle.x + screen.x,
+            circle.y + screen.y,
+            radius,
+            STYLE.colors.hazard.red
         )
     }
     getPulseRatio(durationMs)
@@ -286,13 +314,52 @@ class LightmapRenderer
 
         const viewWidth = this.canvas.width / scale[version]
         const viewHeight = this.canvas.height / scale[version]
+        const badLights = this.getBadVersionLights()
 
         this.ctx.save()
-        this.ctx.globalAlpha = STYLE.lights.compositeAlpha
+        this.ctx.globalAlpha = this.clampAlpha(STYLE.lights.compositeAlpha * badLights.compositeAlphaMultiplier)
         this.ctx.globalCompositeOperation = 'lighter'
         this.ctx.imageSmoothingEnabled = true
         this.ctx.drawImage(this.lightCanvas, 0, 0, viewWidth, viewHeight)
         this.ctx.restore()
+    }
+    drawBadVersionBloom(x, y, radius, color)
+    {
+        if (!this.isBadVersion())
+            return
+
+        const badLights = STYLE.badVersionEffects.lights
+
+        this.drawRadialLight(
+            x,
+            y,
+            radius * badLights.bloomRadiusMultiplier,
+            color,
+            badLights.bloomAlphaMultiplier
+        )
+    }
+    getBadVersionLights()
+    {
+        if (!this.isBadVersion())
+        {
+            return {
+                radiusMultiplier: 1,
+                alphaMultiplier: 1,
+                hazardRadiusMultiplier: 1,
+                hazardAlphaMultiplier: 1,
+                compositeAlphaMultiplier: 1
+            }
+        }
+
+        return STYLE.badVersionEffects.lights
+    }
+    isBadVersion()
+    {
+        return typeof version != 'undefined' && version == 'bad'
+    }
+    clampAlpha(alpha)
+    {
+        return Math.max(0, Math.min(1, alpha))
     }
 }
 
@@ -379,14 +446,18 @@ class ParticleSystem
         if (speed < 0.08)
             return
 
-        for (let i = 0; i < STYLE.particles.playerEmitCount; ++i)
+        const badParticles = this.getBadVersionParticles()
+        const emitCount = Math.ceil(STYLE.particles.playerEmitCount * badParticles.playerEmitMultiplier)
+
+        for (let i = 0; i < emitCount; ++i)
         {
             this.emitSquare(
                 player.x + screen.x + this.randomRange(-player.radius, player.radius),
                 player.y + screen.y + this.randomRange(-player.radius, player.radius),
                 STYLE.colors.player.cyan,
-                STYLE.particles.playerSpeed,
-                STYLE.particles.playerAlpha
+                STYLE.particles.playerSpeed * badParticles.speedMultiplier,
+                this.clampAlpha(STYLE.particles.playerAlpha * badParticles.alphaMultiplier),
+                badParticles
             )
         }
     }
@@ -407,18 +478,43 @@ class ParticleSystem
 
         if (this.isHazard(element))
         {
-            if (Math.random() <= STYLE.particles.hazardEmitChance)
-                this.emitAroundElement(element, STYLE.colors.hazard.red, STYLE.particles.hazardSpeed, STYLE.particles.hazardAlpha)
+            const badParticles = this.getBadVersionParticles()
+            const chance = Math.min(1, STYLE.particles.hazardEmitChance
+                * badParticles.worldChanceMultiplier
+                * badParticles.hazardChanceMultiplier)
+
+            if (Math.random() <= chance)
+            {
+                for (let i = 0; i < badParticles.hazardEmitCount; ++i)
+                {
+                    this.emitAroundElement(
+                        element,
+                        STYLE.colors.hazard.red,
+                        STYLE.particles.hazardSpeed * badParticles.speedMultiplier,
+                        this.clampAlpha(STYLE.particles.hazardAlpha * badParticles.alphaMultiplier),
+                        badParticles
+                    )
+                }
+            }
 
             return
         }
 
-        if (this.isCubeOrPlatform(element) && Math.random() <= STYLE.particles.cubeEmitChance)
+        const badParticles = this.getBadVersionParticles()
+        const chance = Math.min(1, STYLE.particles.cubeEmitChance * badParticles.worldChanceMultiplier)
+
+        if (this.isCubeOrPlatform(element) && Math.random() <= chance)
         {
-            this.emitAroundElement(element, STYLE.colors.cube.blue, STYLE.particles.cubeSpeed, STYLE.particles.cubeAlpha)
+            this.emitAroundElement(
+                element,
+                STYLE.colors.cube.blue,
+                STYLE.particles.cubeSpeed * badParticles.speedMultiplier,
+                this.clampAlpha(STYLE.particles.cubeAlpha * badParticles.alphaMultiplier),
+                badParticles
+            )
         }
     }
-    emitAroundElement(element, color, speed, alpha)
+    emitAroundElement(element, color, speed, alpha, particleConfig)
     {
         const circle = element.getCircumscribedCircle()
         const angle = Math.random() * Math.PI * 2
@@ -426,13 +522,15 @@ class ParticleSystem
         const x = circle.x + screen.x + Math.cos(angle) * radius
         const y = circle.y + screen.y + Math.sin(angle) * radius
 
-        this.emitSquare(x, y, color, speed, alpha)
+        this.emitSquare(x, y, color, speed, alpha, particleConfig)
     }
-    emitSquare(x, y, color, speed, alpha)
+    emitSquare(x, y, color, speed, alpha, particleConfig)
     {
+        const config = particleConfig || this.getBadVersionParticles()
         const angle = Math.random() * Math.PI * 2
         const velocity = this.randomRange(speed * 0.35, speed)
-        const life = this.randomRange(STYLE.particles.lifetimeMs * 0.55, STYLE.particles.lifetimeMs)
+        const lifetime = STYLE.particles.lifetimeMs * config.lifetimeMultiplier
+        const life = this.randomRange(lifetime * 0.55, lifetime)
 
         this.particles.push({
             x,
@@ -442,7 +540,10 @@ class ParticleSystem
             color,
             life,
             maxLife: life,
-            size: this.randomRange(STYLE.particles.minSize, STYLE.particles.maxSize),
+            size: this.randomRange(
+                STYLE.particles.minSize * config.sizeMultiplier,
+                STYLE.particles.maxSize * config.sizeMultiplier
+            ),
             alpha
         })
 
@@ -481,6 +582,26 @@ class ParticleSystem
     {
         return min + Math.random() * (max - min)
     }
+    getBadVersionParticles()
+    {
+        if (typeof version != 'undefined' && version == 'bad')
+            return STYLE.badVersionEffects.particles
+
+        return {
+            playerEmitMultiplier: 1,
+            worldChanceMultiplier: 1,
+            hazardChanceMultiplier: 1,
+            hazardEmitCount: 1,
+            alphaMultiplier: 1,
+            sizeMultiplier: 1,
+            speedMultiplier: 1,
+            lifetimeMultiplier: 1
+        }
+    }
+    clampAlpha(alpha)
+    {
+        return Math.max(0, Math.min(1, alpha))
+    }
 }
 
 class PlayerTrailRenderer
@@ -506,11 +627,12 @@ class PlayerTrailRenderer
             return
 
         const config = STYLE.trails.player
+        const badTrails = this.getBadVersionTrails()
         const positions = track.pos
-        const width = track.lineWidth * config.widthRatio
-        const glowWidth = track.lineWidth * config.glowWidthRatio
+        const width = track.lineWidth * config.widthRatio * badTrails.widthMultiplier
+        const glowWidth = track.lineWidth * config.glowWidthRatio * badTrails.glowWidthMultiplier
         const visibleStart = Math.max(1, Math.floor(positions.length * config.minSegmentRatio))
-        const chunkCount = 4
+        const chunkCount = badTrails.chunkCount
         const visibleCount = positions.length - visibleStart
 
         ctx.save()
@@ -525,20 +647,21 @@ class PlayerTrailRenderer
             const start = Math.max(0, visibleStart + Math.floor(visibleCount * i / chunkCount) - 1)
             const end = visibleStart + Math.floor(visibleCount * (i + 1) / chunkCount) + 1
             const ratio = (i + 1) / chunkCount
-            const alpha = config.minAlpha + (config.maxAlpha - config.minAlpha) * ratio
+            const alpha = this.clampAlpha((config.minAlpha + (config.maxAlpha - config.minAlpha) * ratio)
+                * badTrails.alphaMultiplier)
 
             this.drawSmoothPath(positions, start, Math.min(positions.length, end), width, alpha, glowWidth)
         }
 
         if (positions.length > visibleStart + 1)
         {
-            const tailStart = Math.max(1, positions.length - Math.floor((positions.length - visibleStart) * 0.28))
+            const tailStart = Math.max(1, positions.length - Math.floor((positions.length - visibleStart) * badTrails.tailPortion))
             this.drawSmoothPath(
                 positions,
                 tailStart - 1,
                 positions.length,
                 Math.max(track.lineWidth, width * 0.36),
-                config.coreAlpha,
+                this.clampAlpha(config.coreAlpha * badTrails.alphaMultiplier),
                 0
             )
         }
@@ -567,6 +690,23 @@ class PlayerTrailRenderer
 
         ctx.lineTo(positions[end - 1].x + screen.x, positions[end - 1].y + screen.y)
         ctx.stroke()
+    }
+    getBadVersionTrails()
+    {
+        if (typeof version != 'undefined' && version == 'bad')
+            return STYLE.badVersionEffects.trails
+
+        return {
+            widthMultiplier: 1,
+            glowWidthMultiplier: 1,
+            alphaMultiplier: 1,
+            chunkCount: 4,
+            tailPortion: 0.28
+        }
+    }
+    clampAlpha(alpha)
+    {
+        return Math.max(0, Math.min(1, alpha))
     }
 }
 
