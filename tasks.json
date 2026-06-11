@@ -780,5 +780,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-032",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Restore the red triangle hazard trail behavior that worked before. Red triangle hazards should again leave their intended red visual trail without changing hazard movement, collision, scoring, or restart behavior.\nImplemented: Restored bad-version red triangle hazard trails with fading attached triangle ghosts drawn below world silhouettes.",
+    "acceptance_criteria": [
+      "Moving red triangle hazards show the intended red trail again.",
+      "The hazard trail is visually connected to hazard movement and does not detach from the triangle.",
+      "The hazard trail remains behind gameplay objects where appropriate and does not obscure collision silhouettes.",
+      "Hazard movement, collision, scoring, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-032.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play until moving red triangle hazards are visible.",
+      "Capture a screenshot and save it as screenshots/TASK-032.png.",
+      "Inspect the screenshot and confirm red triangle trails are visible and correctly attached to hazard motion.",
+      "Confirm hazard collision and restart behavior are unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

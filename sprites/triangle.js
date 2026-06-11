@@ -131,12 +131,13 @@ class MultipointTrackLine extends TrackLine
     }
     draw()
     {
-        if (version == 'bad')
-            return
-
         if (trackEnabled && QUALITY.playerTrail)
         {
-            ctx.beginPath()
+            if (version == 'bad')
+            {
+                this.drawBadVersionTrail()
+                return
+            }
 
             //Работает только в частном случае
             let min0, min1, max0, max1, max2
@@ -171,5 +172,56 @@ class MultipointTrackLine extends TrackLine
 
             ctx.closePath()  
         }
+    }
+    drawBadVersionTrail()
+    {
+        if (this.pos.length < 2)
+            return
+
+        const config = STYLE.trails.hazard
+        const step = Math.max(1, config.sampleStep)
+
+        ctx.save()
+        ctx.lineJoin = 'round'
+        ctx.lineCap = 'round'
+        ctx.fillStyle = STYLE.colors.hazard.trail
+        ctx.strokeStyle = STYLE.colors.hazard.trail
+        ctx.shadowColor = STYLE.colors.hazard.trail
+        ctx.shadowBlur = config.glowBlur
+        ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.effectCompositeOperation
+            : 'lighter'
+
+        for (let i = 0; i < this.pos.length - 1; i += step)
+        {
+            const age = i / Math.max(1, this.pos.length - 1)
+            const alpha = config.minAlpha + (config.maxAlpha - config.minAlpha) * age
+
+            this.drawTrailTriangle(this.pos[i], alpha, config.outlineAlpha * age)
+        }
+
+        ctx.restore()
+    }
+    drawTrailTriangle(points, fillAlpha, strokeAlpha)
+    {
+        if (!points || points.length < 3)
+            return
+
+        ctx.beginPath()
+        ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
+
+        for (let i = 0; i < points.length; ++i)
+        {
+            ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+        }
+
+        ctx.globalAlpha = fillAlpha
+        ctx.fill()
+
+        ctx.globalAlpha = strokeAlpha
+        ctx.lineWidth = STYLE.badVersionEffects.obstacles.thinStrokeWidth
+        ctx.stroke()
+
+        ctx.closePath()
     }
 }

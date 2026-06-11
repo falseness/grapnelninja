@@ -156,6 +156,13 @@ const STYLE = Object.freeze({
             maxAlpha: 0.48,
             coreAlpha: 0.72,
             minSegmentRatio: 0
+        }),
+        hazard: Object.freeze({
+            minAlpha: 0.04,
+            maxAlpha: 0.22,
+            outlineAlpha: 0.36,
+            glowBlur: 8,
+            sampleStep: 3
         })
     }),
     badVersionEffects: Object.freeze({
