@@ -12,7 +12,14 @@ const STYLE = Object.freeze({
             vignetteEdge: 'rgba(0, 0, 0, 0.58)',
             hexagonStroke: 'rgba(48, 213, 200, 0.10)',
             hexagonAccentStroke: 'rgba(255, 61, 113, 0.06)',
-            streak: 'rgba(48, 213, 200, 0.08)'
+            streak: 'rgba(48, 213, 200, 0.08)',
+            depthHexagonStroke: 'rgba(48, 213, 200, 0.16)',
+            depthHexagonAccentStroke: 'rgba(255, 61, 113, 0.09)',
+            depthStreak: 'rgba(143, 252, 255, 0.13)',
+            polygonAccentFill: 'rgba(31, 122, 255, 0.045)',
+            polygonAccentStroke: 'rgba(48, 213, 200, 0.18)',
+            polygonDangerFill: 'rgba(255, 61, 113, 0.035)',
+            polygonDangerStroke: 'rgba(255, 61, 113, 0.12)'
         }),
         player: Object.freeze({
             fill: '#06151d',
@@ -220,7 +227,28 @@ const STYLE = Object.freeze({
         streakCount: 12,
         streakSpacingRatio: 0.14,
         streakLengthRatio: 0.28,
-        streakLineWidth: 1.5
+        streakLineWidth: 1.5,
+        badVersion: Object.freeze({
+            hexagonCount: 8,
+            hexagonRadiusRatio: 0.11,
+            hexagonRadiusStepRatio: 0.085,
+            hexagonLineWidth: 2.35,
+            secondaryHexagonCount: 4,
+            secondaryHexagonRadiusRatio: 0.09,
+            secondaryHexagonRadiusStepRatio: 0.12,
+            streakCount: 18,
+            streakSpacingRatio: 0.105,
+            streakLengthRatio: 0.42,
+            streakLineWidth: 1.8,
+            parallaxShiftRatio: 0.04,
+            accentLineWidth: 1.2,
+            accents: Object.freeze([
+                Object.freeze({x: 0.16, y: 0.22, radius: 72, sides: 3, rotation: 0.2, danger: false}),
+                Object.freeze({x: 0.82, y: 0.30, radius: 92, sides: 4, rotation: 0.72, danger: true}),
+                Object.freeze({x: 0.28, y: 0.78, radius: 118, sides: 5, rotation: 0.05, danger: false}),
+                Object.freeze({x: 0.72, y: 0.68, radius: 76, sides: 3, rotation: 1.1, danger: false})
+            ])
+        })
     }),
     features: Object.freeze({
         background: true,

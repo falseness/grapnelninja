@@ -53,12 +53,23 @@ class BackgroundRenderer
 
         this.drawHexagons(width, height, geometry, time)
         this.drawStreaks(width, height, geometry, time)
+
+        if (this.isBadVersion())
+            this.drawBadVersionDepth(width, height, geometry.badVersion, time)
     }
     drawHexagons(width, height, geometry, time)
     {
         const minSize = Math.min(width, height)
         const centerX = width / 2
         const centerY = height / 2
+        const primaryStroke = STYLE.colors.background.hexagonStroke
+        const accentStroke = STYLE.colors.background.hexagonAccentStroke
+
+        this.drawHexagonSet(width, height, geometry, time, centerX, centerY, primaryStroke, accentStroke)
+    }
+    drawHexagonSet(width, height, geometry, time, centerX, centerY, primaryStroke, accentStroke)
+    {
+        const minSize = Math.min(width, height)
         const baseRadius = minSize * geometry.hexagonRadiusRatio
         const radiusStep = minSize * geometry.hexagonRadiusStepRatio
         const rotation = (time % STYLE.timing.backgroundRotationMs) / STYLE.timing.backgroundRotationMs * Math.PI * 2
@@ -72,9 +83,7 @@ class BackgroundRenderer
             const direction = i % 2 == 0 ? 1 : -1
             const angle = rotation * direction + i * Math.PI / 12
 
-            this.ctx.strokeStyle = i % 2 == 0
-                ? STYLE.colors.background.hexagonStroke
-                : STYLE.colors.background.hexagonAccentStroke
+            this.ctx.strokeStyle = i % 2 == 0 ? primaryStroke : accentStroke
             this.drawHexagon(centerX, centerY, radius, angle)
         }
 
@@ -101,19 +110,23 @@ class BackgroundRenderer
     }
     drawStreaks(width, height, geometry, time)
     {
+        this.drawStreakSet(width, height, geometry, time, STYLE.colors.background.streak, 0)
+    }
+    drawStreakSet(width, height, geometry, time, strokeStyle, yOffset)
+    {
         const diagonal = Math.sqrt(width * width + height * height)
         const spacing = Math.max(width, height) * geometry.streakSpacingRatio
         const length = diagonal * geometry.streakLengthRatio
         const offset = (time % STYLE.timing.backgroundStreakMs) / STYLE.timing.backgroundStreakMs * spacing
 
         this.ctx.save()
-        this.ctx.strokeStyle = STYLE.colors.background.streak
+        this.ctx.strokeStyle = strokeStyle
         this.ctx.lineWidth = geometry.streakLineWidth
 
         for (let i = -2; i < geometry.streakCount; ++i)
         {
             const x = i * spacing + offset - spacing * 2
-            const y = height + spacing
+            const y = height + spacing + yOffset
 
             this.ctx.beginPath()
             this.ctx.moveTo(x, y)
@@ -122,6 +135,105 @@ class BackgroundRenderer
         }
 
         this.ctx.restore()
+    }
+    drawBadVersionDepth(width, height, geometry, time)
+    {
+        if (!geometry)
+            return
+
+        const background = STYLE.colors.background
+        const shift = this.getParallaxShift(width, height, geometry)
+
+        this.ctx.save()
+        this.ctx.globalCompositeOperation = 'lighter'
+        this.drawHexagonSet(
+            width,
+            height,
+            geometry,
+            time,
+            width * 0.56 + shift.x,
+            height * 0.52 + shift.y,
+            background.depthHexagonStroke,
+            background.depthHexagonAccentStroke
+        )
+
+        const secondaryGeometry = {
+            hexagonCount: geometry.secondaryHexagonCount,
+            hexagonRadiusRatio: geometry.secondaryHexagonRadiusRatio,
+            hexagonRadiusStepRatio: geometry.secondaryHexagonRadiusStepRatio,
+            hexagonLineWidth: Math.max(1, geometry.hexagonLineWidth * 0.65)
+        }
+
+        this.drawHexagonSet(
+            width,
+            height,
+            secondaryGeometry,
+            time * 0.72,
+            width * 0.25 - shift.x * 0.6,
+            height * 0.36 - shift.y * 0.4,
+            background.depthHexagonAccentStroke,
+            background.depthHexagonStroke
+        )
+        this.drawStreakSet(width, height, geometry, time, background.depthStreak, -height * 0.08)
+        this.drawPolygonAccents(width, height, geometry, time)
+        this.ctx.restore()
+    }
+    getParallaxShift(width, height, geometry)
+    {
+        if (!QUALITY.backgroundMotion)
+            return {x: 0, y: 0}
+
+        const ratio = geometry.parallaxShiftRatio
+        const x = Math.sin(performance.now() / 3100) * width * ratio
+        const y = Math.cos(performance.now() / 3700) * height * ratio
+
+        return {x, y}
+    }
+    drawPolygonAccents(width, height, geometry, time)
+    {
+        const accents = geometry.accents || []
+
+        for (let i = 0; i < accents.length; ++i)
+        {
+            const accent = accents[i]
+            const radius = accent.radius * Math.min(width, height) / 720
+            const rotation = accent.rotation + time / STYLE.timing.backgroundRotationMs * Math.PI * (i % 2 == 0 ? 1 : -1)
+            const x = accent.x * width
+            const y = accent.y * height
+
+            this.drawPolygonAccent(x, y, radius, accent.sides, rotation, accent.danger, geometry.accentLineWidth)
+        }
+    }
+    drawPolygonAccent(centerX, centerY, radius, sides, rotation, danger, lineWidth)
+    {
+        const colors = STYLE.colors.background
+
+        this.ctx.save()
+        this.ctx.beginPath()
+
+        for (let i = 0; i < sides; ++i)
+        {
+            const angle = rotation + i * Math.PI * 2 / sides
+            const x = centerX + Math.cos(angle) * radius
+            const y = centerY + Math.sin(angle) * radius
+
+            if (i == 0)
+                this.ctx.moveTo(x, y)
+            else
+                this.ctx.lineTo(x, y)
+        }
+
+        this.ctx.closePath()
+        this.ctx.fillStyle = danger ? colors.polygonDangerFill : colors.polygonAccentFill
+        this.ctx.strokeStyle = danger ? colors.polygonDangerStroke : colors.polygonAccentStroke
+        this.ctx.lineWidth = lineWidth
+        this.ctx.fill()
+        this.ctx.stroke()
+        this.ctx.restore()
+    }
+    isBadVersion()
+    {
+        return typeof version != 'undefined' && version == 'bad'
     }
 }
 

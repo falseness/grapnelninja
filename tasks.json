@@ -520,11 +520,11 @@
   {
     "id": "TASK-021",
     "title": "Improve bad-version composition and background depth",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-017"
     ],
-    "description": "Tune the bad-version camera framing and background rendering so screenshots show a cleaner concept-art-like composition: visible play space, layered faint geometry, diagonal streaks, subtle polygon accents, and less UI/world crowding.",
+    "description": "Tune the bad-version camera framing and background rendering so screenshots show a cleaner concept-art-like composition: visible play space, layered faint geometry, diagonal streaks, subtle polygon accents, and less UI/world crowding.\nImplemented: Added bad-version-only layered background hexagons, stronger diagonal streaks, subtle polygon accents, and parallax depth while preserving gameplay state and framing.",
     "acceptance_criteria": [
       "Bad-version screenshots show the player, hazards, platforms, ground line, background geometry, particles/trails, lighting, and UI together without excessive crowding.",
       "Background hexagons and diagonal streaks are more visible and layered while staying subtle behind gameplay.",
