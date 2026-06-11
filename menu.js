@@ -282,7 +282,7 @@ class Menu
 
         let checkMark = 
         {
-            x: 0.645 * width,
+            x: 0.825 * width,
             y: 0.67 * height,
             p1:
             {
@@ -308,7 +308,7 @@ class Menu
         })
         this.visualEffectsCheckbox = new Button(
         {
-            x       : Math.max(this.center.x + 0.17 * this.width, 0.05 * this.width + this.visualEffectsText.getWidth()),
+            x       : 0.825 * this.width,
             y       : 0.7 * this.height,
             width   : 0.1 * this.height ,
             height  : 0.1 * this.height,
@@ -320,17 +320,7 @@ class Menu
         function()
         {
             trackEnabled = !trackEnabled
-            ctx.clearRect(Math.min(menu.visualEffectsCheckbox.background.x, checkMark.x - checkMark.lineWidth * 2),
-                          Math.min(menu.visualEffectsCheckbox.background.y, checkMark.y - checkMark.lineWidth,
-                                  checkMark.y - checkMark.lineWidth + checkMark.p1.y, 
-                                   checkMark.y - checkMark.lineWidth + checkMark.p2.y), 
-                          Math.max(menu.visualEffectsCheckbox.background.width,
-                                  checkMark.p1.x + checkMark.lineWidth, checkMark.p2.x + checkMark.lineWidth + checkMark.x - Math.min(menu.visualEffectsCheckbox.background.x, checkMark.x - checkMark.lineWidth * 2)),
-                          Math.max(menu.visualEffectsCheckbox.background.height,
-                                  checkMark.p1.y + checkMark.lineWidth, checkMark.p2.y + checkMark.lineWidth))
-            
-            menu.visualEffectsCheckbox.draw()
-                
+            menu.draw()
         }, 
         {
             draw: function()
@@ -568,7 +558,10 @@ class Menu
     }
     draw()
     {
-        ctx.clearRect(0, 0, this.width, this.height)
+        if (typeof visualEffects != 'undefined' && visualEffects && visualEffects.background)
+            visualEffects.background.drawMenuBackground()
+        else
+            ctx.clearRect(0, 0, this.width, this.height)
         
         this.mainText.draw()
         

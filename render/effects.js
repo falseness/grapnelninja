@@ -12,19 +12,40 @@ class BackgroundRenderer
         if (!STYLE.features.background)
             return
 
-        const background = STYLE.colors.background
         const width = this.canvas.width
         const height = this.canvas.height
 
+        this.drawBaseGradient(width, height)
+        this.drawGeometry(width, height)
+        this.drawVignette(width, height)
+    }
+    drawMenuBackground()
+    {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+
+        if (!STYLE.features.background)
+            return
+
+        const width = this.canvas.width
+        const height = this.canvas.height
+
+        this.drawBaseGradient(width, height)
+        this.drawBadVersionDepth(width, height, STYLE.backgroundGeometry.badVersion, 0, {forceStatic: true})
+        this.drawVignette(width, height)
+    }
+    drawBaseGradient(width, height)
+    {
+        const background = STYLE.colors.background
         const gradient = this.ctx.createLinearGradient(0, 0, 0, height)
         gradient.addColorStop(0, background.gradientTop)
         gradient.addColorStop(0.54, background.gradientMiddle)
         gradient.addColorStop(1, background.gradientBottom)
         this.ctx.fillStyle = gradient
         this.ctx.fillRect(0, 0, width, height)
-
-        this.drawGeometry(width, height)
-
+    }
+    drawVignette(width, height)
+    {
+        const background = STYLE.colors.background
         const radius = Math.sqrt(width * width + height * height) * 0.58
         const vignette = this.ctx.createRadialGradient(
             width / 2,
@@ -141,13 +162,14 @@ class BackgroundRenderer
 
         this.ctx.restore()
     }
-    drawBadVersionDepth(width, height, geometry, time)
+    drawBadVersionDepth(width, height, geometry, time, options)
     {
         if (!geometry)
             return
 
+        options = options || {}
         const background = STYLE.colors.background
-        const freezeMotion = this.shouldFreezeBadVersionBackgroundMotion()
+        const freezeMotion = options.forceStatic || this.shouldFreezeBadVersionBackgroundMotion()
         const geometryTime = freezeMotion ? 0 : time * geometry.motionTimeScale
         const streakTime = freezeMotion ? 0 : time * geometry.streakTimeScale
         const shift = freezeMotion

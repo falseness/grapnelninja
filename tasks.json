@@ -1664,5 +1664,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-065",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Replace the main-menu very dark background with colors from the bad-version gameplay background. The menu should feel visually connected to the in-game bad-version background instead of using a nearly black empty backdrop.\nImplemented: Reused the bad-version gameplay background palette for the main menu backdrop and kept menu controls readable/clickable.",
+    "acceptance_criteria": [
+      "The main menu background uses the bad-version gameplay background color palette instead of a very dark flat background.",
+      "Classic version and bad version buttons, records, options, and menu text remain readable.",
+      "The menu background does not obscure button hit areas or reduce clickability.",
+      "Gameplay backgrounds are not unintentionally changed by this ticket.",
+      "A screenshot is saved at screenshots/TASK-065.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the main menu.",
+      "Capture a screenshot and save it as screenshots/TASK-065.png.",
+      "Inspect the screenshot and confirm the menu background uses colors from the bad-version gameplay background.",
+      "Confirm menu buttons, record text, and options remain readable.",
+      "Click both version buttons or their hit areas enough to confirm menu click behavior still works.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
