@@ -1823,7 +1823,7 @@
     "id": "TASK-071",
     "category": "functional",
     "priority": "normal",
-    "description": "Make background flash color depend on the local background color, matching screenshots/concept_art.png. Flashes on the right side should read red/magenta, while flashes on the left side should read blue/cyan.",
+    "description": "Make background flash color depend on the local background color, matching screenshots/concept_art.png. Flashes on the right side should read red/magenta, while flashes on the left side should read blue/cyan.\nImplemented: Derived background flash palette from each flash's horizontal position relative to the blue/red wash split, with left flashes blue/cyan and right flashes red/magenta.",
     "acceptance_criteria": [
       "Background flashes on the left side of the screen use blue or cyan tones.",
       "Background flashes on the right side of the screen use red or magenta tones.",
@@ -1843,7 +1843,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-072",

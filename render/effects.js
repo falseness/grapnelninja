@@ -300,8 +300,9 @@ class BackgroundRenderer
             const startX = flash.x * width + animationOffset + shift.x
             const startY = flash.y * height + shift.y
             const alpha = typeof flash.alpha == 'number' ? flash.alpha : 1
-            const stroke = flash.color == 'blue' ? colors.flashBlue : colors.flashMagenta
-            const glow = flash.color == 'blue' ? colors.flashBlueGlow : colors.flashMagentaGlow
+            const palette = this.getFlashPalette(flash, geometry)
+            const stroke = palette == 'blue' ? colors.flashBlue : colors.flashMagenta
+            const glow = palette == 'blue' ? colors.flashBlueGlow : colors.flashMagentaGlow
             const segments = this.getFlashSegments(flash, startX, startY, angle, length)
 
             this.ctx.globalAlpha = stableMultiplier * alpha
@@ -316,6 +317,14 @@ class BackgroundRenderer
         }
 
         this.ctx.restore()
+    }
+    getFlashPalette(flash, geometry)
+    {
+        const split = typeof geometry.flashColorSplitRatio == 'number'
+            ? geometry.flashColorSplitRatio
+            : ((geometry.washLeftXRatio || 0) + (geometry.washRightXRatio || 1)) / 2
+
+        return flash.x < split ? 'blue' : 'magenta'
     }
     getFlashSegments(flash, startX, startY, angle, length)
     {

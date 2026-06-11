@@ -316,36 +316,37 @@ const STYLE = Object.freeze({
             flashGlowWidth: 9,
             flashLineWidth: 2.4,
             flashLengthRatio: 0.28,
+            flashColorSplitRatio: 0.5,
             washRadiusRatio: 0.82,
             washLeftXRatio: 0.05,
             washRightXRatio: 0.88,
             washYRatio: 0.54,
             triangleSilhouetteLineWidth: 1.15,
             flashes: Object.freeze([
-                Object.freeze({x: 0.08, y: 0.20, length: 0.16, angle: -35, width: 1.6, glowWidth: 6, alpha: 0.72, color: 'blue'}),
-                Object.freeze({x: 0.24, y: 0.38, length: 0.28, angle: -48, width: 3.2, glowWidth: 12, alpha: 1, color: 'magenta', form: 'broken',
+                Object.freeze({x: 0.08, y: 0.20, length: 0.16, angle: -35, width: 1.6, glowWidth: 6, alpha: 0.72}),
+                Object.freeze({x: 0.24, y: 0.38, length: 0.28, angle: -48, width: 3.2, glowWidth: 12, alpha: 1, form: 'broken',
                     segments: Object.freeze([
                         Object.freeze({start: 0, end: 0.34}),
                         Object.freeze({start: 0.48, end: 0.67}),
                         Object.freeze({start: 0.80, end: 1})
                     ])
                 }),
-                Object.freeze({x: 0.63, y: 0.18, length: 0.21, angle: -28, width: 2.1, glowWidth: 8, alpha: 0.82, color: 'magenta', form: 'fragments',
+                Object.freeze({x: 0.63, y: 0.18, length: 0.21, angle: -28, width: 2.1, glowWidth: 8, alpha: 0.82, form: 'fragments',
                     fragments: Object.freeze([
                         Object.freeze({x: 0, y: 0, length: 0.24, angleOffset: 0}),
                         Object.freeze({x: 0.07, y: 0.03, length: 0.14, angleOffset: 0.32}),
                         Object.freeze({x: -0.04, y: 0.08, length: 0.10, angleOffset: -0.42})
                     ])
                 }),
-                Object.freeze({x: 0.79, y: 0.62, length: 0.34, angle: -57, width: 2.7, glowWidth: 13, alpha: 0.94, color: 'magenta'}),
-                Object.freeze({x: 0.45, y: 0.79, length: 0.13, angle: -40, width: 1.4, glowWidth: 5, alpha: 0.62, color: 'blue', form: 'fragments',
+                Object.freeze({x: 0.79, y: 0.62, length: 0.34, angle: -57, width: 2.7, glowWidth: 13, alpha: 0.94}),
+                Object.freeze({x: 0.45, y: 0.79, length: 0.13, angle: -40, width: 1.4, glowWidth: 5, alpha: 0.62, form: 'fragments',
                     fragments: Object.freeze([
                         Object.freeze({x: 0, y: 0, length: 0.20, angleOffset: 0}),
                         Object.freeze({x: 0.10, y: -0.04, length: 0.13, angleOffset: -0.24}),
                         Object.freeze({x: -0.06, y: 0.05, length: 0.09, angleOffset: 0.5})
                     ])
                 }),
-                Object.freeze({x: 0.92, y: 0.34, length: 0.12, angle: -68, width: 1.8, glowWidth: 7, alpha: 0.56, color: 'blue', form: 'broken',
+                Object.freeze({x: 0.92, y: 0.34, length: 0.12, angle: -68, width: 1.8, glowWidth: 7, alpha: 0.56, form: 'broken',
                     segments: Object.freeze([
                         Object.freeze({start: 0, end: 0.42}),
                         Object.freeze({start: 0.62, end: 1})
@@ -421,28 +422,29 @@ const STYLE = Object.freeze({
             stableFlashAlpha: 0.62,
             flashGlowWidth: 12,
             flashLineWidth: 2.7,
+            flashColorSplitRatio: 0.5,
             washLeftXRatio: 0.12,
             washRightXRatio: 0.88,
             washYRatio: 0.5,
             triangleSilhouetteLineWidth: 1.35,
             flashes: Object.freeze([
-                Object.freeze({x: 0.07, y: 0.18, length: 0.24, angle: -38, width: 2.2, glowWidth: 9, alpha: 0.86, color: 'blue'}),
-                Object.freeze({x: 0.20, y: 0.80, length: 0.22, angle: -56, width: 2.6, glowWidth: 11, alpha: 0.74, color: 'magenta', form: 'broken',
+                Object.freeze({x: 0.07, y: 0.18, length: 0.24, angle: -38, width: 2.2, glowWidth: 9, alpha: 0.86}),
+                Object.freeze({x: 0.20, y: 0.80, length: 0.22, angle: -56, width: 2.6, glowWidth: 11, alpha: 0.74, form: 'broken',
                     segments: Object.freeze([
                         Object.freeze({start: 0, end: 0.28}),
                         Object.freeze({start: 0.44, end: 0.72}),
                         Object.freeze({start: 0.86, end: 1})
                     ])
                 }),
-                Object.freeze({x: 0.72, y: 0.21, length: 0.27, angle: -31, width: 2.4, glowWidth: 10, alpha: 0.9, color: 'magenta', form: 'fragments',
+                Object.freeze({x: 0.72, y: 0.21, length: 0.27, angle: -31, width: 2.4, glowWidth: 10, alpha: 0.9, form: 'fragments',
                     fragments: Object.freeze([
                         Object.freeze({x: 0, y: 0, length: 0.25, angleOffset: 0}),
                         Object.freeze({x: 0.08, y: 0.04, length: 0.16, angleOffset: 0.26}),
                         Object.freeze({x: -0.05, y: 0.08, length: 0.11, angleOffset: -0.34})
                     ])
                 }),
-                Object.freeze({x: 0.88, y: 0.68, length: 0.20, angle: -63, width: 2, glowWidth: 8, alpha: 0.72, color: 'blue'}),
-                Object.freeze({x: 0.44, y: 0.88, length: 0.16, angle: -43, width: 1.7, glowWidth: 7, alpha: 0.58, color: 'magenta', form: 'fragments',
+                Object.freeze({x: 0.88, y: 0.68, length: 0.20, angle: -63, width: 2, glowWidth: 8, alpha: 0.72}),
+                Object.freeze({x: 0.44, y: 0.88, length: 0.16, angle: -43, width: 1.7, glowWidth: 7, alpha: 0.58, form: 'fragments',
                     fragments: Object.freeze([
                         Object.freeze({x: 0, y: 0, length: 0.22, angleOffset: 0}),
                         Object.freeze({x: 0.10, y: -0.04, length: 0.12, angleOffset: -0.2}),
