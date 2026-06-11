@@ -2009,7 +2009,7 @@
     "id": "TASK-078",
     "category": "functional",
     "priority": "normal",
-    "description": "Remove the visual effects button or checkbox from both the main menu and pause menu. Visual effects should always be enabled, with no visible menu control or clickable hidden hit area for turning them off.",
+    "description": "Remove the visual effects button or checkbox from both the main menu and pause menu. Visual effects should always be enabled, with no visible menu control or clickable hidden hit area for turning them off.\nImplemented: Removed visual-effects menu controls and hidden click targets while forcing gameplay visual trails/effects enabled at game start.",
     "acceptance_criteria": [
       "The main menu does not show a visual effects button, checkbox, or label.",
       "The pause menu does not show a visual effects button, checkbox, or label.",
@@ -2031,7 +2031,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-079",

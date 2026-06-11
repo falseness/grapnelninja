@@ -280,74 +280,6 @@ class Menu
             text    : 'time spent in game: ' + getTimeInGame() + ' minutes'
         })
 
-        let checkMark = 
-        {
-            x: 0.825 * width,
-            y: 0.67 * height,
-            p1:
-            {
-                x: 0.025 * width,
-                y: 0.05 * height
-            },
-            p2:
-            {
-                x: 0.058 * width,
-                y: -0.05 * height
-            },
-            lineWidth: STYLE.strokes.checkMarkWidthRatio * height,
-            fill: STYLE.colors.ui.text
-        }
-        this.visualEffectsText = new Text(
-        {
-            x       : this.center.x - 0.2 * this.width  ,
-            y       : 0.7 * this.height,
-            fontSize: 0.1 * this.height , 
-            fill    : STYLE.colors.ui.text,
-            text    : 'visual effects'  ,
-            alignX  : 'start'
-        })
-        this.visualEffectsCheckbox = new Button(
-        {
-            x       : 0.825 * this.width,
-            y       : 0.7 * this.height,
-            width   : 0.1 * this.height ,
-            height  : 0.1 * this.height,
-            stroke  : STYLE.colors.ui.primary
-        },
-        {
-            text: ''
-        },
-        function()
-        {
-            trackEnabled = !trackEnabled
-            menu.draw()
-        }, 
-        {
-            draw: function()
-            {
-                if (trackEnabled)
-                {
-                    ctx.beginPath()
-                    
-                    let x = checkMark.x//0.645 * width
-                    let y = checkMark.y
-
-                    ctx.moveTo(x, y)
-                    ctx.lineTo(x + checkMark.p1.x, y + checkMark.p1.y)
-                    ctx.lineTo(x + checkMark.p2.x, y + checkMark.p2.y)
-
-
-                    ctx.lineWidth = checkMark.lineWidth
-                    ctx.strokeStyle = checkMark.fill
-                    ctx.shadowColor = checkMark.fill
-                    ctx.shadowBlur = STYLE.ui.textShadowBlur
-                    ctx.stroke()
-                    ctx.shadowBlur = 0
-                    ctx.lineWidth = STYLE.strokes.defaultWidth
-                    ctx.closePath()
-                }
-            }
-        })
         this.fpsCounterText = new Text(
         {
             x       : this.center.x - 0.2 * this.width,
@@ -474,7 +406,6 @@ class Menu
         return  this.classicVersionButton.isClickOnButton(coord)    ||
                 this.badVersionButton.isClickOnButton(coord)        ||
                 this.resume.isClickOnButton(coord)                  ||
-                this.visualEffectsCheckbox.isClickOnButton(coord)   ||
                 this.fpsCounterButton.isClickOnButton(coord)        ||
                 this.backToMenu.isClickOnButton(coord)
     }
@@ -488,13 +419,11 @@ class Menu
         
         this.classicVersionButton.clickable     = visible
         this.badVersionButton.clickable         = visible
-        this.visualEffectsCheckbox.clickable    = visible
     }
     changeGamePause(isPaused)
     {
         this.gamePaused = isPaused
         
-        this.visualEffectsCheckbox.clickable    = isPaused
         this.fpsCounterButton.clickable         = isPaused
         this.resume.clickable                   = isPaused
         this.backToMenu.clickable               = isPaused
@@ -529,8 +458,6 @@ class Menu
         
         this.mainText.draw()
         
-        this.visualEffectsText.draw()
-        this.visualEffectsCheckbox.draw()
         this.fpsCounterText.draw()
         this.updateFpsCounterButtonText()
         this.fpsCounterButton.draw()
@@ -573,7 +500,5 @@ class Menu
 
         this.timeInGame.draw()
         
-        this.visualEffectsText.draw()
-        this.visualEffectsCheckbox.draw()
     }
 }
