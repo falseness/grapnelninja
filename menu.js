@@ -28,7 +28,7 @@ class Text
         this.y = object.y
         
         this.fill       = object.fill
-        this.fontSize   = object.fontSize + 'px ' + 'Calibri'
+        this.fontSize   = object.fontSize + 'px ' + STYLE.ui.fontFamily
         this.text       = object.text
         this.align      =
         {
@@ -38,18 +38,22 @@ class Text
     }
     getWidth()
     {
-        ctx.font = this.fontSize + 'px ' + 'Calibri'
+        ctx.font = this.fontSize
         return ctx.measureText(this.text).width
     }
     draw()
     {
+        ctx.save()
         ctx.fillStyle   = this.fill
         ctx.textBaseline= this.align.y
         ctx.textAlign   = this.align.x
-        ctx.font        = this.fontSize + 'px ' + 'Calibri'
+        ctx.font        = this.fontSize
+        ctx.shadowColor = this.fill
+        ctx.shadowBlur  = STYLE.ui.textShadowBlur
         
         
         ctx.fillText(this.text, this.x, this.y)
+        ctx.restore()
     }
 }
 class Button
@@ -81,11 +85,27 @@ class Button
     }
     draw()
     {
+        const inset = Math.min(this.background.width, this.background.height) * STYLE.ui.buttonInsetRatio
+
+        ctx.save()
         ctx.fillStyle   = this.background.fill
         ctx.strokeStyle = this.background.stroke
+        ctx.lineWidth   = STYLE.ui.buttonLineWidth
+        ctx.shadowColor = this.background.stroke
+        ctx.shadowBlur  = STYLE.ui.buttonShadowBlur
         
-        ctx.strokeRect(this.background.x, this.background.y, this.background.width, this.background.height) 
         ctx.fillRect(this.background.x, this.background.y, this.background.width, this.background.height)
+        ctx.strokeRect(this.background.x, this.background.y, this.background.width, this.background.height)
+
+        ctx.shadowBlur = 0
+        ctx.globalAlpha = 0.58
+        ctx.strokeRect(
+            this.background.x + inset,
+            this.background.y + inset,
+            this.background.width - inset * 2,
+            this.background.height - inset * 2
+        )
+        ctx.restore()
         
         this.text.draw()
         
@@ -137,10 +157,11 @@ class Menu
             x: this.center.x        ,
             y: 0.35 * this.height   ,
             width: 0.4 * this.width ,
-            height: 0.1 * this.height
+            height: 0.1 * this.height,
+            stroke: STYLE.colors.ui.primary
         },
         {
-            fill: STYLE.colors.ui.primary,
+            fill: STYLE.colors.ui.buttonText,
             text: 'classic version'
         },
         function(){startGame('classic')})
@@ -157,10 +178,11 @@ class Menu
             x: this.center.x        ,
             y: 0.52 * this.height   ,
             width: 0.4 * this.width ,
-            height: 0.1 * this.height
+            height: 0.1 * this.height,
+            stroke: STYLE.colors.ui.buttonDangerStroke
         },
         {
-            fill: STYLE.colors.ui.danger,
+            fill: STYLE.colors.ui.buttonText,
             text: 'bad version'
         },
         function(){startGame('bad')})
@@ -213,7 +235,8 @@ class Menu
             x       : Math.max(this.center.x + 0.17 * this.width, 0.05 * this.width + this.visualEffectsText.getWidth()),
             y       : 0.7 * this.height,
             width   : 0.1 * this.height ,
-            height  : 0.1 * this.height
+            height  : 0.1 * this.height,
+            stroke  : STYLE.colors.ui.primary
         },
         {
             text: ''
@@ -250,7 +273,10 @@ class Menu
 
                     ctx.lineWidth = checkMark.lineWidth
                     ctx.strokeStyle = checkMark.fill
+                    ctx.shadowColor = checkMark.fill
+                    ctx.shadowBlur = STYLE.ui.textShadowBlur
                     ctx.stroke()
+                    ctx.shadowBlur = 0
                     ctx.lineWidth = STYLE.strokes.defaultWidth
                     ctx.closePath()
                 }
@@ -286,7 +312,10 @@ class Menu
                     ctx.lineTo(x2, y1 + dy * 2)
 
                     ctx.strokeStyle = STYLE.colors.ui.text
+                    ctx.shadowColor = STYLE.colors.ui.text
+                    ctx.shadowBlur = STYLE.ui.buttonShadowBlur
                     ctx.stroke()
+                    ctx.shadowBlur = 0
 
                     ctx.lineWidth = STYLE.strokes.defaultWidth
 
@@ -308,11 +337,12 @@ class Menu
             y: 0.35 * this.height   ,
             width: 0.4 * this.width ,
             clickable:false         ,
-            height: 0.1 * this.height
+            height: 0.1 * this.height,
+            stroke: STYLE.colors.ui.primary
         },
         {
             text: 'resume',
-            fill: STYLE.colors.ui.primary
+            fill: STYLE.colors.ui.buttonText
         }, function()
         {
             menu.changeGamePause(false)
@@ -323,12 +353,12 @@ class Menu
             y: 0.52 * this.height   ,
             width: 0.4 * this.width ,
             clickable: false        ,
-            height: 0.1 * this.height
+            height: 0.1 * this.height,
+            stroke: STYLE.colors.ui.buttonDangerStroke
         },
         {
-            fill: STYLE.colors.ui.text,
             text: 'back to menu'    ,
-            fill: STYLE.colors.ui.danger
+            fill: STYLE.colors.ui.buttonText
         },
         function()
         {
@@ -382,10 +412,15 @@ class Menu
         ctx.fillStyle = STYLE.colors.ui.pauseOverlay
         ctx.fillRect(0, 0, this.width, this.height)
         
+        ctx.save()
         ctx.fillStyle   = STYLE.colors.ui.pausePanelFill
-        ctx.strokeStyle = STYLE.colors.ui.buttonStroke
+        ctx.strokeStyle = STYLE.colors.ui.pausePanelStroke
+        ctx.lineWidth = STYLE.ui.pausePanelLineWidth
+        ctx.shadowColor = STYLE.colors.ui.pausePanelStroke
+        ctx.shadowBlur = STYLE.ui.buttonShadowBlur
         ctx.fillRect(this.width * 0.28, this.height * 0.1, this.width * 0.44, this.height * 0.7)
         ctx.strokeRect(this.width * 0.28, this.height * 0.1, this.width * 0.44, this.height * 0.7)
+        ctx.restore()
         
         this.mainText.draw()
         

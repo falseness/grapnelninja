@@ -44,17 +44,22 @@ const STYLE = Object.freeze({
             line: '#8ffcff'
         }),
         ui: Object.freeze({
-            title: '#0000ff',
-            text: '#0000ff',
-            score: '#0000ff',
-            primary: '#008000',
-            danger: '#ff0000',
-            buttonFill: '#ffffff',
-            buttonStroke: '#000000',
+            title: '#8ffcff',
+            text: '#d8fbff',
+            score: '#30d5c8',
+            record: '#8ffcff',
+            primary: '#30d5c8',
+            danger: '#ff3d71',
+            buttonFill: 'rgba(5, 9, 20, 0.74)',
+            buttonStroke: '#30d5c8',
+            buttonDangerStroke: '#ff3d71',
+            buttonText: '#d8fbff',
+            buttonShadow: 'rgba(48, 213, 200, 0.45)',
             transparent: 'rgba(0, 0, 0, 0)',
-            mutedText: 'rgba(0, 0, 0, 0.5)',
-            pauseOverlay: 'rgba(245, 245, 245, 0.52)',
-            pausePanelFill: '#ffffff',
+            mutedText: 'rgba(143, 252, 255, 0.72)',
+            pauseOverlay: 'rgba(3, 5, 16, 0.68)',
+            pausePanelFill: 'rgba(5, 9, 20, 0.86)',
+            pausePanelStroke: 'rgba(48, 213, 200, 0.82)',
             debug: '#008000',
             debugAccent: '#ff0000'
         })
@@ -72,6 +77,14 @@ const STYLE = Object.freeze({
         grapnelWidthRatio: 0.006,
         menuIconWidthRatio: 0.05,
         checkMarkWidthRatio: 0.03
+    }),
+    ui: Object.freeze({
+        fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+        textShadowBlur: 8,
+        buttonShadowBlur: 10,
+        buttonInsetRatio: 0.08,
+        buttonLineWidth: 2,
+        pausePanelLineWidth: 2
     }),
     lights: Object.freeze({
         resolutionScale: 0.25,

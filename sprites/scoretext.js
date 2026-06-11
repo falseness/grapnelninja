@@ -16,15 +16,23 @@ let scoreText =
     rx: 0.8 * width                     ,
     y: Math.floor(0.1 * height / 2)  ,
     fontSize: 0.05 * height ,
-    fontFamily: 'Calibri'               ,
+    fontFamily: STYLE.ui.fontFamily     ,
     fill: STYLE.colors.ui.score         ,
+    recordFill: STYLE.colors.ui.record  ,
     draw: function()
     {
-        ctx.fillStyle = this.fill
+        ctx.save()
         ctx.textBaseline = 'middle'
+        ctx.textAlign = 'start'
         ctx.font = this.fontSize + 'px ' + this.fontFamily
+        ctx.shadowBlur = STYLE.ui.textShadowBlur
+        ctx.shadowColor = this.fill
+        ctx.fillStyle = this.fill
         ctx.fillText(this.text + this.count[version], this.x, this.y)
+        ctx.shadowColor = this.recordFill
+        ctx.fillStyle = this.recordFill
         ctx.fillText(this.rtext + this.record[version], this.rx, this.y)
+        ctx.restore()
     }
 }
 const scoreTextX        = 0.1 * width

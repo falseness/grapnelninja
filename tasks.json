@@ -349,12 +349,12 @@
   {
     "id": "TASK-015",
     "title": "Redesign in-game UI styling",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-001",
       "TASK-003"
     ],
-    "description": "Restyle score, record, menu, pause UI, and menu button with a monospace or pixel-like neon arcade look. Preserve all UI behavior.",
+    "description": "Restyle score, record, menu, pause UI, and menu button with a monospace or pixel-like neon arcade look. Preserve all UI behavior.\nImplemented: Restyled score, record, main menu, pause controls, visual-effects toggle, and in-game menu button with monospace neon UI drawing while preserving click behavior.",
     "acceptance_criteria": [
       "Score and record text use a monospace or pixel-like font stack and bright neon coloring.",
       "The menu button is restyled as a neon outlined control.",
