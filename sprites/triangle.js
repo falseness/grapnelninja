@@ -206,6 +206,15 @@ class MultipointTrackLine extends TrackLine
             ? STYLE.visualStability.effectCompositeOperation
             : 'lighter'
 
+        ctx.fillStyle = this.stroke
+        ctx.shadowBlur = config.glowBlur
+        ctx.globalAlpha = config.envelopeGlowAlpha
+        ctx.fill()
+
+        ctx.shadowBlur = 0
+        ctx.globalAlpha = config.envelopeAlpha
+        ctx.fill()
+
         ctx.strokeStyle = this.stroke
         ctx.lineJoin = 'round'
         ctx.lineWidth = config.envelopeGlowWidth
@@ -215,7 +224,7 @@ class MultipointTrackLine extends TrackLine
 
         ctx.shadowBlur = 0
         ctx.lineWidth = config.envelopeLineWidth
-        ctx.globalAlpha = config.envelopeAlpha
+        ctx.globalAlpha = config.outlineAlpha
         ctx.stroke()
         ctx.restore()
     }
