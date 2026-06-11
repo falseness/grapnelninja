@@ -2088,5 +2088,30 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-081",
+    "category": "functional",
+    "priority": "normal",
+    "description": "In the classic version, add the same visible shell or border treatment used around other obstacles to the ceiling. This is a visual-only change and must not alter ceiling collision or gameplay behavior.\nImplemented: Added a classic-only inset neon shell to the ceiling side-floor band while preserving collision and bad-version rendering.",
+    "acceptance_criteria": [
+      "In the classic version, the ceiling has a visible shell or border treatment matching the style used around other obstacles.",
+      "The ceiling shell remains readable against the background and does not obscure the player, grapnel, obstacles, HUD text, or menu button.",
+      "Ceiling collision, movement, scoring, spawning, restart behavior, HUD, menus, and version selection remain unchanged.",
+      "The bad version is not unintentionally changed.",
+      "A screenshot is saved at screenshots/TASK-081.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and inspect the ceiling area.",
+      "Confirm the ceiling shell or border treatment visually matches the style used around other obstacles.",
+      "Confirm player contact with the ceiling still behaves as before.",
+      "Capture a representative screenshot and save it as screenshots/TASK-081.png.",
+      "Look at screenshots/TASK-081.png and confirm the task was actually completed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

@@ -236,7 +236,38 @@ class SideFloor extends Floor
         ctx.strokeRect(x, y, surfaceWidth, surfaceHeight)
         ctx.restore()
 
+        this.drawClassicCeilingShell(bounds)
         this.drawClassicContinuousBoundary(bounds)
+    }
+    drawClassicCeilingShell(bounds)
+    {
+        if (bounds.top > height / 2)
+            return
+
+        const x = bounds.left + screen.x
+        const y = bounds.top + screen.y
+        const surfaceWidth = bounds.right - bounds.left
+        const surfaceHeight = bounds.bottom - bounds.top
+        const inset = Math.max(STYLE.strokes.neonGlowWidth, surfaceHeight * STYLE.badVersionEffects.obstacles.innerCopyInsetRatio)
+        const shellWidth = Math.max(0, surfaceWidth - inset * 2)
+        const shellHeight = Math.max(0, surfaceHeight - inset * 2)
+
+        if (shellWidth <= 0 || shellHeight <= 0)
+            return
+
+        ctx.save()
+        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.globalAlpha = 0.58
+        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.strokeRect(x + inset, y + inset, shellWidth, shellHeight)
+
+        ctx.globalAlpha = 0.2
+        ctx.fillStyle = STYLE.colors.ground.line
+        ctx.fillRect(x + inset, y + inset, shellWidth, Math.max(1, STYLE.strokes.neonWidth))
+        ctx.fillRect(x + inset, y + inset + shellHeight - Math.max(1, STYLE.strokes.neonWidth), shellWidth, Math.max(1, STYLE.strokes.neonWidth))
+        ctx.restore()
     }
     drawClassicContinuousBoundary(bounds)
     {
