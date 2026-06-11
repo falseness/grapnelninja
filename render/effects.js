@@ -165,6 +165,7 @@ class BackgroundRenderer
         this.ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
             ? STYLE.visualStability.backgroundCompositeOperation
             : 'lighter'
+        this.drawDynamicLightingWash(width, height, geometry)
         this.drawHexagonSet(
             width,
             height,
@@ -198,6 +199,40 @@ class BackgroundRenderer
         this.drawDecorativeTriangles(width, height, geometry, geometryTime, totalShift)
         this.drawRectangleAccents(width, height, geometry, geometryTime, totalShift)
         this.ctx.restore()
+    }
+    drawDynamicLightingWash(width, height, geometry)
+    {
+        const colors = STYLE.colors.background
+        const radius = Math.max(width, height) * geometry.washRadiusRatio
+
+        this.ctx.save()
+        this.drawAmbientWash(
+            width * geometry.washLeftXRatio,
+            height * geometry.washYRatio,
+            radius,
+            colors.washBlueCore,
+            colors.washBlueMid,
+            colors.washCenter
+        )
+        this.drawAmbientWash(
+            width * geometry.washRightXRatio,
+            height * geometry.washYRatio,
+            radius,
+            colors.washRedCore,
+            colors.washRedMid,
+            colors.washCenter
+        )
+        this.ctx.restore()
+    }
+    drawAmbientWash(centerX, centerY, radius, coreColor, midColor, edgeColor)
+    {
+        const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
+        gradient.addColorStop(0, coreColor)
+        gradient.addColorStop(0.42, midColor)
+        gradient.addColorStop(1, edgeColor)
+
+        this.ctx.fillStyle = gradient
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
     }
     shouldFreezeBadVersionBackgroundMotion()
     {

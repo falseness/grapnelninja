@@ -1536,5 +1536,30 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-060",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Add the concept-art-style fake dynamic lighting gradient to the gameplay background. The left side should read as a blue ambient wash and the right side as a red or magenta ambient wash, matching the stylish dynamic-lighting feel in screenshots/concept_art.png without introducing real lighting calculations.\nImplemented: Added a bad-version-only soft fake dynamic lighting wash with blue left ambient and magenta/red right ambient behind gameplay objects.",
+    "acceptance_criteria": [
+      "Gameplay background has a broad blue ambient wash on the left side and red or magenta ambient wash on the right side.",
+      "The gradient feels like fake dynamic lighting similar to screenshots/concept_art.png, not a flat two-color split.",
+      "The lighting wash remains behind gameplay objects and does not reduce readability of player, hazards, platforms, floor, ceiling, score, record, or menu button.",
+      "The implementation stays visual-only and does not affect collision, movement, scoring, spawning, restart behavior, or version selection.",
+      "A screenshot is saved at screenshots/TASK-060.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe the gameplay background.",
+      "Capture a screenshot and save it as screenshots/TASK-060.png.",
+      "Compare screenshots/TASK-060.png with screenshots/concept_art.png and confirm the left side reads blue and the right side reads red or magenta.",
+      "Confirm the effect looks like soft fake dynamic lighting rather than a hard color split.",
+      "Confirm gameplay objects and HUD remain readable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

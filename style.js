@@ -25,7 +25,12 @@ const STYLE = Object.freeze({
             polygonAccentFill: 'rgba(31, 122, 255, 0.025)',
             polygonAccentStroke: 'rgba(48, 213, 200, 0.11)',
             polygonDangerFill: 'rgba(255, 61, 113, 0.022)',
-            polygonDangerStroke: 'rgba(255, 61, 113, 0.075)'
+            polygonDangerStroke: 'rgba(255, 61, 113, 0.075)',
+            washBlueCore: 'rgba(31, 122, 255, 0.34)',
+            washBlueMid: 'rgba(48, 213, 200, 0.12)',
+            washRedCore: 'rgba(255, 61, 113, 0.52)',
+            washRedMid: 'rgba(168, 55, 255, 0.2)',
+            washCenter: 'rgba(7, 16, 42, 0)'
         }),
         player: Object.freeze({
             fill: '#125dff',
@@ -310,6 +315,10 @@ const STYLE = Object.freeze({
             flashGlowWidth: 9,
             flashLineWidth: 2.4,
             flashLengthRatio: 0.28,
+            washRadiusRatio: 0.82,
+            washLeftXRatio: 0.05,
+            washRightXRatio: 0.88,
+            washYRatio: 0.54,
             triangleSilhouetteLineWidth: 1.15,
             flashes: Object.freeze([
                 Object.freeze({x: 0.11, y: 0.22, length: 0.18, color: 'blue'}),
