@@ -167,11 +167,15 @@ const STYLE = Object.freeze({
     }),
     trails: Object.freeze({
         player: Object.freeze({
-            widthRatio: 3.5,
-            glowWidthRatio: 7,
-            minAlpha: 0.04,
-            maxAlpha: 0.48,
-            coreAlpha: 0.72,
+            widthRatio: 3.2,
+            glowWidthRatio: 2.15,
+            minAlpha: 0.06,
+            maxAlpha: 0.42,
+            coreAlpha: 0.7,
+            edgeAlpha: 0.72,
+            headWidthRatio: 1,
+            tailWidthRatio: 0.18,
+            minPointDistanceRatio: 0.42,
             minSegmentRatio: 0
         }),
         hazard: Object.freeze({

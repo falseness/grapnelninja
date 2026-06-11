@@ -1433,7 +1433,7 @@
     "id": "TASK-056",
     "category": "functional",
     "priority": "normal",
-    "description": "Change the player trail into a ribbon-style trail. The trail should read as a continuous ribbon following the player path rather than an oversized glow or blob trail.",
+    "description": "Change the player trail into a ribbon-style trail. The trail should read as a continuous ribbon following the player path rather than an oversized glow or blob trail.\nImplemented: Replaced the thick stroked player trail with a tapered filled ribbon path that stays behind the player and keeps classic rendering controlled.",
     "acceptance_criteria": [
       "The player trail renders as a continuous ribbon following recent player movement.",
       "The ribbon has a controlled width and does not appear as oversized blobs, repeated circles, or disconnected stamps.",
@@ -1453,7 +1453,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-057",

@@ -1080,64 +1080,123 @@ class PlayerTrailRenderer
 
         const config = STYLE.trails.player
         const badTrails = this.getBadVersionTrails()
-        const positions = track.pos
+        const positions = this.getRibbonPoints(track.pos, track.lineWidth * config.minPointDistanceRatio)
         const width = track.lineWidth * config.widthRatio * badTrails.widthMultiplier
         const glowWidth = track.lineWidth * config.glowWidthRatio * badTrails.glowWidthMultiplier
         const visibleStart = Math.max(1, Math.floor(positions.length * config.minSegmentRatio))
+        const stableAlpha = badTrails.alphaMultiplier * this.getStableAlphaMultiplier()
 
         ctx.save()
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
         ctx.globalCompositeOperation = this.getEffectCompositeOperation()
-        ctx.strokeStyle = STYLE.colors.player.trail
         ctx.shadowColor = STYLE.colors.player.trail
 
-        this.drawSmoothPath(
+        this.drawRibbon(
             positions,
-            Math.max(0, visibleStart - 1),
-            positions.length,
+            visibleStart,
             width,
-            this.clampAlpha(config.maxAlpha * badTrails.alphaMultiplier * this.getStableAlphaMultiplier()),
-            glowWidth
+            glowWidth,
+            this.clampAlpha(config.maxAlpha * stableAlpha)
         )
-
-        if (positions.length > visibleStart + 1)
-        {
-            const tailStart = Math.max(1, positions.length - Math.floor((positions.length - visibleStart) * badTrails.tailPortion))
-            this.drawSmoothPath(
-                positions,
-                tailStart - 1,
-                positions.length,
-                Math.max(track.lineWidth, width * 0.36),
-                this.clampAlpha(config.coreAlpha * badTrails.alphaMultiplier * this.getStableAlphaMultiplier()),
-                0
-            )
-        }
 
         ctx.restore()
     }
-    drawSmoothPath(positions, start, end, width, alpha, glowWidth)
+    getRibbonPoints(positions, minDistance)
     {
-        if (end - start < 2)
-            return
+        if (positions.length < 3 || minDistance <= 0)
+            return positions
 
-        ctx.globalAlpha = alpha
-        ctx.lineWidth = width
-        ctx.shadowBlur = glowWidth
-        ctx.beginPath()
-        ctx.moveTo(positions[start].x + screen.x, positions[start].y + screen.y)
+        const ribbonPoints = [positions[0]]
+        let last = positions[0]
 
-        for (let i = start + 1; i < end - 1; ++i)
+        for (let i = 1; i < positions.length - 1; ++i)
         {
-            const next = positions[i + 1]
-            const middleX = (positions[i].x + next.x) / 2 + screen.x
-            const middleY = (positions[i].y + next.y) / 2 + screen.y
+            const dx = positions[i].x - last.x
+            const dy = positions[i].y - last.y
 
-            ctx.quadraticCurveTo(positions[i].x + screen.x, positions[i].y + screen.y, middleX, middleY)
+            if (Math.sqrt(dx * dx + dy * dy) >= minDistance)
+            {
+                ribbonPoints.push(positions[i])
+                last = positions[i]
+            }
         }
 
-        ctx.lineTo(positions[end - 1].x + screen.x, positions[end - 1].y + screen.y)
+        ribbonPoints.push(positions[positions.length - 1])
+        return ribbonPoints
+    }
+    drawRibbon(positions, visibleStart, width, glowWidth, alpha)
+    {
+        if (positions.length - visibleStart < 2)
+            return
+
+        const outline = this.getRibbonOutline(positions, visibleStart, width)
+
+        if (!outline.length)
+            return
+
+        ctx.fillStyle = STYLE.colors.player.trail
+        ctx.strokeStyle = STYLE.colors.player.trail
+
+        ctx.globalAlpha = this.clampAlpha(alpha * 0.5)
+        ctx.shadowBlur = glowWidth
+        this.drawRibbonOutline(outline)
+        ctx.fill()
+
+        ctx.globalAlpha = alpha
+        ctx.shadowBlur = 0
+        this.drawRibbonOutline(outline)
+        ctx.fill()
+
+        ctx.globalAlpha = this.clampAlpha(STYLE.trails.player.edgeAlpha * alpha)
+        ctx.lineWidth = Math.max(1, width * 0.12)
+        ctx.lineJoin = 'round'
+        this.drawRibbonOutline(outline)
         ctx.stroke()
+    }
+    getRibbonOutline(positions, visibleStart, width)
+    {
+        const config = STYLE.trails.player
+        const left = []
+        const right = []
+        const start = Math.max(0, visibleStart - 1)
+        const end = positions.length - 1
+        const span = Math.max(1, end - start)
+
+        for (let i = start; i <= end; ++i)
+        {
+            const previous = positions[Math.max(start, i - 1)]
+            const current = positions[i]
+            const next = positions[Math.min(end, i + 1)]
+            const dx = next.x - previous.x
+            const dy = next.y - previous.y
+            const length = Math.sqrt(dx * dx + dy * dy)
+
+            if (length <= 0)
+                continue
+
+            const progress = (i - start) / span
+            const eased = progress * progress * (3 - 2 * progress)
+            const localWidth = width * (config.tailWidthRatio + (config.headWidthRatio - config.tailWidthRatio) * eased)
+            const normalX = -dy / length
+            const normalY = dx / length
+            const centerX = current.x + screen.x
+            const centerY = current.y + screen.y
+            const halfWidth = localWidth / 2
+
+            left.push({x: centerX + normalX * halfWidth, y: centerY + normalY * halfWidth})
+            right.push({x: centerX - normalX * halfWidth, y: centerY - normalY * halfWidth})
+        }
+
+        return left.concat(right.reverse())
+    }
+    drawRibbonOutline(outline)
+    {
+        ctx.beginPath()
+        ctx.moveTo(outline[0].x, outline[0].y)
+
+        for (let i = 1; i < outline.length; ++i)
+            ctx.lineTo(outline[i].x, outline[i].y)
+
+        ctx.closePath()
     }
     getBadVersionTrails()
     {
@@ -1145,8 +1204,8 @@ class PlayerTrailRenderer
             return STYLE.badVersionEffects.trails
 
         return {
-            widthMultiplier: 1,
-            glowWidthMultiplier: 1,
+            widthMultiplier: 0.5,
+            glowWidthMultiplier: 0.5,
             alphaMultiplier: 1,
             chunkCount: 4,
             tailPortion: 0.28
