@@ -165,7 +165,7 @@ const STYLE = Object.freeze({
         hazardSpeed: 0.66,
         trampolineSplashCount: 38,
         trampolineSplashSpeed: 0,
-        trampolineSplashDispersion: 4.5,
+        trampolineSplashDispersion: 5.75,
         trampolineSplashAlpha: 0.98,
         trampolineSplashSizeMultiplier: 2.05,
         trampolineSplashLifetimeMultiplier: 3,

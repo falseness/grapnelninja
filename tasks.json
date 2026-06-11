@@ -1875,7 +1875,7 @@
     "id": "TASK-073",
     "category": "functional",
     "priority": "normal",
-    "description": "Increase player splash dispersion a little so splash particles spread slightly farther from the contact point. Keep the change modest and visual-only.",
+    "description": "Increase player splash dispersion a little so splash particles spread slightly farther from the contact point. Keep the change modest and visual-only.\nImplemented: Increased centralized trampoline splash dispersion modestly from 4.5 to 5.75 while leaving count, lifetime, speed, and gameplay behavior unchanged.",
     "acceptance_criteria": [
       "Player or trampoline splash particles disperse slightly more than the current implementation.",
       "The increased dispersion is noticeable but does not make the splash feel noisy or disconnected from the contact point.",
@@ -1894,7 +1894,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-074",
