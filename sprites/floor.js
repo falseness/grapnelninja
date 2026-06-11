@@ -151,7 +151,10 @@ class SideFloor extends Floor
             return
 
         if (this.elements[0].isInHudClearZone && this.elements[0].isInHudClearZone())
+        {
+            this.drawHudZoneCeilingBoundary()
             return
+        }
 
         this.drawContinuousSurface()
     }
@@ -229,6 +232,32 @@ class SideFloor extends Floor
         ctx.lineTo(bounds.right + screen.x, y)
         ctx.stroke()
 
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.shadowBlur = 0
+        ctx.stroke()
+
+        ctx.closePath()
+        ctx.restore()
+    }
+    drawHudZoneCeilingBoundary()
+    {
+        const bounds = this.getContinuousSurfaceBounds()
+        const y = bounds.boundaryY + screen.y
+
+        ctx.save()
+        ctx.beginPath()
+
+        ctx.globalAlpha = 0.72
+        ctx.lineWidth = STYLE.strokes.neonGlowWidth
+        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.moveTo(bounds.left + screen.x, y)
+        ctx.lineTo(bounds.right + screen.x, y)
+        ctx.stroke()
+
+        ctx.globalAlpha = 1
         ctx.lineWidth = STYLE.strokes.neonWidth
         ctx.strokeStyle = STYLE.colors.ground.line
         ctx.shadowBlur = 0

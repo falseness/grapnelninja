@@ -756,5 +756,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-031",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Restore the visible ceiling. Undo the visual change that made the ceiling invisible, while preserving the current ceiling collision and gameplay behavior.\nImplemented: Restored a thin neon ceiling boundary for the bad-version HUD clear zone without changing side-floor collision elements.",
+    "acceptance_criteria": [
+      "The ceiling is visible again during gameplay.",
+      "The ceiling styling fits the current neon dark visual style.",
+      "Ceiling collision, movement, spawning, scoring, and restart behavior remain unchanged.",
+      "The visible ceiling does not obscure HUD text or menu controls.",
+      "A screenshot is saved at screenshots/TASK-031.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe the top playfield area where the ceiling should appear.",
+      "Capture a screenshot and save it as screenshots/TASK-031.png.",
+      "Inspect the screenshot and confirm the ceiling is visible again.",
+      "Confirm HUD text and menu controls remain readable and clickable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
