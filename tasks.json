@@ -613,5 +613,28 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-025",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Move the player trail to a lower render layer. The player trail must be drawn before trampolines, platforms, hazards, floor objects, and other world objects so those objects stay visually on top of the trail.\nImplemented: Moved the player trail into its own lower render layer before world object drawing so obstacles and the player remain on top.",
+    "acceptance_criteria": [
+      "The player trail renders behind trampolines, platforms, hazards, floor objects, and other world objects.",
+      "World objects remain crisp and are not obscured by trail drawing.",
+      "The player itself remains visible above the trail.",
+      "The render order change does not alter collision, movement, score, spawning, or restart behavior.",
+      "A screenshot is saved at screenshots/TASK-025.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and move near trampolines, platforms, hazards, or floor objects while the player trail is visible.",
+      "Capture a screenshot and save it as screenshots/TASK-025.png.",
+      "Inspect the screenshot and confirm world objects draw above the trail.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

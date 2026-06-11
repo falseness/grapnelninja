@@ -25,9 +25,13 @@ function drawWorldLayer()
     ninja.draw()
 }
 
-function drawParticlesAndTrailsLayer(gameState)
+function drawPlayerTrailLayer(gameState)
 {
     visualEffects.playerTrail.draw(gameState)
+}
+
+function drawParticlesAndTrailsLayer(gameState)
+{
     visualEffects.particles.update(gameState)
     visualEffects.particles.draw(gameState)
     visualEffects.screenEffects.draw(gameState)
@@ -48,6 +52,7 @@ function draw()
     visualEffects.screenEffects.begin(gameState)
 
     drawLightsLayer(gameState)
+    drawPlayerTrailLayer(gameState)
     drawWorldLayer()
     drawParticlesAndTrailsLayer(gameState)
     drawUILayer(gameState)
