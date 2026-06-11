@@ -12,7 +12,8 @@ class Ninja
         
         this.fill   = object.fill
         this.stroke = object.stroke
-        
+        this.visualRotation = 0
+
         this.track = new TrackLine(this.radius * 1.5, STYLE.colors.player.trail, STYLE.timing.trailPoints)
         this.track.addPos(this.x, this.y, true)
     }
@@ -62,10 +63,18 @@ class Ninja
     }
     draw()
     {
+        this.updateVisualRotation()
+
+        const centerX = this.x + screen.x
+        const centerY = this.y + screen.y
+
         ctx.save()
+        ctx.translate(centerX, centerY)
+        ctx.rotate(this.visualRotation)
+
         ctx.beginPath()
 
-        ctx.arc(this.x + screen.x, this.y + screen.y, this.radius, 0, Math.PI * 2, false)
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2, false)
 
         ctx.fillStyle = this.fill
         ctx.fill()
@@ -80,13 +89,45 @@ class Ninja
         ctx.shadowBlur = 0
 
         ctx.beginPath()
-        ctx.arc(this.x + screen.x, this.y + screen.y, this.radius * 0.45, 0, Math.PI * 2, false)
+        ctx.arc(0, 0, this.radius * 0.45, 0, Math.PI * 2, false)
         ctx.fillStyle = STYLE.colors.player.core
         ctx.globalAlpha = 0.8
         ctx.fill()
         ctx.closePath()
 
+        this.drawRotationMarker()
+
         ctx.restore()
+    }
+    updateVisualRotation()
+    {
+        const config = STYLE.playerVisuals
+        const speed = Math.sqrt(this.speedX * this.speedX + this.speedY * this.speedY)
+
+        if (speed < config.rotationMinSpeed)
+            return
+
+        this.visualRotation += speed * config.rotationSpeed
+    }
+    drawRotationMarker()
+    {
+        const config = STYLE.playerVisuals
+        const markerWidth = Math.max(1, this.radius * config.rotationMarkerWidthRatio)
+        const markerLength = this.radius * config.rotationMarkerLengthRatio
+        const markerOffset = this.radius * config.rotationMarkerOffsetRatio
+
+        ctx.beginPath()
+        ctx.moveTo(-markerLength * 0.5, -markerOffset)
+        ctx.lineTo(markerLength * 0.5, markerOffset)
+        ctx.strokeStyle = STYLE.colors.player.core
+        ctx.lineWidth = markerWidth
+        ctx.lineCap = 'round'
+        ctx.globalAlpha = config.rotationMarkerAlpha
+        ctx.shadowColor = STYLE.colors.player.core
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth * 0.5
+        ctx.stroke()
+        ctx.closePath()
+        ctx.globalAlpha = STYLE.alpha.full
     }
 }
 class TrackLine

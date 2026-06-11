@@ -111,6 +111,14 @@ const STYLE = Object.freeze({
             minSegmentRatio: 0
         })
     }),
+    playerVisuals: Object.freeze({
+        rotationSpeed: 0.032,
+        rotationMinSpeed: 0.03,
+        rotationMarkerWidthRatio: 0.4,
+        rotationMarkerLengthRatio: 1.35,
+        rotationMarkerOffsetRatio: 0.16,
+        rotationMarkerAlpha: 0.9
+    }),
     timing: Object.freeze({
         inputUntouchMs: 100,
         trailPoints: 100,

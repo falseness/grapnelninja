@@ -298,11 +298,11 @@
   {
     "id": "TASK-013",
     "title": "Add player visual rotation while moving and jumping",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-006"
     ],
-    "description": "Add visual rotation to the player while moving and jumping. The rotation must not affect the player's circular collision model or physics.",
+    "description": "Add visual rotation to the player while moving and jumping. The rotation must not affect the player's circular collision model or physics.\nImplemented: Added draw-only player visual rotation with a cyan marker while preserving circular collision radius, movement, speed, and physics.",
     "acceptance_criteria": [
       "The player visibly rotates while moving or jumping.",
       "Player collision radius, position, movement, speed, and physics are unchanged.",
