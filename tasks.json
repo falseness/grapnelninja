@@ -804,5 +804,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-033",
+    "category": "test",
+    "priority": "critical",
+    "description": "Add a manual visual verification pass after the visual regression fixes. Play the game for 30 seconds, create 3 screenshots, and check whether the previous features and fixes were actually implemented rather than only marked complete.\nImplemented: Completed a 32.8s bad-version visual verification pass, saved three screenshots plus a browser report under screenshots/TASK-033, and found no remaining visual regression requiring a new task.",
+    "acceptance_criteria": [
+      "The game is played for at least 30 seconds in the bad version after the visual fix tickets are implemented.",
+      "Three representative screenshots are saved under screenshots/TASK-033/.",
+      "The screenshots show player trail, red hazard glow/trails, object colors, background, floor joints, ceiling, particles, HUD, and world objects where possible.",
+      "The screenshots are visually inspected to confirm the previous visual features and fixes were actually implemented.",
+      "Any remaining visual regression found during inspection is added as a new pending task in tasks.json.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play for at least 30 seconds.",
+      "Capture 3 screenshots during different gameplay moments and save them under screenshots/TASK-033/.",
+      "Inspect all 3 screenshots and confirm the previous visual fixes are actually visible.",
+      "If a fix is missing or visibly wrong, append a new pending task to tasks.json describing the regression.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

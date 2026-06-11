@@ -1,0 +1,237 @@
+{
+  "version": "bad",
+  "elapsedMs": 32824,
+  "score": 0,
+  "maxParticles": 30,
+  "maxPlayerTrailPoints": 100,
+  "maxHazardTrackPoints": 75,
+  "finalParticleCount": 0,
+  "finalPlayerTrackLength": 100,
+  "finalHazardTrackMax": 75,
+  "seen": {
+    "hazards": true,
+    "redHazardTrails": true,
+    "playerTrail": true,
+    "particles": true,
+    "ceiling": true,
+    "floors": true,
+    "hud": true,
+    "background": true,
+    "colorCategories": true
+  },
+  "screen": {
+    "x": 0,
+    "y": 0
+  },
+  "ninja": {
+    "x": 256,
+    "y": 893.075015743073,
+    "radius": 7.2
+  },
+  "elements": [
+    {
+      "type": "Ground",
+      "stroke": "#64e379",
+      "x": -1280,
+      "y": 1440
+    },
+    {
+      "type": "Ground",
+      "stroke": "#64e379",
+      "x": 0,
+      "y": 1440
+    },
+    {
+      "type": "Ground",
+      "stroke": "#64e379",
+      "x": 1280,
+      "y": 1440
+    },
+    {
+      "type": "Ground",
+      "stroke": "#64e379",
+      "x": 2560,
+      "y": 1440
+    },
+    {
+      "type": "Ground",
+      "stroke": "#64e379",
+      "x": 3840,
+      "y": 1440
+    },
+    {
+      "type": "Ground",
+      "stroke": "#64e379",
+      "x": 5120,
+      "y": 1440
+    },
+    {
+      "type": "JumpingCube",
+      "stroke": "#1f7aff",
+      "x": 551,
+      "y": 968.3054943324942,
+      "width": 169,
+      "height": 169
+    },
+    {
+      "type": "Trampoline",
+      "stroke": "#64e379",
+      "x": 1051,
+      "y": 792.0000000000001
+    },
+    {
+      "type": "Trampoline",
+      "stroke": "#64e379",
+      "x": 1876,
+      "y": 792.0000000000001
+    },
+    {
+      "type": "JumpingCube",
+      "stroke": "#1f7aff",
+      "x": 2758,
+      "y": 925.3217096977332,
+      "width": 184,
+      "height": 184
+    },
+    {
+      "type": "JumpingCube",
+      "stroke": "#1f7aff",
+      "x": 3215,
+      "y": 796.2470875314864,
+      "width": 187,
+      "height": 187
+    },
+    {
+      "type": "JumpingCube",
+      "stroke": "#1f7aff",
+      "x": 3808,
+      "y": 816.5941435768265,
+      "width": 128,
+      "height": 128
+    },
+    {
+      "type": "Trampoline",
+      "stroke": "#64e379",
+      "x": 4316,
+      "y": 792.0000000000001
+    },
+    {
+      "type": "Trampoline",
+      "stroke": "#64e379",
+      "x": 5362,
+      "y": 792.0000000000001
+    },
+    {
+      "type": "Triangle",
+      "stroke": "#ff3d71",
+      "x": 993,
+      "y": 643.4615242270643,
+      "height": 155.88457268119896
+    },
+    {
+      "type": "Triangle",
+      "stroke": "#ff3d71",
+      "x": 1810,
+      "y": 600.0615242270719,
+      "height": 155.88457268119896
+    },
+    {
+      "type": "Triangle",
+      "stroke": "#ff3d71",
+      "x": 2648,
+      "y": 524.0615242270665,
+      "height": 155.88457268119896
+    },
+    {
+      "type": "Triangle",
+      "stroke": "#ff3d71",
+      "x": 3386,
+      "y": 527.9615242270669,
+      "height": 155.88457268119896
+    },
+    {
+      "type": "Triangle",
+      "stroke": "#ff3d71",
+      "x": 4198,
+      "y": 375.3615242270678,
+      "height": 155.88457268119896
+    },
+    {
+      "type": "Triangle",
+      "stroke": "#ff3d71",
+      "x": 5002,
+      "y": 342.26152422706775,
+      "height": 155.88457268119896
+    },
+    {
+      "type": "Triangle",
+      "stroke": "#ff3d71",
+      "x": 5767,
+      "y": 266.9615242270649,
+      "height": 155.88457268119896
+    },
+    {
+      "type": "Triangle",
+      "stroke": "#ff3d71",
+      "x": 6578,
+      "y": 245.36152422706772,
+      "height": 155.88457268119896
+    },
+    {
+      "type": "Side",
+      "stroke": "#64e379",
+      "x": -1280,
+      "y": 0,
+      "width": 1280,
+      "height": 144
+    },
+    {
+      "type": "Side",
+      "stroke": "#64e379",
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 144
+    },
+    {
+      "type": "Side",
+      "stroke": "#64e379",
+      "x": 1280,
+      "y": 0,
+      "width": 1280,
+      "height": 144
+    },
+    {
+      "type": "Side",
+      "stroke": "#64e379",
+      "x": 2560,
+      "y": 0,
+      "width": 1280,
+      "height": 144
+    },
+    {
+      "type": "Side",
+      "stroke": "#64e379",
+      "x": 3840,
+      "y": 0,
+      "width": 1280,
+      "height": 144
+    },
+    {
+      "type": "Side",
+      "stroke": "#64e379",
+      "x": 5120,
+      "y": 0,
+      "width": 1280,
+      "height": 144
+    }
+  ],
+  "quality": {
+    "lightmap": true,
+    "particles": true,
+    "playerTrail": true,
+    "backgroundMotion": true,
+    "screenShake": true
+  },
+  "consoleMessages": []
+}
