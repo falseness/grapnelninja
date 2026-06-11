@@ -59,9 +59,9 @@ const STYLE = Object.freeze({
             red: '#ff3d71'
         }),
         ground: Object.freeze({
-            fill: '#071c12',
-            stroke: '#64e379',
-            line: '#a8ffb2'
+            fill: '#20242a',
+            stroke: '#9aa3ad',
+            line: '#d3d9df'
         }),
         ui: Object.freeze({
             title: '#8ffcff',
@@ -210,6 +210,8 @@ const STYLE = Object.freeze({
             greenHighlightFill: 'rgba(100, 227, 121, 0.14)',
             groundFill: '#030812',
             groundCapFill: '#102b1b',
+            groundStroke: '#64e379',
+            groundLine: '#a8ffb2',
             shadow: 'rgba(0, 0, 0, 0.32)'
         }),
         lights: Object.freeze({

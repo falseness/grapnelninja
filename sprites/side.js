@@ -3,6 +3,8 @@ class Ground extends Trampoline
     constructor(object)
     {
         super(object)
+        this.fill = STYLE.colors.ground.fill
+        this.stroke = STYLE.colors.ground.stroke
     }
     draw()
     {
@@ -36,12 +38,12 @@ class Ground extends Trampoline
         const obstacleStyle = STYLE.badVersionEffects.obstacles
         this.drawBadVersionPolygon(
             obstacleStyle.groundFill,
-            STYLE.colors.ground.stroke,
+            obstacleStyle.groundStroke,
             {
                 lineWidth: obstacleStyle.thinStrokeWidth,
                 glowWidth: obstacleStyle.outerGlowWidth,
                 glowAlpha: obstacleStyle.groundFillAlpha,
-                innerStrokeStyle: STYLE.colors.ground.line
+                innerStrokeStyle: obstacleStyle.groundLine
             }
         )
 
@@ -59,16 +61,19 @@ class Ground extends Trampoline
         ctx.save()
         ctx.beginPath()
 
+        const groundStroke = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundStroke : STYLE.colors.ground.stroke
+        const groundLine = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundLine : STYLE.colors.ground.line
+
         ctx.lineWidth = STYLE.strokes.neonGlowWidth
-        ctx.strokeStyle = STYLE.colors.ground.stroke
-        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.strokeStyle = groundStroke
+        ctx.shadowColor = groundLine
         ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.moveTo(this.x + screen.x, boundaryY + screen.y)
         ctx.lineTo(this.x + this.points[2].x + screen.x, boundaryY + screen.y)
         ctx.stroke()
 
         ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.strokeStyle = groundLine
         ctx.shadowBlur = 0
         ctx.stroke()
 
@@ -153,10 +158,10 @@ class Side extends Rect
         ctx.fillStyle = obstacleStyle.groundCapFill
         ctx.fillRect(x, capY - Math.max(2, height * 0.01), this.width, Math.max(2, height * 0.012))
 
-        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.strokeStyle = obstacleStyle.groundStroke
         ctx.lineWidth = obstacleStyle.thinStrokeWidth
         ctx.globalAlpha = obstacleStyle.groundFillAlpha
-        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowColor = obstacleStyle.groundLine
         ctx.shadowBlur = obstacleStyle.outerGlowWidth
         ctx.strokeRect(x, y, this.width, this.height)
         ctx.restore()
@@ -172,16 +177,19 @@ class Side extends Rect
         ctx.save()
         ctx.beginPath()
 
+        const groundStroke = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundStroke : STYLE.colors.ground.stroke
+        const groundLine = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundLine : STYLE.colors.ground.line
+
         ctx.lineWidth = STYLE.strokes.neonGlowWidth
-        ctx.strokeStyle = STYLE.colors.ground.stroke
-        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.strokeStyle = groundStroke
+        ctx.shadowColor = groundLine
         ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.moveTo(this.x + screen.x, screenBoundaryY)
         ctx.lineTo(this.x + this.width + screen.x, screenBoundaryY)
         ctx.stroke()
 
         ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.strokeStyle = groundLine
         ctx.shadowBlur = 0
         ctx.stroke()
 

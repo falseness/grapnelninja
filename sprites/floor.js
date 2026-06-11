@@ -207,10 +207,10 @@ class SideFloor extends Floor
         ctx.fillStyle = obstacleStyle.groundCapFill
         ctx.fillRect(x, capY, surfaceWidth, capHeight)
 
-        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.strokeStyle = obstacleStyle.groundStroke
         ctx.lineWidth = obstacleStyle.thinStrokeWidth
         ctx.globalAlpha = obstacleStyle.groundFillAlpha
-        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowColor = obstacleStyle.groundLine
         ctx.shadowBlur = obstacleStyle.outerGlowWidth
         ctx.strokeRect(x, y, surfaceWidth, surfaceHeight)
         ctx.restore()
@@ -219,21 +219,22 @@ class SideFloor extends Floor
     }
     drawContinuousNeonBoundary(bounds)
     {
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
         const y = bounds.boundaryY + screen.y
 
         ctx.save()
         ctx.beginPath()
 
         ctx.lineWidth = STYLE.strokes.neonGlowWidth
-        ctx.strokeStyle = STYLE.colors.ground.stroke
-        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.strokeStyle = obstacleStyle.groundStroke
+        ctx.shadowColor = obstacleStyle.groundLine
         ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.moveTo(bounds.left + screen.x, y)
         ctx.lineTo(bounds.right + screen.x, y)
         ctx.stroke()
 
         ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.strokeStyle = obstacleStyle.groundLine
         ctx.shadowBlur = 0
         ctx.stroke()
 
@@ -262,8 +263,8 @@ class SideFloor extends Floor
 
         ctx.globalAlpha = 0.72
         ctx.lineWidth = STYLE.strokes.neonGlowWidth
-        ctx.strokeStyle = STYLE.colors.ground.stroke
-        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.strokeStyle = obstacleStyle.groundStroke
+        ctx.shadowColor = obstacleStyle.groundLine
         ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.moveTo(bounds.left + screen.x, y)
         ctx.lineTo(bounds.right + screen.x, y)
@@ -271,7 +272,7 @@ class SideFloor extends Floor
 
         ctx.globalAlpha = 1
         ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.strokeStyle = obstacleStyle.groundLine
         ctx.shadowBlur = 0
         ctx.stroke()
 

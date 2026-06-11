@@ -1354,7 +1354,7 @@
     "id": "TASK-053",
     "category": "functional",
     "priority": "normal",
-    "description": "Change the classic-version floor color from green to gray. The floor should read as a neutral gray surface while preserving classic-version gameplay and layout.",
+    "description": "Change the classic-version floor color from green to gray. The floor should read as a neutral gray surface while preserving classic-version gameplay and layout.\nImplemented: Recolored classic ground/side-floor surfaces to neutral gray while preserving bad-version floor styling with separate bad floor outline constants.",
     "acceptance_criteria": [
       "The classic-version floor renders gray instead of green.",
       "The gray floor remains clearly distinguishable from the white background and other classic objects.",
@@ -1374,7 +1374,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-054",
