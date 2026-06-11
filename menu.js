@@ -128,6 +128,74 @@ class Button
         return false
     }
 }
+class Checkbox
+{
+    constructor(object, clickFunc)
+    {
+        this.x = object.x
+        this.y = object.y
+        this.size = object.size
+        this.label = object.label
+        this.fill = object.fill || STYLE.colors.ui.text
+        this.stroke = object.stroke || STYLE.colors.ui.primary
+        this.clickable = object.clickable
+        this.click = clickFunc
+        this.fontSize = object.fontSize + 'px ' + STYLE.ui.fontFamily
+    }
+    draw()
+    {
+        const boxX = this.x
+        const boxY = this.y - this.size / 2
+        const markInset = this.size * 0.24
+
+        ctx.save()
+        ctx.font = this.fontSize
+        ctx.textAlign = 'start'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = this.fill
+        ctx.strokeStyle = this.stroke
+        ctx.lineWidth = STYLE.ui.buttonLineWidth
+        ctx.shadowColor = this.stroke
+        ctx.shadowBlur = STYLE.ui.buttonShadowBlur
+        ctx.strokeRect(boxX, boxY, this.size, this.size)
+
+        if (fpsCounter.enabled)
+        {
+            ctx.beginPath()
+            ctx.moveTo(boxX + markInset, this.y)
+            ctx.lineTo(boxX + this.size * 0.43, boxY + this.size - markInset)
+            ctx.lineTo(boxX + this.size - markInset, boxY + markInset)
+            ctx.stroke()
+        }
+
+        ctx.shadowBlur = STYLE.ui.textShadowBlur
+        ctx.fillText(this.label, boxX + this.size * 1.55, this.y)
+        ctx.restore()
+    }
+    isClickOnButton(click)
+    {
+        if (!this.clickable)
+            return false
+
+        ctx.save()
+        ctx.font = this.fontSize
+        const labelWidth = ctx.measureText(this.label).width
+        ctx.restore()
+
+        const padding = this.size * 0.45
+        const minX = this.x - padding
+        const maxX = this.x + this.size * 1.55 + labelWidth + padding
+        const minY = this.y - this.size / 2 - padding
+        const maxY = this.y + this.size / 2 + padding
+
+        if (minX < click.x && click.x < maxX && minY < click.y && click.y < maxY)
+        {
+            this.click()
+            return true
+        }
+        return false
+    }
+}
 class FpsCounter
 {
     constructor()
@@ -271,10 +339,27 @@ class Menu
             text    : 'record: ' + scoreText.record.bad
         })
 
+        this.mainFpsCounterCheckbox = new Checkbox(
+        {
+            x       : this.center.x - 0.15 * this.width,
+            y       : 0.70 * this.height,
+            size    : 0.036 * this.height,
+            fontSize: 0.042 * this.height,
+            fill    : STYLE.colors.ui.text,
+            stroke  : STYLE.colors.ui.primary,
+            label   : 'fps counter',
+            clickable: true
+        },
+        function()
+        {
+            fpsCounter.toggle()
+            menu.draw()
+        })
+
         this.timeInGame = new Text(
             {
             x       : this.center.x                     ,
-            y       : 0.8 * this.height                ,
+            y       : 0.82 * this.height                ,
             fontSize: 0.05 * this.height                ,
             fill    : STYLE.colors.ui.mutedText         ,
             text    : 'time spent in game: ' + getTimeInGame() + ' minutes'
@@ -406,6 +491,7 @@ class Menu
         return  this.classicVersionButton.isClickOnButton(coord)    ||
                 this.badVersionButton.isClickOnButton(coord)        ||
                 this.resume.isClickOnButton(coord)                  ||
+                this.mainFpsCounterCheckbox.isClickOnButton(coord)  ||
                 this.fpsCounterButton.isClickOnButton(coord)        ||
                 this.backToMenu.isClickOnButton(coord)
     }
@@ -419,6 +505,7 @@ class Menu
         
         this.classicVersionButton.clickable     = visible
         this.badVersionButton.clickable         = visible
+        this.mainFpsCounterCheckbox.clickable   = visible
     }
     changeGamePause(isPaused)
     {
@@ -498,6 +585,7 @@ class Menu
         this.badVersionButton.draw()
         this.badRecord.draw()
 
+        this.mainFpsCounterCheckbox.draw()
         this.timeInGame.draw()
         
     }

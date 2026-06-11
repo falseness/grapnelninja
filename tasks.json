@@ -2037,7 +2037,7 @@
     "id": "TASK-079",
     "category": "functional",
     "priority": "normal",
-    "description": "Add an fps counter checkbox or equivalent toggle to the main menu. Reuse the existing FPS counter behavior so the setting can be turned on before starting a game.",
+    "description": "Add an fps counter checkbox or equivalent toggle to the main menu. Reuse the existing FPS counter behavior so the setting can be turned on before starting a game.\nImplemented: Added a main-menu checkbox that toggles the existing FPS counter before starting classic or bad gameplay while preserving the pause-menu FPS toggle.",
     "acceptance_criteria": [
       "The main menu includes an fps counter checkbox or equivalent toggle.",
       "Toggling fps counter in the main menu turns the existing FPS counter on and off.",
@@ -2060,7 +2060,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-080",
