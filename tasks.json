@@ -1714,5 +1714,31 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-067",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Slow down the background hexagon rotation. The hexagon should still move subtly when background motion is enabled, but the rotation should feel calmer and less distracting.\nImplemented: Added a bad-version hexagon-only rotation time scale so background hexagons rotate less than half as fast while other background motion and quality controls remain intact.",
+    "acceptance_criteria": [
+      "Background hexagon rotation is slower than the current implementation.",
+      "Hexagon motion remains visible over time when background motion is enabled.",
+      "The slower rotation feels subtle and does not distract from gameplay.",
+      "Existing background motion quality controls still freeze or disable the motion as expected.",
+      "The change is visual-only and does not affect collision, movement, scoring, spawning, restart behavior, or version selection.",
+      "A screenshot is saved at screenshots/TASK-067.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe the background hexagon for several seconds.",
+      "Confirm the rotation is slower than the prior behavior while still moving subtly.",
+      "Capture a representative screenshot and save it as screenshots/TASK-067.png.",
+      "Disable or freeze background motion through existing quality controls and confirm the setting is respected.",
+      "Confirm gameplay objects and HUD remain readable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

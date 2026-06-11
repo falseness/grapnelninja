@@ -104,7 +104,11 @@ class BackgroundRenderer
         const minSize = Math.min(width, height)
         const baseRadius = minSize * geometry.hexagonRadiusRatio
         const radiusStep = minSize * geometry.hexagonRadiusStepRatio
-        const rotation = (time % STYLE.timing.backgroundRotationMs) / STYLE.timing.backgroundRotationMs * Math.PI * 2
+        const rotationTimeScale = typeof geometry.hexagonRotationTimeScale == 'number'
+            ? geometry.hexagonRotationTimeScale
+            : 1
+        const rotationTime = time * rotationTimeScale
+        const rotation = (rotationTime % STYLE.timing.backgroundRotationMs) / STYLE.timing.backgroundRotationMs * Math.PI * 2
 
         this.ctx.save()
         this.ctx.lineWidth = geometry.hexagonLineWidth

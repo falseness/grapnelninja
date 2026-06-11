@@ -305,6 +305,7 @@ const STYLE = Object.freeze({
             cameraParallaxXRatio: 0.018,
             cameraParallaxYRatio: 0.012,
             motionTimeScale: 0.24,
+            hexagonRotationTimeScale: 0.45,
             streakTimeScale: 0.18,
             flashMotionRatio: 0.006,
             triangleRotationScale: 0.05,
