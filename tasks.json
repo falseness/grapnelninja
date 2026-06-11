@@ -1953,7 +1953,7 @@
     "id": "TASK-076",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix bad-version record text placement so the record is vertically centered in the ceiling band across different phone sizes. Verify the layout with five common phone screenshots.\nImplemented: Added bad-version record HUD metric centering, right-side menu clearance, and dynamic record font fitting across phone widths.\nImplemented: Added a bad-version HUD text backing behind score and record text so gameplay objects cannot visually overlap the RECORD label while preserving phone HUD centering.",
+    "description": "Fix bad-version record text placement so the record is vertically centered in the ceiling band across different phone sizes. Verify the layout with five common phone screenshots.\nImplemented: Added bad-version record HUD metric centering, right-side menu clearance, and dynamic record font fitting across phone widths.\nImplemented: Added a bad-version HUD text backing behind score and record text so gameplay objects cannot visually overlap the RECORD label while preserving phone HUD centering.\nImplemented: Extended bad-version HUD text backing to the full ceiling-band height behind score and record clusters so gameplay objects cannot show through record text on phone screens.",
     "acceptance_criteria": [
       "In the bad version, record text is vertically centered in the visible ceiling band.",
       "Record text remains horizontally placed on the right as intended and does not overlap gameplay objects, score text, stage indicators, or the menu button.",

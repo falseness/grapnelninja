@@ -100,6 +100,7 @@ let scoreText =
         ctx.textBaseline = 'middle'
         const metrics = ctx.measureText(text)
         const padding = viewHeight * STYLE.ui.hudBadTextBackingPaddingRatio
+        const bandHeight = viewHeight * STYLE.ui.badCeilingBandRatio
         const ascent = metrics.actualBoundingBoxAscent || fontSize * 0.72
         const descent = metrics.actualBoundingBoxDescent || fontSize * 0.28
         const textWidth = metrics.width
@@ -110,17 +111,17 @@ let scoreText =
         else if (align == 'end')
             left -= textWidth
 
-        const top = y - ascent
-        const height = ascent + descent
+        const top = Math.min(0, y - ascent - padding)
+        const height = Math.max(bandHeight, y + descent + padding - top)
 
         ctx.shadowBlur = 0
         ctx.globalAlpha = 1
         ctx.fillStyle = STYLE.colors.background.gradientTop
         ctx.fillRect(
             left - padding,
-            top - padding,
+            top,
             textWidth + padding * 2,
-            height + padding * 2
+            height
         )
         ctx.restore()
     },
