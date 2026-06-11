@@ -72,9 +72,11 @@ class Ninja
         ctx.translate(centerX, centerY)
         ctx.rotate(this.visualRotation)
 
+        const visualRadius = this.getVisualRadius()
+
         ctx.beginPath()
 
-        ctx.arc(0, 0, this.radius, 0, Math.PI * 2, false)
+        ctx.arc(0, 0, visualRadius, 0, Math.PI * 2, false)
 
         ctx.fillStyle = this.fill
         ctx.fill()
@@ -82,22 +84,27 @@ class Ninja
         ctx.strokeStyle = this.stroke
         ctx.lineWidth = STYLE.strokes.neonWidth
         ctx.shadowColor = this.stroke
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.shadowBlur = visualRadius * STYLE.playerVisuals.bodyShadowBlurRatio
         ctx.stroke()
 
         ctx.closePath()
         ctx.shadowBlur = 0
 
         ctx.beginPath()
-        ctx.arc(0, 0, this.radius * 0.45, 0, Math.PI * 2, false)
-        ctx.fillStyle = STYLE.colors.player.core
-        ctx.globalAlpha = 0.8
+        ctx.arc(0, 0, visualRadius * STYLE.playerVisuals.innerHighlightRadiusRatio, 0, Math.PI * 2, false)
+        ctx.fillStyle = STYLE.colors.player.highlight
+        ctx.globalAlpha = STYLE.playerVisuals.innerHighlightAlpha
         ctx.fill()
         ctx.closePath()
+        ctx.globalAlpha = STYLE.alpha.full
 
         this.drawRotationMarker()
 
         ctx.restore()
+    }
+    getVisualRadius()
+    {
+        return Math.max(this.radius, STYLE.playerVisuals.minScreenRadius / scale[version])
     }
     updateVisualRotation()
     {
@@ -112,9 +119,10 @@ class Ninja
     drawRotationMarker()
     {
         const config = STYLE.playerVisuals
-        const markerWidth = Math.max(1, this.radius * config.rotationMarkerWidthRatio)
-        const markerLength = this.radius * config.rotationMarkerLengthRatio
-        const markerOffset = this.radius * config.rotationMarkerOffsetRatio
+        const visualRadius = this.getVisualRadius()
+        const markerWidth = Math.max(1, visualRadius * config.rotationMarkerWidthRatio)
+        const markerLength = visualRadius * config.rotationMarkerLengthRatio
+        const markerOffset = visualRadius * config.rotationMarkerOffsetRatio
 
         ctx.beginPath()
         ctx.moveTo(-markerLength * 0.5, -markerOffset)

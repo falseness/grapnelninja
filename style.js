@@ -22,9 +22,10 @@ const STYLE = Object.freeze({
             polygonDangerStroke: 'rgba(255, 61, 113, 0.075)'
         }),
         player: Object.freeze({
-            fill: '#06151d',
+            fill: '#125dff',
             stroke: '#30d5c8',
-            core: '#8ffcff',
+            core: '#6fa8ff',
+            highlight: '#b8f7ff',
             trail: '#30d5c8',
             cyan: '#30d5c8'
         }),
@@ -218,10 +219,14 @@ const STYLE = Object.freeze({
     playerVisuals: Object.freeze({
         rotationSpeed: 0.032,
         rotationMinSpeed: 0.03,
-        rotationMarkerWidthRatio: 0.4,
-        rotationMarkerLengthRatio: 1.35,
+        rotationMarkerWidthRatio: 0.22,
+        rotationMarkerLengthRatio: 1.05,
         rotationMarkerOffsetRatio: 0.16,
-        rotationMarkerAlpha: 0.9
+        rotationMarkerAlpha: 0.55,
+        minScreenRadius: 6,
+        bodyShadowBlurRatio: 0.85,
+        innerHighlightRadiusRatio: 0.42,
+        innerHighlightAlpha: 0.34
     }),
     screenEffects: Object.freeze({
         shockwaveDurationMs: 420,

@@ -857,5 +857,33 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-035",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Restore a clearly visible old-version blue circular player body like Image #1, so the player itself is visible and not mostly represented by its trail. Apply the fix to both classic and bad versions without changing gameplay behavior.\nImplemented: Restored a saturated draw-only blue circular player body with a minimum screen radius and subdued marker so it remains visible above the trail in classic and bad versions.",
+    "acceptance_criteria": [
+      "The player renders as a clearly visible blue circle in both classic and bad versions.",
+      "The player circle is visible at rest and during movement.",
+      "The player body draws above the player trail.",
+      "The player trail remains visible but does not replace, hide, or visually dominate the player body.",
+      "The result is visually closer to the old player circle shown in Image #1.",
+      "Collision, movement, grapnel behavior, scoring, spawning, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-035.png before marking this task to-verify.",
+      "LOOK AT THE ACTUAL SCREENSHOT AND CHECK IF THE TASK ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and confirm the player circle is clearly visible.",
+      "Start the bad version and confirm the player circle is clearly visible.",
+      "Move or jump so the trail appears behind the player.",
+      "Capture a screenshot and save it as screenshots/TASK-035.png.",
+      "Compare the screenshot with Image #1 and confirm the player body is visible as a blue circle rather than mostly trail.",
+      "Confirm grapnel, movement, collision, scoring, and restart behavior still work.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
