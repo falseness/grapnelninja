@@ -299,30 +299,89 @@ class BackgroundRenderer
             const angle = (typeof flash.angle == 'number' ? flash.angle : -45) * Math.PI / 180
             const startX = flash.x * width + animationOffset + shift.x
             const startY = flash.y * height + shift.y
-            const endX = startX + Math.cos(angle) * length
-            const endY = startY + Math.sin(angle) * length
             const alpha = typeof flash.alpha == 'number' ? flash.alpha : 1
             const stroke = flash.color == 'blue' ? colors.flashBlue : colors.flashMagenta
             const glow = flash.color == 'blue' ? colors.flashBlueGlow : colors.flashMagentaGlow
+            const segments = this.getFlashSegments(flash, startX, startY, angle, length)
 
             this.ctx.globalAlpha = stableMultiplier * alpha
             this.ctx.strokeStyle = glow
             this.ctx.lineWidth = flash.glowWidth || geometry.flashGlowWidth
-            this.ctx.beginPath()
-            this.ctx.moveTo(startX, startY)
-            this.ctx.lineTo(endX, endY)
-            this.ctx.stroke()
+            this.drawFlashSegments(segments)
 
             this.ctx.globalAlpha = Math.min(1, stableMultiplier * 1.45 * alpha)
             this.ctx.strokeStyle = stroke
             this.ctx.lineWidth = flash.width || geometry.flashLineWidth
-            this.ctx.beginPath()
-            this.ctx.moveTo(startX, startY)
-            this.ctx.lineTo(endX, endY)
-            this.ctx.stroke()
+            this.drawFlashSegments(segments)
         }
 
         this.ctx.restore()
+    }
+    getFlashSegments(flash, startX, startY, angle, length)
+    {
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
+
+        if (flash.form == 'broken')
+        {
+            const segments = flash.segments || [
+                {start: 0, end: 0.34},
+                {start: 0.48, end: 0.72},
+                {start: 0.84, end: 1}
+            ]
+
+            return segments.map(segment => ({
+                x1: startX + cos * length * segment.start,
+                y1: startY + sin * length * segment.start,
+                x2: startX + cos * length * segment.end,
+                y2: startY + sin * length * segment.end
+            }))
+        }
+
+        if (flash.form == 'fragments')
+        {
+            const fragments = flash.fragments || [
+                {x: 0, y: 0, length: 0.22, angleOffset: 0},
+                {x: 0.04, y: 0.03, length: 0.16, angleOffset: 0.34},
+                {x: -0.03, y: 0.06, length: 0.12, angleOffset: -0.28}
+            ]
+            const normalX = -sin
+            const normalY = cos
+
+            return fragments.map(fragment => {
+                const fragmentLength = length * fragment.length
+                const fragmentAngle = angle + (fragment.angleOffset || 0)
+                const fx = startX + cos * length * (fragment.x || 0) + normalX * length * (fragment.y || 0)
+                const fy = startY + sin * length * (fragment.x || 0) + normalY * length * (fragment.y || 0)
+
+                return {
+                    x1: fx,
+                    y1: fy,
+                    x2: fx + Math.cos(fragmentAngle) * fragmentLength,
+                    y2: fy + Math.sin(fragmentAngle) * fragmentLength
+                }
+            })
+        }
+
+        return [{
+            x1: startX,
+            y1: startY,
+            x2: startX + cos * length,
+            y2: startY + sin * length
+        }]
+    }
+    drawFlashSegments(segments)
+    {
+        this.ctx.beginPath()
+
+        for (let i = 0; i < segments.length; ++i)
+        {
+            const segment = segments[i]
+            this.ctx.moveTo(segment.x1, segment.y1)
+            this.ctx.lineTo(segment.x2, segment.y2)
+        }
+
+        this.ctx.stroke()
     }
     drawDecorativeTriangles(width, height, geometry, time, shift)
     {

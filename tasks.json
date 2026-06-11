@@ -1740,5 +1740,353 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-068",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix trampoline splashes so setting STYLE.features.lightmap to false does not turn them off. Trampoline splashes should be controlled by the particles feature and quality controls, not by the lightmap feature.",
+    "acceptance_criteria": [
+      "With STYLE.features.lightmap set to false and STYLE.features.particles set to true, trampoline splashes still render.",
+      "With QUALITY.lightmap set to false and QUALITY.particles set to true, trampoline splashes still render.",
+      "With STYLE.features.particles or QUALITY.particles set to false, trampoline splashes are disabled as part of the particle system.",
+      "The fix applies to both classic and bad versions wherever trampoline splash particles render.",
+      "Lightmap behavior remains separately controlled and disabling lightmap still disables only lightmap-based glow effects.",
+      "Collision, movement, scoring, spawning, restart behavior, particle caps, splash anchoring, and splash render order remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-068.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Set STYLE.features.lightmap to false while leaving STYLE.features.particles true, or use an equivalent test override.",
+      "Start the bad version and trigger a trampoline splash.",
+      "Capture a screenshot and save it as screenshots/TASK-068.png.",
+      "Confirm the trampoline splash is visible even though lightmap is disabled.",
+      "Disable particles through STYLE.features.particles or QUALITY.particles and confirm trampoline splashes turn off while gameplay remains playable.",
+      "Repeat a basic splash visibility check in the classic version where trampoline splash particles render.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "skip"
+  },
+  {
+    "id": "TASK-069",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix background flashes so they move with the rest of the animated background geometry. Flashes should share the same background motion/parallax behavior as the background triangles and hexagon instead of appearing detached or static.\nImplemented: Routed bad-version background flashes through the shared depth-background parallax/camera shift used by hexagons and decorative geometry.",
+    "acceptance_criteria": [
+      "Background flashes move with the same background motion/parallax system used by the background triangles and hexagon.",
+      "When background motion is enabled, flashes visibly drift or shift together with the other background geometry.",
+      "When background motion is disabled or frozen through existing quality/stability controls, flashes stop moving consistently with the other background geometry.",
+      "The change is visual-only and does not affect collision, movement, scoring, spawning, restart behavior, HUD, menus, or version selection.",
+      "A screenshot is saved at screenshots/TASK-069.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe the background flashes, triangles, and hexagon for several seconds.",
+      "Confirm the flashes move with the other background geometry instead of staying visually detached.",
+      "Disable or freeze background motion through existing quality/stability controls and confirm flashes freeze with the other background geometry.",
+      "Capture a representative screenshot and save it as screenshots/TASK-069.png.",
+      "Confirm gameplay objects and HUD remain readable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
+  },
+  {
+    "id": "TASK-070",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Update background flashes to better match screenshots/concept_art.png by using varied flash forms. Flashes should not all be simple straight lines; include a mix of longer streaks, shorter angled marks, and small bright accent fragments like the concept art.\nImplemented: Added data-driven broken streak and compact fragment flash forms while retaining long streak flashes for the bad-version/menu depth background.",
+    "acceptance_criteria": [
+      "Background flashes include multiple visible forms, not only identical straight lines.",
+      "The flash forms are visually consistent with screenshots/concept_art.png.",
+      "The new forms remain subtle background details and do not obscure gameplay objects, HUD text, or menu controls.",
+      "Flash rendering remains visual-only and does not affect collision, movement, scoring, spawning, restart behavior, HUD, menus, or version selection.",
+      "A screenshot is saved at screenshots/TASK-070.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and inspect the background flashes.",
+      "Compare the result with screenshots/concept_art.png.",
+      "Confirm at least two different flash forms are visible, such as long streaks and shorter accent fragments.",
+      "Capture a representative screenshot and save it as screenshots/TASK-070.png.",
+      "Confirm gameplay objects and HUD remain readable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
+  },
+  {
+    "id": "TASK-071",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Make background flash color depend on the local background color, matching screenshots/concept_art.png. Flashes on the right side should read red/magenta, while flashes on the left side should read blue/cyan.",
+    "acceptance_criteria": [
+      "Background flashes on the left side of the screen use blue or cyan tones.",
+      "Background flashes on the right side of the screen use red or magenta tones.",
+      "The color split follows the background wash colors and matches the visual direction in screenshots/concept_art.png.",
+      "Flash colors remain readable but subtle and do not obscure gameplay objects, HUD text, or menu controls.",
+      "The change is visual-only and does not affect collision, movement, scoring, spawning, restart behavior, HUD, menus, or version selection.",
+      "A screenshot is saved at screenshots/TASK-071.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and inspect flashes on the left and right sides of the background.",
+      "Compare the flash colors with screenshots/concept_art.png.",
+      "Confirm left-side flashes are blue/cyan and right-side flashes are red/magenta.",
+      "Capture a representative screenshot and save it as screenshots/TASK-071.png.",
+      "Confirm gameplay objects and HUD remain readable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-072",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Make decorative background triangle color depend on the local background color, matching screenshots/concept_art.png. Triangles on the left side should read blue-toned, while triangles on the right side should read red/magenta-toned.",
+    "acceptance_criteria": [
+      "Decorative background triangles on the left side use blue-toned fill or stroke colors.",
+      "Decorative background triangles on the right side use red or magenta-toned fill or stroke colors.",
+      "Triangle colors follow the background wash colors and match the visual direction in screenshots/concept_art.png.",
+      "Triangles remain subtle background details and do not obscure gameplay objects, HUD text, or menu controls.",
+      "The change is visual-only and does not affect collision, movement, scoring, spawning, restart behavior, HUD, menus, or version selection.",
+      "A screenshot is saved at screenshots/TASK-072.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and inspect decorative background triangles on the left and right sides.",
+      "Compare the triangle colors with screenshots/concept_art.png.",
+      "Confirm left-side triangles read blue-toned and right-side triangles read red/magenta-toned.",
+      "Capture a representative screenshot and save it as screenshots/TASK-072.png.",
+      "Confirm gameplay objects and HUD remain readable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-073",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Increase player splash dispersion a little so splash particles spread slightly farther from the contact point. Keep the change modest and visual-only.",
+    "acceptance_criteria": [
+      "Player or trampoline splash particles disperse slightly more than the current implementation.",
+      "The increased dispersion is noticeable but does not make the splash feel noisy or disconnected from the contact point.",
+      "Particle count, particle lifetime, collision, movement, scoring, spawning, restart behavior, HUD, menus, and version selection remain unchanged unless directly required for this visual tuning.",
+      "The splash remains readable in both classic and bad versions wherever splash particles render.",
+      "A screenshot is saved at screenshots/TASK-073.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and trigger a player or trampoline splash.",
+      "Confirm the splash particles spread slightly farther from the contact point than before.",
+      "Repeat a basic splash check in the classic version where splash particles render.",
+      "Capture a representative screenshot and save it as screenshots/TASK-073.png.",
+      "Confirm gameplay remains playable and unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-074",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix bad-version splash color when the player touches the ceiling or floor. These ceiling/floor trampoline splashes currently appear gray, but they should be green like other safe trampolines.",
+    "acceptance_criteria": [
+      "In the bad version, player contact with the ceiling creates a green splash, not a gray splash.",
+      "In the bad version, player contact with the floor creates a green splash, not a gray splash.",
+      "The green color matches the safe trampoline splash color used elsewhere.",
+      "Hazard and unsafe-object particle colors are not unintentionally changed.",
+      "Collision, movement, scoring, spawning, restart behavior, HUD, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-074.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and make the player touch the ceiling.",
+      "Confirm the ceiling contact splash is green rather than gray.",
+      "Make the player touch the floor and confirm the floor contact splash is green rather than gray.",
+      "Capture a representative screenshot and save it as screenshots/TASK-074.png.",
+      "Confirm other trampoline and hazard colors still render correctly.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-075",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix bad-version score text placement so the score is vertically centered in the ceiling band across different phone sizes. Verify the layout with five common phone screenshots.",
+    "acceptance_criteria": [
+      "In the bad version, score text is vertically centered in the visible ceiling band.",
+      "Score text remains horizontally placed on the left as intended and does not overlap gameplay objects, record text, stage indicators, or the menu button.",
+      "Score text placement works across five common phone resolutions.",
+      "Five screenshots are saved for this task using common phone sizes and named screenshots/TASK-075-1.png through screenshots/TASK-075-5.png.",
+      "Classic-version score placement is not unintentionally changed.",
+      "Collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Use five common portrait phone resolutions, such as small iPhone, standard iPhone, large iPhone, Pixel, and narrow Android.",
+      "Start the bad version at each resolution.",
+      "Capture screenshots/TASK-075-1.png through screenshots/TASK-075-5.png.",
+      "Inspect each screenshot and confirm the score text is vertically centered in the ceiling band.",
+      "Confirm the score text does not overlap the record text, stage indicators, menu button, or gameplay objects.",
+      "Check the classic version once and confirm its score placement was not unintentionally changed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-076",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix bad-version record text placement so the record is vertically centered in the ceiling band across different phone sizes. Verify the layout with five common phone screenshots.",
+    "acceptance_criteria": [
+      "In the bad version, record text is vertically centered in the visible ceiling band.",
+      "Record text remains horizontally placed on the right as intended and does not overlap gameplay objects, score text, stage indicators, or the menu button.",
+      "Record text placement works across five common phone resolutions.",
+      "Five screenshots are saved for this task using common phone sizes and named screenshots/TASK-076-1.png through screenshots/TASK-076-5.png.",
+      "Classic-version record placement is not unintentionally changed.",
+      "Collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Use five common portrait phone resolutions, such as small iPhone, standard iPhone, large iPhone, Pixel, and narrow Android.",
+      "Start the bad version at each resolution.",
+      "Capture screenshots/TASK-076-1.png through screenshots/TASK-076-5.png.",
+      "Inspect each screenshot and confirm the record text is vertically centered in the ceiling band.",
+      "Confirm the record text does not overlap the score text, stage indicators, menu button, or gameplay objects.",
+      "Check the classic version once and confirm its record placement was not unintentionally changed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-077",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix bad-version menu button placement so the button is vertically centered in the ceiling band across different phone sizes. Verify the layout with five common phone screenshots.",
+    "acceptance_criteria": [
+      "In the bad version, the menu button is vertically centered in the visible ceiling band.",
+      "The menu button remains on the right side as intended and does not overlap score text, record text, stage indicators, or gameplay objects.",
+      "The menu button remains clickable at its visible position.",
+      "Menu button placement works across five common phone resolutions.",
+      "Five screenshots are saved for this task using common phone sizes and named screenshots/TASK-077-1.png through screenshots/TASK-077-5.png.",
+      "Classic-version menu button placement is not unintentionally changed.",
+      "Collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Use five common portrait phone resolutions, such as small iPhone, standard iPhone, large iPhone, Pixel, and narrow Android.",
+      "Start the bad version at each resolution.",
+      "Capture screenshots/TASK-077-1.png through screenshots/TASK-077-5.png.",
+      "Inspect each screenshot and confirm the menu button is vertically centered in the ceiling band.",
+      "Click the menu button at each resolution or otherwise verify its hit area matches its visible position.",
+      "Confirm the menu button does not overlap score text, record text, stage indicators, or gameplay objects.",
+      "Check the classic version once and confirm its menu button placement was not unintentionally changed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-078",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Remove the visual effects button or checkbox from both the main menu and pause menu. Visual effects should always be enabled, with no visible menu control or clickable hidden hit area for turning them off.",
+    "acceptance_criteria": [
+      "The main menu does not show a visual effects button, checkbox, or label.",
+      "The pause menu does not show a visual effects button, checkbox, or label.",
+      "No hidden visual-effects hit area remains clickable in either menu.",
+      "Visual effects remain enabled by default during gameplay.",
+      "The existing FPS counter control remains independent and is not removed by this change.",
+      "Menu layout remains readable and clickable after removing the visual effects control.",
+      "A screenshot is saved at screenshots/TASK-078.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the main menu.",
+      "Confirm the main menu has no visual effects control.",
+      "Start a game, open the pause menu, and confirm the pause menu has no visual effects control.",
+      "Click or tap where the removed visual effects control used to be and confirm nothing toggles off.",
+      "Confirm visual effects remain visible during gameplay.",
+      "Capture a representative screenshot and save it as screenshots/TASK-078.png.",
+      "Confirm the FPS counter control still works wherever it is intended to appear.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-079",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Add an fps counter checkbox or equivalent toggle to the main menu. Reuse the existing FPS counter behavior so the setting can be turned on before starting a game.",
+    "acceptance_criteria": [
+      "The main menu includes an fps counter checkbox or equivalent toggle.",
+      "Toggling fps counter in the main menu turns the existing FPS counter on and off.",
+      "The FPS counter setting persists when starting either the classic version or the bad version from the main menu.",
+      "The main-menu FPS control is readable, clickable, and does not overlap version buttons, record text, or time-in-game text.",
+      "Pause-menu FPS behavior is not unintentionally broken.",
+      "The visual effects control is not reintroduced by this task.",
+      "A screenshot is saved at screenshots/TASK-079.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the main menu.",
+      "Confirm the fps counter control is visible and readable in the main menu.",
+      "Toggle fps counter on from the main menu and start the classic version.",
+      "Confirm the FPS counter is visible during classic gameplay.",
+      "Return to the menu, toggle fps counter on, and start the bad version.",
+      "Confirm the FPS counter is visible during bad-version gameplay.",
+      "Toggle fps counter off and confirm the counter hides during gameplay.",
+      "Capture a representative screenshot and save it as screenshots/TASK-079.png.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-080",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Change the drawing order for the FPS counter itself so it is drawn before the player and the player trail. Do not change the FPS counter checkbox, toggle, or setting behavior.",
+    "acceptance_criteria": [
+      "The FPS counter render call happens before the player render call.",
+      "The FPS counter render call happens before the player trail render call.",
+      "The FPS counter checkbox, toggle, setting persistence, and intended visibility behavior are unchanged.",
+      "The FPS counter is not hidden, removed, or moved as a substitute for changing draw order.",
+      "Collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-080.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Enable the FPS counter through the existing control.",
+      "Start gameplay in either version and confirm the FPS counter appears when enabled.",
+      "Capture a representative screenshot and save it as screenshots/TASK-080.png.",
+      "Inspect the screenshot and confirm the FPS counter draw-order task was actually completed, not worked around by hiding, removing, or moving the counter.",
+      "Inspect the draw path and confirm the FPS counter is drawn before the player and the player trail.",
+      "Toggle the FPS counter off and on again and confirm the existing control behavior still works.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
   }
 ]
