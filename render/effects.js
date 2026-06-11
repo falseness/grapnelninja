@@ -221,12 +221,7 @@ class LightmapRenderer
     {
         if (this.isHazard(element))
         {
-            this.drawElementCircleLight(
-                element,
-                STYLE.lights.hazardRadius,
-                STYLE.colors.hazard.red,
-                STYLE.lights.alpha
-            )
+            this.drawHazardPulseLight(element)
             return
         }
 
@@ -239,6 +234,27 @@ class LightmapRenderer
                 STYLE.lights.alpha
             )
         }
+    }
+    drawHazardPulseLight(element)
+    {
+        const pulse = this.getPulseRatio(STYLE.timing.hazardPulseMs)
+        const alpha = STYLE.lights.hazardPulseMinAlpha
+            + (STYLE.lights.hazardPulseMaxAlpha - STYLE.lights.hazardPulseMinAlpha) * pulse
+        const radius = STYLE.lights.hazardRadius + STYLE.lights.hazardPulseRadiusBoost * pulse
+
+        this.drawElementCircleLight(
+            element,
+            radius,
+            STYLE.colors.hazard.red,
+            alpha
+        )
+    }
+    getPulseRatio(durationMs)
+    {
+        const duration = Math.max(1, durationMs)
+        const phase = (performance.now() % duration) / duration
+
+        return 0.5 + Math.sin(phase * Math.PI * 2) * 0.5
     }
     drawElementCircleLight(element, radius, color, alpha)
     {

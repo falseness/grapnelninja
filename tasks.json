@@ -274,11 +274,11 @@
   {
     "id": "TASK-012",
     "title": "Add pulsing red hazard glow",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-009"
     ],
-    "description": "Add a pulsing red visual glow to triangle hazards only. Keep the pulse visual-only and subtle.",
+    "description": "Add a pulsing red visual glow to triangle hazards only. Keep the pulse visual-only and subtle.\nImplemented: Added STYLE-configured pulsing red lightmap glow for triangle hazards only, with movement and collision behavior unchanged.",
     "acceptance_criteria": [
       "Triangle hazards have a visible red glow pulse over time.",
       "The pulse does not change triangle movement, collision, scoring, or restart behavior.",

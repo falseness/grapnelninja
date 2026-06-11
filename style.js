@@ -80,6 +80,9 @@ const STYLE = Object.freeze({
         hazardRadius: 140,
         groundRadius: 80,
         alpha: 0.45,
+        hazardPulseMinAlpha: 0.26,
+        hazardPulseMaxAlpha: 0.72,
+        hazardPulseRadiusBoost: 36,
         ambientRadiusRatio: 0.62,
         ambientAlpha: 0.18,
         compositeAlpha: 0.85
@@ -114,7 +117,8 @@ const STYLE = Object.freeze({
         cubeTrailPoints: 50,
         triangleTrailPoints: 75,
         backgroundRotationMs: 18000,
-        backgroundStreakMs: 5200
+        backgroundStreakMs: 5200,
+        hazardPulseMs: 1300
     }),
     backgroundGeometry: Object.freeze({
         hexagonCount: 5,
