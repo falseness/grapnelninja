@@ -46,6 +46,9 @@ const STYLE = Object.freeze({
         ui: Object.freeze({
             title: '#8ffcff',
             text: '#d8fbff',
+            hudText: '#f4feff',
+            hudGlow: '#30d5c8',
+            hudMuted: 'rgba(31, 122, 255, 0.42)',
             score: '#30d5c8',
             record: '#8ffcff',
             primary: '#30d5c8',
@@ -84,7 +87,17 @@ const STYLE = Object.freeze({
         buttonShadowBlur: 10,
         buttonInsetRatio: 0.08,
         buttonLineWidth: 2,
-        pausePanelLineWidth: 2
+        pausePanelLineWidth: 2,
+        hudTopRatio: 0.06,
+        hudFontRatio: 0.042,
+        hudLetterSpacing: 4,
+        hudStageFontRatio: 0.032,
+        hudStageDotRatio: 0.006,
+        hudStageGapRatio: 0.031,
+        hudStageDiamondRatio: 0.018,
+        hudStageLineRatio: 0.0018,
+        hudRecordXRatio: 0.91,
+        hudClearTopRatio: 0.14
     }),
     lights: Object.freeze({
         resolutionScale: 0.2,

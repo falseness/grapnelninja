@@ -86,6 +86,7 @@ class Button
     draw()
     {
         const inset = Math.min(this.background.width, this.background.height) * STYLE.ui.buttonInsetRatio
+        const iconOnly = !!this.image && this.text.text == ''
 
         ctx.save()
         ctx.fillStyle   = this.background.fill
@@ -107,7 +108,8 @@ class Button
         )
         ctx.restore()
         
-        this.text.draw()
+        if (!iconOnly)
+            this.text.draw()
         
         if (this.image)
             this.image.draw(this.background.x, this.background.y, this.background.width, this.background.height)
@@ -311,8 +313,8 @@ class Menu
                     ctx.moveTo(x1, y1 + dy * 2)
                     ctx.lineTo(x2, y1 + dy * 2)
 
-                    ctx.strokeStyle = STYLE.colors.ui.text
-                    ctx.shadowColor = STYLE.colors.ui.text
+                    ctx.strokeStyle = STYLE.colors.ui.hudGlow
+                    ctx.shadowColor = STYLE.colors.ui.hudGlow
                     ctx.shadowBlur = STYLE.ui.buttonShadowBlur
                     ctx.stroke()
                     ctx.shadowBlur = 0
@@ -325,11 +327,12 @@ class Menu
         ]
         this.constButton = 
         {
-            x       : 0.96  * this.width,
-            y       : 0.05 * this.height,
-            width   : 0.1  * this.height,
-            height  : 0.09  * this.height,
-            fill    : STYLE.colors.ui.transparent
+            x       : 0.965 * this.width,
+            y       : 0.058 * this.height,
+            width   : 0.072 * this.height,
+            height  : 0.072 * this.height,
+            fill    : STYLE.colors.ui.transparent,
+            stroke  : STYLE.colors.ui.hudGlow
         }
         this.resume = new Button(
         {

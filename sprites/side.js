@@ -55,8 +55,19 @@ class Side extends Rect
     {
         super(object)
     }
+    isInHudClearZone()
+    {
+        const boundaryY = this.y > height / 2 ? this.y : this.y + this.height
+        const screenBoundaryY = boundaryY + screen.y
+        const hudClearTop = height / scale[version] * STYLE.ui.hudClearTopRatio
+
+        return screenBoundaryY < hudClearTop
+    }
     draw()
     {
+        if (this.isInHudClearZone())
+            return
+
         super.draw()
         
         //Чтобы не было "швов"
@@ -79,6 +90,10 @@ class Side extends Rect
     drawNeonBoundary()
     {
         const boundaryY = this.y > height / 2 ? this.y : this.y + this.height
+        const screenBoundaryY = boundaryY + screen.y
+
+        if (this.isInHudClearZone())
+            return
 
         ctx.save()
         ctx.beginPath()
@@ -87,8 +102,8 @@ class Side extends Rect
         ctx.strokeStyle = STYLE.colors.ground.stroke
         ctx.shadowColor = STYLE.colors.ground.line
         ctx.shadowBlur = STYLE.strokes.neonGlowWidth
-        ctx.moveTo(this.x + screen.x, boundaryY + screen.y)
-        ctx.lineTo(this.x + this.width + screen.x, boundaryY + screen.y)
+        ctx.moveTo(this.x + screen.x, screenBoundaryY)
+        ctx.lineTo(this.x + this.width + screen.x, screenBoundaryY)
         ctx.stroke()
 
         ctx.lineWidth = STYLE.strokes.neonWidth

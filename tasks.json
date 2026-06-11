@@ -441,11 +441,11 @@
   {
     "id": "TASK-018",
     "title": "Align HUD typography and top controls with concept art",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-017"
     ],
-    "description": "Restyle the in-game score, record, stage indicator, and menu button to better match the concept art HUD: uppercase pixel-like labels, stronger white/cyan glow, compact top placement, and no world geometry obscuring or competing with the HUD.",
+    "description": "Restyle the in-game score, record, stage indicator, and menu button to better match the concept art HUD: uppercase pixel-like labels, stronger white/cyan glow, compact top placement, and no world geometry obscuring or competing with the HUD.\nImplemented: Restyled the in-game HUD with uppercase glowing score/record labels, a bad-version stage indicator, compact outlined menu icon, and HUD-zone side-floor suppression.",
     "acceptance_criteria": [
       "Score and record labels render uppercase with a brighter white/cyan arcade treatment closer to the concept art.",
       "The top-center stage or progress indicator shown in the concept art is added as visual-only UI for the bad version without changing scoring or gameplay rules.",
