@@ -416,11 +416,11 @@
   {
     "id": "TASK-017",
     "title": "Compare bad version screenshots against concept art",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-016"
     ],
-    "description": "Open the game with bad version, play it, make screenshots, place them into screenshots/TASK-017, then compare the result with /opt/grapnelninja/screenshots/concept_art.png. If the result differs drastically from the concept art, add more pending tickets to tasks.json describing the missing visual work.",
+    "description": "Open the game with bad version, play it, make screenshots, place them into screenshots/TASK-017, then compare the result with /opt/grapnelninja/screenshots/concept_art.png. If the result differs drastically from the concept art, add more pending tickets to tasks.json describing the missing visual work.\nImplemented: Captured bad-version play screenshots, compared them with the concept art, and appended follow-up tickets for the major visual gaps.",
     "acceptance_criteria": [
       "The bad version is opened and played long enough to show player movement, cubes/platforms, triangle hazards, ground line, background, lighting, particles/trails, and UI.",
       "Multiple screenshots are saved under screenshots/TASK-017/.",
@@ -436,6 +436,111 @@
       "Open /opt/grapnelninja/screenshots/concept_art.png and compare it with the captured screenshots.",
       "If the result differs drastically, append new pending follow-up tickets to tasks.json before marking this task to-verify.",
       "Confirm tasks.json remains valid JSON."
+    ]
+  },
+  {
+    "id": "TASK-018",
+    "title": "Align HUD typography and top controls with concept art",
+    "status": "pending",
+    "dependencies": [
+      "TASK-017"
+    ],
+    "description": "Restyle the in-game score, record, stage indicator, and menu button to better match the concept art HUD: uppercase pixel-like labels, stronger white/cyan glow, compact top placement, and no world geometry obscuring or competing with the HUD.",
+    "acceptance_criteria": [
+      "Score and record labels render uppercase with a brighter white/cyan arcade treatment closer to the concept art.",
+      "The top-center stage or progress indicator shown in the concept art is added as visual-only UI for the bad version without changing scoring or gameplay rules.",
+      "The menu button uses a compact cyan outlined icon treatment matching the concept art.",
+      "World/floor visuals do not create a heavy top band that obscures or competes with HUD text.",
+      "All existing menu, pause, resume, back-to-menu, version selection, and visual-effects toggle click behavior remains unchanged.",
+      "A screenshot is saved at screenshots/TASK-018.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and confirm the HUD is readable and closer to the concept art.",
+      "Pause and resume the game, then return to menu, confirming all buttons still work.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-018.png.",
+      "Confirm screenshots/TASK-018.png exists."
+    ]
+  },
+  {
+    "id": "TASK-019",
+    "title": "Increase neon glow and particle richness toward concept art",
+    "status": "pending",
+    "dependencies": [
+      "TASK-017"
+    ],
+    "description": "Tune the bad-version visual effects so active play has brighter object halos, denser but capped square particles, more visible player trail arcs, and stronger colored light blooms similar to the concept art while staying Canvas 2D only.",
+    "acceptance_criteria": [
+      "Player movement produces a more visible cyan arc trail and square particle scatter similar to the concept art.",
+      "Cubes and platforms have stronger blue/cyan glow blooms without obscuring their collision silhouettes.",
+      "Triangle hazards emit more visible red glow and red particle trails while remaining readable.",
+      "Particle counts remain capped by STYLE and do not grow unbounded during at least 30 seconds of play.",
+      "The effect remains disableable through quality config.",
+      "No Canvas blur filters or heavy libraries are introduced.",
+      "A screenshot is saved at screenshots/TASK-019.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play for at least 30 seconds.",
+      "Confirm player trail, particles, and object glows are visibly richer and closer to the concept art.",
+      "Disable particles, player trail, and lightmap through quality config and confirm gameplay remains playable.",
+      "Confirm particle count stays within the STYLE cap.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-019.png.",
+      "Confirm screenshots/TASK-019.png exists."
+    ]
+  },
+  {
+    "id": "TASK-020",
+    "title": "Refine bad-version obstacle silhouettes to match concept art",
+    "status": "pending",
+    "dependencies": [
+      "TASK-017"
+    ],
+    "description": "Adjust draw-only styling for bad-version hazards, cubes, platforms, and ground blocks so they use darker interiors, brighter thin neon outlines, and less heavy filled color, matching the concept art more closely without changing collision geometry.",
+    "acceptance_criteria": [
+      "Triangle hazards use dark interiors with bright red neon outlines rather than large flat red fills.",
+      "Cube and platform interiors remain dark with bright cyan/blue outlines and readable edge highlights.",
+      "Ground and block surfaces are visually lighter and less slab-like while retaining a clear neon floor line.",
+      "Collision geometry, generated positions, movement, scoring, and restart behavior remain unchanged.",
+      "The styling remains readable against the dark background.",
+      "A screenshot is saved at screenshots/TASK-020.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and verify hazards, cubes, platforms, and ground blocks have concept-like dark-fill neon-outline styling.",
+      "Collide with at least one hazard and confirm restart behavior is unchanged.",
+      "Play long enough to score at least one point or confirm score behavior remains unchanged for the bad version.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-020.png.",
+      "Confirm screenshots/TASK-020.png exists."
+    ]
+  },
+  {
+    "id": "TASK-021",
+    "title": "Improve bad-version composition and background depth",
+    "status": "pending",
+    "dependencies": [
+      "TASK-017"
+    ],
+    "description": "Tune the bad-version camera framing and background rendering so screenshots show a cleaner concept-art-like composition: visible play space, layered faint geometry, diagonal streaks, subtle polygon accents, and less UI/world crowding.",
+    "acceptance_criteria": [
+      "Bad-version screenshots show the player, hazards, platforms, ground line, background geometry, particles/trails, lighting, and UI together without excessive crowding.",
+      "Background hexagons and diagonal streaks are more visible and layered while staying subtle behind gameplay.",
+      "Subtle decorative polygon accents or equivalent Canvas 2D geometric details are added behind gameplay if needed to approach the concept art.",
+      "Camera or draw-only framing changes do not alter physics, collision, spawning, scoring, or restart behavior.",
+      "The composition remains readable on a 1280x720 viewport.",
+      "A screenshot is saved at screenshots/TASK-021.png before marking this task to-verify."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play for at least 30 seconds.",
+      "Confirm the captured composition shows key gameplay elements and background depth closer to the concept art.",
+      "Confirm player collisions, scoring, and restart behavior remain unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Capture a screenshot and save it as screenshots/TASK-021.png.",
+      "Confirm screenshots/TASK-021.png exists."
     ]
   }
 ]
