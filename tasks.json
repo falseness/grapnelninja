@@ -1980,7 +1980,7 @@
     "id": "TASK-077",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix bad-version menu button placement so the button is vertically centered in the ceiling band across different phone sizes. Verify the layout with five common phone screenshots.\nImplemented: Added bad-version-specific HUD menu button layout so the icon is centered in the ceiling band, inset from the right edge, and sized to avoid phone HUD overlap.",
+    "description": "Fix bad-version menu button placement so the button is vertically centered in the ceiling band across different phone sizes. Verify the layout with five common phone screenshots.\nImplemented: Added bad-version-specific HUD menu button layout so the icon is centered in the ceiling band, inset from the right edge, and sized to avoid phone HUD overlap.\nVerified: Independent browser/code verification confirmed five phone screenshots, exact bad HUD-band centering, clickable visible menu button, no HUD overlap, classic unchanged, no console errors, and valid JSON.\nImplemented: Reverified and refreshed five portrait screenshots with the in-game menu button centered in the bad-version ceiling band.",
     "acceptance_criteria": [
       "In the bad version, the menu button is vertically centered in the visible ceiling band.",
       "The menu button remains on the right side as intended and does not overlap score text, record text, stage indicators, or gameplay objects.",
