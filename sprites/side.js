@@ -110,7 +110,7 @@ class Side extends Rect
     }
     draw()
     {
-        if (this.isInHudClearZone())
+        if (version == 'bad' && this.isInHudClearZone())
             return
 
         this.drawSideBody()
