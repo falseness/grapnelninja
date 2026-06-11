@@ -37,9 +37,6 @@ let scoreText =
         this.drawHudText(this.text + this.count[version], viewWidth * 0.03, topY, 'start')
         this.drawHudText(this.rtext + this.record[version], viewWidth * STYLE.ui.hudRecordXRatio, topY, 'end')
 
-        if (version == 'bad')
-            this.drawStageIndicator(viewWidth, topY, fontSize)
-
         ctx.restore()
     },
     drawHudText: function(text, x, y, align)
