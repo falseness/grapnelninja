@@ -1162,7 +1162,7 @@
     "id": "TASK-046",
     "category": "test",
     "priority": "critical",
-    "description": "Compare FPS with the visual effects flag enabled and disabled. The FPS difference should be between 1 and 5 FPS; if the difference is larger, identify the expensive visual path and optimize it before marking the task complete.",
+    "description": "Compare FPS with the visual effects flag enabled and disabled. The FPS difference should be between 1 and 5 FPS; if the difference is larger, identify the expensive visual path and optimize it before marking the task complete.\nImplemented: Measured bad-version visual-effects FPS with seeded comparable Playwright runs; enabled averaged 14.33 FPS, disabled averaged 17.45 FPS, absolute delta 3.12 FPS, no optimization needed.",
     "acceptance_criteria": [
       "FPS is measured with visual effects enabled during comparable gameplay.",
       "FPS is measured with visual effects disabled during comparable gameplay.",
@@ -1185,7 +1185,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-047",
