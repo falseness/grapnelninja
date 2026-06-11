@@ -115,8 +115,10 @@ class BackgroundRenderer
     {
         this.drawStreakSet(width, height, geometry, time, STYLE.colors.background.streak, 0)
     }
-    drawStreakSet(width, height, geometry, time, strokeStyle, yOffset)
+    drawStreakSet(width, height, geometry, time, strokeStyle, yOffset, xOffset)
     {
+        yOffset = yOffset || 0
+        xOffset = xOffset || 0
         const diagonal = Math.sqrt(width * width + height * height)
         const spacing = Math.max(width, height) * geometry.streakSpacingRatio
         const length = diagonal * geometry.streakLengthRatio
@@ -128,7 +130,7 @@ class BackgroundRenderer
 
         for (let i = -2; i < geometry.streakCount; ++i)
         {
-            const x = i * spacing + offset - spacing * 2
+            const x = i * spacing + offset - spacing * 2 + xOffset
             const y = height + spacing + yOffset
 
             this.ctx.beginPath()
@@ -146,6 +148,11 @@ class BackgroundRenderer
 
         const background = STYLE.colors.background
         const shift = this.getParallaxShift(width, height, geometry)
+        const cameraShift = this.getCameraParallaxShift(geometry)
+        const totalShift = {
+            x: shift.x + cameraShift.x,
+            y: shift.y + cameraShift.y
+        }
 
         this.ctx.save()
         this.ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
@@ -156,8 +163,8 @@ class BackgroundRenderer
             height,
             geometry,
             time,
-            width * 0.52 + shift.x,
-            height * 0.50 + shift.y,
+            width * 0.52 + totalShift.x,
+            height * 0.50 + totalShift.y,
             background.depthHexagonStroke,
             background.depthHexagonAccentStroke
         )
@@ -174,13 +181,13 @@ class BackgroundRenderer
             height,
             secondaryGeometry,
             time * 0.72,
-            width * 0.25 - shift.x * 0.6,
-            height * 0.36 - shift.y * 0.4,
+            width * 0.25 - totalShift.x * 0.6,
+            height * 0.36 - totalShift.y * 0.4,
             background.depthHexagonAccentStroke,
             background.depthHexagonStroke
         )
-        this.drawStreakSet(width, height, geometry, time, background.depthStreak, -height * 0.08)
-        this.drawRectangleAccents(width, height, geometry, time)
+        this.drawStreakSet(width, height, geometry, time, background.depthStreak, -height * 0.08 + totalShift.y, totalShift.x)
+        this.drawRectangleAccents(width, height, geometry, time, totalShift)
         this.ctx.restore()
     }
     getParallaxShift(width, height, geometry)
@@ -193,6 +200,20 @@ class BackgroundRenderer
         const y = Math.cos(performance.now() / 3700) * height * ratio
 
         return {x, y}
+    }
+    getCameraParallaxShift(geometry)
+    {
+        if (!QUALITY.backgroundMotion || typeof screen == 'undefined' || typeof scale == 'undefined' || typeof version == 'undefined')
+            return {x: 0, y: 0}
+
+        const canvasScale = scale[version] || 1
+        const ratioX = geometry.cameraParallaxXRatio || 0
+        const ratioY = geometry.cameraParallaxYRatio || 0
+
+        return {
+            x: screen.x * canvasScale * ratioX,
+            y: screen.y * canvasScale * ratioY
+        }
     }
     drawPolygonAccents(width, height, geometry, time)
     {
@@ -236,17 +257,18 @@ class BackgroundRenderer
         this.ctx.stroke()
         this.ctx.restore()
     }
-    drawRectangleAccents(width, height, geometry, time)
+    drawRectangleAccents(width, height, geometry, time, shift)
     {
         const rectangles = geometry.rectangles || []
+        shift = shift || {x: 0, y: 0}
 
         for (let i = 0; i < rectangles.length; ++i)
         {
             const rect = rectangles[i]
             const sizeScale = Math.min(width, height) / 720
             const rotation = rect.rotation + time / STYLE.timing.backgroundRotationMs * Math.PI * 0.14 * (i % 2 == 0 ? 1 : -1)
-            const x = rect.x * width
-            const y = rect.y * height
+            const x = rect.x * width + shift.x
+            const y = rect.y * height + shift.y
 
             this.drawRectangleAccent(
                 x,

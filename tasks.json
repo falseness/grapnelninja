@@ -708,5 +708,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-029",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Slow background movement relative to player and camera movement. The background should feel far away by using slower parallax motion instead of moving at the same speed as the player or world.\nImplemented: Added bad-version camera-derived background parallax so distant geometry shifts at a small fraction of foreground screen movement.",
+    "acceptance_criteria": [
+      "Background geometry moves more slowly than foreground gameplay objects during screen movement.",
+      "The slower movement creates a clear distant-background parallax effect.",
+      "The background no longer appears locked to the player or foreground world movement.",
+      "Gameplay physics, collision, spawning, scoring, and camera behavior for gameplay objects remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-029.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and move far enough for the screen or camera to scroll.",
+      "Capture a screenshot and save it as screenshots/TASK-029.png.",
+      "Observe motion during play and confirm background movement is slower than foreground movement.",
+      "Confirm gameplay object positions and collisions still behave normally.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

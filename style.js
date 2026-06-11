@@ -256,6 +256,8 @@ const STYLE = Object.freeze({
             streakLengthRatio: 0.34,
             streakLineWidth: 1.45,
             parallaxShiftRatio: 0.04,
+            cameraParallaxXRatio: 0.055,
+            cameraParallaxYRatio: 0.035,
             accentLineWidth: 1.2,
             rectangles: Object.freeze([
                 Object.freeze({x: 0.18, y: 0.24, width: 12, height: 5, rotation: 0.15, danger: true}),
