@@ -532,6 +532,7 @@ class ParticleSystem
         this.particles = []
         this.lastTime = 0
         this.lastWorldEmitTime = 0
+        this.lastTrampolineSplashTime = 0
     }
     shouldDraw()
     {
@@ -550,14 +551,7 @@ class ParticleSystem
         const dt = this.lastTime ? Math.min(33, now - this.lastTime) : 16
         this.lastTime = now
 
-        this.emitPlayerParticles(gameState.ninja)
-
-        if (now - this.lastWorldEmitTime >= STYLE.particles.worldEmitIntervalMs)
-        {
-            this.emitWorldParticles(gameState.floors)
-            this.lastWorldEmitTime = now
-        }
-
+        this.releaseTrampolineSplashLocks(gameState)
         this.updateParticles(dt)
     }
     draw()
@@ -598,6 +592,86 @@ class ParticleSystem
             if (particle.life <= 0)
                 this.particles.splice(i, 1)
         }
+    }
+    emitTrampolineSplash(player, trampoline)
+    {
+        if (!this.shouldDraw())
+            return
+
+        if (trampoline.particleSplashActive)
+            return
+
+        const now = performance.now()
+
+        if (now - this.lastTrampolineSplashTime < STYLE.particles.trampolineSplashCooldownMs)
+            return
+
+        this.lastTrampolineSplashTime = now
+        trampoline.particleSplashActive = true
+
+        const badParticles = this.getBadVersionParticles()
+        const splashParticles = Object.assign({}, badParticles, {
+            sizeMultiplier: badParticles.sizeMultiplier * STYLE.particles.trampolineSplashSizeMultiplier
+        })
+        const circle = trampoline.getCircumscribedCircle()
+        const originX = player.x + screen.x
+        const originY = player.y + screen.y
+        const color = trampoline.stroke || STYLE.colors.cube.greenStroke
+        const count = STYLE.particles.trampolineSplashCount
+
+        for (let i = 0; i < count; ++i)
+        {
+            this.emitSquare(
+                originX + this.randomRange(-circle.radius * 0.24, circle.radius * 0.24),
+                originY + this.randomRange(-circle.radius * 0.24, circle.radius * 0.24),
+                color,
+                STYLE.particles.trampolineSplashSpeed * splashParticles.speedMultiplier,
+                this.clampAlpha(STYLE.particles.trampolineSplashAlpha * badParticles.alphaMultiplier),
+                splashParticles
+            )
+        }
+    }
+    releaseTrampolineSplashLocks(gameState)
+    {
+        if (!gameState || !gameState.ninja || !gameState.floors)
+            return
+
+        for (let i = 0; i < gameState.floors.length; ++i)
+        {
+            for (let j = 0; j < gameState.floors[i].elements.length; ++j)
+            {
+                const element = gameState.floors[i].elements[j]
+
+                if (!(element instanceof Trampoline) || !element.particleSplashActive)
+                    continue
+
+                if (!this.isPlayerInsideElementBounds(gameState.ninja, element))
+                    element.particleSplashActive = false
+            }
+        }
+    }
+    isPlayerInsideElementBounds(player, element)
+    {
+        const points = element.getPoints()
+        let minX = points[0].x
+        let maxX = points[0].x
+        let minY = points[0].y
+        let maxY = points[0].y
+
+        for (let i = 1; i < points.length; ++i)
+        {
+            minX = Math.min(minX, points[i].x)
+            maxX = Math.max(maxX, points[i].x)
+            minY = Math.min(minY, points[i].y)
+            maxY = Math.max(maxY, points[i].y)
+        }
+
+        const margin = player.radius + STYLE.particles.maxSize
+
+        return player.x >= minX - margin
+            && player.x <= maxX + margin
+            && player.y >= minY - margin
+            && player.y <= maxY + margin
     }
     emitPlayerParticles(player)
     {

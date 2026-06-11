@@ -104,6 +104,9 @@ class Trampoline extends Element
         }
         else
             console.log('collision with trampoline error')
+
+        if (visualEffects && visualEffects.particles)
+            visualEffects.particles.emitTrampolineSplash(who, this)
     }
     draw()
     {

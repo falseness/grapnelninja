@@ -660,5 +660,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-027",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Modify TASK-011 particle behavior. Particles must be off by default during ordinary movement and object glow, and the game should only generate a short splash of particles when the player collides with a trampoline.\nImplemented: Disabled continuous movement/object particle emission and added a capped, quality-gated trampoline collision splash with contact locking.",
+    "acceptance_criteria": [
+      "No continuous particles are emitted by default during ordinary player movement.",
+      "No continuous particles are emitted by default from cubes, platforms, or hazards.",
+      "A short particle splash appears when the player collides with a trampoline.",
+      "Particle count remains capped and particles remain disableable through quality config.",
+      "A screenshot is saved at screenshots/TASK-027.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe normal movement before touching a trampoline.",
+      "Confirm no default movement or object glow particles are visible.",
+      "Collide with a trampoline and capture the particle splash as screenshots/TASK-027.png.",
+      "Confirm particles stop after the trampoline splash and do not become continuous.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

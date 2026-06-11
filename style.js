@@ -139,6 +139,11 @@ const STYLE = Object.freeze({
         playerSpeed: 1.15,
         cubeSpeed: 0.34,
         hazardSpeed: 0.66,
+        trampolineSplashCount: 30,
+        trampolineSplashSpeed: 1.7,
+        trampolineSplashAlpha: 0.72,
+        trampolineSplashSizeMultiplier: 1.65,
+        trampolineSplashCooldownMs: 1000,
         playerAlpha: 0.58,
         cubeAlpha: 0.28,
         hazardAlpha: 0.52
