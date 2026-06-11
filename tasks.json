@@ -1028,7 +1028,7 @@
     "id": "TASK-041",
     "category": "functional",
     "priority": "normal",
-    "description": "Add varied faint triangle silhouettes in the background like screenshots/concept_art.png. These triangles should be decorative background geometry only and must not be confused with red triangle hazards.",
+    "description": "Add varied faint triangle silhouettes in the background like screenshots/concept_art.png. These triangles should be decorative background geometry only and must not be confused with red triangle hazards.\nImplemented: Added bad-version decorative background triangle silhouettes with varied size, opacity, and rotation, using faint non-red styling behind gameplay.",
     "acceptance_criteria": [
       "Multiple decorative background triangle silhouettes are visible behind gameplay, similar to screenshots/concept_art.png.",
       "Background triangles vary in size, position, opacity, or orientation.",
@@ -1049,7 +1049,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-042",

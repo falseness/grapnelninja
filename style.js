@@ -20,6 +20,8 @@ const STYLE = Object.freeze({
             flashBlueGlow: 'rgba(31, 122, 255, 0.16)',
             flashMagenta: 'rgba(255, 61, 113, 0.72)',
             flashMagentaGlow: 'rgba(255, 61, 113, 0.18)',
+            triangleSilhouetteFill: 'rgba(31, 122, 255, 0.028)',
+            triangleSilhouetteStroke: 'rgba(143, 252, 255, 0.12)',
             polygonAccentFill: 'rgba(31, 122, 255, 0.025)',
             polygonAccentStroke: 'rgba(48, 213, 200, 0.11)',
             polygonDangerFill: 'rgba(255, 61, 113, 0.022)',
@@ -284,12 +286,21 @@ const STYLE = Object.freeze({
             flashGlowWidth: 9,
             flashLineWidth: 2.4,
             flashLengthRatio: 0.28,
+            triangleSilhouetteLineWidth: 1.15,
             flashes: Object.freeze([
                 Object.freeze({x: 0.11, y: 0.22, length: 0.18, color: 'blue'}),
                 Object.freeze({x: 0.28, y: 0.33, length: 0.24, color: 'magenta'}),
                 Object.freeze({x: 0.70, y: 0.24, length: 0.20, color: 'magenta'}),
                 Object.freeze({x: 0.84, y: 0.58, length: 0.28, color: 'magenta'}),
                 Object.freeze({x: 0.49, y: 0.76, length: 0.16, color: 'blue'})
+            ]),
+            triangles: Object.freeze([
+                Object.freeze({x: 0.12, y: 0.68, radius: 62, rotation: -0.62, alpha: 0.76}),
+                Object.freeze({x: 0.25, y: 0.42, radius: 42, rotation: 0.48, alpha: 0.52}),
+                Object.freeze({x: 0.42, y: 0.18, radius: 78, rotation: 0.12, alpha: 0.42}),
+                Object.freeze({x: 0.61, y: 0.74, radius: 54, rotation: -0.22, alpha: 0.58}),
+                Object.freeze({x: 0.77, y: 0.38, radius: 88, rotation: 0.78, alpha: 0.48}),
+                Object.freeze({x: 0.91, y: 0.66, radius: 48, rotation: -0.88, alpha: 0.64})
             ]),
             rectangles: Object.freeze([
                 Object.freeze({x: 0.18, y: 0.24, width: 12, height: 5, rotation: 0.15, danger: true}),

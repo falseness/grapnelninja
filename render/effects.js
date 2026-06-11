@@ -194,6 +194,7 @@ class BackgroundRenderer
         )
         this.drawStreakSet(width, height, geometry, geometryTime, background.depthStreak, -height * 0.08 + totalShift.y, totalShift.x)
         this.drawDiagonalFlashes(width, height, geometry, geometryTime)
+        this.drawDecorativeTriangles(width, height, geometry, geometryTime, totalShift)
         this.drawRectangleAccents(width, height, geometry, geometryTime, totalShift)
         this.ctx.restore()
     }
@@ -245,6 +246,59 @@ class BackgroundRenderer
         }
 
         this.ctx.restore()
+    }
+    drawDecorativeTriangles(width, height, geometry, time, shift)
+    {
+        const triangles = geometry.triangles || []
+        shift = shift || {x: 0, y: 0}
+
+        if (!triangles.length)
+            return
+
+        const sizeScale = Math.min(width, height) / 720
+        const motion = QUALITY.backgroundMotion && !STYLE.visualStability.freezeBadVersionBackground
+            ? time / STYLE.timing.backgroundRotationMs * Math.PI * 0.18
+            : 0
+
+        this.ctx.save()
+        this.ctx.fillStyle = STYLE.colors.background.triangleSilhouetteFill
+        this.ctx.strokeStyle = STYLE.colors.background.triangleSilhouetteStroke
+        this.ctx.lineWidth = geometry.triangleSilhouetteLineWidth
+
+        for (let i = 0; i < triangles.length; ++i)
+        {
+            const triangle = triangles[i]
+            const direction = i % 2 == 0 ? 1 : -1
+            const x = triangle.x * width + shift.x * (0.35 + i * 0.04)
+            const y = triangle.y * height + shift.y * (0.28 + i * 0.03)
+            const radius = triangle.radius * sizeScale
+            const rotation = triangle.rotation + motion * direction
+
+            this.ctx.globalAlpha = triangle.alpha
+            this.drawDecorativeTriangle(x, y, radius, rotation)
+        }
+
+        this.ctx.restore()
+    }
+    drawDecorativeTriangle(centerX, centerY, radius, rotation)
+    {
+        this.ctx.beginPath()
+
+        for (let i = 0; i < 3; ++i)
+        {
+            const angle = rotation - Math.PI / 2 + i * Math.PI * 2 / 3
+            const x = centerX + Math.cos(angle) * radius
+            const y = centerY + Math.sin(angle) * radius
+
+            if (i == 0)
+                this.ctx.moveTo(x, y)
+            else
+                this.ctx.lineTo(x, y)
+        }
+
+        this.ctx.closePath()
+        this.ctx.fill()
+        this.ctx.stroke()
     }
     getParallaxShift(width, height, geometry)
     {
