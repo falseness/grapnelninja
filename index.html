@@ -86,13 +86,24 @@
                 scoreText.rx        = scoreTextRx       / scale[version]
                 scoreText.y         = scoreTextY        / scale[version]
                 scoreText.fontSize  = getHudFontSize(width / scale[version], height / scale[version], version)
-                
+                const menuButtonLayout = getHudMenuButtonLayout(
+                    width / scale[version],
+                    height / scale[version],
+                    version,
+                    {
+                        x: menu.constButton.x / scale[version],
+                        y: menu.constButton.y / scale[version],
+                        width: menu.constButton.width / scale[version],
+                        height: menu.constButton.height / scale[version]
+                    }
+                )
+
                 menu.button = new Button(
                 {
-                    x       : menu.constButton.x        / scale[version],
-                    y       : getHudCenterY(height / scale[version], version),
-                    width   : menu.constButton.width    / scale[version],
-                    height  : menu.constButton.height   / scale[version],
+                    x       : menuButtonLayout.x,
+                    y       : menuButtonLayout.y,
+                    width   : menuButtonLayout.width,
+                    height  : menuButtonLayout.height,
                     fill    : menu.constButton.fill,
                     stroke  : menu.constButton.stroke
                 },

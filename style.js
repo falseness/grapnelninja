@@ -131,6 +131,9 @@ const STYLE = Object.freeze({
         hudRecordXRatio: 0.91,
         hudBadRecordXRatio: 0.865,
         hudBadTextGapRatio: 0.025,
+        hudBadMenuButtonSizeRatio: 0.052,
+        hudBadMenuButtonMaxWidthRatio: 0.09,
+        hudBadMenuButtonMarginRatio: 0.025,
         hudClearTopRatio: 0.14,
         badCeilingBandRatio: 0.2,
         fpsXRatio: 0.03,
@@ -540,6 +543,32 @@ function getHudFontSize(viewWidth, viewHeight, selectedVersion)
         return heightSize
 
     return Math.min(heightSize, viewWidth * STYLE.ui.hudBadMaxFontWidthRatio)
+}
+
+function getHudMenuButtonLayout(viewWidth, viewHeight, selectedVersion, fallbackButton)
+{
+    if (selectedVersion != 'bad')
+    {
+        return {
+            x: fallbackButton.x,
+            y: fallbackButton.y,
+            width: fallbackButton.width,
+            height: fallbackButton.height
+        }
+    }
+
+    const size = Math.min(
+        viewHeight * STYLE.ui.hudBadMenuButtonSizeRatio,
+        viewWidth * STYLE.ui.hudBadMenuButtonMaxWidthRatio
+    )
+    const margin = viewWidth * STYLE.ui.hudBadMenuButtonMarginRatio
+
+    return {
+        x: viewWidth - margin - size / 2,
+        y: getHudCenterY(viewHeight, selectedVersion),
+        width: size,
+        height: size
+    }
 }
 
 const QUALITY = {
