@@ -673,7 +673,8 @@ class ParticleSystem
 
         const badParticles = this.getBadVersionParticles()
         const splashParticles = Object.assign({}, badParticles, {
-            sizeMultiplier: badParticles.sizeMultiplier * STYLE.particles.trampolineSplashSizeMultiplier
+            sizeMultiplier: badParticles.sizeMultiplier * STYLE.particles.trampolineSplashSizeMultiplier,
+            lifetimeMultiplier: badParticles.lifetimeMultiplier * STYLE.particles.trampolineSplashLifetimeMultiplier
         })
         const circle = trampoline.getCircumscribedCircle()
         const originX = player.x + screen.x

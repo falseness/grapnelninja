@@ -828,5 +828,34 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-034",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Make the TASK-027 trampoline collision splash easier to see by increasing particle brightness, opacity, and lifetime. Keep particles disabled for ordinary movement and object glow, and keep the change visual-only for both classic and bad versions.\nImplemented: Increased trampoline splash count, opacity, size, and lifetime with trampoline-only particle config while keeping ordinary particle emitters inactive.",
+    "acceptance_criteria": [
+      "Trampoline splash particles are visibly brighter in both classic and bad versions.",
+      "Trampoline splash particles render at higher opacity than the current TASK-027 splash.",
+      "Trampoline splash particles remain visible longer after trampoline collision.",
+      "No continuous particles are emitted by default during ordinary player movement.",
+      "No continuous particles are emitted by default from cubes, platforms, or hazards.",
+      "Particle count remains capped and particles remain disableable through quality config.",
+      "Gameplay collision, movement, scoring, spawning, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-034.png before marking this task to-verify.",
+      "LOOK AT THE ACTUAL SCREENSHOT AND CHECK IF THE TASK ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and collide with a trampoline.",
+      "Start the bad version and collide with a trampoline.",
+      "Capture the brighter longer-lived trampoline splash and save it as screenshots/TASK-034.png.",
+      "Inspect the screenshot and confirm the splash is actually visible, brighter, higher opacity, and longer-lived.",
+      "Observe normal movement before and after the splash and confirm default continuous particles do not return.",
+      "Disable particles through quality config and confirm the splash is disabled while gameplay remains playable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
