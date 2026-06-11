@@ -261,24 +261,26 @@ class BackgroundRenderer
         {
             const flash = flashes[i]
             const length = diagonal * (flash.length || geometry.flashLengthRatio)
+            const angle = (typeof flash.angle == 'number' ? flash.angle : -45) * Math.PI / 180
             const startX = flash.x * width + animationOffset
             const startY = flash.y * height
-            const endX = startX + length
-            const endY = startY - length
+            const endX = startX + Math.cos(angle) * length
+            const endY = startY + Math.sin(angle) * length
+            const alpha = typeof flash.alpha == 'number' ? flash.alpha : 1
             const stroke = flash.color == 'blue' ? colors.flashBlue : colors.flashMagenta
             const glow = flash.color == 'blue' ? colors.flashBlueGlow : colors.flashMagentaGlow
 
-            this.ctx.globalAlpha = stableMultiplier
+            this.ctx.globalAlpha = stableMultiplier * alpha
             this.ctx.strokeStyle = glow
-            this.ctx.lineWidth = geometry.flashGlowWidth
+            this.ctx.lineWidth = flash.glowWidth || geometry.flashGlowWidth
             this.ctx.beginPath()
             this.ctx.moveTo(startX, startY)
             this.ctx.lineTo(endX, endY)
             this.ctx.stroke()
 
-            this.ctx.globalAlpha = Math.min(1, stableMultiplier * 1.45)
+            this.ctx.globalAlpha = Math.min(1, stableMultiplier * 1.45 * alpha)
             this.ctx.strokeStyle = stroke
-            this.ctx.lineWidth = geometry.flashLineWidth
+            this.ctx.lineWidth = flash.width || geometry.flashLineWidth
             this.ctx.beginPath()
             this.ctx.moveTo(startX, startY)
             this.ctx.lineTo(endX, endY)

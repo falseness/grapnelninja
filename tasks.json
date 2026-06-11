@@ -1586,5 +1586,31 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-062",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Make background flashes vary like screenshots/concept_art.png. Current flashes look too parallel and same-sized; they should vary in angle, length, brightness, placement, and thickness while staying subtle background decoration.\nImplemented: Added per-flash angle, length, thickness, glow, and brightness variation for bad-version background flashes while keeping them behind gameplay.",
+    "acceptance_criteria": [
+      "Background flashes are not all parallel.",
+      "Background flashes vary in length, thickness, brightness, and placement.",
+      "The result resembles the varied diagonal energy streaks in screenshots/concept_art.png.",
+      "Flashes remain behind gameplay objects and do not obscure player, hazards, platforms, floor, ceiling, score, record, or menu button.",
+      "The change is visual-only and does not affect collision, movement, scoring, spawning, restart behavior, or version selection.",
+      "A screenshot is saved at screenshots/TASK-062.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe the background flashes.",
+      "Capture a screenshot and save it as screenshots/TASK-062.png.",
+      "Inspect the screenshot and confirm flashes vary in angle and size instead of forming a uniform parallel set.",
+      "Compare against screenshots/concept_art.png for the intended varied flash feel.",
+      "Confirm gameplay objects and HUD remain readable over the flashes.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

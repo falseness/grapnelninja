@@ -321,11 +321,12 @@ const STYLE = Object.freeze({
             washYRatio: 0.54,
             triangleSilhouetteLineWidth: 1.15,
             flashes: Object.freeze([
-                Object.freeze({x: 0.11, y: 0.22, length: 0.18, color: 'blue'}),
-                Object.freeze({x: 0.28, y: 0.33, length: 0.24, color: 'magenta'}),
-                Object.freeze({x: 0.70, y: 0.24, length: 0.20, color: 'magenta'}),
-                Object.freeze({x: 0.84, y: 0.58, length: 0.28, color: 'magenta'}),
-                Object.freeze({x: 0.49, y: 0.76, length: 0.16, color: 'blue'})
+                Object.freeze({x: 0.08, y: 0.20, length: 0.16, angle: -35, width: 1.6, glowWidth: 6, alpha: 0.72, color: 'blue'}),
+                Object.freeze({x: 0.24, y: 0.38, length: 0.28, angle: -48, width: 3.2, glowWidth: 12, alpha: 1, color: 'magenta'}),
+                Object.freeze({x: 0.63, y: 0.18, length: 0.21, angle: -28, width: 2.1, glowWidth: 8, alpha: 0.82, color: 'magenta'}),
+                Object.freeze({x: 0.79, y: 0.62, length: 0.34, angle: -57, width: 2.7, glowWidth: 13, alpha: 0.94, color: 'magenta'}),
+                Object.freeze({x: 0.45, y: 0.79, length: 0.13, angle: -40, width: 1.4, glowWidth: 5, alpha: 0.62, color: 'blue'}),
+                Object.freeze({x: 0.92, y: 0.34, length: 0.12, angle: -68, width: 1.8, glowWidth: 7, alpha: 0.56, color: 'blue'})
             ]),
             triangles: Object.freeze([
                 Object.freeze({
