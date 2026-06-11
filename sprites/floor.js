@@ -236,14 +236,11 @@ class SideFloor extends Floor
         ctx.strokeRect(x, y, surfaceWidth, surfaceHeight)
         ctx.restore()
 
-        this.drawClassicCeilingShell(bounds)
+        this.drawClassicSurfaceShell(bounds)
         this.drawClassicContinuousBoundary(bounds)
     }
-    drawClassicCeilingShell(bounds)
+    drawClassicSurfaceShell(bounds)
     {
-        if (bounds.top > height / 2)
-            return
-
         const x = bounds.left + screen.x
         const y = bounds.top + screen.y
         const surfaceWidth = bounds.right - bounds.left
