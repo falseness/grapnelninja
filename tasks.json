@@ -542,5 +542,28 @@
       "Capture a screenshot and save it as screenshots/TASK-021.png.",
       "Confirm screenshots/TASK-021.png exists."
     ]
+  },
+  {
+    "id": "TASK-022",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix the TASK-012 red hazard glow regression. The pulsing red glow or spot must be drawn at the triangle hazard's actual screen position after camera or screen movement, not at an unrelated world position. Do not change hazard movement, collision, scoring, or restart behavior.\nImplemented: Gated red hazard glow/bloom to visible screen-space triangle positions and reused the same screen-offset circle for light placement.",
+    "acceptance_criteria": [
+      "The red hazard glow is visually aligned with each red triangle hazard during play.",
+      "Camera or screen movement shifts the glow by the same amount as the hazard sprite.",
+      "No red glow or spot appears detached from its hazard as shown in the bad Image #1 example.",
+      "Hazard movement, collision, scoring, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-022.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play until multiple red triangle hazards are visible while the screen is moving.",
+      "Capture a screenshot and save it as screenshots/TASK-022.png.",
+      "Compare the screenshot with Image #1 and confirm every red glow is attached to its triangle hazard.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

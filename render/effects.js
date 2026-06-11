@@ -367,6 +367,11 @@ class LightmapRenderer
     }
     drawHazardPulseLight(element)
     {
+        const circle = this.getScreenCircle(element)
+
+        if (!this.isScreenCircleVisible(circle))
+            return
+
         const badLights = this.getBadVersionLights()
         const pulse = this.getPulseRatio(STYLE.timing.hazardPulseMs)
         const alpha = STYLE.lights.hazardPulseMinAlpha
@@ -381,10 +386,9 @@ class LightmapRenderer
             this.clampAlpha(alpha * badLights.hazardAlphaMultiplier)
         )
 
-        const circle = element.getCircumscribedCircle()
         this.drawBadVersionBloom(
-            circle.x + screen.x,
-            circle.y + screen.y,
+            circle.x,
+            circle.y,
             radius,
             STYLE.colors.hazard.red
         )
@@ -398,15 +402,36 @@ class LightmapRenderer
     }
     drawElementCircleLight(element, radius, color, alpha)
     {
-        const circle = element.getCircumscribedCircle()
+        const circle = this.getScreenCircle(element)
 
         this.drawRadialLight(
-            circle.x + screen.x,
-            circle.y + screen.y,
+            circle.x,
+            circle.y,
             Math.max(radius, circle.radius),
             color,
             alpha
         )
+    }
+    getScreenCircle(element)
+    {
+        const circle = element.getCircumscribedCircle()
+
+        return {
+            x: circle.x + screen.x,
+            y: circle.y + screen.y,
+            radius: circle.radius
+        }
+    }
+    isScreenCircleVisible(circle)
+    {
+        const viewWidth = this.canvas.width / scale[version]
+        const viewHeight = this.canvas.height / scale[version]
+        const margin = circle.radius
+
+        return circle.x > -margin
+            && circle.x < viewWidth + margin
+            && circle.y > -margin
+            && circle.y < viewHeight + margin
     }
     isHazard(element)
     {
