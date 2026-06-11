@@ -1107,7 +1107,7 @@
     "id": "TASK-044",
     "category": "functional",
     "priority": "normal",
-    "description": "Add an FPS counter that can be enabled from the ESC keyboard menu or overlay. The counter should be hidden by default during normal play and should not interfere with score, record, menu button, or gameplay readability.",
+    "description": "Add an FPS counter that can be enabled from the ESC keyboard menu or overlay. The counter should be hidden by default during normal play and should not interfere with score, record, menu button, or gameplay readability.\nImplemented: Added a hidden-by-default FPS counter with an ESC pause-overlay toggle, live RAF-based updates, and HUD-safe rendering.",
     "acceptance_criteria": [
       "An FPS counter exists and is hidden by default during normal gameplay.",
       "Pressing ESC opens the existing keyboard menu or overlay with a way to enable the FPS counter.",
@@ -1129,7 +1129,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-045",

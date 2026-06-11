@@ -97,8 +97,15 @@ function createEvents()
     
     document.addEventListener('keydown', function(event)
     {
-        if (!!screen && event.keyCode == 27)//screen != undefined
-            screen.drawEnable = !screen.drawEnable
+        if (event.keyCode == 27 && !menu.visible)
+        {
+            event.preventDefault()
+
+            if (menu.gamePaused)
+                menu.unPause()
+            else
+                menu.startPause()
+        }
     })
 }
 

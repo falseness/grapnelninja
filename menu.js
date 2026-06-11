@@ -128,6 +128,80 @@ class Button
         return false
     }
 }
+class FpsCounter
+{
+    constructor()
+    {
+        this.enabled = false
+        this.frames = 0
+        this.lastSampleTime = 0
+        this.value = 0
+    }
+    toggle()
+    {
+        this.enabled = !this.enabled
+        this.frames = 0
+        this.lastSampleTime = 0
+    }
+    frame(frameTime)
+    {
+        if (!this.enabled)
+            return
+
+        if (!this.lastSampleTime)
+            this.lastSampleTime = frameTime
+
+        ++this.frames
+
+        const elapsed = frameTime - this.lastSampleTime
+
+        if (elapsed >= STYLE.ui.fpsUpdateMs)
+        {
+            this.value = Math.round(this.frames * 1000 / elapsed)
+            this.frames = 0
+            this.lastSampleTime = frameTime
+        }
+    }
+    draw()
+    {
+        if (!this.enabled || typeof version == 'undefined')
+            return
+
+        const viewWidth = width / scale[version]
+        const viewHeight = height / scale[version]
+        const x = viewWidth * STYLE.ui.fpsXRatio
+        const y = viewHeight * STYLE.ui.fpsYRatio
+        const fontSize = viewHeight * STYLE.ui.fpsFontRatio
+        const padding = viewHeight * STYLE.ui.fpsPaddingRatio
+        const text = 'FPS: ' + this.value
+
+        ctx.save()
+        ctx.font = fontSize + 'px ' + STYLE.ui.fontFamily
+        ctx.textAlign = 'start'
+        ctx.textBaseline = 'middle'
+
+        const metrics = ctx.measureText(text)
+        const panelWidth = metrics.width + padding * 2
+        const panelHeight = fontSize + padding * 1.4
+        const panelX = x - padding
+        const panelY = y - panelHeight / 2
+
+        ctx.fillStyle = STYLE.colors.ui.fpsPanelFill
+        ctx.strokeStyle = STYLE.colors.ui.fpsPanelStroke
+        ctx.lineWidth = STYLE.ui.fpsPanelLineWidth
+        ctx.shadowColor = STYLE.colors.ui.hudGlow
+        ctx.shadowBlur = STYLE.ui.textShadowBlur
+        ctx.fillRect(panelX, panelY, panelWidth, panelHeight)
+        ctx.strokeRect(panelX, panelY, panelWidth, panelHeight)
+
+        ctx.fillStyle = STYLE.colors.ui.hudText
+        ctx.strokeStyle = STYLE.colors.ui.hudGlow
+        ctx.lineWidth = Math.max(1, STYLE.ui.fpsPanelLineWidth * 0.65)
+        ctx.strokeText(text, x, y)
+        ctx.fillText(text, x, y)
+        ctx.restore()
+    }
+}
 class Menu
 {
     constructor(w, h)
@@ -284,6 +358,34 @@ class Menu
                 }
             }
         })
+        this.fpsCounterText = new Text(
+        {
+            x       : this.center.x - 0.2 * this.width,
+            y       : 0.62 * this.height,
+            fontSize: 0.1 * this.height,
+            fill    : STYLE.colors.ui.text,
+            text    : 'fps counter',
+            alignX  : 'start'
+        })
+        this.fpsCounterButton = new Button(
+        {
+            x       : this.center.x + 0.19 * this.width,
+            y       : 0.62 * this.height,
+            width   : 0.17 * this.width,
+            height  : 0.078 * this.height,
+            stroke  : STYLE.colors.ui.primary,
+            clickable: false
+        },
+        {
+            text: 'off',
+            fill: STYLE.colors.ui.buttonText
+        },
+        function()
+        {
+            fpsCounter.toggle()
+            menu.updateFpsCounterButtonText()
+            menu.drawPauseScreen()
+        })
         
         this.args = 
         [
@@ -383,6 +485,7 @@ class Menu
                 this.badVersionButton.isClickOnButton(coord)        ||
                 this.resume.isClickOnButton(coord)                  ||
                 this.visualEffectsCheckbox.isClickOnButton(coord)   ||
+                this.fpsCounterButton.isClickOnButton(coord)        ||
                 this.backToMenu.isClickOnButton(coord)
     }
     clickToPause(coord)
@@ -402,8 +505,13 @@ class Menu
         this.gamePaused = isPaused
         
         this.visualEffectsCheckbox.clickable    = isPaused
+        this.fpsCounterButton.clickable         = isPaused
         this.resume.clickable                   = isPaused
         this.backToMenu.clickable               = isPaused
+    }
+    updateFpsCounterButtonText()
+    {
+        this.fpsCounterButton.text.text = fpsCounter.enabled ? 'on' : 'off'
     }
     startPause()
     {
@@ -411,7 +519,11 @@ class Menu
         this.timeInGame.text = 'time spent in game: ' + getTimeInGame() + ' minutes'
 
         this.changeGamePause(true)
-        
+
+        this.drawPauseScreen()
+    }
+    drawPauseScreen()
+    {
         ctx.fillStyle = STYLE.colors.ui.pauseOverlay
         ctx.fillRect(0, 0, this.width, this.height)
         
@@ -429,10 +541,12 @@ class Menu
         
         this.visualEffectsText.draw()
         this.visualEffectsCheckbox.draw()
+        this.fpsCounterText.draw()
+        this.updateFpsCounterButtonText()
+        this.fpsCounterButton.draw()
         
         this.resume.draw()
         this.backToMenu.draw()
-        
     }
     unPause()
     {

@@ -1282,6 +1282,7 @@ class UIStylingHooks
 
         gameState.scoreText.draw()
         gameState.menu.button.draw()
+        gameState.fpsCounter.draw()
     }
 }
 
@@ -1302,7 +1303,8 @@ class VisualEffects
             floors,
             ninja,
             scoreText,
-            menu
+            menu,
+            fpsCounter
         }
     }
 }

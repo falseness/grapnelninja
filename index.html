@@ -59,6 +59,7 @@
             let time
             ctx.lineCap = 'butt'
             let trackEnabled = true
+            let fpsCounter = new FpsCounter()
             let menu = new Menu(width, height)
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             let lastFrameTime = 0, physicsAccumulatorMs = 0
@@ -219,6 +220,8 @@
 
             function gameLoop(frameTime)
             {
+                fpsCounter.frame(frameTime)
+
                 if (menu.gamePaused)
                 {
                     resetPhysicsTiming()

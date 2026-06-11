@@ -83,6 +83,8 @@ const STYLE = Object.freeze({
             pauseOverlay: 'rgba(3, 5, 16, 0.68)',
             pausePanelFill: 'rgba(5, 9, 20, 0.86)',
             pausePanelStroke: 'rgba(48, 213, 200, 0.82)',
+            fpsPanelFill: 'rgba(3, 8, 18, 0.76)',
+            fpsPanelStroke: 'rgba(48, 213, 200, 0.7)',
             debug: '#008000',
             debugAccent: '#ff0000'
         })
@@ -117,7 +119,13 @@ const STYLE = Object.freeze({
         hudStageDiamondRatio: 0.018,
         hudStageLineRatio: 0.0018,
         hudRecordXRatio: 0.91,
-        hudClearTopRatio: 0.14
+        hudClearTopRatio: 0.14,
+        fpsXRatio: 0.03,
+        fpsYRatio: 0.125,
+        fpsFontRatio: 0.026,
+        fpsPaddingRatio: 0.012,
+        fpsPanelLineWidth: 1.5,
+        fpsUpdateMs: 250
     }),
     lights: Object.freeze({
         resolutionScale: 0.2,
