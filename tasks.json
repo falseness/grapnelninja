@@ -1688,5 +1688,31 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-066",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Add more detail to the main-menu background, including decorative flashes and triangle shapes similar to the gameplay background and screenshots/concept_art.png. The main menu should feel alive without hurting menu readability.\nImplemented: Added menu-specific neon background geometry with decorative flashes, triangle silhouettes, and accent details while preserving menu readability and version selection.",
+    "acceptance_criteria": [
+      "Main-menu background includes decorative flashes.",
+      "Main-menu background includes decorative triangle shapes.",
+      "Menu background details use the same visual language as the gameplay background and screenshots/concept_art.png.",
+      "Menu buttons, records, options, text, and click targets remain readable and usable.",
+      "The added details are visual-only and do not affect gameplay or version selection behavior.",
+      "A screenshot is saved at screenshots/TASK-066.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the main menu.",
+      "Capture a screenshot and save it as screenshots/TASK-066.png.",
+      "Inspect the screenshot and confirm flashes and triangle details are visible in the menu background.",
+      "Compare the menu background details with screenshots/concept_art.png and the gameplay background for style consistency.",
+      "Confirm all menu text and buttons remain readable and clickable.",
+      "Start a game from the menu and confirm version selection still works.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

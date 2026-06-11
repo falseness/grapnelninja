@@ -30,8 +30,16 @@ class BackgroundRenderer
         const height = this.canvas.height
 
         this.drawBaseGradient(width, height)
-        this.drawBadVersionDepth(width, height, STYLE.backgroundGeometry.badVersion, 0, {forceStatic: true})
+        this.drawBadVersionDepth(width, height, this.getMenuBackgroundGeometry(), 0, {forceStatic: true})
         this.drawVignette(width, height)
+    }
+    getMenuBackgroundGeometry()
+    {
+        return Object.assign(
+            {},
+            STYLE.backgroundGeometry.badVersion,
+            STYLE.backgroundGeometry.menu || {}
+        )
     }
     drawBaseGradient(width, height)
     {
