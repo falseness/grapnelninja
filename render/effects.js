@@ -744,12 +744,14 @@ class ParticleSystem
         {
             const particle = this.particles[i]
             const progress = particle.life / particle.maxLife
+            const drawX = particle.worldAnchored ? particle.x + screen.x : particle.x
+            const drawY = particle.worldAnchored ? particle.y + screen.y : particle.y
 
             this.ctx.globalAlpha = Math.max(0, progress) * particle.alpha * this.getStableAlphaMultiplier()
             this.ctx.fillStyle = particle.color
             this.ctx.fillRect(
-                particle.x - particle.size / 2,
-                particle.y - particle.size / 2,
+                drawX - particle.size / 2,
+                drawY - particle.size / 2,
                 particle.size,
                 particle.size
             )
@@ -793,8 +795,8 @@ class ParticleSystem
             lifetimeMultiplier: badParticles.lifetimeMultiplier * STYLE.particles.trampolineSplashLifetimeMultiplier
         })
         const circle = trampoline.getCircumscribedCircle()
-        const originX = player.x + screen.x
-        const originY = player.y + screen.y
+        const originX = player.x
+        const originY = player.y
         const color = trampoline.stroke || STYLE.colors.cube.greenStroke
         const count = STYLE.particles.trampolineSplashCount
         const dispersion = circle.radius * STYLE.particles.trampolineSplashDispersionRatio
@@ -807,7 +809,8 @@ class ParticleSystem
                 color,
                 STYLE.particles.trampolineSplashSpeed * splashParticles.speedMultiplier,
                 this.clampAlpha(STYLE.particles.trampolineSplashAlpha * badParticles.alphaMultiplier),
-                splashParticles
+                splashParticles,
+                true
             )
         }
     }
@@ -938,7 +941,7 @@ class ParticleSystem
 
         this.emitSquare(x, y, color, speed, alpha, particleConfig)
     }
-    emitSquare(x, y, color, speed, alpha, particleConfig)
+    emitSquare(x, y, color, speed, alpha, particleConfig, worldAnchored)
     {
         const config = particleConfig || this.getBadVersionParticles()
         const angle = Math.random() * Math.PI * 2
@@ -958,7 +961,8 @@ class ParticleSystem
                 STYLE.particles.minSize * config.sizeMultiplier,
                 STYLE.particles.maxSize * config.sizeMultiplier
             ),
-            alpha
+            alpha,
+            worldAnchored: !!worldAnchored
         })
 
         this.enforceCap()

@@ -1216,5 +1216,30 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-048",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix trampoline splash particles so they remain attached to world/camera movement after spawning. The splash introduced around TASK-038 currently does not move with the camera, so particles appear to detach from the contact point.\nImplemented: Stored trampoline splash particles in world coordinates and render them with the current camera offset so they stay anchored during screen movement.",
+    "acceptance_criteria": [
+      "Trampoline splash particles move consistently with the camera after they spawn.",
+      "The splash remains visually anchored near the original trampoline contact point while the world scrolls or the camera shifts.",
+      "The fix applies to both classic and bad versions where trampoline splash particles render.",
+      "Particle lifetime, count, static clustered shape, quality-disable behavior, and gameplay behavior remain unchanged unless required to correct camera anchoring.",
+      "A screenshot is saved at screenshots/TASK-048.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and trigger a trampoline splash during movement or camera shift.",
+      "Capture a screenshot and save it as screenshots/TASK-048.png.",
+      "Inspect the splash while the camera moves and confirm it stays anchored to the world contact point instead of remaining screen-fixed.",
+      "Start the classic version and confirm trampoline splash behavior is still correct.",
+      "Disable particles through quality config and confirm the splash is disabled while gameplay remains playable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
