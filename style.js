@@ -156,7 +156,7 @@ const STYLE = Object.freeze({
         hazardSpeed: 0.66,
         trampolineSplashCount: 38,
         trampolineSplashSpeed: 0,
-        trampolineSplashDispersionRatio: 0.1,
+        trampolineSplashDispersion: 4.5,
         trampolineSplashAlpha: 0.98,
         trampolineSplashSizeMultiplier: 2.05,
         trampolineSplashLifetimeMultiplier: 3,
@@ -348,7 +348,7 @@ const STYLE = Object.freeze({
     }),
     features: Object.freeze({
         background: true,
-        lightmap: true,
+        lightmap: false,
         particles: true,
         playerTrail: true,
         screenEffects: true,
