@@ -105,6 +105,8 @@
             }
             function reStart()
             {
+                if (visualEffects && ninja && screen)
+                    visualEffects.screenEffects.triggerDeath(ninja.x + screen.x, ninja.y + screen.y)
                 chooseVersion()
             }
             function startClassicVersion()

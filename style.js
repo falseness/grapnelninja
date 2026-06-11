@@ -119,6 +119,16 @@ const STYLE = Object.freeze({
         rotationMarkerOffsetRatio: 0.16,
         rotationMarkerAlpha: 0.9
     }),
+    screenEffects: Object.freeze({
+        shockwaveDurationMs: 420,
+        shockwaveStartRadius: 8,
+        shockwaveEndRadius: 170,
+        shockwaveLineWidth: 3,
+        shockwaveGlowWidth: 12,
+        shockwaveAlpha: 0.9,
+        shakeDurationMs: 180,
+        shakeMagnitude: 5
+    }),
     timing: Object.freeze({
         inputUntouchMs: 100,
         trailPoints: 100,

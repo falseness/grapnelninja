@@ -572,19 +572,115 @@ class PlayerTrailRenderer
 
 class ScreenEffects
 {
+    constructor(context)
+    {
+        this.ctx = context
+        this.shockwaves = []
+        this.shakeUntil = 0
+        this.shakeStart = 0
+        this.shakeOffset = {x: 0, y: 0}
+        this.isShaking = false
+    }
     shouldApply()
     {
-        return STYLE.features.screenEffects && QUALITY.screenShake
+        return STYLE.features.screenEffects
+    }
+    triggerDeath(x, y)
+    {
+        if (!this.shouldApply())
+            return
+
+        const now = performance.now()
+
+        this.shockwaves.push({
+            x,
+            y,
+            start: now,
+            end: now + STYLE.screenEffects.shockwaveDurationMs
+        })
+
+        if (QUALITY.screenShake)
+        {
+            this.shakeStart = now
+            this.shakeUntil = now + STYLE.screenEffects.shakeDurationMs
+        }
     }
     begin()
     {
         if (!this.shouldApply())
             return
+
+        this.isShaking = false
+
+        if (!QUALITY.screenShake)
+            return
+
+        const now = performance.now()
+
+        if (now >= this.shakeUntil)
+            return
+
+        const duration = Math.max(1, STYLE.screenEffects.shakeDurationMs)
+        const progress = Math.min(1, (now - this.shakeStart) / duration)
+        const magnitude = STYLE.screenEffects.shakeMagnitude * (1 - progress)
+        const angle = now * 0.07
+
+        this.shakeOffset.x = Math.cos(angle * 1.7) * magnitude
+        this.shakeOffset.y = Math.sin(angle * 2.1) * magnitude
+
+        this.ctx.save()
+        this.ctx.translate(this.shakeOffset.x, this.shakeOffset.y)
+        this.isShaking = true
+    }
+    draw()
+    {
+        if (!this.shouldApply())
+            return
+
+        const now = performance.now()
+        const config = STYLE.screenEffects
+
+        this.ctx.save()
+        this.ctx.globalCompositeOperation = 'lighter'
+        this.ctx.strokeStyle = STYLE.colors.player.cyan
+        this.ctx.shadowColor = STYLE.colors.player.cyan
+        this.ctx.lineWidth = config.shockwaveLineWidth
+        this.ctx.shadowBlur = config.shockwaveGlowWidth
+
+        for (let i = this.shockwaves.length - 1; i >= 0; --i)
+        {
+            const shockwave = this.shockwaves[i]
+
+            if (now >= shockwave.end)
+            {
+                this.shockwaves.splice(i, 1)
+                continue
+            }
+
+            const progress = (now - shockwave.start) / Math.max(1, config.shockwaveDurationMs)
+            const eased = 1 - Math.pow(1 - progress, 2)
+            const radius = config.shockwaveStartRadius
+                + (config.shockwaveEndRadius - config.shockwaveStartRadius) * eased
+
+            this.ctx.globalAlpha = config.shockwaveAlpha * (1 - progress)
+            this.ctx.beginPath()
+            this.ctx.arc(shockwave.x, shockwave.y, radius, 0, Math.PI * 2)
+            this.ctx.stroke()
+            this.ctx.closePath()
+        }
+
+        this.ctx.restore()
     }
     end()
     {
         if (!this.shouldApply())
             return
+
+        if (this.isShaking)
+        {
+            this.ctx.restore()
+            this.isShaking = false
+        }
     }
 }
 
@@ -612,7 +708,7 @@ class VisualEffects
         this.lightmap = new LightmapRenderer(context, targetCanvas)
         this.particles = new ParticleSystem(context, targetCanvas)
         this.playerTrail = new PlayerTrailRenderer()
-        this.screenEffects = new ScreenEffects()
+        this.screenEffects = new ScreenEffects(context)
         this.ui = new UIStylingHooks()
     }
     getGameState()

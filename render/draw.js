@@ -30,6 +30,7 @@ function drawParticlesAndTrailsLayer(gameState)
     visualEffects.playerTrail.draw(gameState)
     visualEffects.particles.update(gameState)
     visualEffects.particles.draw(gameState)
+    visualEffects.screenEffects.draw(gameState)
 }
 
 function drawUILayer(gameState)

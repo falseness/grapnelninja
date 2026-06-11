@@ -322,13 +322,13 @@
   {
     "id": "TASK-014",
     "title": "Add death shockwave and small screen shake",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-002",
       "TASK-003",
       "TASK-006"
     ],
-    "description": "Add a brief visual shockwave and small screen shake on player death or restart. Do not delay or alter restart behavior.",
+    "description": "Add a brief visual shockwave and small screen shake on player death or restart. Do not delay or alter restart behavior.\nImplemented: Added restart-triggered shockwave rendering and quality-gated screen shake through the existing ScreenEffects layer.",
     "acceptance_criteria": [
       "A small visual shockwave appears when the player dies or the game restarts from collision/out-of-bounds.",
       "A short, subtle screen shake occurs on death or restart.",
