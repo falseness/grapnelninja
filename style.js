@@ -10,9 +10,9 @@ const STYLE = Object.freeze({
             gradientBottom: '#190a2e',
             vignetteCenter: 'rgba(0, 0, 0, 0)',
             vignetteEdge: 'rgba(0, 0, 0, 0.58)',
-            hexagonStroke: 'rgba(48, 213, 200, 0.13)',
-            hexagonAccentStroke: 'rgba(255, 61, 113, 0.08)',
-            streak: 'rgba(48, 213, 200, 0.11)'
+            hexagonStroke: 'rgba(48, 213, 200, 0.10)',
+            hexagonAccentStroke: 'rgba(255, 61, 113, 0.06)',
+            streak: 'rgba(48, 213, 200, 0.08)'
         }),
         player: Object.freeze({
             fill: '#06151d',
@@ -73,7 +73,7 @@ const STYLE = Object.freeze({
         defaultWidth: 1,
         seamWidth: 10,
         neonWidth: 2,
-        neonGlowWidth: 6,
+        neonGlowWidth: 5,
         grapnelWidthRatio: 0.006,
         menuIconWidthRatio: 0.05,
         checkMarkWidthRatio: 0.03
@@ -87,40 +87,43 @@ const STYLE = Object.freeze({
         pausePanelLineWidth: 2
     }),
     lights: Object.freeze({
-        resolutionScale: 0.25,
-        playerRadius: 120,
-        cubeRadius: 120,
-        hazardRadius: 140,
+        resolutionScale: 0.2,
+        playerRadius: 110,
+        cubeRadius: 104,
+        hazardRadius: 126,
         groundRadius: 80,
-        alpha: 0.45,
-        hazardPulseMinAlpha: 0.26,
-        hazardPulseMaxAlpha: 0.72,
-        hazardPulseRadiusBoost: 36,
+        alpha: 0.34,
+        hazardPulseMinAlpha: 0.22,
+        hazardPulseMaxAlpha: 0.56,
+        hazardPulseRadiusBoost: 26,
         ambientRadiusRatio: 0.62,
-        ambientAlpha: 0.18,
-        compositeAlpha: 0.85
+        ambientAlpha: 0.12,
+        compositeAlpha: 0.72
     }),
     particles: Object.freeze({
-        maxCount: 120,
+        maxCount: 90,
         spawnBurst: 12,
-        lifetimeMs: 450,
-        playerEmitCount: 2,
-        worldEmitIntervalMs: 120,
-        cubeEmitChance: 0.32,
-        hazardEmitChance: 0.55,
+        lifetimeMs: 360,
+        playerEmitCount: 1,
+        worldEmitIntervalMs: 160,
+        cubeEmitChance: 0.24,
+        hazardEmitChance: 0.42,
         minSize: 2,
-        maxSize: 5,
-        playerSpeed: 1.4,
-        cubeSpeed: 0.42,
-        hazardSpeed: 0.82
+        maxSize: 4,
+        playerSpeed: 1.15,
+        cubeSpeed: 0.34,
+        hazardSpeed: 0.66,
+        playerAlpha: 0.58,
+        cubeAlpha: 0.28,
+        hazardAlpha: 0.52
     }),
     trails: Object.freeze({
         player: Object.freeze({
             widthRatio: 3.5,
-            glowWidthRatio: 9,
+            glowWidthRatio: 7,
             minAlpha: 0.04,
-            maxAlpha: 0.62,
-            coreAlpha: 0.82,
+            maxAlpha: 0.48,
+            coreAlpha: 0.72,
             minSegmentRatio: 0
         })
     }),
@@ -137,10 +140,10 @@ const STYLE = Object.freeze({
         shockwaveStartRadius: 8,
         shockwaveEndRadius: 170,
         shockwaveLineWidth: 3,
-        shockwaveGlowWidth: 12,
-        shockwaveAlpha: 0.9,
+        shockwaveGlowWidth: 9,
+        shockwaveAlpha: 0.72,
         shakeDurationMs: 180,
-        shakeMagnitude: 5
+        shakeMagnitude: 3.5
     }),
     timing: Object.freeze({
         inputUntouchMs: 100,
@@ -176,5 +179,15 @@ const QUALITY = {
     particles: true,
     playerTrail: true,
     backgroundMotion: true,
-    screenShake: true
+    screenShake: true,
+    setLowPower: function(enabled)
+    {
+        const fullQuality = !enabled
+
+        this.lightmap = fullQuality
+        this.particles = fullQuality
+        this.playerTrail = fullQuality
+        this.backgroundMotion = fullQuality
+        this.screenShake = fullQuality
+    }
 }

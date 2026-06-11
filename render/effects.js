@@ -386,7 +386,7 @@ class ParticleSystem
                 player.y + screen.y + this.randomRange(-player.radius, player.radius),
                 STYLE.colors.player.cyan,
                 STYLE.particles.playerSpeed,
-                0.72
+                STYLE.particles.playerAlpha
             )
         }
     }
@@ -408,14 +408,14 @@ class ParticleSystem
         if (this.isHazard(element))
         {
             if (Math.random() <= STYLE.particles.hazardEmitChance)
-                this.emitAroundElement(element, STYLE.colors.hazard.red, STYLE.particles.hazardSpeed, 0.64)
+                this.emitAroundElement(element, STYLE.colors.hazard.red, STYLE.particles.hazardSpeed, STYLE.particles.hazardAlpha)
 
             return
         }
 
         if (this.isCubeOrPlatform(element) && Math.random() <= STYLE.particles.cubeEmitChance)
         {
-            this.emitAroundElement(element, STYLE.colors.cube.blue, STYLE.particles.cubeSpeed, 0.36)
+            this.emitAroundElement(element, STYLE.colors.cube.blue, STYLE.particles.cubeSpeed, STYLE.particles.cubeAlpha)
         }
     }
     emitAroundElement(element, color, speed, alpha)

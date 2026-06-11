@@ -376,7 +376,7 @@
   {
     "id": "TASK-016",
     "title": "Final readability and performance pass",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-004",
       "TASK-005",
@@ -391,7 +391,7 @@
       "TASK-014",
       "TASK-015"
     ],
-    "description": "Tune the full neon arcade restyle for readability, minimalism, and performance. Keep effects cheap and ensure weak-device quality settings work.",
+    "description": "Tune the full neon arcade restyle for readability, minimalism, and performance. Keep effects cheap and ensure weak-device quality settings work.\nImplemented: Tuned neon effect intensity for readability/performance and added a low-power quality helper that disables expensive visual layers.",
     "acceptance_criteria": [
       "The final game matches the target minimalist neon arcade style: dark blue/purple background, bright cyan player, blue glowing cubes, red glowing triangle hazards, neon ground line, and simple geometric background.",
       "Effects remain readable and not too noisy during active play.",
