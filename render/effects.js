@@ -1544,6 +1544,13 @@ class UIStylingHooks
     {
         return STYLE.features.uiStyling
     }
+    drawFpsCounter(gameState)
+    {
+        if (!this.shouldDraw())
+            return
+
+        gameState.fpsCounter.draw()
+    }
     draw(gameState)
     {
         if (!this.shouldDraw())
@@ -1551,7 +1558,6 @@ class UIStylingHooks
 
         gameState.scoreText.draw()
         gameState.menu.button.draw()
-        gameState.fpsCounter.draw()
     }
 }
 

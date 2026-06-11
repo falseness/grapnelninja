@@ -2066,7 +2066,7 @@
     "id": "TASK-080",
     "category": "functional",
     "priority": "normal",
-    "description": "Change the drawing order for the FPS counter itself so it is drawn before the player and the player trail. Do not change the FPS counter checkbox, toggle, or setting behavior.",
+    "description": "Change the drawing order for the FPS counter itself so it is drawn before the player and the player trail. Do not change the FPS counter checkbox, toggle, or setting behavior.\nImplemented: Split FPS counter rendering into an early draw layer before player trail and world/player rendering while leaving toggle controls unchanged.",
     "acceptance_criteria": [
       "The FPS counter render call happens before the player render call.",
       "The FPS counter render call happens before the player trail render call.",
@@ -2087,6 +2087,6 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   }
 ]

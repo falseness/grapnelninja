@@ -47,6 +47,11 @@ function drawUILayer(gameState)
     visualEffects.ui.draw(gameState)
 }
 
+function drawFpsCounterLayer(gameState)
+{
+    visualEffects.ui.drawFpsCounter(gameState)
+}
+
 function draw()
 {
     drawBackgroundLayer()
@@ -58,6 +63,7 @@ function draw()
 
     drawLightsLayer(gameState)
     drawBehindForegroundParticlesLayer(gameState)
+    drawFpsCounterLayer(gameState)
     drawPlayerTrailLayer(gameState)
     drawWorldLayer()
     drawParticlesAndTrailsLayer(gameState)
