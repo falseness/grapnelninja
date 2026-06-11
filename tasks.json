@@ -732,5 +732,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-030",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Fix floor segment joints. The floor should render as a continuous surface or line without visible seams or incorrect joints between adjacent floor segments, as shown in Image #6.\nImplemented: Drew bad-version side floors as one continuous visual surface and neon boundary while preserving individual collision elements.",
+    "acceptance_criteria": [
+      "Visible seams or joints between floor segments are removed.",
+      "The floor reads as one continuous neon floor line or surface during play.",
+      "Fixing the joints does not create gaps, overlaps, flicker, or collision changes.",
+      "Floor collision and movement behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-030.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and move until multiple floor segments and their joins are visible.",
+      "Capture a screenshot and save it as screenshots/TASK-030.png.",
+      "Compare the screenshot with Image #6 and confirm floor joints are no longer visible or incorrect.",
+      "Confirm floor collision still behaves the same.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

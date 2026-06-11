@@ -139,4 +139,102 @@ class SideFloor extends Floor
     {
 
     }
+    draw()
+    {
+        if (version != 'bad')
+        {
+            super.draw()
+            return
+        }
+
+        if (!this.elements.length)
+            return
+
+        if (this.elements[0].isInHudClearZone && this.elements[0].isInHudClearZone())
+            return
+
+        this.drawContinuousSurface()
+    }
+    getContinuousSurfaceBounds()
+    {
+        let left = this.elements[0].getLeftPointX()
+        let right = this.elements[0].getRightPointX()
+        let top = Infinity
+        let bottom = -Infinity
+        let boundaryY = 0
+
+        for (let i = 0; i < this.elements.length; ++i)
+        {
+            const element = this.elements[i]
+            left = Math.min(left, element.getLeftPointX())
+            right = Math.max(right, element.getRightPointX())
+
+            const points = element.getPoints()
+            for (let j = 0; j < points.length; ++j)
+            {
+                top = Math.min(top, points[j].y)
+                bottom = Math.max(bottom, points[j].y)
+            }
+        }
+
+        if (top > height / 2)
+            boundaryY = top
+        else
+            boundaryY = bottom
+
+        return {left, right, top, bottom, boundaryY}
+    }
+    drawContinuousSurface()
+    {
+        const bounds = this.getContinuousSurfaceBounds()
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
+        const x = bounds.left + screen.x
+        const y = bounds.top + screen.y
+        const surfaceWidth = bounds.right - bounds.left
+        const surfaceHeight = bounds.bottom - bounds.top
+        const boundaryY = bounds.boundaryY + screen.y
+        const capHeight = Math.max(2, height * 0.012)
+        const isLowerSurface = bounds.boundaryY == bounds.top
+        const capY = isLowerSurface ? boundaryY : boundaryY - capHeight
+
+        ctx.save()
+        ctx.fillStyle = obstacleStyle.groundFill
+        ctx.fillRect(x, y, surfaceWidth, surfaceHeight)
+
+        ctx.fillStyle = obstacleStyle.groundCapFill
+        ctx.fillRect(x, capY, surfaceWidth, capHeight)
+
+        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.lineWidth = obstacleStyle.thinStrokeWidth
+        ctx.globalAlpha = obstacleStyle.groundFillAlpha
+        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowBlur = obstacleStyle.outerGlowWidth
+        ctx.strokeRect(x, y, surfaceWidth, surfaceHeight)
+        ctx.restore()
+
+        this.drawContinuousNeonBoundary(bounds)
+    }
+    drawContinuousNeonBoundary(bounds)
+    {
+        const y = bounds.boundaryY + screen.y
+
+        ctx.save()
+        ctx.beginPath()
+
+        ctx.lineWidth = STYLE.strokes.neonGlowWidth
+        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.moveTo(bounds.left + screen.x, y)
+        ctx.lineTo(bounds.right + screen.x, y)
+        ctx.stroke()
+
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.shadowBlur = 0
+        ctx.stroke()
+
+        ctx.closePath()
+        ctx.restore()
+    }
 }
