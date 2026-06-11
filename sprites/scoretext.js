@@ -39,11 +39,13 @@ let scoreText =
         const scoreX = viewWidth * 0.03
         const recordX = this.getRecordX(viewWidth)
         const recordFontSize = this.getRecordFontSize(recordText, scoreTextValue, scoreX, recordX, fontSize, viewWidth)
+        const recordY = this.getRecordCenterY(recordText, topY)
 
+        this.drawBadHudTextBacking(scoreTextValue, scoreX, topY, 'start', fontSize, viewWidth, viewHeight)
+        this.drawBadHudTextBacking(recordText, recordX, recordY, 'end', recordFontSize, viewWidth, viewHeight)
         this.drawHudText(scoreTextValue, scoreX, topY, 'start')
 
         ctx.font = recordFontSize + 'px ' + this.fontFamily
-        const recordY = this.getRecordCenterY(recordText, topY)
 
         this.drawHudText(recordText, recordX, recordY, 'end')
 
@@ -87,6 +89,40 @@ let scoreText =
         ctx.textAlign = align
         ctx.strokeText(text, x, y)
         ctx.fillText(text, x, y)
+    },
+    drawBadHudTextBacking: function(text, x, y, align, fontSize, viewWidth, viewHeight)
+    {
+        if (version != 'bad')
+            return
+
+        ctx.save()
+        ctx.font = fontSize + 'px ' + this.fontFamily
+        ctx.textBaseline = 'middle'
+        const metrics = ctx.measureText(text)
+        const padding = viewHeight * STYLE.ui.hudBadTextBackingPaddingRatio
+        const ascent = metrics.actualBoundingBoxAscent || fontSize * 0.72
+        const descent = metrics.actualBoundingBoxDescent || fontSize * 0.28
+        const textWidth = metrics.width
+        let left = x
+
+        if (align == 'center')
+            left -= textWidth / 2
+        else if (align == 'end')
+            left -= textWidth
+
+        const top = y - ascent
+        const height = ascent + descent
+
+        ctx.shadowBlur = 0
+        ctx.globalAlpha = 1
+        ctx.fillStyle = STYLE.colors.background.gradientTop
+        ctx.fillRect(
+            left - padding,
+            top - padding,
+            textWidth + padding * 2,
+            height + padding * 2
+        )
+        ctx.restore()
     },
     drawStageIndicator: function(viewWidth, topY, fontSize)
     {

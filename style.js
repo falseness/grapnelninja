@@ -131,6 +131,7 @@ const STYLE = Object.freeze({
         hudRecordXRatio: 0.91,
         hudBadRecordXRatio: 0.865,
         hudBadTextGapRatio: 0.025,
+        hudBadTextBackingPaddingRatio: 0.005,
         hudBadMenuButtonSizeRatio: 0.052,
         hudBadMenuButtonMaxWidthRatio: 0.09,
         hudBadMenuButtonMarginRatio: 0.025,
