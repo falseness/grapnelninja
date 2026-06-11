@@ -82,6 +82,24 @@ class Side extends Rect
     {
         super(object)
     }
+    collision(who, line)
+    {
+        if (this.isBadVersionCeilingBoundary(line))
+        {
+            Trampoline.prototype.collision.call(this, who, line)
+            return
+        }
+
+        super.collision(who, line)
+    }
+    isBadVersionCeilingBoundary(line)
+    {
+        if (version != 'bad' || line.type != 'line' || this.y >= height / 2)
+            return false
+
+        const ceilingBoundaryY = this.y + this.height
+        return line.y1 == ceilingBoundaryY && line.y2 == ceilingBoundaryY
+    }
     isInHudClearZone()
     {
         const boundaryY = this.y > height / 2 ? this.y : this.y + this.height

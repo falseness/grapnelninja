@@ -1292,5 +1292,30 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-051",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Make the bad-version ceiling behave as a trampoline like the floor. Ceiling contact should bounce the player with the same trampoline-style behavior expected from floor trampoline contact.\nImplemented: Routed bad-version top side-floor ceiling boundary collisions through the existing trampoline bounce response while preserving classic side-floor behavior.",
+    "acceptance_criteria": [
+      "In the bad version, player contact with the ceiling triggers trampoline-style bounce behavior like the floor.",
+      "Ceiling trampoline behavior is consistent with floor trampoline strength, direction rules, and contact feel unless existing physics requires ceiling-specific sign handling.",
+      "Ceiling contact does not trap the player, jitter indefinitely, or pass the player through the ceiling.",
+      "The change applies to the bad version and does not break classic-version ceiling or floor behavior.",
+      "A screenshot is saved at screenshots/TASK-051.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and guide or force the player into the ceiling.",
+      "Confirm ceiling contact produces trampoline-style bounce behavior.",
+      "Capture a screenshot and save it as screenshots/TASK-051.png.",
+      "Compare floor trampoline contact and ceiling contact and confirm the behavior feels equivalent for the ceiling orientation.",
+      "Start the classic version and confirm existing floor and ceiling behavior still works.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
