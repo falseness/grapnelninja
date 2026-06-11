@@ -328,12 +328,54 @@ const STYLE = Object.freeze({
                 Object.freeze({x: 0.49, y: 0.76, length: 0.16, color: 'blue'})
             ]),
             triangles: Object.freeze([
-                Object.freeze({x: 0.12, y: 0.68, radius: 62, rotation: -0.62, alpha: 0.76}),
-                Object.freeze({x: 0.25, y: 0.42, radius: 42, rotation: 0.48, alpha: 0.52}),
-                Object.freeze({x: 0.42, y: 0.18, radius: 78, rotation: 0.12, alpha: 0.42}),
-                Object.freeze({x: 0.61, y: 0.74, radius: 54, rotation: -0.22, alpha: 0.58}),
-                Object.freeze({x: 0.77, y: 0.38, radius: 88, rotation: 0.78, alpha: 0.48}),
-                Object.freeze({x: 0.91, y: 0.66, radius: 48, rotation: -0.88, alpha: 0.64})
+                Object.freeze({
+                    x: 0.12, y: 0.68, radius: 62, rotation: -0.62, alpha: 0.76,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.82, y: 0.58}),
+                        Object.freeze({x: 0.52, y: 0.46}),
+                        Object.freeze({x: 0.16, y: -1.02})
+                    ])
+                }),
+                Object.freeze({
+                    x: 0.25, y: 0.42, radius: 42, rotation: 0.48, alpha: 0.52,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.68, y: 0.76}),
+                        Object.freeze({x: 0.84, y: 0.18}),
+                        Object.freeze({x: -0.04, y: -0.78})
+                    ])
+                }),
+                Object.freeze({
+                    x: 0.42, y: 0.18, radius: 78, rotation: 0.12, alpha: 0.42,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.98, y: 0.38}),
+                        Object.freeze({x: 0.74, y: 0.70}),
+                        Object.freeze({x: 0.34, y: -0.78})
+                    ])
+                }),
+                Object.freeze({
+                    x: 0.61, y: 0.74, radius: 54, rotation: -0.22, alpha: 0.58,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.62, y: 0.88}),
+                        Object.freeze({x: 0.72, y: 0.18}),
+                        Object.freeze({x: -0.10, y: -0.96})
+                    ])
+                }),
+                Object.freeze({
+                    x: 0.77, y: 0.38, radius: 88, rotation: 0.78, alpha: 0.48,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.72, y: 0.42}),
+                        Object.freeze({x: 0.92, y: 0.62}),
+                        Object.freeze({x: 0.08, y: -0.94})
+                    ])
+                }),
+                Object.freeze({
+                    x: 0.91, y: 0.66, radius: 48, rotation: -0.88, alpha: 0.64,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.92, y: 0.12}),
+                        Object.freeze({x: 0.58, y: 0.82}),
+                        Object.freeze({x: 0.10, y: -0.74})
+                    ])
+                })
             ]),
             rectangles: Object.freeze([
                 Object.freeze({x: 0.18, y: 0.24, width: 12, height: 5, rotation: 0.15, danger: true}),

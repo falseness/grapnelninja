@@ -315,25 +315,44 @@ class BackgroundRenderer
             const rotation = triangle.rotation + motion * direction
 
             this.ctx.globalAlpha = triangle.alpha
-            this.drawDecorativeTriangle(x, y, radius, rotation)
+            this.drawDecorativeTriangle(x, y, radius, rotation, triangle.points)
         }
 
         this.ctx.restore()
     }
-    drawDecorativeTriangle(centerX, centerY, radius, rotation)
+    drawDecorativeTriangle(centerX, centerY, radius, rotation, points)
     {
         this.ctx.beginPath()
 
-        for (let i = 0; i < 3; ++i)
+        if (points && points.length >= 3)
         {
-            const angle = rotation - Math.PI / 2 + i * Math.PI * 2 / 3
-            const x = centerX + Math.cos(angle) * radius
-            const y = centerY + Math.sin(angle) * radius
+            for (let i = 0; i < points.length; ++i)
+            {
+                const point = points[i]
+                const rotatedX = point.x * Math.cos(rotation) - point.y * Math.sin(rotation)
+                const rotatedY = point.x * Math.sin(rotation) + point.y * Math.cos(rotation)
+                const x = centerX + rotatedX * radius
+                const y = centerY + rotatedY * radius
 
-            if (i == 0)
-                this.ctx.moveTo(x, y)
-            else
-                this.ctx.lineTo(x, y)
+                if (i == 0)
+                    this.ctx.moveTo(x, y)
+                else
+                    this.ctx.lineTo(x, y)
+            }
+        }
+        else
+        {
+            for (let i = 0; i < 3; ++i)
+            {
+                const angle = rotation - Math.PI / 2 + i * Math.PI * 2 / 3
+                const x = centerX + Math.cos(angle) * radius
+                const y = centerY + Math.sin(angle) * radius
+
+                if (i == 0)
+                    this.ctx.moveTo(x, y)
+                else
+                    this.ctx.lineTo(x, y)
+            }
         }
 
         this.ctx.closePath()

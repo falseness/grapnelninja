@@ -1561,5 +1561,30 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-061",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Make decorative background triangles varied like screenshots/concept_art.png instead of all rendering as equilateral triangles. The shapes should feel like irregular distant geometric silhouettes while remaining background-only.\nImplemented: Added custom irregular point geometry for bad-version decorative background triangles and rendered those silhouettes through the background-only renderer.",
+    "acceptance_criteria": [
+      "Decorative background triangles are no longer all equilateral.",
+      "Triangle silhouettes vary in proportions, orientation, size, and placement in a way that resembles screenshots/concept_art.png.",
+      "The triangles remain subtle background details and do not resemble foreground triangle hazards.",
+      "The change is visual-only and does not affect gameplay collision, movement, scoring, spawning, restart behavior, or hazard rendering.",
+      "A screenshot is saved at screenshots/TASK-061.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe decorative background triangles.",
+      "Capture a screenshot and save it as screenshots/TASK-061.png.",
+      "Inspect the screenshot and confirm the background triangles are visibly varied and not all equilateral.",
+      "Compare against screenshots/concept_art.png for the intended irregular silhouette feel.",
+      "Confirm foreground hazard triangles are still readable and unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
