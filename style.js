@@ -234,9 +234,9 @@ const STYLE = Object.freeze({
             lifetimeMultiplier: 1.18
         }),
         trails: Object.freeze({
-            widthMultiplier: 1.36,
-            glowWidthMultiplier: 1.85,
-            alphaMultiplier: 1.28,
+            widthMultiplier: 0.48,
+            glowWidthMultiplier: 0.42,
+            alphaMultiplier: 0.76,
             chunkCount: 6,
             tailPortion: 0.4
         })

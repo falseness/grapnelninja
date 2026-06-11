@@ -1407,7 +1407,7 @@
     "id": "TASK-055",
     "category": "functional",
     "priority": "normal",
-    "description": "Reduce the player trail size so it is closer to the master-version reference in screenshots/master_branch_version.png. The current trail is too large and should be visually lighter without removing it.",
+    "description": "Reduce the player trail size so it is closer to the master-version reference in screenshots/master_branch_version.png. The current trail is too large and should be visually lighter without removing it.\nImplemented: Reduced bad-version player trail width, glow, and alpha multipliers so the trail is smaller and lighter while preserving the visible player body.",
     "acceptance_criteria": [
       "The player trail is visibly smaller and lighter than the current bad-version trail.",
       "The player trail size is close to the reference shown in screenshots/master_branch_version.png.",
@@ -1427,7 +1427,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-056",
