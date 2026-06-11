@@ -942,5 +942,35 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-038",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Modify the TASK-034 trampoline splash particles so the splash is visible but particles do not move after spawning, and reduce the splash dispersion. Keep particles disabled for ordinary movement and object glow, and keep the change visual-only for both classic and bad versions.\nImplemented: Made trampoline splash particles spawn with zero velocity and a smaller STYLE-configured dispersion radius while leaving ordinary emitters inactive.",
+    "acceptance_criteria": [
+      "Trampoline splash particles appear at the collision point but remain static after spawning.",
+      "Splash dispersion is lower than TASK-034, with particles clustered closer to the trampoline contact point.",
+      "The splash remains visible enough to confirm the trampoline collision effect.",
+      "No continuous particles are emitted during ordinary player movement.",
+      "No continuous particles are emitted from cubes, platforms, or hazards.",
+      "Particle count remains capped and particles remain disableable through quality config.",
+      "Gameplay collision, movement, scoring, spawning, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-038.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and collide with a trampoline.",
+      "Start the bad version and collide with a trampoline.",
+      "Capture the trampoline splash and save it as screenshots/TASK-038.png.",
+      "Inspect the screenshot and confirm the splash is clustered near the contact point.",
+      "Observe the splash during play and confirm particles do not drift, fly outward, or keep moving after spawning.",
+      "Confirm normal movement before and after the splash does not emit continuous particles.",
+      "Disable particles through quality config and confirm the splash is disabled while gameplay remains playable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

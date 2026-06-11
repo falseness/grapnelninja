@@ -681,12 +681,13 @@ class ParticleSystem
         const originY = player.y + screen.y
         const color = trampoline.stroke || STYLE.colors.cube.greenStroke
         const count = STYLE.particles.trampolineSplashCount
+        const dispersion = circle.radius * STYLE.particles.trampolineSplashDispersionRatio
 
         for (let i = 0; i < count; ++i)
         {
             this.emitSquare(
-                originX + this.randomRange(-circle.radius * 0.24, circle.radius * 0.24),
-                originY + this.randomRange(-circle.radius * 0.24, circle.radius * 0.24),
+                originX + this.randomRange(-dispersion, dispersion),
+                originY + this.randomRange(-dispersion, dispersion),
                 color,
                 STYLE.particles.trampolineSplashSpeed * splashParticles.speedMultiplier,
                 this.clampAlpha(STYLE.particles.trampolineSplashAlpha * badParticles.alphaMultiplier),
