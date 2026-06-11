@@ -121,6 +121,7 @@ const STYLE = Object.freeze({
         pausePanelLineWidth: 2,
         hudTopRatio: 0.06,
         hudFontRatio: 0.042,
+        hudBadMaxFontWidthRatio: 0.078,
         hudLetterSpacing: 4,
         hudStageFontRatio: 0.032,
         hudStageDotRatio: 0.006,
@@ -129,6 +130,7 @@ const STYLE = Object.freeze({
         hudStageLineRatio: 0.0018,
         hudRecordXRatio: 0.91,
         hudClearTopRatio: 0.14,
+        badCeilingBandRatio: 0.2,
         fpsXRatio: 0.03,
         fpsYRatio: 0.125,
         fpsFontRatio: 0.026,
@@ -522,10 +524,20 @@ const STYLE = Object.freeze({
 function getHudCenterY(viewHeight, selectedVersion)
 {
     const ratio = selectedVersion == 'bad'
-        ? STYLE.ui.hudClearTopRatio / 2
+        ? STYLE.ui.badCeilingBandRatio / 2
         : STYLE.ui.hudTopRatio
 
     return viewHeight * ratio
+}
+
+function getHudFontSize(viewWidth, viewHeight, selectedVersion)
+{
+    const heightSize = viewHeight * STYLE.ui.hudFontRatio
+
+    if (selectedVersion != 'bad')
+        return heightSize
+
+    return Math.min(heightSize, viewWidth * STYLE.ui.hudBadMaxFontWidthRatio)
 }
 
 const QUALITY = {

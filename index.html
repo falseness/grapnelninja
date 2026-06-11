@@ -85,7 +85,7 @@
                 scoreText.x         = scoreTextX        / scale[version]
                 scoreText.rx        = scoreTextRx       / scale[version]
                 scoreText.y         = scoreTextY        / scale[version]
-                scoreText.fontSize  = scoreTextFontSize / scale[version]
+                scoreText.fontSize  = getHudFontSize(width / scale[version], height / scale[version], version)
                 
                 menu.button = new Button(
                 {

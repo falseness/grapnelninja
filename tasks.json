@@ -1926,7 +1926,7 @@
     "id": "TASK-075",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix bad-version score text placement so the score is vertically centered in the ceiling band across different phone sizes. Verify the layout with five common phone screenshots.",
+    "description": "Fix bad-version score text placement so the score is vertically centered in the ceiling band across different phone sizes. Verify the layout with five common phone screenshots.\nImplemented: Centered bad-version score text in the visible phone ceiling band and capped bad HUD font width so score stays clear of record/menu across five portrait phone sizes.",
     "acceptance_criteria": [
       "In the bad version, score text is vertically centered in the visible ceiling band.",
       "Score text remains horizontally placed on the left as intended and does not overlap gameplay objects, record text, stage indicators, or the menu button.",
@@ -1947,7 +1947,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-076",

@@ -24,7 +24,7 @@ let scoreText =
         const viewWidth = width / scale[version]
         const viewHeight = height / scale[version]
         const topY = getHudCenterY(viewHeight, version)
-        const fontSize = viewHeight * STYLE.ui.hudFontRatio
+        const fontSize = getHudFontSize(viewWidth, viewHeight, version)
 
         ctx.save()
         ctx.textBaseline = 'middle'
