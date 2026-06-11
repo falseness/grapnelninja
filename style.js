@@ -264,7 +264,10 @@ const STYLE = Object.freeze({
         stableBrightness: true,
         freezeHazardPulse: true,
         freezeBackgroundParallax: true,
-        backgroundCompositeOperation: 'source-over'
+        backgroundCompositeOperation: 'source-over',
+        effectCompositeOperation: 'source-over',
+        stableEffectAlphaMultiplier: 0.42,
+        stableLightCompositeMultiplier: 0.5
     }),
     features: Object.freeze({
         background: true,

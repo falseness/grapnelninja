@@ -462,10 +462,17 @@ class LightmapRenderer
         const viewWidth = this.canvas.width / scale[version]
         const viewHeight = this.canvas.height / scale[version]
         const badLights = this.getBadVersionLights()
+        const stableLightMultiplier = STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.stableLightCompositeMultiplier
+            : 1
 
         this.ctx.save()
-        this.ctx.globalAlpha = this.clampAlpha(STYLE.lights.compositeAlpha * badLights.compositeAlphaMultiplier)
-        this.ctx.globalCompositeOperation = 'lighter'
+        this.ctx.globalAlpha = this.clampAlpha(
+            STYLE.lights.compositeAlpha
+            * badLights.compositeAlphaMultiplier
+            * stableLightMultiplier
+        )
+        this.ctx.globalCompositeOperation = this.getEffectCompositeOperation()
         this.ctx.imageSmoothingEnabled = true
         this.ctx.drawImage(this.lightCanvas, 0, 0, viewWidth, viewHeight)
         this.ctx.restore()
@@ -499,6 +506,12 @@ class LightmapRenderer
         }
 
         return STYLE.badVersionEffects.lights
+    }
+    getEffectCompositeOperation()
+    {
+        return STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.effectCompositeOperation
+            : 'lighter'
     }
     isBadVersion()
     {
@@ -553,14 +566,14 @@ class ParticleSystem
             return
 
         this.ctx.save()
-        this.ctx.globalCompositeOperation = 'lighter'
+        this.ctx.globalCompositeOperation = this.getEffectCompositeOperation()
 
         for (let i = 0; i < this.particles.length; ++i)
         {
             const particle = this.particles[i]
             const progress = particle.life / particle.maxLife
 
-            this.ctx.globalAlpha = Math.max(0, progress) * particle.alpha
+            this.ctx.globalAlpha = Math.max(0, progress) * particle.alpha * this.getStableAlphaMultiplier()
             this.ctx.fillStyle = particle.color
             this.ctx.fillRect(
                 particle.x - particle.size / 2,
@@ -753,6 +766,18 @@ class ParticleSystem
     {
         return Math.max(0, Math.min(1, alpha))
     }
+    getEffectCompositeOperation()
+    {
+        return STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.effectCompositeOperation
+            : 'lighter'
+    }
+    getStableAlphaMultiplier()
+    {
+        return STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.stableEffectAlphaMultiplier
+            : 1
+    }
 }
 
 class PlayerTrailRenderer
@@ -787,7 +812,7 @@ class PlayerTrailRenderer
         ctx.save()
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
-        ctx.globalCompositeOperation = 'lighter'
+        ctx.globalCompositeOperation = this.getEffectCompositeOperation()
         ctx.strokeStyle = STYLE.colors.player.trail
         ctx.shadowColor = STYLE.colors.player.trail
 
@@ -796,7 +821,7 @@ class PlayerTrailRenderer
             Math.max(0, visibleStart - 1),
             positions.length,
             width,
-            this.clampAlpha(config.maxAlpha * badTrails.alphaMultiplier),
+            this.clampAlpha(config.maxAlpha * badTrails.alphaMultiplier * this.getStableAlphaMultiplier()),
             glowWidth
         )
 
@@ -808,7 +833,7 @@ class PlayerTrailRenderer
                 tailStart - 1,
                 positions.length,
                 Math.max(track.lineWidth, width * 0.36),
-                this.clampAlpha(config.coreAlpha * badTrails.alphaMultiplier),
+                this.clampAlpha(config.coreAlpha * badTrails.alphaMultiplier * this.getStableAlphaMultiplier()),
                 0
             )
         }
@@ -854,6 +879,18 @@ class PlayerTrailRenderer
     clampAlpha(alpha)
     {
         return Math.max(0, Math.min(1, alpha))
+    }
+    getEffectCompositeOperation()
+    {
+        return STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.effectCompositeOperation
+            : 'lighter'
+    }
+    getStableAlphaMultiplier()
+    {
+        return STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.stableEffectAlphaMultiplier
+            : 1
     }
 }
 
@@ -928,7 +965,9 @@ class ScreenEffects
         const config = STYLE.screenEffects
 
         this.ctx.save()
-        this.ctx.globalCompositeOperation = 'lighter'
+        this.ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.effectCompositeOperation
+            : 'lighter'
         this.ctx.strokeStyle = STYLE.colors.player.cyan
         this.ctx.shadowColor = STYLE.colors.player.cyan
         this.ctx.lineWidth = config.shockwaveLineWidth
@@ -949,7 +988,11 @@ class ScreenEffects
             const radius = config.shockwaveStartRadius
                 + (config.shockwaveEndRadius - config.shockwaveStartRadius) * eased
 
-            this.ctx.globalAlpha = config.shockwaveAlpha * (1 - progress)
+            const stableAlpha = STYLE.visualStability.stableBrightness
+                ? STYLE.visualStability.stableEffectAlphaMultiplier
+                : 1
+
+            this.ctx.globalAlpha = config.shockwaveAlpha * stableAlpha * (1 - progress)
             this.ctx.beginPath()
             this.ctx.arc(shockwave.x, shockwave.y, radius, 0, Math.PI * 2)
             this.ctx.stroke()

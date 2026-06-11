@@ -641,7 +641,7 @@
     "id": "TASK-026",
     "category": "functional",
     "priority": "normal",
-    "description": "Disable color and brightness changes caused by movement or progress. Keep the game's dark visual brightness closer to the first dark version shown in Image #4, without progressive palette shifts or brightening during play.\nImplemented: Added stable visual brightness flags, darker bad-version glow/background defaults, fixed hazard glow strength, and non-additive background depth compositing.",
+    "description": "Disable color and brightness changes caused by movement or progress. Keep the game's dark visual brightness closer to the first dark version shown in Image #4, without progressive palette shifts or brightening during play.\nImplemented: Added stable visual brightness flags, darker bad-version glow/background defaults, fixed hazard glow strength, and non-additive background depth compositing.\nVerification failed: During a 30s bad-version progressed run the refreshed screenshot became pale/bright and mean brightness rose from about 34 to 150, so dark stable brightness was not met.\nImplemented: Replaced remaining additive stable visual composites with source-over and reduced stable light/trail/particle/shockwave alpha so bad-version brightness remains dark during progressed play.",
     "acceptance_criteria": [
       "Object, background, and UI colors do not shift because of player movement or progress.",
       "The default dark version remains close to the darker brightness shown in Image #4.",
