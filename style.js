@@ -89,6 +89,16 @@ const STYLE = Object.freeze({
         spawnBurst: 12,
         lifetimeMs: 450
     }),
+    trails: Object.freeze({
+        player: Object.freeze({
+            widthRatio: 3.5,
+            glowWidthRatio: 9,
+            minAlpha: 0.04,
+            maxAlpha: 0.62,
+            coreAlpha: 0.82,
+            minSegmentRatio: 0
+        })
+    }),
     timing: Object.freeze({
         inputUntouchMs: 100,
         trailPoints: 100,

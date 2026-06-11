@@ -317,7 +317,75 @@ class PlayerTrailRenderer
         {
             gameState.floors[i].drawTracks()
         }
-        gameState.ninja.track.draw()
+        this.drawSmoothPlayerTrail(gameState.ninja.track)
+    }
+    drawSmoothPlayerTrail(track)
+    {
+        if (!track || track.pos.length < 2)
+            return
+
+        const config = STYLE.trails.player
+        const positions = track.pos
+        const width = track.lineWidth * config.widthRatio
+        const glowWidth = track.lineWidth * config.glowWidthRatio
+        const visibleStart = Math.max(1, Math.floor(positions.length * config.minSegmentRatio))
+        const chunkCount = 4
+        const visibleCount = positions.length - visibleStart
+
+        ctx.save()
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.strokeStyle = STYLE.colors.player.trail
+        ctx.shadowColor = STYLE.colors.player.trail
+
+        for (let i = 0; i < chunkCount; ++i)
+        {
+            const start = Math.max(0, visibleStart + Math.floor(visibleCount * i / chunkCount) - 1)
+            const end = visibleStart + Math.floor(visibleCount * (i + 1) / chunkCount) + 1
+            const ratio = (i + 1) / chunkCount
+            const alpha = config.minAlpha + (config.maxAlpha - config.minAlpha) * ratio
+
+            this.drawSmoothPath(positions, start, Math.min(positions.length, end), width, alpha, glowWidth)
+        }
+
+        if (positions.length > visibleStart + 1)
+        {
+            const tailStart = Math.max(1, positions.length - Math.floor((positions.length - visibleStart) * 0.28))
+            this.drawSmoothPath(
+                positions,
+                tailStart - 1,
+                positions.length,
+                Math.max(track.lineWidth, width * 0.36),
+                config.coreAlpha,
+                0
+            )
+        }
+
+        ctx.restore()
+    }
+    drawSmoothPath(positions, start, end, width, alpha, glowWidth)
+    {
+        if (end - start < 2)
+            return
+
+        ctx.globalAlpha = alpha
+        ctx.lineWidth = width
+        ctx.shadowBlur = glowWidth
+        ctx.beginPath()
+        ctx.moveTo(positions[start].x + screen.x, positions[start].y + screen.y)
+
+        for (let i = start + 1; i < end - 1; ++i)
+        {
+            const next = positions[i + 1]
+            const middleX = (positions[i].x + next.x) / 2 + screen.x
+            const middleY = (positions[i].y + next.y) / 2 + screen.y
+
+            ctx.quadraticCurveTo(positions[i].x + screen.x, positions[i].y + screen.y, middleX, middleY)
+        }
+
+        ctx.lineTo(positions[end - 1].x + screen.x, positions[end - 1].y + screen.y)
+        ctx.stroke()
     }
 }
 

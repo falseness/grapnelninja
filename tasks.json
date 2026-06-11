@@ -219,13 +219,13 @@
   {
     "id": "TASK-010",
     "title": "Add smooth cyan player trail",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-002",
       "TASK-003",
       "TASK-006"
     ],
-    "description": "Add a smooth cyan visual trail for the player, replacing or visually extending the current track effect without changing movement or physics.",
+    "description": "Add a smooth cyan visual trail for the player, replacing or visually extending the current track effect without changing movement or physics.\nImplemented: Added a style-configured smooth cyan player trail renderer over existing track history, gated by QUALITY.playerTrail.",
     "acceptance_criteria": [
       "The player leaves a smooth cyan trail while moving.",
       "The trail fades cleanly and does not obscure hazards or platforms.",
