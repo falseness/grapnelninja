@@ -734,6 +734,18 @@ class ParticleSystem
     }
     draw()
     {
+        this.drawLayer(function(particle) {
+            return !particle.drawBeforeForeground
+        })
+    }
+    drawBehindForeground()
+    {
+        this.drawLayer(function(particle) {
+            return particle.drawBeforeForeground
+        })
+    }
+    drawLayer(shouldDrawParticle)
+    {
         if (!this.shouldDraw())
             return
 
@@ -743,6 +755,10 @@ class ParticleSystem
         for (let i = 0; i < this.particles.length; ++i)
         {
             const particle = this.particles[i]
+
+            if (!shouldDrawParticle(particle))
+                continue
+
             const progress = particle.life / particle.maxLife
             const drawX = particle.worldAnchored ? particle.x + screen.x : particle.x
             const drawY = particle.worldAnchored ? particle.y + screen.y : particle.y
@@ -810,6 +826,7 @@ class ParticleSystem
                 STYLE.particles.trampolineSplashSpeed * splashParticles.speedMultiplier,
                 this.clampAlpha(STYLE.particles.trampolineSplashAlpha * badParticles.alphaMultiplier),
                 splashParticles,
+                true,
                 true
             )
         }
@@ -941,7 +958,7 @@ class ParticleSystem
 
         this.emitSquare(x, y, color, speed, alpha, particleConfig)
     }
-    emitSquare(x, y, color, speed, alpha, particleConfig, worldAnchored)
+    emitSquare(x, y, color, speed, alpha, particleConfig, worldAnchored, drawBeforeForeground)
     {
         const config = particleConfig || this.getBadVersionParticles()
         const angle = Math.random() * Math.PI * 2
@@ -962,7 +979,8 @@ class ParticleSystem
                 STYLE.particles.maxSize * config.sizeMultiplier
             ),
             alpha,
-            worldAnchored: !!worldAnchored
+            worldAnchored: !!worldAnchored,
+            drawBeforeForeground: !!drawBeforeForeground
         })
 
         this.enforceCap()

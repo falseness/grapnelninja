@@ -1241,5 +1241,30 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-049",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Change trampoline splash render order so splash particles draw before foreground objects such as the player trail. The splash should sit behind later gameplay visuals instead of covering them.\nImplemented: Split trampoline splash particles into a behind-foreground draw layer before the player trail/world layers while leaving particle spawning and gameplay behavior unchanged.",
+    "acceptance_criteria": [
+      "Trampoline splash particles are drawn before player trail rendering and other foreground gameplay objects that should remain readable.",
+      "Player, player trail, hazards, platforms, floor, ceiling, score, record, and menu button remain visible over or after the splash where their layers overlap.",
+      "The splash remains visible enough to confirm trampoline contact.",
+      "Particle spawning, camera anchoring, collision, scoring, and gameplay behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-049.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and trigger a trampoline splash while the player trail is visible.",
+      "Capture a screenshot and save it as screenshots/TASK-049.png.",
+      "Inspect the screenshot and confirm the player trail and foreground gameplay objects draw over the splash where they overlap.",
+      "Confirm the splash is still visible near the trampoline contact point.",
+      "Confirm the classic version still renders trampoline splash and trail layers correctly.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

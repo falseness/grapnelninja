@@ -30,9 +30,14 @@ function drawPlayerTrailLayer(gameState)
     visualEffects.playerTrail.draw(gameState)
 }
 
-function drawParticlesAndTrailsLayer(gameState)
+function drawBehindForegroundParticlesLayer(gameState)
 {
     visualEffects.particles.update(gameState)
+    visualEffects.particles.drawBehindForeground()
+}
+
+function drawParticlesAndTrailsLayer(gameState)
+{
     visualEffects.particles.draw(gameState)
     visualEffects.screenEffects.draw(gameState)
 }
@@ -52,6 +57,7 @@ function draw()
     visualEffects.screenEffects.begin(gameState)
 
     drawLightsLayer(gameState)
+    drawBehindForegroundParticlesLayer(gameState)
     drawPlayerTrailLayer(gameState)
     drawWorldLayer()
     drawParticlesAndTrailsLayer(gameState)
