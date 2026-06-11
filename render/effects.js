@@ -710,7 +710,6 @@ class ParticleSystem
         this.particles = []
         this.lastTime = 0
         this.lastWorldEmitTime = 0
-        this.lastTrampolineSplashTime = 0
     }
     shouldDraw()
     {
@@ -797,12 +796,6 @@ class ParticleSystem
         if (trampoline.particleSplashActive)
             return
 
-        const now = performance.now()
-
-        if (now - this.lastTrampolineSplashTime < STYLE.particles.trampolineSplashCooldownMs)
-            return
-
-        this.lastTrampolineSplashTime = now
         trampoline.particleSplashActive = true
 
         const badParticles = this.getBadVersionParticles()
@@ -845,33 +838,25 @@ class ParticleSystem
                 if (!(element instanceof Trampoline) || !element.particleSplashActive)
                     continue
 
-                if (!this.isPlayerInsideElementBounds(gameState.ninja, element))
+                if (!this.isPlayerCollidingWithElement(gameState.ninja, element))
                     element.particleSplashActive = false
             }
         }
     }
-    isPlayerInsideElementBounds(player, element)
+    isPlayerCollidingWithElement(player, element)
     {
-        const points = element.getPoints()
-        let minX = points[0].x
-        let maxX = points[0].x
-        let minY = points[0].y
-        let maxY = points[0].y
+        if (!twoCirclesIntersect(player.x, player.y, player.radius, element.getCircumscribedCircle()))
+            return false
 
-        for (let i = 1; i < points.length; ++i)
+        const lines = element.getLines()
+
+        for (let i = 0; i < lines.length; ++i)
         {
-            minX = Math.min(minX, points[i].x)
-            maxX = Math.max(maxX, points[i].x)
-            minY = Math.min(minY, points[i].y)
-            maxY = Math.max(maxY, points[i].y)
+            if (collisionCircleWithLine(lines[i], player.x, player.y, player.radius))
+                return true
         }
 
-        const margin = player.radius + STYLE.particles.maxSize
-
-        return player.x >= minX - margin
-            && player.x <= maxX + margin
-            && player.y >= minY - margin
-            && player.y <= maxY + margin
+        return false
     }
     emitPlayerParticles(player)
     {

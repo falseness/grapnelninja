@@ -160,7 +160,6 @@ const STYLE = Object.freeze({
         trampolineSplashAlpha: 0.98,
         trampolineSplashSizeMultiplier: 2.05,
         trampolineSplashLifetimeMultiplier: 3,
-        trampolineSplashCooldownMs: 1000,
         playerAlpha: 0.58,
         cubeAlpha: 0.28,
         hazardAlpha: 0.52

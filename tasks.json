@@ -1485,7 +1485,7 @@
     "id": "TASK-058",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix trampoline collision splash re-triggering so a new splash appears after the player separates and collides again shortly afterward. The current splash has a visible cooldown that suppresses the second splash after rapid re-contact.",
+    "description": "Fix trampoline collision splash re-triggering so a new splash appears after the player separates and collides again shortly afterward. The current splash has a visible cooldown that suppresses the second splash after rapid re-contact.\nImplemented: Replaced the global trampoline splash cooldown with collision-separation lock release so rapid re-contact emits a new splash while continuous contact stays suppressed.",
     "acceptance_criteria": [
       "A trampoline splash appears on the first trampoline collision.",
       "After the player separates from the trampoline and collides again shortly afterward, a new splash appears without waiting for the old cooldown window.",
@@ -1507,7 +1507,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-059",
