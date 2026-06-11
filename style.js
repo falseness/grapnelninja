@@ -129,6 +129,8 @@ const STYLE = Object.freeze({
         hudStageDiamondRatio: 0.018,
         hudStageLineRatio: 0.0018,
         hudRecordXRatio: 0.91,
+        hudBadRecordXRatio: 0.865,
+        hudBadTextGapRatio: 0.025,
         hudClearTopRatio: 0.14,
         badCeilingBandRatio: 0.2,
         fpsXRatio: 0.03,

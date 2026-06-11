@@ -34,10 +34,53 @@ let scoreText =
         ctx.shadowColor = STYLE.colors.ui.hudGlow
         ctx.fillStyle = this.fill
         ctx.strokeStyle = STYLE.colors.ui.hudGlow
-        this.drawHudText(this.text + this.count[version], viewWidth * 0.03, topY, 'start')
-        this.drawHudText(this.rtext + this.record[version], viewWidth * STYLE.ui.hudRecordXRatio, topY, 'end')
+        const scoreTextValue = this.text + this.count[version]
+        const recordText = this.rtext + this.record[version]
+        const scoreX = viewWidth * 0.03
+        const recordX = this.getRecordX(viewWidth)
+        const recordFontSize = this.getRecordFontSize(recordText, scoreTextValue, scoreX, recordX, fontSize, viewWidth)
+
+        this.drawHudText(scoreTextValue, scoreX, topY, 'start')
+
+        ctx.font = recordFontSize + 'px ' + this.fontFamily
+        const recordY = this.getRecordCenterY(recordText, topY)
+
+        this.drawHudText(recordText, recordX, recordY, 'end')
 
         ctx.restore()
+    },
+    getRecordX: function(viewWidth)
+    {
+        if (version == 'bad')
+            return viewWidth * STYLE.ui.hudBadRecordXRatio
+
+        return viewWidth * STYLE.ui.hudRecordXRatio
+    },
+    getRecordFontSize: function(recordText, scoreTextValue, scoreX, recordX, fontSize, viewWidth)
+    {
+        if (version != 'bad')
+            return fontSize
+
+        const scoreWidth = ctx.measureText(scoreTextValue).width
+        const recordWidth = ctx.measureText(recordText).width
+        const availableWidth = recordX - (scoreX + scoreWidth) - viewWidth * STYLE.ui.hudBadTextGapRatio
+
+        if (availableWidth <= 0 || recordWidth <= availableWidth)
+            return fontSize
+
+        return fontSize * availableWidth / recordWidth
+    },
+    getRecordCenterY: function(text, topY)
+    {
+        if (version != 'bad')
+            return topY
+
+        const metrics = ctx.measureText(text)
+
+        if (!metrics.actualBoundingBoxAscent && !metrics.actualBoundingBoxDescent)
+            return topY
+
+        return topY + (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2
     },
     drawHudText: function(text, x, y, align)
     {
