@@ -229,7 +229,7 @@ class BackgroundRenderer
             background.depthHexagonStroke
         )
         this.drawStreakSet(width, height, geometry, streakTime, background.depthStreak, -height * 0.08 + totalShift.y, totalShift.x)
-        this.drawDiagonalFlashes(width, height, geometry, geometryTime)
+        this.drawDiagonalFlashes(width, height, geometry, geometryTime, totalShift)
         this.drawDecorativeTriangles(width, height, geometry, geometryTime, totalShift)
         this.drawRectangleAccents(width, height, geometry, geometryTime, totalShift)
         this.ctx.restore()
@@ -272,9 +272,10 @@ class BackgroundRenderer
     {
         return STYLE.visualStability.freezeBadVersionBackground
     }
-    drawDiagonalFlashes(width, height, geometry, time)
+    drawDiagonalFlashes(width, height, geometry, time, shift)
     {
         const flashes = geometry.flashes || []
+        shift = shift || {x: 0, y: 0}
 
         if (!flashes.length)
             return
@@ -296,8 +297,8 @@ class BackgroundRenderer
             const flash = flashes[i]
             const length = diagonal * (flash.length || geometry.flashLengthRatio)
             const angle = (typeof flash.angle == 'number' ? flash.angle : -45) * Math.PI / 180
-            const startX = flash.x * width + animationOffset
-            const startY = flash.y * height
+            const startX = flash.x * width + animationOffset + shift.x
+            const startY = flash.y * height + shift.y
             const endX = startX + Math.cos(angle) * length
             const endY = startY + Math.sin(angle) * length
             const alpha = typeof flash.alpha == 'number' ? flash.alpha : 1
