@@ -1612,5 +1612,31 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-063",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix the visible classic-version floor and ceiling panel joints shown in screenshots/classic_version_joint.png. The floor and ceiling should read as continuous surfaces or intentionally seamless bands rather than showing obvious rectangular segment seams.\nImplemented: Drew classic side-floor floor and ceiling bands as continuous gray surfaces with uninterrupted boundary lines, preserving collision elements and bad-version styling.",
+    "acceptance_criteria": [
+      "Classic-version floor no longer shows obvious panel joints like screenshots/classic_version_joint.png.",
+      "Classic-version ceiling no longer shows obvious panel joints like screenshots/classic_version_joint.png.",
+      "Floor and ceiling still have clear readable boundaries and do not visually merge with the playfield.",
+      "Classic gameplay collision, movement, scoring, spawning, restart behavior, HUD, and menu button remain unchanged.",
+      "Bad-version floor and ceiling styling are not unintentionally changed by this fix.",
+      "A screenshot is saved at screenshots/TASK-063.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and observe the floor and ceiling bands.",
+      "Capture a screenshot and save it as screenshots/TASK-063.png.",
+      "Compare screenshots/TASK-063.png with screenshots/classic_version_joint.png and confirm the visible joints are fixed.",
+      "Confirm floor and ceiling boundaries remain readable.",
+      "Start the bad version and confirm its floor and ceiling styling are not unintentionally changed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

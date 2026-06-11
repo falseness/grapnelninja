@@ -141,16 +141,10 @@ class SideFloor extends Floor
     }
     draw()
     {
-        if (version != 'bad')
-        {
-            super.draw()
-            return
-        }
-
         if (!this.elements.length)
             return
 
-        if (this.elements[0].isInHudClearZone && this.elements[0].isInHudClearZone())
+        if (version == 'bad' && this.elements[0].isInHudClearZone && this.elements[0].isInHudClearZone())
         {
             this.drawHudZoneCeilingBoundary()
             return
@@ -189,6 +183,12 @@ class SideFloor extends Floor
     }
     drawContinuousSurface()
     {
+        if (version != 'bad')
+        {
+            this.drawClassicContinuousSurface()
+            return
+        }
+
         const bounds = this.getContinuousSurfaceBounds()
         const obstacleStyle = STYLE.badVersionEffects.obstacles
         const x = bounds.left + screen.x
@@ -216,6 +216,50 @@ class SideFloor extends Floor
         ctx.restore()
 
         this.drawContinuousNeonBoundary(bounds)
+    }
+    drawClassicContinuousSurface()
+    {
+        const bounds = this.getContinuousSurfaceBounds()
+        const x = bounds.left + screen.x
+        const y = bounds.top + screen.y
+        const surfaceWidth = bounds.right - bounds.left
+        const surfaceHeight = bounds.bottom - bounds.top
+
+        ctx.save()
+        ctx.fillStyle = STYLE.colors.ground.fill
+        ctx.fillRect(x, y, surfaceWidth, surfaceHeight)
+
+        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.strokeRect(x, y, surfaceWidth, surfaceHeight)
+        ctx.restore()
+
+        this.drawClassicContinuousBoundary(bounds)
+    }
+    drawClassicContinuousBoundary(bounds)
+    {
+        const y = bounds.boundaryY + screen.y
+
+        ctx.save()
+        ctx.beginPath()
+
+        ctx.lineWidth = STYLE.strokes.neonGlowWidth
+        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.moveTo(bounds.left + screen.x, y)
+        ctx.lineTo(bounds.right + screen.x, y)
+        ctx.stroke()
+
+        ctx.lineWidth = STYLE.strokes.neonWidth
+        ctx.strokeStyle = STYLE.colors.ground.line
+        ctx.shadowBlur = 0
+        ctx.stroke()
+
+        ctx.closePath()
+        ctx.restore()
     }
     drawContinuousNeonBoundary(bounds)
     {
