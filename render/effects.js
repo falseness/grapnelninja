@@ -147,12 +147,18 @@ class BackgroundRenderer
             return
 
         const background = STYLE.colors.background
-        const shift = this.getParallaxShift(width, height, geometry)
-        const cameraShift = this.getCameraParallaxShift(geometry)
+        const stableTime = 0
+        const shift = STYLE.visualStability.freezeBadVersionBackground
+            ? {x: 0, y: 0}
+            : this.getParallaxShift(width, height, geometry)
+        const cameraShift = STYLE.visualStability.freezeBadVersionBackground
+            ? {x: 0, y: 0}
+            : this.getCameraParallaxShift(geometry)
         const totalShift = {
             x: shift.x + cameraShift.x,
             y: shift.y + cameraShift.y
         }
+        const geometryTime = STYLE.visualStability.freezeBadVersionBackground ? stableTime : time
 
         this.ctx.save()
         this.ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
@@ -162,7 +168,7 @@ class BackgroundRenderer
             width,
             height,
             geometry,
-            time,
+            geometryTime,
             width * 0.52 + totalShift.x,
             height * 0.50 + totalShift.y,
             background.depthHexagonStroke,
@@ -180,14 +186,14 @@ class BackgroundRenderer
             width,
             height,
             secondaryGeometry,
-            time * 0.72,
+            geometryTime * 0.72,
             width * 0.25 - totalShift.x * 0.6,
             height * 0.36 - totalShift.y * 0.4,
             background.depthHexagonAccentStroke,
             background.depthHexagonStroke
         )
-        this.drawStreakSet(width, height, geometry, time, background.depthStreak, -height * 0.08 + totalShift.y, totalShift.x)
-        this.drawRectangleAccents(width, height, geometry, time, totalShift)
+        this.drawStreakSet(width, height, geometry, geometryTime, background.depthStreak, -height * 0.08 + totalShift.y, totalShift.x)
+        this.drawRectangleAccents(width, height, geometry, geometryTime, totalShift)
         this.ctx.restore()
     }
     getParallaxShift(width, height, geometry)

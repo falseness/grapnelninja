@@ -288,6 +288,7 @@ const STYLE = Object.freeze({
         stableBrightness: true,
         freezeHazardPulse: true,
         freezeBackgroundParallax: true,
+        freezeBadVersionBackground: true,
         backgroundCompositeOperation: 'source-over',
         effectCompositeOperation: 'source-over',
         stableEffectAlphaMultiplier: 0.42,

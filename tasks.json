@@ -2,9 +2,9 @@
   {
     "id": "TASK-001",
     "title": "Add central neon style constants and quality config",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [],
-    "description": "Add a central STYLE constants object for all neon arcade colors and visual settings, plus a quality config for disabling expensive effects. Do not change gameplay logic.\nImplemented: Added central STYLE and QUALITY config and routed existing visual defaults through it without gameplay changes.",
+    "description": "Add a central STYLE constants object for all neon arcade colors and visual settings, plus a quality config for disabling expensive effects. Do not change gameplay logic.\nImplemented: Added central STYLE and QUALITY config and routed existing visual defaults through it without gameplay changes.\nVerified: Re-ran browser checks for classic and bad versions, confirmed STYLE/QUALITY coverage and screenshot.",
     "acceptance_criteria": [
       "A single central STYLE object defines the dark background colors, cyan player color, blue cube color, red hazard color, ground line color, UI colors, alpha values, stroke widths, light sizes, particle caps, and timing values.",
       "A quality config exists and can independently disable lightmap, particles, player trail, background motion, and screen shake.",
@@ -23,11 +23,11 @@
   {
     "id": "TASK-002",
     "title": "Introduce isolated renderer and effects classes",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-001"
     ],
-    "description": "Add dedicated visual-only classes for background rendering, lightmap rendering, particles, player trail, screen effects, and UI styling hooks. Keep these classes easy to disable and separate from gameplay logic.\nImplemented: Added isolated visual effect renderer classes and delegated the draw path through quality-gated visual hooks without moving gameplay ownership.",
+    "description": "Add dedicated visual-only classes for background rendering, lightmap rendering, particles, player trail, screen effects, and UI styling hooks. Keep these classes easy to disable and separate from gameplay logic.\nImplemented: Added isolated visual effect renderer classes and delegated the draw path through quality-gated visual hooks without moving gameplay ownership.\nVerified: Re-ran classic/bad browser checks, quality toggles, code inspection, and refreshed screenshots/TASK-002.png.",
     "acceptance_criteria": [
       "Background, lightmap, particles, player trail, screen effects, and UI styling each live in their own class or clearly isolated module.",
       "The new classes expose small draw/update-style methods and read game state without owning physics, collision, spawning, or scoring decisions.",
@@ -47,11 +47,11 @@
   {
     "id": "TASK-003",
     "title": "Split rendering into named layers",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-002"
     ],
-    "description": "Refactor the main draw path into ordered visual layers: background, lights, world, particles/trails, and UI. Preserve current gameplay and render order where it affects readability.\nImplemented: Split the canvas draw path into named background, lights, world, particles/trails, and UI layer functions without changing gameplay state ownership.",
+    "description": "Refactor the main draw path into ordered visual layers: background, lights, world, particles/trails, and UI. Preserve current gameplay and render order where it affects readability.\nImplemented: Split the canvas draw path into named background, lights, world, particles/trails, and UI layer functions without changing gameplay state ownership.\nVerified: Re-ran code inspection and browser checks for classic/bad versions, confirmed scoring, UI visibility/clickability, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "The main draw function clearly renders background, lights, world objects, particles/trails, and UI in separate ordered sections or methods.",
       "World object drawing still uses the same gameplay state and positions.",
@@ -71,11 +71,11 @@
   {
     "id": "TASK-004",
     "title": "Add dark gradient background and vignette",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-003"
     ],
-    "description": "Replace the flat white playfield background with a minimalist dark blue/purple Canvas 2D gradient and cheap vignette.\nImplemented: Added a Canvas 2D dark blue/purple gradient background with a cheap radial vignette in the isolated background renderer.",
+    "description": "Replace the flat white playfield background with a minimalist dark blue/purple Canvas 2D gradient and cheap vignette.\nImplemented: Added a Canvas 2D dark blue/purple gradient background with a cheap radial vignette in the isolated background renderer.\nVerified: Re-ran browser checks, confirmed dark Canvas gradient and vignette samples, no console errors, readable gameplay/UI, and refreshed screenshot.",
     "acceptance_criteria": [
       "The playfield background is dark blue/purple rather than white.",
       "A subtle vignette darkens the screen edges without hiding gameplay objects.",
@@ -95,11 +95,11 @@
   {
     "id": "TASK-005",
     "title": "Add Super Hexagon inspired geometric background",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-004"
     ],
-    "description": "Add faint rotating hexagon outlines and diagonal motion streaks inspired by Super Hexagon. Keep the effect subtle and visual-only.\nImplemented: Added subtle rotating hexagon outlines and diagonal background streaks to the background renderer, gated by QUALITY.backgroundMotion.",
+    "description": "Add faint rotating hexagon outlines and diagonal motion streaks inspired by Super Hexagon. Keep the effect subtle and visual-only.\nImplemented: Added subtle rotating hexagon outlines and diagonal background streaks to the background renderer, gated by QUALITY.backgroundMotion.\nVerified: Re-ran browser checks, confirmed animated hexagons/streaks behind gameplay, QUALITY.backgroundMotion freeze behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "Faint hexagon outlines appear in the background and rotate or animate over time.",
       "Diagonal motion streaks move subtly across the background.",
@@ -119,11 +119,11 @@
   {
     "id": "TASK-006",
     "title": "Restyle world objects with neon outlines",
-    "status": "to-verify",
     "dependencies": [
       "TASK-003"
     ],
-    "description": "Restyle player, cubes, platforms, grapnel, and triangle hazards with dark fills and bright neon outlines. Do not change their collision geometry or gameplay behavior.\nImplemented: Restyled player, cubes/platforms, grapnel, and triangle hazards with dark fills, neon outlines, and unchanged geometry/gameplay behavior.",
+    "status": "done",
+    "description": "Restyle player, cubes, platforms, grapnel, and triangle hazards with dark fills and bright neon outlines. Do not change their collision geometry or gameplay behavior.\nImplemented: Restyled player, cubes/platforms, grapnel, and triangle hazards with dark fills, neon outlines, and unchanged geometry/gameplay behavior.\nVerified: Re-ran code inspection and browser checks; confirmed neon player, cubes/platforms, grapnel, red triangle hazards, scoring, hazard restart, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "The player renders as a bright cyan neon object with a dark fill or readable cyan core.",
       "Cubes and platforms render with dark fills and blue/cyan neon outlines.",
@@ -145,11 +145,11 @@
   {
     "id": "TASK-007",
     "title": "Add neon ground line treatment",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-006"
     ],
-    "description": "Restyle floor and side-floor visuals into readable neon ground and edge lines. Keep all collision and scoring behavior unchanged.\nImplemented: Restyled ground and side-floor fills to dark neon surfaces with bright cyan boundary lines while preserving collision shapes and generated positions.",
+    "description": "Restyle floor and side-floor visuals into readable neon ground and edge lines. Keep all collision and scoring behavior unchanged.\nImplemented: Restyled ground and side-floor fills to dark neon surfaces with bright cyan boundary lines while preserving collision shapes and generated positions.\nVerified: Re-ran code inspection and browser checks for classic/bad versions, confirmed neon ground lines, unchanged floor geometry/collision behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "The main ground or floor boundary reads as a bright neon line.",
       "Side-floor and boundary visuals match the neon arcade style.",
@@ -169,12 +169,12 @@
   {
     "id": "TASK-008",
     "title": "Add low resolution offscreen lightmap",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-002",
       "TASK-003"
     ],
-    "description": "Add a cheap low-resolution offscreen Canvas 2D lightmap layer and composite it into the main canvas.\nImplemented: Added a low-resolution offscreen Canvas 2D lightmap with clear, radial draw, and composite support gated by QUALITY.lightmap.",
+    "description": "Add a cheap low-resolution offscreen Canvas 2D lightmap layer and composite it into the main canvas.\nImplemented: Added a low-resolution offscreen Canvas 2D lightmap with clear, radial draw, and composite support gated by QUALITY.lightmap.\nVerified: Re-ran code inspection and browser checks; confirmed smaller offscreen lightmap, clear/draw/composite path, quality disable behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "A dedicated lightmap class owns an offscreen canvas smaller than the main canvas.",
       "The lightmap can be cleared, drawn into, and composited into the main canvas during the lights layer.",
@@ -194,11 +194,11 @@
   {
     "id": "TASK-009",
     "title": "Add radial emission for player cubes and hazards",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-008"
     ],
-    "description": "Make the player, blue cubes/platforms, and red triangle hazards emit cheap radial light through the centralized lightmap.\nImplemented: Added centralized lightmap radial emitters for the player, blue/cyan cube and platform objects, and red triangle hazards.",
+    "description": "Make the player, blue cubes/platforms, and red triangle hazards emit cheap radial light through the centralized lightmap.\nImplemented: Added centralized lightmap radial emitters for the player, blue/cyan cube and platform objects, and red triangle hazards.\nVerified: Re-ran code inspection and browser checks; confirmed colored light emissions, lightmap quality disable path, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "The player emits cyan radial light.",
       "Cubes and platforms emit blue or cyan radial light.",
@@ -219,13 +219,13 @@
   {
     "id": "TASK-010",
     "title": "Add smooth cyan player trail",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-002",
       "TASK-003",
       "TASK-006"
     ],
-    "description": "Add a smooth cyan visual trail for the player, replacing or visually extending the current track effect without changing movement or physics.\nImplemented: Added a style-configured smooth cyan player trail renderer over existing track history, gated by QUALITY.playerTrail.",
+    "description": "Add a smooth cyan visual trail for the player, replacing or visually extending the current track effect without changing movement or physics.\nImplemented: Added a style-configured smooth cyan player trail renderer over existing track history, gated by QUALITY.playerTrail.\nVerified: Re-ran browser checks for classic/bad versions, confirmed cyan player trail, QUALITY.playerTrail disable path, no console errors, visual-only render diff, and refreshed screenshot.",
     "acceptance_criteria": [
       "The player leaves a smooth cyan trail while moving.",
       "The trail fades cleanly and does not obscure hazards or platforms.",
@@ -245,13 +245,13 @@
   {
     "id": "TASK-011",
     "title": "Add capped square particle system",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-002",
       "TASK-003",
       "TASK-009"
     ],
-    "description": "Add a visual-only square particle system for player movement, cube glow, and hazard sparks. Keep it cheap, capped, and disableable.\nImplemented: Added capped visual-only square particles for player movement, cube/platform glow, and hazard sparks with QUALITY.particles disable support.",
+    "description": "Add a visual-only square particle system for player movement, cube glow, and hazard sparks. Keep it cheap, capped, and disableable.\nImplemented: Added capped visual-only square particles for player movement, cube/platform glow, and hazard sparks with QUALITY.particles disable support.\nVerified: Re-ran code inspection and 30s browser checks for classic/bad versions; confirmed square particle fields/colors, cap compliance, QUALITY.particles disable behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "A dedicated particle system manages square particles with position, velocity, color, life, and size.",
       "Player movement can emit cyan square particles.",
@@ -274,11 +274,11 @@
   {
     "id": "TASK-012",
     "title": "Add pulsing red hazard glow",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-009"
     ],
-    "description": "Add a pulsing red visual glow to triangle hazards only. Keep the pulse visual-only and subtle.\nImplemented: Added STYLE-configured pulsing red lightmap glow for triangle hazards only, with movement and collision behavior unchanged.",
+    "description": "Add a pulsing red visual glow to triangle hazards only. Keep the pulse visual-only and subtle.\nImplemented: Added STYLE-configured pulsing red lightmap glow for triangle hazards only, with movement and collision behavior unchanged.\nVerified: Re-ran code inspection and browser checks; confirmed STYLE-driven red hazard pulse, unchanged movement/collision restart behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "Triangle hazards have a visible red glow pulse over time.",
       "The pulse does not change triangle movement, collision, scoring, or restart behavior.",
@@ -298,11 +298,11 @@
   {
     "id": "TASK-013",
     "title": "Add player visual rotation while moving and jumping",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-006"
     ],
-    "description": "Add visual rotation to the player while moving and jumping. The rotation must not affect the player's circular collision model or physics.\nImplemented: Added draw-only player visual rotation with a cyan marker while preserving circular collision radius, movement, speed, and physics.",
+    "description": "Add visual rotation to the player while moving and jumping. The rotation must not affect the player's circular collision model or physics.\nImplemented: Added draw-only player visual rotation with a cyan marker while preserving circular collision radius, movement, speed, and physics.\nVerified: Re-ran code inspection and browser checks; confirmed draw-time rotation advances while moving, player position/radius/speeds stay unchanged by drawing, platform and hazard collisions still work, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "The player visibly rotates while moving or jumping.",
       "Player collision radius, position, movement, speed, and physics are unchanged.",
@@ -322,13 +322,13 @@
   {
     "id": "TASK-014",
     "title": "Add death shockwave and small screen shake",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-002",
       "TASK-003",
       "TASK-006"
     ],
-    "description": "Add a brief visual shockwave and small screen shake on player death or restart. Do not delay or alter restart behavior.\nImplemented: Added restart-triggered shockwave rendering and quality-gated screen shake through the existing ScreenEffects layer.",
+    "description": "Add a brief visual shockwave and small screen shake on player death or restart. Do not delay or alter restart behavior.\nImplemented: Added restart-triggered shockwave rendering and quality-gated screen shake through the existing ScreenEffects layer.\nVerified: Re-ran code inspection and browser checks; confirmed restart shockwave, subtle shake, QUALITY.screenShake disable behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "A small visual shockwave appears when the player dies or the game restarts from collision/out-of-bounds.",
       "A short, subtle screen shake occurs on death or restart.",
@@ -349,12 +349,12 @@
   {
     "id": "TASK-015",
     "title": "Redesign in-game UI styling",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-001",
       "TASK-003"
     ],
-    "description": "Restyle score, record, menu, pause UI, and menu button with a monospace or pixel-like neon arcade look. Preserve all UI behavior.\nImplemented: Restyled score, record, main menu, pause controls, visual-effects toggle, and in-game menu button with monospace neon UI drawing while preserving click behavior.",
+    "description": "Restyle score, record, menu, pause UI, and menu button with a monospace or pixel-like neon arcade look. Preserve all UI behavior.\nImplemented: Restyled score, record, main menu, pause controls, visual-effects toggle, and in-game menu button with monospace neon UI drawing while preserving click behavior.\nVerified: Re-ran code inspection and browser checks; confirmed neon monospace score/menu/pause styling, menu/pause/resume/back/version/toggle behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "Score and record text use a monospace or pixel-like font stack and bright neon coloring.",
       "The menu button is restyled as a neon outlined control.",
@@ -376,7 +376,7 @@
   {
     "id": "TASK-016",
     "title": "Final readability and performance pass",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-004",
       "TASK-005",
@@ -391,7 +391,7 @@
       "TASK-014",
       "TASK-015"
     ],
-    "description": "Tune the full neon arcade restyle for readability, minimalism, and performance. Keep effects cheap and ensure weak-device quality settings work.\nImplemented: Tuned neon effect intensity for readability/performance and added a low-power quality helper that disables expensive visual layers.",
+    "description": "Tune the full neon arcade restyle for readability, minimalism, and performance. Keep effects cheap and ensure weak-device quality settings work.\nImplemented: Tuned neon effect intensity for readability/performance and added a low-power quality helper that disables expensive visual layers.\nVerified: Re-ran code inspection and 30s browser checks for classic/bad versions; confirmed final neon readability, Canvas 2D-only/no-heavy-dependency implementation, particle cap, low-power quality disable path, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "The final game matches the target minimalist neon arcade style: dark blue/purple background, bright cyan player, blue glowing cubes, red glowing triangle hazards, neon ground line, and simple geometric background.",
       "Effects remain readable and not too noisy during active play.",
@@ -416,11 +416,11 @@
   {
     "id": "TASK-017",
     "title": "Compare bad version screenshots against concept art",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-016"
     ],
-    "description": "Open the game with bad version, play it, make screenshots, place them into screenshots/TASK-017, then compare the result with /opt/grapnelninja/screenshots/concept_art.png. If the result differs drastically from the concept art, add more pending tickets to tasks.json describing the missing visual work.\nImplemented: Captured bad-version play screenshots, compared them with the concept art, and appended follow-up tickets for the major visual gaps.",
+    "description": "Open the game with bad version, play it, make screenshots, place them into screenshots/TASK-017, then compare the result with /opt/grapnelninja/screenshots/concept_art.png. If the result differs drastically from the concept art, add more pending tickets to tasks.json describing the missing visual work.\nImplemented: Captured bad-version play screenshots, compared them with the concept art, and appended follow-up tickets for the major visual gaps.\nVerified: Re-ran bad-version 30s browser play, captured fresh comparison screenshots, confirmed concept-art gaps and pending follow-up tickets.",
     "acceptance_criteria": [
       "The bad version is opened and played long enough to show player movement, cubes/platforms, triangle hazards, ground line, background, lighting, particles/trails, and UI.",
       "Multiple screenshots are saved under screenshots/TASK-017/.",
@@ -441,11 +441,11 @@
   {
     "id": "TASK-018",
     "title": "Align HUD typography and top controls with concept art",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-017"
     ],
-    "description": "Restyle the in-game score, record, stage indicator, and menu button to better match the concept art HUD: uppercase pixel-like labels, stronger white/cyan glow, compact top placement, and no world geometry obscuring or competing with the HUD.\nImplemented: Restyled the in-game HUD with uppercase glowing score/record labels, a bad-version stage indicator, compact outlined menu icon, and HUD-zone side-floor suppression.",
+    "description": "Restyle the in-game score, record, stage indicator, and menu button to better match the concept art HUD: uppercase pixel-like labels, stronger white/cyan glow, compact top placement, and no world geometry obscuring or competing with the HUD.\nImplemented: Restyled the in-game HUD with uppercase glowing score/record labels, a bad-version stage indicator, compact outlined menu icon, and HUD-zone side-floor suppression.\nVerified: Re-ran code inspection and browser checks; confirmed concept-aligned bad-version HUD, no competing top band, preserved menu/pause/resume/back/version/toggle behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "Score and record labels render uppercase with a brighter white/cyan arcade treatment closer to the concept art.",
       "The top-center stage or progress indicator shown in the concept art is added as visual-only UI for the bad version without changing scoring or gameplay rules.",
@@ -466,11 +466,11 @@
   {
     "id": "TASK-019",
     "title": "Increase neon glow and particle richness toward concept art",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-017"
     ],
-    "description": "Tune the bad-version visual effects so active play has brighter object halos, denser but capped square particles, more visible player trail arcs, and stronger colored light blooms similar to the concept art while staying Canvas 2D only.\nImplemented: Added bad-version glow, bloom, particle density, and trail multipliers while preserving quality-disable paths and Canvas 2D rendering.",
+    "description": "Tune the bad-version visual effects so active play has brighter object halos, denser but capped square particles, more visible player trail arcs, and stronger colored light blooms similar to the concept art while staying Canvas 2D only.\nImplemented: Added bad-version glow, bloom, particle density, and trail multipliers while preserving quality-disable paths and Canvas 2D rendering.\nVerified: Re-ran 30s bad-version browser check, confirmed richer glow/particles/trail, cap 96/140, quality-disable behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "Player movement produces a more visible cyan arc trail and square particle scatter similar to the concept art.",
       "Cubes and platforms have stronger blue/cyan glow blooms without obscuring their collision silhouettes.",
@@ -494,11 +494,11 @@
   {
     "id": "TASK-020",
     "title": "Refine bad-version obstacle silhouettes to match concept art",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-017"
     ],
-    "description": "Adjust draw-only styling for bad-version hazards, cubes, platforms, and ground blocks so they use darker interiors, brighter thin neon outlines, and less heavy filled color, matching the concept art more closely without changing collision geometry.\nImplemented: Added bad-version-only dark obstacle interiors, thin neon outlines, lighter ground caps, and removed the filled hazard track so silhouettes stay outline-forward.",
+    "description": "Adjust draw-only styling for bad-version hazards, cubes, platforms, and ground blocks so they use darker interiors, brighter thin neon outlines, and less heavy filled color, matching the concept art more closely without changing collision geometry.\nImplemented: Added bad-version-only dark obstacle interiors, thin neon outlines, lighter ground caps, and removed the filled hazard track so silhouettes stay outline-forward.\nVerified: Re-ran code inspection and browser checks; confirmed dark-fill neon-outline bad-version obstacles, unchanged score/restart behavior, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "Triangle hazards use dark interiors with bright red neon outlines rather than large flat red fills.",
       "Cube and platform interiors remain dark with bright cyan/blue outlines and readable edge highlights.",
@@ -520,11 +520,11 @@
   {
     "id": "TASK-021",
     "title": "Improve bad-version composition and background depth",
-    "status": "to-verify",
+    "status": "done",
     "dependencies": [
       "TASK-017"
     ],
-    "description": "Tune the bad-version camera framing and background rendering so screenshots show a cleaner concept-art-like composition: visible play space, layered faint geometry, diagonal streaks, subtle polygon accents, and less UI/world crowding.\nImplemented: Added bad-version-only layered background hexagons, stronger diagonal streaks, subtle polygon accents, and parallax depth while preserving gameplay state and framing.",
+    "description": "Tune the bad-version camera framing and background rendering so screenshots show a cleaner concept-art-like composition: visible play space, layered faint geometry, diagonal streaks, subtle polygon accents, and less UI/world crowding.\nImplemented: Added bad-version-only layered background hexagons, stronger diagonal streaks, subtle polygon accents, and parallax depth while preserving gameplay state and framing.\nVerified: Re-ran code inspection and 30s bad-version browser checks; confirmed readable 1280x720 composition, background depth, no console errors, scoring/restart probes, and refreshed screenshot.",
     "acceptance_criteria": [
       "Bad-version screenshots show the player, hazards, platforms, ground line, background geometry, particles/trails, lighting, and UI together without excessive crowding.",
       "Background hexagons and diagonal streaks are more visible and layered while staying subtle behind gameplay.",
@@ -547,7 +547,7 @@
     "id": "TASK-022",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix the TASK-012 red hazard glow regression. The pulsing red glow or spot must be drawn at the triangle hazard's actual screen position after camera or screen movement, not at an unrelated world position. Do not change hazard movement, collision, scoring, or restart behavior.\nImplemented: Gated red hazard glow/bloom to visible screen-space triangle positions and reused the same screen-offset circle for light placement.",
+    "description": "Fix the TASK-012 red hazard glow regression. The pulsing red glow or spot must be drawn at the triangle hazard's actual screen position after camera or screen movement, not at an unrelated world position. Do not change hazard movement, collision, scoring, or restart behavior.\nImplemented: Gated red hazard glow/bloom to visible screen-space triangle positions and reused the same screen-offset circle for light placement.\nVerified: Re-ran bad-version browser verification, inspected screenshot, confirmed red glow centers stay attached to visible triangle hazards during camera movement, no console errors, and valid JSON.",
     "acceptance_criteria": [
       "The red hazard glow is visually aligned with each red triangle hazard during play.",
       "Camera or screen movement shifts the glow by the same amount as the hazard sprite.",
@@ -564,13 +564,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-023",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix the player trail rendering regression. The trail must read as a smooth continuous cyan motion trail and must not show separated circle stamps or visible internal circles like the broken trail in Image #2. Keep the trail visual-only.\nImplemented: Reworked player trail rendering to use continuous smooth strokes instead of overlapping round-capped chunks, eliminating internal circle stamp artifacts.",
+    "description": "Fix the player trail rendering regression. The trail must read as a smooth continuous cyan motion trail and must not show separated circle stamps or visible internal circles like the broken trail in Image #2. Keep the trail visual-only.\nImplemented: Reworked player trail rendering to use continuous smooth strokes instead of overlapping round-capped chunks, eliminating internal circle stamp artifacts.\nVerified: Re-ran bad-version browser check, inspected screenshot, confirmed smooth connected trail with no internal circle stamp artifacts and visual-only behavior.",
     "acceptance_criteria": [
       "The player trail appears smooth and continuous while the player moves.",
       "The trail does not show three or more obvious separated circles inside the trail body.",
@@ -588,13 +588,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-024",
     "category": "functional",
     "priority": "critical",
-    "description": "Restore object color semantics from the old master version. Safe green objects that do not kill the player must remain visually distinct from gray and blue objects, and all object types must not collapse into the same neon color. Use Image #3 as the reference for the lost green and gray/blue distinction.\nImplemented: Restored semantic neon green safe surfaces, gray rect obstacles, blue jumping cubes, and red hazards with matching light/particle colors.",
+    "description": "Restore object color semantics from the old master version. Safe green objects that do not kill the player must remain visually distinct from gray and blue objects, and all object types must not collapse into the same neon color. Use Image #3 as the reference for the lost green and gray/blue distinction.\nImplemented: Restored semantic neon green safe surfaces, gray rect obstacles, blue jumping cubes, and red hazards with matching light/particle colors.\nVerified: Re-ran code inspection and bad-version browser checks; confirmed visible green safe/ground, blue jumping cubes, gray rect obstacles, red hazards, safe green collision behavior, no console errors, valid JSON, and refreshed screenshot.",
     "acceptance_criteria": [
       "Safe non-killing green objects are visibly green again.",
       "Gray and blue objects remain visually distinct from green safe objects.",
@@ -612,13 +612,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-025",
     "category": "functional",
     "priority": "normal",
-    "description": "Move the player trail to a lower render layer. The player trail must be drawn before trampolines, platforms, hazards, floor objects, and other world objects so those objects stay visually on top of the trail.\nImplemented: Moved the player trail into its own lower render layer before world object drawing so obstacles and the player remain on top.",
+    "description": "Move the player trail to a lower render layer. The player trail must be drawn before trampolines, platforms, hazards, floor objects, and other world objects so those objects stay visually on top of the trail.\nImplemented: Moved the player trail into its own lower render layer before world object drawing so obstacles and the player remain on top.\nVerified: Re-ran code inspection and bad-version browser check; confirmed world objects and player draw above the trail, no console errors, valid JSON, and refreshed screenshot.",
     "acceptance_criteria": [
       "The player trail renders behind trampolines, platforms, hazards, floor objects, and other world objects.",
       "World objects remain crisp and are not obscured by trail drawing.",
@@ -635,13 +635,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-026",
     "category": "functional",
     "priority": "normal",
-    "description": "Disable color and brightness changes caused by movement or progress. Keep the game's dark visual brightness closer to the first dark version shown in Image #4, without progressive palette shifts or brightening during play.\nImplemented: Added stable visual brightness flags, darker bad-version glow/background defaults, fixed hazard glow strength, and non-additive background depth compositing.\nVerification failed: During a 30s bad-version progressed run the refreshed screenshot became pale/bright and mean brightness rose from about 34 to 150, so dark stable brightness was not met.\nImplemented: Replaced remaining additive stable visual composites with source-over and reduced stable light/trail/particle/shockwave alpha so bad-version brightness remains dark during progressed play.",
+    "description": "Disable color and brightness changes caused by movement or progress. Keep the game's dark visual brightness closer to the first dark version shown in Image #4, without progressive palette shifts or brightening during play.\nImplemented: Added stable visual brightness flags, darker bad-version glow/background defaults, fixed hazard glow strength, and non-additive background depth compositing.\nVerification failed: During a 30s bad-version progressed run the refreshed screenshot became pale/bright and mean brightness rose from about 34 to 150, so dark stable brightness was not met.\nImplemented: Replaced remaining additive stable visual composites with source-over and reduced stable light/trail/particle/shockwave alpha so bad-version brightness remains dark during progressed play.\nVerified: Re-ran code inspection and bad-version browser checks with 30s progressed play; confirmed dark stable screenshot brightness, no palette cycling, no console errors, valid JSON, and refreshed screenshot.",
     "acceptance_criteria": [
       "Object, background, and UI colors do not shift because of player movement or progress.",
       "The default dark version remains close to the darker brightness shown in Image #4.",
@@ -659,13 +659,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-027",
     "category": "functional",
     "priority": "normal",
-    "description": "Modify TASK-011 particle behavior. Particles must be off by default during ordinary movement and object glow, and the game should only generate a short splash of particles when the player collides with a trampoline.\nImplemented: Disabled continuous movement/object particle emission and added a capped, quality-gated trampoline collision splash with contact locking.",
+    "description": "Modify TASK-011 particle behavior. Particles must be off by default during ordinary movement and object glow, and the game should only generate a short splash of particles when the player collides with a trampoline.\nImplemented: Disabled continuous movement/object particle emission and added a capped, quality-gated trampoline collision splash with contact locking.\nVerified: Re-ran code inspection and bad-version browser checks; confirmed no default particles, capped trampoline splash, quality disable behavior, no console errors, valid JSON, and refreshed screenshot.",
     "acceptance_criteria": [
       "No continuous particles are emitted by default during ordinary player movement.",
       "No continuous particles are emitted by default from cubes, platforms, or hazards.",
@@ -683,13 +683,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-028",
     "category": "functional",
     "priority": "normal",
-    "description": "Simplify the background composition so it is closer to the concept art in Image #5. Replace the current cluttered overlapping geometry with a cleaner composition using two main hexagons, small rectangles, flashes or diagonal streaks, and restrained decorative detail behind gameplay.\nImplemented: Simplified the bad-version background to a two-hexagon composition with fewer diagonal streaks and small rectangle accents behind gameplay.",
+    "description": "Simplify the background composition so it is closer to the concept art in Image #5. Replace the current cluttered overlapping geometry with a cleaner composition using two main hexagons, small rectangles, flashes or diagonal streaks, and restrained decorative detail behind gameplay.\nImplemented: Simplified the bad-version background to a two-hexagon composition with fewer diagonal streaks and small rectangle accents behind gameplay.\nVerified: Re-ran bad-version browser check, inspected screenshot against concept art, confirmed cleaner two-hexagon background, subtle details, readable gameplay/UI, no console errors, and valid JSON.",
     "acceptance_criteria": [
       "The background shows a clean composition with about two main hexagon outlines rather than many overlapping polygon layers.",
       "Small rectangles and flash or diagonal streak details are present behind gameplay.",
@@ -707,13 +707,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-029",
     "category": "functional",
     "priority": "normal",
-    "description": "Slow background movement relative to player and camera movement. The background should feel far away by using slower parallax motion instead of moving at the same speed as the player or world.\nImplemented: Added bad-version camera-derived background parallax so distant geometry shifts at a small fraction of foreground screen movement.",
+    "description": "Slow background movement relative to player and camera movement. The background should feel far away by using slower parallax motion instead of moving at the same speed as the player or world.\nImplemented: Added bad-version camera-derived background parallax so distant geometry shifts at a small fraction of foreground screen movement.\nVerified: Re-ran bad-version browser check, confirmed background moved at 0.055x foreground camera shift, inspected screenshot, no console errors, and valid JSON.",
     "acceptance_criteria": [
       "Background geometry moves more slowly than foreground gameplay objects during screen movement.",
       "The slower movement creates a clear distant-background parallax effect.",
@@ -731,13 +731,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-030",
     "category": "functional",
     "priority": "normal",
-    "description": "Fix floor segment joints. The floor should render as a continuous surface or line without visible seams or incorrect joints between adjacent floor segments, as shown in Image #6.\nImplemented: Drew bad-version side floors as one continuous visual surface and neon boundary while preserving individual collision elements.",
+    "description": "Fix floor segment joints. The floor should render as a continuous surface or line without visible seams or incorrect joints between adjacent floor segments, as shown in Image #6.\nImplemented: Drew bad-version side floors as one continuous visual surface and neon boundary while preserving individual collision elements.\nVerified: Re-ran bad-version browser check, inspected refreshed screenshot, confirmed centered floor join has no visible seam, collision probe still works, no console errors, and valid JSON.",
     "acceptance_criteria": [
       "Visible seams or joints between floor segments are removed.",
       "The floor reads as one continuous neon floor line or surface during play.",
@@ -755,13 +755,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-031",
     "category": "functional",
     "priority": "normal",
-    "description": "Restore the visible ceiling. Undo the visual change that made the ceiling invisible, while preserving the current ceiling collision and gameplay behavior.\nImplemented: Restored a thin neon ceiling boundary for the bad-version HUD clear zone without changing side-floor collision elements.",
+    "description": "Restore the visible ceiling. Undo the visual change that made the ceiling invisible, while preserving the current ceiling collision and gameplay behavior.\nImplemented: Restored a thin neon ceiling boundary for the bad-version HUD clear zone without changing side-floor collision elements.\nVerified: Re-ran bad-version browser checks, inspected screenshot, confirmed visible neon ceiling line, clickable HUD menu, no console errors, and valid JSON.",
     "acceptance_criteria": [
       "The ceiling is visible again during gameplay.",
       "The ceiling styling fits the current neon dark visual style.",
@@ -779,13 +779,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-032",
     "category": "functional",
     "priority": "critical",
-    "description": "Restore the red triangle hazard trail behavior that worked before. Red triangle hazards should again leave their intended red visual trail without changing hazard movement, collision, scoring, or restart behavior.\nImplemented: Restored bad-version red triangle hazard trails with fading attached triangle ghosts drawn below world silhouettes.",
+    "description": "Restore the red triangle hazard trail behavior that worked before. Red triangle hazards should again leave their intended red visual trail without changing hazard movement, collision, scoring, or restart behavior.\nImplemented: Restored bad-version red triangle hazard trails with fading attached triangle ghosts drawn below world silhouettes.\nVerified: Re-ran bad-version browser checks, inspected screenshot, confirmed attached red hazard trails, hazard restart behavior, no console errors, and valid JSON.",
     "acceptance_criteria": [
       "Moving red triangle hazards show the intended red trail again.",
       "The hazard trail is visually connected to hazard movement and does not detach from the triangle.",
@@ -803,13 +803,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-033",
     "category": "test",
     "priority": "critical",
-    "description": "Add a manual visual verification pass after the visual regression fixes. Play the game for 30 seconds, create 3 screenshots, and check whether the previous features and fixes were actually implemented rather than only marked complete.\nImplemented: Completed a 32.8s bad-version visual verification pass, saved three screenshots plus a browser report under screenshots/TASK-033, and found no remaining visual regression requiring a new task.",
+    "description": "Add a manual visual verification pass after the visual regression fixes. Play the game for 30 seconds, create 3 screenshots, and check whether the previous features and fixes were actually implemented rather than only marked complete.\nImplemented: Completed a 32.8s bad-version visual verification pass, saved three screenshots plus a browser report under screenshots/TASK-033, and found no remaining visual regression requiring a new task.\nVerified: Re-ran a 33.3s bad-version browser pass, captured three independent screenshots, inspected original and fresh images, confirmed prior visual fixes, no console errors, and valid JSON.",
     "acceptance_criteria": [
       "The game is played for at least 30 seconds in the bad version after the visual fix tickets are implemented.",
       "Three representative screenshots are saved under screenshots/TASK-033/.",
@@ -827,13 +827,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-034",
     "category": "functional",
     "priority": "normal",
-    "description": "Make the TASK-027 trampoline collision splash easier to see by increasing particle brightness, opacity, and lifetime. Keep particles disabled for ordinary movement and object glow, and keep the change visual-only for both classic and bad versions.\nImplemented: Increased trampoline splash count, opacity, size, and lifetime with trampoline-only particle config while keeping ordinary particle emitters inactive.",
+    "description": "Make the TASK-027 trampoline collision splash easier to see by increasing particle brightness, opacity, and lifetime. Keep particles disabled for ordinary movement and object glow, and keep the change visual-only for both classic and bad versions.\nImplemented: Increased trampoline splash count, opacity, size, and lifetime with trampoline-only particle config while keeping ordinary particle emitters inactive.\nVerified: Re-ran classic/bad browser checks, confirmed brighter longer-lived capped trampoline splash, no ordinary continuous particles, quality-disable behavior, no console errors, and inspected screenshot.",
     "acceptance_criteria": [
       "Trampoline splash particles are visibly brighter in both classic and bad versions.",
       "Trampoline splash particles render at higher opacity than the current TASK-027 splash.",
@@ -856,13 +856,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-035",
     "category": "functional",
     "priority": "critical",
-    "description": "Restore a clearly visible old-version blue circular player body like Image #1, so the player itself is visible and not mostly represented by its trail. Apply the fix to both classic and bad versions without changing gameplay behavior.\nImplemented: Restored a saturated draw-only blue circular player body with a minimum screen radius and subdued marker so it remains visible above the trail in classic and bad versions.",
+    "description": "Restore a clearly visible old-version blue circular player body like Image #1, so the player itself is visible and not mostly represented by its trail. Apply the fix to both classic and bad versions without changing gameplay behavior.\nImplemented: Restored a saturated draw-only blue circular player body with a minimum screen radius and subdued marker so it remains visible above the trail in classic and bad versions.\nVerified: Re-ran independent browser/code inspection; confirmed blue circle visibility in classic and bad versions, trail layering, gameplay sanity checks, no console errors, and refreshed screenshot.",
     "acceptance_criteria": [
       "The player renders as a clearly visible blue circle in both classic and bad versions.",
       "The player circle is visible at rest and during movement.",
@@ -884,13 +884,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-036",
     "category": "functional",
     "priority": "normal",
-    "description": "Modify the shell styling for rectangle objects so blue cubes and gray obstacles show a smaller full copy of the rectangle inside the object, matching the triangle copy-style visual instead of only showing an upper cap. Apply the visual fix to both classic and bad versions without changing collision geometry.\nImplemented: Replaced rectangle top-cap shell styling with a complete inset rectangle copy for classic and bad blue/gray rectangles while preserving triangle copy drawing and geometry.",
+    "description": "Modify the shell styling for rectangle objects so blue cubes and gray obstacles show a smaller full copy of the rectangle inside the object, matching the triangle copy-style visual instead of only showing an upper cap. Apply the visual fix to both classic and bad versions without changing collision geometry.\nImplemented: Replaced rectangle top-cap shell styling with a complete inset rectangle copy for classic and bad blue/gray rectangles while preserving triangle copy drawing and geometry.\nVerified: Re-ran classic/bad browser probes, inspected refreshed screenshot, confirmed full inset rectangle copies and unchanged draw-time geometry.",
     "acceptance_criteria": [
       "Blue cubes show a smaller full rectangle copy inside the object.",
       "Gray obstacles show a smaller full rectangle copy inside the object.",
@@ -912,13 +912,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-037",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix the game loop so physics updates use a fixed timestep or equivalent frame-rate-independent timing instead of advancing once per requestAnimationFrame. Rendering may continue to use requestAnimationFrame, but gameplay speed must not depend on display refresh rate.\nImplemented: Added a 60Hz fixed-step physics accumulator with bounded catch-up while keeping rendering on requestAnimationFrame.",
+    "description": "Fix the game loop so physics updates use a fixed timestep or equivalent frame-rate-independent timing instead of advancing once per requestAnimationFrame. Rendering may continue to use requestAnimationFrame, but gameplay speed must not depend on display refresh rate.\nImplemented: Added a 60Hz fixed-step physics accumulator with bounded catch-up while keeping rendering on requestAnimationFrame.\nVerified: Independent browser probes confirmed equal 60Hz/120Hz physics, RAF-driven rendering, bounded long-frame catch-up, unchanged core interactions, no console errors, valid JSON, and a rendered screenshot.",
     "acceptance_criteria": [
       "Physics movement speed is based on elapsed time or fixed simulation steps, not one physics step per animation frame.",
       "Gameplay speed is consistent across common refresh rates such as 60Hz and 120Hz.",
@@ -941,13 +941,13 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-038",
     "category": "functional",
     "priority": "normal",
-    "description": "Modify the TASK-034 trampoline splash particles so the splash is visible but particles do not move after spawning, and reduce the splash dispersion. Keep particles disabled for ordinary movement and object glow, and keep the change visual-only for both classic and bad versions.\nImplemented: Made trampoline splash particles spawn with zero velocity and a smaller STYLE-configured dispersion radius while leaving ordinary emitters inactive.",
+    "description": "Modify the TASK-034 trampoline splash particles so the splash is visible but particles do not move after spawning, and reduce the splash dispersion. Keep particles disabled for ordinary movement and object glow, and keep the change visual-only for both classic and bad versions.\nImplemented: Made trampoline splash particles spawn with zero velocity and a smaller STYLE-configured dispersion radius while leaving ordinary emitters inactive.\nVerified: Re-ran classic/bad browser probes, confirmed static clustered trampoline splash, no ordinary continuous particles, quality-disable behavior, no console errors, valid JSON, and refreshed screenshot.",
     "acceptance_criteria": [
       "Trampoline splash particles appear at the collision point but remain static after spawning.",
       "Splash dispersion is lower than TASK-034, with particles clustered closer to the trampoline contact point.",
@@ -971,6 +971,249 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
+    "status": "done"
+  },
+  {
+    "id": "TASK-039",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Remove background color changes caused by progress or score advancement. The bad-version background palette must remain visually stable during play instead of shifting colors as the player progresses.\nImplemented: Froze bad-version background animation/camera offsets behind a visual stability flag so its dark palette stays unchanged during progress.",
+    "acceptance_criteria": [
+      "Background colors do not change because of score, progress, distance, camera movement, or elapsed gameplay time.",
+      "The background keeps a stable dark palette during early, mid, and later gameplay.",
+      "Foreground object colors, UI colors, and gameplay behavior remain unchanged except where background color coupling is removed.",
+      "The fix applies to the bad version and does not break the classic version.",
+      "A screenshot is saved at screenshots/TASK-039.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and capture an early-game screenshot.",
+      "Play long enough for visible progress and capture a later screenshot as screenshots/TASK-039.png.",
+      "Compare early and later screenshots and confirm the background palette did not shift because of progress.",
+      "Confirm foreground objects and UI remain readable.",
+      "Confirm the classic version still starts and renders.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-040",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Add bright diagonal background flashes like screenshots/concept_art.png. The flashes should be visual-only, behind gameplay objects, and strong enough to read as neon streak accents without overpowering hazards, platforms, player, or UI.",
+    "acceptance_criteria": [
+      "Bright diagonal magenta and blue background flashes appear behind gameplay, similar to screenshots/concept_art.png.",
+      "The flashes are brighter and clearer than the current faint background line details.",
+      "The flashes do not obscure the player, hazards, platforms, floor, ceiling, score, record, or menu button.",
+      "The flashes can be disabled or frozen through the existing visual effects or background quality controls.",
+      "Gameplay collision, movement, scoring, spawning, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-040.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play until background flashes are visible.",
+      "Capture a screenshot and save it as screenshots/TASK-040.png.",
+      "Compare the screenshot with screenshots/concept_art.png and confirm bright diagonal flashes are present.",
+      "Confirm gameplay objects and UI remain readable over the flashes.",
+      "Disable or freeze background visual effects through the existing quality controls and confirm the flashes respect that setting.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-041",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Add varied faint triangle silhouettes in the background like screenshots/concept_art.png. These triangles should be decorative background geometry only and must not be confused with red triangle hazards.",
+    "acceptance_criteria": [
+      "Multiple decorative background triangle silhouettes are visible behind gameplay, similar to screenshots/concept_art.png.",
+      "Background triangles vary in size, position, opacity, or orientation.",
+      "Background triangles stay faint enough that they are not mistaken for red triangle hazards.",
+      "Background triangles do not obscure the player, hazards, platforms, floor, ceiling, score, record, or menu button.",
+      "The decorative triangles can be disabled or frozen through the existing visual effects or background quality controls.",
+      "Gameplay collision, movement, scoring, spawning, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-041.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play until decorative background triangles are visible.",
+      "Capture a screenshot and save it as screenshots/TASK-041.png.",
+      "Compare the screenshot with screenshots/concept_art.png and confirm varied faint background triangles are present.",
+      "Confirm decorative background triangles are visually distinct from active red triangle hazards.",
+      "Disable or freeze background visual effects through the existing quality controls and confirm the triangles respect that setting.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-042",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Make background movement much slower so the background feels far away from the player. Reduce parallax, animation, and scrolling speed for background-only geometry without changing foreground gameplay movement.",
+    "acceptance_criteria": [
+      "Background geometry moves much more slowly than the player, platforms, hazards, and floor.",
+      "The background creates a distant parallax illusion instead of appearing attached to the foreground world.",
+      "Background animation and scrolling remain subtle during normal gameplay.",
+      "Foreground gameplay movement, collision, scoring, spawning, and restart behavior remain unchanged.",
+      "The fix applies to the bad version and does not break the classic version.",
+      "A screenshot is saved at screenshots/TASK-042.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe background movement while the player and world move.",
+      "Play through several camera shifts or scrolling moments.",
+      "Capture a representative screenshot and save it as screenshots/TASK-042.png.",
+      "Confirm by observation that background geometry moves much slower than foreground gameplay objects.",
+      "Confirm foreground gameplay speed and collisions feel unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-043",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix the broken red spot, glow, or interior fill on triangle hazards shown in screenshots/TASK-035.png. Triangle hazards should have a clean red neon outline and readable red inner treatment without the current broken spot artifact.",
+    "acceptance_criteria": [
+      "Red triangle hazards no longer show the broken red spot or incorrect interior artifact visible in screenshots/TASK-035.png.",
+      "Triangle hazard outline, glow, and inner shape render cleanly and consistently across visible hazards.",
+      "The triangle hazard remains clearly distinguishable from decorative background triangles.",
+      "The fix applies to both classic and bad versions where triangle hazards render.",
+      "Hazard movement, collision, scoring, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-043.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play until multiple red triangle hazards are visible.",
+      "Capture a screenshot and save it as screenshots/TASK-043.png.",
+      "Compare the screenshot with screenshots/TASK-035.png and confirm the broken red spot artifact is gone.",
+      "Start the classic version and confirm triangle hazards still render correctly.",
+      "Collide with a hazard and confirm restart behavior is unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-044",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Add an FPS counter that can be enabled from the ESC keyboard menu or overlay. The counter should be hidden by default during normal play and should not interfere with score, record, menu button, or gameplay readability.",
+    "acceptance_criteria": [
+      "An FPS counter exists and is hidden by default during normal gameplay.",
+      "Pressing ESC opens the existing keyboard menu or overlay with a way to enable the FPS counter.",
+      "The FPS counter updates during gameplay when enabled.",
+      "The FPS counter position does not overlap score, record, menu button, player, hazards, platforms, or key gameplay information.",
+      "The FPS counter can be disabled again from the ESC menu or overlay.",
+      "Adding the FPS counter does not change gameplay collision, movement, scoring, spawning, or restart behavior.",
+      "A screenshot is saved at screenshots/TASK-044.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start a game and confirm no FPS counter is visible by default.",
+      "Press ESC and enable the FPS counter from the keyboard menu or overlay.",
+      "Resume gameplay and confirm the FPS counter is visible and updating.",
+      "Capture a screenshot with the FPS counter visible and save it as screenshots/TASK-044.png.",
+      "Press ESC again and disable the FPS counter.",
+      "Confirm the score, record, menu button, and gameplay objects remain readable.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-045",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Restore triangle hazard trail rendering using the master-version approach instead of drawing many repeated triangle copies. The trail should look like the previous intended implementation and remain cheaper and cleaner than stacked triangle ghosts.",
+    "acceptance_criteria": [
+      "Triangle hazard trails are implemented using the same approach as the master version of the branch, not by drawing many repeated triangle copies.",
+      "Moving red triangle hazards show a clean red trail connected to hazard motion.",
+      "The trail does not create a cluttered stack of visible repeated triangle bodies.",
+      "The trail remains behind gameplay objects where appropriate and does not obscure collision silhouettes.",
+      "Hazard movement, collision, scoring, and restart behavior remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-045.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Inspect the master branch or master-version code path for the previous triangle trail implementation.",
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play until moving red triangle hazards are visible.",
+      "Capture a screenshot and save it as screenshots/TASK-045.png.",
+      "Inspect the screenshot and confirm triangle trails are clean and are not made from many repeated triangle copies.",
+      "Confirm hazard collision and restart behavior are unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-046",
+    "category": "test",
+    "priority": "critical",
+    "description": "Compare FPS with the visual effects flag enabled and disabled. The FPS difference should be between 1 and 5 FPS; if the difference is larger, identify the expensive visual path and optimize it before marking the task complete.",
+    "acceptance_criteria": [
+      "FPS is measured with visual effects enabled during comparable gameplay.",
+      "FPS is measured with visual effects disabled during comparable gameplay.",
+      "The enabled-vs-disabled FPS difference is between 1 and 5 FPS.",
+      "If the difference is more than 5 FPS, the expensive visual effect path is optimized before the task is marked to-verify.",
+      "The measurement method and FPS values are recorded in the task description or progress notes when implemented.",
+      "Gameplay remains functional with visual effects enabled and disabled.",
+      "A screenshot is saved at screenshots/TASK-046.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Enable the FPS counter.",
+      "Run comparable gameplay with visual effects enabled and record the FPS.",
+      "Run comparable gameplay with visual effects disabled and record the FPS.",
+      "Confirm the FPS difference is between 1 and 5 FPS.",
+      "If the difference is more than 5 FPS, optimize the expensive visual path and repeat the comparison.",
+      "Capture a screenshot showing the FPS counter and save it as screenshots/TASK-046.png.",
+      "Confirm gameplay works with visual effects enabled and disabled.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-047",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Reposition the score text, record text, and menu button in the bad version so their centerY sits in the center of the ceiling/HUD band. Fix the current misplaced top alignment visible in screenshots/TASK-035.png without changing click behavior.",
+    "acceptance_criteria": [
+      "Score text centerY aligns with the vertical center of the ceiling/HUD band.",
+      "Record text centerY aligns with the vertical center of the ceiling/HUD band.",
+      "The menu button centerY aligns with the vertical center of the ceiling/HUD band.",
+      "Score, record, and menu button no longer appear pinned too high against the top edge or ceiling line as in screenshots/TASK-035.png.",
+      "The menu button remains clickable and opens the expected menu.",
+      "Score and record values still update and remain readable.",
+      "The fix applies to the bad version and does not break the classic version UI.",
+      "A screenshot is saved at screenshots/TASK-047.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and observe the ceiling/HUD band.",
+      "Capture a screenshot and save it as screenshots/TASK-047.png.",
+      "Inspect the screenshot and confirm score, record, and menu button are vertically centered in the ceiling/HUD band.",
+      "Compare against screenshots/TASK-035.png and confirm the top-aligned placement is fixed.",
+      "Click the menu button and confirm it still opens the expected menu.",
+      "Play long enough to confirm score and record text remain readable and functional.",
+      "Confirm the classic version UI still renders correctly.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "pending"
   }
 ]
