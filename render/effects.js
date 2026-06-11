@@ -202,7 +202,6 @@ class BackgroundRenderer
     shouldFreezeBadVersionBackgroundMotion()
     {
         return STYLE.visualStability.freezeBadVersionBackground
-            && !STYLE.visualStability.useDistantBackgroundMotion
     }
     drawDiagonalFlashes(width, height, geometry, time)
     {
