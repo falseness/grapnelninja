@@ -769,8 +769,6 @@ class PlayerTrailRenderer
         const width = track.lineWidth * config.widthRatio * badTrails.widthMultiplier
         const glowWidth = track.lineWidth * config.glowWidthRatio * badTrails.glowWidthMultiplier
         const visibleStart = Math.max(1, Math.floor(positions.length * config.minSegmentRatio))
-        const chunkCount = badTrails.chunkCount
-        const visibleCount = positions.length - visibleStart
 
         ctx.save()
         ctx.lineCap = 'round'
@@ -779,16 +777,14 @@ class PlayerTrailRenderer
         ctx.strokeStyle = STYLE.colors.player.trail
         ctx.shadowColor = STYLE.colors.player.trail
 
-        for (let i = 0; i < chunkCount; ++i)
-        {
-            const start = Math.max(0, visibleStart + Math.floor(visibleCount * i / chunkCount) - 1)
-            const end = visibleStart + Math.floor(visibleCount * (i + 1) / chunkCount) + 1
-            const ratio = (i + 1) / chunkCount
-            const alpha = this.clampAlpha((config.minAlpha + (config.maxAlpha - config.minAlpha) * ratio)
-                * badTrails.alphaMultiplier)
-
-            this.drawSmoothPath(positions, start, Math.min(positions.length, end), width, alpha, glowWidth)
-        }
+        this.drawSmoothPath(
+            positions,
+            Math.max(0, visibleStart - 1),
+            positions.length,
+            width,
+            this.clampAlpha(config.maxAlpha * badTrails.alphaMultiplier),
+            glowWidth
+        )
 
         if (positions.length > visibleStart + 1)
         {

@@ -565,5 +565,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-023",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix the player trail rendering regression. The trail must read as a smooth continuous cyan motion trail and must not show separated circle stamps or visible internal circles like the broken trail in Image #2. Keep the trail visual-only.\nImplemented: Reworked player trail rendering to use continuous smooth strokes instead of overlapping round-capped chunks, eliminating internal circle stamp artifacts.",
+    "acceptance_criteria": [
+      "The player trail appears smooth and continuous while the player moves.",
+      "The trail does not show three or more obvious separated circles inside the trail body.",
+      "The trail fades cleanly and remains visually connected to recent player motion.",
+      "The trail remains visual-only and does not affect collision, movement, score, or restart behavior.",
+      "A screenshot is saved at screenshots/TASK-023.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and move or jump with the player until the trail is visible.",
+      "Capture a screenshot and save it as screenshots/TASK-023.png.",
+      "Compare the screenshot with Image #2 and confirm the visible internal circle artifacts are gone.",
+      "Confirm player movement and collision behavior are unchanged.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
