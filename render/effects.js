@@ -282,23 +282,188 @@ class LightmapRenderer
 
 class ParticleSystem
 {
-    constructor()
+    constructor(context, targetCanvas)
     {
+        this.ctx = context
+        this.canvas = targetCanvas
         this.particles = []
+        this.lastTime = 0
+        this.lastWorldEmitTime = 0
     }
     shouldDraw()
     {
         return STYLE.features.particles && QUALITY.particles
     }
-    update()
+    update(gameState)
     {
         if (!this.shouldDraw())
+        {
+            this.particles = []
+            this.lastTime = 0
             return
+        }
+
+        const now = performance.now()
+        const dt = this.lastTime ? Math.min(33, now - this.lastTime) : 16
+        this.lastTime = now
+
+        this.emitPlayerParticles(gameState.ninja)
+
+        if (now - this.lastWorldEmitTime >= STYLE.particles.worldEmitIntervalMs)
+        {
+            this.emitWorldParticles(gameState.floors)
+            this.lastWorldEmitTime = now
+        }
+
+        this.updateParticles(dt)
     }
     draw()
     {
         if (!this.shouldDraw())
             return
+
+        this.ctx.save()
+        this.ctx.globalCompositeOperation = 'lighter'
+
+        for (let i = 0; i < this.particles.length; ++i)
+        {
+            const particle = this.particles[i]
+            const progress = particle.life / particle.maxLife
+
+            this.ctx.globalAlpha = Math.max(0, progress) * particle.alpha
+            this.ctx.fillStyle = particle.color
+            this.ctx.fillRect(
+                particle.x - particle.size / 2,
+                particle.y - particle.size / 2,
+                particle.size,
+                particle.size
+            )
+        }
+
+        this.ctx.restore()
+    }
+    updateParticles(dt)
+    {
+        for (let i = this.particles.length - 1; i >= 0; --i)
+        {
+            const particle = this.particles[i]
+
+            particle.x += particle.vx * dt
+            particle.y += particle.vy * dt
+            particle.life -= dt
+
+            if (particle.life <= 0)
+                this.particles.splice(i, 1)
+        }
+    }
+    emitPlayerParticles(player)
+    {
+        const speed = Math.sqrt(player.speedX * player.speedX + player.speedY * player.speedY)
+
+        if (speed < 0.08)
+            return
+
+        for (let i = 0; i < STYLE.particles.playerEmitCount; ++i)
+        {
+            this.emitSquare(
+                player.x + screen.x + this.randomRange(-player.radius, player.radius),
+                player.y + screen.y + this.randomRange(-player.radius, player.radius),
+                STYLE.colors.player.cyan,
+                STYLE.particles.playerSpeed,
+                0.72
+            )
+        }
+    }
+    emitWorldParticles(floors)
+    {
+        for (let i = 0; i < floors.length; ++i)
+        {
+            for (let j = 0; j < floors[i].elements.length; ++j)
+            {
+                this.emitElementParticles(floors[i].elements[j])
+            }
+        }
+    }
+    emitElementParticles(element)
+    {
+        if (!this.isVisible(element))
+            return
+
+        if (this.isHazard(element))
+        {
+            if (Math.random() <= STYLE.particles.hazardEmitChance)
+                this.emitAroundElement(element, STYLE.colors.hazard.red, STYLE.particles.hazardSpeed, 0.64)
+
+            return
+        }
+
+        if (this.isCubeOrPlatform(element) && Math.random() <= STYLE.particles.cubeEmitChance)
+        {
+            this.emitAroundElement(element, STYLE.colors.cube.blue, STYLE.particles.cubeSpeed, 0.36)
+        }
+    }
+    emitAroundElement(element, color, speed, alpha)
+    {
+        const circle = element.getCircumscribedCircle()
+        const angle = Math.random() * Math.PI * 2
+        const radius = circle.radius * Math.sqrt(Math.random())
+        const x = circle.x + screen.x + Math.cos(angle) * radius
+        const y = circle.y + screen.y + Math.sin(angle) * radius
+
+        this.emitSquare(x, y, color, speed, alpha)
+    }
+    emitSquare(x, y, color, speed, alpha)
+    {
+        const angle = Math.random() * Math.PI * 2
+        const velocity = this.randomRange(speed * 0.35, speed)
+        const life = this.randomRange(STYLE.particles.lifetimeMs * 0.55, STYLE.particles.lifetimeMs)
+
+        this.particles.push({
+            x,
+            y,
+            vx: Math.cos(angle) * velocity,
+            vy: Math.sin(angle) * velocity,
+            color,
+            life,
+            maxLife: life,
+            size: this.randomRange(STYLE.particles.minSize, STYLE.particles.maxSize),
+            alpha
+        })
+
+        this.enforceCap()
+    }
+    enforceCap()
+    {
+        const overage = this.particles.length - STYLE.particles.maxCount
+
+        if (overage > 0)
+            this.particles.splice(0, overage)
+    }
+    isVisible(element)
+    {
+        const circle = element.getCircumscribedCircle()
+        const x = circle.x + screen.x
+        const y = circle.y + screen.y
+        const margin = circle.radius + STYLE.particles.maxSize
+        const viewWidth = this.canvas.width / scale[version]
+        const viewHeight = this.canvas.height / scale[version]
+
+        return x > -margin && x < viewWidth + margin && y > -margin && y < viewHeight + margin
+    }
+    isHazard(element)
+    {
+        return element instanceof Triangle && !(element instanceof HarmlessTriangle)
+    }
+    isCubeOrPlatform(element)
+    {
+        if (element instanceof Ground || element instanceof Side)
+            return false
+
+        return element instanceof Rect || element instanceof Trampoline || element instanceof HarmlessTriangle
+    }
+    randomRange(min, max)
+    {
+        return min + Math.random() * (max - min)
     }
 }
 
@@ -429,7 +594,7 @@ class VisualEffects
     {
         this.background = new BackgroundRenderer(context, targetCanvas)
         this.lightmap = new LightmapRenderer(context, targetCanvas)
-        this.particles = new ParticleSystem()
+        this.particles = new ParticleSystem(context, targetCanvas)
         this.playerTrail = new PlayerTrailRenderer()
         this.screenEffects = new ScreenEffects()
         this.ui = new UIStylingHooks()

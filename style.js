@@ -87,7 +87,16 @@ const STYLE = Object.freeze({
     particles: Object.freeze({
         maxCount: 120,
         spawnBurst: 12,
-        lifetimeMs: 450
+        lifetimeMs: 450,
+        playerEmitCount: 2,
+        worldEmitIntervalMs: 120,
+        cubeEmitChance: 0.32,
+        hazardEmitChance: 0.55,
+        minSize: 2,
+        maxSize: 5,
+        playerSpeed: 1.4,
+        cubeSpeed: 0.42,
+        hazardSpeed: 0.82
     }),
     trails: Object.freeze({
         player: Object.freeze({

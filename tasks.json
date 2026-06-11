@@ -245,13 +245,13 @@
   {
     "id": "TASK-011",
     "title": "Add capped square particle system",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-002",
       "TASK-003",
       "TASK-009"
     ],
-    "description": "Add a visual-only square particle system for player movement, cube glow, and hazard sparks. Keep it cheap, capped, and disableable.",
+    "description": "Add a visual-only square particle system for player movement, cube glow, and hazard sparks. Keep it cheap, capped, and disableable.\nImplemented: Added capped visual-only square particles for player movement, cube/platform glow, and hazard sparks with QUALITY.particles disable support.",
     "acceptance_criteria": [
       "A dedicated particle system manages square particles with position, velocity, color, life, and size.",
       "Player movement can emit cyan square particles.",
