@@ -208,8 +208,8 @@ const STYLE = Object.freeze({
             grayHighlightFill: 'rgba(185, 194, 201, 0.13)',
             greenFill: 'rgba(4, 28, 18, 0.82)',
             greenHighlightFill: 'rgba(100, 227, 121, 0.14)',
-            groundFill: 'rgba(3, 8, 18, 0.56)',
-            groundCapFill: 'rgba(100, 227, 121, 0.16)',
+            groundFill: '#030812',
+            groundCapFill: '#102b1b',
             shadow: 'rgba(0, 0, 0, 0.32)'
         }),
         lights: Object.freeze({

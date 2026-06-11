@@ -1266,5 +1266,31 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-050",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Remove bad-version floor and ceiling transparency so background flashes cannot show through them. Floor and ceiling surfaces should render as opaque visual barriers while preserving their existing neon treatment.\nImplemented: Made bad-version floor/ceiling surface fills opaque and restored an opaque HUD-zone ceiling band behind the neon boundary.",
+    "acceptance_criteria": [
+      "Bad-version floor surfaces render without transparency that lets background flashes show through.",
+      "Bad-version ceiling surfaces render without transparency that lets background flashes show through.",
+      "Floor and ceiling neon outlines or highlights remain readable against the opaque surfaces.",
+      "The fix does not make foreground gameplay objects, hazards, UI, or background geometry harder to read.",
+      "Floor and ceiling collision, trampoline behavior, scoring, spawning, and movement remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-050.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the bad version and play until diagonal background flashes are visible behind floor or ceiling areas.",
+      "Capture a screenshot and save it as screenshots/TASK-050.png.",
+      "Inspect the screenshot and confirm flashes/background details do not show through the floor or ceiling surfaces.",
+      "Confirm floor and ceiling outlines remain readable.",
+      "Confirm collisions with floor and ceiling still behave as before.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

@@ -243,9 +243,21 @@ class SideFloor extends Floor
     drawHudZoneCeilingBoundary()
     {
         const bounds = this.getContinuousSurfaceBounds()
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
+        const x = bounds.left + screen.x
         const y = bounds.boundaryY + screen.y
+        const surfaceY = bounds.top + screen.y
+        const surfaceWidth = bounds.right - bounds.left
+        const surfaceHeight = bounds.bottom - bounds.top
+        const capHeight = Math.max(2, height * 0.012)
 
         ctx.save()
+        ctx.fillStyle = obstacleStyle.groundFill
+        ctx.fillRect(x, surfaceY, surfaceWidth, surfaceHeight)
+
+        ctx.fillStyle = obstacleStyle.groundCapFill
+        ctx.fillRect(x, y - capHeight, surfaceWidth, capHeight)
+
         ctx.beginPath()
 
         ctx.globalAlpha = 0.72
