@@ -1381,7 +1381,7 @@
     "id": "TASK-054",
     "category": "functional",
     "priority": "normal",
-    "description": "Make bad-version background motion slightly faster than the current very slow distant-parallax behavior from TASK-042. Keep the motion background-only and do not reintroduce fast foreground-relative movement.",
+    "description": "Make bad-version background motion slightly faster than the current very slow distant-parallax behavior from TASK-042. Keep the motion background-only and do not reintroduce fast foreground-relative movement.\nImplemented: Re-enabled distant bad-version background motion and increased its time/parallax ratios slightly while preserving stable source-over compositing and quality freeze behavior.",
     "acceptance_criteria": [
       "Bad-version background geometry moves slightly faster than the current TASK-042 behavior.",
       "The background still feels slower and farther away than foreground gameplay objects.",
@@ -1401,7 +1401,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-055",
