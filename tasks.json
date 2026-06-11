@@ -589,5 +589,29 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-024",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Restore object color semantics from the old master version. Safe green objects that do not kill the player must remain visually distinct from gray and blue objects, and all object types must not collapse into the same neon color. Use Image #3 as the reference for the lost green and gray/blue distinction.\nImplemented: Restored semantic neon green safe surfaces, gray rect obstacles, blue jumping cubes, and red hazards with matching light/particle colors.",
+    "acceptance_criteria": [
+      "Safe non-killing green objects are visibly green again.",
+      "Gray and blue objects remain visually distinct from green safe objects.",
+      "Hazards remain visually distinct from safe objects.",
+      "The color restoration does not change collision, scoring, spawning, movement, or restart behavior.",
+      "A screenshot is saved at screenshots/TASK-024.png before marking this task to-verify.",
+      "LOOK AT THE IMAGE CREATED AND CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the game and play until green safe objects and gray or blue objects are visible.",
+      "Capture a screenshot and save it as screenshots/TASK-024.png.",
+      "Compare the screenshot with Image #3 and confirm green safe objects are not rendered with the same color as other object types.",
+      "Confirm green safe objects still do not kill the player.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

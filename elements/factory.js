@@ -102,8 +102,8 @@ class HorizontalRectFactory
             x       : x                     ,     
             y       : y                     ,
             points  : this.getPoints(w, h)  ,
-            fill    : STYLE.colors.cube.platformFill,
-            stroke  : STYLE.colors.cube.stroke
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
         }
         
         return [new Trampoline(model)]
@@ -144,8 +144,8 @@ class RectFactory
             y               : y             ,
             width           : w             ,
             height          : h             ,
-            fill            : STYLE.colors.cube.platformFill,
-            stroke          : STYLE.colors.cube.stroke,
+            fill            : STYLE.colors.cube.grayFill,
+            stroke          : STYLE.colors.cube.grayStroke,
             isPairElement   : isPairElement
         }
         
@@ -232,8 +232,8 @@ class TrampolineFactory
             x       : random(x.min, x.max)  ,
             y       : y.max                 ,
             points  : this.generatePoints() ,
-            fill    : STYLE.colors.cube.trampolineFill,
-            stroke  : STYLE.colors.cube.stroke
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
         }
 
         
@@ -275,8 +275,8 @@ class VerticalPairTrampolineFactory extends TrampolineFactory {
             x       : trampoline1.x                         ,
             y       : trampoline1.y - wayHeight - rectHeight,
             points  : points                                ,
-            fill    : STYLE.colors.cube.trampolineFill,
-            stroke  : STYLE.colors.cube.stroke
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
         }
 
         let trampoline2 = new Trampoline(model)
@@ -322,7 +322,8 @@ class JumpingCubeFactory
             y       : y.min                 ,
             width   : w                     ,
             height  : w                     ,
-            fill    : STYLE.colors.cube.fill
+            fill    : STYLE.colors.cube.blueFill,
+            stroke  : STYLE.colors.cube.blueStroke
         }
         if (isOnMiddle)
             model.x -= model.width / 2

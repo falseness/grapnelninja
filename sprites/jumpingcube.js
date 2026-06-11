@@ -5,7 +5,7 @@ class JumpingCube extends Rect
         super(object)
         this.mass = this.height * this.width * blueSpriteDensity
         
-        this.track = new TrackLine(this.width, this.fill, STYLE.timing.cubeTrailPoints)
+        this.track = new TrackLine(this.width, this.stroke, STYLE.timing.cubeTrailPoints)
         this.track.addPos(this.x + this.circle.x, this.y, true)
         
         let cycles = random() * cyclesPerTick

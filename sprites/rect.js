@@ -8,8 +8,8 @@ class Rect extends Element
         this.height = object.height
         
         
-        this.fill   = this.fill     || STYLE.colors.cube.platformFill
-        this.stroke = this.stroke   || STYLE.colors.cube.stroke
+        this.fill   = this.fill     || STYLE.colors.cube.grayFill
+        this.stroke = this.stroke   || STYLE.colors.cube.grayStroke
         this.isPairElement = object.isPairElement || function() {return false}
         
         this.circle =
@@ -78,12 +78,18 @@ class Rect extends Element
         const x = this.x + screen.x
         const y = this.y + screen.y
         const accentInset = Math.min(this.width, this.height) * obstacleStyle.accentInsetRatio
+        const isGreenSafe = this.stroke == STYLE.colors.cube.greenStroke || this.stroke == STYLE.colors.hazard.harmlessStroke
+        const isGray = this.stroke == STYLE.colors.cube.grayStroke
+        const fill = isGreenSafe ? obstacleStyle.greenFill : (isGray ? obstacleStyle.grayFill : obstacleStyle.cubeFill)
+        const highlightFill = isGreenSafe
+            ? obstacleStyle.greenHighlightFill
+            : (isGray ? obstacleStyle.grayHighlightFill : obstacleStyle.cubeHighlightFill)
 
         ctx.save()
-        ctx.fillStyle = obstacleStyle.cubeFill
+        ctx.fillStyle = fill
         ctx.fillRect(x, y, this.width, this.height)
 
-        ctx.fillStyle = obstacleStyle.cubeHighlightFill
+        ctx.fillStyle = highlightFill
         ctx.fillRect(x + accentInset, y + accentInset, Math.max(0, this.width - accentInset * 2), Math.max(0, this.height * 0.32))
 
         ctx.strokeStyle = this.stroke
@@ -99,7 +105,7 @@ class Rect extends Element
         ctx.strokeRect(x, y, this.width, this.height)
 
         ctx.globalAlpha = obstacleStyle.innerHighlightAlpha
-        ctx.strokeStyle = STYLE.colors.cube.accentStroke
+        ctx.strokeStyle = this.stroke
         ctx.strokeRect(x + accentInset, y + accentInset, Math.max(0, this.width - accentInset * 2), Math.max(0, this.height - accentInset * 2))
 
         ctx.restore()

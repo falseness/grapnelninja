@@ -30,25 +30,31 @@ const STYLE = Object.freeze({
         }),
         cube: Object.freeze({
             fill: '#071425',
-            platformFill: '#09111e',
-            trampolineFill: '#120b22',
+            platformFill: '#15181d',
+            trampolineFill: '#071c12',
             stroke: '#30d5c8',
             accentStroke: '#1f7aff',
             trail: '#30d5c8',
-            blue: '#1f7aff'
+            blue: '#1f7aff',
+            blueFill: '#061234',
+            blueStroke: '#1f7aff',
+            grayFill: '#171a1f',
+            grayStroke: '#b9c2c9',
+            greenFill: '#071c12',
+            greenStroke: '#64e379'
         }),
         hazard: Object.freeze({
             fill: '#21070f',
-            harmlessFill: '#06201d',
+            harmlessFill: '#071c12',
             stroke: '#ff3d71',
-            harmlessStroke: '#30d5c8',
+            harmlessStroke: '#64e379',
             trail: '#ff3d71',
             red: '#ff3d71'
         }),
         ground: Object.freeze({
-            fill: '#050914',
-            stroke: '#30d5c8',
-            line: '#8ffcff'
+            fill: '#071c12',
+            stroke: '#64e379',
+            line: '#a8ffb2'
         }),
         ui: Object.freeze({
             title: '#8ffcff',
@@ -161,8 +167,12 @@ const STYLE = Object.freeze({
             hazardCoreFill: 'rgba(255, 61, 113, 0.14)',
             cubeFill: 'rgba(3, 9, 20, 0.82)',
             cubeHighlightFill: 'rgba(31, 122, 255, 0.12)',
+            grayFill: 'rgba(18, 21, 26, 0.82)',
+            grayHighlightFill: 'rgba(185, 194, 201, 0.13)',
+            greenFill: 'rgba(4, 28, 18, 0.82)',
+            greenHighlightFill: 'rgba(100, 227, 121, 0.14)',
             groundFill: 'rgba(3, 8, 18, 0.56)',
-            groundCapFill: 'rgba(48, 213, 200, 0.16)',
+            groundCapFill: 'rgba(100, 227, 121, 0.16)',
             shadow: 'rgba(0, 0, 0, 0.32)'
         }),
         lights: Object.freeze({

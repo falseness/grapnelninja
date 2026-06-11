@@ -6,8 +6,8 @@ class Trampoline extends Element
 
         this.isPairElement = object.isPairElement || function() {return false}
         
-        this.stroke = this.stroke   || STYLE.colors.ground.stroke
-        this.fill   = this.fill     || STYLE.colors.ground.fill
+        this.stroke = this.stroke   || STYLE.colors.cube.greenStroke
+        this.fill   = this.fill     || STYLE.colors.cube.greenFill
         
         this.circle = 
         {
@@ -110,13 +110,14 @@ class Trampoline extends Element
         if (version == 'bad')
         {
             const obstacleStyle = STYLE.badVersionEffects.obstacles
+            const isGreenSafe = this.stroke == STYLE.colors.cube.greenStroke || this.stroke == STYLE.colors.hazard.harmlessStroke
             this.drawBadVersionPolygon(
-                obstacleStyle.cubeFill,
+                isGreenSafe ? obstacleStyle.greenFill : obstacleStyle.cubeFill,
                 this.stroke,
                 {
                     lineWidth: obstacleStyle.thinStrokeWidth,
                     glowWidth: obstacleStyle.outerGlowWidth,
-                    innerStrokeStyle: STYLE.colors.cube.accentStroke
+                    innerStrokeStyle: this.stroke
                 }
             )
             return

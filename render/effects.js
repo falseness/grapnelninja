@@ -350,18 +350,19 @@ class LightmapRenderer
         {
             const badLights = this.getBadVersionLights()
             const circle = element.getCircumscribedCircle()
+            const lightColor = this.getElementLightColor(element)
 
             this.drawElementCircleLight(
                 element,
                 STYLE.lights.cubeRadius * badLights.radiusMultiplier,
-                STYLE.colors.cube.blue,
+                lightColor,
                 this.clampAlpha(STYLE.lights.alpha * badLights.alphaMultiplier)
             )
             this.drawBadVersionBloom(
                 circle.x + screen.x,
                 circle.y + screen.y,
                 Math.max(STYLE.lights.cubeRadius, circle.radius),
-                STYLE.colors.cube.blue
+                lightColor
             )
         }
     }
@@ -443,6 +444,10 @@ class LightmapRenderer
             return false
 
         return element instanceof Rect || element instanceof Trampoline || element instanceof HarmlessTriangle
+    }
+    getElementLightColor(element)
+    {
+        return element.stroke || STYLE.colors.cube.blue
     }
     composite()
     {
@@ -644,7 +649,7 @@ class ParticleSystem
         {
             this.emitAroundElement(
                 element,
-                STYLE.colors.cube.blue,
+                this.getElementParticleColor(element),
                 STYLE.particles.cubeSpeed * badParticles.speedMultiplier,
                 this.clampAlpha(STYLE.particles.cubeAlpha * badParticles.alphaMultiplier),
                 badParticles
@@ -714,6 +719,10 @@ class ParticleSystem
             return false
 
         return element instanceof Rect || element instanceof Trampoline || element instanceof HarmlessTriangle
+    }
+    getElementParticleColor(element)
+    {
+        return element.stroke || STYLE.colors.cube.blue
     }
     randomRange(min, max)
     {
