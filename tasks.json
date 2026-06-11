@@ -1638,5 +1638,31 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-064",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Use the bad-version gameplay background in the classic version gameplay view. Preserve classic gameplay behavior and classic HUD/object behavior while replacing the current classic background treatment with the richer bad-version background.\nImplemented: Routed classic gameplay through the shared bad-version depth background renderer while preserving classic gameplay objects, HUD, and menu behavior.",
+    "acceptance_criteria": [
+      "Classic gameplay uses the bad-version gameplay background colors and geometric background treatment.",
+      "Classic HUD, player, hazards, platforms, floor, ceiling, score, record, and menu button remain readable.",
+      "Classic gameplay collision, movement, scoring, spawning, restart behavior, and version selection remain unchanged.",
+      "Bad-version gameplay background remains unchanged except for shared improvements from other background tickets.",
+      "The main menu is not changed by this ticket.",
+      "A screenshot is saved at screenshots/TASK-064.png before marking this task to-verify.",
+      "double-check screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and observe the gameplay background.",
+      "Capture a screenshot and save it as screenshots/TASK-064.png.",
+      "Confirm the classic gameplay background uses the bad-version background treatment.",
+      "Confirm classic HUD and gameplay objects remain readable over the background.",
+      "Start the bad version and confirm its gameplay background still renders correctly.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

@@ -51,7 +51,7 @@ class BackgroundRenderer
         const geometry = STYLE.backgroundGeometry
         const time = this.getAnimationTime()
 
-        if (this.isBadVersion())
+        if (this.usesDepthBackground())
         {
             this.drawBadVersionDepth(width, height, geometry.badVersion, time)
             return
@@ -470,6 +470,10 @@ class BackgroundRenderer
     isBadVersion()
     {
         return typeof version != 'undefined' && version == 'bad'
+    }
+    usesDepthBackground()
+    {
+        return typeof version != 'undefined' && (version == 'bad' || version == 'classic')
     }
 }
 
