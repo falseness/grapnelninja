@@ -148,6 +148,8 @@ class MultipointTrackLine extends TrackLine
                 return
             }
 
+            ctx.beginPath()
+
             //Работает только в частном случае
             let min0, min1, max0, max1, max2
 
@@ -188,49 +190,47 @@ class MultipointTrackLine extends TrackLine
             return
 
         const config = STYLE.trails.hazard
-        const step = Math.max(1, config.sampleStep)
+        const extremum = this.getPointExtremes()
 
         ctx.save()
-        ctx.lineJoin = 'round'
-        ctx.lineCap = 'round'
-        ctx.fillStyle = STYLE.colors.hazard.trail
-        ctx.strokeStyle = STYLE.colors.hazard.trail
-        ctx.shadowColor = STYLE.colors.hazard.trail
+        ctx.beginPath()
+        ctx.moveTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
+        ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].max + screen.y)
+        ctx.lineTo(this.pos[0][2].x + screen.x, extremum[2].max + screen.y)
+        ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].max + screen.y)
+        ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].min + screen.y)
+        ctx.closePath()
+
+        ctx.fillStyle = this.stroke
+        ctx.shadowColor = this.stroke
         ctx.shadowBlur = config.glowBlur
         ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
             ? STYLE.visualStability.effectCompositeOperation
             : 'lighter'
-
-        for (let i = 0; i < this.pos.length - 1; i += step)
-        {
-            const age = i / Math.max(1, this.pos.length - 1)
-            const alpha = config.minAlpha + (config.maxAlpha - config.minAlpha) * age
-
-            this.drawTrailTriangle(this.pos[i], alpha, config.outlineAlpha * age)
-        }
-
+        ctx.globalAlpha = STYLE.alpha.multipointTrack
+        ctx.fill()
         ctx.restore()
     }
-    drawTrailTriangle(points, fillAlpha, strokeAlpha)
+    getPointExtremes()
     {
-        if (!points || points.length < 3)
-            return
+        const extremum =
+        [
+            {min: this.pos[0][0].y, max: this.pos[0][0].y},
+            {min: this.pos[0][1].y, max: this.pos[0][1].y},
+            {min: this.pos[0][2].y, max: this.pos[0][2].y}
+        ]
 
-        ctx.beginPath()
-        ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
-
-        for (let i = 0; i < points.length; ++i)
+        for (let i = 0; i < this.pos.length; ++i)
         {
-            ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+            for (let j = 0; j < this.pos[i].length; ++j)
+            {
+                if (this.pos[i][j].y < extremum[j].min)
+                    extremum[j].min = this.pos[i][j].y
+                if (this.pos[i][j].y > extremum[j].max)
+                    extremum[j].max = this.pos[i][j].y
+            }
         }
 
-        ctx.globalAlpha = fillAlpha
-        ctx.fill()
-
-        ctx.globalAlpha = strokeAlpha
-        ctx.lineWidth = STYLE.badVersionEffects.obstacles.thinStrokeWidth
-        ctx.stroke()
-
-        ctx.closePath()
+        return extremum
     }
 }

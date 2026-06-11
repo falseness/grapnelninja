@@ -1136,7 +1136,7 @@
     "id": "TASK-045",
     "category": "functional",
     "priority": "critical",
-    "description": "Restore triangle hazard trail rendering using the master-version approach instead of drawing many repeated triangle copies. The trail should look like the previous intended implementation and remain cheaper and cleaner than stacked triangle ghosts.",
+    "description": "Restore triangle hazard trail rendering using the master-version approach instead of drawing many repeated triangle copies. The trail should look like the previous intended implementation and remain cheaper and cleaner than stacked triangle ghosts.\nImplemented: Replaced bad-version repeated triangle ghost trail drawing with a master-style single filled multipoint envelope behind hazard silhouettes.",
     "acceptance_criteria": [
       "Triangle hazard trails are implemented using the same approach as the master version of the branch, not by drawing many repeated triangle copies.",
       "Moving red triangle hazards show a clean red trail connected to hazard motion.",
@@ -1156,7 +1156,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-046",
