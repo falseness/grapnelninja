@@ -1003,7 +1003,7 @@ class ParticleSystem
         })
         const originX = player.x
         const originY = player.y
-        const color = trampoline.stroke || STYLE.colors.cube.greenStroke
+        const color = this.getTrampolineSplashColor(trampoline)
         const count = STYLE.particles.trampolineSplashCount
         const dispersion = STYLE.particles.trampolineSplashDispersion
 
@@ -1020,6 +1020,13 @@ class ParticleSystem
                 true
             )
         }
+    }
+    getTrampolineSplashColor(trampoline)
+    {
+        if (version == 'bad' && (trampoline instanceof Ground || trampoline instanceof Side))
+            return STYLE.colors.cube.greenStroke
+
+        return trampoline.stroke || STYLE.colors.cube.greenStroke
     }
     releaseTrampolineSplashLocks(gameState)
     {

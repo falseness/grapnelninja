@@ -1900,7 +1900,7 @@
     "id": "TASK-074",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix bad-version splash color when the player touches the ceiling or floor. These ceiling/floor trampoline splashes currently appear gray, but they should be green like other safe trampolines.",
+    "description": "Fix bad-version splash color when the player touches the ceiling or floor. These ceiling/floor trampoline splashes currently appear gray, but they should be green like other safe trampolines.\nImplemented: Routed bad-version Ground and Side trampoline splash particles to the safe green trampoline color while leaving normal trampoline and hazard colors unchanged.",
     "acceptance_criteria": [
       "In the bad version, player contact with the ceiling creates a green splash, not a gray splash.",
       "In the bad version, player contact with the floor creates a green splash, not a gray splash.",
@@ -1920,7 +1920,7 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-075",
