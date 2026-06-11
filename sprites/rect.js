@@ -55,6 +55,12 @@ class Rect extends Element
     }
     draw()
     {
+        if (version == 'bad')
+        {
+            this.drawBadVersionRect()
+            return
+        }
+
         ctx.save()
         ctx.fillStyle   = this.fill
         ctx.strokeStyle = this.stroke
@@ -64,6 +70,38 @@ class Rect extends Element
         ctx.shadowColor = this.stroke
         ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.strokeRect(this.x + screen.x, this.y + screen.y, this.width, this.height)
+        ctx.restore()
+    }
+    drawBadVersionRect()
+    {
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
+        const x = this.x + screen.x
+        const y = this.y + screen.y
+        const accentInset = Math.min(this.width, this.height) * obstacleStyle.accentInsetRatio
+
+        ctx.save()
+        ctx.fillStyle = obstacleStyle.cubeFill
+        ctx.fillRect(x, y, this.width, this.height)
+
+        ctx.fillStyle = obstacleStyle.cubeHighlightFill
+        ctx.fillRect(x + accentInset, y + accentInset, Math.max(0, this.width - accentInset * 2), Math.max(0, this.height * 0.32))
+
+        ctx.strokeStyle = this.stroke
+        ctx.lineWidth = obstacleStyle.outerGlowWidth
+        ctx.globalAlpha = obstacleStyle.highlightAlpha
+        ctx.shadowColor = this.stroke
+        ctx.shadowBlur = obstacleStyle.outerGlowWidth
+        ctx.strokeRect(x, y, this.width, this.height)
+
+        ctx.globalAlpha = 1
+        ctx.lineWidth = obstacleStyle.thinStrokeWidth
+        ctx.shadowBlur = 0
+        ctx.strokeRect(x, y, this.width, this.height)
+
+        ctx.globalAlpha = obstacleStyle.innerHighlightAlpha
+        ctx.strokeStyle = STYLE.colors.cube.accentStroke
+        ctx.strokeRect(x + accentInset, y + accentInset, Math.max(0, this.width - accentInset * 2), Math.max(0, this.height - accentInset * 2))
+
         ctx.restore()
     }
 }

@@ -67,6 +67,46 @@ class Triangle extends Element
         if (this.getTopPointY() < this.restrictionY.min || this.getBottomPointY() > this.restrictionY.max)
             this.speedY *= -1
     }
+    draw()
+    {
+        if (version != 'bad')
+        {
+            super.draw()
+            return
+        }
+
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
+        this.drawBadVersionPolygon(
+            this instanceof HarmlessTriangle ? STYLE.colors.hazard.harmlessFill : obstacleStyle.hazardFill,
+            this.stroke,
+            {
+                lineWidth: obstacleStyle.thinStrokeWidth,
+                glowWidth: obstacleStyle.outerGlowWidth,
+                innerStrokeStyle: STYLE.colors.hazard.red
+            }
+        )
+
+        const points = this.getPoints()
+        const centerX = this.x + screen.x
+        const centerY = this.y + screen.y
+
+        ctx.save()
+        ctx.beginPath()
+        for (let i = 0; i < points.length; ++i)
+        {
+            const x = centerX + (points[i].x - this.x) * 0.58
+            const y = centerY + (points[i].y - this.y) * 0.58
+
+            if (i == 0)
+                ctx.moveTo(x, y)
+            else
+                ctx.lineTo(x, y)
+        }
+        ctx.closePath()
+        ctx.fillStyle = obstacleStyle.hazardCoreFill
+        ctx.fill()
+        ctx.restore()
+    }
 }
 
 class HarmlessTriangle extends Triangle{
@@ -91,6 +131,9 @@ class MultipointTrackLine extends TrackLine
     }
     draw()
     {
+        if (version == 'bad')
+            return
+
         if (trackEnabled && QUALITY.playerTrail)
         {
             ctx.beginPath()

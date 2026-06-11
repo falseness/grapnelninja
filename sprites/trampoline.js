@@ -107,6 +107,21 @@ class Trampoline extends Element
     }
     draw()
     {
+        if (version == 'bad')
+        {
+            const obstacleStyle = STYLE.badVersionEffects.obstacles
+            this.drawBadVersionPolygon(
+                obstacleStyle.cubeFill,
+                this.stroke,
+                {
+                    lineWidth: obstacleStyle.thinStrokeWidth,
+                    glowWidth: obstacleStyle.outerGlowWidth,
+                    innerStrokeStyle: STYLE.colors.cube.accentStroke
+                }
+            )
+            return
+        }
+
         ctx.save()
         ctx.beginPath()
 

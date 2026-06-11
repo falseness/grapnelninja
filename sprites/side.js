@@ -6,7 +6,7 @@ class Ground extends Trampoline
     }
     draw()
     {
-        super.draw()
+        this.drawGroundBody()
         
         //Чтобы не было "швов"
         ctx.beginPath()
@@ -24,6 +24,33 @@ class Ground extends Trampoline
         ctx.closePath()
 
         this.drawNeonBoundary()
+    }
+    drawGroundBody()
+    {
+        if (version != 'bad')
+        {
+            super.draw()
+            return
+        }
+
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
+        this.drawBadVersionPolygon(
+            obstacleStyle.groundFill,
+            STYLE.colors.ground.stroke,
+            {
+                lineWidth: obstacleStyle.thinStrokeWidth,
+                glowWidth: obstacleStyle.outerGlowWidth,
+                glowAlpha: obstacleStyle.groundFillAlpha,
+                innerStrokeStyle: STYLE.colors.ground.line
+            }
+        )
+
+        const points = this.getPoints()
+        const topY = Math.min(points[0].y, points[1].y, points[2].y, points[3].y) + screen.y
+        ctx.save()
+        ctx.fillStyle = obstacleStyle.groundCapFill
+        ctx.fillRect(this.x + screen.x, topY, this.points[2].x, Math.max(2, height * 0.012))
+        ctx.restore()
     }
     drawNeonBoundary()
     {
@@ -68,7 +95,7 @@ class Side extends Rect
         if (this.isInHudClearZone())
             return
 
-        super.draw()
+        this.drawSideBody()
         
         //Чтобы не было "швов"
         ctx.beginPath()
@@ -86,6 +113,35 @@ class Side extends Rect
         ctx.closePath()
 
         this.drawNeonBoundary()
+    }
+    drawSideBody()
+    {
+        if (version != 'bad')
+        {
+            super.draw()
+            return
+        }
+
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
+        const x = this.x + screen.x
+        const y = this.y + screen.y
+        const boundaryY = this.y > height / 2 ? this.y : this.y + this.height
+        const capY = boundaryY + screen.y
+
+        ctx.save()
+        ctx.fillStyle = obstacleStyle.groundFill
+        ctx.fillRect(x, y, this.width, this.height)
+
+        ctx.fillStyle = obstacleStyle.groundCapFill
+        ctx.fillRect(x, capY - Math.max(2, height * 0.01), this.width, Math.max(2, height * 0.012))
+
+        ctx.strokeStyle = STYLE.colors.ground.stroke
+        ctx.lineWidth = obstacleStyle.thinStrokeWidth
+        ctx.globalAlpha = obstacleStyle.groundFillAlpha
+        ctx.shadowColor = STYLE.colors.ground.line
+        ctx.shadowBlur = obstacleStyle.outerGlowWidth
+        ctx.strokeRect(x, y, this.width, this.height)
+        ctx.restore()
     }
     drawNeonBoundary()
     {

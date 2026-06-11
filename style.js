@@ -141,6 +141,23 @@ const STYLE = Object.freeze({
         })
     }),
     badVersionEffects: Object.freeze({
+        obstacles: Object.freeze({
+            fillAlpha: 0.68,
+            groundFillAlpha: 0.44,
+            groundCapAlpha: 0.18,
+            highlightAlpha: 0.74,
+            innerHighlightAlpha: 0.18,
+            thinStrokeWidth: 1.35,
+            outerGlowWidth: 7,
+            accentInsetRatio: 0.08,
+            hazardFill: 'rgba(36, 4, 16, 0.72)',
+            hazardCoreFill: 'rgba(255, 61, 113, 0.14)',
+            cubeFill: 'rgba(3, 9, 20, 0.82)',
+            cubeHighlightFill: 'rgba(31, 122, 255, 0.12)',
+            groundFill: 'rgba(3, 8, 18, 0.56)',
+            groundCapFill: 'rgba(48, 213, 200, 0.16)',
+            shadow: 'rgba(0, 0, 0, 0.32)'
+        }),
         lights: Object.freeze({
             radiusMultiplier: 1.34,
             alphaMultiplier: 1.24,

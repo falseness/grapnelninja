@@ -86,4 +86,46 @@ class Element
         ctx.closePath()
         ctx.restore()
     }
+    drawBadVersionPolygon(fillStyle, strokeStyle, options)
+    {
+        options = options || {}
+        const obstacleStyle = STYLE.badVersionEffects.obstacles
+        const points = this.getPoints()
+        const lineWidth = options.lineWidth || obstacleStyle.thinStrokeWidth
+        const glowWidth = options.glowWidth || obstacleStyle.outerGlowWidth
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
+        for (let i = 0; i < points.length; ++i)
+        {
+            ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+        }
+
+        ctx.fillStyle = fillStyle
+        ctx.fill()
+
+        ctx.strokeStyle = strokeStyle
+        ctx.lineWidth = glowWidth
+        ctx.globalAlpha = options.glowAlpha || obstacleStyle.highlightAlpha
+        ctx.shadowColor = strokeStyle
+        ctx.shadowBlur = glowWidth
+        ctx.stroke()
+
+        ctx.globalAlpha = 1
+        ctx.lineWidth = lineWidth
+        ctx.shadowBlur = 0
+        ctx.stroke()
+
+        if (options.innerStrokeStyle)
+        {
+            ctx.globalAlpha = obstacleStyle.innerHighlightAlpha
+            ctx.lineWidth = lineWidth
+            ctx.strokeStyle = options.innerStrokeStyle
+            ctx.stroke()
+        }
+
+        ctx.closePath()
+        ctx.restore()
+    }
 }

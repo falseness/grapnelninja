@@ -494,11 +494,11 @@
   {
     "id": "TASK-020",
     "title": "Refine bad-version obstacle silhouettes to match concept art",
-    "status": "pending",
+    "status": "to-verify",
     "dependencies": [
       "TASK-017"
     ],
-    "description": "Adjust draw-only styling for bad-version hazards, cubes, platforms, and ground blocks so they use darker interiors, brighter thin neon outlines, and less heavy filled color, matching the concept art more closely without changing collision geometry.",
+    "description": "Adjust draw-only styling for bad-version hazards, cubes, platforms, and ground blocks so they use darker interiors, brighter thin neon outlines, and less heavy filled color, matching the concept art more closely without changing collision geometry.\nImplemented: Added bad-version-only dark obstacle interiors, thin neon outlines, lighter ground caps, and removed the filled hazard track so silhouettes stay outline-forward.",
     "acceptance_criteria": [
       "Triangle hazards use dark interiors with bright red neon outlines rather than large flat red fills.",
       "Cube and platform interiors remain dark with bright cyan/blue outlines and readable edge highlights.",
