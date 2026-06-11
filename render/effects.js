@@ -803,12 +803,11 @@ class ParticleSystem
             sizeMultiplier: badParticles.sizeMultiplier * STYLE.particles.trampolineSplashSizeMultiplier,
             lifetimeMultiplier: badParticles.lifetimeMultiplier * STYLE.particles.trampolineSplashLifetimeMultiplier
         })
-        const circle = trampoline.getCircumscribedCircle()
         const originX = player.x
         const originY = player.y
         const color = trampoline.stroke || STYLE.colors.cube.greenStroke
         const count = STYLE.particles.trampolineSplashCount
-        const dispersion = circle.radius * STYLE.particles.trampolineSplashDispersionRatio
+        const dispersion = STYLE.particles.trampolineSplashDispersion
 
         for (let i = 0; i < count; ++i)
         {

@@ -1513,7 +1513,7 @@
     "id": "TASK-059",
     "category": "functional",
     "priority": "normal",
-    "description": "Make trampoline splash particle dispersion constant instead of scaling with trampoline or object size. The splash should keep the current normal-trampoline compact cluster feel even on larger paired trampolines.",
+    "description": "Make trampoline splash particle dispersion constant instead of scaling with trampoline or object size. The splash should keep the current normal-trampoline compact cluster feel even on larger paired trampolines.\nImplemented: Replaced size-derived trampoline splash dispersion with a fixed STYLE.particles value so normal and large paired trampolines emit the same compact cluster.",
     "acceptance_criteria": [
       "Trampoline splash dispersion uses a fixed style or config value instead of trampoline radius, circumscribed circle radius, width, height, or other object dimensions.",
       "Normal trampolines and large paired trampolines produce the same compact splash spread.",
@@ -1535,6 +1535,6 @@
       "Confirm the browser console has no new errors.",
       "Confirm tasks.json remains valid JSON."
     ],
-    "status": "pending"
+    "status": "to-verify"
   }
 ]
