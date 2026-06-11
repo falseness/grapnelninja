@@ -913,5 +913,34 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-037",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix the game loop so physics updates use a fixed timestep or equivalent frame-rate-independent timing instead of advancing once per requestAnimationFrame. Rendering may continue to use requestAnimationFrame, but gameplay speed must not depend on display refresh rate.\nImplemented: Added a 60Hz fixed-step physics accumulator with bounded catch-up while keeping rendering on requestAnimationFrame.",
+    "acceptance_criteria": [
+      "Physics movement speed is based on elapsed time or fixed simulation steps, not one physics step per animation frame.",
+      "Gameplay speed is consistent across common refresh rates such as 60Hz and 120Hz.",
+      "Rendering still uses requestAnimationFrame where appropriate.",
+      "The simulation avoids large catch-up jumps after tab switching, pauses, or long frames.",
+      "Collision, scoring, spawning, grapnel behavior, and restart behavior remain functionally unchanged except for refresh-rate independence.",
+      "Manual verification compares gameplay speed under throttled or simulated different frame rates.",
+      "A screenshot is saved at screenshots/TASK-037.png before marking this task to-verify.",
+      "LOOK AT THE ACTUAL SCREENSHOT AND CHECK IF THE TASK ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Run the game under a normal 60Hz-style browser frame rate and observe player, hazards, scrolling, scoring, and collisions.",
+      "Run the game under a higher refresh rate, throttled requestAnimationFrame, or simulated 120Hz-style frame cadence.",
+      "Confirm gameplay speed is consistent between the different frame-rate conditions.",
+      "Confirm rendering remains smooth and requestAnimationFrame-driven.",
+      "Confirm collision, scoring, spawning, grapnel behavior, and restart behavior still work.",
+      "Capture a representative screenshot and save it as screenshots/TASK-037.png.",
+      "Inspect the screenshot and confirm the game is still rendering correctly after the physics timing fix.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

@@ -9,6 +9,10 @@ let scale =
 }
 
 const cyclesPerTick = 8
+const physicsTicksPerSecond = 60
+const physicsStepMs = 1000 / physicsTicksPerSecond
+const maxPhysicsFrameMs = physicsStepMs * 5
+const physicsStepEpsilonMs = 0.000001
 
 function random(min, max)
 {

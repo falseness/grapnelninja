@@ -61,6 +61,7 @@
             let trackEnabled = true
             let menu = new Menu(width, height)
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
+            let lastFrameTime = 0, physicsAccumulatorMs = 0
             
             let game
             
@@ -69,6 +70,7 @@
             function startGame(_v)
             {
                 reuseTimeInGame()
+                resetPhysicsTiming()
                 version = _v
                 
                 chooseVersion()
@@ -209,18 +211,45 @@
                 //requestAnimationFrame(gameLoop)
             }
 
-            function gameLoop()
+            function resetPhysicsTiming()
+            {
+                lastFrameTime = 0
+                physicsAccumulatorMs = 0
+            }
+
+            function gameLoop(frameTime)
             {
                 if (menu.gamePaused)
                 {
+                    resetPhysicsTiming()
                     menu.pause()
                 }
                 else
                 {
-                    physics()
+                    runFixedPhysics(frameTime)
                     draw()
                 }
                 game = requestAnimationFrame(gameLoop)
+            }
+
+            function runFixedPhysics(frameTime)
+            {
+                if (!lastFrameTime)
+                {
+                    lastFrameTime = frameTime
+                    physics()
+                    return
+                }
+
+                const elapsedMs = Math.min(frameTime - lastFrameTime, maxPhysicsFrameMs)
+                lastFrameTime = frameTime
+                physicsAccumulatorMs += elapsedMs
+
+                while (physicsAccumulatorMs + physicsStepEpsilonMs >= physicsStepMs)
+                {
+                    physics()
+                    physicsAccumulatorMs = Math.max(0, physicsAccumulatorMs - physicsStepMs)
+                }
             }
 
             window.onblur = function() {
