@@ -135,3 +135,59 @@ class Element
         ctx.restore()
     }
 }
+
+class FrameGrapnelMarker
+{
+    constructor(object)
+    {
+        this.points = object.points
+        this.stroke = object.stroke
+        this.strokeWidth = object.strokeWidth
+        this.scored = false
+        this.track = new Empty()
+    }
+    move()
+    {
+
+    }
+    isPairElement()
+    {
+        return false
+    }
+    getLeftPointX()
+    {
+        return Math.min(...this.points.map(point => point.x))
+    }
+    getRightPointX()
+    {
+        return Math.max(...this.points.map(point => point.x))
+    }
+    getCircumscribedCircle()
+    {
+        return {x: this.getRightPointX(), y: this.points[0].y, radius: 0}
+    }
+    getLines()
+    {
+        return []
+    }
+    draw()
+    {
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(this.points[0].x + screen.x, this.points[0].y + screen.y)
+
+        for (let i = 1; i < this.points.length; ++i)
+        {
+            if (i == 2 || i == 4)
+                ctx.moveTo(this.points[1].x + screen.x, this.points[1].y + screen.y)
+
+            ctx.lineTo(this.points[i].x + screen.x, this.points[i].y + screen.y)
+        }
+
+        ctx.strokeStyle = this.stroke
+        ctx.lineWidth = this.strokeWidth
+        ctx.stroke()
+        ctx.closePath()
+        ctx.restore()
+    }
+}

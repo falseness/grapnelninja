@@ -16,6 +16,7 @@ class ElementsFactory
             frame4Elements      : new Frame4ElementsFactory()       ,
             frame5Rects         : new Frame5RectFactory()           ,
             frame6Rects         : new Frame6RectFactory()           ,
+            frame7Elements      : new Frame7ElementsFactory()       ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -439,6 +440,97 @@ class Frame4ElementsFactory extends RectFactory
             this.createGreenSegment(),
             this.createBlueSquare(),
             this.createTriangle()
+        ]
+    }
+}
+class Frame7ElementsFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        this.frameHeight = 630
+        this.greenRect =
+        {
+            x: 285.5,
+            y: 381.5,
+            width: 206,
+            height: 141
+        }
+        this.blueSquare =
+        {
+            x: 363,
+            y: 207,
+            width: 51,
+            height: 52
+        }
+        this.grapnelMarker =
+        {
+            points:
+            [
+                {x: 388.548, y: 239.803},
+                {x: 389.255, y: 150},
+                {x: 417.539, y: 178.284},
+                {x: 389.255, y: 150},
+                {x: 362.385, y: 176.87}
+            ],
+            strokeWidth: 5
+        }
+    }
+    displayToWorld(value)
+    {
+        return value / this.frameHeight * height / scale.bad
+    }
+    createGreenRect()
+    {
+        const rect = this.greenRect
+        const result = super.create(
+            this.displayToWorld(rect.x),
+            this.displayToWorld(rect.y),
+            this.displayToWorld(rect.width),
+            this.displayToWorld(rect.height)
+        )
+
+        result.fill = STYLE.colors.cube.greenFill
+        result.stroke = STYLE.colors.cube.greenStroke
+
+        return result
+    }
+    createBlueSquare()
+    {
+        const rect = this.blueSquare
+        const result = super.create(
+            this.displayToWorld(rect.x),
+            this.displayToWorld(rect.y),
+            this.displayToWorld(rect.width),
+            this.displayToWorld(rect.height)
+        )
+
+        result.fill = STYLE.colors.cube.blueFill
+        result.stroke = STYLE.colors.cube.blueStroke
+
+        return result
+    }
+    createGrapnelMarker()
+    {
+        return new FrameGrapnelMarker(
+        {
+            points      : this.grapnelMarker.points.map(point =>
+            {
+                return {
+                    x: this.displayToWorld(point.x),
+                    y: this.displayToWorld(point.y)
+                }
+            }),
+            strokeWidth : this.displayToWorld(this.grapnelMarker.strokeWidth),
+            stroke      : 'black'
+        })
+    }
+    create(x, y)
+    {
+        return [
+            this.createGreenRect(),
+            this.createBlueSquare(),
+            this.createGrapnelMarker()
         ]
     }
 }
