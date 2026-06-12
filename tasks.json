@@ -445,18 +445,20 @@
   {
     "id": "TASK-018",
     "title": "Align HUD typography and top controls with concept art",
-    "status": "done",
+    "status": "to-verify",
     "dependencies": [
       "TASK-017"
     ],
-    "description": "Restyle the in-game score, record, stage indicator, and menu button to better match the concept art HUD: uppercase pixel-like labels, stronger white/cyan glow, compact top placement, and no world geometry obscuring or competing with the HUD.\nImplemented: Restyled the in-game HUD with uppercase glowing score/record labels, a bad-version stage indicator, compact outlined menu icon, and HUD-zone side-floor suppression.\nVerified: Re-ran code inspection and browser checks; confirmed concept-aligned bad-version HUD, no competing top band, preserved menu/pause/resume/back/version/toggle behavior, no console errors, and refreshed screenshot.",
+    "description": "Restyle the in-game score, record, stage indicator, and menu button to better match the concept art HUD: uppercase pixel-like labels, stronger white/cyan glow, compact top placement, and no world geometry obscuring or competing with the HUD.\nImplemented: Restyled the in-game HUD with uppercase glowing score/record labels, a bad-version stage indicator, compact outlined menu icon, and HUD-zone side-floor suppression.\nVerified: Re-ran code inspection and browser checks; confirmed concept-aligned bad-version HUD, no competing top band, preserved menu/pause/resume/back/version/toggle behavior, no console errors, and refreshed screenshot.\nVerification detail: The verifier must inspect the saved screenshot and visible UI geometry, not only code constants, prior notes, or the existence of a screenshot file.\nVerification failed: Bad-version browser run and refreshed screenshot show no top-center stage/progress indicator; runtime probe recorded drawStageIndicator called 0 times.\nImplemented: Restored the bad-version top-center stage indicator by invoking the existing HUD indicator renderer from scoreText.draw().",
     "acceptance_criteria": [
       "Score and record labels render uppercase with a brighter white/cyan arcade treatment closer to the concept art.",
       "The top-center stage or progress indicator shown in the concept art is added as visual-only UI for the bad version without changing scoring or gameplay rules.",
       "The menu button uses a compact cyan outlined icon treatment matching the concept art.",
       "World/floor visuals do not create a heavy top band that obscures or competes with HUD text.",
       "All existing menu, pause, resume, back-to-menu, version selection, and visual-effects toggle click behavior remains unchanged.",
-      "A screenshot is saved at screenshots/TASK-018.png before marking this task to-verify."
+      "A screenshot is saved at screenshots/TASK-018.png before marking this task to-verify.",
+      "Saved screenshot inspection confirms all relevant text, buttons, and controls are fully readable with no clipping, overlap, or hidden hit-area mismatch.",
+      "Verification cannot pass by relying only on implementation notes, task history, or code inspection; the saved screenshot must visibly satisfy the UI layout requirement."
     ],
     "test_steps": [
       "Open index.html in a browser or run a local static server and open the game.",
@@ -464,7 +466,9 @@
       "Pause and resume the game, then return to menu, confirming all buttons still work.",
       "Confirm the browser console has no new errors.",
       "Capture a screenshot and save it as screenshots/TASK-018.png.",
-      "Confirm screenshots/TASK-018.png exists."
+      "Confirm screenshots/TASK-018.png exists.",
+      "Inspect the saved screenshot directly and list any text, button, or control bounding boxes that look clipped, overlapped, hidden, or visually misaligned.",
+      "If a control is clickable, compare the visible control position with its click behavior and fail verification if the hit area does not match the visible UI."
     ]
   },
   {
