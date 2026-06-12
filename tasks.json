@@ -95,7 +95,7 @@
     "id": "TASK-005",
     "category": "test",
     "priority": "normal",
-    "description": "Verify the new bad-version generation elements visually against the required SVG frames. Keep this ticket sized to 15 minutes or less.",
+    "description": "Verify the new bad-version generation elements visually against the required SVG frames. Keep this ticket sized to 15 minutes or less.\nImplemented: Visually verified Frame 2, Frame 3, and Frame 5 with forced-100% bad-version browser screenshots and restored normal source chances.",
     "acceptance_criteria": [
       "Each new bad-version element is individually tested with its generation chance temporarily set to 100%.",
       "A screenshot is captured for each new element and compared visually against its required SVG frame.",
@@ -112,6 +112,6 @@
       "Step 3: Temporarily force the Frame 5 generation element to 100%, open the game, screenshot it, and compare it with /opt/grapnelninja/screenshots/Frame 5.svg.",
       "Step 4: Restore normal generation chances after visual verification."
     ],
-    "status": "pending"
+    "status": "to-verify"
   }
 ]
