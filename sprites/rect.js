@@ -73,7 +73,8 @@ class Rect extends Element
         ctx.shadowColor = this.stroke
         ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.strokeRect(x, y, this.width, this.height)
-        this.drawInnerRectangleCopy(x, y, STYLE.badVersionEffects.obstacles.innerCopyInsetRatio, this.stroke, this.stroke)
+        const innerFill = this.stroke == STYLE.colors.cube.blueStroke ? STYLE.colors.cube.blueFill : this.stroke
+        this.drawInnerRectangleCopy(x, y, STYLE.badVersionEffects.obstacles.innerCopyInsetRatio, innerFill, this.stroke)
         ctx.restore()
     }
     drawBadVersionRect(x, y)
@@ -84,7 +85,7 @@ class Rect extends Element
         const fill = isGreenSafe ? obstacleStyle.greenFill : (isGray ? obstacleStyle.grayFill : obstacleStyle.cubeFill)
         const isBlueCube = this.stroke == STYLE.colors.cube.blueStroke
         const copyFill = isBlueCube
-            ? this.stroke
+            ? STYLE.colors.cube.blueFill
             : isGreenSafe
             ? obstacleStyle.greenHighlightFill
             : (isGray ? obstacleStyle.grayHighlightFill : obstacleStyle.cubeHighlightFill)

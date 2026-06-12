@@ -2409,7 +2409,7 @@
     "category": "functional",
     "priority": "normal",
     "dependencies": [],
-    "description": "Remove transparency from blue cube shells in both versions so cube shell color does not change when the shell overlaps with the player trail or other translucent effects. This is a visual-only change.\nImplemented: Made blue cube inset shells draw with opaque blue shell paint in classic and bad versions so trail overlap cannot tint the shell.",
+    "description": "Remove transparency from blue cube shells in both versions so cube shell color does not change when the shell overlaps with the player trail or other translucent effects. This is a visual-only change.\nImplemented: Made blue cube inset shells draw with opaque blue shell paint in classic and bad versions so trail overlap cannot tint the shell.\nVerified: Fresh browser verification confirmed classic and bad blue shell pixels stay opaque #1f7aff at alpha 255 with and without player-trail overlap, screenshot inspection passed, no JS errors, and valid JSON.\nImplemented: Changed blue cube inset shell fills to opaque dark blue while preserving bright blue outlines and unchanged cube geometry.",
     "acceptance_criteria": [
       "Blue cube shells render fully opaque rather than translucent.",
       "A blue cube shell keeps the same visible color when it overlaps the player trail.",
@@ -2417,7 +2417,8 @@
       "Cube fill, shell, collision shape, movement, spawning, scoring, and restart behavior remain unchanged except for shell opacity.",
       "The change applies to both classic and bad versions where blue cube shells are rendered.",
       "A screenshot is saved at screenshots/TASK-092.png before marking this task to-verify.",
-      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code",
+      "upd: cubes inside are too bright, chose dark blue instead"
     ],
     "test_steps": [
       "Step 1: Open index.html in a browser or run a local static server and open the game.",
