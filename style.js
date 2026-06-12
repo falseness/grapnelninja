@@ -120,6 +120,8 @@ const STYLE = Object.freeze({
         buttonShadowBlur: 10,
         buttonInsetRatio: 0.08,
         buttonLineWidth: 2,
+        buttonTextPaddingRatio: 0.34,
+        buttonMinFontSize: 12,
         pausePanelLineWidth: 2,
         hudTopRatio: 0.06,
         hudFontRatio: 0.042,

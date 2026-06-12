@@ -354,14 +354,16 @@
       "TASK-001",
       "TASK-003"
     ],
-    "description": "Restyle score, record, menu, pause UI, and menu button with a monospace or pixel-like neon arcade look. Preserve all UI behavior.\nImplemented: Restyled score, record, main menu, pause controls, visual-effects toggle, and in-game menu button with monospace neon UI drawing while preserving click behavior.\nVerified: Re-ran code inspection and browser checks; confirmed neon monospace score/menu/pause styling, menu/pause/resume/back/version/toggle behavior, no console errors, and refreshed screenshot.\nImplemented: Moved the pause FPS counter row below the back-to-menu button and reduced the label size so pause controls no longer overlap.",
+    "description": "Restyle score, record, menu, pause UI, and menu button with a monospace or pixel-like neon arcade look. Preserve all UI behavior.\nImplemented: Restyled score, record, main menu, pause controls, visual-effects toggle, and in-game menu button with monospace neon UI drawing while preserving click behavior.\nVerified: Re-ran code inspection and browser checks; confirmed neon monospace score/menu/pause styling, menu/pause/resume/back/version/toggle behavior, no console errors, and refreshed screenshot.\nVerification detail: The verifier must inspect the saved screenshot and visible UI geometry, not only code constants, prior notes, or the existence of a screenshot file.\nVerification failed: Saved pause screenshot shows the fps counter label overlapping the back-to-menu button and running underneath the off toggle control, so the readable unclipped UI layout criterion is not met.\nImplemented: Moved the pause FPS counter row below the back-to-menu button and reduced the label size so pause controls no longer overlap.\nVerification failed: Saved pause screenshot still shows the back-to-menu label extending outside its visible button outline, creating a visible-control/click-hit-area mismatch.\nImplemented: Added fitted button-label sizing so long pause labels remain inside their visible controls and hit areas.",
     "acceptance_criteria": [
       "Score and record text use a monospace or pixel-like font stack and bright neon coloring.",
       "The menu button is restyled as a neon outlined control.",
       "Main menu and pause menu text/buttons match the neon arcade style.",
       "All existing menu, pause, resume, back-to-menu, version selection, and visual-effects toggle click behavior remains unchanged.",
       "UI text remains readable over the dark background.",
-      "A screenshot is saved at screenshots/TASK-015.png before marking this task to-verify."
+      "A screenshot is saved at screenshots/TASK-015.png before marking this task to-verify.",
+      "Saved screenshot inspection confirms all relevant text, buttons, and controls are fully readable with no clipping, overlap, or hidden hit-area mismatch.",
+      "Verification cannot pass by relying only on implementation notes, task history, or code inspection; the saved screenshot must visibly satisfy the UI layout requirement."
     ],
     "test_steps": [
       "Open index.html in a browser or run a local static server and open the game.",
@@ -370,7 +372,9 @@
       "Pause and resume the game, then return to menu, confirming all buttons still work.",
       "Confirm the browser console has no new errors.",
       "Capture a screenshot and save it as screenshots/TASK-015.png.",
-      "Confirm screenshots/TASK-015.png exists."
+      "Confirm screenshots/TASK-015.png exists.",
+      "Inspect the saved screenshot directly and list any text, button, or control bounding boxes that look clipped, overlapped, hidden, or visually misaligned.",
+      "If a control is clickable, compare the visible control position with its click behavior and fail verification if the hit area does not match the visible UI."
     ]
   },
   {

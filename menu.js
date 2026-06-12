@@ -56,6 +56,10 @@ class Text
         ctx.restore()
     }
 }
+function getArcadeFont(size)
+{
+    return size + 'px ' + STYLE.ui.fontFamily
+}
 class Button
 {
     constructor(background, text, clickFunc, image)
@@ -70,7 +74,7 @@ class Button
         
         text.x          = background.x
         text.y          = background.y
-        text.fontSize   = this.background.height
+        text.fontSize   = this.getFittedTextSize(text.text, this.background.height)
         
         if (typeof background.clickable == "undefined")
             this.clickable = true
@@ -82,6 +86,24 @@ class Button
         this.image = image
         
         this.click = clickFunc
+    }
+    getFittedTextSize(label, maxSize)
+    {
+        if (!label)
+            return maxSize
+
+        const horizontalPadding = this.background.height * STYLE.ui.buttonTextPaddingRatio * 2
+        const maxWidth = Math.max(1, this.background.width - horizontalPadding)
+
+        ctx.save()
+        ctx.font = getArcadeFont(maxSize)
+        const measuredWidth = ctx.measureText(label).width
+        ctx.restore()
+
+        if (measuredWidth <= maxWidth)
+            return maxSize
+
+        return Math.max(STYLE.ui.buttonMinFontSize, maxSize * maxWidth / measuredWidth)
     }
     draw()
     {
