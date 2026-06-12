@@ -175,7 +175,7 @@
     "id": "TASK-009",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.",
+    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.\nImplemented: Guarded Ninja.collision() by caching the current element before collision checks so the handler only reads a valid target while preserving valid element collisions.",
     "acceptance_criteria": [
       "The code path that reads collision only runs when the target object exists.",
       "The fix preserves existing collision behavior for valid game objects.",
@@ -188,7 +188,7 @@
       "Step 3: Open the game with the developer console visible.",
       "Step 4: Play for at least 30 seconds and verify the collision TypeError does not appear."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-010",

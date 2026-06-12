@@ -24,14 +24,18 @@ class Ninja
         {
             for (let i = 0; i < floors[k].elements.length; ++i)
             {
-                if (twoCirclesIntersect(this.x, this.y, this.radius, floors[k].elements[i].getCircumscribedCircle()))
+                const element = floors[k].elements[i]
+                if (!element)
+                    continue
+
+                if (twoCirclesIntersect(this.x, this.y, this.radius, element.getCircumscribedCircle()))
                 {
-                    let lines = floors[k].elements[i].getLines()
+                    let lines = element.getLines()
                     for (let j = 0; j < lines.length; ++j)
                     {
                         if (this.collisionNinjaWithLine(lines[j]))
                         {
-                            floors[k].elements[i].collision(this, lines[j])
+                            element.collision(this, lines[j])
                             collision = lines[j]
                         }
                     }
