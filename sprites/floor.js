@@ -1,19 +1,20 @@
 class Floor
 {
-    constructor(topBorder, bottomBorder, elementsIntervalX, creations)
+    constructor(topBorder, bottomBorder, elementsIntervalX, creations, primaryElementsQuantity)
     {
         this.bottom             = bottomBorder
         this.top                = topBorder
         
         this.creations          = creations
         this.elementsIntervalX  = elementsIntervalX
+        this.primaryElementsQuantity = primaryElementsQuantity || 8
         
         this.elements           = []
     }
     generatePrimaryElements()
     {
         const firstPrimaryElementX      = 0.2 * width
-        const primaryElementsQuantity   = 8
+        const primaryElementsQuantity   = this.primaryElementsQuantity
         
         let nextElementX                = firstPrimaryElementX
         

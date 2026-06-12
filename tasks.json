@@ -26,7 +26,7 @@
     "id": "TASK-002",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 2.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 2.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now creates one centered green Frame 2 Rect using the existing RectFactory/Rect rendering path.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 2 element: one vertical green rectangle between the ceiling and floor.",
       "The implementation reuses existing Rect or existing rectangle factory behavior instead of adding new graphics code.",
@@ -43,7 +43,7 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 2.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-003",

@@ -11,6 +11,7 @@ class ElementsFactory
         {
             ground              : new GroundFactory()               , 
             side                : new SideFactory()                 ,
+            frame2Rect          : new Frame2RectFactory()           ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -193,6 +194,29 @@ class VerticalGroundRectFactory extends RectFactory
         let h = random(this.height.min, this.height.max)
         
         return [super.create(random(x.min, x.max), y.max - h, w, h)]
+    }
+}
+class Frame2RectFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        this.displayWidthRatio = 52 / 630
+        this.displayTopRatio = 164.5 / 630
+        this.displayHeightRatio = 266 / 630
+    }
+    create(x, y)
+    {
+        const worldWidth = this.displayWidthRatio * height / scale.bad
+        const worldHeight = this.displayHeightRatio * height / scale.bad
+        const worldX = (width / scale.bad - worldWidth) / 2
+        const worldY = this.displayTopRatio * height / scale.bad
+        const rect = super.create(worldX, worldY, worldWidth, worldHeight)
+
+        rect.fill = STYLE.colors.cube.greenFill
+        rect.stroke = STYLE.colors.cube.greenStroke
+
+        return [rect]
     }
 }
 class TrampolineFactory
