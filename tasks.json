@@ -2138,5 +2138,31 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-083",
+    "category": "functional",
+    "priority": "normal",
+    "description": "In the classic version, change the color of the flying gameplay triangles to lightblue. This does not apply to decorative background triangles or the background itself.\nImplemented: Added classic-only lightblue drawing for foreground flying gameplay triangles and their trail while leaving decorative background triangles and bad-version triangle styling unchanged.",
+    "acceptance_criteria": [
+      "In the classic version, flying gameplay triangles render in lightblue.",
+      "Decorative background triangles are not changed as part of this task.",
+      "The background color and background effects are not changed as part of this task.",
+      "Triangle collision, movement, scoring, spawning, restart behavior, HUD, menus, and version selection remain unchanged.",
+      "The bad version is not unintentionally changed.",
+      "A screenshot is saved at screenshots/TASK-083.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and wait until flying gameplay triangles are visible.",
+      "Confirm the flying gameplay triangles are lightblue.",
+      "Confirm decorative background triangles and the background itself were not recolored by this task.",
+      "Capture a representative screenshot and save it as screenshots/TASK-083.png.",
+      "Look at screenshots/TASK-083.png and confirm the task was actually completed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

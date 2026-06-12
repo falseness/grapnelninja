@@ -61,6 +61,8 @@ const STYLE = Object.freeze({
         }),
         hazard: Object.freeze({
             fill: '#21070f',
+            classicTriangleFill: 'lightblue',
+            classicTriangleStroke: 'lightblue',
             harmlessFill: '#071c12',
             stroke: '#ff3d71',
             harmlessStroke: '#64e379',

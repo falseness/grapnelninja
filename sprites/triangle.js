@@ -71,7 +71,8 @@ class Triangle extends Element
     {
         if (version != 'bad')
         {
-            super.draw()
+            this.track.stroke = STYLE.colors.hazard.classicTriangleStroke
+            this.drawClassicGameplayTriangle()
             return
         }
 
@@ -88,6 +89,33 @@ class Triangle extends Element
         )
 
         this.drawBadVersionInnerTreatment()
+    }
+    drawClassicGameplayTriangle()
+    {
+        const fill = STYLE.colors.hazard.classicTriangleFill
+        const stroke = STYLE.colors.hazard.classicTriangleStroke
+        const strokeWidth = STYLE.strokes.neonWidth
+        const points = this.getPoints()
+
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
+        for (let i = 0; i < points.length; ++i)
+        {
+            ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+        }
+
+        ctx.fillStyle = fill
+        ctx.fill()
+
+        ctx.strokeStyle = stroke
+        ctx.lineWidth = strokeWidth
+        ctx.shadowColor = stroke
+        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+        ctx.stroke()
+
+        ctx.closePath()
+        ctx.restore()
     }
     drawBadVersionInnerTreatment()
     {
