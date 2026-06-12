@@ -2402,5 +2402,32 @@
       "Step 9: Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-092",
+    "category": "functional",
+    "priority": "normal",
+    "dependencies": [],
+    "description": "Remove transparency from blue cube shells in both versions so cube shell color does not change when the shell overlaps with the player trail or other translucent effects. This is a visual-only change.\nImplemented: Made blue cube inset shells draw with opaque blue shell paint in classic and bad versions so trail overlap cannot tint the shell.",
+    "acceptance_criteria": [
+      "Blue cube shells render fully opaque rather than translucent.",
+      "A blue cube shell keeps the same visible color when it overlaps the player trail.",
+      "The player trail does not visibly tint, darken, lighten, or otherwise change the blue cube shell color.",
+      "Cube fill, shell, collision shape, movement, spawning, scoring, and restart behavior remain unchanged except for shell opacity.",
+      "The change applies to both classic and bad versions where blue cube shells are rendered.",
+      "A screenshot is saved at screenshots/TASK-092.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+    ],
+    "test_steps": [
+      "Step 1: Open index.html in a browser or run a local static server and open the game.",
+      "Step 2: Start the classic version and create or wait for a situation where the player trail overlaps a blue cube shell.",
+      "Step 3: Confirm the blue cube shell remains opaque and does not change color where it overlaps the trail.",
+      "Step 4: Start the bad version and repeat the same overlap inspection if blue cube shells appear there.",
+      "Step 5: Capture a representative screenshot and save it as screenshots/TASK-092.png.",
+      "Step 6: Look at screenshots/TASK-092.png and confirm cube shells are actually opaque when overlapping trails.",
+      "Step 7: Confirm the browser console has no new errors.",
+      "Step 8: Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

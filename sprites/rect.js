@@ -82,7 +82,10 @@ class Rect extends Element
         const isGreenSafe = this.stroke == STYLE.colors.cube.greenStroke || this.stroke == STYLE.colors.hazard.harmlessStroke
         const isGray = this.stroke == STYLE.colors.cube.grayStroke
         const fill = isGreenSafe ? obstacleStyle.greenFill : (isGray ? obstacleStyle.grayFill : obstacleStyle.cubeFill)
-        const copyFill = isGreenSafe
+        const isBlueCube = this.stroke == STYLE.colors.cube.blueStroke
+        const copyFill = isBlueCube
+            ? this.stroke
+            : isGreenSafe
             ? obstacleStyle.greenHighlightFill
             : (isGray ? obstacleStyle.grayHighlightFill : obstacleStyle.cubeHighlightFill)
 
@@ -109,6 +112,7 @@ class Rect extends Element
     drawInnerRectangleCopy(x, y, insetRatio, fillStyle, strokeStyle)
     {
         const obstacleStyle = STYLE.badVersionEffects.obstacles
+        const isBlueCubeShell = strokeStyle == STYLE.colors.cube.blueStroke
         const inset = Math.min(this.width, this.height) * insetRatio
         const width = Math.max(0, this.width - inset * 2)
         const height = Math.max(0, this.height - inset * 2)
@@ -119,10 +123,10 @@ class Rect extends Element
         ctx.save()
         ctx.shadowBlur = 0
         ctx.fillStyle = fillStyle
-        ctx.globalAlpha = obstacleStyle.innerCopyFillAlpha
+        ctx.globalAlpha = isBlueCubeShell ? STYLE.alpha.full : obstacleStyle.innerCopyFillAlpha
         ctx.fillRect(x + inset, y + inset, width, height)
 
-        ctx.globalAlpha = obstacleStyle.innerHighlightAlpha
+        ctx.globalAlpha = isBlueCubeShell ? STYLE.alpha.full : obstacleStyle.innerHighlightAlpha
         ctx.strokeStyle = strokeStyle
         ctx.lineWidth = version == 'bad' ? obstacleStyle.thinStrokeWidth : STYLE.strokes.neonWidth
         ctx.strokeRect(x + inset, y + inset, width, height)
