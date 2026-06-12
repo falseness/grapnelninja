@@ -328,7 +328,7 @@ class Menu
         },
         {
             fill: STYLE.colors.ui.buttonText,
-            text: 'classic version'
+            text: 'chill version'
         },
         function(){startGame('classic')})
         this.classicRecord = new Text(
@@ -349,7 +349,7 @@ class Menu
         },
         {
             fill: STYLE.colors.ui.buttonText,
-            text: 'bad version'
+            text: 'main version'
         },
         function(){startGame('bad')})
         this.badRecord = new Text(
