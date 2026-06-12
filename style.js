@@ -324,7 +324,7 @@ const STYLE = Object.freeze({
             motionTimeScale: 0.24,
             hexagonRotationTimeScale: 0.45,
             streakTimeScale: 0.18,
-            flashMotionRatio: 0.006,
+            flashMotionRatio: 0.000,
             triangleRotationScale: 0.05,
             rectangleRotationScale: 0.04,
             accentLineWidth: 1.2,
