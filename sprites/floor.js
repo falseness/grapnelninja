@@ -59,7 +59,7 @@ class Floor
                 this.elements[i].getRightPointX() + screen.x < 0)
             {
                 this.elements[i].scored = true
-                if (this.elements[i].isPairElement)
+                if (this.elements[i].isPairElement() && this.elements[i + 1])
                     this.elements[++i].scored = true
                 
                 changeScoreText()

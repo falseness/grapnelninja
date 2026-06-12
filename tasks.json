@@ -137,7 +137,7 @@
     "id": "TASK-007",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot set properties of undefined (setting 'scored'). Keep this ticket sized to 15 minutes or less.",
+    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot set properties of undefined (setting 'scored'). Keep this ticket sized to 15 minutes or less.\nImplemented: Fixed Floor.deleteElements scoring to call isPairElement() and only mark the paired element when it exists.",
     "acceptance_criteria": [
       "The code path that assigns scored only runs when the target object exists.",
       "The fix preserves existing scoring behavior for valid game objects.",
@@ -150,7 +150,7 @@
       "Step 3: Open the game with the developer console visible.",
       "Step 4: Play for at least 30 seconds and verify the scored TypeError does not appear."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-008",
