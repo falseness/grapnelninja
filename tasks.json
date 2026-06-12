@@ -282,7 +282,7 @@
     "id": "TASK-014",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 8.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 8.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 8's gray center Rect and three green safe Rects using the existing RectFactory/Rect rendering path.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 8 element from /opt/grapnelninja/screenshots/Frame 8.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -299,7 +299,7 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 8.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-015",

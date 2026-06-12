@@ -17,6 +17,7 @@ class ElementsFactory
             frame5Rects         : new Frame5RectFactory()           ,
             frame6Rects         : new Frame6RectFactory()           ,
             frame7Elements      : new Frame7ElementsFactory()       ,
+            frame8Elements      : new Frame8ElementsFactory()       ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -547,6 +548,53 @@ class Frame7ElementsFactory extends RectFactory
             this.createGreenRect(),
             this.createBlueSquare(),
             ...this.createGrapnelMarker()
+        ]
+    }
+}
+class Frame8ElementsFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        this.frameHeight = 630
+        this.grayRect =
+        {
+            x: 333.5,
+            y: 243.5,
+            width: 52,
+            height: 172
+        }
+        this.greenRects =
+        [
+            {x: 146.5, y: 181.5, width: 52, height: 266},
+            {x: 516.5, y: 416.5, width: 52, height: 137},
+            {x: 516.5, y: 76.5, width: 52, height: 137}
+        ]
+    }
+    displayToWorld(value)
+    {
+        return value / this.frameHeight * height / scale.bad
+    }
+    createFrameRect(rect, fill, stroke)
+    {
+        const result = super.create(
+            this.displayToWorld(rect.x),
+            this.displayToWorld(rect.y),
+            this.displayToWorld(rect.width),
+            this.displayToWorld(rect.height)
+        )
+
+        result.fill = fill
+        result.stroke = stroke
+
+        return result
+    }
+    create(x, y)
+    {
+        return [
+            this.createFrameRect(this.grayRect, STYLE.colors.cube.grayFill, STYLE.colors.cube.grayStroke),
+            ...this.greenRects.map(rect =>
+                this.createFrameRect(rect, STYLE.colors.cube.greenFill, STYLE.colors.cube.greenStroke))
         ]
     }
 }
