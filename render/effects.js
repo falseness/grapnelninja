@@ -5,6 +5,7 @@ class BackgroundRenderer
         this.ctx = context
         this.canvas = targetCanvas
         this.randomFlashCache = new WeakMap()
+        this.randomTriangleCache = new WeakMap()
     }
     draw()
     {
@@ -355,6 +356,7 @@ class BackgroundRenderer
     resetRandomFlashes()
     {
         this.randomFlashCache = new WeakMap()
+        this.randomTriangleCache = new WeakMap()
     }
     getFlashSegments(flash, startX, startY, angle, length)
     {
@@ -424,12 +426,13 @@ class BackgroundRenderer
     }
     drawDecorativeTriangles(width, height, geometry, time, shift)
     {
-        const triangles = geometry.triangles || []
+        const triangleTemplates = geometry.triangles || []
         shift = shift || {x: 0, y: 0}
 
-        if (!triangles.length)
+        if (!triangleTemplates.length)
             return
 
+        const triangles = this.getRandomizedTriangles(triangleTemplates, geometry)
         const sizeScale = Math.min(width, height) / 720
         const motion = QUALITY.backgroundMotion && !this.shouldFreezeBadVersionBackgroundMotion()
             ? time / STYLE.timing.backgroundRotationMs * Math.PI * geometry.triangleRotationScale
@@ -456,6 +459,26 @@ class BackgroundRenderer
         }
 
         this.ctx.restore()
+    }
+    getRandomizedTriangles(triangleTemplates, geometry)
+    {
+        const refreshMs = geometry.triangleRefreshMs
+            || geometry.flashRefreshMs
+            || STYLE.timing.backgroundStreakMs
+        const bucket = Math.floor(performance.now() / refreshMs)
+        const cached = this.randomTriangleCache.get(triangleTemplates)
+
+        if (cached && cached.bucket == bucket)
+            return cached.triangles
+
+        const triangles = triangleTemplates.map(triangle => Object.assign({}, triangle, {
+            x: Math.random(),
+            y: Math.random()
+        }))
+
+        this.randomTriangleCache.set(triangleTemplates, {bucket, triangles})
+
+        return triangles
     }
     getTrianglePalette(triangle, geometry, screenXRatio)
     {

@@ -2458,5 +2458,36 @@
       "Step 9: Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-094",
+    "category": "functional",
+    "priority": "normal",
+    "dependencies": [],
+    "description": "Update decorative background triangles in both versions so their positions are chosen randomly with a uniform distribution across the background. Keep the existing rule that triangle color depends on whether the triangle is on the left or right side of the background.\nImplemented: Randomized decorative background triangle positions through the shared background renderer while preserving side-based blue/magenta palette selection and visual-only layering.",
+    "acceptance_criteria": [
+      "Decorative background triangle positions are chosen randomly across the full visible background area rather than from fixed or clustered positions.",
+      "The random decorative triangle placement is uniformly distributed enough that triangles can appear throughout the left, center, right, top, and bottom areas over repeated runs.",
+      "Decorative triangle color still depends on whether the triangle is positioned on the left or right side of the background.",
+      "Decorative triangles remain behind gameplay objects and do not obscure the player, grapnel, obstacles, HUD text, or menu controls.",
+      "Decorative triangles remain visual-only and do not become gameplay hazards or collision objects.",
+      "The change applies to both classic and bad versions.",
+      "Collision, movement, scoring, spawning, restart behavior, HUD, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-094.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+    ],
+    "test_steps": [
+      "Step 1: Open index.html in a browser or run a local static server and open the game.",
+      "Step 2: Start the classic version several times or wait through several decorative background triangle refreshes.",
+      "Step 3: Confirm decorative triangles appear at varied positions across the background, not only at fixed or clustered locations.",
+      "Step 4: Confirm decorative triangles on the left and right sides still use the expected side-dependent colors.",
+      "Step 5: Confirm the decorative triangles do not behave like gameplay hazards.",
+      "Step 6: Start the bad version and repeat the same triangle position and color inspection.",
+      "Step 7: Capture representative screenshots and save at least one as screenshots/TASK-094.png.",
+      "Step 8: Look at screenshots/TASK-094.png and confirm the random decorative triangle placement and side-based color rule were actually completed.",
+      "Step 9: Confirm the browser console has no new errors.",
+      "Step 10: Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
