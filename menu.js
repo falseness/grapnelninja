@@ -368,8 +368,8 @@ class Menu
         this.fpsCounterText = new Text(
         {
             x       : this.center.x - 0.2 * this.width,
-            y       : 0.62 * this.height,
-            fontSize: 0.1 * this.height,
+            y       : 0.68 * this.height,
+            fontSize: 0.054 * this.height,
             fill    : STYLE.colors.ui.text,
             text    : 'fps counter',
             alignX  : 'start'
@@ -377,7 +377,7 @@ class Menu
         this.fpsCounterButton = new Button(
         {
             x       : this.center.x + 0.19 * this.width,
-            y       : 0.62 * this.height,
+            y       : 0.68 * this.height,
             width   : 0.17 * this.width,
             height  : 0.078 * this.height,
             stroke  : STYLE.colors.ui.primary,
