@@ -1206,7 +1206,7 @@
     "id": "TASK-047",
     "category": "functional",
     "priority": "normal",
-    "description": "Reposition the score text, record text, and menu button in the bad version so their centerY sits in the center of the ceiling/HUD band. Fix the current misplaced top alignment visible in screenshots/TASK-035.png without changing click behavior.\nImplemented: Centered bad-version score, record, and in-game menu button on a shared HUD band center while preserving classic HUD placement and menu click behavior.",
+    "description": "Reposition the score text, record text, and menu button in the bad version so their centerY sits in the center of the ceiling/HUD band. Fix the current misplaced top alignment visible in screenshots/TASK-035.png without changing click behavior.\nImplemented: Centered bad-version score, record, and in-game menu button on a shared HUD band center while preserving classic HUD placement and menu click behavior.\nImplemented: Recomputed bad-version HUD center and backing from the scaled screenshot-visible ceiling boundary so score, record, and menu centers sit in the visible top-band midpoint.",
     "acceptance_criteria": [
       "Score text centerY aligns with the vertical center of the ceiling/HUD band.",
       "Record text centerY aligns with the vertical center of the ceiling/HUD band.",

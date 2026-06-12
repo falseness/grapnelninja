@@ -588,11 +588,19 @@ const STYLE = Object.freeze({
 
 function getHudCenterY(viewHeight, selectedVersion)
 {
-    const ratio = selectedVersion == 'bad'
-        ? STYLE.ui.badCeilingBandRatio / 2
-        : STYLE.ui.hudTopRatio
+    if (selectedVersion == 'bad')
+        return getBadHudCeilingBoundaryY(viewHeight, selectedVersion) / 2
 
-    return viewHeight * ratio
+    return viewHeight * STYLE.ui.hudTopRatio
+}
+
+function getBadHudCeilingBoundaryY(viewHeight, selectedVersion)
+{
+    const versionScale = typeof scale != 'undefined' && scale[selectedVersion]
+        ? scale[selectedVersion]
+        : 1
+
+    return viewHeight * STYLE.ui.badCeilingBandRatio * versionScale
 }
 
 function getHudFontSize(viewWidth, viewHeight, selectedVersion)
