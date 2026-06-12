@@ -305,7 +305,7 @@
     "id": "TASK-015",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 9.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 9.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 9's three green Rects, red Triangle, blue Rect square, and black marker segments using existing Rect, Triangle, and Trampoline rendering paths.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 9 element from /opt/grapnelninja/screenshots/Frame 9.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -322,7 +322,7 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 9.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-016",

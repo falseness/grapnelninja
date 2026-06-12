@@ -1,0 +1,203 @@
+{
+  "data": {
+    "version": "bad",
+    "style": {
+      "greenStroke": "#64e379",
+      "blueStroke": "#1f7aff",
+      "hazardStroke": "#ff3d71"
+    },
+    "forcedCreations": [
+      {
+        "type": "frame9Elements",
+        "chance": 100
+      }
+    ],
+    "factoryKeys": [
+      "frame2Rect",
+      "frame3Triangle",
+      "frame4Elements",
+      "frame5Rects",
+      "frame6Rects",
+      "frame7Elements",
+      "frame8Elements",
+      "frame9Elements"
+    ],
+    "objects": [
+      {
+        "type": "Rect",
+        "fill": "#071c12",
+        "stroke": "#64e379",
+        "x": 141.5,
+        "y": 444.50000000000006,
+        "width": 52,
+        "height": 109,
+        "right": 193.50000000000003,
+        "left": 141.5
+      },
+      {
+        "type": "Rect",
+        "fill": "#071c12",
+        "stroke": "#64e379",
+        "x": 141.5,
+        "y": 233.5,
+        "width": 52,
+        "height": 150,
+        "right": 193.50000000000003,
+        "left": 141.5
+      },
+      {
+        "type": "Rect",
+        "fill": "#071c12",
+        "stroke": "#64e379",
+        "x": 141.5,
+        "y": 76.5,
+        "width": 52,
+        "height": 84,
+        "right": 193.50000000000003,
+        "left": 141.5
+      },
+      {
+        "type": "Triangle",
+        "fill": "#21070f",
+        "stroke": "#ff3d71",
+        "x": 506,
+        "y": 195.00000000000003,
+        "width": null,
+        "height": 114,
+        "right": 557.962,
+        "left": 454.038,
+        "points": [
+          {
+            "x": 454.038,
+            "y": 157.00000000000003
+          },
+          {
+            "x": 557.962,
+            "y": 157.00000000000003
+          },
+          {
+            "x": 506,
+            "y": 271
+          }
+        ]
+      },
+      {
+        "type": "Rect",
+        "fill": "#061234",
+        "stroke": "#1f7aff",
+        "x": 480,
+        "y": 441,
+        "width": 51,
+        "height": 52,
+        "right": 531,
+        "left": 480
+      },
+      {
+        "type": "Trampoline",
+        "fill": "black",
+        "stroke": "black",
+        "x": 0,
+        "y": 0,
+        "width": null,
+        "height": null,
+        "right": 508.0479225276084,
+        "left": 503.7550774723915,
+        "points": [
+          {
+            "x": 508.0479225276084,
+            "y": 473.82268136061174
+          },
+          {
+            "x": 508.7549225276084,
+            "y": 384.01968136061186
+          },
+          {
+            "x": 503.7550774723915,
+            "y": 383.98031863938826
+          },
+          {
+            "x": 503.0480774723915,
+            "y": 473.78331863938826
+          }
+        ]
+      },
+      {
+        "type": "Trampoline",
+        "fill": "black",
+        "stroke": "black",
+        "x": 0,
+        "y": 0,
+        "width": null,
+        "height": null,
+        "right": 536.3067669529663,
+        "left": 504.4872330470336,
+        "points": [
+          {
+            "x": 504.4872330470336,
+            "y": 385.76776695296644
+          },
+          {
+            "x": 532.7712330470335,
+            "y": 414.0517669529664
+          },
+          {
+            "x": 536.3067669529663,
+            "y": 410.51623304703367
+          },
+          {
+            "x": 508.0227669529663,
+            "y": 382.23223304703373
+          }
+        ]
+      },
+      {
+        "type": "Trampoline",
+        "fill": "black",
+        "stroke": "black",
+        "x": 0,
+        "y": 0,
+        "width": null,
+        "height": null,
+        "right": 504.4872330470336,
+        "left": 481.1527669529663,
+        "points": [
+          {
+            "x": 504.4872330470336,
+            "y": 382.23223304703373
+          },
+          {
+            "x": 477.6172330470336,
+            "y": 409.1022330470336
+          },
+          {
+            "x": 481.1527669529663,
+            "y": 412.63776695296633
+          },
+          {
+            "x": 508.0227669529663,
+            "y": 385.76776695296644
+          }
+        ]
+      }
+    ]
+  },
+  "messages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ],
+  "jsErrors": [],
+  "checks": {
+    "rectChecks": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "triangleCheck": true,
+    "markerCheck": true,
+    "frame9Registered": true
+  },
+  "screenshot": "screenshots/TASK-015.png"
+}

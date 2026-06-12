@@ -18,6 +18,7 @@ class ElementsFactory
             frame6Rects         : new Frame6RectFactory()           ,
             frame7Elements      : new Frame7ElementsFactory()       ,
             frame8Elements      : new Frame8ElementsFactory()       ,
+            frame9Elements      : new Frame9ElementsFactory()       ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -595,6 +596,128 @@ class Frame8ElementsFactory extends RectFactory
             this.createFrameRect(this.grayRect, STYLE.colors.cube.grayFill, STYLE.colors.cube.grayStroke),
             ...this.greenRects.map(rect =>
                 this.createFrameRect(rect, STYLE.colors.cube.greenFill, STYLE.colors.cube.greenStroke))
+        ]
+    }
+}
+class Frame9ElementsFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        this.frameHeight = 630
+        this.greenRects =
+        [
+            {x: 141.5, y: 444.5, width: 52, height: 109},
+            {x: 141.5, y: 233.5, width: 52, height: 150},
+            {x: 141.5, y: 76.5, width: 52, height: 84}
+        ]
+        this.triangle =
+        {
+            centerX: 506,
+            topY: 157,
+            bottomY: 271,
+            side: 557.962 - 454.038
+        }
+        this.blueSquare =
+        {
+            x: 480,
+            y: 441,
+            width: 51,
+            height: 52
+        }
+        this.grapnelMarker =
+        {
+            segments:
+            [
+                [{x: 505.548, y: 473.803}, {x: 506.255, y: 384}],
+                [{x: 506.255, y: 384}, {x: 534.539, y: 412.284}],
+                [{x: 506.255, y: 384}, {x: 479.385, y: 410.87}]
+            ],
+            strokeWidth: 5
+        }
+    }
+    displayToWorld(value)
+    {
+        return value / this.frameHeight * height / scale.bad
+    }
+    createFrameRect(rect, fill, stroke)
+    {
+        const result = super.create(
+            this.displayToWorld(rect.x),
+            this.displayToWorld(rect.y),
+            this.displayToWorld(rect.width),
+            this.displayToWorld(rect.height)
+        )
+
+        result.fill = fill
+        result.stroke = stroke
+
+        return result
+    }
+    createTriangle()
+    {
+        const triangle = this.triangle
+        const worldHeight = this.displayToWorld(triangle.bottomY - triangle.topY)
+        const model =
+        {
+            x       : this.displayToWorld(triangle.centerX),
+            y       : this.displayToWorld(triangle.topY) + worldHeight / 3,
+            radius  : worldHeight * 2 / 3,
+            yMin    : 0.2 * height,
+            yMax    : 2 * height,
+            fill    : STYLE.colors.hazard.fill,
+            stroke  : STYLE.colors.hazard.stroke
+        }
+        const result = new Triangle(model)
+
+        result.side = this.displayToWorld(triangle.side)
+        result.height = worldHeight
+        result.track = (trackEnabled)?(new MultipointTrackLine(result.side, result.stroke, STYLE.timing.triangleTrailPoints)):(new Empty())
+        result.track.addPos(result.getPoints(), true)
+
+        return result
+    }
+    createGrapnelMarker()
+    {
+        return this.grapnelMarker.segments.map(segment =>
+        {
+            const start = segment[0]
+            const end = segment[1]
+            const x1 = this.displayToWorld(start.x)
+            const y1 = this.displayToWorld(start.y)
+            const x2 = this.displayToWorld(end.x)
+            const y2 = this.displayToWorld(end.y)
+            const dx = x2 - x1
+            const dy = y2 - y1
+            const length = Math.sqrt(dx * dx + dy * dy)
+            const halfWidth = this.displayToWorld(this.grapnelMarker.strokeWidth) / 2
+            const normalX = -dy / length * halfWidth
+            const normalY = dx / length * halfWidth
+
+            return new Trampoline(
+            {
+                x       : 0,
+                y       : 0,
+                points  :
+                [
+                    {x: x1 + normalX, y: y1 + normalY},
+                    {x: x2 + normalX, y: y2 + normalY},
+                    {x: x2 - normalX, y: y2 - normalY},
+                    {x: x1 - normalX, y: y1 - normalY}
+                ],
+                fill    : 'black',
+                stroke  : 'black'
+            })
+        })
+    }
+    create(x, y)
+    {
+        return [
+            ...this.greenRects.map(rect =>
+                this.createFrameRect(rect, STYLE.colors.cube.greenFill, STYLE.colors.cube.greenStroke)),
+            this.createTriangle(),
+            this.createFrameRect(this.blueSquare, STYLE.colors.cube.blueFill, STYLE.colors.cube.blueStroke),
+            ...this.createGrapnelMarker()
         ]
     }
 }
