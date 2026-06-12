@@ -2466,7 +2466,7 @@
     "category": "functional",
     "priority": "normal",
     "dependencies": [],
-    "description": "Update decorative background triangles in both versions so their positions are chosen randomly with a uniform distribution across the background. Keep the existing rule that triangle color depends on whether the triangle is on the left or right side of the background.\nImplemented: Randomized decorative background triangle positions through the shared background renderer while preserving side-based blue/magenta palette selection and visual-only layering.",
+    "description": "Update decorative background triangles in both versions so their positions are chosen randomly with a uniform distribution across the background. Keep the existing rule that triangle color depends on whether the triangle is on the left or right side of the background.\nImplemented: Randomized decorative background triangle positions through the shared background renderer while preserving side-based blue/magenta palette selection and visual-only layering.\nImplemented: Kept randomized decorative triangle positions stable during active play and reset them only on version start or death/restart.",
     "acceptance_criteria": [
       "Decorative background triangle positions are chosen randomly across the full visible background area rather than from fixed or clustered positions.",
       "The random decorative triangle placement is uniformly distributed enough that triangles can appear throughout the left, center, right, top, and bottom areas over repeated runs.",

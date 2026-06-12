@@ -460,13 +460,9 @@ class BackgroundRenderer
     }
     getRandomizedTriangles(triangleTemplates, geometry)
     {
-        const refreshMs = geometry.triangleRefreshMs
-            || geometry.flashRefreshMs
-            || STYLE.timing.backgroundStreakMs
-        const bucket = Math.floor(performance.now() / refreshMs)
         const cached = this.randomTriangleCache.get(triangleTemplates)
 
-        if (cached && cached.bucket == bucket)
+        if (cached)
             return cached.triangles
 
         const triangles = triangleTemplates.map(triangle => Object.assign({}, triangle, {
@@ -474,7 +470,7 @@ class BackgroundRenderer
             y: Math.random()
         }))
 
-        this.randomTriangleCache.set(triangleTemplates, {bucket, triangles})
+        this.randomTriangleCache.set(triangleTemplates, {triangles})
 
         return triangles
     }
