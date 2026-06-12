@@ -3,7 +3,7 @@
     "id": "TASK-001",
     "category": "functional",
     "priority": "normal",
-    "description": "Turn off all existing generated gameplay elements in the bad version so bad mode only has the ceiling and floor as game objects. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version startup now creates only the bottom ground SideFloor and top ceiling SideFloor, with middle-lane generated floors removed.",
+    "description": "Turn off all existing generated gameplay elements in the bad version so bad mode only has the ceiling and floor as game objects. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version startup now creates only the bottom ground SideFloor and top ceiling SideFloor, with middle-lane generated floors removed.\nVerified: Independent code inspection and live screenshot/object checks confirmed bad mode only creates ceiling/floor game objects and keeps existing graphics styling.",
     "acceptance_criteria": [
       "Bad version generation no longer creates horizontalTopRect, verticalGroundRect, jumpingCubeWithCeiling, jumpingCube, triangle, or other existing middle-lane generated elements.",
       "Bad version still creates the top ceiling and bottom floor game objects.",
@@ -20,13 +20,13 @@
       "Step 3: Verify visually that only the ceiling and floor are present as game objects.",
       "Step 4: Confirm the existing graphics style is unchanged."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-002",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 2.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now creates one centered green Frame 2 Rect using the existing RectFactory/Rect rendering path.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 2.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now creates one centered green Frame 2 Rect using the existing RectFactory/Rect rendering path.\nVerified: Independent commit/code inspection plus live browser screenshot/object checks confirmed one centered green Rect matches Frame 2 geometry and uses the existing RectFactory/Rect rendering path.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 2 element: one vertical green rectangle between the ceiling and floor.",
       "The implementation reuses existing Rect or existing rectangle factory behavior instead of adding new graphics code.",
@@ -43,13 +43,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 2.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-003",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 3.svg by reusing existing triangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes a centered red Frame 3 Triangle using the existing Triangle rendering path.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 3.svg by reusing existing triangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes a centered red Frame 3 Triangle using the existing Triangle rendering path.\nVerified: Independent commit/code inspection and live browser screenshot/object checks confirmed the Frame 3 Triangle matches the SVG geometry and uses the existing Triangle rendering path.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 3 element: one centered red hazard triangle between the ceiling and floor.",
       "The implementation reuses existing Triangle or existing triangle factory behavior instead of adding new graphics code.",
@@ -66,13 +66,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 3.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-004",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 5.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 5's two green Rect posts and green rotated horizontal rectangle segment using existing rectangle/polygon rendering paths.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 5.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 5's two green Rect posts and green rotated horizontal rectangle segment using existing rectangle/polygon rendering paths.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object checks confirmed Frame 5 geometry and unchanged rendering styles.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 5 element: one right vertical green rectangle, one center vertical green rectangle, and one horizontal green rectangle segment.",
       "The implementation reuses existing Rect or existing rectangle factory behavior instead of adding new graphics code.",
@@ -89,13 +89,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 5.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-005",
     "category": "test",
     "priority": "normal",
-    "description": "Verify the new bad-version generation elements visually against the required SVG frames. Keep this ticket sized to 15 minutes or less.\nImplemented: Visually verified Frame 2, Frame 3, and Frame 5 with forced-100% bad-version browser screenshots and restored normal source chances.",
+    "description": "Verify the new bad-version generation elements visually against the required SVG frames. Keep this ticket sized to 15 minutes or less.\nImplemented: Visually verified Frame 2, Frame 3, and Frame 5 with forced-100% bad-version browser screenshots and restored normal source chances.\nVerified: Independent forced-100% browser screenshots and SVG geometry checks passed for Frame 2, Frame 3, and Frame 5; normal source chances remain restored.",
     "acceptance_criteria": [
       "Each new bad-version element is individually tested with its generation chance temporarily set to 100%.",
       "A screenshot is captured for each new element and compared visually against its required SVG frame.",
@@ -112,6 +112,262 @@
       "Step 3: Temporarily force the Frame 5 generation element to 100%, open the game, screenshot it, and compare it with /opt/grapnelninja/screenshots/Frame 5.svg.",
       "Step 4: Restore normal generation chances after visual verification."
     ],
+    "status": "done"
+  },
+  {
+    "id": "TASK-006",
+    "category": "test",
+    "priority": "critical",
+    "description": "Play the game for 30 seconds and reproduce the runtime error: Uncaught TypeError: Cannot set properties of undefined (setting 'scored'). Keep this ticket sized to 15 minutes or less.\nImplemented: Reproduced the scored TypeError after a 32.4s live classic run and captured screenshot/report artifacts with stack context.",
+    "acceptance_criteria": [
+      "The game is played live for at least 30 seconds.",
+      "The browser console captures the exact error text: Uncaught TypeError: Cannot set properties of undefined (setting 'scored').",
+      "A screenshot or video frame is captured when the error appears, if possible.",
+      "The reproduction notes include the visible game state and any relevant console stack context."
+    ],
+    "test_steps": [
+      "Step 1: Open the game in a browser with the developer console visible.",
+      "Step 2: Play continuously for 30 seconds or until the scored TypeError appears.",
+      "Step 3: Capture the exact console error text and stack context.",
+      "Step 4: Capture a screenshot or video frame showing the game state when the error appears, if possible."
+    ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-007",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot set properties of undefined (setting 'scored'). Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "The code path that assigns scored only runs when the target object exists.",
+      "The fix preserves existing scoring behavior for valid game objects.",
+      "The original 30-second reproduction path completes without the scored TypeError.",
+      "No new browser console errors are introduced during the verification run."
+    ],
+    "test_steps": [
+      "Step 1: Reproduce or inspect the code path from TASK-006 to identify the undefined scored target.",
+      "Step 2: Apply the smallest safe fix that preserves existing scoring behavior.",
+      "Step 3: Open the game with the developer console visible.",
+      "Step 4: Play for at least 30 seconds and verify the scored TypeError does not appear."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-008",
+    "category": "test",
+    "priority": "critical",
+    "description": "Play the game for 30 seconds and reproduce the runtime error: Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "The game is played live for at least 30 seconds.",
+      "The browser console captures the exact error text: Uncaught TypeError: Cannot read properties of undefined (reading 'collision').",
+      "A screenshot or video frame is captured when the error appears, if possible.",
+      "The reproduction notes include the visible game state and any relevant console stack context."
+    ],
+    "test_steps": [
+      "Step 1: Open the game in a browser with the developer console visible.",
+      "Step 2: Play continuously for 30 seconds or until the collision TypeError appears.",
+      "Step 3: Capture the exact console error text and stack context.",
+      "Step 4: Capture a screenshot or video frame showing the game state when the error appears, if possible."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-009",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "The code path that reads collision only runs when the target object exists.",
+      "The fix preserves existing collision behavior for valid game objects.",
+      "The original 30-second reproduction path completes without the collision TypeError.",
+      "No new browser console errors are introduced during the verification run."
+    ],
+    "test_steps": [
+      "Step 1: Reproduce or inspect the code path from TASK-008 to identify the undefined collision target.",
+      "Step 2: Apply the smallest safe fix that preserves existing collision behavior.",
+      "Step 3: Open the game with the developer console visible.",
+      "Step 4: Play for at least 30 seconds and verify the collision TypeError does not appear."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-010",
+    "category": "test",
+    "priority": "critical",
+    "description": "Play the game for 30 seconds and, if any additional browser console errors appear, create new tickets for them in tasks.json. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "The game is played live for at least 30 seconds with the browser console visible.",
+      "Any additional uncaught errors are captured with exact console text and stack context.",
+      "A screenshot or video frame is captured for each additional error when possible.",
+      "Each additional error found gets a new pending ticket in tasks.json using /root/tools/agents/tasks_format.json."
+    ],
+    "test_steps": [
+      "Step 1: Open the game in a browser with the developer console visible.",
+      "Step 2: Play continuously for at least 30 seconds.",
+      "Step 3: Record any additional uncaught errors with exact console text and stack context.",
+      "Step 4: Add one new pending ticket per additional error using the required tasks.json format."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-011",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 4.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 4 element from /opt/grapnelninja/screenshots/Frame 4.svg.",
+      "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 4 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 4.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-012",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 6.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 6 element from /opt/grapnelninja/screenshots/Frame 6.svg.",
+      "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 6 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 6.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-013",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 7.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 7 element from /opt/grapnelninja/screenshots/Frame 7.svg.",
+      "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 7 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 7.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-014",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 8.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 8 element from /opt/grapnelninja/screenshots/Frame 8.svg.",
+      "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 8 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 8.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-015",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 9.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 9 element from /opt/grapnelninja/screenshots/Frame 9.svg.",
+      "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 9 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 9.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-016",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 10.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 10 element from /opt/grapnelninja/screenshots/Frame 10.svg.",
+      "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 10 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 10.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-017",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 11.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 11 element from /opt/grapnelninja/screenshots/Frame 11.svg.",
+      "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 11 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 11.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
   }
 ]

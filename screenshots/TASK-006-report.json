@@ -1,0 +1,227 @@
+{
+  "task": "TASK-006",
+  "url": "http://127.0.0.1:8000/index.html",
+  "mode": "classic",
+  "livePlayDurationMs": 32364,
+  "reproduced": true,
+  "exactErrorText": "Uncaught TypeError: Cannot set properties of undefined (setting 'scored')",
+  "stateBeforeInjection": {
+    "version": "classic",
+    "score": 0,
+    "record": 0,
+    "screen": {
+      "x": 0,
+      "y": 0,
+      "deletionBorder": -1280
+    },
+    "ninja": {
+      "x": 443.0012857936696,
+      "y": 464.17041275423156,
+      "speedX": 0.4684477551198366,
+      "speedY": 0.6901984989812563
+    },
+    "grapnel": {
+      "throwed": false,
+      "grappled": false,
+      "points": 2
+    },
+    "floors": [
+      {
+        "index": 0,
+        "type": "SideFloor",
+        "count": 6,
+        "sampleTypes": [
+          "Side",
+          "Side",
+          "Side",
+          "Side",
+          "Side"
+        ]
+      },
+      {
+        "index": 1,
+        "type": "Floor",
+        "count": 13,
+        "sampleTypes": [
+          "HarmlessTriangle",
+          "Trampoline",
+          "Trampoline",
+          "Trampoline",
+          "Rect"
+        ]
+      },
+      {
+        "index": 2,
+        "type": "SideFloor",
+        "count": 6,
+        "sampleTypes": [
+          "Side",
+          "Side",
+          "Side",
+          "Side",
+          "Side"
+        ]
+      }
+    ]
+  },
+  "injectedRuntimeState": {
+    "injected": true,
+    "floorIndex": 1,
+    "elementType": "HarmlessTriangle",
+    "left": -1365.910179183442,
+    "right": -1185.910179183442,
+    "screenX": -6.089820816557875,
+    "expressionRightPlusScreen": -1192,
+    "isPairElementPropertyType": "function",
+    "isPairElementCall": false
+  },
+  "visibleStateAtError": {
+    "version": "classic",
+    "score": 0,
+    "record": 0,
+    "screen": {
+      "x": -6.558268571677711,
+      "y": 0,
+      "deletionBorder": -1280
+    },
+    "ninja": {
+      "x": 454.7124796716652,
+      "y": 481.6556176720879,
+      "speedX": 0.4684477551198366,
+      "speedY": 0.7079094561600966
+    },
+    "floors": [
+      {
+        "index": 0,
+        "type": "SideFloor",
+        "count": 6,
+        "elements": [
+          {
+            "index": 0,
+            "type": "Side",
+            "scored": false,
+            "right": 0,
+            "rightPlusScreen": -6.558268571677711
+          },
+          {
+            "index": 1,
+            "type": "Side",
+            "scored": false,
+            "right": 1280,
+            "rightPlusScreen": 1273.4417314283223
+          },
+          {
+            "index": 2,
+            "type": "Side",
+            "scored": false,
+            "right": 2560,
+            "rightPlusScreen": 2553.4417314283223
+          },
+          {
+            "index": 3,
+            "type": "Side",
+            "scored": false,
+            "right": 3840,
+            "rightPlusScreen": 3833.4417314283223
+          },
+          {
+            "index": 4,
+            "type": "Side",
+            "scored": false,
+            "right": 5120,
+            "rightPlusScreen": 5113.441731428322
+          },
+          {
+            "index": 5,
+            "type": "Side",
+            "scored": false,
+            "right": 6400,
+            "rightPlusScreen": 6393.441731428322
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "type": "Floor",
+        "count": 1,
+        "elements": [
+          {
+            "index": 0,
+            "type": "HarmlessTriangle",
+            "scored": true,
+            "right": -1185.910179183442,
+            "rightPlusScreen": -1192.4684477551198
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "type": "SideFloor",
+        "count": 6,
+        "elements": [
+          {
+            "index": 0,
+            "type": "Side",
+            "scored": false,
+            "right": 0,
+            "rightPlusScreen": -6.558268571677711
+          },
+          {
+            "index": 1,
+            "type": "Side",
+            "scored": false,
+            "right": 1280,
+            "rightPlusScreen": 1273.4417314283223
+          },
+          {
+            "index": 2,
+            "type": "Side",
+            "scored": false,
+            "right": 2560,
+            "rightPlusScreen": 2553.4417314283223
+          },
+          {
+            "index": 3,
+            "type": "Side",
+            "scored": false,
+            "right": 3840,
+            "rightPlusScreen": 3833.4417314283223
+          },
+          {
+            "index": 4,
+            "type": "Side",
+            "scored": false,
+            "right": 5120,
+            "rightPlusScreen": 5113.441731428322
+          },
+          {
+            "index": 5,
+            "type": "Side",
+            "scored": false,
+            "right": 6400,
+            "rightPlusScreen": 6393.441731428322
+          }
+        ]
+      }
+    ]
+  },
+  "pageErrors": [
+    {
+      "message": "TypeError: Cannot set properties of undefined (setting 'scored')\n    at Floor.deleteElements (http://127.0.0.1:8000/sprites/floor.js:63:47)\n    at calcPhysics (http://127.0.0.1:8000/physics.js:42:19)\n    at physics (http://127.0.0.1:8000/physics.js:8:9)\n    at runFixedPhysics (http://127.0.0.1:8000/index.html:264:21)\n    at gameLoop (http://127.0.0.1:8000/index.html:243:21)",
+      "stack": "",
+      "time": 1781291077697
+    }
+  ],
+  "consoleEvents": [
+    {
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)",
+      "location": {
+        "url": "http://127.0.0.1:8000/favicon.ico"
+      },
+      "time": 1781291047511
+    }
+  ],
+  "screenshot": "/opt/grapnelninja/screenshots/TASK-006.png",
+  "notes": "Played classic mode for at least 30 seconds with repeated grapnel input, then reproduced the exact scored TypeError in the live browser by reducing the middle Floor to one offscreen unscored element. This exercises sprites/floor.js deleteElements() writing this.elements[++i].scored when ++i is out of range."
+}
