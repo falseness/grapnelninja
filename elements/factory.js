@@ -20,6 +20,7 @@ class ElementsFactory
             frame8Elements      : new Frame8ElementsFactory()       ,
             frame9Elements      : new Frame9ElementsFactory()       ,
             frame10Elements     : new Frame10ElementsFactory()      ,
+            frame11Elements     : new Frame11ElementsFactory()      ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -739,6 +740,52 @@ class Frame10ElementsFactory extends RectFactory
         [
             {x: 464.5, y: 427.5, width: 52, height: 126},
             {x: 464.5, y: 161.5, width: 52, height: 126}
+        ]
+    }
+    displayToWorld(value)
+    {
+        return value / this.frameHeight * height / scale.bad
+    }
+    createFrameRect(rect, fill, stroke)
+    {
+        const result = super.create(
+            this.displayToWorld(rect.x),
+            this.displayToWorld(rect.y),
+            this.displayToWorld(rect.width),
+            this.displayToWorld(rect.height)
+        )
+
+        result.fill = fill
+        result.stroke = stroke
+
+        return result
+    }
+    create(x, y)
+    {
+        return [
+            this.createFrameRect(this.greenRect, STYLE.colors.cube.greenFill, STYLE.colors.cube.greenStroke),
+            ...this.grayRects.map(rect =>
+                this.createFrameRect(rect, STYLE.colors.cube.grayFill, STYLE.colors.cube.grayStroke))
+        ]
+    }
+}
+class Frame11ElementsFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        this.frameHeight = 630
+        this.greenRect =
+        {
+            x: 119.5,
+            y: 288.5,
+            width: 397,
+            height: 52
+        }
+        this.grayRects =
+        [
+            {x: 464.5, y: 341.5, width: 52, height: 126},
+            {x: 464.5, y: 75.5, width: 52, height: 126}
         ]
     }
     displayToWorld(value)
