@@ -260,7 +260,6 @@ class FpsCounter
         const viewWidth = width / scale[version]
         const viewHeight = height / scale[version]
         const x = viewWidth * STYLE.ui.fpsXRatio
-        const y = viewHeight * STYLE.ui.fpsYRatio
         const fontSize = viewHeight * STYLE.ui.fpsFontRatio
         const padding = viewHeight * STYLE.ui.fpsPaddingRatio
         const text = 'FPS: ' + this.value
@@ -273,6 +272,7 @@ class FpsCounter
         const metrics = ctx.measureText(text)
         const panelWidth = metrics.width + padding * 2
         const panelHeight = fontSize + padding * 1.4
+        const y = getFpsCounterCenterY(viewWidth, viewHeight, version, fontSize, panelHeight)
         const panelX = x - padding
         const panelY = y - panelHeight / 2
 

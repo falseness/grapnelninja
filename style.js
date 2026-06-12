@@ -142,7 +142,7 @@ const STYLE = Object.freeze({
         hudClearTopRatio: 0.14,
         badCeilingBandRatio: 0.2,
         fpsXRatio: 0.03,
-        fpsYRatio: 0.125,
+        fpsYRatio: 0.42,
         fpsFontRatio: 0.09,
         fpsPaddingRatio: 0.022,
         fpsPanelLineWidth: 1.5,
@@ -637,6 +637,16 @@ function getHudMenuButtonLayout(viewWidth, viewHeight, selectedVersion, fallback
         width: size,
         height: size
     }
+}
+
+function getFpsCounterCenterY(viewWidth, viewHeight, selectedVersion, fontSize, panelHeight)
+{
+    const preferredY = viewHeight * STYLE.ui.fpsYRatio
+    const hudBottom = getHudCenterY(viewHeight, selectedVersion)
+        + getHudFontSize(viewWidth, viewHeight, selectedVersion) * 0.8
+    const minY = hudBottom + panelHeight / 2 + viewHeight * STYLE.ui.hudBadTextGapRatio
+
+    return Math.max(preferredY, minY)
 }
 
 const QUALITY = {

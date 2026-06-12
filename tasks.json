@@ -2378,7 +2378,7 @@
     "category": "functional",
     "priority": "normal",
     "dependencies": [],
-    "description": "Increase the FPS counter text size and FPS checkbox size in both versions so they visually match the size of the back to menu text. Preserve the existing FPS toggle behavior.\nImplemented: Enlarged FPS counter text and FPS checkbox sizing across main menu, pause overlay, and gameplay so they visually match the back-to-menu text while preserving toggle behavior.",
+    "description": "Increase the FPS counter text size and FPS checkbox size in both versions so they visually match the size of the back to menu text. Preserve the existing FPS toggle behavior.\nImplemented: Enlarged FPS counter text and FPS checkbox sizing across main menu, pause overlay, and gameplay so they visually match the back-to-menu text while preserving toggle behavior.\nImplemented: Repositioned the enlarged gameplay FPS counter with a HUD-safe anchor so it no longer overlaps score/record/menu HUD while preserving enlarged checkbox sizing and toggle behavior.",
     "acceptance_criteria": [
       "The FPS counter text is visually the same size as the back to menu text.",
       "The FPS checkbox is scaled up so the control visually matches the back to menu text size.",
