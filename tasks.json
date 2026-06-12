@@ -2378,7 +2378,7 @@
     "category": "functional",
     "priority": "normal",
     "dependencies": [],
-    "description": "Increase the FPS counter text size and FPS checkbox size in both versions so they visually match the size of the back to menu text. Preserve the existing FPS toggle behavior.\nImplemented: Enlarged FPS counter text and FPS checkbox sizing across main menu, pause overlay, and gameplay so they visually match the back-to-menu text while preserving toggle behavior.\nImplemented: Repositioned the enlarged gameplay FPS counter with a HUD-safe anchor so it no longer overlaps score/record/menu HUD while preserving enlarged checkbox sizing and toggle behavior.",
+    "description": "Increase the FPS counter text size and FPS checkbox size in both versions so they visually match the size of the back to menu text. Preserve the existing FPS toggle behavior.\nImplemented: Enlarged FPS counter text and FPS checkbox sizing across main menu, pause overlay, and gameplay so they visually match the back-to-menu text while preserving toggle behavior.\nVerification failed: Refreshed screenshot and runtime bounds show the enlarged gameplay FPS panel overlaps the top-left SCORE HUD area, violating the no-overlap criterion.\nImplemented: Repositioned the enlarged gameplay FPS counter with a HUD-safe anchor so it no longer overlaps score/record/menu HUD while preserving enlarged checkbox sizing and toggle behavior.\nVerified: Fresh browser, screenshot, and code verification confirmed desktop classic/bad FPS panels no longer overlap HUD controls, pause checkbox/back-to-menu sizing matches, toggles work on/off, no JS errors, and valid JSON.\nImplemented: Restored the live gameplay FPS counter to its smaller pre-task sizing while keeping the menu and pause FPS checkbox text/box matched to the back-to-menu text.",
     "acceptance_criteria": [
       "The FPS counter text is visually the same size as the back to menu text.",
       "The FPS checkbox is scaled up so the control visually matches the back to menu text size.",
@@ -2388,7 +2388,8 @@
       "The change applies anywhere the FPS counter text or checkbox appears.",
       "Gameplay, collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
       "A screenshot is saved at screenshots/TASK-091.png before marking this task to-verify.",
-      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code",
+      "I did not mean the fps counter it self actually, only menu texts. so undo changes for the fps counter itself"
     ],
     "test_steps": [
       "Step 1: Open index.html in a browser or run a local static server and open the game.",
