@@ -2372,5 +2372,35 @@
       "Step 8: Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-091",
+    "category": "functional",
+    "priority": "normal",
+    "dependencies": [],
+    "description": "Increase the FPS counter text size and FPS checkbox size in both versions so they visually match the size of the back to menu text. Preserve the existing FPS toggle behavior.\nImplemented: Enlarged FPS counter text and FPS checkbox sizing across main menu, pause overlay, and gameplay so they visually match the back-to-menu text while preserving toggle behavior.",
+    "acceptance_criteria": [
+      "The FPS counter text is visually the same size as the back to menu text.",
+      "The FPS checkbox is scaled up so the control visually matches the back to menu text size.",
+      "The FPS checkbox remains square, readable, and clickable after the size increase.",
+      "Toggling the FPS checkbox still turns the FPS counter on and off.",
+      "The FPS counter and checkbox do not overlap nearby menu text, HUD text, or controls.",
+      "The change applies anywhere the FPS counter text or checkbox appears.",
+      "Gameplay, collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-091.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+    ],
+    "test_steps": [
+      "Step 1: Open index.html in a browser or run a local static server and open the game.",
+      "Step 2: Open the menu or overlay that shows the FPS checkbox and back to menu text.",
+      "Step 3: Confirm the FPS counter text and checkbox visually match the back to menu text size.",
+      "Step 4: Toggle the checkbox on and confirm the FPS counter appears during gameplay.",
+      "Step 5: Toggle the checkbox off and confirm the FPS counter hides during gameplay.",
+      "Step 6: Capture a representative screenshot and save it as screenshots/TASK-091.png.",
+      "Step 7: Look at screenshots/TASK-091.png and confirm the FPS text and checkbox size increase was actually completed.",
+      "Step 8: Confirm the browser console has no new errors.",
+      "Step 9: Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

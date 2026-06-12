@@ -365,8 +365,8 @@ class Menu
         {
             x       : this.center.x - 0.15 * this.width,
             y       : 0.70 * this.height,
-            size    : 0.036 * this.height,
-            fontSize: 0.042 * this.height,
+            size    : 0.09 * this.height,
+            fontSize: 0.09 * this.height,
             fill    : STYLE.colors.ui.text,
             stroke  : STYLE.colors.ui.primary,
             label   : 'fps counter',
@@ -391,8 +391,8 @@ class Menu
         {
             x       : this.center.x - 0.15 * this.width,
             y       : 0.68 * this.height,
-            size    : 0.036 * this.height,
-            fontSize: 0.042 * this.height,
+            size    : 0.09 * this.height,
+            fontSize: 0.09 * this.height,
             fill    : STYLE.colors.ui.text,
             stroke  : STYLE.colors.ui.primary,
             label   : 'fps counter',
@@ -569,8 +569,9 @@ class Menu
         )
 
         const rowY = panel.y + panel.height * 0.72
-        const fpsFontSize = Math.min(this.height * 0.034, panel.width * 0.07)
-        const boxSize = Math.min(panel.height * 0.068, this.height * 0.05)
+        const backToMenuFontSize = parseFloat(this.backToMenu.text.fontSize)
+        const fpsFontSize = Math.min(backToMenuFontSize, panel.width * 0.09)
+        const boxSize = fpsFontSize
 
         ctx.save()
         ctx.font = getArcadeFont(fpsFontSize)

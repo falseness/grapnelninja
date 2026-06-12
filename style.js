@@ -143,8 +143,8 @@ const STYLE = Object.freeze({
         badCeilingBandRatio: 0.2,
         fpsXRatio: 0.03,
         fpsYRatio: 0.125,
-        fpsFontRatio: 0.026,
-        fpsPaddingRatio: 0.012,
+        fpsFontRatio: 0.09,
+        fpsPaddingRatio: 0.022,
         fpsPanelLineWidth: 1.5,
         fpsUpdateMs: 250
     }),
