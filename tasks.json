@@ -1,0 +1,117 @@
+[
+  {
+    "id": "TASK-001",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Turn off all existing generated gameplay elements in the bad version so bad mode only has the ceiling and floor as game objects. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version startup now creates only the bottom ground SideFloor and top ceiling SideFloor, with middle-lane generated floors removed.",
+    "acceptance_criteria": [
+      "Bad version generation no longer creates horizontalTopRect, verticalGroundRect, jumpingCubeWithCeiling, jumpingCube, triangle, or other existing middle-lane generated elements.",
+      "Bad version still creates the top ceiling and bottom floor game objects.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Start the bad version with existing generated elements disabled.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Verify visually that only the ceiling and floor are present as game objects.",
+      "Step 4: Confirm the existing graphics style is unchanged."
+    ],
+    "status": "to-verify"
+  },
+  {
+    "id": "TASK-002",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 2.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 2 element: one vertical green rectangle between the ceiling and floor.",
+      "The implementation reuses existing Rect or existing rectangle factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 2 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 2.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-003",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 3.svg by reusing existing triangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 3 element: one centered red hazard triangle between the ceiling and floor.",
+      "The implementation reuses existing Triangle or existing triangle factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 3 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 3.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-004",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 5.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Bad version can generate the Frame 5 element: one right vertical green rectangle, one center vertical green rectangle, and one horizontal green rectangle segment.",
+      "The implementation reuses existing Rect or existing rectangle factory behavior instead of adding new graphics code.",
+      "No graphics, drawing styles, colors, or sprite rendering are changed.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily make the Frame 5 element generation chance 100% in bad version.",
+      "Step 2: Open the game and capture a screenshot.",
+      "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 5.svg.",
+      "Step 4: Revert the temporary 100% generation setting after verification."
+    ],
+    "status": "pending"
+  },
+  {
+    "id": "TASK-005",
+    "category": "test",
+    "priority": "normal",
+    "description": "Verify the new bad-version generation elements visually against the required SVG frames. Keep this ticket sized to 15 minutes or less.",
+    "acceptance_criteria": [
+      "Each new bad-version element is individually tested with its generation chance temporarily set to 100%.",
+      "A screenshot is captured for each new element and compared visually against its required SVG frame.",
+      "Verification is based on the screenshot result, not only on code inspection.",
+      "check the code, BUT DONT TRUST IT",
+      "temporary make generation of new element 100% chance",
+      "open the game, make screenshot",
+      "compare the screenshot with required frame svg",
+      "dont trust the code, look at the screenshot instead"
+    ],
+    "test_steps": [
+      "Step 1: Temporarily force the Frame 2 generation element to 100%, open the game, screenshot it, and compare it with /opt/grapnelninja/screenshots/Frame 2.svg.",
+      "Step 2: Temporarily force the Frame 3 generation element to 100%, open the game, screenshot it, and compare it with /opt/grapnelninja/screenshots/Frame 3.svg.",
+      "Step 3: Temporarily force the Frame 5 generation element to 100%, open the game, screenshot it, and compare it with /opt/grapnelninja/screenshots/Frame 5.svg.",
+      "Step 4: Restore normal generation chances after visual verification."
+    ],
+    "status": "pending"
+  }
+]
