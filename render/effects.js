@@ -4,6 +4,7 @@ class BackgroundRenderer
     {
         this.ctx = context
         this.canvas = targetCanvas
+        this.randomFlashCache = new WeakMap()
     }
     draw()
     {
@@ -280,12 +281,13 @@ class BackgroundRenderer
     }
     drawDiagonalFlashes(width, height, geometry, time, shift)
     {
-        const flashes = geometry.flashes || []
+        const flashTemplates = geometry.flashes || []
         shift = shift || {x: 0, y: 0}
 
-        if (!flashes.length)
+        if (!flashTemplates.length)
             return
 
+        const flashes = this.getRandomizedFlashes(flashTemplates, geometry)
         const colors = STYLE.colors.background
         const diagonal = Math.sqrt(width * width + height * height)
         const animationOffset = QUALITY.backgroundMotion && !this.shouldFreezeBadVersionBackgroundMotion()
@@ -331,6 +333,28 @@ class BackgroundRenderer
             : ((geometry.washLeftXRatio || 0) + (geometry.washRightXRatio || 1)) / 2
 
         return flash.x < split ? 'blue' : 'magenta'
+    }
+    getRandomizedFlashes(flashTemplates, geometry)
+    {
+        const refreshMs = geometry.flashRefreshMs || STYLE.timing.backgroundStreakMs
+        const bucket = Math.floor(performance.now() / refreshMs)
+        const cached = this.randomFlashCache.get(flashTemplates)
+
+        if (cached && cached.bucket == bucket)
+            return cached.flashes
+
+        const flashes = flashTemplates.map(flash => Object.assign({}, flash, {
+            x: Math.random(),
+            y: Math.random()
+        }))
+
+        this.randomFlashCache.set(flashTemplates, {bucket, flashes})
+
+        return flashes
+    }
+    resetRandomFlashes()
+    {
+        this.randomFlashCache = new WeakMap()
     }
     getFlashSegments(flash, startX, startY, angle, length)
     {

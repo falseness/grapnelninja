@@ -2429,5 +2429,34 @@
       "Step 8: Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-093",
+    "category": "functional",
+    "priority": "normal",
+    "dependencies": [],
+    "description": "Update background flashes in both versions so their positions are chosen randomly with a uniform distribution across the background. Keep the existing rule that flash color depends on whether the flash is on the left or right side of the background. Implemented: randomized cached flash positions across the full background with version-start resets and side-based palettes preserved.",
+    "acceptance_criteria": [
+      "Background flash positions are chosen randomly across the full visible background area rather than from fixed or clustered positions.",
+      "The random background flash placement is uniformly distributed enough that flashes can appear throughout the left, center, right, top, and bottom areas over repeated runs.",
+      "Flash color still depends on whether the flash is positioned on the left or right side of the background.",
+      "Flashes remain behind gameplay objects and do not obscure the player, grapnel, obstacles, HUD text, or menu controls.",
+      "The change applies to both classic and bad versions.",
+      "Collision, movement, scoring, spawning, restart behavior, HUD, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-093.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+    ],
+    "test_steps": [
+      "Step 1: Open index.html in a browser or run a local static server and open the game.",
+      "Step 2: Start the classic version several times or wait through several background flash refreshes.",
+      "Step 3: Confirm flashes appear at varied positions across the background, not only at fixed or clustered locations.",
+      "Step 4: Confirm flashes on the left and right sides still use the expected side-dependent colors.",
+      "Step 5: Start the bad version and repeat the same flash position and color inspection.",
+      "Step 6: Capture representative screenshots and save at least one as screenshots/TASK-093.png.",
+      "Step 7: Look at screenshots/TASK-093.png and confirm the random flash placement and side-based color rule were actually completed.",
+      "Step 8: Confirm the browser console has no new errors.",
+      "Step 9: Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
