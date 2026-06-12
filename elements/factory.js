@@ -15,6 +15,7 @@ class ElementsFactory
             frame3Triangle      : new Frame3TriangleFactory()       ,
             frame4Elements      : new Frame4ElementsFactory()       ,
             frame5Rects         : new Frame5RectFactory()           ,
+            frame6Rects         : new Frame6RectFactory()           ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -298,6 +299,36 @@ class Frame5RectFactory extends RectFactory
             this.createGreenRect(this.verticalRects[1]),
             this.createHorizontalSegment()
         ]
+    }
+}
+class Frame6RectFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        this.frameHeight = 630
+        this.rects =
+        [
+            {x: 359.5, y: 76.5, width: 52, height: 106},
+            {x: 359.5, y: 381.5, width: 52, height: 172}
+        ]
+    }
+    displayToWorld(value)
+    {
+        return value / this.frameHeight * height / scale.bad
+    }
+    createFrameRect(rect)
+    {
+        return super.create(
+            this.displayToWorld(rect.x),
+            this.displayToWorld(rect.y),
+            this.displayToWorld(rect.width),
+            this.displayToWorld(rect.height)
+        )
+    }
+    create(x, y)
+    {
+        return this.rects.map(rect => this.createFrameRect(rect))
     }
 }
 class Frame4ElementsFactory extends RectFactory

@@ -1,0 +1,108 @@
+{
+  "report": {
+    "version": "bad",
+    "middleElementCount": 2,
+    "frameRects": [
+      {
+        "className": "Rect",
+        "x": 903.8857142857142,
+        "y": 192.34285714285716,
+        "width": 130.74285714285716,
+        "height": 266.51428571428573,
+        "fill": "#171a1f",
+        "stroke": "#b9c2c9",
+        "display": {
+          "x": 359.5,
+          "y": 76.5,
+          "width": 52.00000000000001,
+          "height": 106.00000000000001
+        }
+      },
+      {
+        "className": "Rect",
+        "x": 903.8857142857142,
+        "y": 959.1999999999999,
+        "width": 130.74285714285716,
+        "height": 432.45714285714286,
+        "fill": "#171a1f",
+        "stroke": "#b9c2c9",
+        "display": {
+          "x": 359.5,
+          "y": 381.5,
+          "width": 52.00000000000001,
+          "height": 171.99999999999997
+        }
+      }
+    ],
+    "normalSourceChances": [
+      {
+        "type": "frame2Rect",
+        "chance": 20
+      },
+      {
+        "type": "frame3Triangle",
+        "chance": 20
+      },
+      {
+        "type": "frame4Elements",
+        "chance": 20
+      },
+      {
+        "type": "frame5Rects",
+        "chance": 20
+      },
+      {
+        "type": "frame6Rects",
+        "chance": 20
+      }
+    ]
+  },
+  "expected": [
+    {
+      "x": 359.5,
+      "y": 76.5,
+      "width": 52,
+      "height": 106
+    },
+    {
+      "x": 359.5,
+      "y": 381.5,
+      "width": 52,
+      "height": 172
+    }
+  ],
+  "comparisons": [
+    {
+      "index": 0,
+      "className": "Rect",
+      "deltas": {
+        "x": 0,
+        "y": 0,
+        "width": 7.105427357601002e-15,
+        "height": 1.4210854715202004e-14
+      },
+      "fill": "#171a1f",
+      "stroke": "#b9c2c9"
+    },
+    {
+      "index": 1,
+      "className": "Rect",
+      "deltas": {
+        "x": 0,
+        "y": 0,
+        "width": 7.105427357601002e-15,
+        "height": 2.842170943040401e-14
+      },
+      "fill": "#171a1f",
+      "stroke": "#b9c2c9"
+    }
+  ],
+  "messages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ],
+  "jsErrors": [],
+  "passed": true
+}
