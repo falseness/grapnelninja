@@ -1,0 +1,121 @@
+{
+  "version": "bad",
+  "floorElementCount": 3,
+  "floorElementTypes": [
+    "Trampoline",
+    "Rect",
+    "Triangle"
+  ],
+  "creations": [
+    {
+      "type": "frame2Rect",
+      "chance": 25
+    },
+    {
+      "type": "frame3Triangle",
+      "chance": 25
+    },
+    {
+      "type": "frame4Elements",
+      "chance": 25
+    },
+    {
+      "type": "frame5Rects",
+      "chance": 25
+    }
+  ],
+  "elements": [
+    {
+      "className": "Trampoline",
+      "fill": "#071c12",
+      "stroke": "#64e379",
+      "x": 0,
+      "y": 0,
+      "width": null,
+      "height": null,
+      "side": null,
+      "points": [
+        {
+          "x": 252,
+          "y": 331
+        },
+        {
+          "x": 252,
+          "y": 278
+        },
+        {
+          "x": 519,
+          "y": 278
+        },
+        {
+          "x": 519,
+          "y": 331
+        }
+      ]
+    },
+    {
+      "className": "Rect",
+      "fill": "#061234",
+      "stroke": "#1f7aff",
+      "x": 368,
+      "y": 165,
+      "width": 51.000000000000014,
+      "height": 52.00000000000001,
+      "side": null,
+      "points": [
+        {
+          "x": 368,
+          "y": 165
+        },
+        {
+          "x": 419.00000000000006,
+          "y": 165
+        },
+        {
+          "x": 419.00000000000006,
+          "y": 217
+        },
+        {
+          "x": 368,
+          "y": 217
+        }
+      ]
+    },
+    {
+      "className": "Triangle",
+      "fill": "#21070f",
+      "stroke": "#ff3d71",
+      "x": 386,
+      "y": 426,
+      "width": null,
+      "height": 114,
+      "side": 103.92399999999999,
+      "points": [
+        {
+          "x": 334.03800000000007,
+          "y": 388
+        },
+        {
+          "x": 437.962,
+          "y": 388
+        },
+        {
+          "x": 386,
+          "y": 502.00000000000006
+        }
+      ]
+    }
+  ],
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)",
+      "location": {
+        "url": "http://127.0.0.1:8000/favicon.ico",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    }
+  ],
+  "jsErrors": []
+}

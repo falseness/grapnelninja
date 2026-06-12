@@ -13,6 +13,7 @@ class ElementsFactory
             side                : new SideFactory()                 ,
             frame2Rect          : new Frame2RectFactory()           ,
             frame3Triangle      : new Frame3TriangleFactory()       ,
+            frame4Elements      : new Frame4ElementsFactory()       ,
             frame5Rects         : new Frame5RectFactory()           ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
@@ -296,6 +297,117 @@ class Frame5RectFactory extends RectFactory
             this.createGreenRect(this.verticalRects[0]),
             this.createGreenRect(this.verticalRects[1]),
             this.createHorizontalSegment()
+        ]
+    }
+}
+class Frame4ElementsFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        this.frameHeight = 630
+        this.greenSegment =
+        {
+            x: 252,
+            y: 331,
+            width: 53,
+            height: 267,
+            rotation: -90
+        }
+        this.blueSquare =
+        {
+            x: 368,
+            y: 165,
+            width: 51,
+            height: 52
+        }
+        this.triangle =
+        {
+            centerX: 386,
+            topY: 388,
+            bottomY: 502,
+            side: 437.962 - 334.038
+        }
+    }
+    displayToWorld(value)
+    {
+        return value / this.frameHeight * height / scale.bad
+    }
+    createGreenSegment()
+    {
+        const rect = this.greenSegment
+        const angle = rect.rotation * Math.PI / 180
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
+        const displayPoints =
+        [
+            {x: 0, y: 0},
+            {x: rect.width, y: 0},
+            {x: rect.width, y: rect.height},
+            {x: 0, y: rect.height}
+        ]
+
+        const points = displayPoints.map(point =>
+        {
+            return {
+                x: this.displayToWorld(rect.x + point.x * cos - point.y * sin),
+                y: this.displayToWorld(rect.y + point.x * sin + point.y * cos)
+            }
+        })
+
+        return new Trampoline(
+        {
+            x       : 0,
+            y       : 0,
+            points  : points,
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
+        })
+    }
+    createBlueSquare()
+    {
+        const rect = this.blueSquare
+        const result = super.create(
+            this.displayToWorld(rect.x),
+            this.displayToWorld(rect.y),
+            this.displayToWorld(rect.width),
+            this.displayToWorld(rect.height)
+        )
+
+        result.fill = STYLE.colors.cube.blueFill
+        result.stroke = STYLE.colors.cube.blueStroke
+
+        return result
+    }
+    createTriangle()
+    {
+        const triangle = this.triangle
+        const worldHeight = this.displayToWorld(triangle.bottomY - triangle.topY)
+        const model =
+        {
+            x       : this.displayToWorld(triangle.centerX),
+            y       : this.displayToWorld(triangle.topY) + worldHeight / 3,
+            radius  : worldHeight * 2 / 3,
+            yMin    : 0.2 * height,
+            yMax    : 2 * height,
+            fill    : STYLE.colors.hazard.fill,
+            stroke  : STYLE.colors.hazard.stroke
+        }
+        const result = new Triangle(model)
+
+        result.side = this.displayToWorld(triangle.side)
+        result.height = worldHeight
+        result.track = (trackEnabled)?(new MultipointTrackLine(result.side, result.stroke, STYLE.timing.triangleTrailPoints)):(new Empty())
+        result.track.addPos(result.getPoints(), true)
+
+        return result
+    }
+    create(x, y)
+    {
+        return [
+            this.createGreenSegment(),
+            this.createBlueSquare(),
+            this.createTriangle()
         ]
     }
 }

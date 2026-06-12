@@ -213,7 +213,7 @@
     "id": "TASK-011",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 4.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 4.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 4's green horizontal segment, blue square, and red triangle using existing Trampoline, Rect, and Triangle rendering paths.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 4 element from /opt/grapnelninja/screenshots/Frame 4.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -230,7 +230,7 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 4.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-012",
