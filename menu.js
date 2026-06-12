@@ -387,32 +387,20 @@ class Menu
             text    : 'time spent in game: ' + getTimeInGame() + ' minutes'
         })
 
-        this.fpsCounterText = new Text(
+        this.pauseFpsCounterCheckbox = new Checkbox(
         {
-            x       : this.center.x - 0.2 * this.width,
+            x       : this.center.x - 0.15 * this.width,
             y       : 0.68 * this.height,
-            fontSize: 0.054 * this.height,
+            size    : 0.036 * this.height,
+            fontSize: 0.042 * this.height,
             fill    : STYLE.colors.ui.text,
-            text    : 'fps counter',
-            alignX  : 'start'
-        })
-        this.fpsCounterButton = new Button(
-        {
-            x       : this.center.x + 0.19 * this.width,
-            y       : 0.68 * this.height,
-            width   : 0.17 * this.width,
-            height  : 0.078 * this.height,
             stroke  : STYLE.colors.ui.primary,
+            label   : 'fps counter',
             clickable: false
-        },
-        {
-            text: 'off',
-            fill: STYLE.colors.ui.buttonText
         },
         function()
         {
             fpsCounter.toggle()
-            menu.updateFpsCounterButtonText()
             menu.drawPauseScreen()
         })
         
@@ -582,29 +570,20 @@ class Menu
 
         const rowY = panel.y + panel.height * 0.72
         const fpsFontSize = Math.min(this.height * 0.034, panel.width * 0.07)
-        const gap = Math.max(10, panel.width * 0.05)
-        const toggleWidth = Math.min(panel.width * 0.20, this.width * 0.17)
-        const toggleHeight = Math.min(this.height * 0.078, panel.height * 0.105)
+        const boxSize = Math.min(panel.height * 0.068, this.height * 0.05)
 
         ctx.save()
         ctx.font = getArcadeFont(fpsFontSize)
-        const labelWidth = ctx.measureText(this.fpsCounterText.text).width
+        const labelWidth = ctx.measureText(this.pauseFpsCounterCheckbox.label).width
         ctx.restore()
 
-        const rowWidth = labelWidth + gap + toggleWidth
+        const rowWidth = boxSize * 1.55 + labelWidth
         const rowX = centerX - rowWidth / 2
 
-        this.fpsCounterText.x = rowX
-        this.fpsCounterText.y = rowY
-        this.fpsCounterText.fontSize = getArcadeFont(fpsFontSize)
-
-        this.layoutPauseButton(
-            this.fpsCounterButton,
-            rowX + labelWidth + gap + toggleWidth / 2,
-            rowY,
-            toggleWidth,
-            toggleHeight
-        )
+        this.pauseFpsCounterCheckbox.x = rowX
+        this.pauseFpsCounterCheckbox.y = rowY
+        this.pauseFpsCounterCheckbox.size = boxSize
+        this.pauseFpsCounterCheckbox.fontSize = getArcadeFont(fpsFontSize)
     }
     click(coord)
     {
@@ -612,7 +591,7 @@ class Menu
                 this.badVersionButton.isClickOnButton(coord)        ||
                 this.resume.isClickOnButton(coord)                  ||
                 this.mainFpsCounterCheckbox.isClickOnButton(coord)  ||
-                this.fpsCounterButton.isClickOnButton(coord)        ||
+                this.pauseFpsCounterCheckbox.isClickOnButton(coord) ||
                 this.backToMenu.isClickOnButton(coord)
     }
     clickToPause(coord)
@@ -631,13 +610,9 @@ class Menu
     {
         this.gamePaused = isPaused
         
-        this.fpsCounterButton.clickable         = isPaused
+        this.pauseFpsCounterCheckbox.clickable = isPaused
         this.resume.clickable                   = isPaused
         this.backToMenu.clickable               = isPaused
-    }
-    updateFpsCounterButtonText()
-    {
-        this.fpsCounterButton.text.text = fpsCounter.enabled ? 'on' : 'off'
     }
     startPause()
     {
@@ -668,9 +643,7 @@ class Menu
         
         this.drawPauseTitle(panel)
         
-        this.fpsCounterText.draw()
-        this.updateFpsCounterButtonText()
-        this.fpsCounterButton.draw()
+        this.pauseFpsCounterCheckbox.draw()
         
         this.resume.draw()
         this.backToMenu.draw()

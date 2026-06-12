@@ -2283,5 +2283,41 @@
       "Do not mark verified unless all five phone screenshots visibly satisfy the title-fit and control-layout checks."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-088",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Change the FPS counter button or on/off control into a checkbox-style control. The checkbox must be square, not a rectangle, and must preserve the existing FPS counter toggle behavior.\nVerification detail: The FPS counter control must be verified from screenshots and click behavior. A square checkbox means the visible box width and height match; a wide labeled button or rectangular toggle does not satisfy this task.\nImplemented: Replaced the pause-menu FPS on/off button with the shared square checkbox control while preserving main-menu checkbox behavior and FPS toggling.",
+    "acceptance_criteria": [
+      "The FPS counter control is displayed as a checkbox instead of an on/off text button.",
+      "The checkbox box is square, with equal visible width and height, and does not appear as a wide rectangle.",
+      "Toggling the checkbox turns the existing FPS counter on and off.",
+      "The FPS counter setting behavior and persistence remain unchanged.",
+      "The checkbox remains readable, clickable, and does not overlap nearby menu text or controls.",
+      "The change applies wherever the FPS counter control appears.",
+      "Visual effects controls are not reintroduced or changed by this task.",
+      "A screenshot is saved at screenshots/TASK-088.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE",
+      "The visible FPS checkbox box is square in screenshots; its width and height differ only by normal stroke/pixel rounding.",
+      "The FPS label text is adjacent to the square checkbox and does not appear inside a wide rectangular button.",
+      "The verifier must fail the task if any FPS control still appears as an ON/OFF text button, a wide rectangle, or a hidden click area detached from the visible checkbox."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the menu containing the FPS counter control.",
+      "Confirm the FPS counter control appears as a square checkbox, not an on/off text button.",
+      "Toggle the checkbox on and start gameplay.",
+      "Confirm the FPS counter is visible during gameplay.",
+      "Toggle the checkbox off and confirm the FPS counter hides during gameplay.",
+      "Open any other menu where the FPS counter control appears and confirm it is also a square checkbox.",
+      "Capture a representative screenshot and save it as screenshots/TASK-088.png.",
+      "Look at screenshots/TASK-088.png and confirm the task was actually completed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON.",
+      "Inspect the saved screenshot and compare the visible checkbox width and height; confirm it reads as a square checkbox, not a rectangular toggle or text button.",
+      "Click the visible square checkbox itself, not a nearby label-only area, and confirm the FPS counter toggles on and off.",
+      "Repeat the visual square-checkbox check anywhere the FPS control appears, including main menu and pause menu if both expose the control."
+    ],
+    "status": "to-verify"
   }
 ]
