@@ -124,7 +124,10 @@
             function reStart()
             {
                 if (visualEffects && ninja && screen)
+                {
                     visualEffects.screenEffects.triggerDeath(ninja.x + screen.x, ninja.y + screen.y)
+                    visualEffects.background.resetRandomFlashes()
+                }
                 chooseVersion()
             }
             function startClassicVersion()

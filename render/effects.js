@@ -337,11 +337,9 @@ class BackgroundRenderer
     }
     getRandomizedFlashes(flashTemplates, geometry)
     {
-        const refreshMs = geometry.flashRefreshMs || STYLE.timing.backgroundStreakMs
-        const bucket = Math.floor(performance.now() / refreshMs)
         const cached = this.randomFlashCache.get(flashTemplates)
 
-        if (cached && cached.bucket == bucket)
+        if (cached)
             return cached.flashes
 
         const flashes = flashTemplates.map(flash => Object.assign({}, flash, {
@@ -349,7 +347,7 @@ class BackgroundRenderer
             y: Math.random()
         }))
 
-        this.randomFlashCache.set(flashTemplates, {bucket, flashes})
+        this.randomFlashCache.set(flashTemplates, {flashes})
 
         return flashes
     }

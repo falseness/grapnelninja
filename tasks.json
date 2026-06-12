@@ -2437,7 +2437,7 @@
     "category": "functional",
     "priority": "normal",
     "dependencies": [],
-    "description": "Update background flashes in both versions so their positions are chosen randomly with a uniform distribution across the background. Keep the existing rule that flash color depends on whether the flash is on the left or right side of the background. Implemented: randomized cached flash positions across the full background with version-start resets and side-based palettes preserved.",
+    "description": "Update background flashes in both versions so their positions are chosen randomly with a uniform distribution across the background. Keep the existing rule that flash color depends on whether the flash is on the left or right side of the background. Implemented: randomized cached flash positions across the full background with version-start resets and side-based palettes preserved.\nImplemented: Kept randomized flash positions stable during active play and reset them only on version start or death/restart.",
     "acceptance_criteria": [
       "Background flash positions are chosen randomly across the full visible background area rather than from fixed or clustered positions.",
       "The random background flash placement is uniformly distributed enough that flashes can appear throughout the left, center, right, top, and bottom areas over repeated runs.",
