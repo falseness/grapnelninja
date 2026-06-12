@@ -2319,5 +2319,30 @@
       "Repeat the visual square-checkbox check anywhere the FPS control appears, including main menu and pause menu if both expose the control."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-089",
+    "category": "functional",
+    "priority": "normal",
+    "description": "In the classic version, make the background move 100 times slower than the current classic background motion. Do not slow gameplay objects or other game systems.\nImplemented: Added a classic-only 0.01 background motion time scale applied to shared background animation and parallax while leaving bad-version timing and gameplay systems unchanged.",
+    "acceptance_criteria": [
+      "In the classic version, background motion is 100 times slower than the current classic background motion.",
+      "Player movement, gameplay scrolling, obstacle movement, physics, collision, scoring, spawning, restart behavior, HUD, menus, and version selection are not slowed by this change.",
+      "The bad version background motion is not intentionally changed by this task.",
+      "The slowed classic background remains visible and does not appear broken or frozen unless the 100x slowdown makes movement nearly imperceptible over a short interval.",
+      "A screenshot is saved at screenshots/TASK-089.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and observe the background motion over time.",
+      "Confirm the classic background moves 100 times slower than before while gameplay remains normal speed.",
+      "Start the bad version and confirm its background motion was not intentionally changed by this task.",
+      "Capture a representative screenshot and save it as screenshots/TASK-089.png.",
+      "Look at screenshots/TASK-089.png and confirm the task was actually completed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

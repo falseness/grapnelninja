@@ -73,7 +73,14 @@ class BackgroundRenderer
         if (!QUALITY.backgroundMotion)
             return 0
 
-        return performance.now()
+        return performance.now() * this.getVersionBackgroundTimeScale()
+    }
+    getVersionBackgroundTimeScale()
+    {
+        if (typeof version != 'undefined' && version == 'classic')
+            return STYLE.backgroundGeometry.classicMotionTimeScale
+
+        return 1
     }
     drawGeometry(width, height)
     {
@@ -505,8 +512,9 @@ class BackgroundRenderer
             return {x: 0, y: 0}
 
         const ratio = geometry.parallaxShiftRatio
-        const x = Math.sin(performance.now() / 3100) * width * ratio
-        const y = Math.cos(performance.now() / 3700) * height * ratio
+        const time = performance.now() * this.getVersionBackgroundTimeScale()
+        const x = Math.sin(time / 3100) * width * ratio
+        const y = Math.cos(time / 3700) * height * ratio
 
         return {x, y}
     }
@@ -516,8 +524,9 @@ class BackgroundRenderer
             return {x: 0, y: 0}
 
         const canvasScale = scale[version] || 1
-        const ratioX = geometry.cameraParallaxXRatio || 0
-        const ratioY = geometry.cameraParallaxYRatio || 0
+        const motionScale = this.getVersionBackgroundTimeScale()
+        const ratioX = (geometry.cameraParallaxXRatio || 0) * motionScale
+        const ratioY = (geometry.cameraParallaxYRatio || 0) * motionScale
 
         return {
             x: screen.x * canvasScale * ratioX,

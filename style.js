@@ -305,6 +305,7 @@ const STYLE = Object.freeze({
         streakSpacingRatio: 0.14,
         streakLengthRatio: 0.28,
         streakLineWidth: 1.5,
+        classicMotionTimeScale: 0.01,
         badVersion: Object.freeze({
             hexagonCount: 2,
             hexagonRadiusRatio: 0.18,
