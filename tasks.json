@@ -2246,5 +2246,38 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-087",
+    "category": "functional",
+    "priority": "critical",
+    "description": "Increase the pause menu window size so the text 'grapnel ninja' fits inside the window without clipping or overflow. Verify the result with five common portrait phone screenshots.\nVerification detail: The pause window size must be judged from the five saved phone screenshots. The title text must fit inside the visible pause window with padding on both left and right sides; no part of the glyph glow or stroke may be clipped by the window edge.\nImplemented: Enlarged the pause panel, fitted the pause title inside it with visible padding, and relaid out pause controls so five portrait screenshots show no clipping or overlap.",
+    "acceptance_criteria": [
+      "The pause menu window is large enough for the text 'grapnel ninja' to fit inside without clipping or overflow.",
+      "The pause menu text, buttons, and controls remain readable and do not overlap each other.",
+      "The pause menu remains centered and usable after the window size increase.",
+      "Five screenshots are saved for this task using common portrait phone sizes and named screenshots/TASK-087-1.png through screenshots/TASK-087-5.png.",
+      "Each of the five screenshots is inspected to confirm 'grapnel ninja' fits inside the pause menu window.",
+      "Pause menu click or tap behavior remains aligned with the visible controls.",
+      "Gameplay, collision, movement, scoring, spawning, restart behavior, HUD, and version selection remain unchanged.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE",
+      "In every required screenshot, the full rendered 'grapnel ninja' title, including glow/stroke, is inside the pause menu window with visible horizontal padding.",
+      "The verifier must fail the task if the title appears to touch, cross, or be cropped by the pause window border on any phone size.",
+      "Verification must be based on the five saved screenshots, not only on menu width constants or code inspection."
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Use five common portrait phone resolutions, such as small iPhone, standard iPhone, large iPhone, Pixel, and narrow Android.",
+      "Start a game at each resolution and open the pause menu.",
+      "Capture screenshots/TASK-087-1.png through screenshots/TASK-087-5.png.",
+      "Look at all five screenshots and confirm 'grapnel ninja' fits inside the pause menu window without clipping or overflow.",
+      "Confirm pause menu controls remain readable, non-overlapping, and clickable at each resolution.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON.",
+      "For each of the five screenshots, inspect the left and right edges of the 'grapnel ninja' title and confirm the glyphs and glow fit inside the pause window border.",
+      "Check the top title, buttons, and FPS/control rows as separate visible regions and fail if any text or control overlaps another row or extends outside the pause window.",
+      "Do not mark verified unless all five phone screenshots visibly satisfy the title-fit and control-layout checks."
+    ],
+    "status": "to-verify"
   }
 ]

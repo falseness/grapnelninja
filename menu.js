@@ -508,6 +508,104 @@ class Menu
             cancelAnimationFrame(game)
         })
     }
+    getPausePanel()
+    {
+        const panelWidth = Math.min(this.width * 0.84, this.width - 24)
+        const panelHeight = Math.min(this.height * 0.76, this.height - 28)
+
+        return {
+            x: (this.width - panelWidth) / 2,
+            y: (this.height - panelHeight) / 2,
+            width: panelWidth,
+            height: panelHeight
+        }
+    }
+    getPauseTitleFontSize(panel)
+    {
+        const text = 'Grapnel ninja'
+        const maxWidth = Math.max(1, panel.width - Math.max(24, this.width * 0.12))
+        const preferredSize = Math.min(this.width * 0.075, panel.height * 0.14)
+
+        ctx.save()
+        ctx.font = getArcadeFont(preferredSize)
+        const measuredWidth = ctx.measureText(text).width
+        ctx.restore()
+
+        if (measuredWidth <= maxWidth)
+            return preferredSize
+
+        return Math.max(STYLE.ui.buttonMinFontSize, preferredSize * maxWidth / measuredWidth)
+    }
+    drawPauseTitle(panel)
+    {
+        const pauseTitle = new Text(
+        {
+            fill    : STYLE.colors.ui.title,
+            fontSize: this.getPauseTitleFontSize(panel),
+            text    : 'Grapnel ninja',
+            x       : this.center.x,
+            y       : panel.y + panel.height * 0.14
+        })
+
+        pauseTitle.draw()
+    }
+    layoutPauseButton(button, x, y, width, height)
+    {
+        button.background.x = x - width / 2
+        button.background.y = y - height / 2
+        button.background.width = width
+        button.background.height = height
+        button.text.x = x
+        button.text.y = y
+        button.text.fontSize = getArcadeFont(button.getFittedTextSize(button.text.text, height))
+    }
+    layoutPauseControls(panel)
+    {
+        const buttonWidth = Math.min(panel.width * 0.48, this.width * 0.42)
+        const buttonHeight = Math.min(this.height * 0.1, panel.height * 0.13)
+        const centerX = panel.x + panel.width / 2
+
+        this.layoutPauseButton(
+            this.resume,
+            centerX,
+            panel.y + panel.height * 0.30,
+            buttonWidth,
+            buttonHeight
+        )
+        this.layoutPauseButton(
+            this.backToMenu,
+            centerX,
+            panel.y + panel.height * 0.52,
+            buttonWidth,
+            buttonHeight
+        )
+
+        const rowY = panel.y + panel.height * 0.72
+        const fpsFontSize = Math.min(this.height * 0.034, panel.width * 0.07)
+        const gap = Math.max(10, panel.width * 0.05)
+        const toggleWidth = Math.min(panel.width * 0.20, this.width * 0.17)
+        const toggleHeight = Math.min(this.height * 0.078, panel.height * 0.105)
+
+        ctx.save()
+        ctx.font = getArcadeFont(fpsFontSize)
+        const labelWidth = ctx.measureText(this.fpsCounterText.text).width
+        ctx.restore()
+
+        const rowWidth = labelWidth + gap + toggleWidth
+        const rowX = centerX - rowWidth / 2
+
+        this.fpsCounterText.x = rowX
+        this.fpsCounterText.y = rowY
+        this.fpsCounterText.fontSize = getArcadeFont(fpsFontSize)
+
+        this.layoutPauseButton(
+            this.fpsCounterButton,
+            rowX + labelWidth + gap + toggleWidth / 2,
+            rowY,
+            toggleWidth,
+            toggleHeight
+        )
+    }
     click(coord)
     {
         return  this.classicVersionButton.isClickOnButton(coord)    ||
@@ -552,6 +650,9 @@ class Menu
     }
     drawPauseScreen()
     {
+        const panel = this.getPausePanel()
+        this.layoutPauseControls(panel)
+
         ctx.fillStyle = STYLE.colors.ui.pauseOverlay
         ctx.fillRect(0, 0, this.width, this.height)
         
@@ -561,11 +662,11 @@ class Menu
         ctx.lineWidth = STYLE.ui.pausePanelLineWidth
         ctx.shadowColor = STYLE.colors.ui.pausePanelStroke
         ctx.shadowBlur = STYLE.ui.buttonShadowBlur
-        ctx.fillRect(this.width * 0.28, this.height * 0.1, this.width * 0.44, this.height * 0.7)
-        ctx.strokeRect(this.width * 0.28, this.height * 0.1, this.width * 0.44, this.height * 0.7)
+        ctx.fillRect(panel.x, panel.y, panel.width, panel.height)
+        ctx.strokeRect(panel.x, panel.y, panel.width, panel.height)
         ctx.restore()
         
-        this.mainText.draw()
+        this.drawPauseTitle(panel)
         
         this.fpsCounterText.draw()
         this.updateFpsCounterButtonText()
