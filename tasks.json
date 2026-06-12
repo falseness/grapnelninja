@@ -2585,5 +2585,32 @@
       "Step 9: Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-098",
+    "category": "functional",
+    "priority": "normal",
+    "dependencies": [],
+    "description": "Reposition the gameplay FPS counter so it is drawn to the right of the score text, with clear horizontal separation and no overlap with score or record HUD text. Do not change the FPS counter checkbox, toggle, or setting behavior.\nImplemented: Anchored the gameplay FPS counter on the HUD centerline immediately to the right of the measured score text while preserving existing FPS checkbox toggles.",
+    "acceptance_criteria": [
+      "When the FPS counter is enabled during gameplay, it appears to the right of the score text (not above, below, or overlapping it).",
+      "The FPS counter does not overlap the score text or record text in classic or bad versions.",
+      "The FPS counter checkbox, toggle, setting persistence, and intended visibility behavior are unchanged.",
+      "Collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-098.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+    ],
+    "test_steps": [
+      "Step 1: Open index.html in a browser or run a local static server and open the game.",
+      "Step 2: Enable the FPS counter through the existing control.",
+      "Step 3: Start the classic version and confirm the FPS counter appears during gameplay.",
+      "Step 4: Capture a representative screenshot and save it as screenshots/TASK-098.png.",
+      "Step 5: Look at screenshots/TASK-098.png and confirm the FPS counter is to the right of the score text with no overlap.",
+      "Step 6: Start the bad version and confirm the FPS counter is still to the right of the score text with no overlap with score or record text.",
+      "Step 7: Toggle the FPS counter off and on again and confirm the existing control behavior still works.",
+      "Step 8: Confirm the browser console has no new errors.",
+      "Step 9: Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

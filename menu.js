@@ -259,7 +259,6 @@ class FpsCounter
 
         const viewWidth = width / scale[version]
         const viewHeight = height / scale[version]
-        const x = viewWidth * STYLE.ui.fpsXRatio
         const fontSize = viewHeight * STYLE.ui.fpsFontRatio
         const padding = viewHeight * STYLE.ui.fpsPaddingRatio
         const text = 'FPS: ' + this.value
@@ -272,7 +271,8 @@ class FpsCounter
         const metrics = ctx.measureText(text)
         const panelWidth = metrics.width + padding * 2
         const panelHeight = fontSize + padding * 1.4
-        const y = getFpsCounterCenterY(viewWidth, viewHeight, version, fontSize, panelHeight)
+        const y = getHudCenterY(viewHeight, version)
+        const x = this.getTextX(viewWidth, viewHeight, text, panelWidth, padding)
         const panelX = x - padding
         const panelY = y - panelHeight / 2
 
@@ -290,6 +290,30 @@ class FpsCounter
         ctx.strokeText(text, x, y)
         ctx.fillText(text, x, y)
         ctx.restore()
+    }
+    getTextX(viewWidth, viewHeight, text, panelWidth, padding)
+    {
+        const scoreX = viewWidth * STYLE.ui.fpsXRatio
+        const scoreValue = scoreText.text + scoreText.count[version]
+        const recordValue = scoreText.rtext + scoreText.record[version]
+        const gap = Math.max(padding, viewWidth * STYLE.ui.hudBadTextGapRatio)
+
+        ctx.save()
+        ctx.font = getHudFontSize(viewWidth, viewHeight, version) + 'px ' + STYLE.ui.fontFamily
+        const scoreRight = scoreX + ctx.measureText(scoreValue).width
+        const recordX = scoreText.getRecordX(viewWidth)
+        const recordWidth = ctx.measureText(recordValue).width
+        const recordLeft = recordX - recordWidth
+        ctx.restore()
+
+        const preferredX = scoreRight + gap + padding
+        const minX = scoreRight + padding * 2
+        const maxX = recordLeft - gap - panelWidth + padding
+
+        if (maxX >= preferredX)
+            return preferredX
+
+        return Math.max(minX, maxX)
     }
 }
 class Menu
