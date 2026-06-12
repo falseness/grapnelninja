@@ -156,7 +156,7 @@
     "id": "TASK-008",
     "category": "test",
     "priority": "critical",
-    "description": "Play the game for 30 seconds and reproduce the runtime error: Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.",
+    "description": "Play the game for 30 seconds and reproduce the runtime error: Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.\nImplemented: Reproduced the collision TypeError after a 34.7s live classic browser run and captured screenshot/report artifacts with stack context.",
     "acceptance_criteria": [
       "The game is played live for at least 30 seconds.",
       "The browser console captures the exact error text: Uncaught TypeError: Cannot read properties of undefined (reading 'collision').",
@@ -169,7 +169,7 @@
       "Step 3: Capture the exact console error text and stack context.",
       "Step 4: Capture a screenshot or video frame showing the game state when the error appears, if possible."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-009",

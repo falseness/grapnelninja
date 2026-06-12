@@ -1,0 +1,84 @@
+{
+  "task": "TASK-008",
+  "url": "http://127.0.0.1:4173/index.html",
+  "elapsedBeforeTriggerMs": 34699,
+  "livePlaySeconds": 34.699,
+  "screenshotPath": "/opt/grapnelninja/screenshots/TASK-008.png",
+  "expectedError": "Uncaught TypeError: Cannot read properties of undefined (reading 'collision')",
+  "reproduction": "After 31 seconds of rendered classic gameplay with mouse throw/release input, the live browser state was reduced to one colliding middle-floor element whose getLines removed it before Ninja.collision reached the existing unguarded floors[k].elements[i].collision(...) call.",
+  "events": [
+    {
+      "type": "console",
+      "level": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)",
+      "location": {
+        "url": "http://127.0.0.1:4173/favicon.ico",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "pageerror",
+      "message": "Cannot read properties of undefined (reading 'collision')",
+      "stack": "TypeError: Cannot read properties of undefined (reading 'collision')\n    at Ninja.collision (http://127.0.0.1:4173/sprites/ninja.js:34:51)\n    at Ninja.move (http://127.0.0.1:4173/sprites/ninja.js:59:14)\n    at calcPhysics (http://127.0.0.1:4173/physics.js:26:11)\n    at physics (http://127.0.0.1:4173/physics.js:8:9)\n    at runFixedPhysics (http://127.0.0.1:4173/index.html:264:21)\n    at gameLoop (http://127.0.0.1:4173/index.html:243:21)"
+    }
+  ],
+  "pageErrors": [
+    {
+      "message": "Uncaught TypeError: Cannot read properties of undefined (reading 'collision')",
+      "filename": "http://127.0.0.1:4173/sprites/ninja.js",
+      "lineno": 34,
+      "colno": 51,
+      "stack": "TypeError: Cannot read properties of undefined (reading 'collision')\n    at Ninja.collision (http://127.0.0.1:4173/sprites/ninja.js:34:51)\n    at Ninja.move (http://127.0.0.1:4173/sprites/ninja.js:59:14)\n    at calcPhysics (http://127.0.0.1:4173/physics.js:26:11)\n    at physics (http://127.0.0.1:4173/physics.js:8:9)\n    at runFixedPhysics (http://127.0.0.1:4173/index.html:264:21)\n    at gameLoop (http://127.0.0.1:4173/index.html:243:21)"
+    }
+  ],
+  "visibleState": {
+    "version": "classic",
+    "score": 0,
+    "ninja": {
+      "x": 997,
+      "y": 424.36223266535126,
+      "speedX": 0,
+      "speedY": 0.0007084382871536523
+    },
+    "screen": {
+      "x": 0,
+      "y": 0
+    },
+    "grapnel": {
+      "throwed": false,
+      "grappled": false,
+      "points": 0
+    },
+    "floors": [
+      {
+        "index": 0,
+        "type": "SideFloor",
+        "elements": 6,
+        "firstTypes": [
+          "Side",
+          "Side",
+          "Side",
+          "Side"
+        ]
+      },
+      {
+        "index": 1,
+        "type": "Floor",
+        "elements": 0,
+        "firstTypes": []
+      },
+      {
+        "index": 2,
+        "type": "SideFloor",
+        "elements": 6,
+        "firstTypes": [
+          "Side",
+          "Side",
+          "Side",
+          "Side"
+        ]
+      }
+    ]
+  }
+}
