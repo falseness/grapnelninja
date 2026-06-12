@@ -2344,5 +2344,33 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-090",
+    "category": "functional",
+    "priority": "normal",
+    "dependencies": [],
+    "description": "Remove the black background behind the score and record HUD text in both versions. The text must remain readable, but the black rectangle or backing fill must no longer overlap visually with the ceiling.\nImplemented: Removed the bad-version score/record HUD backing fill and verified classic/bad HUD text remains readable without black blocks.",
+    "acceptance_criteria": [
+      "The score text has no black rectangle, black backing fill, or opaque dark label background behind it.",
+      "The record text has no black rectangle, black backing fill, or opaque dark label background behind it.",
+      "Score and record text remain readable against the gameplay background and ceiling area.",
+      "The score and record text no longer visually overlap the ceiling through a black background block.",
+      "The change applies to both classic and bad versions unless one version does not render these labels.",
+      "Gameplay, collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-090.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+    ],
+    "test_steps": [
+      "Step 1: Open index.html in a browser or run a local static server and open the game.",
+      "Step 2: Start the classic version and inspect the score and record HUD text near the ceiling.",
+      "Step 3: Confirm the score and record text have no black background block and remain readable.",
+      "Step 4: Start the bad version and repeat the same score and record inspection.",
+      "Step 5: Capture a representative screenshot and save it as screenshots/TASK-090.png.",
+      "Step 6: Look at screenshots/TASK-090.png and confirm the black score/record backgrounds are actually gone.",
+      "Step 7: Confirm the browser console has no new errors.",
+      "Step 8: Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
