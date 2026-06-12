@@ -1,0 +1,74 @@
+{
+  "task": "TASK-010",
+  "mode": "classic",
+  "durationMs": 33976,
+  "interactions": 53,
+  "jsErrors": [
+    {
+      "t": 411,
+      "type": "console-error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)",
+      "location": {
+        "url": "http://127.0.0.1:8765/favicon.ico",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    }
+  ],
+  "allEvents": [
+    {
+      "t": 411,
+      "type": "console-error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)",
+      "location": {
+        "url": "http://127.0.0.1:8765/favicon.ico",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    }
+  ],
+  "state": {
+    "version": "classic",
+    "menuVisible": false,
+    "paused": false,
+    "score": 0,
+    "record": 0,
+    "ninja": {
+      "x": 256,
+      "y": 180.15869017632235,
+      "speedX": 0,
+      "speedY": 0.22599181360201354
+    },
+    "grapnel": {
+      "throwed": false,
+      "grappled": false
+    },
+    "floors": [
+      {
+        "index": 0,
+        "elementCount": 6
+      },
+      {
+        "index": 1,
+        "elementCount": 12
+      },
+      {
+        "index": 2,
+        "elementCount": 6
+      }
+    ]
+  },
+  "uncaughtErrors": [],
+  "resourceNoise": [
+    {
+      "t": 411,
+      "type": "console-error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)",
+      "location": {
+        "url": "http://127.0.0.1:8765/favicon.ico",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    }
+  ]
+}

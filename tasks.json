@@ -194,7 +194,7 @@
     "id": "TASK-010",
     "category": "test",
     "priority": "critical",
-    "description": "Play the game for 30 seconds and, if any additional browser console errors appear, create new tickets for them in tasks.json. Keep this ticket sized to 15 minutes or less.",
+    "description": "Play the game for 30 seconds and, if any additional browser console errors appear, create new tickets for them in tasks.json. Keep this ticket sized to 15 minutes or less.\nImplemented: Completed a 33.9s live classic browser run, captured screenshot/report artifacts, found no uncaught JavaScript errors, and added no new error tickets.",
     "acceptance_criteria": [
       "The game is played live for at least 30 seconds with the browser console visible.",
       "Any additional uncaught errors are captured with exact console text and stack context.",
@@ -207,7 +207,7 @@
       "Step 3: Record any additional uncaught errors with exact console text and stack context.",
       "Step 4: Add one new pending ticket per additional error using the required tasks.json format."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-011",
