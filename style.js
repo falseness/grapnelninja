@@ -437,6 +437,38 @@ const STYLE = Object.freeze({
                         Object.freeze({x: 0.58, y: 0.82}),
                         Object.freeze({x: 0.10, y: -0.74})
                     ])
+                }),
+                Object.freeze({
+                    x: 0.06, y: 0.31, radius: 36, rotation: 0.92, alpha: 0.44,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.70, y: 0.64}),
+                        Object.freeze({x: 0.86, y: 0.30}),
+                        Object.freeze({x: 0.02, y: -0.86})
+                    ])
+                }),
+                Object.freeze({
+                    x: 0.33, y: 0.86, radius: 64, rotation: -1.08, alpha: 0.38,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.86, y: 0.34}),
+                        Object.freeze({x: 0.66, y: 0.76}),
+                        Object.freeze({x: 0.22, y: -0.90})
+                    ])
+                }),
+                Object.freeze({
+                    x: 0.56, y: 0.31, radius: 34, rotation: 1.34, alpha: 0.36,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.58, y: 0.82}),
+                        Object.freeze({x: 0.74, y: 0.28}),
+                        Object.freeze({x: -0.20, y: -0.78})
+                    ])
+                }),
+                Object.freeze({
+                    x: 0.84, y: 0.16, radius: 58, rotation: -0.34, alpha: 0.40,
+                    points: Object.freeze([
+                        Object.freeze({x: -0.76, y: 0.50}),
+                        Object.freeze({x: 0.88, y: 0.44}),
+                        Object.freeze({x: 0.18, y: -0.98})
+                    ])
                 })
             ]),
             rectangles: Object.freeze([

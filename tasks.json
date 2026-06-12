@@ -2216,5 +2216,31 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-086",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Add more decorative triangles to the background in both versions. Keep them background-only and subtle.\nImplemented: Added four subtle shared depth-background decorative triangle silhouettes so classic and bad gameplay both render a denser background triangle set.",
+    "acceptance_criteria": [
+      "The classic version background shows more decorative triangles than the current implementation.",
+      "The bad version background shows more decorative triangles than the current implementation.",
+      "Decorative background triangles remain behind gameplay objects and do not obscure the player, grapnel, obstacles, HUD text, or menu controls.",
+      "The added triangles are visual-only and do not become gameplay hazards or collision objects.",
+      "Collision, movement, scoring, spawning, restart behavior, HUD, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-086.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and inspect the decorative background triangles.",
+      "Confirm there are more decorative background triangles than before and gameplay remains readable.",
+      "Start the bad version and confirm it also has more decorative background triangles than before.",
+      "Capture a representative screenshot and save it as screenshots/TASK-086.png.",
+      "Look at screenshots/TASK-086.png and confirm the task was actually completed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
