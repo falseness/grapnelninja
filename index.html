@@ -211,9 +211,10 @@
                 screen.max = -(0 - screenMargin)
             }
             function start()
-            {  
+            {
                 canvas.width = width
                 canvas.height = height
+                configureCanvasViewport(canvas)
                 visualEffects = new VisualEffects(ctx, canvas)
                 
                 //generatePrimaryElements()

@@ -2489,5 +2489,41 @@
       "Step 10: Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-095",
+    "category": "functional",
+    "priority": "normal",
+    "dependencies": [],
+    "description": "When the game is opened on a phone in portrait orientation, present the game in landscape orientation instead of a vertical portrait layout. Use a simple implementation such as swapping width and height or rotating the game viewport when width is less than height.\nImplemented: Added forced landscape canvas sizing/rotation for portrait viewports with matching input coordinate remapping for menu taps, pause controls, and grapnel targeting.",
+    "acceptance_criteria": [
+      "On portrait phone viewports where width is less than height, the game is presented in landscape orientation.",
+      "The portrait phone presentation is rotated 90 degrees or otherwise swaps the playable width and height so the visible game layout is landscape.",
+      "The landscape-forced layout keeps gameplay, HUD text, menu controls, and click or tap targets visible and usable.",
+      "Desktop and already-landscape viewports are not unintentionally rotated into portrait.",
+      "The behavior works at five popular portrait phone resolutions.",
+      "Screenshots are saved as screenshots/TASK-095-1.png through screenshots/TASK-095-5.png before marking this task to-verify.",
+      "Gameplay, collision, movement, scoring, spawning, restart behavior, menus, FPS control behavior, and version selection remain unchanged except for portrait viewport orientation handling.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+    ],
+    "test_steps": [
+      "Step 1: Open index.html in a browser or run a local static server and open the game.",
+      "Step 2: Emulate or use a 375x667 portrait phone viewport and confirm the game is rotated 90 degrees or otherwise presented as landscape.",
+      "Step 3: Capture screenshots/TASK-095-1.png.",
+      "Step 4: Emulate or use a 390x844 portrait phone viewport and confirm the game is rotated 90 degrees or otherwise presented as landscape.",
+      "Step 5: Capture screenshots/TASK-095-2.png.",
+      "Step 6: Emulate or use a 393x873 portrait phone viewport and confirm the game is rotated 90 degrees or otherwise presented as landscape.",
+      "Step 7: Capture screenshots/TASK-095-3.png.",
+      "Step 8: Emulate or use a 412x915 portrait phone viewport and confirm the game is rotated 90 degrees or otherwise presented as landscape.",
+      "Step 9: Capture screenshots/TASK-095-4.png.",
+      "Step 10: Emulate or use a 430x932 portrait phone viewport and confirm the game is rotated 90 degrees or otherwise presented as landscape.",
+      "Step 11: Capture screenshots/TASK-095-5.png.",
+      "Step 12: Look at all five screenshots and confirm the game is actually shown in landscape orientation despite portrait viewport dimensions.",
+      "Step 13: Confirm visible controls and HUD are not clipped, overlapped, or detached from their click or tap targets.",
+      "Step 14: Confirm a landscape viewport is not incorrectly rotated.",
+      "Step 15: Confirm the browser console has no new errors.",
+      "Step 16: Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

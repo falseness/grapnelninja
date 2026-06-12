@@ -1,6 +1,43 @@
 const widthHeightRatio = 1.8250950570342206
-const height    = window.innerHeight
-const width     = window.innerWidth//height * widthHeightRatio
+const viewportWidth = window.innerWidth
+const viewportHeight = window.innerHeight
+const forceLandscapeViewport = viewportWidth < viewportHeight
+const height    = forceLandscapeViewport ? viewportWidth : viewportHeight
+const width     = forceLandscapeViewport ? viewportHeight : viewportWidth//height * widthHeightRatio
+
+function configureCanvasViewport(canvas)
+{
+    canvas.style.position = 'fixed'
+    canvas.style.left = '50%'
+    canvas.style.top = '50%'
+    canvas.style.width = width + 'px'
+    canvas.style.height = height + 'px'
+    canvas.style.transformOrigin = 'center center'
+    canvas.style.transform = forceLandscapeViewport ? 'translate(-50%, -50%) rotate(90deg)' : 'translate(-50%, -50%)'
+}
+
+function viewportCoordsToCanvasCoords(coord)
+{
+    const rect = canvas.getBoundingClientRect()
+
+    if (!forceLandscapeViewport)
+    {
+        return {
+            x: (coord.x - rect.left) * canvas.width / rect.width,
+            y: (coord.y - rect.top) * canvas.height / rect.height
+        }
+    }
+
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    const offsetX = coord.x - centerX
+    const offsetY = coord.y - centerY
+
+    return {
+        x: offsetY + canvas.width / 2,
+        y: canvas.height / 2 - offsetX
+    }
+}
 
 let scale = 
 {

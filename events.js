@@ -23,11 +23,9 @@ function createEvents()
     }
     function getRealCoords(event)
     {
-        let rect = canvas.getBoundingClientRect()
-        
-        let coord = getCoords(event)
-        
-        return {x: coord.x / scale[version] - rect.left - screen.x, y: coord.y / scale[version] - rect.top - screen.y}
+        let coord = viewportCoordsToCanvasCoords(getCoords(event))
+
+        return {x: coord.x / scale[version] - screen.x, y: coord.y / scale[version] - screen.y}
     }
     function throwGrapnel(event)
     {
@@ -46,7 +44,7 @@ function createEvents()
     }
     function startEvent(event)
     {
-        let coords = getCoords(event)
+        let coords = viewportCoordsToCanvasCoords(getCoords(event))
         if (menu.opened())
         {
             let isButtonClicked     = false
