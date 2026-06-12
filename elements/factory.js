@@ -465,13 +465,11 @@ class Frame7ElementsFactory extends RectFactory
         }
         this.grapnelMarker =
         {
-            points:
+            segments:
             [
-                {x: 388.548, y: 239.803},
-                {x: 389.255, y: 150},
-                {x: 417.539, y: 178.284},
-                {x: 389.255, y: 150},
-                {x: 362.385, y: 176.87}
+                [{x: 388.548, y: 239.803}, {x: 389.255, y: 150}],
+                [{x: 389.255, y: 150}, {x: 417.539, y: 178.284}],
+                [{x: 389.255, y: 150}, {x: 362.385, y: 176.87}]
             ],
             strokeWidth: 5
         }
@@ -512,17 +510,35 @@ class Frame7ElementsFactory extends RectFactory
     }
     createGrapnelMarker()
     {
-        return new FrameGrapnelMarker(
+        return this.grapnelMarker.segments.map(segment =>
         {
-            points      : this.grapnelMarker.points.map(point =>
+            const start = segment[0]
+            const end = segment[1]
+            const x1 = this.displayToWorld(start.x)
+            const y1 = this.displayToWorld(start.y)
+            const x2 = this.displayToWorld(end.x)
+            const y2 = this.displayToWorld(end.y)
+            const dx = x2 - x1
+            const dy = y2 - y1
+            const length = Math.sqrt(dx * dx + dy * dy)
+            const halfWidth = this.displayToWorld(this.grapnelMarker.strokeWidth) / 2
+            const normalX = -dy / length * halfWidth
+            const normalY = dx / length * halfWidth
+
+            return new Trampoline(
             {
-                return {
-                    x: this.displayToWorld(point.x),
-                    y: this.displayToWorld(point.y)
-                }
-            }),
-            strokeWidth : this.displayToWorld(this.grapnelMarker.strokeWidth),
-            stroke      : 'black'
+                x       : 0,
+                y       : 0,
+                points  :
+                [
+                    {x: x1 + normalX, y: y1 + normalY},
+                    {x: x2 + normalX, y: y2 + normalY},
+                    {x: x2 - normalX, y: y2 - normalY},
+                    {x: x1 - normalX, y: y1 - normalY}
+                ],
+                fill    : 'black',
+                stroke  : 'black'
+            })
         })
     }
     create(x, y)
@@ -530,7 +546,7 @@ class Frame7ElementsFactory extends RectFactory
         return [
             this.createGreenRect(),
             this.createBlueSquare(),
-            this.createGrapnelMarker()
+            ...this.createGrapnelMarker()
         ]
     }
 }

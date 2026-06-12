@@ -259,7 +259,7 @@
     "id": "TASK-013",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 7.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 7's green platform, blue square, and black grapnel marker using existing Rect rendering plus a visual-only frame marker.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 7.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 7's green platform, blue square, and black grapnel marker using existing Rect rendering plus a visual-only frame marker.\nImplemented: Replaced the custom FrameGrapnelMarker draw path with existing Trampoline polygon segments for the black marker.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 7 element from /opt/grapnelninja/screenshots/Frame 7.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
