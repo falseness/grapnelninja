@@ -118,6 +118,7 @@ class Trampoline extends Element
                 isGreenSafe ? obstacleStyle.greenFill : obstacleStyle.cubeFill,
                 this.stroke,
                 {
+                    baseFillStyle: this.fill,
                     lineWidth: obstacleStyle.thinStrokeWidth,
                     glowWidth: obstacleStyle.outerGlowWidth,
                     innerStrokeStyle: this.stroke

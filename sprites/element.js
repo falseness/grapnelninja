@@ -102,6 +102,12 @@ class Element
             ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
         }
 
+        if (options.baseFillStyle)
+        {
+            ctx.fillStyle = options.baseFillStyle
+            ctx.fill()
+        }
+
         ctx.fillStyle = fillStyle
         ctx.fill()
 

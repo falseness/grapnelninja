@@ -2527,5 +2527,34 @@
       "Step 16: Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-096",
+    "category": "functional",
+    "priority": "normal",
+    "dependencies": [],
+    "description": "Fix trampoline collision splash layering so splashes render behind or underneath trampoline objects instead of visibly above them. This is a visual draw-order fix only.\nImplemented: Moved trampoline splash visuals under trampoline geometry by giving bad-version trampolines an opaque base fill while keeping splash particles in the below-foreground layer.",
+    "acceptance_criteria": [
+      "Trampoline collision splashes render behind or underneath trampoline objects, not on top of the trampoline geometry.",
+      "The trampoline object outline and fill remain clearly visible above any nearby splash particles during and after collision.",
+      "Trampoline splashes still appear when the player collides with trampolines.",
+      "The fix applies anywhere trampoline splashes are rendered, including classic and bad versions if both can show trampoline splashes.",
+      "Player trail, HUD, gameplay, collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-096.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+    ],
+    "test_steps": [
+      "Step 1: Open index.html in a browser or run a local static server and open the game.",
+      "Step 2: Start a version that can show a trampoline collision splash.",
+      "Step 3: Trigger a player collision with a trampoline and watch the splash near the trampoline.",
+      "Step 4: Confirm the trampoline object is drawn above the splash particles, with splashes behind or underneath the trampoline geometry.",
+      "Step 5: Confirm the splash still appears and is visible enough to prove the collision effect fired.",
+      "Step 6: Repeat in the other version if trampoline splashes can be shown there.",
+      "Step 7: Capture a representative screenshot and save it as screenshots/TASK-096.png.",
+      "Step 8: Look at screenshots/TASK-096.png and confirm the trampoline is actually above the splash particles.",
+      "Step 9: Confirm the browser console has no new errors.",
+      "Step 10: Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
