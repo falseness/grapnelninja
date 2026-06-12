@@ -2164,5 +2164,32 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-084",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Remove the several parallel background lines visible near the bottom of the screen that move even when the player does not. Apply this to both versions.\nImplemented: Removed the shared depth-background streak layer so the bottom parallel moving lines no longer render in classic or bad gameplay.",
+    "acceptance_criteria": [
+      "The parallel moving background lines near the bottom of the screen are completely removed in the classic version.",
+      "The parallel moving background lines near the bottom of the screen are completely removed in the bad version.",
+      "No replacement line effect remains in that bottom background area.",
+      "Other intended background effects may remain visible if they are not the removed bottom parallel lines.",
+      "Collision, movement, scoring, spawning, restart behavior, HUD, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-084.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and keep the player still long enough to inspect the bottom background.",
+      "Confirm the bottom parallel moving background lines are completely gone in the classic version.",
+      "Start the bad version and repeat the same bottom-background inspection.",
+      "Confirm the bottom parallel moving background lines are completely gone in the bad version.",
+      "Capture a representative screenshot and save it as screenshots/TASK-084.png.",
+      "Look at screenshots/TASK-084.png and confirm the task was actually completed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

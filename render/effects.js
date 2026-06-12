@@ -228,7 +228,6 @@ class BackgroundRenderer
             background.depthHexagonAccentStroke,
             background.depthHexagonStroke
         )
-        this.drawStreakSet(width, height, geometry, streakTime, background.depthStreak, -height * 0.08 + totalShift.y, totalShift.x)
         this.drawDiagonalFlashes(width, height, geometry, geometryTime, totalShift)
         this.drawDecorativeTriangles(width, height, geometry, geometryTime, totalShift)
         this.drawRectangleAccents(width, height, geometry, geometryTime, totalShift)
