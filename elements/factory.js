@@ -12,6 +12,7 @@ class ElementsFactory
             ground              : new GroundFactory()               , 
             side                : new SideFactory()                 ,
             frame2Rect          : new Frame2RectFactory()           ,
+            frame3Triangle      : new Frame3TriangleFactory()       ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -417,6 +418,42 @@ class TriangleFactory
         let model = this.getModel(x, y)
         
         return [new Triangle(model)]
+    }
+}
+class Frame3TriangleFactory extends TriangleFactory
+{
+    constructor()
+    {
+        super()
+        this.displayCenterXRatio = 385.5 / 630
+        this.displayCenterYRatio = (187.75 + (421 - 187.75) / 3) / 630
+        this.displaySideRatio = (491.588 - 279.412) / 630
+        this.displayHeightRatio = (421 - 187.75) / 630
+    }
+    create(x, y)
+    {
+        const worldCenterX = this.displayCenterXRatio * height / scale.bad
+        const worldCenterY = this.displayCenterYRatio * height / scale.bad
+        const worldSide = this.displaySideRatio * height / scale.bad
+        const worldHeight = this.displayHeightRatio * height / scale.bad
+        const model =
+        {
+            x       : worldCenterX,
+            y       : worldCenterY,
+            radius  : worldHeight * 2 / 3,
+            yMin    : 0.2 * height,
+            yMax    : 2 * height,
+            fill    : STYLE.colors.hazard.fill,
+            stroke  : STYLE.colors.hazard.stroke
+        }
+        const triangle = new Triangle(model)
+
+        triangle.side = worldSide
+        triangle.height = worldHeight
+        triangle.track = (trackEnabled)?(new MultipointTrackLine(triangle.side, triangle.stroke, STYLE.timing.triangleTrailPoints)):(new Empty())
+        triangle.track.addPos(triangle.getPoints(), true)
+
+        return [triangle]
     }
 }
 class HarmlessTriangleFactory extends TriangleFactory {
