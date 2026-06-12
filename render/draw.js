@@ -63,11 +63,11 @@ function draw()
 
     drawLightsLayer(gameState)
     drawBehindForegroundParticlesLayer(gameState)
-    drawFpsCounterLayer(gameState)
     drawPlayerTrailLayer(gameState)
     drawWorldLayer()
     drawParticlesAndTrailsLayer(gameState)
     drawUILayer(gameState)
+    drawFpsCounterLayer(gameState)
 
     visualEffects.screenEffects.end(gameState)
 

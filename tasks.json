@@ -2556,5 +2556,34 @@
       "Step 10: Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-097",
+    "category": "functional",
+    "priority": "normal",
+    "dependencies": [],
+    "description": "Change the drawing order for the FPS counter so it is drawn after all other gameplay and HUD layers, including the player, player trail, world objects, particles, score text, and menu button. Do not change the FPS counter checkbox, toggle, or setting behavior.\nImplemented: Moved the gameplay FPS counter draw layer after trail, world, particles, score/menu UI, and menu button rendering while preserving existing FPS controls.",
+    "acceptance_criteria": [
+      "The FPS counter render call happens after the player render call.",
+      "The FPS counter render call happens after the player trail render call.",
+      "The FPS counter render call happens after world objects, particles, score text, and menu button rendering.",
+      "The FPS counter checkbox, toggle, setting persistence, and intended visibility behavior are unchanged.",
+      "The FPS counter is not hidden, removed, or moved as a substitute for changing draw order.",
+      "Collision, movement, scoring, spawning, restart behavior, menus, and version selection remain unchanged.",
+      "A screenshot is saved at screenshots/TASK-097.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE. DONT CHECK EXISTENCE OF SCREENSHOTS, look at screenshots themselves. dont trust the code"
+    ],
+    "test_steps": [
+      "Step 1: Open index.html in a browser or run a local static server and open the game.",
+      "Step 2: Enable the FPS counter through the existing control.",
+      "Step 3: Start gameplay in either version and confirm the FPS counter appears when enabled.",
+      "Step 4: Capture a representative screenshot and save it as screenshots/TASK-097.png.",
+      "Step 5: Look at screenshots/TASK-097.png and confirm the FPS counter draw-order task was actually completed, not worked around by hiding, removing, or moving the counter.",
+      "Step 6: Inspect the draw path and confirm the FPS counter is drawn after the player, player trail, world objects, particles, score text, and menu button.",
+      "Step 7: Toggle the FPS counter off and on again and confirm the existing control behavior still works.",
+      "Step 8: Confirm the browser console has no new errors.",
+      "Step 9: Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]
