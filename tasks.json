@@ -72,7 +72,7 @@
     "id": "TASK-004",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 5.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 5.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 5's two green Rect posts and green rotated horizontal rectangle segment using existing rectangle/polygon rendering paths.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 5 element: one right vertical green rectangle, one center vertical green rectangle, and one horizontal green rectangle segment.",
       "The implementation reuses existing Rect or existing rectangle factory behavior instead of adding new graphics code.",
@@ -89,7 +89,7 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 5.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "pending"
+    "status": "to-verify"
   },
   {
     "id": "TASK-005",

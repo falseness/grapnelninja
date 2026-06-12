@@ -13,6 +13,7 @@ class ElementsFactory
             side                : new SideFactory()                 ,
             frame2Rect          : new Frame2RectFactory()           ,
             frame3Triangle      : new Frame3TriangleFactory()       ,
+            frame5Rects         : new Frame5RectFactory()           ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -218,6 +219,84 @@ class Frame2RectFactory extends RectFactory
         rect.stroke = STYLE.colors.cube.greenStroke
 
         return [rect]
+    }
+}
+class Frame5RectFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        this.frameHeight = 630
+        this.verticalRects =
+        [
+            {x: 688.5, y: 76.5, width: 52, height: 266},
+            {x: 333.5, y: 188.5, width: 52, height: 365}
+        ]
+        this.horizontalRect =
+        {
+            x: 386.935,
+            y: 232.654,
+            width: 42.9148,
+            height: 186.553,
+            rotation: -90.5738
+        }
+    }
+    displayToWorld(value)
+    {
+        return value / this.frameHeight * height / scale.bad
+    }
+    createGreenRect(rect)
+    {
+        const result = super.create(
+            this.displayToWorld(rect.x),
+            this.displayToWorld(rect.y),
+            this.displayToWorld(rect.width),
+            this.displayToWorld(rect.height)
+        )
+
+        result.fill = STYLE.colors.cube.greenFill
+        result.stroke = STYLE.colors.cube.greenStroke
+
+        return result
+    }
+    createHorizontalSegment()
+    {
+        const rect = this.horizontalRect
+        const angle = rect.rotation * Math.PI / 180
+        const cos = Math.cos(angle)
+        const sin = Math.sin(angle)
+        const displayPoints =
+        [
+            {x: 0, y: 0},
+            {x: rect.width, y: 0},
+            {x: rect.width, y: rect.height},
+            {x: 0, y: rect.height}
+        ]
+
+        const points = displayPoints.map(point =>
+        {
+            return {
+                x: this.displayToWorld(rect.x + point.x * cos - point.y * sin),
+                y: this.displayToWorld(rect.y + point.x * sin + point.y * cos)
+            }
+        })
+
+        return new Trampoline(
+        {
+            x       : 0,
+            y       : 0,
+            points  : points,
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
+        })
+    }
+    create(x, y)
+    {
+        return [
+            this.createGreenRect(this.verticalRects[0]),
+            this.createGreenRect(this.verticalRects[1]),
+            this.createHorizontalSegment()
+        ]
     }
 }
 class TrampolineFactory
