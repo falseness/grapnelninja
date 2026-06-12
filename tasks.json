@@ -1467,7 +1467,7 @@
     "id": "TASK-057",
     "category": "functional",
     "priority": "normal",
-    "description": "Turn off the bad-version top-middle stage indicator icon shown as the centered diamond and 1 2 3 marker. The top-right menu button should remain available unless a separate ticket changes it.\nImplemented: Removed the bad-version stage indicator draw call while preserving score, record, HUD band, and menu button behavior.",
+    "description": "Turn off the bad-version top-middle stage indicator icon shown as the centered diamond and 1 2 3 marker. The top-right menu button should remain available unless a separate ticket changes it.\nImplemented: Removed the bad-version stage indicator draw call while preserving score, record, HUD band, and menu button behavior.\nImplemented: Removed the restored scoreText stage-indicator draw call so the bad-version HUD no longer renders the centered diamond or 1 2 3 marker.",
     "acceptance_criteria": [
       "The bad-version top-middle stage indicator is no longer visible during gameplay.",
       "The score text, record text, ceiling/HUD band, and top-right menu button remain visible and readable.",

@@ -49,9 +49,6 @@ let scoreText =
 
         this.drawHudText(recordText, recordX, recordY, 'end')
 
-        if (version == 'bad')
-            this.drawStageIndicator(viewWidth, topY, fontSize)
-
         ctx.restore()
     },
     getRecordX: function(viewWidth)
