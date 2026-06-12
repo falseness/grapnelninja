@@ -2191,5 +2191,30 @@
       "Confirm tasks.json remains valid JSON."
     ],
     "status": "to-verify"
+  },
+  {
+    "id": "TASK-085",
+    "category": "functional",
+    "priority": "normal",
+    "description": "Add more flashes to the background in both versions. Keep the flashes visual-only and behind gameplay.\nImplemented: Increased the shared gameplay background flash set from six to ten varied flashes so classic and bad versions show more visual-only flash accents behind gameplay.",
+    "acceptance_criteria": [
+      "The classic version background shows more flashes than the current implementation.",
+      "The bad version background shows more flashes than the current implementation.",
+      "Flashes remain behind gameplay objects and do not obscure the player, grapnel, obstacles, HUD text, or menu controls.",
+      "The change is visual-only and does not affect collision, movement, scoring, spawning, restart behavior, HUD, menus, or version selection.",
+      "A screenshot is saved at screenshots/TASK-085.png before marking this task to-verify.",
+      "LOOK AT THE screenshots, CHECK IF THE TASK WAS ACTUALLY DONE"
+    ],
+    "test_steps": [
+      "Open index.html in a browser or run a local static server and open the game.",
+      "Start the classic version and inspect the background flashes.",
+      "Confirm there are more background flashes than before and gameplay remains readable.",
+      "Start the bad version and confirm it also has more background flashes than before.",
+      "Capture a representative screenshot and save it as screenshots/TASK-085.png.",
+      "Look at screenshots/TASK-085.png and confirm the task was actually completed.",
+      "Confirm the browser console has no new errors.",
+      "Confirm tasks.json remains valid JSON."
+    ],
+    "status": "to-verify"
   }
 ]

@@ -365,6 +365,28 @@ const STYLE = Object.freeze({
                         Object.freeze({start: 0, end: 0.42}),
                         Object.freeze({start: 0.62, end: 1})
                     ])
+                }),
+                Object.freeze({x: 0.15, y: 0.55, length: 0.18, angle: -62, width: 1.7, glowWidth: 7, alpha: 0.58, form: 'broken',
+                    segments: Object.freeze([
+                        Object.freeze({start: 0, end: 0.30}),
+                        Object.freeze({start: 0.46, end: 0.63}),
+                        Object.freeze({start: 0.78, end: 1})
+                    ])
+                }),
+                Object.freeze({x: 0.35, y: 0.12, length: 0.11, angle: -24, width: 1.3, glowWidth: 5, alpha: 0.48, form: 'fragments',
+                    fragments: Object.freeze([
+                        Object.freeze({x: 0, y: 0, length: 0.18, angleOffset: 0}),
+                        Object.freeze({x: 0.08, y: 0.05, length: 0.11, angleOffset: 0.42}),
+                        Object.freeze({x: -0.06, y: 0.03, length: 0.09, angleOffset: -0.36})
+                    ])
+                }),
+                Object.freeze({x: 0.68, y: 0.47, length: 0.16, angle: -36, width: 1.6, glowWidth: 7, alpha: 0.52}),
+                Object.freeze({x: 0.84, y: 0.84, length: 0.20, angle: -52, width: 2, glowWidth: 9, alpha: 0.6, form: 'broken',
+                    segments: Object.freeze([
+                        Object.freeze({start: 0, end: 0.24}),
+                        Object.freeze({start: 0.38, end: 0.58}),
+                        Object.freeze({start: 0.74, end: 1})
+                    ])
                 })
             ]),
             triangles: Object.freeze([
