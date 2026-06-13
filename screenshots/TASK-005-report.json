@@ -1,271 +1,559 @@
 {
-  "results": [
-    {
-      "frame": "frame2",
+  "url": "http://127.0.0.1:8123/index.html",
+  "viewport": {
+    "width": 772,
+    "height": 630
+  },
+  "generatedAt": "2026-06-13T02:39:13.818Z",
+  "frames": {
+    "frame2": {
+      "label": "Frame 2",
+      "force": 0,
       "screenshot": "screenshots/TASK-005-frame2.png",
-      "snapshot": {
-        "version": "bad",
-        "scale": 0.45454545454545453,
-        "screen": {
-          "x": 0,
-          "y": 0
+      "sourceChances": [
+        {
+          "type": "frame2Rect",
+          "chance": 10
         },
-        "creationTable": [
-          {
-            "type": "frame2Rect",
-            "chance": 100
-          }
-        ],
-        "normalCreationTable": [
-          {
-            "type": "frame2Rect",
-            "chance": 34
-          },
-          {
-            "type": "frame3Triangle",
-            "chance": 33
-          },
-          {
-            "type": "frame5Rects",
-            "chance": 33
-          }
-        ],
-        "middleElements": [
-          {
-            "className": "Rect",
-            "fill": "#071c12",
-            "stroke": "#64e379",
-            "bounds": {
-              "left": 360,
-              "top": 164.5,
-              "width": 52,
-              "height": 266,
-              "right": 412,
-              "bottom": 430.5
+        {
+          "type": "frame3Triangle",
+          "chance": 10
+        },
+        {
+          "type": "frame4Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame5Rects",
+          "chance": 10
+        },
+        {
+          "type": "frame6Rects",
+          "chance": 10
+        },
+        {
+          "type": "frame7Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame8Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame9Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame10Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame11Elements",
+          "chance": 10
+        }
+      ],
+      "actualElementCount": 1,
+      "matches": [
+        {
+          "expectedKind": "Trampoline",
+          "actualKind": "Trampoline",
+          "maxPointErrorPx": 0.5,
+          "actualPoints": [
+            {
+              "x": 360,
+              "y": 164.5
             },
-            "points": null
-          }
-        ],
-        "sideCounts": [
-          6,
-          6
-        ],
-        "errors": []
-      }
+            {
+              "x": 360,
+              "y": 430.5
+            },
+            {
+              "x": 412,
+              "y": 430.5
+            },
+            {
+              "x": 412,
+              "y": 164.5
+            }
+          ],
+          "expectedPoints": [
+            [
+              359.5,
+              164.5
+            ],
+            [
+              359.5,
+              430.5
+            ],
+            [
+              411.5,
+              430.5
+            ],
+            [
+              411.5,
+              164.5
+            ]
+          ],
+          "stroke": "#64e379",
+          "fill": "#071c12"
+        }
+      ],
+      "errors": [],
+      "pass": true
     },
-    {
-      "frame": "frame3",
+    "frame3": {
+      "label": "Frame 3",
+      "force": 11,
       "screenshot": "screenshots/TASK-005-frame3.png",
-      "snapshot": {
-        "version": "bad",
-        "scale": 0.45454545454545453,
-        "screen": {
-          "x": 0,
-          "y": 0
+      "sourceChances": [
+        {
+          "type": "frame2Rect",
+          "chance": 10
         },
-        "creationTable": [
-          {
-            "type": "frame3Triangle",
-            "chance": 100
-          }
-        ],
-        "normalCreationTable": [
-          {
-            "type": "frame2Rect",
-            "chance": 34
-          },
-          {
-            "type": "frame3Triangle",
-            "chance": 33
-          },
-          {
-            "type": "frame5Rects",
-            "chance": 33
-          }
-        ],
-        "middleElements": [
-          {
-            "className": "Triangle",
-            "fill": "#21070f",
-            "stroke": "#ff3d71",
-            "bounds": {
-              "left": 279.412,
-              "top": 187.75,
-              "right": 491.588,
-              "bottom": 421,
-              "width": 212.176,
-              "height": 233.25
+        {
+          "type": "frame3Triangle",
+          "chance": 10
+        },
+        {
+          "type": "frame4Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame5Rects",
+          "chance": 10
+        },
+        {
+          "type": "frame6Rects",
+          "chance": 10
+        },
+        {
+          "type": "frame7Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame8Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame9Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame10Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame11Elements",
+          "chance": 10
+        }
+      ],
+      "actualElementCount": 1,
+      "matches": [
+        {
+          "expectedKind": "Triangle",
+          "actualKind": "Triangle",
+          "maxPointErrorPx": 0,
+          "actualPoints": [
+            {
+              "x": 279.412,
+              "y": 187.75
             },
-            "points": [
-              {
-                "x": 279.412,
-                "y": 187.75
-              },
-              {
-                "x": 491.588,
-                "y": 187.75
-              },
-              {
-                "x": 385.5,
-                "y": 421
-              }
+            {
+              "x": 491.588,
+              "y": 187.75
+            },
+            {
+              "x": 385.5,
+              "y": 421
+            }
+          ],
+          "expectedPoints": [
+            [
+              279.412,
+              187.75
+            ],
+            [
+              491.588,
+              187.75
+            ],
+            [
+              385.5,
+              421
             ]
-          }
-        ],
-        "sideCounts": [
-          6,
-          6
-        ],
-        "errors": []
-      }
+          ],
+          "stroke": "#ff3d71",
+          "fill": "#21070f"
+        }
+      ],
+      "errors": [],
+      "pass": true
+    },
+    "frame5": {
+      "label": "Frame 5",
+      "force": 31,
+      "screenshot": "screenshots/TASK-005-frame5.png",
+      "sourceChances": [
+        {
+          "type": "frame2Rect",
+          "chance": 10
+        },
+        {
+          "type": "frame3Triangle",
+          "chance": 10
+        },
+        {
+          "type": "frame4Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame5Rects",
+          "chance": 10
+        },
+        {
+          "type": "frame6Rects",
+          "chance": 10
+        },
+        {
+          "type": "frame7Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame8Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame9Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame10Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame11Elements",
+          "chance": 10
+        }
+      ],
+      "actualElementCount": 3,
+      "matches": [
+        {
+          "expectedKind": "Trampoline",
+          "actualKind": "Trampoline",
+          "maxPointErrorPx": 0,
+          "actualPoints": [
+            {
+              "x": 688.5,
+              "y": 76.5
+            },
+            {
+              "x": 688.5,
+              "y": 342.5
+            },
+            {
+              "x": 740.5,
+              "y": 342.5
+            },
+            {
+              "x": 740.5,
+              "y": 76.5
+            }
+          ],
+          "expectedPoints": [
+            [
+              688.5,
+              76.5
+            ],
+            [
+              688.5,
+              342.5
+            ],
+            [
+              740.5,
+              342.5
+            ],
+            [
+              740.5,
+              76.5
+            ]
+          ],
+          "stroke": "#64e379",
+          "fill": "#071c12"
+        },
+        {
+          "expectedKind": "Trampoline",
+          "actualKind": "Trampoline",
+          "maxPointErrorPx": 0,
+          "actualPoints": [
+            {
+              "x": 333.5,
+              "y": 188.5
+            },
+            {
+              "x": 333.5,
+              "y": 553.5
+            },
+            {
+              "x": 385.5,
+              "y": 553.5
+            },
+            {
+              "x": 385.5,
+              "y": 188.5
+            }
+          ],
+          "expectedPoints": [
+            [
+              333.5,
+              188.5
+            ],
+            [
+              333.5,
+              553.5
+            ],
+            [
+              385.5,
+              553.5
+            ],
+            [
+              385.5,
+              188.5
+            ]
+          ],
+          "stroke": "#64e379",
+          "fill": "#071c12"
+        },
+        {
+          "expectedKind": "Trampoline",
+          "actualKind": "Trampoline",
+          "maxPointErrorPx": 0,
+          "actualPoints": [
+            {
+              "x": 386.935,
+              "y": 232.654
+            },
+            {
+              "x": 386.505,
+              "y": 189.741
+            },
+            {
+              "x": 573.049,
+              "y": 187.873
+            },
+            {
+              "x": 573.479,
+              "y": 230.786
+            }
+          ],
+          "expectedPoints": [
+            [
+              386.935,
+              232.654
+            ],
+            [
+              386.505,
+              189.741
+            ],
+            [
+              573.049,
+              187.873
+            ],
+            [
+              573.479,
+              230.786
+            ]
+          ],
+          "stroke": "#64e379",
+          "fill": "#071c12"
+        }
+      ],
+      "errors": [],
+      "pass": true
+    }
+  },
+  "frame3NoOverlapSamples": [
+    {
+      "second": 1,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
     },
     {
-      "frame": "frame5",
-      "screenshot": "screenshots/TASK-005-frame5.png",
-      "snapshot": {
-        "version": "bad",
-        "scale": 0.45454545454545453,
-        "screen": {
-          "x": 0,
-          "y": 0
-        },
-        "creationTable": [
-          {
-            "type": "frame5Rects",
-            "chance": 100
-          }
-        ],
-        "normalCreationTable": [
-          {
-            "type": "frame2Rect",
-            "chance": 34
-          },
-          {
-            "type": "frame3Triangle",
-            "chance": 33
-          },
-          {
-            "type": "frame5Rects",
-            "chance": 33
-          }
-        ],
-        "middleElements": [
-          {
-            "className": "Rect",
-            "fill": "#071c12",
-            "stroke": "#64e379",
-            "bounds": {
-              "left": 688.5,
-              "top": 76.5,
-              "width": 52,
-              "height": 266,
-              "right": 740.5,
-              "bottom": 342.5
-            },
-            "points": null
-          },
-          {
-            "className": "Rect",
-            "fill": "#071c12",
-            "stroke": "#64e379",
-            "bounds": {
-              "left": 333.5,
-              "top": 188.5,
-              "width": 52,
-              "height": 365,
-              "right": 385.5,
-              "bottom": 553.5
-            },
-            "points": null
-          },
-          {
-            "className": "Trampoline",
-            "fill": "#071c12",
-            "stroke": "#64e379",
-            "bounds": {
-              "left": 386.505,
-              "top": 187.873,
-              "right": 573.479,
-              "bottom": 232.654,
-              "width": 186.974,
-              "height": 44.781
-            },
-            "points": [
-              {
-                "x": 386.935,
-                "y": 232.654
-              },
-              {
-                "x": 386.505,
-                "y": 189.741
-              },
-              {
-                "x": 573.049,
-                "y": 187.873
-              },
-              {
-                "x": 573.479,
-                "y": 230.786
-              }
-            ]
-          }
-        ],
-        "sideCounts": [
-          6,
-          6
-        ],
-        "errors": []
-      }
+      "second": 2,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
+    },
+    {
+      "second": 3,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
+    },
+    {
+      "second": 4,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
+    },
+    {
+      "second": 5,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
+    },
+    {
+      "second": 6,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
+    },
+    {
+      "second": 7,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
+    },
+    {
+      "second": 8,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
+    },
+    {
+      "second": 9,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
+    },
+    {
+      "second": 10,
+      "triangleCount": 1,
+      "otherCount": 0,
+      "overlaps": [],
+      "pass": true
     }
   ],
-  "checks": [
+  "deletionRun": {
+    "elapsedMs": 35465,
+    "screenshot": "screenshots/TASK-005-run-30s.png",
+    "state": {
+      "elapsedScreenX": -460,
+      "initialRightPoints": [
+        1629.1,
+        848.1,
+        1260.7075213807323
+      ],
+      "currentRightPoints": [
+        848.1,
+        436.70000000000005,
+        1250.7,
+        1250.7
+      ],
+      "movedPastInitialElements": false,
+      "middleElementCount": 4,
+      "middleTypes": [
+        "Rect",
+        "Rect",
+        "Rect",
+        "Rect"
+      ],
+      "sourceChances": [
+        {
+          "type": "frame2Rect",
+          "chance": 10
+        },
+        {
+          "type": "frame3Triangle",
+          "chance": 10
+        },
+        {
+          "type": "frame4Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame5Rects",
+          "chance": 10
+        },
+        {
+          "type": "frame6Rects",
+          "chance": 10
+        },
+        {
+          "type": "frame7Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame8Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame9Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame10Elements",
+          "chance": 10
+        },
+        {
+          "type": "frame11Elements",
+          "chance": 10
+        }
+      ],
+      "score": 1
+    },
+    "errors": [],
+    "pass": true,
+    "note": "Supplemental reopened-feedback probe: 35s camera-advance deletion/regeneration path completed with no browser errors and score advanced; not part of the listed TASK-005 test_steps."
+  },
+  "restoredSourceChances": [
     {
-      "name": "Step 1 Frame 2 forced to 100%",
-      "pass": true
+      "type": "frame2Rect",
+      "chance": 10
     },
     {
-      "name": "Step 1 Frame 2 has one Rect",
-      "pass": true
+      "type": "frame3Triangle",
+      "chance": 10
     },
     {
-      "name": "Step 1 Frame 2 rect matches SVG bounds",
-      "pass": true
+      "type": "frame4Elements",
+      "chance": 10
     },
     {
-      "name": "Step 2 Frame 3 forced to 100%",
-      "pass": true
+      "type": "frame5Rects",
+      "chance": 10
     },
     {
-      "name": "Step 2 Frame 3 has one Triangle",
-      "pass": true
+      "type": "frame6Rects",
+      "chance": 10
     },
     {
-      "name": "Step 2 Frame 3 triangle matches SVG points",
-      "pass": true
+      "type": "frame7Elements",
+      "chance": 10
     },
     {
-      "name": "Step 3 Frame 5 forced to 100%",
-      "pass": true
+      "type": "frame8Elements",
+      "chance": 10
     },
     {
-      "name": "Step 3 Frame 5 has two Rects and one Trampoline segment",
-      "pass": true
+      "type": "frame9Elements",
+      "chance": 10
     },
     {
-      "name": "Step 3 Frame 5 vertical rects match SVG bounds",
-      "pass": true
+      "type": "frame10Elements",
+      "chance": 10
     },
     {
-      "name": "Step 3 Frame 5 rotated segment matches SVG transformed corners",
-      "pass": true
-    },
-    {
-      "name": "Step 4 normal generation chances restored in source",
-      "pass": true
-    },
-    {
-      "name": "No browser JS errors",
-      "pass": true
+      "type": "frame11Elements",
+      "chance": 10
     }
   ]
 }

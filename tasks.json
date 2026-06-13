@@ -110,7 +110,7 @@
     "id": "TASK-005",
     "category": "test",
     "priority": "normal",
-    "description": "Verify the new bad-version generation elements visually against the required SVG frames. Keep this ticket sized to 15 minutes or less.\nImplemented: Visually verified Frame 2, Frame 3, and Frame 5 with forced-100% bad-version browser screenshots and restored normal source chances.\nVerified: Independent forced-100% browser screenshots and SVG geometry checks passed for Frame 2, Frame 3, and Frame 5; normal source chances remain restored.",
+    "description": "Verify the new bad-version generation elements visually against the required SVG frames. Keep this ticket sized to 15 minutes or less.\nImplemented: Visually verified Frame 2, Frame 3, and Frame 5 with forced-100% bad-version browser screenshots and restored normal source chances.\nVerified: Independent forced-100% browser screenshots and SVG geometry checks passed for Frame 2, Frame 3, and Frame 5; normal source chances remain restored.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Re-verified Frame 2, Frame 3, and Frame 5 with forced bad-version browser screenshots, SVG geometry checks, no-overlap samples, a supplemental 35s deletion probe, and restored source chances.",
     "acceptance_criteria": [
       "Each new bad-version element is individually tested with its generation chance temporarily set to 100%.",
       "A screenshot is captured for each new element and compared visually against its required SVG frame.",
@@ -119,7 +119,12 @@
       "temporary make generation of new element 100% chance",
       "open the game, make screenshot",
       "compare the screenshot with required frame svg",
-      "dont trust the code, look at the screenshot instead"
+      "dont trust the code, look at the screenshot instead",
+      "1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.",
+      "2. distance betweend different elements is huge, are you ok? look at master version and make similar",
+      "3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check",
+      "4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)",
+      "5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)"
     ],
     "test_steps": [
       "Step 1: Temporarily force the Frame 2 generation element to 100%, open the game, screenshot it, and compare it with /opt/grapnelninja/screenshots/Frame 2.svg.",
@@ -127,7 +132,7 @@
       "Step 3: Temporarily force the Frame 5 generation element to 100%, open the game, screenshot it, and compare it with /opt/grapnelninja/screenshots/Frame 5.svg.",
       "Step 4: Restore normal generation chances after visual verification."
     ],
-    "status": "done"
+    "status": "to-verify"
   },
   {
     "id": "TASK-006",
