@@ -1,71 +1,287 @@
 {
-  "data": {
-    "version": "bad",
-    "style": {
-      "greenStroke": "#64e379",
-      "blueStroke": "#1f7aff",
-      "hazardStroke": "#ff3d71"
+  "url": "http://127.0.0.1:4173/index.html",
+  "errors": [],
+  "console": [],
+  "checks": [
+    {
+      "label": "green 1 left",
+      "actual": 141.5,
+      "expected": 141.5,
+      "eps": 0.75,
+      "ok": true
     },
-    "forcedCreations": [
+    {
+      "label": "green 1 top",
+      "actual": 76.5,
+      "expected": 76.5,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 1 width",
+      "actual": 52.00000000000003,
+      "expected": 52,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 1 height",
+      "actual": 84,
+      "expected": 84,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 2 left",
+      "actual": 141.5,
+      "expected": 141.5,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 2 top",
+      "actual": 233.5,
+      "expected": 233.5,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 2 width",
+      "actual": 52.00000000000003,
+      "expected": 52,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 2 height",
+      "actual": 150,
+      "expected": 150,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 3 left",
+      "actual": 141.5,
+      "expected": 141.5,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 3 top",
+      "actual": 444.50000000000006,
+      "expected": 444.5,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 3 width",
+      "actual": 52.00000000000003,
+      "expected": 52,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "green 3 height",
+      "actual": 109.00000000000006,
+      "expected": 109,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "triangle left",
+      "actual": 454.038,
+      "expected": 454.038,
+      "eps": 1,
+      "ok": true
+    },
+    {
+      "label": "triangle right",
+      "actual": 557.962,
+      "expected": 557.962,
+      "eps": 1,
+      "ok": true
+    },
+    {
+      "label": "triangle top",
+      "actual": 157.00000000000003,
+      "expected": 157,
+      "eps": 1,
+      "ok": true
+    },
+    {
+      "label": "triangle bottom",
+      "actual": 271,
+      "expected": 271,
+      "eps": 1,
+      "ok": true
+    },
+    {
+      "label": "cube left",
+      "actual": 480,
+      "expected": 480,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "cube top",
+      "actual": 441,
+      "expected": 441,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "cube width",
+      "actual": 51,
+      "expected": 51,
+      "eps": 0.75,
+      "ok": true
+    },
+    {
+      "label": "cube height",
+      "actual": 52.00000000000006,
+      "expected": 52,
+      "eps": 0.75,
+      "ok": true
+    }
+  ],
+  "initial": {
+    "version": "bad",
+    "sourceChances": [
+      {
+        "type": "frame2Rect",
+        "chance": 0
+      },
+      {
+        "type": "frame3Triangle",
+        "chance": 0
+      },
+      {
+        "type": "frame4Elements",
+        "chance": 0
+      },
+      {
+        "type": "frame5Rects",
+        "chance": 0
+      },
+      {
+        "type": "frame6Rects",
+        "chance": 0
+      },
+      {
+        "type": "frame7Elements",
+        "chance": 0
+      },
+      {
+        "type": "frame8Elements",
+        "chance": 0
+      },
       {
         "type": "frame9Elements",
         "chance": 100
+      },
+      {
+        "type": "frame10Elements",
+        "chance": 0
+      },
+      {
+        "type": "frame11Elements",
+        "chance": 0
       }
-    ],
-    "factoryKeys": [
-      "frame2Rect",
-      "frame3Triangle",
-      "frame4Elements",
-      "frame5Rects",
-      "frame6Rects",
-      "frame7Elements",
-      "frame8Elements",
-      "frame9Elements"
     ],
     "objects": [
       {
-        "type": "Rect",
+        "className": "Trampoline",
         "fill": "#071c12",
         "stroke": "#64e379",
         "x": 141.5,
         "y": 444.50000000000006,
-        "width": 52,
-        "height": 109,
-        "right": 193.50000000000003,
-        "left": 141.5
+        "width": null,
+        "height": null,
+        "speedY": 0,
+        "points": [
+          {
+            "x": 141.5,
+            "y": 444.50000000000006
+          },
+          {
+            "x": 141.5,
+            "y": 553.5000000000001
+          },
+          {
+            "x": 193.50000000000003,
+            "y": 553.5000000000001
+          },
+          {
+            "x": 193.50000000000003,
+            "y": 444.50000000000006
+          }
+        ]
       },
       {
-        "type": "Rect",
+        "className": "Trampoline",
         "fill": "#071c12",
         "stroke": "#64e379",
         "x": 141.5,
         "y": 233.5,
-        "width": 52,
-        "height": 150,
-        "right": 193.50000000000003,
-        "left": 141.5
+        "width": null,
+        "height": null,
+        "speedY": 0,
+        "points": [
+          {
+            "x": 141.5,
+            "y": 233.5
+          },
+          {
+            "x": 141.5,
+            "y": 383.5
+          },
+          {
+            "x": 193.50000000000003,
+            "y": 383.5
+          },
+          {
+            "x": 193.50000000000003,
+            "y": 233.5
+          }
+        ]
       },
       {
-        "type": "Rect",
+        "className": "Trampoline",
         "fill": "#071c12",
         "stroke": "#64e379",
         "x": 141.5,
         "y": 76.5,
-        "width": 52,
-        "height": 84,
-        "right": 193.50000000000003,
-        "left": 141.5
+        "width": null,
+        "height": null,
+        "speedY": 0,
+        "points": [
+          {
+            "x": 141.5,
+            "y": 76.5
+          },
+          {
+            "x": 141.5,
+            "y": 160.5
+          },
+          {
+            "x": 193.50000000000003,
+            "y": 160.5
+          },
+          {
+            "x": 193.50000000000003,
+            "y": 76.5
+          }
+        ]
       },
       {
-        "type": "Triangle",
+        "className": "Triangle",
         "fill": "#21070f",
         "stroke": "#ff3d71",
         "x": 506,
         "y": 195.00000000000003,
         "width": null,
         "height": 114,
-        "right": 557.962,
-        "left": 454.038,
+        "speedY": 0.39375,
         "points": [
           {
             "x": 454.038,
@@ -82,122 +298,153 @@
         ]
       },
       {
-        "type": "Rect",
+        "className": "JumpingCube",
         "fill": "#061234",
         "stroke": "#1f7aff",
         "x": 480,
         "y": 441,
         "width": 51,
         "height": 52,
-        "right": 531,
-        "left": 480
-      },
-      {
-        "type": "Trampoline",
-        "fill": "black",
-        "stroke": "black",
-        "x": 0,
-        "y": 0,
-        "width": null,
-        "height": null,
-        "right": 508.0479225276084,
-        "left": 503.7550774723915,
+        "speedY": -0.1,
         "points": [
           {
-            "x": 508.0479225276084,
-            "y": 473.82268136061174
+            "x": 480,
+            "y": 441
           },
           {
-            "x": 508.7549225276084,
-            "y": 384.01968136061186
+            "x": 531,
+            "y": 441
           },
           {
-            "x": 503.7550774723915,
-            "y": 383.98031863938826
+            "x": 531,
+            "y": 493.00000000000006
           },
           {
-            "x": 503.0480774723915,
-            "y": 473.78331863938826
-          }
-        ]
-      },
-      {
-        "type": "Trampoline",
-        "fill": "black",
-        "stroke": "black",
-        "x": 0,
-        "y": 0,
-        "width": null,
-        "height": null,
-        "right": 536.3067669529663,
-        "left": 504.4872330470336,
-        "points": [
-          {
-            "x": 504.4872330470336,
-            "y": 385.76776695296644
-          },
-          {
-            "x": 532.7712330470335,
-            "y": 414.0517669529664
-          },
-          {
-            "x": 536.3067669529663,
-            "y": 410.51623304703367
-          },
-          {
-            "x": 508.0227669529663,
-            "y": 382.23223304703373
-          }
-        ]
-      },
-      {
-        "type": "Trampoline",
-        "fill": "black",
-        "stroke": "black",
-        "x": 0,
-        "y": 0,
-        "width": null,
-        "height": null,
-        "right": 504.4872330470336,
-        "left": 481.1527669529663,
-        "points": [
-          {
-            "x": 504.4872330470336,
-            "y": 382.23223304703373
-          },
-          {
-            "x": 477.6172330470336,
-            "y": 409.1022330470336
-          },
-          {
-            "x": 481.1527669529663,
-            "y": 412.63776695296633
-          },
-          {
-            "x": 508.0227669529663,
-            "y": 385.76776695296644
+            "x": 480,
+            "y": 493.00000000000006
           }
         ]
       }
     ]
   },
-  "messages": [
+  "noOverlapSamples": [
     {
-      "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+      "i": 1,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
+    },
+    {
+      "i": 2,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
+    },
+    {
+      "i": 3,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
+    },
+    {
+      "i": 4,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
+    },
+    {
+      "i": 5,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
+    },
+    {
+      "i": 6,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
+    },
+    {
+      "i": 7,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
+    },
+    {
+      "i": 8,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
+    },
+    {
+      "i": 9,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
+    },
+    {
+      "i": 10,
+      "triangleBounds": {
+        "left": 454.038,
+        "right": 557.962,
+        "top": 157.00000000000003,
+        "bottom": 271,
+        "width": 103.92399999999998,
+        "height": 113.99999999999997
+      }
     }
   ],
-  "jsErrors": [],
-  "checks": {
-    "rectChecks": [
-      true,
-      true,
-      true,
-      true
-    ],
-    "triangleCheck": true,
-    "markerCheck": true,
-    "frame9Registered": true
+  "progression": {
+    "screenX": -528360,
+    "score": 493,
+    "middleElements": 5,
+    "frame9Chance": 100
   },
-  "screenshot": "screenshots/TASK-015.png"
+  "sourceChanceRestored": true,
+  "jsErrors": []
 }
