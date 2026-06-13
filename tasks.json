@@ -26,7 +26,7 @@
     "id": "TASK-002",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 2.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now creates one centered green Frame 2 Rect using the existing RectFactory/Rect rendering path.\nVerified: Independent commit/code inspection plus live browser screenshot/object checks confirmed one centered green Rect matches Frame 2 geometry and uses the existing RectFactory/Rect rendering path.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Reworked Frame 2 as an existing Trampoline rectangle, preserved SVG geometry, and fixed single-element floor regeneration after offscreen deletion.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 2.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now creates one centered green Frame 2 Rect using the existing RectFactory/Rect rendering path.\nVerified: Independent commit/code inspection plus live browser screenshot/object checks confirmed one centered green Rect matches Frame 2 geometry and uses the existing RectFactory/Rect rendering path.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Reworked Frame 2 as an existing Trampoline rectangle, preserved SVG geometry, and fixed single-element floor regeneration after offscreen deletion.\nVerified: Independent code/commit inspection, forced-100% screenshot/SVG geometry comparison, and 30s bad-version deletion run confirmed Frame 2 is a green Trampoline and no crash/errors occur.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 2 element: one vertical green rectangle between the ceiling and floor.",
       "The implementation reuses existing Rect or existing rectangle factory behavior instead of adding new graphics code.",
@@ -48,13 +48,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 2.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-003",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 3.svg by reusing existing triangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes a centered red Frame 3 Triangle using the existing Triangle rendering path.\nVerified: Independent commit/code inspection and live browser screenshot/object checks confirmed the Frame 3 Triangle matches the SVG geometry and uses the existing Triangle rendering path.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Reworked Frame 3 Triangle to keep its existing Triangle rendering while constraining movement to the SVG hazard bounds.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 3.svg by reusing existing triangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes a centered red Frame 3 Triangle using the existing Triangle rendering path.\nVerified: Independent commit/code inspection and live browser screenshot/object checks confirmed the Frame 3 Triangle matches the SVG geometry and uses the existing Triangle rendering path.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Reworked Frame 3 Triangle to keep its existing Triangle rendering while constraining movement to the SVG hazard bounds.\nVerified: Independent code/commit inspection, forced-100% screenshot/SVG geometry comparison, 10 no-overlap screenshots, and 30s bad-version deletion run confirmed Frame 3 is correct with no JS errors.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 3 element: one centered red hazard triangle between the ceiling and floor.",
       "The implementation reuses existing Triangle or existing triangle factory behavior instead of adding new graphics code.",
@@ -76,13 +76,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 3.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-004",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 5.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 5's two green Rect posts and green rotated horizontal rectangle segment using existing rectangle/polygon rendering paths.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object checks confirmed Frame 5 geometry and unchanged rendering styles.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Reworked Frame 5 green pieces as existing Trampoline polygons, preserving SVG geometry and avoiding obstacle Rect semantics.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 5.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 5's two green Rect posts and green rotated horizontal rectangle segment using existing rectangle/polygon rendering paths.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object checks confirmed Frame 5 geometry and unchanged rendering styles.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Reworked Frame 5 green pieces as existing Trampoline polygons, preserving SVG geometry and avoiding obstacle Rect semantics.\nVerified: Independent code/commit inspection, forced-100% screenshot/SVG geometry comparison, and 30s bad-version deletion run confirmed Frame 5 uses existing Trampoline pieces with no JS errors.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 5 element: one right vertical green rectangle, one center vertical green rectangle, and one horizontal green rectangle segment.",
       "The implementation reuses existing Rect or existing rectangle factory behavior instead of adding new graphics code.",
@@ -104,13 +104,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 5.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-005",
     "category": "test",
     "priority": "normal",
-    "description": "Verify the new bad-version generation elements visually against the required SVG frames. Keep this ticket sized to 15 minutes or less.\nImplemented: Visually verified Frame 2, Frame 3, and Frame 5 with forced-100% bad-version browser screenshots and restored normal source chances.\nVerified: Independent forced-100% browser screenshots and SVG geometry checks passed for Frame 2, Frame 3, and Frame 5; normal source chances remain restored.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Re-verified Frame 2, Frame 3, and Frame 5 with forced bad-version browser screenshots, SVG geometry checks, no-overlap samples, a supplemental 35s deletion probe, and restored source chances.\nImplemented: Verified Frame 2, Frame 3, and Frame 5 against SVG screenshots and fixed grouped bad-version regeneration so 30s offscreen progression no longer hangs.",
+    "description": "Verify the new bad-version generation elements visually against the required SVG frames. Keep this ticket sized to 15 minutes or less.\nImplemented: Visually verified Frame 2, Frame 3, and Frame 5 with forced-100% bad-version browser screenshots and restored normal source chances.\nVerified: Independent forced-100% browser screenshots and SVG geometry checks passed for Frame 2, Frame 3, and Frame 5; normal source chances remain restored.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Re-verified Frame 2, Frame 3, and Frame 5 with forced bad-version browser screenshots, SVG geometry checks, no-overlap samples, a supplemental 35s deletion probe, and restored source chances.\nVerification failed: Independent browser deletion/progression probe hung when moving bad-version elements offscreen, so the reopened 30-second no-crash criterion was not met.\nImplemented: Verified Frame 2, Frame 3, and Frame 5 against SVG screenshots and fixed grouped bad-version regeneration so 30s offscreen progression no longer hangs.\nVerified: Independent code/commit inspection, forced-100% browser screenshots for Frame 2/3/5, SVG geometry comparison, ten Frame 3 no-overlap samples, restored 10% source chances, and a real 31s offscreen deletion run all passed with no JS exceptions.",
     "acceptance_criteria": [
       "Each new bad-version element is individually tested with its generation chance temporarily set to 100%.",
       "A screenshot is captured for each new element and compared visually against its required SVG frame.",
@@ -132,13 +132,13 @@
       "Step 3: Temporarily force the Frame 5 generation element to 100%, open the game, screenshot it, and compare it with /opt/grapnelninja/screenshots/Frame 5.svg.",
       "Step 4: Restore normal generation chances after visual verification."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-006",
     "category": "test",
     "priority": "critical",
-    "description": "Play the game for 30 seconds and reproduce the runtime error: Uncaught TypeError: Cannot set properties of undefined (setting 'scored'). Keep this ticket sized to 15 minutes or less.\nImplemented: Reproduced the scored TypeError after a 32.4s live classic run and captured screenshot/report artifacts with stack context.",
+    "description": "Play the game for 30 seconds and reproduce the runtime error: Uncaught TypeError: Cannot set properties of undefined (setting 'scored'). Keep this ticket sized to 15 minutes or less.\nImplemented: Reproduced the scored TypeError after a 32.4s live classic run and captured screenshot/report artifacts with stack context.\nVerified: Independent 31.4s browser run captured the exact console error, screenshot, visible state, and stack at sprites/floor.js:63.",
     "acceptance_criteria": [
       "The game is played live for at least 30 seconds.",
       "The browser console captures the exact error text: Uncaught TypeError: Cannot set properties of undefined (setting 'scored').",
@@ -151,13 +151,13 @@
       "Step 3: Capture the exact console error text and stack context.",
       "Step 4: Capture a screenshot or video frame showing the game state when the error appears, if possible."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-007",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot set properties of undefined (setting 'scored'). Keep this ticket sized to 15 minutes or less.\nImplemented: Fixed Floor.deleteElements scoring to call isPairElement() and only mark the paired element when it exists.",
+    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot set properties of undefined (setting 'scored'). Keep this ticket sized to 15 minutes or less.\nImplemented: Fixed Floor.deleteElements scoring to call isPairElement() and only mark the paired element when it exists.\nVerified: Independent code inspection plus targeted scored-path and 31.6s classic browser checks passed with no scored TypeError or JS errors.",
     "acceptance_criteria": [
       "The code path that assigns scored only runs when the target object exists.",
       "The fix preserves existing scoring behavior for valid game objects.",
@@ -170,13 +170,13 @@
       "Step 3: Open the game with the developer console visible.",
       "Step 4: Play for at least 30 seconds and verify the scored TypeError does not appear."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-008",
     "category": "test",
     "priority": "critical",
-    "description": "Play the game for 30 seconds and reproduce the runtime error: Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.\nImplemented: Reproduced the collision TypeError after a 34.7s live classic browser run and captured screenshot/report artifacts with stack context.",
+    "description": "Play the game for 30 seconds and reproduce the runtime error: Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.\nImplemented: Reproduced the collision TypeError after a 34.7s live classic browser run and captured screenshot/report artifacts with stack context.\nVerified: Independent 35.0s classic browser run captured the exact collision TypeError, screenshot, visible state, and stack at sprites/ninja.js:34.",
     "acceptance_criteria": [
       "The game is played live for at least 30 seconds.",
       "The browser console captures the exact error text: Uncaught TypeError: Cannot read properties of undefined (reading 'collision').",
@@ -189,13 +189,13 @@
       "Step 3: Capture the exact console error text and stack context.",
       "Step 4: Capture a screenshot or video frame showing the game state when the error appears, if possible."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-009",
     "category": "functional",
     "priority": "critical",
-    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.\nImplemented: Guarded Ninja.collision() by caching the current element before collision checks so the handler only reads a valid target while preserving valid element collisions.",
+    "description": "Fix the runtime error where the game throws Uncaught TypeError: Cannot read properties of undefined (reading 'collision'). Keep this ticket sized to 15 minutes or less.\nImplemented: Guarded Ninja.collision() by caching the current element before collision checks so the handler only reads a valid target while preserving valid element collisions.\nVerified: Independent diff/code inspection, targeted undefined-slot collision probe, and 34.2s classic browser run passed with no collision TypeError or JS errors.",
     "acceptance_criteria": [
       "The code path that reads collision only runs when the target object exists.",
       "The fix preserves existing collision behavior for valid game objects.",
@@ -208,13 +208,13 @@
       "Step 3: Open the game with the developer console visible.",
       "Step 4: Play for at least 30 seconds and verify the collision TypeError does not appear."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-010",
     "category": "test",
     "priority": "critical",
-    "description": "Play the game for 30 seconds and, if any additional browser console errors appear, create new tickets for them in tasks.json. Keep this ticket sized to 15 minutes or less.\nImplemented: Completed a 33.9s live classic browser run, captured screenshot/report artifacts, found no uncaught JavaScript errors, and added no new error tickets.",
+    "description": "Play the game for 30 seconds and, if any additional browser console errors appear, create new tickets for them in tasks.json. Keep this ticket sized to 15 minutes or less.\nImplemented: Completed a 33.9s live classic browser run, captured screenshot/report artifacts, found no uncaught JavaScript errors, and added no new error tickets.\nVerified: Independent 33.6s classic browser run captured screenshot/report artifacts, found zero uncaught JavaScript errors, and required no new tickets.",
     "acceptance_criteria": [
       "The game is played live for at least 30 seconds with the browser console visible.",
       "Any additional uncaught errors are captured with exact console text and stack context.",
@@ -227,13 +227,13 @@
       "Step 3: Record any additional uncaught errors with exact console text and stack context.",
       "Step 4: Add one new pending ticket per additional error using the required tasks.json format."
     ],
-    "status": "to-verify"
+    "status": "done"
   },
   {
     "id": "TASK-011",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 4.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 4's green horizontal segment, blue square, and red triangle using existing Trampoline, Rect, and Triangle rendering paths.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 4.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 4's green horizontal segment, blue square, and red triangle using existing Trampoline, Rect, and Triangle rendering paths.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object verification confirmed Frame 4 geometry and existing renderer reuse.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Constrained Frame 4 triangle movement to its SVG hazard bounds while keeping the green segment as an existing Trampoline and preserving existing Rect/Triangle rendering.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 4 element from /opt/grapnelninja/screenshots/Frame 4.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -242,7 +242,12 @@
       "temporary make generation of new element 100% chance",
       "open the game, make screenshot",
       "compare the screenshot with required frame svg",
-      "dont trust the code, look at the screenshot instead"
+      "dont trust the code, look at the screenshot instead",
+      "1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.",
+      "2. distance betweend different elements is huge, are you ok? look at master version and make similar",
+      "3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check",
+      "4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)",
+      "5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)"
     ],
     "test_steps": [
       "Step 1: Temporarily make the Frame 4 element generation chance 100% in bad version.",
@@ -256,7 +261,7 @@
     "id": "TASK-012",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 6.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 6's two gray Rect pillars using the existing RectFactory/Rect rendering path.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 6.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 6's two gray Rect pillars using the existing RectFactory/Rect rendering path.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object verification confirmed Frame 6 geometry and existing Rect renderer reuse.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)",
     "acceptance_criteria": [
       "Bad version can generate the Frame 6 element from /opt/grapnelninja/screenshots/Frame 6.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -265,7 +270,12 @@
       "temporary make generation of new element 100% chance",
       "open the game, make screenshot",
       "compare the screenshot with required frame svg",
-      "dont trust the code, look at the screenshot instead"
+      "dont trust the code, look at the screenshot instead",
+      "1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.",
+      "2. distance betweend different elements is huge, are you ok? look at master version and make similar",
+      "3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check",
+      "4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)",
+      "5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)"
     ],
     "test_steps": [
       "Step 1: Temporarily make the Frame 6 element generation chance 100% in bad version.",
@@ -273,13 +283,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 6.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "pending"
   },
   {
     "id": "TASK-013",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 7.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 7's green platform, blue square, and black grapnel marker using existing Rect rendering plus a visual-only frame marker.\nImplemented: Replaced the custom FrameGrapnelMarker draw path with existing Trampoline polygon segments for the black marker.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 7.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 7's green platform, blue square, and black grapnel marker using existing Rect rendering plus a visual-only frame marker.\nVerification failed: Frame 7 visual screenshot matched, but implementation adds a new FrameGrapnelMarker draw path instead of reusing existing classes/factory behavior.\nImplemented: Replaced the custom FrameGrapnelMarker draw path with existing Trampoline polygon segments for the black marker.\nVerified: Independent code inspection plus forced-100% browser screenshot/object checks confirmed Frame 7 geometry and existing Rect/Trampoline renderer reuse.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)",
     "acceptance_criteria": [
       "Bad version can generate the Frame 7 element from /opt/grapnelninja/screenshots/Frame 7.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -288,7 +298,12 @@
       "temporary make generation of new element 100% chance",
       "open the game, make screenshot",
       "compare the screenshot with required frame svg",
-      "dont trust the code, look at the screenshot instead"
+      "dont trust the code, look at the screenshot instead",
+      "1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.",
+      "2. distance betweend different elements is huge, are you ok? look at master version and make similar",
+      "3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check",
+      "4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)",
+      "5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)"
     ],
     "test_steps": [
       "Step 1: Temporarily make the Frame 7 element generation chance 100% in bad version.",
@@ -296,13 +311,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 7.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "pending"
   },
   {
     "id": "TASK-014",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 8.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 8's gray center Rect and three green safe Rects using the existing RectFactory/Rect rendering path.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 8.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 8's gray center Rect and three green safe Rects using the existing RectFactory/Rect rendering path.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object verification confirmed Frame 8 geometry and existing Rect renderer reuse.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)",
     "acceptance_criteria": [
       "Bad version can generate the Frame 8 element from /opt/grapnelninja/screenshots/Frame 8.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -311,7 +326,12 @@
       "temporary make generation of new element 100% chance",
       "open the game, make screenshot",
       "compare the screenshot with required frame svg",
-      "dont trust the code, look at the screenshot instead"
+      "dont trust the code, look at the screenshot instead",
+      "1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.",
+      "2. distance betweend different elements is huge, are you ok? look at master version and make similar",
+      "3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check",
+      "4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)",
+      "5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)"
     ],
     "test_steps": [
       "Step 1: Temporarily make the Frame 8 element generation chance 100% in bad version.",
@@ -319,13 +339,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 8.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "pending"
   },
   {
     "id": "TASK-015",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 9.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 9's three green Rects, red Triangle, blue Rect square, and black marker segments using existing Rect, Triangle, and Trampoline rendering paths.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 9.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 9's three green Rects, red Triangle, blue Rect square, and black marker segments using existing Rect, Triangle, and Trampoline rendering paths.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object verification confirmed Frame 9 geometry and existing Rect/Triangle/Trampoline renderer reuse.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)",
     "acceptance_criteria": [
       "Bad version can generate the Frame 9 element from /opt/grapnelninja/screenshots/Frame 9.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -334,7 +354,12 @@
       "temporary make generation of new element 100% chance",
       "open the game, make screenshot",
       "compare the screenshot with required frame svg",
-      "dont trust the code, look at the screenshot instead"
+      "dont trust the code, look at the screenshot instead",
+      "1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.",
+      "2. distance betweend different elements is huge, are you ok? look at master version and make similar",
+      "3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check",
+      "4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)",
+      "5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)"
     ],
     "test_steps": [
       "Step 1: Temporarily make the Frame 9 element generation chance 100% in bad version.",
@@ -342,13 +367,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 9.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "pending"
   },
   {
     "id": "TASK-016",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 10.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 10's green horizontal Rect and two gray Rect pillars using the existing RectFactory/Rect rendering path.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 10.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 10's green horizontal Rect and two gray Rect pillars using the existing RectFactory/Rect rendering path.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object verification confirmed Frame 10 geometry and existing Rect renderer reuse.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)",
     "acceptance_criteria": [
       "Bad version can generate the Frame 10 element from /opt/grapnelninja/screenshots/Frame 10.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -357,7 +382,12 @@
       "temporary make generation of new element 100% chance",
       "open the game, make screenshot",
       "compare the screenshot with required frame svg",
-      "dont trust the code, look at the screenshot instead"
+      "dont trust the code, look at the screenshot instead",
+      "1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.",
+      "2. distance betweend different elements is huge, are you ok? look at master version and make similar",
+      "3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check",
+      "4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)",
+      "5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)"
     ],
     "test_steps": [
       "Step 1: Temporarily make the Frame 10 element generation chance 100% in bad version.",
@@ -365,13 +395,13 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 10.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "pending"
   },
   {
     "id": "TASK-017",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 11.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 11's green horizontal Rect and two gray Rect pillars using the existing RectFactory/Rect rendering path.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 11.svg by reusing existing classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 11's green horizontal Rect and two gray Rect pillars using the existing RectFactory/Rect rendering path.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object verification confirmed Frame 11 geometry and existing Rect renderer reuse.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)",
     "acceptance_criteria": [
       "Bad version can generate the Frame 11 element from /opt/grapnelninja/screenshots/Frame 11.svg.",
       "The implementation reuses existing classes or existing factory behavior instead of adding new graphics code.",
@@ -380,7 +410,12 @@
       "temporary make generation of new element 100% chance",
       "open the game, make screenshot",
       "compare the screenshot with required frame svg",
-      "dont trust the code, look at the screenshot instead"
+      "dont trust the code, look at the screenshot instead",
+      "1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.",
+      "2. distance betweend different elements is huge, are you ok? look at master version and make similar",
+      "3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check",
+      "4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)",
+      "5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)"
     ],
     "test_steps": [
       "Step 1: Temporarily make the Frame 11 element generation chance 100% in bad version.",
@@ -388,6 +423,6 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 11.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "to-verify"
+    "status": "pending"
   }
 ]

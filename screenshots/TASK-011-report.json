@@ -1,121 +1,507 @@
 {
-  "version": "bad",
-  "floorElementCount": 3,
-  "floorElementTypes": [
-    "Trampoline",
-    "Rect",
-    "Triangle"
-  ],
-  "creations": [
-    {
-      "type": "frame2Rect",
-      "chance": 25
-    },
-    {
-      "type": "frame3Triangle",
-      "chance": 25
-    },
-    {
-      "type": "frame4Elements",
-      "chance": 25
-    },
-    {
-      "type": "frame5Rects",
-      "chance": 25
-    }
-  ],
-  "elements": [
-    {
-      "className": "Trampoline",
-      "fill": "#071c12",
-      "stroke": "#64e379",
-      "x": 0,
-      "y": 0,
-      "width": null,
-      "height": null,
-      "side": null,
-      "points": [
-        {
-          "x": 252,
-          "y": 331
+  "state": {
+    "version": "bad",
+    "scale": 0.45454545454545453,
+    "elements": [
+      {
+        "index": 0,
+        "ctor": "Trampoline",
+        "x": 0,
+        "y": 0,
+        "fill": "#071c12",
+        "stroke": "#64e379",
+        "group": 0,
+        "left": 554.4,
+        "right": 1141.8,
+        "top": 611.6,
+        "bottom": 728.2,
+        "displayLeft": 251.99999999999997,
+        "displayRight": 519,
+        "displayTop": 278,
+        "displayBottom": 331,
+        "points": [
+          {
+            "x": 554.4,
+            "y": 728.2
+          },
+          {
+            "x": 554.4,
+            "y": 611.6
+          },
+          {
+            "x": 1141.8,
+            "y": 611.6
+          },
+          {
+            "x": 1141.8,
+            "y": 728.2
+          }
+        ],
+        "restrictionY": null,
+        "displayRestrictionY": null
+      },
+      {
+        "index": 1,
+        "ctor": "Rect",
+        "x": 809.6,
+        "y": 363,
+        "fill": "#061234",
+        "stroke": "#1f7aff",
+        "group": 0,
+        "left": 809.6,
+        "right": 921.8000000000001,
+        "top": 363,
+        "bottom": 477.4,
+        "displayLeft": 368,
+        "displayRight": 419,
+        "displayTop": 165,
+        "displayBottom": 216.99999999999997,
+        "points": [
+          {
+            "x": 809.6,
+            "y": 363
+          },
+          {
+            "x": 921.8000000000001,
+            "y": 363
+          },
+          {
+            "x": 921.8000000000001,
+            "y": 477.4
+          },
+          {
+            "x": 809.6,
+            "y": 477.4
+          }
+        ],
+        "restrictionY": null,
+        "displayRestrictionY": null
+      },
+      {
+        "index": 2,
+        "ctor": "Triangle",
+        "x": 849.2,
+        "y": 937.2,
+        "fill": "#21070f",
+        "stroke": "#ff3d71",
+        "group": 0,
+        "left": 734.8836000000001,
+        "right": 963.5164,
+        "top": 853.6,
+        "bottom": 1104.4,
+        "displayLeft": 334.03800000000007,
+        "displayRight": 437.962,
+        "displayTop": 388,
+        "displayBottom": 502,
+        "points": [
+          {
+            "x": 734.8836000000001,
+            "y": 853.6
+          },
+          {
+            "x": 963.5164,
+            "y": 853.6
+          },
+          {
+            "x": 849.2,
+            "y": 1104.4
+          }
+        ],
+        "restrictionY": {
+          "min": 853.6,
+          "max": 1104.3999999999999
         },
-        {
-          "x": 252,
-          "y": 278
-        },
-        {
-          "x": 519,
-          "y": 278
-        },
-        {
-          "x": 519,
-          "y": 331
+        "displayRestrictionY": {
+          "min": 388,
+          "max": 501.99999999999994
         }
-      ]
-    },
-    {
-      "className": "Rect",
-      "fill": "#061234",
-      "stroke": "#1f7aff",
-      "x": 368,
-      "y": 165,
-      "width": 51.000000000000014,
-      "height": 52.00000000000001,
-      "side": null,
-      "points": [
-        {
-          "x": 368,
-          "y": 165
-        },
-        {
-          "x": 419.00000000000006,
-          "y": 165
-        },
-        {
-          "x": 419.00000000000006,
-          "y": 217
-        },
-        {
-          "x": 368,
-          "y": 217
-        }
-      ]
-    },
-    {
-      "className": "Triangle",
-      "fill": "#21070f",
-      "stroke": "#ff3d71",
-      "x": 386,
-      "y": 426,
-      "width": null,
-      "height": 114,
-      "side": 103.92399999999999,
-      "points": [
-        {
-          "x": 334.03800000000007,
-          "y": 388
-        },
-        {
-          "x": 437.962,
-          "y": 388
-        },
-        {
-          "x": 386,
-          "y": 502.00000000000006
-        }
-      ]
-    }
-  ],
-  "consoleMessages": [
-    {
-      "type": "error",
-      "text": "Failed to load resource: the server responded with a status of 404 (File not found)",
-      "location": {
-        "url": "http://127.0.0.1:8000/favicon.ico",
-        "lineNumber": 0,
-        "columnNumber": 0
       }
+    ],
+    "creations": [
+      "frame2Rect:10",
+      "frame3Triangle:10",
+      "frame4Elements:10",
+      "frame5Rects:10",
+      "frame6Rects:10",
+      "frame7Elements:10",
+      "frame8Elements:10",
+      "frame9Elements:10",
+      "frame10Elements:10",
+      "frame11Elements:10"
+    ],
+    "screenX": 0
+  },
+  "checks": [
+    {
+      "label": "one Trampoline, one Rect, one Triangle",
+      "pass": true,
+      "constructors": [
+        "Trampoline",
+        "Rect",
+        "Triangle"
+      ]
+    },
+    {
+      "label": "green segment minX matches Frame 4 display",
+      "pass": true,
+      "actual": 251.99999999999997,
+      "expected": 252,
+      "tolerance": 1.2
+    },
+    {
+      "label": "green segment maxX matches Frame 4 display",
+      "pass": true,
+      "actual": 519,
+      "expected": 519,
+      "tolerance": 1.2
+    },
+    {
+      "label": "green segment minY matches Frame 4 display",
+      "pass": true,
+      "actual": 278,
+      "expected": 278,
+      "tolerance": 1.2
+    },
+    {
+      "label": "green segment maxY matches Frame 4 display",
+      "pass": true,
+      "actual": 331,
+      "expected": 331,
+      "tolerance": 1.2
+    },
+    {
+      "label": "blue square left matches Frame 4 display",
+      "pass": true,
+      "actual": 368,
+      "expected": 368,
+      "tolerance": 1.2
+    },
+    {
+      "label": "blue square right matches Frame 4 display",
+      "pass": true,
+      "actual": 419,
+      "expected": 419,
+      "tolerance": 1.2
+    },
+    {
+      "label": "blue square top matches Frame 4 display",
+      "pass": true,
+      "actual": 165,
+      "expected": 165,
+      "tolerance": 1.2
+    },
+    {
+      "label": "blue square bottom matches Frame 4 display",
+      "pass": true,
+      "actual": 216.99999999999997,
+      "expected": 217,
+      "tolerance": 1.2
+    },
+    {
+      "label": "triangle left matches Frame 4 display",
+      "pass": true,
+      "actual": 334.03800000000007,
+      "expected": 334.038,
+      "tolerance": 1.2
+    },
+    {
+      "label": "triangle right matches Frame 4 display",
+      "pass": true,
+      "actual": 437.962,
+      "expected": 437.962,
+      "tolerance": 1.2
+    },
+    {
+      "label": "triangle top matches Frame 4 display",
+      "pass": true,
+      "actual": 388,
+      "expected": 388,
+      "tolerance": 1.2
+    },
+    {
+      "label": "triangle bottom matches Frame 4 display",
+      "pass": true,
+      "actual": 502,
+      "expected": 502,
+      "tolerance": 1.2
+    },
+    {
+      "label": "triangle yMin constrained to SVG top",
+      "pass": true,
+      "actual": 388,
+      "expected": 388,
+      "tolerance": 0.05
+    },
+    {
+      "label": "triangle yMax constrained to SVG bottom",
+      "pass": true,
+      "actual": 501.99999999999994,
+      "expected": 502,
+      "tolerance": 0.05
+    },
+    {
+      "label": "10 one-second samples have no triangle overlap with other Frame 4 objects",
+      "pass": true
+    },
+    {
+      "label": "10 one-second samples keep triangle inside SVG vertical bounds",
+      "pass": true
+    },
+    {
+      "label": "30s bad-version progression keeps generated elements alive",
+      "pass": true,
+      "finalState": {
+        "score": 0,
+        "elementsLength": 3,
+        "screenX": 0,
+        "constructors": [
+          "Trampoline",
+          "Rect",
+          "Triangle"
+        ],
+        "groups": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "label": "no JS page or console errors except static resource noise",
+      "pass": true,
+      "jsErrors": []
     }
   ],
-  "jsErrors": []
+  "overlapSamples": [
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "triTop": 853.6,
+        "triBottom": 1104.4,
+        "restriction": {
+          "min": 853.6,
+          "max": 1104.3999999999999
+        },
+        "overlaps": [
+          {
+            "ctor": "Trampoline",
+            "hit": false
+          },
+          {
+            "ctor": "Rect",
+            "hit": false
+          }
+        ]
+      }
+    ]
+  ],
+  "finalState": {
+    "score": 0,
+    "elementsLength": 3,
+    "screenX": 0,
+    "constructors": [
+      "Trampoline",
+      "Rect",
+      "Triangle"
+    ],
+    "groups": [
+      0,
+      0,
+      0
+    ]
+  },
+  "consoleMessages": [],
+  "pageErrors": [],
+  "screenshotPath": "/opt/grapnelninja/screenshots/TASK-011.png",
+  "noOverlapPaths": [
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-1.png",
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-2.png",
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-3.png",
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-4.png",
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-5.png",
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-6.png",
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-7.png",
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-8.png",
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-9.png",
+    "/opt/grapnelninja/screenshots/TASK-011-no-overlap-10.png"
+  ]
 }

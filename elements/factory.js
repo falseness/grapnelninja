@@ -441,8 +441,8 @@ class Frame4ElementsFactory extends RectFactory
             x       : this.displayToWorld(triangle.centerX),
             y       : this.displayToWorld(triangle.topY) + worldHeight / 3,
             radius  : worldHeight * 2 / 3,
-            yMin    : 0.2 * height,
-            yMax    : 2 * height,
+            yMin    : this.displayToWorld(triangle.topY),
+            yMax    : this.displayToWorld(triangle.bottomY),
             fill    : STYLE.colors.hazard.fill,
             stroke  : STYLE.colors.hazard.stroke
         }
