@@ -66,15 +66,19 @@ class Floor
             }
             else if (this.elements[i].getRightPointX() + screen.x < screen.getDeletionBorder())
             {
+                let nextElementX = this.elements[i].getRightPointX()
                 if (this.elements[i].isPairElement())
                 {
+                    if (this.elements[i + 1])
+                        nextElementX = Math.max(nextElementX, this.elements[i + 1].getRightPointX())
                     this.elements.splice(i, 2)
                     ++newElements
                 }
                 else
                     this.elements.splice(i, 1)
                 
-                this.generateElements(this.elements[this.elements.length - 1].getRightPointX())
+                const previousElement = this.elements[this.elements.length - 1]
+                this.generateElements(previousElement ? previousElement.getRightPointX() : nextElementX)
                 
                 ++newElements
                 --i

@@ -220,12 +220,22 @@ class Frame2RectFactory extends RectFactory
         const worldHeight = this.displayHeightRatio * height / scale.bad
         const worldX = (width / scale.bad - worldWidth) / 2
         const worldY = this.displayTopRatio * height / scale.bad
-        const rect = super.create(worldX, worldY, worldWidth, worldHeight)
+        const model =
+        {
+            x       : worldX,
+            y       : worldY,
+            points  :
+            [
+                {x: 0, y: 0},
+                {x: 0, y: worldHeight},
+                {x: worldWidth, y: worldHeight},
+                {x: worldWidth, y: 0}
+            ],
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
+        }
 
-        rect.fill = STYLE.colors.cube.greenFill
-        rect.stroke = STYLE.colors.cube.greenStroke
-
-        return [rect]
+        return [new Trampoline(model)]
     }
 }
 class Frame5RectFactory extends RectFactory
