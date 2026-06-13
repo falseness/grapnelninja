@@ -1034,6 +1034,8 @@ class Frame3TriangleFactory extends TriangleFactory
         this.displayCenterYRatio = (187.75 + (421 - 187.75) / 3) / 630
         this.displaySideRatio = (491.588 - 279.412) / 630
         this.displayHeightRatio = (421 - 187.75) / 630
+        this.displayTopRatio = 187.75 / 630
+        this.displayBottomRatio = 421 / 630
     }
     create(x, y)
     {
@@ -1041,13 +1043,15 @@ class Frame3TriangleFactory extends TriangleFactory
         const worldCenterY = this.displayCenterYRatio * height / scale.bad
         const worldSide = this.displaySideRatio * height / scale.bad
         const worldHeight = this.displayHeightRatio * height / scale.bad
+        const worldTop = this.displayTopRatio * height / scale.bad
+        const worldBottom = this.displayBottomRatio * height / scale.bad
         const model =
         {
             x       : worldCenterX,
             y       : worldCenterY,
             radius  : worldHeight * 2 / 3,
-            yMin    : 0.2 * height,
-            yMax    : 2 * height,
+            yMin    : worldTop,
+            yMax    : worldBottom,
             fill    : STYLE.colors.hazard.fill,
             stroke  : STYLE.colors.hazard.stroke
         }
