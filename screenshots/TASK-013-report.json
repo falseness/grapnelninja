@@ -1,23 +1,26 @@
 {
-  "snapshot": {
+  "geometry": {
     "version": "bad",
-    "width": 772,
-    "height": 630,
-    "scale": 0.45454545454545453,
-    "normalChances": true,
-    "elements": [
+    "screenX": 0,
+    "scaleBad": 0.45454545454545453,
+    "creations": [
       {
-        "className": "Trampoline",
-        "fill": "#071c12",
-        "stroke": "#64e379",
+        "type": "frame7Elements",
+        "chance": 100
+      }
+    ],
+    "middle": [
+      {
+        "ctor": "Trampoline",
         "x": 628.1,
         "y": 839.3000000000001,
         "width": null,
         "height": null,
+        "speedY": 0,
+        "fill": "#071c12",
+        "stroke": "#64e379",
         "left": 628.1,
         "right": 1081.3,
-        "top": 839.3000000000001,
-        "bottom": 1149.5,
         "points": [
           {
             "x": 628.1,
@@ -38,106 +41,429 @@
         ]
       },
       {
-        "className": "JumpingCube",
-        "fill": "#061234",
-        "stroke": "#1f7aff",
+        "ctor": "JumpingCube",
         "x": 798.5999999999999,
-        "y": 455.40000000000003,
+        "y": 452.3970717884134,
         "width": 112.2,
         "height": 114.4,
+        "speedY": 0.07852644836272085,
+        "fill": "#061234",
+        "stroke": "#1f7aff",
         "left": 798.5999999999999,
         "right": 910.8,
-        "top": 455.40000000000003,
-        "bottom": 569.8000000000001,
         "points": [
           {
             "x": 798.5999999999999,
-            "y": 455.40000000000003
+            "y": 452.3970717884134
           },
           {
             "x": 910.8,
-            "y": 455.40000000000003
+            "y": 452.3970717884134
           },
           {
             "x": 910.8,
-            "y": 569.8000000000001
+            "y": 566.7970717884134
           },
           {
             "x": 798.5999999999999,
-            "y": 569.8000000000001
+            "y": 566.7970717884134
           }
         ]
       }
     ]
   },
+  "expected": {
+    "green": {
+      "x": 628.1,
+      "y": 839.3000000000001,
+      "width": 453.2,
+      "height": 310.2
+    },
+    "blue": {
+      "x": 798.5999999999999,
+      "y": 455.40000000000003,
+      "width": 112.2,
+      "height": 114.4
+    }
+  },
   "checks": [
     {
-      "name": "green trampoline left",
+      "name": "one green Trampoline generated",
       "pass": true,
-      "actual": 285.5,
-      "expected": 285.5,
-      "eps": 1.25
+      "observed": 1
     },
     {
-      "name": "green trampoline top",
+      "name": "one JumpingCube generated",
       "pass": true,
-      "actual": 381.5,
-      "expected": 381.5,
-      "eps": 1.25
+      "observed": 1
     },
     {
-      "name": "green trampoline width",
+      "name": "green block matches Frame 7.svg bounds",
       "pass": true,
-      "actual": 205.99999999999997,
-      "expected": 206,
-      "eps": 1.25
+      "observed": {
+        "left": 628.1,
+        "right": 1081.3,
+        "top": 839.3000000000001,
+        "bottom": 1149.5
+      },
+      "expected": {
+        "x": 628.1,
+        "y": 839.3000000000001,
+        "width": 453.2,
+        "height": 310.2
+      }
     },
     {
-      "name": "green trampoline height",
+      "name": "blue JumpingCube starts near Frame 7.svg bounds",
       "pass": true,
-      "actual": 140.99999999999997,
-      "expected": 141,
-      "eps": 1.25
+      "observed": {
+        "ctor": "JumpingCube",
+        "x": 798.5999999999999,
+        "y": 452.3970717884134,
+        "width": 112.2,
+        "height": 114.4,
+        "speedY": 0.07852644836272085,
+        "fill": "#061234",
+        "stroke": "#1f7aff",
+        "left": 798.5999999999999,
+        "right": 910.8,
+        "points": [
+          {
+            "x": 798.5999999999999,
+            "y": 452.3970717884134
+          },
+          {
+            "x": 910.8,
+            "y": 452.3970717884134
+          },
+          {
+            "x": 910.8,
+            "y": 566.7970717884134
+          },
+          {
+            "x": 798.5999999999999,
+            "y": 566.7970717884134
+          }
+        ]
+      },
+      "expected": {
+        "x": 798.5999999999999,
+        "y": 455.40000000000003,
+        "width": 112.2,
+        "height": 114.4
+      }
     },
     {
-      "name": "jumping cube left",
+      "name": "blue square uses existing JumpingCube physics class",
       "pass": true,
-      "actual": 362.99999999999994,
-      "expected": 363,
-      "eps": 1.25
+      "observed": "JumpingCube"
     },
     {
-      "name": "jumping cube top",
+      "name": "SVG arrow annotation not generated",
       "pass": true,
-      "actual": 207,
-      "expected": 207,
-      "eps": 1.25
+      "observed": [
+        "Trampoline",
+        "JumpingCube"
+      ]
     },
     {
-      "name": "jumping cube width",
+      "name": "no browser JS errors during screenshot",
       "pass": true,
-      "actual": 51.00000000000002,
-      "expected": 51,
-      "eps": 1.25
+      "observed": {
+        "messages": [
+          {
+            "type": "error",
+            "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+          }
+        ],
+        "pageErrors": []
+      }
     },
     {
-      "name": "jumping cube height",
+      "name": "31s bad-version progression completed with elements",
       "pass": true,
-      "actual": 52.000000000000014,
-      "expected": 52,
-      "eps": 1.25
+      "observed": {
+        "elapsedMs": 31488,
+        "samples": [
+          {
+            "screenX": 0,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -120,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -240,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -360,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -480,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -600,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -720,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -840,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": 0,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -120,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -240,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -360,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -480,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -600,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -720,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -840,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": 0,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -120,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -240,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -360,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -480,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -600,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -720,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -840,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": 0,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -120,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -240,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -360,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -480,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          },
+          {
+            "screenX": -600,
+            "elementCount": 2,
+            "types": [
+              "Trampoline",
+              "JumpingCube"
+            ],
+            "score": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "normal source chances restored in source",
+      "pass": true,
+      "observed": "index.html contains 10% Frame 7 source chance"
     }
   ],
-  "runtime": {
-    "elapsedMs": 31000,
-    "score": 572,
-    "screenX": -530600,
-    "elementSummary": [
-      "Trampoline",
-      "JumpingCube"
-    ],
-    "generatedBlackObjects": 0
-  },
   "console": [
     {
       "type": "error",
@@ -145,5 +471,279 @@
     }
   ],
   "pageErrors": [],
-  "errors": []
+  "run": {
+    "elapsedMs": 31488,
+    "samples": [
+      {
+        "screenX": 0,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -120,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -240,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -360,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -480,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -600,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -720,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -840,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": 0,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -120,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -240,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -360,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -480,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -600,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -720,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -840,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": 0,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -120,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -240,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -360,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -480,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -600,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -720,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -840,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": 0,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -120,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -240,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -360,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -480,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      },
+      {
+        "screenX": -600,
+        "elementCount": 2,
+        "types": [
+          "Trampoline",
+          "JumpingCube"
+        ],
+        "score": 0
+      }
+    ]
+  }
 }

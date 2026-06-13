@@ -482,7 +482,8 @@ class Frame7ElementsFactory extends RectFactory
             x: 363,
             y: 207,
             width: 51,
-            height: 52
+            height: 52,
+            speedY: -0.1
         }
     }
     displayToWorld(value)
@@ -513,16 +514,27 @@ class Frame7ElementsFactory extends RectFactory
     createBlueSquare()
     {
         const rect = this.blueSquare
-
-        return new JumpingCube(
+        const x = this.displayToWorld(rect.x)
+        const y = this.displayToWorld(rect.y)
+        const width = this.displayToWorld(rect.width)
+        const height = this.displayToWorld(rect.height)
+        const result = new JumpingCube(
         {
-            x       : this.displayToWorld(rect.x),
-            y       : this.displayToWorld(rect.y),
-            width   : this.displayToWorld(rect.width),
-            height  : this.displayToWorld(rect.height),
+            x       : x,
+            y       : y,
+            width   : width,
+            height  : height,
             fill    : STYLE.colors.cube.blueFill,
             stroke  : STYLE.colors.cube.blueStroke
         })
+
+        result.x = x
+        result.y = y
+        result.speedY = rect.speedY
+        result.track.pos = []
+        result.track.addPos(result.x + result.circle.x, result.y, true)
+
+        return result
     }
     create(x, y)
     {
