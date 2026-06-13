@@ -1,146 +1,149 @@
 {
-  "report": {
+  "snapshot": {
     "version": "bad",
-    "creationTypes": [
-      "frame7Elements:100"
-    ],
-    "elementCount": 5,
+    "width": 772,
+    "height": 630,
+    "scale": 0.45454545454545453,
+    "normalChances": true,
     "elements": [
       {
-        "type": "Rect",
+        "className": "Trampoline",
         "fill": "#071c12",
         "stroke": "#64e379",
-        "left": 285.5,
-        "right": 491.50000000000006,
+        "x": 628.1,
+        "y": 839.3000000000001,
+        "width": null,
+        "height": null,
+        "left": 628.1,
+        "right": 1081.3,
+        "top": 839.3000000000001,
+        "bottom": 1149.5,
         "points": [
           {
-            "x": 285.5,
-            "y": 381.5
+            "x": 628.1,
+            "y": 839.3000000000001
           },
           {
-            "x": 491.50000000000006,
-            "y": 381.5
+            "x": 628.1,
+            "y": 1149.5
           },
           {
-            "x": 491.50000000000006,
-            "y": 522.5
+            "x": 1081.3,
+            "y": 1149.5
           },
           {
-            "x": 285.5,
-            "y": 522.5
+            "x": 1081.3,
+            "y": 839.3000000000001
           }
         ]
       },
       {
-        "type": "Rect",
+        "className": "JumpingCube",
         "fill": "#061234",
         "stroke": "#1f7aff",
-        "left": 362.99999999999994,
-        "right": 414,
+        "x": 798.5999999999999,
+        "y": 455.40000000000003,
+        "width": 112.2,
+        "height": 114.4,
+        "left": 798.5999999999999,
+        "right": 910.8,
+        "top": 455.40000000000003,
+        "bottom": 569.8000000000001,
         "points": [
           {
-            "x": 362.99999999999994,
-            "y": 207
+            "x": 798.5999999999999,
+            "y": 455.40000000000003
           },
           {
-            "x": 414,
-            "y": 207
+            "x": 910.8,
+            "y": 455.40000000000003
           },
           {
-            "x": 414,
-            "y": 259
+            "x": 910.8,
+            "y": 569.8000000000001
           },
           {
-            "x": 362.99999999999994,
-            "y": 259
-          }
-        ]
-      },
-      {
-        "type": "Trampoline",
-        "fill": "black",
-        "stroke": "black",
-        "left": 386.75507747239146,
-        "right": 391.0479225276085,
-        "points": [
-          {
-            "x": 391.0479225276085,
-            "y": 239.82268136061177
-          },
-          {
-            "x": 391.7549225276085,
-            "y": 150.01968136061174
-          },
-          {
-            "x": 386.75507747239146,
-            "y": 149.9803186393882
-          },
-          {
-            "x": 386.0480774723915,
-            "y": 239.78331863938826
-          }
-        ]
-      },
-      {
-        "type": "Trampoline",
-        "fill": "black",
-        "stroke": "black",
-        "left": 387.48723304703356,
-        "right": 419.30676695296637,
-        "points": [
-          {
-            "x": 387.48723304703356,
-            "y": 151.76776695296635
-          },
-          {
-            "x": 415.77123304703366,
-            "y": 180.05176695296637
-          },
-          {
-            "x": 419.30676695296637,
-            "y": 176.51623304703364
-          },
-          {
-            "x": 391.0227669529663,
-            "y": 148.23223304703362
-          }
-        ]
-      },
-      {
-        "type": "Trampoline",
-        "fill": "black",
-        "stroke": "black",
-        "left": 364.1527669529664,
-        "right": 387.48723304703356,
-        "points": [
-          {
-            "x": 387.48723304703356,
-            "y": 148.23223304703362
-          },
-          {
-            "x": 360.6172330470336,
-            "y": 175.10223304703362
-          },
-          {
-            "x": 364.1527669529664,
-            "y": 178.63776695296636
-          },
-          {
-            "x": 391.0227669529663,
-            "y": 151.76776695296635
+            "x": 798.5999999999999,
+            "y": 569.8000000000001
           }
         ]
       }
-    ],
-    "sourceChances": [
-      "frame2Rect', chance: 17},\n                        {type: 'frame3Triangle', chance: 17},\n                        {type: 'frame4Elements', chance: 17},\n                        {type: 'frame5Rects', chance: 17},\n                        {type: 'frame6Rects', chance: 16},\n                        {type: 'frame7Elements', chance: 16}\n                    "
     ]
   },
-  "messages": [
+  "checks": [
+    {
+      "name": "green trampoline left",
+      "pass": true,
+      "actual": 285.5,
+      "expected": 285.5,
+      "eps": 1.25
+    },
+    {
+      "name": "green trampoline top",
+      "pass": true,
+      "actual": 381.5,
+      "expected": 381.5,
+      "eps": 1.25
+    },
+    {
+      "name": "green trampoline width",
+      "pass": true,
+      "actual": 205.99999999999997,
+      "expected": 206,
+      "eps": 1.25
+    },
+    {
+      "name": "green trampoline height",
+      "pass": true,
+      "actual": 140.99999999999997,
+      "expected": 141,
+      "eps": 1.25
+    },
+    {
+      "name": "jumping cube left",
+      "pass": true,
+      "actual": 362.99999999999994,
+      "expected": 363,
+      "eps": 1.25
+    },
+    {
+      "name": "jumping cube top",
+      "pass": true,
+      "actual": 207,
+      "expected": 207,
+      "eps": 1.25
+    },
+    {
+      "name": "jumping cube width",
+      "pass": true,
+      "actual": 51.00000000000002,
+      "expected": 51,
+      "eps": 1.25
+    },
+    {
+      "name": "jumping cube height",
+      "pass": true,
+      "actual": 52.000000000000014,
+      "expected": 52,
+      "eps": 1.25
+    }
+  ],
+  "runtime": {
+    "elapsedMs": 31000,
+    "score": 572,
+    "screenX": -530600,
+    "elementSummary": [
+      "Trampoline",
+      "JumpingCube"
+    ],
+    "generatedBlackObjects": 0
+  },
+  "console": [
     {
       "type": "error",
       "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
     }
   ],
-  "pageErrors": []
+  "pageErrors": [],
+  "errors": []
 }

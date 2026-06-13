@@ -484,16 +484,6 @@ class Frame7ElementsFactory extends RectFactory
             width: 51,
             height: 52
         }
-        this.grapnelMarker =
-        {
-            segments:
-            [
-                [{x: 388.548, y: 239.803}, {x: 389.255, y: 150}],
-                [{x: 389.255, y: 150}, {x: 417.539, y: 178.284}],
-                [{x: 389.255, y: 150}, {x: 362.385, y: 176.87}]
-            ],
-            strokeWidth: 5
-        }
     }
     displayToWorld(value)
     {
@@ -502,72 +492,43 @@ class Frame7ElementsFactory extends RectFactory
     createGreenRect()
     {
         const rect = this.greenRect
-        const result = super.create(
-            this.displayToWorld(rect.x),
-            this.displayToWorld(rect.y),
-            this.displayToWorld(rect.width),
-            this.displayToWorld(rect.height)
-        )
+        const worldWidth = this.displayToWorld(rect.width)
+        const worldHeight = this.displayToWorld(rect.height)
 
-        result.fill = STYLE.colors.cube.greenFill
-        result.stroke = STYLE.colors.cube.greenStroke
-
-        return result
+        return new Trampoline(
+        {
+            x       : this.displayToWorld(rect.x),
+            y       : this.displayToWorld(rect.y),
+            points  :
+            [
+                {x: 0, y: 0},
+                {x: 0, y: worldHeight},
+                {x: worldWidth, y: worldHeight},
+                {x: worldWidth, y: 0}
+            ],
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
+        })
     }
     createBlueSquare()
     {
         const rect = this.blueSquare
-        const result = super.create(
-            this.displayToWorld(rect.x),
-            this.displayToWorld(rect.y),
-            this.displayToWorld(rect.width),
-            this.displayToWorld(rect.height)
-        )
 
-        result.fill = STYLE.colors.cube.blueFill
-        result.stroke = STYLE.colors.cube.blueStroke
-
-        return result
-    }
-    createGrapnelMarker()
-    {
-        return this.grapnelMarker.segments.map(segment =>
+        return new JumpingCube(
         {
-            const start = segment[0]
-            const end = segment[1]
-            const x1 = this.displayToWorld(start.x)
-            const y1 = this.displayToWorld(start.y)
-            const x2 = this.displayToWorld(end.x)
-            const y2 = this.displayToWorld(end.y)
-            const dx = x2 - x1
-            const dy = y2 - y1
-            const length = Math.sqrt(dx * dx + dy * dy)
-            const halfWidth = this.displayToWorld(this.grapnelMarker.strokeWidth) / 2
-            const normalX = -dy / length * halfWidth
-            const normalY = dx / length * halfWidth
-
-            return new Trampoline(
-            {
-                x       : 0,
-                y       : 0,
-                points  :
-                [
-                    {x: x1 + normalX, y: y1 + normalY},
-                    {x: x2 + normalX, y: y2 + normalY},
-                    {x: x2 - normalX, y: y2 - normalY},
-                    {x: x1 - normalX, y: y1 - normalY}
-                ],
-                fill    : 'black',
-                stroke  : 'black'
-            })
+            x       : this.displayToWorld(rect.x),
+            y       : this.displayToWorld(rect.y),
+            width   : this.displayToWorld(rect.width),
+            height  : this.displayToWorld(rect.height),
+            fill    : STYLE.colors.cube.blueFill,
+            stroke  : STYLE.colors.cube.blueStroke
         })
     }
     create(x, y)
     {
         return [
             this.createGreenRect(),
-            this.createBlueSquare(),
-            ...this.createGrapnelMarker()
+            this.createBlueSquare()
         ]
     }
 }
