@@ -1,108 +1,241 @@
 {
-  "report": {
+  "task": "TASK-012",
+  "screenshotPath": "/opt/grapnelninja/screenshots/TASK-012.png",
+  "verifyScreenshotPath": "/opt/grapnelninja/screenshots/TASK-012-verify.png",
+  "geometry": {
     "version": "bad",
-    "middleElementCount": 2,
-    "frameRects": [
-      {
-        "className": "Rect",
-        "x": 903.8857142857142,
-        "y": 192.34285714285716,
-        "width": 130.74285714285716,
-        "height": 266.51428571428573,
-        "fill": "#171a1f",
-        "stroke": "#b9c2c9",
-        "display": {
-          "x": 359.5,
-          "y": 76.5,
-          "width": 52.00000000000001,
-          "height": 106.00000000000001
-        }
-      },
-      {
-        "className": "Rect",
-        "x": 903.8857142857142,
-        "y": 959.1999999999999,
-        "width": 130.74285714285716,
-        "height": 432.45714285714286,
-        "fill": "#171a1f",
-        "stroke": "#b9c2c9",
-        "display": {
-          "x": 359.5,
-          "y": 381.5,
-          "width": 52.00000000000001,
-          "height": 171.99999999999997
-        }
-      }
-    ],
-    "normalSourceChances": [
-      {
-        "type": "frame2Rect",
-        "chance": 20
-      },
-      {
-        "type": "frame3Triangle",
-        "chance": 20
-      },
-      {
-        "type": "frame4Elements",
-        "chance": 20
-      },
-      {
-        "type": "frame5Rects",
-        "chance": 20
-      },
+    "sourceChances": [
       {
         "type": "frame6Rects",
-        "chance": 20
+        "chance": 100
+      }
+    ],
+    "elementCount": 2,
+    "elements": [
+      {
+        "ctor": "Rect",
+        "x": 790.9,
+        "y": 168.3,
+        "width": 114.4,
+        "height": 233.20000000000005,
+        "fill": "#171a1f",
+        "stroke": "#b9c2c9",
+        "group": 0,
+        "left": 790.9,
+        "right": 905.3
+      },
+      {
+        "ctor": "Rect",
+        "x": 790.9,
+        "y": 839.3000000000001,
+        "width": 114.4,
+        "height": 378.4,
+        "fill": "#171a1f",
+        "stroke": "#b9c2c9",
+        "group": 0,
+        "left": 790.9,
+        "right": 905.3
+      }
+    ],
+    "display": [
+      {
+        "ctor": "Rect",
+        "x": 359.5,
+        "y": 76.5,
+        "width": 52,
+        "height": 106.00000000000001,
+        "fill": "#171a1f",
+        "stroke": "#b9c2c9",
+        "group": 0
+      },
+      {
+        "ctor": "Rect",
+        "x": 359.5,
+        "y": 381.5,
+        "width": 52,
+        "height": 171.99999999999997,
+        "fill": "#171a1f",
+        "stroke": "#b9c2c9",
+        "group": 0
+      }
+    ],
+    "expected": [
+      {
+        "x": 359.5,
+        "y": 76.5,
+        "width": 52,
+        "height": 106
+      },
+      {
+        "x": 359.5,
+        "y": 381.5,
+        "width": 52,
+        "height": 172
       }
     ]
   },
-  "expected": [
-    {
-      "x": 359.5,
-      "y": 76.5,
-      "width": 52,
-      "height": 106
-    },
-    {
-      "x": 359.5,
-      "y": 381.5,
-      "width": 52,
-      "height": 172
-    }
-  ],
-  "comparisons": [
+  "geometryChecks": [
     {
       "index": 0,
-      "className": "Rect",
-      "deltas": {
+      "actual": {
+        "ctor": "Rect",
+        "x": 359.5,
+        "y": 76.5,
+        "width": 52,
+        "height": 106.00000000000001,
+        "fill": "#171a1f",
+        "stroke": "#b9c2c9",
+        "group": 0
+      },
+      "expected": {
+        "x": 359.5,
+        "y": 76.5,
+        "width": 52,
+        "height": 106
+      },
+      "diffs": {
         "x": 0,
         "y": 0,
-        "width": 7.105427357601002e-15,
+        "width": 0,
         "height": 1.4210854715202004e-14
       },
-      "fill": "#171a1f",
-      "stroke": "#b9c2c9"
+      "pass": true
     },
     {
       "index": 1,
-      "className": "Rect",
-      "deltas": {
+      "actual": {
+        "ctor": "Rect",
+        "x": 359.5,
+        "y": 381.5,
+        "width": 52,
+        "height": 171.99999999999997,
+        "fill": "#171a1f",
+        "stroke": "#b9c2c9",
+        "group": 0
+      },
+      "expected": {
+        "x": 359.5,
+        "y": 381.5,
+        "width": 52,
+        "height": 172
+      },
+      "diffs": {
         "x": 0,
         "y": 0,
-        "width": 7.105427357601002e-15,
+        "width": 0,
         "height": 2.842170943040401e-14
       },
-      "fill": "#171a1f",
-      "stroke": "#b9c2c9"
+      "pass": true
     }
   ],
-  "messages": [
+  "normalChances": [
+    {
+      "type": "frame2Rect",
+      "chance": 10
+    },
+    {
+      "type": "frame3Triangle",
+      "chance": 10
+    },
+    {
+      "type": "frame4Elements",
+      "chance": 10
+    },
+    {
+      "type": "frame5Rects",
+      "chance": 10
+    },
+    {
+      "type": "frame6Rects",
+      "chance": 10
+    },
+    {
+      "type": "frame7Elements",
+      "chance": 10
+    },
+    {
+      "type": "frame8Elements",
+      "chance": 10
+    },
+    {
+      "type": "frame9Elements",
+      "chance": 10
+    },
+    {
+      "type": "frame10Elements",
+      "chance": 10
+    },
+    {
+      "type": "frame11Elements",
+      "chance": 10
+    }
+  ],
+  "progression": {
+    "elapsedMs": 31000,
+    "version": "bad",
+    "screenX": -7480,
+    "score": 8,
+    "middleElementCount": 3,
+    "middleTypes": [
+      "Trampoline",
+      "Rect",
+      "Triangle"
+    ],
+    "groups": [
+      7,
+      7,
+      7
+    ],
+    "sourceChances": [
+      {
+        "type": "frame2Rect",
+        "chance": 10
+      },
+      {
+        "type": "frame3Triangle",
+        "chance": 10
+      },
+      {
+        "type": "frame4Elements",
+        "chance": 10
+      },
+      {
+        "type": "frame5Rects",
+        "chance": 10
+      },
+      {
+        "type": "frame6Rects",
+        "chance": 10
+      },
+      {
+        "type": "frame7Elements",
+        "chance": 10
+      },
+      {
+        "type": "frame8Elements",
+        "chance": 10
+      },
+      {
+        "type": "frame9Elements",
+        "chance": 10
+      },
+      {
+        "type": "frame10Elements",
+        "chance": 10
+      },
+      {
+        "type": "frame11Elements",
+        "chance": 10
+      }
+    ]
+  },
+  "consoleMessages": [
     {
       "type": "error",
       "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
     }
   ],
-  "jsErrors": [],
+  "relevantConsoleMessages": [],
+  "pageErrors": [],
   "passed": true
 }

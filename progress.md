@@ -216,3 +216,4 @@ TASK-005: Verified Frame 2, Frame 3, and Frame 5 with forced screenshots, fixed 
 
 TASK-005 verification: Passed independent code/commit inspection, forced Frame 2/3/5 screenshot comparison, ten Frame 3 no-overlap samples, restored 10% source chances, and a real 31s offscreen deletion/regeneration run with no JS exceptions.
 TASK-011: Constrained Frame 4 triangle movement to the SVG hazard bounds while keeping the green segment as an existing Trampoline; forced-100% browser screenshot/object geometry, 10 no-overlap samples, and a 31s bad-version run passed with no JS errors. Gotcha: verification forced Frame 4 at runtime only, so source chances remain 10% each.
+TASK-012: Re-verified Frame 6 as two gray Rect pillars via the existing RectFactory/Rect path; forced-100% browser screenshot/object geometry matched Frame 6.svg and a 31s bad-version progression run had no JS errors. Gotcha: verification forced Frame 6 at runtime only, so source chances remain 10% each.
