@@ -10,6 +10,7 @@ class Floor
         this.primaryElementsQuantity = primaryElementsQuantity || 8
         
         this.elements           = []
+        this.nextGenerationGroupId = 0
     }
     generatePrimaryElements()
     {
@@ -40,47 +41,102 @@ class Floor
         {
             if (num <= this.creations[i].chance + sumChances)
             {
-                this.elements.push(...elementsFactory.create(
+                const generatedElements = elementsFactory.create(
                     {min: x + this.elementsIntervalX.min, max: x + this.elementsIntervalX.max}, 
-                    {min: this.top, max: this.bottom}   , this.creations[i].type))
+                    {min: this.top, max: this.bottom}   , this.creations[i].type)
+                const generationGroupId = this.nextGenerationGroupId++
+
+                this.alignBadVersionGeneratedElements(generatedElements, x + this.elementsIntervalX.min)
+
+                for (let j = 0; j < generatedElements.length; ++j)
+                {
+                    generatedElements[j].generationGroupId = generationGroupId
+                }
+
+                this.elements.push(...generatedElements)
                 
-                return
+                return generatedElements.length
             }
             sumChances += this.creations[i].chance
         }
         console.log('generation element on floor error')
+        return 0
+    }
+    alignBadVersionGeneratedElements(generatedElements, nextElementX)
+    {
+        if (version != 'bad' || this.primaryElementsQuantity != 1)
+            return
+
+        const firstPrimaryElementX = 0.2 * width
+        const offsetX = nextElementX - firstPrimaryElementX
+
+        if (!offsetX)
+            return
+
+        for (let i = 0; i < generatedElements.length; ++i)
+        {
+            generatedElements[i].x += offsetX
+            this.resetElementTrack(generatedElements[i])
+        }
+    }
+    resetElementTrack(element)
+    {
+        if (!element.track || !element.track.pos || !element.getPoints)
+            return
+
+        element.track.pos = []
+        element.track.addPos(element.getPoints(), true)
+    }
+    getGenerationGroup(index)
+    {
+        const element = this.elements[index]
+        const generationGroupId = element.generationGroupId
+        let rightPointX = element.getRightPointX()
+        let indexes = []
+
+        for (let i = 0; i < this.elements.length; ++i)
+        {
+            if (this.elements[i].generationGroupId != generationGroupId)
+                continue
+
+            rightPointX = Math.max(rightPointX, this.elements[i].getRightPointX())
+            indexes.push(i)
+        }
+
+        return {indexes, rightPointX}
+    }
+    markGenerationGroupScored(indexes)
+    {
+        for (let i = 0; i < indexes.length; ++i)
+        {
+            this.elements[indexes[i]].scored = true
+        }
     }
     deleteElements()
     {
         let newElements = 0
         for (let i = 0; i < this.elements.length - newElements; ++i)
         {
-            if (!this.elements[i].scored && 
-                this.elements[i].getRightPointX() + screen.x < 0)
+            const group = this.getGenerationGroup(i)
+
+            if (!this.elements[i].scored &&
+                group.rightPointX + screen.x < 0)
             {
-                this.elements[i].scored = true
-                if (this.elements[i].isPairElement() && this.elements[i + 1])
-                    this.elements[++i].scored = true
+                this.markGenerationGroupScored(group.indexes)
                 
                 changeScoreText()
             }
-            else if (this.elements[i].getRightPointX() + screen.x < screen.getDeletionBorder())
+            else if (group.rightPointX + screen.x < screen.getDeletionBorder())
             {
-                let nextElementX = this.elements[i].getRightPointX()
-                if (this.elements[i].isPairElement())
+                let nextElementX = group.rightPointX
+                this.elements = this.elements.filter(function(element, index)
                 {
-                    if (this.elements[i + 1])
-                        nextElementX = Math.max(nextElementX, this.elements[i + 1].getRightPointX())
-                    this.elements.splice(i, 2)
-                    ++newElements
-                }
-                else
-                    this.elements.splice(i, 1)
+                    return group.indexes.indexOf(index) == -1
+                })
                 
                 const previousElement = this.elements[this.elements.length - 1]
-                this.generateElements(previousElement ? previousElement.getRightPointX() : nextElementX)
+                newElements += this.generateElements(previousElement ? previousElement.getRightPointX() : nextElementX)
                 
-                ++newElements
                 --i
             }
         }

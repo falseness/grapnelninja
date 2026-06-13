@@ -1,0 +1,648 @@
+{
+  "reports": [
+    {
+      "frame": "frame2",
+      "screenshot": "/opt/grapnelninja/screenshots/TASK-005-frame2-verify.png",
+      "state": {
+        "version": "bad",
+        "objects": [
+          {
+            "ctor": "Trampoline",
+            "points": [
+              {
+                "x": 360,
+                "y": 164.5
+              },
+              {
+                "x": 360,
+                "y": 430.50000000000006
+              },
+              {
+                "x": 412,
+                "y": 430.50000000000006
+              },
+              {
+                "x": 412,
+                "y": 164.5
+              }
+            ],
+            "stroke": "#64e379",
+            "fill": "#071c12",
+            "group": 0
+          }
+        ]
+      }
+    },
+    {
+      "frame": "frame3",
+      "screenshot": "/opt/grapnelninja/screenshots/TASK-005-frame3-verify.png",
+      "state": {
+        "version": "bad",
+        "objects": [
+          {
+            "ctor": "Triangle",
+            "points": [
+              {
+                "x": 279.41200000000003,
+                "y": 187.75000000000003
+              },
+              {
+                "x": 491.5880000000001,
+                "y": 187.75000000000003
+              },
+              {
+                "x": 385.50000000000006,
+                "y": 421
+              }
+            ],
+            "stroke": "#ff3d71",
+            "fill": "#21070f",
+            "group": 0
+          }
+        ]
+      }
+    },
+    {
+      "frame": "frame5",
+      "screenshot": "/opt/grapnelninja/screenshots/TASK-005-frame5-verify.png",
+      "state": {
+        "version": "bad",
+        "objects": [
+          {
+            "ctor": "Trampoline",
+            "points": [
+              {
+                "x": 688.4999999999999,
+                "y": 76.5
+              },
+              {
+                "x": 688.4999999999999,
+                "y": 342.5
+              },
+              {
+                "x": 740.4999999999999,
+                "y": 342.5
+              },
+              {
+                "x": 740.4999999999999,
+                "y": 76.5
+              }
+            ],
+            "stroke": "#64e379",
+            "fill": "#071c12",
+            "group": 0
+          },
+          {
+            "ctor": "Trampoline",
+            "points": [
+              {
+                "x": 333.5,
+                "y": 188.5
+              },
+              {
+                "x": 333.5,
+                "y": 553.5
+              },
+              {
+                "x": 385.5,
+                "y": 553.5
+              },
+              {
+                "x": 385.5,
+                "y": 188.5
+              }
+            ],
+            "stroke": "#64e379",
+            "fill": "#071c12",
+            "group": 0
+          },
+          {
+            "ctor": "Trampoline",
+            "points": [
+              {
+                "x": 386.935,
+                "y": 232.654
+              },
+              {
+                "x": 386.50522836873216,
+                "y": 189.74135203480262
+              },
+              {
+                "x": 573.0488733548783,
+                "y": 187.87311107532216
+              },
+              {
+                "x": 573.4786449861462,
+                "y": 230.7857590405195
+              }
+            ],
+            "stroke": "#64e379",
+            "fill": "#071c12",
+            "group": 0
+          }
+        ]
+      }
+    }
+  ],
+  "triangleSamples": [
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ],
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ],
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ],
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ],
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ],
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ],
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ],
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ],
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ],
+    [
+      {
+        "x": 279.41200000000003,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 491.5880000000001,
+        "y": 187.75000000000003
+      },
+      {
+        "x": 385.50000000000006,
+        "y": 421
+      }
+    ]
+  ],
+  "healthSamples": [
+    {
+      "second": 1,
+      "screenX": 0,
+      "ninjaX": 154.4,
+      "score": 0,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 2,
+      "screenX": -260,
+      "ninjaX": 414.4,
+      "score": 0,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 3,
+      "screenX": -390,
+      "ninjaX": 544.4,
+      "score": 0,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 4,
+      "screenX": -520,
+      "ninjaX": 674.4,
+      "score": 0,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 5,
+      "screenX": -650,
+      "ninjaX": 804.4,
+      "score": 0,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 6,
+      "screenX": -780,
+      "ninjaX": 934.4,
+      "score": 0,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 7,
+      "screenX": -910,
+      "ninjaX": 1064.4,
+      "score": 1,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 8,
+      "screenX": -1040,
+      "ninjaX": 1194.4,
+      "score": 1,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 9,
+      "screenX": -1170,
+      "ninjaX": 1324.4,
+      "score": 1,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 10,
+      "screenX": -1300,
+      "ninjaX": 1454.4,
+      "score": 1,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 11,
+      "screenX": -1430,
+      "ninjaX": 1584.4,
+      "score": 1,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 12,
+      "screenX": -1560,
+      "ninjaX": 1714.4,
+      "score": 1,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 0,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 13,
+      "screenX": -1690,
+      "ninjaX": 1844.4,
+      "score": 2,
+      "objectCount": 1,
+      "groups": 1,
+      "activeGroup": 1,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 14,
+      "screenX": -1820,
+      "ninjaX": 1974.4,
+      "score": 2,
+      "objectCount": 1,
+      "groups": 1,
+      "activeGroup": 1,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 15,
+      "screenX": -1950,
+      "ninjaX": 2104.4,
+      "score": 2,
+      "objectCount": 1,
+      "groups": 1,
+      "activeGroup": 1,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 16,
+      "screenX": -2080,
+      "ninjaX": 2234.4,
+      "score": 2,
+      "objectCount": 1,
+      "groups": 1,
+      "activeGroup": 1,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 17,
+      "screenX": -2210,
+      "ninjaX": 2364.4,
+      "score": 2,
+      "objectCount": 1,
+      "groups": 1,
+      "activeGroup": 1,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 18,
+      "screenX": -2340,
+      "ninjaX": 2494.4,
+      "score": 2,
+      "objectCount": 1,
+      "groups": 1,
+      "activeGroup": 1,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 19,
+      "screenX": -2470,
+      "ninjaX": 2624.4,
+      "score": 3,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 2,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 20,
+      "screenX": -2600,
+      "ninjaX": 2754.4,
+      "score": 3,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 2,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 21,
+      "screenX": -2730,
+      "ninjaX": 2884.4,
+      "score": 3,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 2,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 22,
+      "screenX": -2860,
+      "ninjaX": 3014.4,
+      "score": 3,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 2,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 23,
+      "screenX": -2990,
+      "ninjaX": 3144.4,
+      "score": 3,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 2,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 24,
+      "screenX": -3120,
+      "ninjaX": 3274.4,
+      "score": 3,
+      "objectCount": 2,
+      "groups": 1,
+      "activeGroup": 2,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 25,
+      "screenX": -3250,
+      "ninjaX": 3404.4,
+      "score": 3,
+      "objectCount": 5,
+      "groups": 1,
+      "activeGroup": 3,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 26,
+      "screenX": -3380,
+      "ninjaX": 3534.4,
+      "score": 4,
+      "objectCount": 5,
+      "groups": 1,
+      "activeGroup": 3,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 27,
+      "screenX": -3510,
+      "ninjaX": 3664.4,
+      "score": 4,
+      "objectCount": 5,
+      "groups": 1,
+      "activeGroup": 3,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 28,
+      "screenX": -3640,
+      "ninjaX": 3794.4,
+      "score": 4,
+      "objectCount": 5,
+      "groups": 1,
+      "activeGroup": 3,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 29,
+      "screenX": -3770,
+      "ninjaX": 3924.4,
+      "score": 4,
+      "objectCount": 5,
+      "groups": 1,
+      "activeGroup": 3,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 30,
+      "screenX": -3900,
+      "ninjaX": 4054.4,
+      "score": 4,
+      "objectCount": 5,
+      "groups": 1,
+      "activeGroup": 3,
+      "startGroup": 0,
+      "chanceSum": 100
+    },
+    {
+      "second": 31,
+      "screenX": -4030,
+      "ninjaX": 4184.4,
+      "score": 4,
+      "objectCount": 5,
+      "groups": 1,
+      "activeGroup": 3,
+      "startGroup": 0,
+      "chanceSum": 100
+    }
+  ],
+  "progression": {
+    "second": 31,
+    "screenX": -4030,
+    "ninjaX": 4184.4,
+    "score": 4,
+    "objectCount": 5,
+    "groups": 1,
+    "activeGroup": 3,
+    "startGroup": 0,
+    "chanceSum": 100
+  },
+  "progressionShot": "/opt/grapnelninja/screenshots/TASK-005-live-30s-verify.png",
+  "errors": [],
+  "ignoredConsole": [
+    "Failed to load resource: the server responded with a status of 404 (File not found)"
+  ]
+}
