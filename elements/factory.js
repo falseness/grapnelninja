@@ -582,12 +582,31 @@ class Frame8ElementsFactory extends RectFactory
 
         return result
     }
+    createGreenTrampolineRect(rect)
+    {
+        const worldWidth = this.displayToWorld(rect.width)
+        const worldHeight = this.displayToWorld(rect.height)
+
+        return new Trampoline(
+        {
+            x       : this.displayToWorld(rect.x),
+            y       : this.displayToWorld(rect.y),
+            points  :
+            [
+                {x: 0, y: 0},
+                {x: 0, y: worldHeight},
+                {x: worldWidth, y: worldHeight},
+                {x: worldWidth, y: 0}
+            ],
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
+        })
+    }
     create(x, y)
     {
         return [
             this.createFrameRect(this.grayRect, STYLE.colors.cube.grayFill, STYLE.colors.cube.grayStroke),
-            ...this.greenRects.map(rect =>
-                this.createFrameRect(rect, STYLE.colors.cube.greenFill, STYLE.colors.cube.greenStroke))
+            ...this.greenRects.map(rect => this.createGreenTrampolineRect(rect))
         ]
     }
 }
