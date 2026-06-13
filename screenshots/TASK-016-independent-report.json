@@ -1,0 +1,154 @@
+{
+  "screenshotPath": "/opt/grapnelninja/screenshots/TASK-016-independent-verify.png",
+  "progressedPath": "/opt/grapnelninja/screenshots/TASK-016-independent-31s.png",
+  "verify": {
+    "version": "bad",
+    "scale": 0.45454545454545453,
+    "chanceState": "frame2Rect:0,frame3Triangle:0,frame4Elements:0,frame5Rects:0,frame6Rects:0,frame7Elements:0,frame8Elements:0,frame9Elements:0,frame10Elements:100,frame11Elements:0",
+    "elements": [
+      {
+        "className": "Trampoline",
+        "x": 262.90000000000003,
+        "y": 634.7,
+        "width": 873.4,
+        "height": 114.4,
+        "left": 262.90000000000003,
+        "right": 1136.3,
+        "stroke": "#64e379",
+        "fill": "#071c12",
+        "generationGroupId": 0
+      },
+      {
+        "className": "Rect",
+        "x": 1021.9,
+        "y": 940.5,
+        "width": 114.4,
+        "height": 277.2,
+        "left": 1021.9,
+        "right": 1136.3,
+        "stroke": "#b9c2c9",
+        "fill": "#171a1f",
+        "generationGroupId": 0
+      },
+      {
+        "className": "Rect",
+        "x": 1021.9,
+        "y": 355.3,
+        "width": 114.4,
+        "height": 277.2,
+        "left": 1021.9,
+        "right": 1136.3,
+        "stroke": "#b9c2c9",
+        "fill": "#171a1f",
+        "generationGroupId": 0
+      }
+    ]
+  },
+  "expected": [
+    {
+      "className": "Trampoline",
+      "x": 262.90000000000003,
+      "y": 634.7,
+      "width": 873.4,
+      "height": 114.4
+    },
+    {
+      "className": "Rect",
+      "x": 1021.9,
+      "y": 940.5,
+      "width": 114.4,
+      "height": 277.2
+    },
+    {
+      "className": "Rect",
+      "x": 1021.9,
+      "y": 355.3,
+      "width": 114.4,
+      "height": 277.2
+    }
+  ],
+  "geometryChecks": [
+    {
+      "expected": {
+        "className": "Trampoline",
+        "x": 262.90000000000003,
+        "y": 634.7,
+        "width": 873.4,
+        "height": 114.4
+      },
+      "actual": {
+        "className": "Trampoline",
+        "x": 262.90000000000003,
+        "y": 634.7,
+        "width": 873.4,
+        "height": 114.4,
+        "left": 262.90000000000003,
+        "right": 1136.3,
+        "stroke": "#64e379",
+        "fill": "#071c12",
+        "generationGroupId": 0
+      },
+      "pass": true
+    },
+    {
+      "expected": {
+        "className": "Rect",
+        "x": 1021.9,
+        "y": 940.5,
+        "width": 114.4,
+        "height": 277.2
+      },
+      "actual": {
+        "className": "Rect",
+        "x": 1021.9,
+        "y": 940.5,
+        "width": 114.4,
+        "height": 277.2,
+        "left": 1021.9,
+        "right": 1136.3,
+        "stroke": "#b9c2c9",
+        "fill": "#171a1f",
+        "generationGroupId": 0
+      },
+      "pass": true
+    },
+    {
+      "expected": {
+        "className": "Rect",
+        "x": 1021.9,
+        "y": 355.3,
+        "width": 114.4,
+        "height": 277.2
+      },
+      "actual": {
+        "className": "Rect",
+        "x": 1021.9,
+        "y": 355.3,
+        "width": 114.4,
+        "height": 277.2,
+        "left": 1021.9,
+        "right": 1136.3,
+        "stroke": "#b9c2c9",
+        "fill": "#171a1f",
+        "generationGroupId": 0
+      },
+      "pass": true
+    }
+  ],
+  "sourceChances": "frame2Rect:10,frame3Triangle:10,frame4Elements:10,frame5Rects:10,frame6Rects:10,frame7Elements:10,frame8Elements:10,frame9Elements:10,frame10Elements:10,frame11Elements:10",
+  "progression": {
+    "durationMs": 31003.20000076294,
+    "frames": 1098,
+    "errors": [],
+    "middleElementCount": 3,
+    "score": 35,
+    "sourceChances": "frame2Rect:10,frame3Triangle:10,frame4Elements:10,frame5Rects:10,frame6Rects:10,frame7Elements:10,frame8Elements:10,frame9Elements:10,frame10Elements:10,frame11Elements:10"
+  },
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    }
+  ],
+  "pageErrors": []
+}
