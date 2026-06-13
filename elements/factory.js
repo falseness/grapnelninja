@@ -262,19 +262,26 @@ class Frame5RectFactory extends RectFactory
     {
         return value / this.frameHeight * height / scale.bad
     }
-    createGreenRect(rect)
+    createGreenTrampolineRect(rect)
     {
-        const result = super.create(
-            this.displayToWorld(rect.x),
-            this.displayToWorld(rect.y),
-            this.displayToWorld(rect.width),
-            this.displayToWorld(rect.height)
-        )
+        const worldWidth = this.displayToWorld(rect.width)
+        const worldHeight = this.displayToWorld(rect.height)
+        const model =
+        {
+            x       : this.displayToWorld(rect.x),
+            y       : this.displayToWorld(rect.y),
+            points  :
+            [
+                {x: 0, y: 0},
+                {x: 0, y: worldHeight},
+                {x: worldWidth, y: worldHeight},
+                {x: worldWidth, y: 0}
+            ],
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
+        }
 
-        result.fill = STYLE.colors.cube.greenFill
-        result.stroke = STYLE.colors.cube.greenStroke
-
-        return result
+        return new Trampoline(model)
     }
     createHorizontalSegment()
     {
@@ -310,8 +317,8 @@ class Frame5RectFactory extends RectFactory
     create(x, y)
     {
         return [
-            this.createGreenRect(this.verticalRects[0]),
-            this.createGreenRect(this.verticalRects[1]),
+            this.createGreenTrampolineRect(this.verticalRects[0]),
+            this.createGreenTrampolineRect(this.verticalRects[1]),
             this.createHorizontalSegment()
         ]
     }

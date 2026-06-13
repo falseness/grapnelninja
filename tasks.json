@@ -82,7 +82,7 @@
     "id": "TASK-004",
     "category": "functional",
     "priority": "normal",
-    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 5.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 5's two green Rect posts and green rotated horizontal rectangle segment using existing rectangle/polygon rendering paths.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object checks confirmed Frame 5 geometry and unchanged rendering styles.",
+    "description": "Implement bad-version generation for /opt/grapnelninja/screenshots/Frame 5.svg by reusing existing rectangle classes/factory patterns. Keep this ticket sized to 15 minutes or less.\nImplemented: Bad-version generation now includes Frame 5's two green Rect posts and green rotated horizontal rectangle segment using existing rectangle/polygon rendering paths.\nVerified: Independent commit/code inspection plus fresh forced-100% browser screenshot/object checks confirmed Frame 5 geometry and unchanged rendering styles.\nReopened feedback:\n1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.\n2. distance betweend different elements is huge, are you ok? look at master version and make similar\n3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check\n4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)\n5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)\nImplemented: Reworked Frame 5 green pieces as existing Trampoline polygons, preserving SVG geometry and avoiding obstacle Rect semantics.",
     "acceptance_criteria": [
       "Bad version can generate the Frame 5 element: one right vertical green rectangle, one center vertical green rectangle, and one horizontal green rectangle segment.",
       "The implementation reuses existing Rect or existing rectangle factory behavior instead of adding new graphics code.",
@@ -91,7 +91,12 @@
       "temporary make generation of new element 100% chance",
       "open the game, make screenshot",
       "compare the screenshot with required frame svg",
-      "dont trust the code, look at the screenshot instead"
+      "dont trust the code, look at the screenshot instead",
+      "1. green TRAMPOLINE ON FRAME MEANS TRAMPOLINE, NOT OBSTACLE. ARE YOU STUPID????.",
+      "2. distance betweend different elements is huge, are you ok? look at master version and make similar",
+      "3. if you ACTUALLY PLAY THE GAME, then you get  crash. just move the player to the right so all elements disappear, you get crash. so PLAY THE GAME BEFORE SETTING THE TICKET `done`. play the game for 30 seconds, move the player to the right and check",
+      "4. the arrow for the cube was TO SHOW THE SPEED. LOOK AT THE SOURCE CODE OF THE svg. YOU SHOULD NOT ADD IT TO ACTUAL GAME. IT MEANT THAT cube has physics (IT ALREADY HAD, YOU JUST NEEDED TO PLACE FUCKING CUBE, YOU MORON)",
+      "5. red triangle goes though the object. in master version we set range for the triangle, so it does not collide the other objects. follow  this paterns (also DOUBLE FUCKING CHECK NO COLLISIONS. MAKE 10 SCREENSHOTS WITH 1 SECOND DIFFERENCE AND CHECK NO COLLUSSIONS BETWEEN triangle and something else)"
     ],
     "test_steps": [
       "Step 1: Temporarily make the Frame 5 element generation chance 100% in bad version.",
@@ -99,7 +104,7 @@
       "Step 3: Compare the screenshot against /opt/grapnelninja/screenshots/Frame 5.svg.",
       "Step 4: Revert the temporary 100% generation setting after verification."
     ],
-    "status": "done"
+    "status": "to-verify"
   },
   {
     "id": "TASK-005",
