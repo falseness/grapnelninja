@@ -5,7 +5,7 @@ Run a local HTTP server; requires Python Playwright. Evidence is never staged.
 import argparse
 import hashlib
 import json
-import math
+from verification_support import assert_near
 from pathlib import Path
 import subprocess
 from urllib.parse import urlparse
@@ -61,15 +61,7 @@ motion = '''() => {
 }'''
 
 def near(a, b, path='root'):
-    if isinstance(a, dict):
-        assert a.keys() == b.keys(), path
-        for k in a: near(a[k], b[k], path+'.'+k)
-    elif isinstance(a, list):
-        assert len(a) == len(b), path
-        for i, (x, y) in enumerate(zip(a, b)): near(x, y, path+f'[{i}]')
-    elif isinstance(a, (int, float)) and not isinstance(a, bool):
-        assert math.isfinite(b) and math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-8), (path, a, b)
-    else: assert a == b, (path, a, b)
+    assert_near(a, b, path, rel_tol=1e-9, abs_tol=1e-8, require_finite=True)
 
 results = {}; errors = []; console = []
 with sync_playwright() as p:

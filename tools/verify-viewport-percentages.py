@@ -8,7 +8,7 @@ import argparse
 import ast
 import hashlib
 import json
-import math
+from verification_support import assert_near
 from pathlib import Path
 import re
 import subprocess
@@ -24,15 +24,8 @@ def fixtures(path, names):
             for node in tree.body if isinstance(node, ast.Assign)
             and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names}
 
-def near(a,b,path='root'):
- if isinstance(a,dict):
-  assert a.keys()==b.keys(),(path,a.keys(),b.keys())
-  for k in a:near(a[k],b[k],path+'.'+k)
- elif isinstance(a,list):
-  assert len(a)==len(b),(path,len(a),len(b))
-  for i,(x,y) in enumerate(zip(a,b)):near(x,y,path+f'[{i}]')
- elif isinstance(a,(float,int)) and not isinstance(a,bool):assert math.isclose(a,b,rel_tol=1e-12,abs_tol=1e-10),(path,a,b)
- else:assert a==b,(path,a,b)
+def near(a, b, path='root'):
+    assert_near(a, b, path, rel_tol=1e-12, abs_tol=1e-10, require_finite=False)
 
 init='''window.testNow=1000;performance.now=()=>testNow;Date.now=()=>1000000;window.requestAnimationFrame=()=>1;let seed=1234;Math.random=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296};'''
 
