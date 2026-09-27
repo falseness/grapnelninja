@@ -1,39 +1,20 @@
 """Assert real factory group spacing and preservation at three canvas sizes."""
-from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
-from threading import Thread
 import unittest
 
-from playwright.sync_api import sync_playwright
+from browser_test_support import start_browser_test
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046')))
-
-
-class QuietHandler(SimpleHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
 
 
 class ObstacleSpacingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         EVIDENCE.mkdir(parents=True, exist_ok=True)
-        server = ThreadingHTTPServer(('127.0.0.1', 0),
-                                     partial(QuietHandler, directory=str(ROOT)))
-        cls.addClassCleanup(server.server_close)
-        thread = Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        cls.addClassCleanup(thread.join)
-        cls.addClassCleanup(server.shutdown)
-        cls.url = f'http://127.0.0.1:{server.server_port}/'
-        playwright = sync_playwright().start()
-        cls.addClassCleanup(playwright.stop)
-        cls.browser = playwright.chromium.launch(args=['--no-sandbox'])
-        cls.addClassCleanup(cls.browser.close)
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
 
     def test_spacing_and_preservation(self):
         results = []

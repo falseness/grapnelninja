@@ -1,21 +1,13 @@
 """Browser regression for trail seeds after real advance generation."""
-from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Thread
 import unittest
 import os
 
-from playwright.sync_api import sync_playwright
+from browser_test_support import start_browser_test
 
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046')))
-
-
-class QuietHandler(SimpleHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
 
 
 class GroupTrailsTests(unittest.TestCase):
@@ -26,18 +18,7 @@ class GroupTrailsTests(unittest.TestCase):
         cls.addClassCleanup(lambda: (EVIDENCE / 'browser-errors.log').write_text(
             (EVIDENCE / 'browser-errors.log').read_text() + ''.join(error + '\n' for error in cls.errors)
             if (EVIDENCE / 'browser-errors.log').exists() else ''.join(error + '\n' for error in cls.errors)))
-        server = ThreadingHTTPServer(('127.0.0.1', 0),
-                                     partial(QuietHandler, directory=str(ROOT)))
-        cls.addClassCleanup(server.server_close)
-        thread = Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        cls.addClassCleanup(thread.join)
-        cls.addClassCleanup(server.shutdown)
-        cls.url = f'http://127.0.0.1:{server.server_port}/'
-        playwright = sync_playwright().start()
-        cls.addClassCleanup(playwright.stop)
-        cls.browser = playwright.chromium.launch(args=['--no-sandbox'])
-        cls.addClassCleanup(cls.browser.close)
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
 
     def test_advance_trails(self):
         page = self.browser.new_page(viewport={'width': 772, 'height': 630})
