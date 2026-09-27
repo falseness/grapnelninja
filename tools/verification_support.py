@@ -1,6 +1,8 @@
 """Import-safe shared helpers for standalone verification tools."""
 
 import math
+import subprocess
+from urllib.parse import urlparse
 
 
 def assert_near(a, b, path='root', *, rel_tol, abs_tol, require_finite):
@@ -26,3 +28,25 @@ def assert_near(a, b, path='root', *, rel_tol, abs_tol, require_finite):
             a, b, rel_tol=rel_tol, abs_tol=abs_tol), mismatch
     else:
         assert a == b, mismatch
+
+
+def load_baseline_sources(revision, files):
+    """Read baseline JS/HTML bytes for the caller's tracked-file list.
+
+    Missing files fail through git show; other assets retain live-server routing.
+    """
+    return {name: subprocess.check_output(['git', 'show', revision + ':' + name])
+            for name in files if name.endswith(('.js', '.html'))}
+
+
+def baseline_route(sources):
+    """Build a Playwright route callback using explicitly loaded baseline bytes."""
+    def route(request_route):
+        name = urlparse(request_route.request.url).path.lstrip('/') or 'index.html'
+        if name in sources:
+            request_route.fulfill(
+                body=sources[name],
+                content_type='text/javascript' if name.endswith('.js') else 'text/html')
+        else:
+            request_route.continue_()
+    return route

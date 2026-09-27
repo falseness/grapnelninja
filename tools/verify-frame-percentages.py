@@ -5,11 +5,10 @@ Run a local HTTP server; requires Python Playwright. Evidence is never staged.
 import argparse
 import hashlib
 import json
-from verification_support import assert_near
+from verification_support import assert_near, load_baseline_sources, baseline_route
 from verification_scenarios import frames, expected, setup, motion
 from pathlib import Path
 import subprocess
-from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -31,13 +30,8 @@ with sync_playwright() as p:
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.on('console', lambda m: console.append(m.text) if m.type=='error' else None)
         if revision == 'baseline':
-            sources = {f:subprocess.check_output(['git','show',args.baseline+':'+f]) for f in files if f.endswith(('.js','.html'))}
-            def route(r):
-                file = urlparse(r.request.url).path.lstrip('/') or 'index.html'
-                if file in sources:
-                    r.fulfill(body=sources[file], content_type='text/javascript' if file.endswith('.js') else 'text/html')
-                else: r.continue_()
-            page.route('**/*', route)
+            sources = load_baseline_sources(args.baseline, files)
+            page.route('**/*', baseline_route(sources))
         results[revision] = {}
         for frame, types in zip(frames, expected):
             page.goto(args.url)

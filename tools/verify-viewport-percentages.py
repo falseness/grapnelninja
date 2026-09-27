@@ -7,12 +7,11 @@ Evidence is written under artifacts/TASK-030; never stage that directory.
 import argparse
 import hashlib
 import json
-from verification_support import assert_near
+from verification_support import assert_near, load_baseline_sources, baseline_route
 from verification_scenarios import scenario as gameplay, setup, motion, frames, expected
 from pathlib import Path
 import re
 import subprocess
-from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 from PIL import Image, ImageChops
 
@@ -86,8 +85,7 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     files = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
-    sources = {f: subprocess.check_output(['git', 'show', args.baseline+':'+f])
-               for f in files if f.endswith(('.js', '.html'))}
+    sources = load_baseline_sources(args.baseline, files)
     errors, results = [], {}
 
     def new_page(browser, w, h, baseline=False, live=False):
@@ -97,13 +95,7 @@ def main():
         if not live:
             page.add_init_script(init)
         if baseline:
-            def route(r):
-                name = urlparse(r.request.url).path.lstrip('/') or 'index.html'
-                if name in sources:
-                    r.fulfill(body=sources[name], content_type='text/javascript' if name.endswith('.js') else 'text/html')
-                else:
-                    r.continue_()
-            page.route('**/*', route)
+            page.route('**/*', baseline_route(sources))
         page.goto(args.url)
         return page
 
