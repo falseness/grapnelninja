@@ -32,7 +32,7 @@ class Floor
             }
         }
     }
-    generateElements(x)
+    generateElements(x, minimumLeftX)
     {
         let num = random()
         
@@ -46,7 +46,7 @@ class Floor
                     {min: this.top, max: this.bottom}   , this.creations[i].type)
                 const generationGroupId = this.nextGenerationGroupId++
 
-                this.alignBadVersionGeneratedElements(generatedElements, x + this.elementsIntervalX.min)
+                this.alignBadVersionGeneratedElements(generatedElements, x + this.elementsIntervalX.min, minimumLeftX)
 
                 for (let j = 0; j < generatedElements.length; ++j)
                 {
@@ -62,13 +62,18 @@ class Floor
         console.log('generation element on floor error')
         return 0
     }
-    alignBadVersionGeneratedElements(generatedElements, nextElementX)
+    alignBadVersionGeneratedElements(generatedElements, nextElementX, minimumLeftX)
     {
         if (version != 'bad' || this.primaryElementsQuantity != 1)
             return
 
         const firstPrimaryElementX = 0.2 * width
-        const offsetX = nextElementX - firstPrimaryElementX
+        let offsetX = nextElementX - firstPrimaryElementX
+        if (minimumLeftX !== undefined && generatedElements.length)
+        {
+            const leftPointX = Math.min(...generatedElements.map(element => element.getLeftPointX()))
+            offsetX = Math.max(offsetX, minimumLeftX - leftPointX)
+        }
 
         if (!offsetX)
             return
@@ -134,8 +139,14 @@ class Floor
                     return group.indexes.indexOf(index) == -1
                 })
                 
-                const previousElement = this.elements[this.elements.length - 1]
-                newElements += this.generateElements(previousElement ? previousElement.getRightPointX() : nextElementX)
+                for (const element of this.elements)
+                    nextElementX = Math.max(nextElementX, element.getRightPointX())
+
+                // A single bad-mode group can be deleted far behind the player.
+                // Keep its replacement ahead, translating the whole frame together.
+                const minimumLeftX = version == 'bad' && this.primaryElementsQuantity == 1
+                    ? ninja.x + 0.2 * width : undefined
+                newElements += this.generateElements(nextElementX, minimumLeftX)
                 
                 --i
             }

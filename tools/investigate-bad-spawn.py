@@ -24,8 +24,8 @@ with sync_playwright() as p:
  window.probe={spawns:[],restarts:0};
  const restart=reStart; reStart=function(){probe.restarts++;return restart()};
  const generate=Floor.prototype.generateElements;
- Floor.prototype.generateElements=function(x){
- const old=new Set(this.elements); const result=generate.call(this,x);
+ Floor.prototype.generateElements=function(x,...args){
+ const old=new Set(this.elements); const result=generate.call(this,x,...args);
  if(this.constructor===Floor && typeof ninja!=='undefined' && ninja){
  const added=this.elements.filter(e=>!old.has(e));
  probe.spawns.push({time:performance.now(),anchor:x,playerX:ninja.x,screenX:screen.x,
