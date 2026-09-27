@@ -1,16 +1,19 @@
-"""Capture TASK-018 spawn regression with real mouse input for 30 seconds.
+"""Capture bad-mode spawn placement with real mouse input for 30 seconds.
 
 Requires Python Playwright and Chromium (python3 -m playwright install chromium).
 Serve the repository with python3 -m http.server 8018, then run this script
 from the repository root. Set BROWSER_CDP_URL to use an existing browser.
-All generated evidence is written beneath artifacts/TASK-018.
+Use --output to select the evidence directory (default: artifacts/TASK-018).
 The generation and restart wrappers only observe; gameplay is unchanged.
 """
-import json,time,subprocess,os,base64,faulthandler
+import argparse,json,time,subprocess,os,base64,faulthandler,hashlib
 faulthandler.dump_traceback_later(60, repeat=True)
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-out=Path('artifacts/TASK-018')
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--output', default='artifacts/TASK-018')
+args=parser.parse_args()
+out=Path(args.output)
 out.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
  b=(p.chromium.connect_over_cdp(os.environ['BROWSER_CDP_URL'])
@@ -44,6 +47,7 @@ with sync_playwright() as p:
   if target<30:
    page.mouse.up(); page.mouse.move(700,85); page.mouse.down()
  result=page.evaluate('probe');result.update(samples=samples,console=console,errors=errors,wallSeconds=time.monotonic()-start,sourceCommit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),method='Unmodified gameplay with repeated mouse grapnel throws to (700,85), once per second; observation-only generation/restart wrappers.')
+ result['sourceHashes']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in subprocess.check_output(['git','ls-files'],text=True).splitlines() if name.endswith(('.js','.html','.py'))}
  (out/'run.json').write_text(json.dumps(result,indent=2))
  (out/'console.log').write_text('\n'.join(f"{m['type']}: {m['text']}" for m in console)+'\n')
  (out/'page-errors.log').write_text('\n'.join(errors))
