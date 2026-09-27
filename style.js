@@ -105,12 +105,19 @@ const STYLE = Object.freeze({
         multipointTrack: 0.5,
         full: 1
     }),
+    // Sprite thickness and isotropic sizes use logical canvas height.
+    // Values remain in the existing world/screen space of each consumer.
+    spriteGeometry: Object.freeze({
+        capHeightPercent: 1.2,
+        bandHeightPercent: 1,
+        seamInset: screenHeightPercent(100 / 1080)
+    }),
     strokes: Object.freeze({
-        defaultWidth: 1,
-        seamWidth: 10,
-        neonWidth: 2,
-        neonGlowWidth: 5,
-        grapnelWidthRatio: 0.006,
+        defaultWidth: screenHeightPercent(100 * 1 / 1080),
+        seamWidth: screenHeightPercent(100 * 10 / 1080),
+        neonWidth: screenHeightPercent(100 * 2 / 1080),
+        neonGlowWidth: screenHeightPercent(100 * 5 / 1080),
+        grapnelWidthHeightPercent: 0.6,
         menuIconWidthRatio: 0.05,
         checkMarkWidthRatio: 0.03
     }),
@@ -219,8 +226,8 @@ const STYLE = Object.freeze({
             innerHighlightAlpha: 0.18,
             hazardInnerScale: 0.58,
             hazardInnerStrokeAlpha: 0.46,
-            thinStrokeWidth: 1.35,
-            outerGlowWidth: 7,
+            thinStrokeWidth: screenHeightPercent(100 * 1.35 / 1080),
+            outerGlowWidth: screenHeightPercent(100 * 7 / 1080),
             accentInsetRatio: 0.08,
             innerCopyInsetRatio: 0.16,
             innerCopyFillAlpha: 0.18,
@@ -272,7 +279,7 @@ const STYLE = Object.freeze({
         rotationMarkerLengthRatio: 1.05,
         rotationMarkerOffsetRatio: 0.16,
         rotationMarkerAlpha: 0.55,
-        minScreenRadius: 6,
+        minScreenRadius: screenHeightPercent(100 * 6 / 1080),
         bodyShadowBlurRatio: 0.85,
         innerHighlightRadiusRatio: 0.42,
         innerHighlightAlpha: 0.34

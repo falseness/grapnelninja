@@ -154,7 +154,7 @@ class Grapnel
             }
             ctx.lineTo(ninja.x + screen.x, ninja.y + screen.y)
 
-            const strokeWidth = Math.round(STYLE.strokes.grapnelWidthRatio * height)
+            const strokeWidth = Math.round(screenHeightPercent(STYLE.strokes.grapnelWidthHeightPercent))
 
             ctx.strokeStyle = this.stroke
             ctx.lineWidth = strokeWidth + STYLE.strokes.neonGlowWidth

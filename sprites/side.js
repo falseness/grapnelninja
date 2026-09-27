@@ -14,8 +14,8 @@ class Ground extends Trampoline
         ctx.beginPath()
         
         ctx.lineWidth = STYLE.strokes.seamWidth
-        ctx.moveTo(this.x + screen.x, this.y + screen.y + 1)
-        ctx.lineTo(this.x + screen.x, this.y + this.points[1].y + screen.y - 1)
+        ctx.moveTo(this.x + screen.x, this.y + screen.y + STYLE.spriteGeometry.seamInset)
+        ctx.lineTo(this.x + screen.x, this.y + this.points[1].y + screen.y - STYLE.spriteGeometry.seamInset)
         
         
         ctx.strokeStyle = this.fill
@@ -51,7 +51,7 @@ class Ground extends Trampoline
         const topY = Math.min(points[0].y, points[1].y, points[2].y, points[3].y) + screen.y
         ctx.save()
         ctx.fillStyle = obstacleStyle.groundCapFill
-        ctx.fillRect(this.x + screen.x, topY, this.points[2].x, Math.max(2, height * 0.012))
+        ctx.fillRect(this.x + screen.x, topY, this.points[2].x, Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent)))
         ctx.restore()
     }
     drawNeonBoundary()
@@ -124,8 +124,8 @@ class Side extends Rect
         ctx.beginPath()
         
         ctx.lineWidth = STYLE.strokes.seamWidth
-        ctx.moveTo(this.x + screen.x, this.y + screen.y + 1)
-        ctx.lineTo(this.x + screen.x, this.y + this.height + screen.y - 1)
+        ctx.moveTo(this.x + screen.x, this.y + screen.y + STYLE.spriteGeometry.seamInset)
+        ctx.lineTo(this.x + screen.x, this.y + this.height + screen.y - STYLE.spriteGeometry.seamInset)
         
         
         ctx.strokeStyle = this.fill
@@ -156,7 +156,7 @@ class Side extends Rect
         ctx.fillRect(x, y, this.width, this.height)
 
         ctx.fillStyle = obstacleStyle.groundCapFill
-        ctx.fillRect(x, capY - Math.max(2, height * 0.01), this.width, Math.max(2, height * 0.012))
+        ctx.fillRect(x, capY - Math.max(2, screenHeightPercent(STYLE.spriteGeometry.bandHeightPercent)), this.width, Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent)))
 
         ctx.strokeStyle = obstacleStyle.groundStroke
         ctx.lineWidth = obstacleStyle.thinStrokeWidth

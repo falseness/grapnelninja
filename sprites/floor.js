@@ -268,7 +268,7 @@ class SideFloor extends Floor
         const surfaceWidth = bounds.right - bounds.left
         const surfaceHeight = bounds.bottom - bounds.top
         const boundaryY = bounds.boundaryY + screen.y
-        const capHeight = Math.max(2, height * 0.012)
+        const capHeight = Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent))
         const isLowerSurface = bounds.boundaryY == bounds.top
         const capY = isLowerSurface ? boundaryY : boundaryY - capHeight
 
@@ -394,7 +394,7 @@ class SideFloor extends Floor
         const surfaceY = bounds.top + screen.y
         const surfaceWidth = bounds.right - bounds.left
         const surfaceHeight = bounds.bottom - bounds.top
-        const capHeight = Math.max(2, height * 0.012)
+        const capHeight = Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent))
 
         ctx.save()
         ctx.fillStyle = obstacleStyle.groundFill
