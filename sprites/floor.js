@@ -90,7 +90,11 @@ class Floor
             return
 
         element.track.pos = []
-        element.track.addPos(element.getPoints(), true)
+        if (element instanceof JumpingCube)
+            element.track.addPos(element.x + element.circle.x,
+                element.speedY > 0 ? element.y : element.getBottomPointY(), true)
+        else
+            element.track.addPos(element.getPoints(), true)
     }
     getGenerationGroup(index)
     {
