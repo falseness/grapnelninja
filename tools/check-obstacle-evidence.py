@@ -2,12 +2,42 @@
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 
 from verification_scenarios import frames
 
 TEMPLATES = set(frames)
 VIEWPORTS = {(772, 630), (1280, 720), (1920, 1080)}
+COVERAGE_PHASES = {
+    'startup-before-first-render', 'deletion-disabled',
+    'physics-replenishment', 'restart',
+}
+
+
+def validate_coverage(traversal, width):
+    coverage = traversal.get('coverage')
+    assert isinstance(coverage, list) and coverage, 'coverage: missing or empty records'
+    assert all(isinstance(r, dict) for r in coverage), 'coverage: invalid record'
+    assert COVERAGE_PHASES <= {r.get('phase') for r in coverage}, 'coverage: missing phase'
+    for r in coverage:
+        assert r.get('passed') is True, 'coverage: failed flag'
+        for name in ('cameraX', 'scale', 'viewportWidth', 'visibleRight',
+                     'requiredRight', 'generatedRight'):
+            value = r.get(name)
+            assert (type(value) in (int, float) and math.isfinite(value)), \
+                f'coverage: nonfinite or invalid {name}'
+        assert r['scale'] > 0, 'coverage: scale must be positive'
+        viewport_width = width / r['scale']
+        visible_right = -r['cameraX'] + viewport_width
+        required_right = visible_right + viewport_width
+        for name, expected in (('viewportWidth', viewport_width),
+                               ('visibleRight', visible_right),
+                               ('requiredRight', required_right)):
+            assert math.isfinite(expected), f'coverage: nonfinite derived {name}'
+            assert abs(r[name] - expected) <= 1e-6, f'coverage: inconsistent {name}'
+        assert r['generatedRight'] >= required_right, 'coverage: generatedRight shortfall'
+    return coverage
 
 
 def main():
@@ -35,8 +65,9 @@ def main():
                 assert abs((r['left']-r['predecessorRight'])*r['scale']-.1*width) <= 1e-6
             if not r['initializing']:
                 assert r['left'] > r['visibleRight']
+        coverage = validate_coverage(traversal, width)
         measurements.append(dict(width=width, height=height, spacing=row['measurements'],
-                                 advance=traversal['creations']))
+                                 advance=traversal['creations'], coverage=coverage))
         print(f'PASS {width}x{height}: all ten templates; {len(row["measurements"])} spacing measurements; '
               f'{len(gameplay)} offscreen gameplay spawns; pixel gaps within 1e-6')
     (out / 'measurements.json').write_text(json.dumps(measurements, indent=2) + '\n')
