@@ -21,48 +21,78 @@ class JumpingCube extends Rect
     move()
     {
         this.speedY += GRAVITY
-        
-        this.x += this.speedX
-        this.y += this.speedY
-        
+        this.collisionWithElements()
+
         if (this.speedY > 0)
             this.track.addPos(this.x + this.circle.x, this.y)
         else
             this.track.addPos(this.x + this.circle.x, this.getBottomPointY())
-        
-        this.collisionWithElements()
+
     }
     collisionWithElements()
     {
-        let cubeLines = this.getLines()
-        let circle = this.getCircumscribedCircle()
-        
-        
-        for (let k = 0; k < floors.length; ++k)
+        // Sweep each axis before moving, so even thin obstacles cannot be skipped.
+        // Conservative polygon bounds also cover containment and collinear edges.
+        const obstacles = []
+        for (const floor of floors)
         {
-            for (let i = 0; i < floors[k].elements.length; ++i)
+            for (const element of floor.elements)
             {
-                if (circlesIntersect(circle, floors[k].elements[i].getCircumscribedCircle()))
-                {
-                    let lines = floors[k].elements[i].getLines()
-                    for (let j = 0; j < lines.length; ++j)
-                    {
-                        for (let q = 0; q < cubeLines.length; ++q)
-                        {                   
-                            if (linesCollision(lines[j], cubeLines[q]))
-                            {
-                                //тупо:
-                                this.speedY *= -1
-                                if (this.speedY > 0)
-                                    this.speedY += GRAVITY
-                                else
-                                    this.speedY -= GRAVITY
-
-                                return
-                            }
-                        }
-                    }
+                if (element === this)
+                    continue
+                const points = element.getPoints()
+                const bounds = {
+                    left: Math.min(...points.map(point => point.x)),
+                    right: Math.max(...points.map(point => point.x)),
+                    top: Math.min(...points.map(point => point.y)),
+                    bottom: Math.max(...points.map(point => point.y))
                 }
+                // Triangles move independently; reserve their full vertical travel,
+                // including the one-step overshoot of Triangle.changeSpeed().
+                if (element instanceof Triangle)
+                {
+                    bounds.top = Math.min(bounds.top, element.restrictionY.min - Math.abs(element.speedY))
+                    bounds.bottom = Math.max(bounds.bottom, element.restrictionY.max + Math.abs(element.speedY))
+                }
+                obstacles.push(bounds)
+            }
+        }
+
+        for (const axis of ['x', 'y'])
+        {
+            const vertical = axis == 'y'
+            const speed = vertical ? 'speedY' : 'speedX'
+            const size = vertical ? this.height : this.width
+            const crossStart = vertical ? this.x : this.y
+            const crossEnd = crossStart + (vertical ? this.width : this.height)
+            let distance = this[speed]
+            let collided = false
+            for (const bounds of obstacles)
+            {
+                const crossMin = vertical ? bounds.left : bounds.top
+                const crossMax = vertical ? bounds.right : bounds.bottom
+                if (crossEnd <= crossMin || crossStart >= crossMax)
+                    continue
+                const near = vertical ? bounds.top : bounds.left
+                const far = vertical ? bounds.bottom : bounds.right
+                const end = this[axis] + size
+                if (distance > 0 && end <= near && end + distance >= near)
+                {
+                    distance = Math.max(0, near - end - 1e-7)
+                    collided = true
+                }
+                else if (distance < 0 && this[axis] >= far && this[axis] + distance <= far)
+                {
+                    distance = Math.min(0, far - this[axis] + 1e-7)
+                    collided = true
+                }
+            }
+            this[axis] += distance
+            if (collided)
+            {
+                this[speed] *= -1
+                if (vertical)
+                    this.speedY += this.speedY > 0 ? GRAVITY : -GRAVITY
             }
         }
     }

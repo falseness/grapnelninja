@@ -483,8 +483,7 @@ class Frame7ElementsFactory extends RectFactory
             x: 363,
             y: 207,
             width: 51,
-            height: 52,
-            speedY: -0.1
+            height: 52
         }
     }
     displayToWorld(value)
@@ -531,7 +530,8 @@ class Frame7ElementsFactory extends RectFactory
 
         result.x = x
         result.y = y
-        result.speedY = rect.speedY
+        // Launch through a visible 60 display-pixel arc using the existing gravity.
+        result.speedY = -Math.sqrt(2 * GRAVITY * this.displayToWorld(60))
         result.track.pos = []
         result.track.addPos(result.x + result.circle.x, result.y, true)
 
@@ -635,8 +635,7 @@ class Frame9ElementsFactory extends RectFactory
             x: 480,
             y: 441,
             width: 51,
-            height: 52,
-            speedY: -0.1
+            height: 52
         }
     }
     displayToWorld(value)
@@ -696,7 +695,8 @@ class Frame9ElementsFactory extends RectFactory
 
         result.x = x
         result.y = y
-        result.speedY = rect.speedY
+        // Launch through a visible 60 display-pixel arc using the existing gravity.
+        result.speedY = -Math.sqrt(2 * GRAVITY * this.displayToWorld(60))
         result.track.pos = []
         result.track.addPos(result.x + result.circle.x, result.y, true)
 
