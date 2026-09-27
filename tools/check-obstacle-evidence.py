@@ -5,6 +5,8 @@ import json
 import math
 from pathlib import Path
 
+from PIL import Image
+
 from verification_scenarios import frames
 
 TEMPLATES = set(frames)
@@ -13,6 +15,42 @@ COVERAGE_PHASES = {
     'startup-before-first-render', 'deletion-disabled',
     'physics-replenishment', 'restart',
 }
+# The producer samples target=0 after probe/browser round trips (0.823s in
+# TASK-058). Allow up to one second of start overhead, not a late final sample:
+# the probe clock must reach 30s and the observed sample span must be >=29s.
+CAPTURE_START_TOLERANCE = 1.0
+
+
+def validate_live_samples(samples, directory):
+    assert isinstance(samples, list) and len(samples) >= 11, \
+        'live timeline: at least 11 samples required'
+    previous = None
+    paths = set()
+    for index, sample in enumerate(samples):
+        assert isinstance(sample, dict), f'live timeline: sample {index} must be an object'
+        elapsed = sample.get('elapsed')
+        assert type(elapsed) in (int, float) and math.isfinite(elapsed), \
+            f'live timeline: sample {index} elapsed must be finite numeric seconds'
+        assert elapsed >= 0, f'live timeline: sample {index} elapsed must be nonnegative'
+        assert previous is None or elapsed > previous, \
+            f'live timeline: sample {index} elapsed must be strictly increasing'
+        previous = elapsed
+        name = sample.get('screenshot')
+        assert isinstance(name, str) and name, \
+            f'live image: sample {index} screenshot path required'
+        path = (directory / name).resolve()
+        assert path not in paths, f'live timeline: sample {index} duplicate screenshot path: {name}'
+        paths.add(path)
+        try:
+            with Image.open(path) as image:
+                image.load()
+        except (OSError, ValueError) as error:
+            raise AssertionError(f'live image: sample {index} cannot decode {name}: {error}') from error
+    first, last = samples[0]['elapsed'], samples[-1]['elapsed']
+    assert first <= CAPTURE_START_TOLERANCE, \
+        'live timeline: first sample must be within 1 second of probe start'
+    assert last >= 30 and last - first >= 30 - CAPTURE_START_TOLERANCE, \
+        'live timeline: short capture; require probe elapsed >=30s and sample span >=29s'
 
 
 def validate_coverage(traversal, width):
@@ -88,9 +126,7 @@ def main():
             assert abs(gap-.1*e['canvasWidth']) <= 1e-6
         if not e['initializing']:
             assert e['left'] > e['visibleRight']
-    assert len(live['samples']) >= 11
-    for sample in live['samples']:
-        assert (out / 'live' / sample['screenshot']).stat().st_size > 0
+    validate_live_samples(live.get('samples'), out / 'live')
     print(f'PASS live: {live["wallSeconds"]:.3f} seconds; {len(events)} gameplay events; '
           f'{live["restarts"]} classified restarts; {len(live["samples"])} time-labelled screenshots')
     for path in ['live/console-errors.log', 'live/page-errors.log', 'browser-errors.log']:

@@ -9,10 +9,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from PIL import Image
+
 from test_obstacle_evidence_catalog import CHECKER_PATH, VIEWPORTS, checker
 
 
-class ObstacleEvidenceCoverageTests(unittest.TestCase):
+class ObstacleEvidenceFixture:
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -50,8 +52,8 @@ class ObstacleEvidenceCoverageTests(unittest.TestCase):
         samples = []
         for index in range(11):
             name = f'sample-{index}.png'
-            (self.out / 'live' / name).write_bytes(b'fixture screenshot')
-            samples.append(dict(screenshot=name))
+            Image.new('RGB', (2, 2), (index, 0, 0)).save(self.out / 'live' / name)
+            samples.append(dict(screenshot=name, elapsed=index * 3 + .05))
         hashes = {str(CHECKER_PATH): hashlib.sha256(CHECKER_PATH.read_bytes()).hexdigest()}
         self.write('live/run.json', dict(passed=True, wallSeconds=30, spawns=[initial] + events,
                                        gameplayEventCount=3, restarts=0, runs=[dict(id=0)],
@@ -72,6 +74,8 @@ class ObstacleEvidenceCoverageTests(unittest.TestCase):
         with patch.object(sys, 'argv', [str(CHECKER_PATH), str(self.out)]), redirect_stdout(io.StringIO()):
             checker.main()
 
+
+class ObstacleEvidenceCoverageTests(ObstacleEvidenceFixture, unittest.TestCase):
     def test_valid_coverage_accepted_and_preserved(self):
         self.run_checker()
         measurements = json.loads((self.out / 'measurements.json').read_text())
