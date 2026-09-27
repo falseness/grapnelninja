@@ -432,7 +432,7 @@ class Frame4ElementsFactory extends RectFactory
 
         return result
     }
-    createTriangle()
+    createTriangle(y)
     {
         const triangle = this.triangle
         const worldHeight = this.displayToWorld(triangle.bottomY - triangle.topY)
@@ -441,8 +441,9 @@ class Frame4ElementsFactory extends RectFactory
             x       : this.displayToWorld(triangle.centerX),
             y       : this.displayToWorld(triangle.topY) + worldHeight / 3,
             radius  : worldHeight * 2 / 3,
-            yMin    : this.displayToWorld(triangle.topY),
-            yMax    : this.displayToWorld(triangle.bottomY),
+            // Stay below the horizontal trampoline, with the master factory clearance.
+            yMin    : this.displayToWorld(this.greenSegment.y) + 0.01 * height,
+            yMax    : y.max - 0.01 * height,
             fill    : STYLE.colors.hazard.fill,
             stroke  : STYLE.colors.hazard.stroke
         }
@@ -460,7 +461,7 @@ class Frame4ElementsFactory extends RectFactory
         return [
             this.createGreenSegment(),
             this.createBlueSquare(),
-            this.createTriangle()
+            this.createTriangle(y)
         ]
     }
 }
@@ -701,7 +702,7 @@ class Frame9ElementsFactory extends RectFactory
 
         return result
     }
-    createTriangle()
+    createTriangle(y)
     {
         const triangle = this.triangle
         const worldHeight = this.displayToWorld(triangle.bottomY - triangle.topY)
@@ -710,7 +711,8 @@ class Frame9ElementsFactory extends RectFactory
             x       : this.displayToWorld(triangle.centerX),
             y       : this.displayToWorld(triangle.topY) + worldHeight / 3,
             radius  : worldHeight * 2 / 3,
-            yMin    : this.displayToWorld(triangle.topY),
+            // Move above the initial footprint, away from the cube below.
+            yMin    : y.min + 0.01 * height,
             yMax    : this.displayToWorld(triangle.bottomY),
             fill    : STYLE.colors.hazard.fill,
             stroke  : STYLE.colors.hazard.stroke
@@ -728,7 +730,7 @@ class Frame9ElementsFactory extends RectFactory
     {
         return [
             ...this.greenRects.map(rect => this.createGreenTrampolineRect(rect)),
-            this.createTriangle(),
+            this.createTriangle(y),
             this.createBlueSquare()
         ]
     }
@@ -1083,15 +1085,13 @@ class Frame3TriangleFactory extends TriangleFactory
         const worldCenterY = this.displayCenterYRatio * height / scale.bad
         const worldSide = this.displaySideRatio * height / scale.bad
         const worldHeight = this.displayHeightRatio * height / scale.bad
-        const worldTop = this.displayTopRatio * height / scale.bad
-        const worldBottom = this.displayBottomRatio * height / scale.bad
         const model =
         {
             x       : worldCenterX,
             y       : worldCenterY,
             radius  : worldHeight * 2 / 3,
-            yMin    : worldTop,
-            yMax    : worldBottom,
+            yMin    : y.min + 0.01 * height,
+            yMax    : y.max - 0.01 * height,
             fill    : STYLE.colors.hazard.fill,
             stroke  : STYLE.colors.hazard.stroke
         }
