@@ -522,8 +522,8 @@ class Menu
     }
     getPausePanel()
     {
-        const panelWidth = Math.min(this.width * 0.84, this.width - 24)
-        const panelHeight = Math.min(this.height * 0.76, this.height - 28)
+        const panelWidth = Math.min(this.width * 0.84, this.width - this.width * STYLE.ui.pauseMarginWidthPercent / 100)
+        const panelHeight = Math.min(this.height * 0.76, this.height - this.height * STYLE.ui.pauseMarginHeightPercent / 100)
 
         return {
             x: (this.width - panelWidth) / 2,
@@ -535,7 +535,7 @@ class Menu
     getPauseTitleFontSize(panel)
     {
         const text = 'Grapnel ninja'
-        const maxWidth = Math.max(1, panel.width - Math.max(24, this.width * 0.12))
+        const maxWidth = Math.max(1, panel.width - Math.max(this.width * STYLE.ui.pauseMarginWidthPercent / 100, this.width * 0.12))
         const preferredSize = Math.min(this.width * 0.075, panel.height * 0.14)
 
         ctx.save()

@@ -1,3 +1,10 @@
+// Decorative templates use a 720-unit square and fit the shorter canvas axis.
+// Keep this isotropic local scale: a radius of 62 is 93 pixels at 1920x1080.
+function backgroundTemplateScale(viewWidth, viewHeight)
+{
+    return Math.min(viewWidth, viewHeight) * (100 / 720) / 100
+}
+
 class BackgroundRenderer
 {
     constructor(context, targetCanvas)
@@ -431,7 +438,7 @@ class BackgroundRenderer
             return
 
         const triangles = this.getRandomizedTriangles(triangleTemplates, geometry)
-        const sizeScale = Math.min(width, height) / 720
+        const sizeScale = backgroundTemplateScale(width, height)
         const motion = QUALITY.backgroundMotion && !this.shouldFreezeBadVersionBackgroundMotion()
             ? time / STYLE.timing.backgroundRotationMs * Math.PI * geometry.triangleRotationScale
             : 0
@@ -581,7 +588,7 @@ class BackgroundRenderer
         for (let i = 0; i < accents.length; ++i)
         {
             const accent = accents[i]
-            const radius = accent.radius * Math.min(width, height) / 720
+            const radius = accent.radius * backgroundTemplateScale(width, height)
             const rotation = accent.rotation + time / STYLE.timing.backgroundRotationMs * Math.PI * (i % 2 == 0 ? 1 : -1)
             const x = accent.x * width
             const y = accent.y * height
@@ -624,7 +631,7 @@ class BackgroundRenderer
         for (let i = 0; i < rectangles.length; ++i)
         {
             const rect = rectangles[i]
-            const sizeScale = Math.min(width, height) / 720
+            const sizeScale = backgroundTemplateScale(width, height)
             const rotation = rect.rotation + time / STYLE.timing.backgroundRotationMs * Math.PI * geometry.rectangleRotationScale * (i % 2 == 0 ? 1 : -1)
             const x = rect.x * width + shift.x
             const y = rect.y * height + shift.y
@@ -1054,13 +1061,14 @@ class ParticleSystem
         const originY = player.y
         const color = this.getTrampolineSplashColor(trampoline)
         const count = STYLE.particles.trampolineSplashCount
-        const dispersion = STYLE.particles.trampolineSplashDispersion
+        const dispersionX = STYLE.particles.trampolineSplashDispersionX
+        const dispersionY = STYLE.particles.trampolineSplashDispersionY
 
         for (let i = 0; i < count; ++i)
         {
             this.emitSquare(
-                originX + this.randomRange(-dispersion, dispersion),
-                originY + this.randomRange(-dispersion, dispersion),
+                originX + this.randomRange(-dispersionX, dispersionX),
+                originY + this.randomRange(-dispersionY, dispersionY),
                 color,
                 STYLE.particles.trampolineSplashSpeed * splashParticles.speedMultiplier,
                 this.clampAlpha(STYLE.particles.trampolineSplashAlpha * badParticles.alphaMultiplier),
@@ -1115,7 +1123,7 @@ class ParticleSystem
     {
         const speed = Math.sqrt(player.speedX * player.speedX + player.speedY * player.speedY)
 
-        if (speed < 0.08)
+        if (speed < STYLE.particles.playerMinSpeed)
             return
 
         const badParticles = this.getBadVersionParticles()
@@ -1519,11 +1527,12 @@ class ScreenEffects
 
         const duration = Math.max(1, STYLE.screenEffects.shakeDurationMs)
         const progress = Math.min(1, (now - this.shakeStart) / duration)
-        const magnitude = STYLE.screenEffects.shakeMagnitude * (1 - progress)
+        const magnitudeX = STYLE.screenEffects.shakeMagnitudeX * (1 - progress)
+        const magnitudeY = STYLE.screenEffects.shakeMagnitudeY * (1 - progress)
         const angle = now * 0.07
 
-        this.shakeOffset.x = Math.cos(angle * 1.7) * magnitude
-        this.shakeOffset.y = Math.sin(angle * 2.1) * magnitude
+        this.shakeOffset.x = Math.cos(angle * 1.7) * magnitudeX
+        this.shakeOffset.y = Math.sin(angle * 2.1) * magnitudeY
 
         this.ctx.save()
         this.ctx.translate(this.shakeOffset.x, this.shakeOffset.y)

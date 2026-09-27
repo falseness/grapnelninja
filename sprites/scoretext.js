@@ -30,7 +30,7 @@ let scoreText =
         ctx.textBaseline = 'middle'
         ctx.font = fontSize + 'px ' + this.fontFamily
         ctx.lineWidth = Math.max(1, viewHeight * STYLE.ui.hudStageLineRatio)
-        ctx.shadowBlur = STYLE.ui.textShadowBlur + 5
+        ctx.shadowBlur = STYLE.ui.textShadowBlur + STYLE.ui.hudExtraShadowBlur
         ctx.shadowColor = STYLE.colors.ui.hudGlow
         ctx.fillStyle = this.fill
         ctx.strokeStyle = STYLE.colors.ui.hudGlow
@@ -128,7 +128,7 @@ let scoreText =
         ctx.strokeStyle = STYLE.colors.ui.hudGlow
         ctx.fillStyle = STYLE.colors.ui.transparent
         ctx.shadowColor = STYLE.colors.ui.hudGlow
-        ctx.shadowBlur = STYLE.ui.textShadowBlur + 4
+        ctx.shadowBlur = STYLE.ui.textShadowBlur + STYLE.ui.stageExtraShadowBlur
         ctx.lineWidth = Math.max(1, radius * 0.18)
         ctx.strokeRect(-radius / 2, -radius / 2, radius, radius)
         ctx.closePath()
