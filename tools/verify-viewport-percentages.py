@@ -24,6 +24,9 @@ init='''window.testNow=1000;performance.now=()=>testNow;Date.now=()=>1000000;win
 
 scenario=r'''mode=>{
  startGame(mode);menu.visible=false;screen.x=0;screen.y=0;fpsCounter.enabled=true;fpsCounter.value=60;
+ // Keep fixture effects independent of random draws consumed by startup prefill.
+ let fixtureSeed=1234;
+ Math.random=()=>{fixtureSeed=(1664525*fixtureSeed+1013904223)>>>0;return fixtureSeed/4294967296};
  const W=width/scale[mode],H=height/scale[mode];
  ninja.x=W*.5;ninja.y=H*.5;ninja.speedX=1;ninja.speedY=1;
  ninja.track.pos=Array.from({length:30},(_,i)=>({x:W*(.25+i*.008),y:H*(.52+Math.sin(i/5)*.025)}));
