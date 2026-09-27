@@ -32,7 +32,7 @@ class Floor
             }
         }
     }
-    generateElements(x, minimumLeftX)
+    generateElements(x)
     {
         let num = random()
         
@@ -44,9 +44,8 @@ class Floor
                 const generatedElements = elementsFactory.create(
                     {min: x + this.elementsIntervalX.min, max: x + this.elementsIntervalX.max}, 
                     {min: this.top, max: this.bottom}   , this.creations[i].type)
+                this.alignBadVersionGeneratedElements(generatedElements, x)
                 const generationGroupId = this.nextGenerationGroupId++
-
-                this.alignBadVersionGeneratedElements(generatedElements, x + this.elementsIntervalX.min, minimumLeftX)
 
                 for (let j = 0; j < generatedElements.length; ++j)
                 {
@@ -62,17 +61,21 @@ class Floor
         console.log('generation element on floor error')
         return 0
     }
-    alignBadVersionGeneratedElements(generatedElements, nextElementX, minimumLeftX)
+    alignBadVersionGeneratedElements(generatedElements, nextElementX)
     {
         if (version != 'bad' || this.primaryElementsQuantity != 1)
             return
 
         const firstPrimaryElementX = 0.2 * width
-        let offsetX = nextElementX - firstPrimaryElementX
-        if (minimumLeftX !== undefined && generatedElements.length)
+        let offsetX = nextElementX + this.elementsIntervalX.min - firstPrimaryElementX
+        if (this.nextGenerationGroupId > 0 && generatedElements.length)
         {
             const leftPointX = Math.min(...generatedElements.map(element => element.getLeftPointX()))
-            offsetX = Math.max(offsetX, minimumLeftX - leftPointX)
+            // The last member need not be the rightmost member of its frame.
+            // If deletion emptied the queue, nextElementX carries that group's bound.
+            const precedingRightX = this.elements.length
+                ? this.getGenerationGroup(this.elements.length - 1).rightPointX : nextElementX
+            offsetX = precedingRightX + 0.10 * width / scale.bad - leftPointX
         }
 
         if (!offsetX)
@@ -146,11 +149,7 @@ class Floor
                 for (const element of this.elements)
                     nextElementX = Math.max(nextElementX, element.getRightPointX())
 
-                // A single bad-mode group can be deleted far behind the player.
-                // Keep its replacement ahead, translating the whole frame together.
-                const minimumLeftX = version == 'bad' && this.primaryElementsQuantity == 1
-                    ? ninja.x + 0.2 * width : undefined
-                newElements += this.generateElements(nextElementX, minimumLeftX)
+                newElements += this.generateElements(nextElementX)
                 
                 --i
             }

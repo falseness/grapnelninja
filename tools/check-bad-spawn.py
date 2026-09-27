@@ -13,6 +13,7 @@ with sync_playwright() as p:
     page.goto('http://127.0.0.1:8018/')
     lines = page.evaluate('''() => {
         startGame('bad');
+        cancelAnimationFrame(game);
         const lines = [];
         const assert = (ok, message) => { if (!ok) throw Error(message); };
         const near = (a, b) => Math.abs(a - b) < 1e-6;
@@ -51,7 +52,7 @@ with sync_playwright() as p:
                 screen.x = -ninja.x + .35*width;
                 f.deleteElements();
                 const left = Math.min(...f.elements.map(e => e.getLeftPointX()));
-                assert(near(left, ninja.x + .2*width), 'stale anchor or double offset');
+                assert(near((left - right) * scale.bad, .10*width), 'replacement gap');
                 assert(f.elements.length === old.length && old.every(e => !f.elements.includes(e)), 'partial deletion');
                 assert(f.elements.every(e => e.generationGroupId === 1 && !e.scored), 'replacement group state');
                 const dx = f.elements[0].x - baseline[0].x;
@@ -63,14 +64,16 @@ with sync_playwright() as p:
                     for (const key of ['y','type','fill','stroke','speedX','speedY','restrictionY'])
                         assert(JSON.stringify(actual[key]) === JSON.stringify(expected[key]), 'changed ' + key);
                 });
+                // Put the replacement in view before checking repeated processing.
+                screen.x = -left + 1;
                 f.deleteElements();
                 assert(scores === before + 1 && f.elements.every(e => e.generationGroupId === 1), 'replacement processed twice');
                 // A retained group farther ahead remains the spacing anchor.
                 const retainedRight = Math.max(...f.elements.map(e => e.getRightPointX()));
-                f.generateElements(retainedRight, ninja.x + .2*width);
+                f.generateElements(retainedRight);
                 const added = f.elements.filter(e => e.generationGroupId === 2);
-                assert(Math.min(...added.map(e => e.getLeftPointX())) > retainedRight, 'retained group overlap');
-                lines.push('PASS ' + creation.type + ': startup geometry; forward placement; single translation; types/physics/colors/polygons preserved; grouped score exactly once; whole-group deletion; retained anchor');
+                assert(near((Math.min(...added.map(e => e.getLeftPointX())) - retainedRight) * scale.bad, .10*width), 'retained group gap');
+                lines.push('PASS ' + creation.type + ': startup geometry; exact 10% spacing; single translation; types/physics/colors/polygons preserved; grouped score exactly once; whole-group deletion; retained anchor');
             }
             version = 'classic';
             const f = new Floor(0,height,{min:0,max:0},[],1);

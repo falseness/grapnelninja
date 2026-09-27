@@ -77,9 +77,10 @@ class GroupTrailsTests(unittest.TestCase):
                                 const baseline = old.map(e => ({x:e.x, points:e.getPoints()}));
                                 const right = Math.max(...old.map(e => e.getRightPointX()));
                                 ninja.x = right + 5*width;
-                                screen.x = -ninja.x + .35*width;
-                                f.deleteElements(); // Score the entire old group.
+                                screen.x = -right - 1;
+                                f.deleteElements(); // Score before crossing the deletion border.
                                 assert(old.every(e => e.scored), 'old group not scored');
+                                screen.x = -ninja.x + .35*width;
                                 f.deleteElements(); // Replace the scored group.
                                 assert(f.nextGenerationGroupId === 2 &&
                                     f.elements.length === old.length &&
@@ -87,7 +88,7 @@ class GroupTrailsTests(unittest.TestCase):
                                     f.elements.every(e => e.generationGroupId === 1 && !e.scored),
                                     'whole-group advancement failed');
                                 assert(near(Math.min(...f.elements.map(e => e.getLeftPointX())),
-                                    ninja.x + .2*width), 'replacement not ahead of player');
+                                    right + .10*width/scale.bad), 'replacement gap changed');
                                 const dx = f.elements[0].x - baseline[0].x;
                                 assert(dx > 0, 'no translation');
                                 const targets = f.elements.filter(e =>
