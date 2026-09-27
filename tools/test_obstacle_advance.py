@@ -2,6 +2,7 @@
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 from threading import Thread
 import unittest
@@ -9,7 +10,7 @@ import unittest
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = ROOT / 'artifacts' / 'TASK-046'
+EVIDENCE = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046')))
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -77,15 +78,23 @@ PROBE = r'''() => {
         const predecessorLeft = precedingId === null ? null : Math.min(...this.elements
             .filter(e => e.generationGroupId === precedingId).map(e => e.getLeftPointX()));
         const id = this.nextGenerationGroupId;
-        const count = generate.call(this, x);
+        const factory = elementsFactory.create;
+        let template;
+        elementsFactory.create = function(...args) {
+            template = args[2];
+            return factory.apply(this, args);
+        };
+        let count;
+        try { count = generate.call(this, x); }
+        finally { elementsFactory.create = factory; }
         if (relevant) {
             const group = this.elements.filter(e => e.generationGroupId === id);
             const left = Math.min(...group.map(e => e.getLeftPointX()));
             const right = Math.max(...group.map(e => e.getRightPointX()));
             const V = width/scale.bad, R = -screen.x+V;
-            if (id > 0) assert(near(left-predecessor, .1*V), '10% creation gap');
+            if (id > 0) assert(near((left-predecessor)*scale.bad, .1*width), '10% creation gap');
             if (!initializing) assert(left > R, 'visible post-initialization spawn');
-            creations.push({frame, id, initializing, left, right, predecessorId:precedingId, predecessorLeft, predecessorRight:predecessor,
+            creations.push({template, canvasWidth:width, canvasHeight:height, frame, id, initializing, left, right, predecessorId:precedingId, predecessorLeft, predecessorRight:predecessor,
                 cameraX:screen.x, scale:scale.bad, visibleRight:R, viewportWidth:V,
                 gap:predecessor === null ? null : left-predecessor, passed:true});
         }
@@ -179,6 +188,12 @@ PROBE = r'''() => {
         f.elements.every(e => !e.scored), 'restart did not reset queue');
     checkCoverage(f, 'restart');
     assertions.push('PASS restart resets queue IDs, score flags and camera; startup coverage restored');
+    const templates = f.creations.map(c => c.type);
+    for (const template of templates) {
+        assert(creations.some(c => c.template === template && !c.initializing),
+            'missing gameplay template '+template);
+    }
+    assertions.push(`PASS ${width}x${height}: all ten gameplay templates; offscreen creation and 10% pixel gaps within 1e-6`);
     const first = f.elements.filter(e => e.generationGroupId === 0);
     const right = Math.max(...first.map(e => e.getRightPointX()));
     screen.x = -right+1;

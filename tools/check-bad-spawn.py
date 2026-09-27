@@ -84,7 +84,7 @@ with sync_playwright() as p:
         }
         return lines;
     }''')
-    evidence = Path(os.environ.get('TASK_EVIDENCE_DIR', 'artifacts/TASK-046'))
+    evidence = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', 'artifacts/TASK-046')))
     evidence.mkdir(parents=True, exist_ok=True)
     with (evidence / 'browser-errors.log').open('a') as log:
         log.write(''.join(error + '\n' for error in errors))

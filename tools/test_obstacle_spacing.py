@@ -10,7 +10,7 @@ import unittest
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = Path(os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046'))
+EVIDENCE = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046')))
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
