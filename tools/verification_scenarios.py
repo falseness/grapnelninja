@@ -60,6 +60,10 @@ setup = '''frame => {
  // Check direct factory output as well as the floor's real group placement.
  window.raw=elementsFactory.create({min:width*.2,max:width*.2},{min:f.top,max:f.bottom},frame).map(snapshot);
  seed=1234; f.creations=[{type:frame,chance:100}]; f.generatePrimaryElements();
+ // Startup may prefill several groups. Keep one real, fully placed template
+ // for initial geometry, dynamic targets and all subsequent motion samples.
+ const groupId=f.elements[0].generationGroupId;
+ f.elements=f.elements.filter(e=>e.generationGroupId===groupId);
  window.initial=f.elements.map(snapshot);
  window.box=e=>{const p=e.getPoints();return {left:Math.min(...p.map(p=>p.x)),right:Math.max(...p.map(p=>p.x)),top:Math.min(...p.map(p=>p.y)),bottom:Math.max(...p.map(p=>p.y))}};
  window.dynamic=f.elements.filter(e=>e instanceof Triangle||e instanceof JumpingCube);
