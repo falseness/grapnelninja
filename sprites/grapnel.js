@@ -1,5 +1,5 @@
-const grapnelSpeed = 0.1 * height * 2 / cyclesPerTick
-const grappleSpeed = 0.00025188916876574307 * height / Math.pow(cyclesPerTick, 2)
+const grapnelSpeed = screenHeightPercent(GAMEPLAY.grapnelThrowHeightPercent) / cyclesPerTick
+const grappleSpeed = screenHeightPercent(GAMEPLAY.grapplePullHeightPercent) / Math.pow(cyclesPerTick, 2)
 
 class Grapnel
 {
@@ -87,8 +87,8 @@ class Grapnel
     {
         if (coords)
         {
-            const correctCornerEps = 6
-            const firstPointEps = 50
+            const correctCornerEps = screenHeightPercent(GAMEPLAY.cornerToleranceHeightPercent)
+            const firstPointEps = screenHeightPercent(GAMEPLAY.firstPointToleranceHeightPercent)
             coords = this.correctToCornerOfElement(coords.x, coords.y, element.getPoints(), correctCornerEps)
             
             this.grappled = true

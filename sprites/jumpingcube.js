@@ -78,12 +78,12 @@ class JumpingCube extends Rect
                 const end = this[axis] + size
                 if (distance > 0 && end <= near && end + distance >= near)
                 {
-                    distance = Math.max(0, near - end - 1e-7)
+                    distance = Math.max(0, near - end - GAMEPLAY.cubeContactEpsilon)
                     collided = true
                 }
                 else if (distance < 0 && this[axis] >= far && this[axis] + distance <= far)
                 {
-                    distance = Math.min(0, far - this[axis] + 1e-7)
+                    distance = Math.min(0, far - this[axis] + GAMEPLAY.cubeContactEpsilon)
                     collided = true
                 }
             }

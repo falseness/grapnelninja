@@ -2,11 +2,11 @@ class Screen
 {
     constructor(yAxisMotion, screenY)
     {
-        this.borderX        = 0.35 * width
+        this.borderX        = screenWidthPercent(GAMEPLAY.cameraBorderWidthPercent)
         
-        this.topBorderY     = height * 0.6
-        this.bottomBorderY  = height * 0.4
-        this.centerBorderY  = height * 0.5
+        this.topBorderY     = screenHeightPercent(GAMEPLAY.cameraTopHeightPercent)
+        this.bottomBorderY  = screenHeightPercent(GAMEPLAY.cameraBottomHeightPercent)
+        this.centerBorderY  = screenHeightPercent(GAMEPLAY.cameraCenterHeightPercent)
         
         this.speedX         = 0
         this.speedY         = 0
@@ -55,11 +55,11 @@ class Screen
         {
             let screenNinjaY = ninja.y + screen.y
             
-            let screenMoveRatio = 1.5
-            const eps = 10
+            const screenMoveRatio = GAMEPLAY.cameraMoveRatio
+            const eps = screenHeightPercent(GAMEPLAY.coordinateToleranceHeightPercent)
             if (screenNinjaY > this.bottomBorderY && ninja.speedY > 0)
             {
-                if (isLess(this.y, this.min))
+                if (isLess(this.y, this.min, eps))
                 {
                     this.y = this.min
                     this.speedY = 0
@@ -71,7 +71,7 @@ class Screen
             }
             if (screenNinjaY < this.topBorderY && ninja.speedY < 0)
             {
-                 if (isMore(this.y, this.max))
+                 if (isMore(this.y, this.max, eps))
                 {
                     this.y = this.max
                     this.speedY = 0
@@ -81,9 +81,9 @@ class Screen
                 return true
             }
         
-            if (ninja.speedY > 0 && !(isEqually(this.y, this.max)))
+            if (ninja.speedY > 0 && !(isEqually(this.y, this.max, eps)))
             {
-                if (isLess(this.y, this.min))
+                if (isLess(this.y, this.min, eps))
                 {
                     this.y = this.min
                     this.speedY = 0
@@ -92,9 +92,9 @@ class Screen
                 this.speedY = -ninja.speedY
                 return true
             }
-            if (ninja.speedY < 0 && !(isEqually(this.y, this.min)))
+            if (ninja.speedY < 0 && !(isEqually(this.y, this.min, eps)))
             {
-                if (isMore(this.y, this.max))
+                if (isMore(this.y, this.max, eps))
                 {
                     this.y = this.max
                     this.speedY = 0

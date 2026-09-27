@@ -88,7 +88,8 @@ function pointIsOnStraight(point, line)
     }
     else if (line.type == 'line')
     {
-        const eps = 0
+        // The old zero argument fell back to the one-pixel equality tolerance.
+        const eps = screenHeightPercent(GAMEPLAY.coordinateToleranceHeightPercent)
         return (isEqually(point.y, line.k * point.x + line.b, eps))
     }
     else

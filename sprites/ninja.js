@@ -50,7 +50,7 @@ class Ninja
     }
     move()
     {
-        const maxSpeed = 0.02 * height
+        const maxSpeed = screenHeightPercent(GAMEPLAY.ninjaMaxSpeedHeightPercent)
         if (this.speedY > maxSpeed)
             this.speedY = maxSpeed
         if (this.speedY < -maxSpeed)

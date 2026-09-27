@@ -5,6 +5,31 @@ const forceLandscapeViewport = viewportWidth < viewportHeight
 const height    = forceLandscapeViewport ? viewportWidth : viewportHeight
 const width     = forceLandscapeViewport ? viewportHeight : viewportWidth//height * widthHeightRatio
 
+// Logical canvas percentages; baseline gameplay was measured at 1920 x 1080.
+function screenWidthPercent(percent) { return width * (percent / 100) }
+function screenHeightPercent(percent) { return height * (percent / 100) }
+
+const GAMEPLAY = Object.freeze({
+    gravityHeightPercent: 0.006297229219143577,
+    // Direction-vector magnitudes use one height scale to preserve aim angles.
+    grapnelThrowHeightPercent: 20,
+    grapplePullHeightPercent: 0.025188916876574307,
+    triangleSpeedHeightPercent: 0.5,
+    ninjaMaxSpeedHeightPercent: 2,
+    cornerToleranceHeightPercent: 100 * 6 / 1080,
+    firstPointToleranceHeightPercent: 100 * 50 / 1080,
+    coordinateToleranceHeightPercent: 100 / 1080,
+    cameraBorderWidthPercent: 35,
+    cameraTopHeightPercent: 60,
+    cameraBottomHeightPercent: 40,
+    cameraCenterHeightPercent: 50,
+    cameraMoveRatio: 1.5,
+    triangleUpwardChancePercent: 50,
+    // Numerical separation, not a visible clearance: intentionally unscaled.
+    cubeContactEpsilon: 1e-7
+})
+const defaultEqualityTolerance = 1
+
 function configureCanvasViewport(canvas)
 {
     canvas.style.position = 'fixed'
@@ -59,22 +84,22 @@ function random(min, max)
 }
 function isEqually(a, b, eps)
 {
-    eps = eps || 1
+    eps = eps || defaultEqualityTolerance
     return (Math.abs(a - b) < eps)
 }
 function isMore(a, b, eps)
 {
-    eps = eps || 1
+    eps = eps || defaultEqualityTolerance
     return (a - b > -eps)
 }
 function isLess(a, b, eps)
 {
-    eps = eps || 1
+    eps = eps || defaultEqualityTolerance
     return (a - b < eps)
 }
 function isPointsEqually(p1, p2, eps)
 {
-    eps = eps || 1
+    eps = eps || defaultEqualityTolerance
     return (Math.pow(p1[0] - p2[0], 2) + Math.pow(p1[1] - p2[1], 2) < Math.pow(eps, 2))
 }
 function abs(a)

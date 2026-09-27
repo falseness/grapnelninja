@@ -4,8 +4,8 @@ class Triangle extends Element
     {
         super(object)
     
-        this.speedY =   0.005 * height / cyclesPerTick
-        if (random() < 50)
+        this.speedY =   screenHeightPercent(GAMEPLAY.triangleSpeedHeightPercent) / cyclesPerTick
+        if (random() < GAMEPLAY.triangleUpwardChancePercent)
             this.speedY *= -1
         
         this.side   =   object.radius * Math.sqrt(3)

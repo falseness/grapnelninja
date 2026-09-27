@@ -1,4 +1,4 @@
-const GRAVITY = 0.00006297229219143577 * height / Math.pow(cyclesPerTick, 2)
+const GRAVITY = screenHeightPercent(GAMEPLAY.gravityHeightPercent) / Math.pow(cyclesPerTick, 2)
 
 function physics()
 {
