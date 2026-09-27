@@ -4,9 +4,9 @@ import hashlib
 import json
 from pathlib import Path
 
-TEMPLATES = {'frame2Rect', 'frame3Triangle', 'frame4Elements', 'frame5Rects',
-             'frame6Rects', 'frame7Elements', 'frame8Elements', 'frame9Elements',
-             'frame10Elements', 'frame11Elements'}
+from verification_scenarios import frames
+
+TEMPLATES = set(frames)
 VIEWPORTS = {(772, 630), (1280, 720), (1920, 1080)}
 
 
