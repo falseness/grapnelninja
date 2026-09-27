@@ -1,15 +1,16 @@
-"""Browser regression for trail seeds after real generation-group replacement."""
+"""Browser regression for trail seeds after real advance generation."""
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 import unittest
+import os
 
 from playwright.sync_api import sync_playwright
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = ROOT / 'artifacts' / 'TASK-043'
+EVIDENCE = Path(os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046'))
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -23,7 +24,8 @@ class GroupTrailsTests(unittest.TestCase):
         EVIDENCE.mkdir(parents=True, exist_ok=True)
         cls.errors = []
         cls.addClassCleanup(lambda: (EVIDENCE / 'browser-errors.log').write_text(
-            ''.join(error + '\n' for error in cls.errors)))
+            (EVIDENCE / 'browser-errors.log').read_text() + ''.join(error + '\n' for error in cls.errors)
+            if (EVIDENCE / 'browser-errors.log').exists() else ''.join(error + '\n' for error in cls.errors)))
         server = ThreadingHTTPServer(('127.0.0.1', 0),
                                      partial(QuietHandler, directory=str(ROOT)))
         cls.addClassCleanup(server.server_close)
@@ -37,7 +39,7 @@ class GroupTrailsTests(unittest.TestCase):
         cls.browser = playwright.chromium.launch(args=['--no-sandbox'])
         cls.addClassCleanup(cls.browser.close)
 
-    def test_replacement_trails(self):
+    def test_advance_trails(self):
         page = self.browser.new_page(viewport={'width': 772, 'height': 630})
         self.addCleanup(page.close)
         page.on('pageerror', lambda error: self.errors.append(str(error)))
@@ -72,30 +74,30 @@ class GroupTrailsTests(unittest.TestCase):
                                 return elements;
                             };
                             try {
+                                screen.x = 0;
                                 f.generatePrimaryElements();
-                                const old = [...f.elements];
+                                const initialId = f.nextGenerationGroupId - 1;
+                                const old = f.elements.filter(e => e.generationGroupId === initialId);
                                 const baseline = old.map(e => ({x:e.x, points:e.getPoints()}));
                                 const right = Math.max(...old.map(e => e.getRightPointX()));
-                                ninja.x = right + 5*width;
-                                screen.x = -right - 1;
-                                f.deleteElements(); // Score before crossing the deletion border.
-                                assert(old.every(e => e.scored), 'old group not scored');
-                                screen.x = -ninja.x + .35*width;
-                                f.deleteElements(); // Replace the scored group.
-                                assert(f.nextGenerationGroupId === 2 &&
-                                    f.elements.length === old.length &&
-                                    old.every(e => !f.elements.includes(e)) &&
-                                    f.elements.every(e => e.generationGroupId === 1 && !e.scored),
-                                    'whole-group advancement failed');
-                                assert(near(Math.min(...f.elements.map(e => e.getLeftPointX())),
-                                    right + .10*width/scale.bad), 'replacement gap changed');
-                                const dx = f.elements[0].x - baseline[0].x;
+                                const before = f.nextGenerationGroupId;
+                                // Advance the camera by a normal small step until prefill runs low.
+                                while (f.nextGenerationGroupId === before) {
+                                    screen.x -= 1;
+                                    f.replenishElements();
+                                }
+                                const generated = f.elements.filter(e => e.generationGroupId === before);
+                                assert(generated.length === old.length, 'advance group size');
+                                assert(old.every(e => f.elements.includes(e)), 'generation depended on deletion');
+                                assert(near(Math.min(...generated.map(e => e.getLeftPointX())),
+                                    right + .10*width/scale.bad), 'advance gap changed');
+                                const dx = generated[0].x - baseline[0].x;
                                 assert(dx > 0, 'no translation');
-                                const targets = f.elements.filter(e =>
+                                const targets = generated.filter(e =>
                                     e instanceof JumpingCube || e instanceof Triangle);
                                 assert(targets.length > 0, 'missing trail target');
                                 for (const e of targets) {
-                                    const original = baseline[f.elements.indexOf(e)];
+                                    const original = baseline[generated.indexOf(e)];
                                     assert(near(e.x, original.x + dx), 'translated X mismatch');
                                     assert(e.track.pos.length === 1, 'forced single seed missing');
                                     const seed = e.track.pos[0];

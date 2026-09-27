@@ -39,6 +39,7 @@ function calcPhysics()
 
     for (let i = 0; i < floors.length; ++i)
     {
+        floors[i].replenishElements()
         floors[i].deleteElements()
     }
 }

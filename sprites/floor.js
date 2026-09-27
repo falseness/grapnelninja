@@ -14,6 +14,11 @@ class Floor
     }
     generatePrimaryElements()
     {
+        if (version == 'bad' && this.primaryElementsQuantity == 1)
+        {
+            this.elements = []
+            this.nextGenerationGroupId = 0
+        }
         const firstPrimaryElementX      = 0.2 * width
         const primaryElementsQuantity   = this.primaryElementsQuantity
         
@@ -30,6 +35,23 @@ class Floor
             {
                 console.log('err')
             }
+        }
+        this.replenishElements()
+    }
+    replenishElements()
+    {
+        if (version != 'bad' || this.primaryElementsQuantity != 1)
+            return
+
+        const viewportWidth = width / scale.bad
+        const targetRight = -screen.x + 2 * viewportWidth
+        let right = this.elements.length
+            ? this.getGenerationGroup(this.elements.length - 1).rightPointX : 0.2 * width
+        while (right < targetRight)
+        {
+            if (!this.generateElements(right))
+                break
+            right = this.getGenerationGroup(this.elements.length - 1).rightPointX
         }
     }
     generateElements(x)
@@ -149,7 +171,8 @@ class Floor
                 for (const element of this.elements)
                     nextElementX = Math.max(nextElementX, element.getRightPointX())
 
-                newElements += this.generateElements(nextElementX)
+                if (version != 'bad' || this.primaryElementsQuantity != 1)
+                    newElements += this.generateElements(nextElementX)
                 
                 --i
             }

@@ -3,6 +3,8 @@
 Serve the repository on port 8018, then run with Python Playwright installed.
 This deterministic probe is separate from the real-input gameplay capture.
 """
+import os
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
@@ -10,6 +12,7 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={'width': 772, 'height': 630})
     errors = []
     page.on('pageerror', lambda error: errors.append(str(error)))
+    page.on('console', lambda message: errors.append(message.text) if message.type == 'error' else None)
     page.goto('http://127.0.0.1:8018/')
     lines = page.evaluate('''() => {
         startGame('bad');
@@ -31,11 +34,13 @@ with sync_playwright() as p:
                 const snapshot = e => ({x:e.x, y:e.y, type:e.constructor.name,
                     points:e.getPoints(), fill:e.fill, stroke:e.stroke,
                     speedX:e.speedX, speedY:e.speedY, restrictionY:e.restrictionY});
+                screen.x = 0;
                 f.generatePrimaryElements();
-                assert(JSON.stringify(f.elements.map(snapshot)) === JSON.stringify(raw.map(snapshot)),
+                const first = f.elements.filter(e => e.generationGroupId === 0);
+                assert(JSON.stringify(first.map(snapshot)) === JSON.stringify(raw.map(snapshot)),
                     creation.type + ': startup geometry changed');
-                const baseline = f.elements.map(snapshot);
-                const old = [...f.elements];
+                const baseline = first.map(snapshot);
+                const old = [...first];
                 const right = Math.max(...old.map(e => e.getRightPointX()));
                 // A partially visible multi-object group must neither score nor delete.
                 screen.x = -right + 1;
@@ -47,16 +52,17 @@ with sync_playwright() as p:
                 assert(scores === before + 1 && old.every(e => e.scored), 'group score missing');
                 f.deleteElements();
                 assert(scores === before + 1 && old.every(e => f.elements.includes(e)), 'duplicate score/early deletion');
-                // Reproduce deletion far behind the player with an otherwise empty queue.
-                ninja.x = right + 5*width;
-                screen.x = -ninja.x + .35*width;
+                const replacement = f.elements.filter(e => e.generationGroupId === 1);
+                assert(replacement.length === old.length, 'prefill missing second group');
+                const left = Math.min(...replacement.map(e => e.getLeftPointX()));
+                assert(near((left - right) * scale.bad, .10*width), 'advance gap');
+                const generationCount = f.nextGenerationGroupId;
+                screen.x = screen.getDeletionBorder() - right - 1;
                 f.deleteElements();
-                const left = Math.min(...f.elements.map(e => e.getLeftPointX()));
-                assert(near((left - right) * scale.bad, .10*width), 'replacement gap');
-                assert(f.elements.length === old.length && old.every(e => !f.elements.includes(e)), 'partial deletion');
-                assert(f.elements.every(e => e.generationGroupId === 1 && !e.scored), 'replacement group state');
-                const dx = f.elements[0].x - baseline[0].x;
-                f.elements.forEach((e,i) => {
+                assert(old.every(e => !f.elements.includes(e)), 'partial deletion');
+                assert(f.nextGenerationGroupId === generationCount, 'deletion generated duplicates');
+                const dx = replacement[0].x - baseline[0].x;
+                replacement.forEach((e,i) => {
                     const actual = snapshot(e), expected = baseline[i];
                     assert(near(actual.x, expected.x + dx), 'nonuniform translation');
                     assert(actual.points.every((point,j) => near(point.x, expected.points[j].x + dx)
@@ -64,16 +70,7 @@ with sync_playwright() as p:
                     for (const key of ['y','type','fill','stroke','speedX','speedY','restrictionY'])
                         assert(JSON.stringify(actual[key]) === JSON.stringify(expected[key]), 'changed ' + key);
                 });
-                // Put the replacement in view before checking repeated processing.
-                screen.x = -left + 1;
-                f.deleteElements();
-                assert(scores === before + 1 && f.elements.every(e => e.generationGroupId === 1), 'replacement processed twice');
-                // A retained group farther ahead remains the spacing anchor.
-                const retainedRight = Math.max(...f.elements.map(e => e.getRightPointX()));
-                f.generateElements(retainedRight);
-                const added = f.elements.filter(e => e.generationGroupId === 2);
-                assert(near((Math.min(...added.map(e => e.getLeftPointX())) - retainedRight) * scale.bad, .10*width), 'retained group gap');
-                lines.push('PASS ' + creation.type + ': startup geometry; exact 10% spacing; single translation; types/physics/colors/polygons preserved; grouped score exactly once; whole-group deletion; retained anchor');
+                lines.push('PASS ' + creation.type + ': startup geometry; exact 10% spacing; single translation; types/physics/colors/polygons preserved; grouped score exactly once; whole-group deletion; advance prefill; no deletion-triggered generation');
             }
             version = 'classic';
             const f = new Floor(0,height,{min:0,max:0},[],1);
@@ -87,6 +84,10 @@ with sync_playwright() as p:
         }
         return lines;
     }''')
+    evidence = Path(os.environ.get('TASK_EVIDENCE_DIR', 'artifacts/TASK-046'))
+    evidence.mkdir(parents=True, exist_ok=True)
+    with (evidence / 'browser-errors.log').open('a') as log:
+        log.write(''.join(error + '\n' for error in errors))
     assert not errors, errors
     print('\n'.join(lines))
     print('PASS browser page errors=0')

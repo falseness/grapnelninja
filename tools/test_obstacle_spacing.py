@@ -2,6 +2,7 @@
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 from threading import Thread
 import unittest
@@ -9,7 +10,7 @@ import unittest
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = ROOT / 'artifacts' / 'TASK-045'
+EVIDENCE = Path(os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046'))
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -88,7 +89,8 @@ PROBE = r'''() => {
         };
         const begin = f.elements.length;
         try {
-            if (initial) f.generatePrimaryElements();
+            // Probe one group; startup now prefills multiple groups.
+            if (initial) f.generateElements(.2*width);
             else f.generateElements(anchor);
         } finally { elementsFactory.create = factory; }
         const group = f.elements.slice(begin);
