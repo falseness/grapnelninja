@@ -1,3 +1,10 @@
+// Frame templates store screen percentages, before bad-mode camera zoom.
+// Original SVG units used a 630-high canvas. At 1920x1080 its equivalent
+// width is 1120 (1920 * 630 / 1080), preserving the original layout exactly.
+const FRAME_REFERENCE = Object.freeze({width: 1120, height: 630})
+function frameWidthPercent(percent) { return screenWidthPercent(percent) / scale.bad }
+function frameHeightPercent(percent) { return screenHeightPercent(percent) / scale.bad }
+
 function changeScoreText()
 {
     if (++scoreText.count[version] > scoreText.record[version])
@@ -210,16 +217,16 @@ class Frame2RectFactory extends RectFactory
     constructor()
     {
         super()
-        this.displayWidthRatio = 52 / 630
-        this.displayTopRatio = 164.5 / 630
-        this.displayHeightRatio = 266 / 630
+        this.widthPercent = 100 * (52 / FRAME_REFERENCE.width)
+        this.topHeightPercent = 100 * (164.5 / FRAME_REFERENCE.height)
+        this.heightPercent = 100 * (266 / FRAME_REFERENCE.height)
     }
     create(x, y)
     {
-        const worldWidth = this.displayWidthRatio * height / scale.bad
-        const worldHeight = this.displayHeightRatio * height / scale.bad
+        const worldWidth = frameWidthPercent(this.widthPercent)
+        const worldHeight = frameHeightPercent(this.heightPercent)
         const worldX = (width / scale.bad - worldWidth) / 2
-        const worldY = this.displayTopRatio * height / scale.bad
+        const worldY = frameHeightPercent(this.topHeightPercent)
         const model =
         {
             x       : worldX,
@@ -243,33 +250,38 @@ class Frame5RectFactory extends RectFactory
     constructor()
     {
         super()
-        this.frameHeight = 630
         this.verticalRects =
         [
-            {x: 688.5, y: 76.5, width: 52, height: 266},
-            {x: 333.5, y: 188.5, width: 52, height: 365}
+            {
+                x: 100 * 688.5 / FRAME_REFERENCE.width,
+                y: 100 * 76.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 266 / FRAME_REFERENCE.height
+            },
+            {
+                x: 100 * 333.5 / FRAME_REFERENCE.width,
+                y: 100 * 188.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 365 / FRAME_REFERENCE.height
+            }
         ]
         this.horizontalRect =
         {
-            x: 386.935,
-            y: 232.654,
-            width: 42.9148,
-            height: 186.553,
+            x: 100 * 386.935 / FRAME_REFERENCE.width,
+            y: 100 * 232.654 / FRAME_REFERENCE.height,
+            width: 100 * 42.9148 / FRAME_REFERENCE.height,
+            height: 100 * 186.553 / FRAME_REFERENCE.height,
             rotation: -90.5738
         }
     }
-    displayToWorld(value)
-    {
-        return value / this.frameHeight * height / scale.bad
-    }
     createGreenTrampolineRect(rect)
     {
-        const worldWidth = this.displayToWorld(rect.width)
-        const worldHeight = this.displayToWorld(rect.height)
+        const worldWidth = frameWidthPercent(rect.width)
+        const worldHeight = frameHeightPercent(rect.height)
         const model =
         {
-            x       : this.displayToWorld(rect.x),
-            y       : this.displayToWorld(rect.y),
+            x       : frameWidthPercent(rect.x),
+            y       : frameHeightPercent(rect.y),
             points  :
             [
                 {x: 0, y: 0},
@@ -289,6 +301,7 @@ class Frame5RectFactory extends RectFactory
         const angle = rect.rotation * Math.PI / 180
         const cos = Math.cos(angle)
         const sin = Math.sin(angle)
+        // Rotate local height percentages uniformly, then add the W/H position.
         const displayPoints =
         [
             {x: 0, y: 0},
@@ -300,8 +313,8 @@ class Frame5RectFactory extends RectFactory
         const points = displayPoints.map(point =>
         {
             return {
-                x: this.displayToWorld(rect.x + point.x * cos - point.y * sin),
-                y: this.displayToWorld(rect.y + point.x * sin + point.y * cos)
+                x: frameWidthPercent(rect.x) + frameHeightPercent(point.x * cos - point.y * sin),
+                y: frameHeightPercent(rect.y + point.x * sin + point.y * cos)
             }
         })
 
@@ -328,24 +341,29 @@ class Frame6RectFactory extends RectFactory
     constructor()
     {
         super()
-        this.frameHeight = 630
         this.rects =
         [
-            {x: 359.5, y: 76.5, width: 52, height: 106},
-            {x: 359.5, y: 381.5, width: 52, height: 172}
+            {
+                x: 100 * 359.5 / FRAME_REFERENCE.width,
+                y: 100 * 76.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 106 / FRAME_REFERENCE.height
+            },
+            {
+                x: 100 * 359.5 / FRAME_REFERENCE.width,
+                y: 100 * 381.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 172 / FRAME_REFERENCE.height
+            }
         ]
-    }
-    displayToWorld(value)
-    {
-        return value / this.frameHeight * height / scale.bad
     }
     createFrameRect(rect)
     {
         return super.create(
-            this.displayToWorld(rect.x),
-            this.displayToWorld(rect.y),
-            this.displayToWorld(rect.width),
-            this.displayToWorld(rect.height)
+            frameWidthPercent(rect.x),
+            frameHeightPercent(rect.y),
+            frameWidthPercent(rect.width),
+            frameHeightPercent(rect.height)
         )
     }
     create(x, y)
@@ -358,33 +376,28 @@ class Frame4ElementsFactory extends RectFactory
     constructor()
     {
         super()
-        this.frameHeight = 630
         this.greenSegment =
         {
-            x: 252,
-            y: 331,
-            width: 53,
-            height: 267,
+            x: 100 * 252 / FRAME_REFERENCE.width,
+            y: 100 * 331 / FRAME_REFERENCE.height,
+            width: 100 * 53 / FRAME_REFERENCE.height,
+            height: 100 * 267 / FRAME_REFERENCE.height,
             rotation: -90
         }
         this.blueSquare =
         {
-            x: 368,
-            y: 165,
-            width: 51,
-            height: 52
+            x: 100 * 368 / FRAME_REFERENCE.width,
+            y: 100 * 165 / FRAME_REFERENCE.height,
+            width: 100 * 51 / FRAME_REFERENCE.width,
+            height: 100 * 52 / FRAME_REFERENCE.height
         }
         this.triangle =
         {
-            centerX: 386,
-            topY: 388,
-            bottomY: 502,
-            side: 437.962 - 334.038
+            centerX: 100 * 386 / FRAME_REFERENCE.width,
+            topY: 100 * 388 / FRAME_REFERENCE.height,
+            bottomY: 100 * 502 / FRAME_REFERENCE.height,
+            side: 100 * (437.962 - 334.038) / FRAME_REFERENCE.height
         }
-    }
-    displayToWorld(value)
-    {
-        return value / this.frameHeight * height / scale.bad
     }
     createGreenSegment()
     {
@@ -392,6 +405,7 @@ class Frame4ElementsFactory extends RectFactory
         const angle = rect.rotation * Math.PI / 180
         const cos = Math.cos(angle)
         const sin = Math.sin(angle)
+        // Rotate local height percentages uniformly, then add the W/H position.
         const displayPoints =
         [
             {x: 0, y: 0},
@@ -403,8 +417,8 @@ class Frame4ElementsFactory extends RectFactory
         const points = displayPoints.map(point =>
         {
             return {
-                x: this.displayToWorld(rect.x + point.x * cos - point.y * sin),
-                y: this.displayToWorld(rect.y + point.x * sin + point.y * cos)
+                x: frameWidthPercent(rect.x) + frameHeightPercent(point.x * cos - point.y * sin),
+                y: frameHeightPercent(rect.y + point.x * sin + point.y * cos)
             }
         })
 
@@ -421,10 +435,10 @@ class Frame4ElementsFactory extends RectFactory
     {
         const rect = this.blueSquare
         const result = super.create(
-            this.displayToWorld(rect.x),
-            this.displayToWorld(rect.y),
-            this.displayToWorld(rect.width),
-            this.displayToWorld(rect.height)
+            frameWidthPercent(rect.x),
+            frameHeightPercent(rect.y),
+            frameWidthPercent(rect.width),
+            frameHeightPercent(rect.height)
         )
 
         result.fill = STYLE.colors.cube.blueFill
@@ -435,21 +449,21 @@ class Frame4ElementsFactory extends RectFactory
     createTriangle(y)
     {
         const triangle = this.triangle
-        const worldHeight = this.displayToWorld(triangle.bottomY - triangle.topY)
+        const worldHeight = frameHeightPercent(triangle.bottomY - triangle.topY)
         const model =
         {
-            x       : this.displayToWorld(triangle.centerX),
-            y       : this.displayToWorld(triangle.topY) + worldHeight / 3,
+            x       : frameWidthPercent(triangle.centerX),
+            y       : frameHeightPercent(triangle.topY) + worldHeight / 3,
             radius  : worldHeight * 2 / 3,
             // Stay below the horizontal trampoline, with the master factory clearance.
-            yMin    : this.displayToWorld(this.greenSegment.y) + 0.01 * height,
+            yMin    : frameHeightPercent(this.greenSegment.y) + 0.01 * height,
             yMax    : y.max - 0.01 * height,
             fill    : STYLE.colors.hazard.fill,
             stroke  : STYLE.colors.hazard.stroke
         }
         const result = new Triangle(model)
 
-        result.side = this.displayToWorld(triangle.side)
+        result.side = frameHeightPercent(triangle.side)
         result.height = worldHeight
         result.track = (trackEnabled)?(new MultipointTrackLine(result.side, result.stroke, STYLE.timing.triangleTrailPoints)):(new Empty())
         result.track.addPos(result.getPoints(), true)
@@ -470,36 +484,32 @@ class Frame7ElementsFactory extends RectFactory
     constructor()
     {
         super()
-        this.frameHeight = 630
+        this.launchArcHeightPercent = 100 * 60 / FRAME_REFERENCE.height
         this.greenRect =
         {
-            x: 285.5,
-            y: 381.5,
-            width: 206,
-            height: 141
+            x: 100 * 285.5 / FRAME_REFERENCE.width,
+            y: 100 * 381.5 / FRAME_REFERENCE.height,
+            width: 100 * 206 / FRAME_REFERENCE.width,
+            height: 100 * 141 / FRAME_REFERENCE.height
         }
         this.blueSquare =
         {
-            x: 363,
-            y: 207,
-            width: 51,
-            height: 52
+            x: 100 * 363 / FRAME_REFERENCE.width,
+            y: 100 * 207 / FRAME_REFERENCE.height,
+            width: 100 * 51 / FRAME_REFERENCE.width,
+            height: 100 * 52 / FRAME_REFERENCE.height
         }
-    }
-    displayToWorld(value)
-    {
-        return value / this.frameHeight * height / scale.bad
     }
     createGreenRect()
     {
         const rect = this.greenRect
-        const worldWidth = this.displayToWorld(rect.width)
-        const worldHeight = this.displayToWorld(rect.height)
+        const worldWidth = frameWidthPercent(rect.width)
+        const worldHeight = frameHeightPercent(rect.height)
 
         return new Trampoline(
         {
-            x       : this.displayToWorld(rect.x),
-            y       : this.displayToWorld(rect.y),
+            x       : frameWidthPercent(rect.x),
+            y       : frameHeightPercent(rect.y),
             points  :
             [
                 {x: 0, y: 0},
@@ -514,10 +524,10 @@ class Frame7ElementsFactory extends RectFactory
     createBlueSquare()
     {
         const rect = this.blueSquare
-        const x = this.displayToWorld(rect.x)
-        const y = this.displayToWorld(rect.y)
-        const width = this.displayToWorld(rect.width)
-        const height = this.displayToWorld(rect.height)
+        const x = frameWidthPercent(rect.x)
+        const y = frameHeightPercent(rect.y)
+        const width = frameWidthPercent(rect.width)
+        const height = frameHeightPercent(rect.height)
         const result = new JumpingCube(
         {
             x       : x,
@@ -530,8 +540,8 @@ class Frame7ElementsFactory extends RectFactory
 
         result.x = x
         result.y = y
-        // Launch through a visible 60 display-pixel arc using the existing gravity.
-        result.speedY = -Math.sqrt(2 * GRAVITY * this.displayToWorld(60))
+        // Height-based launch arc uses the existing gravity.
+        result.speedY = -Math.sqrt(2 * GRAVITY * frameHeightPercent(this.launchArcHeightPercent))
         result.track.pos = []
         result.track.addPos(result.x + result.circle.x, result.y, true)
 
@@ -550,32 +560,42 @@ class Frame8ElementsFactory extends RectFactory
     constructor()
     {
         super()
-        this.frameHeight = 630
         this.grayRect =
         {
-            x: 333.5,
-            y: 243.5,
-            width: 52,
-            height: 172
+            x: 100 * 333.5 / FRAME_REFERENCE.width,
+            y: 100 * 243.5 / FRAME_REFERENCE.height,
+            width: 100 * 52 / FRAME_REFERENCE.width,
+            height: 100 * 172 / FRAME_REFERENCE.height
         }
         this.greenRects =
         [
-            {x: 146.5, y: 181.5, width: 52, height: 266},
-            {x: 516.5, y: 416.5, width: 52, height: 137},
-            {x: 516.5, y: 76.5, width: 52, height: 137}
+            {
+                x: 100 * 146.5 / FRAME_REFERENCE.width,
+                y: 100 * 181.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 266 / FRAME_REFERENCE.height
+            },
+            {
+                x: 100 * 516.5 / FRAME_REFERENCE.width,
+                y: 100 * 416.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 137 / FRAME_REFERENCE.height
+            },
+            {
+                x: 100 * 516.5 / FRAME_REFERENCE.width,
+                y: 100 * 76.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 137 / FRAME_REFERENCE.height
+            }
         ]
-    }
-    displayToWorld(value)
-    {
-        return value / this.frameHeight * height / scale.bad
     }
     createFrameRect(rect, fill, stroke)
     {
         const result = super.create(
-            this.displayToWorld(rect.x),
-            this.displayToWorld(rect.y),
-            this.displayToWorld(rect.width),
-            this.displayToWorld(rect.height)
+            frameWidthPercent(rect.x),
+            frameHeightPercent(rect.y),
+            frameWidthPercent(rect.width),
+            frameHeightPercent(rect.height)
         )
 
         result.fill = fill
@@ -585,13 +605,13 @@ class Frame8ElementsFactory extends RectFactory
     }
     createGreenTrampolineRect(rect)
     {
-        const worldWidth = this.displayToWorld(rect.width)
-        const worldHeight = this.displayToWorld(rect.height)
+        const worldWidth = frameWidthPercent(rect.width)
+        const worldHeight = frameHeightPercent(rect.height)
 
         return new Trampoline(
         {
-            x       : this.displayToWorld(rect.x),
-            y       : this.displayToWorld(rect.y),
+            x       : frameWidthPercent(rect.x),
+            y       : frameHeightPercent(rect.y),
             points  :
             [
                 {x: 0, y: 0},
@@ -616,39 +636,50 @@ class Frame9ElementsFactory extends RectFactory
     constructor()
     {
         super()
-        this.frameHeight = 630
+        this.launchArcHeightPercent = 100 * 60 / FRAME_REFERENCE.height
         this.greenRects =
         [
-            {x: 141.5, y: 444.5, width: 52, height: 109},
-            {x: 141.5, y: 233.5, width: 52, height: 150},
-            {x: 141.5, y: 76.5, width: 52, height: 84}
+            {
+                x: 100 * 141.5 / FRAME_REFERENCE.width,
+                y: 100 * 444.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 109 / FRAME_REFERENCE.height
+            },
+            {
+                x: 100 * 141.5 / FRAME_REFERENCE.width,
+                y: 100 * 233.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 150 / FRAME_REFERENCE.height
+            },
+            {
+                x: 100 * 141.5 / FRAME_REFERENCE.width,
+                y: 100 * 76.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 84 / FRAME_REFERENCE.height
+            }
         ]
         this.triangle =
         {
-            centerX: 506,
-            topY: 157,
-            bottomY: 271,
-            side: 557.962 - 454.038
+            centerX: 100 * 506 / FRAME_REFERENCE.width,
+            topY: 100 * 157 / FRAME_REFERENCE.height,
+            bottomY: 100 * 271 / FRAME_REFERENCE.height,
+            side: 100 * (557.962 - 454.038) / FRAME_REFERENCE.height
         }
         this.blueSquare =
         {
-            x: 480,
-            y: 441,
-            width: 51,
-            height: 52
+            x: 100 * 480 / FRAME_REFERENCE.width,
+            y: 100 * 441 / FRAME_REFERENCE.height,
+            width: 100 * 51 / FRAME_REFERENCE.width,
+            height: 100 * 52 / FRAME_REFERENCE.height
         }
-    }
-    displayToWorld(value)
-    {
-        return value / this.frameHeight * height / scale.bad
     }
     createFrameRect(rect, fill, stroke)
     {
         const result = super.create(
-            this.displayToWorld(rect.x),
-            this.displayToWorld(rect.y),
-            this.displayToWorld(rect.width),
-            this.displayToWorld(rect.height)
+            frameWidthPercent(rect.x),
+            frameHeightPercent(rect.y),
+            frameWidthPercent(rect.width),
+            frameHeightPercent(rect.height)
         )
 
         result.fill = fill
@@ -658,13 +689,13 @@ class Frame9ElementsFactory extends RectFactory
     }
     createGreenTrampolineRect(rect)
     {
-        const worldWidth = this.displayToWorld(rect.width)
-        const worldHeight = this.displayToWorld(rect.height)
+        const worldWidth = frameWidthPercent(rect.width)
+        const worldHeight = frameHeightPercent(rect.height)
 
         return new Trampoline(
         {
-            x       : this.displayToWorld(rect.x),
-            y       : this.displayToWorld(rect.y),
+            x       : frameWidthPercent(rect.x),
+            y       : frameHeightPercent(rect.y),
             points  :
             [
                 {x: 0, y: 0},
@@ -679,10 +710,10 @@ class Frame9ElementsFactory extends RectFactory
     createBlueSquare()
     {
         const rect = this.blueSquare
-        const x = this.displayToWorld(rect.x)
-        const y = this.displayToWorld(rect.y)
-        const width = this.displayToWorld(rect.width)
-        const height = this.displayToWorld(rect.height)
+        const x = frameWidthPercent(rect.x)
+        const y = frameHeightPercent(rect.y)
+        const width = frameWidthPercent(rect.width)
+        const height = frameHeightPercent(rect.height)
         const result = new JumpingCube(
         {
             x       : x,
@@ -695,8 +726,8 @@ class Frame9ElementsFactory extends RectFactory
 
         result.x = x
         result.y = y
-        // Launch through a visible 60 display-pixel arc using the existing gravity.
-        result.speedY = -Math.sqrt(2 * GRAVITY * this.displayToWorld(60))
+        // Height-based launch arc uses the existing gravity.
+        result.speedY = -Math.sqrt(2 * GRAVITY * frameHeightPercent(this.launchArcHeightPercent))
         result.track.pos = []
         result.track.addPos(result.x + result.circle.x, result.y, true)
 
@@ -705,21 +736,21 @@ class Frame9ElementsFactory extends RectFactory
     createTriangle(y)
     {
         const triangle = this.triangle
-        const worldHeight = this.displayToWorld(triangle.bottomY - triangle.topY)
+        const worldHeight = frameHeightPercent(triangle.bottomY - triangle.topY)
         const model =
         {
-            x       : this.displayToWorld(triangle.centerX),
-            y       : this.displayToWorld(triangle.topY) + worldHeight / 3,
+            x       : frameWidthPercent(triangle.centerX),
+            y       : frameHeightPercent(triangle.topY) + worldHeight / 3,
             radius  : worldHeight * 2 / 3,
             // Move above the initial footprint, away from the cube below.
             yMin    : y.min + 0.01 * height,
-            yMax    : this.displayToWorld(triangle.bottomY),
+            yMax    : frameHeightPercent(triangle.bottomY),
             fill    : STYLE.colors.hazard.fill,
             stroke  : STYLE.colors.hazard.stroke
         }
         const result = new Triangle(model)
 
-        result.side = this.displayToWorld(triangle.side)
+        result.side = frameHeightPercent(triangle.side)
         result.height = worldHeight
         result.track = (trackEnabled)?(new MultipointTrackLine(result.side, result.stroke, STYLE.timing.triangleTrailPoints)):(new Empty())
         result.track.addPos(result.getPoints(), true)
@@ -740,31 +771,36 @@ class Frame10ElementsFactory extends RectFactory
     constructor()
     {
         super()
-        this.frameHeight = 630
         this.greenRect =
         {
-            x: 119.5,
-            y: 288.5,
-            width: 397,
-            height: 52
+            x: 100 * 119.5 / FRAME_REFERENCE.width,
+            y: 100 * 288.5 / FRAME_REFERENCE.height,
+            width: 100 * 397 / FRAME_REFERENCE.width,
+            height: 100 * 52 / FRAME_REFERENCE.height
         }
         this.grayRects =
         [
-            {x: 464.5, y: 427.5, width: 52, height: 126},
-            {x: 464.5, y: 161.5, width: 52, height: 126}
+            {
+                x: 100 * 464.5 / FRAME_REFERENCE.width,
+                y: 100 * 427.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 126 / FRAME_REFERENCE.height
+            },
+            {
+                x: 100 * 464.5 / FRAME_REFERENCE.width,
+                y: 100 * 161.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 126 / FRAME_REFERENCE.height
+            }
         ]
-    }
-    displayToWorld(value)
-    {
-        return value / this.frameHeight * height / scale.bad
     }
     createFrameRect(rect, fill, stroke)
     {
         const result = super.create(
-            this.displayToWorld(rect.x),
-            this.displayToWorld(rect.y),
-            this.displayToWorld(rect.width),
-            this.displayToWorld(rect.height)
+            frameWidthPercent(rect.x),
+            frameHeightPercent(rect.y),
+            frameWidthPercent(rect.width),
+            frameHeightPercent(rect.height)
         )
 
         result.fill = fill
@@ -774,13 +810,13 @@ class Frame10ElementsFactory extends RectFactory
     }
     createGreenTrampolineRect(rect)
     {
-        const worldWidth = this.displayToWorld(rect.width)
-        const worldHeight = this.displayToWorld(rect.height)
+        const worldWidth = frameWidthPercent(rect.width)
+        const worldHeight = frameHeightPercent(rect.height)
 
         return new Trampoline(
         {
-            x       : this.displayToWorld(rect.x),
-            y       : this.displayToWorld(rect.y),
+            x       : frameWidthPercent(rect.x),
+            y       : frameHeightPercent(rect.y),
             points  :
             [
                 {x: 0, y: 0},
@@ -806,31 +842,36 @@ class Frame11ElementsFactory extends RectFactory
     constructor()
     {
         super()
-        this.frameHeight = 630
         this.greenRect =
         {
-            x: 119.5,
-            y: 288.5,
-            width: 397,
-            height: 52
+            x: 100 * 119.5 / FRAME_REFERENCE.width,
+            y: 100 * 288.5 / FRAME_REFERENCE.height,
+            width: 100 * 397 / FRAME_REFERENCE.width,
+            height: 100 * 52 / FRAME_REFERENCE.height
         }
         this.grayRects =
         [
-            {x: 464.5, y: 341.5, width: 52, height: 126},
-            {x: 464.5, y: 75.5, width: 52, height: 126}
+            {
+                x: 100 * 464.5 / FRAME_REFERENCE.width,
+                y: 100 * 341.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 126 / FRAME_REFERENCE.height
+            },
+            {
+                x: 100 * 464.5 / FRAME_REFERENCE.width,
+                y: 100 * 75.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 126 / FRAME_REFERENCE.height
+            }
         ]
-    }
-    displayToWorld(value)
-    {
-        return value / this.frameHeight * height / scale.bad
     }
     createFrameRect(rect, fill, stroke)
     {
         const result = super.create(
-            this.displayToWorld(rect.x),
-            this.displayToWorld(rect.y),
-            this.displayToWorld(rect.width),
-            this.displayToWorld(rect.height)
+            frameWidthPercent(rect.x),
+            frameHeightPercent(rect.y),
+            frameWidthPercent(rect.width),
+            frameHeightPercent(rect.height)
         )
 
         result.fill = fill
@@ -840,13 +881,13 @@ class Frame11ElementsFactory extends RectFactory
     }
     createGreenTrampolineRect(rect)
     {
-        const worldWidth = this.displayToWorld(rect.width)
-        const worldHeight = this.displayToWorld(rect.height)
+        const worldWidth = frameWidthPercent(rect.width)
+        const worldHeight = frameHeightPercent(rect.height)
 
         return new Trampoline(
         {
-            x       : this.displayToWorld(rect.x),
-            y       : this.displayToWorld(rect.y),
+            x       : frameWidthPercent(rect.x),
+            y       : frameHeightPercent(rect.y),
             points  :
             [
                 {x: 0, y: 0},
@@ -1072,19 +1113,20 @@ class Frame3TriangleFactory extends TriangleFactory
     constructor()
     {
         super()
-        this.displayCenterXRatio = 385.5 / 630
-        this.displayCenterYRatio = (187.75 + (421 - 187.75) / 3) / 630
-        this.displaySideRatio = (491.588 - 279.412) / 630
-        this.displayHeightRatio = (421 - 187.75) / 630
-        this.displayTopRatio = 187.75 / 630
-        this.displayBottomRatio = 421 / 630
+        this.centerWidthPercent = 100 * 385.5 / FRAME_REFERENCE.width
+        this.centerHeightPercent = 100 * ((187.75 + (421 - 187.75) / 3)) / FRAME_REFERENCE.height
+        // Triangle side/radius keep one height scale for their collision shape.
+        this.sideHeightPercent = 100 * ((491.588 - 279.412)) / FRAME_REFERENCE.height
+        this.heightPercent = 100 * ((421 - 187.75)) / FRAME_REFERENCE.height
+        this.topHeightPercent = 100 * 187.75 / FRAME_REFERENCE.height
+        this.bottomHeightPercent = 100 * 421 / FRAME_REFERENCE.height
     }
     create(x, y)
     {
-        const worldCenterX = this.displayCenterXRatio * height / scale.bad
-        const worldCenterY = this.displayCenterYRatio * height / scale.bad
-        const worldSide = this.displaySideRatio * height / scale.bad
-        const worldHeight = this.displayHeightRatio * height / scale.bad
+        const worldCenterX = frameWidthPercent(this.centerWidthPercent)
+        const worldCenterY = frameHeightPercent(this.centerHeightPercent)
+        const worldSide = frameHeightPercent(this.sideHeightPercent)
+        const worldHeight = frameHeightPercent(this.heightPercent)
         const model =
         {
             x       : worldCenterX,
