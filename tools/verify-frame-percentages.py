@@ -50,6 +50,8 @@ with sync_playwright() as p:
         page.close()
     # Independent axis check at a different aspect ratio, before floor translation.
     page=browser.new_page(viewport={'width':1600,'height':720})
+    page.on('pageerror',lambda e:errors.append(str(e)))
+    page.on('console',lambda m:console.append(m.text) if m.type=='error' else None)
     page.goto(args.url)
     scaled=page.evaluate(setup,'frame9Elements')['raw']
     original=results['current']['frame9Elements']['raw']

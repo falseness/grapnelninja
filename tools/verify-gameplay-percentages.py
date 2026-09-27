@@ -49,6 +49,8 @@ with sync_playwright() as p:
             print(f'PASS {mode} baseline {name}={value}', flush=True)
     # Non-baseline dimensions check axis selection and tolerances independently.
     page = browser.new_page(viewport={'width':1280,'height':720})
+    page.on('pageerror', lambda e: errors.append(str(e)))
+    page.on('console', lambda m: console.append(m.type+': '+m.text) if m.type=='error' else None)
     page.goto(args.url)
     scaled = page.evaluate(scenario, 'bad')['values']
     for key in ['gravity','throwSpeed','pullSpeed','triangleSpeed','ninjaCap','cameraTop','cameraBottom','cameraCenter','cornerTolerance','firstPointTolerance','coordinateTolerance']:
