@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 from verification_support import assert_near
+from verification_scenarios import frames, expected, setup, motion
 from pathlib import Path
 import subprocess
 from urllib.parse import urlparse
@@ -18,47 +19,6 @@ parser.add_argument('--output', type=Path, default=Path('artifacts/TASK-027'))
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 files = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
-frames = ['frame2Rect', 'frame3Triangle', 'frame4Elements', 'frame5Rects',
-          'frame6Rects', 'frame7Elements', 'frame8Elements', 'frame9Elements',
-          'frame10Elements', 'frame11Elements']
-expected = [['Trampoline'], ['Triangle'], ['Trampoline', 'Rect', 'Triangle'],
-            ['Trampoline']*3, ['Rect']*2, ['Trampoline', 'JumpingCube'],
-            ['Rect']+['Trampoline']*3, ['Trampoline']*3+['Triangle', 'JumpingCube'],
-            ['Trampoline', 'Rect', 'Rect'], ['Trampoline', 'Rect', 'Rect']]
-setup = '''frame => {
- startGame('bad'); cancelAnimationFrame(game); menu.visible=false;
- window.seed=1234;
- Math.random=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296};
- const f=floors[1]; f.elements=[];
- window.snapshot=e=>({type:e.constructor.name,x:e.x,y:e.y,width:e.width,height:e.height,
-   radius:e.radius,side:e.side,speedX:e.speedX,speedY:e.speedY,restrictionY:e.restrictionY,
-   points:e.getPoints(),circle:e.getCircumscribedCircle(),fill:e.fill,stroke:e.stroke});
- // Check direct factory output as well as the floor's real group placement.
- window.raw=elementsFactory.create({min:width*.2,max:width*.2},{min:f.top,max:f.bottom},frame).map(snapshot);
- seed=1234; f.creations=[{type:frame,chance:100}]; f.generatePrimaryElements();
- window.initial=f.elements.map(snapshot);
- window.box=e=>{const p=e.getPoints();return {left:Math.min(...p.map(p=>p.x)),right:Math.max(...p.map(p=>p.x)),top:Math.min(...p.map(p=>p.y)),bottom:Math.max(...p.map(p=>p.y))}};
- window.dynamic=f.elements.filter(e=>e instanceof Triangle||e instanceof JumpingCube);
- draw();return {raw,initial};
-}'''
-motion = '''() => {
- const samples=[], stats=dynamic.map(e=>({type:e.constructor.name,minY:e.y,maxY:e.y,turns:0,minGap:Infinity,overlaps:0,boundViolations:0}));
- for(let step=0;step<14400;step++) {
-  const speeds=dynamic.map(e=>e.speedY); floors[1].moveElements();
-  dynamic.forEach((e,i)=>{
-   const a=box(e), s=stats[i]; s.minY=Math.min(s.minY,e.y);s.maxY=Math.max(s.maxY,e.y);
-   if(speeds[i]*e.speedY<0)s.turns++;
-   if(e instanceof Triangle && (a.top<e.restrictionY.min-Math.abs(e.speedY)-1e-8||a.bottom>e.restrictionY.max+Math.abs(e.speedY)+1e-8))s.boundViolations++;
-   for(const o of floors.flatMap(f=>f.elements)) {
-    if(o===e)continue;const b=box(o);
-    const gap=Math.max(b.left-a.right,a.left-b.right,b.top-a.bottom,a.top-b.bottom);
-    s.minGap=Math.min(s.minGap,gap);if(gap < -1e-8)s.overlaps++;
-   }
-  });
-  if(step%480===0)samples.push(floors[1].elements.map(snapshot));
- }
- draw(); return {stats,samples,substeps:14400,seconds:14400/(60*cyclesPerTick)};
-}'''
 
 def near(a, b, path='root'):
     assert_near(a, b, path, rel_tol=1e-9, abs_tol=1e-8, require_finite=True)

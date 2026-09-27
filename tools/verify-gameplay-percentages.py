@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 from verification_support import assert_near
+from verification_scenarios import scenario
 from pathlib import Path
 import subprocess
 from urllib.parse import urlparse
@@ -23,45 +24,6 @@ errors = []
 console = []
 results = {}
 
-scenario = '''mode => {
- startGame(mode); cancelAnimationFrame(game); menu.visible=false;
- // Reset randomness after startup so factory warm-up is identical.
- window.seed=1234;
- Math.random=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296};
- floors[1].elements=[];
- floors[1].creations=[{type:'frame9Elements',chance:100}];
- floors[1].generatePrimaryElements();
- const cube=floors[1].elements.find(e=>e instanceof JumpingCube);
- const triangle=floors[1].elements.find(e=>e instanceof Triangle);
- ninja.x=width*.2; ninja.y=height*.3; ninja.speedX=0; ninja.speedY=0;
- const values={gravity:GRAVITY,throwSpeed:grapnelSpeed,pullSpeed:grappleSpeed,
-   triangleSpeed:Math.abs(triangle.speedY),cameraX:screen.borderX,
-   cameraTop:screen.topBorderY,cameraBottom:screen.bottomBorderY,cameraCenter:screen.centerBorderY};
- // Exercise the actual player cap without obstacle interference.
- const savedFloors=floors; floors=[];
- ninja.speedY=height; ninja.move(); values.ninjaCap=ninja.speedY;
- ninja.speedY=0; floors=savedFloors;
- grapnel.pos=[[ninja.x,ninja.y,new Empty()]];grapnel.throwed=true;
- const direction=grapnel.calcSpeed({x:ninja.x+100,y:ninja.y-100});
- grapnel.speedX=direction.cos*grapnelSpeed;grapnel.speedY=direction.sin*grapnelSpeed;
- const trace=[];
- for(let i=0;i<240;i++) {
-   ninja.speedY+=GRAVITY;ninja.move();triangle.move();cube.move();grapnel.move();
-   trace.push([ninja.x,ninja.y,ninja.speedY,triangle.y,triangle.speedY,cube.x,cube.y,cube.speedY,grapnel.pos[0][0],grapnel.pos[0][1]]);
- }
- // Exercise attached grapnel pull in the real physics function.
- floors=[];grapnel.pos=[[ninja.x+100,ninja.y-100,new Empty()]];
- grapnel.grappled=true; ninja.speedX=0;ninja.speedY=0;
- calcPhysics();values.pulledSpeedX=ninja.speedX;values.pulledSpeedY=ninja.speedY;
- floors=savedFloors;
- const eps=typeof GAMEPLAY==='undefined'?1:screenHeightPercent(GAMEPLAY.coordinateToleranceHeightPercent);
- values.lineInside=pointIsOnStraight({x:0,y:eps*.9},{type:'line',k:0,b:0});
- values.lineOutside=pointIsOnStraight({x:0,y:eps*1.1},{type:'line',k:0,b:0});
- values.cornerTolerance=typeof GAMEPLAY==='undefined'?6:screenHeightPercent(GAMEPLAY.cornerToleranceHeightPercent);
- values.firstPointTolerance=typeof GAMEPLAY==='undefined'?50:screenHeightPercent(GAMEPLAY.firstPointToleranceHeightPercent);
- values.coordinateTolerance=eps;
- return {values,trace};
-}'''
 
 def near(a, b, path='root'):
     assert_near(a, b, path, rel_tol=1e-12, abs_tol=1e-12, require_finite=True)

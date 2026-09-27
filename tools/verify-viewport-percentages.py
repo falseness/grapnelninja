@@ -5,10 +5,10 @@ python3 tools/verify-viewport-percentages.py --url http://127.0.0.1:8030/
 Evidence is written under artifacts/TASK-030; never stage that directory.
 """
 import argparse
-import ast
 import hashlib
 import json
 from verification_support import assert_near
+from verification_scenarios import scenario as gameplay, setup, motion, frames, expected
 from pathlib import Path
 import re
 import subprocess
@@ -17,12 +17,6 @@ from playwright.sync_api import sync_playwright
 from PIL import Image, ImageChops
 
 
-def fixtures(path, names):
-    """Read literal scenarios from existing standalone checks without running them."""
-    tree = ast.parse(Path(path).read_text())
-    return {node.targets[0].id: ast.literal_eval(node.value)
-            for node in tree.body if isinstance(node, ast.Assign)
-            and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names}
 
 def near(a, b, path='root'):
     assert_near(a, b, path, rel_tol=1e-12, abs_tol=1e-10, require_finite=False)
@@ -91,12 +85,6 @@ def main():
     parser.add_argument('--output', type=Path, default=Path('artifacts/TASK-030'))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    gameplay = fixtures('tools/verify-gameplay-percentages.py', {'scenario'})['scenario']
-    frame = fixtures('tools/verify-frame-percentages.py', {'setup', 'motion', 'frames'})
-    frame['expected'] = [['Trampoline'], ['Triangle'], ['Trampoline', 'Rect', 'Triangle'],
-                         ['Trampoline']*3, ['Rect']*2, ['Trampoline', 'JumpingCube'],
-                         ['Rect']+['Trampoline']*3, ['Trampoline']*3+['Triangle','JumpingCube'],
-                         ['Trampoline','Rect','Rect'], ['Trampoline','Rect','Rect']]
     files = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
     sources = {f: subprocess.check_output(['git', 'show', args.baseline+':'+f])
                for f in files if f.endswith(('.js', '.html'))}
@@ -147,11 +135,11 @@ def main():
                 key = f'{revision}-{w}x{h}'
                 row = results[key] = {'frames': {}, 'modes': {}}
                 page = new_page(browser, w, h, revision=='baseline')
-                for name, types in zip(frame['frames'], frame['expected']):
+                for name, types in zip(frames, expected):
                     page.goto(args.url)
-                    sample = page.evaluate(frame['setup'], name)
+                    sample = page.evaluate(setup, name)
                     assert [e['type'] for e in sample['initial']] == types
-                    sample['motion'] = page.evaluate(frame['motion'])
+                    sample['motion'] = page.evaluate(motion)
                     row['frames'][name] = sample
                     for stat in sample['motion']['stats']:
                         assert stat['maxY']>stat['minY'] and stat['turns']>0, stat
