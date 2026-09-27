@@ -101,7 +101,9 @@ def main():
 
     def check_geometry(old, new, w, h):
         sx, sy = w/1920, h/1080
+        assert len(old)==len(new), 'raw object count mismatch'
         for a, b in zip(old, new):
+            assert len(a['points'])==len(b['points']), 'polygon point count mismatch'
             for key in ['type', 'fill', 'stroke']:
                 near(a[key], b[key], key)
             near(a['x']*sx, b['x'], 'x')

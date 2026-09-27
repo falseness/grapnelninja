@@ -55,7 +55,9 @@ with sync_playwright() as p:
     page.goto(args.url)
     scaled=page.evaluate(setup,'frame9Elements')['raw']
     original=results['current']['frame9Elements']['raw']
+    assert len(original)==len(scaled), 'raw object count mismatch'
     for old,new in zip(original,scaled):
+        assert len(old['points'])==len(new['points']), 'polygon point count mismatch'
         near(old['x']*1600/1920,new['x'])
         near(old['y']*720/1080,new['y'])
         for a,b in zip(old['points'],new['points']):
