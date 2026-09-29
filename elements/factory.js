@@ -434,15 +434,24 @@ class Frame4ElementsFactory extends RectFactory
     createBlueSquare()
     {
         const rect = this.blueSquare
-        const result = super.create(
-            frameWidthPercent(rect.x),
-            frameHeightPercent(rect.y),
-            frameWidthPercent(rect.width),
-            frameHeightPercent(rect.height)
-        )
+        const x = frameWidthPercent(rect.x)
+        const y = frameHeightPercent(rect.y)
+        const result = new JumpingCube(
+        {
+            x       : x,
+            y       : y,
+            width   : frameWidthPercent(rect.width),
+            height  : frameHeightPercent(rect.height),
+            fill    : STYLE.colors.cube.blueFill,
+            stroke  : STYLE.colors.cube.blueStroke
+        })
 
-        result.fill = STYLE.colors.cube.blueFill
-        result.stroke = STYLE.colors.cube.blueStroke
+        // Undo constructor warm-up steps run before the green segment existed.
+        result.x = x
+        result.y = y
+        result.speedY = 0
+        result.track.pos = []
+        result.track.addPos(result.x + result.circle.x, result.y, true)
 
         return result
     }
