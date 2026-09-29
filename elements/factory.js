@@ -795,13 +795,13 @@ class Frame10ElementsFactory extends RectFactory
         this.grayRects =
         [
             {
-                x: 100 * 464.5 / FRAME_REFERENCE.width,
+                x: 100 * 292 / FRAME_REFERENCE.width,
                 y: 100 * 427.5 / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
                 height: 100 * 126 / FRAME_REFERENCE.height
             },
             {
-                x: 100 * 464.5 / FRAME_REFERENCE.width,
+                x: 100 * 292 / FRAME_REFERENCE.width,
                 y: 100 * 161.5 / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
                 height: 100 * 126 / FRAME_REFERENCE.height
@@ -866,13 +866,13 @@ class Frame11ElementsFactory extends RectFactory
         this.grayRects =
         [
             {
-                x: 100 * 464.5 / FRAME_REFERENCE.width,
+                x: 100 * 292 / FRAME_REFERENCE.width,
                 y: 100 * 341.5 / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
                 height: 100 * 126 / FRAME_REFERENCE.height
             },
             {
-                x: 100 * 464.5 / FRAME_REFERENCE.width,
+                x: 100 * 292 / FRAME_REFERENCE.width,
                 y: 100 * 75.5 / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
                 height: 100 * 126 / FRAME_REFERENCE.height
