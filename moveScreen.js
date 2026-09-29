@@ -2,7 +2,7 @@ class Screen
 {
     constructor(yAxisMotion, screenY)
     {
-        this.borderX        = screenWidthPercent(GAMEPLAY.cameraBorderWidthPercent[version]) / scale[version]
+        this.borderX        = screenWidthPercent(GAMEPLAY.cameraBorderWidthPercent) / scale[version]
         
         this.topBorderY     = screenHeightPercent(GAMEPLAY.cameraTopHeightPercent)
         this.bottomBorderY  = screenHeightPercent(GAMEPLAY.cameraBottomHeightPercent)
