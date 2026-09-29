@@ -4,11 +4,11 @@ class Floor
     {
         this.bottom             = bottomBorder
         this.top                = topBorder
-        
+
         this.creations          = creations
         this.elementsIntervalX  = elementsIntervalX
         this.primaryElementsQuantity = primaryElementsQuantity || 8
-        
+
         this.elements           = []
         this.nextGenerationGroupId = 0
     }
@@ -21,9 +21,9 @@ class Floor
         }
         const firstPrimaryElementX      = 0.2 * width
         const primaryElementsQuantity   = this.primaryElementsQuantity
-        
+
         let nextElementX                = firstPrimaryElementX
-        
+
         for (let i = 0; i < primaryElementsQuantity; ++i)
         {
             this.generateElements(nextElementX)
@@ -57,14 +57,14 @@ class Floor
     generateElements(x)
     {
         let num = random()
-        
+
         let sumChances = 0
         for (let i = 0; i < this.creations.length; ++i)
         {
             if (num <= this.creations[i].chance + sumChances)
             {
                 const generatedElements = elementsFactory.create(
-                    {min: x + this.elementsIntervalX.min, max: x + this.elementsIntervalX.max}, 
+                    {min: x + this.elementsIntervalX.min, max: x + this.elementsIntervalX.max},
                     {min: this.top, max: this.bottom}   , this.creations[i].type)
                 this.alignBadVersionGeneratedElements(generatedElements, x)
                 const generationGroupId = this.nextGenerationGroupId++
@@ -75,7 +75,7 @@ class Floor
                 }
 
                 this.elements.push(...generatedElements)
-                
+
                 return generatedElements.length
             }
             sumChances += this.creations[i].chance
@@ -97,7 +97,7 @@ class Floor
             // If deletion emptied the queue, nextElementX carries that group's bound.
             const precedingRightX = this.elements.length
                 ? this.getGenerationGroup(this.elements.length - 1).rightPointX : nextElementX
-            offsetX = precedingRightX + 0.10 * width / scale.bad - leftPointX
+            offsetX = precedingRightX + 0.40 * width / scale.bad - leftPointX
         }
 
         if (!offsetX)
@@ -157,7 +157,7 @@ class Floor
                 group.rightPointX + screen.x < 0)
             {
                 this.markGenerationGroupScored(group.indexes)
-                
+
                 changeScoreText()
             }
             else if (group.rightPointX + screen.x < screen.getDeletionBorder())
@@ -167,13 +167,13 @@ class Floor
                 {
                     return group.indexes.indexOf(index) == -1
                 })
-                
+
                 for (const element of this.elements)
                     nextElementX = Math.max(nextElementX, element.getRightPointX())
 
                 if (version != 'bad' || this.primaryElementsQuantity != 1)
                     newElements += this.generateElements(nextElementX)
-                
+
                 --i
             }
         }
@@ -208,16 +208,16 @@ class SideFloor extends Floor
     constructor(bottomBorder, topBorder, creations)
     {
         super(bottomBorder, topBorder, {min: 0, max: 0}, creations)
-        
+
         this.leftPointX = screen.getDeletionBorder()
     }
     generatePrimaryElements()
     {
         const firstPrimaryElementX      = this.leftPointX
         const primaryElementsQuantity   = 6
-        
+
         let nextElementX                = firstPrimaryElementX
-        
+
         for (let i = 0; i < primaryElementsQuantity; ++i)
         {
             this.generateElements(nextElementX)
