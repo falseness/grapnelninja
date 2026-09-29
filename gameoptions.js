@@ -19,7 +19,7 @@ const GAMEPLAY = Object.freeze({
     cornerToleranceHeightPercent: 100 * 6 / 1080,
     firstPointToleranceHeightPercent: 100 * 50 / 1080,
     coordinateToleranceHeightPercent: 100 / 1080,
-    cameraBorderWidthPercent: 45,
+    cameraBorderWidthPercent: Object.freeze({ classic: 35, bad: 45 }),
     cameraTopHeightPercent: 60,
     cameraBottomHeightPercent: 40,
     cameraCenterHeightPercent: 50,
