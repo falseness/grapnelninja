@@ -84,7 +84,7 @@ class Trampoline extends Element
         }
         else if (line.type == 'line')
         {
-            let lineAngle = line.k
+            let lineAngle = Math.atan(line.k)
 
             let xn = -who.speedX
             let yn = -who.speedY
