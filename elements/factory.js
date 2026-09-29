@@ -253,7 +253,8 @@ class Frame5RectFactory extends RectFactory
         this.verticalRects =
         [
             {
-                x: 100 * 688.5 / FRAME_REFERENCE.width,
+                // Doubled gap after the horizontal segment (ends at ~573.47).
+                x: 100 * (688.5 + 115.03) / FRAME_REFERENCE.width,
                 y: 100 * 76.5 / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
                 height: 100 * 266 / FRAME_REFERENCE.height
@@ -571,7 +572,8 @@ class Frame8ElementsFactory extends RectFactory
         super()
         this.grayRect =
         {
-            x: 100 * 333.5 / FRAME_REFERENCE.width,
+            // Doubled gap after the left green rect.
+            x: 100 * (333.5 + 135) / FRAME_REFERENCE.width,
             y: 100 * 243.5 / FRAME_REFERENCE.height,
             width: 100 * 52 / FRAME_REFERENCE.width,
             height: 100 * 172 / FRAME_REFERENCE.height
@@ -585,13 +587,13 @@ class Frame8ElementsFactory extends RectFactory
                 height: 100 * 266 / FRAME_REFERENCE.height
             },
             {
-                x: 100 * 516.5 / FRAME_REFERENCE.width,
+                x: 100 * (516.5 + 135 + 131) / FRAME_REFERENCE.width,
                 y: 100 * 416.5 / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
                 height: 100 * 137 / FRAME_REFERENCE.height
             },
             {
-                x: 100 * 516.5 / FRAME_REFERENCE.width,
+                x: 100 * (516.5 + 135 + 131) / FRAME_REFERENCE.width,
                 y: 100 * 76.5 / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
                 height: 100 * 137 / FRAME_REFERENCE.height
@@ -669,14 +671,15 @@ class Frame9ElementsFactory extends RectFactory
         ]
         this.triangle =
         {
-            centerX: 100 * 506 / FRAME_REFERENCE.width,
+            // Doubled gap after the green column (triangle left edge 454.038).
+            centerX: 100 * (506 + 260.538) / FRAME_REFERENCE.width,
             topY: 100 * 157 / FRAME_REFERENCE.height,
             bottomY: 100 * 271 / FRAME_REFERENCE.height,
             side: 100 * (557.962 - 454.038) / FRAME_REFERENCE.height
         }
         this.blueSquare =
         {
-            x: 100 * 480 / FRAME_REFERENCE.width,
+            x: 100 * (480 + 260.538) / FRAME_REFERENCE.width,
             y: 100 * 441 / FRAME_REFERENCE.height,
             width: 100 * 51 / FRAME_REFERENCE.width,
             height: 100 * 52 / FRAME_REFERENCE.height
