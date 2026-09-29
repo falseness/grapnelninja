@@ -97,7 +97,7 @@ class Floor
             // If deletion emptied the queue, nextElementX carries that group's bound.
             const precedingRightX = this.elements.length
                 ? this.getGenerationGroup(this.elements.length - 1).rightPointX : nextElementX
-            offsetX = precedingRightX + 0.40 * width / scale.bad - leftPointX
+            offsetX = precedingRightX + random(0.20 * width / scale.bad, 0.30 * width / scale.bad) - leftPointX
         }
 
         if (!offsetX)
