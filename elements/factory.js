@@ -23,6 +23,7 @@ class ElementsFactory
             frame4Elements      : new Frame4ElementsFactory()       ,
             frame5Rects         : new Frame5RectFactory()           ,
             frame6Rects         : new Frame6RectFactory()           ,
+            frame1Elements      : new Frame1ElementsFactory()       ,
             frame7Elements      : new Frame7ElementsFactory()       ,
             frame8Elements      : new Frame8ElementsFactory()       ,
             frame9Elements      : new Frame9ElementsFactory()       ,
@@ -488,6 +489,90 @@ class Frame4ElementsFactory extends RectFactory
             this.createGreenSegment(),
             this.createBlueSquare(),
             this.createTriangle(y)
+        ]
+    }
+}
+class Frame1ElementsFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        // Apex stays below the pillar tops (cube top 387, pillar top 287.5).
+        this.launchArcHeightPercent = 100 * 60 / FRAME_REFERENCE.height
+        this.greenRects =
+        [
+            {
+                x: 100 * 164.5 / FRAME_REFERENCE.width,
+                y: 100 * 287.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 266 / FRAME_REFERENCE.height
+            },
+            {
+                x: 100 * 644.5 / FRAME_REFERENCE.width,
+                y: 100 * 287.5 / FRAME_REFERENCE.height,
+                width: 100 * 52 / FRAME_REFERENCE.width,
+                height: 100 * 266 / FRAME_REFERENCE.height
+            }
+        ]
+        this.blueSquare =
+        {
+            x: 100 * 330 / FRAME_REFERENCE.width,
+            y: 100 * 387 / FRAME_REFERENCE.height,
+            width: 100 * 51 / FRAME_REFERENCE.width,
+            height: 100 * 52 / FRAME_REFERENCE.height
+        }
+    }
+    createGreenRect(rect)
+    {
+        const worldWidth = frameWidthPercent(rect.width)
+        const worldHeight = frameHeightPercent(rect.height)
+
+        return new Trampoline(
+        {
+            x       : frameWidthPercent(rect.x),
+            y       : frameHeightPercent(rect.y),
+            points  :
+            [
+                {x: 0, y: 0},
+                {x: 0, y: worldHeight},
+                {x: worldWidth, y: worldHeight},
+                {x: worldWidth, y: 0}
+            ],
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
+        })
+    }
+    createBlueSquare()
+    {
+        const rect = this.blueSquare
+        const x = frameWidthPercent(rect.x)
+        const y = frameHeightPercent(rect.y)
+        const result = new JumpingCube(
+        {
+            x       : x,
+            y       : y,
+            width   : frameWidthPercent(rect.width),
+            height  : frameHeightPercent(rect.height),
+            fill    : STYLE.colors.cube.blueFill,
+            stroke  : STYLE.colors.cube.blueStroke
+        })
+
+        result.x = x
+        result.y = y
+        // Arrow in Frame 1: launch up-right at 45 degrees.
+        const speed = Math.sqrt(2 * GRAVITY * frameHeightPercent(this.launchArcHeightPercent))
+        result.speedX = speed
+        result.speedY = -speed
+        result.track.pos = []
+        result.track.addPos(result.x + result.circle.x, result.y, true)
+
+        return result
+    }
+    create(x, y)
+    {
+        return [
+            ...this.greenRects.map(rect => this.createGreenRect(rect)),
+            this.createBlueSquare()
         ]
     }
 }
