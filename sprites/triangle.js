@@ -28,6 +28,7 @@ class Triangle extends Element
     {
         this.changeSpeed()
         this.y += this.speedY
+        this.dy = this.speedY
         
         this.track.addPos(this.getPoints())
         

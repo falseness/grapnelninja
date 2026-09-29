@@ -4,6 +4,9 @@ class Element
     {
         this.speedX = 0
         this.speedY = 0
+        // Displacement applied by the last move(); tethered grapnel points follow it.
+        this.dx = 0
+        this.dy = 0
         
         this.x      = object.x
         this.y      = object.y

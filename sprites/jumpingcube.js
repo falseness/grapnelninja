@@ -88,6 +88,7 @@ class JumpingCube extends Rect
                 }
             }
             this[axis] += distance
+            this[vertical ? 'dy' : 'dx'] = distance
             if (collided)
             {
                 this[speed] *= -1

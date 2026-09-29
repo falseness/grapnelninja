@@ -4,6 +4,8 @@ class Empty
     {
         this.speedX = 0
         this.speedY = 0
+        this.dx = 0
+        this.dy = 0
         this.pos = []
     }
     isEmpty()

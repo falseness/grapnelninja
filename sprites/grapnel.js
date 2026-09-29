@@ -25,9 +25,11 @@ class Grapnel
                 }
             }
             
+            // Follow each element's actual displacement from its last move().
             for (let i = 0; i < this.pos.length; ++i)
             {
-                this.pos[i][1] += this.pos[i][2].speedY
+                this.pos[i][0] += this.pos[i][2].dx
+                this.pos[i][1] += this.pos[i][2].dy
             }
         }
     }
