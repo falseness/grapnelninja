@@ -497,8 +497,8 @@ class Frame1ElementsFactory extends RectFactory
     constructor()
     {
         super()
-        // Apex stays below the pillar tops (cube top 387, pillar top 137.5).
-        this.launchArcHeightPercent = 100 * 60 / FRAME_REFERENCE.height
+        // Apex 387 - 180 = 207 stays below the pillar tops (137.5).
+        this.launchArcHeightPercent = 100 * 180 / FRAME_REFERENCE.height
         // Bad-mode ground starts at 2 * height of the 2.2 * height world.
         const groundTop = FRAME_REFERENCE.height * 2 / 2.2
         const pillarTop = 137.5
