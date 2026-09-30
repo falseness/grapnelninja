@@ -497,29 +497,32 @@ class Frame1ElementsFactory extends RectFactory
     constructor()
     {
         super()
-        // Apex stays below the pillar tops (cube top 387, pillar top 287.5).
+        // Apex stays below the pillar tops (cube top 387, pillar top 137.5).
         this.launchArcHeightPercent = 100 * 60 / FRAME_REFERENCE.height
+        // Bad-mode ground starts at 2 * height of the 2.2 * height world.
+        const groundTop = FRAME_REFERENCE.height * 2 / 2.2
+        const pillarTop = 137.5
         this.greenRects =
         [
             {
                 x: 100 * 164.5 / FRAME_REFERENCE.width,
-                y: 100 * 287.5 / FRAME_REFERENCE.height,
+                y: 100 * pillarTop / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
-                height: 100 * 266 / FRAME_REFERENCE.height
+                height: 100 * (groundTop - pillarTop) / FRAME_REFERENCE.height
             },
             {
-                x: 100 * 644.5 / FRAME_REFERENCE.width,
-                y: 100 * 287.5 / FRAME_REFERENCE.height,
+                x: 100 * 858.5 / FRAME_REFERENCE.width,
+                y: 100 * pillarTop / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
-                height: 100 * 266 / FRAME_REFERENCE.height
+                height: 100 * (groundTop - pillarTop) / FRAME_REFERENCE.height
             }
         ]
         this.blueSquare =
         {
             x: 100 * 330 / FRAME_REFERENCE.width,
             y: 100 * 387 / FRAME_REFERENCE.height,
-            width: 100 * 51 / FRAME_REFERENCE.width,
-            height: 100 * 52 / FRAME_REFERENCE.height
+            width: 100 * 153 / FRAME_REFERENCE.width,
+            height: 100 * 156 / FRAME_REFERENCE.height
         }
     }
     createGreenRect(rect)

@@ -17,15 +17,18 @@ if not EVIDENCE.is_absolute():
 
 VIEWPORTS = [(772, 630), (1280, 720), (1920, 1080)]
 REFERENCE = (1120, 630)
-# screenshots/Frame 1.svg rects: x, y, width, height.
+# Bad-mode ground top in reference pixels (2 * height of a 2.2 * height world).
+GROUND_TOP = REFERENCE[1] * 2 / 2.2
+# Rects: x, y, width, height. Derived from screenshots/Frame 1.svg, then changed:
+# taller pillars reaching the ground, 1.5x pillar gap, 3x cube side.
 SVG = {
-    'leftPillar': (164.5, 287.5, 52, 266),
-    'rightPillar': (644.5, 287.5, 52, 266),
-    'cube': (330, 387, 51, 52),
+    'leftPillar': (164.5, 137.5, 52, GROUND_TOP - 137.5),
+    'rightPillar': (858.5, 137.5, 52, GROUND_TOP - 137.5),
+    'cube': (330, 387, 153, 156),
 }
 TOLERANCE = 1e-6
-# 20 simulated seconds at 60 ticks per second.
-SECONDS = 20
+# 30 simulated seconds at 60 ticks per second.
+SECONDS = 30
 TICKS_PER_SECOND = 60
 
 BOX = '''const box = e => {
@@ -163,7 +166,7 @@ class Frame1FactoryTests(unittest.TestCase):
             with self.subTest(viewport=(run['width'], run['height'])):
                 self.assertGreater(a['speedX'], 0)
                 self.assertEqual(a['speedX'], -a['speedY'])
-                self.assertGreaterEqual(a['simulatedSeconds'], 20)
+                self.assertGreaterEqual(a['simulatedSeconds'], SECONDS)
                 self.assertGreater(a['minTop'], a['pillarTop'])
                 self.assertTrue(a['insidePillarsPass'])
                 self.assertGreaterEqual(a['wallReversals'], 4)
