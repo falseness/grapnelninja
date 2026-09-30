@@ -9,7 +9,8 @@ every newly added trail point is measured against the cube centre at the cycle
 that added it. The summary reports edgeFlips (consecutive trail points whose y
 differs by >= 0.9 * cube height), maxTrailOffsetFromCenter, wallBounces (speedX
 sign changes) and apexes (speedY sign changes). Screenshots are taken at an
-apex, a left-wall bounce, a right-wall bounce and mid-flight.
+apex, a left-wall bounce, a right-wall bounce and mid-flight; for vertical
+cubes (speedX == 0) at an apex, a floor bounce, mid-rise and mid-fall.
 Outputs are untracked evidence, defaulting to artifacts/TASK-067/before.
 """
 import argparse, hashlib, json, math, subprocess
@@ -64,14 +65,18 @@ SETUP = '''(frame) => {
         const cx = r.centre.x;
         if ((kind === 'apex' && r.apex) || (kind === 'wall-left' && r.wallBounce && cx < mid)
             || (kind === 'wall-right' && r.wallBounce && cx >= mid)
-            || (kind === 'midflight' && Math.abs(cx - mid) < Math.abs(r.speedX) * cyclesPerTick && !r.speedYFlip))
+            || (kind === 'midflight' && Math.abs(cx - mid) < Math.abs(r.speedX) * cyclesPerTick && !r.speedYFlip)
+            // Vertical cubes (speedX == 0) never hit walls: capture floor bounce and mid rise/fall instead.
+            || (kind === 'floor-bounce' && r.speedYFlip && r.speedY <= 0)
+            || (kind === 'rising' && i >= 10 && r.speedY < 0 && !r.speedYFlip)
+            || (kind === 'falling' && i >= 10 && r.speedY > 0 && !r.speedYFlip))
             { draw(); return {tick: r.tick, centre: r.centre, box: r.box, speedX: r.speedX, speedY: r.speedY}; } }
         draw(); return null; };
     window.trailProbe = probe;
     resetPhysicsTiming(); draw();
     return {cube: box(cube), cubeWidth: cube.width, cubeHeight: cube.height, pillars: pillars.map(box),
             stepMs: physicsStepMs, cyclesPerTick, trailLineWidth: cube.track.lineWidth,
-            trailPointsLimit: cube.track.pointsLimit, ninja: {x: ninja.x, y: ninja.y}};
+            trailPointsLimit: cube.track.pointsLimit, ninja: {x: ninja.x, y: ninja.y}, speedX: cube.speedX};
 }'''
 
 console, errors, report = [], [], {}
@@ -89,7 +94,8 @@ with sync_playwright() as p:
         pl = setup['pillars']
         mid = (pl[0]['right'] + pl[1]['left']) / 2 if len(pl) >= 2 else (setup['cube']['left'] + setup['cube']['right']) / 2
         shots = []
-        for kind in ('apex', 'wall-left', 'wall-right', 'midflight'):
+        kinds = ('apex', 'wall-left', 'wall-right', 'midflight') if setup['speedX'] else ('apex', 'floor-bounce', 'rising', 'falling')
+        for kind in kinds:
             hit = page.evaluate('([k, w, m, mid]) => trailRun(k, w, m, mid)', [kind, args.warmup, 1200, mid])
             assert hit, f'{frame}: no {kind} moment found'
             t = hit['tick'] * setup['stepMs'] / 1000
