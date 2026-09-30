@@ -55,10 +55,11 @@ SIMULATE = '''({ticks}) => {
     floors[1].elements = elements;
     const obstacles = floors.flatMap(f => f.elements).filter(e => e !== cube);
     const groundTop = Math.min(...floors[0].elements.map(e => box(e).top));
+    const ceilingBottom = Math.max(...floors[2].elements.map(e => box(e).bottom));
     const initial = {x: cube.x, y: cube.y, speedX: cube.speedX, speedY: cube.speedY};
     const cycles = ticks * cyclesPerTick;
     let minTop = Infinity, minLeft = Infinity, maxRight = -Infinity, minGap = Infinity;
-    const wallReversals = [], groundBounces = [], samples = [];
+    const wallReversals = [], groundBounces = [], ceilingBounces = [], samples = [];
     for (let i = 0; i < cycles; ++i) {
         const before = {speedX: cube.speedX, speedY: cube.speedY};
         cube.move();
@@ -74,13 +75,16 @@ SIMULATE = '''({ticks}) => {
         if (before.speedY > 0 && cube.speedY < 0 && b.bottom > (box(leftPillar).top + groundTop) / 2)
             groundBounces.push({cycle: i, bottom: b.bottom, groundTop,
                 speedYBefore: before.speedY, speedY: cube.speedY});
+        if (before.speedY < 0 && cube.speedY > 0)
+            ceilingBounces.push({cycle: i, top: b.top, ceilingBottom,
+                speedYBefore: before.speedY, speedY: cube.speedY});
         if (i % cyclesPerTick == 0)
             samples.push({cycle: i, x: cube.x, y: cube.y, speedX: cube.speedX, speedY: cube.speedY});
     }
     return {width, height, cycles, cyclesPerTick, epsilon: GAMEPLAY.cubeContactEpsilon, initial,
         pillarTop: box(leftPillar).top, innerLeftFace: box(leftPillar).right,
-        innerRightFace: box(rightPillar).left, groundTop,
-        minTop, minLeft, maxRight, minGap, wallReversals, groundBounces, samples};
+        innerRightFace: box(rightPillar).left, groundTop, ceilingBottom,
+        minTop, minLeft, maxRight, minGap, wallReversals, groundBounces, ceilingBounces, samples};
 }'''
 
 
@@ -145,8 +149,9 @@ class Frame1FactoryTests(unittest.TestCase):
                 'speedX': speed_x, 'speedY': speed_y,
                 'launch45Pass': speed_x > 0 and speed_x == -speed_y,
                 'simulatedSeconds': run['seconds'],
-                'minTop': run['minTop'], 'pillarTop': run['pillarTop'],
-                'belowPillarTopPass': run['minTop'] > run['pillarTop'],
+                'minTop': run['minTop'], 'ceilingBottom': run['ceilingBottom'],
+                'touchesCeilingPass': run['minTop'] <= run['ceilingBottom'] + eps,
+                'ceilingBounces': len(run['ceilingBounces']),
                 'xRange': [run['minLeft'], run['maxRight']],
                 'innerFaces': [run['innerLeftFace'], run['innerRightFace']],
                 'insidePillarsPass': run['minLeft'] >= run['innerLeftFace'] - eps
@@ -167,7 +172,8 @@ class Frame1FactoryTests(unittest.TestCase):
                 self.assertGreater(a['speedX'], 0)
                 self.assertEqual(a['speedX'], -a['speedY'])
                 self.assertGreaterEqual(a['simulatedSeconds'], SECONDS)
-                self.assertGreater(a['minTop'], a['pillarTop'])
+                self.assertTrue(a['touchesCeilingPass'])
+                self.assertGreaterEqual(a['ceilingBounces'], 2)
                 self.assertTrue(a['insidePillarsPass'])
                 self.assertGreaterEqual(a['wallReversals'], 4)
                 self.assertGreaterEqual(a['groundBounces'], 2)

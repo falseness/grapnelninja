@@ -122,8 +122,7 @@ class Floor
 
         element.track.pos = []
         if (element instanceof JumpingCube)
-            element.track.addPos(element.x + element.circle.x,
-                element.speedY > 0 ? element.y : element.getBottomPointY(), true)
+            element.track.addPos(element.x + element.circle.x, element.y + element.circle.y, true)
         else
             element.track.addPos(element.getPoints(), true)
     }

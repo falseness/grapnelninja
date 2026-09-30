@@ -94,7 +94,7 @@ PROBE = r'''templates => {
                     const seed = e.track.pos[0];
                     assert(Number.isFinite(seed.x) && Number.isFinite(seed.y), 'finite scalar cube coordinates');
                     assert(near(seed.x,e.x+e.circle.x) &&
-                        near(seed.y,e.speedY>0 ? e.y : e.getBottomPointY()), 'cube translated seed');
+                        near(seed.y,e.y+e.circle.y), 'cube translated seed');
                     cubes++;
                 } else if (e instanceof Triangle) {
                     assert(e.track.pos.length === 1 && Array.isArray(e.track.pos[0]) &&

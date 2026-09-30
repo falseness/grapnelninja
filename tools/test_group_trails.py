@@ -86,8 +86,7 @@ class GroupTrailsTests(unittest.TestCase):
                                         assert(Number.isFinite(seed.x) && Number.isFinite(seed.y),
                                             'cube seed is not finite scalar coordinates');
                                         assert(near(seed.x, e.x + e.circle.x), 'cube center X');
-                                        assert(near(seed.y, velocity > 0 ? e.y : e.getBottomPointY()),
-                                            'cube velocity-selected Y edge');
+                                        assert(near(seed.y, e.y + e.circle.y), 'cube center Y');
                                     } else {
                                         assert(Array.isArray(seed) && seed.length === 3,
                                             'triangle seed lost polygon shape');

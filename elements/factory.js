@@ -455,7 +455,7 @@ class Frame4ElementsFactory extends RectFactory
         result.y = y
         result.speedY = 0
         result.track.pos = []
-        result.track.addPos(result.x + result.circle.x, result.y, true)
+        result.track.addPos(result.x + result.circle.x, result.y + result.circle.y, true)
 
         return result
     }
@@ -567,7 +567,7 @@ class Frame1ElementsFactory extends RectFactory
         result.speedX = speed
         result.speedY = -speed
         result.track.pos = []
-        result.track.addPos(result.x + result.circle.x, result.y, true)
+        result.track.addPos(result.x + result.circle.x, result.y + result.circle.y, true)
 
         return result
     }
@@ -643,7 +643,7 @@ class Frame7ElementsFactory extends RectFactory
         // Height-based launch arc uses the existing gravity.
         result.speedY = -Math.sqrt(2 * GRAVITY * frameHeightPercent(this.launchArcHeightPercent))
         result.track.pos = []
-        result.track.addPos(result.x + result.circle.x, result.y, true)
+        result.track.addPos(result.x + result.circle.x, result.y + result.circle.y, true)
 
         return result
     }
@@ -831,7 +831,7 @@ class Frame9ElementsFactory extends RectFactory
         // Height-based launch arc uses the existing gravity.
         result.speedY = -Math.sqrt(2 * GRAVITY * frameHeightPercent(this.launchArcHeightPercent))
         result.track.pos = []
-        result.track.addPos(result.x + result.circle.x, result.y, true)
+        result.track.addPos(result.x + result.circle.x, result.y + result.circle.y, true)
 
         return result
     }
