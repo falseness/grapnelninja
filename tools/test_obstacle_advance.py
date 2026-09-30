@@ -73,11 +73,12 @@ PROBE = r'''() => {
             const left = Math.min(...group.map(e => e.getLeftPointX()));
             const right = Math.max(...group.map(e => e.getRightPointX()));
             const V = width/scale.bad, R = -screen.x+V;
-            if (id > 0) assert(near((left-predecessor)*scale.bad, .1*width), '10% creation gap');
+            const pixelGap = id > 0 ? (left-predecessor)*scale.bad : null;
+            if (id > 0) assert(pixelGap >= .2*width-1e-6 && pixelGap <= .3*width+1e-6, '20-30% creation gap');
             if (!initializing) assert(left > R, 'visible post-initialization spawn');
             creations.push({template, canvasWidth:width, canvasHeight:height, frame, id, initializing, left, right, predecessorId:precedingId, predecessorLeft, predecessorRight:predecessor,
                 cameraX:screen.x, scale:scale.bad, visibleRight:R, viewportWidth:V,
-                gap:predecessor === null ? null : left-predecessor, passed:true});
+                gap:predecessor === null ? null : left-predecessor, pixelGap, passed:true});
         }
         return count;
     };
@@ -174,7 +175,7 @@ PROBE = r'''() => {
         assert(creations.some(c => c.template === template && !c.initializing),
             'missing gameplay template '+template);
     }
-    assertions.push(`PASS ${width}x${height}: all ten gameplay templates; offscreen creation and 10% pixel gaps within 1e-6`);
+    assertions.push(`PASS ${width}x${height}: all ${templates.length} gameplay templates; offscreen creation and 20-30% pixel gaps within 1e-6`);
     const first = f.elements.filter(e => e.generationGroupId === 0);
     const right = Math.max(...first.map(e => e.getRightPointX()));
     screen.x = -right+1;

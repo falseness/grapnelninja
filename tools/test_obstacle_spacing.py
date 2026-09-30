@@ -5,6 +5,7 @@ from pathlib import Path
 import unittest
 
 from browser_test_support import start_browser_test
+from verification_scenarios import frames
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046')))
@@ -25,10 +26,10 @@ class ObstacleSpacingTests(unittest.TestCase):
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 try:
                     page.goto(self.url)
-                    result = page.evaluate(PROBE)
+                    result = page.evaluate(PROBE, frames)
                     self.assertEqual(errors, [])
                     self.assertEqual((result['width'], result['height']), viewport)
-                    self.assertEqual(len(result['measurements']), 30)
+                    self.assertEqual(len(result['measurements']), 3 * len(frames))
                     results.append(result)
                     print('\n'.join(result['assertions']), flush=True)
                     for row in result['measurements']:
@@ -37,10 +38,11 @@ class ObstacleSpacingTests(unittest.TestCase):
                     page.close()
         (EVIDENCE / 'spacing.json').write_text(json.dumps(results, indent=2) + '\n')
         self.assertEqual(len(results), 3)
-        print('PASS all ten frame templates at three viewports; 90 measured gaps; browser errors=0', flush=True)
+        print(f'PASS all {len(frames)} frame templates at three viewports; '
+              f'{sum(len(r["measurements"]) for r in results)} measured gaps; browser errors=0', flush=True)
 
 
-PROBE = r'''() => {
+PROBE = r'''templates => {
     startGame('bad');
     cancelAnimationFrame(game);
     Math.random = () => .25;
@@ -54,7 +56,7 @@ PROBE = r'''() => {
         speedX:e.speedX, speedY:e.speedY, restrictionY:e.restrictionY,
         mass:e.mass, circle:e.circle, width:e.width, height:e.height});
     const types = floors[1].creations.map(c => c.type);
-    assert(types.length === 10 && new Set(types).size === 10, 'ten templates required');
+    assert(JSON.stringify(types) === JSON.stringify(templates), 'bad-mode templates must match the catalog');
     const assertions = [], measurements = [];
     let cubes = 0, triangles = 0, first = 0, translated = 0;
     const makeFloor = type => new Floor(.2*height, 2*height, {min:0,max:0},
@@ -123,16 +125,17 @@ PROBE = r'''() => {
             const group = generate(f, type, f.elements[f.elements.length-1].getRightPointX());
             const left = Math.min(...group.map(e => e.getLeftPointX()));
             const gap = (left-right)*scale.bad;
-            assert(near(gap,.10*width), `${type} gap ${gap} expected ${.10*width}`);
+            // Gameplay spacing is random(20%, 30%) of the canvas width (commit 2201dd3).
+            assert(gap >= .20*width-1e-6 && gap <= .30*width+1e-6, `${type} gap ${gap} outside [${.20*width}, ${.30*width}]`);
             measurements.push({sequence:label, template:type, predecessorRight:right,
                 newGroupLeft:left, scale:scale.bad, measuredPixelGap:gap,
-                expectedPixelGap:.10*width, tolerancePixels:1e-6, passed:true});
+                expectedPixelGapMin:.20*width, expectedPixelGapMax:.30*width, tolerancePixels:1e-6, passed:true});
             preceding = group;
         }
     };
     for (const type of types) run([type,type,type], type);
-    run([types[9],...types], 'mixed-template');
-    assert(translated === 30 && cubes > 0 && triangles > 0, 'coverage incomplete');
+    run([types[types.length-1],...types], 'mixed-template');
+    assert(translated === 3*types.length && cubes > 0 && triangles > 0, 'coverage incomplete');
     assertions.push(`PASS ${width}x${height}: uniform translation of every group member; unchanged relative polygon geometry and motion settings; grouping preserved`);
     assertions.push(`PASS ${width}x${height}: cube trails finite scalar coordinates (${cubes}); triangle trails retain polygon points (${triangles}); forced seeds with tick/quality disabled`);
     startGame('classic');

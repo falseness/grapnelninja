@@ -21,6 +21,11 @@ COVERAGE_PHASES = {
 CAPTURE_START_TOLERANCE = 1.0
 
 
+def gap_in_range(pixel_gap, width):
+    """Gameplay spacing is random(20%, 30%) of the canvas width."""
+    return .2 * width - 1e-6 <= pixel_gap <= .3 * width + 1e-6
+
+
 def validate_live_samples(samples, directory):
     assert isinstance(samples, list) and len(samples) >= 11, \
         'live timeline: at least 11 samples required'
@@ -92,7 +97,7 @@ def main():
         assert {r['template'] for r in row['measurements']} == TEMPLATES
         for r in row['measurements']:
             assert r['passed']
-            assert abs((r['newGroupLeft']-r['predecessorRight'])*r['scale']-.1*width) <= 1e-6
+            assert gap_in_range((r['newGroupLeft']-r['predecessorRight'])*r['scale'], width)
         traversal = next(r for r in advance if (r['width'], r['height']) == (width, height))
         gameplay = [r for r in traversal['creations'] if not r['initializing']]
         assert {r['template'] for r in gameplay} == TEMPLATES
@@ -100,14 +105,14 @@ def main():
             assert r['passed'] and r['canvasWidth'] == width and r['canvasHeight'] == height
             assert abs(r['visibleRight'] - (-r['cameraX'] + width/r['scale'])) <= 1e-6
             if r['id'] > 0:
-                assert abs((r['left']-r['predecessorRight'])*r['scale']-.1*width) <= 1e-6
+                assert gap_in_range((r['left']-r['predecessorRight'])*r['scale'], width)
             if not r['initializing']:
                 assert r['left'] > r['visibleRight']
         coverage = validate_coverage(traversal, width)
         measurements.append(dict(width=width, height=height, spacing=row['measurements'],
                                  advance=traversal['creations'], coverage=coverage))
-        print(f'PASS {width}x{height}: all ten templates; {len(row["measurements"])} spacing measurements; '
-              f'{len(gameplay)} offscreen gameplay spawns; pixel gaps within 1e-6')
+        print(f'PASS {width}x{height}: all {len(TEMPLATES)} templates; {len(row["measurements"])} spacing measurements; '
+              f'{len(gameplay)} offscreen gameplay spawns; 20-30% pixel gaps within 1e-6')
     (out / 'measurements.json').write_text(json.dumps(measurements, indent=2) + '\n')
     live = json.loads((out / 'live/run.json').read_text())
     events = [e for e in live['spawns'] if not e['initializing']]
@@ -122,8 +127,7 @@ def main():
         assert abs(e['visibleRight'] - (-e['cameraX'] + e['canvasWidth']/e['scale'])) <= 1e-6
         if e['id'] > 0:
             gap = (e['left']-e['predecessorRight'])*e['scale']
-            assert abs(gap-e['expectedPixelGap']) <= 1e-6
-            assert abs(gap-.1*e['canvasWidth']) <= 1e-6
+            assert gap_in_range(gap, e['canvasWidth'])
         if not e['initializing']:
             assert e['left'] > e['visibleRight']
     validate_live_samples(live.get('samples'), out / 'live')
@@ -143,7 +147,7 @@ def main():
         assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name
     for name, digest in live['sourceHashes'].items():
         assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, name
-    print('PASS unit-tests.log ends with OK; spawn.log has ten frame and classic PASS assertions; command exits zero')
+    print(f'PASS unit-tests.log ends with OK; spawn.log has {len(TEMPLATES)} frame and classic PASS assertions; command exits zero')
     print(f'PASS tested source hashes match checkout: {len(hashes)} sources/checkers; {len(live["sourceHashes"])} live sources')
 
 

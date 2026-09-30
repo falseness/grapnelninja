@@ -12,9 +12,9 @@ from verification_scenarios import frames
 
 
 EXPECTED_TEMPLATES = {
-    'frame2Rect', 'frame3Triangle', 'frame4Elements', 'frame5Rects',
-    'frame6Rects', 'frame7Elements', 'frame8Elements', 'frame9Elements',
-    'frame10Elements', 'frame11Elements',
+    'frame1Elements', 'frame2Rect', 'frame3Triangle', 'frame4Elements',
+    'frame5Rects', 'frame6Rects', 'frame7Elements', 'frame8Elements',
+    'frame9Elements', 'frame10Elements', 'frame11Elements',
 }
 VIEWPORTS = [(772, 630), (1280, 720), (1920, 1080)]
 CHECKER_PATH = Path(__file__).with_name('check-obstacle-evidence.py')
@@ -24,9 +24,9 @@ spec.loader.exec_module(checker)
 
 
 class ObstacleEvidenceCatalogTests(unittest.TestCase):
-    def test_exact_ten_templates(self):
-        self.assertEqual(len(EXPECTED_TEMPLATES), 10)
-        self.assertEqual(len(frames), 10)
+    def test_exact_eleven_templates(self):
+        self.assertEqual(len(EXPECTED_TEMPLATES), 11)
+        self.assertEqual(len(frames), 11)
         self.assertEqual(set(frames), EXPECTED_TEMPLATES)
         self.assertEqual(checker.TEMPLATES, EXPECTED_TEMPLATES)
 
@@ -39,7 +39,7 @@ class ObstacleEvidenceCatalogTests(unittest.TestCase):
         for width, height in viewports:
             spacing.append(dict(width=width, height=height, measurements=[
                 dict(template=name, passed=True, predecessorRight=100,
-                     newGroupLeft=100 + .1 * width / .5, scale=.5)
+                     newGroupLeft=100 + .25 * width / .5, scale=.5)
                 for name in sorted(EXPECTED_TEMPLATES)
                 if not ((width, height) == first_viewport and name == missing_template)
             ]))

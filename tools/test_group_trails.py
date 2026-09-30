@@ -70,8 +70,8 @@ class GroupTrailsTests(unittest.TestCase):
                                 const generated = f.elements.filter(e => e.generationGroupId === before);
                                 assert(generated.length === old.length, 'advance group size');
                                 assert(old.every(e => f.elements.includes(e)), 'generation depended on deletion');
-                                assert(near(Math.min(...generated.map(e => e.getLeftPointX())),
-                                    right + .10*width/scale.bad), 'advance gap changed');
+                                const gap = (Math.min(...generated.map(e => e.getLeftPointX())) - right)*scale.bad;
+                                assert(gap >= .20*width - 1e-6 && gap <= .30*width + 1e-6, 'advance gap changed');
                                 const dx = generated[0].x - baseline[0].x;
                                 assert(dx > 0, 'no translation');
                                 const targets = generated.filter(e =>

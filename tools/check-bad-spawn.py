@@ -55,7 +55,8 @@ with sync_playwright() as p:
                 const replacement = f.elements.filter(e => e.generationGroupId === 1);
                 assert(replacement.length === old.length, 'prefill missing second group');
                 const left = Math.min(...replacement.map(e => e.getLeftPointX()));
-                assert(near((left - right) * scale.bad, .10*width), 'advance gap');
+                const gap = (left - right) * scale.bad;
+                assert(gap >= .20*width - 1e-6 && gap <= .30*width + 1e-6, 'advance gap');
                 const generationCount = f.nextGenerationGroupId;
                 screen.x = screen.getDeletionBorder() - right - 1;
                 f.deleteElements();
@@ -70,7 +71,7 @@ with sync_playwright() as p:
                     for (const key of ['y','type','fill','stroke','speedX','speedY','restrictionY'])
                         assert(JSON.stringify(actual[key]) === JSON.stringify(expected[key]), 'changed ' + key);
                 });
-                lines.push('PASS ' + creation.type + ': startup geometry; exact 10% spacing; single translation; types/physics/colors/polygons preserved; grouped score exactly once; whole-group deletion; advance prefill; no deletion-triggered generation');
+                lines.push('PASS ' + creation.type + ': startup geometry; 20-30% spacing (' + gap.toFixed(3) + 'px of ' + width + '); single translation; types/physics/colors/polygons preserved; grouped score exactly once; whole-group deletion; advance prefill; no deletion-triggered generation');
             }
             version = 'classic';
             const f = new Floor(0,height,{min:0,max:0},[],1);

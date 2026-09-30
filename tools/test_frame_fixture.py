@@ -9,6 +9,10 @@ from verification_support import assert_near, baseline_route, load_baseline_sour
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# 2201dd3 is the last intentional frame geometry change (Frame 4 cube, gray rects,
+# obstacle distances). Frame 1 was added after it.
+BASELINE = '2201dd3'
+BASELINE_FRAMES = [frame for frame in frames if frame != 'frame1Elements']
 
 
 class FrameFixtureTests(unittest.TestCase):
@@ -17,7 +21,7 @@ class FrameFixtureTests(unittest.TestCase):
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         files = subprocess.check_output(
             ['git', 'ls-files'], cwd=ROOT, text=True).splitlines()
-        cls.baseline = load_baseline_sources('a6b41aa', files)
+        cls.baseline = load_baseline_sources(BASELINE, files)
 
     def assert_members(self, members, types):
         self.assertEqual(len(members), len(types))
@@ -75,20 +79,22 @@ class FrameFixtureTests(unittest.TestCase):
                 cases += 1
                 print(f'PASS current {width}x{height} {frame}: initial/raw types and counts; '
                       'dynamic identity; 30 isolated motion samples; browser errors=0', flush=True)
-        self.assertEqual(cases, 30)
-        print('PASS current frame fixture: 30 cases', flush=True)
+        self.assertEqual(cases, 3 * len(frames))
+        print(f'PASS current frame fixture: {cases} cases', flush=True)
         cases = 0
         for frame, types in zip(frames, expected):
+            if frame not in BASELINE_FRAMES:
+                continue
             row = self.sample(frame, types, 1920, 1080, baseline=True)
             # Match the viewport verifier's existing numeric tolerance and compare
             # complete snapshots, including exact object and polygon cardinality.
             assert_near(row, current[frame], frame, rel_tol=1e-12,
                         abs_tol=1e-10, require_finite=False)
             cases += 1
-            print(f'PASS baseline a6b41aa 1920x1080 {frame}: initial/raw match current; '
+            print(f'PASS baseline {BASELINE} 1920x1080 {frame}: initial/raw match current; '
                   'dynamic identity; 30 isolated motion samples; browser errors=0', flush=True)
-        self.assertEqual(cases, 10)
-        print('PASS baseline frame fixture: 10 cases', flush=True)
+        self.assertEqual(cases, len(BASELINE_FRAMES))
+        print(f'PASS baseline frame fixture: {cases} cases', flush=True)
 
 
 if __name__ == '__main__':

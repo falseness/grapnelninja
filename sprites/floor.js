@@ -56,12 +56,18 @@ class Floor
     }
     generateElements(x)
     {
-        let num = random()
+        // Bad mode draws an integer ticket below the total integer weight and
+        // compares against exclusive bounds, so equal weights are exactly equal.
+        // Math.random() * total can round up to total, hence the clamp.
+        const exclusiveBounds = version == 'bad' && this.primaryElementsQuantity == 1
+        const totalChance = this.creations.reduce((sum, creation) => sum + creation.chance, 0)
+        let num = exclusiveBounds ? Math.min(random(0, totalChance), totalChance - 1) : random()
 
         let sumChances = 0
         for (let i = 0; i < this.creations.length; ++i)
         {
-            if (num <= this.creations[i].chance + sumChances)
+            const bound = this.creations[i].chance + sumChances
+            if (exclusiveBounds ? num < bound : num <= bound)
             {
                 const generatedElements = elementsFactory.create(
                     {min: x + this.elementsIntervalX.min, max: x + this.elementsIntervalX.max},

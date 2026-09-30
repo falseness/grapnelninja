@@ -28,12 +28,12 @@ class ObstacleEvidenceFixture:
             left = visible_right + 100
             spacing.append(dict(width=width, height=height, measurements=[
                 dict(template=name, passed=True, predecessorRight=left,
-                     newGroupLeft=left + .1 * width / scale, scale=scale)
+                     newGroupLeft=left + .25 * width / scale, scale=scale)
                 for name in sorted(checker.TEMPLATES)
             ]))
             creations = [dict(template=name, passed=True, initializing=False,
                               canvasWidth=width, canvasHeight=height, id=index + 1,
-                              left=left, predecessorRight=left - .1 * width / scale,
+                              left=left, predecessorRight=left - .25 * width / scale,
                               cameraX=camera_x, scale=scale, visibleRight=visible_right)
                          for index, name in enumerate(sorted(checker.TEMPLATES))]
             coverage = [dict(phase=phase, frame=index, cameraX=camera_x, scale=scale,
@@ -46,7 +46,8 @@ class ObstacleEvidenceFixture:
         self.write('spacing.json', spacing)
         (self.out / 'live').mkdir()
         events = [dict(self.advance[0]['creations'][i], run=0, gapPassed=True,
-                       offscreenPassed=True, expectedPixelGap=.1 * VIEWPORTS[0][0])
+                       offscreenPassed=True, expectedPixelGapMin=.2 * VIEWPORTS[0][0],
+                       expectedPixelGapMax=.3 * VIEWPORTS[0][0])
                   for i in range(3)]
         initial = dict(events[0], id=0, initializing=True)
         samples = []

@@ -45,12 +45,12 @@ PROBE = r'''() => {
         const right = Math.max(...group.map(e => e.getRightPointX()));
         const visibleRight = -screen.x + width/scale.bad;
         const pixelGap = predecessorRight === null ? null : (left-predecessorRight)*scale.bad;
-        const gapPassed = id === 0 || (pixelGap !== null && Math.abs(pixelGap-.1*width) <= 1e-6);
+        const gapPassed = id === 0 || (pixelGap !== null && pixelGap >= .2*width-1e-6 && pixelGap <= .3*width+1e-6);
         const offscreenPassed = probe.initializing || left > visibleRight;
         probe.spawns.push({elapsed:(performance.now()-probe.start)/1000,run:probe.runs.length-1,
             initializing:probe.initializing,template,id,left,right,predecessorRight,
             cameraX:screen.x,visibleRight,scale:scale.bad,canvasWidth:width,canvasHeight:height,
-            pixelLeft:(left+screen.x)*scale.bad,pixelGap,expectedPixelGap:.1*width,
+            pixelLeft:(left+screen.x)*scale.bad,pixelGap,expectedPixelGapMin:.2*width,expectedPixelGapMax:.3*width,
             gapPassed,offscreenPassed,passed:gapPassed && offscreenPassed});
         return result;
     };
