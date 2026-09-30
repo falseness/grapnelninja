@@ -497,11 +497,15 @@ class Frame1ElementsFactory extends RectFactory
     constructor()
     {
         super()
-        // Apex 387 - 180 = 207 stays below the pillar tops (137.5).
-        this.launchArcHeightPercent = 100 * 180 / FRAME_REFERENCE.height
-        // Bad-mode ground starts at 2 * height of the 2.2 * height world.
+        // Bad-mode ceiling ends at 0.2 * height and ground starts at 2 * height
+        // of the 2.2 * height world.
+        const ceilingBottom = FRAME_REFERENCE.height * 0.2 / 2.2
         const groundTop = FRAME_REFERENCE.height * 2 / 2.2
         const pillarTop = 137.5
+        const cubeTop = 387
+        // Aim 10px past the ceiling so the cube bounces off it. The cube is taller
+        // than the ceiling-to-pillar-top gap, so it still cannot clear the pillars.
+        this.launchArcHeightPercent = 100 * (cubeTop - ceilingBottom + 10) / FRAME_REFERENCE.height
         this.greenRects =
         [
             {
@@ -520,7 +524,7 @@ class Frame1ElementsFactory extends RectFactory
         this.blueSquare =
         {
             x: 100 * 330 / FRAME_REFERENCE.width,
-            y: 100 * 387 / FRAME_REFERENCE.height,
+            y: 100 * cubeTop / FRAME_REFERENCE.height,
             width: 100 * 153 / FRAME_REFERENCE.width,
             height: 100 * 156 / FRAME_REFERENCE.height
         }
