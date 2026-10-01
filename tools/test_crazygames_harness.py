@@ -75,6 +75,7 @@ class CrazyGamesHarnessTests(unittest.TestCase):
         times = [c['t'] for c in calls]
         self.assertEqual(times, sorted(times))
         if self.evidence:
+            Path(self.evidence).mkdir(parents=True, exist_ok=True)
             Path(self.evidence, 'sample-calls.json').write_text(
                 json.dumps(calls, indent=2) + '\n')
 

@@ -34,9 +34,11 @@ def load_baseline_sources(revision, files):
     """Read baseline JS/HTML bytes for the caller's tracked-file list.
 
     Missing files fail through git show; other assets retain live-server routing.
+    Test tooling under tools/ is never part of the game, so it is not loaded.
     """
     return {name: subprocess.check_output(['git', 'show', revision + ':' + name])
-            for name in files if name.endswith(('.js', '.html'))}
+            for name in files
+            if name.endswith(('.js', '.html')) and not name.startswith('tools/')}
 
 
 def baseline_route(sources):

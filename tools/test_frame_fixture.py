@@ -9,12 +9,11 @@ from verification_support import assert_near, baseline_route, load_baseline_sour
 
 
 ROOT = Path(__file__).resolve().parents[1]
-# 2201dd3 is the last intentional frame geometry change (Frame 4 cube, gray rects,
-# obstacle distances). Frame 1 was added after it and the Frame 4 cube now jumps
-# to the ceiling, so both are compared only against the current checkout.
-# Frames 12, 13 and 14 did not exist at the baseline either.
-BASELINE = '2201dd3'
-BASELINE_FRAMES = [frame for frame in frames if frame not in ['frame1Elements', 'frame4Elements', 'frame12Elements', 'frame13Elements', 'frame14Rects']]
+# d9b7129 is the last intentional frame geometry change (the user's Frame 1-14
+# obstacle edits after 2201dd3, ending with the axis-aligned Frame 5/14
+# segments). Every current template exists there, so all are compared.
+BASELINE = 'd9b7129'
+BASELINE_FRAMES = list(frames)
 
 
 class FrameFixtureTests(unittest.TestCase):
