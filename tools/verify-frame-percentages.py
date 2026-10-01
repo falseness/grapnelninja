@@ -1,4 +1,4 @@
-"""Compare Frames 2–11 against a git baseline in Chromium and check safe motion.
+"""Compare Frames 3–11 against a git baseline in Chromium and check safe motion.
 
 Run a local HTTP server; requires Python Playwright. Evidence is never staged.
 """

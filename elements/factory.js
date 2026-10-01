@@ -18,7 +18,6 @@ class ElementsFactory
         {
             ground              : new GroundFactory()               , 
             side                : new SideFactory()                 ,
-            frame2Rect          : new Frame2RectFactory()           ,
             frame3Triangle      : new Frame3TriangleFactory()       ,
             frame4Elements      : new Frame4ElementsFactory()       ,
             frame5Rects         : new Frame5RectFactory()           ,
@@ -211,39 +210,6 @@ class VerticalGroundRectFactory extends RectFactory
         let h = random(this.height.min, this.height.max)
         
         return [super.create(random(x.min, x.max), y.max - h, w, h)]
-    }
-}
-class Frame2RectFactory extends RectFactory
-{
-    constructor()
-    {
-        super()
-        this.widthPercent = 100 * (52 / FRAME_REFERENCE.width)
-        this.topHeightPercent = 100 * (164.5 / FRAME_REFERENCE.height)
-        this.heightPercent = 100 * (266 / FRAME_REFERENCE.height)
-    }
-    create(x, y)
-    {
-        const worldWidth = frameWidthPercent(this.widthPercent)
-        const worldHeight = frameHeightPercent(this.heightPercent)
-        const worldX = (width / scale.bad - worldWidth) / 2
-        const worldY = frameHeightPercent(this.topHeightPercent)
-        const model =
-        {
-            x       : worldX,
-            y       : worldY,
-            points  :
-            [
-                {x: 0, y: 0},
-                {x: 0, y: worldHeight},
-                {x: worldWidth, y: worldHeight},
-                {x: worldWidth, y: 0}
-            ],
-            fill    : STYLE.colors.cube.greenFill,
-            stroke  : STYLE.colors.cube.greenStroke
-        }
-
-        return [new Trampoline(model)]
     }
 }
 class Frame5RectFactory extends RectFactory

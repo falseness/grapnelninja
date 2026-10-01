@@ -12,7 +12,7 @@ from verification_scenarios import frames
 
 
 EXPECTED_TEMPLATES = {
-    'frame1Elements', 'frame2Rect', 'frame3Triangle', 'frame4Elements',
+    'frame1Elements', 'frame3Triangle', 'frame4Elements',
     'frame5Rects', 'frame6Rects', 'frame7Elements', 'frame8Elements',
     'frame9Elements', 'frame10Elements', 'frame11Elements',
 }
@@ -24,9 +24,9 @@ spec.loader.exec_module(checker)
 
 
 class ObstacleEvidenceCatalogTests(unittest.TestCase):
-    def test_exact_eleven_templates(self):
-        self.assertEqual(len(EXPECTED_TEMPLATES), 11)
-        self.assertEqual(len(frames), 11)
+    def test_exact_ten_templates(self):
+        self.assertEqual(len(EXPECTED_TEMPLATES), 10)
+        self.assertEqual(len(frames), 10)
         self.assertEqual(set(frames), EXPECTED_TEMPLATES)
         self.assertEqual(checker.TEMPLATES, EXPECTED_TEMPLATES)
 

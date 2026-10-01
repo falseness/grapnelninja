@@ -40,11 +40,11 @@ scenario = '''mode => {
  return {values,trace};
 }'''
 
-frames = ['frame1Elements', 'frame2Rect', 'frame3Triangle', 'frame4Elements', 'frame5Rects',
+frames = ['frame1Elements', 'frame3Triangle', 'frame4Elements', 'frame5Rects',
           'frame6Rects', 'frame7Elements', 'frame8Elements', 'frame9Elements',
           'frame10Elements', 'frame11Elements']
 
-expected = [['Trampoline', 'Trampoline', 'JumpingCube'], ['Trampoline'], ['Triangle'], ['Trampoline', 'JumpingCube', 'Triangle'],
+expected = [['Trampoline', 'Trampoline', 'JumpingCube'], ['Triangle'], ['Trampoline', 'JumpingCube', 'Triangle'],
             ['Trampoline']*3, ['Rect']*2, ['Trampoline', 'JumpingCube'],
             ['Rect']+['Trampoline']*3, ['Trampoline']*3+['Triangle', 'JumpingCube'],
             ['Trampoline', 'Rect', 'Rect'], ['Trampoline', 'Rect', 'Rect']]
