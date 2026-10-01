@@ -70,8 +70,10 @@ function createEvents()
         if (!(menu.opened()))
             throwGrapnel(event)
     }
+    // preventDefault stops the emulated mousedown/mouseup after a tap
     function touch(event)
-    {       
+    {
+        event.preventDefault()
         if (!grapnel.throwed)
         {
             click(event)
@@ -82,20 +84,34 @@ function createEvents()
         if (!menu.visible)
             pickUpGrapnel()
     }
-    function offtouch()
+    function offtouch(event)
     {
+        event.preventDefault()
         offclick()
     }
     document.addEventListener('mousedown', click)
     document.addEventListener('mouseup', offclick)
     
-    document.addEventListener('touchstart', touch)
-    document.addEventListener('touchend', offtouch)
+    document.addEventListener('touchstart', touch, {passive: false})
+    document.addEventListener('touchend', offtouch, {passive: false})
     
     
+    document.addEventListener('contextmenu', function(event)
+    {
+        event.preventDefault()
+    })
+    document.addEventListener('wheel', function(event)
+    {
+        event.preventDefault()
+    }, {passive: false})
+    
+    const scrollKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ']
+    const pauseKeys = ['Escape', 'p', 'P']
     document.addEventListener('keydown', function(event)
     {
-        if (event.keyCode == 27 && !menu.visible)
+        if (scrollKeys.includes(event.key))
+            event.preventDefault()
+        if (pauseKeys.includes(event.key) && !menu.visible)
         {
             event.preventDefault()
 
