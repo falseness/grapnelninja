@@ -7,6 +7,13 @@ from playwright.sync_api import sync_playwright
 
 
 SDK_ROUTE = '**/crazygames-sdk-v3.js'
+LOGICAL_HEIGHT = 1080
+
+
+def logical_size(viewport_width, viewport_height):
+    """Logical canvas size for a browser viewport (gameoptions.js)."""
+    aspect = min(21 / 9, max(4 / 3, viewport_width / viewport_height))
+    return round(LOGICAL_HEIGHT * aspect), LOGICAL_HEIGHT
 
 
 class QuietHandler(SimpleHTTPRequestHandler):

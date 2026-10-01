@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import unittest
 
-from browser_test_support import start_browser_test
+from browser_test_support import logical_size, start_browser_test
 from verification_scenarios import frames
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,7 +28,7 @@ class ObstacleSpacingTests(unittest.TestCase):
                     page.goto(self.url)
                     result = page.evaluate(PROBE, frames)
                     self.assertEqual(errors, [])
-                    self.assertEqual((result['width'], result['height']), viewport)
+                    self.assertEqual((result['width'], result['height']), logical_size(*viewport))
                     self.assertEqual(len(result['measurements']), 3 * len(frames))
                     results.append(result)
                     print('\n'.join(result['assertions']), flush=True)
