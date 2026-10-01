@@ -1,0 +1,1 @@
+DONT COMMIT screenshots/. I added it into .gitginore FOR A REASON!
