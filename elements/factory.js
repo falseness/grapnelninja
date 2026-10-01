@@ -851,6 +851,8 @@ class Frame13ElementsFactory extends RectFactory
             centerX: 100 * (524 + 278.538) / FRAME_REFERENCE.width,
             topY: 100 * 321 / FRAME_REFERENCE.height,
             bottomY: 100 * 435 / FRAME_REFERENCE.height,
+            // Highest top edge; rises into the cube's arc and bounces it upward.
+            minTopY: 100 * 200 / FRAME_REFERENCE.height,
             side: 100 * (575.962 - 472.038) / FRAME_REFERENCE.height
         }
         this.blueSquare =
@@ -930,8 +932,7 @@ class Frame13ElementsFactory extends RectFactory
             x       : frameWidthPercent(triangle.centerX),
             y       : frameHeightPercent(triangle.topY) + worldHeight / 3,
             radius  : worldHeight * 2 / 3,
-            // Move below the initial footprint, away from the cube above.
-            yMin    : frameHeightPercent(triangle.topY),
+            yMin    : frameHeightPercent(triangle.minTopY),
             yMax    : y.max - 0.01 * height,
             fill    : STYLE.colors.hazard.fill,
             stroke  : STYLE.colors.hazard.stroke
