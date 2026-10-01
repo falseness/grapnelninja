@@ -2,10 +2,9 @@
 import json
 from pathlib import Path
 
-from browser_test_support import start_browser_test
+from browser_test_support import SDK_ROUTE, start_browser_test
 
 FAKE_SDK = Path(__file__).with_name('fixtures') / 'fake-crazygames-sdk.js'
-SDK_ROUTE = '**/crazygames-sdk-v3.js'
 
 
 def start_crazygames_test(root, add_cleanup):

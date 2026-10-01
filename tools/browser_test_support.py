@@ -6,9 +6,39 @@ from threading import Thread
 from playwright.sync_api import sync_playwright
 
 
+SDK_ROUTE = '**/crazygames-sdk-v3.js'
+
+
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass
+
+
+def stub_sdk(route):
+    """Serve an empty SDK so pages boot offline with CG disabled."""
+    route.fulfill(content_type='application/javascript', body='')
+
+
+class OfflineSdkBrowser:
+    """Browser whose pages never fetch the real CrazyGames SDK.
+
+    Routes added later (e.g. by crazygames_harness) take precedence.
+    """
+    def __init__(self, browser):
+        self._browser = browser
+
+    def __getattr__(self, name):
+        return getattr(self._browser, name)
+
+    def new_context(self, **kwargs):
+        context = self._browser.new_context(**kwargs)
+        context.route(SDK_ROUTE, stub_sdk)
+        return context
+
+    def new_page(self, **kwargs):
+        page = self._browser.new_page(**kwargs)
+        page.context.route(SDK_ROUTE, stub_sdk)
+        return page
 
 
 def start_browser_test(root, add_cleanup):
@@ -25,4 +55,4 @@ def start_browser_test(root, add_cleanup):
     add_cleanup(playwright.stop)
     browser = playwright.chromium.launch(args=['--no-sandbox'])
     add_cleanup(browser.close)
-    return url, browser
+    return url, OfflineSdkBrowser(browser)

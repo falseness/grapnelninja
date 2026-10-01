@@ -1,5 +1,7 @@
 // Test double for the CrazyGames HTML5 SDK v3; served in place of
 // crazygames-sdk-v3.js by tools/crazygames_harness.py.
+// Set window.__cgFake.initHang to make init() never resolve; otherwise
+// __cgFake.initResolvedAt records when init() resolved.
 (function () {
     const fake = window.__cgFake = Object.assign({
         adOutcome: 'finished',
@@ -43,7 +45,10 @@
     window.CrazyGames = {
         SDK: {
             environment: fake.environment,
-            init: recorded('init', function () { return Promise.resolve() }),
+            init: recorded('init', function () {
+                if (fake.initHang) return new Promise(function () {})
+                return Promise.resolve().then(function () { fake.initResolvedAt = performance.now() })
+            }),
             game: {
                 settings: {muteAudio: false, disableChat: false},
                 gameplayStart: recorded('game.gameplayStart'),

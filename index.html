@@ -4,6 +4,7 @@
         <title>grapnel ninja</title>
         <meta charset = "UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 
         <style>
             body 
@@ -19,6 +20,7 @@
         <canvas id = "canvas"></canvas>
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
+        <script src = "crazygames.js"></script>
         <script src = 'menu.js'></script>
     
         <script src = "collision/circlewithcircle.js"></script>
@@ -66,7 +68,15 @@
             
             let game
             
-            window.onload = start()
+            boot()
+            
+            async function boot()
+            {
+                CG.loadingStart()
+                await CG.init()
+                start()
+                CG.loadingStop()
+            }
             
             function startGame(_v)
             {
