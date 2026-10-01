@@ -235,13 +235,13 @@ class Frame5RectFactory extends RectFactory
                 height: 100 * 365 / FRAME_REFERENCE.height
             }
         ]
+        // Axis-aligned, flush with the column's right edge and top.
         this.horizontalRect =
         {
-            x: 100 * 446.935 / FRAME_REFERENCE.width,
-            y: 100 * 232.654 / FRAME_REFERENCE.height,
-            width: 100 * 42.9148 / FRAME_REFERENCE.height,
-            height: 100 * 126.553 / FRAME_REFERENCE.height,
-            rotation: -90.5738
+            x: 100 * 445.5 / FRAME_REFERENCE.width,
+            y: 100 * 188.5 / FRAME_REFERENCE.height,
+            width: 100 * 128 / FRAME_REFERENCE.width,
+            height: 100 * 43 / FRAME_REFERENCE.height
         }
     }
     createGreenTrampolineRect(rect)
@@ -265,44 +265,12 @@ class Frame5RectFactory extends RectFactory
 
         return new Trampoline(model)
     }
-    createHorizontalSegment()
-    {
-        const rect = this.horizontalRect
-        const angle = rect.rotation * Math.PI / 180
-        const cos = Math.cos(angle)
-        const sin = Math.sin(angle)
-        // Rotate local height percentages uniformly, then add the W/H position.
-        const displayPoints =
-        [
-            {x: 0, y: 0},
-            {x: rect.width, y: 0},
-            {x: rect.width, y: rect.height},
-            {x: 0, y: rect.height}
-        ]
-
-        const points = displayPoints.map(point =>
-        {
-            return {
-                x: frameWidthPercent(rect.x) + frameHeightPercent(point.x * cos - point.y * sin),
-                y: frameHeightPercent(rect.y + point.x * sin + point.y * cos)
-            }
-        })
-
-        return new Trampoline(
-        {
-            x       : 0,
-            y       : 0,
-            points  : points,
-            fill    : STYLE.colors.cube.greenFill,
-            stroke  : STYLE.colors.cube.greenStroke
-        })
-    }
     create(x, y)
     {
         return [
             this.createGreenTrampolineRect(this.verticalRects[0]),
             this.createGreenTrampolineRect(this.verticalRects[1]),
-            this.createHorizontalSegment()
+            this.createGreenTrampolineRect(this.horizontalRect)
         ]
     }
 }
@@ -311,11 +279,25 @@ class Frame14RectFactory extends Frame5RectFactory
     constructor()
     {
         super()
-        // Frame 5 mirrored vertically: the right pillar stands on the ground,
-        // the column hangs from the ceiling with the segment at its bottom.
+        // Derived from screenshots/Frame 14.svg: the right pillar stands on
+        // the ground, the column hangs from the ceiling with the segment at
+        // its bottom. The pillar keeps Frame 5's doubled gap after the segment.
+        this.verticalRects[0].x = 100 * (688.5 + 116) / FRAME_REFERENCE.width
         this.verticalRects[0].y = 100 * 287.5 / FRAME_REFERENCE.height
-        this.verticalRects[1].y = 100 * 76.5 / FRAME_REFERENCE.height
-        this.horizontalRect.y = 100 * 443.286 / FRAME_REFERENCE.height
+        this.verticalRects[1] =
+        {
+            x: 100 * 333.5 / FRAME_REFERENCE.width,
+            y: 100 * 76.5 / FRAME_REFERENCE.height,
+            width: 100 * 52 / FRAME_REFERENCE.width,
+            height: 100 * 323 / FRAME_REFERENCE.height
+        }
+        this.horizontalRect =
+        {
+            x: 100 * 385.5 / FRAME_REFERENCE.width,
+            y: 100 * 356.5 / FRAME_REFERENCE.height,
+            width: 100 * 187 / FRAME_REFERENCE.width,
+            height: 100 * 43 / FRAME_REFERENCE.height
+        }
     }
 }
 class Frame6RectFactory extends RectFactory
