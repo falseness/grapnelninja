@@ -20,8 +20,10 @@ class FrameFixtureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        # Files of the baseline tree: later additions (crazygames.js) do not exist there
         files = subprocess.check_output(
-            ['git', 'ls-files'], cwd=ROOT, text=True).splitlines()
+            ['git', 'ls-tree', '-r', '--name-only', BASELINE],
+            cwd=ROOT, text=True).splitlines()
         cls.baseline = load_baseline_sources(BASELINE, files)
 
     def assert_members(self, members, types):

@@ -22,8 +22,10 @@ class ViewportEffectsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        # Files of the baseline tree: later additions (crazygames.js) do not exist there
         files = subprocess.check_output(
-            ['git', 'ls-files'], cwd=ROOT, text=True).splitlines()
+            ['git', 'ls-tree', '-r', '--name-only', 'a6b41aa'],
+            cwd=ROOT, text=True).splitlines()
         cls.baseline = load_baseline_sources('a6b41aa', files)
 
     def sample(self, mode, baseline):

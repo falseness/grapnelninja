@@ -7,6 +7,8 @@ const CG = (function()
 
     let sdk = null
     let loading = false
+    // Never send the same gameplay event twice in a row
+    let gameplayActive = false
 
     function call(fn)
     {
@@ -63,8 +65,20 @@ const CG = (function()
             return CG.environment
         },
 
-        gameplayStart() { call(s => s.game.gameplayStart()) },
-        gameplayStop()  { call(s => s.game.gameplayStop()) },
+        gameplayStart()
+        {
+            if (gameplayActive)
+                return
+            gameplayActive = true
+            call(s => s.game.gameplayStart())
+        },
+        gameplayStop()
+        {
+            if (!gameplayActive)
+                return
+            gameplayActive = false
+            call(s => s.game.gameplayStop())
+        },
         loadingStart()
         {
             loading = true

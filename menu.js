@@ -491,7 +491,7 @@ class Menu
             fill: STYLE.colors.ui.buttonText
         }, function()
         {
-            menu.changeGamePause(false)
+            menu.unPause()
         })
         this.backToMenu = new Button(
         {
@@ -508,6 +508,7 @@ class Menu
         },
         function()
         {
+            CG.gameplayStop()
             menu.changeGamePause(false)
     
             menu.setVisible(true)
@@ -639,8 +640,11 @@ class Menu
         this.resume.clickable                   = isPaused
         this.backToMenu.clickable               = isPaused
     }
-    startPause()
+    // reason 'blur': focus loss is handled by the platform, no gameplayStop
+    startPause(reason)
     {
+        if (reason != 'blur')
+            CG.gameplayStop()
         pauseTimeInGame()
         this.timeInGame.text = 'time spent in game: ' + getTimeInGame() + ' minutes'
 
@@ -675,6 +679,7 @@ class Menu
     }
     unPause()
     {
+        CG.gameplayStart()
         reuseTimeInGame()
         menu.changeGamePause(false)
     }
