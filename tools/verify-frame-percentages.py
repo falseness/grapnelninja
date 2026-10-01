@@ -53,8 +53,8 @@ with sync_playwright() as p:
     page.on('pageerror',lambda e:errors.append(str(e)))
     page.on('console',lambda m:console.append(m.text) if m.type=='error' else None)
     page.goto(args.url)
-    scaled=page.evaluate(setup,'frame9Elements')['raw']
-    original=results['current']['frame9Elements']['raw']
+    scaled=page.evaluate(setup,'frame13Elements')['raw']
+    original=results['current']['frame13Elements']['raw']
     assert len(original)==len(scaled), 'raw object count mismatch'
     for old,new in zip(original,scaled):
         assert len(old['points'])==len(new['points']), 'polygon point count mismatch'

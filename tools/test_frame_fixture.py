@@ -12,9 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # 2201dd3 is the last intentional frame geometry change (Frame 4 cube, gray rects,
 # obstacle distances). Frame 1 was added after it and the Frame 4 cube now jumps
 # to the ceiling, so both are compared only against the current checkout.
-# Frame 12 did not exist at the baseline either.
+# Frames 12 and 13 did not exist at the baseline either.
 BASELINE = '2201dd3'
-BASELINE_FRAMES = [frame for frame in frames if frame not in ['frame1Elements', 'frame4Elements', 'frame12Elements']]
+BASELINE_FRAMES = [frame for frame in frames if frame not in ['frame1Elements', 'frame4Elements', 'frame12Elements', 'frame13Elements']]
 
 
 class FrameFixtureTests(unittest.TestCase):

@@ -36,7 +36,7 @@ class GroupTrailsTests(unittest.TestCase):
             const near = (a, b) => Math.abs(a - b) < 1e-6;
             const lines = [];
             let cases = 0, triangles = 0;
-            for (const frame of ['frame7Elements', 'frame9Elements', 'frame3Triangle']) {
+            for (const frame of ['frame7Elements', 'frame13Elements', 'frame3Triangle']) {
                 // Include zero velocity to lock down JumpingCube's <= 0 edge.
                 for (const velocity of frame === 'frame3Triangle' ? [null] : [-1, 0, 1]) {
                     for (const tick of [true, false]) {

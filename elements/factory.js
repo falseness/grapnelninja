@@ -25,10 +25,10 @@ class ElementsFactory
             frame1Elements      : new Frame1ElementsFactory()       ,
             frame7Elements      : new Frame7ElementsFactory()       ,
             frame8Elements      : new Frame8ElementsFactory()       ,
-            frame9Elements      : new Frame9ElementsFactory()       ,
             frame10Elements     : new Frame10ElementsFactory()      ,
             frame11Elements     : new Frame11ElementsFactory()      ,
             frame12Elements     : new Frame12ElementsFactory()      ,
+            frame13Elements     : new Frame13ElementsFactory()      ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -818,7 +818,7 @@ class Frame8ElementsFactory extends RectFactory
         ]
     }
 }
-class Frame9ElementsFactory extends RectFactory
+class Frame13ElementsFactory extends RectFactory
 {
     constructor()
     {
@@ -847,16 +847,16 @@ class Frame9ElementsFactory extends RectFactory
         ]
         this.triangle =
         {
-            // Doubled gap after the green column (triangle left edge 454.038).
-            centerX: 100 * (506 + 260.538) / FRAME_REFERENCE.width,
-            topY: 100 * 157 / FRAME_REFERENCE.height,
-            bottomY: 100 * 271 / FRAME_REFERENCE.height,
-            side: 100 * (557.962 - 454.038) / FRAME_REFERENCE.height
+            // Doubled gap after the green column (triangle left edge 472.038).
+            centerX: 100 * (524 + 278.538) / FRAME_REFERENCE.width,
+            topY: 100 * 321 / FRAME_REFERENCE.height,
+            bottomY: 100 * 435 / FRAME_REFERENCE.height,
+            side: 100 * (575.962 - 472.038) / FRAME_REFERENCE.height
         }
         this.blueSquare =
         {
-            x: 100 * (480 + 260.538) / FRAME_REFERENCE.width,
-            y: 100 * 441 / FRAME_REFERENCE.height,
+            x: 100 * (498 + 278.538) / FRAME_REFERENCE.width,
+            y: 100 * 257 / FRAME_REFERENCE.height,
             width: 100 * 51 / FRAME_REFERENCE.width,
             height: 100 * 52 / FRAME_REFERENCE.height
         }
@@ -930,9 +930,9 @@ class Frame9ElementsFactory extends RectFactory
             x       : frameWidthPercent(triangle.centerX),
             y       : frameHeightPercent(triangle.topY) + worldHeight / 3,
             radius  : worldHeight * 2 / 3,
-            // Move above the initial footprint, away from the cube below.
-            yMin    : y.min + 0.01 * height,
-            yMax    : frameHeightPercent(triangle.bottomY),
+            // Move below the initial footprint, away from the cube above.
+            yMin    : frameHeightPercent(triangle.topY),
+            yMax    : y.max - 0.01 * height,
             fill    : STYLE.colors.hazard.fill,
             stroke  : STYLE.colors.hazard.stroke
         }

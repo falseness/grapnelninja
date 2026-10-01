@@ -14,7 +14,7 @@ import argparse
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--url', default='http://127.0.0.1:8024/')
 parser.add_argument('--output', type=Path, default=Path('artifacts/TASK-024'))
-parser.add_argument('--frames', default='frame7Elements,frame9Elements', help='comma-separated frame types')
+parser.add_argument('--frames', default='frame7Elements,frame13Elements', help='comma-separated frame types')
 args=parser.parse_args()
 out=args.output
 out.mkdir(parents=True, exist_ok=True)

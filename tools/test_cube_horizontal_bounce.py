@@ -135,7 +135,7 @@ class CubeHorizontalBounceTests(unittest.TestCase):
     def test_frame_cubes_keep_zero_horizontal_speed(self):
         page = self.open_bad_game()
         result = {}
-        for frame in ['frame7Elements', 'frame9Elements']:
+        for frame in ['frame7Elements', 'frame13Elements']:
             row = page.evaluate('''frame => {
                 chooseVersion();
                 for (const floor of floors) floor.elements = [];

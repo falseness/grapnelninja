@@ -14,7 +14,7 @@ from verification_scenarios import frames
 EXPECTED_TEMPLATES = {
     'frame1Elements', 'frame3Triangle', 'frame4Elements',
     'frame5Rects', 'frame6Rects', 'frame7Elements', 'frame8Elements',
-    'frame9Elements', 'frame10Elements', 'frame11Elements', 'frame12Elements',
+    'frame10Elements', 'frame11Elements', 'frame12Elements', 'frame13Elements',
 }
 VIEWPORTS = [(772, 630), (1280, 720), (1920, 1080)]
 CHECKER_PATH = Path(__file__).with_name('check-obstacle-evidence.py')

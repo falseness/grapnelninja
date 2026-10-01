@@ -216,7 +216,7 @@ def main():
                     page = new_page(browser,w,h,live=True)
                     page.evaluate('''mode=>{
                       startGame(mode);menu.visible=false;
-                      floors[1].elements=[];floors[1].creations=[{type:'frame9Elements',chance:100}];floors[1].generatePrimaryElements();
+                      floors[1].elements=[];floors[1].creations=[{type:'frame13Elements',chance:100}];floors[1].generatePrimaryElements();
                       window.motion={};
                       for(const Type of [Ninja,Grapnel,Triangle,JumpingCube]) {
                         const move=Type.prototype.move,name=Type.name;motion[name]={calls:0,moved:0};

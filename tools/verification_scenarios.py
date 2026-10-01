@@ -6,7 +6,7 @@ scenario = '''mode => {
  window.seed=1234;
  Math.random=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296};
  floors[1].elements=[];
- floors[1].creations=[{type:'frame9Elements',chance:100}];
+ floors[1].creations=[{type:'frame13Elements',chance:100}];
  floors[1].generatePrimaryElements();
  const cube=floors[1].elements.find(e=>e instanceof JumpingCube);
  const triangle=floors[1].elements.find(e=>e instanceof Triangle);
@@ -41,14 +41,14 @@ scenario = '''mode => {
 }'''
 
 frames = ['frame1Elements', 'frame3Triangle', 'frame4Elements', 'frame5Rects',
-          'frame6Rects', 'frame7Elements', 'frame8Elements', 'frame9Elements',
-          'frame10Elements', 'frame11Elements', 'frame12Elements']
+          'frame6Rects', 'frame7Elements', 'frame8Elements',
+          'frame10Elements', 'frame11Elements', 'frame12Elements', 'frame13Elements']
 
 expected = [['Trampoline', 'Trampoline', 'JumpingCube'], ['Triangle'], ['Trampoline', 'JumpingCube', 'Triangle'],
             ['Trampoline']*3, ['Rect']*2, ['Trampoline', 'JumpingCube'],
-            ['Rect']+['Trampoline']*3, ['Trampoline']*3+['Triangle', 'JumpingCube'],
+            ['Rect']+['Trampoline']*3,
             ['Trampoline', 'Rect', 'Rect'], ['Trampoline', 'Rect', 'Rect'],
-            ['Trampoline']*3+['JumpingCube']*2]
+            ['Trampoline']*3+['JumpingCube']*2, ['Trampoline']*3+['Triangle', 'JumpingCube']]
 
 setup = '''frame => {
  startGame('bad'); cancelAnimationFrame(game); menu.visible=false;
