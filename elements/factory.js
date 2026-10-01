@@ -383,8 +383,8 @@ class Frame4ElementsFactory extends RectFactory
         // Bad-mode ceiling ends at 0.2 * height of the 2.2 * height world.
         const ceilingBottom = FRAME_REFERENCE.height * 0.2 / 2.2
         const cubeTop = 165
-        // Aim 10px past the ceiling so the cube bounces between it and the green segment.
-        this.launchArcHeightPercent = 100 * (cubeTop - ceilingBottom + 10) / FRAME_REFERENCE.height
+        // Aim 100px past the ceiling so the cube bounces quickly between it and the green segment.
+        this.launchArcHeightPercent = 100 * (cubeTop - ceilingBottom + 100) / FRAME_REFERENCE.height
         this.greenSegment =
         {
             x: 100 * 252 / FRAME_REFERENCE.width,
