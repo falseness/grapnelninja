@@ -42,13 +42,14 @@ scenario = '''mode => {
 
 frames = ['frame1Elements', 'frame3Triangle', 'frame4Elements', 'frame5Rects',
           'frame6Rects', 'frame7Elements', 'frame8Elements',
-          'frame10Elements', 'frame11Elements', 'frame12Elements', 'frame13Elements']
+          'frame10Elements', 'frame11Elements', 'frame12Elements', 'frame13Elements',
+          'frame14Rects']
 
 expected = [['Trampoline', 'Trampoline', 'JumpingCube'], ['Triangle'], ['Trampoline', 'JumpingCube', 'Triangle'],
             ['Trampoline']*3, ['Rect']*2, ['Trampoline', 'JumpingCube'],
             ['Rect']+['Trampoline']*3,
             ['Trampoline', 'Rect', 'Rect'], ['Trampoline', 'Rect', 'Rect'],
-            ['Trampoline']*3+['JumpingCube']*2, ['Trampoline']*3+['Triangle', 'JumpingCube']]
+            ['Trampoline']*3+['JumpingCube']*2, ['Trampoline']*3+['Triangle', 'JumpingCube'], ['Trampoline']*3]
 
 setup = '''frame => {
  startGame('bad'); cancelAnimationFrame(game); menu.visible=false;

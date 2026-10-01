@@ -29,6 +29,7 @@ class ElementsFactory
             frame11Elements     : new Frame11ElementsFactory()      ,
             frame12Elements     : new Frame12ElementsFactory()      ,
             frame13Elements     : new Frame13ElementsFactory()      ,
+            frame14Rects        : new Frame14RectFactory()          ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -303,6 +304,18 @@ class Frame5RectFactory extends RectFactory
             this.createGreenTrampolineRect(this.verticalRects[1]),
             this.createHorizontalSegment()
         ]
+    }
+}
+class Frame14RectFactory extends Frame5RectFactory
+{
+    constructor()
+    {
+        super()
+        // Frame 5 mirrored vertically: the right pillar stands on the ground,
+        // the column hangs from the ceiling with the segment at its bottom.
+        this.verticalRects[0].y = 100 * 287.5 / FRAME_REFERENCE.height
+        this.verticalRects[1].y = 100 * 76.5 / FRAME_REFERENCE.height
+        this.horizontalRect.y = 100 * 443.286 / FRAME_REFERENCE.height
     }
 }
 class Frame6RectFactory extends RectFactory
