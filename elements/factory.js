@@ -28,6 +28,7 @@ class ElementsFactory
             frame9Elements      : new Frame9ElementsFactory()       ,
             frame10Elements     : new Frame10ElementsFactory()      ,
             frame11Elements     : new Frame11ElementsFactory()      ,
+            frame12Elements     : new Frame12ElementsFactory()      ,
             horizontalTopRect   : new HorizontalTopRectFactory()    ,
             verticalGroundRect  : new VerticalGroundRectFactory()   ,
             verticalPairRects   : new VerticalPairRectsFactory()    ,
@@ -559,6 +560,108 @@ class Frame1ElementsFactory extends RectFactory
         return [
             ...this.greenRects.map(rect => this.createGreenRect(rect)),
             this.createBlueSquare()
+        ]
+    }
+}
+class Frame12ElementsFactory extends RectFactory
+{
+    constructor()
+    {
+        super()
+        // Bad-mode ceiling ends at 0.2 * height and ground starts at 2 * height
+        // of the 2.2 * height world.
+        this.ceilingBottom = FRAME_REFERENCE.height * 0.2 / 2.2
+        const groundTop = FRAME_REFERENCE.height * 2 / 2.2
+        const pillarTop = 137.5
+        // Pillars hang 60px above the ground, like Frame 1.
+        const pillarBottom = groundTop - 60
+        // Like Frame 1, the right pillar moves from 638.5 to 858.5. Interior
+        // centres are spread proportionally across the wider gap.
+        const innerLeft = 167.5 + 52
+        const spread = x => innerLeft + (x - innerLeft) * (858.5 - innerLeft) / (638.5 - innerLeft)
+        const pillar = x => (
+        {
+            x: 100 * x / FRAME_REFERENCE.width,
+            y: 100 * pillarTop / FRAME_REFERENCE.height,
+            width: 100 * 52 / FRAME_REFERENCE.width,
+            height: 100 * (pillarBottom - pillarTop) / FRAME_REFERENCE.height
+        })
+        this.greenRects =
+        [
+            pillar(167.5),
+            pillar(858.5),
+            {
+                x: 100 * (spread(397 + 53 / 2) - 53 / 2) / FRAME_REFERENCE.width,
+                y: 100 * 308 / FRAME_REFERENCE.height,
+                width: 100 * 53 / FRAME_REFERENCE.width,
+                height: 100 * 113 / FRAME_REFERENCE.height
+            }
+        ]
+        // Arrows in Frame 12: left cube launches up-right, right cube up-left.
+        this.blueSquares =
+        [
+            {left: 260, top: 210, directionX: 1},
+            {left: 525, top: 280, directionX: -1}
+        ].map(cube => (
+        {
+            x: 100 * (spread(cube.left + 96 / 2) - 96 / 2) / FRAME_REFERENCE.width,
+            y: 100 * cube.top / FRAME_REFERENCE.height,
+            width: 100 * 96 / FRAME_REFERENCE.width,
+            height: 100 * 98 / FRAME_REFERENCE.height,
+            // Aim 10px past the ceiling so the cube bounces off it.
+            launchArcHeightPercent: 100 * (cube.top - this.ceilingBottom + 10) / FRAME_REFERENCE.height,
+            directionX: cube.directionX
+        }))
+    }
+    createGreenRect(rect)
+    {
+        const worldWidth = frameWidthPercent(rect.width)
+        const worldHeight = frameHeightPercent(rect.height)
+
+        return new Trampoline(
+        {
+            x       : frameWidthPercent(rect.x),
+            y       : frameHeightPercent(rect.y),
+            points  :
+            [
+                {x: 0, y: 0},
+                {x: 0, y: worldHeight},
+                {x: worldWidth, y: worldHeight},
+                {x: worldWidth, y: 0}
+            ],
+            fill    : STYLE.colors.cube.greenFill,
+            stroke  : STYLE.colors.cube.greenStroke
+        })
+    }
+    createBlueSquare(rect)
+    {
+        const x = frameWidthPercent(rect.x)
+        const y = frameHeightPercent(rect.y)
+        const result = new JumpingCube(
+        {
+            x       : x,
+            y       : y,
+            width   : frameWidthPercent(rect.width),
+            height  : frameHeightPercent(rect.height),
+            fill    : STYLE.colors.cube.blueFill,
+            stroke  : STYLE.colors.cube.blueStroke
+        })
+
+        result.x = x
+        result.y = y
+        const speed = Math.sqrt(2 * GRAVITY * frameHeightPercent(rect.launchArcHeightPercent))
+        result.speedX = rect.directionX * speed
+        result.speedY = -speed
+        result.track.pos = []
+        result.track.addPos(result.x + result.circle.x, result.y + result.circle.y, true)
+
+        return result
+    }
+    create(x, y)
+    {
+        return [
+            ...this.greenRects.map(rect => this.createGreenRect(rect)),
+            ...this.blueSquares.map(rect => this.createBlueSquare(rect))
         ]
     }
 }
