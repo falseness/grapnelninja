@@ -240,9 +240,7 @@
             }
             function start()
             {
-                canvas.width = width
-                canvas.height = height
-                configureCanvasViewport(canvas)
+                configureCanvasViewport(canvas, ctx)
                 visualEffects = new VisualEffects(ctx, canvas)
                 
                 //generatePrimaryElements()

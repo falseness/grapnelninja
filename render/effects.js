@@ -16,13 +16,13 @@ class BackgroundRenderer
     }
     draw()
     {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+        this.ctx.clearRect(0, 0, LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height)
 
         if (!STYLE.features.background)
             return
 
-        const width = this.canvas.width
-        const height = this.canvas.height
+        const width = LOGICAL_VIEWPORT.width
+        const height = LOGICAL_VIEWPORT.height
 
         this.drawBaseGradient(width, height)
         this.drawGeometry(width, height)
@@ -30,13 +30,13 @@ class BackgroundRenderer
     }
     drawMenuBackground()
     {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+        this.ctx.clearRect(0, 0, LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height)
 
         if (!STYLE.features.background)
             return
 
-        const width = this.canvas.width
-        const height = this.canvas.height
+        const width = LOGICAL_VIEWPORT.width
+        const height = LOGICAL_VIEWPORT.height
 
         this.drawBaseGradient(width, height)
         this.drawBadVersionDepth(width, height, this.getMenuBackgroundGeometry(), 0, {forceStatic: true})
@@ -281,7 +281,7 @@ class BackgroundRenderer
         gradient.addColorStop(1, edgeColor)
 
         this.ctx.fillStyle = gradient
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+        this.ctx.fillRect(0, 0, LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height)
     }
     shouldFreezeBadVersionBackgroundMotion()
     {
@@ -689,8 +689,8 @@ class LightmapRenderer
     }
     resize()
     {
-        const nextWidth = Math.max(1, Math.ceil(this.canvas.width * this.scale))
-        const nextHeight = Math.max(1, Math.ceil(this.canvas.height * this.scale))
+        const nextWidth = Math.max(1, Math.ceil(LOGICAL_VIEWPORT.width * this.scale))
+        const nextHeight = Math.max(1, Math.ceil(LOGICAL_VIEWPORT.height * this.scale))
 
         if (this.lightCanvas.width == nextWidth && this.lightCanvas.height == nextHeight)
             return
@@ -731,8 +731,8 @@ class LightmapRenderer
     }
     drawAmbientLight()
     {
-        const viewWidth = this.canvas.width / scale[version]
-        const viewHeight = this.canvas.height / scale[version]
+        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
+        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
         const radius = Math.max(viewWidth, viewHeight) * STYLE.lights.ambientRadiusRatio
 
         this.drawRadialLight(
@@ -862,8 +862,8 @@ class LightmapRenderer
     }
     isScreenCircleVisible(circle)
     {
-        const viewWidth = this.canvas.width / scale[version]
-        const viewHeight = this.canvas.height / scale[version]
+        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
+        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
         const margin = circle.radius
 
         return circle.x > -margin
@@ -891,8 +891,8 @@ class LightmapRenderer
         if (!this.shouldDraw())
             return
 
-        const viewWidth = this.canvas.width / scale[version]
-        const viewHeight = this.canvas.height / scale[version]
+        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
+        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
         const badLights = this.getBadVersionLights()
         const stableLightMultiplier = STYLE.visualStability.stableBrightness
             ? STYLE.visualStability.stableLightCompositeMultiplier
@@ -1244,8 +1244,8 @@ class ParticleSystem
         const x = circle.x + screen.x
         const y = circle.y + screen.y
         const margin = circle.radius + STYLE.particles.maxSize
-        const viewWidth = this.canvas.width / scale[version]
-        const viewHeight = this.canvas.height / scale[version]
+        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
+        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
 
         return x > -margin && x < viewWidth + margin && y > -margin && y < viewHeight + margin
     }
