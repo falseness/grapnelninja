@@ -39,13 +39,11 @@ class JumpingCube extends Rect
                     top: Math.min(...points.map(point => point.y)),
                     bottom: Math.max(...points.map(point => point.y))
                 }
-                // Triangles move independently; reserve their full vertical travel,
-                // including the one-step overshoot of Triangle.changeSpeed().
-                if (element instanceof Triangle)
-                {
-                    bounds.top = Math.min(bounds.top, element.restrictionY.min - Math.abs(element.speedY))
-                    bounds.bottom = Math.max(bounds.bottom, element.restrictionY.max + Math.abs(element.speedY))
-                }
+                // Triangles move independently; pad by one step of their motion so the
+                // cube bounces off the triangle itself without penetrating it next step.
+                bounds.pad = element instanceof Triangle ? Math.abs(element.speedY) : 0
+                bounds.top -= bounds.pad
+                bounds.bottom += bounds.pad
                 obstacles.push(bounds)
             }
         }
@@ -58,7 +56,8 @@ class JumpingCube extends Rect
             const crossStart = vertical ? this.x : this.y
             const crossEnd = crossStart + (vertical ? this.width : this.height)
             let distance = this[speed]
-            let collided = false
+            let away = 0
+            let minAwaySpeed = 0
             for (const bounds of obstacles)
             {
                 const crossMin = vertical ? bounds.left : bounds.top
@@ -68,25 +67,35 @@ class JumpingCube extends Rect
                 const near = vertical ? bounds.top : bounds.left
                 const far = vertical ? bounds.bottom : bounds.right
                 const end = this[axis] + size
-                if (distance > 0 && end <= near && end + distance >= near)
+                // A moving triangle closes the gap by itself, so a cube inside its
+                // padding is in contact too and gets pushed out to the padded edge.
+                const pad = vertical ? bounds.pad : 0
+                if ((distance > 0 || pad > 0) && end <= near + pad && end + distance >= near)
                 {
-                    distance = Math.max(0, near - end - GAMEPLAY.cubeContactEpsilon)
-                    collided = true
+                    const stop = near - end - GAMEPLAY.cubeContactEpsilon
+                    distance = pad > 0 ? stop : Math.max(0, stop)
+                    away = -1
+                    minAwaySpeed = Math.max(minAwaySpeed, pad)
                 }
-                else if (distance < 0 && this[axis] >= far && this[axis] + distance <= far)
+                else if ((distance < 0 || pad > 0) && this[axis] >= far - pad && this[axis] + distance <= far)
                 {
-                    distance = Math.min(0, far - this[axis] + GAMEPLAY.cubeContactEpsilon)
-                    collided = true
+                    const stop = far - this[axis] + GAMEPLAY.cubeContactEpsilon
+                    distance = pad > 0 ? stop : Math.min(0, stop)
+                    away = 1
+                    minAwaySpeed = Math.max(minAwaySpeed, pad)
                 }
             }
             this[axis] += distance
             this[vertical ? 'dy' : 'dx'] = distance
-            if (collided)
+            if (away != 0 && Math.sign(this[speed]) != away)
             {
                 this[speed] *= -1
                 if (vertical)
                     this.speedY += this.speedY > 0 ? GRAVITY : -GRAVITY
             }
+            // Leave at least as fast as the triangle approaches, or it catches up.
+            if (away * this[speed] < minAwaySpeed)
+                this[speed] = away * minAwaySpeed
         }
     }
 }
