@@ -20,10 +20,11 @@ REFERENCE = (1120, 630)
 # Bad-mode ground top in reference pixels (2 * height of a 2.2 * height world).
 GROUND_TOP = REFERENCE[1] * 2 / 2.2
 # Rects: x, y, width, height. Derived from screenshots/Frame 1.svg, then changed:
-# taller pillars reaching the ground, 1.5x pillar gap, 3x cube side.
+# taller pillars ending 60px above the ground, 1.5x pillar gap, 3x cube side.
+PILLAR_BOTTOM = GROUND_TOP - 60
 SVG = {
-    'leftPillar': (164.5, 137.5, 52, GROUND_TOP - 137.5),
-    'rightPillar': (858.5, 137.5, 52, GROUND_TOP - 137.5),
+    'leftPillar': (164.5, 137.5, 52, PILLAR_BOTTOM - 137.5),
+    'rightPillar': (858.5, 137.5, 52, PILLAR_BOTTOM - 137.5),
     'cube': (330, 387, 153, 156),
 }
 TOLERANCE = 1e-6

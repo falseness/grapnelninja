@@ -507,6 +507,9 @@ class Frame1ElementsFactory extends RectFactory
         const ceilingBottom = FRAME_REFERENCE.height * 0.2 / 2.2
         const groundTop = FRAME_REFERENCE.height * 2 / 2.2
         const pillarTop = 137.5
+        // Pillars hang 60px above the ground; the gap is lower than the cube,
+        // so the cube still cannot slip under them.
+        const pillarBottom = groundTop - 60
         const cubeTop = 387
         // Aim 10px past the ceiling so the cube bounces off it. The cube is taller
         // than the ceiling-to-pillar-top gap, so it still cannot clear the pillars.
@@ -517,13 +520,13 @@ class Frame1ElementsFactory extends RectFactory
                 x: 100 * 164.5 / FRAME_REFERENCE.width,
                 y: 100 * pillarTop / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
-                height: 100 * (groundTop - pillarTop) / FRAME_REFERENCE.height
+                height: 100 * (pillarBottom - pillarTop) / FRAME_REFERENCE.height
             },
             {
                 x: 100 * 858.5 / FRAME_REFERENCE.width,
                 y: 100 * pillarTop / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
-                height: 100 * (groundTop - pillarTop) / FRAME_REFERENCE.height
+                height: 100 * (pillarBottom - pillarTop) / FRAME_REFERENCE.height
             }
         ]
         this.blueSquare =
