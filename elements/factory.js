@@ -227,7 +227,7 @@ class Frame5RectFactory extends RectFactory
                 height: 100 * 266 / FRAME_REFERENCE.height
             },
             {
-                x: 100 * 333.5 / FRAME_REFERENCE.width,
+                x: 100 * 393.5 / FRAME_REFERENCE.width,
                 y: 100 * 188.5 / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
                 height: 100 * 365 / FRAME_REFERENCE.height
@@ -235,10 +235,10 @@ class Frame5RectFactory extends RectFactory
         ]
         this.horizontalRect =
         {
-            x: 100 * 386.935 / FRAME_REFERENCE.width,
+            x: 100 * 446.935 / FRAME_REFERENCE.width,
             y: 100 * 232.654 / FRAME_REFERENCE.height,
             width: 100 * 42.9148 / FRAME_REFERENCE.height,
-            height: 100 * 186.553 / FRAME_REFERENCE.height,
+            height: 100 * 126.553 / FRAME_REFERENCE.height,
             rotation: -90.5738
         }
     }
