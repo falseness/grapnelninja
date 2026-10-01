@@ -309,21 +309,26 @@ class Frame6RectFactory extends RectFactory
     constructor()
     {
         super()
-        // Doubled gap to ceiling (ends at ~57.27) and floor (starts at ~572.73).
-        const edgeGap = 19.227
+        // Bad-mode ceiling ends at 0.2 * height and ground starts at 2 * height
+        // of the 2.2 * height world. Pillars touch them; the passage between
+        // them keeps the Frame 6 position (182.5 to 381.5).
+        const ceilingBottom = FRAME_REFERENCE.height * 0.2 / 2.2
+        const groundTop = FRAME_REFERENCE.height * 2 / 2.2
+        const passageTop = 182.5
+        const passageBottom = 381.5
         this.rects =
         [
             {
                 x: 100 * 359.5 / FRAME_REFERENCE.width,
-                y: 100 * (76.5 + edgeGap) / FRAME_REFERENCE.height,
+                y: 100 * ceilingBottom / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
-                height: 100 * (106 - edgeGap) / FRAME_REFERENCE.height
+                height: 100 * (passageTop - ceilingBottom) / FRAME_REFERENCE.height
             },
             {
                 x: 100 * 359.5 / FRAME_REFERENCE.width,
-                y: 100 * 381.5 / FRAME_REFERENCE.height,
+                y: 100 * passageBottom / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
-                height: 100 * (172 - edgeGap) / FRAME_REFERENCE.height
+                height: 100 * (groundTop - passageBottom) / FRAME_REFERENCE.height
             }
         ]
     }
