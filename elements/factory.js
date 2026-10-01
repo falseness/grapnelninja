@@ -380,6 +380,11 @@ class Frame4ElementsFactory extends RectFactory
     constructor()
     {
         super()
+        // Bad-mode ceiling ends at 0.2 * height of the 2.2 * height world.
+        const ceilingBottom = FRAME_REFERENCE.height * 0.2 / 2.2
+        const cubeTop = 165
+        // Aim 10px past the ceiling so the cube bounces between it and the green segment.
+        this.launchArcHeightPercent = 100 * (cubeTop - ceilingBottom + 10) / FRAME_REFERENCE.height
         this.greenSegment =
         {
             x: 100 * 252 / FRAME_REFERENCE.width,
@@ -391,7 +396,7 @@ class Frame4ElementsFactory extends RectFactory
         this.blueSquare =
         {
             x: 100 * 368 / FRAME_REFERENCE.width,
-            y: 100 * 165 / FRAME_REFERENCE.height,
+            y: 100 * cubeTop / FRAME_REFERENCE.height,
             width: 100 * 51 / FRAME_REFERENCE.width,
             height: 100 * 52 / FRAME_REFERENCE.height
         }
@@ -453,7 +458,7 @@ class Frame4ElementsFactory extends RectFactory
         // Undo constructor warm-up steps run before the green segment existed.
         result.x = x
         result.y = y
-        result.speedY = 0
+        result.speedY = -Math.sqrt(2 * GRAVITY * frameHeightPercent(this.launchArcHeightPercent))
         result.track.pos = []
         result.track.addPos(result.x + result.circle.x, result.y + result.circle.y, true)
 
