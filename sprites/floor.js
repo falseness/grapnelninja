@@ -229,6 +229,18 @@ class SideFloor extends Floor
             let t = this.elements[this.elements.length - 1]
             nextElementX = t.getRightPointX()
         }
+        this.replenishElements()
+    }
+    replenishElements()
+    {
+        // Obstacles are generated up to 2 viewports ahead and a group can stick
+        // out by up to one more, so the surface must reach 3 viewports ahead;
+        // otherwise cubes spawned past its end fall out of the world.
+        const targetRight = -screen.x + 3 * width / scale[version]
+        while (this.elements[this.elements.length - 1].getRightPointX() < targetRight)
+        {
+            this.generateElements(this.elements[this.elements.length - 1].getRightPointX())
+        }
     }
     deleteElements()
     {
