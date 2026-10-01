@@ -5,19 +5,11 @@ function pauseTimeInGame() {
     let thisTime = Math.floor(new Date().getTime() / 1000)
     let delta = Math.floor(thisTime - time)
 
-    let newTime = delta
-    if (!!localStorage.getItem('time')) {
-        let oldTime = Number(localStorage.getItem('time'))
-        newTime += oldTime
-    }
-    localStorage.setItem('time', newTime)
+    if (Number.isFinite(delta) && delta > 0)
+        PROGRESS.setTime(PROGRESS.getTime() + delta)
 }
 function getTimeInGame() {
-    let t = 0
-    if (!!localStorage.getItem('time')) {
-        t += Number(localStorage.getItem('time'))
-    }
-    return Math.floor(t / 60)
+    return Math.floor(PROGRESS.getTime() / 60)
 }
 
 class Text
@@ -509,6 +501,7 @@ class Menu
         function()
         {
             CG.gameplayStop()
+            PROGRESS.saveRecords()
             menu.changeGamePause(false)
     
             menu.setVisible(true)
@@ -645,6 +638,7 @@ class Menu
     {
         if (reason != 'blur')
             CG.gameplayStop()
+        PROGRESS.saveRecords()
         pauseTimeInGame()
         this.timeInGame.text = 'time spent in game: ' + getTimeInGame() + ' minutes'
 

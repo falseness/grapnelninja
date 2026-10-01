@@ -65,7 +65,8 @@ class CrazyGamesSdkBootTests(unittest.TestCase):
         """(a) fake SDK: [init, loadingStart, loadingStop]; init resolves before menu draws."""
         page, _ = self.boot()
         page.wait_for_function('CG.environment !== "pending"')
-        calls = sdk_calls(page)
+        # Progress loading (TASK-074) also reads data.*; only lifecycle calls matter here
+        calls = [c for c in sdk_calls(page) if not c['name'].startswith('data.')]
         names = [c['name'] for c in calls]
         self.assertEqual(names, ['init', 'game.loadingStart', 'game.loadingStop'])
         resolved = page.evaluate('window.__cgFake.initResolvedAt')

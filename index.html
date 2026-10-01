@@ -21,6 +21,7 @@
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
         <script src = "crazygames.js"></script>
+        <script src = "progress.js"></script>
         <script src = 'menu.js'></script>
     
         <script src = "collision/circlewithcircle.js"></script>
@@ -74,6 +75,7 @@
             {
                 CG.loadingStart()
                 await CG.init()
+                PROGRESS.load()
                 start()
                 CG.loadingStop()
             }
@@ -134,6 +136,7 @@
             }
             function reStart()
             {
+                PROGRESS.saveRecords()
                 if (visualEffects && ninja && screen)
                 {
                     visualEffects.screenEffects.triggerDeath(ninja.x + screen.x, ninja.y + screen.y)
