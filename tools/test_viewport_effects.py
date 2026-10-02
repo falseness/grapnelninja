@@ -27,6 +27,8 @@ class ViewportEffectsTests(unittest.TestCase):
             ['git', 'ls-tree', '-r', '--name-only', 'a6b41aa'],
             cwd=ROOT, text=True).splitlines()
         cls.baseline = load_baseline_sources('a6b41aa', files)
+        # TASK-112 capitalised the menu title on purpose; apply it to the baseline too
+        cls.baseline['menu.js'] = cls.baseline['menu.js'].replace(b"'Grapnel ninja'", b"'Grapnel Ninja'")
 
     def sample(self, mode, baseline):
         page = self.browser.new_page(viewport={'width': 1920, 'height': 1080})

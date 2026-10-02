@@ -334,7 +334,7 @@ class Menu
         {
             fill    : STYLE.colors.ui.title,
             fontSize: 0.075 * this.width,
-            text    : 'Grapnel ninja'   ,
+            text    : 'Grapnel Ninja'   ,
             x       : this.center.x     ,
             y       : 0.2 * this.height
         })
@@ -532,7 +532,7 @@ class Menu
     }
     getPauseTitleFontSize(panel)
     {
-        const text = 'Grapnel ninja'
+        const text = 'Grapnel Ninja'
         const maxWidth = Math.max(1, panel.width - Math.max(this.width * STYLE.ui.pauseMarginWidthPercent / 100, this.width * 0.12))
         const preferredSize = Math.min(this.width * 0.075, panel.height * 0.14)
 
@@ -552,7 +552,7 @@ class Menu
         {
             fill    : STYLE.colors.ui.title,
             fontSize: this.getPauseTitleFontSize(panel),
-            text    : 'Grapnel ninja',
+            text    : 'Grapnel Ninja',
             x       : this.center.x,
             y       : panel.y + panel.height * 0.14
         })
