@@ -54,6 +54,12 @@ const defaultEqualityTolerance = 1
 
 // A lethal death offers a continue once per run, from this score on.
 const CONTINUE_MIN_SCORE = 5
+// After a continue the ninja ignores lethal hits for this much physics time
+// and blinks; the respawn zone is kept clear for a margin beyond it.
+const RESPAWN_INVULNERABLE_MS = 2000
+const RESPAWN_SAFE_MARGIN_MS = 1000
+const RESPAWN_BLINK_MS = 125
+const RESPAWN_BLINK_ALPHA = 0.25
 
 // Largest centred CSS rectangle of the logical aspect that fits the window.
 function getCanvasCssRect()

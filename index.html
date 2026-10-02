@@ -55,6 +55,7 @@
         <script src = "sprites/side.js"></script>
         
         <script src = "physics.js"></script>
+        <script src = "respawn.js"></script>
         
         <script src = "moveScreen.js"></script>
         
@@ -165,7 +166,7 @@
             // otherwise restart instantly. The offer freezes physics.
             function onLethalDeath()
             {
-                if (continueOffer.visible)
+                if (continueOffer.visible || ninja.isInvulnerable())
                     return
                 if (continueUsed || scoreText.count[version] < CONTINUE_MIN_SCORE)
                 {
@@ -176,12 +177,13 @@
                 PROGRESS.saveRecords()
                 continueOffer.show()
             }
-            // Placeholder until the safe respawn and the rewarded ad land:
-            // only resumes physics.
+            // Keeps score, version, floors and screen; the ninja respawns at
+            // rest at a safe point with temporary invulnerability (no ad yet).
             function continueRun()
             {
                 continueUsed = true
                 continueOffer.hide()
+                respawnNinja()
                 resetPhysicsTiming()
                 CG.gameplayStart()
             }

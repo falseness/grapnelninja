@@ -226,9 +226,7 @@ class CrazyGamesContinueTests(unittest.TestCase):
         self.assertEqual(gameplay_events(page), [START, STOP, START, STOP])
         print('  ASSERT (e) eligible again after restart: pass', file=sys.stderr)
 
-        # Continue (placeholder): resumes physics. Put the ninja back as the
-        # TASK-081 respawn will, so it does not die again at once.
-        page.evaluate('() => { ninja.x = window.__pin.x; ninja.y = window.__pin.y }')
+        # Continue: the ninja respawns at a safe point and resumes physics
         self.click_button(page, 'continueButton')
         page.wait_for_timeout(300)
         s = state(page)
@@ -237,6 +235,8 @@ class CrazyGamesContinueTests(unittest.TestCase):
         self.assertEqual(gameplay_events(page), [START, STOP, START, STOP, START])
 
         # (d) a second eligible death in the same run restarts instantly
+        # (once the respawn invulnerability has run out)
+        page.wait_for_function('!ninja.isInvulnerable()')
         self.kill(page, 7)
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 3, 0))
@@ -257,7 +257,6 @@ class CrazyGamesContinueTests(unittest.TestCase):
         self.assertEqual(gameplay_events(page), [START, STOP, START])
 
         self.kill(page, 5)
-        page.evaluate('() => { ninja.x = window.__pin.x; ninja.y = window.__pin.y }')
         self.tap_button(page, 'continueButton')
         s = state(page)
         self.assertEqual((s['offer'], s['continueUsed']), (False, True))

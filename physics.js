@@ -10,6 +10,7 @@ function physics()
     }
     firstCycleInThisTick = true
     calcPhysics()
+    ninja.tickInvulnerability(physicsStepMs)
 }
 function calcPhysics()
 {
