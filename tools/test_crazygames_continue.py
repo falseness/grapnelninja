@@ -228,7 +228,8 @@ class CrazyGamesContinueTests(unittest.TestCase):
 
         # Continue: the ninja respawns at a safe point and resumes physics
         self.click_button(page, 'continueButton')
-        page.wait_for_timeout(300)
+        # Continue is asynchronous since the rewarded ad (TASK-082)
+        page.wait_for_function('!continueOffer.visible')
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score'], s['continueUsed']),
                          (False, 2, 6, True))
@@ -258,6 +259,7 @@ class CrazyGamesContinueTests(unittest.TestCase):
 
         self.kill(page, 5)
         self.tap_button(page, 'continueButton')
+        page.wait_for_function('!continueOffer.visible')
         s = state(page)
         self.assertEqual((s['offer'], s['continueUsed']), (False, True))
         self.assertEqual(gameplay_events(page), [START, STOP, START, STOP, START])
