@@ -2,17 +2,22 @@
 
   python3 tools/make_preview_video.py --out artifacts/TASK-086/videos
 
-Replays the best TASK-084 autopilot seed (bad mode, seed 4) tick by tick with
-no requestAnimationFrame: two physics() ticks per video frame, then draw()
-and a canvas PNG, so the clip plays at exactly 30 fps on any machine. The
-canvas is rendered once at 2880x1620 (1920x1080 viewport, DPR 1.5, the
+Replays the best TASK-084 autopilot seed (classic mode, seed 1) tick by tick
+with no requestAnimationFrame: two physics() ticks per video frame, then
+draw() and a canvas PNG, so the clip plays at exactly 30 fps on any machine.
+The canvas is rendered once at 2880x1620 (1920x1080 viewport, DPR 1.5, the
 viewport the seeds were recorded at, so the replay stays deterministic).
-Both videos are cut from those frames inside the playfield band (bad mode
-draws flat near-black bands above and below it), following the ninja with a
+Classic keeps the ninja at a fixed screen x for the whole window, so it never
+falls behind the camera (bad seed 4 does, for seconds at a time). Both videos
+are cut from those frames inside the mode's crop band (bad mode draws flat
+near-black bands above and below its playfield), following the ninja with a
 smoothed crop:
 
-  preview-1920x1080.mp4  16:9 crop, downscaled
-  preview-1080x1620.mp4  2:3 crop, upscaled (the 1620 px canvas minus the bands)
+  preview-1920x1080.mp4  16:9 crop (the whole classic canvas), downscaled
+  preview-1080x1620.mp4  2:3 crop, 1:1 pixels in classic
+
+The tool fails if the ninja is ever outside a crop box (or the canvas) or the
+score resets, and logs the off-crop frame count (must be 0).
 
 Each video opens with the matching TASK-085 cover for 0.5 s, then cuts
 straight into gameplay. H.264 (yuv420p) via imageio-ffmpeg, no audio stream.
@@ -33,9 +38,14 @@ from make_covers import AUTOPILOT, PLAYFIELD, ROOT, VIEWPORT
 FPS = 30
 TICKS_PER_FRAME = 60 // FPS
 DPR = 1.5  # 2880x1620 canvas (the 1920x1080 viewport the seeds were recorded at)
-# Bad seed 4 hovers in front of the first frame for ~5 s; start after that.
-START_TICK = 300
-END_TICK = 1320
+# Classic seed 1 settles at its fixed screen x by tick 60; 1020 ticks = 17 s.
+MODE = 'classic'
+START_TICK = 180
+END_TICK = 1200
+# Vertical band (fractions of the canvas height) the crops stay inside
+CROP_BAND = {'classic': (0.0, 1.0), 'bad': PLAYFIELD}
+# The ninja point must stay this far (fraction of the crop size) inside every crop
+NINJA_MARGIN = 0.03
 COVER_SECONDS = 0.5
 # Crop centre = ninja x + LEAD * crop width, so the obstacles ahead stay in view
 LEAD = {'landscape': 0.1, 'portrait': 0.15}
@@ -116,14 +126,20 @@ def smooth(values, radius):
     return out
 
 
-def crop_box(image_size, center_x, aspect):
-    """Largest crop of aspect w/h inside the playfield band, centred on center_x px."""
+def crop_box(image_size, center_x, aspect, band):
+    """Largest crop of aspect w/h inside the vertical band, centred on center_x px."""
     iw, ih = image_size
-    top, bottom = round(PLAYFIELD[0] * ih), round(PLAYFIELD[1] * ih)
+    top, bottom = round(band[0] * ih), round(band[1] * ih)
     cw = round((bottom - top) * aspect)
     cx = min(max(center_x, cw / 2), iw - cw / 2)
     left = round(cx - cw / 2)
     return left, top, left + cw, bottom
+
+
+def inside(box, point, margin):
+    left, top, right, bottom = box
+    mx, my = margin * (right - left), margin * (bottom - top)
+    return left + mx <= point[0] <= right - mx and top + my <= point[1] <= bottom - my
 
 
 def encode(meta, frames_dir, covers_dir, out):
@@ -133,8 +149,21 @@ def encode(meta, frames_dir, covers_dir, out):
     out.mkdir(parents=True, exist_ok=True)
     frames = meta['frames']
     first = Image.open(frames_dir / frames[0]['file'])
-    iw = first.width
+    iw, ih = first.size
+    band = CROP_BAND[meta['mode']]
     xs = smooth([f['ninja'][0] * iw for f in frames], FPS)
+    # Plan every crop first, so a ninja that leaves the frame fails before encoding
+    boxes = {}
+    for name, video in VIDEOS.items():
+        w, h = video['size']
+        boxes[name] = [crop_box((iw, ih), x + LEAD[name] * (band[1] - band[0]) * ih * w / h, w / h, band)
+                       for x in xs]
+        off = [f['frame'] for f, box in zip(frames, boxes[name])
+               if not inside(box, (f['ninja'][0] * iw, f['ninja'][1] * ih), NINJA_MARGIN)]
+        print(f'{name}: ninja outside the crop (margin {NINJA_MARGIN}) in {len(off)} of {len(frames)} frames'
+              + (f': {off[:10]}' if off else ''), flush=True)
+        if off:
+            raise SystemExit(f'{name}: ninja leaves the crop in {len(off)} frames, first {off[0]}')
     crops = {}
     for name, video in VIDEOS.items():
         w, h = video['size']
@@ -148,17 +177,17 @@ def encode(meta, frames_dir, covers_dir, out):
         cover_bytes = np.asarray(cover).tobytes()
         for _ in range(round(COVER_SECONDS * FPS)):
             writer.send(cover_bytes)
-        boxes = []
-        for frame, x in zip(frames, xs):
-            image = Image.open(frames_dir / frame['file']).convert('RGB')
-            box = crop_box(image.size, x + LEAD[name] * (PLAYFIELD[1] - PLAYFIELD[0]) * image.height * w / h,
-                           w / h)
-            boxes.append(box)
-            writer.send(np.asarray(image.crop(box).resize((w, h), Image.LANCZOS)).tobytes())
+        for frame, box in zip(frames, boxes[name]):
+            image = Image.open(frames_dir / frame['file']).convert('RGB').crop(box)
+            if image.size != (w, h):
+                image = image.resize((w, h), Image.LANCZOS)
+            writer.send(np.asarray(image).tobytes())
         writer.close()
+        box = boxes[name][0]
         crops[name] = {'file': path.name, 'size': [w, h], 'cover_frames': round(COVER_SECONDS * FPS),
                        'gameplay_frames': len(frames), 'crop_size': [box[2] - box[0], box[3] - box[1]],
-                       'crop_left_range': [min(b[0] for b in boxes), max(b[0] for b in boxes)]}
+                       'crop_band': list(band), 'ninja_margin': NINJA_MARGIN, 'ninja_off_crop_frames': 0,
+                       'crop_left_range': [min(b[0] for b in boxes[name]), max(b[0] for b in boxes[name])]}
         print(f'{path.name}: {(path.stat().st_size)} bytes, {crops[name]}', flush=True)
     return crops
 
@@ -168,7 +197,7 @@ def main():
     parser.add_argument('--out', required=True)
     parser.add_argument('--seeds', default=str(ROOT / 'artifacts/TASK-084/seed-search.json'))
     parser.add_argument('--covers', default=str(ROOT / 'artifacts/TASK-085/covers'))
-    parser.add_argument('--mode', default='bad')
+    parser.add_argument('--mode', default=MODE)
     parser.add_argument('--start-tick', type=int, default=START_TICK)
     parser.add_argument('--end-tick', type=int, default=END_TICK)
     parser.add_argument('--skip-capture', action='store_true',
