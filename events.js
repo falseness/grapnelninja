@@ -76,7 +76,8 @@ function createEvents()
     function touch(event)
     {
         event.preventDefault()
-        if (!grapnel.throwed)
+        // No grapnel before the first run: a menu tap must still reach click()
+        if (!grapnel || !grapnel.throwed)
         {
             click(event)
         }

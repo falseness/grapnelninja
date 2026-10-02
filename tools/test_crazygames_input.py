@@ -112,6 +112,18 @@ class CrazyGamesInputTests(unittest.TestCase):
             page.screenshot(path=str(self.out() / 'touch-gameplay.png'))
         print('  ASSERT one tap -> exactly 1 grapnel throw: pass', file=sys.stderr)
 
+    def test_first_tap_on_menu_starts_game(self):
+        # A fresh load has no grapnel yet; the tap must reach the menu button
+        context, page, errors = open_touch_game(self.browser, self.url)
+        self.track(context, errors)
+        self.assertTrue(page.evaluate('typeof grapnel == "undefined"'))
+        c = page.evaluate('''(() => { const b = menu.classicVersionButton.background
+            return {x: b.x + b.width / 2, y: b.y + b.height / 2} })()''')
+        point = canvas_to_viewport(page, c['x'], c['y'])
+        page.touchscreen.tap(point['x'], point['y'])
+        page.wait_for_function('!menu.visible && version === "classic"', timeout=5000)
+        print('\n  ASSERT first menu tap starts classic, no page error: pass', file=sys.stderr)
+
     def test_default_prevented(self):
         page = self.boot_desktop()
         result = page.evaluate('''() => {
