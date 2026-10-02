@@ -17,9 +17,9 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gamepix_harness import (canvas_to_viewport, click_canvas, collect_errors, open_game,
-                             route_fake_sdk, sdk_calls, sdk_errors, set_fake_config,
-                             start_gamepix_test)
+from gamepix_harness import (canvas_to_viewport, click_canvas, collect_errors, fire,
+                             open_game, route_fake_sdk, sdk_calls, sdk_errors,
+                             set_fake_config, start_gamepix_test)
 import test_continue as continue_test
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -77,6 +77,17 @@ def offer_text(s):
     return WATCH_LABEL if s['watchVisible'] else s['notice']
 
 
+# Fake the Page Visibility API state and fire visibilitychange
+SET_VISIBILITY = '''(state) => {
+    Object.defineProperty(document, 'visibilityState',
+        {configurable: true, get: () => state})
+    Object.defineProperty(document, 'hidden',
+        {configurable: true, get: () => state === 'hidden'})
+    document.dispatchEvent(new Event('visibilitychange'))
+}'''
+PORTRAIT = {'width': 390, 'height': 844}
+SMALL = {'width': 800, 'height': 450}
+
 LABELS = '''() => ({watch: continueOffer.continueButton.text.text,
     restart: continueOffer.restartButton.text.text})'''
 
@@ -88,6 +99,7 @@ class GamePixRewardedTests(unittest.TestCase):
         cls.evidence = os.environ.get('GAMEPIX_REWARDED_EVIDENCE_DIR')
         cls.errors = []
         cls.matrix = {}
+        cls.edges = {}
 
     @classmethod
     def tearDownClass(cls):
@@ -101,10 +113,13 @@ class GamePixRewardedTests(unittest.TestCase):
                     line + '\n' for line in lines))
             (out / 'outcome-matrix.json').write_text(
                 json.dumps(cls.matrix, indent=1, sort_keys=True) + '\n')
+            if cls.edges:
+                (out / 'edge-matrix.json').write_text(json.dumps(
+                    [cls.edges[k] for k in sorted(cls.edges)], indent=1) + '\n')
 
-    def boot(self, fake=None, block_sdk=False, touch=False):
+    def boot(self, fake=None, block_sdk=False, touch=False, viewport=VIEWPORT):
         if touch:
-            context = self.browser.new_context(viewport=VIEWPORT, has_touch=True)
+            context = self.browser.new_context(viewport=viewport, has_touch=True)
             route_fake_sdk(context)
             set_fake_config(context, fake)
             page = context.new_page()
@@ -112,7 +127,7 @@ class GamePixRewardedTests(unittest.TestCase):
             page.goto(self.url + 'index.html')
         else:
             context, page, errors = open_game(self.browser, self.url + 'index.html',
-                                              VIEWPORT, fake, block_sdk)
+                                              viewport, fake, block_sdk)
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
@@ -130,6 +145,7 @@ class GamePixRewardedTests(unittest.TestCase):
             menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2})
         }''')
         page.wait_for_timeout(300)
+        self.context = context
         return page
 
     def state(self, page):
@@ -356,6 +372,278 @@ class GamePixRewardedTests(unittest.TestCase):
         page.wait_for_function('!continueOffer.visible', timeout=30000)
         self.assertEqual(reward_ads(page), 1)
         log(f'ASSERT {len(points)} mousedowns + taps during ad: no grapnel, frozen: pass')
+
+
+    # Edge cases (TASK-107). Every boot() asserts no console/page errors and
+    # an empty window.__fakeGamePix.errors list in cleanup.
+
+    def edge(self, case, expected, observed):
+        self.edges[case] = {'case': case, 'test': self._testMethodName,
+                            'expected': expected, 'observed': observed}
+
+    def watch(self, page):
+        """Click Watch ad and wait until GamePix.rewardAd was called."""
+        self.click_button(page, 'continueButton')
+        page.wait_for_function(
+            'window.__fakeGamePix.calls.some(c => c.name == "rewardAd")')
+
+    def wait_respawn(self, page):
+        page.wait_for_function('!continueOffer.visible', timeout=40000)
+        page.wait_for_timeout(150)
+        return self.state(page)
+
+    def assert_plays_on(self, page, ms=1000):
+        """The run keeps going: ticks advance, no restart, no offer."""
+        ticks = self.state(page)['ticks']
+        page.wait_for_timeout(ms)
+        s = self.state(page)
+        self.assertGreater(s['ticks'], ticks + 5)
+        self.assertEqual((s['offer'], s['reStarts']), (False, 0))
+        return s
+
+    def test_g01_double_click_and_double_tap_one_ad(self):
+        observed = {}
+        for kind in ('dblclick', 'doubletap'):
+            page = self.boot({'reward': 'success', 'rewardDelayMs': 1500},
+                             touch=kind == 'doubletap')
+            self.kill(page)
+            c = self.center(page, 'continueButton')
+            p = canvas_to_viewport(page, c['x'], c['y'])
+            if kind == 'dblclick':
+                page.mouse.dblclick(round(p['x']), round(p['y']))
+            else:
+                page.touchscreen.tap(round(p['x']), round(p['y']))
+                page.touchscreen.tap(round(p['x']), round(p['y']))
+            after = self.wait_respawn(page)
+            observed[kind] = {'rewardAd': reward_ads(page), 'errors': sdk_errors(page),
+                              'respawns': after['respawns']}
+            self.assertEqual(observed[kind], {'rewardAd': 1, 'errors': [], 'respawns': 1})
+        self.edge(1, 'rewardAd x1, fake errors [], respawns 1 for dblclick and double tap',
+                  observed)
+        log(f'ASSERT dblclick/double tap -> {observed}: pass')
+
+    def test_g02_restart_during_pending_ad_no_respawn_into_new_run(self):
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 1500})
+        self.kill(page)
+        self.watch(page)
+        # The Restart button is disabled while the ad is pending
+        self.click_button(page, 'restartButton')
+        self.wait_input(page)
+        s = self.state(page)
+        self.assertEqual((s['offer'], s['adPending'], s['reStarts']), (True, True, 0))
+        # Force a restart anyway (the offer's Restart callback)
+        page.evaluate('restartFromOffer()')
+        page.wait_for_timeout(2000)
+        s = self.state(page)
+        self.assertEqual((s['offer'], s['respawns'], s['reStarts'], s['score'],
+                          s['continueUsed']), (False, 0, 1, 0, False))
+        # The new run still gets its own working continue
+        self.kill(page)
+        self.assert_offer(page)
+        self.click_button(page, 'continueButton')
+        after = self.wait_respawn(page)
+        self.assertEqual((after['respawns'], reward_ads(page)), (1, 2))
+        self.edge(2, 'Restart click ignored while pending; forced restart -> late success '
+                     'does not respawn; new run continue works',
+                  {'clickIgnored': True, 'respawnsAfterLateSuccess': s['respawns'],
+                   'newRunRespawns': after['respawns'], 'rewardAd': reward_ads(page)})
+        log('ASSERT Restart during pending ad: late success ignored in the new run: pass')
+
+    def test_g03_result_after_watchdog_ignored(self):
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 2000})
+        page.evaluate('PLATFORM.rewardPlayingTimeoutMs = 600')
+        self.kill(page)
+        before = self.state(page)
+        self.watch(page)
+        page.wait_for_function('continueOffer.adFailed', timeout=10000)
+        page.wait_for_function('performance.now() - window.__fakeGamePix.calls'
+                               '.find(c => c.name == "rewardAd").t > 2600')
+        s = self.assert_no_reward(page, before)
+        self.edge(3, 'watchdog -> "Ad unavailable"; later success ignored, no respawn',
+                  {'notice': s['notice'], 'respawns': s['respawns'], 'offer': s['offer']})
+        log('ASSERT result after watchdog ignored: pass')
+
+    def test_g04_long_20s_ad_respawns(self):
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 20000})
+        self.kill(page)
+        self.watch(page)
+        page.wait_for_timeout(10000)
+        self.assertTrue(self.state(page)['adPending'])
+        after = self.wait_respawn(page)
+        start = [c for c in sdk_calls(page) if c['name'] == 'rewardAd'][0]['t']
+        took = page.evaluate('performance.now()') - start
+        self.assertGreater(took, 19000)
+        self.assertEqual((after['respawns'], after['score'], after['invulnerable']),
+                         (1, 6, True))
+        self.assert_plays_on(page, 500)
+        self.edge(4, '20 s success -> respawn, score kept',
+                  {'adMs': round(took), 'respawns': after['respawns'], 'score': after['score']})
+        log(f'ASSERT 20 s ad ({took:.0f} ms) respawns: pass')
+
+    def paused_after_ad(self, page, case, how):
+        self.kill(page)
+        self.watch(page)
+        if how == 'hidden':
+            page.evaluate(SET_VISIBILITY, 'hidden')
+        else:
+            fire(page, 'pause')
+        after = self.wait_respawn(page)
+        if how == 'hidden':
+            page.evaluate(SET_VISIBILITY, 'visible')
+        paused = page.evaluate('menu.gamePaused')
+        self.save(page, f'paused-after-ad-{how}')
+        self.assertTrue(paused, f'{how} during the ad: run not paused after the respawn')
+        self.assertEqual(after['respawns'], 1)
+        # Frozen behind the pause overlay
+        inv = page.evaluate('ninja.invulnerableMs')
+        page.wait_for_timeout(600)
+        self.assertEqual(self.state(page)['ticks'], after['ticks'])
+        self.assertEqual(page.evaluate('ninja.invulnerableMs'), inv)
+        # Resume from the overlay: invulnerability left, no instant death
+        page.evaluate('''() => { const b = menu.resume.background
+            menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2}) }''')
+        self.assertFalse(page.evaluate('menu.gamePaused'))
+        self.assertGreater(inv, 1500)
+        s = self.assert_plays_on(page)
+        self.edge(case, f'{how} during ad -> paused overlay after the ad, frozen, '
+                        'resume -> no death',
+                  {'pausedAfterAd': paused, 'invulnerableMsAtResume': inv,
+                   'reStarts': s['reStarts'], 'respawns': s['respawns']})
+        log(f'ASSERT {how} during ad -> paused after the ad, resume plays on: pass')
+
+    def test_g05_hidden_during_ad_pauses_after(self):
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 1500})
+        self.paused_after_ad(page, 5, 'hidden')
+
+    def test_g06_sdk_pause_during_ad_pauses_after(self):
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 1500})
+        self.paused_after_ad(page, 6, 'sdk-pause')
+
+    def test_g07_resize_during_ad_respawn_safe(self):
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 2000})
+        self.kill(page)
+        self.watch(page)
+        rect = 'canvas.getBoundingClientRect().width'
+        before = page.evaluate(rect)
+        page.set_viewport_size(SMALL)
+        # 1280x720 and 800x450 share 16:9: the logical width stays, the CSS size shrinks
+        page.wait_for_function(f'{rect} < {before} && continueOffer.panel.width > 0',
+                               timeout=5000)
+        page.wait_for_timeout(300)
+        after_css = page.evaluate(rect)
+        self.assertTrue(self.state(page)['adPending'])
+        after = self.wait_respawn(page)
+        self.save(page, 'resize-during-ad')
+        pos = page.evaluate('''() => ({x: ninja.x + screen.x, y: ninja.y + screen.y,
+            width: width, height: height})''')
+        self.assertTrue(0 < pos['x'] < pos['width'] and 0 < pos['y'] < pos['height'], pos)
+        self.assertEqual((after['respawns'], after['invulnerable']), (1, True))
+        self.assert_plays_on(page)
+        self.edge(7, 'resize 1280x720 -> 800x450 during ad -> respawn on screen, '
+                     'invulnerable, run goes on',
+                  {'canvasCssWidth': [before, after_css], 'ninja': pos,
+                   'respawns': after['respawns']})
+        log(f'ASSERT resize during ad (CSS {before} -> {after_css}): safe respawn: pass')
+
+    def test_g08_touch_portrait_cdp(self):
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 1000}, touch=True,
+                         viewport=PORTRAIT)
+        cdp = self.context.new_cdp_session(page)
+
+        def tap(x, y, hold=40):
+            """Touch for hold ms; return whether the grapnel was out meanwhile."""
+            p = canvas_to_viewport(page, x, y)
+            cdp.send('Input.dispatchTouchEvent', {
+                'type': 'touchStart', 'touchPoints': [{'x': p['x'], 'y': p['y']}]})
+            page.wait_for_timeout(hold)
+            thrown = page.evaluate('grapnel.throwed')
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+            return thrown
+
+        self.kill(page)
+        c = self.center(page, 'continueButton')
+        tap(c['x'], c['y'])
+        after = self.wait_respawn(page)
+        self.assertEqual((after['respawns'], reward_ads(page)), (1, 1))
+        self.wait_input(page)
+        self.save(page, 'respawn-after-touch')
+        ticks, throws = after['ticks'], 0
+        w = page.evaluate('width')
+        for i in range(10):
+            throws += tap(w * (0.3 + 0.05 * i), 300, hold=200)
+            page.wait_for_timeout(100)
+        s = self.state(page)
+        self.assertGreater(s['ticks'], ticks + 60)
+        self.assertGreater(throws, 0)
+        self.assertEqual((s['offer'], s['reStarts'], s['respawns']), (False, 0, 1))
+        self.edge(8, '390x844 CDP touch: Watch -> respawn, 3 s of taps play on',
+                  {'respawns': s['respawns'], 'ticksPlayed': s['ticks'] - ticks,
+                   'grapnelSeen': throws, 'reStarts': s['reStarts']})
+        log(f'ASSERT portrait CDP touch: respawn + 3 s play ({throws} throws seen): pass')
+
+    def test_g09_second_death_after_continue_rules(self):
+        page = self.boot({'reward': 'success'})
+        self.kill(page)
+        self.assert_offer(page)
+        self.click_button(page, 'continueButton')
+        self.wait_respawn(page)
+        page.wait_for_function('!ninja.isInvulnerable()', timeout=30000)
+        # Continue used: the second lethal death restarts, no offer
+        self.kill(page, 9, offer=False)
+        s = self.state(page)
+        self.assertEqual((s['reStarts'], s['score'], s['continueUsed']), (1, 0, False))
+        # New run: below CONTINUE_MIN_SCORE -> restart; from it -> full offer
+        self.kill(page, 2, offer=False)
+        self.kill(page, 7)
+        s = self.assert_offer(page)
+        self.assertEqual(reward_ads(page), 1)
+        self.edge(9, 'second death after continue -> restart, no offer; next run: '
+                     'score 2 -> restart, score 7 -> Watch ad + Restart',
+                  {'reStarts': page.evaluate('window.__reStarts'),
+                   'labels': page.evaluate(LABELS), 'watchClickable': s['watchClickable'],
+                   'restartClickable': s['restartClickable'], 'rewardAd': reward_ads(page)})
+        log('ASSERT second death after continue follows the offer rules: pass')
+
+    def test_g10_reward_ad_throws_synchronously(self):
+        page = self.boot({'reward': 'throw'})
+        self.kill(page)
+        before = self.state(page)
+        self.click_button(page, 'continueButton')
+        self.wait_input(page)
+        s = self.assert_no_reward(page, before)
+        # Nothing stays in flight: the next run's ad request works
+        self.restart_from_offer(page)
+        page.evaluate('window.__fakeGamePix.reward = "success"')
+        self.kill(page)
+        self.click_button(page, 'continueButton')
+        after = self.wait_respawn(page)
+        self.assertEqual((after['respawns'], reward_ads(page)), (1, 2))
+        self.edge(10, 'sync throw -> "Ad unavailable", Restart; next offer ad works',
+                  {'notice': s['notice'], 'respawnsAfterThrow': s['respawns'],
+                   'nextOfferRespawns': after['respawns'], 'rewardAd': reward_ads(page)})
+        log('ASSERT rewardAd throws: Ad unavailable, nothing stuck: pass')
+
+    def test_g11_fail_then_success_retry(self):
+        page = self.boot({'reward': 'fail'})
+        self.kill(page)
+        before = self.state(page)
+        self.click_button(page, 'continueButton')
+        page.wait_for_function('continueOffer.adFailed', timeout=10000)
+        self.wait_input(page)
+        s = self.assert_no_reward(page, before)
+        # The next answer is a success; the retry comes from the next offer
+        # (the TASK-082 rule: a failed offer shows "Ad unavailable" + Restart)
+        page.evaluate('window.__fakeGamePix.reward = "success"')
+        self.restart_from_offer(page)
+        self.kill(page)
+        self.assert_offer(page)
+        self.click_button(page, 'continueButton')
+        after = self.wait_respawn(page)
+        self.assertEqual((after['respawns'], after['score'], reward_ads(page)), (1, 6, 2))
+        self.edge(11, "'fail' -> 'Ad unavailable' + Restart; retry with 'success' -> respawn",
+                  {'failNotice': s['notice'], 'retryRespawns': after['respawns'],
+                   'rewardAd': reward_ads(page)})
+        log('ASSERT fail then success retry: pass')
 
 
 if __name__ == '__main__':

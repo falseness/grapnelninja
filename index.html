@@ -108,6 +108,9 @@
             let menu = new Menu(width, height)
             let continueOffer = new ContinueOffer(width, height, watchAdToContinue, restartFromOffer)
             let continueUsed = false
+            // A pause request (hidden tab, GamePix on.pause) while the
+            // rewarded ad plays: applied once the ad respawns the ninja
+            let pauseAfterAd = false
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             let lastFrameTime = 0, physicsAccumulatorMs = 0
             
@@ -158,6 +161,7 @@
             {
                 firstCycleInThisTick = true
                 continueUsed = false
+                pauseAfterAd = false
                 continueOffer.hide()
                 checkAdsAvailable()
                 
@@ -242,6 +246,7 @@
                 if (continueUsed || continueOffer.adPending || !continueOffer.watchVisible())
                     return
                 continueUsed = true
+                pauseAfterAd = false
                 continueOffer.setAdPending(true)
                 PLATFORM.requestRewarded(
                 {
@@ -272,6 +277,11 @@
                 continueOffer.hide()
                 respawnNinja()
                 resetPhysicsTiming()
+                if (pauseAfterAd || document.visibilityState == 'hidden')
+                {
+                    pauseAfterAd = false
+                    menu.startPause()
+                }
             }
             function restartFromOffer()
             {
@@ -481,7 +491,9 @@
             // loss (a click outside the iframe must not pause the run)
             function pauseRun()
             {
-                if (!menu.visible && !menu.gamePaused && !continueOffer.visible)
+                if (continueOffer.visible && continueOffer.adPending)
+                    pauseAfterAd = true
+                else if (!menu.visible && !menu.gamePaused && !continueOffer.visible)
                     menu.startPause()
             }
             document.addEventListener('visibilitychange', function() {
