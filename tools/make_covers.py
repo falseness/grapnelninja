@@ -17,9 +17,11 @@ and FPS layers are skipped so the only text is the composed title.
 Frame metadata (mode, seed, tick, ninja position) goes to source-frames.json.
 
 The compose step (default --frames is <out>/../source-frames) writes one
-cover per size in COVER_SIZES: 16:9 (1920x1080, 1280x720), 4:3 (800x600),
-1:1 (800x800, 512x512) and 2:3 (800x1200), so a portal's thumbnail slots
-can be matched without knowing their exact sizes up front.
+cover per size in COVER_SIZES: 16:9 (1920x1080, 1280x720), 4:3 (800x600,
+1024x768), 1:1 (1024x1024, 800x800, 512x512, 256x256) and 2:3 (800x1200), so
+a portal's thumbnail slots can be matched without knowing their exact sizes
+up front. --sizes WxH,... composes only those sizes (they must be in
+COVER_SIZES), e.g. --sizes 256x256,1024x1024,1024x768.
 """
 import argparse
 import base64
@@ -56,6 +58,9 @@ COVER_SIZES = {
     (800, 1200): 0.05,
     (800, 800): 0.07,
     (512, 512): 0.07,
+    (256, 256): 0.07,
+    (1024, 1024): 0.07,
+    (1024, 768): 0.08,
 }
 
 CAPTURE_JS = '''async ([mode, seed, actions, targetTick]) => {
@@ -167,7 +172,7 @@ def crop_around(image, center_x, aspect):
     return image.crop((left, top, left + cw, bottom))
 
 
-def compose(frames_dir, out):
+def compose(frames_dir, out, sizes=None):
     from PIL import Image
     meta = json.loads((frames_dir / 'source-frames.json').read_text())['frames']
     out.mkdir(parents=True, exist_ok=True)
@@ -177,6 +182,8 @@ def compose(frames_dir, out):
     # All come from the same 2880x1620 frame so the style matches;
     # the shift keeps the ninja left of centre with the obstacles ahead of it.
     for (w, h), shift in COVER_SIZES.items():
+        if sizes is not None and (w, h) not in sizes:
+            continue
         cover = crop_around(source, ninja_x + shift, w / h).resize((w, h), Image.LANCZOS)
         title_y = 0.13 if h > w else 0.15
         cover = neon_title(cover, TITLE, w / 2, h * title_y, w * (0.62 if w > h else 0.88))
@@ -195,6 +202,7 @@ def main():
     parser.add_argument('--out')
     parser.add_argument('--landscape', help='mode:tick for the landscape frame')
     parser.add_argument('--crop', help='mode:tick for the portrait/square frame')
+    parser.add_argument('--sizes', help='WxH,... subset of COVER_SIZES to compose (default: all)')
     parser.add_argument('--errors-dir', help='where to write console-errors.log/page-errors.log')
     args = parser.parse_args()
 
@@ -213,9 +221,15 @@ def main():
             (errors_dir / f'{kind}-errors.log').write_text(''.join(e + '\n' for e in errors[kind]))
         if errors['console'] or errors['page']:
             return 1
+    sizes = None
+    if args.sizes:
+        sizes = {tuple(int(v) for v in size.split('x')) for size in args.sizes.split(',')}
+        unknown = sizes - COVER_SIZES.keys()
+        if unknown:
+            raise SystemExit(f'sizes not in COVER_SIZES: {sorted(unknown)}')
     if args.out:
         out = Path(args.out)
-        compose(Path(args.frames) if args.frames else out.parent / 'source-frames', out)
+        compose(Path(args.frames) if args.frames else out.parent / 'source-frames', out, sizes)
     return 0
 
 
