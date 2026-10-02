@@ -5,10 +5,25 @@ const FRAME_REFERENCE = Object.freeze({width: 1120, height: 630})
 function frameWidthPercent(percent) { return screenWidthPercent(percent) / scale.bad }
 function frameHeightPercent(percent) { return screenHeightPercent(percent) / scale.bad }
 
+// GamePix score events: updateScore on every point, happyMoment once per
+// run when the record is beaten. updateLevel is N/A: the game has no levels.
+let recordBeatenThisRun = false
+function resetScoreEvents()
+{
+    recordBeatenThisRun = false
+}
 function changeScoreText()
 {
     if (++scoreText.count[version] > scoreText.record[version])
+    {
         scoreText.record[version] = scoreText.count[version]
+        if (!recordBeatenThisRun)
+        {
+            recordBeatenThisRun = true
+            PLATFORM.happyMoment()
+        }
+    }
+    PLATFORM.updateScore(scoreText.count[version])
 }
 class ElementsFactory
 {
