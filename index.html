@@ -1,10 +1,10 @@
 <!Doctype html>
 <html>
     <head>
+        <script src="https://integration.gamepix.com/sdk/v3/gamepix.sdk.js"></script>
         <title>grapnel ninja</title>
         <meta charset = "UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <script src="https://cdn.y8.com/minimal-sdk/2-0/y8.min.js" async></script>
 
         <style>
             body 
@@ -22,13 +22,44 @@
                 touch-action: none;
                 -webkit-tap-highlight-color: transparent;
             }
+            /* Shown until the menu is interactive, then removed */
+            #loading
+            {
+                position: fixed;
+                inset: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 4vh;
+                background-color: black;
+                color: #30d5c8;
+                font: 6vh Consolas, Monaco, "Courier New", monospace;
+                text-shadow: 0 0 12px #30d5c8;
+            }
+            #loading-track
+            {
+                width: 40vw;
+                height: 2vh;
+                border: 2px solid #30d5c8;
+                box-shadow: 0 0 12px #30d5c8;
+            }
+            #loading-bar
+            {
+                width: 0;
+                height: 100%;
+                background-color: #30d5c8;
+            }
         </style>
     </head>
     <body>
         <canvas id = "canvas"></canvas>
+        <div id = "loading">
+            <div>Grapnel ninja</div>
+            <div id = "loading-track"><div id = "loading-bar"></div></div>
+        </div>
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
-        <script src = "y8config.js"></script>
         <script src = "platform.js"></script>
         <script src = "progress.js"></script>
         <script src = 'menu.js'></script>
@@ -66,6 +97,7 @@
         <script src = "events.js"></script>
         <script>
             'use strict'
+            setLoadingProgress(10)
             let canvas = document.getElementById('canvas')
             let ctx = canvas.getContext('2d')
             let ok = false
@@ -86,8 +118,22 @@
             async function boot()
             {
                 await PLATFORM.init()
+                setLoadingProgress(50)
+                if (document.fonts)
+                    await document.fonts.ready
+                setLoadingProgress(90)
+                setLoadingProgress(100)
+                // GamePix requires loaded() before any other SDK call
+                PLATFORM.loaded()
                 PROGRESS.load()
                 start()
+                document.getElementById('loading').remove()
+            }
+            // Loading screen bar plus GamePix progress (0..100)
+            function setLoadingProgress(pct)
+            {
+                document.getElementById('loading-bar').style.width = pct + '%'
+                PLATFORM.loading(pct)
             }
             
             function startGame(_v)
