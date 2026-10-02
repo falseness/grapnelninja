@@ -715,3 +715,104 @@ class Menu
         
     }
 }
+// Offered after an eligible lethal death: two equally sized and styled
+// buttons, a rewarded continue and a plain restart.
+class ContinueOffer
+{
+    constructor(w, h, onContinue, onRestart)
+    {
+        this.visible = false
+        this.continueButton = new Button(
+            {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
+            {text: 'Watch ad to continue', fill: STYLE.colors.ui.buttonText},
+            onContinue)
+        this.restartButton = new Button(
+            {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
+            {text: 'Restart', fill: STYLE.colors.ui.buttonText},
+            onRestart)
+        this.layout(w, h)
+    }
+    layout(w, h)
+    {
+        this.width = w
+        this.height = h
+        this.panel =
+        {
+            width: Math.min(w * 0.84, h * 1.3),
+            height: h * 0.7
+        }
+        this.panel.x = (w - this.panel.width) / 2
+        this.panel.y = (h - this.panel.height) / 2
+
+        const centerX = w / 2
+        const buttonWidth = this.panel.width * 0.7
+        const buttonHeight = h * 0.11
+        const buttons = [this.continueButton, this.restartButton]
+        const rows = [0.56, 0.78]
+
+        for (let i = 0; i < buttons.length; ++i)
+            menu.layoutPauseButton(buttons[i], centerX, this.panel.y + this.panel.height * rows[i], buttonWidth, buttonHeight)
+
+        // Equal prominence: both labels share the smaller fitted size
+        const fontSize = Math.min(...buttons.map(b => parseFloat(b.text.fontSize)))
+        for (let i = 0; i < buttons.length; ++i)
+            buttons[i].text.fontSize = getArcadeFont(fontSize)
+
+        this.title = new Text(
+        {
+            fill    : STYLE.colors.ui.title,
+            fontSize: h * 0.09,
+            text    : 'Continue?',
+            x       : centerX,
+            y       : this.panel.y + this.panel.height * 0.16
+        })
+        this.score = new Text(
+        {
+            fill    : STYLE.colors.ui.mutedText,
+            fontSize: h * 0.05,
+            text    : '',
+            x       : centerX,
+            y       : this.panel.y + this.panel.height * 0.33
+        })
+    }
+    show()
+    {
+        this.setVisible(true)
+    }
+    hide()
+    {
+        this.setVisible(false)
+    }
+    setVisible(visible)
+    {
+        this.visible = visible
+        this.continueButton.clickable = visible
+        this.restartButton.clickable = visible
+    }
+    click(coord)
+    {
+        return this.continueButton.isClickOnButton(coord) ||
+               this.restartButton.isClickOnButton(coord)
+    }
+    draw()
+    {
+        this.score.text = scoreText.text + scoreText.count[version]
+
+        ctx.save()
+        ctx.fillStyle = STYLE.colors.ui.pauseOverlay
+        ctx.fillRect(0, 0, this.width, this.height)
+        ctx.fillStyle   = STYLE.colors.ui.pausePanelFill
+        ctx.strokeStyle = STYLE.colors.ui.pausePanelStroke
+        ctx.lineWidth = STYLE.ui.pausePanelLineWidth
+        ctx.shadowColor = STYLE.colors.ui.pausePanelStroke
+        ctx.shadowBlur = STYLE.ui.buttonShadowBlur
+        ctx.fillRect(this.panel.x, this.panel.y, this.panel.width, this.panel.height)
+        ctx.strokeRect(this.panel.x, this.panel.y, this.panel.width, this.panel.height)
+        ctx.restore()
+
+        this.title.draw()
+        this.score.draw()
+        this.continueButton.draw()
+        this.restartButton.draw()
+    }
+}

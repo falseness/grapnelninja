@@ -45,6 +45,8 @@ function createEvents()
     function startEvent(event)
     {
         let coords = viewportCoordsToCanvasCoords(getCoords(event))
+        if (continueOffer.visible)
+            return continueOffer.click(coords)
         if (menu.opened())
         {
             let isButtonClicked     = false
@@ -67,7 +69,7 @@ function createEvents()
             }, STYLE.timing.inputUntouchMs)
             return
         }
-        if (!(menu.opened()))
+        if (!menu.opened() && !continueOffer.visible)
             throwGrapnel(event)
     }
     // preventDefault stops the emulated mousedown/mouseup after a tap
@@ -111,7 +113,7 @@ function createEvents()
     {
         if (scrollKeys.includes(event.key))
             event.preventDefault()
-        if (pauseKeys.includes(event.key) && !menu.visible)
+        if (pauseKeys.includes(event.key) && !menu.visible && !continueOffer.visible)
         {
             event.preventDefault()
 

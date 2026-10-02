@@ -52,6 +52,9 @@ const GAMEPLAY = Object.freeze({
 })
 const defaultEqualityTolerance = 1
 
+// A lethal death offers a continue once per run, from this score on.
+const CONTINUE_MIN_SCORE = 5
+
 // Largest centred CSS rectangle of the logical aspect that fits the window.
 function getCanvasCssRect()
 {

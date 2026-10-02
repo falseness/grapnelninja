@@ -13,6 +13,10 @@ function physics()
 }
 function calcPhysics()
 {
+    // A continue offer freezes the run until the player answers it
+    if (continueOffer.visible)
+        return
+
     ninja.speedY += GRAVITY
 
     if (screen.shouldStartMove())
@@ -24,6 +28,8 @@ function calcPhysics()
     }
 
     ninja.move()
+    if (continueOffer.visible)
+        return
 
     grapnel.move()
     if (grapnel.throwed)

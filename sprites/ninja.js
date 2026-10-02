@@ -63,7 +63,7 @@ class Ninja
         this.collision()
         
         if (this.x + screen.x < screen.getDeletionBorder())
-            reStart()
+            onLethalDeath()
     }
     draw()
     {

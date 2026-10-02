@@ -72,6 +72,8 @@
             let trackEnabled = true
             let fpsCounter = new FpsCounter()
             let menu = new Menu(width, height)
+            let continueOffer = new ContinueOffer(width, height, continueRun, restartFromOffer)
+            let continueUsed = false
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             let lastFrameTime = 0, physicsAccumulatorMs = 0
             
@@ -104,6 +106,8 @@
             function chooseVersion()
             {
                 firstCycleInThisTick = true
+                continueUsed = false
+                continueOffer.hide()
                 
                 layoutHud()
                 
@@ -156,6 +160,37 @@
                     visualEffects.background.resetRandomFlashes()
                 }
                 chooseVersion()
+            }
+            // Lethal hits: offer one continue per run from CONTINUE_MIN_SCORE,
+            // otherwise restart instantly. The offer freezes physics.
+            function onLethalDeath()
+            {
+                if (continueOffer.visible)
+                    return
+                if (continueUsed || scoreText.count[version] < CONTINUE_MIN_SCORE)
+                {
+                    reStart()
+                    return
+                }
+                CG.gameplayStop()
+                PROGRESS.saveRecords()
+                continueOffer.show()
+            }
+            // Placeholder until the safe respawn and the rewarded ad land:
+            // only resumes physics.
+            function continueRun()
+            {
+                continueUsed = true
+                continueOffer.hide()
+                resetPhysicsTiming()
+                CG.gameplayStart()
+            }
+            function restartFromOffer()
+            {
+                continueOffer.hide()
+                reStart()
+                resetPhysicsTiming()
+                CG.gameplayStart()
             }
             function startClassicVersion()
             {
@@ -272,6 +307,12 @@
                     resetPhysicsTiming()
                     menu.pause()
                 }
+                else if (continueOffer.visible)
+                {
+                    resetPhysicsTiming()
+                    draw()
+                    continueOffer.draw()
+                }
                 else
                 {
                     runFixedPhysics(frameTime)
@@ -312,6 +353,7 @@
                 configureCanvasViewport(canvas, ctx)
                 ctx.lineCap = 'butt'
                 rebuildMenu()
+                continueOffer.layout(width, height)
 
                 if (version && screen)
                 {
@@ -349,7 +391,7 @@
             })
 
             window.onblur = function() {
-                if (!menu.visible && !menu.gamePaused) {
+                if (!menu.visible && !menu.gamePaused && !continueOffer.visible) {
                     menu.startPause('blur')
                     //menuBack()
                 }
