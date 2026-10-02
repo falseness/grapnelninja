@@ -123,8 +123,9 @@
                     await document.fonts.ready
                 setLoadingProgress(90)
                 setLoadingProgress(100)
-                // GamePix requires loaded() before any other SDK call
-                PLATFORM.loaded()
+                // GamePix requires loaded() before any other SDK call,
+                // including GamePix.localStorage used by PROGRESS
+                await PLATFORM.loaded()
                 PROGRESS.load()
                 start()
                 document.getElementById('loading').remove()

@@ -1,12 +1,19 @@
-// Records and time-in-game persisted in localStorage. Records are written
-// only on run end or pause, never per point.
+// Records and time-in-game persisted through PLATFORM.storage (the GamePix
+// SDK storage, or the browser's own storage when the SDK is disabled).
+// Values are strings only. GamePix requires loaded() before any other SDK
+// call, so nothing touches storage until load(), which index.html runs after
+// PLATFORM.loaded() resolved (TASK-099 never probed storage before loaded()).
+// Records are written only on run end or pause, never per point.
 const PROGRESS = (function()
 {
     const recordsKey = 'grapnelninja.records'
     const timeKey    = 'grapnelninja.time'
     const legacyTimeKey = 'time'
 
+    const storage = PLATFORM.storage
+
     let savedRecords = null
+    let loaded = false
 
     function readNumber(value)
     {
@@ -24,21 +31,22 @@ const PROGRESS = (function()
 
     const PROGRESS =
     {
-        // Call once after PLATFORM.init(): migrate legacy time, load records
+        // Call once after PLATFORM.loaded(): migrate legacy time, load records
         load()
         {
-            const legacy = localStorage.getItem(legacyTimeKey)
+            loaded = true
+            const legacy = storage.getItem(legacyTimeKey)
             if (legacy !== null)
             {
-                if (localStorage.getItem(timeKey) === null)
-                    localStorage.setItem(timeKey, String(readNumber(legacy)))
-                localStorage.removeItem(legacyTimeKey)
+                if (storage.getItem(timeKey) === null)
+                    storage.setItem(timeKey, String(readNumber(legacy)))
+                storage.removeItem(legacyTimeKey)
             }
 
             let records = {}
             try
             {
-                records = JSON.parse(localStorage.getItem(recordsKey)) || {}
+                records = JSON.parse(storage.getItem(recordsKey)) || {}
             }
             catch (e)
             {
@@ -60,16 +68,18 @@ const PROGRESS = (function()
             const json = recordsJson()
             if (json === savedRecords)
                 return
-            localStorage.setItem(recordsKey, json)
+            storage.setItem(recordsKey, json)
             savedRecords = json
         },
         getTime()
         {
-            return readNumber(localStorage.getItem(timeKey))
+            return loaded ? readNumber(storage.getItem(timeKey)) : 0
         },
         setTime(seconds)
         {
-            localStorage.setItem(timeKey, String(readNumber(seconds)))
+            if (!loaded)
+                return
+            storage.setItem(timeKey, String(readNumber(seconds)))
         }
     }
     // Closing the tab mid-run must not lose a new record
