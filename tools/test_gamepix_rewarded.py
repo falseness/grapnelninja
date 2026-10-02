@@ -1,12 +1,14 @@
-"""Rewarded ad behind "Watch ad to continue" (TASK-082, Y8 port TASK-093).
+"""Rewarded ad behind "Watch ad to continue" (TASK-082, GamePix port TASK-106).
 
-Runs against the fake Y8 SDK (tools/fixtures/fake-y8-sdk.js); window.__y8Fake
-.rewardOutcome picks the outcome. The ninja is pinned by the TASK-080 physics
+Runs against the fake GamePix SDK (tools/fixtures/fake-gamepix-sdk.js);
+window.__fakeGamePix.reward picks the outcome: 'success', 'fail' (resolves
+{success: false}), 'never' (never settles; the PLATFORM.rewardPlayingTimeoutMs
+watchdog ends it) or 'throw'. The ninja is pinned by the TASK-080 physics
 wrapper; window.__respawns counts respawnNinja() calls and re-pins the ninja
 at the respawn point, window.__ticks counts physics() calls.
 
-Env: Y8_REWARDED_EVIDENCE_DIR receives calls/<case>.json, screens/<state>.png,
-outcome-matrix.json and console/page-errors.log.
+Env: GAMEPIX_REWARDED_EVIDENCE_DIR receives calls/<case>.json,
+screens/<state>.png, outcome-matrix.json and console/page-errors.log.
 """
 import json
 import os
@@ -15,17 +17,19 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from y8_harness import (FAKE_SDK, Y8_SDK_ROUTE, canvas_to_viewport, click_canvas,
-                        collect_errors, open_game, sdk_calls, start_y8_test)
+from gamepix_harness import (canvas_to_viewport, click_canvas, collect_errors, open_game,
+                             route_fake_sdk, sdk_calls, sdk_errors, set_fake_config,
+                             start_gamepix_test)
 import test_continue as continue_test
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 WATCH_LABEL = 'Watch ad to continue'
+RESTART_LABEL = 'Restart'
 AD_ERROR = 'Ad unavailable'
 ADS_UNAVAILABLE = 'Ads unavailable'
-# Fake outcomes that end without a reward (window.__y8Fake.rewardOutcome)
-NO_REWARD = ('dismissed', 'noAdPreloaded', 'frequencyCapped', 'notReady', 'reject')
+# Watchdog for the 'never' outcome, set on PLATFORM before the ad starts
+WATCHDOG_MS = 1500
 
 INSTRUMENT_RESPAWN = '''() => {
     window.__respawns = 0
@@ -64,8 +68,8 @@ def call_names(page):
     return [c['name'] for c in sdk_calls(page)]
 
 
-def show_ads(page):
-    return call_names(page).count('showAd')
+def reward_ads(page):
+    return call_names(page).count('rewardAd')
 
 
 def offer_text(s):
@@ -73,11 +77,15 @@ def offer_text(s):
     return WATCH_LABEL if s['watchVisible'] else s['notice']
 
 
-class Y8RewardedTests(unittest.TestCase):
+LABELS = '''() => ({watch: continueOffer.continueButton.text.text,
+    restart: continueOffer.restartButton.text.text})'''
+
+
+class GamePixRewardedTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_y8_test(ROOT, cls.addClassCleanup)
-        cls.evidence = os.environ.get('Y8_REWARDED_EVIDENCE_DIR')
+        cls.url, cls.browser = start_gamepix_test(ROOT, cls.addClassCleanup)
+        cls.evidence = os.environ.get('GAMEPIX_REWARDED_EVIDENCE_DIR')
         cls.errors = []
         cls.matrix = {}
 
@@ -94,12 +102,11 @@ class Y8RewardedTests(unittest.TestCase):
             (out / 'outcome-matrix.json').write_text(
                 json.dumps(cls.matrix, indent=1, sort_keys=True) + '\n')
 
-    def boot(self, fake=None, block_sdk=False, touch=False, environment=None):
+    def boot(self, fake=None, block_sdk=False, touch=False):
         if touch:
             context = self.browser.new_context(viewport=VIEWPORT, has_touch=True)
-            context.route(Y8_SDK_ROUTE, lambda route: route.fulfill(
-                path=str(FAKE_SDK), content_type='application/javascript'))
-            context.add_init_script(f'window.__y8Fake = {json.dumps(fake or {})}')
+            route_fake_sdk(context)
+            set_fake_config(context, fake)
             page = context.new_page()
             errors = collect_errors(page)
             page.goto(self.url + 'index.html')
@@ -110,9 +117,11 @@ class Y8RewardedTests(unittest.TestCase):
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
+        if not block_sdk:
+            self.addCleanup(lambda: self.assertEqual(sdk_errors(page), []))
         page.wait_for_function('PLATFORM.environment !== "pending" && menu.visible',
                                timeout=10000)
-        expected = environment or ('disabled' if block_sdk else 'y8')
+        expected = 'disabled' if block_sdk else 'gamepix'
         self.assertEqual(page.evaluate('PLATFORM.environment'), expected)
         page.evaluate(continue_test.INSTRUMENT_RUN)
         page.evaluate(INSTRUMENT_RESPAWN)
@@ -131,6 +140,15 @@ class Y8RewardedTests(unittest.TestCase):
         page.wait_for_function('!window.__kill')
         page.wait_for_timeout(150)
         self.assertEqual(self.state(page)['offer'], offer)
+
+    def assert_offer(self, page, watch=True):
+        """The offer says what the ad gives and Restart is clickable (skippable)."""
+        s = self.state(page)
+        self.assertEqual(page.evaluate(LABELS),
+                         {'watch': WATCH_LABEL, 'restart': RESTART_LABEL})
+        self.assertTrue(s['offer'] and s['restartClickable'])
+        self.assertEqual((s['watchVisible'], s['watchClickable']), (watch, watch))
+        return s
 
     def center(self, page, name):
         return page.evaluate(f'''(() => {{ const b = continueOffer.{name}.background
@@ -182,35 +200,38 @@ class Y8RewardedTests(unittest.TestCase):
         return s
 
     def no_reward_case(self, outcome):
-        page = self.boot({'rewardOutcome': outcome})
+        page = self.boot({'reward': outcome})
+        if outcome == 'never':
+            page.evaluate(f'PLATFORM.rewardPlayingTimeoutMs = {WATCHDOG_MS}')
         self.kill(page)
-        before = self.state(page)
-        self.assertEqual(offer_text(before), WATCH_LABEL)
+        before = self.assert_offer(page)
         self.click_button(page, 'continueButton')
+        t0 = page.evaluate('performance.now()')
         page.wait_for_function('continueOffer.adFailed', timeout=10000)
+        waited = page.evaluate('performance.now()') - t0
         self.wait_input(page)
         s = self.assert_no_reward(page, before)
-        if outcome == 'dismissed':
-            self.save(page, 'ad-error')
+        self.save(page, f'ad-error-{outcome}')
         # A click on the old watch button spot does nothing
         self.click_button(page, 'continueButton')
         self.wait_input(page)
-        self.assertEqual((self.state(page)['respawns'], show_ads(page)), (0, 1))
+        self.assertEqual((self.state(page)['respawns'], reward_ads(page)), (0, 1))
         restarted = self.restart_from_offer(page)
         self.save_calls(page, outcome)
-        self.record(outcome, offerText=offer_text(s), respawned=False,
-                    restartWorks=restarted, showAdCalls=show_ads(page))
-        log(f'ASSERT {outcome}: no respawn, "{s["notice"]}", score {s["score"]} kept,'
-            ' Restart -> score 0: pass')
+        self.record(outcome, offerText=offer_text(before), visibleResult=offer_text(s),
+                    respawned=False, scoreKept=s['score'] == before['score'],
+                    restartWorks=restarted, rewardAdCalls=reward_ads(page))
+        log(f'ASSERT {outcome}: "{s["notice"]}" after {waited:.0f} ms, no respawn, '
+            f'score {s["score"]} kept, Restart -> score 0: pass')
+        return waited
 
-    def test_a_viewed_continues(self):
-        page = self.boot({'adDurationMs': 8000})
+    def test_a_success_continues(self):
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 3000})
         self.kill(page)
         self.save(page, 'offer')
-        before = self.state(page)
-        self.assertTrue(before['watchVisible'] and before['watchClickable'])
+        before = self.assert_offer(page)
         self.click_button(page, 'continueButton')
-        page.wait_for_function('window.__y8Fake.calls.some(c => c.name == "beforeAd")')
+        page.wait_for_function('window.__fakeGamePix.calls.some(c => c.name == "rewardAd")')
         page.wait_for_timeout(100)
         during = self.state(page)
         self.assertTrue(during['offer'] and during['adPending'])
@@ -218,69 +239,36 @@ class Y8RewardedTests(unittest.TestCase):
         self.assertEqual((during['x'], during['y'], during['respawns']),
                          (before['x'], before['y'], 0))
         self.save(page, 'ad-pending')
-        self.assertNotIn('adViewed', call_names(page),
-                         'ad-pending screenshot taken after adViewed')
         page.wait_for_function('!continueOffer.visible', timeout=30000)
         page.wait_for_timeout(150)
         after = self.state(page)
         self.save(page, 'after-respawn')
-        calls = self.save_calls(page, 'viewed')
-        names = [n for n in call_names(page) if n in (
-            'showAd', 'beforeReward', 'showAdFn', 'beforeAd', 'adViewed', 'afterAd',
-            'adBreakDone')]
-        self.assertEqual(names, ['showAd', 'beforeReward', 'showAdFn', 'beforeAd',
-                                 'adViewed', 'afterAd', 'adBreakDone'])
-        show = next(c for c in calls if c['name'] == 'showAd')
-        self.assertIn('adViewed', show['args'][0])
+        self.save_calls(page, 'success')
+        self.assertEqual(reward_ads(page), 1)
         self.assertEqual((after['respawns'], after['continueUsed'], after['score'],
                           after['reStarts'], after['version'], after['floors']),
                          (1, True, 6, 0, before['version'], before['floors']))
         self.assertTrue(after['invulnerable'])
         # Gameplay resumes: physics ticks run on behind no offer
         page.wait_for_function(f'window.__ticks > {after["ticks"]} + 5')
-        self.record('viewed', offerText=offer_text(before), respawned=True,
-                    showAdCalls=show_ads(page))
-        log(f'ASSERT viewed: {names}; respawns 1, score 6, invulnerable, resumed: pass')
+        self.record('success', offerText=offer_text(before),
+                    visibleResult='offer hidden, safe respawn (invulnerable), score kept',
+                    respawned=True, scoreKept=after['score'] == before['score'],
+                    rewardAdCalls=reward_ads(page))
+        log('ASSERT success: rewardAd x1, respawns 1, score 6, invulnerable, resumed: pass')
 
-    def test_b_dismissed(self):
-        self.no_reward_case('dismissed')
+    def test_b_fail(self):
+        self.no_reward_case('fail')
 
-    def test_b_no_ad_preloaded(self):
-        self.no_reward_case('noAdPreloaded')
+    def test_b_never_hits_watchdog(self):
+        waited = self.no_reward_case('never')
+        self.assertGreater(waited, WATCHDOG_MS - 100)
 
-    def test_b_frequency_capped(self):
-        self.no_reward_case('frequencyCapped')
-
-    def test_b_not_ready(self):
-        self.no_reward_case('notReady')
-
-    def test_b_reject(self):
-        self.no_reward_case('reject')
-
-    def test_b_silent_hits_watchdog(self):
-        page = self.boot({'rewardOutcome': 'silent'})
-        page.evaluate('PLATFORM.rewardTimeoutMs = 1500')
-        self.kill(page)
-        before = self.state(page)
-        self.click_button(page, 'continueButton')
-        page.wait_for_timeout(700)
-        s = self.state(page)
-        self.assertTrue(s['adPending'] and not s['restartClickable'])
-        t0 = page.evaluate('performance.now()')
-        page.wait_for_function('continueOffer.adFailed', timeout=10000)
-        waited = page.evaluate('performance.now()') - t0
-        self.assertGreater(waited + 700, 1400)
-        self.wait_input(page)
-        s = self.assert_no_reward(page, before)
-        self.assertEqual(show_ads(page), 1)
-        restarted = self.restart_from_offer(page)
-        self.save_calls(page, 'silent')
-        self.record('silent', offerText=offer_text(s), respawned=False,
-                    restartWorks=restarted, showAdCalls=show_ads(page))
-        log(f'ASSERT silent: watchdog error after ~{waited + 700:.0f} ms, Restart works: pass')
+    def test_b_throw(self):
+        self.no_reward_case('throw')
 
     def test_c_double_click_requests_one_ad(self):
-        page = self.boot({'adDurationMs': 8000})
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 3000})
         untouch = page.evaluate('STYLE.timing.inputUntouchMs')
         self.kill(page)
         c = self.center(page, 'continueButton')
@@ -294,13 +282,12 @@ class Y8RewardedTests(unittest.TestCase):
         page.wait_for_function('!continueOffer.visible', timeout=30000)
         page.wait_for_timeout(150)
         self.save_calls(page, 'doubleclick')
-        self.assertEqual(show_ads(page), 1)
-        self.assertEqual(call_names(page).count('adViewed'), 1)
+        self.assertEqual(reward_ads(page), 1)
         self.assertEqual(self.state(page)['respawns'], 1)
-        log(f'ASSERT 5 Watch clicks -> showAd x{show_ads(page)}: pass')
+        log(f'ASSERT 5 Watch clicks -> rewardAd x{reward_ads(page)}: pass')
 
     def test_d_second_death_after_continue_restarts(self):
-        page = self.boot()
+        page = self.boot({'reward': 'success'})
         self.kill(page)
         self.click_button(page, 'continueButton')
         page.wait_for_function('!continueOffer.visible', timeout=30000)
@@ -310,75 +297,46 @@ class Y8RewardedTests(unittest.TestCase):
         s = self.state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score'], s['continueUsed']),
                          (False, 1, 0, False))
-        self.assertEqual(show_ads(page), 1)
-        self.record('viewed', restartWorks=True)
+        self.assertEqual(reward_ads(page), 1)
+        self.record('success', restartWorks=True)
         log('ASSERT second lethal death after continue -> instant restart, no offer: pass')
 
     def test_d_late_reward_after_watchdog_is_ignored(self):
-        # The break outlives the watchdog: adViewed arrives after the error
-        page = self.boot({'adDurationMs': 2500})
-        page.evaluate('PLATFORM.rewardTimeoutMs = PLATFORM.rewardPlayingTimeoutMs = 800')
+        # The ad outlives the watchdog: {success: true} arrives after the error
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 2500})
+        page.evaluate('PLATFORM.rewardPlayingTimeoutMs = 800')
         self.kill(page)
         before = self.state(page)
         self.click_button(page, 'continueButton')
         page.wait_for_function('continueOffer.adFailed', timeout=10000)
-        page.wait_for_function('window.__y8Fake.calls.some(c => c.name == "adBreakDone")',
-                               timeout=10000)
-        page.wait_for_timeout(200)
-        self.assertIn('adViewed', call_names(page))
+        page.wait_for_timeout(2500)
         self.assert_no_reward(page, before)
         self.restart_from_offer(page)
-        log('ASSERT adViewed after the watchdog error: no respawn, Restart works: pass')
-
-    def disabled_case(self, **boot):
-        page = self.boot(environment='disabled', **boot)
-        self.kill(page)
-        s = self.state(page)
-        self.assertEqual((s['watchVisible'], s['watchClickable'], s['restartClickable'],
-                          s['notice']), (False, False, True, ADS_UNAVAILABLE))
-        self.click_button(page, 'continueButton')
-        self.wait_input(page)
-        self.assertEqual((self.state(page)['respawns'], self.state(page)['offer']), (0, True))
-        return page, s
+        log('ASSERT success after the watchdog error: no respawn, Restart works: pass')
 
     def test_e_sdk_blocked_ads_unavailable(self):
-        page, s = self.disabled_case(block_sdk=True)
+        page = self.boot(block_sdk=True)
+        self.kill(page)
+        s = self.assert_offer(page, watch=False)
+        self.assertEqual(s['notice'], ADS_UNAVAILABLE)
         self.save(page, 'ads-unavailable')
+        self.click_button(page, 'continueButton')
+        self.wait_input(page)
+        s2 = self.state(page)
+        self.assertEqual((s2['respawns'], s2['offer']), (0, True))
         restarted = self.restart_from_offer(page)
         self.assertEqual(sdk_calls(page), [])
-        self.record('disabled', offerText=offer_text(s), respawned=False,
-                    restartWorks=restarted, showAdCalls=0)
+        self.record('blocked', offerText=offer_text(s), visibleResult=s['notice'],
+                    respawned=False, scoreKept=True, restartWorks=restarted,
+                    rewardAdCalls=0)
         log('ASSERT SDK blocked: "Ads unavailable", no Watch ad, Restart works: pass')
 
-    def test_e_init_reject_ads_unavailable(self):
-        page, _ = self.disabled_case(fake={'initReject': True})
-        self.restart_from_offer(page)
-        self.assertEqual(show_ads(page), 0)
-        log('ASSERT init rejected: "Ads unavailable", Restart works, no showAd: pass')
-
-    def test_e_ready_never_ads_unavailable(self):
-        page, _ = self.disabled_case(fake={'readyNever': True})
-        self.restart_from_offer(page)
-        self.assertEqual(show_ads(page), 0)
-        log('ASSERT never ready: "Ads unavailable", Restart works, no showAd: pass')
-
-    def test_d_long_ad_outlives_request_watchdog(self):
-        # A rewarded video longer than rewardTimeoutMs still pays out
-        page = self.boot({'adDurationMs': 2500})
-        page.evaluate('PLATFORM.rewardTimeoutMs = 800')
-        self.kill(page)
-        self.click_button(page, 'continueButton')
-        page.wait_for_function('!continueOffer.visible', timeout=10000)
-        s = self.state(page)
-        self.assertEqual((s['respawns'], s['score'], s['adFailed']), (1, 6, False))
-        log('ASSERT 2.5 s ad with an 0.8 s request watchdog -> respawn: pass')
-
     def test_f_input_during_ad_throws_no_grapnel(self):
-        # Long ad (beyond rewardTimeoutMs): input rounds can take seconds on a loaded machine
-        page = self.boot({'adDurationMs': 15000}, touch=True)
+        # Long ad: input rounds can take seconds on a loaded machine
+        page = self.boot({'reward': 'success', 'rewardDelayMs': 15000}, touch=True)
         self.kill(page)
         self.click_button(page, 'continueButton')
-        page.wait_for_function('window.__y8Fake.calls.some(c => c.name == "beforeAd")')
+        page.wait_for_function('window.__fakeGamePix.calls.some(c => c.name == "rewardAd")')
         frozen = self.state(page)
         points = [(400, 300), (1500, 200), (960, 900)]
         for x, y in points:
@@ -396,7 +354,7 @@ class Y8RewardedTests(unittest.TestCase):
             self.assertTrue(s['adPending'])
             self.assertEqual((s['x'], s['y']), (frozen['x'], frozen['y']))
         page.wait_for_function('!continueOffer.visible', timeout=30000)
-        self.assertEqual(show_ads(page), 1)
+        self.assertEqual(reward_ads(page), 1)
         log(f'ASSERT {len(points)} mousedowns + taps during ad: no grapnel, frozen: pass')
 
 

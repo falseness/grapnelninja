@@ -1,6 +1,7 @@
-"""Continue offer after an eligible lethal death (TASK-080, Y8 port TASK-093).
+"""Continue offer after an eligible lethal death (TASK-080; ported to the
+GamePix harness in TASK-106).
 
-Env: Y8_CONTINUE_EVIDENCE_DIR receives offer-*.png, button-rects.json and
+Env: GAMEPIX_CONTINUE_EVIDENCE_DIR receives offer-*.png, button-rects.json and
 console/page-errors.log.
 """
 import json
@@ -11,10 +12,13 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import logical_size
-from y8_harness import (FAKE_SDK, Y8_SDK_ROUTE, canvas_to_viewport, click_canvas,
-                        collect_errors, open_game, sdk_calls, start_y8_test)
+from gamepix_harness import (canvas_to_viewport, click_canvas, collect_errors,
+                             open_game, route_fake_sdk, sdk_calls, set_fake_config,
+                             start_gamepix_test)
 
 ROOT = Path(__file__).resolve().parent.parent
+# The fake GamePix SDK defaults to a failed ad; the flows here expect a reward
+FAKE = {'reward': 'success'}
 
 # Count reStart calls and pin the ninja at its start state after every physics
 # tick so it never dies on its own. window.__kill moves it behind the deletion
@@ -64,8 +68,8 @@ BUTTON_RECTS = '''() => {
 }'''
 
 
-def show_ad_count(page):
-    return sum(c['name'] == 'showAd' for c in sdk_calls(page))
+def reward_ad_count(page):
+    return sum(c['name'] == 'rewardAd' for c in sdk_calls(page))
 
 
 def state(page):
@@ -77,8 +81,8 @@ def state(page):
 class ContinueTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_y8_test(ROOT, cls.addClassCleanup)
-        cls.evidence = os.environ.get('Y8_CONTINUE_EVIDENCE_DIR')
+        cls.url, cls.browser = start_gamepix_test(ROOT, cls.addClassCleanup)
+        cls.evidence = os.environ.get('GAMEPIX_CONTINUE_EVIDENCE_DIR')
         cls.errors = []
         cls.rects = {}
 
@@ -98,25 +102,26 @@ class ContinueTests(unittest.TestCase):
     def boot(self, viewport, touch=False):
         if touch:
             context = self.browser.new_context(viewport=viewport, has_touch=True, is_mobile=True)
-            context.route(Y8_SDK_ROUTE, lambda route: route.fulfill(
-                path=str(FAKE_SDK), content_type='application/javascript'))
+            route_fake_sdk(context)
+            set_fake_config(context, FAKE)
             page = context.new_page()
             errors = collect_errors(page)
             page.goto(self.url + 'index.html')
         else:
-            context, page, errors = open_game(self.browser, self.url + 'index.html', viewport)
+            context, page, errors = open_game(self.browser, self.url + 'index.html', viewport,
+                                              FAKE)
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "y8" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "gamepix" && menu.visible')
         page.evaluate(INSTRUMENT_RUN)
         page.evaluate('''() => {
             const b = menu.classicVersionButton.background
             menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2})
         }''')
         page.wait_for_timeout(300)
-        self.assertEqual(show_ad_count(page), 0)
+        self.assertEqual(reward_ad_count(page), 0)
         return page
 
     def kill(self, page, score):
@@ -173,7 +178,7 @@ class ContinueTests(unittest.TestCase):
         self.kill(page, 4)
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 1, 0))
-        self.assertEqual(show_ad_count(page), 0)
+        self.assertEqual(reward_ad_count(page), 0)
         print('  ASSERT (a) score 4 death -> instant reStart, no overlay: pass', file=sys.stderr)
 
         # (b) score >= 5: overlay, frozen physics, no ad requested yet
@@ -185,9 +190,9 @@ class ContinueTests(unittest.TestCase):
         after = state(page)
         self.assertTrue(after['offer'])
         self.assertEqual((after['x'], after['y']), (before['x'], before['y']))
-        self.assertEqual(show_ad_count(page), 0)
+        self.assertEqual(reward_ad_count(page), 0)
         print(f'  ASSERT (b) score 5 death -> overlay; ninja ({before["x"]:.3f},'
-              f' {before["y"]:.3f}) unchanged over 1 s; no showAd: pass',
+              f' {before["y"]:.3f}) unchanged over 1 s; no rewardAd: pass',
               file=sys.stderr)
         self.record_rects(page, '1280x720')
         self.save(page, 'offer-1280x720.png')
@@ -218,14 +223,14 @@ class ContinueTests(unittest.TestCase):
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score'], s['continueUsed']),
                          (False, 2, 0, False))
-        self.assertEqual(show_ad_count(page), 0)
+        self.assertEqual(reward_ad_count(page), 0)
         print('  ASSERT (c) Restart -> score 0, overlay hidden: pass',
               file=sys.stderr)
 
         # (e) after a restart the run is eligible again
         self.kill(page, 6)
         self.assertTrue(state(page)['offer'])
-        self.assertEqual(show_ad_count(page), 0)
+        self.assertEqual(reward_ad_count(page), 0)
         print('  ASSERT (e) eligible again after restart: pass', file=sys.stderr)
 
         # Continue: the ninja respawns at a safe point and resumes physics
@@ -235,7 +240,7 @@ class ContinueTests(unittest.TestCase):
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score'], s['continueUsed']),
                          (False, 2, 6, True))
-        self.assertEqual(show_ad_count(page), 1)
+        self.assertEqual(reward_ad_count(page), 1)
 
         # (d) a second eligible death in the same run restarts instantly
         # (once the respawn invulnerability has run out)
@@ -243,7 +248,7 @@ class ContinueTests(unittest.TestCase):
         self.kill(page, 7)
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 3, 0))
-        self.assertEqual(show_ad_count(page), 1)
+        self.assertEqual(reward_ad_count(page), 1)
         print('  ASSERT (d) second eligible death after continue -> instant reStart: pass',
               file=sys.stderr)
 
@@ -251,20 +256,20 @@ class ContinueTests(unittest.TestCase):
         page = self.boot({'width': 844, 'height': 390}, touch=True)
         self.kill(page, 5)
         self.assertTrue(state(page)['offer'])
-        self.assertEqual(show_ad_count(page), 0)
+        self.assertEqual(reward_ad_count(page), 0)
         self.record_rects(page, '844x390')
         self.save(page, 'offer-844x390-touch.png')
         self.tap_button(page, 'restartButton')
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 1, 0))
-        self.assertEqual(show_ad_count(page), 0)
+        self.assertEqual(reward_ad_count(page), 0)
 
         self.kill(page, 5)
         self.tap_button(page, 'continueButton')
         page.wait_for_function('!continueOffer.visible')
         s = state(page)
         self.assertEqual((s['offer'], s['continueUsed']), (False, True))
-        self.assertEqual(show_ad_count(page), 1)
+        self.assertEqual(reward_ad_count(page), 1)
         print('  ASSERT touch tap Restart and Continue at 844x390: pass', file=sys.stderr)
 
 
