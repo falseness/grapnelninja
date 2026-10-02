@@ -210,6 +210,9 @@ class Checkbox
         return false
     }
 }
+// Legibility floor in CSS px for small iframes (800x450).
+const minCssFontPx = 12
+
 class FpsCounter
 {
     constructor()
@@ -251,7 +254,9 @@ class FpsCounter
 
         const viewWidth = width / scale[version]
         const viewHeight = height / scale[version]
-        const fontSize = viewHeight * STYLE.ui.fpsFontRatio
+        // Never below the CSS px floor when the iframe is small.
+        const cssPerView = canvas.getBoundingClientRect().height / viewHeight
+        const fontSize = Math.max(viewHeight * STYLE.ui.fpsFontRatio, minCssFontPx / cssPerView)
         const padding = viewHeight * STYLE.ui.fpsPaddingRatio
         const text = 'FPS: ' + this.value
 
