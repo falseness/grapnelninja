@@ -4,7 +4,7 @@
         <title>grapnel ninja</title>
         <meta charset = "UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+        <script src="https://cdn.y8.com/minimal-sdk/2-0/y8.min.js" async></script>
 
         <style>
             body 
@@ -28,7 +28,8 @@
         <canvas id = "canvas"></canvas>
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
-        <script src = "crazygames.js"></script>
+        <script src = "y8config.js"></script>
+        <script src = "platform.js"></script>
         <script src = "progress.js"></script>
         <script src = 'menu.js'></script>
     
@@ -84,11 +85,9 @@
             
             async function boot()
             {
-                CG.loadingStart()
-                await CG.init()
+                await PLATFORM.init()
                 PROGRESS.load()
                 start()
-                CG.loadingStop()
             }
             
             function startGame(_v)
@@ -100,7 +99,6 @@
                 visualEffects.background.resetRandomFlashes()
 
                 chooseVersion()
-                CG.gameplayStart()
                 
                 game = requestAnimationFrame(gameLoop)
             }
@@ -174,22 +172,14 @@
                     reStart()
                     return
                 }
-                CG.gameplayStop()
                 PROGRESS.saveRecords()
                 continueOffer.show()
             }
-            // Run start: adblock users and players without the SDK get only
-            // Restart plus an "Ads unavailable" notice on the offer.
+            // Run start: players without the SDK get only Restart plus an
+            // "Ads unavailable" notice on the offer.
             function checkAdsAvailable()
             {
-                continueOffer.setAdsAvailable(CG.environment != 'disabled')
-                if (CG.environment == 'disabled')
-                    return
-                CG.hasAdblock().then(adblock =>
-                {
-                    if (adblock)
-                        continueOffer.setAdsAvailable(false)
-                })
+                continueOffer.setAdsAvailable(PLATFORM.environment != 'disabled')
             }
             // One rewarded ad per continue and at most one continue per run.
             // Input stays ignored (both buttons disabled, physics frozen by
@@ -200,7 +190,7 @@
                     return
                 continueUsed = true
                 continueOffer.setAdPending(true)
-                CG.requestAd('rewarded',
+                PLATFORM.requestRewarded(
                 {
                     // The game stays frozen behind the offer. There is no
                     // game audio, so nothing needs muting during the ad.
@@ -229,14 +219,12 @@
                 continueOffer.hide()
                 respawnNinja()
                 resetPhysicsTiming()
-                CG.gameplayStart()
             }
             function restartFromOffer()
             {
                 continueOffer.hide()
                 reStart()
                 resetPhysicsTiming()
-                CG.gameplayStart()
             }
             function startClassicVersion()
             {
@@ -438,11 +426,11 @@
 
             window.onblur = function() {
                 if (!menu.visible && !menu.gamePaused && !continueOffer.visible) {
-                    menu.startPause('blur')
+                    menu.startPause()
                     //menuBack()
                 }
             }
-            // a hidden tab pauses like focus loss (no gameplayStop)
+            // a hidden tab pauses like focus loss
             document.addEventListener('visibilitychange', function() {
                 if (document.visibilityState == 'hidden')
                     window.onblur()

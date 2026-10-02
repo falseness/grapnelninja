@@ -505,7 +505,6 @@ class Menu
         },
         function()
         {
-            CG.gameplayStop()
             PROGRESS.saveRecords()
             menu.changeGamePause(false)
     
@@ -638,11 +637,8 @@ class Menu
         this.resume.clickable                   = isPaused
         this.backToMenu.clickable               = isPaused
     }
-    // reason 'blur': focus loss is handled by the platform, no gameplayStop
     startPause(reason)
     {
-        if (reason != 'blur')
-            CG.gameplayStop()
         PROGRESS.saveRecords()
         pauseTimeInGame()
         this.timeInGame.text = 'time spent in game: ' + getTimeInGame() + ' minutes'
@@ -678,7 +674,6 @@ class Menu
     }
     unPause()
     {
-        CG.gameplayStart()
         reuseTimeInGame()
         menu.changeGamePause(false)
     }

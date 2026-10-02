@@ -6,7 +6,7 @@ from threading import Thread
 from playwright.sync_api import sync_playwright
 
 
-SDK_ROUTE = '**/crazygames-sdk-v3.js'
+SDK_ROUTE = '**/y8.min.js'
 LOGICAL_HEIGHT = 1080
 
 
@@ -22,14 +22,14 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 
 def stub_sdk(route):
-    """Serve an empty SDK so pages boot offline with CG disabled."""
+    """Serve an empty SDK so pages boot offline with PLATFORM disabled."""
     route.fulfill(content_type='application/javascript', body='')
 
 
 class OfflineSdkBrowser:
-    """Browser whose pages never fetch the real CrazyGames SDK.
+    """Browser whose pages never fetch the real Y8 SDK.
 
-    Routes added later (e.g. by crazygames_harness) take precedence.
+    Routes added later (e.g. by y8_harness) take precedence.
     """
     def __init__(self, browser):
         self._browser = browser

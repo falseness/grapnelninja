@@ -1,6 +1,5 @@
-// Records and time-in-game persisted through CG.data (CrazyGames data
-// module, or localStorage when the SDK is disabled). Records are written
-// only on run end or pause, never per point, to respect the data debounce.
+// Records and time-in-game persisted in localStorage. Records are written
+// only on run end or pause, never per point.
 const PROGRESS = (function()
 {
     const recordsKey = 'grapnelninja.records'
@@ -25,21 +24,21 @@ const PROGRESS = (function()
 
     const PROGRESS =
     {
-        // Call once after CG.init(): migrate legacy time, load records
+        // Call once after PLATFORM.init(): migrate legacy time, load records
         load()
         {
             const legacy = localStorage.getItem(legacyTimeKey)
             if (legacy !== null)
             {
-                if (CG.data.getItem(timeKey) === null)
-                    CG.data.setItem(timeKey, String(readNumber(legacy)))
+                if (localStorage.getItem(timeKey) === null)
+                    localStorage.setItem(timeKey, String(readNumber(legacy)))
                 localStorage.removeItem(legacyTimeKey)
             }
 
             let records = {}
             try
             {
-                records = JSON.parse(CG.data.getItem(recordsKey)) || {}
+                records = JSON.parse(localStorage.getItem(recordsKey)) || {}
             }
             catch (e)
             {
@@ -61,16 +60,16 @@ const PROGRESS = (function()
             const json = recordsJson()
             if (json === savedRecords)
                 return
-            CG.data.setItem(recordsKey, json)
+            localStorage.setItem(recordsKey, json)
             savedRecords = json
         },
         getTime()
         {
-            return readNumber(CG.data.getItem(timeKey))
+            return readNumber(localStorage.getItem(timeKey))
         },
         setTime(seconds)
         {
-            CG.data.setItem(timeKey, String(readNumber(seconds)))
+            localStorage.setItem(timeKey, String(readNumber(seconds)))
         }
     }
     // Closing the tab mid-run must not lose a new record
