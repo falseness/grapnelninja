@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 
 from browser_test_support import start_browser_test
+# SDK-independent page helpers, re-exported for the Y8 suites.
+from gamepix_harness import canvas_to_viewport, click_canvas  # noqa: F401
 
 Y8_SDK_ROUTE = '**/y8.min.js'
 FAKE_SDK = Path(__file__).with_name('fixtures') / 'fake-y8-sdk.js'
@@ -54,23 +56,3 @@ def collect_errors(page, block_sdk=False):
 def sdk_calls(page):
     """Return the fake SDK's recorded calls ([] when the SDK is absent)."""
     return page.evaluate('() => (window.__y8Fake && window.__y8Fake.calls) || []')
-
-
-def canvas_to_viewport(page, x, y):
-    """Invert the page's affine viewportCoordsToCanvasCoords at (x, y)."""
-    return page.evaluate('''([x, y]) => {
-        const o = viewportCoordsToCanvasCoords({x: 0, y: 0})
-        const ex = viewportCoordsToCanvasCoords({x: 1, y: 0})
-        const ey = viewportCoordsToCanvasCoords({x: 0, y: 1})
-        const a = ex.x - o.x, b = ey.x - o.x, c = ex.y - o.y, d = ey.y - o.y
-        const det = a * d - b * c
-        const dx = x - o.x, dy = y - o.y
-        return {x: (d * dx - b * dy) / det, y: (a * dy - c * dx) / det}
-    }''', [x, y])
-
-
-def click_canvas(page, x, y):
-    """Click at logical canvas coordinates (x, y)."""
-    point = canvas_to_viewport(page, x, y)
-    page.mouse.click(point['x'], point['y'])
-    return point
