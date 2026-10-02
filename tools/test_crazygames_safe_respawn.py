@@ -149,10 +149,14 @@ SETUP = r'''() => {
         return {cause: cause == 'behind-border' ? cause : 'obstacle:' + element.constructor.name,
                 deathX: ninja.x, deathY: ninja.y, score: scoreText.count[version]}
     }
-    rs.pressContinue = () => {
+    // The continue arrives with the fake rewarded ad's adFinished (TASK-082)
+    rs.pressContinue = async () => {
         const b = continueOffer.continueButton.background
-        continueOffer.click({x: b.x + b.width / 2, y: b.y + b.height / 2})
-        if (continueOffer.visible) throw Error('continue click ignored')
+        if (!continueOffer.click({x: b.x + b.width / 2, y: b.y + b.height / 2}))
+            throw Error('continue click ignored')
+        for (let i = 0; i < 200 && continueOffer.visible; ++i)
+            await new Promise(resolve => setTimeout(resolve, 10))
+        if (continueOffer.visible) throw Error('rewarded ad did not finish')
         rs.deaths = 0
         const p = lastRespawn
         const s = scale[version]

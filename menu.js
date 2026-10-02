@@ -722,6 +722,11 @@ class ContinueOffer
     constructor(w, h, onContinue, onRestart)
     {
         this.visible = false
+        // Rewarded ad state: ads may be unavailable for the whole run
+        // (adblock, no SDK), fail for this offer, or be playing right now.
+        this.adsAvailable = true
+        this.adFailed = false
+        this.adPending = false
         this.continueButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
             {text: 'Watch ad to continue', fill: STYLE.colors.ui.buttonText},
@@ -774,20 +779,66 @@ class ContinueOffer
             x       : centerX,
             y       : this.panel.y + this.panel.height * 0.33
         })
+        // Takes the watch button's place when there is no ad to offer
+        this.noticeText = new Text(
+        {
+            fill    : STYLE.colors.ui.mutedText,
+            fontSize: h * 0.05,
+            text    : '',
+            x       : centerX,
+            y       : this.panel.y + this.panel.height * rows[0]
+        })
     }
     show()
     {
+        this.adFailed = false
+        this.adPending = false
         this.setVisible(true)
     }
     hide()
     {
+        this.adPending = false
         this.setVisible(false)
     }
     setVisible(visible)
     {
         this.visible = visible
-        this.continueButton.clickable = visible
-        this.restartButton.clickable = visible
+        this.updateClickable()
+    }
+    watchVisible()
+    {
+        return this.adsAvailable && !this.adFailed
+    }
+    setAdsAvailable(available)
+    {
+        this.adsAvailable = available
+        this.updateClickable()
+    }
+    // While an ad is requested both buttons ignore clicks until a callback
+    setAdPending(pending)
+    {
+        this.adPending = pending
+        this.updateClickable()
+    }
+    showAdError()
+    {
+        this.adPending = false
+        this.adFailed = true
+        this.updateClickable()
+    }
+    updateClickable()
+    {
+        const enabled = this.visible && !this.adPending
+        this.continueButton.clickable = enabled && this.watchVisible()
+        this.restartButton.clickable = enabled
+    }
+    notice()
+    {
+        if (!this.adsAvailable)
+            return 'Ads unavailable'
+        if (this.adFailed)
+            return 'Ad unavailable'
+        return ''
     }
     click(coord)
     {
@@ -812,7 +863,18 @@ class ContinueOffer
 
         this.title.draw()
         this.score.draw()
-        this.continueButton.draw()
+
+        ctx.save()
+        if (this.adPending)
+            ctx.globalAlpha = 0.4
+        if (this.watchVisible())
+            this.continueButton.draw()
+        else
+        {
+            this.noticeText.text = this.notice()
+            this.noticeText.draw()
+        }
         this.restartButton.draw()
+        ctx.restore()
     }
 }

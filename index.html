@@ -73,7 +73,7 @@
             let trackEnabled = true
             let fpsCounter = new FpsCounter()
             let menu = new Menu(width, height)
-            let continueOffer = new ContinueOffer(width, height, continueRun, restartFromOffer)
+            let continueOffer = new ContinueOffer(width, height, watchAdToContinue, restartFromOffer)
             let continueUsed = false
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             let lastFrameTime = 0, physicsAccumulatorMs = 0
@@ -109,6 +109,7 @@
                 firstCycleInThisTick = true
                 continueUsed = false
                 continueOffer.hide()
+                checkAdsAvailable()
                 
                 layoutHud()
                 
@@ -177,8 +178,51 @@
                 PROGRESS.saveRecords()
                 continueOffer.show()
             }
+            // Run start: adblock users and players without the SDK get only
+            // Restart plus an "Ads unavailable" notice on the offer.
+            function checkAdsAvailable()
+            {
+                continueOffer.setAdsAvailable(CG.environment != 'disabled')
+                if (CG.environment == 'disabled')
+                    return
+                CG.hasAdblock().then(adblock =>
+                {
+                    if (adblock)
+                        continueOffer.setAdsAvailable(false)
+                })
+            }
+            // One rewarded ad per continue and at most one continue per run.
+            // Input stays ignored (both buttons disabled, physics frozen by
+            // the visible offer) until the SDK answers.
+            function watchAdToContinue()
+            {
+                if (continueUsed || continueOffer.adPending || !continueOffer.watchVisible())
+                    return
+                continueUsed = true
+                continueOffer.setAdPending(true)
+                CG.requestAd('rewarded',
+                {
+                    // The game stays frozen behind the offer. There is no
+                    // game audio, so nothing needs muting during the ad.
+                    adStarted: () => {},
+                    adFinished: () =>
+                    {
+                        if (!continueOffer.adPending)
+                            return
+                        continueOffer.setAdPending(false)
+                        continueRun()
+                    },
+                    // No reward: keep the score on the offer, Restart only
+                    adError: () =>
+                    {
+                        if (!continueOffer.adPending)
+                            return
+                        continueOffer.showAdError()
+                    }
+                })
+            }
             // Keeps score, version, floors and screen; the ninja respawns at
-            // rest at a safe point with temporary invulnerability (no ad yet).
+            // rest at a safe point with temporary invulnerability.
             function continueRun()
             {
                 continueUsed = true
