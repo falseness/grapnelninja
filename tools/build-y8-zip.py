@@ -1,15 +1,17 @@
-"""Build the CrazyGames upload zip from an explicit allowlist.
+"""Build the Y8 upload zip from an explicit allowlist.
 
 The zip holds index.html at its root, the root *.js game files and the
 collision/, elements/, render/ and sprites/ folders. Every local reference in
 index.html must be relative and present in the zip; the only external URL
-allowed is the CrazyGames SDK.
+allowed is the Y8 SDK. The build fails unless y8config.js holds a real
+appId (24 hex chars) and gameId (digits).
 
-Usage: python3 tools/build-crazygames-zip.py [--out PATH] [--listing PATH]
-                                             [--stats PATH] [--refs PATH]
+Usage: python3 tools/build-y8-zip.py [--out PATH] [--listing PATH]
+                                     [--stats PATH] [--refs PATH]
 """
 import argparse
 import json
+import re
 import sys
 import zipfile
 from html.parser import HTMLParser
@@ -17,7 +19,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_OUT = ROOT / 'artifacts' / 'TASK-088' / 'grapnelninja-crazygames.zip'
+DEFAULT_OUT = ROOT / 'artifacts' / 'TASK-096' / 'grapnelninja-y8.zip'
 
 ROOT_FILES = ['index.html']
 ROOT_GLOBS = ['*.js']
@@ -25,7 +27,10 @@ FOLDERS = ['collision', 'elements', 'render', 'sprites']
 FOLDER_SUFFIXES = {'.js'}
 EXCLUDED = ['tools', 'artifacts', 'screenshots', 'prompts.md', 'AGENTS.md',
             'README.md', '.git', '__pycache__']
-SDK_URL = 'https://sdk.crazygames.com/crazygames-sdk-v3.js'
+SDK_URL = 'https://cdn.y8.com/minimal-sdk/2-0/y8.min.js'
+CONFIG_FILE = 'y8config.js'
+ID_PATTERNS = {'appId': re.compile(r'^[0-9a-f]{24}$'),
+               'gameId': re.compile(r'^[0-9]+$')}
 MAX_BYTES = 20 * 1024 * 1024
 MAX_FILES = 1500
 
@@ -74,7 +79,7 @@ def check_references(html, zip_paths):
     for tag, attr, ref in html_references(html):
         parsed = urlparse(ref)
         if ref == SDK_URL:
-            lines.append(f'{tag} {attr}={ref}: external (CrazyGames SDK, allowed)')
+            lines.append(f'{tag} {attr}={ref}: external (Y8 SDK, allowed)')
         elif parsed.scheme or parsed.netloc:
             errors.append(f'{tag} {attr}={ref}: non-relative URL')
         elif ref.startswith('/'):
@@ -84,6 +89,18 @@ def check_references(html, zip_paths):
         else:
             lines.append(f'{tag} {attr}={ref}: present, relative')
     return lines, errors
+
+
+def check_y8_config(js):
+    """Return errors for missing, empty or placeholder IDs in y8config.js."""
+    errors = []
+    for key, pattern in ID_PATTERNS.items():
+        m = re.search(r'\b%s\s*:\s*([\'"])(.*?)\1' % key, js)
+        if not m:
+            errors.append(f'{key}: missing')
+        elif not pattern.fullmatch(m.group(2)):
+            errors.append(f'{key}: {m.group(2)!r} does not match {pattern.pattern}')
+    return errors
 
 
 def excluded_hits(zip_paths):
@@ -100,6 +117,12 @@ def build(out, root=ROOT):
     hits = excluded_hits(zip_paths)
     if hits:
         raise SystemExit(f'excluded paths in the allowlist: {hits}')
+    config = root / CONFIG_FILE
+    if not config.is_file():
+        raise SystemExit(f'{CONFIG_FILE} is missing')
+    id_errors = check_y8_config(config.read_text(encoding='utf-8'))
+    if id_errors:
+        raise SystemExit(f'bad {CONFIG_FILE}:\n' + '\n'.join(id_errors))
     html = (root / 'index.html').read_text(encoding='utf-8')
     ref_lines, ref_errors = check_references(html, zip_paths)
     if ref_errors:
