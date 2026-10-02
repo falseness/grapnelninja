@@ -105,8 +105,23 @@
             {
                 firstCycleInThisTick = true
                 
-                scoreText.x         = scoreTextX        / scale[version]
-                scoreText.rx        = scoreTextRx       / scale[version]
+                layoutHud()
+                
+                scoreText.count[version] = 0
+                menu.setVisible(false)
+                
+                if (version == 'classic')
+                    startClassicVersion()
+                else if (version == 'bad')
+                    startBadVersion()
+                else
+                    console.log('error version in startGame()')
+            }
+            // Width-derived HUD values: score text and the menu button.
+            function layoutHud()
+            {
+                scoreText.x         = scoreTextX()      / scale[version]
+                scoreText.rx        = scoreTextRx()     / scale[version]
                 scoreText.y         = scoreTextY        / scale[version]
                 scoreText.fontSize  = getHudFontSize(width / scale[version], height / scale[version], version)
                 const menuButtonLayout = getHudMenuButtonLayout(
@@ -131,16 +146,6 @@
                     stroke  : menu.constButton.stroke
                 },
                 ...menu.args)
-                
-                scoreText.count[version] = 0
-                menu.setVisible(false)
-                
-                if (version == 'classic')
-                    startClassicVersion()
-                else if (version == 'bad')
-                    startBadVersion()
-                else
-                    console.log('error version in startGame()')
             }
             function reStart()
             {
@@ -294,6 +299,54 @@
                     physicsAccumulatorMs = Math.max(0, physicsAccumulatorMs - physicsStepMs)
                 }
             }
+
+            // Live re-layout when the iframe resizes (fullscreen toggle,
+            // window resize). The current run keeps going: only width-derived
+            // values are recomputed; the logical height (and physics) is fixed.
+            let resizeTimer = null
+            function onViewportResize()
+            {
+                resizeTimer = null
+                const oldWidth = width
+                updateLogicalViewport()
+                configureCanvasViewport(canvas, ctx)
+                ctx.lineCap = 'butt'
+                rebuildMenu()
+
+                if (version && screen)
+                {
+                    screen.updateWidthLayout()
+                    layoutHud()
+                    // Factories capture width-derived sizes; they hold no run state.
+                    elementsFactory = new ElementsFactory
+                    for (let i = 0; i < floors.length; ++i)
+                        floors[i].rescaleSpacing(width / oldWidth)
+                }
+
+                if (menu.visible)
+                    menu.draw()
+                else if (menu.gamePaused)
+                {
+                    draw()
+                    menu.drawPauseScreen()
+                }
+            }
+            // A new Menu at the new size that keeps the current menu state.
+            function rebuildMenu()
+            {
+                const old = menu
+                menu = new Menu(width, height)
+                menu.classicRecord.text = old.classicRecord.text
+                menu.badRecord.text = old.badRecord.text
+                menu.timeInGame.text = old.timeInGame.text
+                menu.button = old.button
+                menu.setVisible(old.visible)
+                menu.changeGamePause(old.gamePaused)
+            }
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimer)
+                resizeTimer = setTimeout(onViewportResize, 100)
+            })
 
             window.onblur = function() {
                 if (!menu.visible && !menu.gamePaused) {

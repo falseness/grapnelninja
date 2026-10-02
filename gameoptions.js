@@ -4,10 +4,28 @@ const widthHeightRatio = 1.8250950570342206
 const LOGICAL_HEIGHT = 1080
 const minViewportAspect = 4 / 3
 const maxViewportAspect = 21 / 9
-const viewportAspect = Math.min(maxViewportAspect, Math.max(minViewportAspect, window.innerWidth / window.innerHeight))
+function computeLogicalWidth()
+{
+    const aspect = Math.min(maxViewportAspect, Math.max(minViewportAspect, window.innerWidth / window.innerHeight))
+    return Math.round(LOGICAL_HEIGHT * aspect)
+}
 const height    = LOGICAL_HEIGHT
-const width     = Math.round(LOGICAL_HEIGHT * viewportAspect)
-const LOGICAL_VIEWPORT = Object.freeze({width: width, height: height})
+// Mutable: a live window resize recomputes it (see updateLogicalViewport).
+let width       = computeLogicalWidth()
+let LOGICAL_VIEWPORT = Object.freeze({width: width, height: height})
+
+// Recomputes the logical width from the window; returns true if it changed.
+function updateLogicalViewport()
+{
+    const nextWidth = computeLogicalWidth()
+
+    if (nextWidth == width)
+        return false
+
+    width = nextWidth
+    LOGICAL_VIEWPORT = Object.freeze({width: width, height: height})
+    return true
+}
 
 // Logical canvas percentages; baseline gameplay was measured at 1920 x 1080.
 function screenWidthPercent(percent) { return width * (percent / 100) }

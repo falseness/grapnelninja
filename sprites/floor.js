@@ -12,6 +12,11 @@ class Floor
         this.elements           = []
         this.nextGenerationGroupId = 0
     }
+    // Live viewport resize: existing elements stay, new spawn spacing follows the new width.
+    rescaleSpacing(ratio)
+    {
+        this.elementsIntervalX = {min: this.elementsIntervalX.min * ratio, max: this.elementsIntervalX.max * ratio}
+    }
     generatePrimaryElements()
     {
         if (version == 'bad' && this.primaryElementsQuantity == 1)

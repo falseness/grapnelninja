@@ -135,7 +135,7 @@ let scoreText =
         ctx.restore()
     }
 }
-const scoreTextX        = 0.1 * width
-const scoreTextRx       = 0.8 * width
+function scoreTextX()  { return 0.1 * width }
+function scoreTextRx() { return 0.8 * width }
 const scoreTextY        = STYLE.ui.hudTopRatio * height
 const scoreTextFontSize = STYLE.ui.hudFontRatio * height
