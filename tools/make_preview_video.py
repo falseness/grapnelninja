@@ -1,6 +1,6 @@
-"""CrazyGames preview videos from real gameplay (TASK-086).
+"""Store preview videos from real gameplay (TASK-086).
 
-  python3 tools/make_preview_video.py --out artifacts/TASK-086/videos
+  python3 tools/make_preview_video.py --out artifacts/TASK-097/assets
 
 Replays the best TASK-084 autopilot seed (classic mode, seed 1) tick by tick
 with no requestAnimationFrame: two physics() ticks per video frame, then
@@ -19,7 +19,7 @@ smoothed crop:
 The tool fails if the ninja is ever outside a crop box (or the canvas) or the
 score resets, and logs the off-crop frame count (must be 0).
 
-Each video opens with the matching TASK-085 cover for 0.5 s, then cuts
+Each video opens with the matching make_covers.py cover for 0.5 s, then cuts
 straight into gameplay. H.264 (yuv420p) via imageio-ffmpeg, no audio stream.
 Raw frames and the per-frame capture log (tick, score, ninja position) go to
 <out>/../frames and <out>/../capture-log.json.
@@ -194,9 +194,9 @@ def encode(meta, frames_dir, covers_dir, out):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--out', required=True)
+    parser.add_argument('--out', default=str(ROOT / 'artifacts/TASK-097/assets'))
     parser.add_argument('--seeds', default=str(ROOT / 'artifacts/TASK-084/seed-search.json'))
-    parser.add_argument('--covers', default=str(ROOT / 'artifacts/TASK-085/covers'))
+    parser.add_argument('--covers', default=str(ROOT / 'artifacts/TASK-097/assets'))
     parser.add_argument('--mode', default=MODE)
     parser.add_argument('--start-tick', type=int, default=START_TICK)
     parser.add_argument('--end-tick', type=int, default=END_TICK)

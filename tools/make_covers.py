@@ -1,22 +1,25 @@
-"""CrazyGames cover images from real gameplay (TASK-085).
+"""Store cover images from real gameplay (TASK-085, sizes extended in TASK-097).
 
 Two steps:
 
   python3 tools/make_covers.py --capture --seeds artifacts/TASK-084/seed-search.json \
       --frames artifacts/TASK-085/source-frames
-  python3 tools/make_covers.py --out artifacts/TASK-085/covers
+  python3 tools/make_covers.py --out artifacts/TASK-097/assets \
+      --frames artifacts/TASK-085/source-frames
 
 --capture replays the best TASK-084 autopilot seed of each mode tick by tick
 (physics + draw, no requestAnimationFrame) up to the chosen game time and
 saves the canvas: once at 1920x1080 (DPR 1) as the reference landscape frame
-and once at 2880x1620 (DPR 1.5). All three covers are cut from the 2880x1620
+and once at 2880x1620 (DPR 1.5). All covers are cut from the 2880x1620
 frame inside the playfield band (bad mode draws flat dark bands above and
 below it) and downscaled, so the landscape is supersampled too. HUD
 and FPS layers are skipped so the only text is the composed title.
 Frame metadata (mode, seed, tick, ninja position) goes to source-frames.json.
 
-The compose step (default --frames is <out>/../source-frames) writes
-cover-1920x1080.png, cover-800x1200.png and cover-800x800.png.
+The compose step (default --frames is <out>/../source-frames) writes one
+cover per size in COVER_SIZES: 16:9 (1920x1080, 1280x720), 4:3 (800x600),
+1:1 (800x800, 512x512) and 2:3 (800x1200), so a portal's thumbnail slots
+can be matched without knowing their exact sizes up front.
 """
 import argparse
 import base64
@@ -43,6 +46,16 @@ PLAYFIELD = (0.099, 0.901)
 SHOTS = {
     'landscape': {'mode': 'bad', 'tick': 690},
     'crop': {'mode': 'bad', 'tick': 690},
+}
+
+# (width, height) -> horizontal shift of the crop centre past the ninja
+COVER_SIZES = {
+    (1920, 1080): 0.1,
+    (1280, 720): 0.1,
+    (800, 600): 0.08,
+    (800, 1200): 0.05,
+    (800, 800): 0.07,
+    (512, 512): 0.07,
 }
 
 CAPTURE_JS = '''async ([mode, seed, actions, targetTick]) => {
@@ -161,9 +174,9 @@ def compose(frames_dir, out):
     source = Image.open(frames_dir / meta['crop']['file']).convert('RGB')
     ninja_x = meta['crop']['ninja'][0]
     results = {}
-    # All three come from the same 2880x1620 frame so the style matches;
+    # All come from the same 2880x1620 frame so the style matches;
     # the shift keeps the ninja left of centre with the obstacles ahead of it.
-    for (w, h), shift in (((1920, 1080), 0.1), ((800, 1200), 0.05), ((800, 800), 0.07)):
+    for (w, h), shift in COVER_SIZES.items():
         cover = crop_around(source, ninja_x + shift, w / h).resize((w, h), Image.LANCZOS)
         title_y = 0.13 if h > w else 0.15
         cover = neon_title(cover, TITLE, w / 2, h * title_y, w * (0.62 if w > h else 0.88))
