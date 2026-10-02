@@ -1,4 +1,8 @@
-"""Continue offer after an eligible lethal death (no ad yet, TASK-080)."""
+"""Continue offer after an eligible lethal death (TASK-080, Y8 port TASK-093).
+
+Env: Y8_CONTINUE_EVIDENCE_DIR receives offer-*.png, button-rects.json and
+console/page-errors.log.
+"""
 import json
 import os
 from pathlib import Path
@@ -6,13 +10,11 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import SDK_ROUTE, logical_size
-from crazygames_harness import (FAKE_SDK, canvas_to_viewport, click_canvas, collect_errors,
-                                open_game, sdk_calls, start_crazygames_test)
+from browser_test_support import logical_size
+from y8_harness import (FAKE_SDK, Y8_SDK_ROUTE, canvas_to_viewport, click_canvas,
+                        collect_errors, open_game, sdk_calls, start_y8_test)
 
 ROOT = Path(__file__).resolve().parent.parent
-GAMEPLAY = ('game.gameplayStart', 'game.gameplayStop')
-START, STOP = GAMEPLAY
 
 # Count reStart calls and pin the ninja at its start state after every physics
 # tick so it never dies on its own. window.__kill moves it behind the deletion
@@ -62,8 +64,8 @@ BUTTON_RECTS = '''() => {
 }'''
 
 
-def gameplay_events(page):
-    return [c['name'] for c in sdk_calls(page) if c['name'] in GAMEPLAY]
+def show_ad_count(page):
+    return sum(c['name'] == 'showAd' for c in sdk_calls(page))
 
 
 def state(page):
@@ -72,11 +74,11 @@ def state(page):
         x: ninja.x, y: ninja.y, gamePaused: menu.gamePaused, menuVisible: menu.visible})''')
 
 
-class CrazyGamesContinueTests(unittest.TestCase):
+class ContinueTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_crazygames_test(ROOT, cls.addClassCleanup)
-        cls.evidence = os.environ.get('CG_CONTINUE_EVIDENCE_DIR')
+        cls.url, cls.browser = start_y8_test(ROOT, cls.addClassCleanup)
+        cls.evidence = os.environ.get('Y8_CONTINUE_EVIDENCE_DIR')
         cls.errors = []
         cls.rects = {}
 
@@ -96,7 +98,7 @@ class CrazyGamesContinueTests(unittest.TestCase):
     def boot(self, viewport, touch=False):
         if touch:
             context = self.browser.new_context(viewport=viewport, has_touch=True, is_mobile=True)
-            context.route(SDK_ROUTE, lambda route: route.fulfill(
+            context.route(Y8_SDK_ROUTE, lambda route: route.fulfill(
                 path=str(FAKE_SDK), content_type='application/javascript'))
             page = context.new_page()
             errors = collect_errors(page)
@@ -107,14 +109,14 @@ class CrazyGamesContinueTests(unittest.TestCase):
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('CG.environment === "crazygames" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "y8" && menu.visible')
         page.evaluate(INSTRUMENT_RUN)
         page.evaluate('''() => {
             const b = menu.classicVersionButton.background
             menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2})
         }''')
         page.wait_for_timeout(300)
-        self.assertEqual(gameplay_events(page), [START])
+        self.assertEqual(show_ad_count(page), 0)
         return page
 
     def kill(self, page, score):
@@ -171,10 +173,10 @@ class CrazyGamesContinueTests(unittest.TestCase):
         self.kill(page, 4)
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 1, 0))
-        self.assertEqual(gameplay_events(page), [START])
+        self.assertEqual(show_ad_count(page), 0)
         print('  ASSERT (a) score 4 death -> instant reStart, no overlay: pass', file=sys.stderr)
 
-        # (b) score >= 5: overlay, frozen physics, gameplayStop
+        # (b) score >= 5: overlay, frozen physics, no ad requested yet
         self.kill(page, 5)
         before = state(page)
         self.assertTrue(before['offer'])
@@ -183,9 +185,9 @@ class CrazyGamesContinueTests(unittest.TestCase):
         after = state(page)
         self.assertTrue(after['offer'])
         self.assertEqual((after['x'], after['y']), (before['x'], before['y']))
-        self.assertEqual(gameplay_events(page), [START, STOP])
+        self.assertEqual(show_ad_count(page), 0)
         print(f'  ASSERT (b) score 5 death -> overlay; ninja ({before["x"]:.3f},'
-              f' {before["y"]:.3f}) unchanged over 1 s; events [start, stop]: pass',
+              f' {before["y"]:.3f}) unchanged over 1 s; no showAd: pass',
               file=sys.stderr)
         self.record_rects(page, '1280x720')
         self.save(page, 'offer-1280x720.png')
@@ -211,19 +213,19 @@ class CrazyGamesContinueTests(unittest.TestCase):
         page.evaluate('window.dispatchEvent(new Event("blur"))')
         self.assertFalse(state(page)['gamePaused'])
 
-        # (c) Restart: score 0, overlay hidden, gameplayStart
+        # (c) Restart: score 0, overlay hidden
         self.click_button(page, 'restartButton')
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score'], s['continueUsed']),
                          (False, 2, 0, False))
-        self.assertEqual(gameplay_events(page), [START, STOP, START])
-        print('  ASSERT (c) Restart -> score 0, overlay hidden, events +start: pass',
+        self.assertEqual(show_ad_count(page), 0)
+        print('  ASSERT (c) Restart -> score 0, overlay hidden: pass',
               file=sys.stderr)
 
         # (e) after a restart the run is eligible again
         self.kill(page, 6)
         self.assertTrue(state(page)['offer'])
-        self.assertEqual(gameplay_events(page), [START, STOP, START, STOP])
+        self.assertEqual(show_ad_count(page), 0)
         print('  ASSERT (e) eligible again after restart: pass', file=sys.stderr)
 
         # Continue: the ninja respawns at a safe point and resumes physics
@@ -233,7 +235,7 @@ class CrazyGamesContinueTests(unittest.TestCase):
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score'], s['continueUsed']),
                          (False, 2, 6, True))
-        self.assertEqual(gameplay_events(page), [START, STOP, START, STOP, START])
+        self.assertEqual(show_ad_count(page), 1)
 
         # (d) a second eligible death in the same run restarts instantly
         # (once the respawn invulnerability has run out)
@@ -241,7 +243,7 @@ class CrazyGamesContinueTests(unittest.TestCase):
         self.kill(page, 7)
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 3, 0))
-        self.assertEqual(gameplay_events(page), [START, STOP, START, STOP, START])
+        self.assertEqual(show_ad_count(page), 1)
         print('  ASSERT (d) second eligible death after continue -> instant reStart: pass',
               file=sys.stderr)
 
@@ -249,20 +251,20 @@ class CrazyGamesContinueTests(unittest.TestCase):
         page = self.boot({'width': 844, 'height': 390}, touch=True)
         self.kill(page, 5)
         self.assertTrue(state(page)['offer'])
-        self.assertEqual(gameplay_events(page), [START, STOP])
+        self.assertEqual(show_ad_count(page), 0)
         self.record_rects(page, '844x390')
         self.save(page, 'offer-844x390-touch.png')
         self.tap_button(page, 'restartButton')
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 1, 0))
-        self.assertEqual(gameplay_events(page), [START, STOP, START])
+        self.assertEqual(show_ad_count(page), 0)
 
         self.kill(page, 5)
         self.tap_button(page, 'continueButton')
         page.wait_for_function('!continueOffer.visible')
         s = state(page)
         self.assertEqual((s['offer'], s['continueUsed']), (False, True))
-        self.assertEqual(gameplay_events(page), [START, STOP, START, STOP, START])
+        self.assertEqual(show_ad_count(page), 1)
         print('  ASSERT touch tap Restart and Continue at 844x390: pass', file=sys.stderr)
 
 

@@ -203,6 +203,7 @@ class Y8PlatformTests(unittest.TestCase):
         # The watchdog fires mid-ad; the later adViewed/adBreakDone are ignored.
         page, _ = self.open(fake_options={'adDurationMs': 400})
         self.init(page)
+        page.evaluate('PLATFORM.rewardPlayingTimeoutMs = 100')
         self.reward(page, 'lateAfterWatchdog', 'adError', code='timeout',
                     rewardTimeoutMs=100, settleMs=700)
         self.assertTrue(page.evaluate(

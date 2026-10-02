@@ -74,6 +74,9 @@ const PLATFORM = (function()
         environment: 'pending',
         // Watchdog for a rewarded break that never reports an outcome
         rewardTimeoutMs: 15000,
+        // Once beforeAd reports a playing ad, the watchdog restarts with this
+        // limit: rewarded videos often run 15-30 s and must not time out.
+        rewardPlayingTimeoutMs: 120000,
 
         init()
         {
@@ -122,7 +125,12 @@ const PLATFORM = (function()
                 fail('disabled', 'Y8 SDK disabled')
                 return
             }
-            watchdog = setTimeout(() => fail('timeout', 'Y8 rewarded ad timed out'), PLATFORM.rewardTimeoutMs)
+            function startWatchdog(ms)
+            {
+                clearTimeout(watchdog)
+                watchdog = setTimeout(() => fail('timeout', 'Y8 rewarded ad timed out'), ms)
+            }
+            startWatchdog(PLATFORM.rewardTimeoutMs)
             try
             {
                 // The showAd Promise resolves before adBreakDone; only rejection matters
@@ -132,8 +140,10 @@ const PLATFORM = (function()
                     beforeReward: showAdFn => showAdFn(),
                     beforeAd: () =>
                     {
-                        if (!finished)
-                            notify('adStarted')
+                        if (finished)
+                            return
+                        startWatchdog(PLATFORM.rewardPlayingTimeoutMs)
+                        notify('adStarted')
                     },
                     adViewed: () =>
                     {

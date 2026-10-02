@@ -4,7 +4,7 @@ Each case drives physics by hand (no requestAnimationFrame, no input after
 the continue): advance the run, die for real through ninja.move(), answer the
 continue offer and then run RESPAWN_INVULNERABLE_MS + 500 ms of physics.
 
-Env: CG_RESPAWN_EVIDENCE_DIR receives frames/<case>/t*.png, contact.png,
+Env: Y8_RESPAWN_EVIDENCE_DIR receives frames/<case>/t*.png, contact.png,
 respawn-cases.json, replenish-check.json and console/page-errors.log.
 """
 import json
@@ -14,7 +14,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from crazygames_harness import open_game, start_crazygames_test
+from y8_harness import open_game, start_y8_test
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
@@ -202,8 +202,8 @@ SPAWN_HOOK = r'''() => {
 class SafeRespawnTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_crazygames_test(ROOT, cls.addClassCleanup)
-        cls.evidence = os.environ.get('CG_RESPAWN_EVIDENCE_DIR')
+        cls.url, cls.browser = start_y8_test(ROOT, cls.addClassCleanup)
+        cls.evidence = os.environ.get('Y8_RESPAWN_EVIDENCE_DIR')
         cls.errors = []
         cls.cases = []
         cls.replenish = []
@@ -249,7 +249,7 @@ class SafeRespawnTests(unittest.TestCase):
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual((errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('CG.environment === "crazygames" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "y8" && menu.visible')
         page.evaluate(SETUP)
         return page
 
