@@ -126,6 +126,11 @@
                 // GamePix requires loaded() before any other SDK call,
                 // including GamePix.localStorage used by PROGRESS
                 await PLATFORM.loaded()
+                // GamePix on.pause pauses like a hidden tab. On resume the run
+                // stays paused: the player resumes from the pause overlay.
+                // on.soundOn/soundOff are N/A: the game has no audio.
+                PLATFORM.onPause(pauseRun)
+                PLATFORM.onResume(function() {})
                 PROGRESS.load()
                 start()
                 document.getElementById('loading').remove()
@@ -471,16 +476,16 @@
                 resizeTimer = setTimeout(onViewportResize, 100)
             })
 
-            window.onblur = function() {
-                if (!menu.visible && !menu.gamePaused && !continueOffer.visible) {
+            // GamePix: pause only via the Page Visibility API, never on focus
+            // loss (a click outside the iframe must not pause the run)
+            function pauseRun()
+            {
+                if (!menu.visible && !menu.gamePaused && !continueOffer.visible)
                     menu.startPause()
-                    //menuBack()
-                }
             }
-            // a hidden tab pauses like focus loss
             document.addEventListener('visibilitychange', function() {
                 if (document.visibilityState == 'hidden')
-                    window.onblur()
+                    pauseRun()
             })
             
         </script>
