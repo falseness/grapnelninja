@@ -10,13 +10,24 @@ const PLATFORM = (function()
 
     // Resolves once 'y8sdk.ready' fires. A listener added after the SDK has
     // loaded misses the first event, so ask the SDK to emit it again.
+    // Rejects at once when the page has loaded without window.y8: 'load'
+    // waits for async scripts, so the SDK is blocked or empty.
     function whenReady()
     {
-        return new Promise(resolve =>
+        return new Promise((resolve, reject) =>
         {
             window.addEventListener('y8sdk.ready', () => resolve(), {once: true})
             if (window.y8 && typeof window.y8.emitReadyEvent === 'function')
                 window.y8.emitReadyEvent()
+            const checkLoaded = () =>
+            {
+                if (!window.y8)
+                    reject(new Error('Y8 SDK not loaded'))
+            }
+            if (document.readyState === 'complete')
+                checkLoaded()
+            else
+                window.addEventListener('load', checkLoaded, {once: true})
         })
     }
 

@@ -637,7 +637,7 @@ class Menu
         this.resume.clickable                   = isPaused
         this.backToMenu.clickable               = isPaused
     }
-    startPause(reason)
+    startPause()
     {
         PROGRESS.saveRecords()
         pauseTimeInGame()
