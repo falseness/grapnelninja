@@ -66,8 +66,8 @@ class ViewportEffectsTests(unittest.TestCase):
                 if message.type == 'error' else None)
         try:
             page.add_init_script(CHECKER.init)
-            # browser_test_support stubs only the Y8 SDK: keep the real Bridge
-            # (and its splash screen) out, so PLATFORM boots disabled
+            # Keep the real Bridge (and its splash screen) out, so PLATFORM
+            # boots disabled
             page.route(BRIDGE_URL, lambda route: route.fulfill(
                 content_type='application/javascript', body=''))
             if baseline:

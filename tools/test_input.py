@@ -1,4 +1,4 @@
-"""Input hardening for the Y8 iframe: touch, keys, scrolling, focus."""
+"""Input hardening for the game iframe: touch, keys, scrolling, focus."""
 import json
 import os
 from pathlib import Path
@@ -6,8 +6,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from y8_harness import (FAKE_SDK, Y8_SDK_ROUTE, canvas_to_viewport, collect_errors,
-                        open_game, sdk_calls, start_y8_test)
+from playgama_harness import (bridge_calls, canvas_to_viewport, open_game,
+                              start_playgama_test)
 
 ROOT = Path(__file__).resolve().parent.parent
 TOUCH_VIEWPORT = {'width': 844, 'height': 390}
@@ -16,13 +16,8 @@ DESKTOP_VIEWPORT = {'width': 1280, 'height': 720}
 
 def open_touch_game(browser, url):
     """Return (context, page, errors) for a mobile landscape touch context."""
-    context = browser.new_context(viewport=TOUCH_VIEWPORT, has_touch=True,
-                                  is_mobile=True)
-    context.route(Y8_SDK_ROUTE, lambda route: route.fulfill(
-        path=str(FAKE_SDK), content_type='application/javascript'))
-    page = context.new_page()
-    errors = collect_errors(page)
-    page.goto(url + 'index.html')
+    context, page, errors = open_game(browser, url + 'index.html', TOUCH_VIEWPORT,
+                                      has_touch=True, is_mobile=True)
     page.wait_for_function('menu.visible && typeof Grapnel !== "undefined"')
     return context, page, errors
 
@@ -58,8 +53,8 @@ def count_tap_throws(page):
 class InputTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_y8_test(ROOT, cls.addClassCleanup)
-        cls.evidence = os.environ.get('Y8_INPUT_EVIDENCE_DIR')
+        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.evidence = os.environ.get('INPUT_EVIDENCE_DIR')
         cls.errors = []
 
     @classmethod
@@ -83,7 +78,7 @@ class InputTests(unittest.TestCase):
         context, page, errors = open_game(self.browser, 'about:blank', DESKTOP_VIEWPORT)
         self.track(context, errors)
         page.goto(self.url + 'index.html')
-        page.wait_for_function('PLATFORM.environment === "y8" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "playgama" && menu.visible')
         return page
 
     def out(self):
@@ -158,17 +153,17 @@ class InputTests(unittest.TestCase):
     def test_visibility_hidden_pauses(self):
         page = self.boot_desktop()
         start_classic(page)
-        before = [c['name'] for c in sdk_calls(page)]
+        before = [c['name'] for c in bridge_calls(page)]
         page.evaluate('''() => {
             Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true})
             Object.defineProperty(document, 'hidden', {value: true, configurable: true})
             document.dispatchEvent(new Event('visibilitychange'))
         }''')
         self.assertTrue(page.evaluate('menu.gamePaused'))
-        names = [c['name'] for c in sdk_calls(page)]
-        print(f'\n  sdk calls after hidden={names[len(before):]}', file=sys.stderr)
-        self.assertNotIn('showAd', names[len(before):])
-        print('  ASSERT visibilitychange hidden -> gamePaused, no showAd: pass',
+        names = [c['name'] for c in bridge_calls(page)]
+        print(f'\n  bridge calls after hidden={names[len(before):]}', file=sys.stderr)
+        self.assertEqual([n for n in names[len(before):] if n.startswith('advertisement.show')], [])
+        print('  ASSERT visibilitychange hidden -> gamePaused, no ad shown: pass',
               file=sys.stderr)
 
     def test_computed_style(self):

@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import unittest
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 from verification_scenarios import expected, frames, motion, setup
 from verification_support import assert_near, baseline_route, load_baseline_sources
 
@@ -43,6 +43,7 @@ class FrameFixtureTests(unittest.TestCase):
             if baseline:
                 page.route('**/*', baseline_route(self.baseline))
             page.goto(self.url)
+            wait_for_boot(page)
             row = page.evaluate(setup, frame)
             for key in ['initial', 'raw']:
                 self.assert_members(row[key], types)

@@ -139,13 +139,13 @@ class BaselineRoutingTests(unittest.TestCase):
                 route = self.route(path)
                 route.fulfill.assert_called_once_with(
                     body=self.original['index.html'], content_type='text/html')
-                route.continue_.assert_not_called()
+                route.fallback.assert_not_called()
 
     def test_javascript_and_javascript_mime(self):
         route = self.route('/game.js')
         route.fulfill.assert_called_once_with(
             body=self.original['game.js'], content_type='text/javascript')
-        route.continue_.assert_not_called()
+        route.fallback.assert_not_called()
 
     def test_query_strings_preserve_root_html_and_javascript(self):
         for path, name, mime in [('/?v=1', 'index.html', 'text/html'),
@@ -154,13 +154,13 @@ class BaselineRoutingTests(unittest.TestCase):
             with self.subTest(path=path):
                 route = self.route(path)
                 route.fulfill.assert_called_once_with(body=self.original[name], content_type=mime)
-                route.continue_.assert_not_called()
+                route.fallback.assert_not_called()
 
-    def test_unknown_asset_continuation(self):
+    def test_unknown_asset_fallback(self):
         for path in ['/style.css', '/image.png?v=1', '/unknown.js', '/unknown.html']:
             with self.subTest(path=path):
                 route = self.route(path)
-                route.continue_.assert_called_once_with()
+                route.fallback.assert_called_once_with()
                 route.fulfill.assert_not_called()
 
     def test_missing_baseline_source_failure(self):

@@ -29,7 +29,7 @@ FOLDERS = ['collision', 'elements', 'render', 'sprites']
 FOLDER_SUFFIXES = {'.js'}
 ALLOWED_SUFFIXES = {'.html', '.js', '.json'}
 EXCLUDED = ['tools', 'artifacts', 'screenshots', 'prompts.md', 'AGENTS.md',
-            'README.md', '.git', '__pycache__', 'y8config.js']
+            'README.md', '.git', '__pycache__']
 EXCLUDED_SUFFIXES = {'.py', '.md'}
 SDK_URL = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
 LATIN_NAME = re.compile(r'^[A-Za-z0-9._/-]+$')

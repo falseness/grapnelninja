@@ -1,4 +1,4 @@
-"""Continue offer after an eligible lethal death (TASK-080, Y8 port TASK-093,
+"""Continue offer after an eligible lethal death (TASK-080, port TASK-093,
 Playgama port TASK-125).
 
 Env: CONTINUE_EVIDENCE_DIR receives offer-*.png, button-rects.json and

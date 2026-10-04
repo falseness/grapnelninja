@@ -50,5 +50,5 @@ def baseline_route(sources):
                 body=sources[name],
                 content_type='text/javascript' if name.endswith('.js') else 'text/html')
         else:
-            request_route.continue_()
+            request_route.fallback()
     return route

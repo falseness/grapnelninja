@@ -181,7 +181,8 @@ class AudioTests(unittest.TestCase):
         page = self.boot(NO_AUDIO_CONTEXT)
         self.assertFalse(page.evaluate('"AudioContext" in window'))
         page.keyboard.press('Shift')
-        page.mouse.click(10, 10)
+        # Bottom-left corner: the top-left one holds the language button
+        page.mouse.click(10, VIEWPORT['height'] - 10)
         result = page.evaluate('''async () => {
             AUDIO.startMusic()
             for (const name of AUDIO.sources) await AUDIO.setMute(name, true)

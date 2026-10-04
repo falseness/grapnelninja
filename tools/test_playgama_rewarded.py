@@ -1,4 +1,4 @@
-"""Rewarded continue on the Playgama Bridge (TASK-122, ports test_y8_rewarded).
+"""Rewarded continue on the Playgama Bridge (TASK-122).
 
 Runs against the fake Bridge (tools/fixtures/fake-playgama-bridge.js);
 window.__fakeBridge.rewardedSeq scripts the rewarded states. The continue is

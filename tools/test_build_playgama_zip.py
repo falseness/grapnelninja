@@ -36,7 +36,6 @@ class BuildPlaygamaZipTest(unittest.TestCase):
         self.assertIn('index.html', names)
         self.assertIn(bz.CONFIG_FILE, names)
         self.assertIn('platform.js', names)
-        self.assertNotIn('y8config.js', names)
         self.assertEqual(set(stats['checks'].values()), {'PASS'}, stats['errors'])
         for name in names:
             self.assertIn(Path(name).suffix, bz.ALLOWED_SUFFIXES, name)
@@ -107,11 +106,11 @@ class BuildPlaygamaZipTest(unittest.TestCase):
     def test_excluded_names_are_detected(self):
         self.assertEqual(bz.excluded_hits(['tools/x.js', 'sprites/__pycache__/a.js',
                                            'README.md', 'sprites/ninja.js',
-                                           'y8config.js', 'artifacts/a.json',
+                                           'artifacts/a.json',
                                            'screenshots/s.js', '.git/HEAD',
                                            'build.py', 'sprites/notes.md']),
                          ['tools/x.js', 'sprites/__pycache__/a.js', 'README.md',
-                          'y8config.js', 'artifacts/a.json', 'screenshots/s.js',
+                          'artifacts/a.json', 'screenshots/s.js',
                           '.git/HEAD', 'build.py', 'sprites/notes.md'])
 
     def test_non_latin_names_fail(self):

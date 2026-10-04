@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import unittest
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWPORTS = [(1120, 630), (2544, 1327)]
@@ -20,6 +20,7 @@ class SideFloorCoverageTests(unittest.TestCase):
         page.on('pageerror', lambda error: errors.append(str(error)))
         try:
             page.goto(self.url)
+            wait_for_boot(page)
             result = page.evaluate(PROBE, scrollWidthsPerTick)
         finally:
             page.close()

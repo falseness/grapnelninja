@@ -6,7 +6,7 @@ from threading import Thread
 from playwright.sync_api import sync_playwright
 
 
-SDK_ROUTE = '**/y8.min.js'
+BRIDGE_URL = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
 LOGICAL_HEIGHT = 1080
 
 
@@ -21,15 +21,15 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
-def stub_sdk(route):
-    """Serve an empty SDK so pages boot offline with PLATFORM disabled."""
+def stub_bridge(route):
+    """Serve an empty Bridge so pages boot offline with PLATFORM disabled."""
     route.fulfill(content_type='application/javascript', body='')
 
 
-class OfflineSdkBrowser:
-    """Browser whose pages never fetch the real Y8 SDK.
+class OfflineBridgeBrowser:
+    """Browser whose pages never fetch the real Playgama Bridge.
 
-    Routes added later (e.g. by y8_harness) take precedence.
+    Routes added later (e.g. by playgama_harness) take precedence.
     """
     def __init__(self, browser):
         self._browser = browser
@@ -39,13 +39,22 @@ class OfflineSdkBrowser:
 
     def new_context(self, **kwargs):
         context = self._browser.new_context(**kwargs)
-        context.route(SDK_ROUTE, stub_sdk)
+        context.route(BRIDGE_URL, stub_bridge)
         return context
 
     def new_page(self, **kwargs):
         page = self._browser.new_page(**kwargs)
-        page.context.route(SDK_ROUTE, stub_sdk)
+        page.context.route(BRIDGE_URL, stub_bridge)
         return page
+
+
+def wait_for_boot(page):
+    """Wait until index.html's async boot() has run start().
+
+    Older trees (verification baselines) boot synchronously, without #loading.
+    """
+    page.wait_for_function(
+        "() => { const el = document.getElementById('loading'); return !el || el.hidden }")
 
 
 def start_browser_test(root, add_cleanup):
@@ -62,4 +71,4 @@ def start_browser_test(root, add_cleanup):
     add_cleanup(playwright.stop)
     browser = playwright.chromium.launch(args=['--no-sandbox'])
     add_cleanup(browser.close)
-    return url, OfflineSdkBrowser(browser)
+    return url, OfflineBridgeBrowser(browser)
