@@ -183,6 +183,7 @@
                 
                 scoreText.count[version] = 0
                 menu.setVisible(false)
+                PLATFORM.sendLifecycle('level_started', {world: version})
                 
                 if (version == 'classic')
                     startClassicVersion()
@@ -309,6 +310,9 @@
             {
                 if (interstitialPending)
                     return
+                // A death without a continue ends the run
+                if (runOver)
+                    PLATFORM.sendLifecycle('level_failed', {world: version})
                 const now = PLATFORM.now()
                 const recent = lastInterstitialAt !== null &&
                     now - lastInterstitialAt < PLATFORM.interstitialMinGapMs

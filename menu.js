@@ -651,6 +651,7 @@ class Menu
         this.timeInGame.text = 'time spent in game: ' + getTimeInGame() + ' minutes'
 
         this.changeGamePause(true)
+        PLATFORM.sendLifecycle('level_paused')
 
         this.drawPauseScreen()
     }
@@ -685,6 +686,7 @@ class Menu
     {
         reuseTimeInGame()
         menu.changeGamePause(false)
+        PLATFORM.sendLifecycle('level_resumed')
     }
     opened()
     {

@@ -297,6 +297,14 @@ const PLATFORM = (function()
             }
         },
 
+        // Gameplay lifecycle messages; dropped until game_ready was sent
+        sendLifecycle(name, data)
+        {
+            if (!gameReadySent)
+                return Promise.resolve()
+            return PLATFORM.sendMessage(name, data)
+        },
+
         // Call when the first playable frame is ready; sends at most once
         gameReady()
         {

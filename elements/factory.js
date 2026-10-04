@@ -16,6 +16,7 @@ function changeScoreText()
         {
             scoreText.recordSoundPlayed = true
             AUDIO.play('record')
+            PLATFORM.sendLifecycle('player_got_achievement')
         }
     }
 }
