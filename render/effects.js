@@ -5,9 +5,9 @@ function backgroundTemplateScale(viewWidth, viewHeight)
     return Math.min(viewWidth, viewHeight) * (100 / 720) / 100
 }
 
-// The bars only show soft gradients and faint lines, so the full-window
-// background canvas renders at a quarter of the window's CSS size and CSS
-// stretches it: a full-resolution repaint cost ~30% of the frame at 2560x1080
+// The bars only show soft gradients and faint lines, so the bar canvases
+// render at a quarter of their CSS size and CSS stretches them: a
+// full-resolution repaint cost ~30% of the frame at 2560x1080
 const WINDOW_BACKGROUND_SCALE = 0.25
 
 // The bars background drifts slowly: it is repainted every few frames (and at
@@ -15,14 +15,52 @@ const WINDOW_BACKGROUND_SCALE = 0.25
 // compositor a texture upload on the frames in between
 const WINDOW_BARS_EVERY_FRAMES = 4
 
-// Sizes the full-window background canvas behind the game canvas; its
-// backing store follows the window size at WINDOW_BACKGROUND_SCALE.
-function configureWindowBackground(windowCanvas)
+// Each bar canvas reaches this far (CSS px) under the play rect, so the bars
+// stay opaque under the game canvas's antialiased (fractional) edge row and
+// the low-resolution upscale; a full-window canvas would be blended under
+// the whole play rect every frame (~7% of the frame at 2560x1080)
+const WINDOW_BAR_OVERLAP_PX = 2 + 2 / WINDOW_BACKGROUND_SCALE
+
+// CSS boxes of the two letterbox bars (left/right or top/bottom of the play
+// rect), or [] when the play rect fills the window.
+function windowBarBoxes(rect)
 {
-    windowCanvas.width = Math.max(1, Math.round(window.innerWidth * WINDOW_BACKGROUND_SCALE))
-    windowCanvas.height = Math.max(1, Math.round(window.innerHeight * WINDOW_BACKGROUND_SCALE))
-    // Resizing the backing store cleared it
-    windowCanvas.barsKey = null
+    const overlap = WINDOW_BAR_OVERLAP_PX
+    const right = rect.left + rect.width
+    const bottom = rect.top + rect.height
+
+    if (rect.left >= 0.5)
+        return [{left: 0, top: 0, width: rect.left + overlap, height: window.innerHeight},
+                {left: right - overlap, top: 0, width: window.innerWidth - right + overlap, height: window.innerHeight}]
+    if (rect.top >= 0.5)
+        return [{left: 0, top: 0, width: window.innerWidth, height: rect.top + overlap},
+                {left: 0, top: bottom - overlap, width: window.innerWidth, height: window.innerHeight - bottom + overlap}]
+    return []
+}
+
+// Places the two bar canvases behind the game canvas over the letterbox
+// bars; their backing stores follow their CSS size at WINDOW_BACKGROUND_SCALE.
+function configureWindowBackground()
+{
+    const boxes = windowBarBoxes(getCanvasCssRect())
+
+    Array.from(document.getElementsByClassName('window-bar')).forEach((barCanvas, i) =>
+    {
+        const box = boxes[i]
+
+        barCanvas.hidden = !box
+        barCanvas.box = box || null
+        // Resizing the backing store clears it
+        barCanvas.barsKey = null
+        if (!box)
+            return
+        barCanvas.style.left = box.left + 'px'
+        barCanvas.style.top = box.top + 'px'
+        barCanvas.style.width = box.width + 'px'
+        barCanvas.style.height = box.height + 'px'
+        barCanvas.width = Math.max(1, Math.ceil(box.width * WINDOW_BACKGROUND_SCALE))
+        barCanvas.height = Math.max(1, Math.ceil(box.height * WINDOW_BACKGROUND_SCALE))
+    })
 }
 
 // Linear mix of two 'rgba(r, g, b, a)' colors, t in [0, 1].
@@ -54,8 +92,8 @@ class BackgroundRenderer
         this.paintMenu()
         this.drawWindowBars('menu', () => this.paintMenu())
     }
-    // Area the full-size fills cover: the logical viewport, or the whole
-    // window (in logical units) while drawWindowBars paints the bars.
+    // Area the full-size fills cover: the logical viewport, or a bar canvas
+    // (in logical units) while drawWindowBars paints the bars.
     fillBounds()
     {
         return this.bounds || {x: 0, y: 0, width: LOGICAL_VIEWPORT.width, height: LOGICAL_VIEWPORT.height}
@@ -70,54 +108,51 @@ class BackgroundRenderer
         const bounds = this.fillBounds()
         this.ctx.clearRect(bounds.x, bounds.y, bounds.width, bounds.height)
     }
-    // Repeats this frame's background on the full-window canvas behind the
-    // game canvas, in the same logical coordinates and clipped to the
-    // letterbox bars, so the picture continues past the play rect.
+    // Repeats this frame's background on the two bar canvases behind the
+    // game canvas, in the same logical coordinates, so the picture continues
+    // past the play rect.
     drawWindowBars(scene, paint)
     {
-        const windowCanvas = document.getElementById('background')
+        const barCanvases = Array.from(document.getElementsByClassName('window-bar')).filter(c => c.box)
         const rect = getCanvasCssRect()
 
-        if (!windowCanvas || (rect.left < 0.5 && rect.top < 0.5))
+        if (!barCanvases.length)
             return
 
-        const key = [scene, windowCanvas.width, windowCanvas.height, rect.left, rect.top, rect.width].join()
-        if (windowCanvas.barsKey === key && ++this.barsFramesSkipped < WINDOW_BARS_EVERY_FRAMES)
+        const key = [scene, rect.left, rect.top, rect.width].join()
+        if (barCanvases[0].barsKey === key && ++this.barsFramesSkipped < WINDOW_BARS_EVERY_FRAMES)
             return
-        windowCanvas.barsKey = key
         this.barsFramesSkipped = 0
 
         const gameCtx = this.ctx
-        const ctx = windowCanvas.getContext('2d')
         const fit = rect.width / LOGICAL_VIEWPORT.width
-        const pixelScale = windowCanvas.width / window.innerWidth
 
-        ctx.setTransform(fit * pixelScale, 0, 0, fit * pixelScale, rect.left * pixelScale, rect.top * pixelScale)
-        this.bounds = {
-            x: -rect.left / fit,
-            y: -rect.top / fit,
-            width: window.innerWidth / fit,
-            height: window.innerHeight / fit
-        }
-        ctx.save()
-        ctx.beginPath()
-        ctx.rect(this.bounds.x, this.bounds.y, this.bounds.width, this.bounds.height)
-        // The hole stops inside the play rect (2 CSS px plus the upscale blur of
-        // the low-resolution backing store, 2 backing px), so the bars layer
-        // stays opaque under the game canvas's antialiased (fractional) edge row
-        const inset = (2 + 2 / pixelScale) / fit
-        ctx.rect(inset, inset, LOGICAL_VIEWPORT.width - 2 * inset, LOGICAL_VIEWPORT.height - 2 * inset)
-        ctx.clip('evenodd')
-        this.ctx = ctx
-        try
+        for (const barCanvas of barCanvases)
         {
-            paint()
-        }
-        finally
-        {
-            this.ctx = gameCtx
-            this.bounds = null
-            ctx.restore()
+            const box = barCanvas.box
+            const ctx = barCanvas.getContext('2d')
+            const scaleX = barCanvas.width / box.width
+            const scaleY = barCanvas.height / box.height
+
+            barCanvas.barsKey = key
+            ctx.setTransform(fit * scaleX, 0, 0, fit * scaleY,
+                (rect.left - box.left) * scaleX, (rect.top - box.top) * scaleY)
+            this.bounds = {
+                x: (box.left - rect.left) / fit,
+                y: (box.top - rect.top) / fit,
+                width: box.width / fit,
+                height: box.height / fit
+            }
+            this.ctx = ctx
+            try
+            {
+                paint()
+            }
+            finally
+            {
+                this.ctx = gameCtx
+                this.bounds = null
+            }
         }
     }
     paint()

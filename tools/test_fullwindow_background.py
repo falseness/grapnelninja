@@ -12,6 +12,7 @@ PNG per viewport under screens/.
 """
 import io
 import json
+import math
 import os
 import statistics
 from pathlib import Path
@@ -156,40 +157,63 @@ class FullWindowBackgroundTests(unittest.TestCase):
             data['after'] = records
             path.write_text(json.dumps(data, indent=2))
 
-    def test_window_background_renders_at_quarter_size(self):
-        """TASK-138: a full-resolution bars repaint cost ~30% of the frame at
-        2560x1080; the window canvas backing store is a quarter of the window
-        (1/16 of the pixels) and CSS stretches it over the whole window."""
-        for viewport in [(2560, 1080, False), (390, 844, True)]:
+    def test_bar_canvases_cover_only_the_bars_at_quarter_size(self):
+        """TASK-138: a full-window, full-resolution background layer cost
+        ~20-30% of the frame at 2560x1080. Two bar canvases cover only the
+        letterbox bars (plus WINDOW_BAR_OVERLAP_PX under the play rect) at a
+        quarter of their CSS size; without bars both are hidden."""
+        for viewport in [(2560, 1080, False), (390, 844, True), (1920, 1080, False)]:
             with self.subTest(viewport=viewport_name(viewport)):
                 page = self.boot(viewport)
-                size = page.evaluate('''() => {
-                    const b = document.getElementById('background')
-                    const r = b.getBoundingClientRect()
-                    return {scale: WINDOW_BACKGROUND_SCALE, width: b.width, height: b.height,
-                            css: {left: r.left, top: r.top, width: r.width, height: r.height},
-                            window: {width: innerWidth, height: innerHeight}}
-                }''')
-                self.assertEqual(size['scale'], 0.25)
-                self.assertEqual(size['width'], round(viewport[0] * 0.25))
-                self.assertEqual(size['height'], round(viewport[1] * 0.25))
-                self.assertEqual(size['css'], {'left': 0, 'top': 0, 'width': viewport[0],
-                                               'height': viewport[1]})
-                print(f'\n  {viewport_name(viewport)} window background {json.dumps(size)}',
-                      file=sys.stderr)
+                bars = page.evaluate('''() => ({
+                    scale: WINDOW_BACKGROUND_SCALE, overlap: WINDOW_BAR_OVERLAP_PX,
+                    rect: getCanvasCssRect(),
+                    canvases: Array.from(document.getElementsByClassName('window-bar')).map(c => {
+                        const r = c.getBoundingClientRect()
+                        return {hidden: c.hidden, width: c.width, height: c.height,
+                                css: {left: r.left, top: r.top, width: r.width, height: r.height}}
+                    })
+                })''')
+                self.assertEqual((bars['scale'], bars['overlap']), (0.25, 10))
+                self.assertEqual(len(bars['canvases']), 2)
+                rect, w, h = bars['rect'], viewport[0], viewport[1]
+                if viewport[:2] == (1920, 1080):
+                    self.assertEqual([c['hidden'] for c in bars['canvases']], [True, True])
+                    continue
+                for c in bars['canvases']:
+                    self.assertFalse(c['hidden'])
+                    self.assertEqual(c['width'], math.ceil(c['css']['width'] * 0.25 - 1e-9))
+                    self.assertEqual(c['height'], math.ceil(c['css']['height'] * 0.25 - 1e-9))
+                first, second = (c['css'] for c in bars['canvases'])
+                if rect['left'] >= 0.5:
+                    want = [(0, 0, rect['left'] + 10, h),
+                            (rect['left'] + rect['width'] - 10, 0, w - rect['left'] - rect['width'] + 10, h)]
+                else:
+                    want = [(0, 0, w, rect['top'] + 10),
+                            (0, rect['top'] + rect['height'] - 10, w, h - rect['top'] - rect['height'] + 10)]
+                for got, box in zip((first, second), want):
+                    for key, value in zip(('left', 'top', 'width', 'height'), box):
+                        self.assertAlmostEqual(got[key], value, delta=0.01, msg=key)
+                # The bars layer covers the bars and the two overlap strips, not the play rect
+                area = sum(c['css']['width'] * c['css']['height'] for c in bars['canvases'])
+                strips = 2 * 10 * (h if rect['left'] >= 0.5 else w)
+                self.assertLessEqual(area, w * h - rect['width'] * rect['height'] + strips + 1)
+                print(f'\n  {viewport_name(viewport)} bar canvases {json.dumps(bars)} '
+                      f'area {area / (w * h):.3f} of the window', file=sys.stderr)
 
     def test_window_bars_repaint_every_4th_frame(self):
         """TASK-138: in a run the bars repaint every WINDOW_BARS_EVERY_FRAMES
-        frames, and on the first frame after a resize (the backing store was
-        cleared)."""
+        frames, and on the first frame after a resize (the backing stores
+        were cleared)."""
         page = self.boot((2560, 1080, False))
         page.evaluate("startGame('classic')")
         page.wait_for_timeout(300)
         page.evaluate('''() => {
-            const bars = document.getElementById('background').getContext('2d')
-            const clip = bars.clip
+            // paint() starts with one clearRect on the bar canvas
+            const bars = document.getElementsByClassName('window-bar')[0].getContext('2d')
+            const clear = bars.clearRect
             window.__barsPaints = 0
-            bars.clip = function() { window.__barsPaints++; return clip.apply(this, arguments) }
+            bars.clearRect = function() { window.__barsPaints++; return clear.apply(this, arguments) }
             window.__frames = 0
             const loop = () => { window.__frames++; requestAnimationFrame(loop) }
             requestAnimationFrame(loop)
@@ -203,10 +227,10 @@ class FullWindowBackgroundTests(unittest.TestCase):
         self.assertGreaterEqual(run['paints'], (run['frames'] - 1) // 4)
         self.assertLessEqual(run['paints'], (run['frames'] + 1) // 4 + 1)
         page.set_viewport_size({'width': 925, 'height': 925})
-        page.wait_for_function('''() => { const b = document.getElementById('background')
-            return b.width == Math.round(925 * WINDOW_BACKGROUND_SCALE) && b.barsKey }''', timeout=60000)
-        after = page.evaluate('''() => { const b = document.getElementById('background')
-            return {paints: __barsPaints, key: b.barsKey, width: b.width, height: b.height} }''')
+        page.wait_for_function('''() => { const b = document.getElementsByClassName('window-bar')[0]
+            return b.box && b.box.width == 925 && b.barsKey }''', timeout=60000)
+        after = page.evaluate('''() => { const b = document.getElementsByClassName('window-bar')[0]
+            return {paints: __barsPaints, key: b.barsKey, width: b.width, height: b.height, box: b.box} }''')
         self.assertGreater(after['paints'], run['paints'])
         print(f'\n  2560x1080 run {json.dumps(run)}; after resize to 925x925 {json.dumps(after)}',
               file=sys.stderr)
