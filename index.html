@@ -63,6 +63,7 @@
         <script src = "progress.js"></script>
         <script src = "audio.js"></script>
         <script src = 'menu.js'></script>
+        <script src = "mutebutton.js"></script>
     
         <script src = "collision/circlewithcircle.js"></script>
         <script src = "collision/linewithline.js"></script>
@@ -107,6 +108,9 @@
             let menu = new Menu(width, height)
             let continueOffer = new ContinueOffer(width, height, watchAdToContinue, restartFromOffer)
             let continueUsed = false
+            // A pause request (hidden tab, focus loss) while the rewarded
+            // ad plays: applied once the ad respawns the ninja
+            let pauseAfterAd = false
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             let lastFrameTime = 0, physicsAccumulatorMs = 0
             
@@ -123,6 +127,9 @@
                 await PLATFORM.init()
                 setLoadingProgress('Loading progress...')
                 PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
+                MUTE_BUTTON.restore(PROGRESS.getMuted())
+                // Plays from the first gesture; muting silences it
+                AUDIO.startMusic()
                 setLoadingProgress('Starting...')
                 await nextFrame()
                 start()
@@ -156,6 +163,8 @@
             {
                 firstCycleInThisTick = true
                 continueUsed = false
+                pauseAfterAd = false
+                scoreText.recordSoundPlayed = false
                 continueOffer.hide()
                 checkAdsAvailable()
                 
@@ -217,6 +226,7 @@
             {
                 if (continueOffer.visible || ninja.isInvulnerable())
                     return
+                AUDIO.play('death')
                 if (continueUsed || scoreText.count[version] < CONTINUE_MIN_SCORE)
                 {
                     reStart()
@@ -239,9 +249,9 @@
                 if (continueUsed || continueOffer.adPending || !continueOffer.watchVisible())
                     return
                 continueUsed = true
+                pauseAfterAd = false
                 continueOffer.setAdPending(true)
-                // The game stays frozen behind the offer. There is no game
-                // audio, so nothing needs muting during the ad.
+                // The game stays frozen behind the offer
                 PLATFORM.requestRewarded('continue').then(result =>
                 {
                     if (!continueOffer.adPending)
@@ -264,6 +274,11 @@
                 continueOffer.hide()
                 respawnNinja()
                 resetPhysicsTiming()
+                if (pauseAfterAd || document.visibilityState == 'hidden')
+                {
+                    pauseAfterAd = false
+                    menu.startPause()
+                }
             }
             function restartFromOffer()
             {
@@ -464,16 +479,19 @@
                 resizeTimer = setTimeout(onViewportResize, 100)
             })
 
-            window.onblur = function() {
-                if (!menu.visible && !menu.gamePaused && !continueOffer.visible) {
+            // Focus loss and a hidden tab pause the run; during the rewarded
+            // ad the pause waits for the respawn
+            function pauseRun()
+            {
+                if (continueOffer.visible && continueOffer.adPending)
+                    pauseAfterAd = true
+                else if (!menu.visible && !menu.gamePaused && !continueOffer.visible)
                     menu.startPause()
-                    //menuBack()
-                }
             }
-            // a hidden tab pauses like focus loss
+            window.onblur = pauseRun
             document.addEventListener('visibilitychange', function() {
                 if (document.visibilityState == 'hidden')
-                    window.onblur()
+                    pauseRun()
             })
             
         </script>

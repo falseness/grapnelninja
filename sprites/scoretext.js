@@ -7,6 +7,8 @@ let scoreText =
         classic : 0
     }                                   ,                
     rtext: 'RECORD: '                   ,
+    // Reset at each run start; the record sound plays once per run
+    recordSoundPlayed: false            ,
     record: 
     {
         bad     : 0,

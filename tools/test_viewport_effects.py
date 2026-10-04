@@ -8,6 +8,7 @@ import unittest
 from PIL import Image, ImageChops
 
 from browser_test_support import start_browser_test
+from playgama_harness import BRIDGE_URL
 from verification_support import baseline_route, load_baseline_sources
 
 
@@ -29,6 +30,20 @@ class ViewportEffectsTests(unittest.TestCase):
         cls.baseline = load_baseline_sources('a6b41aa', files)
         # TASK-112 capitalised the menu title on purpose; apply it to the baseline too
         cls.baseline['menu.js'] = cls.baseline['menu.js'].replace(b"'Grapnel ninja'", b"'Grapnel Ninja'")
+        # TASK-120 added the speaker mute button to the menu, pause screen and
+        # HUD: draw the current mutebutton.js at the same points in the baseline
+        cls.baseline['mutebutton.js'] = (ROOT / 'mutebutton.js').read_bytes()
+        for name, old, new in [
+                ('index.html', b"<script src = 'menu.js'></script>",
+                 b"<script src = 'menu.js'></script><script src = 'mutebutton.js'></script>"),
+                ('menu.js', b"this.backToMenu.draw()\n",
+                 b"this.backToMenu.draw()\nMUTE_BUTTON.draw('pause')\n"),
+                ('menu.js', b"this.timeInGame.draw()\n",
+                 b"this.timeInGame.draw()\nMUTE_BUTTON.draw('menu')\n"),
+                ('render/draw.js', b"ctx.scale(1 / scale[version], 1 / scale[version])\n}",
+                 b"ctx.scale(1 / scale[version], 1 / scale[version])\nMUTE_BUTTON.draw('hud')\n}")]:
+            assert cls.baseline[name].count(old) == 1, (name, old)
+            cls.baseline[name] = cls.baseline[name].replace(old, new)
 
     def sample(self, mode, baseline):
         page = self.browser.new_page(viewport={'width': 1920, 'height': 1080})
@@ -38,9 +53,20 @@ class ViewportEffectsTests(unittest.TestCase):
                 if message.type == 'error' else None)
         try:
             page.add_init_script(CHECKER.init)
+            # browser_test_support stubs only the Y8 SDK: keep the real Bridge
+            # (and its splash screen) out, so PLATFORM boots disabled
+            page.route(BRIDGE_URL, lambda route: route.fulfill(
+                content_type='application/javascript', body=''))
             if baseline:
                 page.route('**/*', baseline_route(self.baseline))
             page.goto(self.url)
+            if not baseline:
+                # Since TASK-117 boot() waits for animation frames before start(),
+                # and the checker's init script stubs requestAnimationFrame: run
+                # the rest of boot by hand (draw the menu, hide #loading)
+                page.wait_for_function("document.getElementById('loading-progress')"
+                                       ".textContent == 'Starting...'")
+                page.evaluate("() => { start(); document.getElementById('loading').hidden = true }")
             effects = page.evaluate(CHECKER.scenario, mode)
             for part in ['particles', 'trails', 'hud', 'screenEffects']:
                 self.assertGreater(len(effects['parts'][part]), 5, part)

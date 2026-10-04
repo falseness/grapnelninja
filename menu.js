@@ -135,6 +135,7 @@ class Button
             if (this.background.x < click.x && click.x < this.background.x + this.background.width &&
                 this.background.y < click.y && click.y < this.background.y + this.background.height)
             {
+                AUDIO.play('click')
                 this.click()
                 return true
             }
@@ -204,6 +205,7 @@ class Checkbox
 
         if (minX < click.x && click.x < maxX && minY < click.y && click.y < maxY)
         {
+            AUDIO.play('click')
             this.click()
             return true
         }
@@ -671,6 +673,8 @@ class Menu
         
         this.resume.draw()
         this.backToMenu.draw()
+
+        MUTE_BUTTON.draw('pause')
     }
     unPause()
     {
@@ -707,7 +711,8 @@ class Menu
 
         this.mainFpsCounterCheckbox.draw()
         this.timeInGame.draw()
-        
+
+        MUTE_BUTTON.draw('menu')
     }
 }
 // Offered after an eligible lethal death: two equally sized and styled

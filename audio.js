@@ -33,6 +33,9 @@ const AUDIO = (function()
     const muted = {user: false, host: false, ad: false, hidden: false}
     const log = []
     window.__audioLog = log
+    // Last playThrottled time per sound
+    const lastPlayed = {}
+    const throttleMs = 100
 
     let ctx = null
     let master = null
@@ -223,6 +226,15 @@ const AUDIO = (function()
             {
                 console.warn('Audio play failed', name, e && e.message)
             }
+        },
+        // For contacts that can repeat on consecutive physics cycles
+        playThrottled(name)
+        {
+            const now = performance.now()
+            if (now - (lastPlayed[name] || -Infinity) < throttleMs)
+                return
+            lastPlayed[name] = now
+            this.play(name)
         },
         startMusic()
         {

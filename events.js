@@ -36,6 +36,7 @@ function createEvents()
         
         grapnel.throwed = true
         grapnel.setGrappled(false)   
+        AUDIO.play('throw')
     }
     function pickUpGrapnel()
     {   
@@ -47,6 +48,8 @@ function createEvents()
         let coords = viewportCoordsToCanvasCoords(getCoords(event))
         if (continueOffer.visible)
             return continueOffer.click(coords)
+        if (MUTE_BUTTON.click(coords))
+            return true
         if (menu.opened())
         {
             let isButtonClicked     = false
