@@ -62,6 +62,8 @@ function createEvents()
     }
     function click(event)
     {
+        if (adOpen)
+            return
         if (!unTouch && startEvent(event))
         {
             //Элегантный костыль:
@@ -87,6 +89,8 @@ function createEvents()
     }
     function offclick()
     {
+        if (adOpen)
+            return
         if (!menu.visible)
             pickUpGrapnel()
     }
@@ -117,7 +121,7 @@ function createEvents()
     {
         if (scrollKeys.includes(event.key))
             event.preventDefault()
-        if (pauseKeys.includes(event.key) && !menu.visible && !continueOffer.visible)
+        if (pauseKeys.includes(event.key) && !menu.visible && !continueOffer.visible && !adOpen)
         {
             event.preventDefault()
 

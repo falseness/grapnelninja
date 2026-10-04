@@ -111,6 +111,8 @@
             // A pause request (hidden tab, focus loss) while the rewarded
             // ad plays: applied once the ad respawns the ninja
             let pauseAfterAd = false
+            // A full-screen ad is on top: gameplay and input are frozen
+            let adOpen = false
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             let lastFrameTime = 0, physicsAccumulatorMs = 0
             
@@ -125,6 +127,8 @@
             {
                 setLoadingProgress('Connecting...')
                 await PLATFORM.init()
+                // Host audio state applies before the first sound
+                AUDIO.setMute('host', !PLATFORM.isAudioEnabled())
                 setLoadingProgress('Loading progress...')
                 PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
                 MUTE_BUTTON.restore(PROGRESS.getMuted())
@@ -402,6 +406,11 @@
                     draw()
                     continueOffer.draw()
                 }
+                else if (adOpen)
+                {
+                    resetPhysicsTiming()
+                    draw()
+                }
                 else
                 {
                     runFixedPhysics(frameTime)
@@ -489,9 +498,29 @@
                     menu.startPause()
             }
             window.onblur = pauseRun
+            // A hidden tab mutes and pauses; showing it again unmutes only
             document.addEventListener('visibilitychange', function() {
-                if (document.visibilityState == 'hidden')
+                const hidden = document.visibilityState == 'hidden'
+                AUDIO.setMute('hidden', hidden)
+                if (hidden)
                     pauseRun()
+            })
+            // Host pause pauses the run; resuming is left to the player
+            PLATFORM.onPause(function(isPaused) {
+                if (isPaused)
+                    pauseRun()
+            })
+            PLATFORM.onAudio(function(isEnabled) {
+                AUDIO.setMute('host', !isEnabled)
+            })
+            PLATFORM.onAdState(function(state) {
+                if (state == 'opened')
+                    adOpen = true
+                else if (state == 'closed' || state == 'failed')
+                    adOpen = false
+                else
+                    return
+                AUDIO.setMute('ad', adOpen)
             })
             
         </script>
