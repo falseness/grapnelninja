@@ -23,7 +23,8 @@ from test_continue import INSTRUMENT_RUN
 
 SIZES = [(360, 640, True), (390, 844, True), (915, 412, True), (844, 390, True),
          (1280, 720, False), (1920, 1080, False), (2560, 1440, False),
-         (2560, 1080, False), (1280, 500, False)]
+         (2560, 1080, False), (1280, 500, False), (925, 925, False), (1024, 768, False),
+         (1280, 1024, False)]
 LANGS = {'en': 'en-US', 'ru': 'ru-RU'}
 SCREENS = ['menu', 'hud', 'pause', 'offer', 'ad_unavailable']
 MAX_ASPECT = 2.0
