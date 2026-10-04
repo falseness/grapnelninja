@@ -2,7 +2,8 @@
 <html>
     <head>
         <script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>
-        <title>Grapnel Ninja</title>
+        <title></title>
+        <script src = "i18n.js"></script>
         <meta charset = "UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
@@ -53,9 +54,10 @@
     </head>
     <body>
         <div id = "loading">
-            <div id = "loading-title">Grapnel Ninja</div>
-            <div id = "loading-progress">Loading...</div>
+            <div id = "loading-title" data-i18n = "game.title"></div>
+            <div id = "loading-progress" data-i18n = "loading.initial"></div>
         </div>
+        <script>I18N.applyDom()</script>
         <canvas id = "canvas"></canvas>
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
@@ -131,16 +133,16 @@
             // after that, so earlier clicks and keys are ignored.
             async function boot()
             {
-                setLoadingProgress('Connecting...')
+                setLoadingProgress(I18N.t('loading.connecting'))
                 await PLATFORM.init()
                 // Host audio state applies before the first sound
                 AUDIO.setMute('host', !PLATFORM.isAudioEnabled())
-                setLoadingProgress('Loading progress...')
+                setLoadingProgress(I18N.t('loading.progress'))
                 PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
                 MUTE_BUTTON.restore(PROGRESS.getMuted())
                 // Plays from the first gesture; muting silences it
                 AUDIO.startMusic()
-                setLoadingProgress('Starting...')
+                setLoadingProgress(I18N.t('loading.starting'))
                 await nextFrame()
                 start()
                 await nextFrame()

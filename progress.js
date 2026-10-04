@@ -78,9 +78,9 @@ const PROGRESS = (function()
             state.lang  = values[langKey] || null
             savedJson = JSON.stringify(snapshot())
 
-            menu.classicRecord.text = 'record: ' + scoreText.record.classic
-            menu.badRecord.text     = 'record: ' + scoreText.record.bad
-            menu.timeInGame.text    = 'time spent in game: ' + getTimeInGame() + ' minutes'
+            menu.classicRecord.text = I18N.t('menu.record', {value: scoreText.record.classic})
+            menu.badRecord.text     = I18N.t('menu.record', {value: scoreText.record.bad})
+            menu.timeInGame.text    = I18N.t('menu.timeInGame', {minutes: getTimeInGame()})
         },
         // Save after a meaningful change; throttled to one setMany per second
         save()

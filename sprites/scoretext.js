@@ -1,12 +1,12 @@
 let scoreText = 
 {
-    text: 'SCORE: '                     ,
+    get text() { return I18N.t('hud.score') },
     count: 
     {
         bad     : 0                     ,
         classic : 0
     }                                   ,                
-    rtext: 'RECORD: '                   ,
+    get rtext() { return I18N.t('hud.record') },
     // Reset at each run start; the record sound plays once per run
     recordSoundPlayed: false            ,
     record: 

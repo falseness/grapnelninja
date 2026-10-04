@@ -1,6 +1,7 @@
-"""Continue offer after an eligible lethal death (TASK-080, Y8 port TASK-093).
+"""Continue offer after an eligible lethal death (TASK-080, Y8 port TASK-093,
+Playgama port TASK-125).
 
-Env: Y8_CONTINUE_EVIDENCE_DIR receives offer-*.png, button-rects.json and
+Env: CONTINUE_EVIDENCE_DIR receives offer-*.png, button-rects.json and
 console/page-errors.log.
 """
 import json
@@ -11,8 +12,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import logical_size
-from y8_harness import (FAKE_SDK, Y8_SDK_ROUTE, canvas_to_viewport, click_canvas,
-                        collect_errors, open_game, sdk_calls, start_y8_test)
+import playgama_harness as h
+from playgama_harness import bridge_calls, open_game, start_playgama_test
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -65,7 +66,19 @@ BUTTON_RECTS = '''() => {
 
 
 def show_ad_count(page):
-    return sum(c['name'] == 'showAd' for c in sdk_calls(page))
+    return sum(c['name'] == 'advertisement.showRewarded' for c in bridge_calls(page))
+
+
+def canvas_to_viewport(page, x, y):
+    """CSS viewport point of logical canvas point (x, y)."""
+    return page.evaluate('''([x, y]) => { const r = canvas.getBoundingClientRect()
+        return {x: r.left + x * r.width / width, y: r.top + y * r.height / height} }''',
+        [x, y])
+
+
+def click_canvas(page, x, y):
+    point = canvas_to_viewport(page, x, y)
+    page.mouse.click(point['x'], point['y'])
 
 
 def state(page):
@@ -77,8 +90,8 @@ def state(page):
 class ContinueTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_y8_test(ROOT, cls.addClassCleanup)
-        cls.evidence = os.environ.get('Y8_CONTINUE_EVIDENCE_DIR')
+        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.evidence = os.environ.get('CONTINUE_EVIDENCE_DIR')
         cls.errors = []
         cls.rects = {}
 
@@ -98,10 +111,11 @@ class ContinueTests(unittest.TestCase):
     def boot(self, viewport, touch=False):
         if touch:
             context = self.browser.new_context(viewport=viewport, has_touch=True, is_mobile=True)
-            context.route(Y8_SDK_ROUTE, lambda route: route.fulfill(
-                path=str(FAKE_SDK), content_type='application/javascript'))
+            context.route(h.BRIDGE_URL, lambda route: route.fulfill(
+                path=str(h.FAKE_BRIDGE), content_type='application/javascript'))
+            context.route(h.CONFIG_ROUTE, h.serve_config)
             page = context.new_page()
-            errors = collect_errors(page)
+            errors = h.collect_errors(page)
             page.goto(self.url + 'index.html')
         else:
             context, page, errors = open_game(self.browser, self.url + 'index.html', viewport)
@@ -109,7 +123,8 @@ class ContinueTests(unittest.TestCase):
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "y8" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "playgama" && menu.visible'
+                               ' && document.getElementById("loading").hidden', timeout=15000)
         page.evaluate(INSTRUMENT_RUN)
         page.evaluate('''() => {
             const b = menu.classicVersionButton.background

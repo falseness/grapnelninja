@@ -260,7 +260,7 @@ class FpsCounter
         const cssPerView = canvas.getBoundingClientRect().height / viewHeight
         const fontSize = Math.max(viewHeight * STYLE.ui.fpsFontRatio, minCssFontPx / cssPerView)
         const padding = viewHeight * STYLE.ui.fpsPaddingRatio
-        const text = 'FPS: ' + this.value
+        const text = I18N.t('hud.fps', {value: this.value})
 
         ctx.save()
         ctx.font = fontSize + 'px ' + STYLE.ui.fontFamily
@@ -336,7 +336,7 @@ class Menu
         {
             fill    : STYLE.colors.ui.title,
             fontSize: 0.075 * this.width,
-            text    : 'Grapnel Ninja'   ,
+            text    : I18N.t('game.title'),
             x       : this.center.x     ,
             y       : 0.2 * this.height
         })
@@ -351,7 +351,7 @@ class Menu
         },
         {
             fill: STYLE.colors.ui.buttonText,
-            text: 'chill version'
+            text: I18N.t('menu.chillVersion')
         },
         function(){startGame('classic')})
         this.classicRecord = new Text(
@@ -360,7 +360,7 @@ class Menu
             y       : 0.43 * this.height                ,
             fontSize: 0.05 * this.height                ,
             fill    : STYLE.colors.ui.mutedText         ,
-            text    : 'record: ' + scoreText.record.classic
+            text    : I18N.t('menu.record', {value: scoreText.record.classic})
         })
         this.badVersionButton = new Button(
         {
@@ -372,7 +372,7 @@ class Menu
         },
         {
             fill: STYLE.colors.ui.buttonText,
-            text: 'main version'
+            text: I18N.t('menu.mainVersion')
         },
         function(){startGame('bad')})
         this.badRecord = new Text(
@@ -381,7 +381,7 @@ class Menu
             y       : 0.60 * this.height                ,
             fontSize: 0.05 * this.height                ,
             fill    : STYLE.colors.ui.mutedText         ,
-            text    : 'record: ' + scoreText.record.bad
+            text    : I18N.t('menu.record', {value: scoreText.record.bad})
         })
 
         this.mainFpsCounterCheckbox = new Checkbox(
@@ -392,7 +392,7 @@ class Menu
             fontSize: 0.09 * this.height,
             fill    : STYLE.colors.ui.text,
             stroke  : STYLE.colors.ui.primary,
-            label   : 'fps counter',
+            label   : I18N.t('menu.fpsCounter'),
             clickable: true
         },
         function()
@@ -407,7 +407,7 @@ class Menu
             y       : 0.82 * this.height                ,
             fontSize: 0.05 * this.height                ,
             fill    : STYLE.colors.ui.mutedText         ,
-            text    : 'time spent in game: ' + getTimeInGame() + ' minutes'
+            text    : I18N.t('menu.timeInGame', {minutes: getTimeInGame()})
         })
 
         this.pauseFpsCounterCheckbox = new Checkbox(
@@ -418,7 +418,7 @@ class Menu
             fontSize: 0.09 * this.height,
             fill    : STYLE.colors.ui.text,
             stroke  : STYLE.colors.ui.primary,
-            label   : 'fps counter',
+            label   : I18N.t('menu.fpsCounter'),
             clickable: false
         },
         function()
@@ -486,7 +486,7 @@ class Menu
             stroke: STYLE.colors.ui.primary
         },
         {
-            text: 'resume',
+            text: I18N.t('pause.resume'),
             fill: STYLE.colors.ui.buttonText
         }, function()
         {
@@ -502,7 +502,7 @@ class Menu
             stroke: STYLE.colors.ui.buttonDangerStroke
         },
         {
-            text: 'back to menu'    ,
+            text: I18N.t('pause.backToMenu'),
             fill: STYLE.colors.ui.buttonText
         },
         function()
@@ -539,7 +539,7 @@ class Menu
     }
     getPauseTitleFontSize(panel)
     {
-        const text = 'Grapnel Ninja'
+        const text = I18N.t('game.title')
         const maxWidth = Math.max(1, panel.width - Math.max(this.width * STYLE.ui.pauseMarginWidthPercent / 100, this.width * 0.12))
         const preferredSize = Math.min(this.width * 0.075, panel.height * 0.14)
 
@@ -559,7 +559,7 @@ class Menu
         {
             fill    : STYLE.colors.ui.title,
             fontSize: this.getPauseTitleFontSize(panel),
-            text    : 'Grapnel Ninja',
+            text    : I18N.t('game.title'),
             x       : this.center.x,
             y       : panel.y + panel.height * 0.14
         })
@@ -648,7 +648,7 @@ class Menu
     {
         pauseTimeInGame()
         PROGRESS.save()
-        this.timeInGame.text = 'time spent in game: ' + getTimeInGame() + ' minutes'
+        this.timeInGame.text = I18N.t('menu.timeInGame', {minutes: getTimeInGame()})
 
         this.changeGamePause(true)
         PLATFORM.sendLifecycle('level_paused')
@@ -737,13 +737,13 @@ class ContinueOffer
         this.adPending = false
         this.continueButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
-            {text: 'Continue', fill: STYLE.colors.ui.buttonText},
+            {text: I18N.t('continue.watch'), fill: STYLE.colors.ui.buttonText},
             onContinue)
-        this.adBadgeLabel = 'AD'
-        this.rewardLabel = 'Watch an ad to continue this run'
+        this.adBadgeLabel = I18N.t('continue.adBadge')
+        this.rewardLabel = I18N.t('continue.reward')
         this.restartButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
-            {text: 'Restart', fill: STYLE.colors.ui.buttonText},
+            {text: I18N.t('continue.restart'), fill: STYLE.colors.ui.buttonText},
             onRestart)
         this.layout(w, h)
     }
@@ -777,7 +777,7 @@ class ContinueOffer
         {
             fill    : STYLE.colors.ui.title,
             fontSize: h * 0.09,
-            text    : 'Continue?',
+            text    : I18N.t('continue.title'),
             x       : centerX,
             y       : this.panel.y + this.panel.height * 0.16
         })
@@ -885,9 +885,9 @@ class ContinueOffer
     notice()
     {
         if (!this.adsAvailable)
-            return 'Ads unavailable'
+            return I18N.t('continue.adsUnavailable')
         if (this.adFailed)
-            return 'Ad unavailable'
+            return I18N.t('continue.adUnavailable')
         return ''
     }
     click(coord)
