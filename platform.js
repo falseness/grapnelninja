@@ -169,6 +169,14 @@ const PLATFORM = (function()
         // An interstitial that is not 'opened' by then counts as skipped
         interstitialOpenTimeoutMs: 3000,
         interstitialPlayingTimeoutMs: 120000,
+        // The game also skips an interstitial this soon after the last one
+        interstitialMinGapMs: 60000,
+
+        // Clock for the interstitial gap; tests replace it
+        now()
+        {
+            return performance.now()
+        },
 
         init()
         {

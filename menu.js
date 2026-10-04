@@ -508,16 +508,21 @@ class Menu
         function()
         {
             PROGRESS.save()
-            menu.changeGamePause(false)
-    
-            menu.setVisible(true)
-           
-            menu.classicRecord.text = scoreText.rtext    + scoreText.record.classic
-            menu.badRecord.text     = scoreText.rtext   + scoreText.record.bad
-            
-            menu.draw()
-            
-            cancelAnimationFrame(game)
+            // After a death the game over interstitial plays first
+            leaveFinishedRun(function()
+            {
+                menu.changeGamePause(false)
+                continueOffer.hide()
+
+                menu.setVisible(true)
+
+                menu.classicRecord.text = scoreText.rtext    + scoreText.record.classic
+                menu.badRecord.text     = scoreText.rtext   + scoreText.record.bad
+
+                menu.draw()
+
+                cancelAnimationFrame(game)
+            })
         })
     }
     getPausePanel()

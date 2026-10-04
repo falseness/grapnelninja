@@ -113,6 +113,12 @@
             let pauseAfterAd = false
             // A full-screen ad is on top: gameplay and input are frozen
             let adOpen = false
+            // The run ended in a death: leaving it (Restart, Menu) shows an
+            // interstitial first; a continue respawn clears it
+            let runOver = false
+            // An interstitial was requested: gameplay and input wait for it
+            let interstitialPending = false
+            let lastInterstitialAt = null
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             let lastFrameTime = 0, physicsAccumulatorMs = 0
             
@@ -167,6 +173,7 @@
             {
                 firstCycleInThisTick = true
                 continueUsed = false
+                runOver = false
                 pauseAfterAd = false
                 scoreText.recordSoundPlayed = false
                 continueOffer.hide()
@@ -228,12 +235,13 @@
             // otherwise restart instantly. The offer freezes physics.
             function onLethalDeath()
             {
-                if (continueOffer.visible || ninja.isInvulnerable())
+                if (continueOffer.visible || ninja.isInvulnerable() || interstitialPending)
                     return
                 AUDIO.play('death')
+                runOver = true
                 if (continueUsed || scoreText.count[version] < CONTINUE_MIN_SCORE)
                 {
-                    reStart()
+                    leaveFinishedRun(reStart)
                     return
                 }
                 PROGRESS.save()
@@ -275,6 +283,7 @@
             function continueRun()
             {
                 continueUsed = true
+                runOver = false
                 continueOffer.hide()
                 respawnNinja()
                 resetPhysicsTiming()
@@ -286,9 +295,38 @@
             }
             function restartFromOffer()
             {
-                continueOffer.hide()
-                reStart()
-                resetPhysicsTiming()
+                leaveFinishedRun(function()
+                {
+                    continueOffer.hide()
+                    reStart()
+                    resetPhysicsTiming()
+                })
+            }
+            // Game over interstitial: after a death, never mid-run, at most
+            // once per PLATFORM.interstitialMinGapMs. next() runs once the
+            // ad is closed, failed or skipped.
+            function leaveFinishedRun(next)
+            {
+                if (interstitialPending)
+                    return
+                const now = PLATFORM.now()
+                const recent = lastInterstitialAt !== null &&
+                    now - lastInterstitialAt < PLATFORM.interstitialMinGapMs
+                if (!runOver || recent)
+                {
+                    runOver = false
+                    next()
+                    return
+                }
+                runOver = false
+                interstitialPending = true
+                PLATFORM.showInterstitial('game_over').then(result =>
+                {
+                    interstitialPending = false
+                    if (result === 'closed')
+                        lastInterstitialAt = PLATFORM.now()
+                    next()
+                })
             }
             function startClassicVersion()
             {
@@ -406,7 +444,7 @@
                     draw()
                     continueOffer.draw()
                 }
-                else if (adOpen)
+                else if (adOpen || interstitialPending)
                 {
                     resetPhysicsTiming()
                     draw()

@@ -226,6 +226,8 @@
         if (!(kind in ads)) throw new Error('unknown ad kind ' + kind)
         fake[kind + 'Seq'] = seq
     }
+    // Ends the minimumDelayBetweenInterstitial cooldown at once.
+    fake.clearInterstitialCooldown = function () { interstitialCooldownUntil = 0 }
     // Accepts an EVENT_NAME value or its key ('PAUSE_STATE_CHANGED').
     fake.fire = function (event, value) {
         if (event in EVENT_NAME) event = EVENT_NAME[event]

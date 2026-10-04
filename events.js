@@ -46,8 +46,15 @@ function createEvents()
     function startEvent(event)
     {
         let coords = viewportCoordsToCanvasCoords(getCoords(event))
-        if (continueOffer.visible)
-            return continueOffer.click(coords)
+        if (continueOffer.visible && !menu.gamePaused)
+        {
+            if (continueOffer.click(coords))
+                return true
+            if (continueOffer.adPending)
+                return false
+            // The HUD menu button still opens the pause menu: Menu after a death
+            return menu.clickToPause({x: coords.x / scale[version], y: coords.y / scale[version]})
+        }
         if (MUTE_BUTTON.click(coords))
             return true
         if (menu.opened())
@@ -62,7 +69,7 @@ function createEvents()
     }
     function click(event)
     {
-        if (adOpen)
+        if (adOpen || interstitialPending)
             return
         if (!unTouch && startEvent(event))
         {
@@ -89,7 +96,7 @@ function createEvents()
     }
     function offclick()
     {
-        if (adOpen)
+        if (adOpen || interstitialPending)
             return
         if (!menu.visible)
             pickUpGrapnel()
@@ -121,7 +128,7 @@ function createEvents()
     {
         if (scrollKeys.includes(event.key))
             event.preventDefault()
-        if (pauseKeys.includes(event.key) && !menu.visible && !continueOffer.visible && !adOpen)
+        if (pauseKeys.includes(event.key) && !menu.visible && !continueOffer.visible && !adOpen && !interstitialPending)
         {
             event.preventDefault()
 
