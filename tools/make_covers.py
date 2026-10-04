@@ -1,4 +1,4 @@
-"""Store cover images from real gameplay (TASK-085, sizes extended in TASK-097).
+"""Store cover images from real gameplay (TASK-085, sizes extended in TASK-097, TASK-131).
 
 Two steps:
 
@@ -18,7 +18,8 @@ Frame metadata (mode, seed, tick, ninja position) goes to source-frames.json.
 
 The compose step (default --frames is <out>/../source-frames) writes one
 cover per size in COVER_SIZES: 16:9 (1920x1080, 1280x720), 4:3 (800x600,
-1024x768), 1:1 (1024x1024, 800x800, 512x512, 256x256) and 2:3 (800x1200), so
+1024x768), 1:1 (1024x1024, 800x800, 512x512, 256x256), 2:3 (800x1200) and
+9:16 (1080x1920, the Playgama portrait cover), so
 a portal's thumbnail slots can be matched without knowing their exact sizes
 up front. --sizes WxH,... composes only those sizes (they must be in
 COVER_SIZES), e.g. --sizes 256x256,1024x1024,1024x768.
@@ -56,6 +57,7 @@ COVER_SIZES = {
     (1280, 720): 0.1,
     (800, 600): 0.08,
     (800, 1200): 0.05,
+    (1080, 1920): 0.05,
     (800, 800): 0.07,
     (512, 512): 0.07,
     (256, 256): 0.07,
