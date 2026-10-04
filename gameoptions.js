@@ -1,9 +1,10 @@
 const widthHeightRatio = 1.8250950570342206
 // Logical viewport: height is always 1080 units, width follows the window
-// aspect clamped to [4:3, 21:9]. The canvas CSS box letterboxes that aspect.
+// aspect clamped to [4:3, 2:1] (Playgama: play field at most 2:1).
+// The canvas CSS box letterboxes that aspect.
 const LOGICAL_HEIGHT = 1080
 const minViewportAspect = 4 / 3
-const maxViewportAspect = 21 / 9
+const maxViewportAspect = 2
 function computeLogicalWidth()
 {
     const aspect = Math.min(maxViewportAspect, Math.max(minViewportAspect, window.innerWidth / window.innerHeight))

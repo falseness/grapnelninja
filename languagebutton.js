@@ -48,6 +48,7 @@ const LANGUAGE_BUTTON =
         ctx.shadowColor = color
         ctx.shadowBlur = STYLE.ui.buttonShadowBlur
         ctx.strokeRect(r.x, r.y, r.width, r.height)
+        LAYOUT_PROBE.rect('button', 'language', r.x, r.y, r.width, r.height)
 
         // Globe: outline, meridian and two parallels
         const cx = r.x + r.height * 0.55
@@ -73,6 +74,7 @@ const LANGUAGE_BUTTON =
         ctx.textAlign = 'start'
         ctx.textBaseline = 'middle'
         ctx.fillText(I18N.t('language.name'), r.x + r.height * 1.1, cy)
+        LAYOUT_PROBE.text(I18N.t('language.name'), r.x + r.height * 1.1, cy)
         ctx.restore()
     }
 }

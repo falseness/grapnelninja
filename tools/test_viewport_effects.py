@@ -34,7 +34,17 @@ class ViewportEffectsTests(unittest.TestCase):
         # HUD: draw the current mutebutton.js at the same points in the baseline.
         # TASK-126 added the language toggle to the menu: draw the current
         # languagebutton.js (with i18n.js) there too
-        cls.baseline['mutebutton.js'] = (ROOT / 'mutebutton.js').read_bytes()
+        # TASK-127: the buttons report to LAYOUT_PROBE (menu.js) and size from
+        # getCanvasCssRect (gameoptions.js), both newer than the baseline
+        cls.baseline['mutebutton.js'] = (
+            b"const LAYOUT_PROBE = {rect() {}, text() {}}\n"
+            b"function getCanvasCssRect() { return canvas.getBoundingClientRect() }\n"
+            + (ROOT / 'mutebutton.js').read_bytes())
+        # TASK-127 capped button labels at 0.8 of the button height
+        for old in [b"this.getFittedTextSize(text.text, this.background.height)",
+                    b"button.getFittedTextSize(button.text.text, height)"]:
+            assert cls.baseline['menu.js'].count(old) == 1, old
+            cls.baseline['menu.js'] = cls.baseline['menu.js'].replace(old, old[:-1] + b" * 0.8)")
         for name, old, new in [
                 ('index.html', b"<script src = 'menu.js'></script>",
                  b"<script src = 'menu.js'></script><script src = 'mutebutton.js'></script>"

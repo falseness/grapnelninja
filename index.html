@@ -217,13 +217,17 @@
                         height: menu.constButton.height / scale[version]
                     }
                 )
+                // A touch target (44 CSS px) on phones, kept inside the corner
+                const viewWidth = width / scale[version]
+                const margin = MUTE_BUTTON.marginRatio * height / scale[version]
+                const size = Math.max(menuButtonLayout.width, MUTE_BUTTON.minSize() / scale[version])
 
                 menu.button = new Button(
                 {
-                    x       : menuButtonLayout.x,
-                    y       : menuButtonLayout.y,
-                    width   : menuButtonLayout.width,
-                    height  : menuButtonLayout.height,
+                    x       : Math.min(menuButtonLayout.x, viewWidth - margin - size / 2),
+                    y       : Math.max(menuButtonLayout.y, margin + size / 2),
+                    width   : size,
+                    height  : size,
                     fill    : menu.constButton.fill,
                     stroke  : menu.constButton.stroke
                 },

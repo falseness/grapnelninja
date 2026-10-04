@@ -12,7 +12,7 @@ LOGICAL_HEIGHT = 1080
 
 def logical_size(viewport_width, viewport_height):
     """Logical canvas size for a browser viewport (gameoptions.js)."""
-    aspect = min(21 / 9, max(4 / 3, viewport_width / viewport_height))
+    aspect = min(2, max(4 / 3, viewport_width / viewport_height))
     return round(LOGICAL_HEIGHT * aspect), LOGICAL_HEIGHT
 
 

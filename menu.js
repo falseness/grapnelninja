@@ -12,6 +12,42 @@ function getTimeInGame() {
     return Math.floor(PROGRESS.getTime() / 60)
 }
 
+// Test hook: while LAYOUT_PROBE.boxes is an array, UI text and buttons
+// push their boxes there in CSS px relative to the canvas, with the CSS
+// font size for text. Uses the current transform, so scaled views work.
+const LAYOUT_PROBE =
+{
+    boxes: null,
+    toCss(x, y)
+    {
+        const m = ctx.getTransform()
+        const r = canvas.width / canvas.getBoundingClientRect().width
+        return {x: (m.a * x + m.c * y + m.e) / r, y: (m.b * x + m.d * y + m.f) / r}
+    },
+    rect(kind, name, x, y, w, h)
+    {
+        if (!this.boxes)
+            return
+        const a = this.toCss(x, y)
+        const b = this.toCss(x + w, y + h)
+        this.boxes.push({kind: kind, name: name, x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y})
+    },
+    // Text drawn with the current ctx font, align and baseline
+    text(name, x, y)
+    {
+        if (!this.boxes || name === '')
+            return
+        const t = ctx.measureText(name)
+        const a = this.toCss(x - t.actualBoundingBoxLeft, y - t.actualBoundingBoxAscent)
+        const b = this.toCss(x + t.actualBoundingBoxRight, y + t.actualBoundingBoxDescent)
+        const m = ctx.getTransform()
+        const fontPx = parseFloat(ctx.font) * Math.hypot(m.a, m.b) /
+            (canvas.width / canvas.getBoundingClientRect().width)
+        this.boxes.push({kind: 'text', name: String(name), x: a.x, y: a.y,
+            width: b.x - a.x, height: b.y - a.y, fontPx: fontPx})
+    }
+}
+
 class Text
 {
     constructor(object)
@@ -45,9 +81,31 @@ class Text
         
         
         ctx.fillText(this.text, this.x, this.y)
+        LAYOUT_PROBE.text(this.text, this.x, this.y)
         ctx.restore()
     }
 }
+// Centres of rows of the given heights stacked between top and bottom
+// with equal gaps
+function stackRows(top, bottom, heights)
+{
+    const gap = (bottom - top - heights.reduce((a, b) => a + b, 0)) / (heights.length + 1)
+    let y = top
+    return heights.map(h =>
+    {
+        y += gap + h
+        return y - h / 2
+    })
+}
+// Phones: the 44 CSS px touch floor (in logical units) when it outgrows the
+// default button height, else 0
+function compactTouchSize(buttonHeight)
+{
+    const touch = MUTE_BUTTON.minSize()
+    return touch > buttonHeight ? touch : 0
+}
+// Label font size to button height: ascenders stay inside the frame
+const buttonLabelHeightRatio = 0.8
 function getArcadeFont(size)
 {
     return size + 'px ' + STYLE.ui.fontFamily
@@ -66,7 +124,7 @@ class Button
         
         text.x          = background.x
         text.y          = background.y
-        text.fontSize   = this.getFittedTextSize(text.text, this.background.height)
+        text.fontSize   = this.getFittedTextSize(text.text, this.background.height * buttonLabelHeightRatio)
         
         if (typeof background.clickable == "undefined")
             this.clickable = true
@@ -111,6 +169,8 @@ class Button
         
         ctx.fillRect(this.background.x, this.background.y, this.background.width, this.background.height)
         ctx.strokeRect(this.background.x, this.background.y, this.background.width, this.background.height)
+        LAYOUT_PROBE.rect('button', this.text.text || 'icon', this.background.x, this.background.y,
+            this.background.width, this.background.height)
 
         ctx.shadowBlur = 0
         ctx.globalAlpha = 0.58
@@ -185,25 +245,38 @@ class Checkbox
 
         ctx.shadowBlur = STYLE.ui.textShadowBlur
         ctx.fillText(this.label, boxX + this.size * 1.55, this.y)
+        LAYOUT_PROBE.text(this.label, boxX + this.size * 1.55, this.y)
+        if (LAYOUT_PROBE.boxes)
+        {
+            const hit = this.hitRect()
+            LAYOUT_PROBE.rect('button', this.label, hit.x, hit.y, hit.width, hit.height)
+        }
         ctx.restore()
     }
-    isClickOnButton(click)
+    // Box and label plus a padding; at least a touch target high
+    hitRect()
     {
-        if (!this.clickable)
-            return false
-
         ctx.save()
         ctx.font = this.fontSize
         const labelWidth = ctx.measureText(this.label).width
         ctx.restore()
 
         const padding = this.size * 0.45
-        const minX = this.x - padding
-        const maxX = this.x + this.size * 1.55 + labelWidth + padding
-        const minY = this.y - this.size / 2 - padding
-        const maxY = this.y + this.size / 2 + padding
+        const height = Math.max(this.size * 1.5, MUTE_BUTTON.minSize())
+        return {
+            x: this.x - padding,
+            y: this.y - height / 2,
+            width: this.size * 1.55 + labelWidth + padding * 2,
+            height: height
+        }
+    }
+    isClickOnButton(click)
+    {
+        if (!this.clickable)
+            return false
 
-        if (minX < click.x && click.x < maxX && minY < click.y && click.y < maxY)
+        const r = this.hitRect()
+        if (r.x < click.x && click.x < r.x + r.width && r.y < click.y && click.y < r.y + r.height)
         {
             AUDIO.play('click')
             this.click()
@@ -288,6 +361,7 @@ class FpsCounter
         ctx.lineWidth = Math.max(1, STYLE.ui.fpsPanelLineWidth * 0.65)
         ctx.strokeText(text, x, y)
         ctx.fillText(text, x, y)
+        LAYOUT_PROBE.text(text, x, y)
         ctx.restore()
     }
     getTextX(viewWidth, viewHeight, text, panelWidth, padding)
@@ -524,6 +598,29 @@ class Menu
                 cancelAnimationFrame(game)
             })
         })
+        this.compactLayout()
+    }
+    // Phones: buttons grow to the touch floor and the rows are stacked
+    // evenly below the corner buttons (language, mute)
+    compactLayout()
+    {
+        const touch = compactTouchSize(0.1 * this.height)
+        if (!touch)
+            return
+        const margin = MUTE_BUTTON.marginRatio * this.height
+        const top = 2 * margin + Math.max(MUTE_BUTTON.sizeRatio * this.height, touch)
+        const recordSize = parseFloat(this.classicRecord.fontSize)
+        const check = this.mainFpsCounterCheckbox
+        const rows = stackRows(top, this.height - margin, [parseFloat(this.mainText.fontSize),
+            touch, recordSize, touch, recordSize, check.hitRect().height, recordSize])
+
+        this.mainText.y = rows[0]
+        this.layoutPauseButton(this.classicVersionButton, this.center.x, rows[1], 0.4 * this.width, touch)
+        this.classicRecord.y = rows[2]
+        this.layoutPauseButton(this.badVersionButton, this.center.x, rows[3], 0.4 * this.width, touch)
+        this.badRecord.y = rows[4]
+        check.y = rows[5]
+        this.timeInGame.y = rows[6]
     }
     getPausePanel()
     {
@@ -561,7 +658,7 @@ class Menu
             fontSize: this.getPauseTitleFontSize(panel),
             text    : I18N.t('game.title'),
             x       : this.center.x,
-            y       : panel.y + panel.height * 0.14
+            y       : this.pauseTitleY
         })
 
         pauseTitle.draw()
@@ -574,13 +671,16 @@ class Menu
         button.background.height = height
         button.text.x = x
         button.text.y = y
-        button.text.fontSize = getArcadeFont(button.getFittedTextSize(button.text.text, height))
+        button.text.fontSize = getArcadeFont(button.getFittedTextSize(button.text.text, height * buttonLabelHeightRatio))
     }
     layoutPauseControls(panel)
     {
         const buttonWidth = Math.min(panel.width * 0.48, this.width * 0.42)
-        const buttonHeight = Math.min(this.height * 0.1, panel.height * 0.13)
+        const defaultHeight = Math.min(this.height * 0.1, panel.height * 0.13)
+        const touch = compactTouchSize(defaultHeight)
+        const buttonHeight = touch || defaultHeight
         const centerX = panel.x + panel.width / 2
+        this.pauseTitleY = panel.y + panel.height * 0.14
 
         this.layoutPauseButton(
             this.resume,
@@ -614,6 +714,15 @@ class Menu
         this.pauseFpsCounterCheckbox.y = rowY
         this.pauseFpsCounterCheckbox.size = boxSize
         this.pauseFpsCounterCheckbox.fontSize = getArcadeFont(fpsFontSize)
+
+        if (!touch)
+            return
+        const rows = stackRows(panel.y, panel.y + panel.height, [this.getPauseTitleFontSize(panel),
+            buttonHeight, buttonHeight, this.pauseFpsCounterCheckbox.hitRect().height])
+        this.pauseTitleY = rows[0]
+        this.layoutPauseButton(this.resume, centerX, rows[1], buttonWidth, buttonHeight)
+        this.layoutPauseButton(this.backToMenu, centerX, rows[2], buttonWidth, buttonHeight)
+        this.pauseFpsCounterCheckbox.y = rows[3]
     }
     click(coord)
     {
@@ -759,9 +868,11 @@ class ContinueOffer
     {
         this.width = w
         this.height = h
+        // Phones: touch-sized buttons, rows stacked evenly in a wider panel
+        const touch = compactTouchSize(h * 0.11)
         this.panel =
         {
-            width: Math.min(w * 0.84, h * 1.3),
+            width: touch ? w * 0.96 : Math.min(w * 0.84, h * 1.3),
             height: h * 0.7
         }
         this.panel.x = (w - this.panel.width) / 2
@@ -769,12 +880,18 @@ class ContinueOffer
 
         const centerX = w / 2
         const buttonWidth = this.panel.width * 0.7
-        const buttonHeight = h * 0.11
+        const buttonHeight = touch || h * 0.11
         const buttons = [this.continueButton, this.restartButton]
-        const rows = [0.56, 0.78]
+        // Names the reward above the watch button
+        const rewardFontSize = Math.min(h * 0.045,
+            this.fittedFontSize(this.rewardLabel, h * 0.045, this.panel.width * (touch ? 0.94 : 0.9)))
+        const y = touch
+            ? stackRows(this.panel.y, this.panel.y + this.panel.height,
+                [h * 0.09, h * 0.05, rewardFontSize, buttonHeight, buttonHeight])
+            : [0.16, 0.33, 0.42, 0.56, 0.78].map(f => this.panel.y + this.panel.height * f)
 
         for (let i = 0; i < buttons.length; ++i)
-            menu.layoutPauseButton(buttons[i], centerX, this.panel.y + this.panel.height * rows[i], buttonWidth, buttonHeight)
+            menu.layoutPauseButton(buttons[i], centerX, y[3 + i], buttonWidth, buttonHeight)
         this.clearAdBadge()
 
         // Equal prominence: both labels share the smaller fitted size
@@ -788,7 +905,7 @@ class ContinueOffer
             fontSize: h * 0.09,
             text    : I18N.t('continue.title'),
             x       : centerX,
-            y       : this.panel.y + this.panel.height * 0.16
+            y       : y[0]
         })
         this.score = new Text(
         {
@@ -796,18 +913,15 @@ class ContinueOffer
             fontSize: h * 0.05,
             text    : '',
             x       : centerX,
-            y       : this.panel.y + this.panel.height * 0.33
+            y       : y[1]
         })
-        // Names the reward above the watch button
-        const rewardFontSize = Math.min(h * 0.045,
-            this.fittedFontSize(this.rewardLabel, h * 0.045, this.panel.width * 0.9))
         this.rewardText = new Text(
         {
             fill    : STYLE.colors.ui.buttonText,
             fontSize: rewardFontSize,
             text    : this.rewardLabel,
             x       : centerX,
-            y       : this.panel.y + this.panel.height * 0.42
+            y       : y[2]
         })
         // Takes the watch button's place when there is no ad to offer
         this.noticeText = new Text(
@@ -816,7 +930,7 @@ class ContinueOffer
             fontSize: h * 0.05,
             text    : '',
             x       : centerX,
-            y       : this.panel.y + this.panel.height * rows[0]
+            y       : y[3]
         })
     }
     // A label that would run under the badge ('Продолжить' next to
@@ -872,6 +986,7 @@ class ContinueOffer
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillText(this.adBadgeLabel, badge.x + badge.width / 2, badge.y + badge.height / 2)
+        LAYOUT_PROBE.text(this.adBadgeLabel, badge.x + badge.width / 2, badge.y + badge.height / 2)
         ctx.restore()
     }
     show()

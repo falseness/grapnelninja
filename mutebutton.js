@@ -26,7 +26,7 @@ const MUTE_BUTTON =
     // Logical units per CSS pixel turn the CSS floor into a logical size
     minSize()
     {
-        const cssHeight = canvas.getBoundingClientRect().height
+        const cssHeight = getCanvasCssRect().height
         return cssHeight > 0 ? this.minCssPx * height / cssHeight : 0
     },
     rect(where)
@@ -93,6 +93,7 @@ const MUTE_BUTTON =
         ctx.shadowColor = color
         ctx.shadowBlur = STYLE.ui.buttonShadowBlur
         ctx.strokeRect(r.x, r.y, r.width, r.height)
+        LAYOUT_PROBE.rect('button', 'mute', r.x, r.y, r.width, r.height)
 
         // Speaker body
         const px = f => r.x + f * r.width

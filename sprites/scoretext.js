@@ -53,10 +53,11 @@ let scoreText =
     },
     getRecordX: function(viewWidth)
     {
-        if (version == 'bad')
-            return viewWidth * STYLE.ui.hudBadRecordXRatio
-
-        return viewWidth * STYLE.ui.hudRecordXRatio
+        const x = viewWidth * (version == 'bad' ? STYLE.ui.hudBadRecordXRatio : STYLE.ui.hudRecordXRatio)
+        // Left of a HUD menu button grown to the touch floor
+        if (!menu.button)
+            return x
+        return Math.min(x, menu.button.background.x - viewWidth * STYLE.ui.hudBadTextGapRatio)
     },
     getRecordFontSize: function(recordText, scoreTextValue, scoreX, recordX, fontSize, viewWidth)
     {
@@ -89,6 +90,7 @@ let scoreText =
         ctx.textAlign = align
         ctx.strokeText(text, x, y)
         ctx.fillText(text, x, y)
+        LAYOUT_PROBE.text(text, x, y)
     },
     drawStageIndicator: function(viewWidth, topY, fontSize)
     {
