@@ -6,7 +6,7 @@ from threading import Thread
 from playwright.sync_api import sync_playwright
 
 
-SDK_ROUTE = '**/gamepix.sdk.js'
+SDK_ROUTE = '**/y8.min.js'
 LOGICAL_HEIGHT = 1080
 
 
@@ -27,9 +27,9 @@ def stub_sdk(route):
 
 
 class OfflineSdkBrowser:
-    """Browser whose pages never fetch the real GamePix SDK.
+    """Browser whose pages never fetch the real Y8 SDK.
 
-    Routes added later (e.g. by gamepix_harness) take precedence.
+    Routes added later (e.g. by y8_harness) take precedence.
     """
     def __init__(self, browser):
         self._browser = browser

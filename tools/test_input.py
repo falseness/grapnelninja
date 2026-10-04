@@ -1,4 +1,4 @@
-"""Input hardening for the GamePix iframe: touch, keys, scrolling, focus."""
+"""Input hardening for the Y8 iframe: touch, keys, scrolling, focus."""
 import json
 import os
 from pathlib import Path
@@ -6,8 +6,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gamepix_harness import (canvas_to_viewport, collect_errors, open_game,
-                             route_fake_sdk, sdk_calls, start_gamepix_test)
+from y8_harness import (FAKE_SDK, Y8_SDK_ROUTE, canvas_to_viewport, collect_errors,
+                        open_game, sdk_calls, start_y8_test)
 
 ROOT = Path(__file__).resolve().parent.parent
 TOUCH_VIEWPORT = {'width': 844, 'height': 390}
@@ -18,7 +18,8 @@ def open_touch_game(browser, url):
     """Return (context, page, errors) for a mobile landscape touch context."""
     context = browser.new_context(viewport=TOUCH_VIEWPORT, has_touch=True,
                                   is_mobile=True)
-    route_fake_sdk(context)
+    context.route(Y8_SDK_ROUTE, lambda route: route.fulfill(
+        path=str(FAKE_SDK), content_type='application/javascript'))
     page = context.new_page()
     errors = collect_errors(page)
     page.goto(url + 'index.html')
@@ -57,8 +58,8 @@ def count_tap_throws(page):
 class InputTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_gamepix_test(ROOT, cls.addClassCleanup)
-        cls.evidence = os.environ.get('GAMEPIX_INPUT_EVIDENCE_DIR')
+        cls.url, cls.browser = start_y8_test(ROOT, cls.addClassCleanup)
+        cls.evidence = os.environ.get('Y8_INPUT_EVIDENCE_DIR')
         cls.errors = []
 
     @classmethod
@@ -82,7 +83,7 @@ class InputTests(unittest.TestCase):
         context, page, errors = open_game(self.browser, 'about:blank', DESKTOP_VIEWPORT)
         self.track(context, errors)
         page.goto(self.url + 'index.html')
-        page.wait_for_function('PLATFORM.environment === "gamepix" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "y8" && menu.visible')
         return page
 
     def out(self):
@@ -166,8 +167,8 @@ class InputTests(unittest.TestCase):
         self.assertTrue(page.evaluate('menu.gamePaused'))
         names = [c['name'] for c in sdk_calls(page)]
         print(f'\n  sdk calls after hidden={names[len(before):]}', file=sys.stderr)
-        self.assertNotIn('rewardAd', names[len(before):])
-        print('  ASSERT visibilitychange hidden -> gamePaused, no rewardAd: pass',
+        self.assertNotIn('showAd', names[len(before):])
+        print('  ASSERT visibilitychange hidden -> gamePaused, no showAd: pass',
               file=sys.stderr)
 
     def test_computed_style(self):

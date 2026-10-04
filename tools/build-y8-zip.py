@@ -1,16 +1,17 @@
-"""Build the GamePix upload zip from an explicit allowlist.
+"""Build the Y8 upload zip from an explicit allowlist.
 
 The zip holds index.html at its root, the root *.js game files and the
 collision/, elements/, render/ and sprites/ folders. Every local reference in
 index.html must be relative and present in the zip; the only external URL
-allowed is the GamePix SDK, which must be the first <script> in <head> and
-must not be async.
+allowed is the Y8 SDK. The build fails unless y8config.js holds a real
+appId (24 hex chars) and gameId (digits).
 
-Usage: python3 tools/build-gamepix-zip.py [--out PATH] [--listing PATH]
-                                          [--stats PATH] [--refs PATH]
+Usage: python3 tools/build-y8-zip.py [--out PATH] [--listing PATH]
+                                     [--stats PATH] [--refs PATH]
 """
 import argparse
 import json
+import re
 import sys
 import zipfile
 from html.parser import HTMLParser
@@ -18,7 +19,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_OUT = ROOT / 'artifacts' / 'TASK-109' / 'grapnelninja-gamepix.zip'
+DEFAULT_OUT = ROOT / 'artifacts' / 'TASK-096' / 'grapnelninja-y8.zip'
 
 ROOT_FILES = ['index.html']
 ROOT_GLOBS = ['*.js']
@@ -26,7 +27,10 @@ FOLDERS = ['collision', 'elements', 'render', 'sprites']
 FOLDER_SUFFIXES = {'.js'}
 EXCLUDED = ['tools', 'artifacts', 'screenshots', 'prompts.md', 'AGENTS.md',
             'README.md', '.git', '__pycache__']
-SDK_URL = 'https://integration.gamepix.com/sdk/v3/gamepix.sdk.js'
+SDK_URL = 'https://cdn.y8.com/minimal-sdk/2-0/y8.min.js'
+CONFIG_FILE = 'y8config.js'
+ID_PATTERNS = {'appId': re.compile(r'^[0-9a-f]{24}$'),
+               'gameId': re.compile(r'^[0-9]+$')}
 MAX_BYTES = 20 * 1024 * 1024
 MAX_FILES = 1500
 
@@ -55,21 +59,11 @@ class RefParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.refs = []
-        self.head_scripts = []
-        self.in_head = False
 
     def handle_starttag(self, tag, attrs):
-        if tag == 'head':
-            self.in_head = True
-        elif tag == 'script' and self.in_head:
-            self.head_scripts.append(dict(attrs))
         for name, value in attrs:
             if (tag, name) in REF_ATTRS and value:
                 self.refs.append((tag, name, value.strip()))
-
-    def handle_endtag(self, tag):
-        if tag == 'head':
-            self.in_head = False
 
 
 def html_references(html):
@@ -85,7 +79,7 @@ def check_references(html, zip_paths):
     for tag, attr, ref in html_references(html):
         parsed = urlparse(ref)
         if ref == SDK_URL:
-            lines.append(f'{tag} {attr}={ref}: external (GamePix SDK, allowed)')
+            lines.append(f'{tag} {attr}={ref}: external (Y8 SDK, allowed)')
         elif parsed.scheme or parsed.netloc:
             errors.append(f'{tag} {attr}={ref}: non-relative URL')
         elif ref.startswith('/'):
@@ -97,18 +91,15 @@ def check_references(html, zip_paths):
     return lines, errors
 
 
-def check_sdk_tag(html):
-    """Return errors unless the SDK is the first <head> script, not async."""
-    parser = RefParser()
-    parser.feed(html)
-    if not parser.head_scripts:
-        return ['no <script> in <head>']
-    first = parser.head_scripts[0]
+def check_y8_config(js):
+    """Return errors for missing, empty or placeholder IDs in y8config.js."""
     errors = []
-    if (first.get('src') or '').strip() != SDK_URL:
-        errors.append(f'first <head> script is {first.get("src")!r}, not {SDK_URL}')
-    elif 'async' in first or 'defer' in first:
-        errors.append('GamePix SDK tag must not be async or defer')
+    for key, pattern in ID_PATTERNS.items():
+        m = re.search(r'\b%s\s*:\s*([\'"])(.*?)\1' % key, js)
+        if not m:
+            errors.append(f'{key}: missing')
+        elif not pattern.fullmatch(m.group(2)):
+            errors.append(f'{key}: {m.group(2)!r} does not match {pattern.pattern}')
     return errors
 
 
@@ -126,10 +117,13 @@ def build(out, root=ROOT):
     hits = excluded_hits(zip_paths)
     if hits:
         raise SystemExit(f'excluded paths in the allowlist: {hits}')
+    config = root / CONFIG_FILE
+    if not config.is_file():
+        raise SystemExit(f'{CONFIG_FILE} is missing')
+    id_errors = check_y8_config(config.read_text(encoding='utf-8'))
+    if id_errors:
+        raise SystemExit(f'bad {CONFIG_FILE}:\n' + '\n'.join(id_errors))
     html = (root / 'index.html').read_text(encoding='utf-8')
-    sdk_errors = check_sdk_tag(html)
-    if sdk_errors:
-        raise SystemExit('bad GamePix SDK tag:\n' + '\n'.join(sdk_errors))
     ref_lines, ref_errors = check_references(html, zip_paths)
     if ref_errors:
         raise SystemExit('bad index.html references:\n' + '\n'.join(ref_errors))
@@ -147,7 +141,6 @@ def zip_report(out):
     """Assert the written zip; return (listing lines, stats)."""
     with zipfile.ZipFile(out) as zf:
         infos = zf.infolist()
-        zf_html = zf.read('index.html').decode('utf-8')
     names = [i.filename for i in infos]
     listing = [f'{i.file_size:>9} {i.compress_size:>9} {i.filename}' for i in infos]
     stats = {
@@ -162,13 +155,10 @@ def zip_report(out):
         ('index.html at the zip root', 'index.html' in names),
         ('only allowlisted paths', set(names) == set(allowlisted_files())),
         ('no excluded names (' + ', '.join(EXCLUDED) + ')', not excluded_hits(names)),
-        ('no *.py or *.md files', not any(n.endswith(('.py', '.md')) for n in names)),
-        ('GamePix SDK is the first <head> script, not async',
-         not check_sdk_tag(zf_html)),
         (f'zip size {stats["zip_bytes"]} <= {MAX_BYTES}', stats['zip_bytes'] <= MAX_BYTES),
         (f'file count {len(infos)} <= {MAX_FILES}', len(infos) <= MAX_FILES),
     ]
-    stats['checks'] = {name: 'PASS' if ok else 'FAIL' for name, ok in checks}
+    stats['checks'] = {name: ok for name, ok in checks}
     return listing, stats
 
 
@@ -185,15 +175,15 @@ def main(argv=None):
     for line in ref_lines:
         print('ref', line)
     listing, stats = zip_report(args.out)
-    for name, result in stats['checks'].items():
-        print(f'assert {name}: {result}')
+    for name, ok in stats['checks'].items():
+        print(f'assert {name}: {"PASS" if ok else "FAIL"}')
     if args.listing:
         args.listing.write_text('\n'.join(listing) + '\n')
     if args.stats:
         args.stats.write_text(json.dumps(stats, indent=2) + '\n')
     if args.refs:
         args.refs.write_text('\n'.join(ref_lines) + '\n')
-    if any(r != 'PASS' for r in stats['checks'].values()):
+    if not all(stats['checks'].values()):
         print('FAIL')
         return 1
     print('OK')

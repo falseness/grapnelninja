@@ -1,40 +1,29 @@
-"""Open pages against the fake GamePix SDK in a shared test browser."""
+"""Open pages against the fake Y8 SDK in a shared test browser."""
 import json
 from pathlib import Path
 
 from browser_test_support import start_browser_test
 
-GAMEPIX_SDK_URL = 'https://integration.gamepix.com/sdk/v3/gamepix.sdk.js'
-GAMEPIX_SDK_ROUTE = '**/gamepix.sdk.js'
-FAKE_SDK = Path(__file__).with_name('fixtures') / 'fake-gamepix-sdk.js'
+Y8_SDK_ROUTE = '**/y8.min.js'
+FAKE_SDK = Path(__file__).with_name('fixtures') / 'fake-y8-sdk.js'
 
 
-def start_gamepix_test(root, add_cleanup):
+def start_y8_test(root, add_cleanup):
     """Return URL/browser from the shared server/browser lifetime."""
     return start_browser_test(root, add_cleanup)
-
-
-def route_fake_sdk(context, block_sdk=False):
-    """Serve the fake (or abort) for every GamePix SDK request."""
-    if block_sdk:
-        context.route(GAMEPIX_SDK_ROUTE, lambda route: route.abort())
-    else:
-        context.route(GAMEPIX_SDK_ROUTE, lambda route: route.fulfill(
-            path=str(FAKE_SDK), content_type='application/javascript'))
-
-
-def set_fake_config(context, fake_options=None):
-    """Merge fake_options into window.__fakeGamePix before any page script."""
-    context.add_init_script(
-        f'window.__fakeGamePix = Object.assign(window.__fakeGamePix || {{}}, '
-        f'{json.dumps(fake_options or {})})')
 
 
 def open_game(browser, url, viewport, fake_options=None, block_sdk=False):
     """Return (context, page, errors); errors has 'console' and 'page' lists."""
     context = browser.new_context(viewport=viewport)
-    route_fake_sdk(context, block_sdk)
-    set_fake_config(context, fake_options)
+    if block_sdk:
+        context.route(Y8_SDK_ROUTE, lambda route: route.abort())
+    else:
+        context.route(Y8_SDK_ROUTE, lambda route: route.fulfill(
+            path=str(FAKE_SDK), content_type='application/javascript'))
+    context.add_init_script(
+        f'window.__y8Fake = Object.assign(window.__y8Fake || {{}}, '
+        f'{json.dumps(fake_options or {})})')
     page = context.new_page()
     errors = collect_errors(page, block_sdk)
     page.goto(url)
@@ -52,7 +41,7 @@ def collect_errors(page, block_sdk=False):
     def on_console(msg):
         if msg.type != 'error':
             return
-        if block_sdk and 'gamepix.sdk.js' in msg.location.get('url', ''):
+        if block_sdk and 'y8.min.js' in msg.location.get('url', ''):
             errors['blocked_sdk'].append(msg.text)
         else:
             errors['console'].append(msg.text)
@@ -64,19 +53,7 @@ def collect_errors(page, block_sdk=False):
 
 def sdk_calls(page):
     """Return the fake SDK's recorded calls ([] when the SDK is absent)."""
-    return page.evaluate(
-        '() => (window.__fakeGamePix && window.__fakeGamePix.calls) || []')
-
-
-def sdk_errors(page):
-    """Return the documented SDK error codes the fake has logged."""
-    return page.evaluate(
-        '() => (window.__fakeGamePix && window.__fakeGamePix.errors) || []')
-
-
-def fire(page, name):
-    """Call GamePix.on[name] ('pause', 'resume', 'soundOn', 'soundOff')."""
-    page.evaluate('(name) => window.__fakeGamePix.fire(name)', name)
+    return page.evaluate('() => (window.__y8Fake && window.__y8Fake.calls) || []')
 
 
 def canvas_to_viewport(page, x, y):
