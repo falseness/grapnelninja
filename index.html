@@ -1,10 +1,10 @@
 <!Doctype html>
 <html>
     <head>
+        <script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>
         <title>Grapnel Ninja</title>
         <meta charset = "UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <script src="https://cdn.y8.com/minimal-sdk/2-0/y8.min.js" async></script>
 
         <style>
             body 
@@ -22,13 +22,43 @@
                 touch-action: none;
                 -webkit-tap-highlight-color: transparent;
             }
+            #loading
+            {
+                position: fixed;
+                inset: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                background-color: black;
+                color: white;
+                font-family: sans-serif;
+                z-index: 1;
+            }
+            #loading[hidden]
+            {
+                display: none;
+            }
+            #loading-title
+            {
+                font-size: 48px;
+            }
+            #loading-progress
+            {
+                margin-top: 16px;
+                font-size: 20px;
+                color: #aaa;
+            }
         </style>
     </head>
     <body>
+        <div id = "loading">
+            <div id = "loading-title">Grapnel Ninja</div>
+            <div id = "loading-progress">Loading...</div>
+        </div>
         <canvas id = "canvas"></canvas>
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
-        <script src = "y8config.js"></script>
         <script src = "platform.js"></script>
         <script src = "progress.js"></script>
         <script src = 'menu.js'></script>
@@ -83,11 +113,30 @@
             
             boot()
             
+            // Bridge init -> one storage read -> first menu frame -> hide
+            // the loading overlay -> game_ready. Input is attached only
+            // after that, so earlier clicks and keys are ignored.
             async function boot()
             {
+                setLoadingProgress('Connecting...')
                 await PLATFORM.init()
-                PROGRESS.load()
+                setLoadingProgress('Loading progress...')
+                PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
+                setLoadingProgress('Starting...')
+                await nextFrame()
                 start()
+                await nextFrame()
+                document.getElementById('loading').hidden = true
+                createEvents()
+                PLATFORM.gameReady()
+            }
+            function setLoadingProgress(text)
+            {
+                document.getElementById('loading-progress').textContent = text
+            }
+            function nextFrame()
+            {
+                return new Promise(resolve => requestAnimationFrame(resolve))
             }
             
             function startGame(_v)
@@ -314,11 +363,6 @@
                 
                 //generatePrimaryElements()
                 menu.draw()
-                
-                
-                createEvents()
-                
-                //requestAnimationFrame(gameLoop)
             }
 
             function resetPhysicsTiming()

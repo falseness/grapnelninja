@@ -24,8 +24,10 @@ const PROGRESS = (function()
 
     const PROGRESS =
     {
-        // Call once after PLATFORM.init(): migrate legacy time, load records
-        load()
+        // Every key read by the single PLATFORM.storage.getMany at boot
+        keys: [recordsKey],
+        // Call once with the boot getMany result: migrate legacy time, load records
+        load(values)
         {
             const legacy = localStorage.getItem(legacyTimeKey)
             if (legacy !== null)
@@ -38,7 +40,7 @@ const PROGRESS = (function()
             let records = {}
             try
             {
-                records = JSON.parse(localStorage.getItem(recordsKey)) || {}
+                records = JSON.parse(values[recordsKey]) || {}
             }
             catch (e)
             {
