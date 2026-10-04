@@ -118,7 +118,8 @@ class ProgressTests(unittest.TestCase):
         state = page.evaluate('[PROGRESS.getTime(), PROGRESS.getMuted(), PROGRESS.getLang()]')
         log(f'seeded state={state} menu time={self.menu_texts(page)["time"]!r}')
         self.assertEqual(state, [125, True, 'ru'])
-        self.assertIn('2 minutes', self.menu_texts(page)['time'])
+        # Since TASK-126 the saved 'ru' also switches the menu to Russian
+        self.assertEqual(self.menu_texts(page)['time'], 'время в игре: 2 мин.')
 
         page.evaluate('''() => {
             PROGRESS.setTime(PROGRESS.getTime() + 60)

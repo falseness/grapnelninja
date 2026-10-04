@@ -31,15 +31,18 @@ class ViewportEffectsTests(unittest.TestCase):
         # TASK-112 capitalised the menu title on purpose; apply it to the baseline too
         cls.baseline['menu.js'] = cls.baseline['menu.js'].replace(b"'Grapnel ninja'", b"'Grapnel Ninja'")
         # TASK-120 added the speaker mute button to the menu, pause screen and
-        # HUD: draw the current mutebutton.js at the same points in the baseline
+        # HUD: draw the current mutebutton.js at the same points in the baseline.
+        # TASK-126 added the language toggle to the menu: draw the current
+        # languagebutton.js (with i18n.js) there too
         cls.baseline['mutebutton.js'] = (ROOT / 'mutebutton.js').read_bytes()
         for name, old, new in [
                 ('index.html', b"<script src = 'menu.js'></script>",
-                 b"<script src = 'menu.js'></script><script src = 'mutebutton.js'></script>"),
+                 b"<script src = 'menu.js'></script><script src = 'mutebutton.js'></script>"
+                 b"<script src = 'i18n.js'></script><script src = 'languagebutton.js'></script>"),
                 ('menu.js', b"this.backToMenu.draw()\n",
                  b"this.backToMenu.draw()\nMUTE_BUTTON.draw('pause')\n"),
                 ('menu.js', b"this.timeInGame.draw()\n",
-                 b"this.timeInGame.draw()\nMUTE_BUTTON.draw('menu')\n"),
+                 b"this.timeInGame.draw()\nMUTE_BUTTON.draw('menu')\nLANGUAGE_BUTTON.draw()\n"),
                 ('render/draw.js', b"ctx.scale(1 / scale[version], 1 / scale[version])\n}",
                  b"ctx.scale(1 / scale[version], 1 / scale[version])\nMUTE_BUTTON.draw('hud')\n}")]:
             assert cls.baseline[name].count(old) == 1, (name, old)

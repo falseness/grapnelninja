@@ -66,6 +66,7 @@
         <script src = "audio.js"></script>
         <script src = 'menu.js'></script>
         <script src = "mutebutton.js"></script>
+        <script src = "languagebutton.js"></script>
     
         <script src = "collision/circlewithcircle.js"></script>
         <script src = "collision/linewithline.js"></script>
@@ -135,10 +136,14 @@
             {
                 setLoadingProgress(I18N.t('loading.connecting'))
                 await PLATFORM.init()
+                // Platform language until the saved choice is read
+                I18N.language = I18N.pick(null, PLATFORM.language)
                 // Host audio state applies before the first sound
                 AUDIO.setMute('host', !PLATFORM.isAudioEnabled())
                 setLoadingProgress(I18N.t('loading.progress'))
                 PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
+                I18N.language = I18N.pick(PROGRESS.getLang(), PLATFORM.language)
+                applyLanguage()
                 MUTE_BUTTON.restore(PROGRESS.getMuted())
                 // Plays from the first gesture; muting silences it
                 AUDIO.startMusic()
@@ -515,14 +520,30 @@
                     menu.drawPauseScreen()
                 }
             }
-            // A new Menu at the new size that keeps the current menu state.
+            // Menu toggle: switch now, re-lay out every screen, save the choice
+            function setLanguage(lang)
+            {
+                I18N.language = lang
+                applyLanguage()
+                PROGRESS.setLang(I18N.language)
+                PROGRESS.save()
+                if (menu.visible)
+                    menu.draw()
+            }
+            // Text in the current language everywhere: page, menu, offer
+            function applyLanguage()
+            {
+                I18N.applyDom()
+                document.documentElement.lang = I18N.language
+                rebuildMenu()
+                continueOffer.relabel(width, height)
+            }
+            // A new Menu at the new size that keeps the current menu state;
+            // its texts come from the current language and progress.
             function rebuildMenu()
             {
                 const old = menu
                 menu = new Menu(width, height)
-                menu.classicRecord.text = old.classicRecord.text
-                menu.badRecord.text = old.badRecord.text
-                menu.timeInGame.text = old.timeInGame.text
                 menu.button = old.button
                 menu.setVisible(old.visible)
                 menu.changeGamePause(old.gamePaused)

@@ -516,8 +516,8 @@ class Menu
 
                 menu.setVisible(true)
 
-                menu.classicRecord.text = scoreText.rtext    + scoreText.record.classic
-                menu.badRecord.text     = scoreText.rtext   + scoreText.record.bad
+                menu.classicRecord.text = I18N.t('menu.record', {value: scoreText.record.classic})
+                menu.badRecord.text     = I18N.t('menu.record', {value: scoreText.record.bad})
 
                 menu.draw()
 
@@ -720,6 +720,7 @@ class Menu
         this.timeInGame.draw()
 
         MUTE_BUTTON.draw('menu')
+        LANGUAGE_BUTTON.draw()
     }
 }
 // Offered after an eligible lethal death: two equally sized and styled
@@ -737,14 +738,21 @@ class ContinueOffer
         this.adPending = false
         this.continueButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
-            {text: I18N.t('continue.watch'), fill: STYLE.colors.ui.buttonText},
+            {text: '', fill: STYLE.colors.ui.buttonText},
             onContinue)
-        this.adBadgeLabel = I18N.t('continue.adBadge')
-        this.rewardLabel = I18N.t('continue.reward')
         this.restartButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
-            {text: I18N.t('continue.restart'), fill: STYLE.colors.ui.buttonText},
+            {text: '', fill: STYLE.colors.ui.buttonText},
             onRestart)
+        this.relabel(w, h)
+    }
+    // Labels in the current language, then a layout that fits them
+    relabel(w, h)
+    {
+        this.continueButton.text.text = I18N.t('continue.watch')
+        this.restartButton.text.text = I18N.t('continue.restart')
+        this.adBadgeLabel = I18N.t('continue.adBadge')
+        this.rewardLabel = I18N.t('continue.reward')
         this.layout(w, h)
     }
     layout(w, h)
@@ -767,6 +775,7 @@ class ContinueOffer
 
         for (let i = 0; i < buttons.length; ++i)
             menu.layoutPauseButton(buttons[i], centerX, this.panel.y + this.panel.height * rows[i], buttonWidth, buttonHeight)
+        this.clearAdBadge()
 
         // Equal prominence: both labels share the smaller fitted size
         const fontSize = Math.min(...buttons.map(b => parseFloat(b.text.fontSize)))
@@ -810,6 +819,28 @@ class ContinueOffer
             y       : this.panel.y + this.panel.height * rows[0]
         })
     }
+    // A label that would run under the badge ('Продолжить' next to
+    // 'РЕКЛАМА') is centred and fitted in the space right of it
+    clearAdBadge()
+    {
+        const button = this.continueButton
+        const b = button.background
+        const badge = this.adBadge()
+        const left = badge.x + badge.width + b.height * 0.15
+        const right = b.x + b.width - b.height * 0.22
+        const size = parseFloat(button.text.fontSize)
+
+        ctx.save()
+        ctx.font = button.text.fontSize
+        const textLeft = button.text.x - ctx.measureText(button.text.text).width / 2
+        ctx.restore()
+        if (textLeft >= left)
+            return
+
+        button.text.x = (left + right) / 2
+        button.text.fontSize = getArcadeFont(Math.max(STYLE.ui.buttonMinFontSize,
+            this.fittedFontSize(button.text.text, size, right - left)))
+    }
     fittedFontSize(label, size, maxWidth)
     {
         ctx.save()
@@ -823,7 +854,11 @@ class ContinueOffer
     {
         const b = this.continueButton.background
         const height = b.height * 0.56
-        const width = height * 1.5
+        // Wide enough for a longer label ('РЕКЛАМА')
+        ctx.save()
+        ctx.font = getArcadeFont(height * 0.7)
+        const width = Math.max(height * 1.5, ctx.measureText(this.adBadgeLabel).width + height * 0.4)
+        ctx.restore()
         return {x: b.x + b.height * 0.22, y: b.y + (b.height - height) / 2, width: width, height: height}
     }
     drawAdBadge()

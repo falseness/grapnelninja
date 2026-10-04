@@ -1,5 +1,5 @@
 // User-visible strings. I18N.t(key, params) looks the key up in the current
-// language (English only for now) and fills {name} placeholders from params.
+// current language (English or Russian) and fills {name} placeholders from params.
 const I18N = (function()
 {
     const dictionaries =
@@ -27,14 +27,58 @@ const I18N = (function()
             'continue.reward'       : 'Watch an ad to continue this run',
             'continue.restart'      : 'Restart',
             'continue.adsUnavailable': 'Ads unavailable',
-            'continue.adUnavailable': 'Ad unavailable'
+            'continue.adUnavailable': 'Ad unavailable',
+            'language.name'         : 'English'
+        },
+        ru:
+        {
+            'game.title'            : 'Grapnel Ninja',
+            'loading.initial'       : 'Загрузка...',
+            'loading.connecting'    : 'Подключение...',
+            'loading.progress'      : 'Загрузка прогресса...',
+            'loading.starting'      : 'Запуск...',
+            'menu.chillVersion'     : 'спокойный режим',
+            'menu.mainVersion'      : 'основной режим',
+            'menu.record'           : 'рекорд: {value}',
+            'menu.fpsCounter'       : 'счётчик FPS',
+            'menu.timeInGame'       : 'время в игре: {minutes} мин.',
+            'pause.resume'          : 'продолжить',
+            'pause.backToMenu'      : 'в меню',
+            'hud.fps'               : 'FPS: {value}',
+            'hud.score'             : 'СЧЁТ: ',
+            'hud.record'            : 'РЕКОРД: ',
+            'continue.title'        : 'Продолжить?',
+            'continue.watch'        : 'Продолжить',
+            'continue.adBadge'      : 'РЕКЛАМА',
+            'continue.reward'       : 'Посмотрите рекламу, чтобы продолжить забег',
+            'continue.restart'      : 'Заново',
+            'continue.adsUnavailable': 'Реклама недоступна',
+            'continue.adUnavailable': 'Не удалось загрузить рекламу',
+            'language.name'         : 'Русский'
         }
     }
+    // Menu toggle order
+    const languages = ['en', 'ru']
     let language = 'en'
 
     return {
         dictionaries,
+        languages,
         get language() { return language },
+        set language(value) { language = languages.includes(value) ? value : 'en' },
+        // Boot language: the saved choice, else Russian for a Russian
+        // platform language, else English
+        pick(saved, platformLanguage)
+        {
+            if (languages.includes(saved))
+                return saved
+            return String(platformLanguage || '').toLowerCase().startsWith('ru') ? 'ru' : 'en'
+        },
+        // The language after the current one in the menu toggle
+        next()
+        {
+            return languages[(languages.indexOf(language) + 1) % languages.length]
+        },
         t(key, params)
         {
             let text = (dictionaries[language] || {})[key]
