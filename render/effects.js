@@ -5,6 +5,26 @@ function backgroundTemplateScale(viewWidth, viewHeight)
     return Math.min(viewWidth, viewHeight) * (100 / 720) / 100
 }
 
+// Sizes the full-window background canvas behind the game canvas; its
+// backing store follows the window size and device pixel ratio.
+function configureWindowBackground(windowCanvas)
+{
+    const dpr = window.devicePixelRatio || 1
+
+    windowCanvas.width = Math.max(1, Math.round(window.innerWidth * dpr))
+    windowCanvas.height = Math.max(1, Math.round(window.innerHeight * dpr))
+}
+
+// Linear mix of two 'rgba(r, g, b, a)' colors, t in [0, 1].
+function mixRgba(from, to, t)
+{
+    const a = from.match(/[\d.]+/g).map(Number)
+    const b = to.match(/[\d.]+/g).map(Number)
+    const mix = a.map((value, i) => value + ((b[i] === undefined ? 1 : b[i]) - value) * t)
+
+    return 'rgba(' + mix.slice(0, 3).map(Math.round).join(', ') + ', ' + (mix[3] === undefined ? 1 : mix[3]) + ')'
+}
+
 class BackgroundRenderer
 {
     constructor(context, targetCanvas)
@@ -16,7 +36,76 @@ class BackgroundRenderer
     }
     draw()
     {
-        this.ctx.clearRect(0, 0, LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height)
+        this.paint()
+        this.drawWindowBars(() => this.paint())
+    }
+    drawMenuBackground()
+    {
+        this.paintMenu()
+        this.drawWindowBars(() => this.paintMenu())
+    }
+    // Area the full-size fills cover: the logical viewport, or the whole
+    // window (in logical units) while drawWindowBars paints the bars.
+    fillBounds()
+    {
+        return this.bounds || {x: 0, y: 0, width: LOGICAL_VIEWPORT.width, height: LOGICAL_VIEWPORT.height}
+    }
+    fillAll()
+    {
+        const bounds = this.fillBounds()
+        this.ctx.fillRect(bounds.x, bounds.y, bounds.width, bounds.height)
+    }
+    clearAll()
+    {
+        const bounds = this.fillBounds()
+        this.ctx.clearRect(bounds.x, bounds.y, bounds.width, bounds.height)
+    }
+    // Repeats this frame's background on the full-window canvas behind the
+    // game canvas, in the same logical coordinates and clipped to the
+    // letterbox bars, so the picture continues past the play rect.
+    drawWindowBars(paint)
+    {
+        const windowCanvas = document.getElementById('background')
+        const rect = getCanvasCssRect()
+
+        if (!windowCanvas || (rect.left < 0.5 && rect.top < 0.5))
+            return
+
+        const gameCtx = this.ctx
+        const ctx = windowCanvas.getContext('2d')
+        const fit = rect.width / LOGICAL_VIEWPORT.width
+        const pixelScale = windowCanvas.width / window.innerWidth
+
+        ctx.setTransform(fit * pixelScale, 0, 0, fit * pixelScale, rect.left * pixelScale, rect.top * pixelScale)
+        this.bounds = {
+            x: -rect.left / fit,
+            y: -rect.top / fit,
+            width: window.innerWidth / fit,
+            height: window.innerHeight / fit
+        }
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(this.bounds.x, this.bounds.y, this.bounds.width, this.bounds.height)
+        // The hole stops 2 CSS px inside the play rect, so the bars layer stays
+        // opaque under the game canvas's antialiased (fractional) edge row
+        const inset = 2 / fit
+        ctx.rect(inset, inset, LOGICAL_VIEWPORT.width - 2 * inset, LOGICAL_VIEWPORT.height - 2 * inset)
+        ctx.clip('evenodd')
+        this.ctx = ctx
+        try
+        {
+            paint()
+        }
+        finally
+        {
+            this.ctx = gameCtx
+            this.bounds = null
+            ctx.restore()
+        }
+    }
+    paint()
+    {
+        this.clearAll()
 
         if (!STYLE.features.background)
             return
@@ -28,9 +117,9 @@ class BackgroundRenderer
         this.drawGeometry(width, height)
         this.drawVignette(width, height)
     }
-    drawMenuBackground()
+    paintMenu()
     {
-        this.ctx.clearRect(0, 0, LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height)
+        this.clearAll()
 
         if (!STYLE.features.background)
             return
@@ -58,24 +147,42 @@ class BackgroundRenderer
         gradient.addColorStop(0.54, background.gradientMiddle)
         gradient.addColorStop(1, background.gradientBottom)
         this.ctx.fillStyle = gradient
-        this.ctx.fillRect(0, 0, width, height)
+        this.fillAll()
     }
     drawVignette(width, height)
     {
         const background = STYLE.colors.background
         const radius = Math.sqrt(width * width + height * height) * 0.58
+        const innerRadius = radius * 0.18
+        // In the bars the vignette matches the game canvas out to the play
+        // rect corners, then fades to half that darkness at the window corners
+        const bounds = this.fillBounds()
+        const playCorner = Math.sqrt(width * width + height * height) / 2
+        const windowCorner = Math.max(
+            Math.hypot(width / 2 - bounds.x, height / 2 - bounds.y),
+            Math.hypot(bounds.x + bounds.width - width / 2, bounds.y + bounds.height - height / 2)
+        )
+        const outerRadius = this.bounds && windowCorner > playCorner ? windowCorner : radius
         const vignette = this.ctx.createRadialGradient(
             width / 2,
             height / 2,
-            radius * 0.18,
+            innerRadius,
             width / 2,
             height / 2,
-            radius
+            outerRadius
         )
         vignette.addColorStop(0, background.vignetteCenter)
-        vignette.addColorStop(1, background.vignetteEdge)
+        if (outerRadius == radius)
+            vignette.addColorStop(1, background.vignetteEdge)
+        else
+        {
+            const corner = mixRgba(background.vignetteCenter, background.vignetteEdge,
+                (playCorner - innerRadius) / (radius - innerRadius))
+            vignette.addColorStop((playCorner - innerRadius) / (outerRadius - innerRadius), corner)
+            vignette.addColorStop(1, mixRgba(background.vignetteCenter, corner, 0.5))
+        }
         this.ctx.fillStyle = vignette
-        this.ctx.fillRect(0, 0, width, height)
+        this.fillAll()
     }
     getAnimationTime()
     {
@@ -281,7 +388,7 @@ class BackgroundRenderer
         gradient.addColorStop(1, edgeColor)
 
         this.ctx.fillStyle = gradient
-        this.ctx.fillRect(0, 0, LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height)
+        this.fillAll()
     }
     shouldFreezeBadVersionBackgroundMotion()
     {

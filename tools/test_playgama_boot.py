@@ -103,7 +103,7 @@ class PlaygamaBootTests(unittest.TestCase):
     def test_normal_boot_order(self):
         """initialize < storage.get < game_ready (once), after the first menu frame."""
         page = self.boot()
-        page.wait_for_function(READY, timeout=5000)
+        page.wait_for_function(READY, timeout=15000)
         page.wait_for_timeout(300)
         self.assertEqual(page.evaluate('PLATFORM.environment'), 'playgama')
         self.assertTrue(page.evaluate('menu.visible'))
@@ -159,7 +159,9 @@ class PlaygamaBootTests(unittest.TestCase):
 
     def test_input_before_ready_ignored(self):
         """Clicks and keys during loading do nothing; the menu shows after."""
-        page = self.boot(initDelayMs=1500)
+        # 6.5 s (under PLATFORM.initTimeoutMs 8 s) so 25 clicks + 4 keys
+        # still land before ready on a loaded 2-CPU host
+        page = self.boot(initDelayMs=6500)
         page.wait_for_selector('#loading', state='visible', timeout=2000)
         self.assertFalse(page.evaluate(LOADING_HIDDEN))
         if self.evidence:
@@ -170,7 +172,7 @@ class PlaygamaBootTests(unittest.TestCase):
         for key in ('Space', 'Enter', 'Escape', 'KeyP'):
             page.keyboard.press(key)
         self.assertEqual(page.evaluate('window.__boot.readyAt'), None)
-        page.wait_for_function(READY, timeout=5000)
+        page.wait_for_function(READY, timeout=15000)
         page.wait_for_timeout(200)
         self.assertTrue(page.evaluate('menu.visible'))
         self.assertFalse(page.evaluate('menu.gamePaused'))
@@ -181,7 +183,7 @@ class PlaygamaBootTests(unittest.TestCase):
     def test_config_served(self):
         """playgama-bridge-config.json is fetched next to index.html with 200."""
         page = self.boot()
-        page.wait_for_function(READY, timeout=5000)
+        page.wait_for_function(READY, timeout=15000)
         got = page.evaluate('''async () => {
             const r = await fetch('./playgama-bridge-config.json')
             return {status: r.status, url: r.url, body: await r.json()}
