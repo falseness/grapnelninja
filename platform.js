@@ -1,65 +1,101 @@
-// Thin wrapper over the Y8 minimal SDK 2.x. When the SDK is missing, never
-// becomes ready, or init throws, rejects or times out, PLATFORM.environment
-// is 'disabled' and every call is a safe no-op (rewarded ads report adError).
+// Thin wrapper over the Playgama Bridge v2. When window.bridge is missing or
+// bridge.initialize() rejects or times out, PLATFORM.environment is
+// 'disabled' and every call is a safe no-op: ads report unavailable/skipped,
+// storage falls back to window.localStorage.
 const PLATFORM = (function()
 {
-    const initTimeoutMs = 3000
+    const busyStates = ['loading', 'opened', 'rewarded']
 
-    let sdk = null
+    let bridge = null
     let initPromise = null
+    let warned = false
+    let gameReadySent = false
+    let adBusy = false
+    const listeners = {pause: [], audio: [], adState: []}
 
-    // Resolves once 'y8sdk.ready' fires. A listener added after the SDK has
-    // loaded misses the first event, so ask the SDK to emit it again.
-    // Rejects at once when the page has loaded without window.y8: 'load'
-    // waits for async scripts, so the SDK is blocked or empty.
-    function whenReady()
+    function warn(message, e)
     {
-        return new Promise((resolve, reject) =>
-        {
-            window.addEventListener('y8sdk.ready', () => resolve(), {once: true})
-            if (window.y8 && typeof window.y8.emitReadyEvent === 'function')
-                window.y8.emitReadyEvent()
-            const checkLoaded = () =>
-            {
-                if (!window.y8)
-                    reject(new Error('Y8 SDK not loaded'))
-            }
-            if (document.readyState === 'complete')
-                checkLoaded()
-            else
-                window.addEventListener('load', checkLoaded, {once: true})
-        })
+        if (warned)
+            return
+        warned = true
+        console.warn('Playgama Bridge disabled:', message, e && e.message)
     }
 
-    async function start()
+    function emit(kind, value)
     {
-        await whenReady()
-        const candidate = window.y8.sdk()
-        // init() returns a Promise that resolves to undefined (TASK-089 probe)
-        await candidate.init(
-            {appId: Y8_CONFIG.appId, autoLogin: false},
-            {gameId: Y8_CONFIG.gameId, preloadAdBreaks: 'auto', sound: 'off'})
-        return candidate
+        for (const fn of listeners[kind].slice())
+        {
+            try
+            {
+                fn(value)
+            }
+            catch (e)
+            {
+                console.warn('Playgama ' + kind + ' listener failed', e)
+            }
+        }
+    }
+
+    function isoLanguage(value)
+    {
+        const code = String(value || '').slice(0, 2).toLowerCase()
+        return /^[a-z]{2}$/.test(code) ? code : 'en'
+    }
+
+    // Host pause/audio and the 'opened'/'closed' of any full-screen ad
+    function subscribe()
+    {
+        const names = bridge.EVENT_NAME
+        bridge.platform.on(names.PAUSE_STATE_CHANGED, isPaused => emit('pause', !!isPaused))
+        bridge.platform.on(names.AUDIO_STATE_CHANGED, isEnabled => emit('audio', !!isEnabled))
+        for (const event of [names.INTERSTITIAL_STATE_CHANGED, names.REWARDED_STATE_CHANGED])
+        {
+            let opened = false
+            bridge.advertisement.on(event, state =>
+            {
+                if (state === 'opened' && !opened)
+                {
+                    opened = true
+                    emit('adState', 'opened')
+                }
+                else if ((state === 'closed' || state === 'failed') && opened)
+                {
+                    opened = false
+                    emit('adState', 'closed')
+                }
+            })
+        }
     }
 
     async function init()
     {
+        const candidate = window.bridge
+        if (!candidate || typeof candidate.initialize !== 'function')
+        {
+            warn('window.bridge missing')
+            PLATFORM.environment = 'disabled'
+            return PLATFORM.environment
+        }
         let timer
         try
         {
-            sdk = await Promise.race([
-                start(),
+            await Promise.race([
+                Promise.resolve().then(() => candidate.initialize()),
                 new Promise((resolve, reject) =>
                 {
-                    timer = setTimeout(() => reject(new Error('Y8 SDK init timeout')), initTimeoutMs)
+                    timer = setTimeout(() => reject(new Error('initialize timeout')), PLATFORM.initTimeoutMs)
                 })
             ])
-            PLATFORM.environment = 'y8'
+            bridge = candidate
+            PLATFORM.platformId = bridge.platform.id
+            PLATFORM.language = isoLanguage(bridge.platform.language)
+            subscribe()
+            PLATFORM.environment = 'playgama'
         }
         catch (e)
         {
-            console.warn('Y8 SDK disabled:', e && e.message)
-            sdk = null
+            warn('initialize failed', e)
+            bridge = null
             PLATFORM.environment = 'disabled'
         }
         finally
@@ -69,14 +105,70 @@ const PLATFORM = (function()
         return PLATFORM.environment
     }
 
+    function rewardedBusy()
+    {
+        return adBusy || busyStates.indexOf(bridge.advertisement.rewardedState) >= 0
+    }
+
+    function interstitialBusy()
+    {
+        return adBusy || busyStates.indexOf(bridge.advertisement.interstitialState) >= 0
+    }
+
+    // Subscribe to one ad's state events until done() is called
+    function watchAd(event, onState)
+    {
+        bridge.advertisement.on(event, onState)
+        return () => bridge.advertisement.off(event, onState)
+    }
+
+    function localGet(key)
+    {
+        try
+        {
+            return window.localStorage.getItem(key)
+        }
+        catch (e)
+        {
+            return null
+        }
+    }
+
+    function localSet(key, value)
+    {
+        try
+        {
+            window.localStorage.setItem(key, value)
+        }
+        catch (e)
+        {
+            console.warn('localStorage write failed', e)
+        }
+    }
+
+    // The Bridge JSON-parses stored strings on get ('12' -> 12): turn every
+    // value back into the string that was saved.
+    function storedString(value)
+    {
+        if (value === null || value === undefined)
+            return null
+        return typeof value === 'string' ? value : JSON.stringify(value)
+    }
+
     const PLATFORM =
     {
         environment: 'pending',
-        // Watchdog for a rewarded break that never reports an outcome
+        platformId: null,
+        language: 'en',
+        initTimeoutMs: 8000,
+        // Watchdog for a rewarded ad that never reports an outcome
         rewardTimeoutMs: 15000,
-        // Once beforeAd reports a playing ad, the watchdog restarts with this
-        // limit: rewarded videos often run 15-30 s and must not time out.
+        // Once the ad is 'opened' the watchdog restarts with this limit:
+        // rewarded videos often run 15-30 s and must not time out.
         rewardPlayingTimeoutMs: 120000,
+        // An interstitial that is not 'opened' by then counts as skipped
+        interstitialOpenTimeoutMs: 3000,
+        interstitialPlayingTimeoutMs: 120000,
 
         init()
         {
@@ -85,83 +177,191 @@ const PLATFORM = (function()
             return initPromise
         },
 
-        // Calls exactly one of callbacks.adFinished() / callbacks.adError({code, message});
-        // callbacks.adStarted() may run before it when an ad is actually shown.
-        requestRewarded(callbacks)
+        // Resolves {status: 'rewarded' | 'dismissed' | 'unavailable', reason?};
+        // grant the reward ONLY on 'rewarded'. Never rejects.
+        requestRewarded(placement = 'continue')
         {
-            callbacks = callbacks || {}
-            let finished = false
-            let viewed = false
-            let watchdog = null
-
-            function notify(name, arg)
+            if (!bridge)
+                return Promise.resolve({status: 'unavailable', reason: 'disabled'})
+            if (!bridge.advertisement.isRewardedSupported)
+                return Promise.resolve({status: 'unavailable', reason: 'unsupported'})
+            if (rewardedBusy())
+                return Promise.resolve({status: 'unavailable', reason: 'busy'})
+            adBusy = true
+            return new Promise(resolve =>
             {
-                if (typeof callbacks[name] !== 'function')
-                    return
+                let rewarded = false
+                let watchdog = null
+                let unwatch = () => {}
+                function finish(result)
+                {
+                    clearTimeout(watchdog)
+                    unwatch()
+                    adBusy = false
+                    resolve(result)
+                }
+                function startWatchdog(ms)
+                {
+                    clearTimeout(watchdog)
+                    watchdog = setTimeout(() => finish({status: 'unavailable', reason: 'timeout'}), ms)
+                }
+                unwatch = watchAd(bridge.EVENT_NAME.REWARDED_STATE_CHANGED, state =>
+                {
+                    if (state === 'opened')
+                        startWatchdog(PLATFORM.rewardPlayingTimeoutMs)
+                    else if (state === 'rewarded')
+                        rewarded = true
+                    else if (state === 'failed')
+                        finish({status: 'unavailable', reason: 'failed'})
+                    else if (state === 'closed')
+                        finish(rewarded ? {status: 'rewarded'} : {status: 'dismissed'})
+                })
+                startWatchdog(PLATFORM.rewardTimeoutMs)
                 try
                 {
-                    callbacks[name](arg)
+                    bridge.advertisement.showRewarded(placement)
                 }
                 catch (e)
                 {
-                    console.warn('Y8 rewarded callback failed', e)
+                    finish({status: 'unavailable', reason: 'exception'})
                 }
-            }
-            function finish(name, arg)
-            {
-                if (finished)
-                    return
-                finished = true
-                clearTimeout(watchdog)
-                notify(name, arg)
-            }
-            function fail(code, message)
-            {
-                finish('adError', {code: code, message: message})
-            }
+            })
+        },
 
-            if (!sdk)
+        // Resolves 'closed' | 'failed' | 'skipped' (unsupported, disabled,
+        // another ad in progress, or not 'opened' in time). Never rejects.
+        showInterstitial(placement = 'game_over')
+        {
+            if (!bridge || !bridge.advertisement.isInterstitialSupported || interstitialBusy())
+                return Promise.resolve('skipped')
+            adBusy = true
+            return new Promise(resolve =>
             {
-                fail('disabled', 'Y8 SDK disabled')
-                return
-            }
-            function startWatchdog(ms)
-            {
-                clearTimeout(watchdog)
-                watchdog = setTimeout(() => fail('timeout', 'Y8 rewarded ad timed out'), ms)
-            }
-            startWatchdog(PLATFORM.rewardTimeoutMs)
+                let watchdog = null
+                let unwatch = () => {}
+                function finish(result)
+                {
+                    clearTimeout(watchdog)
+                    unwatch()
+                    adBusy = false
+                    resolve(result)
+                }
+                unwatch = watchAd(bridge.EVENT_NAME.INTERSTITIAL_STATE_CHANGED, state =>
+                {
+                    if (state === 'opened')
+                    {
+                        clearTimeout(watchdog)
+                        watchdog = setTimeout(() => finish('closed'), PLATFORM.interstitialPlayingTimeoutMs)
+                    }
+                    else if (state === 'closed' || state === 'failed')
+                        finish(state)
+                })
+                watchdog = setTimeout(() => finish('skipped'), PLATFORM.interstitialOpenTimeoutMs)
+                try
+                {
+                    bridge.advertisement.showInterstitial(placement)
+                }
+                catch (e)
+                {
+                    finish('failed')
+                }
+            })
+        },
+
+        // Safe wrapper: never throws or rejects; a no-op when disabled
+        sendMessage(name, data)
+        {
+            if (!bridge)
+                return Promise.resolve()
             try
             {
-                // The showAd Promise resolves before adBreakDone; only rejection matters
-                Promise.resolve(sdk.showAd({
-                    type: 'reward',
-                    name: 'continue',
-                    beforeReward: showAdFn => showAdFn(),
-                    beforeAd: () =>
-                    {
-                        if (finished)
-                            return
-                        startWatchdog(PLATFORM.rewardPlayingTimeoutMs)
-                        notify('adStarted')
-                    },
-                    adViewed: () =>
-                    {
-                        viewed = true
-                        finish('adFinished')
-                    },
-                    adDismissed: () => fail('dismissed', 'Y8 rewarded ad dismissed'),
-                    adBreakDone: info =>
-                    {
-                        const status = info && info.breakStatus
-                        if (status !== 'viewed' || !viewed)
-                            fail(status || 'unknown', 'Y8 ad break ended: ' + status)
-                    }
-                })).catch(e => fail('rejected', (e && e.message) || 'Y8 showAd rejected'))
+                return Promise.resolve(data === undefined
+                    ? bridge.platform.sendMessage(name)
+                    : bridge.platform.sendMessage(name, data)).catch(e =>
+                {
+                    console.warn('Playgama sendMessage failed', name, e)
+                })
             }
             catch (e)
             {
-                fail('exception', (e && e.message) || 'Y8 showAd threw')
+                console.warn('Playgama sendMessage failed', name, e)
+                return Promise.resolve()
+            }
+        },
+
+        // Call when the first playable frame is ready; sends at most once
+        gameReady()
+        {
+            if (gameReadySent || !bridge)
+                return Promise.resolve()
+            gameReadySent = true
+            return PLATFORM.sendMessage('game_ready')
+        },
+
+        isAudioEnabled()
+        {
+            return bridge ? bridge.platform.isAudioEnabled !== false : true
+        },
+
+        onPause(fn)
+        {
+            listeners.pause.push(fn)
+        },
+
+        onAudio(fn)
+        {
+            listeners.audio.push(fn)
+        },
+
+        // fn('opened') / fn('closed') around any full-screen ad
+        onAdState(fn)
+        {
+            listeners.adState.push(fn)
+        },
+
+        storage:
+        {
+            // Resolves {key: string | null} with ONE bridge.storage.get call
+            async getMany(keys)
+            {
+                const result = {}
+                if (!bridge)
+                {
+                    for (const key of keys)
+                        result[key] = localGet(key)
+                    return result
+                }
+                let values = []
+                try
+                {
+                    values = await bridge.storage.get(keys.slice())
+                }
+                catch (e)
+                {
+                    console.warn('Playgama storage.get failed', e)
+                }
+                keys.forEach((key, i) => result[key] = storedString((values || [])[i]))
+                return result
+            },
+
+            // Saves {key: value} as strings with ONE bridge.storage.set call
+            async setMany(obj)
+            {
+                const keys = Object.keys(obj)
+                const values = keys.map(key => String(obj[key]))
+                if (!bridge)
+                {
+                    keys.forEach((key, i) => localSet(key, values[i]))
+                    return
+                }
+                try
+                {
+                    await bridge.storage.set(keys, values)
+                }
+                catch (e)
+                {
+                    console.warn('Playgama storage.set failed', e)
+                }
             }
         }
     }

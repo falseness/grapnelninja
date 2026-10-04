@@ -190,25 +190,20 @@
                     return
                 continueUsed = true
                 continueOffer.setAdPending(true)
-                PLATFORM.requestRewarded(
+                // The game stays frozen behind the offer. There is no game
+                // audio, so nothing needs muting during the ad.
+                PLATFORM.requestRewarded('continue').then(result =>
                 {
-                    // The game stays frozen behind the offer. There is no
-                    // game audio, so nothing needs muting during the ad.
-                    adStarted: () => {},
-                    adFinished: () =>
+                    if (!continueOffer.adPending)
+                        return
+                    if (result.status === 'rewarded')
                     {
-                        if (!continueOffer.adPending)
-                            return
                         continueOffer.setAdPending(false)
                         continueRun()
-                    },
-                    // No reward: keep the score on the offer, Restart only
-                    adError: () =>
-                    {
-                        if (!continueOffer.adPending)
-                            return
-                        continueOffer.showAdError()
                     }
+                    // No reward: keep the score on the offer, Restart only
+                    else
+                        continueOffer.showAdError()
                 })
             }
             // Keeps score, version, floors and screen; the ninja respawns at
