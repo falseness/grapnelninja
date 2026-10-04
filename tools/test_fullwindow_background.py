@@ -178,6 +178,41 @@ class FullWindowBackgroundTests(unittest.TestCase):
                 print(f'\n  {viewport_name(viewport)} window background {json.dumps(size)}',
                       file=sys.stderr)
 
+    def test_window_bars_repaint_every_4th_frame(self):
+        """TASK-138: in a run the bars repaint every WINDOW_BARS_EVERY_FRAMES
+        frames, and on the first frame after a resize (the backing store was
+        cleared)."""
+        page = self.boot((2560, 1080, False))
+        page.evaluate("startGame('classic')")
+        page.wait_for_timeout(300)
+        page.evaluate('''() => {
+            const bars = document.getElementById('background').getContext('2d')
+            const clip = bars.clip
+            window.__barsPaints = 0
+            bars.clip = function() { window.__barsPaints++; return clip.apply(this, arguments) }
+            window.__frames = 0
+            const loop = () => { window.__frames++; requestAnimationFrame(loop) }
+            requestAnimationFrame(loop)
+        }''')
+        page.wait_for_function('() => window.__frames >= 24', timeout=120000)
+        run = page.evaluate('''() => ({frames: __frames, paints: __barsPaints,
+            every: WINDOW_BARS_EVERY_FRAMES, menu: menu.visible})''')
+        self.assertEqual(run['every'], 4)
+        self.assertFalse(run['menu'])
+        # rAF callbacks and game frames are counted apart: allow one frame each way
+        self.assertGreaterEqual(run['paints'], (run['frames'] - 1) // 4)
+        self.assertLessEqual(run['paints'], (run['frames'] + 1) // 4 + 1)
+        page.set_viewport_size({'width': 925, 'height': 925})
+        page.wait_for_function('''() => { const b = document.getElementById('background')
+            return b.width == Math.round(925 * WINDOW_BACKGROUND_SCALE) && b.barsKey }''', timeout=60000)
+        after = page.evaluate('''() => { const b = document.getElementById('background')
+            return {paints: __barsPaints, key: b.barsKey, width: b.width, height: b.height} }''')
+        self.assertGreater(after['paints'], run['paints'])
+        print(f'\n  2560x1080 run {json.dumps(run)}; after resize to 925x925 {json.dumps(after)}',
+              file=sys.stderr)
+        if self.evidence:
+            (self.out() / 'bars-cadence.json').write_text(json.dumps({'run': run, 'after_resize': after}))
+
     def test_chill_button_click_starts_classic(self):
         lines = []
         for viewport in CLICK_VIEWPORTS:

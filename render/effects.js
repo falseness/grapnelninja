@@ -10,12 +10,19 @@ function backgroundTemplateScale(viewWidth, viewHeight)
 // stretches it: a full-resolution repaint cost ~30% of the frame at 2560x1080
 const WINDOW_BACKGROUND_SCALE = 0.25
 
+// The bars background drifts slowly: it is repainted every few frames (and at
+// once after a resize or a menu/game switch), which also spares the
+// compositor a texture upload on the frames in between
+const WINDOW_BARS_EVERY_FRAMES = 4
+
 // Sizes the full-window background canvas behind the game canvas; its
 // backing store follows the window size at WINDOW_BACKGROUND_SCALE.
 function configureWindowBackground(windowCanvas)
 {
     windowCanvas.width = Math.max(1, Math.round(window.innerWidth * WINDOW_BACKGROUND_SCALE))
     windowCanvas.height = Math.max(1, Math.round(window.innerHeight * WINDOW_BACKGROUND_SCALE))
+    // Resizing the backing store cleared it
+    windowCanvas.barsKey = null
 }
 
 // Linear mix of two 'rgba(r, g, b, a)' colors, t in [0, 1].
@@ -40,12 +47,12 @@ class BackgroundRenderer
     draw()
     {
         this.paint()
-        this.drawWindowBars(() => this.paint())
+        this.drawWindowBars('game', () => this.paint())
     }
     drawMenuBackground()
     {
         this.paintMenu()
-        this.drawWindowBars(() => this.paintMenu())
+        this.drawWindowBars('menu', () => this.paintMenu())
     }
     // Area the full-size fills cover: the logical viewport, or the whole
     // window (in logical units) while drawWindowBars paints the bars.
@@ -66,13 +73,19 @@ class BackgroundRenderer
     // Repeats this frame's background on the full-window canvas behind the
     // game canvas, in the same logical coordinates and clipped to the
     // letterbox bars, so the picture continues past the play rect.
-    drawWindowBars(paint)
+    drawWindowBars(scene, paint)
     {
         const windowCanvas = document.getElementById('background')
         const rect = getCanvasCssRect()
 
         if (!windowCanvas || (rect.left < 0.5 && rect.top < 0.5))
             return
+
+        const key = [scene, windowCanvas.width, windowCanvas.height, rect.left, rect.top, rect.width].join()
+        if (windowCanvas.barsKey === key && ++this.barsFramesSkipped < WINDOW_BARS_EVERY_FRAMES)
+            return
+        windowCanvas.barsKey = key
+        this.barsFramesSkipped = 0
 
         const gameCtx = this.ctx
         const ctx = windowCanvas.getContext('2d')
