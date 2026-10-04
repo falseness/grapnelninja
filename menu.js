@@ -716,7 +716,8 @@ class Menu
     }
 }
 // Offered after an eligible lethal death: two equally sized and styled
-// buttons, a rewarded continue and a plain restart.
+// buttons, a rewarded continue and a plain restart. The continue button
+// carries an 'AD' badge and the line above it names the reward.
 class ContinueOffer
 {
     constructor(w, h, onContinue, onRestart)
@@ -729,8 +730,10 @@ class ContinueOffer
         this.adPending = false
         this.continueButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
-            {text: 'Watch ad to continue', fill: STYLE.colors.ui.buttonText},
+            {text: 'Continue', fill: STYLE.colors.ui.buttonText},
             onContinue)
+        this.adBadgeLabel = 'AD'
+        this.rewardLabel = 'Watch an ad to continue this run'
         this.restartButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
             {text: 'Restart', fill: STYLE.colors.ui.buttonText},
@@ -779,6 +782,17 @@ class ContinueOffer
             x       : centerX,
             y       : this.panel.y + this.panel.height * 0.33
         })
+        // Names the reward above the watch button
+        const rewardFontSize = Math.min(h * 0.045,
+            this.fittedFontSize(this.rewardLabel, h * 0.045, this.panel.width * 0.9))
+        this.rewardText = new Text(
+        {
+            fill    : STYLE.colors.ui.buttonText,
+            fontSize: rewardFontSize,
+            text    : this.rewardLabel,
+            x       : centerX,
+            y       : this.panel.y + this.panel.height * 0.42
+        })
         // Takes the watch button's place when there is no ad to offer
         this.noticeText = new Text(
         {
@@ -788,6 +802,35 @@ class ContinueOffer
             x       : centerX,
             y       : this.panel.y + this.panel.height * rows[0]
         })
+    }
+    fittedFontSize(label, size, maxWidth)
+    {
+        ctx.save()
+        ctx.font = getArcadeFont(size)
+        const measured = ctx.measureText(label).width
+        ctx.restore()
+        return measured <= maxWidth ? size : size * maxWidth / measured
+    }
+    // Badge box inside the continue button's left edge
+    adBadge()
+    {
+        const b = this.continueButton.background
+        const height = b.height * 0.56
+        const width = height * 1.5
+        return {x: b.x + b.height * 0.22, y: b.y + (b.height - height) / 2, width: width, height: height}
+    }
+    drawAdBadge()
+    {
+        const badge = this.adBadge()
+        ctx.save()
+        ctx.fillStyle = STYLE.colors.ui.primary
+        ctx.fillRect(badge.x, badge.y, badge.width, badge.height)
+        ctx.fillStyle = STYLE.colors.ui.buttonFill
+        ctx.font = getArcadeFont(badge.height * 0.7)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(this.adBadgeLabel, badge.x + badge.width / 2, badge.y + badge.height / 2)
+        ctx.restore()
     }
     show()
     {
@@ -868,7 +911,11 @@ class ContinueOffer
         if (this.adPending)
             ctx.globalAlpha = 0.4
         if (this.watchVisible())
+        {
+            this.rewardText.draw()
             this.continueButton.draw()
+            this.drawAdBadge()
+        }
         else
         {
             this.noticeText.text = this.notice()
