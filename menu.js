@@ -460,10 +460,10 @@ class Menu
 
         this.mainFpsCounterCheckbox = new Checkbox(
         {
-            x       : this.center.x - 0.15 * this.width,
+            x       : this.center.x,
             y       : 0.70 * this.height,
-            size    : 0.09 * this.height,
-            fontSize: 0.09 * this.height,
+            size    : 0.05 * this.height,
+            fontSize: 0.05 * this.height,
             fill    : STYLE.colors.ui.text,
             stroke  : STYLE.colors.ui.primary,
             label   : I18N.t('menu.fpsCounter'),
@@ -598,7 +598,34 @@ class Menu
                 cancelAnimationFrame(game)
             })
         })
+        this.layoutMainFpsCheckbox()
         this.compactLayout()
+    }
+    // The fps label is no taller than the record text (but stays readable,
+    // >= buttonMinFontSize CSS px) and the box + label row is centred on the
+    // menu column
+    layoutMainFpsCheckbox()
+    {
+        const check = this.mainFpsCounterCheckbox
+        const recordSize = parseFloat(this.classicRecord.fontSize)
+        const height = (m) => m.actualBoundingBoxAscent + m.actualBoundingBoxDescent
+
+        ctx.save()
+        ctx.font = this.classicRecord.fontSize
+        const recordHeight = height(ctx.measureText(this.classicRecord.text))
+        ctx.font = getArcadeFont(recordSize)
+        const label = ctx.measureText(check.label)
+        ctx.restore()
+
+        const cssHeight = getCanvasCssRect().height
+        const minSize = cssHeight > 0 ? STYLE.ui.buttonMinFontSize * this.height / cssHeight : 0
+        const size = Math.max(Math.min(recordSize, minSize),
+            recordSize * Math.min(1, recordHeight / height(label)))
+        const rowWidth = size * 1.55 + label.width * size / recordSize
+
+        check.size = size
+        check.fontSize = getArcadeFont(size)
+        check.x = this.center.x - rowWidth / 2
     }
     // Phones: buttons grow to the touch floor and the rows are stacked
     // evenly below the corner buttons (language, mute)
@@ -825,6 +852,7 @@ class Menu
         this.badVersionButton.draw()
         this.badRecord.draw()
 
+        this.layoutMainFpsCheckbox()
         this.mainFpsCounterCheckbox.draw()
         this.timeInGame.draw()
 
