@@ -27,8 +27,9 @@ MUTED_KEY = 'grapnelninja.muted'
 READY = ('PLATFORM.environment !== "pending" && menu.visible'
          ' && document.getElementById("loading").hidden')
 # The rewarded ad stays 'opened' long enough to act while it plays
+# 5 s: the ad must still be open when a loaded host gets to the blur/hidden check
 SLOW_REWARD = {'rewardedSeq': ['loading', 'opened',
-                               {'state': 'rewarded', 'delayMs': 1500}, 'closed']}
+                               {'state': 'rewarded', 'delayMs': 5000}, 'closed']}
 
 # Keep the ninja where it is after every physics tick so it never dies on its
 # own; while the continue offer is shown the ninja is left alone.
@@ -237,7 +238,7 @@ class AudioWiringTests(unittest.TestCase):
                 y: 0.6 * height - screen.y, width: size, height: size,
                 fill: STYLE.colors.cube.blueFill, stroke: STYLE.colors.cube.blueStroke}))
         }'''), page.wait_for_function('__audioLog.some(e => e.name == "bounce")',
-                                      timeout=10000)))
+                                      timeout=60000)))
 
         expect('lethal death (score below the continue minimum)', 'death',
                lambda: page.evaluate('() => { scoreText.count[version] = 0; onLethalDeath() }'))

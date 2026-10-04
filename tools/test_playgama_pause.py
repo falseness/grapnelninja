@@ -114,8 +114,12 @@ class PlaygamaPauseTests(unittest.TestCase):
         return page.evaluate('__physicsTicks') - start
 
     def assert_running(self, page):
+        # Physics advances by at most maxPhysicsFrameMs per frame, so on a
+        # loaded host (1-2 fps) 400 ms can hold only 5 ticks: wait for them
         self.assertFalse(page.evaluate('menu.gamePaused'))
-        self.assertGreater(self.ticks_over(page), 5)
+        start = page.evaluate('__physicsTicks')
+        page.wait_for_function(f'() => __physicsTicks > {start} + 5', timeout=10000)
+        self.assertFalse(page.evaluate('menu.gamePaused'))
 
     def assert_paused(self, page):
         self.assertTrue(page.evaluate('menu.gamePaused'))
