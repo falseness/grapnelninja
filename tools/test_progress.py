@@ -1,4 +1,4 @@
-"""Records and time-in-game persist in localStorage."""
+"""Records, time in game and settings persist through Bridge storage."""
 import json
 import os
 from pathlib import Path
@@ -6,43 +6,32 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from y8_harness import open_game, start_y8_test
+from playgama_harness import (bridge_calls, bridge_errors, open_game,
+                              start_playgama_test)
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
-READY = 'PLATFORM.environment === "y8" && menu.visible'
-# Count every localStorage write of the records key in window.__recordWrites
-COUNT_WRITES = '''(() => {
-    window.__recordWrites = 0
-    const orig = Storage.prototype.setItem
-    Storage.prototype.setItem = function(key, value) {
-        if (key === '%s') window.__recordWrites++
-        return orig.apply(this, arguments)
-    }
-})()''' % RECORDS_KEY
+TIME_KEY = 'grapnelninja.time'
+KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.muted', 'grapnelninja.lang']
+FAKE_STORE = '__fakeBridgeStorage'
+READY = ('PLATFORM.environment !== "pending" && menu.visible'
+         ' && document.getElementById("loading").hidden')
 
 
 def log(message):
     print('  ' + message, file=sys.stderr)
 
 
+def storage_calls(page, name):
+    return [c for c in bridge_calls(page) if c['name'] == name]
+
+
 class ProgressTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_y8_test(ROOT, cls.addClassCleanup)
-        cls.evidence = os.environ.get('Y8_PROGRESS_EVIDENCE_DIR')
-        cls.errors = []
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls.evidence:
-            out = cls.out()
-            for kind in ('console', 'page'):
-                lines = [f'{name}: {msg}' for name, errors in cls.errors
-                         for msg in errors[kind]]
-                (out / f'{kind}-errors.log').write_text(''.join(
-                    line + '\n' for line in lines))
+        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.evidence = os.environ.get('PROGRESS_EVIDENCE_DIR')
 
     @classmethod
     def out(cls):
@@ -50,159 +39,253 @@ class ProgressTests(unittest.TestCase):
         out.mkdir(parents=True, exist_ok=True)
         return out
 
-    def boot(self, block_sdk=False):
+    def boot(self, block_bridge=False):
         context, page, errors = open_game(self.browser, 'about:blank', VIEWPORT,
-                                          block_sdk=block_sdk)
+                                          block_bridge=block_bridge)
         self.addCleanup(context.close)
-        self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
+        if not block_bridge:
+            self.addCleanup(lambda: self.assertEqual(bridge_errors(page), []))
         page.goto(self.url + 'index.html')
-        self.wait_ready(page, block_sdk)
+        page.wait_for_function(READY)
+        # Freeze physics so the ninja never dies on its own: run ends come
+        # only from the test's own reStart() calls.
+        page.evaluate('runFixedPhysics = function () {}')
+        expected = 'disabled' if block_bridge else 'playgama'
+        self.assertEqual(page.evaluate('PLATFORM.environment'), expected)
         return page
 
-    def wait_ready(self, page, block_sdk=False):
-        page.wait_for_function('PLATFORM.environment === "disabled" && menu.visible'
-                               if block_sdk else READY)
-
-    def reload(self, page, block_sdk=False):
+    def reload(self, page):
         page.reload()
-        self.wait_ready(page, block_sdk)
+        page.wait_for_function(READY)
+        page.evaluate('runFixedPhysics = function () {}')
 
-    def score_and_pause(self, page, mode, points):
+    def fake_store(self, page):
+        return json.loads(page.evaluate(
+            f'sessionStorage.getItem("{FAKE_STORE}") || "{{}}"'))
+
+    def seed_and_reload(self, page, store):
+        page.evaluate('([key, store]) => sessionStorage.setItem(key, JSON.stringify(store))',
+                      [FAKE_STORE, store])
+        self.reload(page)
+
+    def score(self, page, mode, points):
         page.evaluate('''([mode, points]) => {
             startGame(mode)
             for (let i = 0; i < points; ++i) changeScoreText()
-            menu.startPause()
         }''', [mode, points])
 
-    def stored_records(self, page):
-        return json.loads(page.evaluate(f'localStorage.getItem("{RECORDS_KEY}")'))
+    def wait_throttle(self, page):
+        page.wait_for_timeout(1100)
 
     def menu_texts(self, page):
         return page.evaluate('''({classic: menu.classicRecord.text,
             bad: menu.badRecord.text, time: menu.timeInGame.text})''')
 
-    def test_records_and_time_migration(self):
-        """(a) classic, (b) bad and (c) legacy time migration via localStorage."""
+    def test_boot_reads_all_keys_with_one_get(self):
+        """One storage.get at boot carries every PROGRESS key; no set at boot."""
         page = self.boot()
+        gets = storage_calls(page, 'storage.get')
+        log(f'boot gets={[c["args"] for c in gets]}')
+        self.assertEqual(len(gets), 1)
+        self.assertEqual(gets[0]['args'][0], KEYS)
+        self.assertEqual(page.evaluate('PROGRESS.keys'), KEYS)
+        self.assertEqual(storage_calls(page, 'storage.set'), [])
 
-        self.score_and_pause(page, 'classic', 7)
+    def test_records_survive_reload(self):
+        """Classic and bad records come back from Bridge storage after reload."""
+        page = self.boot()
+        self.score(page, 'classic', 7)
+        page.evaluate('reStart()')
+        self.wait_throttle(page)
+        self.score(page, 'bad', 5)
+        page.evaluate('menu.startPause()')
         self.reload(page)
         texts = self.menu_texts(page)
-        records = self.stored_records(page)
-        log(f'(a) after reload menu={texts} records={records}')
-        self.assertEqual(texts['classic'], 'record: 7')
-        self.assertEqual(texts['bad'], 'record: 0')
-        self.assertEqual(records['classic'], 7)
-        self.assertEqual(page.evaluate('scoreText.record.classic'), 7)
-        log('ASSERT (a) classic menu "record: 7" and stored classic == 7: pass')
+        records = json.loads(self.fake_store(page)[RECORDS_KEY])
+        log(f'after reload menu={texts} stored={records}')
+        self.assertEqual((texts['classic'], texts['bad']), ('record: 7', 'record: 5'))
+        self.assertEqual(records, {'classic': 7, 'bad': 5})
+        self.assertEqual(page.evaluate('[scoreText.record.classic, scoreText.record.bad]'),
+                         [7, 5])
 
-        self.score_and_pause(page, 'bad', 7)
-        self.reload(page)
-        texts = self.menu_texts(page)
-        records = self.stored_records(page)
-        log(f'(b) after reload menu={texts} records={records}')
-        self.assertEqual(texts['bad'], 'record: 7')
-        self.assertEqual(texts['classic'], 'record: 7')
-        self.assertEqual(records, {'classic': 7, 'bad': 7})
-        log('ASSERT (b) bad menu "record: 7" and stored bad == 7: pass')
+    def test_time_and_settings_survive_reload(self):
+        """Time in game and the reserved muted/lang keys round-trip."""
+        page = self.boot()
+        self.seed_and_reload(page, {TIME_KEY: '125', 'grapnelninja.muted': '1',
+                                    'grapnelninja.lang': 'ru'})
+        state = page.evaluate('[PROGRESS.getTime(), PROGRESS.getMuted(), PROGRESS.getLang()]')
+        log(f'seeded state={state} menu time={self.menu_texts(page)["time"]!r}')
+        self.assertEqual(state, [125, True, 'ru'])
+        self.assertIn('2 minutes', self.menu_texts(page)['time'])
 
         page.evaluate('''() => {
-            localStorage.removeItem("grapnelninja.time")
-            localStorage.setItem("time", "125")
+            PROGRESS.setTime(PROGRESS.getTime() + 60)
+            PROGRESS.setMuted(false)
+            PROGRESS.setLang('en')
+            PROGRESS.save()
         }''')
         self.reload(page)
-        stored = page.evaluate('localStorage.getItem("grapnelninja.time")')
-        legacy = page.evaluate('localStorage.getItem("time")')
-        texts = self.menu_texts(page)
-        log(f'(c) grapnelninja.time={stored!r} legacy time={legacy!r} menu time={texts["time"]!r}')
-        self.assertEqual(stored, '125')
-        self.assertIsNone(legacy)
-        self.assertIn('2 minutes', texts['time'])
-        log('ASSERT (c) legacy time=125 migrated to grapnelninja.time=125, legacy removed,'
-            ' menu "2 minutes": pass')
+        state = page.evaluate('[PROGRESS.getTime(), PROGRESS.getMuted(), PROGRESS.getLang()]')
+        log(f'after save+reload state={state}')
+        self.assertEqual(state, [185, False, 'en'])
+        self.assertIn('3 minutes', self.menu_texts(page)['time'])
 
-        # A second load must not migrate again or touch the stored time
+    def test_corrupt_values_fall_back_to_defaults(self):
+        """Corrupt JSON, NaN, negative and junk values load as defaults."""
+        page = self.boot()
+        cases = [
+            {RECORDS_KEY: '{not json', TIME_KEY: 'NaN'},
+            {RECORDS_KEY: '{"classic":"NaN","bad":-4}', TIME_KEY: '-30'},
+            {RECORDS_KEY: 'null', TIME_KEY: 'Infinity', 'grapnelninja.muted': 'x'},
+            {RECORDS_KEY: '[1,2]', TIME_KEY: '{"a":1}'},
+        ]
+        for store in cases:
+            self.seed_and_reload(page, store)
+            state = page.evaluate('''[scoreText.record.classic, scoreText.record.bad,
+                PROGRESS.getTime(), PROGRESS.getMuted(), PROGRESS.getLang()]''')
+            log(f'seed={store} -> state={state}')
+            self.assertEqual(state, [0, 0, 0, False, None])
+            texts = self.menu_texts(page)
+            self.assertEqual((texts['classic'], texts['bad']), ('record: 0', 'record: 0'))
+            self.assertIn(' 0 minutes', texts['time'])
+        self.score(page, 'classic', 3)
+        page.evaluate('reStart()')
+        self.assertEqual(json.loads(self.fake_store(page)[RECORDS_KEY]),
+                         {'classic': 3, 'bad': 0})
+
+    def test_disabled_mode_uses_local_storage(self):
+        """Without the Bridge, progress goes to localStorage and survives reload."""
+        page = self.boot(block_bridge=True)
+        self.score(page, 'classic', 4)
+        page.evaluate('reStart()')
+        self.wait_throttle(page)
+        self.score(page, 'bad', 6)
+        page.evaluate('menu.startPause()')
+        local = page.evaluate(f'localStorage.getItem("{RECORDS_KEY}")')
         self.reload(page)
-        self.assertEqual(page.evaluate('localStorage.getItem("grapnelninja.time")'), '125')
-
+        texts = self.menu_texts(page)
         dump = page.evaluate('''Object.fromEntries(Object.keys(localStorage).sort()
             .map(k => [k, localStorage.getItem(k)]))''')
-        log(f'localStorage={dump}')
-        if self.evidence:
-            page.screenshot(path=str(self.out() / 'menu-after-reload.png'))
-            (self.out() / 'storage-dump.json').write_text(json.dumps(dump, indent=2) + '\n')
+        log(f'disabled localStorage={dump} menu={texts}')
+        self.assertEqual(json.loads(local), {'classic': 4, 'bad': 6})
+        self.assertEqual((texts['classic'], texts['bad']), ('record: 4', 'record: 6'))
+        self.assertEqual(sorted(dump), sorted(KEYS))
 
-    def test_blocked_sdk_keeps_records(self):
-        """(d) with the SDK blocked, records still persist."""
-        page = self.boot(block_sdk=True)
-        self.score_and_pause(page, 'classic', 4)
-        self.score_and_pause(page, 'bad', 6)
-        self.reload(page, block_sdk=True)
-        texts = self.menu_texts(page)
-        records = self.stored_records(page)
-        log(f'(d) blocked SDK menu={texts} records={records}')
-        self.assertEqual(texts['classic'], 'record: 4')
-        self.assertEqual(texts['bad'], 'record: 6')
-        self.assertEqual(records, {'classic': 4, 'bad': 6})
-        log('ASSERT (d) blocked SDK records persist: pass')
-
-    def test_records_written_only_on_run_end_or_pause(self):
-        """(e) no write per point; one write on pause and on run end."""
+    def test_saves_only_on_meaningful_change(self):
+        """No set per point or per frame; one set (all keys) on pause and run end."""
         page = self.boot()
-        page.evaluate(COUNT_WRITES)
         page.evaluate('startGame("classic")')
         for _ in range(10):
             page.evaluate('changeScoreText()')
             page.wait_for_timeout(50)
-        during = page.evaluate('window.__recordWrites')
+        page.wait_for_timeout(500)
+        during = len(storage_calls(page, 'storage.set'))
         page.keyboard.press('Escape')
         self.assertTrue(page.evaluate('menu.gamePaused'))
-        after_pause = page.evaluate('window.__recordWrites')
-        log(f'(e) record writes during 10 points={during} after pause={after_pause}')
+        after_pause = storage_calls(page, 'storage.set')
+        log(f'sets during 10 points={during} after pause={len(after_pause)}')
         self.assertEqual(during, 0)
-        self.assertEqual(after_pause, 1)
-        self.assertGreaterEqual(self.stored_records(page)['classic'], 10)
+        self.assertEqual(len(after_pause), 1)
+        self.assertEqual(after_pause[0]['args'][0], KEYS)
 
         page.keyboard.press('Escape')
-        self.assertFalse(page.evaluate('menu.gamePaused'))
+        self.wait_throttle(page)
         for _ in range(15):
             page.evaluate('changeScoreText()')
-        self.assertEqual(page.evaluate('window.__recordWrites'), 1)
         page.evaluate('reStart()')
-        ended = page.evaluate('window.__recordWrites')
-        log(f'(e) record writes after run end={ended}')
-        self.assertEqual(ended, 2)
-        self.assertEqual(self.stored_records(page)['classic'],
-                         page.evaluate('scoreText.record.classic'))
-        log('ASSERT (e) 0 writes per point, 1 on pause, 1 on run end: pass')
+        sets = storage_calls(page, 'storage.set')
+        log(f'sets after run end={len(sets)}')
+        self.assertEqual(len(sets), 2)
+        self.assertEqual(sets[1]['args'][0], KEYS)
+        # Nothing changed: a further run end writes nothing
+        self.wait_throttle(page)
+        page.evaluate('reStart()')
+        page.wait_for_timeout(300)
+        self.assertEqual(len(storage_calls(page, 'storage.set')), 2)
 
-    def test_pagehide_saves_new_record(self):
-        """(f) closing the tab mid-run keeps a new record."""
+    def test_throttle_one_set_per_second(self):
+        """Rapid saves collapse into one trailing set, >= 1 s after the last."""
         page = self.boot()
         page.evaluate('''() => {
             startGame("classic")
-            for (let i = 0; i < 5; ++i) changeScoreText()
+            for (let i = 0; i < 5; ++i) {
+                changeScoreText()
+                PROGRESS.save()
+            }
         }''')
-        self.assertIsNone(page.evaluate(f'localStorage.getItem("{RECORDS_KEY}")'))
-        page.evaluate('window.dispatchEvent(new PageTransitionEvent("pagehide"))')
-        records = self.stored_records(page)
-        log(f'(f) after pagehide records={records}')
-        self.assertEqual(records['classic'], 5)
-        log('ASSERT (f) pagehide saves the new record: pass')
+        page.wait_for_timeout(1500)
+        sets = storage_calls(page, 'storage.set')
+        gaps = [b['t'] - a['t'] for a, b in zip(sets, sets[1:])]
+        log(f'sets={len(sets)} gaps={gaps} values={[c["args"][1] for c in sets]}')
+        self.assertEqual(len(sets), 2)
+        self.assertTrue(all(g >= 990 for g in gaps))
+        self.assertEqual(json.loads(sets[-1]['args'][1][0]),
+                         {'classic': 5, 'bad': 0})
 
-    def test_corrupt_records_tolerated(self):
-        """(g) corrupt JSON in the records key loads as zero records."""
+    def test_pagehide_flushes_new_record(self):
+        """Closing the tab mid-run keeps a new record."""
         page = self.boot()
-        page.evaluate(f'localStorage.setItem("{RECORDS_KEY}", "{{not json")')
+        self.score(page, 'classic', 5)
+        self.assertNotIn(RECORDS_KEY, self.fake_store(page))
+        page.evaluate('window.dispatchEvent(new PageTransitionEvent("pagehide"))')
+        records = json.loads(self.fake_store(page)[RECORDS_KEY])
+        log(f'after pagehide records={records}')
+        self.assertEqual(records['classic'], 5)
+
+    def test_scripted_session_storage_calls(self):
+        """Boot, 2 runs with a new record, menu, reload: 1 get per boot,
+        <= 1 set per run end, every set carries all keys."""
+        page = self.boot()
+        boots = []
+        session = {'steps': []}
+
+        def snap(step):
+            calls = [c for c in bridge_calls(page) if c['name'].startswith('storage.')]
+            session['steps'].append({'step': step, 'storageCallsSoFar': len(calls)})
+            return calls
+
+        snap('boot')
+        for run, points in ((1, 4), (2, 9)):
+            before = len(storage_calls(page, 'storage.set'))
+            self.score(page, 'classic', points)
+            page.evaluate('reStart()')
+            after = len(storage_calls(page, 'storage.set'))
+            session['steps'].append({'step': f'run {run} end', 'record': points,
+                                     'setsThisRunEnd': after - before})
+            self.assertLessEqual(after - before, 1)
+            self.wait_throttle(page)
+        page.evaluate('menu.startPause(); menu.backToMenu.click()')
+        self.wait_throttle(page)
+        self.assertTrue(page.evaluate('menu.visible'))
+        boots.append(snap('menu'))
         self.reload(page)
-        texts = self.menu_texts(page)
-        log(f'(g) corrupt records menu={texts}')
-        self.assertEqual((texts['classic'], texts['bad']), ('record: 0', 'record: 0'))
-        self.score_and_pause(page, 'classic', 3)
-        self.assertEqual(self.stored_records(page), {'classic': 3, 'bad': 0})
-        log('ASSERT (g) corrupt JSON tolerated, next save overwrites it: pass')
+        boots.append(snap('reload'))
+        self.assertEqual(page.evaluate('menu.classicRecord.text'), 'record: 9')
+
+        for i, calls in enumerate(boots):
+            gets = [c for c in calls if c['name'] == 'storage.get']
+            sets = [c for c in calls if c['name'] == 'storage.set']
+            self.assertEqual(len(gets), 1, f'boot {i}')
+            for c in sets:
+                self.assertEqual(c['args'][0], KEYS)
+                self.assertEqual(len(c['args'][1]), len(KEYS))
+        session['boots'] = [{
+            'boot': i + 1,
+            'storageGetCount': sum(c['name'] == 'storage.get' for c in calls),
+            'storageSetCount': sum(c['name'] == 'storage.set' for c in calls),
+            'everySetHasAllKeys': all(c['args'][0] == KEYS for c in calls
+                                      if c['name'] == 'storage.set'),
+            'calls': calls,
+        } for i, calls in enumerate(boots)]
+        session['keys'] = KEYS
+        log(f'session boots: ' + ', '.join(
+            f'boot {b["boot"]} get={b["storageGetCount"]} set={b["storageSetCount"]}'
+            for b in session['boots']))
+        if self.evidence:
+            (self.out() / 'storage-calls.json').write_text(
+                json.dumps(session, indent=2) + '\n')
 
 
 if __name__ == '__main__':

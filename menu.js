@@ -505,7 +505,7 @@ class Menu
         },
         function()
         {
-            PROGRESS.saveRecords()
+            PROGRESS.save()
             menu.changeGamePause(false)
     
             menu.setVisible(true)
@@ -639,8 +639,8 @@ class Menu
     }
     startPause()
     {
-        PROGRESS.saveRecords()
         pauseTimeInGame()
+        PROGRESS.save()
         this.timeInGame.text = 'time spent in game: ' + getTimeInGame() + ' minutes'
 
         this.changeGamePause(true)

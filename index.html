@@ -202,7 +202,7 @@
             }
             function reStart()
             {
-                PROGRESS.saveRecords()
+                PROGRESS.save()
                 if (visualEffects && ninja && screen)
                 {
                     visualEffects.screenEffects.triggerDeath(ninja.x + screen.x, ninja.y + screen.y)
@@ -221,7 +221,7 @@
                     reStart()
                     return
                 }
-                PROGRESS.saveRecords()
+                PROGRESS.save()
                 continueOffer.show()
             }
             // Run start: players without the SDK get only Restart plus an
