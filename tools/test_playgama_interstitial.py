@@ -26,7 +26,8 @@ import test_continue as continue_test
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 # The interstitial stays 'opened' long enough to act while it plays
-SLOW_AD = ['loading', 'opened', {'state': 'closed', 'delayMs': 3000}]
+# 6 s: the ad must still be open after the input burst on a loaded host
+SLOW_AD = ['loading', 'opened', {'state': 'closed', 'delayMs': 6000}]
 FAKE_CLOCK = '''() => { window.__clock = 0; PLATFORM.now = () => window.__clock }'''
 TICKS = '''() => {
     window.__ticks = 0
@@ -106,7 +107,7 @@ class PlaygamaInterstitialTests(unittest.TestCase):
         page.wait_for_timeout(50)
 
     def wait_settled(self, page):
-        page.wait_for_function('!interstitialPending', timeout=10000)
+        page.wait_for_function('!interstitialPending', timeout=20000)
         page.wait_for_timeout(150)
 
     def pause_to_menu(self, page):

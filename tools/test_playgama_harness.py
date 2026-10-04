@@ -164,7 +164,10 @@ class PlaygamaHarnessTests(unittest.TestCase):
             {'state': 'closed', 'delayMs': 10}]})
         self.show(page, 'rewarded')
         t = {c['name']: c['t'] for c in bridge_calls(page)}
-        self.assertGreaterEqual(t['rewarded:rewarded'] - t['rewarded:opened'], 290)
+        # The states are timed from showRewarded (cumulative delays); a timer
+        # only fires late, so measure from the call, not from the 'opened' timer
+        self.assertGreaterEqual(t['rewarded:rewarded'] - t['advertisement.showRewarded'], 309)
+        self.assertGreaterEqual(t['rewarded:closed'] - t['rewarded:rewarded'], 0)
 
     def test_double_show_rewarded_is_error(self):
         page = self.open(expect_errors=True)
