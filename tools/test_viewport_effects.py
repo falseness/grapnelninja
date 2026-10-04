@@ -19,6 +19,44 @@ CHECKER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECKER)
 
 
+# TASK-137 resized and centred the main menu 'fps counter' checkbox on
+# purpose: the menu and pause screenshots are compared with that row (box + label +
+# glow, screenshot px) masked out on both sides.
+FPS_ROW = '''() => {
+    const c = menu.mainFpsCounterCheckbox
+    ctx.save()
+    ctx.font = c.fontSize
+    const labelWidth = ctx.measureText(c.label).width
+    ctx.restore()
+    const r = canvas.getBoundingClientRect()
+    const sx = r.width / width, sy = r.height / height
+    const pad = 2 * STYLE.ui.buttonShadowBlur + STYLE.ui.buttonLineWidth
+    return [Math.floor(r.left + (c.x - pad) * sx), Math.floor(r.top + (c.y - c.size / 2 - pad) * sy),
+            Math.ceil(r.left + (c.x + c.size * 1.55 + labelWidth + pad) * sx),
+            Math.ceil(r.top + (c.y + c.size / 2 + pad) * sy)]
+}'''
+# The masked row stays a small part of the 1920x1080 menu
+FPS_ROW_MAX_HEIGHT = 0.2
+
+
+def mask_fps_row(image, box):
+    masked = image.copy()
+    masked.paste((0, 0, 0, 0) if masked.mode == 'RGBA' else (0, 0, 0), box)
+    return masked
+
+
+def strip_fps_row(calls):
+    """Menu canvas calls without the save..restore blocks that measure or draw the 'fps counter' label."""
+    calls = list(calls)
+    while True:
+        hits = [i for i, c in enumerate(calls) if c[0] in ('fillText', 'measureText') and c[1] == 'fps counter']
+        if not hits:
+            return calls
+        start = max(i for i in range(hits[0]) if calls[i] == ['save'])
+        end = next(i for i in range(hits[0], len(calls)) if calls[i] == ['restore'])
+        calls[start:end + 1] = []
+
+
 class ViewportEffectsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -90,6 +128,8 @@ class ViewportEffectsTests(unittest.TestCase):
                 page.evaluate(function + '()')
                 with Image.open(BytesIO(page.screenshot())) as image:
                     images[stage] = image.copy()
+                if stage == 'menu':
+                    images['menu_fps_row'] = page.evaluate(FPS_ROW)
             return effects, images
         finally:
             page.close()
@@ -101,16 +141,26 @@ class ViewportEffectsTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 old, old_images = self.sample(mode, baseline=True)
                 new, new_images = self.sample(mode, baseline=False)
+                a, b = old_images['menu_fps_row'], new_images['menu_fps_row']
+                row = (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+                self.assertLess(row[3] - row[1], FPS_ROW_MAX_HEIGHT * old_images['menu'].height, row)
+                # drawTestPause paints the panel over the menu frame, so the row shows there too
+                for image in (old_images, new_images):
+                    for stage in ['menu', 'pause']:
+                        image[stage] = mask_fps_row(image[stage], row)
                 for stage in ['game', 'menu', 'pause']:
                     self.assertEqual(old_images[stage].size, new_images[stage].size)
                     self.assertIsNone(ImageChops.difference(
                         old_images[stage], new_images[stage]).getbbox(), (mode, stage))
+                for effects in (old, new):
+                    effects['parts']['menu'] = strip_fps_row(effects['parts']['menu'])
                 for field in ['parts', 'particles', 'shake', 'quality', 'panel']:
                     CHECKER.near(old[field], new[field], mode + '.' + field)
                 CHECKER.near(CHECKER.normalized_style(old['style']),
                              CHECKER.normalized_style(new['style']))
                 print(f'PASS {mode} baseline a6b41aa/current 1920x1080: '
-                      'game/menu/pause pixel equality; normalized effects equality; '
+                      f'game/menu/pause pixel equality (menu fps row {row} masked on menu/pause); '
+                      'normalized effects equality (menu fps row calls stripped); '
                       'browser console/page errors=0', flush=True)
                 passed.append(mode)
         self.assertEqual(passed, ['classic', 'bad'])
