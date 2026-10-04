@@ -5,14 +5,17 @@ function backgroundTemplateScale(viewWidth, viewHeight)
     return Math.min(viewWidth, viewHeight) * (100 / 720) / 100
 }
 
+// The bars only show soft gradients and faint lines, so the full-window
+// background canvas renders at a quarter of the window's CSS size and CSS
+// stretches it: a full-resolution repaint cost ~30% of the frame at 2560x1080
+const WINDOW_BACKGROUND_SCALE = 0.25
+
 // Sizes the full-window background canvas behind the game canvas; its
-// backing store follows the window size and device pixel ratio.
+// backing store follows the window size at WINDOW_BACKGROUND_SCALE.
 function configureWindowBackground(windowCanvas)
 {
-    const dpr = window.devicePixelRatio || 1
-
-    windowCanvas.width = Math.max(1, Math.round(window.innerWidth * dpr))
-    windowCanvas.height = Math.max(1, Math.round(window.innerHeight * dpr))
+    windowCanvas.width = Math.max(1, Math.round(window.innerWidth * WINDOW_BACKGROUND_SCALE))
+    windowCanvas.height = Math.max(1, Math.round(window.innerHeight * WINDOW_BACKGROUND_SCALE))
 }
 
 // Linear mix of two 'rgba(r, g, b, a)' colors, t in [0, 1].
@@ -86,9 +89,10 @@ class BackgroundRenderer
         ctx.save()
         ctx.beginPath()
         ctx.rect(this.bounds.x, this.bounds.y, this.bounds.width, this.bounds.height)
-        // The hole stops 2 CSS px inside the play rect, so the bars layer stays
-        // opaque under the game canvas's antialiased (fractional) edge row
-        const inset = 2 / fit
+        // The hole stops inside the play rect (2 CSS px plus the upscale blur of
+        // the low-resolution backing store, 2 backing px), so the bars layer
+        // stays opaque under the game canvas's antialiased (fractional) edge row
+        const inset = (2 + 2 / pixelScale) / fit
         ctx.rect(inset, inset, LOGICAL_VIEWPORT.width - 2 * inset, LOGICAL_VIEWPORT.height - 2 * inset)
         ctx.clip('evenodd')
         this.ctx = ctx

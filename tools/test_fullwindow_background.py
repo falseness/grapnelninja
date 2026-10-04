@@ -156,6 +156,28 @@ class FullWindowBackgroundTests(unittest.TestCase):
             data['after'] = records
             path.write_text(json.dumps(data, indent=2))
 
+    def test_window_background_renders_at_quarter_size(self):
+        """TASK-138: a full-resolution bars repaint cost ~30% of the frame at
+        2560x1080; the window canvas backing store is a quarter of the window
+        (1/16 of the pixels) and CSS stretches it over the whole window."""
+        for viewport in [(2560, 1080, False), (390, 844, True)]:
+            with self.subTest(viewport=viewport_name(viewport)):
+                page = self.boot(viewport)
+                size = page.evaluate('''() => {
+                    const b = document.getElementById('background')
+                    const r = b.getBoundingClientRect()
+                    return {scale: WINDOW_BACKGROUND_SCALE, width: b.width, height: b.height,
+                            css: {left: r.left, top: r.top, width: r.width, height: r.height},
+                            window: {width: innerWidth, height: innerHeight}}
+                }''')
+                self.assertEqual(size['scale'], 0.25)
+                self.assertEqual(size['width'], round(viewport[0] * 0.25))
+                self.assertEqual(size['height'], round(viewport[1] * 0.25))
+                self.assertEqual(size['css'], {'left': 0, 'top': 0, 'width': viewport[0],
+                                               'height': viewport[1]})
+                print(f'\n  {viewport_name(viewport)} window background {json.dumps(size)}',
+                      file=sys.stderr)
+
     def test_chill_button_click_starts_classic(self):
         lines = []
         for viewport in CLICK_VIEWPORTS:
