@@ -5,6 +5,17 @@ function backgroundTemplateScale(viewWidth, viewHeight)
     return Math.min(viewWidth, viewHeight) * (100 / 720) / 100
 }
 
+const DEFAULT_BROKEN_FLASH_SEGMENTS = [
+    {start: 0, end: 0.34},
+    {start: 0.48, end: 0.72},
+    {start: 0.84, end: 1}
+]
+const DEFAULT_FLASH_FRAGMENTS = [
+    {x: 0, y: 0, length: 0.22, angleOffset: 0},
+    {x: 0.04, y: 0.03, length: 0.16, angleOffset: 0.34},
+    {x: -0.03, y: 0.06, length: 0.12, angleOffset: -0.28}
+]
+
 class BackgroundRenderer
 {
     constructor(context, targetCanvas)
@@ -14,6 +25,9 @@ class BackgroundRenderer
         this.randomFlashCache = new WeakMap()
         this.randomTriangleCache = new WeakMap()
         this.gradientCache = null
+        // Reused every frame so the background draws without per-frame garbage.
+        this.flashSegmentCache = new WeakMap()
+        this.trianglePaletteColors = {fill: null, stroke: null}
     }
     draw()
     {
@@ -394,51 +408,78 @@ class BackgroundRenderer
 
         if (flash.form == 'broken')
         {
-            const segments = flash.segments || [
-                {start: 0, end: 0.34},
-                {start: 0.48, end: 0.72},
-                {start: 0.84, end: 1}
-            ]
+            const segments = flash.segments || DEFAULT_BROKEN_FLASH_SEGMENTS
+            const result = this.getFlashSegmentList(flash, segments.length)
 
-            return segments.map(segment => ({
-                x1: startX + cos * length * segment.start,
-                y1: startY + sin * length * segment.start,
-                x2: startX + cos * length * segment.end,
-                y2: startY + sin * length * segment.end
-            }))
+            for (let i = 0; i < segments.length; ++i)
+            {
+                const segment = segments[i]
+                this.setFlashSegment(
+                    result[i],
+                    startX + cos * length * segment.start,
+                    startY + sin * length * segment.start,
+                    startX + cos * length * segment.end,
+                    startY + sin * length * segment.end
+                )
+            }
+
+            return result
         }
 
         if (flash.form == 'fragments')
         {
-            const fragments = flash.fragments || [
-                {x: 0, y: 0, length: 0.22, angleOffset: 0},
-                {x: 0.04, y: 0.03, length: 0.16, angleOffset: 0.34},
-                {x: -0.03, y: 0.06, length: 0.12, angleOffset: -0.28}
-            ]
+            const fragments = flash.fragments || DEFAULT_FLASH_FRAGMENTS
             const normalX = -sin
             const normalY = cos
+            const result = this.getFlashSegmentList(flash, fragments.length)
 
-            return fragments.map(fragment => {
+            for (let i = 0; i < fragments.length; ++i)
+            {
+                const fragment = fragments[i]
                 const fragmentLength = length * fragment.length
                 const fragmentAngle = angle + (fragment.angleOffset || 0)
                 const fx = startX + cos * length * (fragment.x || 0) + normalX * length * (fragment.y || 0)
                 const fy = startY + sin * length * (fragment.x || 0) + normalY * length * (fragment.y || 0)
 
-                return {
-                    x1: fx,
-                    y1: fy,
-                    x2: fx + Math.cos(fragmentAngle) * fragmentLength,
-                    y2: fy + Math.sin(fragmentAngle) * fragmentLength
-                }
-            })
+                this.setFlashSegment(
+                    result[i],
+                    fx,
+                    fy,
+                    fx + Math.cos(fragmentAngle) * fragmentLength,
+                    fy + Math.sin(fragmentAngle) * fragmentLength
+                )
+            }
+
+            return result
         }
 
-        return [{
-            x1: startX,
-            y1: startY,
-            x2: startX + cos * length,
-            y2: startY + sin * length
-        }]
+        const result = this.getFlashSegmentList(flash, 1)
+        this.setFlashSegment(result[0], startX, startY, startX + cos * length, startY + sin * length)
+        return result
+    }
+    getFlashSegmentList(flash, count)
+    {
+        // One fixed-length list per flash, overwritten by the next getFlashSegments call.
+        let list = this.flashSegmentCache.get(flash)
+
+        if (!list || list.length != count)
+        {
+            list = []
+
+            for (let i = 0; i < count; ++i)
+                list.push({x1: 0, y1: 0, x2: 0, y2: 0})
+
+            this.flashSegmentCache.set(flash, list)
+        }
+
+        return list
+    }
+    setFlashSegment(segment, x1, y1, x2, y2)
+    {
+        segment.x1 = x1
+        segment.y1 = y1
+        segment.x2 = x2
+        segment.y2 = y2
     }
     drawFlashSegments(segments)
     {
@@ -524,19 +565,18 @@ class BackgroundRenderer
     getTrianglePaletteColors(palette)
     {
         const colors = STYLE.colors.background
+        const result = this.trianglePaletteColors
 
         if (palette == 'magenta')
         {
-            return {
-                fill: colors.triangleSilhouetteMagentaFill || colors.triangleSilhouetteFill,
-                stroke: colors.triangleSilhouetteMagentaStroke || colors.triangleSilhouetteStroke
-            }
+            result.fill = colors.triangleSilhouetteMagentaFill || colors.triangleSilhouetteFill
+            result.stroke = colors.triangleSilhouetteMagentaStroke || colors.triangleSilhouetteStroke
+            return result
         }
 
-        return {
-            fill: colors.triangleSilhouetteBlueFill || colors.triangleSilhouetteFill,
-            stroke: colors.triangleSilhouetteBlueStroke || colors.triangleSilhouetteStroke
-        }
+        result.fill = colors.triangleSilhouetteBlueFill || colors.triangleSilhouetteFill
+        result.stroke = colors.triangleSilhouetteBlueStroke || colors.triangleSilhouetteStroke
+        return result
     }
     drawDecorativeTriangle(centerX, centerY, radius, rotation, points)
     {
@@ -1054,17 +1094,23 @@ class ParticleSystem
     }
     updateParticles(dt)
     {
-        for (let i = this.particles.length - 1; i >= 0; --i)
+        // In-place compaction: keeps the draw order without splice garbage.
+        const particles = this.particles
+        let kept = 0
+
+        for (let i = 0; i < particles.length; ++i)
         {
-            const particle = this.particles[i]
+            const particle = particles[i]
 
             particle.x += particle.vx * dt
             particle.y += particle.vy * dt
             particle.life -= dt
 
-            if (particle.life <= 0)
-                this.particles.splice(i, 1)
+            if (particle.life > 0)
+                particles[kept++] = particle
         }
+
+        particles.length = kept
     }
     emitTrampolineSplash(player, trampoline)
     {
@@ -1259,8 +1305,15 @@ class ParticleSystem
     {
         const overage = this.particles.length - STYLE.particles.maxCount
 
-        if (overage > 0)
-            this.particles.splice(0, overage)
+        if (overage <= 0)
+            return
+
+        const particles = this.particles
+
+        for (let i = overage; i < particles.length; ++i)
+            particles[i - overage] = particles[i]
+
+        particles.length -= overage
     }
     isVisible(element)
     {
@@ -1328,6 +1381,14 @@ class ParticleSystem
 
 class PlayerTrailRenderer
 {
+    constructor()
+    {
+        // Reused every frame: the returned arrays are only valid until the next call.
+        this.ribbonPoints = []
+        this.ribbonOutline = []
+        this.ribbonLeft = []
+        this.ribbonRight = []
+    }
     shouldDraw()
     {
         return trackEnabled && STYLE.features.playerTrail && QUALITY.playerTrail
@@ -1375,8 +1436,12 @@ class PlayerTrailRenderer
         if (positions.length < 3 || minDistance <= 0)
             return positions
 
-        const ribbonPoints = [positions[0]]
+        const ribbonPoints = this.ribbonPoints
         let last = positions[0]
+        let count = 1
+
+        // Overwrite in place: length = 0 would drop the backing store every frame.
+        ribbonPoints[0] = last
 
         for (let i = 1; i < positions.length - 1; ++i)
         {
@@ -1385,12 +1450,13 @@ class PlayerTrailRenderer
 
             if (Math.sqrt(dx * dx + dy * dy) >= minDistance)
             {
-                ribbonPoints.push(positions[i])
+                ribbonPoints[count++] = positions[i]
                 last = positions[i]
             }
         }
 
-        ribbonPoints.push(positions[positions.length - 1])
+        ribbonPoints[count++] = positions[positions.length - 1]
+        ribbonPoints.length = count
         return ribbonPoints
     }
     drawRibbon(positions, visibleStart, width, glowWidth, alpha)
@@ -1425,8 +1491,10 @@ class PlayerTrailRenderer
     getRibbonOutline(positions, visibleStart, width)
     {
         const config = STYLE.trails.player
-        const left = []
-        const right = []
+        const left = this.ribbonLeft
+        const right = this.ribbonRight
+        const outline = this.ribbonOutline
+        let count = 0
         const start = Math.max(0, visibleStart - 1)
         const end = positions.length - 1
         const span = Math.max(1, end - start)
@@ -1452,11 +1520,28 @@ class PlayerTrailRenderer
             const centerY = current.y + screen.y
             const halfWidth = localWidth / 2
 
-            left.push({x: centerX + normalX * halfWidth, y: centerY + normalY * halfWidth})
-            right.push({x: centerX - normalX * halfWidth, y: centerY - normalY * halfWidth})
+            if (count == left.length)
+            {
+                left.push({x: 0, y: 0})
+                right.push({x: 0, y: 0})
+            }
+
+            left[count].x = centerX + normalX * halfWidth
+            left[count].y = centerY + normalY * halfWidth
+            right[count].x = centerX - normalX * halfWidth
+            right[count].y = centerY - normalY * halfWidth
+            ++count
         }
 
-        return left.concat(right.reverse())
+        outline.length = count * 2
+
+        for (let i = 0; i < count; ++i)
+        {
+            outline[i] = left[i]
+            outline[count * 2 - 1 - i] = right[i]
+        }
+
+        return outline
     }
     drawRibbonOutline(outline)
     {
