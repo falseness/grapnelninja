@@ -30,10 +30,12 @@ class Ninja
                 const element = floors[k].elements[i]
                 if (!element)
                     continue
-                if (!boundsOverlap(reach, pointsBounds(element.getPoints())))
+                // The circumscribed circle is the cheap reject (no point arrays),
+                // so it runs before the bounds of the points.
+                if (!twoCirclesIntersect(this.x, this.y, this.radius, element.getCircumscribedCircle()))
                     continue
 
-                if (twoCirclesIntersect(this.x, this.y, this.radius, element.getCircumscribedCircle()))
+                if (boundsOverlap(reach, pointsBounds(element.getPoints())))
                 {
                     let lines = element.getLines()
                     let hit = false
