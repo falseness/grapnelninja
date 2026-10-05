@@ -6,7 +6,8 @@ Every screen is drawn once with LAYOUT_PROBE.boxes on (menu.js), which
 returns the text and button boxes in CSS px relative to the canvas.
 
 Checks per shot:
-- aspect: canvas CSS box width / height, <= 2.0 on desktop sizes
+- aspect: canvas CSS box width / height, <= 2.0 on desktop sizes; on touch
+  sizes the canvas fills the window (no letterbox bars)
 - scrollbar: document scrollWidth/Height > clientWidth/Height
 - clipped: boxes not inside the canvas box
 - overlaps: pairs of boxes that intersect (a text inside the button it
@@ -22,6 +23,7 @@ from test_audio_wiring import READY
 from test_continue import INSTRUMENT_RUN
 
 SIZES = [(360, 640, True), (390, 844, True), (915, 412, True), (844, 390, True),
+         (892, 340, True), (800, 360, True),
          (1280, 720, False), (1920, 1080, False), (2560, 1440, False),
          (2560, 1080, False), (1280, 500, False), (925, 925, False), (1024, 768, False),
          (1280, 1024, False)]
@@ -41,7 +43,7 @@ PROBE = '''(code) => {
     const r = canvas.getBoundingClientRect()
     const d = document.documentElement
     return {boxes: boxes, canvas: {left: r.left, top: r.top, width: r.width, height: r.height},
-            scroll: {sw: d.scrollWidth, sh: d.scrollHeight, cw: d.clientWidth, ch: d.clientHeight,
+            scroll: {window: {width: innerWidth, height: innerHeight}, sw: d.scrollWidth, sh: d.scrollHeight, cw: d.clientWidth, ch: d.clientHeight,
                      bsw: document.body.scrollWidth, bsh: document.body.scrollHeight}}
 }'''
 DRAW = {
@@ -110,6 +112,10 @@ def evaluate(shot, touch):
     failures = []
     if not touch and aspect > MAX_ASPECT + 1e-3:
         failures.append('aspect')
+    w = s['window']
+    if touch and w['width'] / w['height'] >= 4 / 3 and \
+            (abs(c['width'] - w['width']) > 1 or abs(c['height'] - w['height']) > 1):
+        failures.append('fullscreen')
     if scrollbar:
         failures.append('scrollbar')
     if overlaps:

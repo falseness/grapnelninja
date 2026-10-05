@@ -2,7 +2,8 @@
 
 Menu, HUD, pause, continue offer and ad unavailable, in en and ru, at a
 phone portrait, a phone landscape, a 21:9 desktop and a short desktop
-window: play field <= 2:1 on desktop, no scrollbar, text and buttons inside
+window and a 2.6:1 phone landscape with browser bars: play field <= 2:1 on
+desktop and the whole window on touch, no scrollbar, text and buttons inside
 the canvas and apart, text >= 12 CSS px, buttons >= 44 CSS px on touch.
 
 Env: LAYOUT_EVIDENCE_DIR receives layout-matrix.json.
@@ -18,7 +19,7 @@ from browser_test_support import start_browser_test
 import layout_matrix as lm
 
 ROOT = Path(__file__).resolve().parent.parent
-SIZES = [(360, 640, True), (844, 390, True), (2560, 1080, False), (1280, 500, False)]
+SIZES = [(360, 640, True), (844, 390, True), (892, 340, True), (2560, 1080, False), (1280, 500, False)]
 
 
 class LayoutMatrixTests(unittest.TestCase):

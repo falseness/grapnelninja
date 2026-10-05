@@ -1,14 +1,24 @@
 const widthHeightRatio = 1.8250950570342206
 // Logical viewport: height is always 1080 units, width follows the window
-// aspect clamped to [4:3, 2:1] (Playgama: play field at most 2:1).
+// aspect clamped to [4:3, 2:1] on desktop (Playgama: play field at most 2:1).
+// Touch-first devices are not capped: a landscape phone (about 2.2:1, wider
+// with the browser bars) gets the whole screen (Playgama: full screen on mobile).
 // The canvas CSS box letterboxes that aspect.
 const LOGICAL_HEIGHT = 1080
 const minViewportAspect = 4 / 3
 const maxViewportAspect = 2
+function isTouchFirstDevice()
+{
+    return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+}
 function computeLogicalWidth()
 {
-    const aspect = Math.min(maxViewportAspect, Math.max(minViewportAspect, window.innerWidth / window.innerHeight))
-    return Math.round(LOGICAL_HEIGHT * aspect)
+    const touch = isTouchFirstDevice()
+    const aspect = Math.min(touch ? Infinity : maxViewportAspect,
+                            Math.max(minViewportAspect, window.innerWidth / window.innerHeight))
+    // Touch: never round wider than the window, so the canvas fits by height
+    // and keeps the 44 CSS px touch floor exact (see MUTE_BUTTON.minSize)
+    return (touch ? Math.floor : Math.round)(LOGICAL_HEIGHT * aspect)
 }
 const height    = LOGICAL_HEIGHT
 // Mutable: a live window resize recomputes it (see updateLogicalViewport).

@@ -21,8 +21,11 @@ const LAYOUT_PROBE =
     toCss(x, y)
     {
         const m = ctx.getTransform()
-        const r = canvas.width / canvas.getBoundingClientRect().width
-        return {x: (m.a * x + m.c * y + m.e) / r, y: (m.b * x + m.d * y + m.f) / r}
+        // Backing px per CSS px per axis (backing sizes are rounded apart)
+        const css = canvas.getBoundingClientRect()
+        const rx = canvas.width / css.width
+        const ry = canvas.height / css.height
+        return {x: (m.a * x + m.c * y + m.e) / rx, y: (m.b * x + m.d * y + m.f) / ry}
     },
     rect(kind, name, x, y, w, h)
     {
