@@ -144,12 +144,22 @@ class Ninja
             this.speedY = maxSpeed
         if (this.speedY < -maxSpeed)
             this.speedY = -maxSpeed
-        this.x += this.speedX
-        this.y += this.speedY
-        
-        this.track.addPos(this.x, this.y)
-        
-        this.collision()
+        // A cycle longer than the radius could jump over a thin edge:
+        // move in equal sub-steps, colliding after each one.
+        const steps = Math.max(1, Math.ceil(Math.hypot(this.speedX, this.speedY) / this.radius))
+        for (let i = 1; i <= steps; ++i)
+        {
+            this.x += this.speedX / steps
+            this.y += this.speedY / steps
+            
+            if (i == steps)
+                this.track.addPos(this.x, this.y)
+            
+            this.collision()
+            // A deadly hit restarted the game with a new ninja.
+            if (ninja !== this)
+                return
+        }
         
         if (this.x + screen.x < screen.getDeletionBorder())
             reStart()

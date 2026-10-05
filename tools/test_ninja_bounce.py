@@ -1,9 +1,10 @@
 """Ninja (ball) must not tunnel through bouncy surfaces (scenarios A-H).
 
-Scenarios that still tunnel on HEAD are marked expectedFailure; tickets that
-fix a scenario remove its marker.
+Every scenario A-H must pass (the sub-stepping of TASK-157 cleared the last
+known-failure markers, B and H).
 """
 from pathlib import Path
+import math
 import sys
 import unittest
 
@@ -72,6 +73,19 @@ FLAT_BOUNCE = r'''([depth, vy]) => {
 }'''.replace('OLD_FORMULA', OLD_FORMULA)
 
 
+# Collision calls made by one Ninja.move() with velocity (vx, vy), no elements.
+MOVE_STEPS = r'''([vx, vy]) => {
+    tunnel.clear();
+    tunnel.place(0.5 * width, 0.5 * height, vx, vy);
+    let calls = 0;
+    const orig = ninja.collision;
+    ninja.collision = function() { calls++; return orig.call(this); };
+    ninja.move();
+    delete ninja.collision;
+    return {calls, r: ninja.radius, x: ninja.x, y: ninja.y, x0: 0.5 * width, y0: 0.5 * height};
+}'''
+
+
 def reflection_check(page, seed=156):
     return page.evaluate(REFLECTION_CHECK, seed)
 
@@ -132,10 +146,29 @@ class NinjaBounceTests(unittest.TestCase):
             self.assertEqual((out['speedX'], out['speedY']), (1.5, -4.0), mode)
             self.assertGreaterEqual(out['distance'], out['r'], mode)
 
+    def move_steps(self, mode, vx, vy):
+        page, errors = open_page(self.browser, self.url, mode)
+        try:
+            out = page.evaluate(MOVE_STEPS, [vx, vy])
+        finally:
+            page.close()
+        self.assertEqual(errors, [], mode)
+        return out
+
+    def test_slow_cycle_collides_once_fast_cycle_n_times(self):
+        for mode in MODES:
+            r = self.move_steps(mode, 0, 0)['r']
+            for vx, vy in [(0, 0), (0.5 * r, 0.5 * r), (0, r), (0, 1.01 * r),
+                           (3.4 * r, 0), (-2 * r, 1.5 * r), (12.2 * r, -0.9 * r)]:
+                out = self.move_steps(mode, vx, vy)
+                n = max(1, math.ceil(math.hypot(vx, vy) / r))
+                self.assertEqual(out['calls'], n, f'{mode} v=({vx}, {vy})')
+                self.assertAlmostEqual(out['x'] - out['x0'], vx, delta=1e-9, msg=mode)
+                self.assertAlmostEqual(out['y'] - out['y0'], vy, delta=1e-9, msg=mode)
+
     def test_a_fall_at_max_speed_onto_flat_trampoline(self):
         self.check('A')
 
-    @unittest.expectedFailure
     def test_b_fast_horizontal_into_vertical_edge(self):
         self.check('B')
 
@@ -154,7 +187,6 @@ class NinjaBounceTests(unittest.TestCase):
     def test_g_hit_on_vertex(self):
         self.check('G')
 
-    @unittest.expectedFailure
     def test_h_seeded_fuzz_at_factory_frames(self):
         self.check('H')
 
