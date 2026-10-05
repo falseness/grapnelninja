@@ -68,11 +68,18 @@ class Triangle extends Element
         if (this.getTopPointY() < this.restrictionY.min || this.getBottomPointY() > this.restrictionY.max)
             this.speedY *= -1
     }
-    draw()
+    // Done by draw(), and by Floor.draw for culled triangles, so the trail colour
+    // does not depend on whether the triangle was on screen.
+    syncTrackStyle()
     {
         if (version != 'bad')
-        {
             this.track.stroke = STYLE.colors.hazard.classicTriangleStroke
+    }
+    draw()
+    {
+        this.syncTrackStyle()
+        if (version != 'bad')
+        {
             this.drawClassicGameplayTriangle()
             return
         }

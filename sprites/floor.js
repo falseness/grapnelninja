@@ -192,18 +192,26 @@ class Floor
     }
     draw()
     {
+        const cullRect = getCullRect()
         for (let i = 0; i < this.elements.length; ++i)
         {
-            this.elements[i].draw()
+            const element = this.elements[i]
+            if (isCullBoxVisible(getElementCullBox(element), cullRect))
+                element.draw()
+            else if (element.syncTrackStyle)
+                element.syncTrackStyle()
         }
     }
     drawTracks()
     {
         if (trackEnabled)
         {
+            const cullRect = getCullRect()
             for (let i = 0; i < this.elements.length; ++i)
             {
-                this.elements[i].track.draw()
+                const track = this.elements[i].track
+                if (isCullBoxVisible(getTrackCullBox(track), cullRect))
+                    track.draw()
             }
         }
     }
