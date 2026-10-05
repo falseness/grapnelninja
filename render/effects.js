@@ -745,6 +745,7 @@ class LightmapRenderer
         this.enabled = true
         this.lightCanvas = document.createElement('canvas')
         this.lightCtx = this.lightCanvas.getContext('2d')
+        this.gradients = new Map()
         this.resize()
     }
     shouldDraw()
@@ -772,17 +773,32 @@ class LightmapRenderer
         const lightX = x * this.scale
         const lightY = y * this.scale
         const lightRadius = radius * this.scale
-        const gradient = this.lightCtx.createRadialGradient(lightX, lightY, 0, lightX, lightY, lightRadius)
-
-        gradient.addColorStop(0, color)
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
+        const gradient = this.getLightGradient(color, lightRadius)
 
         this.lightCtx.save()
+        this.lightCtx.translate(lightX, lightY)
         this.lightCtx.globalAlpha = alpha
         this.lightCtx.globalCompositeOperation = 'lighter'
         this.lightCtx.fillStyle = gradient
-        this.lightCtx.fillRect(lightX - lightRadius, lightY - lightRadius, lightRadius * 2, lightRadius * 2)
+        this.lightCtx.fillRect(-lightRadius, -lightRadius, lightRadius * 2, lightRadius * 2)
         this.lightCtx.restore()
+    }
+    getLightGradient(color, radius)
+    {
+        const key = color + '|' + radius
+        let gradient = this.gradients.get(key)
+
+        if (gradient)
+            return gradient
+
+        if (this.gradients.size >= 64)
+            this.gradients.clear()
+
+        gradient = this.lightCtx.createRadialGradient(0, 0, 0, 0, 0, radius)
+        gradient.addColorStop(0, color)
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
+        this.gradients.set(key, gradient)
+        return gradient
     }
     draw(gameState)
     {
