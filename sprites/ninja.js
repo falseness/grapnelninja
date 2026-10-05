@@ -20,6 +20,7 @@ class Ninja
     collision()
     {
         let collision = false
+        this.bounce = null
         // A line hit lies on the element within radius of the centre.
         const reach = circleBounds(this.x, this.y, this.radius, defaultEqualityTolerance)
         for (let k = 0; k < floors.length; ++k)
@@ -36,11 +37,12 @@ class Ninja
                 {
                     let lines = element.getLines()
                     let hit = false
+                    let contact = null
                     for (let j = 0; j < lines.length; ++j)
                     {
                         if (this.collisionNinjaWithLine(lines[j]))
                         {
-                            element.collision(this, lines[j])
+                            contact = this.hitLine(element, lines[j], contact)
                             collision = lines[j]
                             hit = true
                         }
@@ -49,12 +51,87 @@ class Ninja
                     if (!hit && pointInPolygon(element.getPoints(), this.x, this.y))
                     {
                         collision = nearestLine(lines, this.x, this.y)
-                        element.collision(this, collision)
+                        contact = this.hitLine(element, collision, contact)
                     }
+                    if (contact && (!this.bounce || this.deeperContact(contact, this.bounce)))
+                        this.bounce = contact
                 }
             }
         }
+        if (this.bounce)
+            this.applyBounce(this.bounce)
         return collision
+    }
+    // Deadly hits act at once; a bouncy element keeps its nearest hit edge,
+    // and the cycle bounces once off the element with the deepest one.
+    // Edges the ball moves into rank first, so a shared seam edge never wins.
+    hitLine(element, line, best)
+    {
+        const bouncy = element instanceof Trampoline ||
+            (element instanceof Side && element.isBadVersionCeilingBoundary(line))
+        if (!bouncy)
+        {
+            element.collision(this, line)
+            return best
+        }
+        const contact = this.contactWith(line, element.getPoints())
+        if (best && (best.approaching > contact.approaching ||
+            (best.approaching == contact.approaching && best.distance <= contact.distance)))
+            return best
+        contact.element = element
+        contact.line = line
+        return contact
+    }
+    // Closest point of line, the normal towards the outside and the penetration.
+    contactWith(line, points)
+    {
+        const dx = line.x2 - line.x1
+        const dy = line.y2 - line.y1
+        const length2 = dx * dx + dy * dy
+        let t = length2 > 0 ? ((this.x - line.x1) * dx + (this.y - line.y1) * dy) / length2 : 0
+        t = Math.max(0, Math.min(1, t))
+        const px = line.x1 + t * dx
+        const py = line.y1 + t * dy
+        const distance = Math.hypot(this.x - px, this.y - py)
+        // A sunk centre is pushed out through the edge, not further in.
+        const side = pointInPolygon(points, this.x, this.y) ? -1 : 1
+        let nx, ny
+        if (distance > 0)
+        {
+            nx = side * (this.x - px) / distance
+            ny = side * (this.y - py) / distance
+        }
+        else
+        {
+            const length = Math.sqrt(length2)
+            nx = dy / length
+            ny = -dx / length
+            if (pointInPolygon(points, px + nx, py + ny))
+            {
+                nx = -nx
+                ny = -ny
+            }
+        }
+        return {x: px, y: py, nx: nx, ny: ny, distance: distance, depth: this.radius - side * distance,
+                approaching: this.speedX * nx + this.speedY * ny < 0}
+    }
+    deeperContact(a, b)
+    {
+        if (a.approaching != b.approaching)
+            return a.approaching
+        return a.depth > b.depth
+    }
+    applyBounce(contact)
+    {
+        if (contact.approaching)
+        {
+            bounceSpeed(this, contact.line)
+            if (visualEffects && visualEffects.particles)
+                visualEffects.particles.emitTrampolineSplash(this, contact.element)
+        }
+        const out = this.radius + GAMEPLAY.cubeContactEpsilon
+        this.x = contact.x + contact.nx * out
+        this.y = contact.y + contact.ny * out
     }
     collisionNinjaWithLine(line)
     {
