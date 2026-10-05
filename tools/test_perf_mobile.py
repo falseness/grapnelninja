@@ -6,6 +6,7 @@ import perf_mobile
 KEYS = ['rev', 'mode', 'seed', 'frames', 'frame_interval_ms', 'physics_ms', 'draw_ms',
         'physics_steps_per_frame', 'frames_over_16_7ms', 'frames_over_33_4ms',
         'cpu_fps', 'wall_fps', 'page_errors']
+GC_KEYS = ['gc_minor_count', 'gc_major_count', 'gc_total_ms', 'allocated_bytes_per_frame']
 
 
 class PerfMobileTest(unittest.TestCase):
@@ -33,6 +34,25 @@ class PerfMobileTest(unittest.TestCase):
             self.assertGreaterEqual(d['offset_ms'], d['t_ms'])
             self.assertLess(d['offset_ms'], result['window_ms'])
         self.assertLessEqual(result['input_lag_ms']['max'], result['max_frame_gap_ms'] + 250)
+        # GC trace and heap sampling counters.
+        for key in GC_KEYS:
+            self.assertIn(key, result)
+            self.assertIsNotNone(result[key], key)
+            self.assertGreaterEqual(result[key], 0, key)
+        for key in ('gc_minor_count', 'gc_major_count'):
+            self.assertIsInstance(result[key], int, key)
+
+    def test_gc_stats_window_and_thread(self):
+        mark = {'name': perf_mobile.T0_MARK, 'ph': 'R', 'pid': 1, 'tid': 2, 'ts': 1000}
+        events = [mark,
+                  {'name': 'MinorGC', 'ph': 'X', 'pid': 1, 'tid': 2, 'ts': 2000, 'dur': 500},
+                  {'name': 'MajorGC', 'ph': 'B', 'pid': 1, 'tid': 2, 'ts': 3000},
+                  {'name': 'MajorGC', 'ph': 'E', 'pid': 1, 'tid': 2, 'ts': 4500},
+                  {'name': 'MinorGC', 'ph': 'X', 'pid': 1, 'tid': 9, 'ts': 2000, 'dur': 500},
+                  {'name': 'MinorGC', 'ph': 'X', 'pid': 1, 'tid': 2, 'ts': 500, 'dur': 500},
+                  {'name': 'MinorGC', 'ph': 'X', 'pid': 1, 'tid': 2, 'ts': 1001001, 'dur': 500}]
+        self.assertEqual(perf_mobile.gc_stats(events, 1),
+                         {'gc_minor_count': 1, 'gc_major_count': 1, 'gc_total_ms': 2.0})
 
 
 if __name__ == '__main__':

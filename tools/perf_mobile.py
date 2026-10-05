@@ -9,8 +9,13 @@ exactly --seconds from startGame(); frames, touches and timings are recorded
 only inside it. physics(), draw() and gameLoop() are wrapped in the page for
 measurement only; game files are served unchanged.
 
+Unless --no-trace is given, the window is also covered by a CDP trace (GC
+events) and the V8 sampling heap profiler (allocations, including objects
+already collected), reported as gc_minor_count, gc_major_count, gc_total_ms
+and allocated_bytes_per_frame. With --no-trace those keys are null.
+
 Usage: python3 tools/perf_mobile.py --rev worktree|<git rev> --mode bad|classic
-       [--seconds 20] [--seed 1] --out perf.json
+       [--seconds 20] [--seed 1] [--no-trace] --out perf.json
 """
 import argparse
 from contextlib import ExitStack
@@ -31,6 +36,9 @@ VIEWPORT = {'width': 844, 'height': 390}
 DEVICE_SCALE_FACTOR = 3
 CPU_THROTTLE_RATE = 4
 CLK = os.sysconf('SC_CLK_TCK')
+TRACE_CATEGORIES = ['v8', 'disabled-by-default-v8.gc', 'devtools.timeline', 'blink.user_timing']
+GC_EVENTS = {'MinorGC': 'minor', 'MajorGC': 'major'}
+T0_MARK = 'perf-mobile-t0'
 
 # Mulberry32 replaces Math.random before any game script runs.
 SEED_SCRIPT = '''(() => {
@@ -81,6 +89,7 @@ START_SCRIPT = '''([mode, script, windowMs]) => {
     startGame(mode)
     perf.windowMs = windowMs
     perf.t0 = performance.now()
+    performance.mark('perf-mobile-t0')
     let touch = null
     const fire = event => {
         const offset = performance.now() - perf.t0
@@ -158,6 +167,56 @@ def chrome_cpu_seconds():
     return total / CLK
 
 
+def read_trace(cdp, page):
+    """Ends the trace started with ReturnAsStream and returns its events."""
+    done = {}
+    cdp.on('Tracing.tracingComplete', lambda params: done.update(params))
+    cdp.send('Tracing.end')
+    deadline = time.monotonic() + 120
+    while 'stream' not in done:
+        if time.monotonic() > deadline:
+            raise TimeoutError('Tracing.tracingComplete not received')
+        page.wait_for_timeout(50)
+    chunks = []
+    while True:
+        chunk = cdp.send('IO.read', {'handle': done['stream'], 'size': 1 << 20})
+        chunks.append(chunk['data'])
+        if chunk.get('eof'):
+            break
+    cdp.send('IO.close', {'handle': done['stream']})
+    data = json.loads(''.join(chunks))
+    return data['traceEvents'] if isinstance(data, dict) else data
+
+
+def gc_stats(events, seconds):
+    """MinorGC/MajorGC events on the page's main thread inside [t0, t0+seconds].
+
+    t0 is the performance.mark() START_SCRIPT sets next to __perf.t0, so the
+    trace window matches the frame window."""
+    mark = next(e for e in events if e.get('name') == T0_MARK)
+    start, end = mark['ts'], mark['ts'] + seconds * 1e6
+    thread = (mark['pid'], mark['tid'])
+    counts, total_us, open_begin = {'minor': 0, 'major': 0}, 0.0, {}
+    for e in sorted(events, key=lambda e: e.get('ts', 0)):
+        kind = GC_EVENTS.get(e.get('name'))
+        if not kind or (e.get('pid'), e.get('tid')) != thread or not start <= e.get('ts', 0) < end:
+            continue
+        if e['ph'] == 'X':
+            counts[kind] += 1
+            total_us += e.get('dur', 0)
+        elif e['ph'] == 'B':
+            open_begin[kind] = e['ts']
+        elif e['ph'] == 'E' and kind in open_begin:
+            counts[kind] += 1
+            total_us += e['ts'] - open_begin.pop(kind)
+    return {'gc_minor_count': counts['minor'], 'gc_major_count': counts['major'],
+            'gc_total_ms': round(total_us / 1000, 3)}
+
+
+def sampled_bytes(node):
+    return node.get('selfSize', 0) + sum(sampled_bytes(c) for c in node.get('children', []))
+
+
 def export_rev(rev, add_cleanup):
     """Serve directory for rev: the checkout itself or a `git archive` copy."""
     if rev == 'worktree':
@@ -174,7 +233,7 @@ def export_rev(rev, add_cleanup):
     return Path(scratch.name), sha
 
 
-def run(rev, mode, seconds, seed, log=print):
+def run(rev, mode, seconds, seed, log=print, trace=True):
     script = input_script(seed, seconds)
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
@@ -191,10 +250,17 @@ def run(rev, mode, seconds, seed, log=print):
         log(f'rev={rev_id} mode={mode} seed={seed} seconds={seconds} '
             f'viewport={VIEWPORT["width"]}x{VIEWPORT["height"]} dpr={DEVICE_SCALE_FACTOR} '
             f'is_mobile=True has_touch=True cpu_throttle_rate={CPU_THROTTLE_RATE} '
-            f'input_events={len(script)}')
+            f'input_events={len(script)} trace={trace}')
         page.goto(url + 'index.html')
         page.wait_for_function('() => typeof menu != "undefined" && menu.visible')
         page.evaluate(INSTRUMENT_SCRIPT)
+        if trace:
+            cdp.send('HeapProfiler.enable')
+            cdp.send('HeapProfiler.startSampling', {'includeObjectsCollectedByMajorGC': True,
+                                                    'includeObjectsCollectedByMinorGC': True})
+            cdp.send('Tracing.start', {'traceConfig': {'includedCategories': TRACE_CATEGORIES,
+                                                       'recordMode': 'recordAsMuchAsPossible'},
+                                       'transferMode': 'ReturnAsStream'})
         page.evaluate(START_SCRIPT, [mode, script, seconds * 1000])
         cpu0, t0 = chrome_cpu_seconds(), time.monotonic()
         # Input runs in the page; Python only closes the CPU/wall window.
@@ -203,6 +269,12 @@ def run(rev, mode, seconds, seed, log=print):
         page.wait_for_function('() => performance.now() - __perf.t0 >= __perf.windowMs',
                                timeout=60000)
         perf = page.evaluate('() => window.__perf')
+        gc = {'gc_minor_count': None, 'gc_major_count': None, 'gc_total_ms': None}
+        allocated = None
+        if trace:
+            profile = cdp.send('HeapProfiler.stopSampling')['profile']
+            allocated = sampled_bytes(profile['head'])
+            gc = gc_stats(read_trace(cdp, page), seconds)
     frames = perf['frames']
     intervals = [b - a for a, b in zip(frames, frames[1:])]
     histogram = {}
@@ -232,6 +304,9 @@ def run(rev, mode, seconds, seed, log=print):
         'cpu_seconds': round(cpu_s, 3), 'wall_seconds': round(wall_s, 3),
         'cpu_fps': round(len(frames) / cpu_s, 2) if cpu_s > 0 else None,
         'wall_fps': round(len(frames) / wall_s, 2),
+        **gc,
+        'allocated_bytes_per_frame': (round(allocated / len(frames), 1)
+                                      if allocated is not None and frames else None),
         'page_errors': errors,
     }
     log(f'frames={result["frames"]} frame_interval_ms={result["frame_interval_ms"]} '
@@ -241,6 +316,8 @@ def run(rev, mode, seconds, seed, log=print):
         f'wall_fps={result["wall_fps"]} touchstarts={perf["touches"]} throws={perf["throws"]} '
         f'input_dispatched={len(perf["dispatched"])}/{len(script)} '
         f'input_lag_ms={result["input_lag_ms"]} wall_seconds={result["wall_seconds"]} '
+        f'gc_minor={gc["gc_minor_count"]} gc_major={gc["gc_major_count"]} '
+        f'gc_total_ms={gc["gc_total_ms"]} alloc_per_frame={result["allocated_bytes_per_frame"]} '
         f'page_errors={len(errors)}')
     return result
 
@@ -251,9 +328,12 @@ def main():
     parser.add_argument('--mode', choices=['bad', 'classic'], default='bad')
     parser.add_argument('--seconds', type=float, default=20)
     parser.add_argument('--seed', type=int, default=1)
+    parser.add_argument('--no-trace', dest='trace', action='store_false',
+                        help='skip the GC trace and heap sampling (plain timing run)')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
-    result = run(args.rev, args.mode, args.seconds, args.seed, log=lambda s: print(s, flush=True))
+    result = run(args.rev, args.mode, args.seconds, args.seed, log=lambda s: print(s, flush=True),
+                 trace=args.trace)
     Path(args.out).write_text(json.dumps(result, indent=1) + '\n')
     print(f'wrote {args.out}')
 
