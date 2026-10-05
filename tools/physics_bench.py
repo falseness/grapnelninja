@@ -10,6 +10,10 @@ death (reStart -> chooseVersion) happen inside physics() and are part of the
 run. The page is cross-origin isolated (COOP/COEP) for 5 us timer resolution.
 
 Reps alternate the rev order (rep 0: A then B, rep 1: B then A, ...).
+Besides the raw per-rep stats and their medians, the min-envelope (for each
+tick index the min over that rev's reps) is reported per mode: the ticks are
+deterministic, while scheduler/GC spikes do not line up across reps, so the
+envelope filters host noise out of p95.
 
 Usage: python3 tools/physics_bench.py --rev A [--rev B] [--reps 5]
            [--mode bad|classic|both] [--out FILE.json]
@@ -100,7 +104,7 @@ def run_once(browser, url, mode, ticks, warmup):
     finally:
         context.close()
     ms = r['ms']
-    return {'p50': round(pct(ms, 50), 4), 'p95': round(pct(ms, 95), 4),
+    return ms, {'p50': round(pct(ms, 50), 4), 'p95': round(pct(ms, 95), 4),
             'total': round(sum(ms), 2), 'max': round(max(ms), 3), 'ticks': len(ms),
             'deaths': r['deaths'], 'throws': r['throws'],
             'cross_origin_isolated': r['isolated'], 'page_errors': errors}
@@ -122,6 +126,7 @@ def main(argv=None):
     labels = ['A', 'B'][:len(args.rev)]
 
     runs = []
+    ticks_ms = {(label, mode): [] for label in labels for mode in modes}
     with ExitStack() as stack:
         revs, urls = {}, {}
         for label, rev in zip(labels, args.rev):
@@ -138,7 +143,8 @@ def main(argv=None):
             order = labels if rep % 2 == 0 else labels[::-1]
             for label in order:
                 for mode in modes:
-                    r = run_once(browser, urls[label], mode, args.ticks, args.warmup)
+                    ms, r = run_once(browser, urls[label], mode, args.ticks, args.warmup)
+                    ticks_ms[label, mode].append(ms)
                     r = {'rep': rep, 'label': label, 'rev': revs[label], 'mode': mode, **r}
                     runs.append(r)
                     print(f'rep={rep} {label}={revs[label][:7]} mode={mode} p50={r["p50"]} '
@@ -152,21 +158,36 @@ def main(argv=None):
                               for key in ('p50', 'p95', 'total')}
                        for mode in modes}
                for label in labels}
+    envelope = {}
+    for label in labels:
+        envelope[label] = {}
+        for mode in modes:
+            ms = [min(tick) for tick in zip(*ticks_ms[label, mode])]
+            envelope[label][mode] = {'p50': round(pct(ms, 50), 4), 'p95': round(pct(ms, 95), 4),
+                                     'total': round(sum(ms), 2)}
     result = {'revs': revs, 'reps': args.reps, 'modes': modes, 'ticks': args.ticks,
               'warmup': args.warmup, 'seed': SEED, 'viewport': VIEWPORT,
-              'runs': runs, 'medians': medians}
+              'runs': runs, 'medians': medians, 'envelope': envelope}
     for label in labels:
         for mode in modes:
-            m = medians[label][mode]
+            m, e = medians[label][mode], envelope[label][mode]
             print(f'median {label}={revs[label][:7]} mode={mode} p50={m["p50"]} '
                   f'p95={m["p95"]} total={m["total"]}')
+            print(f'envelope {label}={revs[label][:7]} mode={mode} p50={e["p50"]} '
+                  f'p95={e["p95"]} total={e["total"]}')
     if len(labels) == 2:
         result['p95_ratio_b_over_a'] = {
             mode: round(medians['B'][mode]['p95'] / medians['A'][mode]['p95'], 4) for mode in modes}
         result['total_ratio_b_over_a'] = {
             mode: round(medians['B'][mode]['total'] / medians['A'][mode]['total'], 4) for mode in modes}
+        result['envelope_p95_ratio_b_over_a'] = {
+            mode: round(envelope['B'][mode]['p95'] / envelope['A'][mode]['p95'], 4) for mode in modes}
+        result['envelope_total_ratio_b_over_a'] = {
+            mode: round(envelope['B'][mode]['total'] / envelope['A'][mode]['total'], 4) for mode in modes}
         print(f'p95_ratio_b_over_a={result["p95_ratio_b_over_a"]} '
               f'total_ratio_b_over_a={result["total_ratio_b_over_a"]}')
+        print(f'envelope_p95_ratio_b_over_a={result["envelope_p95_ratio_b_over_a"]} '
+              f'envelope_total_ratio_b_over_a={result["envelope_total_ratio_b_over_a"]}')
     if args.out:
         Path(args.out).write_text(json.dumps(result, indent=1) + '\n')
     return result
