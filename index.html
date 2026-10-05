@@ -56,7 +56,7 @@
         <script>
             'use strict'
             let canvas = document.getElementById('canvas')
-            let ctx = canvas.getContext('2d')
+            let ctx = canvas.getContext('2d', {alpha: false})
             let ok = false
             let time
             ctx.lineCap = 'butt'
