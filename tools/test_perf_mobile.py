@@ -24,6 +24,15 @@ class PerfMobileTest(unittest.TestCase):
         self.assertEqual(result['page_errors'], [])
         self.assertEqual(result['emulation']['cpu_throttle_rate'], 4)
         self.assertGreater(result['touchstarts_received'], 0)
+        # The window is --seconds, not "until the last touch returns".
+        self.assertLess(abs(result['wall_seconds'] - 5), 1.0)
+        # Touches fire on the page clock: never early, and late by at most
+        # about one main-thread gap (no accumulated schedule slip).
+        self.assertGreater(result['input_dispatched'], 0)
+        for d in result['input_dispatch']:
+            self.assertGreaterEqual(d['offset_ms'], d['t_ms'])
+            self.assertLess(d['offset_ms'], result['window_ms'])
+        self.assertLessEqual(result['input_lag_ms']['max'], result['max_frame_gap_ms'] + 250)
 
 
 if __name__ == '__main__':

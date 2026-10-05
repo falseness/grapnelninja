@@ -2,10 +2,12 @@
 
 Emulates a phone (844x390 landscape, DPR 3, is_mobile, has_touch), applies the
 CDP CPU throttle, seeds Math.random, starts startGame(mode) and replays a
-seeded touch script through CDP Input.dispatchTouchEvent (the real
-touchstart/touchend events events.js listens to). physics(), draw() and
-gameLoop() are wrapped in the page for measurement only; game files are
-served unchanged.
+seeded touch script as real TouchEvents (the touchstart/touchend events
+events.js listens to), scheduled in the page against performance.now() so the
+input timing does not depend on how fast the revision renders. The window is
+exactly --seconds from startGame(); frames, touches and timings are recorded
+only inside it. physics(), draw() and gameLoop() are wrapped in the page for
+measurement only; game files are served unchanged.
 
 Usage: python3 tools/perf_mobile.py --rev worktree|<git rev> --mode bad|classic
        [--seconds 20] [--seed 1] --out perf.json
@@ -42,29 +44,63 @@ SEED_SCRIPT = '''(() => {
     }
 })()'''
 
-# Measurement wrappers around the global game functions.
+# Measurement wrappers around the global game functions. Nothing is recorded
+# until START_SCRIPT sets perf.t0, and nothing after perf.t0 + perf.windowMs.
 INSTRUMENT_SCRIPT = '''() => {
-    const perf = window.__perf = {frames: [], physicsMs: [], drawMs: [], steps: [], current: 0, touches: 0, throws: 0}
-    document.addEventListener('touchstart', () => perf.touches++)
-    document.addEventListener('touchstart', () => grapnel.throwed && perf.throws++)
+    const perf = window.__perf = {t0: null, windowMs: 0, frames: [], physicsMs: [], drawMs: [], steps: [],
+                                  current: 0, touches: 0, throws: 0, dispatched: []}
+    const recording = () => perf.t0 !== null && performance.now() - perf.t0 < perf.windowMs
+    document.addEventListener('touchstart', () => recording() && perf.touches++)
+    document.addEventListener('touchstart', () => recording() && grapnel.throwed && perf.throws++)
     const physics0 = window.physics, draw0 = window.draw, loop0 = window.gameLoop
     window.physics = function() {
         const t = performance.now()
         physics0()
-        perf.physicsMs.push(performance.now() - t)
+        if (recording()) perf.physicsMs.push(performance.now() - t)
         perf.current++
     }
     window.draw = function() {
         const t = performance.now()
         draw0()
-        perf.drawMs.push(performance.now() - t)
+        if (recording()) perf.drawMs.push(performance.now() - t)
     }
     window.gameLoop = function(frameTime) {
-        perf.frames.push(frameTime)
+        if (perf.fireDue) perf.fireDue()
+        const on = recording()
+        if (on) perf.frames.push(frameTime)
         perf.current = 0
         loop0(frameTime)
-        perf.steps.push(perf.current)
+        if (on) perf.steps.push(perf.current)
     }
+}'''
+
+# Starts the game, opens the measurement window and schedules every touch at
+# t0 + t_ms on the page clock. Each dispatch records its actual offset.
+START_SCRIPT = '''([mode, script, windowMs]) => {
+    const perf = window.__perf
+    startGame(mode)
+    perf.windowMs = windowMs
+    perf.t0 = performance.now()
+    let touch = null
+    const fire = event => {
+        const offset = performance.now() - perf.t0
+        if (offset >= windowMs)
+            return
+        const target = document.elementFromPoint(event.x, event.y) || document.body
+        if (event.type == 'start')
+            touch = new Touch({identifier: 0, target, clientX: event.x, clientY: event.y})
+        const init = {bubbles: true, cancelable: true, changedTouches: [touch],
+                      touches: event.type == 'start' ? [touch] : []}
+        target.dispatchEvent(new TouchEvent(event.type == 'start' ? 'touchstart' : 'touchend', init))
+        perf.dispatched.push({t_ms: event.t_ms, type: event.type, offset_ms: Math.round(offset * 10) / 10})
+    }
+    const queue = script.slice()
+    perf.fireDue = () => {
+        while (queue.length && performance.now() - perf.t0 >= queue[0].t_ms)
+            fire(queue.shift())
+    }
+    for (const event of script)
+        setTimeout(perf.fireDue, Math.max(0, event.t_ms - (performance.now() - perf.t0)))
 }'''
 
 
@@ -159,32 +195,32 @@ def run(rev, mode, seconds, seed, log=print):
         page.goto(url + 'index.html')
         page.wait_for_function('() => typeof menu != "undefined" && menu.visible')
         page.evaluate(INSTRUMENT_SCRIPT)
-        page.evaluate('mode => startGame(mode)', mode)
+        page.evaluate(START_SCRIPT, [mode, script, seconds * 1000])
         cpu0, t0 = chrome_cpu_seconds(), time.monotonic()
-        for event in script:
-            delay = t0 + event['t_ms'] / 1000 - time.monotonic()
-            if delay > 0:
-                time.sleep(delay)
-            point = {'x': event['x'], 'y': event['y'], 'id': 0}
-            if event['type'] == 'start':
-                cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [point]})
-            else:
-                cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
-        delay = t0 + seconds - time.monotonic()
-        if delay > 0:
-            time.sleep(delay)
-        perf = page.evaluate('() => window.__perf')
+        # Input runs in the page; Python only closes the CPU/wall window.
+        time.sleep(max(0, t0 + seconds - time.monotonic()))
         cpu_s, wall_s = chrome_cpu_seconds() - cpu0, time.monotonic() - t0
+        page.wait_for_function('() => performance.now() - __perf.t0 >= __perf.windowMs',
+                               timeout=60000)
+        perf = page.evaluate('() => window.__perf')
     frames = perf['frames']
     intervals = [b - a for a, b in zip(frames, frames[1:])]
     histogram = {}
     for n in perf['steps']:
         histogram[str(n)] = histogram.get(str(n), 0) + 1
+    lags = [d['offset_ms'] - d['t_ms'] for d in perf['dispatched']]
+    # Longest main-thread gap inside the window (t0, every rAF, window end): an
+    # in-page dispatch can be late by at most about one such gap.
+    marks = [perf['t0']] + frames + [perf['t0'] + seconds * 1000]
+    max_gap = max(b - a for a, b in zip(marks, marks[1:]))
     result = {
         'rev': rev_id, 'mode': mode, 'seed': seed, 'seconds': seconds,
         'emulation': {'viewport': VIEWPORT, 'device_scale_factor': DEVICE_SCALE_FACTOR,
                       'is_mobile': True, 'has_touch': True, 'cpu_throttle_rate': CPU_THROTTLE_RATE},
-        'input_events': len(script),
+        'input_events': len(script), 'input_dispatched': len(perf['dispatched']),
+        'input_lag_ms': {**percentiles(lags), 'max': round(max(lags), 1) if lags else None},
+        'input_dispatch': perf['dispatched'], 'max_frame_gap_ms': round(max_gap, 1),
+        'window_ms': seconds * 1000,
         'touchstarts_received': perf['touches'], 'grapnel_throws': perf['throws'],
         'frames': len(frames),
         'frame_interval_ms': percentiles(intervals),
@@ -203,6 +239,8 @@ def run(rev, mode, seconds, seed, log=print):
         f'steps={result["physics_steps_per_frame"]} over16.7={result["frames_over_16_7ms"]} '
         f'over33.4={result["frames_over_33_4ms"]} cpu_fps={result["cpu_fps"]} '
         f'wall_fps={result["wall_fps"]} touchstarts={perf["touches"]} throws={perf["throws"]} '
+        f'input_dispatched={len(perf["dispatched"])}/{len(script)} '
+        f'input_lag_ms={result["input_lag_ms"]} wall_seconds={result["wall_seconds"]} '
         f'page_errors={len(errors)}')
     return result
 
