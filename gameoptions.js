@@ -73,8 +73,33 @@ let scale =
 const cyclesPerTick = 8
 const physicsTicksPerSecond = 60
 const physicsStepMs = 1000 / physicsTicksPerSecond
-const maxPhysicsFrameMs = physicsStepMs * 5
 const physicsStepEpsilonMs = 0.000001
+const physicsSnapMs = 2
+const maxPhysicsStepsPerFrame = 2
+
+// state: {lastFrameTime, accumulatorMs}; returns how many physics steps to run
+function computePhysicsSteps(state, frameTime)
+{
+    if (!state.lastFrameTime)
+    {
+        state.lastFrameTime = frameTime
+        state.accumulatorMs = physicsStepMs / 2
+        return 1
+    }
+
+    let elapsedMs = Math.max(0, frameTime - state.lastFrameTime)
+    state.lastFrameTime = frameTime
+
+    const wholeSteps = Math.round(elapsedMs / physicsStepMs)
+    if (wholeSteps >= 1 && Math.abs(elapsedMs - wholeSteps * physicsStepMs) <= physicsSnapMs)
+        elapsedMs = wholeSteps * physicsStepMs
+
+    state.accumulatorMs += elapsedMs
+    const steps = Math.floor((state.accumulatorMs + physicsStepEpsilonMs) / physicsStepMs)
+    state.accumulatorMs = Math.max(0, state.accumulatorMs - steps * physicsStepMs)
+
+    return Math.min(steps, maxPhysicsStepsPerFrame)
+}
 
 function random(min, max)
 {

@@ -64,7 +64,7 @@
             let fpsCounter = new FpsCounter()
             let menu = new Menu(width, height)
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
-            let lastFrameTime = 0, physicsAccumulatorMs = 0
+            const physicsTiming = {lastFrameTime: 0, accumulatorMs: 0}
             
             let game
             
@@ -236,8 +236,8 @@
 
             function resetPhysicsTiming()
             {
-                lastFrameTime = 0
-                physicsAccumulatorMs = 0
+                physicsTiming.lastFrameTime = 0
+                physicsTiming.accumulatorMs = 0
             }
 
             function gameLoop(frameTime)
@@ -259,22 +259,8 @@
 
             function runFixedPhysics(frameTime)
             {
-                if (!lastFrameTime)
-                {
-                    lastFrameTime = frameTime
+                for (let steps = computePhysicsSteps(physicsTiming, frameTime); steps > 0; steps--)
                     physics()
-                    return
-                }
-
-                const elapsedMs = Math.min(frameTime - lastFrameTime, maxPhysicsFrameMs)
-                lastFrameTime = frameTime
-                physicsAccumulatorMs += elapsedMs
-
-                while (physicsAccumulatorMs + physicsStepEpsilonMs >= physicsStepMs)
-                {
-                    physics()
-                    physicsAccumulatorMs = Math.max(0, physicsAccumulatorMs - physicsStepMs)
-                }
             }
 
             window.onblur = function() {
