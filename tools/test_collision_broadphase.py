@@ -3,8 +3,9 @@
 Helper cases run the real script in a page. The world-state test plays 1200
 seeded ticks (render_snapshot's frozen clock and scripted input) on the base
 revision and on the candidate and requires equal state hashes for bad and
-classic. Candidate: the worktree if game files are dirty, else HEAD; base:
-HEAD or HEAD~1 respectively. Override with BROADPHASE_BASE / BROADPHASE_REV.
+classic. Candidate: the worktree if game files are dirty, else HEAD; base: the
+parent of the commit that added collision/broadphase.js (HEAD if it is not
+committed yet). Override with BROADPHASE_BASE / BROADPHASE_REV.
 """
 from contextlib import ExitStack
 import hashlib
@@ -37,7 +38,10 @@ STATE_SCRIPT = '''() => JSON.stringify({
 def default_revs():
     dirty = subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'],
                                     cwd=ROOT, text=True).strip()
-    base, rev = ('HEAD', 'worktree') if dirty else ('HEAD~1', 'HEAD')
+    added = subprocess.check_output(['git', 'log', '--diff-filter=A', '--format=%H', '--', 'collision/broadphase.js'],
+                                    cwd=ROOT, text=True).split()
+    base = added[-1] + '~1' if added else 'HEAD'
+    rev = 'worktree' if dirty else 'HEAD'
     return os.environ.get('BROADPHASE_BASE', base), os.environ.get('BROADPHASE_REV', rev)
 
 
