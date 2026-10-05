@@ -42,6 +42,20 @@ class PerfMobileTest(unittest.TestCase):
         for key in ('gc_minor_count', 'gc_major_count'):
             self.assertIsInstance(result[key], int, key)
 
+    def test_layers_run(self):
+        result = perf_mobile.run('worktree', 'bad', 5, 1, log=print, trace=False, layers=True)
+        self.assertEqual(result['page_errors'], [])
+        self.assertEqual(list(result['layers_ms']), perf_mobile.LAYERS)
+        for name, ms in result['layers_ms'].items():
+            self.assertIsNotNone(ms['p50'], name)
+            self.assertIsNotNone(ms['p95'], name)
+        for key in ('gradients_per_frame', 'shadow_draws_per_frame',
+                    'offscreen_element_draws_per_frame', 'element_draws_per_frame'):
+            self.assertGreaterEqual(result[key]['mean'], 0, key)
+        self.assertGreater(result['element_draws_per_frame']['mean'], 0)
+        self.assertLessEqual(result['offscreen_element_draws_per_frame']['mean'],
+                             result['element_draws_per_frame']['mean'])
+
     def test_gc_stats_window_and_thread(self):
         mark = {'name': perf_mobile.T0_MARK, 'ph': 'R', 'pid': 1, 'tid': 2, 'ts': 1000}
         events = [mark,

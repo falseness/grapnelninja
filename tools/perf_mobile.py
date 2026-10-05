@@ -14,8 +14,14 @@ events) and the V8 sampling heap profiler (allocations, including objects
 already collected), reported as gc_minor_count, gc_major_count, gc_total_ms
 and allocated_bytes_per_frame. With --no-trace those keys are null.
 
+--layers also times every draw layer function in render/draw.js (layers_ms)
+and counts per frame: gradients created, fill/stroke calls made while
+shadowBlur > 0 (any canvas) and floor element draw() calls whose element's
+points lie fully outside the visible view. --cpuprofile FILE saves a CDP
+Profiler (.cpuprofile) of the window.
+
 Usage: python3 tools/perf_mobile.py --rev worktree|<git rev> --mode bad|classic
-       [--seconds 20] [--seed 1] [--no-trace] --out perf.json
+       [--seconds 20] [--seed 1] [--no-trace] [--layers] [--cpuprofile F] --out perf.json
 """
 import argparse
 from contextlib import ExitStack
@@ -39,6 +45,10 @@ CLK = os.sysconf('SC_CLK_TCK')
 TRACE_CATEGORIES = ['v8', 'disabled-by-default-v8.gc', 'devtools.timeline', 'blink.user_timing']
 GC_EVENTS = {'MinorGC': 'minor', 'MajorGC': 'major'}
 T0_MARK = 'perf-mobile-t0'
+LAYERS = ['drawBackgroundLayer', 'drawLightsLayer', 'drawBehindForegroundParticlesLayer',
+          'drawPlayerTrailLayer', 'drawWorldLayer', 'drawParticlesAndTrailsLayer',
+          'drawUILayer', 'drawFpsCounterLayer']
+COUNTERS = ['gradients', 'shadow_draws', 'offscreen_element_draws', 'element_draws']
 
 # Mulberry32 replaces Math.random before any game script runs.
 SEED_SCRIPT = '''(() => {
@@ -79,6 +89,72 @@ INSTRUMENT_SCRIPT = '''() => {
         perf.current = 0
         loop0(frameTime)
         if (on) perf.steps.push(perf.current)
+    }
+}'''
+
+# --layers: wraps each draw layer and the canvas drawing calls. Counters are
+# per gameLoop frame (all canvases, including the offscreen light canvas).
+LAYERS_SCRIPT = '''([layers]) => {
+    const perf = window.__perf
+    const recording = () => perf.t0 !== null && performance.now() - perf.t0 < perf.windowMs
+    perf.layersMs = {}
+    perf.counters = {gradients: [], shadow_draws: [], offscreen_element_draws: [], element_draws: []}
+    let frame = null
+    for (const name of layers) {
+        const f = window[name]
+        perf.layersMs[name] = []
+        window[name] = function(...args) {
+            const t = performance.now()
+            const r = f.apply(this, args)
+            if (recording()) perf.layersMs[name].push(performance.now() - t)
+            return r
+        }
+    }
+    const proto = CanvasRenderingContext2D.prototype
+    for (const name of ['createLinearGradient', 'createRadialGradient']) {
+        const f = proto[name]
+        proto[name] = function(...args) {
+            if (frame) frame.gradients++
+            return f.apply(this, args)
+        }
+    }
+    for (const name of ['fill', 'stroke', 'fillRect', 'strokeRect', 'fillText', 'strokeText']) {
+        const f = proto[name]
+        proto[name] = function(...args) {
+            if (frame && this.shadowBlur > 0) frame.shadow_draws++
+            return f.apply(this, args)
+        }
+    }
+    const offscreen = element => {
+        const points = element.getPoints && element.getPoints()
+        if (!points || !points.length) return false
+        const w = canvas.width / scale[version], h = canvas.height / scale[version]
+        const xs = points.map(p => p.x + screen.x), ys = points.map(p => p.y + screen.y)
+        return Math.max(...xs) < 0 || Math.min(...xs) > w || Math.max(...ys) < 0 || Math.min(...ys) > h
+    }
+    const wrapElement = element => {
+        if (Object.prototype.hasOwnProperty.call(element, 'draw')) return
+        element.draw = function() {
+            if (frame) {
+                frame.element_draws++
+                if (offscreen(element)) frame.offscreen_element_draws++
+            }
+            return Object.getPrototypeOf(element).draw.call(element)
+        }
+    }
+    const world = window.drawWorldLayer
+    window.drawWorldLayer = function() {
+        for (const floor of floors)
+            for (const element of floor.elements) wrapElement(element)
+        return world()
+    }
+    const loop = window.gameLoop
+    window.gameLoop = function(frameTime) {
+        const on = recording()
+        frame = on ? {gradients: 0, shadow_draws: 0, offscreen_element_draws: 0, element_draws: 0} : null
+        loop(frameTime)
+        if (on) for (const k in frame) perf.counters[k].push(frame[k])
+        frame = null
     }
 }'''
 
@@ -233,7 +309,7 @@ def export_rev(rev, add_cleanup):
     return Path(scratch.name), sha
 
 
-def run(rev, mode, seconds, seed, log=print, trace=True):
+def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofile=None):
     script = input_script(seed, seconds)
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
@@ -250,10 +326,12 @@ def run(rev, mode, seconds, seed, log=print, trace=True):
         log(f'rev={rev_id} mode={mode} seed={seed} seconds={seconds} '
             f'viewport={VIEWPORT["width"]}x{VIEWPORT["height"]} dpr={DEVICE_SCALE_FACTOR} '
             f'is_mobile=True has_touch=True cpu_throttle_rate={CPU_THROTTLE_RATE} '
-            f'input_events={len(script)} trace={trace}')
+            f'input_events={len(script)} trace={trace} layers={layers} cpuprofile={cpuprofile}')
         page.goto(url + 'index.html')
         page.wait_for_function('() => typeof menu != "undefined" && menu.visible')
         page.evaluate(INSTRUMENT_SCRIPT)
+        if layers:
+            page.evaluate(LAYERS_SCRIPT, [LAYERS])
         if trace:
             cdp.send('HeapProfiler.enable')
             cdp.send('HeapProfiler.startSampling', {'includeObjectsCollectedByMajorGC': True,
@@ -261,6 +339,9 @@ def run(rev, mode, seconds, seed, log=print, trace=True):
             cdp.send('Tracing.start', {'traceConfig': {'includedCategories': TRACE_CATEGORIES,
                                                        'recordMode': 'recordAsMuchAsPossible'},
                                        'transferMode': 'ReturnAsStream'})
+        if cpuprofile:
+            cdp.send('Profiler.enable')
+            cdp.send('Profiler.start')
         page.evaluate(START_SCRIPT, [mode, script, seconds * 1000])
         cpu0, t0 = chrome_cpu_seconds(), time.monotonic()
         # Input runs in the page; Python only closes the CPU/wall window.
@@ -269,6 +350,9 @@ def run(rev, mode, seconds, seed, log=print, trace=True):
         page.wait_for_function('() => performance.now() - __perf.t0 >= __perf.windowMs',
                                timeout=60000)
         perf = page.evaluate('() => window.__perf')
+        if cpuprofile:
+            profile = cdp.send('Profiler.stop')['profile']
+            Path(cpuprofile).write_text(json.dumps(profile))
         gc = {'gc_minor_count': None, 'gc_major_count': None, 'gc_total_ms': None}
         allocated = None
         if trace:
@@ -309,6 +393,14 @@ def run(rev, mode, seconds, seed, log=print, trace=True):
                                       if allocated is not None and frames else None),
         'page_errors': errors,
     }
+    if layers:
+        result['layers_ms'] = {name: percentiles(perf['layersMs'][name]) for name in LAYERS}
+        for key in COUNTERS:
+            values = perf['counters'][key]
+            result[f'{key}_per_frame'] = {**percentiles(values),
+                                          'mean': round(sum(values) / len(values), 2) if values else None}
+        log('layers_ms=' + json.dumps(result['layers_ms']) + ' ' +
+            ' '.join(f'{k}_per_frame={result[k + "_per_frame"]}' for k in COUNTERS))
     log(f'frames={result["frames"]} frame_interval_ms={result["frame_interval_ms"]} '
         f'physics_ms={result["physics_ms"]} draw_ms={result["draw_ms"]} '
         f'steps={result["physics_steps_per_frame"]} over16.7={result["frames_over_16_7ms"]} '
@@ -330,10 +422,13 @@ def main():
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no-trace', dest='trace', action='store_false',
                         help='skip the GC trace and heap sampling (plain timing run)')
+    parser.add_argument('--layers', action='store_true',
+                        help='time each draw layer and count gradients/shadow draws/offscreen elements')
+    parser.add_argument('--cpuprofile', help='save a CDP CPU profile of the window to this file')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
     result = run(args.rev, args.mode, args.seconds, args.seed, log=lambda s: print(s, flush=True),
-                 trace=args.trace)
+                 trace=args.trace, layers=args.layers, cpuprofile=args.cpuprofile)
     Path(args.out).write_text(json.dumps(result, indent=1) + '\n')
     print(f'wrote {args.out}')
 
