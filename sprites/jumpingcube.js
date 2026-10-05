@@ -26,27 +26,30 @@ class JumpingCube extends Rect
         // Sweep each axis before moving, so even thin obstacles cannot be skipped.
         // Conservative polygon bounds also cover containment and collinear edges.
         const obstacles = []
+        let maxPad = 0
         for (const floor of floors)
         {
             for (const element of floor.elements)
             {
                 if (element === this)
                     continue
-                const points = element.getPoints()
-                const bounds = {
-                    left: Math.min(...points.map(point => point.x)),
-                    right: Math.max(...points.map(point => point.x)),
-                    top: Math.min(...points.map(point => point.y)),
-                    bottom: Math.max(...points.map(point => point.y))
-                }
+                const bounds = pointsBounds(element.getPoints())
                 // Triangles move independently; pad by one step of their motion so the
                 // cube bounces off the triangle itself without penetrating it next step.
                 bounds.pad = element instanceof Triangle ? Math.abs(element.speedY) : 0
                 bounds.top -= bounds.pad
                 bounds.bottom += bounds.pad
+                maxPad = Math.max(maxPad, bounds.pad)
                 obstacles.push(bounds)
             }
         }
+        // Broad phase: an obstacle can only stop the cube within one step of either
+        // axis (a padded stop moves at most maxPad + epsilon), so the rest are skipped.
+        const reach = Math.abs(this.speedX) + Math.abs(this.speedY) + 2 * maxPad
+            + 2 * GAMEPLAY.cubeContactEpsilon + defaultEqualityTolerance
+        const sweep = {left: this.x - reach, right: this.x + this.width + reach,
+                       top: this.y - reach, bottom: this.y + this.height + reach}
+        const candidates = obstacles.filter(bounds => boundsOverlap(sweep, bounds))
 
         for (const axis of ['x', 'y'])
         {
@@ -58,7 +61,7 @@ class JumpingCube extends Rect
             let distance = this[speed]
             let away = 0
             let minAwaySpeed = 0
-            for (const bounds of obstacles)
+            for (const bounds of candidates)
             {
                 const crossMin = vertical ? bounds.left : bounds.top
                 const crossMax = vertical ? bounds.right : bounds.bottom

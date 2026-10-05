@@ -55,10 +55,15 @@ class Grapnel
             else
                 grapnelLine = lineFormula(this.pos[q - 1][0], this.pos[q - 1][1], this.pos[q][0], this.pos[q][1])
             
+            // A hit lies on both segments, so inside both boxes.
+            const reach = segmentBounds(grapnelLine.x1, grapnelLine.y1, grapnelLine.x2, grapnelLine.y2,
+                                        defaultEqualityTolerance)
             for (let k = 0; k < floors.length; ++k)
             {
                 for (let i = 0; i < floors[k].elements.length; ++i)
                 {
+                    if (!boundsOverlap(reach, pointsBounds(floors[k].elements[i].getPoints())))
+                        continue
                     if (circlesIntersect(grapnelLine.circle, floors[k].elements[i].getCircumscribedCircle()))
                     {
                         let lines = floors[k].elements[i].getLines()

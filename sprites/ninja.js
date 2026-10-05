@@ -20,12 +20,16 @@ class Ninja
     collision()
     {
         let collision = false
+        // A line hit lies on the element within radius of the centre.
+        const reach = circleBounds(this.x, this.y, this.radius, defaultEqualityTolerance)
         for (let k = 0; k < floors.length; ++k)
         {
             for (let i = 0; i < floors[k].elements.length; ++i)
             {
                 const element = floors[k].elements[i]
                 if (!element)
+                    continue
+                if (!boundsOverlap(reach, pointsBounds(element.getPoints())))
                     continue
 
                 if (twoCirclesIntersect(this.x, this.y, this.radius, element.getCircumscribedCircle()))
