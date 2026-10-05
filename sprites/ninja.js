@@ -35,13 +35,21 @@ class Ninja
                 if (twoCirclesIntersect(this.x, this.y, this.radius, element.getCircumscribedCircle()))
                 {
                     let lines = element.getLines()
+                    let hit = false
                     for (let j = 0; j < lines.length; ++j)
                     {
                         if (this.collisionNinjaWithLine(lines[j]))
                         {
                             element.collision(this, lines[j])
                             collision = lines[j]
+                            hit = true
                         }
+                    }
+                    // A ball that already sank in still hits the nearest edge.
+                    if (!hit && pointInPolygon(element.getPoints(), this.x, this.y))
+                    {
+                        collision = nearestLine(lines, this.x, this.y)
+                        element.collision(this, collision)
                     }
                 }
             }
