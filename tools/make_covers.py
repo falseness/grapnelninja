@@ -54,6 +54,7 @@ SHOTS = {
 # (width, height) -> horizontal shift of the crop centre past the ninja
 COVER_SIZES = {
     (1920, 1080): 0.1,
+    (1360, 850): 0.1,
     (1280, 720): 0.1,
     (800, 600): 0.08,
     (800, 1200): 0.05,
