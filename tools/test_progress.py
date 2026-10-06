@@ -1,4 +1,4 @@
-"""Records, time in game and settings persist through Bridge storage."""
+"""Records, time in game and settings persist through PLATFORM storage (localStorage)."""
 import json
 import os
 from pathlib import Path
@@ -6,15 +6,14 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from playgama_harness import (bridge_calls, bridge_errors, open_game,
-                              start_playgama_test)
+from game_harness import (local_store, open_game, seed_store, start_game_test,
+                          storage_calls as all_storage_calls)
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
 TIME_KEY = 'grapnelninja.time'
 KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.muted', 'grapnelninja.lang']
-FAKE_STORE = '__fakeBridgeStorage'
 READY = ('PLATFORM.environment !== "pending" && menu.visible'
          ' && document.getElementById("loading").hidden')
 
@@ -24,13 +23,13 @@ def log(message):
 
 
 def storage_calls(page, name):
-    return [c for c in bridge_calls(page) if c['name'] == name]
+    return [c for c in all_storage_calls(page) if c['name'] == name]
 
 
 class ProgressTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
         cls.evidence = os.environ.get('PROGRESS_EVIDENCE_DIR')
 
     @classmethod
@@ -39,21 +38,17 @@ class ProgressTests(unittest.TestCase):
         out.mkdir(parents=True, exist_ok=True)
         return out
 
-    def boot(self, block_bridge=False):
-        context, page, errors = open_game(self.browser, 'about:blank', VIEWPORT,
-                                          block_bridge=block_bridge)
+    def boot(self):
+        context, page, errors = open_game(self.browser, 'about:blank', VIEWPORT)
         self.addCleanup(context.close)
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        if not block_bridge:
-            self.addCleanup(lambda: self.assertEqual(bridge_errors(page), []))
         page.goto(self.url + 'index.html')
         page.wait_for_function(READY)
         # Freeze physics so the ninja never dies on its own: run ends come
         # only from the test's own reStart() calls.
         page.evaluate('runFixedPhysics = function () {}')
-        expected = 'disabled' if block_bridge else 'playgama'
-        self.assertEqual(page.evaluate('PLATFORM.environment'), expected)
+        self.assertEqual(page.evaluate('PLATFORM.environment'), 'itch')
         return page
 
     def reload(self, page):
@@ -62,12 +57,10 @@ class ProgressTests(unittest.TestCase):
         page.evaluate('runFixedPhysics = function () {}')
 
     def fake_store(self, page):
-        return json.loads(page.evaluate(
-            f'sessionStorage.getItem("{FAKE_STORE}") || "{{}}"'))
+        return local_store(page)
 
     def seed_and_reload(self, page, store):
-        page.evaluate('([key, store]) => sessionStorage.setItem(key, JSON.stringify(store))',
-                      [FAKE_STORE, store])
+        seed_store(page, store)
         self.reload(page)
 
     def score(self, page, mode, points):
@@ -94,7 +87,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(storage_calls(page, 'storage.set'), [])
 
     def test_records_survive_reload(self):
-        """Classic and bad records come back from Bridge storage after reload."""
+        """Classic and bad records come back from localStorage after reload."""
         page = self.boot()
         self.score(page, 'classic', 7)
         page.evaluate('reStart()')
@@ -156,9 +149,9 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(json.loads(self.fake_store(page)[RECORDS_KEY]),
                          {'classic': 3, 'bad': 0})
 
-    def test_disabled_mode_uses_local_storage(self):
-        """Without the Bridge, progress goes to localStorage and survives reload."""
-        page = self.boot(block_bridge=True)
+    def test_local_storage_keys(self):
+        """Progress goes to localStorage under exactly PROGRESS.keys and survives reload."""
+        page = self.boot()
         self.score(page, 'classic', 4)
         page.evaluate('reStart()')
         self.wait_throttle(page)
@@ -169,7 +162,7 @@ class ProgressTests(unittest.TestCase):
         texts = self.menu_texts(page)
         dump = page.evaluate('''Object.fromEntries(Object.keys(localStorage).sort()
             .map(k => [k, localStorage.getItem(k)]))''')
-        log(f'disabled localStorage={dump} menu={texts}')
+        log(f'localStorage={dump} menu={texts}')
         self.assertEqual(json.loads(local), {'classic': 4, 'bad': 6})
         self.assertEqual((texts['classic'], texts['bad']), ('record: 4', 'record: 6'))
         self.assertEqual(sorted(dump), sorted(KEYS))
@@ -243,7 +236,7 @@ class ProgressTests(unittest.TestCase):
         session = {'steps': []}
 
         def snap(step):
-            calls = [c for c in bridge_calls(page) if c['name'].startswith('storage.')]
+            calls = all_storage_calls(page)
             session['steps'].append({'step': step, 'storageCallsSoFar': len(calls)})
             return calls
 

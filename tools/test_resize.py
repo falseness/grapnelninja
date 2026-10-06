@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import logical_size
-from playgama_harness import canvas_to_viewport, click_canvas, open_game, start_playgama_test
+from game_harness import canvas_to_viewport, click_canvas, open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 START_VIEWPORT = {'width': 1280, 'height': 720}
@@ -101,7 +101,7 @@ def run_state(page):
 class ResizeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
         cls.screens = os.environ.get('RESIZE_SCREENS_DIR')
         cls.evidence = os.environ.get('RESIZE_EVIDENCE_DIR')
         cls.errors = []
@@ -123,7 +123,7 @@ class ResizeTests(unittest.TestCase):
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "playgama" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "itch" && menu.visible')
         return page
 
     def write_evidence(self, name, data):

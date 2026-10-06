@@ -14,7 +14,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from playgama_harness import open_game, start_playgama_test
+from game_harness import open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
@@ -205,7 +205,7 @@ SPAWN_HOOK = r'''() => {
 class SafeRespawnTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
         cls.evidence = os.environ.get('RESPAWN_EVIDENCE_DIR')
         cls.errors = []
         cls.cases = []
@@ -252,7 +252,7 @@ class SafeRespawnTests(unittest.TestCase):
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual((errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "playgama" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "itch" && menu.visible')
         page.evaluate(SETUP)
         return page
 

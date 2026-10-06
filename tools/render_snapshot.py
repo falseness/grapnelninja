@@ -114,7 +114,7 @@ def boot_frozen(page, rounds=500):
     """Drive index.html's async boot() to the first menu frame under CLOCK_SCRIPT.
 
     boot() awaits rAF, which the frozen clock never fires on its own; the real
-    event loop runs between rounds so the Bridge script load can settle.
+    event loop runs between rounds so async boot work (storage, fonts) can settle.
     """
     for _ in range(rounds):
         if page.evaluate('() => __snap.pumpBoot()'):

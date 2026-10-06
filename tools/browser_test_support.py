@@ -1,12 +1,15 @@
 """Shared server/browser lifetime for unittest browser suites."""
 from functools import partial
+import re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
 from playwright.sync_api import sync_playwright
 
 
-BRIDGE_URL = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
+# Any request that is not to the local test server (the game loads no
+# external scripts; older baseline trees may still reference an SDK URL)
+EXTERNAL_URL = re.compile(r'^(?!https?://127\.0\.0\.1[:/])(?:https?|wss?)://')
 LOGICAL_HEIGHT = 1080
 
 
@@ -21,15 +24,15 @@ class QuietHandler(SimpleHTTPRequestHandler):
         pass
 
 
-def stub_bridge(route):
-    """Serve an empty Bridge so pages boot offline with PLATFORM disabled."""
-    route.fulfill(content_type='application/javascript', body='')
+def block_external(route):
+    """Abort the request so pages run offline."""
+    route.abort()
 
 
-class OfflineBridgeBrowser:
-    """Browser whose pages never fetch the real Playgama Bridge.
+class OfflineBrowser:
+    """Browser whose pages never reach the network beyond the test server.
 
-    Routes added later (e.g. by playgama_harness) take precedence.
+    Routes added later take precedence.
     """
     def __init__(self, browser):
         self._browser = browser
@@ -39,12 +42,12 @@ class OfflineBridgeBrowser:
 
     def new_context(self, **kwargs):
         context = self._browser.new_context(**kwargs)
-        context.route(BRIDGE_URL, stub_bridge)
+        context.route(EXTERNAL_URL, block_external)
         return context
 
     def new_page(self, **kwargs):
         page = self._browser.new_page(**kwargs)
-        page.context.route(BRIDGE_URL, stub_bridge)
+        page.context.route(EXTERNAL_URL, block_external)
         return page
 
 
@@ -71,4 +74,4 @@ def start_browser_test(root, add_cleanup):
     add_cleanup(playwright.stop)
     browser = playwright.chromium.launch(args=['--no-sandbox'])
     add_cleanup(browser.close)
-    return url, OfflineBridgeBrowser(browser)
+    return url, OfflineBrowser(browser)

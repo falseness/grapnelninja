@@ -23,7 +23,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import wait_for_boot
-from playgama_harness import click_canvas, open_game, start_playgama_test
+from game_harness import click_canvas, open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 # (width, height, touch)
@@ -114,7 +114,7 @@ def sample_menu(page, viewport):
 class FullWindowBackgroundTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
         cls.evidence = os.environ.get('FULLWINDOW_EVIDENCE_DIR')
 
     def out(self):

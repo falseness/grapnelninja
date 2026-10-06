@@ -1,27 +1,22 @@
-"""Continue offer after an eligible lethal death (TASK-080, port TASK-093,
-Playgama port TASK-125).
+"""Lethal death without the continue offer (itch.io build, no rewarded ad).
 
-Env: CONTINUE_EVIDENCE_DIR receives offer-*.png, button-rects.json and
-console/page-errors.log.
+The ad SDK build showed a Continue/Restart offer after an eligible death
+(TASK-080/093/125). The itch.io PLATFORM reports rewarded ads unsupported
+(TASK-163), so every lethal death, at any score, restarts the run at once
+and the offer never shows.
 """
-import json
-import os
 from pathlib import Path
 import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import logical_size
-import playgama_harness as h
-from playgama_harness import bridge_calls, open_game, start_playgama_test
+from game_harness import open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 
 # Count reStart calls and pin the ninja at its start state after every physics
 # tick so it never dies on its own. window.__kill moves it behind the deletion
 # border before the next tick: a real lethal death through ninja.move().
-# While the offer is shown the ninja is left alone, so a frozen run shows as
-# unchanged x/y.
 INSTRUMENT_RUN = '''() => {
     window.__reStarts = 0
     const original = window.reStart
@@ -51,87 +46,33 @@ INSTRUMENT_RUN = '''() => {
     }
 }'''
 
-BUTTON_RECTS = '''() => {
-    const rect = canvas.getBoundingClientRect()
-    const css = rect.height / height
-    const one = b => ({x: b.background.x, y: b.background.y,
-        width: b.background.width, height: b.background.height,
-        font: b.text.fontSize, fontPx: parseFloat(b.text.fontSize),
-        cssWidth: b.background.width * css, cssHeight: b.background.height * css,
-        cssFontPx: parseFloat(b.text.fontSize) * css,
-        stroke: b.background.stroke, fill: b.background.fill, label: b.text.text})
-    return {logical: {width: width, height: height}, canvasCss: rect.toJSON(),
-            continue: one(continueOffer.continueButton), restart: one(continueOffer.restartButton)}
-}'''
-
-
-def show_ad_count(page):
-    return sum(c['name'] == 'advertisement.showRewarded' for c in bridge_calls(page))
-
-
-def canvas_to_viewport(page, x, y):
-    """CSS viewport point of logical canvas point (x, y)."""
-    return page.evaluate('''([x, y]) => { const r = canvas.getBoundingClientRect()
-        return {x: r.left + x * r.width / width, y: r.top + y * r.height / height} }''',
-        [x, y])
-
-
-def click_canvas(page, x, y):
-    point = canvas_to_viewport(page, x, y)
-    page.mouse.click(point['x'], point['y'])
-
 
 def state(page):
     return page.evaluate('''() => ({offer: continueOffer.visible, score: scoreText.count[version],
         reStarts: window.__reStarts, continueUsed: continueUsed,
-        x: ninja.x, y: ninja.y, gamePaused: menu.gamePaused, menuVisible: menu.visible})''')
+        gamePaused: menu.gamePaused, menuVisible: menu.visible})''')
 
 
-class ContinueTests(unittest.TestCase):
+class NoContinueTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
-        cls.evidence = os.environ.get('CONTINUE_EVIDENCE_DIR')
-        cls.errors = []
-        cls.rects = {}
+        cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
 
-    @classmethod
-    def tearDownClass(cls):
-        if cls.evidence:
-            out = Path(cls.evidence)
-            out.mkdir(parents=True, exist_ok=True)
-            for kind in ('console', 'page'):
-                lines = [f'{name}: {msg}' for name, errors in cls.errors
-                         for msg in errors[kind]]
-                (out / f'{kind}-errors.log').write_text(''.join(
-                    line + '\n' for line in lines))
-            if cls.rects:
-                (out / 'button-rects.json').write_text(json.dumps(cls.rects, indent=1) + '\n')
-
-    def boot(self, viewport, touch=False):
-        if touch:
-            context = self.browser.new_context(viewport=viewport, has_touch=True, is_mobile=True)
-            context.route(h.BRIDGE_URL, lambda route: route.fulfill(
-                path=str(h.FAKE_BRIDGE), content_type='application/javascript'))
-            context.route(h.CONFIG_ROUTE, h.serve_config)
-            page = context.new_page()
-            errors = h.collect_errors(page)
-            page.goto(self.url + 'index.html')
-        else:
-            context, page, errors = open_game(self.browser, self.url + 'index.html', viewport)
+    def boot(self, viewport, **context_options):
+        context, page, errors = open_game(self.browser, self.url + 'index.html', viewport,
+                                          **context_options)
         self.addCleanup(context.close)
-        self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "playgama" && menu.visible'
+        page.wait_for_function('PLATFORM.environment === "itch" && menu.visible'
                                ' && document.getElementById("loading").hidden', timeout=15000)
+        self.assertEqual(page.evaluate('PLATFORM.isRewardedSupported()'), False)
         page.evaluate(INSTRUMENT_RUN)
         page.evaluate('''() => {
             const b = menu.classicVersionButton.background
             menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2})
         }''')
         page.wait_for_timeout(300)
-        self.assertEqual(show_ad_count(page), 0)
         return page
 
     def kill(self, page, score):
@@ -139,148 +80,24 @@ class ContinueTests(unittest.TestCase):
         page.wait_for_function('!window.__kill')
         page.wait_for_timeout(100)
 
-    def wait_input(self, page):
-        # events.js ignores input for STYLE.timing.inputUntouchMs after a button click
-        page.wait_for_timeout(page.evaluate('STYLE.timing.inputUntouchMs') + 100)
+    def check_instant_restarts(self, page, scores):
+        for i, score in enumerate(scores, 1):
+            self.kill(page, score)
+            s = state(page)
+            self.assertEqual((s['offer'], s['reStarts'], s['score'], s['continueUsed']),
+                             (False, i, 0, False), f'score {score}')
+            self.assertFalse(s['gamePaused'] or s['menuVisible'], f'score {score}')
+            print(f'  ASSERT score {score} death -> instant reStart, no offer: pass',
+                  file=sys.stderr)
 
-    def click_button(self, page, name):
-        b = page.evaluate(f'''(() => {{ const b = continueOffer.{name}.background
-            return {{x: b.x + b.width / 2, y: b.y + b.height / 2}} }})()''')
-        click_canvas(page, b['x'], b['y'])
-        self.wait_input(page)
-
-    def tap_button(self, page, name):
-        b = page.evaluate(f'''(() => {{ const b = continueOffer.{name}.background
-            return {{x: b.x + b.width / 2, y: b.y + b.height / 2}} }})()''')
-        p = canvas_to_viewport(page, b['x'], b['y'])
-        page.touchscreen.tap(round(p['x']), round(p['y']))
-        self.wait_input(page)
-
-    def save(self, page, name):
-        if self.evidence:
-            out = Path(self.evidence)
-            out.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=str(out / name))
-
-    def record_rects(self, page, key):
-        rects = page.evaluate(BUTTON_RECTS)
-        self.rects[key] = rects
-        a, b = rects['continue'], rects['restart']
-        for k in ('width', 'height', 'fontPx', 'stroke', 'fill'):
-            self.assertEqual(a[k], b[k], f'{key}: buttons differ in {k}')
-        # Inside the logical canvas and not overlapping each other
-        for r in (a, b):
-            self.assertGreaterEqual(r['x'], 0)
-            self.assertLessEqual(r['x'] + r['width'], rects['logical']['width'])
-            self.assertGreaterEqual(r['y'], 0)
-            self.assertLessEqual(r['y'] + r['height'], rects['logical']['height'])
-        self.assertLessEqual(a['y'] + a['height'], b['y'])
-        self.assertGreaterEqual(min(a['cssFontPx'], b['cssFontPx']), 12)
-        print(f'\n  {key}: buttons {a["width"]:.1f}x{a["height"]:.1f} font {a["fontPx"]:.2f}'
-              f' (css {a["cssFontPx"]:.2f}px) equal: pass', file=sys.stderr)
-        return rects
-
-    def test_continue_flow_mouse(self):
+    def test_death_restarts_instantly_mouse(self):
         page = self.boot({'width': 1280, 'height': 720})
-
-        # (a) score < CONTINUE_MIN_SCORE: instant restart, no overlay
         self.assertEqual(page.evaluate('CONTINUE_MIN_SCORE'), 5)
-        self.kill(page, 4)
-        s = state(page)
-        self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 1, 0))
-        self.assertEqual(show_ad_count(page), 0)
-        print('  ASSERT (a) score 4 death -> instant reStart, no overlay: pass', file=sys.stderr)
+        self.check_instant_restarts(page, [4, 5, 7])
 
-        # (b) score >= 5: overlay, frozen physics, no ad requested yet
-        self.kill(page, 5)
-        before = state(page)
-        self.assertTrue(before['offer'])
-        self.assertEqual(before['reStarts'], 1)
-        page.wait_for_timeout(1000)
-        after = state(page)
-        self.assertTrue(after['offer'])
-        self.assertEqual((after['x'], after['y']), (before['x'], before['y']))
-        self.assertEqual(show_ad_count(page), 0)
-        print(f'  ASSERT (b) score 5 death -> overlay; ninja ({before["x"]:.3f},'
-              f' {before["y"]:.3f}) unchanged over 1 s; no showAd: pass',
-              file=sys.stderr)
-        self.record_rects(page, '1280x720')
-        self.save(page, 'offer-1280x720.png')
-
-        # Live re-layout while the offer is shown (4:3 changes the logical width)
-        page.set_viewport_size({'width': 1024, 'height': 768})
-        page.wait_for_function('continueOffer.width == width && width == %d'
-                               % logical_size(1024, 768)[0])
-        page.wait_for_timeout(200)
-        narrow = self.record_rects(page, '1024x768')
-        self.assertLess(narrow['continue']['width'], self.rects['1280x720']['continue']['width'])
-        self.save(page, 'offer-1024x768.png')
-        page.set_viewport_size({'width': 800, 'height': 450})
-        page.wait_for_function('continueOffer.width == width && width == %d'
-                               % logical_size(800, 450)[0])
-        page.wait_for_timeout(200)
-        self.assertTrue(state(page)['offer'])
-        self.record_rects(page, '800x450')
-        self.save(page, 'offer-800x450.png')
-
-        # Pause keys and blur do nothing while the offer is shown
-        page.keyboard.press('Escape')
-        page.evaluate('window.dispatchEvent(new Event("blur"))')
-        self.assertFalse(state(page)['gamePaused'])
-
-        # (c) Restart: score 0, overlay hidden
-        self.click_button(page, 'restartButton')
-        s = state(page)
-        self.assertEqual((s['offer'], s['reStarts'], s['score'], s['continueUsed']),
-                         (False, 2, 0, False))
-        self.assertEqual(show_ad_count(page), 0)
-        print('  ASSERT (c) Restart -> score 0, overlay hidden: pass',
-              file=sys.stderr)
-
-        # (e) after a restart the run is eligible again
-        self.kill(page, 6)
-        self.assertTrue(state(page)['offer'])
-        self.assertEqual(show_ad_count(page), 0)
-        print('  ASSERT (e) eligible again after restart: pass', file=sys.stderr)
-
-        # Continue: the ninja respawns at a safe point and resumes physics
-        self.click_button(page, 'continueButton')
-        # Continue is asynchronous since the rewarded ad (TASK-082)
-        page.wait_for_function('!continueOffer.visible')
-        s = state(page)
-        self.assertEqual((s['offer'], s['reStarts'], s['score'], s['continueUsed']),
-                         (False, 2, 6, True))
-        self.assertEqual(show_ad_count(page), 1)
-
-        # (d) a second eligible death in the same run restarts instantly
-        # (once the respawn invulnerability has run out)
-        page.wait_for_function('!ninja.isInvulnerable()')
-        self.kill(page, 7)
-        s = state(page)
-        self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 3, 0))
-        self.assertEqual(show_ad_count(page), 1)
-        print('  ASSERT (d) second eligible death after continue -> instant reStart: pass',
-              file=sys.stderr)
-
-    def test_touch_restart_844x390(self):
-        page = self.boot({'width': 844, 'height': 390}, touch=True)
-        self.kill(page, 5)
-        self.assertTrue(state(page)['offer'])
-        self.assertEqual(show_ad_count(page), 0)
-        self.record_rects(page, '844x390')
-        self.save(page, 'offer-844x390-touch.png')
-        self.tap_button(page, 'restartButton')
-        s = state(page)
-        self.assertEqual((s['offer'], s['reStarts'], s['score']), (False, 1, 0))
-        self.assertEqual(show_ad_count(page), 0)
-
-        self.kill(page, 5)
-        self.tap_button(page, 'continueButton')
-        page.wait_for_function('!continueOffer.visible')
-        s = state(page)
-        self.assertEqual((s['offer'], s['continueUsed']), (False, True))
-        self.assertEqual(show_ad_count(page), 1)
-        print('  ASSERT touch tap Restart and Continue at 844x390: pass', file=sys.stderr)
+    def test_death_restarts_instantly_touch_844x390(self):
+        page = self.boot({'width': 844, 'height': 390}, has_touch=True, is_mobile=True)
+        self.check_instant_restarts(page, [5, 6])
 
 
 if __name__ == '__main__':

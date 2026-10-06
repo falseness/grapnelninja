@@ -8,7 +8,6 @@ import unittest
 from PIL import Image, ImageChops
 
 from browser_test_support import start_browser_test
-from playgama_harness import BRIDGE_URL
 from verification_support import baseline_route, load_baseline_sources
 
 
@@ -104,10 +103,6 @@ class ViewportEffectsTests(unittest.TestCase):
                 if message.type == 'error' else None)
         try:
             page.add_init_script(CHECKER.init)
-            # Keep the real Bridge (and its splash screen) out, so PLATFORM
-            # boots disabled
-            page.route(BRIDGE_URL, lambda route: route.fulfill(
-                content_type='application/javascript', body=''))
             if baseline:
                 page.route('**/*', baseline_route(self.baseline))
             page.goto(self.url)

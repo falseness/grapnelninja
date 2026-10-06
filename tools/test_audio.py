@@ -7,7 +7,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from playgama_harness import bridge_errors, open_game, start_playgama_test
+from game_harness import open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
@@ -26,7 +26,7 @@ def log(message):
 class AudioTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
         cls.evidence = os.environ.get('AUDIO_EVIDENCE_DIR')
 
     def write_evidence(self, name, data):
@@ -43,7 +43,6 @@ class AudioTests(unittest.TestCase):
         self.addCleanup(context.close)
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        self.addCleanup(lambda: self.assertEqual(bridge_errors(page), []))
         page.goto(self.url + 'index.html')
         page.wait_for_function(READY)
         # Keep the game idle: only the test touches AUDIO

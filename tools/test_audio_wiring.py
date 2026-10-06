@@ -1,13 +1,12 @@
-"""Sounds wired into gameplay, the speaker mute button, pause during the ad.
+"""Sounds wired into gameplay and the speaker mute button.
 
 Every gameplay event is checked through window.__audioLog (audio.js logs
 each AUDIO.play). The mute button toggles the 'user' mute source and is
-saved under grapnelninja.muted. The pause-during-ad tests are the TASK-107
-g05/g06 cases: a hidden tab or a window blur while the rewarded ad plays
-pauses the run right after the respawn.
+saved under grapnelninja.muted. (The itch.io build has no rewarded ad, so
+the pause-during-ad cases g05/g06 of the ad SDK build are gone.)
 
 Env: AUDIO_WIRING_EVIDENCE_DIR receives event-sounds.json, mute-persist.json,
-hit-areas.json, pause-during-ad.json and screens/{menu,pause,hud}-WxH.png.
+hit-areas.json and screens/{menu,pause,hud}-WxH.png.
 """
 import json
 import os
@@ -16,9 +15,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import playgama_harness as harness
-from playgama_harness import (bridge_calls, bridge_errors, open_game,
-                              start_playgama_test)
+from game_harness import open_game, start_game_test, storage_calls
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
@@ -26,10 +23,6 @@ PORTRAIT = {'width': 390, 'height': 844}
 MUTED_KEY = 'grapnelninja.muted'
 READY = ('PLATFORM.environment !== "pending" && menu.visible'
          ' && document.getElementById("loading").hidden')
-# The rewarded ad stays 'opened' long enough to act while it plays
-# 5 s: the ad must still be open when a loaded host gets to the blur/hidden check
-SLOW_REWARD = {'rewardedSeq': ['loading', 'opened',
-                               {'state': 'rewarded', 'delayMs': 5000}, 'closed']}
 
 # Keep the ninja where it is after every physics tick so it never dies on its
 # own; while the continue offer is shown the ninja is left alone.
@@ -58,14 +51,6 @@ PIN_NINJA = '''() => {
     }
 }'''
 
-SET_VISIBILITY = '''(state) => {
-    Object.defineProperty(document, 'visibilityState',
-        {configurable: true, get: () => state})
-    Object.defineProperty(document, 'hidden',
-        {configurable: true, get: () => state === 'hidden'})
-    document.dispatchEvent(new Event('visibilitychange'))
-}'''
-
 CENTER = '''(path) => { const b = eval(path).background
     return {x: b.x + b.width / 2, y: b.y + b.height / 2} }'''
 
@@ -82,20 +67,14 @@ def canvas_to_viewport(page, x, y):
 
 
 def storage_sets(page):
-    return [c for c in bridge_calls(page) if c['name'] == 'storage.set']
+    return [c for c in storage_calls(page) if c['name'] == 'storage.set']
 
 
 class AudioWiringTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
         cls.evidence = os.environ.get('AUDIO_WIRING_EVIDENCE_DIR')
-        cls.pause_cases = {}
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls.pause_cases:
-            cls.write_evidence('pause-during-ad.json', cls.pause_cases)
 
     @classmethod
     def write_evidence(cls, name, data):
@@ -112,31 +91,19 @@ class AudioWiringTests(unittest.TestCase):
         out.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(out / name))
 
-    def boot(self, viewport=VIEWPORT, fake=None, touch=False):
+    def boot(self, viewport=VIEWPORT, touch=False):
         if touch:
-            context, page, errors = self.touch_context(viewport, fake)
+            context, page, errors = open_game(self.browser, 'about:blank', viewport,
+                                              has_touch=True, is_mobile=True)
         else:
-            context, page, errors = open_game(self.browser, 'about:blank', viewport, fake)
+            context, page, errors = open_game(self.browser, 'about:blank', viewport)
         self.addCleanup(context.close)
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        self.addCleanup(lambda: self.assertEqual(bridge_errors(page), []))
         page.goto(self.url + 'index.html')
         page.wait_for_function(READY)
         page.evaluate(PIN_NINJA)
         return page
-
-    def touch_context(self, viewport, fake):
-        context = self.browser.new_context(viewport=viewport, has_touch=True,
-                                           is_mobile=True)
-        context.route(harness.BRIDGE_URL, lambda route: route.fulfill(
-            path=str(harness.FAKE_BRIDGE), content_type='application/javascript'))
-        context.route(harness.CONFIG_ROUTE, harness.serve_config)
-        context.add_init_script(
-            f'window.__fakeBridge = Object.assign(window.__fakeBridge || {{}}, '
-            f'{json.dumps(fake or {})})')
-        page = context.new_page()
-        return context, page, harness.collect_errors(page)
 
     def reload(self, page):
         page.reload()
@@ -276,7 +243,6 @@ class AudioWiringTests(unittest.TestCase):
                  ('HUD menu button again', lambda: self.click_hud_menu(page)),
                  ('back to menu', lambda: self.click_button(page, 'menu.backToMenu')),
                  ('main version', lambda: self.click_button(page, 'menu.badVersionButton')),
-                 ('offer restart', lambda: self.offer_restart(page)),
                  ('mute (menu)', lambda: self.click_mute_after_menu(page))]
         seen = []
         for name, action in steps:
@@ -296,12 +262,6 @@ class AudioWiringTests(unittest.TestCase):
             return {x: (b.x + b.width / 2) * s, y: (b.y + b.height / 2) * s} }''')
         self.click_logical(page, c['x'], c['y'])
         self.assertTrue(page.evaluate('menu.gamePaused'))
-
-    def offer_restart(self, page):
-        page.evaluate('() => { scoreText.count[version] = 5; onLethalDeath() }')
-        self.assertTrue(page.evaluate('continueOffer.visible'))
-        self.click_button(page, 'continueOffer.restartButton')
-        self.assertFalse(page.evaluate('continueOffer.visible'))
 
     def click_mute_after_menu(self, page):
         page.evaluate('() => { menu.backToMenu.clickable = true; menu.backToMenu.click() }')
@@ -431,37 +391,6 @@ class AudioWiringTests(unittest.TestCase):
                 self.screenshot(page, f'{where}-{size}.png')
                 log(f'{where} {size}: {info["cssWidth"]:.1f} CSS px, pixel {info["speakerPixel"]}')
         self.write_evidence('hit-areas.json', areas)
-
-    # TASK-107 g05/g06 re-port: pause requested while the ad is pending
-
-    def paused_after_ad(self, how):
-        page = self.boot(fake=SLOW_REWARD)
-        self.start(page)
-        page.evaluate('() => { scoreText.count[version] = 5; onLethalDeath() }')
-        self.assertTrue(page.evaluate('continueOffer.visible'))
-        self.click_button(page, 'continueOffer.continueButton')
-        self.assertTrue(page.evaluate('continueOffer.adPending'), 'ad not pending')
-        if how == 'hidden':
-            page.evaluate(SET_VISIBILITY, 'hidden')
-        else:
-            page.evaluate('window.dispatchEvent(new Event("blur"))')
-        during = page.evaluate('({paused: menu.gamePaused, offer: continueOffer.visible})')
-        page.wait_for_function('!continueOffer.visible', timeout=10000)
-        if how == 'hidden':
-            page.evaluate(SET_VISIBILITY, 'visible')
-        state = page.evaluate('''({paused: menu.gamePaused, offer: continueOffer.visible,
-            continueUsed: continueUsed, invulnerable: ninja.isInvulnerable()})''')
-        self.pause_cases[how] = {'duringAd': during, 'afterRespawn': state}
-        self.assertEqual(during, {'paused': False, 'offer': True})
-        self.assertTrue(state['paused'], f'{how} during the ad: run not paused after the respawn')
-        self.assertTrue(state['continueUsed'])
-        log(f'{how} during the ad -> {state}')
-
-    def test_g05_hidden_during_ad_pauses_after(self):
-        self.paused_after_ad('hidden')
-
-    def test_g06_blur_during_ad_pauses_after(self):
-        self.paused_after_ad('blur')
 
 
 if __name__ == '__main__':

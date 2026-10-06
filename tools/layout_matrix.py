@@ -1,7 +1,8 @@
-"""Layout checks per screen, size and language (Playgama UX rules).
+"""Layout checks per screen, size and language.
 
-For each (language, size) one page is opened against the fake Bridge and
-walked through menu -> hud -> pause -> continue offer -> ad unavailable.
+For each (language, size) one page is opened (browser locale = language)
+and walked through menu -> hud -> pause. The itch.io build has no rewarded
+ad, so the continue offer and ad-unavailable screens never show.
 Every screen is drawn once with LAYOUT_PROBE.boxes on (menu.js), which
 returns the text and button boxes in CSS px relative to the canvas.
 
@@ -15,10 +16,9 @@ Checks per shot:
 - min_font_px: smallest text, >= 12
 - min_button_px: smallest button side, >= 44 on touch sizes
 """
-import json
 from pathlib import Path
 
-from playgama_harness import BRIDGE_URL, CONFIG_ROUTE, FAKE_BRIDGE, collect_errors, serve_config
+from game_harness import open_game
 from test_audio_wiring import READY
 from test_continue import INSTRUMENT_RUN
 
@@ -28,7 +28,7 @@ SIZES = [(360, 640, True), (390, 844, True), (915, 412, True), (844, 390, True),
          (2560, 1080, False), (1280, 500, False), (925, 925, False), (1024, 768, False),
          (1280, 1024, False)]
 LANGS = {'en': 'en-US', 'ru': 'ru-RU'}
-SCREENS = ['menu', 'hud', 'pause', 'offer', 'ad_unavailable']
+SCREENS = ['menu', 'hud', 'pause']
 MAX_ASPECT = 2.0
 MIN_FONT_PX = 12
 MIN_BUTTON_PX = 44
@@ -50,8 +50,6 @@ DRAW = {
     'menu': 'menu.draw()',
     'hud': 'draw()',
     'pause': 'menu.drawPauseScreen()',
-    'offer': 'continueOffer.draw()',
-    'ad_unavailable': 'continueOffer.draw()',
 }
 
 
@@ -133,19 +131,11 @@ def evaluate(shot, touch):
 
 def open_page(browser, url, size, touch, locale):
     w, h = size
-    kwargs = {'viewport': {'width': w, 'height': h}}
+    kwargs = {'locale': locale}
     if touch:
         kwargs.update(has_touch=True, is_mobile=True, device_scale_factor=2)
-    context = browser.new_context(**kwargs)
-    context.route(BRIDGE_URL, lambda route: route.fulfill(
-        path=str(FAKE_BRIDGE), content_type='application/javascript'))
-    context.route(CONFIG_ROUTE, serve_config)
-    context.add_init_script(
-        f'window.__fakeBridge = Object.assign(window.__fakeBridge || {{}}, '
-        f'{json.dumps({"language": locale})})')
-    page = context.new_page()
-    errors = collect_errors(page)
-    page.goto(url + 'index.html')
+    context, page, errors = open_game(browser, url + 'index.html',
+                                      {'width': w, 'height': h}, **kwargs)
     page.wait_for_function(READY, timeout=15000)
     return context, page, errors
 
@@ -178,12 +168,6 @@ def walk(browser, url, lang, size, touch, shots_dir=None):
         shot('hud')
         page.evaluate('menu.startPause()')
         shot('pause')
-        page.evaluate('menu.unPause()')
-        page.evaluate('() => { scoreText.count[version] = 7; window.__kill = true }')
-        page.wait_for_function('continueOffer.visible')
-        shot('offer')
-        page.evaluate('continueOffer.showAdError()')
-        shot('ad_unavailable')
         assert (errors['console'], errors['page']) == ([], []), errors
     finally:
         context.close()

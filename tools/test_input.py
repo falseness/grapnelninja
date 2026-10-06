@@ -6,8 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from playgama_harness import (bridge_calls, canvas_to_viewport, open_game,
-                              start_playgama_test)
+from game_harness import canvas_to_viewport, open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 TOUCH_VIEWPORT = {'width': 844, 'height': 390}
@@ -53,7 +52,7 @@ def count_tap_throws(page):
 class InputTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
         cls.evidence = os.environ.get('INPUT_EVIDENCE_DIR')
         cls.errors = []
 
@@ -78,7 +77,7 @@ class InputTests(unittest.TestCase):
         context, page, errors = open_game(self.browser, 'about:blank', DESKTOP_VIEWPORT)
         self.track(context, errors)
         page.goto(self.url + 'index.html')
-        page.wait_for_function('PLATFORM.environment === "playgama" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "itch" && menu.visible')
         return page
 
     def out(self):
@@ -153,17 +152,13 @@ class InputTests(unittest.TestCase):
     def test_visibility_hidden_pauses(self):
         page = self.boot_desktop()
         start_classic(page)
-        before = [c['name'] for c in bridge_calls(page)]
         page.evaluate('''() => {
             Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true})
             Object.defineProperty(document, 'hidden', {value: true, configurable: true})
             document.dispatchEvent(new Event('visibilitychange'))
         }''')
         self.assertTrue(page.evaluate('menu.gamePaused'))
-        names = [c['name'] for c in bridge_calls(page)]
-        print(f'\n  bridge calls after hidden={names[len(before):]}', file=sys.stderr)
-        self.assertEqual([n for n in names[len(before):] if n.startswith('advertisement.show')], [])
-        print('  ASSERT visibilitychange hidden -> gamePaused, no ad shown: pass',
+        print('\n  ASSERT visibilitychange hidden -> gamePaused: pass',
               file=sys.stderr)
 
     def test_computed_style(self):

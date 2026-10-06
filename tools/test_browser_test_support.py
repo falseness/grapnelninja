@@ -40,7 +40,7 @@ class BrowserTestSupportTests(unittest.TestCase):
                     url, actual_browser = support.start_browser_test(
                         Path('/supplied/root'), owner.addCleanup)
                     self.assertEqual(url, 'http://127.0.0.1:12345/')
-                    self.assertIsInstance(actual_browser, support.OfflineBridgeBrowser)
+                    self.assertIsInstance(actual_browser, support.OfflineBrowser)
                     self.assertIs(actual_browser._browser, browser)
                 thread.start.assert_called_once_with()
                 playwright.chromium.launch.assert_called_once_with(args=['--no-sandbox'])

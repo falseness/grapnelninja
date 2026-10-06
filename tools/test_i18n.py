@@ -1,13 +1,13 @@
 """English + Russian localization (TASK-126).
 
-Runs against the fake Bridge (tools/fixtures/fake-playgama-bridge.js), whose
-'language' option is what bridge.platform.language returns. Boot language:
-the saved 'grapnelninja.lang' storage value, else 'ru' for a platform
-language starting with 'ru', else 'en'. The menu's LANGUAGE_BUTTON switches
-language at once and saves it through the single storage.set.
+The browser locale is navigator.language, which the itch.io PLATFORM reports
+as its language. Boot language: the saved 'grapnelninja.lang' storage value,
+else 'ru' for a platform language starting with 'ru', else 'en'. The menu's
+LANGUAGE_BUTTON switches language at once and saves it through the single
+storage write (localStorage, observed by game_harness's storage spy).
 
 Env: I18N_EVIDENCE_DIR receives key-parity.txt, ru-strings.md and
-screens/{en,ru}/{menu,pause,offer,hud}.png (1280x720) plus the same under
+screens/{en,ru}/{menu,pause,hud}.png (1280x720) plus the same under
 screens/{en,ru}/390x844/.
 """
 import json
@@ -17,8 +17,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from playgama_harness import (bridge_calls, bridge_errors, open_game,
-                              start_playgama_test)
+from game_harness import open_game, start_game_test, storage_calls
 from test_audio_wiring import READY, canvas_to_viewport
 import test_continue as continue_test
 
@@ -56,16 +55,15 @@ def log(msg):
 class I18nTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.url, cls.browser = start_playgama_test(ROOT, cls.addClassCleanup)
+        cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
         cls.evidence = os.environ.get('I18N_EVIDENCE_DIR')
 
     def open(self, language, viewport=VIEWPORT):
         context, page, errors = open_game(self.browser, self.url + 'index.html',
-                                          viewport, {'language': language})
+                                          viewport, locale=language)
         self.addCleanup(context.close)
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        self.addCleanup(lambda: self.assertEqual(bridge_errors(page), []))
         page.wait_for_function(READY, timeout=15000)
         return page
 
@@ -81,7 +79,7 @@ class I18nTests(unittest.TestCase):
 
     def saved_langs(self, page):
         out = []
-        for c in bridge_calls(page):
+        for c in storage_calls(page):
             if c['name'] == 'storage.set' and LANG_KEY in c['args'][0]:
                 out.append(c['args'][1][c['args'][0].index(LANG_KEY)])
         return out
@@ -108,7 +106,7 @@ class I18nTests(unittest.TestCase):
         ui = self.ui(page)
         self.assertEqual((ui['lang'], ui['chill'], ui['button'], ui['htmlLang']),
                          ('ru', 'спокойный режим', 'Русский', 'ru'))
-        page.wait_for_function(f'''() => (window.__fakeBridge.calls || []).some(c =>
+        page.wait_for_function(f'''() => window.__storageSpy.calls.some(c =>
             c.name == 'storage.set' && c.args[0].includes({json.dumps(LANG_KEY)}))''')
         self.assertEqual(self.saved_langs(page), ['ru'])
         page.reload()
@@ -121,7 +119,7 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(self.ui(page)['lang'], 'ru')
         self.click_language(page)
         self.assertEqual(self.ui(page)['lang'], 'en')
-        page.wait_for_function(f'''() => (window.__fakeBridge.calls || []).some(c =>
+        page.wait_for_function(f'''() => window.__storageSpy.calls.some(c =>
             c.name == 'storage.set' && c.args[0].includes({json.dumps(LANG_KEY)}))''')
         self.assertEqual(self.saved_langs(page), ['en'])
         page.reload()
@@ -199,11 +197,7 @@ class I18nTests(unittest.TestCase):
         page.wait_for_timeout(100)
         page.screenshot(path=str(out / 'pause.png'))
         page.evaluate('menu.unPause()')
-        page.evaluate('() => { scoreText.count[version] = 7; window.__kill = true }')
-        page.wait_for_function('continueOffer.visible')
-        page.wait_for_timeout(200)
-        page.screenshot(path=str(out / 'offer.png'))
-        log(f'{lang} {viewport["width"]}x{viewport["height"]}: menu/hud/pause/offer saved')
+        log(f'{lang} {viewport["width"]}x{viewport["height"]}: menu/hud/pause saved')
 
 
 if __name__ == '__main__':
