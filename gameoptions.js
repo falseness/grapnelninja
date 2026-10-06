@@ -1,9 +1,42 @@
 const widthHeightRatio = 1.8250950570342206
-const viewportWidth = window.innerWidth
-const viewportHeight = window.innerHeight
-const forceLandscapeViewport = viewportWidth < viewportHeight
-const height    = forceLandscapeViewport ? viewportWidth : viewportHeight
-const width     = forceLandscapeViewport ? viewportHeight : viewportWidth//height * widthHeightRatio
+// Logical viewport: height is always 1080 units, width follows the window
+// aspect clamped to [4:3, 2:1] on desktop (Playgama: play field at most 2:1).
+// Touch-first devices are not capped: a landscape phone (about 2.2:1, wider
+// with the browser bars) gets the whole screen (Playgama: full screen on mobile).
+// The canvas CSS box letterboxes that aspect.
+const LOGICAL_HEIGHT = 1080
+const minViewportAspect = 4 / 3
+const maxViewportAspect = 2
+function isTouchFirstDevice()
+{
+    return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+}
+function computeLogicalWidth()
+{
+    const touch = isTouchFirstDevice()
+    const aspect = Math.min(touch ? Infinity : maxViewportAspect,
+                            Math.max(minViewportAspect, window.innerWidth / window.innerHeight))
+    // Touch: never round wider than the window, so the canvas fits by height
+    // and keeps the 44 CSS px touch floor exact (see MUTE_BUTTON.minSize)
+    return (touch ? Math.floor : Math.round)(LOGICAL_HEIGHT * aspect)
+}
+const height    = LOGICAL_HEIGHT
+// Mutable: a live window resize recomputes it (see updateLogicalViewport).
+let width       = computeLogicalWidth()
+let LOGICAL_VIEWPORT = Object.freeze({width: width, height: height})
+
+// Recomputes the logical width from the window; returns true if it changed.
+function updateLogicalViewport()
+{
+    const nextWidth = computeLogicalWidth()
+
+    if (nextWidth == width)
+        return false
+
+    width = nextWidth
+    LOGICAL_VIEWPORT = Object.freeze({width: width, height: height})
+    return true
+}
 
 // Logical canvas percentages; baseline gameplay was measured at 1920 x 1080.
 function screenWidthPercent(percent) { return width * (percent / 100) }
@@ -30,37 +63,55 @@ const GAMEPLAY = Object.freeze({
 })
 const defaultEqualityTolerance = 1
 
-function configureCanvasViewport(canvas)
+// A lethal death offers a continue once per run, from this score on.
+const CONTINUE_MIN_SCORE = 5
+// After a continue the ninja ignores lethal hits for this much physics time
+// and blinks; the respawn zone is kept clear for a margin beyond it.
+const RESPAWN_INVULNERABLE_MS = 2000
+const RESPAWN_SAFE_MARGIN_MS = 1000
+const RESPAWN_BLINK_MS = 125
+const RESPAWN_BLINK_ALPHA = 0.25
+
+// Largest centred CSS rectangle of the logical aspect that fits the window.
+function getCanvasCssRect()
 {
+    const fit = Math.min(window.innerWidth / width, window.innerHeight / height)
+    const cssWidth = width * fit
+    const cssHeight = height * fit
+
+    return {
+        left: (window.innerWidth - cssWidth) / 2,
+        top: (window.innerHeight - cssHeight) / 2,
+        width: cssWidth,
+        height: cssHeight
+    }
+}
+
+// Sizes the CSS box and backing store (CSS size * DPR) and applies the base
+// transform so all drawing code works in logical units.
+function configureCanvasViewport(canvas, context)
+{
+    const rect = getCanvasCssRect()
+    const dpr = window.devicePixelRatio || 1
+
     canvas.style.position = 'fixed'
-    canvas.style.left = '50%'
-    canvas.style.top = '50%'
-    canvas.style.width = width + 'px'
-    canvas.style.height = height + 'px'
-    canvas.style.transformOrigin = 'center center'
-    canvas.style.transform = forceLandscapeViewport ? 'translate(-50%, -50%) rotate(90deg)' : 'translate(-50%, -50%)'
+    canvas.style.left = rect.left + 'px'
+    canvas.style.top = rect.top + 'px'
+    canvas.style.width = rect.width + 'px'
+    canvas.style.height = rect.height + 'px'
+    canvas.width = Math.max(1, Math.round(rect.width * dpr))
+    canvas.height = Math.max(1, Math.round(rect.height * dpr))
+
+    context.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0)
 }
 
 function viewportCoordsToCanvasCoords(coord)
 {
     const rect = canvas.getBoundingClientRect()
 
-    if (!forceLandscapeViewport)
-    {
-        return {
-            x: (coord.x - rect.left) * canvas.width / rect.width,
-            y: (coord.y - rect.top) * canvas.height / rect.height
-        }
-    }
-
-    const centerX = rect.left + rect.width / 2
-    const centerY = rect.top + rect.height / 2
-    const offsetX = coord.x - centerX
-    const offsetY = coord.y - centerY
-
     return {
-        x: offsetY + canvas.width / 2,
-        y: canvas.height / 2 - offsetX
+        x: (coord.x - rect.left) * width / rect.width,
+        y: (coord.y - rect.top) * height / rect.height
     }
 }
 

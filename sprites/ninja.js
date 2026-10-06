@@ -13,6 +13,7 @@ class Ninja
         this.fill   = object.fill
         this.stroke = object.stroke
         this.visualRotation = 0
+        this.invulnerableMs = 0
 
         this.track = new TrackLine(this.radius * 1.5, STYLE.colors.player.trail, STYLE.timing.trailPoints)
         this.track.addPos(this.x, this.y, true)
@@ -158,17 +159,35 @@ class Ninja
                 this.track.addPos(this.x, this.y)
             
             this.collision()
-            // A deadly hit restarted the game with a new ninja.
-            if (ninja !== this)
+            // A deadly hit restarted the game with a new ninja or froze
+            // the run (continue offer, game over interstitial).
+            if (ninja !== this || isRunFrozen())
                 return
         }
         
         if (this.x + screen.x < screen.getDeletionBorder())
-            reStart()
+            onLethalDeath()
+    }
+    isInvulnerable()
+    {
+        return this.invulnerableMs > 0
+    }
+    // Driven by physics steps, so pauses and the continue offer do not consume it.
+    tickInvulnerability(ms)
+    {
+        if (this.invulnerableMs > 0)
+            this.invulnerableMs = Math.max(0, this.invulnerableMs - ms)
+    }
+    getBlinkAlpha()
+    {
+        if (this.isInvulnerable() && Math.floor(Math.round(this.invulnerableMs) / RESPAWN_BLINK_MS) % 2 == 0)
+            return RESPAWN_BLINK_ALPHA
+        return STYLE.alpha.full
     }
     draw()
     {
         this.updateVisualRotation()
+        const blinkAlpha = this.getBlinkAlpha()
 
         const centerX = this.x + screen.x
         const centerY = this.y + screen.y
@@ -176,6 +195,7 @@ class Ninja
         ctx.save()
         ctx.translate(centerX, centerY)
         ctx.rotate(this.visualRotation)
+        ctx.globalAlpha = blinkAlpha
 
         const visualRadius = this.getVisualRadius()
 
@@ -198,12 +218,12 @@ class Ninja
         ctx.beginPath()
         ctx.arc(0, 0, visualRadius * STYLE.playerVisuals.innerHighlightRadiusRatio, 0, Math.PI * 2, false)
         ctx.fillStyle = STYLE.colors.player.highlight
-        ctx.globalAlpha = STYLE.playerVisuals.innerHighlightAlpha
+        ctx.globalAlpha = STYLE.playerVisuals.innerHighlightAlpha * blinkAlpha
         ctx.fill()
         ctx.closePath()
-        ctx.globalAlpha = STYLE.alpha.full
+        ctx.globalAlpha = blinkAlpha
 
-        this.drawRotationMarker()
+        this.drawRotationMarker(blinkAlpha)
 
         ctx.restore()
     }
@@ -221,7 +241,7 @@ class Ninja
 
         this.visualRotation += speed * config.rotationSpeed
     }
-    drawRotationMarker()
+    drawRotationMarker(blinkAlpha)
     {
         const config = STYLE.playerVisuals
         const visualRadius = this.getVisualRadius()
@@ -235,7 +255,7 @@ class Ninja
         ctx.strokeStyle = STYLE.colors.player.core
         ctx.lineWidth = markerWidth
         ctx.lineCap = 'round'
-        ctx.globalAlpha = config.rotationMarkerAlpha
+        ctx.globalAlpha = config.rotationMarkerAlpha * blinkAlpha
         ctx.shadowColor = STYLE.colors.player.core
         ctx.shadowBlur = STYLE.strokes.neonGlowWidth * 0.5
         ctx.stroke()

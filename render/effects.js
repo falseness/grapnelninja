@@ -16,6 +16,74 @@ const DEFAULT_FLASH_FRAGMENTS = [
     {x: -0.03, y: 0.06, length: 0.12, angleOffset: -0.28}
 ]
 
+// The bars only show soft gradients and faint lines, so the bar canvases
+// render at a quarter of their CSS size and CSS stretches them: a
+// full-resolution repaint cost ~30% of the frame at 2560x1080
+const WINDOW_BACKGROUND_SCALE = 0.25
+
+// The bars background drifts slowly: it is repainted every few frames (and at
+// once after a resize or a menu/game switch), which also spares the
+// compositor a texture upload on the frames in between
+const WINDOW_BARS_EVERY_FRAMES = 4
+
+// Each bar canvas reaches this far (CSS px) under the play rect, so the bars
+// stay opaque under the game canvas's antialiased (fractional) edge row and
+// the low-resolution upscale; a full-window canvas would be blended under
+// the whole play rect every frame (~7% of the frame at 2560x1080)
+const WINDOW_BAR_OVERLAP_PX = 2 + 2 / WINDOW_BACKGROUND_SCALE
+
+// CSS boxes of the two letterbox bars (left/right or top/bottom of the play
+// rect), or [] when the play rect fills the window.
+function windowBarBoxes(rect)
+{
+    const overlap = WINDOW_BAR_OVERLAP_PX
+    const right = rect.left + rect.width
+    const bottom = rect.top + rect.height
+
+    if (rect.left >= 0.5)
+        return [{left: 0, top: 0, width: rect.left + overlap, height: window.innerHeight},
+                {left: right - overlap, top: 0, width: window.innerWidth - right + overlap, height: window.innerHeight}]
+    if (rect.top >= 0.5)
+        return [{left: 0, top: 0, width: window.innerWidth, height: rect.top + overlap},
+                {left: 0, top: bottom - overlap, width: window.innerWidth, height: window.innerHeight - bottom + overlap}]
+    return []
+}
+
+// Places the two bar canvases behind the game canvas over the letterbox
+// bars; their backing stores follow their CSS size at WINDOW_BACKGROUND_SCALE.
+function configureWindowBackground()
+{
+    const boxes = windowBarBoxes(getCanvasCssRect())
+
+    Array.from(document.getElementsByClassName('window-bar')).forEach((barCanvas, i) =>
+    {
+        const box = boxes[i]
+
+        barCanvas.hidden = !box
+        barCanvas.box = box || null
+        // Resizing the backing store clears it
+        barCanvas.barsKey = null
+        if (!box)
+            return
+        barCanvas.style.left = box.left + 'px'
+        barCanvas.style.top = box.top + 'px'
+        barCanvas.style.width = box.width + 'px'
+        barCanvas.style.height = box.height + 'px'
+        barCanvas.width = Math.max(1, Math.ceil(box.width * WINDOW_BACKGROUND_SCALE))
+        barCanvas.height = Math.max(1, Math.ceil(box.height * WINDOW_BACKGROUND_SCALE))
+    })
+}
+
+// Linear mix of two 'rgba(r, g, b, a)' colors, t in [0, 1].
+function mixRgba(from, to, t)
+{
+    const a = from.match(/[\d.]+/g).map(Number)
+    const b = to.match(/[\d.]+/g).map(Number)
+    const mix = a.map((value, i) => value + ((b[i] === undefined ? 1 : b[i]) - value) * t)
+
+    return 'rgba(' + mix.slice(0, 3).map(Math.round).join(', ') + ', ' + (mix[3] === undefined ? 1 : mix[3]) + ')'
+}
+
 class BackgroundRenderer
 {
     constructor(context, targetCanvas)
@@ -24,34 +92,107 @@ class BackgroundRenderer
         this.canvas = targetCanvas
         this.randomFlashCache = new WeakMap()
         this.randomTriangleCache = new WeakMap()
-        this.gradientCache = null
+        this.gradientCache = new Map()
         // Reused every frame so the background draws without per-frame garbage.
         this.flashSegmentCache = new WeakMap()
         this.trianglePaletteColors = {fill: null, stroke: null}
     }
     draw()
     {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+        this.paint()
+        this.drawWindowBars('game', () => this.paint())
+    }
+    drawMenuBackground()
+    {
+        this.paintMenu()
+        this.drawWindowBars('menu', () => this.paintMenu())
+    }
+    // Area the full-size fills cover: the logical viewport, or a bar canvas
+    // (in logical units) while drawWindowBars paints the bars.
+    fillBounds()
+    {
+        return this.bounds || {x: 0, y: 0, width: LOGICAL_VIEWPORT.width, height: LOGICAL_VIEWPORT.height}
+    }
+    fillAll()
+    {
+        const bounds = this.fillBounds()
+        this.ctx.fillRect(bounds.x, bounds.y, bounds.width, bounds.height)
+    }
+    clearAll()
+    {
+        const bounds = this.fillBounds()
+        this.ctx.clearRect(bounds.x, bounds.y, bounds.width, bounds.height)
+    }
+    // Repeats this frame's background on the two bar canvases behind the
+    // game canvas, in the same logical coordinates, so the picture continues
+    // past the play rect.
+    drawWindowBars(scene, paint)
+    {
+        const barCanvases = Array.from(document.getElementsByClassName('window-bar')).filter(c => c.box)
+        const rect = getCanvasCssRect()
+
+        if (!barCanvases.length)
+            return
+
+        const key = [scene, rect.left, rect.top, rect.width].join()
+        if (barCanvases[0].barsKey === key && ++this.barsFramesSkipped < WINDOW_BARS_EVERY_FRAMES)
+            return
+        this.barsFramesSkipped = 0
+
+        const gameCtx = this.ctx
+        const fit = rect.width / LOGICAL_VIEWPORT.width
+
+        for (const barCanvas of barCanvases)
+        {
+            const box = barCanvas.box
+            const ctx = barCanvas.getContext('2d')
+            const scaleX = barCanvas.width / box.width
+            const scaleY = barCanvas.height / box.height
+
+            barCanvas.barsKey = key
+            ctx.setTransform(fit * scaleX, 0, 0, fit * scaleY,
+                (rect.left - box.left) * scaleX, (rect.top - box.top) * scaleY)
+            this.bounds = {
+                x: (box.left - rect.left) / fit,
+                y: (box.top - rect.top) / fit,
+                width: box.width / fit,
+                height: box.height / fit
+            }
+            this.ctx = ctx
+            try
+            {
+                paint()
+            }
+            finally
+            {
+                this.ctx = gameCtx
+                this.bounds = null
+            }
+        }
+    }
+    paint()
+    {
+        this.clearAll()
 
         if (!STYLE.features.background)
             return
 
-        const width = this.canvas.width
-        const height = this.canvas.height
+        const width = LOGICAL_VIEWPORT.width
+        const height = LOGICAL_VIEWPORT.height
 
         this.drawBaseGradient(width, height)
         this.drawGeometry(width, height)
         this.drawVignette(width, height)
     }
-    drawMenuBackground()
+    paintMenu()
     {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+        this.clearAll()
 
         if (!STYLE.features.background)
             return
 
-        const width = this.canvas.width
-        const height = this.canvas.height
+        const width = LOGICAL_VIEWPORT.width
+        const height = LOGICAL_VIEWPORT.height
 
         this.drawBaseGradient(width, height)
         this.drawBadVersionDepth(width, height, this.getMenuBackgroundGeometry(), 0, {forceStatic: true})
@@ -65,12 +206,16 @@ class BackgroundRenderer
             STYLE.backgroundGeometry.menu || {}
         )
     }
+    // The bar canvases fill other bounds than the game canvas, so their
+    // vignette differs: the key includes the bounds being filled
     getGradientKey(width, height)
     {
         const background = STYLE.colors.background
+        const bounds = this.bounds
         return [
             width,
             height,
+            bounds ? [bounds.x, bounds.y, bounds.width, bounds.height].join() : '',
             background.gradientTop,
             background.gradientMiddle,
             background.gradientBottom,
@@ -81,8 +226,9 @@ class BackgroundRenderer
     getGradients(width, height)
     {
         const key = this.getGradientKey(width, height)
-        if (this.gradientCache && this.gradientCache.key === key)
-            return this.gradientCache
+        const cached = this.gradientCache.get(key)
+        if (cached)
+            return cached
 
         const background = STYLE.colors.background
         const gradient = this.ctx.createLinearGradient(0, 0, 0, height)
@@ -91,29 +237,51 @@ class BackgroundRenderer
         gradient.addColorStop(1, background.gradientBottom)
 
         const radius = Math.sqrt(width * width + height * height) * 0.58
+        const innerRadius = radius * 0.18
+        // In the bars the vignette matches the game canvas out to the play
+        // rect corners, then fades to half that darkness at the window corners
+        const bounds = this.fillBounds()
+        const playCorner = Math.sqrt(width * width + height * height) / 2
+        const windowCorner = Math.max(
+            Math.hypot(width / 2 - bounds.x, height / 2 - bounds.y),
+            Math.hypot(bounds.x + bounds.width - width / 2, bounds.y + bounds.height - height / 2)
+        )
+        const outerRadius = this.bounds && windowCorner > playCorner ? windowCorner : radius
         const vignette = this.ctx.createRadialGradient(
             width / 2,
             height / 2,
-            radius * 0.18,
+            innerRadius,
             width / 2,
             height / 2,
-            radius
+            outerRadius
         )
         vignette.addColorStop(0, background.vignetteCenter)
-        vignette.addColorStop(1, background.vignetteEdge)
+        if (outerRadius == radius)
+            vignette.addColorStop(1, background.vignetteEdge)
+        else
+        {
+            const corner = mixRgba(background.vignetteCenter, background.vignetteEdge,
+                (playCorner - innerRadius) / (radius - innerRadius))
+            vignette.addColorStop((playCorner - innerRadius) / (outerRadius - innerRadius), corner)
+            vignette.addColorStop(1, mixRgba(background.vignetteCenter, corner, 0.5))
+        }
 
-        this.gradientCache = {key, gradient, vignette}
-        return this.gradientCache
+        // The game canvas and up to two bars; a resize starts over
+        if (this.gradientCache.size >= 3)
+            this.gradientCache.clear()
+        const entry = {gradient, vignette}
+        this.gradientCache.set(key, entry)
+        return entry
     }
     drawBaseGradient(width, height)
     {
         this.ctx.fillStyle = this.getGradients(width, height).gradient
-        this.ctx.fillRect(0, 0, width, height)
+        this.fillAll()
     }
     drawVignette(width, height)
     {
         this.ctx.fillStyle = this.getGradients(width, height).vignette
-        this.ctx.fillRect(0, 0, width, height)
+        this.fillAll()
     }
     getAnimationTime()
     {
@@ -319,7 +487,7 @@ class BackgroundRenderer
         gradient.addColorStop(1, edgeColor)
 
         this.ctx.fillStyle = gradient
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+        this.fillAll()
     }
     shouldFreezeBadVersionBackgroundMotion()
     {
@@ -754,8 +922,8 @@ class LightmapRenderer
     }
     resize()
     {
-        const nextWidth = Math.max(1, Math.ceil(this.canvas.width * this.scale))
-        const nextHeight = Math.max(1, Math.ceil(this.canvas.height * this.scale))
+        const nextWidth = Math.max(1, Math.ceil(LOGICAL_VIEWPORT.width * this.scale))
+        const nextHeight = Math.max(1, Math.ceil(LOGICAL_VIEWPORT.height * this.scale))
 
         if (this.lightCanvas.width == nextWidth && this.lightCanvas.height == nextHeight)
             return
@@ -811,8 +979,8 @@ class LightmapRenderer
     }
     drawAmbientLight()
     {
-        const viewWidth = this.canvas.width / scale[version]
-        const viewHeight = this.canvas.height / scale[version]
+        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
+        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
         const radius = Math.max(viewWidth, viewHeight) * STYLE.lights.ambientRadiusRatio
 
         this.drawRadialLight(
@@ -942,8 +1110,8 @@ class LightmapRenderer
     }
     isScreenCircleVisible(circle)
     {
-        const viewWidth = this.canvas.width / scale[version]
-        const viewHeight = this.canvas.height / scale[version]
+        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
+        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
         const margin = circle.radius
 
         return circle.x > -margin
@@ -971,8 +1139,8 @@ class LightmapRenderer
         if (!this.shouldDraw())
             return
 
-        const viewWidth = this.canvas.width / scale[version]
-        const viewHeight = this.canvas.height / scale[version]
+        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
+        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
         const badLights = this.getBadVersionLights()
         const stableLightMultiplier = STYLE.visualStability.stableBrightness
             ? STYLE.visualStability.stableLightCompositeMultiplier
@@ -1337,8 +1505,8 @@ class ParticleSystem
         const x = circle.x + screen.x
         const y = circle.y + screen.y
         const margin = circle.radius + STYLE.particles.maxSize
-        const viewWidth = this.canvas.width / scale[version]
-        const viewHeight = this.canvas.height / scale[version]
+        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
+        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
 
         return x > -margin && x < viewWidth + margin && y > -margin && y < viewHeight + margin
     }

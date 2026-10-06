@@ -36,6 +36,7 @@ function createEvents()
         
         grapnel.throwed = true
         grapnel.setGrappled(false)   
+        AUDIO.play('throw')
     }
     function pickUpGrapnel()
     {   
@@ -45,6 +46,17 @@ function createEvents()
     function startEvent(event)
     {
         let coords = viewportCoordsToCanvasCoords(getCoords(event))
+        if (continueOffer.visible && !menu.gamePaused)
+        {
+            if (continueOffer.click(coords))
+                return true
+            if (continueOffer.adPending)
+                return false
+            // The HUD menu button still opens the pause menu: Menu after a death
+            return menu.clickToPause({x: coords.x / scale[version], y: coords.y / scale[version]})
+        }
+        if (MUTE_BUTTON.click(coords) || LANGUAGE_BUTTON.click(coords))
+            return true
         if (menu.opened())
         {
             let isButtonClicked     = false
@@ -57,6 +69,8 @@ function createEvents()
     }
     function click(event)
     {
+        if (adOpen || interstitialPending)
+            return
         if (!unTouch && startEvent(event))
         {
             //Элегантный костыль:
@@ -67,35 +81,54 @@ function createEvents()
             }, STYLE.timing.inputUntouchMs)
             return
         }
-        if (!(menu.opened()))
+        if (!menu.opened() && !continueOffer.visible)
             throwGrapnel(event)
     }
+    // preventDefault stops the emulated mousedown/mouseup after a tap
     function touch(event)
-    {       
-        if (!grapnel.throwed)
+    {
+        event.preventDefault()
+        // No grapnel before the first run: a menu tap must still reach click()
+        if (!grapnel || !grapnel.throwed)
         {
             click(event)
         }
     }
     function offclick()
     {
+        if (adOpen || interstitialPending)
+            return
         if (!menu.visible)
             pickUpGrapnel()
     }
-    function offtouch()
+    function offtouch(event)
     {
+        event.preventDefault()
         offclick()
     }
     document.addEventListener('mousedown', click)
     document.addEventListener('mouseup', offclick)
     
-    document.addEventListener('touchstart', touch)
-    document.addEventListener('touchend', offtouch)
+    document.addEventListener('touchstart', touch, {passive: false})
+    document.addEventListener('touchend', offtouch, {passive: false})
     
     
+    document.addEventListener('contextmenu', function(event)
+    {
+        event.preventDefault()
+    })
+    document.addEventListener('wheel', function(event)
+    {
+        event.preventDefault()
+    }, {passive: false})
+    
+    const scrollKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ']
+    const pauseKeys = ['Escape', 'p', 'P']
     document.addEventListener('keydown', function(event)
     {
-        if (event.keyCode == 27 && !menu.visible)
+        if (scrollKeys.includes(event.key))
+            event.preventDefault()
+        if (pauseKeys.includes(event.key) && !menu.visible && !continueOffer.visible && !adOpen && !interstitialPending)
         {
             event.preventDefault()
 

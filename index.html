@@ -1,7 +1,9 @@
 <!Doctype html>
 <html>
     <head>
-        <title>grapnel ninja</title>
+        <script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>
+        <title></title>
+        <script src = "i18n.js"></script>
         <meta charset = "UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
@@ -13,13 +15,66 @@
                 overflow: hidden;
                 background-color: black;
             }
+            body, canvas
+            {
+                user-select: none;
+                -webkit-user-select: none;
+                -webkit-touch-callout: none;
+                touch-action: none;
+                -webkit-tap-highlight-color: transparent;
+            }
+            /* Letterbox bars behind the game canvas (placed by configureWindowBackground) */
+            .window-bar
+            {
+                position: fixed;
+                pointer-events: none;
+            }
+            #loading
+            {
+                position: fixed;
+                inset: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                background-color: black;
+                color: white;
+                font-family: sans-serif;
+                z-index: 1;
+            }
+            #loading[hidden]
+            {
+                display: none;
+            }
+            #loading-title
+            {
+                font-size: 48px;
+            }
+            #loading-progress
+            {
+                margin-top: 16px;
+                font-size: 20px;
+                color: #aaa;
+            }
         </style>
     </head>
     <body>
+        <div id = "loading">
+            <div id = "loading-title" data-i18n = "game.title"></div>
+            <div id = "loading-progress" data-i18n = "loading.initial"></div>
+        </div>
+        <script>I18N.applyDom()</script>
+        <canvas class = "window-bar" hidden></canvas>
+        <canvas class = "window-bar" hidden></canvas>
         <canvas id = "canvas"></canvas>
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
+        <script src = "platform.js"></script>
+        <script src = "progress.js"></script>
+        <script src = "audio.js"></script>
         <script src = 'menu.js'></script>
+        <script src = "mutebutton.js"></script>
+        <script src = "languagebutton.js"></script>
     
         <script src = "collision/circlewithcircle.js"></script>
         <script src = "collision/linewithline.js"></script>
@@ -46,6 +101,7 @@
         <script src = "sprites/side.js"></script>
         
         <script src = "physics.js"></script>
+        <script src = "respawn.js"></script>
         
         <script src = "moveScreen.js"></script>
         
@@ -63,12 +119,60 @@
             let trackEnabled = true
             let fpsCounter = new FpsCounter()
             let menu = new Menu(width, height)
+            let continueOffer = new ContinueOffer(width, height, watchAdToContinue, restartFromOffer)
+            let continueUsed = false
+            // A pause request (hidden tab, focus loss) while the rewarded
+            // ad plays: applied once the ad respawns the ninja
+            let pauseAfterAd = false
+            // A full-screen ad is on top: gameplay and input are frozen
+            let adOpen = false
+            // The run ended in a death: leaving it (Restart, Menu) shows an
+            // interstitial first; a continue respawn clears it
+            let runOver = false
+            // An interstitial was requested: gameplay and input wait for it
+            let interstitialPending = false
+            let lastInterstitialAt = null
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             const physicsTiming = {lastFrameTime: 0, accumulatorMs: 0}
             
             let game
             
-            window.onload = start()
+            boot()
+            
+            // Bridge init -> one storage read -> first menu frame -> hide
+            // the loading overlay -> game_ready. Input is attached only
+            // after that, so earlier clicks and keys are ignored.
+            async function boot()
+            {
+                setLoadingProgress(I18N.t('loading.connecting'))
+                await PLATFORM.init()
+                // Platform language until the saved choice is read
+                I18N.language = I18N.pick(null, PLATFORM.language)
+                // Host audio state applies before the first sound
+                AUDIO.setMute('host', !PLATFORM.isAudioEnabled())
+                setLoadingProgress(I18N.t('loading.progress'))
+                PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
+                I18N.language = I18N.pick(PROGRESS.getLang(), PLATFORM.language)
+                applyLanguage()
+                MUTE_BUTTON.restore(PROGRESS.getMuted())
+                // Plays from the first gesture; muting silences it
+                AUDIO.startMusic()
+                setLoadingProgress(I18N.t('loading.starting'))
+                await nextFrame()
+                start()
+                await nextFrame()
+                document.getElementById('loading').hidden = true
+                createEvents()
+                PLATFORM.gameReady()
+            }
+            function setLoadingProgress(text)
+            {
+                document.getElementById('loading-progress').textContent = text
+            }
+            function nextFrame()
+            {
+                return new Promise(resolve => requestAnimationFrame(resolve))
+            }
             
             function startGame(_v)
             {
@@ -85,9 +189,31 @@
             function chooseVersion()
             {
                 firstCycleInThisTick = true
+                continueUsed = false
+                runOver = false
+                pauseAfterAd = false
+                scoreText.recordSoundPlayed = false
+                continueOffer.hide()
+                checkAdsAvailable()
                 
-                scoreText.x         = scoreTextX        / scale[version]
-                scoreText.rx        = scoreTextRx       / scale[version]
+                layoutHud()
+                
+                scoreText.count[version] = 0
+                menu.setVisible(false)
+                PLATFORM.sendLifecycle('level_started', {world: version})
+                
+                if (version == 'classic')
+                    startClassicVersion()
+                else if (version == 'bad')
+                    startBadVersion()
+                else
+                    console.log('error version in startGame()')
+            }
+            // Width-derived HUD values: score text and the menu button.
+            function layoutHud()
+            {
+                scoreText.x         = scoreTextX()      / scale[version]
+                scoreText.rx        = scoreTextRx()     / scale[version]
                 scoreText.y         = scoreTextY        / scale[version]
                 scoreText.fontSize  = getHudFontSize(width / scale[version], height / scale[version], version)
                 const menuButtonLayout = getHudMenuButtonLayout(
@@ -101,36 +227,136 @@
                         height: menu.constButton.height / scale[version]
                     }
                 )
+                // A touch target (44 CSS px) on phones, kept inside the corner
+                const viewWidth = width / scale[version]
+                const margin = MUTE_BUTTON.marginRatio * height / scale[version]
+                const size = Math.max(menuButtonLayout.width, MUTE_BUTTON.minSize() / scale[version])
 
                 menu.button = new Button(
                 {
-                    x       : menuButtonLayout.x,
-                    y       : menuButtonLayout.y,
-                    width   : menuButtonLayout.width,
-                    height  : menuButtonLayout.height,
+                    x       : Math.min(menuButtonLayout.x, viewWidth - margin - size / 2),
+                    y       : Math.max(menuButtonLayout.y, margin + size / 2),
+                    width   : size,
+                    height  : size,
                     fill    : menu.constButton.fill,
                     stroke  : menu.constButton.stroke
                 },
                 ...menu.args)
-                
-                scoreText.count[version] = 0
-                menu.setVisible(false)
-                
-                if (version == 'classic')
-                    startClassicVersion()
-                else if (version == 'bad')
-                    startBadVersion()
-                else
-                    console.log('error version in startGame()')
             }
             function reStart()
             {
+                PROGRESS.save()
                 if (visualEffects && ninja && screen)
                 {
                     visualEffects.screenEffects.triggerDeath(ninja.x + screen.x, ninja.y + screen.y)
                     visualEffects.background.resetRandomFlashes()
                 }
                 chooseVersion()
+            }
+            // A death is waiting on the continue offer or the interstitial
+            function isRunFrozen()
+            {
+                return continueOffer.visible || interstitialPending
+            }
+            // Lethal hits: offer one continue per run from CONTINUE_MIN_SCORE,
+            // otherwise restart instantly. The offer freezes physics.
+            function onLethalDeath()
+            {
+                if (continueOffer.visible || ninja.isInvulnerable() || interstitialPending)
+                    return
+                AUDIO.play('death')
+                runOver = true
+                if (continueUsed || scoreText.count[version] < CONTINUE_MIN_SCORE)
+                {
+                    leaveFinishedRun(reStart)
+                    return
+                }
+                PROGRESS.save()
+                continueOffer.show()
+            }
+            // Run start: players without the SDK get only Restart plus an
+            // "Ads unavailable" notice on the offer.
+            function checkAdsAvailable()
+            {
+                continueOffer.setAdsAvailable(PLATFORM.environment != 'disabled')
+            }
+            // One rewarded ad per continue and at most one continue per run.
+            // Input stays ignored (both buttons disabled, physics frozen by
+            // the visible offer) until the SDK answers.
+            function watchAdToContinue()
+            {
+                if (continueUsed || continueOffer.adPending || !continueOffer.watchVisible())
+                    return
+                continueUsed = true
+                pauseAfterAd = false
+                continueOffer.setAdPending(true)
+                // The game stays frozen behind the offer
+                PLATFORM.requestRewarded('continue').then(result =>
+                {
+                    if (!continueOffer.adPending)
+                        return
+                    if (result.status === 'rewarded')
+                    {
+                        continueOffer.setAdPending(false)
+                        continueRun()
+                    }
+                    // No reward: keep the score on the offer, Restart only
+                    else
+                        continueOffer.showAdError()
+                })
+            }
+            // Keeps score, version, floors and screen; the ninja respawns at
+            // rest at a safe point with temporary invulnerability.
+            function continueRun()
+            {
+                continueUsed = true
+                runOver = false
+                continueOffer.hide()
+                respawnNinja()
+                resetPhysicsTiming()
+                if (pauseAfterAd || document.visibilityState == 'hidden')
+                {
+                    pauseAfterAd = false
+                    menu.startPause()
+                }
+            }
+            function restartFromOffer()
+            {
+                leaveFinishedRun(function()
+                {
+                    continueOffer.hide()
+                    reStart()
+                    resetPhysicsTiming()
+                })
+            }
+            // Game over interstitial: after a death, never mid-run, at most
+            // once per PLATFORM.interstitialMinGapMs. next() runs once the
+            // ad is closed, failed or skipped.
+            function leaveFinishedRun(next)
+            {
+                if (interstitialPending)
+                    return
+                // A death without a continue ends the run
+                if (runOver)
+                    PLATFORM.sendLifecycle('level_failed', {world: version})
+                const now = PLATFORM.now()
+                const recent = lastInterstitialAt !== null &&
+                    now - lastInterstitialAt < PLATFORM.interstitialMinGapMs
+                if (!runOver || recent)
+                {
+                    runOver = false
+                    next()
+                    return
+                }
+                runOver = false
+                interstitialPending = true
+                PLATFORM.showInterstitial('game_over').then(result =>
+                {
+                    interstitialPending = false
+                    if (result === 'closed')
+                        lastInterstitialAt = PLATFORM.now()
+                    next()
+                })
             }
             function startClassicVersion()
             {
@@ -220,18 +446,12 @@
             }
             function start()
             {
-                canvas.width = width
-                canvas.height = height
-                configureCanvasViewport(canvas)
+                configureCanvasViewport(canvas, ctx)
+                configureWindowBackground()
                 visualEffects = new VisualEffects(ctx, canvas)
                 
                 //generatePrimaryElements()
                 menu.draw()
-                
-                
-                createEvents()
-                
-                //requestAnimationFrame(gameLoop)
             }
 
             function resetPhysicsTiming()
@@ -249,6 +469,17 @@
                     resetPhysicsTiming()
                     menu.pause()
                 }
+                else if (continueOffer.visible)
+                {
+                    resetPhysicsTiming()
+                    draw()
+                    continueOffer.draw()
+                }
+                else if (adOpen || interstitialPending)
+                {
+                    resetPhysicsTiming()
+                    draw()
+                }
                 else
                 {
                     runFixedPhysics(frameTime)
@@ -263,12 +494,106 @@
                     physics()
             }
 
-            window.onblur = function() {
-                if (!menu.visible) {
-                    menu.startPause()
-                    //menuBack()
+            // Live re-layout when the iframe resizes (fullscreen toggle,
+            // window resize). The current run keeps going: only width-derived
+            // values are recomputed; the logical height (and physics) is fixed.
+            let resizeTimer = null
+            function onViewportResize()
+            {
+                resizeTimer = null
+                const oldWidth = width
+                updateLogicalViewport()
+                configureCanvasViewport(canvas, ctx)
+                configureWindowBackground()
+                ctx.lineCap = 'butt'
+                rebuildMenu()
+                continueOffer.layout(width, height)
+
+                if (version && screen)
+                {
+                    screen.updateWidthLayout()
+                    layoutHud()
+                    // Factories capture width-derived sizes; they hold no run state.
+                    elementsFactory = new ElementsFactory
+                    for (let i = 0; i < floors.length; ++i)
+                        floors[i].rescaleSpacing(width / oldWidth)
+                }
+
+                if (menu.visible)
+                    menu.draw()
+                else if (menu.gamePaused)
+                {
+                    draw()
+                    menu.drawPauseScreen()
                 }
             }
+            // Menu toggle: switch now, re-lay out every screen, save the choice
+            function setLanguage(lang)
+            {
+                I18N.language = lang
+                applyLanguage()
+                PROGRESS.setLang(I18N.language)
+                PROGRESS.save()
+                if (menu.visible)
+                    menu.draw()
+            }
+            // Text in the current language everywhere: page, menu, offer
+            function applyLanguage()
+            {
+                I18N.applyDom()
+                document.documentElement.lang = I18N.language
+                rebuildMenu()
+                continueOffer.relabel(width, height)
+            }
+            // A new Menu at the new size that keeps the current menu state;
+            // its texts come from the current language and progress.
+            function rebuildMenu()
+            {
+                const old = menu
+                menu = new Menu(width, height)
+                menu.button = old.button
+                menu.setVisible(old.visible)
+                menu.changeGamePause(old.gamePaused)
+            }
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimer)
+                resizeTimer = setTimeout(onViewportResize, 100)
+            })
+
+            // Focus loss and a hidden tab pause the run; during the rewarded
+            // ad the pause waits for the respawn
+            function pauseRun()
+            {
+                if (continueOffer.visible && continueOffer.adPending)
+                    pauseAfterAd = true
+                else if (!menu.visible && !menu.gamePaused && !continueOffer.visible)
+                    menu.startPause()
+            }
+            window.onblur = pauseRun
+            // A hidden tab mutes and pauses; showing it again unmutes only
+            document.addEventListener('visibilitychange', function() {
+                const hidden = document.visibilityState == 'hidden'
+                AUDIO.setMute('hidden', hidden)
+                if (hidden)
+                    pauseRun()
+            })
+            // Host pause pauses the run; resuming is left to the player
+            PLATFORM.onPause(function(isPaused) {
+                if (isPaused)
+                    pauseRun()
+            })
+            PLATFORM.onAudio(function(isEnabled) {
+                AUDIO.setMute('host', !isEnabled)
+            })
+            PLATFORM.onAdState(function(state) {
+                if (state == 'opened')
+                    adOpen = true
+                else if (state == 'closed' || state == 'failed')
+                    adOpen = false
+                else
+                    return
+                AUDIO.setMute('ad', adOpen)
+            })
             
         </script>
     </body>

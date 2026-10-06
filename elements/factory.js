@@ -7,8 +7,18 @@ function frameHeightPercent(percent) { return screenHeightPercent(percent) / sca
 
 function changeScoreText()
 {
+    AUDIO.play('score')
     if (++scoreText.count[version] > scoreText.record[version])
+    {
         scoreText.record[version] = scoreText.count[version]
+        // Once per run that beats the record
+        if (!scoreText.recordSoundPlayed)
+        {
+            scoreText.recordSoundPlayed = true
+            AUDIO.play('record')
+            PLATFORM.sendLifecycle('player_got_achievement')
+        }
+    }
 }
 class ElementsFactory
 {

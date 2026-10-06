@@ -621,11 +621,12 @@ function getBadHudCeilingBoundaryY(viewHeight, selectedVersion)
 function getHudFontSize(viewWidth, viewHeight, selectedVersion)
 {
     const heightSize = viewHeight * STYLE.ui.hudFontRatio
-
-    if (selectedVersion != 'bad')
-        return heightSize
-
-    return Math.min(heightSize, viewWidth * STYLE.ui.hudBadMaxFontWidthRatio)
+    const size = selectedVersion == 'bad'
+        ? Math.min(heightSize, viewWidth * STYLE.ui.hudBadMaxFontWidthRatio)
+        : heightSize
+    // Never below the CSS px floor in a small canvas (phones)
+    const cssHeight = getCanvasCssRect().height
+    return cssHeight > 0 ? Math.max(size, minCssFontPx * viewHeight / cssHeight) : size
 }
 
 function getHudMenuButtonLayout(viewWidth, viewHeight, selectedVersion, fallbackButton)

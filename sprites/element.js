@@ -53,7 +53,7 @@ class Element
     }
     collision()
     {
-        reStart()
+        onLethalDeath()
     }
     isEmpty()
     {

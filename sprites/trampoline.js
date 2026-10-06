@@ -112,6 +112,7 @@ class Trampoline extends Element
 
         if (visualEffects && visualEffects.particles)
             visualEffects.particles.emitTrampolineSplash(who, this)
+        AUDIO.playThrottled('trampoline')
     }
     draw()
     {

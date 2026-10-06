@@ -21,6 +21,17 @@ class JumpingCube extends Rect
 
         this.track.addPos(this.x + this.circle.x, this.y + this.circle.y)
     }
+    // Off-screen cubes and the warm-up moves in the constructor stay silent
+    isOnScreen()
+    {
+        if (!floors || !floors.some(floor => floor.elements.includes(this)))
+            return false
+        const viewWidth = width / scale[version]
+        const viewHeight = height / scale[version]
+        const x = this.x + screen.x
+        const y = this.y + screen.y
+        return x + this.width > 0 && x < viewWidth && y + this.height > 0 && y < viewHeight
+    }
     collisionWithElements()
     {
         // Sweep each axis before moving, so even thin obstacles cannot be skipped.
@@ -92,6 +103,8 @@ class JumpingCube extends Rect
             this[vertical ? 'dy' : 'dx'] = distance
             if (away != 0 && Math.sign(this[speed]) != away)
             {
+                if (this.isOnScreen())
+                    AUDIO.playThrottled('bounce')
                 this[speed] *= -1
                 if (vertical)
                     this.speedY += this.speedY > 0 ? GRAVITY : -GRAVITY
