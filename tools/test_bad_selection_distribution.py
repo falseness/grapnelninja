@@ -1,4 +1,4 @@
-"""Seeded equal-weight template selection through the real bad-mode Floor."""
+"""Seeded weighted template selection through the real bad-mode Floor."""
 import json
 import os
 from pathlib import Path
@@ -11,6 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = Path(os.environ.get('DISTRIBUTION_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-065'))
 SELECTIONS = 1000 * len(frames)
 TOLERANCE = 0.15
+# Bad-mode weights from index.html (b95ba5c "feat change chanes", 129d979 Frame 14).
+WEIGHTS = {'frame1Elements': 6, 'frame3Triangle': 6, 'frame4Elements': 6, 'frame5Rects': 5,
+           'frame6Rects': 5, 'frame7Elements': 6, 'frame8Elements': 5,
+           'frame10Elements': 5, 'frame11Elements': 5, 'frame12Elements': 6,
+           'frame13Elements': 6, 'frame14Rects': 5}
 
 
 class BadSelectionDistributionTests(unittest.TestCase):
@@ -19,7 +24,7 @@ class BadSelectionDistributionTests(unittest.TestCase):
         EVIDENCE.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
 
-    def test_equal_weight_distribution(self):
+    def test_weighted_distribution(self):
         page = self.browser.new_page(viewport={'width': 772, 'height': 630})
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
@@ -30,12 +35,13 @@ class BadSelectionDistributionTests(unittest.TestCase):
             result = page.evaluate(PROBE, SELECTIONS)
         finally:
             page.close()
-        expected = SELECTIONS / len(frames)
+        total = sum(WEIGHTS.values())
+        expected = {frame: SELECTIONS * WEIGHTS[frame] / total for frame in frames}
         result.update(expectedPerTemplate=expected, tolerance=TOLERANCE,
                       templates=frames)
         (EVIDENCE / 'distribution.json').write_text(json.dumps(result, indent=2) + '\n')
         self.assertEqual(errors, [])
-        self.assertEqual(result['weights'], [{'type': frame, 'chance': 1} for frame in frames])
+        self.assertEqual(result['weights'], [{'type': frame, 'chance': WEIGHTS[frame]} for frame in frames])
         self.assertEqual(result['selections'], SELECTIONS)
         self.assertEqual(result['fallThrough'], 0)
         self.assertEqual(result['undefinedSelections'], 0)
@@ -43,10 +49,11 @@ class BadSelectionDistributionTests(unittest.TestCase):
         self.assertEqual(sum(result['counts'].values()), SELECTIONS)
         for frame in frames:
             count = result['counts'][frame]
-            self.assertLessEqual(abs(count - expected), TOLERANCE * expected, frame)
+            want = expected[frame]
+            self.assertLessEqual(abs(count - want), TOLERANCE * want, frame)
             print(f'PASS {frame}: {count} of {SELECTIONS} '
-                  f'(expected {expected:.0f} +/- {TOLERANCE * expected:.0f})', flush=True)
-        # Extreme Math.random() values: 1 - 2**-53 times 11 rounds up to 11.
+                  f'(expected {want:.0f} +/- {TOLERANCE * want:.0f})', flush=True)
+        # Extreme Math.random() values: 1 - 2**-53 times the total can round up to it.
         self.assertEqual(result['edges'], {'0': frames[0], 'max': frames[-1]})
         print(f'PASS {SELECTIONS} seeded selections; fall-through=0; undefined=0; '
               f'edges random()=0 -> {frames[0]}, random()=1-2^-53 -> {frames[-1]}', flush=True)

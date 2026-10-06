@@ -38,6 +38,9 @@ SCENARIO = '''({wraps, cycles}) => {
     firstCycleInThisTick = true;
     for (const floor of floors) floor.elements = [];
     const w = 0.05 * height;
+    // Absolute offsets below were tuned as 772x630 viewport pixels; convert
+    // them to logical units (height 1080) so the scenario keeps its geometry.
+    const px = height / 630;
     const groundTop = 0.8 * height;
     const leftX = 0.3 * width;
     const gray = (x, y, width, height) => new Rect({x, y, width, height});
@@ -57,7 +60,7 @@ SCENARIO = '''({wraps, cycles}) => {
     const rest = {x: leftX + 1.5 * w, y: groundTop - 8 * w};
     ninja.x = rest.x;
     ninja.y = rest.y;
-    grapnel.pos = [[cube.x + 1, cube.y + 1, new Empty()]];
+    grapnel.pos = [[cube.x + px, cube.y + px, new Empty()]];
     grapnel.speedX = 0;
     grapnel.speedY = 0;
     grapnel.throwed = true;
@@ -68,7 +71,7 @@ SCENARIO = '''({wraps, cycles}) => {
         // Swing the ninja just below the top edge on the right: the rope
         // crosses the right edge next to the top-right corner and wraps it.
         ninja.x = cube.x + 1.8 * w;
-        ninja.y = cube.y + 2;
+        ninja.y = cube.y + 2 * px;
         grapnel.collision();
         attach.afterWrap = grapnel.pos.map(p => [p[0], p[1], p[2].constructor.name]);
         ninja.x = rest.x;

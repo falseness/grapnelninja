@@ -7,7 +7,7 @@ import unittest
 
 # Allow `python3 -m unittest tools/test_frame1_factory.py` from the root.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import start_browser_test
+from browser_test_support import logical_size, start_browser_test, wait_for_boot
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,6 +111,7 @@ class Frame1FactoryTests(unittest.TestCase):
                 if message.type == 'error' else None)
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.goto(self.url)
+        wait_for_boot(page)
         page.evaluate("startGame('bad'); cancelAnimationFrame(game)")
         return page
 
@@ -118,11 +119,12 @@ class Frame1FactoryTests(unittest.TestCase):
         rows = []
         for width, height in VIEWPORTS:
             run = self.open_bad_game(width, height).evaluate(CREATE)
+            self.assertEqual((run['width'], run['height']), logical_size(width, height))
             self.assertAlmostEqual(run['scaleBad'], 1 / 2.2, places=12)
-            row = {'viewport': [width, height], 'scaleBad': run['scaleBad'],
+            row = {'viewport': [width, height], 'logical': [run['width'], run['height']], 'scaleBad': run['scaleBad'],
                    'types': run['types'], 'elements': {}}
             for (name, rect), actual in zip(SVG.items(), run['bounds']):
-                expected = expected_bounds(width, height, run['scaleBad'], rect)
+                expected = expected_bounds(run['width'], run['height'], run['scaleBad'], rect)
                 error = max(abs(expected[k] - actual[k]) for k in expected)
                 row['elements'][name] = {'svg': rect, 'expected': expected, 'actual': actual,
                                          'maxError': error, 'pass': error <= TOLERANCE}
