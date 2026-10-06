@@ -114,3 +114,7 @@ def click_canvas(page, x, y):
     page.mouse.click(point['x'], point['y'])
     return point
 
+
+# The game booted: platform ready, menu drawn, loading overlay hidden
+READY = ('PLATFORM.environment !== "pending" && menu.visible'
+         ' && document.getElementById("loading").hidden')

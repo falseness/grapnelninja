@@ -70,9 +70,7 @@
         <script src = "style.js"></script>
         <script src = "platform.js"></script>
         <script src = "progress.js"></script>
-        <script src = "audio.js"></script>
         <script src = 'menu.js'></script>
-        <script src = "mutebutton.js"></script>
         <script src = "languagebutton.js"></script>
     
         <script src = "collision/circlewithcircle.js"></script>
@@ -147,15 +145,10 @@
                 await PLATFORM.init()
                 // Platform language until the saved choice is read
                 I18N.language = I18N.pick(null, PLATFORM.language)
-                // Host audio state applies before the first sound
-                AUDIO.setMute('host', !PLATFORM.isAudioEnabled())
                 setLoadingProgress(I18N.t('loading.progress'))
                 PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
                 I18N.language = I18N.pick(PROGRESS.getLang(), PLATFORM.language)
                 applyLanguage()
-                MUTE_BUTTON.restore(PROGRESS.getMuted())
-                // Plays from the first gesture; muting silences it
-                AUDIO.startMusic()
                 setLoadingProgress(I18N.t('loading.starting'))
                 await nextFrame()
                 start()
@@ -191,7 +184,7 @@
                 continueUsed = false
                 runOver = false
                 pauseAfterAd = false
-                scoreText.recordSoundPlayed = false
+                scoreText.recordAnnounced = false
                 continueOffer.hide()
                 checkAdsAvailable()
                 
@@ -228,8 +221,8 @@
                 )
                 // A touch target (44 CSS px) on phones, kept inside the corner
                 const viewWidth = width / scale[version]
-                const margin = MUTE_BUTTON.marginRatio * height / scale[version]
-                const size = Math.max(menuButtonLayout.width, MUTE_BUTTON.minSize() / scale[version])
+                const margin = LANGUAGE_BUTTON.marginRatio * height / scale[version]
+                const size = Math.max(menuButtonLayout.width, minTouchSize() / scale[version])
 
                 menu.button = new Button(
                 {
@@ -264,7 +257,6 @@
             {
                 if (continueOffer.visible || ninja.isInvulnerable() || interstitialPending)
                     return
-                AUDIO.play('death')
                 runOver = true
                 if (!PLATFORM.isRewardedSupported() || continueUsed ||
                     scoreText.count[version] < CONTINUE_MIN_SCORE)
@@ -571,10 +563,9 @@
                     menu.startPause()
             }
             window.onblur = pauseRun
-            // A hidden tab mutes and pauses; showing it again unmutes only
+            // A hidden tab pauses
             document.addEventListener('visibilitychange', function() {
                 const hidden = document.visibilityState == 'hidden'
-                AUDIO.setMute('hidden', hidden)
                 if (hidden)
                     pauseRun()
             })
@@ -583,17 +574,11 @@
                 if (isPaused)
                     pauseRun()
             })
-            PLATFORM.onAudio(function(isEnabled) {
-                AUDIO.setMute('host', !isEnabled)
-            })
             PLATFORM.onAdState(function(state) {
                 if (state == 'opened')
                     adOpen = true
                 else if (state == 'closed' || state == 'failed')
                     adOpen = false
-                else
-                    return
-                AUDIO.setMute('ad', adOpen)
             })
             
         </script>

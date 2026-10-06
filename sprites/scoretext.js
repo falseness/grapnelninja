@@ -7,8 +7,8 @@ let scoreText =
         classic : 0
     }                                   ,                
     get rtext() { return I18N.t('hud.record') },
-    // Reset at each run start; the record sound plays once per run
-    recordSoundPlayed: false            ,
+    // Reset at each run start; a new record is announced once per run
+    recordAnnounced: false            ,
     record: 
     {
         bad     : 0,

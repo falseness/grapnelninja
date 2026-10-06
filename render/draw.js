@@ -73,5 +73,4 @@ function draw()
 
     ctx.scale(1 / scale[version], 1 / scale[version])
 
-    MUTE_BUTTON.draw('hud')
 }

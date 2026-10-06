@@ -1,7 +1,7 @@
 // Language toggle in the top-left corner of the menu: a globe and the
 // current language's name in that language. A click switches to the next
 // language at once, re-lays out the screens and saves the choice. Drawn and
-// hit-tested in logical canvas units like MUTE_BUTTON.
+// hit-tested in logical canvas units.
 const LANGUAGE_BUTTON =
 {
     sizeRatio: 0.072,
@@ -10,7 +10,7 @@ const LANGUAGE_BUTTON =
     rect()
     {
         const margin = this.marginRatio * height
-        const size = Math.max(this.sizeRatio * height, MUTE_BUTTON.minSize())
+        const size = Math.max(this.sizeRatio * height, minTouchSize())
         ctx.save()
         ctx.font = getArcadeFont(this.fontSize(size))
         const textWidth = ctx.measureText(I18N.t('language.name')).width
@@ -30,7 +30,6 @@ const LANGUAGE_BUTTON =
         if (r.x < coords.x && coords.x < r.x + r.width &&
             r.y < coords.y && coords.y < r.y + r.height)
         {
-            AUDIO.play('click')
             setLanguage(I18N.next())
             return true
         }

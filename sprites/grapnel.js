@@ -98,8 +98,6 @@ class Grapnel
             const firstPointEps = screenHeightPercent(GAMEPLAY.firstPointToleranceHeightPercent)
             coords = this.correctToCornerOfElement(coords.x, coords.y, element.getPoints(), correctCornerEps)
             
-            if (!this.grappled)
-                AUDIO.play('hook')
             this.grappled = true
             if  (
                     index == 1                                                          && 

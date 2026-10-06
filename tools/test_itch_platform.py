@@ -132,7 +132,6 @@ class ItchPlatformTests(unittest.TestCase):
         page.evaluate('''() => {
             scoreText.record.classic = 42
             scoreText.record.bad = 7
-            MUTE_BUTTON.toggle()
             setLanguage('ru')
             PROGRESS.flush()
         }''')
@@ -142,8 +141,8 @@ class ItchPlatformTests(unittest.TestCase):
         wait_for_boot(page)
         page.wait_for_function(READY)
         after = page.evaluate('''() => ({classic: scoreText.record.classic,
-            bad: scoreText.record.bad, muted: MUTE_BUTTON.muted, lang: I18N.language})''')
-        self.assertEqual(after, {'classic': 42, 'bad': 7, 'muted': True, 'lang': 'ru'})
+            bad: scoreText.record.bad, lang: I18N.language})''')
+        self.assertEqual(after, {'classic': 42, 'bad': 7, 'lang': 'ru'})
 
     def test_c_blocked_storage(self):
         page, errors, _ = self.open(BLOCK_STORAGE)

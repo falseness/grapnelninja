@@ -78,8 +78,6 @@ CAPTURE_JS = '''async ([mode, seed, actions, targetTick]) => {
     // no HUD/score/pause icon and no FPS counter on a cover
     window.drawUILayer = function() {}
     window.drawFpsCounterLayer = function() {}
-    // nor the in-game mute icon (drawn on the canvas after the layers)
-    MUTE_BUTTON.draw = function() {}
     while (__ap.tick < targetTick && __ap.deathTick === null)
     {
         physics()
@@ -110,8 +108,6 @@ SCREEN_JS = '''async ([mode, seed, actions, condition, extraTicks, live, maxTick
     cancelAnimationFrame(game)
     window.drawUILayer = function() {}
     window.drawFpsCounterLayer = function() {}
-    // nor the in-game mute icon (drawn on the canvas after the layers)
-    MUTE_BUTTON.draw = function() {}
     const ap = __ap
     const splashTicks = []
     const particles = visualEffects.particles

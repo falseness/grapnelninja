@@ -7,7 +7,7 @@ const PLATFORM = (function()
     let initPromise = null
     let warned = false
     const memory = new Map()
-    const listeners = {pause: [], audio: [], adState: []}
+    const listeners = {pause: [], adState: []}
 
     function warn(message, e)
     {
@@ -143,19 +143,9 @@ const PLATFORM = (function()
             return Promise.resolve()
         },
 
-        isAudioEnabled()
-        {
-            return true
-        },
-
         onPause(fn)
         {
             listeners.pause.push(fn)
-        },
-
-        onAudio(fn)
-        {
-            listeners.audio.push(fn)
         },
 
         onAdState(fn)

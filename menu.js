@@ -104,7 +104,7 @@ function stackRows(top, bottom, heights)
 // default button height, else 0
 function compactTouchSize(buttonHeight)
 {
-    const touch = MUTE_BUTTON.minSize()
+    const touch = minTouchSize()
     return touch > buttonHeight ? touch : 0
 }
 // Label font size to button height: ascenders stay inside the frame
@@ -198,7 +198,6 @@ class Button
             if (this.background.x < click.x && click.x < this.background.x + this.background.width &&
                 this.background.y < click.y && click.y < this.background.y + this.background.height)
             {
-                AUDIO.play('click')
                 this.click()
                 return true
             }
@@ -265,7 +264,7 @@ class Checkbox
         ctx.restore()
 
         const padding = this.size * 0.45
-        const height = Math.max(this.size * 1.5, MUTE_BUTTON.minSize())
+        const height = Math.max(this.size * 1.5, minTouchSize())
         return {
             x: this.x - padding,
             y: this.y - height / 2,
@@ -281,7 +280,6 @@ class Checkbox
         const r = this.hitRect()
         if (r.x < click.x && click.x < r.x + r.width && r.y < click.y && click.y < r.y + r.height)
         {
-            AUDIO.play('click')
             this.click()
             return true
         }
@@ -631,14 +629,14 @@ class Menu
         check.x = this.center.x - rowWidth / 2
     }
     // Phones: buttons grow to the touch floor and the rows are stacked
-    // evenly below the corner buttons (language, mute)
+    // evenly below the corner button (language)
     compactLayout()
     {
         const touch = compactTouchSize(0.1 * this.height)
         if (!touch)
             return
-        const margin = MUTE_BUTTON.marginRatio * this.height
-        const top = 2 * margin + Math.max(MUTE_BUTTON.sizeRatio * this.height, touch)
+        const margin = LANGUAGE_BUTTON.marginRatio * this.height
+        const top = 2 * margin + Math.max(LANGUAGE_BUTTON.sizeRatio * this.height, touch)
         const recordSize = parseFloat(this.classicRecord.fontSize)
         const check = this.mainFpsCounterCheckbox
         const rows = stackRows(top, this.height - margin, [parseFloat(this.mainText.fontSize),
@@ -818,8 +816,6 @@ class Menu
         
         this.resume.draw()
         this.backToMenu.draw()
-
-        MUTE_BUTTON.draw('pause')
     }
     unPause()
     {
@@ -859,7 +855,6 @@ class Menu
         this.mainFpsCounterCheckbox.draw()
         this.timeInGame.draw()
 
-        MUTE_BUTTON.draw('menu')
         LANGUAGE_BUTTON.draw()
     }
 }
