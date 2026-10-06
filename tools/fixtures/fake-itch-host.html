@@ -1,10 +1,14 @@
 <!Doctype html>
 <!-- A stand-in for an itch.io game page ('Embed in page', 960x540). The iframe
      attributes are the ones itch emits (artifacts/TASK-160/iframe.html); as on
-     itch, the iframe is only inserted after 'Click to play'. -->
+     itch, the iframe is only inserted after 'Click to play'.
+     With ?launch=fullscreen it plays itch's 'Mobile Friendly' mode on phones:
+     'Click to launch in fullscreen' puts the iframe in a fixed 100vw x 100vh
+     overlay over the page. -->
 <html>
     <head>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Grapnel Ninja by Falseness</title>
         <style>
             body { margin: 0; background: #222; color: #ddd; font: 16px sans-serif }
@@ -13,8 +17,12 @@
             .game_frame iframe { display: block; width: 100%; height: 100%; border: 0 }
             #load_game { position: absolute; inset: 0; margin: auto; width: 240px; height: 60px;
                          font-size: 22px; cursor: pointer }
-            .controls { width: 960px; margin: 8px auto; text-align: right }
-            .description { width: 960px; margin: 0 auto; height: 3000px }
+            .game_frame.fullscreen_launch { width: 100% !important; height: 200px !important }
+            #game_overlay { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+                            z-index: 10; background: #000 }
+            #game_overlay iframe { display: block; width: 100%; height: 100%; border: 0 }
+            .controls { width: 960px; max-width: 100%; margin: 8px auto; text-align: right }
+            .description { width: 960px; max-width: 100%; margin: 0 auto; height: 3000px }
         </style>
     </head>
     <body>
@@ -30,6 +38,11 @@
         <script>
             const GAME_URL = '{{GAME_URL}}'
             const frame = document.getElementById('game_frame')
+            const fullscreenLaunch = new URLSearchParams(location.search).get('launch') === 'fullscreen'
+            if (fullscreenLaunch) {
+                frame.classList.add('fullscreen_launch')
+                document.getElementById('load_game').textContent = 'Click to launch in fullscreen'
+            }
             document.getElementById('load_game').addEventListener('click', function() {
                 const iframe = document.createElement('iframe')
                 iframe.id = 'game_drop'
@@ -44,7 +57,14 @@
                 iframe.src = GAME_URL
                 this.remove()
                 frame.classList.add('game_loaded')
-                frame.appendChild(iframe)
+                if (fullscreenLaunch) {
+                    const overlay = document.createElement('div')
+                    overlay.id = 'game_overlay'
+                    overlay.appendChild(iframe)
+                    document.body.appendChild(overlay)
+                } else {
+                    frame.appendChild(iframe)
+                }
             })
             document.getElementById('fullscreen_btn').addEventListener('click', function() {
                 const iframe = document.getElementById('game_drop')
