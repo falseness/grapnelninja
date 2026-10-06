@@ -1,8 +1,8 @@
 const widthHeightRatio = 1.8250950570342206
 // Logical viewport: height is always 1080 units, width follows the window
-// aspect clamped to [4:3, 2:1] on desktop (Playgama: play field at most 2:1).
+// aspect clamped to [4:3, 2:1] on desktop (play field at most 2:1).
 // Touch-first devices are not capped: a landscape phone (about 2.2:1, wider
-// with the browser bars) gets the whole screen (Playgama: full screen on mobile).
+// with the browser bars) gets the whole screen (full screen on mobile).
 // The canvas CSS box letterboxes that aspect.
 const LOGICAL_HEIGHT = 1080
 const minViewportAspect = 4 / 3

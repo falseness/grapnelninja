@@ -1,7 +1,6 @@
 <!Doctype html>
 <html>
     <head>
-        <script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>
         <title></title>
         <script src = "i18n.js"></script>
         <meta charset = "UTF-8">
@@ -139,7 +138,7 @@
             
             boot()
             
-            // Bridge init -> one storage read -> first menu frame -> hide
+            // Platform init -> one storage read -> first menu frame -> hide
             // the loading overlay -> game_ready. Input is attached only
             // after that, so earlier clicks and keys are ignored.
             async function boot()
@@ -258,15 +257,17 @@
             {
                 return continueOffer.visible || interstitialPending
             }
-            // Lethal hits: offer one continue per run from CONTINUE_MIN_SCORE,
-            // otherwise restart instantly. The offer freezes physics.
+            // Lethal hits: offer one continue per run from CONTINUE_MIN_SCORE
+            // when rewarded ads exist, otherwise restart instantly. The offer
+            // freezes physics. On itch.io there are no ads: always restart.
             function onLethalDeath()
             {
                 if (continueOffer.visible || ninja.isInvulnerable() || interstitialPending)
                     return
                 AUDIO.play('death')
                 runOver = true
-                if (continueUsed || scoreText.count[version] < CONTINUE_MIN_SCORE)
+                if (!PLATFORM.isRewardedSupported() || continueUsed ||
+                    scoreText.count[version] < CONTINUE_MIN_SCORE)
                 {
                     leaveFinishedRun(reStart)
                     return
@@ -274,11 +275,11 @@
                 PROGRESS.save()
                 continueOffer.show()
             }
-            // Run start: players without the SDK get only Restart plus an
-            // "Ads unavailable" notice on the offer.
+            // Run start: without rewarded ads the offer would hold only
+            // Restart plus an "Ads unavailable" notice (it is never shown then).
             function checkAdsAvailable()
             {
-                continueOffer.setAdsAvailable(PLATFORM.environment != 'disabled')
+                continueOffer.setAdsAvailable(PLATFORM.isRewardedSupported())
             }
             // One rewarded ad per continue and at most one continue per run.
             // Input stays ignored (both buttons disabled, physics frozen by
@@ -342,7 +343,7 @@
                 const now = PLATFORM.now()
                 const recent = lastInterstitialAt !== null &&
                     now - lastInterstitialAt < PLATFORM.interstitialMinGapMs
-                if (!runOver || recent)
+                if (!runOver || recent || !PLATFORM.isInterstitialSupported())
                 {
                     runOver = false
                     next()
