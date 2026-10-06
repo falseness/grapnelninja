@@ -27,8 +27,10 @@ from game_harness import click_canvas, open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 # (width, height, touch)
+# An upright phone turns the stage to landscape and fills it (no bars, see
+# test_rotate_landscape): a portrait desktop window keeps the top/bottom bars
 VIEWPORTS = [(925, 925, False), (1024, 768, False), (1280, 1024, False),
-             (390, 844, True), (2560, 1080, False), (1920, 1080, False)]
+             (390, 844, False), (2560, 1080, False), (1920, 1080, False)]
 CLICK_VIEWPORTS = [(925, 925, False), (390, 844, True)]
 BLACK_MAX_CHANNEL = 8
 BAR_OFFSET_PX = 8
@@ -162,7 +164,7 @@ class FullWindowBackgroundTests(unittest.TestCase):
         ~20-30% of the frame at 2560x1080. Two bar canvases cover only the
         letterbox bars (plus WINDOW_BAR_OVERLAP_PX under the play rect) at a
         quarter of their CSS size; without bars both are hidden."""
-        for viewport in [(2560, 1080, False), (390, 844, True), (1920, 1080, False)]:
+        for viewport in [(2560, 1080, False), (390, 844, False), (1920, 1080, False)]:
             with self.subTest(viewport=viewport_name(viewport)):
                 page = self.boot(viewport)
                 bars = page.evaluate('''() => ({

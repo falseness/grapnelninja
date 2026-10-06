@@ -11,11 +11,25 @@ function isTouchFirstDevice()
 {
     return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
 }
+// A phone held upright plays in landscape: the stage (the game canvas and
+// the letterbox bars) is turned 90 degrees clockwise.
+function isViewRotated()
+{
+    return isTouchFirstDevice() && window.innerWidth < window.innerHeight
+}
+// The window as the stage sees it: width and height swap when rotated
+function getViewSize()
+{
+    return isViewRotated()
+        ? {width: window.innerHeight, height: window.innerWidth}
+        : {width: window.innerWidth, height: window.innerHeight}
+}
 function computeLogicalWidth()
 {
     const touch = isTouchFirstDevice()
+    const view = getViewSize()
     const aspect = Math.min(touch ? Infinity : maxViewportAspect,
-                            Math.max(minViewportAspect, window.innerWidth / window.innerHeight))
+                            Math.max(minViewportAspect, view.width / view.height))
     // Touch: never round wider than the window, so the canvas fits by height
     // and keeps the 44 CSS px touch floor exact (see minTouchSize)
     return (touch ? Math.floor : Math.round)(LOGICAL_HEIGHT * aspect)
@@ -72,16 +86,18 @@ const RESPAWN_SAFE_MARGIN_MS = 1000
 const RESPAWN_BLINK_MS = 125
 const RESPAWN_BLINK_ALPHA = 0.25
 
-// Largest centred CSS rectangle of the logical aspect that fits the window.
+// Largest centred CSS rectangle of the logical aspect that fits the view,
+// in stage coordinates (the window's own when the stage is not rotated).
 function getCanvasCssRect()
 {
-    const fit = Math.min(window.innerWidth / width, window.innerHeight / height)
+    const view = getViewSize()
+    const fit = Math.min(view.width / width, view.height / height)
     const cssWidth = width * fit
     const cssHeight = height * fit
 
     return {
-        left: (window.innerWidth - cssWidth) / 2,
-        top: (window.innerHeight - cssHeight) / 2,
+        left: (view.width - cssWidth) / 2,
+        top: (view.height - cssHeight) / 2,
         width: cssWidth,
         height: cssHeight
     }
@@ -96,10 +112,25 @@ function minTouchSize()
     return cssHeight > 0 ? MIN_TOUCH_CSS_PX * height / cssHeight : 0
 }
 
+// Covers the window with the stage, turned about the window centre when
+// the view is rotated.
+function configureStage()
+{
+    const stage = document.getElementById('stage')
+    const view = getViewSize()
+
+    stage.style.left = (window.innerWidth - view.width) / 2 + 'px'
+    stage.style.top = (window.innerHeight - view.height) / 2 + 'px'
+    stage.style.width = view.width + 'px'
+    stage.style.height = view.height + 'px'
+    stage.style.transform = isViewRotated() ? 'rotate(90deg)' : ''
+}
+
 // Sizes the CSS box and backing store (CSS size * DPR) and applies the base
 // transform so all drawing code works in logical units.
 function configureCanvasViewport(canvas, context)
 {
+    configureStage()
     const rect = getCanvasCssRect()
     const dpr = window.devicePixelRatio || 1
 
@@ -114,14 +145,44 @@ function configureCanvasViewport(canvas, context)
     context.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0)
 }
 
+// Window (client) point -> stage point; the stage turns clockwise about
+// the window centre when rotated.
+function viewportCoordsToStageCoords(coord)
+{
+    if (!isViewRotated())
+        return {x: coord.x, y: coord.y}
+
+    const view = getViewSize()
+    const offsetX = coord.x - window.innerWidth / 2
+    const offsetY = coord.y - window.innerHeight / 2
+
+    return {x: view.width / 2 + offsetY, y: view.height / 2 - offsetX}
+}
+
 function viewportCoordsToCanvasCoords(coord)
 {
-    const rect = canvas.getBoundingClientRect()
+    const rect = getCanvasCssRect()
+    const point = viewportCoordsToStageCoords(coord)
 
     return {
-        x: (coord.x - rect.left) * width / rect.width,
-        y: (coord.y - rect.top) * height / rect.height
+        x: (point.x - rect.left) * width / rect.width,
+        y: (point.y - rect.top) * height / rect.height
     }
+}
+
+// Logical canvas point -> window (client) point
+function canvasCoordsToViewportCoords(coord)
+{
+    const rect = getCanvasCssRect()
+    const x = rect.left + coord.x * rect.width / width
+    const y = rect.top + coord.y * rect.height / height
+
+    if (!isViewRotated())
+        return {x: x, y: y}
+
+    const view = getViewSize()
+    return {x: window.innerWidth / 2 - (y - view.height / 2),
+            y: window.innerHeight / 2 + (x - view.width / 2)}
 }
 
 let scale = 

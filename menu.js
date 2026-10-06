@@ -22,7 +22,7 @@ const LAYOUT_PROBE =
     {
         const m = ctx.getTransform()
         // Backing px per CSS px per axis (backing sizes are rounded apart)
-        const css = canvas.getBoundingClientRect()
+        const css = getCanvasCssRect()
         const rx = canvas.width / css.width
         const ry = canvas.height / css.height
         return {x: (m.a * x + m.c * y + m.e) / rx, y: (m.b * x + m.d * y + m.f) / ry}
@@ -45,7 +45,7 @@ const LAYOUT_PROBE =
         const b = this.toCss(x + t.actualBoundingBoxRight, y + t.actualBoundingBoxDescent)
         const m = ctx.getTransform()
         const fontPx = parseFloat(ctx.font) * Math.hypot(m.a, m.b) /
-            (canvas.width / canvas.getBoundingClientRect().width)
+            (canvas.width / getCanvasCssRect().width)
         this.boxes.push({kind: 'text', name: String(name), x: a.x, y: a.y,
             width: b.x - a.x, height: b.y - a.y, fontPx: fontPx})
     }
@@ -331,7 +331,7 @@ class FpsCounter
         const viewWidth = width / scale[version]
         const viewHeight = height / scale[version]
         // Never below the CSS px floor when the iframe is small.
-        const cssPerView = canvas.getBoundingClientRect().height / viewHeight
+        const cssPerView = getCanvasCssRect().height / viewHeight
         const fontSize = Math.max(viewHeight * STYLE.ui.fpsFontRatio, minCssFontPx / cssPerView)
         const padding = viewHeight * STYLE.ui.fpsPaddingRatio
         const text = I18N.t('hud.fps', {value: this.value})

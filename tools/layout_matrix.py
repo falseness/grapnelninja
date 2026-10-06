@@ -39,10 +39,13 @@ PROBE = '''(code) => {
     try { (new Function(code))() } finally {}
     const boxes = LAYOUT_PROBE.boxes
     LAYOUT_PROBE.boxes = null
-    const r = canvas.getBoundingClientRect()
+    // The canvas box and the window as the stage sees them (an upright
+    // phone turns the stage to landscape)
+    const r = getCanvasCssRect()
+    const view = getViewSize()
     const d = document.documentElement
     return {boxes: boxes, canvas: {left: r.left, top: r.top, width: r.width, height: r.height},
-            scroll: {window: {width: innerWidth, height: innerHeight}, sw: d.scrollWidth, sh: d.scrollHeight, cw: d.clientWidth, ch: d.clientHeight,
+            scroll: {window: {width: view.width, height: view.height}, sw: d.scrollWidth, sh: d.scrollHeight, cw: d.clientWidth, ch: d.clientHeight,
                      bsw: document.body.scrollWidth, bsh: document.body.scrollHeight}}
 }'''
 DRAW = {

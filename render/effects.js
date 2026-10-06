@@ -37,15 +37,16 @@ const WINDOW_BAR_OVERLAP_PX = 2 + 2 / WINDOW_BACKGROUND_SCALE
 function windowBarBoxes(rect)
 {
     const overlap = WINDOW_BAR_OVERLAP_PX
+    const view = getViewSize()
     const right = rect.left + rect.width
     const bottom = rect.top + rect.height
 
     if (rect.left >= 0.5)
-        return [{left: 0, top: 0, width: rect.left + overlap, height: window.innerHeight},
-                {left: right - overlap, top: 0, width: window.innerWidth - right + overlap, height: window.innerHeight}]
+        return [{left: 0, top: 0, width: rect.left + overlap, height: view.height},
+                {left: right - overlap, top: 0, width: view.width - right + overlap, height: view.height}]
     if (rect.top >= 0.5)
-        return [{left: 0, top: 0, width: window.innerWidth, height: rect.top + overlap},
-                {left: 0, top: bottom - overlap, width: window.innerWidth, height: window.innerHeight - bottom + overlap}]
+        return [{left: 0, top: 0, width: view.width, height: rect.top + overlap},
+                {left: 0, top: bottom - overlap, width: view.width, height: view.height - bottom + overlap}]
     return []
 }
 
