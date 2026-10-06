@@ -10,7 +10,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import OfflineBrowser
 from itch_harness import start_itch_embed
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 VIEWPORT = {'width': 1920, 'height': 1080}
 SCREEN = {'width': 1920, 'height': 1080}
@@ -138,8 +138,18 @@ class ItchEmbedTests(unittest.TestCase):
 
     def start_version(self, page, frame, version):
         button = 'classicVersionButton' if version == 'classic' else 'badVersionButton'
+        # events.js ignores input for STYLE.timing.inputUntouchMs after a button click
+        # (e.g. backToMenu); its setTimeout can fire late under load, so retry once
+        page.wait_for_timeout(frame.evaluate('STYLE.timing.inputUntouchMs') + 100)
         self.click_button(page, frame, button)
-        frame.wait_for_function('v => version === v && !menu.visible', arg=version)
+        started = 'v => version === v && !menu.visible'
+        try:
+            frame.wait_for_function(started, arg=version, timeout=5000)
+        except PlaywrightTimeoutError:
+            self.assertTrue(frame.evaluate('menu.visible'))
+            page.wait_for_timeout(frame.evaluate('STYLE.timing.inputUntouchMs') + 100)
+            self.click_button(page, frame, button)
+            frame.wait_for_function(started, arg=version)
         ticks = frame.evaluate('window.__ticks')
         frame.wait_for_function('t => window.__ticks > t + 10', arg=ticks)
 
