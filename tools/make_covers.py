@@ -19,7 +19,8 @@ Frame metadata (mode, seed, tick, ninja position) goes to source-frames.json.
 The compose step (default --frames is <out>/../source-frames) writes one
 cover per size in COVER_SIZES: 16:9 (1920x1080, 1280x720), 4:3 (800x600,
 1024x768), 1:1 (1024x1024, 800x800, 512x512, 256x256), 2:3 (800x1200) and
-9:16 (1080x1920, the Playgama portrait cover), so
+9:16 (1080x1920, the Playgama portrait cover), 315:250 (630x500, 315x250,
+the itch.io cover), so
 a portal's thumbnail slots can be matched without knowing their exact sizes
 up front. --sizes WxH,... composes only those sizes (they must be in
 COVER_SIZES), e.g. --sizes 256x256,1024x1024,1024x768.
@@ -64,6 +65,9 @@ COVER_SIZES = {
     (256, 256): 0.07,
     (1024, 1024): 0.07,
     (1024, 768): 0.08,
+    # itch.io cover (315:250, shown at 315x250, uploaded at 2x)
+    (630, 500): 0.08,
+    (315, 250): 0.08,
 }
 
 CAPTURE_JS = '''async ([mode, seed, actions, targetTick]) => {
@@ -74,6 +78,8 @@ CAPTURE_JS = '''async ([mode, seed, actions, targetTick]) => {
     // no HUD/score/pause icon and no FPS counter on a cover
     window.drawUILayer = function() {}
     window.drawFpsCounterLayer = function() {}
+    // nor the in-game mute icon (drawn on the canvas after the layers)
+    MUTE_BUTTON.draw = function() {}
     while (__ap.tick < targetTick && __ap.deathTick === null)
     {
         physics()
@@ -85,6 +91,111 @@ CAPTURE_JS = '''async ([mode, seed, actions, targetTick]) => {
         ninja: [(ninja.x + screen.x) * s / width, (ninja.y + screen.y) * s / height],
         url: canvas.toDataURL('image/png')}
 }'''
+
+
+# name -> (mode, JS condition checked after every physics tick, extra ticks)
+SCREENS = {
+    'classic-grapnel': ('classic', 'ap.tick >= 420 && grapnel.isGrappled() && grappledTicks >= 8', 0),
+    'bad-obstacles': ('bad', 'ap.tick >= 500', 0),
+    'trampoline-bounce': ('classic', 'splashTicks.length && splashTicks[splashTicks.length - 1] >= 240', 4),
+}
+PHONE = {'viewport': {'width': 360, 'height': 640}, 'device_scale_factor': 3,
+         'is_mobile': True, 'has_touch': True}
+
+SCREEN_JS = '''async ([mode, seed, actions, condition, extraTicks, live, maxTicks]) => {
+    __ap.install(seed)
+    if (!live)
+        __ap.replay(actions)
+    startGame(mode)
+    cancelAnimationFrame(game)
+    window.drawUILayer = function() {}
+    window.drawFpsCounterLayer = function() {}
+    // nor the in-game mute icon (drawn on the canvas after the layers)
+    MUTE_BUTTON.draw = function() {}
+    const ap = __ap
+    const splashTicks = []
+    const particles = visualEffects.particles
+    const emit = particles.emitTrampolineSplash
+    particles.emitTrampolineSplash = function(...args)
+    {
+        if (!ap.simulating)
+            splashTicks.push(ap.tick)
+        return emit.apply(this, args)
+    }
+    const met = new Function('ap', 'grapnel', 'splashTicks', 'grappledTicks', 'return ' + condition)
+    let grappledTicks = 0
+    let extra = -1
+    while (ap.tick < maxTicks && ap.deathTick === null)
+    {
+        if (live)
+            ap.step()
+        else
+            physics()
+        grappledTicks = grapnel.isGrappled() ? grappledTicks + 1 : 0
+        if (extra < 0 && met(ap, grapnel, splashTicks, grappledTicks))
+            extra = extraTicks
+        if (extra == 0)
+            break
+        if (extra > 0)
+            --extra
+    }
+    draw()
+    return {tick: ap.tick, deathTick: ap.deathTick, found: extra == 0, splashTicks: splashTicks,
+        grappled: grapnel.isGrappled(), score: scoreText.count[version], canvas: [canvas.width, canvas.height]}
+}'''
+
+
+def capture_screens(seed_report, out):
+    """Store screenshots (1920x1080, phone 1080x1920) from the real game."""
+    from browser_test_support import start_browser_test
+    report = json.loads(Path(seed_report).read_text())
+    out.mkdir(parents=True, exist_ok=True)
+    meta = {}
+    errors = {'console': [], 'page': []}
+    with contextlib.ExitStack() as stack:
+        url, browser = start_browser_test(ROOT, stack.callback)
+
+        def open_page(label, **options):
+            context = browser.new_context(**options)
+            stack.callback(context.close)
+            context.add_init_script(path=str(AUTOPILOT))
+            page = context.new_page()
+            page.set_default_timeout(0)
+            page.on('console', lambda m: m.type == 'error' and errors['console'].append(f'[{label}] {m.text}'))
+            page.on('pageerror', lambda e: errors['page'].append(f'[{label}] {e}'))
+            page.goto(url + 'index.html')
+            page.wait_for_function('typeof menu != "undefined" && menu.visible')
+            return page
+
+        def shoot(page, name, facts):
+            path = out / f'screen-{name}.png'
+            page.screenshot(path=str(path))
+            meta[name] = {'file': path.name, **facts}
+            print(f'{name}: {path.name} {facts}', flush=True)
+
+        page = open_page('menu', viewport=VIEWPORT, device_scale_factor=1)
+        page.wait_for_timeout(1000)
+        shoot(page, 'menu', {})
+        for name, (mode, condition, extra) in SCREENS.items():
+            entry = report['modes'][mode]
+            page = open_page(name, viewport=VIEWPORT, device_scale_factor=1)
+            facts = page.evaluate(SCREEN_JS, [mode, entry['best_seed'], entry['best_actions'],
+                                              condition, extra, False, 1360])
+            if not facts['found']:
+                raise SystemExit(f'{name}: condition not met: {facts}')
+            shoot(page, name, {'mode': mode, 'seed': entry['best_seed'], **facts})
+        # Phone portrait: live autopilot (classic), first seed that gets a grapnel shot
+        for seed in range(1, 9):
+            page = open_page('phone-portrait', **PHONE)
+            facts = page.evaluate(SCREEN_JS, ['classic', seed, [], SCREENS['classic-grapnel'][1]
+                                              .replace('420', '240'), 0, True, 600])
+            if facts['found']:
+                shoot(page, 'phone-portrait', {'mode': 'classic', 'seed': seed, 'live': True, **facts})
+                break
+        else:
+            raise SystemExit('phone-portrait: no seed reached the grapnel shot')
+    (out / 'screens.json').write_text(json.dumps(meta, indent=1))
+    return errors
 
 
 def capture(seed_report, frames_dir, shots):
@@ -175,7 +286,7 @@ def crop_around(image, center_x, aspect):
     return image.crop((left, top, left + cw, bottom))
 
 
-def compose(frames_dir, out, sizes=None):
+def compose(frames_dir, out, sizes=None, embed_bg=False):
     from PIL import Image
     meta = json.loads((frames_dir / 'source-frames.json').read_text())['frames']
     out.mkdir(parents=True, exist_ok=True)
@@ -191,6 +302,10 @@ def compose(frames_dir, out, sizes=None):
         title_y = 0.13 if h > w else 0.15
         cover = neon_title(cover, TITLE, w / 2, h * title_y, w * (0.62 if w > h else 0.88))
         results[f'cover-{w}x{h}.png'] = cover
+    if embed_bg:
+        # no title: itch draws its Play button over the centre
+        results['embed-bg-960x540.png'] = crop_around(source, ninja_x + 0.1, 16 / 9).resize(
+            (960, 540), Image.LANCZOS)
 
     for name, image in results.items():
         image.save(out / name, optimize=True)
@@ -206,6 +321,8 @@ def main():
     parser.add_argument('--landscape', help='mode:tick for the landscape frame')
     parser.add_argument('--crop', help='mode:tick for the portrait/square frame')
     parser.add_argument('--sizes', help='WxH,... subset of COVER_SIZES to compose (default: all)')
+    parser.add_argument('--embed-bg', action='store_true', help='also write embed-bg-960x540.png')
+    parser.add_argument('--screens', help='directory for the store screenshots')
     parser.add_argument('--errors-dir', help='where to write console-errors.log/page-errors.log')
     args = parser.parse_args()
 
@@ -216,6 +333,13 @@ def main():
             mode, tick = value.split(':')
             shots[name] = {'mode': mode, 'tick': int(tick)}
 
+    if args.screens:
+        errors = capture_screens(args.seeds, Path(args.screens))
+        errors_dir = Path(args.errors_dir) if args.errors_dir else Path(args.screens).parent
+        for kind in ('console', 'page'):
+            (errors_dir / f'screens-{kind}-errors.log').write_text(''.join(e + '\n' for e in errors[kind]))
+        if errors['console'] or errors['page']:
+            return 1
     if args.capture:
         frames = Path(args.frames)
         errors = capture(args.seeds, frames, shots)
@@ -232,7 +356,8 @@ def main():
             raise SystemExit(f'sizes not in COVER_SIZES: {sorted(unknown)}')
     if args.out:
         out = Path(args.out)
-        compose(Path(args.frames) if args.frames else out.parent / 'source-frames', out, sizes)
+        compose(Path(args.frames) if args.frames else out.parent / 'source-frames', out, sizes,
+                args.embed_bg)
     return 0
 
 
