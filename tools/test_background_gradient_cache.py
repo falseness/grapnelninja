@@ -64,6 +64,7 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         page.on('pageerror', lambda e: errors.append(str(e)))
         context.add_init_script(COUNT_SCRIPT)
         page.goto(url + 'index.html', wait_until='load')
+        render_snapshot.boot_frozen(page)
         load = page.evaluate(TAKE_SCRIPT)
         page.evaluate(render_snapshot.SETUP_SCRIPT, [script, True])
         menu = page.evaluate(MENU_SCRIPT, frames)
@@ -72,10 +73,18 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         for tick in range(1, frames + 1):
             page.evaluate(render_snapshot.ADVANCE_SCRIPT, tick)
             game.append(page.evaluate(TAKE_SCRIPT))
+        # Trees with live re-layout: a real window resize changes the logical
+        # size; older trees: bump the canvas backing store
+        page.set_viewport_size({'width': VIEWPORT['width'] + 60, 'height': VIEWPORT['height']})
         size = page.evaluate('''() => {
             const c = visualEffects.background.canvas
-            c.width = c.width + 10
-            c.height = c.height + 10
+            if (typeof onViewportResize == 'function')
+                onViewportResize()
+            else
+            {
+                c.width = c.width + 10
+                c.height = c.height + 10
+            }
             return [c.width, c.height]
         }''')
         resized = []

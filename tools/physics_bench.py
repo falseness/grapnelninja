@@ -31,7 +31,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import QuietHandler
+from browser_test_support import QuietHandler, wait_for_boot
 from perf_mobile import SEED_SCRIPT, export_rev, pct
 
 
@@ -100,6 +100,7 @@ def run_once(browser, url, mode, ticks, warmup):
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.goto(url + 'index.html')
         page.wait_for_function('() => typeof menu != "undefined" && menu.visible')
+        wait_for_boot(page)
         r = page.evaluate(BENCH_SCRIPT, [mode, ticks, warmup, PERIOD, HOLD, TARGETS])
     finally:
         context.close()

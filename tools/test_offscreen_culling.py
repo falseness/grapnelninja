@@ -116,6 +116,7 @@ def draw_counts(rev, modes=('bad', 'classic'), frames=FRAMES, helpers=False):
             page = context.new_page()
             page.on('pageerror', lambda e, m=mode: result['page_errors'].append(f'{m}: {e}'))
             page.goto(url + 'index.html', wait_until='load')
+            render_snapshot.boot_frozen(page)
             page.evaluate(render_snapshot.SETUP_SCRIPT, [script, True])
             page.evaluate('mode => startGame(mode)', mode)
             if helpers and mode == modes[0]:

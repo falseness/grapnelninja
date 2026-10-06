@@ -18,7 +18,7 @@ import json
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -299,6 +299,7 @@ def open_page(browser, url, mode):
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
     page.goto(url)
+    wait_for_boot(page)
     page.evaluate(f"startGame('{mode}'); cancelAnimationFrame(game)")
     page.evaluate(HARNESS)
     return page, errors

@@ -4,7 +4,7 @@ from contextlib import ExitStack
 from pathlib import Path
 import unittest
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -67,6 +67,7 @@ class CircleSegmentTest(unittest.TestCase):
             errors = []
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.goto(url + 'index.html', wait_until='load')
+            wait_for_boot(page)
             cls.r = page.evaluate(cls.CASES)
             cls.errors = errors
 

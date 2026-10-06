@@ -35,7 +35,7 @@ import tarfile
 import tempfile
 import time
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWPORT = {'width': 844, 'height': 390}
@@ -329,6 +329,7 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
             f'input_events={len(script)} trace={trace} layers={layers} cpuprofile={cpuprofile}')
         page.goto(url + 'index.html')
         page.wait_for_function('() => typeof menu != "undefined" && menu.visible')
+        wait_for_boot(page)
         page.evaluate(INSTRUMENT_SCRIPT)
         if layers:
             page.evaluate(LAYERS_SCRIPT, [LAYERS])

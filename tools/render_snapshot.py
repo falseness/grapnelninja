@@ -56,7 +56,14 @@ CLOCK_SCRIPT = '''(() => {
     }
     window.Date = FrozenDate
     // rAF callbacks are recorded and never run: the harness steps by hand.
-    window.requestAnimationFrame = () => ++snap.rafs
+    // Until boot() hides #loading they are queued for pumpBoot instead.
+    snap.bootRafs = []
+    snap.booted = false
+    window.requestAnimationFrame = cb => {
+        if (!snap.booted)
+            snap.bootRafs.push(cb)
+        return ++snap.rafs
+    }
     window.cancelAnimationFrame = () => {}
     const addTimer = (fn, ms, repeat, args) => {
         const id = snap.nextId++
@@ -83,6 +90,16 @@ CLOCK_SCRIPT = '''(() => {
                 t.fn(...t.args)
         }
     }
+    // One boot round: due timers and the queued rAFs; true once booted
+    // (trees without #loading boot synchronously on load).
+    snap.pumpBoot = () => {
+        snap.runTimers()
+        for (const cb of snap.bootRafs.splice(0))
+            cb(snap.now)
+        const loading = document.getElementById('loading')
+        snap.booted = !loading || loading.hidden
+        return snap.booted
+    }
     snap.step = () => {
         snap.tick++
         snap.now = snap.tick * STEP
@@ -92,6 +109,19 @@ CLOCK_SCRIPT = '''(() => {
         draw()
     }
 })()'''
+
+def boot_frozen(page, rounds=500):
+    """Drive index.html's async boot() to the first menu frame under CLOCK_SCRIPT.
+
+    boot() awaits rAF, which the frozen clock never fires on its own; the real
+    event loop runs between rounds so the Bridge script load can settle.
+    """
+    for _ in range(rounds):
+        if page.evaluate('() => __snap.pumpBoot()'):
+            return
+        page.wait_for_timeout(5)
+    raise RuntimeError('boot() did not finish under the frozen clock')
+
 
 # After load: input dispatch (touch or mouse) and the black composite capture.
 SETUP_SCRIPT = '''([script, touch]) => {
@@ -185,6 +215,7 @@ def capture(rev, out, extra_init=None, log=print):
                 page = context.new_page()
                 page.on('pageerror', lambda e, n=vp['name']: errors.append(f'{n}: {e}'))
                 page.goto(url + 'index.html', wait_until='load')
+                boot_frozen(page)
                 if not page.evaluate('() => typeof menu != "undefined" && menu.visible'):
                     raise RuntimeError('menu not visible after load')
                 page.evaluate(SETUP_SCRIPT, [script, vp['touch']])

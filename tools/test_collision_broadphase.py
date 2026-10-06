@@ -15,7 +15,7 @@ from pathlib import Path
 import subprocess
 import unittest
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 from perf_mobile import SEED_SCRIPT, export_rev
 import render_snapshot
 
@@ -63,6 +63,7 @@ def world_states(rev, modes):
             errors = []
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.goto(url + 'index.html', wait_until='load')
+            render_snapshot.boot_frozen(page)
             page.evaluate(render_snapshot.SETUP_SCRIPT, [script, True])
             page.evaluate('mode => startGame(mode)', mode)
             digest, checkpoints = hashlib.sha256(), []
@@ -113,6 +114,7 @@ class BroadphaseHelperTest(unittest.TestCase):
             url, browser = start_browser_test(ROOT, stack.callback)
             page = browser.new_page()
             page.goto(url + 'index.html', wait_until='load')
+            wait_for_boot(page)
             cls.r = page.evaluate(cls.CASES)
 
     def test_bounds(self):
