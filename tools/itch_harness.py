@@ -7,14 +7,16 @@ missing files. The host server plays itch.io: it serves
 tools/fixtures/fake-itch-host.html with the game URL filled in.
 
 By default the zip is built from the tracked files as they are in the working
-tree (so an uncommitted fix is what gets tested); pass rev to build from git.
+tree (so an uncommitted fix is what gets tested); pass rev to build from git,
+or set ITCH_ZIP=<path> to serve a prebuilt zip exactly as it will be uploaded.
 
-Usage: python3 tools/itch_harness.py [--rev REV]  (prints both URLs, serves until ^C)
+Usage: [ITCH_ZIP=path] python3 tools/itch_harness.py [--rev REV]  (prints both URLs, serves until ^C)
 """
 import argparse
 import importlib.util
 import io
 import mimetypes
+import os
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread
@@ -42,7 +44,10 @@ def worktree_tree(root=ROOT):
 
 
 def zip_files(rev=None):
-    """Build the itch zip and return its entries as {path: bytes}."""
+    """Build the itch zip (or read $ITCH_ZIP) and return its entries as {path: bytes}."""
+    if os.environ.get('ITCH_ZIP'):
+        with zipfile.ZipFile(os.environ['ITCH_ZIP']) as zf:
+            return {name: zf.read(name) for name in zf.namelist() if not name.endswith('/')}
     tree = builder.git_tree(rev) if rev else worktree_tree()
     blob, report = builder.build(tree)
     if blob is None:
