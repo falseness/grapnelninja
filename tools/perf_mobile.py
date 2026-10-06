@@ -68,7 +68,9 @@ INSTRUMENT_SCRIPT = '''() => {
     const perf = window.__perf = {t0: null, windowMs: 0, frames: [], physicsMs: [], drawMs: [], steps: [],
                                   current: 0, touches: 0, throws: 0, dispatched: []}
     const recording = () => perf.t0 !== null && performance.now() - perf.t0 < perf.windowMs
-    document.addEventListener('touchstart', () => recording() && perf.touches++)
+    // Capture on window: counted before the game's handlers run, so a slow
+    // handler on a loaded host cannot push the count past the window.
+    window.addEventListener('touchstart', () => recording() && perf.touches++, true)
     document.addEventListener('touchstart', () => recording() && grapnel.throwed && perf.throws++)
     const physics0 = window.physics, draw0 = window.draw, loop0 = window.gameLoop
     window.physics = function() {
