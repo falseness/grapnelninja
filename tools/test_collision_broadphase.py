@@ -4,8 +4,10 @@ Helper cases run the real script in a page. The world-state test plays 1200
 seeded ticks (render_snapshot's frozen clock and scripted input) on the base
 revision and on the candidate and requires equal state hashes for bad and
 classic. Candidate: the worktree if game files are dirty, else HEAD; base: the
-parent of the commit that added collision/broadphase.js (HEAD if it is not
-committed yet). Override with BROADPHASE_BASE / BROADPHASE_REV.
+candidate itself with the broad phase switched off (boundsOverlap always true),
+because later physics fixes changed the world state against the parent of the
+commit that added collision/broadphase.js. Override with BROADPHASE_BASE (a
+revision without the broad phase) / BROADPHASE_REV.
 """
 from contextlib import ExitStack
 import hashlib
@@ -38,14 +40,11 @@ STATE_SCRIPT = '''() => JSON.stringify({
 def default_revs():
     dirty = subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'],
                                     cwd=ROOT, text=True).strip()
-    added = subprocess.check_output(['git', 'log', '--diff-filter=A', '--format=%H', '--', 'collision/broadphase.js'],
-                                    cwd=ROOT, text=True).split()
-    base = added[-1] + '~1' if added else 'HEAD'
-    rev = 'worktree' if dirty else 'HEAD'
-    return os.environ.get('BROADPHASE_BASE', base), os.environ.get('BROADPHASE_REV', rev)
+    rev = os.environ.get('BROADPHASE_REV', 'worktree' if dirty else 'HEAD')
+    return os.environ.get('BROADPHASE_BASE', rev), rev
 
 
-def world_states(rev, modes):
+def world_states(rev, modes, disable_broadphase=False):
     """{mode: {'rev', 'hash', 'checkpoints', 'final', 'broadphase'}} after TICKS ticks."""
     out = {}
     with ExitStack() as stack:
@@ -64,6 +63,12 @@ def world_states(rev, modes):
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.goto(url + 'index.html', wait_until='load')
             render_snapshot.boot_frozen(page)
+            if disable_broadphase:
+                page.evaluate('''() => {
+                    boundsOverlap = () => true
+                    const far = {left: 9, right: 9, top: 9, bottom: 9}
+                    window.__broadphaseOff = boundsOverlap({left: 0, right: 0, top: 0, bottom: 0}, far)
+                }''')
             page.evaluate(render_snapshot.SETUP_SCRIPT, [script, True])
             page.evaluate('mode => startGame(mode)', mode)
             digest, checkpoints = hashlib.sha256(), []
@@ -74,7 +79,7 @@ def world_states(rev, modes):
                 digest.update(state.encode())
             out[mode] = {'rev': rev_id, 'hash': digest.hexdigest(), 'checkpoints': checkpoints,
                          'final': json.loads(state), 'page_errors': errors,
-                         'broadphase': page.evaluate('() => typeof pointsBounds == "function"')}
+                         'broadphase': page.evaluate('() => typeof pointsBounds == "function" && !window.__broadphaseOff')}
             context.close()
     return out
 
@@ -144,7 +149,8 @@ class WorldStateHashTest(unittest.TestCase):
     def test_world_state_equal_after_1200_ticks(self):
         base, rev = default_revs()
         modes = ['bad', 'classic']
-        before, after = world_states(base, modes), world_states(rev, modes)
+        before = world_states(base, modes, disable_broadphase=base == rev)
+        after = world_states(rev, modes)
         for mode in modes:
             b, a = before[mode], after[mode]
             print(f'STATE_HASH mode={mode} ticks={TICKS} base={b["rev"]} hash={b["hash"]}', flush=True)

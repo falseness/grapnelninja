@@ -4,17 +4,18 @@ Helper cases run in the page against the bounds test: inside, partly inside,
 just outside the padded edge (and exactly on it) and far outside, plus the
 element and track boxes. The in-page run steps bad and classic on
 render_snapshot's frozen clock (844x390@3, touch) for FRAMES ticks at the base
-rev (before culling) and at CULL_REV (default worktree): element draw() calls
+rev (culling off) and at CULL_REV (default worktree): element draw() calls
 per frame must drop while the canvas captures stay byte-identical.
-CULL_BASE defaults to the parent of the commit that added render/culling.js,
-or HEAD while it is not committed yet.
+CULL_BASE defaults to CULL_REV with culling switched off (isCullBoxVisible
+always true), because later rendering and viewport changes moved the captures
+against the parent of the commit that added render/culling.js. Set CULL_BASE to
+a revision without culling to compare against it instead.
 """
 from contextlib import ExitStack
 import base64
 import hashlib
 import os
 import statistics
-import subprocess
 import unittest
 
 from browser_test_support import start_browser_test
@@ -91,13 +92,7 @@ HELPER_SCRIPT = '''() => {
 }'''
 
 
-def default_base():
-    added = subprocess.check_output(['git', 'log', '--diff-filter=A', '--format=%H', '--', 'render/culling.js'],
-                                    cwd=ROOT, text=True).split()
-    return added[-1] + '~1' if added else 'HEAD'
-
-
-def draw_counts(rev, modes=('bad', 'classic'), frames=FRAMES, helpers=False):
+def draw_counts(rev, modes=('bad', 'classic'), frames=FRAMES, helpers=False, disable_culling=False):
     """Per mode: per-frame element draws and shadowBlur draws over frames ticks,
     and the sha256 of the black-composited capture at CAPTURE_TICKS."""
     result = {'modes': {}, 'page_errors': []}
@@ -117,6 +112,11 @@ def draw_counts(rev, modes=('bad', 'classic'), frames=FRAMES, helpers=False):
             page.on('pageerror', lambda e, m=mode: result['page_errors'].append(f'{m}: {e}'))
             page.goto(url + 'index.html', wait_until='load')
             render_snapshot.boot_frozen(page)
+            if disable_culling:
+                result['culling_off'] = page.evaluate('''() => {
+                    isCullBoxVisible = () => true
+                    return isCullBoxVisible({left: 1e9, right: 1e9, top: 1e9, bottom: 1e9}, {left: 0, right: 1, top: 0, bottom: 1})
+                }''')
             page.evaluate(render_snapshot.SETUP_SCRIPT, [script, True])
             page.evaluate('mode => startGame(mode)', mode)
             if helpers and mode == modes[0]:
@@ -144,14 +144,19 @@ def draw_counts(rev, modes=('bad', 'classic'), frames=FRAMES, helpers=False):
 class OffscreenCullingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.base_rev = os.environ.get('CULL_BASE') or default_base()
-        cls.after = draw_counts(os.environ.get('CULL_REV', 'worktree'), helpers=True)
-        cls.before = draw_counts(cls.base_rev)
+        rev = os.environ.get('CULL_REV', 'worktree')
+        cls.base_rev = os.environ.get('CULL_BASE')
+        cls.after = draw_counts(rev, helpers=True)
+        cls.before = draw_counts(cls.base_rev or rev, disable_culling=not cls.base_rev)
         cls.h = cls.after['helpers']
         for name, r in [('before', cls.before), ('after', cls.after)]:
             print(name, r['rev'], {m: (v['element_draws_median'], v['shadow_draws_median'])
                                    for m, v in r['modes'].items()})
         print('helpers', cls.h)
+
+    def test_base_has_culling_off(self):
+        if not self.base_rev:
+            self.assertTrue(self.before['culling_off'])
 
     def test_no_page_errors(self):
         self.assertEqual(self.before['page_errors'], [])

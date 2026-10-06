@@ -193,7 +193,10 @@ SPAWN_HOOK = r'''() => {
             rs.spawns.push({tick: rs.tickNo || 0, phase: rs.phase, anchor: x, prevRight, lastGroupRight,
                 left: Math.min(...group.map(e => e.getLeftPointX())),
                 right: Math.max(...group.map(e => e.getRightPointX())),
-                types: group.map(e => e.constructor.name)})
+                types: group.map(e => e.constructor.name),
+                // TriangleFactory adds radius * sqrt(3) to the sampled x, so a lone
+                // triangle's left edge sits side / 2 past the interval.
+                triangleShift: group.length == 1 && group[0] instanceof Triangle ? group[0].side / 2 : 0})
         return n
     }
 }'''
@@ -400,7 +403,7 @@ class SafeRespawnTests(unittest.TestCase):
                 lo, hi = 0.20 * width, 0.30 * width
             else:
                 # classic: the group is placed within the floor interval past the anchor
-                gap = s['left'] - s['anchor']
+                gap = s['left'] - s['triangleShift'] - s['anchor']
                 lo, hi = result['interval']['min'], result['interval']['max']
             ok = lo - 1e-6 <= gap <= hi + 1e-6
             checks.append(dict(s, measuredGap=gap, min=lo, max=hi, passed=ok))
