@@ -1,6 +1,6 @@
 """English + Russian localization (TASK-126).
 
-The browser locale is navigator.language, which the itch.io PLATFORM reports
+The browser locale is navigator.language, which the local PLATFORM reports
 as its language. Boot language: the saved 'grapnelninja.lang' storage value,
 else 'ru' for a platform language starting with 'ru', else 'en'. The menu's
 LANGUAGE_BUTTON switches language at once and saves it through the single

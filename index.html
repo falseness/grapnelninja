@@ -259,7 +259,7 @@
             }
             // Lethal hits: offer one continue per run from CONTINUE_MIN_SCORE
             // when rewarded ads exist, otherwise restart instantly. The offer
-            // freezes physics. On itch.io there are no ads: always restart.
+            // freezes physics. Without ads (the local adapter): always restart.
             function onLethalDeath()
             {
                 if (continueOffer.visible || ninja.isInvulnerable() || interstitialPending)

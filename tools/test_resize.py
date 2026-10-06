@@ -123,7 +123,7 @@ class ResizeTests(unittest.TestCase):
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "itch" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "local" && menu.visible')
         return page
 
     def write_evidence(self, name, data):

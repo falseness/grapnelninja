@@ -48,7 +48,7 @@ class ProgressTests(unittest.TestCase):
         # Freeze physics so the ninja never dies on its own: run ends come
         # only from the test's own reStart() calls.
         page.evaluate('runFixedPhysics = function () {}')
-        self.assertEqual(page.evaluate('PLATFORM.environment'), 'itch')
+        self.assertEqual(page.evaluate('PLATFORM.environment'), 'local')
         return page
 
     def reload(self, page):

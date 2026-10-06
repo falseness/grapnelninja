@@ -2,7 +2,7 @@
 
 Every gameplay event is checked through window.__audioLog (audio.js logs
 each AUDIO.play). The mute button toggles the 'user' mute source and is
-saved under grapnelninja.muted. (The itch.io build has no rewarded ad, so
+saved under grapnelninja.muted. (The local build has no rewarded ad, so
 the pause-during-ad cases g05/g06 of the ad SDK build are gone.)
 
 Env: AUDIO_WIRING_EVIDENCE_DIR receives event-sounds.json, mute-persist.json,

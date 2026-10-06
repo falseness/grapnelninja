@@ -1,7 +1,7 @@
 """Layout checks per screen, size and language.
 
 For each (language, size) one page is opened (browser locale = language)
-and walked through menu -> hud -> pause. The itch.io build has no rewarded
+and walked through menu -> hud -> pause. The local build has no rewarded
 ad, so the continue offer and ad-unavailable screens never show.
 Every screen is drawn once with LAYOUT_PROBE.boxes on (menu.js), which
 returns the text and button boxes in CSS px relative to the canvas.

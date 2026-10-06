@@ -1,4 +1,4 @@
-// Local itch.io platform adapter: no SDK, no network, no ads. Keeps the
+// Local platform adapter: no SDK, no network, no ads. Keeps the
 // PLATFORM API the game calls. Storage uses window.localStorage and falls
 // back to an in-memory map when it is missing or throws (a cross-origin
 // iframe with blocked storage raises SecurityError on access).
@@ -86,7 +86,7 @@ const PLATFORM = (function()
     const PLATFORM =
     {
         environment: 'pending',
-        platformId: 'itch',
+        platformId: 'local',
         language: 'en',
         // The game skips an interstitial this soon after the last one
         interstitialMinGapMs: 60000,
@@ -101,13 +101,13 @@ const PLATFORM = (function()
             if (!initPromise)
             {
                 PLATFORM.language = isoLanguage(navigatorLanguage())
-                PLATFORM.environment = 'itch'
+                PLATFORM.environment = 'local'
                 initPromise = Promise.resolve(PLATFORM.environment)
             }
             return initPromise
         },
 
-        // No ads on itch.io: the continue offer and the interstitial never show
+        // No ads locally: the continue offer and the interstitial never show
         isRewardedSupported()
         {
             return false

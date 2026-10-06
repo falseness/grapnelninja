@@ -24,7 +24,7 @@ FRAMES_MS = (0, 300, 500, 1000, 2000, 2500)
 # window.__rs: seeded runs, a manual camera advance with deaths disabled,
 # real lethal deaths, the continue and per-tick measurements.
 SETUP = r'''() => {
-    // The itch.io build has no rewarded ads, so the continue (and its safe
+    // The local build has no rewarded ads, so the continue (and its safe
     // respawn in respawn.js) is unreachable in play; a stub ad that always
     // rewards keeps the respawn path under test.
     PLATFORM.isRewardedSupported = () => true
@@ -257,7 +257,7 @@ class SafeRespawnTests(unittest.TestCase):
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual((errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "itch" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "local" && menu.visible')
         page.evaluate(SETUP)
         return page
 

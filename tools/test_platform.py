@@ -1,4 +1,4 @@
-"""The local itch.io PLATFORM adapter: offline boot, storage, no ads, hidden-tab pause."""
+"""The local PLATFORM adapter: offline boot, storage, no ads, hidden-tab pause."""
 import json
 import os
 from pathlib import Path
@@ -12,7 +12,7 @@ from browser_test_support import start_browser_test, wait_for_boot
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
-READY = ('PLATFORM.environment === "itch" && menu.visible'
+READY = ('PLATFORM.environment === "local" && menu.visible'
          ' && document.getElementById("loading").hidden')
 
 # A cross-origin iframe with blocked storage: every localStorage access throws
@@ -70,8 +70,8 @@ class ItchPlatformTests(unittest.TestCase):
     def setUpClass(cls):
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         cls.origin = '{0.scheme}://{0.netloc}'.format(urlsplit(cls.url))
-        cls.evidence = Path(os.environ.get('ITCH_EVIDENCE_DIR') or '')
-        cls.save_evidence = bool(os.environ.get('ITCH_EVIDENCE_DIR'))
+        cls.evidence = Path(os.environ.get('PLATFORM_EVIDENCE_DIR') or '')
+        cls.save_evidence = bool(os.environ.get('PLATFORM_EVIDENCE_DIR'))
 
     def out(self, name):
         path = self.evidence / name
@@ -113,7 +113,7 @@ class ItchPlatformTests(unittest.TestCase):
     def test_a_offline_boot(self):
         page, errors, requests = self.open()
         self.boot(page)
-        self.assertEqual(page.evaluate('PLATFORM.environment'), 'itch')
+        self.assertEqual(page.evaluate('PLATFORM.environment'), 'local')
         self.assertEqual(page.evaluate('typeof window.bridge'), 'undefined')
         page.wait_for_timeout(500)
         foreign = [u for u in requests if not u.startswith(self.origin + '/')]

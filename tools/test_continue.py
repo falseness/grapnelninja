@@ -1,7 +1,7 @@
-"""Lethal death without the continue offer (itch.io build, no rewarded ad).
+"""Lethal death without the continue offer (local build, no rewarded ad).
 
 The ad SDK build showed a Continue/Restart offer after an eligible death
-(TASK-080/093/125). The itch.io PLATFORM reports rewarded ads unsupported
+(TASK-080/093/125). The local PLATFORM reports rewarded ads unsupported
 (TASK-163), so every lethal death, at any score, restarts the run at once
 and the offer never shows.
 """
@@ -64,7 +64,7 @@ class NoContinueTests(unittest.TestCase):
         self.addCleanup(context.close)
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "itch" && menu.visible'
+        page.wait_for_function('PLATFORM.environment === "local" && menu.visible'
                                ' && document.getElementById("loading").hidden', timeout=15000)
         self.assertEqual(page.evaluate('PLATFORM.isRewardedSupported()'), False)
         page.evaluate(INSTRUMENT_RUN)

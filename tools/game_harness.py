@@ -1,10 +1,10 @@
 """Open game pages in a shared test browser and observe PLATFORM storage.
 
-The itch.io build has no SDK: PLATFORM.storage goes to localStorage. An init
+The local build has no SDK: PLATFORM.storage goes to localStorage. An init
 script wraps Storage.prototype.getItem/setItem on localStorage and groups the
 calls made in one synchronous run (one getMany or setMany) into one record
 {name: 'storage.get' | 'storage.set', args: [keys, values], t} in
-window.__storageSpy.calls, the shape the fake Bridge's call log had.
+window.__storageSpy.calls, the call log shape the tests expect.
 """
 from browser_test_support import start_browser_test
 

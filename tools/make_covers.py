@@ -19,7 +19,7 @@ Frame metadata (mode, seed, tick, ninja position) goes to source-frames.json.
 The compose step (default --frames is <out>/../source-frames) writes one
 cover per size in COVER_SIZES: 16:9 (1920x1080, 1280x720), 4:3 (800x600,
 1024x768), 1:1 (1024x1024, 800x800, 512x512, 256x256), 2:3 (800x1200) and
-9:16 (1080x1920, the Playgama portrait cover), so
+9:16 (1080x1920, a portrait store cover), so
 a portal's thumbnail slots can be matched without knowing their exact sizes
 up front. --sizes WxH,... composes only those sizes (they must be in
 COVER_SIZES), e.g. --sizes 256x256,1024x1024,1024x768.

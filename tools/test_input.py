@@ -77,7 +77,7 @@ class InputTests(unittest.TestCase):
         context, page, errors = open_game(self.browser, 'about:blank', DESKTOP_VIEWPORT)
         self.track(context, errors)
         page.goto(self.url + 'index.html')
-        page.wait_for_function('PLATFORM.environment === "itch" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "local" && menu.visible')
         return page
 
     def out(self):

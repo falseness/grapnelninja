@@ -1,5 +1,5 @@
 // Records, time in game and settings persisted through PLATFORM.storage
-// (Bridge storage; platform.js falls back to browser storage when disabled).
+// (localStorage, with an in-memory fallback in platform.js).
 // Everything is read by one getMany at boot and written by one setMany per
 // meaningful change (run end, pause, menu return), at most once per second.
 const PROGRESS = (function()

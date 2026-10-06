@@ -122,7 +122,9 @@ function createEvents()
         event.preventDefault()
     }, {passive: false})
     
-    const scrollKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ']
+    // Keys that would scroll the host page around an embedding iframe
+    const scrollKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ',
+        'PageUp', 'PageDown', 'Home', 'End']
     const pauseKeys = ['Escape', 'p', 'P']
     document.addEventListener('keydown', function(event)
     {
