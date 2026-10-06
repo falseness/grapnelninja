@@ -1,0 +1,56 @@
+<!Doctype html>
+<!-- A stand-in for an itch.io game page ('Embed in page', 960x540). The iframe
+     attributes are the ones itch emits (artifacts/TASK-160/iframe.html); as on
+     itch, the iframe is only inserted after 'Click to play'. -->
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Grapnel Ninja by Falseness</title>
+        <style>
+            body { margin: 0; background: #222; color: #ddd; font: 16px sans-serif }
+            header { height: 160px; padding: 20px; box-sizing: border-box }
+            .game_frame { position: relative; margin: 0 auto; background: #000 }
+            .game_frame iframe { display: block; width: 100%; height: 100%; border: 0 }
+            #load_game { position: absolute; inset: 0; margin: auto; width: 240px; height: 60px;
+                         font-size: 22px; cursor: pointer }
+            .controls { width: 960px; margin: 8px auto; text-align: right }
+            .description { width: 960px; margin: 0 auto; height: 3000px }
+        </style>
+    </head>
+    <body>
+        <header><h1>Grapnel Ninja</h1><p>A web game made by Falseness</p></header>
+        <div class="game_frame" id="game_frame" data-width="960" data-height="540"
+             style="width: 960px; height: 540px">
+            <button id="load_game">Click to play</button>
+        </div>
+        <div class="controls"><button id="fullscreen_btn">Fullscreen</button></div>
+        <div class="description" id="description">
+            <p>Throw the grapnel, swing between the floors and keep running.</p>
+        </div>
+        <script>
+            const GAME_URL = '{{GAME_URL}}'
+            const frame = document.getElementById('game_frame')
+            document.getElementById('load_game').addEventListener('click', function() {
+                const iframe = document.createElement('iframe')
+                iframe.id = 'game_drop'
+                iframe.setAttribute('allowfullscreen', 'true')
+                iframe.setAttribute('allow', 'autoplay; fullscreen *; geolocation; microphone; camera; midi; monetization; xr-spatial-tracking; gamepad; gyroscope; accelerometer; xr; cross-origin-isolated; web-share')
+                iframe.setAttribute('frameborder', '0')
+                iframe.setAttribute('scrolling', 'no')
+                iframe.setAttribute('allowtransparency', 'true')
+                iframe.setAttribute('webkitallowfullscreen', 'true')
+                iframe.setAttribute('mozallowfullscreen', 'true')
+                iframe.setAttribute('msallowfullscreen', 'true')
+                iframe.src = GAME_URL
+                this.remove()
+                frame.classList.add('game_loaded')
+                frame.appendChild(iframe)
+            })
+            document.getElementById('fullscreen_btn').addEventListener('click', function() {
+                const iframe = document.getElementById('game_drop')
+                if (iframe)
+                    iframe.requestFullscreen()
+            })
+        </script>
+    </body>
+</html>
