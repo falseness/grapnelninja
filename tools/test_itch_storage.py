@@ -110,6 +110,9 @@ class ItchStorageTests(unittest.TestCase):
         return frame
 
     def click_game(self, page, x, y):
+        # events.js ignores input for STYLE.timing.inputUntouchMs after a button click
+        page.wait_for_timeout(page.frame_locator('#game_drop').locator('body').evaluate(
+            '() => STYLE.timing.inputUntouchMs') + 100)
         box = page.locator('#game_drop').bounding_box()
         page.mouse.click(box['x'] + x, box['y'] + y)
 
