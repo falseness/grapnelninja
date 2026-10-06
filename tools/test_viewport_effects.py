@@ -1,5 +1,6 @@
 """Compare the viewport checker's real effects scenario in Chromium."""
 import importlib.util
+import json
 from io import BytesIO
 from pathlib import Path
 import subprocess
@@ -54,6 +55,22 @@ def strip_fps_row(calls):
         start = max(i for i in range(hits[0]) if calls[i] == ['save'])
         end = next(i for i in range(hits[0], len(calls)) if calls[i] == ['restore'])
         calls[start:end + 1] = []
+
+
+GRADIENT_CALLS = ('createLinearGradient', 'createRadialGradient')
+
+
+def split_gradients(parts):
+    """Per-part draw calls without the gradient constructors, plus the distinct constructors.
+
+    The TASK-161 merge builds the base vignette together with the linear gradient
+    and caches both by bounds (render/effects.js getGradients): the vignette's
+    createRadialGradient moves ahead of the first fillStyle, and later parts reuse
+    the cached pair instead of building it again. The gradients and every draw
+    stay the same."""
+    created = {json.dumps(c) for calls in parts.values() for c in calls if c[0] in GRADIENT_CALLS}
+    return ({part: [c for c in calls if c[0] not in GRADIENT_CALLS] for part, calls in parts.items()},
+            sorted(created))
 
 
 class ViewportEffectsTests(unittest.TestCase):
@@ -149,7 +166,8 @@ class ViewportEffectsTests(unittest.TestCase):
                         old_images[stage], new_images[stage]).getbbox(), (mode, stage))
                 for effects in (old, new):
                     effects['parts']['menu'] = strip_fps_row(effects['parts']['menu'])
-                for field in ['parts', 'particles', 'shake', 'quality', 'panel']:
+                    effects['parts'], effects['gradients'] = split_gradients(effects['parts'])
+                for field in ['parts', 'gradients', 'particles', 'shake', 'quality', 'panel']:
                     CHECKER.near(old[field], new[field], mode + '.' + field)
                 CHECKER.near(CHECKER.normalized_style(old['style']),
                              CHECKER.normalized_style(new['style']))

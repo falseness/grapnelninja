@@ -24,6 +24,11 @@ FRAMES_MS = (0, 300, 500, 1000, 2000, 2500)
 # window.__rs: seeded runs, a manual camera advance with deaths disabled,
 # real lethal deaths, the continue and per-tick measurements.
 SETUP = r'''() => {
+    // The itch.io build has no rewarded ads, so the continue (and its safe
+    // respawn in respawn.js) is unreachable in play; a stub ad that always
+    // rewards keeps the respawn path under test.
+    PLATFORM.isRewardedSupported = () => true
+    PLATFORM.requestRewarded = () => Promise.resolve({status: 'rewarded'})
     const realLethal = window.onLethalDeath
     const realRestart = window.reStart
     const rs = window.__rs = {deaths: 0, reStarts: 0, lethalCalls: 0, deathsEnabled: true}
@@ -149,7 +154,7 @@ SETUP = r'''() => {
         return {cause: cause == 'behind-border' ? cause : 'obstacle:' + element.constructor.name,
                 deathX: ninja.x, deathY: ninja.y, score: scoreText.count[version]}
     }
-    // The continue arrives with the fake rewarded ad's adFinished (TASK-082)
+    // The continue arrives with the stub rewarded ad's result
     rs.pressContinue = async () => {
         const b = continueOffer.continueButton.background
         if (!continueOffer.click({x: b.x + b.width / 2, y: b.y + b.height / 2}))
