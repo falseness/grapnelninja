@@ -17,8 +17,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from game_harness import open_game, start_game_test, storage_calls
-from test_audio_wiring import READY, canvas_to_viewport
+from game_harness import READY, canvas_to_viewport, open_game, start_game_test, storage_calls
 import test_continue as continue_test
 
 ROOT = Path(__file__).resolve().parent.parent

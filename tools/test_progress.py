@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
 TIME_KEY = 'grapnelninja.time'
-KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.muted', 'grapnelninja.lang']
+KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang']
 READY = ('PLATFORM.environment !== "pending" && menu.visible'
          ' && document.getElementById("loading").hidden')
 
@@ -104,26 +104,24 @@ class ProgressTests(unittest.TestCase):
                          [7, 5])
 
     def test_time_and_settings_survive_reload(self):
-        """Time in game and the reserved muted/lang keys round-trip."""
+        """Time in game and the lang key round-trip."""
         page = self.boot()
-        self.seed_and_reload(page, {TIME_KEY: '125', 'grapnelninja.muted': '1',
-                                    'grapnelninja.lang': 'ru'})
-        state = page.evaluate('[PROGRESS.getTime(), PROGRESS.getMuted(), PROGRESS.getLang()]')
+        self.seed_and_reload(page, {TIME_KEY: '125', 'grapnelninja.lang': 'ru'})
+        state = page.evaluate('[PROGRESS.getTime(), PROGRESS.getLang()]')
         log(f'seeded state={state} menu time={self.menu_texts(page)["time"]!r}')
-        self.assertEqual(state, [125, True, 'ru'])
+        self.assertEqual(state, [125, 'ru'])
         # Since TASK-126 the saved 'ru' also switches the menu to Russian
         self.assertEqual(self.menu_texts(page)['time'], 'время в игре: 2 мин.')
 
         page.evaluate('''() => {
             PROGRESS.setTime(PROGRESS.getTime() + 60)
-            PROGRESS.setMuted(false)
             PROGRESS.setLang('en')
             PROGRESS.save()
         }''')
         self.reload(page)
-        state = page.evaluate('[PROGRESS.getTime(), PROGRESS.getMuted(), PROGRESS.getLang()]')
+        state = page.evaluate('[PROGRESS.getTime(), PROGRESS.getLang()]')
         log(f'after save+reload state={state}')
-        self.assertEqual(state, [185, False, 'en'])
+        self.assertEqual(state, [185, 'en'])
         self.assertIn('3 minutes', self.menu_texts(page)['time'])
 
     def test_corrupt_values_fall_back_to_defaults(self):
@@ -132,15 +130,15 @@ class ProgressTests(unittest.TestCase):
         cases = [
             {RECORDS_KEY: '{not json', TIME_KEY: 'NaN'},
             {RECORDS_KEY: '{"classic":"NaN","bad":-4}', TIME_KEY: '-30'},
-            {RECORDS_KEY: 'null', TIME_KEY: 'Infinity', 'grapnelninja.muted': 'x'},
+            {RECORDS_KEY: 'null', TIME_KEY: 'Infinity', 'grapnelninja.lang': ''},
             {RECORDS_KEY: '[1,2]', TIME_KEY: '{"a":1}'},
         ]
         for store in cases:
             self.seed_and_reload(page, store)
             state = page.evaluate('''[scoreText.record.classic, scoreText.record.bad,
-                PROGRESS.getTime(), PROGRESS.getMuted(), PROGRESS.getLang()]''')
+                PROGRESS.getTime(), PROGRESS.getLang()]''')
             log(f'seed={store} -> state={state}')
-            self.assertEqual(state, [0, 0, 0, False, None])
+            self.assertEqual(state, [0, 0, 0, None])
             texts = self.menu_texts(page)
             self.assertEqual((texts['classic'], texts['bad']), ('record: 0', 'record: 0'))
             self.assertIn(' 0 minutes', texts['time'])

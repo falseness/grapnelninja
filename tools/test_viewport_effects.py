@@ -84,16 +84,14 @@ class ViewportEffectsTests(unittest.TestCase):
         cls.baseline = load_baseline_sources('a6b41aa', files)
         # TASK-112 capitalised the menu title on purpose; apply it to the baseline too
         cls.baseline['menu.js'] = cls.baseline['menu.js'].replace(b"'Grapnel ninja'", b"'Grapnel Ninja'")
-        # TASK-120 added the speaker mute button to the menu, pause screen and
-        # HUD: draw the current mutebutton.js at the same points in the baseline.
         # TASK-126 added the language toggle to the menu: draw the current
-        # languagebutton.js (with i18n.js) there too
-        # TASK-127: the buttons report to LAYOUT_PROBE (menu.js) and size from
-        # getCanvasCssRect (gameoptions.js), both newer than the baseline
-        cls.baseline['mutebutton.js'] = (
+        # languagebutton.js (with i18n.js) in the baseline too
+        # TASK-127: the button reports to LAYOUT_PROBE (menu.js) and sizes from
+        # minTouchSize (gameoptions.js), both newer than the baseline
+        cls.baseline['buttonshim.js'] = (
             b"const LAYOUT_PROBE = {rect() {}, text() {}}\n"
-            b"function getCanvasCssRect() { return canvas.getBoundingClientRect() }\n"
-            + (ROOT / 'mutebutton.js').read_bytes())
+            b"function minTouchSize() { const h = canvas.getBoundingClientRect().height\n"
+            b"    return h > 0 ? 44 * height / h : 0 }\n")
         # TASK-127 capped button labels at 0.8 of the button height
         for old in [b"this.getFittedTextSize(text.text, this.background.height)",
                     b"button.getFittedTextSize(button.text.text, height)"]:
@@ -101,14 +99,10 @@ class ViewportEffectsTests(unittest.TestCase):
             cls.baseline['menu.js'] = cls.baseline['menu.js'].replace(old, old[:-1] + b" * 0.8)")
         for name, old, new in [
                 ('index.html', b"<script src = 'menu.js'></script>",
-                 b"<script src = 'menu.js'></script><script src = 'mutebutton.js'></script>"
+                 b"<script src = 'menu.js'></script><script src = 'buttonshim.js'></script>"
                  b"<script src = 'i18n.js'></script><script src = 'languagebutton.js'></script>"),
-                ('menu.js', b"this.backToMenu.draw()\n",
-                 b"this.backToMenu.draw()\nMUTE_BUTTON.draw('pause')\n"),
                 ('menu.js', b"this.timeInGame.draw()\n",
-                 b"this.timeInGame.draw()\nMUTE_BUTTON.draw('menu')\nLANGUAGE_BUTTON.draw()\n"),
-                ('render/draw.js', b"ctx.scale(1 / scale[version], 1 / scale[version])\n}",
-                 b"ctx.scale(1 / scale[version], 1 / scale[version])\nMUTE_BUTTON.draw('hud')\n}")]:
+                 b"this.timeInGame.draw()\nLANGUAGE_BUTTON.draw()\n")]:
             assert cls.baseline[name].count(old) == 1, (name, old)
             cls.baseline[name] = cls.baseline[name].replace(old, new)
 

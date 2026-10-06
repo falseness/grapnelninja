@@ -103,8 +103,6 @@ class JumpingCube extends Rect
             this[vertical ? 'dy' : 'dx'] = distance
             if (away != 0 && Math.sign(this[speed]) != away)
             {
-                if (this.isOnScreen())
-                    AUDIO.playThrottled('bounce')
                 this[speed] *= -1
                 if (vertical)
                     this.speedY += this.speedY > 0 ? GRAVITY : -GRAVITY

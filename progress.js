@@ -6,12 +6,11 @@ const PROGRESS = (function()
 {
     const recordsKey = 'grapnelninja.records'
     const timeKey    = 'grapnelninja.time'
-    const mutedKey   = 'grapnelninja.muted'
     const langKey    = 'grapnelninja.lang'
     const minSaveIntervalMs = 1000
 
-    // In-memory state; muted and lang are reserved for TASK-120/TASK-126
-    const state = { time: 0, muted: false, lang: null }
+    // In-memory state
+    const state = { time: 0, lang: null }
 
     let savedJson = null
     let lastSaveAt = -Infinity
@@ -45,7 +44,6 @@ const PROGRESS = (function()
                 bad     : scoreText.record.bad
             }),
             [timeKey]   : String(state.time),
-            [mutedKey]  : state.muted ? '1' : '0',
             [langKey]   : state.lang || ''
         }
     }
@@ -66,7 +64,7 @@ const PROGRESS = (function()
     const PROGRESS =
     {
         // Every key read by the single PLATFORM.storage.getMany at boot
-        keys: [recordsKey, timeKey, mutedKey, langKey],
+        keys: [recordsKey, timeKey, langKey],
         // Call once with the boot getMany result; missing or bad values -> defaults
         load(values)
         {
@@ -74,7 +72,6 @@ const PROGRESS = (function()
             scoreText.record.classic = readNumber(records.classic)
             scoreText.record.bad     = readNumber(records.bad)
             state.time  = readNumber(values[timeKey])
-            state.muted = values[mutedKey] === '1'
             state.lang  = values[langKey] || null
             savedJson = JSON.stringify(snapshot())
 
@@ -108,14 +105,6 @@ const PROGRESS = (function()
         setTime(seconds)
         {
             state.time = readNumber(seconds)
-        },
-        getMuted()
-        {
-            return state.muted
-        },
-        setMuted(muted)
-        {
-            state.muted = !!muted
         },
         getLang()
         {

@@ -17,7 +17,7 @@ function computeLogicalWidth()
     const aspect = Math.min(touch ? Infinity : maxViewportAspect,
                             Math.max(minViewportAspect, window.innerWidth / window.innerHeight))
     // Touch: never round wider than the window, so the canvas fits by height
-    // and keeps the 44 CSS px touch floor exact (see MUTE_BUTTON.minSize)
+    // and keeps the 44 CSS px touch floor exact (see minTouchSize)
     return (touch ? Math.floor : Math.round)(LOGICAL_HEIGHT * aspect)
 }
 const height    = LOGICAL_HEIGHT
@@ -85,6 +85,15 @@ function getCanvasCssRect()
         width: cssWidth,
         height: cssHeight
     }
+}
+
+// Touch targets are never smaller than this many CSS pixels
+const MIN_TOUCH_CSS_PX = 44
+// Logical units per CSS pixel turn the CSS floor into a logical size
+function minTouchSize()
+{
+    const cssHeight = getCanvasCssRect().height
+    return cssHeight > 0 ? MIN_TOUCH_CSS_PX * height / cssHeight : 0
 }
 
 // Sizes the CSS box and backing store (CSS size * DPR) and applies the base

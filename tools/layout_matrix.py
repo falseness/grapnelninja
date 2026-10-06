@@ -18,8 +18,7 @@ Checks per shot:
 """
 from pathlib import Path
 
-from game_harness import open_game
-from test_audio_wiring import READY
+from game_harness import READY, open_game
 from test_continue import INSTRUMENT_RUN
 
 SIZES = [(360, 640, True), (390, 844, True), (915, 412, True), (844, 390, True),

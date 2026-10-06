@@ -36,7 +36,6 @@ function createEvents()
         
         grapnel.throwed = true
         grapnel.setGrappled(false)   
-        AUDIO.play('throw')
     }
     function pickUpGrapnel()
     {   
@@ -55,7 +54,7 @@ function createEvents()
             // The HUD menu button still opens the pause menu: Menu after a death
             return menu.clickToPause({x: coords.x / scale[version], y: coords.y / scale[version]})
         }
-        if (MUTE_BUTTON.click(coords) || LANGUAGE_BUTTON.click(coords))
+        if (LANGUAGE_BUTTON.click(coords))
             return true
         if (menu.opened())
         {
