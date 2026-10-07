@@ -44,9 +44,9 @@ const LANGUAGE_BUTTON =
         ctx.strokeStyle = color
         ctx.fillStyle = color
         ctx.lineWidth = STYLE.ui.buttonLineWidth
+        strokeNeonRect(r.x, r.y, r.width, r.height, color, STYLE.ui.neonUnit.small)
         ctx.shadowColor = color
         ctx.shadowBlur = STYLE.ui.buttonShadowBlur
-        ctx.strokeRect(r.x, r.y, r.width, r.height)
         LAYOUT_PROBE.rect('button', 'language', r.x, r.y, r.width, r.height)
 
         // Globe: outline, meridian and two parallels
@@ -75,5 +75,13 @@ const LANGUAGE_BUTTON =
         ctx.fillText(I18N.t('language.name'), r.x + r.height * 1.1, cy)
         LAYOUT_PROBE.text(I18N.t('language.name'), r.x + r.height * 1.1, cy)
         ctx.restore()
+    },
+    // Bloom pass: the frame as one plain line
+    drawGlow()
+    {
+        const r = this.rect()
+        ctx.beginPath()
+        ctx.rect(r.x, r.y, r.width, r.height)
+        strokeNeonPath(STYLE.colors.ui.hudGlow, 1, STYLE.ui.neonUnit.small)
     }
 }

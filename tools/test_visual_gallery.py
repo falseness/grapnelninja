@@ -46,6 +46,12 @@ class VisualGalleryTest(unittest.TestCase):
                     self.assertIsInstance(state[key], (int, float), f'{name} {key}')
                     self.assertTrue(math.isfinite(state[key]), f'{name} {key}')
 
+            pauses = [f'{vp["name"]}-{mode}-pause' for vp in visual_gallery.VIEWPORTS
+                      for mode in visual_gallery.MODES]
+            self.assertEqual(sorted(manifest['screens']), sorted(pauses))
+            for name in pauses:
+                self.assertTrue((out / f'{name}.png').exists(), name)
+
             for mode in visual_gallery.MODES:
                 gif = Image.open(out / f'gif-{mode}.gif')
                 self.assertGreaterEqual(gif.n_frames, 30)

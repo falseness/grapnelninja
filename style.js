@@ -113,7 +113,9 @@ const STYLE = Object.freeze({
             line: '#c4ffd8'
         }),
         ui: Object.freeze({
-            title: '#8ffcff',
+            title: '#eafeff',
+            // Neon tube around the title letters (ninja cyan)
+            titleGlow: '#30d5c8',
             text: '#d8fbff',
             hudText: '#f4feff',
             hudGlow: '#30d5c8',
@@ -122,15 +124,16 @@ const STYLE = Object.freeze({
             record: '#8ffcff',
             primary: '#30d5c8',
             danger: '#ff3d71',
-            buttonFill: 'rgba(5, 9, 20, 0.74)',
+            buttonFill: 'rgba(6, 3, 26, 0.72)',
             buttonStroke: '#30d5c8',
             buttonDangerStroke: '#ff3d71',
             buttonText: '#d8fbff',
             buttonShadow: 'rgba(48, 213, 200, 0.45)',
             transparent: 'rgba(0, 0, 0, 0)',
             mutedText: 'rgba(143, 252, 255, 0.72)',
-            pauseOverlay: 'rgba(3, 5, 16, 0.68)',
-            pausePanelFill: 'rgba(5, 9, 20, 0.86)',
+            // Light enough that the frozen run stays visible behind the panel
+            pauseOverlay: 'rgba(4, 0, 24, 0.3)',
+            pausePanelFill: 'rgba(8, 3, 34, 0.5)',
             pausePanelStroke: 'rgba(48, 213, 200, 0.82)',
             fpsPanelFill: 'rgba(3, 8, 18, 0.76)',
             fpsPanelStroke: 'rgba(48, 213, 200, 0.7)',
@@ -187,6 +190,17 @@ const STYLE = Object.freeze({
         pauseMarginWidthPercent: 100 * 24 / 1920,
         pauseMarginHeightPercent: 100 * 28 / 1080,
         pausePanelLineWidth: screenHeightPercent(100 * 2 / 1080),
+        // Menu and pause outlines use the game's neon (strokeNeonPath) at
+        // these parts of its width; small controls get a thinner tube
+        neonUnit: Object.freeze({
+            button: 0.55,
+            panel: 0.45,
+            small: 0.3
+        }),
+        // Neon tube around the title letters, as parts of the font size
+        titleHaloWidthRatio: 0.16,
+        titleInnerHaloWidthRatio: 0.07,
+        titleTubeWidthRatio: 0.03,
         hudTopRatio: 0.06,
         hudFontRatio: 0.042,
         hudBadMaxFontWidthRatio: 0.078,

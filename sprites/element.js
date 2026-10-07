@@ -1,6 +1,7 @@
 // Bold neon outline of the current path (STYLE.strokes.neonOutline): two faint
 // halo strokes, the outline in its colour and a pale core line. No shadowBlur.
-// Widths are screen pixels, so they are divided by the world scale. Changes
+// Widths are screen pixels, so they are divided by the world scale (or
+// multiplied by unit: the menu and pause screens pass their own). Changes
 // stroke state: callers wrap it in ctx.save()/restore().
 // True while BloomRenderer redraws the emissive outlines into its glow canvas.
 let bloomPassActive = false
@@ -16,10 +17,10 @@ function updateNeonPulse()
         : 1
 }
 
-function strokeNeonPath(color, alpha)
+function strokeNeonPath(color, alpha, unit)
 {
     const neon = STYLE.strokes.neonOutline
-    const unit = 1 / scale[version]
+    unit = unit === undefined ? 1 / scale[version] : unit
     const baseAlpha = alpha === undefined ? 1 : alpha
 
     // Bloom pass (BloomRenderer): one plain colour line into the glow canvas

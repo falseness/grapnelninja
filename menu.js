@@ -59,6 +59,8 @@ class Text
         this.y = object.y
         
         this.fill       = object.fill
+        // Neon tube colour around the letters (titles), else a plain glow
+        this.glow       = object.glow
         this.fontSize   = object.fontSize + 'px ' + STYLE.ui.fontFamily
         this.text       = object.text
         this.align      =
@@ -79,7 +81,9 @@ class Text
         ctx.textBaseline= this.align.y
         ctx.textAlign   = this.align.x
         ctx.font        = this.fontSize
-        ctx.shadowColor = this.fill
+        if (this.glow)
+            this.strokeNeonTube()
+        ctx.shadowColor = this.glow || this.fill
         ctx.shadowBlur  = STYLE.ui.textShadowBlur
         
         
@@ -87,6 +91,43 @@ class Text
         LAYOUT_PROBE.text(this.text, this.x, this.y)
         ctx.restore()
     }
+    // Halo strokes of the letters in the glow colour, like strokeNeonPath
+    strokeNeonTube()
+    {
+        const neon = STYLE.strokes.neonOutline
+        const size = parseFloat(this.fontSize)
+
+        ctx.strokeStyle = this.glow
+        ctx.lineJoin = 'round'
+        ctx.globalAlpha = neon.haloAlpha * neonPulse
+        ctx.lineWidth = size * STYLE.ui.titleHaloWidthRatio
+        ctx.strokeText(this.text, this.x, this.y)
+        ctx.globalAlpha = neon.innerHaloAlpha * neonPulse
+        ctx.lineWidth = size * STYLE.ui.titleInnerHaloWidthRatio
+        ctx.strokeText(this.text, this.x, this.y)
+        ctx.globalAlpha = 1
+        ctx.lineWidth = size * STYLE.ui.titleTubeWidthRatio
+        ctx.strokeText(this.text, this.x, this.y)
+    }
+    // Bloom pass (BloomRenderer.drawScreen): the letters in the glow colour
+    drawGlow()
+    {
+        ctx.fillStyle    = this.glow || this.fill
+        ctx.textBaseline = this.align.y
+        ctx.textAlign    = this.align.x
+        ctx.font         = this.fontSize
+        ctx.fillText(this.text, this.x, this.y)
+    }
+}
+// Outline of a rect in the game's neon (STYLE.ui.neonUnit), for the menu and
+// pause screens drawn in logical units
+function strokeNeonRect(x, y, w, h, color, unit)
+{
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(x, y, w, h)
+    strokeNeonPath(color, 1, unit)
+    ctx.restore()
 }
 // Centres of rows of the given heights stacked between top and bottom
 // with equal gaps
@@ -137,6 +178,8 @@ class Button
         this.text = new Text(text)
         
         this.image = image
+        // Menu and pause buttons: neon outline (the HUD menu button keeps its glow)
+        this.neon = !!background.neon
         
         this.click = clickFunc
     }
@@ -167,11 +210,17 @@ class Button
         ctx.fillStyle   = this.background.fill
         ctx.strokeStyle = this.background.stroke
         ctx.lineWidth   = STYLE.ui.buttonLineWidth
-        ctx.shadowColor = this.background.stroke
-        ctx.shadowBlur  = STYLE.ui.buttonShadowBlur
         
         ctx.fillRect(this.background.x, this.background.y, this.background.width, this.background.height)
-        ctx.strokeRect(this.background.x, this.background.y, this.background.width, this.background.height)
+        if (this.neon)
+            strokeNeonRect(this.background.x, this.background.y, this.background.width, this.background.height,
+                this.background.stroke, STYLE.ui.neonUnit.button)
+        else
+        {
+            ctx.shadowColor = this.background.stroke
+            ctx.shadowBlur  = STYLE.ui.buttonShadowBlur
+            ctx.strokeRect(this.background.x, this.background.y, this.background.width, this.background.height)
+        }
         LAYOUT_PROBE.rect('button', this.text.text || 'icon', this.background.x, this.background.y,
             this.background.width, this.background.height)
 
@@ -190,6 +239,13 @@ class Button
         
         if (this.image)
             this.image.draw(this.background.x, this.background.y, this.background.width, this.background.height)
+    }
+    // Bloom pass: the outline as one plain line
+    drawGlow()
+    {
+        ctx.beginPath()
+        ctx.rect(this.background.x, this.background.y, this.background.width, this.background.height)
+        strokeNeonPath(this.background.stroke, 1, STYLE.ui.neonUnit.button)
     }
     isClickOnButton(click)
     {
@@ -231,13 +287,16 @@ class Checkbox
         ctx.textBaseline = 'middle'
         ctx.fillStyle = this.fill
         ctx.strokeStyle = this.stroke
+        strokeNeonRect(boxX, boxY, this.size, this.size, this.stroke, STYLE.ui.neonUnit.small)
+        ctx.globalAlpha = 1
         ctx.lineWidth = STYLE.ui.buttonLineWidth
         ctx.shadowColor = this.stroke
         ctx.shadowBlur = STYLE.ui.buttonShadowBlur
-        ctx.strokeRect(boxX, boxY, this.size, this.size)
 
         if (fpsCounter.enabled)
         {
+            ctx.strokeStyle = this.stroke
+            ctx.lineWidth = Math.max(STYLE.ui.buttonLineWidth, this.size * 0.12)
             ctx.beginPath()
             ctx.moveTo(boxX + markInset, this.y)
             ctx.lineTo(boxX + this.size * 0.43, boxY + this.size - markInset)
@@ -254,6 +313,13 @@ class Checkbox
             LAYOUT_PROBE.rect('button', this.label, hit.x, hit.y, hit.width, hit.height)
         }
         ctx.restore()
+    }
+    // Bloom pass: the box as one plain line
+    drawGlow()
+    {
+        ctx.beginPath()
+        ctx.rect(this.x, this.y - this.size / 2, this.size, this.size)
+        strokeNeonPath(this.stroke, 1, STYLE.ui.neonUnit.small)
     }
     // Box and label plus a padding; at least a touch target high
     hitRect()
@@ -390,6 +456,14 @@ class FpsCounter
         return Math.max(minX, maxX)
     }
 }
+// Menu motes: logical px, no camera
+const MENU_MOTES_VIEW = Object.freeze({unit: 1, cameraX: 0, cameraY: 0})
+// Bloom of the menu and pause controls (BloomRenderer.drawScreen)
+function drawScreenGlow(drawShapes)
+{
+    if (typeof visualEffects != 'undefined' && visualEffects && visualEffects.bloom)
+        visualEffects.bloom.drawScreen(drawShapes)
+}
 class Menu
 {
     constructor(w, h)
@@ -410,6 +484,7 @@ class Menu
         this.mainText = new Text(
         {
             fill    : STYLE.colors.ui.title,
+            glow    : STYLE.colors.ui.titleGlow,
             fontSize: 0.075 * this.width,
             text    : I18N.t('game.title'),
             x       : this.center.x     ,
@@ -422,7 +497,8 @@ class Menu
             y: 0.35 * this.height   ,
             width: 0.4 * this.width ,
             height: 0.1 * this.height,
-            stroke: STYLE.colors.ui.primary
+            stroke: STYLE.colors.ui.primary,
+            neon: true
         },
         {
             fill: STYLE.colors.ui.buttonText,
@@ -443,7 +519,8 @@ class Menu
             y: 0.52 * this.height   ,
             width: 0.4 * this.width ,
             height: 0.1 * this.height,
-            stroke: STYLE.colors.ui.buttonDangerStroke
+            stroke: STYLE.colors.ui.buttonDangerStroke,
+            neon: true
         },
         {
             fill: STYLE.colors.ui.buttonText,
@@ -499,6 +576,8 @@ class Menu
         function()
         {
             fpsCounter.toggle()
+            // A fresh frame under the screen, so the tint and glow do not stack
+            draw()
             menu.drawPauseScreen()
         })
         
@@ -558,7 +637,8 @@ class Menu
             width: 0.4 * this.width ,
             clickable:false         ,
             height: 0.1 * this.height,
-            stroke: STYLE.colors.ui.primary
+            stroke: STYLE.colors.ui.primary,
+            neon: true
         },
         {
             text: I18N.t('pause.resume'),
@@ -574,7 +654,8 @@ class Menu
             width: 0.4 * this.width ,
             clickable: false        ,
             height: 0.1 * this.height,
-            stroke: STYLE.colors.ui.buttonDangerStroke
+            stroke: STYLE.colors.ui.buttonDangerStroke,
+            neon: true
         },
         {
             text: I18N.t('pause.backToMenu'),
@@ -678,18 +759,17 @@ class Menu
 
         return Math.max(STYLE.ui.buttonMinFontSize, preferredSize * maxWidth / measuredWidth)
     }
-    drawPauseTitle(panel)
+    getPauseTitle(panel)
     {
-        const pauseTitle = new Text(
+        return new Text(
         {
             fill    : STYLE.colors.ui.title,
+            glow    : STYLE.colors.ui.titleGlow,
             fontSize: this.getPauseTitleFontSize(panel),
             text    : I18N.t('game.title'),
             x       : this.center.x,
             y       : this.pauseTitleY
         })
-
-        pauseTitle.draw()
     }
     layoutPauseButton(button, x, y, width, height)
     {
@@ -792,6 +872,8 @@ class Menu
 
         this.drawPauseScreen()
     }
+    // Over the frozen last frame of the run, which stays visible through a
+    // light tint and a see-through panel
     drawPauseScreen()
     {
         const panel = this.getPausePanel()
@@ -802,15 +884,21 @@ class Menu
         
         ctx.save()
         ctx.fillStyle   = STYLE.colors.ui.pausePanelFill
-        ctx.strokeStyle = STYLE.colors.ui.pausePanelStroke
-        ctx.lineWidth = STYLE.ui.pausePanelLineWidth
-        ctx.shadowColor = STYLE.colors.ui.pausePanelStroke
-        ctx.shadowBlur = STYLE.ui.buttonShadowBlur
         ctx.fillRect(panel.x, panel.y, panel.width, panel.height)
-        ctx.strokeRect(panel.x, panel.y, panel.width, panel.height)
+        strokeNeonRect(panel.x, panel.y, panel.width, panel.height,
+            STYLE.colors.ui.pausePanelStroke, STYLE.ui.neonUnit.panel)
         ctx.restore()
+
+        const title = this.getPauseTitle(panel)
+        drawScreenGlow(() =>
+        {
+            title.drawGlow()
+            this.resume.drawGlow()
+            this.backToMenu.drawGlow()
+            this.pauseFpsCounterCheckbox.drawGlow()
+        })
         
-        this.drawPauseTitle(panel)
+        title.draw()
         
         this.pauseFpsCounterCheckbox.draw()
         
@@ -836,10 +924,26 @@ class Menu
         */
         
     }
+    // The crystal background with the game's motes and colour grade, the
+    // bloom of the neon controls, then the crisp controls
     draw()
     {
+        this.layoutMainFpsCheckbox()
         if (typeof visualEffects != 'undefined' && visualEffects && visualEffects.background)
+        {
             visualEffects.background.drawMenuBackground()
+            visualEffects.particles.drawAmbientMotes(MENU_MOTES_VIEW)
+            visualEffects.colorGrade.draw()
+            drawScreenGlow(() =>
+            {
+                visualEffects.particles.drawAmbientMotes(MENU_MOTES_VIEW)
+                this.mainText.drawGlow()
+                this.classicVersionButton.drawGlow()
+                this.badVersionButton.drawGlow()
+                this.mainFpsCounterCheckbox.drawGlow()
+                LANGUAGE_BUTTON.drawGlow()
+            })
+        }
         else
             ctx.clearRect(0, 0, this.width, this.height)
         
@@ -851,7 +955,6 @@ class Menu
         this.badVersionButton.draw()
         this.badRecord.draw()
 
-        this.layoutMainFpsCheckbox()
         this.mainFpsCounterCheckbox.draw()
         this.timeInGame.draw()
 
@@ -872,11 +975,11 @@ class ContinueOffer
         this.adFailed = false
         this.adPending = false
         this.continueButton = new Button(
-            {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
+            {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false, neon: true},
             {text: '', fill: STYLE.colors.ui.buttonText},
             onContinue)
         this.restartButton = new Button(
-            {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false},
+            {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false, neon: true},
             {text: '', fill: STYLE.colors.ui.buttonText},
             onRestart)
         this.relabel(w, h)
@@ -928,6 +1031,7 @@ class ContinueOffer
         this.title = new Text(
         {
             fill    : STYLE.colors.ui.title,
+            glow    : STYLE.colors.ui.titleGlow,
             fontSize: h * 0.09,
             text    : I18N.t('continue.title'),
             x       : centerX,

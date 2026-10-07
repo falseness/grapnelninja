@@ -6,7 +6,9 @@ two runs of one revision give byte-identical PNGs and identical game states.
 Usage: python3 tools/visual_gallery.py --rev worktree|<git rev> --out DIR
        python3 tools/visual_gallery.py --compare-state A.json B.json
 --rev writes into DIR: <viewport>-menu.png and <viewport>-<mode>-tick<NNNN>.png
-for desktop 1920x1080@1 and phone 844x390@3; gif-bad.gif and gif-classic.gif
+for desktop 1920x1080@1 and phone 844x390@3; <viewport>-<mode>-pause.png (the
+pause screen opened after the last tick, listed under 'screens': no state
+check, it runs after every state capture); gif-bad.gif and gif-classic.gif
 (GIF_FRAMES consecutive desktop frames at 15 fps from tick GIF_START, scaled to
 960x540); sheet.png (the reference AI cover top-left, then every capture,
 labelled); manifest.json (rev, viewport, mode, tick and the game state per capture).
@@ -119,7 +121,7 @@ def write_sheet(out, items, path, cols=4):
 def run(rev, out, log=print):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    shots, states, gifs, errors = {}, {}, {}, []
+    shots, states, gifs, screens, errors = {}, {}, {}, {}, []
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
         url, browser = start_browser_test(root, stack.callback)
@@ -158,6 +160,8 @@ def run(rev, out, log=print):
                             frames.append(to_gif_frame(png_bytes(page.evaluate('() => __snap.capture()'))))
                     if frames:
                         gifs[mode] = frames
+                    page.evaluate('() => menu.startPause()')
+                    screens[f'{vp["name"]}-{mode}-pause'] = png_bytes(page.evaluate('() => __snap.capture()'))
                 context.close()
                 log(f'rev={rev_id} viewport={vp["name"]} {vp["width"]}x{vp["height"]}@{vp["dpr"]} '
                     f'mode={mode} done')
@@ -168,11 +172,17 @@ def run(rev, out, log=print):
         size = Image.open(io.BytesIO(shots[name])).size
         captures[name] = dict(states[name], file=f'{name}.png', width=size[0], height=size[1],
                               sha256=hashlib.sha256(shots[name]).hexdigest())
+    screen_files = {}
+    for name, data in screens.items():
+        (out / f'{name}.png').write_bytes(data)
+        size = Image.open(io.BytesIO(data)).size
+        screen_files[name] = {'file': f'{name}.png', 'width': size[0], 'height': size[1],
+                              'sha256': hashlib.sha256(data).hexdigest()}
     for mode, frames in gifs.items():
         write_gif(frames, out / f'gif-{mode}.gif')
     items = [('reference: cover-ai-1-original.png', Image.open(REFERENCE))] if REFERENCE.exists() else []
     items += [(f'{name}  ({c["width"]}x{c["height"]})', Image.open(out / c['file']))
-              for name, c in captures.items()]
+              for name, c in list(captures.items()) + list(screen_files.items())]
     write_sheet(out, items, out / 'sheet.png')
     manifest = {
         'rev': rev_sha, 'source': rev_id, 'seed': SEED, 'ticks': TICKS,
@@ -180,7 +190,7 @@ def run(rev, out, log=print):
         'gifs': {mode: {'file': f'gif-{mode}.gif', 'viewport': GIF_VIEWPORT, 'size': list(GIF_SIZE),
                         'fps': GIF_FPS, 'frames': len(frames), 'ticks': gif_ticks()}
                  for mode, frames in gifs.items()},
-        'page_errors': errors, 'captures': captures,
+        'page_errors': errors, 'captures': captures, 'screens': screen_files,
     }
     (out / 'manifest.json').write_text(json.dumps(manifest, indent=1) + '\n')
     return manifest
@@ -225,7 +235,10 @@ def main(argv=None):
     manifest = run(args.rev, args.out, log=log)
     for name, c in manifest['captures'].items():
         log(f'{c["sha256"]}  {name}.png  state={json.dumps(c["state"])}')
+    for name, c in manifest['screens'].items():
+        log(f'{c["sha256"]}  {name}.png  (screen)')
     log(f'rev={manifest["rev"]} source={manifest["source"]} captures={len(manifest["captures"])} '
+        f'screens={len(manifest["screens"])} '
         f'gifs={len(manifest["gifs"])} page_errors={len(manifest["page_errors"])}')
     return 0
 

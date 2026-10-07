@@ -1828,21 +1828,23 @@ class ParticleSystem
         this.sparkSeed = savedSeed
         return this.ambientMotes
     }
-    drawAmbientMotes()
+    // view: {unit, cameraX, cameraY} for screens without a camera (menu),
+    // else the game camera
+    drawAmbientMotes(view)
     {
         if (!this.shouldDrawAmbientMotes())
             return
 
         const config = STYLE.ambient
         const motes = this.getAmbientMotes()
-        const unit = 1 / scale[version]
+        const unit = view ? view.unit : 1 / scale[version]
         const seconds = performance.now() / 1000
         // Motes live in screen px at 1080 on a field one halo wider than the view
         const margin = config.moteMaxSize * config.moteHaloRatio
         const fieldWidth = LOGICAL_VIEWPORT.width + margin * 2
         const fieldHeight = LOGICAL_VIEWPORT.height + margin * 2
-        const cameraX = screen.x * scale[version]
-        const cameraY = screen.y * scale[version]
+        const cameraX = view ? view.cameraX : screen.x * scale[version]
+        const cameraY = view ? view.cameraY : screen.y * scale[version]
 
         this.ctx.save()
         this.ctx.globalCompositeOperation = 'source-over'
@@ -2222,16 +2224,41 @@ class BloomRenderer
     drawGlowPass(gameState, shakeOffset)
     {
         const glow = this.levels[0]
-        const glowCtx = glow.ctx
         const scaleX = glow.canvas.width / width * scale[version]
         const scaleY = glow.canvas.height / height * scale[version]
+
+        this.renderGlow(scaleX, 0, 0, scaleY, shakeOffset.x * scaleX, shakeOffset.y * scaleY,
+            this.drawEmissiveShapes, gameState)
+    }
+    // Menu and pause screens: glow of what drawShapes draws in the current
+    // ctx transform (logical units), added under the crisp controls
+    drawScreen(drawShapes)
+    {
+        if (!this.shouldDraw())
+            return
+
+        this.resize()
+        const glow = this.levels[0].canvas
+        const sx = glow.width / this.canvas.width
+        const sy = glow.height / this.canvas.height
+        const m = this.ctx.getTransform()
+        this.renderGlow(m.a * sx, m.b * sy, m.c * sx, m.d * sy, m.e * sx, m.f * sy, drawShapes)
+        this.blur()
+        this.composite()
+    }
+    // Clears the glow canvas, sets its transform and calls drawShapes(arg)
+    // with the global ctx pointing at it
+    renderGlow(a, b, c, d, e, f, drawShapes, arg)
+    {
+        const glow = this.levels[0]
+        const glowCtx = glow.ctx
 
         glowCtx.setTransform(1, 0, 0, 1, 0, 0)
         glowCtx.globalCompositeOperation = 'source-over'
         glowCtx.globalAlpha = 1
         glowCtx.fillStyle = 'black'
         glowCtx.fillRect(0, 0, glow.canvas.width, glow.canvas.height)
-        glowCtx.setTransform(scaleX, 0, 0, scaleY, shakeOffset.x * scaleX, shakeOffset.y * scaleY)
+        glowCtx.setTransform(a, b, c, d, e, f)
 
         const mainCtx = ctx
         const particlesCtx = visualEffects.particles.ctx
@@ -2242,7 +2269,7 @@ class BloomRenderer
         {
             glowCtx.save()
             glowCtx.lineCap = 'round'
-            this.drawEmissiveShapes(gameState)
+            drawShapes.call(this, arg)
             glowCtx.restore()
         }
         finally
