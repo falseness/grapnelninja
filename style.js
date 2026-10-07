@@ -226,6 +226,22 @@ const STYLE = Object.freeze({
         ambientAlpha: 0.12,
         compositeAlpha: 0.72
     }),
+    // Bloom: the emissive shapes (outlines, ninja ring, rope, player trail,
+    // sparks) are redrawn into a low-resolution glow canvas, blurred by a
+    // downsample chain and added over the frame before the HUD.
+    bloom: Object.freeze({
+        // Glow canvas size per axis, as a part of the backing store (<= 1/4)
+        resolutionScale: 0.25,
+        // Each blur level halves the previous one: 1/4, 1/8, 1/16, 1/32 of the backing
+        blurLevels: 4,
+        // Added alpha of each level (sharp to wide) and overall strength. The
+        // sharp level is weak so the lines keep their colour instead of going white.
+        levelAlphas: Object.freeze([0.22, 0.4, 0.65, 0.9]),
+        strength: 1,
+        // Outline width in the glow pass, screen px at 1080 (divided by scale[version])
+        lineWidth: 14,
+        compositeOperation: 'lighter'
+    }),
     particles: Object.freeze({
         maxCount: 140,
         spawnBurst: 12,
@@ -740,7 +756,8 @@ const STYLE = Object.freeze({
         particles: true,
         playerTrail: true,
         screenEffects: true,
-        uiStyling: true
+        uiStyling: true,
+        bloom: true
     })
 })
 
@@ -814,6 +831,7 @@ const QUALITY = {
     playerTrail: true,
     backgroundMotion: true,
     screenShake: true,
+    bloom: true,
     setLowPower: function(enabled)
     {
         const fullQuality = !enabled
@@ -823,5 +841,6 @@ const QUALITY = {
         this.playerTrail = fullQuality
         this.backgroundMotion = fullQuality
         this.screenShake = fullQuality
+        this.bloom = fullQuality
     }
 }

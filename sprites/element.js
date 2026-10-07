@@ -2,11 +2,25 @@
 // halo strokes, the outline in its colour and a pale core line. No shadowBlur.
 // Widths are screen pixels, so they are divided by the world scale. Changes
 // stroke state: callers wrap it in ctx.save()/restore().
+// True while BloomRenderer redraws the emissive outlines into its glow canvas.
+let bloomPassActive = false
+
 function strokeNeonPath(color, alpha)
 {
     const neon = STYLE.strokes.neonOutline
     const unit = 1 / scale[version]
     const baseAlpha = alpha === undefined ? 1 : alpha
+
+    // Bloom pass (BloomRenderer): one plain colour line into the glow canvas
+    if (bloomPassActive)
+    {
+        ctx.strokeStyle = color
+        ctx.globalAlpha = baseAlpha
+        ctx.lineJoin = 'round'
+        ctx.lineWidth = STYLE.bloom.lineWidth * unit
+        ctx.stroke()
+        return
+    }
 
     ctx.shadowBlur = 0
     ctx.strokeStyle = color
@@ -113,6 +127,29 @@ class Element
 
         ctx.closePath()
         ctx.restore()
+    }
+    getGlowStroke()
+    {
+        return this.stroke
+    }
+    // Bloom pass: the outline alone, in its neon colour (see strokeNeonPath).
+    drawGlow()
+    {
+        const points = this.getPoints()
+        const sx = screen.x
+        const sy = screen.y
+
+        ctx.beginPath()
+        ctx.moveTo(points[points.length - 1].x + sx, points[points.length - 1].y + sy)
+        for (let i = 0; i < points.length; ++i)
+        {
+            if (points[i].curvature)
+                ctx.quadraticCurveTo(points[i].curvature.x + sx, points[i].curvature.y + sy, points[i].x + sx, points[i].y + sy)
+            else
+                ctx.lineTo(points[i].x + sx, points[i].y + sy)
+        }
+        ctx.closePath()
+        strokeNeonPath(this.getGlowStroke())
     }
     // Elements without a 3D look (triangles, sides, ground) keep this no-op.
     drawExtrusion()

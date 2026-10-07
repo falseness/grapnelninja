@@ -207,6 +207,16 @@ class Floor
                 element.syncTrackStyle()
         }
     }
+    drawGlow()
+    {
+        const cullRect = getCullRect()
+        for (let i = 0; i < this.elements.length; ++i)
+        {
+            const element = this.elements[i]
+            if (isCullBoxVisible(getElementCullBox(element), cullRect))
+                element.drawGlow()
+        }
+    }
     drawExtrusions()
     {
         const cullRect = getCullRect()
@@ -289,6 +299,18 @@ class SideFloor extends Floor
         }
 
         this.drawContinuousSurface()
+    }
+    // Bloom pass: only the boundary line of the strip glows
+    drawGlow()
+    {
+        if (!this.elements.length)
+            return
+
+        const bounds = this.getContinuousSurfaceBounds()
+        if (version == 'bad')
+            this.drawContinuousNeonBoundary(bounds)
+        else
+            this.drawClassicContinuousBoundary(bounds)
     }
     getContinuousSurfaceBounds()
     {

@@ -75,6 +75,10 @@ class Triangle extends Element
         if (version != 'bad')
             this.track.stroke = STYLE.colors.hazard.classicTriangleStroke
     }
+    getGlowStroke()
+    {
+        return version != 'bad' ? STYLE.colors.hazard.classicTriangleStroke : this.stroke
+    }
     draw()
     {
         this.syncTrackStyle()

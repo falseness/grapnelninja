@@ -46,6 +46,11 @@ class PerfMobileTest(unittest.TestCase):
         result = perf_mobile.run('worktree', 'bad', 5, 1, log=print, trace=False, layers=True)
         self.assertEqual(result['page_errors'], [])
         self.assertEqual(list(result['layers_ms']), perf_mobile.LAYERS)
+        # The bloom pass runs between the world effects and the HUD.
+        self.assertIn('drawBloomLayer', perf_mobile.LAYERS)
+        self.assertLess(perf_mobile.LAYERS.index('drawParticlesAndTrailsLayer'),
+                        perf_mobile.LAYERS.index('drawBloomLayer'))
+        self.assertLess(perf_mobile.LAYERS.index('drawBloomLayer'), perf_mobile.LAYERS.index('drawUILayer'))
         for name, ms in result['layers_ms'].items():
             self.assertIsNotNone(ms['p50'], name)
             self.assertIsNotNone(ms['p95'], name)

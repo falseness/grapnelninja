@@ -24,6 +24,10 @@ class Empty
     {
         
     }
+    drawGlow()
+    {
+        
+    }
 }
 
 

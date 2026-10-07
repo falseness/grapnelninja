@@ -1975,6 +1975,11 @@ class PlayerTrailRenderer
         }
         this.drawSmoothPlayerTrail(gameState.ninja.track)
     }
+    drawSmoothPlayerTrailIfEnabled(track)
+    {
+        if (this.shouldDraw())
+            this.drawSmoothPlayerTrail(track)
+    }
     drawSmoothPlayerTrail(track)
     {
         if (!track || track.pos.length < 2)
@@ -2155,6 +2160,150 @@ class PlayerTrailRenderer
     }
 }
 
+// Bloom (STYLE.bloom): the emissive shapes are drawn a second time, as plain
+// colour lines, into a glow canvas of at most 1/4 of the backing size. Smaller
+// copies of it (each half the previous) blur it; all of them are stretched
+// back over the frame with 'lighter', so the outlines get a soft halo while
+// the HUD, drawn afterwards, stays crisp. No ctx.filter: the downsample chain
+// looks the same in every browser.
+class BloomRenderer
+{
+    constructor(context, targetCanvas)
+    {
+        this.ctx = context
+        this.canvas = targetCanvas
+        this.levels = []
+    }
+    shouldDraw()
+    {
+        return STYLE.features.bloom && QUALITY.bloom
+    }
+    // Level 0 is the glow canvas; each next level is half the previous one.
+    resize()
+    {
+        const config = STYLE.bloom
+        while (this.levels.length < config.blurLevels)
+        {
+            const levelCanvas = document.createElement('canvas')
+            const levelCtx = levelCanvas.getContext('2d', {alpha: false})
+            this.levels.push({canvas: levelCanvas, ctx: levelCtx})
+        }
+
+        let levelWidth = Math.max(1, Math.floor(this.canvas.width * config.resolutionScale))
+        let levelHeight = Math.max(1, Math.floor(this.canvas.height * config.resolutionScale))
+        for (let i = 0; i < config.blurLevels; ++i)
+        {
+            const level = this.levels[i]
+            // Resizing a canvas clears it and resets its state: only on change
+            if (level.canvas.width != levelWidth || level.canvas.height != levelHeight)
+            {
+                level.canvas.width = levelWidth
+                level.canvas.height = levelHeight
+                level.ctx.imageSmoothingEnabled = true
+            }
+            levelWidth = Math.max(1, Math.floor(levelWidth / 2))
+            levelHeight = Math.max(1, Math.floor(levelHeight / 2))
+        }
+    }
+    draw(gameState, shakeOffset)
+    {
+        if (!this.shouldDraw())
+            return
+
+        this.resize()
+        this.drawGlowPass(gameState, shakeOffset)
+        this.blur()
+        this.composite()
+    }
+    // Same world transform as the frame (scale[version], screen shake), mapped
+    // onto the glow canvas; the global ctx points at it while the sprites draw.
+    drawGlowPass(gameState, shakeOffset)
+    {
+        const glow = this.levels[0]
+        const glowCtx = glow.ctx
+        const scaleX = glow.canvas.width / width * scale[version]
+        const scaleY = glow.canvas.height / height * scale[version]
+
+        glowCtx.setTransform(1, 0, 0, 1, 0, 0)
+        glowCtx.globalCompositeOperation = 'source-over'
+        glowCtx.globalAlpha = 1
+        glowCtx.fillStyle = 'black'
+        glowCtx.fillRect(0, 0, glow.canvas.width, glow.canvas.height)
+        glowCtx.setTransform(scaleX, 0, 0, scaleY, shakeOffset.x * scaleX, shakeOffset.y * scaleY)
+
+        const mainCtx = ctx
+        const particlesCtx = visualEffects.particles.ctx
+        ctx = glowCtx
+        visualEffects.particles.ctx = glowCtx
+        bloomPassActive = true
+        try
+        {
+            glowCtx.save()
+            glowCtx.lineCap = 'round'
+            this.drawEmissiveShapes(gameState)
+            glowCtx.restore()
+        }
+        finally
+        {
+            bloomPassActive = false
+            visualEffects.particles.ctx = particlesCtx
+            ctx = mainCtx
+        }
+    }
+    drawEmissiveShapes(gameState)
+    {
+        const floors = gameState.floors
+
+        visualEffects.playerTrail.drawSmoothPlayerTrailIfEnabled(gameState.ninja.track)
+        grapnel.draw()
+        for (let i = 0; i < floors.length; ++i)
+            floors[i].drawGlow()
+        grapnel.drawHook()
+        this.drawNinjaRing(gameState.ninja)
+        visualEffects.particles.drawLayer(BloomRenderer.anyParticle)
+    }
+    static anyParticle()
+    {
+        return true
+    }
+    drawNinjaRing(player)
+    {
+        const radius = player.getVisualRadius()
+
+        ctx.beginPath()
+        ctx.arc(player.x + screen.x, player.y + screen.y, radius, 0, Math.PI * 2, false)
+        ctx.globalAlpha = player.getBlinkAlpha()
+        ctx.strokeStyle = player.stroke
+        ctx.lineWidth = radius * STYLE.playerVisuals.ringWidthRatio
+        ctx.stroke()
+        ctx.globalAlpha = 1
+    }
+    blur()
+    {
+        for (let i = 1; i < this.levels.length; ++i)
+        {
+            const source = this.levels[i - 1].canvas
+            const target = this.levels[i]
+            target.ctx.drawImage(source, 0, 0, target.canvas.width, target.canvas.height)
+        }
+    }
+    composite()
+    {
+        const config = STYLE.bloom
+
+        this.ctx.save()
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+        this.ctx.globalCompositeOperation = config.compositeOperation
+        this.ctx.imageSmoothingEnabled = true
+        for (let i = 0; i < this.levels.length; ++i)
+        {
+            this.ctx.globalAlpha = Math.max(0, Math.min(1, config.levelAlphas[i] * config.strength))
+            this.ctx.drawImage(this.levels[i].canvas, 0, 0, this.canvas.width, this.canvas.height)
+        }
+        this.ctx.restore()
+    }
+}
+
 class ScreenEffects
 {
     constructor(context)
@@ -2308,6 +2457,7 @@ class VisualEffects
         this.particles = new ParticleSystem(context, targetCanvas)
         this.playerTrail = new PlayerTrailRenderer()
         this.screenEffects = new ScreenEffects(context)
+        this.bloom = new BloomRenderer(context, targetCanvas)
         this.ui = new UIStylingHooks()
     }
     getGameState()

@@ -10,6 +10,11 @@ class Ground extends Trampoline
     {
         
     }
+    // Bloom pass: only the neon boundary glows
+    drawGlow()
+    {
+        this.drawNeonBoundary()
+    }
     draw()
     {
         this.drawGroundBody()
@@ -104,6 +109,13 @@ class Side extends Rect
         const hudClearTop = height / scale[version] * STYLE.ui.hudClearTopRatio
 
         return screenBoundaryY < hudClearTop
+    }
+    drawGlow()
+    {
+        if (version == 'bad' && this.isInHudClearZone())
+            return
+
+        this.drawNeonBoundary()
     }
     draw()
     {

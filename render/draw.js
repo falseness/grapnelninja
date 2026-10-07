@@ -1,3 +1,5 @@
+const NO_SHAKE = Object.freeze({x: 0, y: 0})
+
 function drawBackgroundLayer()
 {
     visualEffects.background.draw()
@@ -49,6 +51,13 @@ function drawParticlesAndTrailsLayer(gameState)
     visualEffects.screenEffects.draw(gameState)
 }
 
+// Glow halo of the emissive shapes, added before the HUD so text stays crisp
+function drawBloomLayer(gameState)
+{
+    const screenEffects = visualEffects.screenEffects
+    visualEffects.bloom.draw(gameState, screenEffects.isShaking ? screenEffects.shakeOffset : NO_SHAKE)
+}
+
 function drawUILayer(gameState)
 {
     visualEffects.ui.draw(gameState)
@@ -73,6 +82,7 @@ function draw()
     drawPlayerTrailLayer(gameState)
     drawWorldLayer()
     drawParticlesAndTrailsLayer(gameState)
+    drawBloomLayer(gameState)
     drawUILayer(gameState)
     drawFpsCounterLayer(gameState)
 
