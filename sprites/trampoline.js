@@ -126,12 +126,7 @@ class Trampoline extends Element
             this.drawBadVersionPolygon(
                 isGreenSafe ? obstacleStyle.greenFill : obstacleStyle.cubeFill,
                 this.stroke,
-                {
-                    baseFillStyle: this.fill,
-                    lineWidth: obstacleStyle.thinStrokeWidth,
-                    glowWidth: obstacleStyle.outerGlowWidth,
-                    innerStrokeStyle: this.stroke
-                }
+                {baseFillStyle: this.fill}
             )
             return
         }
@@ -154,11 +149,7 @@ class Trampoline extends Element
         ctx.fillStyle   = this.fill
         ctx.fill()
 
-        ctx.strokeStyle = this.stroke
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.shadowColor = this.stroke
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
-        ctx.stroke()
+        strokeNeonPath(this.stroke)
 
         ctx.closePath()
         ctx.restore()

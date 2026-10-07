@@ -88,12 +88,7 @@ class Triangle extends Element
         const isHarmless = this instanceof HarmlessTriangle
         this.drawBadVersionPolygon(
             isHarmless ? STYLE.colors.hazard.harmlessFill : obstacleStyle.hazardFill,
-            this.stroke,
-            {
-                lineWidth: obstacleStyle.thinStrokeWidth,
-                glowWidth: obstacleStyle.outerGlowWidth,
-                innerStrokeStyle: this.stroke
-            }
+            this.stroke
         )
 
         this.drawBadVersionInnerTreatment()
@@ -102,7 +97,6 @@ class Triangle extends Element
     {
         const fill = STYLE.colors.hazard.classicTriangleFill
         const stroke = STYLE.colors.hazard.classicTriangleStroke
-        const strokeWidth = STYLE.strokes.neonWidth
         const points = this.getPoints()
 
         ctx.save()
@@ -113,16 +107,13 @@ class Triangle extends Element
             ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
         }
 
+        ctx.closePath()
+
         ctx.fillStyle = fill
         ctx.fill()
 
-        ctx.strokeStyle = stroke
-        ctx.lineWidth = strokeWidth
-        ctx.shadowColor = stroke
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
-        ctx.stroke()
+        strokeNeonPath(stroke)
 
-        ctx.closePath()
         ctx.restore()
     }
     drawBadVersionInnerTreatment()
@@ -131,14 +122,14 @@ class Triangle extends Element
         const points = this.getPoints()
         const centerX = this.x + screen.x
         const centerY = this.y + screen.y
-        const scale = obstacleStyle.hazardInnerScale
+        const innerScale = obstacleStyle.hazardInnerScale
 
         ctx.save()
         ctx.beginPath()
         for (let i = 0; i < points.length; ++i)
         {
-            const x = centerX + (points[i].x - this.x) * scale
-            const y = centerY + (points[i].y - this.y) * scale
+            const x = centerX + (points[i].x - this.x) * innerScale
+            const y = centerY + (points[i].y - this.y) * innerScale
 
             if (i == 0)
                 ctx.moveTo(x, y)
@@ -147,7 +138,7 @@ class Triangle extends Element
         }
         ctx.closePath()
         ctx.strokeStyle = this.stroke
-        ctx.lineWidth = obstacleStyle.thinStrokeWidth
+        ctx.lineWidth = STYLE.strokes.neonOutline.innerWidth / scale[version]
         ctx.globalAlpha = obstacleStyle.hazardInnerStrokeAlpha
         ctx.stroke()
         ctx.restore()

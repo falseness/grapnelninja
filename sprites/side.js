@@ -43,12 +43,7 @@ class Ground extends Trampoline
         this.drawBadVersionPolygon(
             obstacleStyle.groundFill,
             obstacleStyle.groundStroke,
-            {
-                lineWidth: obstacleStyle.thinStrokeWidth,
-                glowWidth: obstacleStyle.outerGlowWidth,
-                glowAlpha: obstacleStyle.groundFillAlpha,
-                innerStrokeStyle: obstacleStyle.groundLine
-            }
+            {outlineAlpha: STYLE.strokes.neonOutline.groundAlpha}
         )
 
         const points = this.getPoints()
@@ -66,22 +61,11 @@ class Ground extends Trampoline
         ctx.beginPath()
 
         const groundStroke = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundStroke : STYLE.colors.ground.stroke
-        const groundLine = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundLine : STYLE.colors.ground.line
 
-        ctx.lineWidth = STYLE.strokes.neonGlowWidth
-        ctx.strokeStyle = groundStroke
-        ctx.shadowColor = groundLine
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.moveTo(this.x + screen.x, boundaryY + screen.y)
         ctx.lineTo(this.x + this.points[2].x + screen.x, boundaryY + screen.y)
-        ctx.stroke()
+        strokeNeonPath(groundStroke)
 
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.strokeStyle = groundLine
-        ctx.shadowBlur = 0
-        ctx.stroke()
-
-        ctx.closePath()
         ctx.restore()
     }
 }
@@ -186,22 +170,11 @@ class Side extends Rect
         ctx.beginPath()
 
         const groundStroke = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundStroke : STYLE.colors.ground.stroke
-        const groundLine = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundLine : STYLE.colors.ground.line
 
-        ctx.lineWidth = STYLE.strokes.neonGlowWidth
-        ctx.strokeStyle = groundStroke
-        ctx.shadowColor = groundLine
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.moveTo(this.x + screen.x, screenBoundaryY)
         ctx.lineTo(this.x + this.width + screen.x, screenBoundaryY)
-        ctx.stroke()
+        strokeNeonPath(groundStroke)
 
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.strokeStyle = groundLine
-        ctx.shadowBlur = 0
-        ctx.stroke()
-
-        ctx.closePath()
         ctx.restore()
     }
 }

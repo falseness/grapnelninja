@@ -411,20 +411,10 @@ class SideFloor extends Floor
         ctx.save()
         ctx.beginPath()
 
-        ctx.lineWidth = STYLE.strokes.neonGlowWidth
-        ctx.strokeStyle = STYLE.colors.ground.stroke
-        ctx.shadowColor = STYLE.colors.ground.line
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.moveTo(bounds.left + screen.x, y)
         ctx.lineTo(bounds.right + screen.x, y)
-        ctx.stroke()
+        strokeNeonPath(STYLE.colors.ground.stroke)
 
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.strokeStyle = STYLE.colors.ground.line
-        ctx.shadowBlur = 0
-        ctx.stroke()
-
-        ctx.closePath()
         ctx.restore()
     }
     drawContinuousNeonBoundary(bounds)
@@ -435,20 +425,10 @@ class SideFloor extends Floor
         ctx.save()
         ctx.beginPath()
 
-        ctx.lineWidth = STYLE.strokes.neonGlowWidth
-        ctx.strokeStyle = obstacleStyle.groundStroke
-        ctx.shadowColor = obstacleStyle.groundLine
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.moveTo(bounds.left + screen.x, y)
         ctx.lineTo(bounds.right + screen.x, y)
-        ctx.stroke()
+        strokeNeonPath(obstacleStyle.groundStroke)
 
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.strokeStyle = obstacleStyle.groundLine
-        ctx.shadowBlur = 0
-        ctx.stroke()
-
-        ctx.closePath()
         ctx.restore()
     }
     drawHudZoneCeilingBoundary()
@@ -471,22 +451,10 @@ class SideFloor extends Floor
 
         ctx.beginPath()
 
-        ctx.globalAlpha = 0.72
-        ctx.lineWidth = STYLE.strokes.neonGlowWidth
-        ctx.strokeStyle = obstacleStyle.groundStroke
-        ctx.shadowColor = obstacleStyle.groundLine
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
         ctx.moveTo(bounds.left + screen.x, y)
         ctx.lineTo(bounds.right + screen.x, y)
-        ctx.stroke()
+        strokeNeonPath(obstacleStyle.groundStroke)
 
-        ctx.globalAlpha = 1
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.strokeStyle = obstacleStyle.groundLine
-        ctx.shadowBlur = 0
-        ctx.stroke()
-
-        ctx.closePath()
         ctx.restore()
     }
 }

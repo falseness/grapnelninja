@@ -90,19 +90,19 @@ const STYLE = Object.freeze({
             trail: '#30d5c8',
             blue: '#1f7aff',
             blueFill: '#061234',
-            blueStroke: '#1f7aff',
+            blueStroke: '#2f86ff',
             grayFill: '#171a1f',
             grayStroke: '#b9c2c9',
             greenFill: '#071c12',
-            greenStroke: '#64e379'
+            greenStroke: '#2bff7a'
         }),
         hazard: Object.freeze({
             fill: '#21070f',
             classicTriangleFill: 'lightblue',
             classicTriangleStroke: 'lightblue',
             harmlessFill: '#071c12',
-            stroke: '#ff3d71',
-            harmlessStroke: '#64e379',
+            stroke: '#ff2d95',
+            harmlessStroke: '#2bff7a',
             trail: '#ff3d71',
             red: '#ff3d71'
         }),
@@ -154,6 +154,21 @@ const STYLE = Object.freeze({
         seamWidth: screenHeightPercent(100 * 10 / 1080),
         neonWidth: screenHeightPercent(100 * 2 / 1080),
         neonGlowWidth: screenHeightPercent(100 * 5 / 1080),
+        // Bold obstacle and floor outlines (strokeNeonPath). Widths are screen
+        // pixels at 1080: divided by scale[version] when drawn, so both versions
+        // look the same. Halo and core are plain strokes, no shadowBlur.
+        neonOutline: Object.freeze({
+            width: screenHeightPercent(100 * 7 / 1080),
+            haloWidth: screenHeightPercent(100 * 26 / 1080),
+            haloAlpha: 0.16,
+            innerHaloWidth: screenHeightPercent(100 * 14 / 1080),
+            innerHaloAlpha: 0.32,
+            coreWidthRatio: 0.36,
+            coreColor: '#ffffff',
+            coreAlpha: 0.55,
+            innerWidth: screenHeightPercent(100 * 3 / 1080),
+            groundAlpha: 0.5
+        }),
         grapnelWidthHeightPercent: 0.6,
         menuIconWidthRatio: 0.05,
         checkMarkWidthRatio: 0.03
@@ -283,7 +298,6 @@ const STYLE = Object.freeze({
             fillAlpha: 0.68,
             groundFillAlpha: 0.44,
             groundCapAlpha: 0.18,
-            highlightAlpha: 0.74,
             innerHighlightAlpha: 0.18,
             hazardInnerScale: 0.58,
             hazardInnerStrokeAlpha: 0.46,
@@ -302,8 +316,8 @@ const STYLE = Object.freeze({
             greenHighlightFill: 'rgba(100, 227, 121, 0.14)',
             groundFill: '#030812',
             groundCapFill: '#102b1b',
-            groundStroke: '#64e379',
-            groundLine: '#a8ffb2',
+            groundStroke: '#2bff7a',
+            groundLine: '#c4ffd8',
             shadow: 'rgba(0, 0, 0, 0.32)'
         }),
         lights: Object.freeze({

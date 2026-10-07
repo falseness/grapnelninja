@@ -70,13 +70,10 @@ class Rect extends Element
 
         ctx.save()
         ctx.fillStyle   = this.fill
-        ctx.strokeStyle = this.stroke
-        
         ctx.fillRect(x, y, this.width, this.height)
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.shadowColor = this.stroke
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
-        ctx.strokeRect(x, y, this.width, this.height)
+        ctx.beginPath()
+        ctx.rect(x, y, this.width, this.height)
+        strokeNeonPath(this.stroke)
         const innerFill = this.stroke == STYLE.colors.cube.blueStroke ? STYLE.colors.cube.blueFill : this.stroke
         this.drawInnerRectangleCopy(x, y, STYLE.badVersionEffects.obstacles.innerCopyInsetRatio, innerFill, this.stroke)
         ctx.restore()
@@ -98,17 +95,9 @@ class Rect extends Element
         ctx.fillStyle = fill
         ctx.fillRect(x, y, this.width, this.height)
 
-        ctx.strokeStyle = this.stroke
-        ctx.lineWidth = obstacleStyle.outerGlowWidth
-        ctx.globalAlpha = obstacleStyle.highlightAlpha
-        ctx.shadowColor = this.stroke
-        ctx.shadowBlur = obstacleStyle.outerGlowWidth
-        ctx.strokeRect(x, y, this.width, this.height)
-
-        ctx.globalAlpha = 1
-        ctx.lineWidth = obstacleStyle.thinStrokeWidth
-        ctx.shadowBlur = 0
-        ctx.strokeRect(x, y, this.width, this.height)
+        ctx.beginPath()
+        ctx.rect(x, y, this.width, this.height)
+        strokeNeonPath(this.stroke)
 
         this.drawInnerRectangleCopy(x, y, obstacleStyle.innerCopyInsetRatio, copyFill, this.stroke)
 
@@ -133,7 +122,7 @@ class Rect extends Element
 
         ctx.globalAlpha = isBlueCubeShell ? STYLE.alpha.full : obstacleStyle.innerHighlightAlpha
         ctx.strokeStyle = strokeStyle
-        ctx.lineWidth = version == 'bad' ? obstacleStyle.thinStrokeWidth : STYLE.strokes.neonWidth
+        ctx.lineWidth = STYLE.strokes.neonOutline.innerWidth / scale[version]
         ctx.strokeRect(x + inset, y + inset, width, height)
         ctx.restore()
     }

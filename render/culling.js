@@ -8,6 +8,8 @@
 // 1.5 * shadowBlur, 2 is used. Strokes extend by half their width, miter joins
 // by up to miterLimit (10) / 2 widths. Screen shake translates the world layer.
 // Extruded back faces reach up to STYLE.extrusion.depth past the geometry.
+// Neon outlines (strokeNeonPath) are screen widths, so they grow by 1 / scale:
+// the round-joined halo reaches half its width, the mitered outline 5 widths.
 function getCullPadding()
 {
     const obstacles = STYLE.badVersionEffects.obstacles
@@ -20,8 +22,10 @@ function getCullPadding()
     const maxShake = Math.max(STYLE.screenEffects.shakeMagnitudeX, STYLE.screenEffects.shakeMagnitudeY)
 
     const maxExtrusion = STYLE.extrusion.depth / scale[version] + STYLE.extrusion.edgeWidth
+    const neon = STYLE.strokes.neonOutline
+    const maxNeon = Math.max(neon.haloWidth / 2, neon.innerHaloWidth / 2, 5 * neon.width) / scale[version]
 
-    return 2 * maxBlur / scale[version] + 5 * maxLineWidth + maxBand + maxShake + maxExtrusion + 1
+    return 2 * maxBlur / scale[version] + 5 * maxLineWidth + maxBand + maxShake + maxExtrusion + maxNeon + 1
 }
 
 // Visible world rect (element coordinates, before + screen.x / + screen.y),

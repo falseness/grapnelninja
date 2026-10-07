@@ -1,3 +1,34 @@
+// Bold neon outline of the current path (STYLE.strokes.neonOutline): two faint
+// halo strokes, the outline in its colour and a pale core line. No shadowBlur.
+// Widths are screen pixels, so they are divided by the world scale. Changes
+// stroke state: callers wrap it in ctx.save()/restore().
+function strokeNeonPath(color, alpha)
+{
+    const neon = STYLE.strokes.neonOutline
+    const unit = 1 / scale[version]
+    const baseAlpha = alpha === undefined ? 1 : alpha
+
+    ctx.shadowBlur = 0
+    ctx.strokeStyle = color
+    ctx.lineJoin = 'round'
+    ctx.globalAlpha = baseAlpha * neon.haloAlpha
+    ctx.lineWidth = neon.haloWidth * unit
+    ctx.stroke()
+    ctx.globalAlpha = baseAlpha * neon.innerHaloAlpha
+    ctx.lineWidth = neon.innerHaloWidth * unit
+    ctx.stroke()
+
+    ctx.lineJoin = 'miter'
+    ctx.globalAlpha = baseAlpha
+    ctx.lineWidth = neon.width * unit
+    ctx.stroke()
+
+    ctx.strokeStyle = neon.coreColor
+    ctx.globalAlpha = baseAlpha * neon.coreAlpha
+    ctx.lineWidth = neon.width * neon.coreWidthRatio * unit
+    ctx.stroke()
+}
+
 class Element
 {
     constructor(object)
@@ -65,8 +96,6 @@ class Element
     }
     draw()
     {
-        const strokeWidth = STYLE.strokes.neonWidth
-
         ctx.save()
         ctx.beginPath()
 
@@ -80,11 +109,7 @@ class Element
         ctx.fillStyle   = this.fill
         ctx.fill()
 
-        ctx.strokeStyle = this.stroke
-        ctx.lineWidth = strokeWidth
-        ctx.shadowColor = this.stroke
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
-        ctx.stroke()
+        strokeNeonPath(this.stroke)
 
         ctx.closePath()
         ctx.restore()
@@ -174,10 +199,7 @@ class Element
     drawBadVersionPolygon(fillStyle, strokeStyle, options)
     {
         options = options || {}
-        const obstacleStyle = STYLE.badVersionEffects.obstacles
         const points = this.getPoints()
-        const lineWidth = options.lineWidth || obstacleStyle.thinStrokeWidth
-        const glowWidth = options.glowWidth || obstacleStyle.outerGlowWidth
 
         ctx.save()
         ctx.beginPath()
@@ -186,6 +208,7 @@ class Element
         {
             ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
         }
+        ctx.closePath()
 
         if (options.baseFillStyle)
         {
@@ -196,27 +219,8 @@ class Element
         ctx.fillStyle = fillStyle
         ctx.fill()
 
-        ctx.strokeStyle = strokeStyle
-        ctx.lineWidth = glowWidth
-        ctx.globalAlpha = options.glowAlpha || obstacleStyle.highlightAlpha
-        ctx.shadowColor = strokeStyle
-        ctx.shadowBlur = glowWidth
-        ctx.stroke()
+        strokeNeonPath(strokeStyle, options.outlineAlpha)
 
-        ctx.globalAlpha = 1
-        ctx.lineWidth = lineWidth
-        ctx.shadowBlur = 0
-        ctx.stroke()
-
-        if (options.innerStrokeStyle)
-        {
-            ctx.globalAlpha = obstacleStyle.innerHighlightAlpha
-            ctx.lineWidth = lineWidth
-            ctx.strokeStyle = options.innerStrokeStyle
-            ctx.stroke()
-        }
-
-        ctx.closePath()
         ctx.restore()
     }
 }
