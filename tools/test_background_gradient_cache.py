@@ -2,9 +2,9 @@
 
 The game runs on render_snapshot's frozen clock (844x390@3, touch). An init
 script counts every createLinearGradient / createRadialGradient call made from
-the background's drawBaseGradient or drawVignette, per frame. The cache must
-create 2 gradients on the first background frame (the menu drawn at load), none
-on the next 100 menu frames and 101 game frames, and rebuild them once (2)
+the background's drawBaseGradient, drawHaze or drawVignette, per frame. The cache must
+create 3 gradients (base, haze, vignette) on the first background frame (the menu drawn at load), none
+on the next 100 menu frames and 101 game frames, and rebuild them once (3)
 after the canvas size changes. Candidate: GRADIENT_REV (default worktree).
 """
 from contextlib import ExitStack
@@ -19,13 +19,13 @@ FRAMES = 100
 VIEWPORT = render_snapshot.VIEWPORTS[0]
 
 # Init script: counts gradient creations whose caller is the background's
-# drawBaseGradient/drawVignette (directly or via a helper), from page load on.
+# drawBaseGradient/drawHaze/drawVignette (directly or via a helper), from page load on.
 COUNT_SCRIPT = '''(() => {
     const counter = window.__bgGradients = {frame: 0}
     for (const name of ['createLinearGradient', 'createRadialGradient']) {
         const original = CanvasRenderingContext2D.prototype[name]
         CanvasRenderingContext2D.prototype[name] = function (...args) {
-            if (/\\.(drawBaseGradient|drawVignette) /.test(new Error().stack)) counter.frame++
+            if (/\\.(drawBaseGradient|drawHaze|drawVignette) /.test(new Error().stack)) counter.frame++
             return original.apply(this, args)
         }
     }
@@ -105,15 +105,15 @@ class BackgroundGradientCacheTest(unittest.TestCase):
     def test_no_page_errors(self):
         self.assertEqual(self.r['page_errors'], [])
 
-    def test_first_frame_builds_both(self):
-        self.assertEqual(self.r['load'], 2)
+    def test_first_frame_builds_all(self):
+        self.assertEqual(self.r['load'], 3)
 
     def test_next_frames_build_none(self):
         self.assertEqual(self.r['menu'], [0] * FRAMES)
         self.assertEqual(self.r['game'], [0] * (FRAMES + 1))
 
     def test_canvas_size_change_rebuilds_once(self):
-        self.assertEqual(self.r['resized'][0], 2)
+        self.assertEqual(self.r['resized'][0], 3)
         self.assertEqual(self.r['resized'][1:], [0] * (len(self.r['resized']) - 1))
 
 

@@ -43,7 +43,20 @@ const STYLE = Object.freeze({
             crystalFrontLit: '#3a2899',
             crystalEdge: 'rgba(170, 140, 255, 0.34)',
             crystalRock: '#150e4a',
-            crystalRockLit: '#21166a'
+            crystalRockLit: '#21166a',
+            // Depth haze over the far layer: lavender at the top and bottom,
+            // where the crystals are, clear in the middle of the field
+            hazeTop: 'rgba(150, 112, 255, 0.24)',
+            hazeUpper: 'rgba(128, 96, 236, 0.08)',
+            hazeMiddle: 'rgba(110, 80, 220, 0)',
+            hazeLower: 'rgba(140, 92, 240, 0.12)',
+            hazeBottom: 'rgba(176, 116, 255, 0.3)',
+            // Near rocks: darker than the far layer and every gameplay fill
+            nearShadow: '#06031a',
+            nearMid: '#0c0729',
+            nearLit: '#150d40',
+            nearRim: 'rgba(150, 112, 255, 0.4)',
+            nearRock: '#06031a'
         }),
         player: Object.freeze({
             fill: '#125dff',
@@ -355,6 +368,28 @@ const STYLE = Object.freeze({
             cameraParallaxYRatio: 0.03,
             driftRatio: 0.02,
             // Highest offscreen pixels per logical unit
+            maxPixelScale: 1
+        }),
+        // Near rocks: large dark low-poly boulders along the bottom edge with
+        // a few tall outcrops, and short ones hanging from the top. Most of
+        // them sit under the HUD band and the ground strip; they follow more
+        // of the camera than the far crystals, so they read as closer
+        nearRocks: Object.freeze({
+            seed: 178,
+            bottomCount: 7,
+            bottomHeight: Object.freeze([140, 250]),
+            bottomHalfWidth: Object.freeze([130, 260]),
+            outcropCount: 2,
+            outcropHeight: Object.freeze([300, 400]),
+            outcropHalfWidth: Object.freeze([90, 150]),
+            topCount: 4,
+            topHeight: Object.freeze([110, 190]),
+            topHalfWidth: Object.freeze([110, 210]),
+            rimLineWidth: 2.5,
+            cameraParallaxXRatio: 0.4,
+            cameraParallaxYRatio: 0.08,
+            driftRatio: 0.07,
+            maxShiftYRatio: 0.03,
             maxPixelScale: 1
         }),
         badVersion: Object.freeze({

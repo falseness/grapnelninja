@@ -94,6 +94,8 @@ class BackgroundRenderer
         this.randomFlashCache = new WeakMap()
         this.randomTriangleCache = new WeakMap()
         this.gradientCache = new Map()
+        // Offscreen crystal/rock tiles by name ('far', 'near')
+        this.layerCache = {}
         // Reused every frame so the background draws without per-frame garbage.
         this.flashSegmentCache = new WeakMap()
         this.trianglePaletteColors = {fill: null, stroke: null}
@@ -181,9 +183,13 @@ class BackgroundRenderer
         const width = LOGICAL_VIEWPORT.width
         const height = LOGICAL_VIEWPORT.height
 
+        const backgroundGeometry = STYLE.backgroundGeometry
+
         this.drawBaseGradient(width, height)
-        this.drawCrystalLayer(width, height, this.getCrystalShift(width, height))
+        this.drawCrystalLayer(width, height, this.getLayerShift(width, height, backgroundGeometry.crystals))
+        this.drawHaze(width, height)
         this.drawGeometry(width, height)
+        this.drawNearLayer(width, height, this.getLayerShift(width, height, backgroundGeometry.nearRocks))
         this.drawVignette(width, height)
     }
     paintMenu()
@@ -198,7 +204,9 @@ class BackgroundRenderer
 
         this.drawBaseGradient(width, height)
         this.drawCrystalLayer(width, height, {x: 0, y: 0})
+        this.drawHaze(width, height)
         this.drawBadVersionDepth(width, height, this.getMenuBackgroundGeometry(), 0, {forceStatic: true})
+        this.drawNearLayer(width, height, {x: 0, y: 0})
         this.drawVignette(width, height)
     }
     getMenuBackgroundGeometry()
@@ -239,6 +247,14 @@ class BackgroundRenderer
         gradient.addColorStop(0.54, background.gradientMiddle)
         gradient.addColorStop(1, background.gradientBottom)
 
+        // Between the far crystals and the near rocks
+        const haze = this.ctx.createLinearGradient(0, 0, 0, height)
+        haze.addColorStop(0, background.hazeTop)
+        haze.addColorStop(0.24, background.hazeUpper)
+        haze.addColorStop(0.5, background.hazeMiddle)
+        haze.addColorStop(0.74, background.hazeLower)
+        haze.addColorStop(1, background.hazeBottom)
+
         const radius = Math.sqrt(width * width + height * height) * 0.58
         const innerRadius = radius * 0.18
         // In the bars the vignette matches the game canvas out to the play
@@ -272,13 +288,18 @@ class BackgroundRenderer
         // The game canvas and up to two bars; a resize starts over
         if (this.gradientCache.size >= 3)
             this.gradientCache.clear()
-        const entry = {gradient, vignette}
+        const entry = {gradient, vignette, haze}
         this.gradientCache.set(key, entry)
         return entry
     }
     drawBaseGradient(width, height)
     {
         this.ctx.fillStyle = this.getGradients(width, height).gradient
+        this.fillAll()
+    }
+    drawHaze(width, height)
+    {
+        this.ctx.fillStyle = this.getGradients(width, height).haze
         this.fillAll()
     }
     drawVignette(width, height)
@@ -816,54 +837,54 @@ class BackgroundRenderer
             y: screen.y * canvasScale * ratioY
         }
     }
-    // Where the far crystal tile sits this frame: it follows a fraction of
-    // the camera (against its motion, so it reads as far away) and of the
-    // slow background drift
-    getCrystalShift(width, height)
+    // Where a crystal/rock tile sits this frame: it follows a fraction of
+    // the camera (against its motion; the far layer a small one, the near
+    // rocks a larger one) and of the slow background drift
+    getLayerShift(width, height, layer)
     {
         if (this.shouldFreezeBadVersionBackgroundMotion())
             return {x: 0, y: 0}
 
-        const crystals = STYLE.backgroundGeometry.crystals
         const drift = this.getParallaxShift(width, height,
-            {parallaxShiftRatio: crystals.driftRatio, ignoreTimeScale: true})
+            {parallaxShiftRatio: layer.driftRatio, ignoreTimeScale: true})
         const camera = this.getCameraParallaxShift({
-            cameraParallaxXRatio: crystals.cameraParallaxXRatio,
-            cameraParallaxYRatio: crystals.cameraParallaxYRatio,
+            cameraParallaxXRatio: layer.cameraParallaxXRatio,
+            cameraParallaxYRatio: layer.cameraParallaxYRatio,
             ignoreTimeScale: true
         })
-        const maxY = height * 0.05
+        const maxY = height * (layer.maxShiftYRatio || 0.05)
 
         return {
             x: drift.x - camera.x,
             y: Math.max(-maxY, Math.min(maxY, drift.y - camera.y))
         }
     }
-    // The crystal tile for this viewport size, built once from a fixed seed
+    // A crystal/rock tile for this viewport size, built once by paint
     // (a resize builds a new one)
-    getCrystalLayer(width, height)
+    getLayerTile(name, width, height, config, paint)
     {
-        const crystals = STYLE.backgroundGeometry.crystals
-        const pixelScale = Math.max(0.25, Math.min(crystals.maxPixelScale, this.canvas.width / width || 1))
+        const pixelScale = Math.max(0.25, Math.min(config.maxPixelScale, this.canvas.width / width || 1))
         const key = [width, height, pixelScale].join('|')
+        const cached = this.layerCache[name]
 
-        if (this.crystalLayer && this.crystalLayer.key === key)
-            return this.crystalLayer
+        if (cached && cached.key === key)
+            return cached
 
         const layerCanvas = document.createElement('canvas')
         layerCanvas.width = Math.max(1, Math.round(width * pixelScale))
         layerCanvas.height = Math.max(1, Math.round(height * pixelScale))
         const ctx = layerCanvas.getContext('2d')
         ctx.setTransform(layerCanvas.width / width, 0, 0, layerCanvas.height / height, 0, 0)
-        this.paintCrystalTile(ctx, width, height, crystals)
+        paint(ctx, width, height, config, this.getTileTools(ctx, width, config.seed))
 
-        this.crystalLayer = {key, canvas: layerCanvas, width, height}
-        return this.crystalLayer
+        const layer = {key, canvas: layerCanvas, width, height}
+        this.layerCache[name] = layer
+        return layer
     }
-    paintCrystalTile(ctx, width, height, crystals)
+    // Seeded random numbers and wrapped polygon drawing for a tile
+    getTileTools(ctx, width, initialSeed)
     {
-        const colors = STYLE.colors.background
-        let seed = crystals.seed >>> 0
+        let seed = initialSeed >>> 0
         // mulberry32: the same tile on every run and every device
         const random = () =>
         {
@@ -896,6 +917,13 @@ class BackgroundRenderer
             ctx.fillStyle = fill
             ctx.fill()
         }
+
+        return {random, between, wrapped, polygon}
+    }
+    paintCrystalTile(ctx, width, height, crystals, tools)
+    {
+        const colors = STYLE.colors.background
+        const {random, between, wrapped, polygon} = tools
         // A faceted shard from baseY towards dir (-1 up, 1 down): a shadow
         // facet left of the ridge and a lit facet right of it
         const shard = (x, baseY, dir, h, w, lean, shadow, lit, edge) =>
@@ -973,18 +1001,71 @@ class BackgroundRenderer
             colors.crystalFrontShadow, colors.crystalFrontLit, colors.crystalEdge)
         rocks(crystals.rockCount, bottom, -1, crystals.rockHeight)
         rocks(crystals.rockCount, top, 1, crystals.rockHeight.map(h => h * 0.6))
-        // Solid rock rows at both edges: drawCrystalLayer extends them over
+        // Solid rock rows at both edges: drawLayerTile extends them over
         // whatever the shifted tile leaves uncovered
         ctx.fillStyle = colors.crystalRock
         ctx.fillRect(0, 0, width, height * 0.012)
         ctx.fillRect(0, height * 0.988, width, height * 0.012)
     }
-    // Tiles the crystal layer across fillBounds() at shift. Tile edges are
-    // snapped to device pixels so neighbouring copies neither overlap nor
-    // leave a gap
+    // Large dark boulders: a shadow, a middle and a lit facet around the
+    // summit, and a faint rim along the lit side
+    paintNearTile(ctx, width, height, rocks, tools)
+    {
+        const colors = STYLE.colors.background
+        const {random, between, wrapped, polygon} = tools
+        const boulder = (x, baseY, dir, h, w) =>
+        {
+            const summit = [x + (random() - 0.5) * w * 0.5, baseY + dir * h]
+            const leftShoulder = [x - w * (0.55 + random() * 0.2), baseY + dir * h * (0.45 + random() * 0.3)]
+            const rightShoulder = [x + w * (0.45 + random() * 0.2), baseY + dir * h * (0.5 + random() * 0.3)]
+            const inner = [x + (random() - 0.5) * w * 0.4, baseY + dir * h * (0.25 + random() * 0.2)]
+
+            wrapped(() =>
+            {
+                polygon([[x - w, baseY], leftShoulder, summit, inner, [inner[0], baseY]], colors.nearShadow)
+                polygon([[inner[0], baseY], inner, summit, rightShoulder, [x + w, baseY]], colors.nearMid)
+                polygon([inner, summit, rightShoulder], colors.nearLit)
+                ctx.beginPath()
+                ctx.moveTo(leftShoulder[0], leftShoulder[1])
+                ctx.lineTo(summit[0], summit[1])
+                ctx.lineTo(rightShoulder[0], rightShoulder[1])
+                ctx.strokeStyle = colors.nearRim
+                ctx.lineWidth = rocks.rimLineWidth
+                ctx.stroke()
+            })
+        }
+        const row = (count, baseY, dir, heights, halfWidths) =>
+        {
+            for (let i = 0; i < count; ++i)
+                boulder((i + 0.15 + random() * 0.7) * width / count, baseY, dir, between(heights), between(halfWidths))
+        }
+        const bottom = height + 2
+        const top = -2
+
+        row(rocks.outcropCount, bottom, -1, rocks.outcropHeight, rocks.outcropHalfWidth)
+        row(rocks.bottomCount, bottom, -1, rocks.bottomHeight, rocks.bottomHalfWidth)
+        row(rocks.topCount, top, 1, rocks.topHeight, rocks.topHalfWidth)
+        ctx.fillStyle = colors.nearRock
+        ctx.fillRect(0, 0, width, height * 0.012)
+        ctx.fillRect(0, height * 0.988, width, height * 0.012)
+    }
     drawCrystalLayer(width, height, shift)
     {
-        const layer = this.getCrystalLayer(width, height)
+        const layer = this.getLayerTile('far', width, height, STYLE.backgroundGeometry.crystals,
+            (...args) => this.paintCrystalTile(...args))
+        this.drawLayerTile(layer, width, height, shift, STYLE.colors.background.crystalRock)
+    }
+    drawNearLayer(width, height, shift)
+    {
+        const layer = this.getLayerTile('near', width, height, STYLE.backgroundGeometry.nearRocks,
+            (...args) => this.paintNearTile(...args))
+        this.drawLayerTile(layer, width, height, shift, STYLE.colors.background.nearRock)
+    }
+    // Tiles a layer across fillBounds() at shift. Tile edges are snapped to
+    // device pixels so neighbouring copies neither overlap nor leave a gap;
+    // edgeFill covers what the shifted tile leaves uncovered above and below
+    drawLayerTile(layer, width, height, shift, edgeFill)
+    {
         const bounds = this.fillBounds()
         const transform = this.ctx.getTransform()
         const toDevice = x => Math.round(transform.a * x + transform.e)
@@ -1001,7 +1082,7 @@ class BackgroundRenderer
             ++k
         }
 
-        this.ctx.fillStyle = STYLE.colors.background.crystalRock
+        this.ctx.fillStyle = edgeFill
         if (bounds.y < shift.y)
             this.ctx.fillRect(bounds.x, bounds.y, bounds.width, shift.y - bounds.y)
         if (shift.y + height < bounds.y + bounds.height)
