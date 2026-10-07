@@ -191,41 +191,92 @@ class Ninja
 
         const centerX = this.x + screen.x
         const centerY = this.y + screen.y
+        const visualRadius = this.getVisualRadius()
+        const sprite = Ninja.getGlowSprite(visualRadius, this.fill, this.stroke, ctx.getTransform())
 
         ctx.save()
         ctx.translate(centerX, centerY)
+        ctx.globalAlpha = blinkAlpha
+        // Ring, dark centre and halo are one pre-rendered image: no shadowBlur per frame
+        ctx.drawImage(sprite.canvas, -sprite.half, -sprite.half, sprite.half * 2, sprite.half * 2)
+
         ctx.rotate(this.visualRotation)
-        ctx.globalAlpha = blinkAlpha
-
-        const visualRadius = this.getVisualRadius()
-
-        ctx.beginPath()
-
-        ctx.arc(0, 0, visualRadius, 0, Math.PI * 2, false)
-
-        ctx.fillStyle = this.fill
-        ctx.fill()
-
-        ctx.strokeStyle = this.stroke
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.shadowColor = this.stroke
-        ctx.shadowBlur = visualRadius * STYLE.playerVisuals.bodyShadowBlurRatio
-        ctx.stroke()
-
-        ctx.closePath()
-        ctx.shadowBlur = 0
-
-        ctx.beginPath()
-        ctx.arc(0, 0, visualRadius * STYLE.playerVisuals.innerHighlightRadiusRatio, 0, Math.PI * 2, false)
-        ctx.fillStyle = STYLE.colors.player.highlight
-        ctx.globalAlpha = STYLE.playerVisuals.innerHighlightAlpha * blinkAlpha
-        ctx.fill()
-        ctx.closePath()
-        ctx.globalAlpha = blinkAlpha
-
         this.drawRotationMarker(blinkAlpha)
 
         ctx.restore()
+    }
+    // The halo can be far wider than the hitbox; it only exists in this sprite.
+    // One sprite is kept and rebuilt when the radius, colours or pixel density change
+    // (version switch, resize)
+    static getGlowSprite(radius, fill, stroke, transform)
+    {
+        const config = STYLE.playerVisuals
+        const density = Math.hypot(transform.a, transform.b) || 1
+        const pixelScale = Math.max(0.25, Math.min(config.maxSpritePixelScale, Math.ceil(density * 4) / 4))
+        const key = [radius, fill, stroke, pixelScale].join('|')
+        const cached = Ninja.glowSprite
+
+        if (cached && cached.key === key)
+            return cached
+
+        const ringWidth = radius * config.ringWidthRatio
+        const half = radius * config.haloRadiusRatio
+        const spriteCanvas = document.createElement('canvas')
+        spriteCanvas.width = spriteCanvas.height = Math.max(1, Math.ceil(half * 2 * pixelScale))
+        const spriteCtx = spriteCanvas.getContext('2d')
+        const fit = spriteCanvas.width / (half * 2)
+        spriteCtx.setTransform(fit, 0, 0, fit, half * fit, half * fit)
+
+        const ring = () =>
+        {
+            spriteCtx.beginPath()
+            spriteCtx.arc(0, 0, radius, 0, Math.PI * 2, false)
+        }
+
+        // Soft wide glow fading out from the ring to the sprite edge
+        const glow = spriteCtx.createRadialGradient(0, 0, radius * 0.8, 0, 0, half)
+        glow.addColorStop(0, STYLE.colors.player.halo)
+        glow.addColorStop(1, 'rgba(34, 200, 255, 0)')
+        spriteCtx.globalAlpha = config.haloGlowAlpha
+        spriteCtx.fillStyle = glow
+        spriteCtx.beginPath()
+        spriteCtx.arc(0, 0, half, 0, Math.PI * 2, false)
+        spriteCtx.fill()
+
+        // Halo: the ring blurred twice (shadowBlur works in canvas pixels)
+        spriteCtx.globalAlpha = config.haloAlpha
+        spriteCtx.strokeStyle = STYLE.colors.player.halo
+        spriteCtx.lineWidth = ringWidth
+        spriteCtx.shadowColor = STYLE.colors.player.halo
+        for (const blur of [config.haloBlurRatio, config.haloBlurRatio * 0.45])
+        {
+            spriteCtx.shadowBlur = radius * blur * fit
+            ring()
+            spriteCtx.stroke()
+        }
+        spriteCtx.shadowBlur = 0
+        spriteCtx.globalAlpha = STYLE.alpha.full
+
+        // Dark navy centre, a little lighter towards the ring
+        const centre = spriteCtx.createRadialGradient(0, 0, 0, 0, 0, radius)
+        centre.addColorStop(0, STYLE.colors.player.centre)
+        centre.addColorStop(1, fill)
+        ring()
+        spriteCtx.fillStyle = centre
+        spriteCtx.fill()
+
+        // Thick bright ring with a pale hot core line
+        ring()
+        spriteCtx.strokeStyle = stroke
+        spriteCtx.lineWidth = ringWidth
+        spriteCtx.stroke()
+        ring()
+        spriteCtx.strokeStyle = STYLE.colors.player.highlight
+        spriteCtx.lineWidth = ringWidth * config.ringCoreWidthRatio
+        spriteCtx.stroke()
+
+        Ninja.glowSprite = {key, canvas: spriteCanvas, half}
+        return Ninja.glowSprite
     }
     getVisualRadius()
     {
@@ -256,8 +307,6 @@ class Ninja
         ctx.lineWidth = markerWidth
         ctx.lineCap = 'round'
         ctx.globalAlpha = config.rotationMarkerAlpha * blinkAlpha
-        ctx.shadowColor = STYLE.colors.player.core
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth * 0.5
         ctx.stroke()
         ctx.closePath()
         ctx.globalAlpha = STYLE.alpha.full

@@ -59,10 +59,12 @@ const STYLE = Object.freeze({
             nearRock: '#06031a'
         }),
         player: Object.freeze({
-            fill: '#125dff',
-            stroke: '#30d5c8',
+            fill: '#0a1446',
+            stroke: '#38e8ff',
             core: '#6fa8ff',
             highlight: '#b8f7ff',
+            centre: '#050a2e',
+            halo: '#22c8ff',
             trail: '#30d5c8',
             cyan: '#30d5c8'
         }),
@@ -309,9 +311,13 @@ const STYLE = Object.freeze({
         rotationMarkerOffsetRatio: 0.16,
         rotationMarkerAlpha: 0.55,
         minScreenRadius: screenHeightPercent(100 * 6 / 1080),
-        bodyShadowBlurRatio: 0.85,
-        innerHighlightRadiusRatio: 0.42,
-        innerHighlightAlpha: 0.34
+        ringWidthRatio: 0.25,
+        ringCoreWidthRatio: 0.35,
+        haloRadiusRatio: 2.6,
+        haloBlurRatio: 0.9,
+        haloAlpha: 1,
+        haloGlowAlpha: 0.45,
+        maxSpritePixelScale: 3
     }),
     screenEffects: Object.freeze({
         shockwaveDurationMs: 420,
