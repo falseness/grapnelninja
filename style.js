@@ -307,7 +307,8 @@ const STYLE = Object.freeze({
     // Final colour grade over the world (under the HUD), toward the cover art:
     // a multiply that cuts mostly red deepens the shadows into blue (violet at
     // the bottom) while keeping the green neon green, a soft-light pass pushes the bright areas toward magenta, and a
-    // dark navy vignette closes the corners.
+    // dark navy vignette closes the corners. Off (features.colorGrade): it
+    // dimmed the whole frame by about a quarter and turned the green neon teal.
     colorGrade: Object.freeze({
         shadowOperation: 'multiply',
         shadowTop: 'rgba(110, 215, 255, 0.5)',
@@ -826,7 +827,7 @@ const STYLE = Object.freeze({
         uiStyling: true,
         bloom: true,
         ambient: true,
-        colorGrade: true
+        colorGrade: false
     })
 })
 
