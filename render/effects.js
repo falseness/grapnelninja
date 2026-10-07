@@ -1400,6 +1400,11 @@ class LightmapRenderer
     }
 }
 
+function positiveModulo(value, modulus)
+{
+    return ((value % modulus) + modulus) % modulus
+}
+
 class ParticleSystem
 {
     constructor(context, targetCanvas)
@@ -1784,6 +1789,80 @@ class ParticleSystem
     sparkRange(min, max)
     {
         return min + this.sparkRandom() * (max - min)
+    }
+    shouldDrawAmbientMotes()
+    {
+        return STYLE.features.ambient && QUALITY.ambient
+    }
+    // Ambient motes: a fixed set seeded once from their own stream. Position and
+    // alpha are pure functions of the clock and the camera, so nothing spawns
+    // or allocates per frame and a frozen clock gives the same picture.
+    getAmbientMotes()
+    {
+        if (this.ambientMotes)
+            return this.ambientMotes
+
+        const config = STYLE.ambient
+        const savedSeed = this.sparkSeed
+        this.sparkSeed = config.moteSeed
+        this.ambientMotes = []
+        for (let i = 0; i < config.moteCount; ++i)
+        {
+            const speed = this.sparkRange(config.moteMinSpeed, config.moteMaxSpeed)
+            const rise = config.moteRiseRatio
+            const side = this.sparkRandom() < 0.5 ? -1 : 1
+            this.ambientMotes.push({
+                u: this.sparkRandom(),
+                v: this.sparkRandom(),
+                vx: side * speed * Math.sqrt(1 - rise * rise),
+                vy: -speed * rise,
+                size: this.sparkRange(config.moteMinSize, config.moteMaxSize),
+                alpha: this.sparkRange(config.moteMinAlpha, config.moteMaxAlpha),
+                twinkleMs: this.sparkRange(config.moteMinTwinkleMs, config.moteMaxTwinkleMs),
+                phase: this.sparkRandom() * Math.PI * 2,
+                // Nearer (bigger) motes follow the camera more
+                parallax: config.moteParallax * (0.5 + this.sparkRandom()),
+                color: config.moteColors[i % config.moteColors.length]
+            })
+        }
+        this.sparkSeed = savedSeed
+        return this.ambientMotes
+    }
+    drawAmbientMotes()
+    {
+        if (!this.shouldDrawAmbientMotes())
+            return
+
+        const config = STYLE.ambient
+        const motes = this.getAmbientMotes()
+        const unit = 1 / scale[version]
+        const seconds = performance.now() / 1000
+        // Motes live in screen px at 1080 on a field one halo wider than the view
+        const margin = config.moteMaxSize * config.moteHaloRatio
+        const fieldWidth = LOGICAL_VIEWPORT.width + margin * 2
+        const fieldHeight = LOGICAL_VIEWPORT.height + margin * 2
+        const cameraX = screen.x * scale[version]
+        const cameraY = screen.y * scale[version]
+
+        this.ctx.save()
+        this.ctx.globalCompositeOperation = 'source-over'
+        for (let i = 0; i < motes.length; ++i)
+        {
+            const mote = motes[i]
+            const x = positiveModulo(mote.u * fieldWidth + mote.vx * seconds + cameraX * mote.parallax, fieldWidth) - margin
+            const y = positiveModulo(mote.v * fieldHeight + mote.vy * seconds + cameraY * mote.parallax, fieldHeight) - margin
+            const twinkle = 0.5 + 0.5 * Math.sin(seconds * 1000 * 2 * Math.PI / mote.twinkleMs + mote.phase)
+            const alpha = mote.alpha * (0.3 + 0.7 * twinkle)
+            const size = mote.size * unit
+            const haloSize = size * config.moteHaloRatio
+
+            this.ctx.fillStyle = mote.color
+            this.ctx.globalAlpha = alpha * config.moteHaloAlpha
+            this.ctx.fillRect(x * unit - haloSize / 2, y * unit - haloSize / 2, haloSize, haloSize)
+            this.ctx.globalAlpha = alpha
+            this.ctx.fillRect(x * unit - size / 2, y * unit - size / 2, size, size)
+        }
+        this.ctx.restore()
     }
     isPlayerMoving(player)
     {
@@ -2177,6 +2256,7 @@ class BloomRenderer
     {
         const floors = gameState.floors
 
+        visualEffects.particles.drawAmbientMotes()
         visualEffects.playerTrail.drawSmoothPlayerTrailIfEnabled(gameState.ninja.track)
         grapnel.draw()
         for (let i = 0; i < floors.length; ++i)
@@ -2220,7 +2300,7 @@ class BloomRenderer
         this.ctx.imageSmoothingEnabled = true
         for (let i = 0; i < this.levels.length; ++i)
         {
-            this.ctx.globalAlpha = Math.max(0, Math.min(1, config.levelAlphas[i] * config.strength))
+            this.ctx.globalAlpha = Math.max(0, Math.min(1, config.levelAlphas[i] * config.strength * neonPulse))
             this.ctx.drawImage(this.levels[i].canvas, 0, 0, this.canvas.width, this.canvas.height)
         }
         this.ctx.restore()

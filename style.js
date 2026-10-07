@@ -257,6 +257,33 @@ const STYLE = Object.freeze({
         lineWidth: 14,
         compositeOperation: 'lighter'
     }),
+    // Ambient life: tiny motes drifting over the background and a slow neon
+    // pulse. Both are pure functions of the page clock (frozen in the
+    // captures), so they never flicker and draw no random numbers per frame.
+    ambient: Object.freeze({
+        moteCount: 40,
+        moteSeed: 186,
+        // Screen px at 1080 (divided by scale[version])
+        moteMinSize: 4,
+        moteMaxSize: 10,
+        moteHaloRatio: 3.5,
+        moteHaloAlpha: 0.3,
+        // Drift speed in screen px at 1080 per second; motes rise slowly
+        moteMinSpeed: 10,
+        moteMaxSpeed: 28,
+        moteRiseRatio: 0.7,
+        // Part of the camera movement the motes follow (depth parallax)
+        moteParallax: 0.25,
+        moteMinAlpha: 0.5,
+        moteMaxAlpha: 0.95,
+        // Each mote fades in and out over its own period (ms)
+        moteMinTwinkleMs: 2200,
+        moteMaxTwinkleMs: 4200,
+        moteColors: Object.freeze(['#9feaff', '#c9a8ff', '#e6f6ff', '#7fc4ff']),
+        // Neon halo and bloom brightness swing by +-pulseAmount over pulsePeriodMs
+        pulsePeriodMs: 2000,
+        pulseAmount: 0.08
+    }),
     particles: Object.freeze({
         maxCount: 140,
         spawnBurst: 12,
@@ -760,7 +787,8 @@ const STYLE = Object.freeze({
         playerTrail: true,
         screenEffects: true,
         uiStyling: true,
-        bloom: true
+        bloom: true,
+        ambient: true
     })
 })
 
@@ -835,6 +863,7 @@ const QUALITY = {
     backgroundMotion: true,
     screenShake: true,
     bloom: true,
+    ambient: true,
     setLowPower: function(enabled)
     {
         const fullQuality = !enabled
@@ -845,5 +874,6 @@ const QUALITY = {
         this.backgroundMotion = fullQuality
         this.screenShake = fullQuality
         this.bloom = fullQuality
+        this.ambient = fullQuality
     }
 }

@@ -4,6 +4,17 @@
 // stroke state: callers wrap it in ctx.save()/restore().
 // True while BloomRenderer redraws the emissive outlines into its glow canvas.
 let bloomPassActive = false
+// Neon brightness of the current frame (STYLE.ambient pulse), set by draw()
+let neonPulse = 1
+
+function updateNeonPulse()
+{
+    const config = STYLE.ambient
+
+    neonPulse = STYLE.features.ambient && QUALITY.ambient
+        ? 1 + config.pulseAmount * Math.sin(performance.now() * 2 * Math.PI / config.pulsePeriodMs)
+        : 1
+}
 
 function strokeNeonPath(color, alpha)
 {
@@ -25,10 +36,10 @@ function strokeNeonPath(color, alpha)
     ctx.shadowBlur = 0
     ctx.strokeStyle = color
     ctx.lineJoin = 'round'
-    ctx.globalAlpha = baseAlpha * neon.haloAlpha
+    ctx.globalAlpha = baseAlpha * neon.haloAlpha * neonPulse
     ctx.lineWidth = neon.haloWidth * unit
     ctx.stroke()
-    ctx.globalAlpha = baseAlpha * neon.innerHaloAlpha
+    ctx.globalAlpha = baseAlpha * neon.innerHaloAlpha * neonPulse
     ctx.lineWidth = neon.innerHaloWidth * unit
     ctx.stroke()
 
@@ -38,7 +49,7 @@ function strokeNeonPath(color, alpha)
     ctx.stroke()
 
     ctx.strokeStyle = neon.coreColor
-    ctx.globalAlpha = baseAlpha * neon.coreAlpha
+    ctx.globalAlpha = baseAlpha * neon.coreAlpha * neonPulse
     ctx.lineWidth = neon.width * neon.coreWidthRatio * unit
     ctx.stroke()
 }

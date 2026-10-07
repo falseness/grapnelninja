@@ -42,6 +42,7 @@ function drawPlayerTrailLayer(gameState)
 function drawBehindForegroundParticlesLayer(gameState)
 {
     visualEffects.particles.update(gameState)
+    visualEffects.particles.drawAmbientMotes()
     visualEffects.particles.drawBehindForeground()
 }
 
@@ -75,6 +76,7 @@ function draw()
     ctx.scale(scale[version], scale[version])
 
     const gameState = visualEffects.getGameState()
+    updateNeonPulse()
     visualEffects.screenEffects.begin(gameState)
 
     drawLightsLayer(gameState)
