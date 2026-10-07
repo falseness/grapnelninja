@@ -1178,6 +1178,16 @@ class BackgroundRenderer
     }
 }
 
+// '#rrggbb' -> 'rgba(r, g, b, alpha)' (used only when a gradient is built)
+function colorWithAlpha(hex, alpha)
+{
+    const value = parseInt(hex.slice(1, 7), 16)
+    return 'rgba(' + (value >> 16 & 255) + ', ' + (value >> 8 & 255) + ', ' + (value & 255) + ', ' + alpha + ')'
+}
+
+// Coloured light spill: every neon object adds a soft radial light of its own
+// colour into a small canvas, which is added over the crystal background before
+// the world is drawn, so obstacles themselves are never washed out.
 class LightmapRenderer
 {
     constructor(context, targetCanvas)
@@ -1188,6 +1198,7 @@ class LightmapRenderer
         this.enabled = true
         this.lightCanvas = document.createElement('canvas')
         this.lightCtx = this.lightCanvas.getContext('2d')
+        // Unit-radius gradients by colour; drawRadialLight scales them to size
         this.gradients = new Map()
         this.resize()
     }
@@ -1208,28 +1219,36 @@ class LightmapRenderer
     }
     clear()
     {
+        if (!this.shouldDraw())
+            return
+
         this.resize()
         this.lightCtx.clearRect(0, 0, this.lightCanvas.width, this.lightCanvas.height)
     }
+    // x, y in world-on-screen units (as drawn under ctx.scale(scale[version])),
+    // radius in screen px at 1080. Lights fully off screen are skipped.
     drawRadialLight(x, y, radius, color, alpha)
     {
-        const lightX = x * this.scale
-        const lightY = y * this.scale
-        const lightRadius = radius * this.scale
-        const gradient = this.getLightGradient(color, lightRadius)
+        const toLight = this.scale * scale[version]
+        const lightX = x * toLight
+        const lightY = y * toLight
+        const lightRadius = radius * height / 1080 * this.scale
 
-        this.lightCtx.save()
-        this.lightCtx.translate(lightX, lightY)
-        this.lightCtx.globalAlpha = alpha
-        this.lightCtx.globalCompositeOperation = 'lighter'
-        this.lightCtx.fillStyle = gradient
-        this.lightCtx.fillRect(-lightRadius, -lightRadius, lightRadius * 2, lightRadius * 2)
-        this.lightCtx.restore()
+        if (lightX < -lightRadius || lightY < -lightRadius
+            || lightX > this.lightCanvas.width + lightRadius
+            || lightY > this.lightCanvas.height + lightRadius)
+            return false
+
+        const lightCtx = this.lightCtx
+        lightCtx.setTransform(lightRadius, 0, 0, lightRadius, lightX, lightY)
+        lightCtx.globalAlpha = alpha
+        lightCtx.fillStyle = this.getLightGradient(color)
+        lightCtx.fillRect(-1, -1, 2, 2)
+        return true
     }
-    getLightGradient(color, radius)
+    getLightGradient(color)
     {
-        const key = color + '|' + radius
-        let gradient = this.gradients.get(key)
+        let gradient = this.gradients.get(color)
 
         if (gradient)
             return gradient
@@ -1237,10 +1256,13 @@ class LightmapRenderer
         if (this.gradients.size >= 64)
             this.gradients.clear()
 
-        gradient = this.lightCtx.createRadialGradient(0, 0, 0, 0, 0, radius)
-        gradient.addColorStop(0, color)
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
-        this.gradients.set(key, gradient)
+        const falloff = STYLE.lights.falloff
+        gradient = this.lightCtx.createRadialGradient(0, 0, 0, 0, 0, 1)
+        for (let i = 0; i < falloff.length; ++i)
+        {
+            gradient.addColorStop(falloff[i][0], colorWithAlpha(color, falloff[i][1]))
+        }
+        this.gradients.set(color, gradient)
         return gradient
     }
     draw(gameState)
@@ -1248,166 +1270,111 @@ class LightmapRenderer
         if (!this.shouldDraw())
             return
 
-        this.drawAmbientLight()
-        this.drawPlayerLight(gameState.ninja)
+        const lightCtx = this.lightCtx
+        lightCtx.save()
+        lightCtx.globalCompositeOperation = 'lighter'
         this.drawWorldLights(gameState.floors)
-    }
-    drawAmbientLight()
-    {
-        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
-        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
-        const radius = Math.max(viewWidth, viewHeight) * STYLE.lights.ambientRadiusRatio
-
-        this.drawRadialLight(
-            viewWidth * 0.5,
-            viewHeight * 0.45,
-            radius,
-            STYLE.colors.cube.blue,
-            STYLE.lights.ambientAlpha
-        )
+        this.drawPlayerLight(gameState.ninja)
+        lightCtx.restore()
     }
     drawPlayerLight(player)
     {
-        const badLights = this.getBadVersionLights()
-
+        const lights = STYLE.lights
         this.drawRadialLight(
             player.x + screen.x,
             player.y + screen.y,
-            STYLE.lights.playerRadius * badLights.radiusMultiplier,
-            STYLE.colors.player.cyan,
-            this.clampAlpha(STYLE.lights.alpha * badLights.alphaMultiplier)
-        )
-
-        this.drawBadVersionBloom(
-            player.x + screen.x,
-            player.y + screen.y,
-            STYLE.lights.playerRadius,
-            STYLE.colors.player.cyan
+            lights.playerRadius,
+            STYLE.colors.player.halo,
+            lights.playerAlpha
         )
     }
     drawWorldLights(floors)
     {
         for (let i = 0; i < floors.length; ++i)
         {
-            for (let j = 0; j < floors[i].elements.length; ++j)
+            const elements = floors[i].elements
+            for (let j = 0; j < elements.length; ++j)
             {
-                this.drawElementLight(floors[i].elements[j])
+                this.drawElementLight(elements[j])
             }
         }
     }
     drawElementLight(element)
     {
-        if (this.isHazard(element))
+        const lights = STYLE.lights
+        let radius
+        let alpha
+
+        // Every triangle gets the same light, so classic traps stay hidden
+        if (element instanceof Triangle)
         {
-            this.drawHazardPulseLight(element)
-            return
+            radius = lights.hazardRadius
+            alpha = lights.hazardAlpha
         }
-
-        if (this.isCubeOrPlatform(element))
+        else if (this.isCubeOrPlatform(element))
         {
-            const badLights = this.getBadVersionLights()
-            const circle = element.getCircumscribedCircle()
-            const lightColor = this.getElementLightColor(element)
-
-            this.drawElementCircleLight(
-                element,
-                STYLE.lights.cubeRadius * badLights.radiusMultiplier,
-                lightColor,
-                this.clampAlpha(STYLE.lights.alpha * badLights.alphaMultiplier)
-            )
-            this.drawBadVersionBloom(
-                circle.x + screen.x,
-                circle.y + screen.y,
-                Math.max(STYLE.lights.cubeRadius, circle.radius),
-                lightColor
-            )
+            radius = lights.cubeRadius
+            alpha = lights.cubeAlpha
         }
-    }
-    drawHazardPulseLight(element)
-    {
-        const circle = this.getScreenCircle(element)
-
-        if (!this.isScreenCircleVisible(circle))
+        else
             return
 
-        const badLights = this.getBadVersionLights()
-        const pulse = this.getPulseRatio(STYLE.timing.hazardPulseMs)
-        const alpha = STYLE.lights.hazardPulseMinAlpha
-            + (STYLE.lights.hazardPulseMaxAlpha - STYLE.lights.hazardPulseMinAlpha) * pulse
-        const radius = (STYLE.lights.hazardRadius + STYLE.lights.hazardPulseRadiusBoost * pulse)
-            * badLights.hazardRadiusMultiplier
+        const circle = element.getCircumscribedCircle()
+        const elementScreenRadius = circle.radius * scale[version] * 1080 / height
+        let x = circle.x
+        let y = circle.y
 
-        this.drawElementCircleLight(
-            element,
-            radius,
-            STYLE.colors.hazard.red,
-            this.clampAlpha(alpha * badLights.hazardAlphaMultiplier)
-        )
+        // A big block (classic walls) can have its centre far off screen: the
+        // light moves to the centre clamped into the view (still on the block).
+        // Floor/ceiling strips spanning the view give no light, the bloom does that
+        if (elementScreenRadius > lights.maxElementRadius)
+        {
+            const box = getElementCullBox(element)
+            const viewWidth = width / scale[version]
+            const viewHeight = height / scale[version]
 
-        this.drawBadVersionBloom(
-            circle.x,
-            circle.y,
-            radius,
-            STYLE.colors.hazard.red
-        )
-    }
-    getPulseRatio(durationMs)
-    {
-        if (STYLE.visualStability.freezeHazardPulse)
-            return 0.5
+            if (box.right < -screen.x || box.left > -screen.x + viewWidth
+                || box.bottom < -screen.y || box.top > -screen.y + viewHeight)
+                return
 
-        const duration = Math.max(1, durationMs)
-        const phase = (performance.now() % duration) / duration
+            y = Math.max(-screen.y, Math.min(-screen.y + viewHeight, y))
 
-        return 0.5 + Math.sin(phase * Math.PI * 2) * 0.5
-    }
-    drawElementCircleLight(element, radius, color, alpha)
-    {
-        const circle = this.getScreenCircle(element)
+            if (box.right - box.left > viewWidth * lights.maxBlockViewWidthRatio)
+            {
+                // Wider than the view: only its vertical edge facing the view
+                // centre glows, fading out as that edge nears the centre
+                const centerX = -screen.x + viewWidth / 2
+                const distance = Math.max(box.left - centerX, centerX - box.right)
+                if (distance <= 0)
+                    return
 
+                alpha *= Math.min(1, distance / (viewWidth * lights.edgeFadeViewRatio))
+                x = centerX < box.left ? box.left : box.right
+            }
+            else
+                x = Math.max(-screen.x, Math.min(-screen.x + viewWidth, x))
+        }
+
+        // Bigger blocks light a wider area, up to maxElementRadius more
         this.drawRadialLight(
-            circle.x,
-            circle.y,
-            Math.max(radius, circle.radius),
-            color,
+            x + screen.x,
+            y + screen.y,
+            radius + Math.min(elementScreenRadius, lights.maxElementRadius),
+            this.getElementLightColor(element),
             alpha
         )
     }
-    getScreenCircle(element)
-    {
-        const circle = element.getCircumscribedCircle()
-
-        return {
-            x: circle.x + screen.x,
-            y: circle.y + screen.y,
-            radius: circle.radius
-        }
-    }
-    isScreenCircleVisible(circle)
-    {
-        const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
-        const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
-        const margin = circle.radius
-
-        return circle.x > -margin
-            && circle.x < viewWidth + margin
-            && circle.y > -margin
-            && circle.y < viewHeight + margin
-    }
-    isHazard(element)
-    {
-        return element instanceof Triangle && !(element instanceof HarmlessTriangle)
-    }
     isCubeOrPlatform(element)
     {
-        if (element instanceof Ground || element instanceof Side)
+        // The floor/ceiling strips span the whole level; their glow is the bloom's job
+        if (element instanceof Ground)
             return false
 
-        return element instanceof Rect || element instanceof Trampoline || element instanceof HarmlessTriangle
+        return element instanceof Rect || element instanceof Trampoline
     }
     getElementLightColor(element)
     {
-        return element.stroke || STYLE.colors.cube.blue
+        return element.getGlowStroke() || STYLE.colors.cube.blue
     }
     composite()
     {
@@ -1416,65 +1383,13 @@ class LightmapRenderer
 
         const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
         const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
-        const badLights = this.getBadVersionLights()
-        const stableLightMultiplier = STYLE.visualStability.stableBrightness
-            ? STYLE.visualStability.stableLightCompositeMultiplier
-            : 1
 
         this.ctx.save()
-        this.ctx.globalAlpha = this.clampAlpha(
-            STYLE.lights.compositeAlpha
-            * badLights.compositeAlphaMultiplier
-            * stableLightMultiplier
-        )
-        this.ctx.globalCompositeOperation = this.getEffectCompositeOperation()
+        this.ctx.globalAlpha = STYLE.lights.compositeAlpha
+        this.ctx.globalCompositeOperation = STYLE.lights.compositeOperation
         this.ctx.imageSmoothingEnabled = true
         this.ctx.drawImage(this.lightCanvas, 0, 0, viewWidth, viewHeight)
         this.ctx.restore()
-    }
-    drawBadVersionBloom(x, y, radius, color)
-    {
-        if (!this.isBadVersion())
-            return
-
-        const badLights = STYLE.badVersionEffects.lights
-
-        this.drawRadialLight(
-            x,
-            y,
-            radius * badLights.bloomRadiusMultiplier,
-            color,
-            badLights.bloomAlphaMultiplier
-        )
-    }
-    getBadVersionLights()
-    {
-        if (!this.isBadVersion())
-        {
-            return {
-                radiusMultiplier: 1,
-                alphaMultiplier: 1,
-                hazardRadiusMultiplier: 1,
-                hazardAlphaMultiplier: 1,
-                compositeAlphaMultiplier: 1
-            }
-        }
-
-        return STYLE.badVersionEffects.lights
-    }
-    getEffectCompositeOperation()
-    {
-        return STYLE.visualStability.stableBrightness
-            ? STYLE.visualStability.effectCompositeOperation
-            : 'lighter'
-    }
-    isBadVersion()
-    {
-        return typeof version != 'undefined' && version == 'bad'
-    }
-    clampAlpha(alpha)
-    {
-        return Math.max(0, Math.min(1, alpha))
     }
 }
 
@@ -1903,7 +1818,8 @@ class ParticleSystem
     }
     isCubeOrPlatform(element)
     {
-        if (element instanceof Ground || element instanceof Side)
+        // The floor/ceiling strips span the whole level; their glow is the bloom's job
+        if (element instanceof Ground)
             return false
 
         return element instanceof Rect || element instanceof Trampoline || element instanceof HarmlessTriangle

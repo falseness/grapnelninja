@@ -212,19 +212,34 @@ const STYLE = Object.freeze({
         fpsPanelLineWidth: screenHeightPercent(100 * 1.5 / 1080),
         fpsUpdateMs: 250
     }),
+    // Coloured light spill on the crystal background (LightmapRenderer).
+    // Radii are screen px at 1080 (the same size in both modes); block lights
+    // also grow by the block's own radius.
     lights: Object.freeze({
         resolutionScale: 0.2,
-        playerRadius: screenHeightPercent(100 * 110 / 1080),
-        cubeRadius: screenHeightPercent(100 * 104 / 1080),
-        hazardRadius: screenHeightPercent(100 * 126 / 1080),
-        groundRadius: screenHeightPercent(100 * 80 / 1080),
-        alpha: 0.34,
-        hazardPulseMinAlpha: 0.22,
-        hazardPulseMaxAlpha: 0.56,
-        hazardPulseRadiusBoost: screenHeightPercent(100 * 26 / 1080),
-        ambientRadiusRatio: 0.62,
-        ambientAlpha: 0.12,
-        compositeAlpha: 0.72
+        playerRadius: 210,
+        cubeRadius: 140,
+        hazardRadius: 150,
+        // Cap on the block-size bonus, so the huge classic blocks do not flood the screen
+        maxElementRadius: 170,
+        playerAlpha: 0.85,
+        cubeAlpha: 0.65,
+        hazardAlpha: 0.75,
+        // Blocks wider than this part of the view light only from their edge
+        // facing the view centre, fading over edgeFadeViewRatio of the view width
+        maxBlockViewWidthRatio: 0.9,
+        edgeFadeViewRatio: 0.15,
+        // Gradient stops [offset, alpha]: a bright middle with a soft edge
+        falloff: Object.freeze([
+            Object.freeze([0, 1]),
+            Object.freeze([0.35, 0.55]),
+            Object.freeze([0.7, 0.16]),
+            Object.freeze([1, 0])
+        ]),
+        // hard-light pushes the crystals toward the light's hue (green stays
+        // green on the blue rock); 'lighter' would only brighten them to cyan
+        compositeAlpha: 1,
+        compositeOperation: 'hard-light'
     }),
     // Bloom: the emissive shapes (outlines, ninja ring, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a
@@ -337,15 +352,6 @@ const STYLE = Object.freeze({
             groundLine: '#c4ffd8',
             shadow: 'rgba(0, 0, 0, 0.32)'
         }),
-        lights: Object.freeze({
-            radiusMultiplier: 1.08,
-            alphaMultiplier: 0.92,
-            hazardRadiusMultiplier: 1.02,
-            hazardAlphaMultiplier: 0.9,
-            bloomRadiusMultiplier: 1.24,
-            bloomAlphaMultiplier: 0.2,
-            compositeAlphaMultiplier: 0.86
-        }),
         particles: Object.freeze({
             playerEmitMultiplier: 3,
             worldChanceMultiplier: 1.75,
@@ -418,8 +424,7 @@ const STYLE = Object.freeze({
         cubeTrailPoints: 50,
         triangleTrailPoints: 75,
         backgroundRotationMs: 18000,
-        backgroundStreakMs: 5200,
-        hazardPulseMs: 1300
+        backgroundStreakMs: 5200
     }),
     backgroundGeometry: Object.freeze({
         hexagonCount: 5,
@@ -741,18 +746,16 @@ const STYLE = Object.freeze({
     }),
     visualStability: Object.freeze({
         stableBrightness: true,
-        freezeHazardPulse: true,
         freezeBackgroundParallax: true,
         useDistantBackgroundMotion: true,
         freezeBadVersionBackground: false,
         backgroundCompositeOperation: 'source-over',
         effectCompositeOperation: 'source-over',
-        stableEffectAlphaMultiplier: 0.42,
-        stableLightCompositeMultiplier: 0.5
+        stableEffectAlphaMultiplier: 0.42
     }),
     features: Object.freeze({
         background: true,
-        lightmap: false,
+        lightmap: true,
         particles: true,
         playerTrail: true,
         screenEffects: true,
