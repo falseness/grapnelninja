@@ -1319,17 +1319,24 @@ class LightmapRenderer
         else
             return
 
-        const circle = element.getCircumscribedCircle()
-        const elementScreenRadius = circle.radius * scale[version] * 1080 / height
-        let x = circle.x
-        let y = circle.y
+        // The drawn box, not getCircumscribedCircle(): that collision helper's
+        // centre and radius can lie off the shape (Trampoline, Rect)
+        const box = getElementCullBox(element)
+        if (!box)
+            return
+
+        const halfWidth = (box.right - box.left) / 2
+        const halfHeight = (box.bottom - box.top) / 2
+        const elementScreenRadius = Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight)
+            * scale[version] * 1080 / height
+        let x = box.left + halfWidth
+        let y = box.top + halfHeight
 
         // A big block (classic walls) can have its centre far off screen: the
         // light moves to the centre clamped into the view (still on the block).
         // Floor/ceiling strips spanning the view give no light, the bloom does that
         if (elementScreenRadius > lights.maxElementRadius)
         {
-            const box = getElementCullBox(element)
             const viewWidth = width / scale[version]
             const viewHeight = height / scale[version]
 
