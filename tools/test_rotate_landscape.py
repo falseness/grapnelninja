@@ -50,6 +50,36 @@ class RotateLandscapeTests(unittest.TestCase):
         page.touchscreen.tap(point['x'], point['y'])
         return point
 
+    def test_backing_resolution_and_css_probe(self):
+        for touch, dpr in [(True, 3), (True, 1), (False, 1), (False, 3)]:
+            with self.subTest(touch=touch, dpr=dpr):
+                page, errors = self.boot(LANDSCAPE if touch else
+                                         {'width': 1920, 'height': 1080},
+                                         has_touch=touch, is_mobile=touch,
+                                         device_scale_factor=dpr)
+                result = page.evaluate("""() => {
+                    configureCanvasViewport(canvas, ctx)
+                    const css = getCanvasCssRect()
+                    LAYOUT_PROBE.boxes = []
+                    LAYOUT_PROBE.rect('button', 'floor', 0, 0, minTouchSize(), minTouchSize())
+                    const probe = LAYOUT_PROBE.boxes[0]
+                    LAYOUT_PROBE.boxes = null
+                    visualEffects.bloom.resize()
+                    return {css, backing: [canvas.width, canvas.height], probe,
+                            lightScale: visualEffects.lightmap.scale,
+                            bloomWidth: visualEffects.bloom.levels[0].canvas.width}
+                }""")
+                ratio = min(dpr, 2) if touch else dpr
+                self.assertEqual(result['backing'],
+                                 [int(result['css'][axis] * ratio + .5)
+                                  for axis in ('width', 'height')])
+                for axis in ('width', 'height'):
+                    self.assertAlmostEqual(result['probe'][axis], 44, places=4)
+                self.assertEqual(result['lightScale'], .15 if touch else .2)
+                self.assertEqual(result['bloomWidth'],
+                                 int(result['backing'][0] * (.2 if touch else .25)))
+                self.assertFalse(errors['page'])
+
     def test_portrait_phone_is_rotated_to_landscape(self):
         page, errors = self.boot(PORTRAIT, **PHONE)
         s = page.evaluate(STATE)

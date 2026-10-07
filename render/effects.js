@@ -1225,7 +1225,8 @@ class LightmapRenderer
     {
         this.ctx = context
         this.canvas = targetCanvas
-        this.scale = STYLE.lights.resolutionScale
+        this.scale = isTouchFirstDevice()
+            ? STYLE.lights.touchResolutionScale : STYLE.lights.resolutionScale
         this.enabled = true
         this.lightCanvas = document.createElement('canvas')
         this.lightCtx = this.lightCanvas.getContext('2d')
@@ -2269,8 +2270,10 @@ class BloomRenderer
             this.levels.push({canvas: levelCanvas, ctx: levelCtx})
         }
 
-        let levelWidth = Math.max(1, Math.floor(this.canvas.width * config.resolutionScale))
-        let levelHeight = Math.max(1, Math.floor(this.canvas.height * config.resolutionScale))
+        const resolutionScale = isTouchFirstDevice()
+            ? config.touchResolutionScale : config.resolutionScale
+        let levelWidth = Math.max(1, Math.floor(this.canvas.width * resolutionScale))
+        let levelHeight = Math.max(1, Math.floor(this.canvas.height * resolutionScale))
         for (let i = 0; i < config.blurLevels; ++i)
         {
             const level = this.levels[i]

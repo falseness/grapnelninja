@@ -237,6 +237,7 @@ const STYLE = Object.freeze({
     // also grow by the block's own radius.
     lights: Object.freeze({
         resolutionScale: 0.2,
+        touchResolutionScale: 0.15,
         playerRadius: 210,
         cubeRadius: 140,
         hazardRadius: 150,
@@ -267,6 +268,7 @@ const STYLE = Object.freeze({
     bloom: Object.freeze({
         // Glow canvas size per axis, as a part of the backing store (<= 1/4)
         resolutionScale: 0.25,
+        touchResolutionScale: 0.2,
         // Each blur level halves the previous one: 1/4, 1/8, 1/16, 1/32 of the backing
         blurLevels: 4,
         // Added alpha of each level (sharp to wide) and overall strength. The

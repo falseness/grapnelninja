@@ -126,13 +126,14 @@ function configureStage()
     stage.style.transform = isViewRotated() ? 'rotate(90deg)' : ''
 }
 
-// Sizes the CSS box and backing store (CSS size * DPR) and applies the base
+// Sizes the CSS box and backing store (CSS size * capped DPR) and applies the base
 // transform so all drawing code works in logical units.
 function configureCanvasViewport(canvas, context)
 {
     configureStage()
     const rect = getCanvasCssRect()
-    const dpr = window.devicePixelRatio || 1
+    const deviceDpr = window.devicePixelRatio || 1
+    const dpr = isTouchFirstDevice() ? Math.min(deviceDpr, 2) : deviceDpr
 
     canvas.style.position = 'fixed'
     canvas.style.left = rect.left + 'px'

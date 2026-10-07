@@ -33,24 +33,21 @@ INSTRUMENT_RUN = '''() => {
     }
 }'''
 
-# Record every fillText/strokeText size in CSS px while window.__fontTag is set:
-# font px * logical->backing scale (includes the version scale) * CSS/backing.
+# Measure visible UI text through the layout probe: glyphs may be drawn from
+# cached sprites, while offscreen bloom text has no CSS box of its own.
 INSTRUMENT_FONTS = '''() => {
     window.__fonts = []
-    const proto = CanvasRenderingContext2D.prototype
-    for (const name of ['fillText', 'strokeText']) {
-        const original = proto[name]
-        proto[name] = function(text) {
-            if (window.__fontTag) {
-                const px = parseFloat(/([\\d.]+)px/.exec(this.font)[1])
-                const t = this.getTransform()
-                const cssPerBacking = this.canvas.getBoundingClientRect().width / this.canvas.width
-                window.__fonts.push({tag: window.__fontTag, text: String(text), font: this.font,
-                                     // Rounded to 1e-6: an exact 12 px floor can measure 11.999999999.
-                                     css: Math.round(px * Math.hypot(t.a, t.b) * cssPerBacking * 1e6) / 1e6})
-            }
-            return original.apply(this, arguments)
-        }
+    const original = LAYOUT_PROBE.text
+    LAYOUT_PROBE.text = function(name, x, y) {
+        if (!window.__fontTag) return original.call(this, name, x, y)
+        const previous = this.boxes
+        this.boxes = []
+        try {
+            original.call(this, name, x, y)
+            for (const box of this.boxes)
+                window.__fonts.push({tag: window.__fontTag, text: box.name,
+                    css: Math.round(box.fontPx * 1e6) / 1e6})
+        } finally { this.boxes = previous }
     }
 }'''
 
