@@ -24,6 +24,16 @@ class PerfMobileTest(unittest.TestCase):
         self.assertGreater(result['frames'], 0)
         self.assertEqual(result['page_errors'], [])
         self.assertEqual(result['emulation']['cpu_throttle_rate'], 4)
+        provenance = result['provenance']
+        self.assertRegex(provenance['harness_rev'], r'^[0-9a-f]{40}$')
+        self.assertRegex(provenance['browser_version'], r'^\d+\.')
+        self.assertTrue(provenance['trace'])
+        self.assertFalse(provenance['layers'])
+        self.assertEqual(provenance['canvases']['main'], {'width': 1688, 'height': 780})
+        for digest in provenance['harness_files_sha256'].values():
+            self.assertRegex(digest, r'^[0-9a-f]{64}$')
+        self.assertEqual(len(provenance['runtime_scripts_sha256']), 4)
+        self.assertEqual(len(provenance['host_load_before']), 3)
         self.assertGreater(result['touchstarts_received'], 0)
         # The window is --seconds, not "until the last touch returns".
         self.assertLess(abs(result['wall_seconds'] - 5), 1.0)
@@ -49,6 +59,10 @@ class PerfMobileTest(unittest.TestCase):
     def test_layers_run(self):
         result = perf_mobile.run('worktree', 'bad', 5, 1, log=print, trace=False, layers=True)
         self.assertEqual(result['page_errors'], [])
+        self.assertFalse(result['provenance']['trace'])
+        self.assertTrue(result['provenance']['layers'])
+        self.assertEqual(len(result['provenance']['canvases']['bloom']), 4)
+        self.assertGreater(result['provenance']['canvases']['lightmap']['width'], 0)
         self.assertEqual(list(result['layers_ms']), perf_mobile.LAYERS)
         # The bloom pass runs between the world effects and the HUD.
         self.assertIn('drawBloomLayer', perf_mobile.LAYERS)

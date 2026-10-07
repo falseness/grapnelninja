@@ -31,6 +31,7 @@ Usage: python3 tools/perf_mobile.py --rev worktree|<git rev> --mode bad|classic
 """
 import argparse
 from contextlib import ExitStack
+import hashlib
 import io
 import json
 import os
@@ -40,6 +41,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
+from datetime import datetime, timezone
 
 from browser_test_support import start_browser_test, wait_for_boot
 
@@ -324,9 +326,29 @@ def export_rev(rev, add_cleanup):
 def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofile=None,
         warmup=3, heapprofile=None):
     script = input_script(seed, seconds)
+    # Capture the harness independently of the game exported by --rev. All
+    # provenance work stays outside the measured window.
+    provenance = {
+        'started_utc': datetime.now(timezone.utc).isoformat(),
+        'harness_rev': subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+        'harness_files_sha256': {
+            name: hashlib.sha256((ROOT / 'tools' / name).read_bytes()).hexdigest()
+            for name in ('perf_mobile.py', 'browser_test_support.py')},
+        # Diagnostic runners can override these in memory without editing a
+        # file. Hash the actual scripts too, rather than silently calling those
+        # runs equivalent to an unmodified CLI run.
+        'runtime_scripts_sha256': {
+            name: hashlib.sha256(value.encode()).hexdigest()
+            for name, value in (('seed', SEED_SCRIPT), ('instrument', INSTRUMENT_SCRIPT),
+                                ('start', START_SCRIPT), ('layers', LAYERS_SCRIPT))},
+        'trace': trace, 'layers': layers,
+        'host_load_before': os.getloadavg(),
+    }
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
         url, browser = start_browser_test(root, stack.callback)
+        provenance['browser_version'] = browser.version
         context = browser.new_context(viewport=VIEWPORT, device_scale_factor=DEVICE_SCALE_FACTOR,
                                       is_mobile=True, has_touch=True)
         stack.callback(context.close)
@@ -382,6 +404,18 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
             if heapprofile:
                 Path(heapprofile).write_text(json.dumps(profile))
             gc = gc_stats(read_trace(cdp, page), seconds)
+        provenance['canvases'] = page.evaluate('''() => {
+            const size = c => ({width: c.width, height: c.height});
+            const effects = typeof visualEffects === 'undefined' ? null : visualEffects;
+            return {
+                main: size(document.getElementById('canvas')),
+                lightmap: effects && effects.lightmap && effects.lightmap.lightCanvas
+                    ? size(effects.lightmap.lightCanvas) : null,
+                bloom: effects && effects.bloom && effects.bloom.levels
+                    ? effects.bloom.levels.map(level => size(level.canvas)) : []
+            };
+        }''')
+        provenance['host_load_after'] = os.getloadavg()
     frames = perf['frames']
     intervals = [b - a for a, b in zip(frames, frames[1:])]
     histogram = {}
@@ -393,6 +427,7 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
     marks = [perf['t0']] + frames + [perf['t0'] + seconds * 1000]
     max_gap = max(b - a for a, b in zip(marks, marks[1:]))
     result = {
+        'provenance': provenance,
         'rev': rev_id, 'mode': mode, 'seed': seed, 'seconds': seconds,
         'emulation': {'viewport': VIEWPORT, 'device_scale_factor': DEVICE_SCALE_FACTOR,
                       'is_mobile': True, 'has_touch': True, 'cpu_throttle_rate': CPU_THROTTLE_RATE},
