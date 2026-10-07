@@ -2307,6 +2307,77 @@ class BloomRenderer
     }
 }
 
+class ColorGradeRenderer
+{
+    constructor(context, targetCanvas)
+    {
+        this.ctx = context
+        this.canvas = targetCanvas
+        this.gradients = null
+        this.gradientKey = ''
+    }
+    shouldDraw()
+    {
+        return STYLE.features.colorGrade
+    }
+    // Built once per backing size; the grade itself never creates gradients
+    getGradients(width, height)
+    {
+        const key = width + 'x' + height
+        if (this.gradientKey == key)
+            return this.gradients
+
+        const config = STYLE.colorGrade
+        const ctx = this.ctx
+
+        const shadows = ctx.createLinearGradient(0, 0, 0, height)
+        shadows.addColorStop(0, config.shadowTop)
+        shadows.addColorStop(1, config.shadowBottom)
+
+        const highlights = ctx.createRadialGradient(
+            width * config.highlightCenterX, height * config.highlightCenterY, 0,
+            width * config.highlightCenterX, height * config.highlightCenterY, Math.hypot(width, height) * 0.6)
+        highlights.addColorStop(0, config.highlightCenter)
+        highlights.addColorStop(1, config.highlightEdge)
+
+        const radius = Math.hypot(width, height) / 2
+        const vignette = ctx.createRadialGradient(width / 2, height / 2, radius * config.vignetteInner,
+            width / 2, height / 2, radius)
+        vignette.addColorStop(0, 'rgba(0, 0, 0, 0)')
+        vignette.addColorStop(1, config.vignetteEdge)
+
+        this.gradients = {shadows, highlights, vignette}
+        this.gradientKey = key
+        return this.gradients
+    }
+    // Screen-fixed full-frame fills over the world (not the HUD): shadows lifted
+    // toward blue, highlights pushed toward magenta, then the corner vignette
+    draw()
+    {
+        if (!this.shouldDraw())
+            return
+
+        const config = STYLE.colorGrade
+        const ctx = this.ctx
+        const width = this.canvas.width
+        const height = this.canvas.height
+        const gradients = this.getGradients(width, height)
+
+        ctx.save()
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.globalCompositeOperation = config.shadowOperation
+        ctx.fillStyle = gradients.shadows
+        ctx.fillRect(0, 0, width, height)
+        ctx.globalCompositeOperation = config.highlightOperation
+        ctx.fillStyle = gradients.highlights
+        ctx.fillRect(0, 0, width, height)
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.fillStyle = gradients.vignette
+        ctx.fillRect(0, 0, width, height)
+        ctx.restore()
+    }
+}
+
 class ScreenEffects
 {
     constructor(context)
@@ -2461,6 +2532,7 @@ class VisualEffects
         this.playerTrail = new PlayerTrailRenderer()
         this.screenEffects = new ScreenEffects(context)
         this.bloom = new BloomRenderer(context, targetCanvas)
+        this.colorGrade = new ColorGradeRenderer(context, targetCanvas)
         this.ui = new UIStylingHooks()
     }
     getGameState()

@@ -59,6 +59,12 @@ function drawBloomLayer(gameState)
     visualEffects.bloom.draw(gameState, screenEffects.isShaking ? screenEffects.shakeOffset : NO_SHAKE)
 }
 
+// Final colour grade and vignette over the world, under the HUD
+function drawColorGradeLayer()
+{
+    visualEffects.colorGrade.draw()
+}
+
 function drawUILayer(gameState)
 {
     visualEffects.ui.draw(gameState)
@@ -85,6 +91,7 @@ function draw()
     drawWorldLayer()
     drawParticlesAndTrailsLayer(gameState)
     drawBloomLayer(gameState)
+    drawColorGradeLayer()
     drawUILayer(gameState)
     drawFpsCounterLayer(gameState)
 

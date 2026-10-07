@@ -284,6 +284,23 @@ const STYLE = Object.freeze({
         pulsePeriodMs: 2000,
         pulseAmount: 0.08
     }),
+    // Final colour grade over the world (under the HUD), toward the cover art:
+    // a multiply that cuts mostly red deepens the shadows into blue (violet at
+    // the bottom) while keeping the green neon green, a soft-light pass pushes the bright areas toward magenta, and a
+    // dark navy vignette closes the corners.
+    colorGrade: Object.freeze({
+        shadowOperation: 'multiply',
+        shadowTop: 'rgba(110, 215, 255, 0.5)',
+        shadowBottom: 'rgba(150, 200, 255, 0.5)',
+        highlightOperation: 'soft-light',
+        highlightCenterX: 0.5,
+        highlightCenterY: 0.55,
+        highlightCenter: 'rgba(255, 60, 190, 0.22)',
+        highlightEdge: 'rgba(255, 60, 190, 0.1)',
+        // Inner radius of the clear centre, as a part of the half-diagonal
+        vignetteInner: 0.3,
+        vignetteEdge: 'rgba(3, 0, 22, 0.88)'
+    }),
     particles: Object.freeze({
         maxCount: 140,
         spawnBurst: 12,
@@ -788,7 +805,8 @@ const STYLE = Object.freeze({
         screenEffects: true,
         uiStyling: true,
         bloom: true,
-        ambient: true
+        ambient: true,
+        colorGrade: true
     })
 })
 
