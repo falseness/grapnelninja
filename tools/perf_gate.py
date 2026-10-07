@@ -19,6 +19,13 @@ def load_runs(directory, mode, revision=None):
     runs = []
     for i, path in enumerate(paths):
         run = json.loads(path.read_text())
+        # Causal probes can deliberately remove effects or add timing wrappers.
+        # Their numbers must never become acceptance evidence by renaming files.
+        experiment = run.get('experiment') or {}
+        if (run.get('diagnostic') or run.get('diagnostic_override')
+                or run.get('context_options') or experiment.get('diagnostic_override')
+                or experiment.get('subphases')):
+            raise ValueError(f'{path}: diagnostic run is not acceptance evidence')
         if (run['mode'] != mode or run['seconds'] != 20 or run['seed'] != 1
                 or run['frames'] <= 0 or run['page_errors'] or not run['layers_ms']
                 or (revision is not None and run['rev'] != revision)

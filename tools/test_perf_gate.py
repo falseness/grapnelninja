@@ -66,6 +66,24 @@ class PerfGateTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             report(self.base, self.current, 'head')
 
+    def test_reject_diagnostic_runs_even_when_under_budget(self):
+        path = self.current / 'bad-notrace-1.json'
+        original = path.read_text()
+        for key, value in (
+                ('diagnostic', True),
+                ('diagnostic_override', 'disableBloom()'),
+                ('context_options', 'willReadFrequently:true'),
+                ('experiment', {'diagnostic_override': 'disableLightmap()'}),
+                ('experiment', {'subphases': {'bloom.blur': {'p95': 1}}})):
+            with self.subTest(key=key, value=value):
+                path.write_text(original)
+                self.change('notrace-1', key, value)
+                with self.assertRaisesRegex(ValueError, 'diagnostic run'):
+                    report(self.base, self.current, 'head')
+        path.write_text(original)
+        self.change('notrace-1', 'experiment', {'diagnostic_override': ''})
+        self.assertTrue(report(self.base, self.current, 'head')[1])
+
 
 if __name__ == '__main__':
     unittest.main()
