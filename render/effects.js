@@ -182,6 +182,7 @@ class BackgroundRenderer
         const height = LOGICAL_VIEWPORT.height
 
         this.drawBaseGradient(width, height)
+        this.drawCrystalLayer(width, height, this.getCrystalShift(width, height))
         this.drawGeometry(width, height)
         this.drawVignette(width, height)
     }
@@ -196,6 +197,7 @@ class BackgroundRenderer
         const height = LOGICAL_VIEWPORT.height
 
         this.drawBaseGradient(width, height)
+        this.drawCrystalLayer(width, height, {x: 0, y: 0})
         this.drawBadVersionDepth(width, height, this.getMenuBackgroundGeometry(), 0, {forceStatic: true})
         this.drawVignette(width, height)
     }
@@ -793,7 +795,7 @@ class BackgroundRenderer
             return {x: 0, y: 0}
 
         const ratio = geometry.parallaxShiftRatio
-        const time = performance.now() * this.getVersionBackgroundTimeScale()
+        const time = performance.now() * (geometry.ignoreTimeScale ? 1 : this.getVersionBackgroundTimeScale())
         const x = Math.sin(time / 3100) * width * ratio
         const y = Math.cos(time / 3700) * height * ratio
 
@@ -805,7 +807,7 @@ class BackgroundRenderer
             return {x: 0, y: 0}
 
         const canvasScale = scale[version] || 1
-        const motionScale = this.getVersionBackgroundTimeScale()
+        const motionScale = geometry.ignoreTimeScale ? 1 : this.getVersionBackgroundTimeScale()
         const ratioX = (geometry.cameraParallaxXRatio || 0) * motionScale
         const ratioY = (geometry.cameraParallaxYRatio || 0) * motionScale
 
@@ -813,6 +815,197 @@ class BackgroundRenderer
             x: screen.x * canvasScale * ratioX,
             y: screen.y * canvasScale * ratioY
         }
+    }
+    // Where the far crystal tile sits this frame: it follows a fraction of
+    // the camera (against its motion, so it reads as far away) and of the
+    // slow background drift
+    getCrystalShift(width, height)
+    {
+        if (this.shouldFreezeBadVersionBackgroundMotion())
+            return {x: 0, y: 0}
+
+        const crystals = STYLE.backgroundGeometry.crystals
+        const drift = this.getParallaxShift(width, height,
+            {parallaxShiftRatio: crystals.driftRatio, ignoreTimeScale: true})
+        const camera = this.getCameraParallaxShift({
+            cameraParallaxXRatio: crystals.cameraParallaxXRatio,
+            cameraParallaxYRatio: crystals.cameraParallaxYRatio,
+            ignoreTimeScale: true
+        })
+        const maxY = height * 0.05
+
+        return {
+            x: drift.x - camera.x,
+            y: Math.max(-maxY, Math.min(maxY, drift.y - camera.y))
+        }
+    }
+    // The crystal tile for this viewport size, built once from a fixed seed
+    // (a resize builds a new one)
+    getCrystalLayer(width, height)
+    {
+        const crystals = STYLE.backgroundGeometry.crystals
+        const pixelScale = Math.max(0.25, Math.min(crystals.maxPixelScale, this.canvas.width / width || 1))
+        const key = [width, height, pixelScale].join('|')
+
+        if (this.crystalLayer && this.crystalLayer.key === key)
+            return this.crystalLayer
+
+        const layerCanvas = document.createElement('canvas')
+        layerCanvas.width = Math.max(1, Math.round(width * pixelScale))
+        layerCanvas.height = Math.max(1, Math.round(height * pixelScale))
+        const ctx = layerCanvas.getContext('2d')
+        ctx.setTransform(layerCanvas.width / width, 0, 0, layerCanvas.height / height, 0, 0)
+        this.paintCrystalTile(ctx, width, height, crystals)
+
+        this.crystalLayer = {key, canvas: layerCanvas, width, height}
+        return this.crystalLayer
+    }
+    paintCrystalTile(ctx, width, height, crystals)
+    {
+        const colors = STYLE.colors.background
+        let seed = crystals.seed >>> 0
+        // mulberry32: the same tile on every run and every device
+        const random = () =>
+        {
+            seed = (seed + 0x6D2B79F5) >>> 0
+            let t = seed
+            t = Math.imul(t ^ (t >>> 15), t | 1)
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+        }
+        const between = range => range[0] + (range[1] - range[0]) * random()
+        // Shapes are drawn again one tile width left and right, so whatever
+        // leaves one side of the tile comes back on the other: no seam
+        const wrapped = draw =>
+        {
+            for (const dx of [-width, 0, width])
+            {
+                ctx.save()
+                ctx.translate(dx, 0)
+                draw()
+                ctx.restore()
+            }
+        }
+        const polygon = (points, fill) =>
+        {
+            ctx.beginPath()
+            ctx.moveTo(points[0][0], points[0][1])
+            for (let i = 1; i < points.length; ++i)
+                ctx.lineTo(points[i][0], points[i][1])
+            ctx.closePath()
+            ctx.fillStyle = fill
+            ctx.fill()
+        }
+        // A faceted shard from baseY towards dir (-1 up, 1 down): a shadow
+        // facet left of the ridge and a lit facet right of it
+        const shard = (x, baseY, dir, h, w, lean, shadow, lit, edge) =>
+        {
+            const tip = [x + lean * w, baseY + dir * h]
+            const ridge = [x + w * (0.05 + random() * 0.2), baseY]
+            const left = [x - w * 0.85, baseY + dir * h * (0.4 + random() * 0.3)]
+            const right = [x + w * 0.8, baseY + dir * h * (0.35 + random() * 0.3)]
+
+            wrapped(() =>
+            {
+                polygon([[x - w, baseY], left, tip, ridge], shadow)
+                polygon([ridge, tip, right, [x + w, baseY]], lit)
+                if (!edge)
+                    return
+                ctx.beginPath()
+                ctx.moveTo(left[0], left[1])
+                ctx.lineTo(tip[0], tip[1])
+                ctx.lineTo(ridge[0], ridge[1])
+                ctx.strokeStyle = edge
+                ctx.lineWidth = crystals.edgeLineWidth
+                ctx.stroke()
+            })
+        }
+        const row = (count, baseY, dir, heights, shadow, lit, edge) =>
+        {
+            for (let i = 0; i < count; ++i)
+            {
+                const x = (i + 0.1 + random() * 0.8) * width / count
+                const h = between(heights)
+                const w = between(crystals.halfWidth)
+                const lean = (random() - 0.5) * 0.9
+
+                // Some shards grow a smaller one beside them
+                if (random() < 0.5)
+                    shard(x + w * (random() < 0.5 ? -0.9 : 0.9), baseY, dir, h * (0.4 + random() * 0.2),
+                        w * 0.6, (random() - 0.5) * 0.9, shadow, lit, edge)
+                shard(x, baseY, dir, h, w, lean, shadow, lit, edge)
+            }
+        }
+        // Low-poly boulders: two facets split at the summit
+        const rocks = (count, baseY, dir, heights) =>
+        {
+            for (let i = 0; i < count; ++i)
+            {
+                const x = (i + random()) * width / count
+                const h = between(heights)
+                const w = between(crystals.rockHalfWidth)
+                const top = [x + (random() - 0.5) * w * 0.6, baseY + dir * h]
+                const points = [
+                    [x - w, baseY],
+                    [x - w * 0.6, baseY + dir * h * (0.5 + random() * 0.3)],
+                    top,
+                    [x + w * 0.5, baseY + dir * h * (0.55 + random() * 0.3)],
+                    [x + w, baseY]
+                ]
+
+                wrapped(() =>
+                {
+                    polygon(points.slice(0, 3).concat([[top[0], baseY]]), colors.crystalRock)
+                    polygon([[top[0], baseY]].concat(points.slice(2)), colors.crystalRockLit)
+                })
+            }
+        }
+        const bottom = height + 2
+        const top = -2
+
+        row(crystals.topBackCount, top, 1, crystals.topBackHeight,
+            colors.crystalBackShadow, colors.crystalBackLit, colors.crystalEdge)
+        row(crystals.bottomBackCount, bottom, -1, crystals.bottomBackHeight,
+            colors.crystalBackShadow, colors.crystalBackLit, colors.crystalEdge)
+        row(crystals.topFrontCount, top, 1, crystals.topFrontHeight,
+            colors.crystalFrontShadow, colors.crystalFrontLit, colors.crystalEdge)
+        row(crystals.bottomFrontCount, bottom, -1, crystals.bottomFrontHeight,
+            colors.crystalFrontShadow, colors.crystalFrontLit, colors.crystalEdge)
+        rocks(crystals.rockCount, bottom, -1, crystals.rockHeight)
+        rocks(crystals.rockCount, top, 1, crystals.rockHeight.map(h => h * 0.6))
+        // Solid rock rows at both edges: drawCrystalLayer extends them over
+        // whatever the shifted tile leaves uncovered
+        ctx.fillStyle = colors.crystalRock
+        ctx.fillRect(0, 0, width, height * 0.012)
+        ctx.fillRect(0, height * 0.988, width, height * 0.012)
+    }
+    // Tiles the crystal layer across fillBounds() at shift. Tile edges are
+    // snapped to device pixels so neighbouring copies neither overlap nor
+    // leave a gap
+    drawCrystalLayer(width, height, shift)
+    {
+        const layer = this.getCrystalLayer(width, height)
+        const bounds = this.fillBounds()
+        const transform = this.ctx.getTransform()
+        const toDevice = x => Math.round(transform.a * x + transform.e)
+        const fromDevice = x => (x - transform.e) / transform.a
+        const right = bounds.x + bounds.width
+        let k = Math.floor((bounds.x - shift.x) / width)
+        let left = fromDevice(toDevice(shift.x + k * width))
+
+        while (left < right)
+        {
+            const next = fromDevice(toDevice(shift.x + (k + 1) * width))
+            this.ctx.drawImage(layer.canvas, left, shift.y, next - left, height)
+            left = next
+            ++k
+        }
+
+        this.ctx.fillStyle = STYLE.colors.background.crystalRock
+        if (bounds.y < shift.y)
+            this.ctx.fillRect(bounds.x, bounds.y, bounds.width, shift.y - bounds.y)
+        if (shift.y + height < bounds.y + bounds.height)
+            this.ctx.fillRect(bounds.x, shift.y + height, bounds.width, bounds.y + bounds.height - shift.y - height)
     }
     drawPolygonAccents(width, height, geometry, time)
     {

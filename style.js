@@ -34,7 +34,16 @@ const STYLE = Object.freeze({
             washBlueMid: 'rgba(48, 213, 200, 0.12)',
             washRedCore: 'rgba(255, 61, 113, 0.52)',
             washRedMid: 'rgba(168, 55, 255, 0.2)',
-            washCenter: 'rgba(44, 31, 150, 0)'
+            washCenter: 'rgba(44, 31, 150, 0)',
+            // Far crystal layer: back row (lighter, see-through), front row
+            // and the rock along the edges; each shard has a shadow and a lit facet
+            crystalBackShadow: 'rgba(52, 34, 150, 0.62)',
+            crystalBackLit: 'rgba(98, 70, 210, 0.58)',
+            crystalFrontShadow: '#1a1158',
+            crystalFrontLit: '#3a2899',
+            crystalEdge: 'rgba(170, 140, 255, 0.34)',
+            crystalRock: '#150e4a',
+            crystalRockLit: '#21166a'
         }),
         player: Object.freeze({
             fill: '#125dff',
@@ -321,6 +330,33 @@ const STYLE = Object.freeze({
         streakLengthRatio: 0.28,
         streakLineWidth: screenHeightPercent(100 * 1.5 / 1080),
         classicMotionTimeScale: 0.01,
+        // Far crystal spires along the bottom and hanging from the top: one
+        // seeded tile per viewport size, scrolled with the camera and tiled
+        // horizontally. Heights are in logical units (the viewport is 1080 high)
+        crystals: Object.freeze({
+            seed: 177,
+            bottomBackCount: 9,
+            bottomFrontCount: 12,
+            topBackCount: 8,
+            topFrontCount: 10,
+            bottomBackHeight: Object.freeze([330, 520]),
+            bottomFrontHeight: Object.freeze([190, 360]),
+            topBackHeight: Object.freeze([230, 380]),
+            topFrontHeight: Object.freeze([150, 270]),
+            halfWidth: Object.freeze([42, 96]),
+            rockCount: 7,
+            rockHeight: Object.freeze([80, 150]),
+            rockHalfWidth: Object.freeze([120, 230]),
+            edgeLineWidth: 2,
+            // Fraction of the camera shift the layer follows and the slow
+            // drift amplitude (of the viewport size); both ignore the classic
+            // motion time scale, so the chill version drifts too
+            cameraParallaxXRatio: 0.12,
+            cameraParallaxYRatio: 0.03,
+            driftRatio: 0.02,
+            // Highest offscreen pixels per logical unit
+            maxPixelScale: 1
+        }),
         badVersion: Object.freeze({
             hexagonCount: 2,
             hexagonRadiusRatio: 0.18,
