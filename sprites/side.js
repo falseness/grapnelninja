@@ -6,6 +6,10 @@ class Ground extends Trampoline
         this.fill = STYLE.colors.ground.fill
         this.stroke = STYLE.colors.ground.stroke
     }
+    drawExtrusion()
+    {
+        
+    }
     draw()
     {
         this.drawGroundBody()
@@ -86,6 +90,10 @@ class Side extends Rect
     constructor(object)
     {
         super(object)
+    }
+    drawExtrusion()
+    {
+        
     }
     collision(who, line)
     {

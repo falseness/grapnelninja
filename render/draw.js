@@ -14,6 +14,12 @@ function drawWorldLayer()
 {
     grapnel.draw()
 
+    // All back faces first, so no extrusion covers a neighbour's front face
+    for (let i = 1; i < floors.length - 1; ++i)
+    {
+        floors[i].drawExtrusions()
+    }
+
     for (let i = 1; i < floors.length - 1; ++i)
     {
         floors[i].draw()

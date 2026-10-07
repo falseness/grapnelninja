@@ -207,6 +207,16 @@ class Floor
                 element.syncTrackStyle()
         }
     }
+    drawExtrusions()
+    {
+        const cullRect = getCullRect()
+        for (let i = 0; i < this.elements.length; ++i)
+        {
+            const element = this.elements[i]
+            if (element.drawExtrusion && isCullBoxVisible(getElementCullBox(element), cullRect))
+                element.drawExtrusion()
+        }
+    }
     drawTracks()
     {
         if (trackEnabled)

@@ -7,6 +7,7 @@
 // and ignores the transform, so it grows by 1 / scale; a blur reaches about
 // 1.5 * shadowBlur, 2 is used. Strokes extend by half their width, miter joins
 // by up to miterLimit (10) / 2 widths. Screen shake translates the world layer.
+// Extruded back faces reach up to STYLE.extrusion.depth past the geometry.
 function getCullPadding()
 {
     const obstacles = STYLE.badVersionEffects.obstacles
@@ -18,7 +19,9 @@ function getCullPadding()
     const maxBand = Math.max(2, screenHeightPercent(geometry.capHeightPercent), screenHeightPercent(geometry.bandHeightPercent))
     const maxShake = Math.max(STYLE.screenEffects.shakeMagnitudeX, STYLE.screenEffects.shakeMagnitudeY)
 
-    return 2 * maxBlur / scale[version] + 5 * maxLineWidth + maxBand + maxShake + 1
+    const maxExtrusion = STYLE.extrusion.depth / scale[version] + STYLE.extrusion.edgeWidth
+
+    return 2 * maxBlur / scale[version] + 5 * maxLineWidth + maxBand + maxShake + maxExtrusion + 1
 }
 
 // Visible world rect (element coordinates, before + screen.x / + screen.y),

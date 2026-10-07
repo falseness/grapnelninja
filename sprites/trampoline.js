@@ -113,6 +113,10 @@ class Trampoline extends Element
         if (visualEffects && visualEffects.particles)
             visualEffects.particles.emitTrampolineSplash(who, this)
     }
+    drawExtrusion()
+    {
+        this.drawPolygonExtrusion()
+    }
     draw()
     {
         if (version == 'bad')

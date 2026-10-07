@@ -357,6 +357,19 @@ const STYLE = Object.freeze({
         tipRadiusRatio: 2.2,
         tipCoreRadiusRatio: 1.05
     }),
+    // Fake-3D back face of rectangles, cubes and green blocks: one shared light
+    // direction (back face up-right). The front face stays on the hitbox.
+    // depth is in screen pixels (divided by scale[version] in world units).
+    extrusion: Object.freeze({
+        depth: screenHeightPercent(100 * 34 / 1080),
+        maxDepthRatio: 0.35,
+        directionX: 1,
+        directionY: -0.8,
+        baseFill: '#040817',
+        sideAlpha: 0.42,
+        edgeAlpha: 0.9,
+        edgeWidth: screenHeightPercent(100 * 1.5 / 1080)
+    }),
     screenEffects: Object.freeze({
         shockwaveDurationMs: 420,
         shockwaveStartRadius: screenHeightPercent(100 * 8 / 1080),

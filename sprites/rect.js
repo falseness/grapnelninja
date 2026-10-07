@@ -53,6 +53,10 @@ class Rect extends Element
     {
         return this.getX()
     }
+    drawExtrusion()
+    {
+        this.drawPolygonExtrusion()
+    }
     draw()
     {
         const x = this.x + screen.x
