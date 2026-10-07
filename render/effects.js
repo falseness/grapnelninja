@@ -1699,7 +1699,7 @@ class ParticleSystem
                 {
                     this.emitAroundElement(
                         element,
-                        STYLE.colors.hazard.red,
+                        version == 'bad' ? STYLE.colors.hazard.red : element.getGlowStroke(),
                         STYLE.particles.hazardSpeed * badParticles.speedMultiplier,
                         this.clampAlpha(STYLE.particles.hazardAlpha * badParticles.alphaMultiplier),
                         badParticles
@@ -1988,6 +1988,8 @@ class ParticleSystem
     }
     getElementParticleColor(element)
     {
+        if (element instanceof Triangle)
+            return element.getGlowStroke()
         return element.stroke || STYLE.colors.cube.blue
     }
     randomRange(min, max)
