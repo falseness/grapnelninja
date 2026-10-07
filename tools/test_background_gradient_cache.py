@@ -5,7 +5,10 @@ script counts every createLinearGradient / createRadialGradient call made from
 the background's drawBaseGradient, drawHaze or drawVignette, per frame. The cache must
 create 3 gradients (base, haze, vignette) on the first background frame (the menu drawn at load), none
 on the next 100 menu frames and 101 game frames, and rebuild them once (3)
-after the canvas size changes. Candidate: GRADIENT_REV (default worktree).
+after the canvas size changes. Gradients from any caller (the wash, lights,
+grade, sprites) are counted too: after WARMUP_FRAMES game frames (the first
+frames build the light and ninja sprite gradients), no game frame may create
+one (zero steady-state churn). Candidate: GRADIENT_REV (default worktree).
 """
 from contextlib import ExitStack
 import os
@@ -16,21 +19,24 @@ from perf_mobile import SEED_SCRIPT, export_rev
 import render_snapshot
 
 FRAMES = 100
+WARMUP_FRAMES = 2
 VIEWPORT = render_snapshot.VIEWPORTS[0]
 
 # Init script: counts gradient creations whose caller is the background's
 # drawBaseGradient/drawHaze/drawVignette (directly or via a helper), from page load on.
 COUNT_SCRIPT = '''(() => {
-    const counter = window.__bgGradients = {frame: 0}
+    const counter = window.__bgGradients = {frame: 0, all: 0}
     for (const name of ['createLinearGradient', 'createRadialGradient']) {
         const original = CanvasRenderingContext2D.prototype[name]
         CanvasRenderingContext2D.prototype[name] = function (...args) {
+            counter.all++
             if (/\\.(drawBaseGradient|drawHaze|drawVignette) /.test(new Error().stack)) counter.frame++
             return original.apply(this, args)
         }
     }
 })()'''
 
+TAKE_ALL_SCRIPT = '''() => { const n = __bgGradients.all; __bgGradients.all = 0; return n }'''
 TAKE_SCRIPT = '''() => { const n = __bgGradients.frame; __bgGradients.frame = 0; return n }'''
 
 MENU_SCRIPT = '''frames => {
@@ -70,9 +76,11 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         menu = page.evaluate(MENU_SCRIPT, frames)
         page.evaluate('mode => startGame(mode)', mode)
         game = [page.evaluate(TAKE_SCRIPT)]
+        game_all = [page.evaluate(TAKE_ALL_SCRIPT)]
         for tick in range(1, frames + 1):
             page.evaluate(render_snapshot.ADVANCE_SCRIPT, tick)
             game.append(page.evaluate(TAKE_SCRIPT))
+            game_all.append(page.evaluate(TAKE_ALL_SCRIPT))
         # Trees with live re-layout: a real window resize changes the logical
         # size; older trees: bump the canvas backing store
         page.set_viewport_size({'width': VIEWPORT['width'] + 60, 'height': VIEWPORT['height']})
@@ -92,6 +100,7 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
             page.evaluate(render_snapshot.ADVANCE_SCRIPT, tick)
             resized.append(page.evaluate(TAKE_SCRIPT))
         return {'rev': rev_id, 'mode': mode, 'frames': frames, 'load': load, 'menu': menu, 'game': game,
+                'game_all': game_all,
                 'resized_canvas': size, 'resized': resized, 'page_errors': errors}
 
 
@@ -100,7 +109,7 @@ class BackgroundGradientCacheTest(unittest.TestCase):
     def setUpClass(cls):
         cls.r = background_gradient_counts(os.environ.get('GRADIENT_REV', 'worktree'))
         print('rev', cls.r['rev'], 'load', cls.r['load'], 'game[:3]', cls.r['game'][:3], 'resized', cls.r['resized'],
-              'menu[:3]', cls.r['menu'][:3])
+              'menu[:3]', cls.r['menu'][:3], 'game_all', cls.r['game_all'])
 
     def test_no_page_errors(self):
         self.assertEqual(self.r['page_errors'], [])
@@ -111,6 +120,9 @@ class BackgroundGradientCacheTest(unittest.TestCase):
     def test_next_frames_build_none(self):
         self.assertEqual(self.r['menu'], [0] * FRAMES)
         self.assertEqual(self.r['game'], [0] * (FRAMES + 1))
+
+    def test_no_gradient_of_any_kind_after_warmup(self):
+        self.assertEqual(self.r['game_all'][WARMUP_FRAMES:], [0] * (FRAMES + 1 - WARMUP_FRAMES))
 
     def test_canvas_size_change_rebuilds_once(self):
         self.assertEqual(self.r['resized'][0], 3)

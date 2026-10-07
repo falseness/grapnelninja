@@ -75,6 +75,20 @@ class Element
         
         this.scored = false
     }
+    // Same box as pointsBounds(this.getPoints()); subclasses skip the arrays
+    writeBounds(out)
+    {
+        const points = this.getPoints()
+        startBounds(out, points[0].x, points[0].y)
+        for (let i = 1; i < points.length; ++i)
+            addBoundsPoint(out, points[i].x, points[i].y)
+        return out
+    }
+    // getElementCullBox: the points plus any curve control points
+    writeCullBox(out)
+    {
+        return this.writeBounds(out)
+    }
     isToRightThanEdgeOfScreen()
     {
         return this.getLeftPointX() > width
@@ -95,8 +109,13 @@ class Element
     {
         
     }
+    // Every caller only reads the lines, so they are rebuilt only after the
+    // element moved: static obstacles reuse one set across physics steps
     getLines()
     {
+        if (this.lines && this.linesX === this.x && this.linesY === this.y)
+            return this.lines
+
         let points = this.getPoints()
         let res = []
         for (let i = 1; i < points.length; ++i)
@@ -105,7 +124,10 @@ class Element
         }
         
         res.push(lineFormula(points[points.length - 1].x, points[points.length - 1].y, points[0].x, points[0].y))
-        
+
+        this.lines = res
+        this.linesX = this.x
+        this.linesY = this.y
         return res
     }
     collision()

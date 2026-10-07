@@ -1,3 +1,8 @@
+// Pooled obstacle boxes and sweep box: collisionWithElements runs for every
+// cube on every physics step, and never re-enters itself
+const cubeObstacles = []
+const cubeSweep = {left: 0, right: 0, top: 0, bottom: 0}
+
 class JumpingCube extends Rect
 {
     constructor(object)
@@ -36,34 +41,51 @@ class JumpingCube extends Rect
     {
         // Sweep each axis before moving, so even thin obstacles cannot be skipped.
         // Conservative polygon bounds also cover containment and collinear edges.
-        const obstacles = []
+        const obstacles = cubeObstacles
+        let count = 0
         let maxPad = 0
-        for (const floor of floors)
+        for (let k = 0; k < floors.length; ++k)
         {
-            for (const element of floor.elements)
+            const elements = floors[k].elements
+            for (let i = 0; i < elements.length; ++i)
             {
+                const element = elements[i]
                 if (element === this)
                     continue
-                const bounds = pointsBounds(element.getPoints())
+                if (count == obstacles.length)
+                    obstacles.push({left: 0, right: 0, top: 0, bottom: 0, pad: 0})
+                const bounds = elementBounds(element, obstacles[count++])
                 // Triangles move independently; pad by one step of their motion so the
                 // cube bounces off the triangle itself without penetrating it next step.
                 bounds.pad = element instanceof Triangle ? Math.abs(element.speedY) : 0
                 bounds.top -= bounds.pad
                 bounds.bottom += bounds.pad
                 maxPad = Math.max(maxPad, bounds.pad)
-                obstacles.push(bounds)
             }
         }
         // Broad phase: an obstacle can only stop the cube within one step of either
         // axis (a padded stop moves at most maxPad + epsilon), so the rest are skipped.
         const reach = Math.abs(this.speedX) + Math.abs(this.speedY) + 2 * maxPad
             + 2 * GAMEPLAY.cubeContactEpsilon + defaultEqualityTolerance
-        const sweep = {left: this.x - reach, right: this.x + this.width + reach,
-                       top: this.y - reach, bottom: this.y + this.height + reach}
-        const candidates = obstacles.filter(bounds => boundsOverlap(sweep, bounds))
-
-        for (const axis of ['x', 'y'])
+        const sweep = cubeSweep
+        sweep.left = this.x - reach
+        sweep.right = this.x + this.width + reach
+        sweep.top = this.y - reach
+        sweep.bottom = this.y + this.height + reach
+        // The overlapping boxes move to the front, in order
+        let candidateCount = 0
+        for (let i = 0; i < count; ++i)
         {
+            const bounds = obstacles[i]
+            if (!boundsOverlap(sweep, bounds))
+                continue
+            obstacles[i] = obstacles[candidateCount]
+            obstacles[candidateCount++] = bounds
+        }
+
+        for (let a = 0; a < 2; ++a)
+        {
+            const axis = a == 0 ? 'x' : 'y'
             const vertical = axis == 'y'
             const speed = vertical ? 'speedY' : 'speedX'
             const size = vertical ? this.height : this.width
@@ -72,8 +94,9 @@ class JumpingCube extends Rect
             let distance = this[speed]
             let away = 0
             let minAwaySpeed = 0
-            for (const bounds of candidates)
+            for (let c = 0; c < candidateCount; ++c)
             {
+                const bounds = obstacles[c]
                 const crossMin = vertical ? bounds.left : bounds.top
                 const crossMax = vertical ? bounds.right : bounds.bottom
                 if (crossEnd <= crossMin || crossStart >= crossMax)

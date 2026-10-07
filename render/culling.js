@@ -30,15 +30,31 @@ function getCullPadding()
 
 // Visible world rect (element coordinates, before + screen.x / + screen.y),
 // padded by getCullPadding().
+// Several layers ask for it every frame, so it is rebuilt only when the draw
+// frame, the camera or the view changes; read it before the next draw frame.
+const cullRectCache = {frame: -1, screenX: 0, screenY: 0, width: 0, height: 0, version: '',
+                       rect: {left: 0, top: 0, right: 0, bottom: 0}}
 function getCullRect()
 {
+    const cache = cullRectCache
+    const frame = typeof drawFrameId == 'number' ? drawFrameId : -1
+    if (frame >= 0 && cache.frame === frame && cache.screenX === screen.x && cache.screenY === screen.y &&
+        cache.width === width && cache.height === height && cache.version === version)
+        return cache.rect
+
     const pad = getCullPadding()
-    return {
-        left: -screen.x - pad,
-        top: -screen.y - pad,
-        right: -screen.x + width / scale[version] + pad,
-        bottom: -screen.y + height / scale[version] + pad
-    }
+    const rect = cache.rect
+    rect.left = -screen.x - pad
+    rect.top = -screen.y - pad
+    rect.right = -screen.x + width / scale[version] + pad
+    rect.bottom = -screen.y + height / scale[version] + pad
+    cache.frame = frame
+    cache.screenX = screen.x
+    cache.screenY = screen.y
+    cache.width = width
+    cache.height = height
+    cache.version = version
+    return rect
 }
 
 // The bounds test: false only when the box lies fully outside the rect.
@@ -57,8 +73,13 @@ function addPointToBox(box, point)
 
 // Element geometry box, including quadratic curve control points.
 // null (never culled) for elements without points, such as Empty.
+// Elements with writeCullBox fill one shared box, so read it before the next call.
+const elementCullBox = {left: 0, top: 0, right: 0, bottom: 0}
 function getElementCullBox(element)
 {
+    if (element.writeCullBox)
+        return element.writeCullBox(elementCullBox)
+
     const points = element.getPoints && element.getPoints()
     if (!points || !points.length)
         return null

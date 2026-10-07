@@ -149,6 +149,21 @@ class Floor
 
         return {indexes, rightPointX}
     }
+    // getGenerationGroup(index).rightPointX without the index list, for the
+    // per-step scan in deleteElements
+    getGenerationGroupRightPointX(index)
+    {
+        const generationGroupId = this.elements[index].generationGroupId
+        let rightPointX = this.elements[index].getRightPointX()
+
+        for (let i = 0; i < this.elements.length; ++i)
+        {
+            if (this.elements[i].generationGroupId == generationGroupId)
+                rightPointX = Math.max(rightPointX, this.elements[i].getRightPointX())
+        }
+
+        return rightPointX
+    }
     markGenerationGroupScored(indexes)
     {
         for (let i = 0; i < indexes.length; ++i)
@@ -161,17 +176,25 @@ class Floor
         let newElements = 0
         for (let i = 0; i < this.elements.length - newElements; ++i)
         {
-            const group = this.getGenerationGroup(i)
+            // The group reaches at least as far right as the element, so an
+            // element past both borders needs no group scan
+            const ownRightX = this.elements[i].getRightPointX() + screen.x
+            if (ownRightX >= 0 && ownRightX >= screen.getDeletionBorder())
+                continue
+
+            const rightPointX = this.getGenerationGroupRightPointX(i)
 
             if (!this.elements[i].scored &&
-                group.rightPointX + screen.x < 0)
+                rightPointX + screen.x < 0)
             {
+                const group = this.getGenerationGroup(i)
                 this.markGenerationGroupScored(group.indexes)
 
                 changeScoreText()
             }
-            else if (group.rightPointX + screen.x < screen.getDeletionBorder())
+            else if (rightPointX + screen.x < screen.getDeletionBorder())
             {
+                const group = this.getGenerationGroup(i)
                 let nextElementX = group.rightPointX
                 this.elements = this.elements.filter(function(element, index)
                 {

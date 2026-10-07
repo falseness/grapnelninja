@@ -1,3 +1,6 @@
+// Scratch box for the broad phase, refilled for every element
+const ninjaElementBounds = {left: 0, right: 0, top: 0, bottom: 0}
+
 class Ninja
 {
     constructor(object)
@@ -36,7 +39,7 @@ class Ninja
                 if (!twoCirclesIntersect(this.x, this.y, this.radius, element.getCircumscribedCircle()))
                     continue
 
-                if (boundsOverlap(reach, pointsBounds(element.getPoints())))
+                if (boundsOverlap(reach, elementBounds(element, ninjaElementBounds)))
                 {
                     let lines = element.getLines()
                     let hit = false

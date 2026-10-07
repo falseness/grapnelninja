@@ -1,6 +1,9 @@
 const grapnelSpeed = screenHeightPercent(GAMEPLAY.grapnelThrowHeightPercent) / cyclesPerTick
 const grappleSpeed = screenHeightPercent(GAMEPLAY.grapplePullHeightPercent) / Math.pow(cyclesPerTick, 2)
 
+// Scratch box for the broad phase, refilled for every element
+const grapnelElementBounds = {left: 0, right: 0, top: 0, bottom: 0}
+
 class Grapnel
 {
     constructor(object)
@@ -62,7 +65,7 @@ class Grapnel
             {
                 for (let i = 0; i < floors[k].elements.length; ++i)
                 {
-                    if (!boundsOverlap(reach, pointsBounds(floors[k].elements[i].getPoints())))
+                    if (!boundsOverlap(reach, elementBounds(floors[k].elements[i], grapnelElementBounds)))
                         continue
                     if (circlesIntersect(grapnelLine.circle, floors[k].elements[i].getCircumscribedCircle()))
                     {

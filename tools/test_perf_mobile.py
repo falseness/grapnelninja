@@ -41,6 +41,10 @@ class PerfMobileTest(unittest.TestCase):
             self.assertGreaterEqual(result[key], 0, key)
         for key in ('gc_minor_count', 'gc_major_count'):
             self.assertIsInstance(result[key], int, key)
+        # Allocations after the default 3 s warm-up, read from the live profile.
+        self.assertEqual(result['warmup_seconds'], 3)
+        self.assertIsNotNone(result['allocated_bytes_per_frame_after_warmup'])
+        self.assertGreaterEqual(result['allocated_bytes_per_frame_after_warmup'], 0)
 
     def test_layers_run(self):
         result = perf_mobile.run('worktree', 'bad', 5, 1, log=print, trace=False, layers=True)
@@ -58,6 +62,11 @@ class PerfMobileTest(unittest.TestCase):
         for name, ms in result['layers_ms'].items():
             self.assertIsNotNone(ms['p50'], name)
             self.assertIsNotNone(ms['p95'], name)
+        # Counters again for the frames after the warm-up only.
+        for key in perf_mobile.COUNTERS:
+            warm = result[f'{key}_per_frame_after_warmup']
+            self.assertLessEqual(warm['frames'], result['frames'], key)
+            self.assertEqual(set(warm), {'p50', 'p95', 'p99', 'max', 'mean', 'frames'}, key)
         for key in ('gradients_per_frame', 'shadow_draws_per_frame',
                     'offscreen_element_draws_per_frame', 'element_draws_per_frame'):
             self.assertGreaterEqual(result[key]['mean'], 0, key)

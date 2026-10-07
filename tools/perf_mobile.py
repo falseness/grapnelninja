@@ -13,15 +13,21 @@ Unless --no-trace is given, the window is also covered by a CDP trace (GC
 events) and the V8 sampling heap profiler (allocations, including objects
 already collected), reported as gc_minor_count, gc_major_count, gc_total_ms
 and allocated_bytes_per_frame. With --no-trace those keys are null.
+allocated_bytes_per_frame_after_warmup counts only what was allocated after
+--warmup seconds (default 3), divided by the frames after that point; the
+profile is read without stopping at t0 + warmup. --heapprofile FILE saves the
+sampling heap profile of the whole window (.heapprofile, DevTools format).
 
 --layers also times every draw layer function in render/draw.js (layers_ms)
 and counts per frame: gradients created, fill/stroke calls made while
 shadowBlur > 0 (any canvas) and floor element draw() calls whose element's
-points lie fully outside the visible view. --cpuprofile FILE saves a CDP
+points lie fully outside the visible view. <key>_per_frame_after_warmup holds
+the same counters for the frames that start --warmup seconds after t0. --cpuprofile FILE saves a CDP
 Profiler (.cpuprofile) of the window.
 
 Usage: python3 tools/perf_mobile.py --rev worktree|<git rev> --mode bad|classic
-       [--seconds 20] [--seed 1] [--no-trace] [--layers] [--cpuprofile F] --out perf.json
+       [--seconds 20] [--seed 1] [--warmup 3] [--no-trace] [--layers] [--cpuprofile F]
+       [--heapprofile F] --out perf.json
 """
 import argparse
 from contextlib import ExitStack
@@ -101,6 +107,7 @@ LAYERS_SCRIPT = '''([layers]) => {
     const recording = () => perf.t0 !== null && performance.now() - perf.t0 < perf.windowMs
     perf.layersMs = {}
     perf.counters = {gradients: [], shadow_draws: [], offscreen_element_draws: [], element_draws: []}
+    perf.counterFrames = []
     let frame = null
     for (const name of layers) {
         const f = window[name]
@@ -155,7 +162,10 @@ LAYERS_SCRIPT = '''([layers]) => {
         const on = recording()
         frame = on ? {gradients: 0, shadow_draws: 0, offscreen_element_draws: 0, element_draws: 0} : null
         loop(frameTime)
-        if (on) for (const k in frame) perf.counters[k].push(frame[k])
+        if (on) {
+            for (const k in frame) perf.counters[k].push(frame[k])
+            perf.counterFrames.push(frameTime)
+        }
         frame = null
     }
 }'''
@@ -311,7 +321,8 @@ def export_rev(rev, add_cleanup):
     return Path(scratch.name), sha
 
 
-def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofile=None):
+def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofile=None,
+        warmup=3, heapprofile=None):
     script = input_script(seed, seconds)
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
@@ -328,7 +339,8 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
         log(f'rev={rev_id} mode={mode} seed={seed} seconds={seconds} '
             f'viewport={VIEWPORT["width"]}x{VIEWPORT["height"]} dpr={DEVICE_SCALE_FACTOR} '
             f'is_mobile=True has_touch=True cpu_throttle_rate={CPU_THROTTLE_RATE} '
-            f'input_events={len(script)} trace={trace} layers={layers} cpuprofile={cpuprofile}')
+            f'input_events={len(script)} trace={trace} layers={layers} cpuprofile={cpuprofile} '
+            f'warmup={warmup} heapprofile={heapprofile}')
         page.goto(url + 'index.html')
         page.wait_for_function('() => typeof menu != "undefined" && menu.visible')
         wait_for_boot(page)
@@ -347,6 +359,12 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
             cdp.send('Profiler.start')
         page.evaluate(START_SCRIPT, [mode, script, seconds * 1000])
         cpu0, t0 = chrome_cpu_seconds(), time.monotonic()
+        warm_frames = warm_bytes = None
+        if trace and 0 < warmup < seconds:
+            time.sleep(max(0, t0 + warmup - time.monotonic()))
+            # Both read between two page tasks, so they agree on the frame boundary
+            warm_frames = page.evaluate('() => __perf.frames.length')
+            warm_bytes = sampled_bytes(cdp.send('HeapProfiler.getSamplingProfile')['profile']['head'])
         # Input runs in the page; Python only closes the CPU/wall window.
         time.sleep(max(0, t0 + seconds - time.monotonic()))
         cpu_s, wall_s = chrome_cpu_seconds() - cpu0, time.monotonic() - t0
@@ -361,6 +379,8 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
         if trace:
             profile = cdp.send('HeapProfiler.stopSampling')['profile']
             allocated = sampled_bytes(profile['head'])
+            if heapprofile:
+                Path(heapprofile).write_text(json.dumps(profile))
             gc = gc_stats(read_trace(cdp, page), seconds)
     frames = perf['frames']
     intervals = [b - a for a, b in zip(frames, frames[1:])]
@@ -394,6 +414,10 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
         **gc,
         'allocated_bytes_per_frame': (round(allocated / len(frames), 1)
                                       if allocated is not None and frames else None),
+        'warmup_seconds': warmup,
+        'allocated_bytes_per_frame_after_warmup': (
+            round((allocated - warm_bytes) / (len(frames) - warm_frames), 1)
+            if warm_bytes is not None and len(frames) > warm_frames else None),
         'page_errors': errors,
     }
     if layers:
@@ -402,8 +426,13 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
             values = perf['counters'][key]
             result[f'{key}_per_frame'] = {**percentiles(values),
                                           'mean': round(sum(values) / len(values), 2) if values else None}
+            warm = [v for t, v in zip(perf['counterFrames'], values) if t - perf['t0'] >= warmup * 1000]
+            result[f'{key}_per_frame_after_warmup'] = {
+                **percentiles(warm), 'max': max(warm) if warm else None,
+                'mean': round(sum(warm) / len(warm), 2) if warm else None, 'frames': len(warm)}
         log('layers_ms=' + json.dumps(result['layers_ms']) + ' ' +
-            ' '.join(f'{k}_per_frame={result[k + "_per_frame"]}' for k in COUNTERS))
+            ' '.join(f'{k}_per_frame={result[k + "_per_frame"]}' for k in COUNTERS) + ' ' +
+            ' '.join(f'{k}_after_warmup={result[k + "_per_frame_after_warmup"]}' for k in COUNTERS))
     log(f'frames={result["frames"]} frame_interval_ms={result["frame_interval_ms"]} '
         f'physics_ms={result["physics_ms"]} draw_ms={result["draw_ms"]} '
         f'steps={result["physics_steps_per_frame"]} over16.7={result["frames_over_16_7ms"]} '
@@ -413,6 +442,7 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
         f'input_lag_ms={result["input_lag_ms"]} wall_seconds={result["wall_seconds"]} '
         f'gc_minor={gc["gc_minor_count"]} gc_major={gc["gc_major_count"]} '
         f'gc_total_ms={gc["gc_total_ms"]} alloc_per_frame={result["allocated_bytes_per_frame"]} '
+        f'alloc_per_frame_after_warmup={result["allocated_bytes_per_frame_after_warmup"]} '
         f'page_errors={len(errors)}')
     return result
 
@@ -428,10 +458,14 @@ def main():
     parser.add_argument('--layers', action='store_true',
                         help='time each draw layer and count gradients/shadow draws/offscreen elements')
     parser.add_argument('--cpuprofile', help='save a CDP CPU profile of the window to this file')
+    parser.add_argument('--warmup', type=float, default=3,
+                        help='seconds after startGame() excluded from the *_after_warmup values')
+    parser.add_argument('--heapprofile', help='save the sampling heap profile of the window to this file')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
     result = run(args.rev, args.mode, args.seconds, args.seed, log=lambda s: print(s, flush=True),
-                 trace=args.trace, layers=args.layers, cpuprofile=args.cpuprofile)
+                 trace=args.trace, layers=args.layers, cpuprofile=args.cpuprofile,
+                 warmup=args.warmup, heapprofile=args.heapprofile)
     Path(args.out).write_text(json.dumps(result, indent=1) + '\n')
     print(f'wrote {args.out}')
 

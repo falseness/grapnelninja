@@ -94,6 +94,8 @@ class BackgroundRenderer
         this.randomFlashCache = new WeakMap()
         this.randomTriangleCache = new WeakMap()
         this.gradientCache = new Map()
+        this.washGradients = null
+        this.lastGameGradients = null
         // Offscreen crystal/rock tiles by name ('far', 'near')
         this.layerCache = {}
         // Reused every frame so the background draws without per-frame garbage.
@@ -236,10 +238,28 @@ class BackgroundRenderer
     }
     getGradients(width, height)
     {
+        // The game canvas asks three times a frame: skip building the key string
+        const background = STYLE.colors.background
+        const last = this.lastGameGradients
+        if (!this.bounds && last && last.width == width && last.height == height &&
+            last.gradientTop == background.gradientTop && last.gradientMiddle == background.gradientMiddle &&
+            last.gradientBottom == background.gradientBottom && last.vignetteCenter == background.vignetteCenter &&
+            last.vignetteEdge == background.vignetteEdge)
+            return last.gradients
+
         const key = this.getGradientKey(width, height)
-        const cached = this.gradientCache.get(key)
-        if (cached)
-            return cached
+        const cached = this.gradientCache.get(key) || this.buildGradients(key, width, height)
+        if (!this.bounds)
+            this.lastGameGradients = {
+                width, height, gradients: cached,
+                gradientTop: background.gradientTop, gradientMiddle: background.gradientMiddle,
+                gradientBottom: background.gradientBottom, vignetteCenter: background.vignetteCenter,
+                vignetteEdge: background.vignetteEdge
+            }
+        return cached
+    }
+    buildGradients(key, width, height)
+    {
 
         const background = STYLE.colors.background
         const gradient = this.ctx.createLinearGradient(0, 0, 0, height)
@@ -481,37 +501,48 @@ class BackgroundRenderer
     }
     drawDynamicLightingWash(width, height, geometry)
     {
-        const colors = STYLE.colors.background
-        const radius = Math.max(width, height) * geometry.washRadiusRatio
+        const washes = this.getWashGradients(width, height, geometry)
 
         this.ctx.save()
-        this.drawAmbientWash(
-            width * geometry.washLeftXRatio,
-            height * geometry.washYRatio,
-            radius,
-            colors.washBlueCore,
-            colors.washBlueMid,
-            colors.washCenter
-        )
-        this.drawAmbientWash(
-            width * geometry.washRightXRatio,
-            height * geometry.washYRatio,
-            radius,
-            colors.washRedCore,
-            colors.washRedMid,
-            colors.washCenter
-        )
+        this.ctx.fillStyle = washes.blue
+        this.fillAll()
+        this.ctx.fillStyle = washes.red
+        this.fillAll()
         this.ctx.restore()
     }
-    drawAmbientWash(centerX, centerY, radius, coreColor, midColor, edgeColor)
+    // Both washes depend only on the size, the geometry ratios and the colors,
+    // so they are built once and reused every frame
+    getWashGradients(width, height, geometry)
+    {
+        const colors = STYLE.colors.background
+        const radius = Math.max(width, height) * geometry.washRadiusRatio
+        const leftX = width * geometry.washLeftXRatio
+        const rightX = width * geometry.washRightXRatio
+        const y = height * geometry.washYRatio
+        const cached = this.washGradients
+
+        if (cached && cached.radius == radius && cached.leftX == leftX && cached.rightX == rightX &&
+            cached.y == y && cached.colors == colors && cached.blueCore == colors.washBlueCore &&
+            cached.blueMid == colors.washBlueMid && cached.redCore == colors.washRedCore &&
+            cached.redMid == colors.washRedMid && cached.center == colors.washCenter)
+            return cached
+
+        this.washGradients = {
+            radius, leftX, rightX, y, colors,
+            blueCore: colors.washBlueCore, blueMid: colors.washBlueMid,
+            redCore: colors.washRedCore, redMid: colors.washRedMid, center: colors.washCenter,
+            blue: this.createAmbientWash(leftX, y, radius, colors.washBlueCore, colors.washBlueMid, colors.washCenter),
+            red: this.createAmbientWash(rightX, y, radius, colors.washRedCore, colors.washRedMid, colors.washCenter)
+        }
+        return this.washGradients
+    }
+    createAmbientWash(centerX, centerY, radius, coreColor, midColor, edgeColor)
     {
         const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
         gradient.addColorStop(0, coreColor)
         gradient.addColorStop(0.42, midColor)
         gradient.addColorStop(1, edgeColor)
-
-        this.ctx.fillStyle = gradient
-        this.fillAll()
+        return gradient
     }
     shouldFreezeBadVersionBackgroundMotion()
     {
@@ -1405,6 +1436,9 @@ function positiveModulo(value, modulus)
     return ((value % modulus) + modulus) % modulus
 }
 
+// Numbers per mote in ParticleSystem.moteLayout
+const MOTE_LAYOUT_STRIDE = 8
+
 class ParticleSystem
 {
     constructor(context, targetCanvas)
@@ -1414,6 +1448,9 @@ class ParticleSystem
         this.particles = []
         // Expired particles, reused by acquireParticle (capped at maxCount).
         this.pool = []
+        // Ambient mote rects of the current game frame (layoutAmbientMotes)
+        this.moteLayout = null
+        this.moteLayoutFrame = -1
         this.lastTime = 0
         this.lastWorldEmitTime = 0
         this.trailSparkBudget = 0
@@ -1835,8 +1872,38 @@ class ParticleSystem
         if (!this.shouldDrawAmbientMotes())
             return
 
-        const config = STYLE.ambient
         const motes = this.getAmbientMotes()
+        // The game frame's motes and their bloom copy share one layout
+        const layout = view ? this.layoutAmbientMotes(motes, view) : this.getFrameMoteLayout(motes)
+        const ctx = this.ctx
+
+        ctx.save()
+        ctx.globalCompositeOperation = 'source-over'
+        for (let i = 0, j = 0; i < motes.length; ++i, j += MOTE_LAYOUT_STRIDE)
+        {
+            ctx.fillStyle = motes[i].color
+            ctx.globalAlpha = layout[j]
+            ctx.fillRect(layout[j + 1], layout[j + 2], layout[j + 3], layout[j + 3])
+            ctx.globalAlpha = layout[j + 4]
+            ctx.fillRect(layout[j + 5], layout[j + 6], layout[j + 7], layout[j + 7])
+        }
+        ctx.restore()
+    }
+    getFrameMoteLayout(motes)
+    {
+        if (this.moteLayoutFrame !== drawFrameId || !this.moteLayout ||
+            this.moteLayout.length != motes.length * MOTE_LAYOUT_STRIDE)
+        {
+            this.layoutAmbientMotes(motes, null)
+            this.moteLayoutFrame = drawFrameId
+        }
+        return this.moteLayout
+    }
+    // Fills this.moteLayout (reused) for view, or the game camera, and returns
+    // it: per mote the halo alpha, x, y, size, then the core alpha, x, y, size
+    layoutAmbientMotes(motes, view)
+    {
+        const config = STYLE.ambient
         const unit = view ? view.unit : 1 / scale[version]
         const seconds = performance.now() / 1000
         // Motes live in screen px at 1080 on a field one halo wider than the view
@@ -1846,9 +1913,13 @@ class ParticleSystem
         const cameraX = view ? view.cameraX : screen.x * scale[version]
         const cameraY = view ? view.cameraY : screen.y * scale[version]
 
-        this.ctx.save()
-        this.ctx.globalCompositeOperation = 'source-over'
-        for (let i = 0; i < motes.length; ++i)
+        if (!this.moteLayout || this.moteLayout.length != motes.length * MOTE_LAYOUT_STRIDE)
+            this.moteLayout = new Float64Array(motes.length * MOTE_LAYOUT_STRIDE)
+        const layout = this.moteLayout
+        // A menu layout must not pass for a game frame's
+        this.moteLayoutFrame = -1
+
+        for (let i = 0, j = 0; i < motes.length; ++i, j += MOTE_LAYOUT_STRIDE)
         {
             const mote = motes[i]
             const x = positiveModulo(mote.u * fieldWidth + mote.vx * seconds + cameraX * mote.parallax, fieldWidth) - margin
@@ -1858,13 +1929,16 @@ class ParticleSystem
             const size = mote.size * unit
             const haloSize = size * config.moteHaloRatio
 
-            this.ctx.fillStyle = mote.color
-            this.ctx.globalAlpha = alpha * config.moteHaloAlpha
-            this.ctx.fillRect(x * unit - haloSize / 2, y * unit - haloSize / 2, haloSize, haloSize)
-            this.ctx.globalAlpha = alpha
-            this.ctx.fillRect(x * unit - size / 2, y * unit - size / 2, size, size)
+            layout[j] = alpha * config.moteHaloAlpha
+            layout[j + 1] = x * unit - haloSize / 2
+            layout[j + 2] = y * unit - haloSize / 2
+            layout[j + 3] = haloSize
+            layout[j + 4] = alpha
+            layout[j + 5] = x * unit - size / 2
+            layout[j + 6] = y * unit - size / 2
+            layout[j + 7] = size
         }
-        this.ctx.restore()
+        return layout
     }
     isPlayerMoving(player)
     {

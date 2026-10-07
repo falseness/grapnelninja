@@ -21,7 +21,12 @@ class Rect extends Element
     }
     getCircumscribedCircle()
     {
-        return {x: this.circle.x + this.x, y: this.circle.y + this.y, radius: this.circle.radius}
+        // One object per element, refilled: every caller reads it at once
+        const circle = this.circumscribedCircle || (this.circumscribedCircle = {x: 0, y: 0, radius: 0})
+        circle.x = this.circle.x + this.x
+        circle.y = this.circle.y + this.y
+        circle.radius = this.circle.radius
+        return circle
     }
     getPoints()
     {   
@@ -40,6 +45,19 @@ class Rect extends Element
         ]
         
         return points
+    }
+    writeBounds(out)
+    {
+        const x = this.getX()
+        const y = this.getY()
+        const xPlusMarginX = x + this.width
+        const yPlusMarginY = y + this.height
+
+        startBounds(out, x, y)
+        addBoundsPoint(out, xPlusMarginX, y)
+        addBoundsPoint(out, xPlusMarginX, yPlusMarginY)
+        addBoundsPoint(out, x, yPlusMarginY)
+        return out
     }
     moveX(speed)
     {

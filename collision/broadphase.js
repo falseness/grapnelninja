@@ -15,6 +15,28 @@ function pointsBounds(points, pad)
     }
     return {left: left - pad, right: right + pad, top: top - pad, bottom: bottom + pad}
 }
+// Grows the box to hold (x, y); the same comparisons pointsBounds makes.
+function addBoundsPoint(out, x, y)
+{
+    if (x < out.left)   out.left = x
+    if (x > out.right)  out.right = x
+    if (y < out.top)    out.top = y
+    if (y > out.bottom) out.bottom = y
+}
+function startBounds(out, x, y)
+{
+    out.left = x
+    out.right = x
+    out.top = y
+    out.bottom = y
+    return out
+}
+// pointsBounds(element.getPoints()) written into out, without the point
+// arrays: elements override writeBounds with their own corner formulas.
+function elementBounds(element, out)
+{
+    return element.writeBounds(out)
+}
 function segmentBounds(x1, y1, x2, y2, pad)
 {
     pad = pad || 0

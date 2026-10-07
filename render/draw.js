@@ -1,4 +1,7 @@
 const NO_SHAKE = Object.freeze({x: 0, y: 0})
+// Counts game draw() calls: per-frame layouts shared by several layers
+// (ambient motes and their bloom copy) are keyed on it
+let drawFrameId = 0
 
 function drawBackgroundLayer()
 {
@@ -108,6 +111,7 @@ function warmGlowSprites()
 
 function draw()
 {
+    ++drawFrameId
     drawBackgroundLayer()
 
     ctx.scale(scale[version], scale[version])

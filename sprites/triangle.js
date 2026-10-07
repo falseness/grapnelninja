@@ -22,7 +22,12 @@ class Triangle extends Element
     }
     getCircumscribedCircle()
     {
-        return {x: this.x, y: this.y, radius: this.radius}
+        // One object per element, refilled: every caller reads it at once
+        const circle = this.circumscribedCircle || (this.circumscribedCircle = {x: 0, y: 0, radius: 0})
+        circle.x = this.x
+        circle.y = this.y
+        circle.radius = this.radius
+        return circle
     }
     move()
     {
@@ -62,6 +67,16 @@ class Triangle extends Element
             {x: x                   , y: y + this.height * (2 / 3)}
         ]
         return points
+    }
+    writeBounds(out)
+    {
+        const x = this.getX()
+        const y = this.getY()
+
+        startBounds(out, x - this.side / 2, y - this.height * (1 / 3))
+        addBoundsPoint(out, x + this.side / 2, y - this.height * (1 / 3))
+        addBoundsPoint(out, x, y + this.height * (2 / 3))
+        return out
     }
     changeSpeed()
     {

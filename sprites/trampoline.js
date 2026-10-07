@@ -75,7 +75,12 @@ class Trampoline extends Element
     }
     getCircumscribedCircle()
     {
-        return {x: this.x + this.circle.x, y: this.y + this.circle.y, radius: this.circle.radius}
+        // One object per element, refilled: every caller reads it at once
+        const circle = this.circumscribedCircle || (this.circumscribedCircle = {x: 0, y: 0, radius: 0})
+        circle.x = this.x + this.circle.x
+        circle.y = this.y + this.circle.y
+        circle.radius = this.circle.radius
+        return circle
     }
     getRightPointX()
     {
@@ -91,6 +96,26 @@ class Trampoline extends Element
         for (let i = 0; i < this.points.length; ++i)
             res.push({x: this.points[i].x + this.x, y: this.points[i].y + this.y, curvature: this.points[i].curvature})
         return res
+    }
+    writeBounds(out)
+    {
+        const points = this.points
+        startBounds(out, points[0].x + this.x, points[0].y + this.y)
+        for (let i = 1; i < points.length; ++i)
+            addBoundsPoint(out, points[i].x + this.x, points[i].y + this.y)
+        return out
+    }
+    // getPoints() passes each curvature control point through unshifted
+    writeCullBox(out)
+    {
+        this.writeBounds(out)
+        for (let i = 0; i < this.points.length; ++i)
+        {
+            const curvature = this.points[i].curvature
+            if (curvature)
+                addBoundsPoint(out, curvature.x, curvature.y)
+        }
+        return out
     }
     collision(who, line)
     {
