@@ -146,36 +146,90 @@ class Grapnel
     {
         this.grappled = boolean
     }
+    getWidth()
+    {
+        // Bad mode draws the world scaled down: keep the rope readable on screen.
+        return Math.max(Math.round(screenHeightPercent(STYLE.strokes.grapnelWidthHeightPercent)),
+                        STYLE.grapnelVisuals.minScreenWidth / scale[version])
+    }
+    tracePath()
+    {
+        ctx.beginPath()
+        ctx.moveTo(this.pos[0][0] + screen.x, this.pos[0][1] + screen.y)
+        for (let i = 1; i < this.pos.length; ++i)
+        {
+            ctx.lineTo(this.pos[i][0] + screen.x, this.pos[i][1] + screen.y)
+        }
+        ctx.lineTo(ninja.x + screen.x, ninja.y + screen.y)
+    }
+    // Glow without shadowBlur: a wide faint stroke, the cyan rope and a pale core.
+    strokeGlow(width)
+    {
+        const look = STYLE.grapnelVisuals
+        const colors = STYLE.colors.grapnel
+
+        ctx.strokeStyle = colors.halo
+        ctx.globalAlpha = look.haloAlpha
+        ctx.lineWidth = width * look.haloWidthRatio
+        ctx.stroke()
+
+        ctx.strokeStyle = colors.rope
+        ctx.globalAlpha = STYLE.alpha.full
+        ctx.lineWidth = width
+        ctx.stroke()
+
+        ctx.strokeStyle = colors.core
+        ctx.lineWidth = width * look.coreWidthRatio
+        ctx.stroke()
+    }
     draw()
     {
         if (this.throwed)
         {
             ctx.save()
-            ctx.beginPath()
+            ctx.lineCap = 'round'
+            ctx.lineJoin = 'round'
 
-            ctx.moveTo(this.pos[0][0] + screen.x, this.pos[0][1] + screen.y)
-            
-            for (let i = 1; i < this.pos.length; ++i)
-            {
-                ctx.lineTo(this.pos[i][0] + screen.x, this.pos[i][1] + screen.y)
-            }
-            ctx.lineTo(ninja.x + screen.x, ninja.y + screen.y)
-
-            const strokeWidth = Math.round(screenHeightPercent(STYLE.strokes.grapnelWidthHeightPercent))
-
-            ctx.strokeStyle = this.stroke
-            ctx.lineWidth = strokeWidth + STYLE.strokes.neonGlowWidth
-            ctx.globalAlpha = 0.35
-            ctx.shadowColor = this.stroke
-            ctx.shadowBlur = STYLE.strokes.neonGlowWidth
-            ctx.stroke()
-
-            ctx.globalAlpha = STYLE.alpha.full
-            ctx.lineWidth = strokeWidth
-            ctx.stroke()
-
-            ctx.closePath()
+            this.tracePath()
+            this.strokeGlow(this.getWidth())
             ctx.restore()
         }
+    }
+    // Drawn after the floors so the anchor ring sits on top of the element it hooks;
+    // a bright tip while the grapnel is still flying.
+    drawHook()
+    {
+        if (!this.throwed)
+            return
+
+        const look = STYLE.grapnelVisuals
+        const colors = STYLE.colors.grapnel
+        const width = this.getWidth()
+
+        ctx.save()
+        const hookX = this.pos[0][0] + screen.x
+        const hookY = this.pos[0][1] + screen.y
+        ctx.beginPath()
+        if (this.grappled)
+        {
+            ctx.arc(hookX, hookY, width * look.anchorRadiusRatio, 0, 2 * Math.PI)
+            ctx.fillStyle = colors.anchorFill
+            ctx.fill()
+            this.strokeGlow(width * look.anchorWidthRatio)
+        }
+        else
+        {
+            ctx.arc(hookX, hookY, width * look.tipRadiusRatio, 0, 2 * Math.PI)
+            ctx.fillStyle = colors.halo
+            ctx.globalAlpha = look.haloAlpha
+            ctx.fill()
+            ctx.beginPath()
+            ctx.arc(hookX, hookY, width * look.tipCoreRadiusRatio, 0, 2 * Math.PI)
+            ctx.fillStyle = colors.core
+            ctx.globalAlpha = STYLE.alpha.full
+            ctx.fill()
+        }
+
+        ctx.restore()
     }
 }

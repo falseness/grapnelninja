@@ -22,6 +22,7 @@ function drawWorldLayer()
     floors[floors.length - 1].draw()
 
     screen.draw()
+    grapnel.drawHook()
     ninja.draw()
 }
 

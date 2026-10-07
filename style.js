@@ -68,6 +68,12 @@ const STYLE = Object.freeze({
             trail: '#30d5c8',
             cyan: '#30d5c8'
         }),
+        grapnel: Object.freeze({
+            rope: '#38e8ff',
+            core: '#d8fbff',
+            halo: '#22c8ff',
+            anchorFill: '#050a2e'
+        }),
         cube: Object.freeze({
             fill: '#071425',
             platformFill: '#15181d',
@@ -318,6 +324,17 @@ const STYLE = Object.freeze({
         haloAlpha: 1,
         haloGlowAlpha: 0.45,
         maxSpritePixelScale: 3
+    }),
+    // Ratios of the rounded rope width (STYLE.strokes.grapnelWidthHeightPercent).
+    grapnelVisuals: Object.freeze({
+        minScreenWidth: screenHeightPercent(100 * 4 / 1080),
+        haloWidthRatio: 4,
+        haloAlpha: 0.32,
+        coreWidthRatio: 0.38,
+        anchorRadiusRatio: 1.8,
+        anchorWidthRatio: 0.85,
+        tipRadiusRatio: 2.2,
+        tipCoreRadiusRatio: 1.05
     }),
     screenEffects: Object.freeze({
         shockwaveDurationMs: 420,
