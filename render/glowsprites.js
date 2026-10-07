@@ -9,6 +9,27 @@ const GLOW_SPRITES =
     cache: new Map()
 }
 
+// HUD labels recur every frame. Retain their metrics as well as their pixels;
+// measureText otherwise repeats font shaping even when the glow sprite exists.
+// Game labels use the default kerning, spacing and font variant settings.
+const GLOW_TEXT_METRICS = new Map()
+if (document.fonts)
+    document.fonts.addEventListener('loadingdone', () => GLOW_TEXT_METRICS.clear())
+
+function measureGlowText(text, font = ctx.font, align = ctx.textAlign, baseline = ctx.textBaseline)
+{
+    const key = text + '|' + font + '|' + align + '|' + baseline + '|' + ctx.direction
+    let metrics = GLOW_TEXT_METRICS.get(key)
+    if (!metrics)
+    {
+        metrics = ctx.measureText(text)
+        if (GLOW_TEXT_METRICS.size >= 128)
+            GLOW_TEXT_METRICS.clear()
+        GLOW_TEXT_METRICS.set(key, metrics)
+    }
+    return metrics
+}
+
 // Canvas px around the bounds: the blur reach plus the shape's own margin
 function glowSpritePad(blur, margin, scaleX)
 {
@@ -121,7 +142,7 @@ function drawGlowText(text, x, y, shadowColor, blur, stroke)
 {
     const font = ctx.font, align = ctx.textAlign, baseline = ctx.textBaseline
     const fill = ctx.fillStyle, strokeStyle = ctx.strokeStyle, lineWidth = ctx.lineWidth
-    const metrics = ctx.measureText(text)
+    const metrics = measureGlowText(text, font, align, baseline)
     const left = x - metrics.actualBoundingBoxLeft
     const top = y - metrics.actualBoundingBoxAscent
     const key = 'text|' + text + '|' + font + '|' + align + '|' + baseline + '|' + fill + '|' +

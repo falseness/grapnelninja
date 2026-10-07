@@ -62,8 +62,8 @@ let scoreText =
         if (version != 'bad')
             return fontSize
 
-        const scoreWidth = ctx.measureText(scoreTextValue).width
-        const recordWidth = ctx.measureText(recordText).width
+        const scoreWidth = measureGlowText(scoreTextValue).width
+        const recordWidth = measureGlowText(recordText).width
         const availableWidth = recordX - (scoreX + scoreWidth) - viewWidth * STYLE.ui.hudBadTextGapRatio
 
         if (availableWidth <= 0 || recordWidth <= availableWidth)
@@ -76,7 +76,7 @@ let scoreText =
         if (version != 'bad')
             return topY
 
-        const metrics = ctx.measureText(text)
+        const metrics = measureGlowText(text)
 
         if (!metrics.actualBoundingBoxAscent && !metrics.actualBoundingBoxDescent)
             return topY
