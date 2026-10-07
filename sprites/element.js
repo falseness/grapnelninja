@@ -49,7 +49,7 @@ function strokeNeonPath(color, alpha, unit)
     ctx.lineWidth = neon.width * unit
     ctx.stroke()
 
-    ctx.strokeStyle = neon.coreColor
+    ctx.strokeStyle = neon.coreColors[color] || neon.coreColor
     ctx.globalAlpha = baseAlpha * neon.coreAlpha * neonPulse
     ctx.lineWidth = neon.width * neon.coreWidthRatio * unit
     ctx.stroke()

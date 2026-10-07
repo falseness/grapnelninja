@@ -5,8 +5,8 @@ const STYLE = Object.freeze({
             canvas: 'white',
             dark: '#0d1468',
             darkAccent: '#2a1470',
-            gradientTop: '#1a2ca0',
-            gradientMiddle: '#2c1f96',
+            gradientTop: '#0a0f58',
+            gradientMiddle: '#1d1378',
             gradientBottom: '#4a1688',
             vignetteCenter: 'rgba(0, 0, 0, 0)',
             vignetteEdge: 'rgba(8, 4, 40, 0.5)',
@@ -44,18 +44,18 @@ const STYLE = Object.freeze({
             crystalEdge: 'rgba(170, 140, 255, 0.34)',
             crystalRock: '#150e4a',
             crystalRockLit: '#21166a',
-            // Depth haze over the far layer: lavender at the top and bottom,
-            // where the crystals are, clear in the middle of the field
-            hazeTop: 'rgba(150, 112, 255, 0.24)',
-            hazeUpper: 'rgba(128, 96, 236, 0.08)',
+            // Depth haze over the far layer: a faint lavender at the top (the
+            // cave roof stays deep navy), magenta at the bottom, clear in the middle
+            hazeTop: 'rgba(150, 112, 255, 0.08)',
+            hazeUpper: 'rgba(128, 96, 236, 0.02)',
             hazeMiddle: 'rgba(110, 80, 220, 0)',
-            hazeLower: 'rgba(140, 92, 240, 0.12)',
-            hazeBottom: 'rgba(176, 116, 255, 0.3)',
-            // Near rocks: darker than the far layer and every gameplay fill
+            hazeLower: 'rgba(200, 70, 240, 0.08)',
+            hazeBottom: 'rgba(230, 70, 220, 0.24)',
+            // Near rocks: darker than the far layer and every gameplay fill, with a magenta rim
             nearShadow: '#06031a',
             nearMid: '#0c0729',
             nearLit: '#150d40',
-            nearRim: 'rgba(150, 112, 255, 0.4)',
+            nearRim: 'rgba(255, 80, 210, 0.6)',
             nearRock: '#06031a'
         }),
         player: Object.freeze({
@@ -94,7 +94,7 @@ const STYLE = Object.freeze({
             grayFill: '#081a26',
             grayStroke: '#22d8ff',
             greenFill: '#071c12',
-            greenStroke: '#2bff7a'
+            greenStroke: '#3dff4a'
         }),
         hazard: Object.freeze({
             fill: '#21070f',
@@ -102,14 +102,14 @@ const STYLE = Object.freeze({
             classicTriangleStroke: '#ff2d95',
             harmlessFill: '#071c12',
             stroke: '#ff2d95',
-            harmlessStroke: '#2bff7a',
+            harmlessStroke: '#3dff4a',
             trail: '#ff3d71',
             red: '#ff3d71'
         }),
         // Classic floor/ceiling strips: same green neon edge as bad mode
         ground: Object.freeze({
             fill: '#06101c',
-            stroke: '#2bff7a',
+            stroke: '#3dff4a',
             line: '#c4ffd8'
         }),
         ui: Object.freeze({
@@ -169,6 +169,12 @@ const STYLE = Object.freeze({
             innerHaloAlpha: 0.32,
             coreWidthRatio: 0.36,
             coreColor: '#ffffff',
+            // Pale tint of the tube colour for the hot core: a white core on
+            // green blows out to cyan after bloom and the grade
+            coreColors: Object.freeze({
+                '#3dff4a': '#d8ffd8',
+                '#ff2d95': '#ffd6ea'
+            }),
             coreAlpha: 0.55,
             innerWidth: screenHeightPercent(100 * 3 / 1080),
             groundAlpha: 0.5
@@ -345,13 +351,13 @@ const STYLE = Object.freeze({
         // Widths are ratios of the track line width (1.5 ninja radii).
         player: Object.freeze({
             widthRatio: 4.2,
-            minScreenWidth: screenHeightPercent(100 * 16 / 1080),
+            minScreenWidth: screenHeightPercent(100 * 30 / 1080),
             haloWidthRatio: 2.1,
-            haloAlpha: 0.24,
+            haloAlpha: 0.38,
             bodyLayers: 3,
-            bodyAlpha: 0.3,
+            bodyAlpha: 0.45,
             coreWidthRatio: 0.3,
-            coreAlpha: 0.6,
+            coreAlpha: 0.8,
             coreStartRatio: 0.4,
             maxAlpha: 1,
             headWidthRatio: 1,
@@ -402,11 +408,11 @@ const STYLE = Object.freeze({
             cubeHighlightFill: 'rgba(31, 122, 255, 0.12)',
             grayFill: 'rgba(6, 20, 30, 0.82)',
             grayHighlightFill: 'rgba(34, 216, 255, 0.13)',
-            greenFill: 'rgba(4, 28, 18, 0.82)',
-            greenHighlightFill: 'rgba(100, 227, 121, 0.14)',
+            greenFill: 'rgba(10, 64, 36, 0.8)',
+            greenHighlightFill: 'rgba(90, 255, 140, 0.3)',
             groundFill: '#030812',
             groundCapFill: '#102b1b',
-            groundStroke: '#2bff7a',
+            groundStroke: '#3dff4a',
             groundLine: '#c4ffd8',
             shadow: 'rgba(0, 0, 0, 0.32)'
         }),
@@ -421,7 +427,7 @@ const STYLE = Object.freeze({
             lifetimeMultiplier: 1.18
         }),
         trails: Object.freeze({
-            widthMultiplier: 0.48,
+            widthMultiplier: 1,
             alphaMultiplier: 1
         })
     }),
@@ -432,20 +438,20 @@ const STYLE = Object.freeze({
         rotationMarkerLengthRatio: 1.05,
         rotationMarkerOffsetRatio: 0.16,
         rotationMarkerAlpha: 0.55,
-        minScreenRadius: screenHeightPercent(100 * 6 / 1080),
-        ringWidthRatio: 0.25,
+        minScreenRadius: screenHeightPercent(100 * 12 / 1080),
+        ringWidthRatio: 0.38,
         ringCoreWidthRatio: 0.35,
-        haloRadiusRatio: 2.6,
+        haloRadiusRatio: 4,
         haloBlurRatio: 0.9,
         haloAlpha: 1,
-        haloGlowAlpha: 0.45,
+        haloGlowAlpha: 0.75,
         maxSpritePixelScale: 3
     }),
     // Ratios of the rounded rope width (STYLE.strokes.grapnelWidthHeightPercent).
     grapnelVisuals: Object.freeze({
-        minScreenWidth: screenHeightPercent(100 * 4 / 1080),
+        minScreenWidth: screenHeightPercent(100 * 6 / 1080),
         haloWidthRatio: 4,
-        haloAlpha: 0.32,
+        haloAlpha: 0.45,
         coreWidthRatio: 0.38,
         anchorRadiusRatio: 1.8,
         anchorWidthRatio: 0.85,
@@ -461,7 +467,7 @@ const STYLE = Object.freeze({
         directionX: 1,
         directionY: -0.8,
         baseFill: '#040817',
-        sideAlpha: 0.42,
+        sideAlpha: 0.62,
         edgeAlpha: 0.9,
         edgeWidth: screenHeightPercent(100 * 1.5 / 1080)
     }),
