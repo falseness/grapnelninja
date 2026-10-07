@@ -2040,6 +2040,8 @@ class PlayerTrailRenderer
         this.ribbonOutline = []
         this.ribbonLeft = []
         this.ribbonRight = []
+        this.ribbonPaths = []
+        this.ribbonPathFrame = -1
     }
     shouldDraw()
     {
@@ -2067,6 +2069,15 @@ class PlayerTrailRenderer
             return
 
         const config = STYLE.trails.player
+        // The main pass and bloom use the same world-space outline this frame.
+        // Keep paths until the next frame; never retain geometry across physics steps.
+        if (this.ribbonPathFrame !== drawFrameId || this.ribbonPathTrack !== track)
+        {
+            this.ribbonPaths.length = 0
+            this.ribbonPathFrame = drawFrameId
+            this.ribbonPathTrack = track
+        }
+        this.ribbonPathIndex = 0
         const positions = this.getRibbonPoints(track.pos, track.lineWidth * config.minPointDistanceRatio)
         const width = this.getRibbonWidth(track)
         const visibleStart = Math.max(1, Math.floor(positions.length * config.minSegmentRatio))
@@ -2144,15 +2155,24 @@ class PlayerTrailRenderer
         if (positions.length - start < 2)
             return
 
-        const outline = this.getRibbonOutline(positions, start, width)
-
-        if (!outline.length)
-            return
+        const index = this.ribbonPathIndex++
+        let path = this.ribbonPaths[index]
+        if (!path)
+        {
+            const outline = this.getRibbonOutline(positions, start, width)
+            if (!outline.length)
+                return
+            path = new Path2D()
+            path.moveTo(outline[0].x, outline[0].y)
+            for (let i = 1; i < outline.length; ++i)
+                path.lineTo(outline[i].x, outline[i].y)
+            path.closePath()
+            this.ribbonPaths[index] = path
+        }
 
         ctx.globalAlpha = this.clampAlpha(alpha)
         ctx.fillStyle = color
-        this.drawRibbonOutline(outline)
-        ctx.fill()
+        ctx.fill(path)
     }
     getRibbonOutline(positions, visibleStart, width)
     {
