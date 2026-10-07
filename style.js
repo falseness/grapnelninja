@@ -3,13 +3,13 @@ const STYLE = Object.freeze({
         background: Object.freeze({
             page: 'black',
             canvas: 'white',
-            dark: '#050713',
-            darkAccent: '#12102a',
-            gradientTop: '#050713',
-            gradientMiddle: '#07102a',
-            gradientBottom: '#120720',
+            dark: '#0d1468',
+            darkAccent: '#2a1470',
+            gradientTop: '#1a2ca0',
+            gradientMiddle: '#2c1f96',
+            gradientBottom: '#4a1688',
             vignetteCenter: 'rgba(0, 0, 0, 0)',
-            vignetteEdge: 'rgba(0, 0, 0, 0.66)',
+            vignetteEdge: 'rgba(8, 4, 40, 0.5)',
             hexagonStroke: 'rgba(48, 213, 200, 0.10)',
             hexagonAccentStroke: 'rgba(255, 61, 113, 0.06)',
             streak: 'rgba(48, 213, 200, 0.08)',
@@ -34,7 +34,7 @@ const STYLE = Object.freeze({
             washBlueMid: 'rgba(48, 213, 200, 0.12)',
             washRedCore: 'rgba(255, 61, 113, 0.52)',
             washRedMid: 'rgba(168, 55, 255, 0.2)',
-            washCenter: 'rgba(7, 16, 42, 0)'
+            washCenter: 'rgba(44, 31, 150, 0)'
         }),
         player: Object.freeze({
             fill: '#125dff',
