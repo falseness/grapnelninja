@@ -2378,13 +2378,15 @@ class BloomRenderer
     }
     drawNinjaRing(player)
     {
-        const radius = player.getVisualRadius()
+        const radius = player.getRingOuterRadius()
+        const ringWidth = radius * STYLE.playerVisuals.ringWidthRatio
 
+        // Inside the outer edge, like the ring sprite
         ctx.beginPath()
-        ctx.arc(player.x + screen.x, player.y + screen.y, radius, 0, Math.PI * 2, false)
+        ctx.arc(player.x + screen.x, player.y + screen.y, radius - ringWidth * 0.5, 0, Math.PI * 2, false)
         ctx.globalAlpha = player.getBlinkAlpha()
         ctx.strokeStyle = player.stroke
-        ctx.lineWidth = radius * STYLE.playerVisuals.ringWidthRatio
+        ctx.lineWidth = ringWidth
         ctx.stroke()
         ctx.globalAlpha = 1
     }

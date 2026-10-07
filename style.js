@@ -443,10 +443,12 @@ const STYLE = Object.freeze({
         rotationMarkerLengthRatio: 1.05,
         rotationMarkerOffsetRatio: 0.16,
         rotationMarkerAlpha: 0.55,
-        minScreenRadius: screenHeightPercent(100 * 12 / 1080),
+        // Pre-overhaul size (e430f92): see Ninja.getRingOuterRadius
+        minScreenRadius: screenHeightPercent(100 * 6 / 1080),
         ringWidthRatio: 0.38,
         ringCoreWidthRatio: 0.35,
-        haloRadiusRatio: 4,
+        // Outer soft glow ends here, so the ball does not read bigger
+        haloRadiusRatio: 1.25,
         haloBlurRatio: 0.9,
         haloAlpha: 1,
         haloGlowAlpha: 0.75,
