@@ -91,25 +91,26 @@ const STYLE = Object.freeze({
             blue: '#1f7aff',
             blueFill: '#061234',
             blueStroke: '#2f86ff',
-            grayFill: '#171a1f',
-            grayStroke: '#b9c2c9',
+            grayFill: '#081a26',
+            grayStroke: '#22d8ff',
             greenFill: '#071c12',
             greenStroke: '#2bff7a'
         }),
         hazard: Object.freeze({
             fill: '#21070f',
-            classicTriangleFill: 'lightblue',
-            classicTriangleStroke: 'lightblue',
+            classicTriangleFill: '#21070f',
+            classicTriangleStroke: '#ff2d95',
             harmlessFill: '#071c12',
             stroke: '#ff2d95',
             harmlessStroke: '#2bff7a',
             trail: '#ff3d71',
             red: '#ff3d71'
         }),
+        // Classic floor/ceiling strips: same green neon edge as bad mode
         ground: Object.freeze({
-            fill: '#20242a',
-            stroke: '#9aa3ad',
-            line: '#d3d9df'
+            fill: '#06101c',
+            stroke: '#2bff7a',
+            line: '#c4ffd8'
         }),
         ui: Object.freeze({
             title: '#8ffcff',
@@ -310,8 +311,8 @@ const STYLE = Object.freeze({
             hazardCoreFill: 'rgba(255, 61, 113, 0.14)',
             cubeFill: 'rgba(3, 9, 20, 0.82)',
             cubeHighlightFill: 'rgba(31, 122, 255, 0.12)',
-            grayFill: 'rgba(18, 21, 26, 0.82)',
-            grayHighlightFill: 'rgba(185, 194, 201, 0.13)',
+            grayFill: 'rgba(6, 20, 30, 0.82)',
+            grayHighlightFill: 'rgba(34, 216, 255, 0.13)',
             greenFill: 'rgba(4, 28, 18, 0.82)',
             greenHighlightFill: 'rgba(100, 227, 121, 0.14)',
             groundFill: '#030812',
