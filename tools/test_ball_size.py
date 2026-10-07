@@ -13,7 +13,11 @@ Asserts per mode/viewport: HEAD (BALL_SIZE_REV, default worktree) within
 max(1 CSS px, 10%) of BALL_SIZE_ORIGINAL (default e430f92, before the
 overhaul), and BALL_SIZE_PARENT (default 1f91051, the enlarged TASK-189 ball)
 larger than the original. Where the hitbox is bigger than the minimum radius
-(classic on desktop) the parent only grew by its wider ring. Writes ball-size.json and before-after.png (4x crops)
+(classic on desktop) the parent only grew by its wider ring. HEAD's ball also
+keeps its dark centre: the median luminance of the centre (inside
+CENTRE_RATIO of the measured radius) is at most MAX_CENTRE_TO_RING of the
+ring's (between RING_RATIOS of it), so trail and bloom glow do not wash it out.
+Writes ball-size.json and before-after.png (4x crops)
 into BALL_SIZE_EVIDENCE_DIR when it is set.
 """
 from contextlib import ExitStack
@@ -46,6 +50,9 @@ TOLERANCE_CSS_PX = 1
 TOLERANCE_RATIO = 0.1
 EDGE_DROP_RATIO = 0.5
 CROP_CSS_PX = 24
+CENTRE_RATIO = 0.45
+RING_RATIOS = (0.65, 1.0)
+MAX_CENTRE_TO_RING = 0.6
 ZOOM = 4
 
 # Centre of the ninja in canvas pixels and canvas pixels per CSS pixel
@@ -69,11 +76,11 @@ def brightness(img, x, y):
 def outer_radius(img, cx, cy, rmax):
     """Median over DIRECTIONS of the outer edge, in canvas pixels, plus the samples.
 
-    The ring is the brightest thing in the ball (teal on blue before the
-    overhaul, the bloomed cyan ring with a pale core after), so its outer edge
-    is a sharp brightness drop going outward, also on top of trail and bloom
-    haze. The outermost drop of at least EDGE_DROP_RATIO of the largest one is
-    taken, so the core-to-ring step inside a wide ring does not count as the edge.
+    The ring's outer edge is a sharp brightness step going outward (teal rim on
+    the dark cave before the overhaul, a cyan ring drawn over trail and bloom
+    haze after), darker or lighter than what lies outside. The outermost step of
+    at least EDGE_DROP_RATIO of the largest one is taken, so the steps between
+    the centre, the rotation marker and the ring do not count as the edge.
     """
     samples = []
     for i in range(DIRECTIONS):
@@ -81,11 +88,22 @@ def outer_radius(img, cx, cy, rmax):
         dx, dy = math.cos(a), math.sin(a)
         drops = []
         for d in range(int(math.ceil(rmax))):
-            drops.append((brightness(img, cx + dx * d, cy + dy * d)
-                          - brightness(img, cx + dx * (d + 1), cy + dy * (d + 1)), d + 0.5))
+            drops.append((abs(brightness(img, cx + dx * d, cy + dy * d)
+                              - brightness(img, cx + dx * (d + 1), cy + dy * (d + 1))), d + 0.5))
         largest = max(drop for drop, _ in drops)
         samples.append(max(edge for drop, edge in drops if drop >= EDGE_DROP_RATIO * largest))
     return statistics.median(samples), samples
+
+
+def luminance_contrast(img, cx, cy, radius):
+    """(centre, ring) median Rec. 709 luminance inside the ball of this radius."""
+    h, w = img.shape[:2]
+    ys, xs = np.mgrid[0:h, 0:w]
+    d = np.hypot(xs + 0.5 - cx, ys + 0.5 - cy)
+    lum = img[..., :3].astype(float) @ np.array([0.2126, 0.7152, 0.0722])
+    centre = float(np.median(lum[d <= CENTRE_RATIO * radius]))
+    ring = float(np.median(lum[(d >= RING_RATIOS[0] * radius) & (d <= RING_RATIOS[1] * radius)]))
+    return centre, ring
 
 
 def run(rev):
@@ -127,14 +145,18 @@ def measure(result):
         p = c['probe']
         rmax = RMAX_FACTOR * max(12 / 1080 * img.shape[0], p['hitbox'])
         radius, samples = outer_radius(img, p['x'], p['y'], rmax)
+        centre_lum, ring_lum = luminance_contrast(img, p['x'], p['y'], radius)
         entry = out.setdefault(vp_name, {}).setdefault(mode, {'per_tick': {}})
         entry['per_tick'][tick] = {'radius_canvas_px': radius, 'radius_css_px': radius / p['density'],
                                    'directions_canvas_px': samples, 'centre_canvas_px': [p['x'], p['y']],
                                    'hitbox_radius_css_px': p['hitbox'] / p['density'],
-                                   'ninja_world': [p['x_world'], p['y_world']]}
+                                   'ninja_world': [p['x_world'], p['y_world']],
+                                   'centre_luminance': centre_lum, 'ring_luminance': ring_lum,
+                                   'centre_to_ring': centre_lum / max(ring_lum, 1e-6)}
     for modes in out.values():
         for entry in modes.values():
             entry['radius_css_px'] = statistics.median(t['radius_css_px'] for t in entry['per_tick'].values())
+            entry['centre_to_ring'] = max(t['centre_to_ring'] for t in entry['per_tick'].values())
     return out
 
 
@@ -178,7 +200,8 @@ class BallSizeTest(unittest.TestCase):
         cls.report = {'revs': {name: r['rev'] for name, r in cls.results.items()},
                       'ticks': TICKS, 'directions': DIRECTIONS,
                       'limit': f'|head - original| <= max({TOLERANCE_CSS_PX} CSS px, '
-                               f'{TOLERANCE_RATIO:.0%} of original); parent > original',
+                               f'{TOLERANCE_RATIO:.0%} of original); parent > original; '
+                               f'head centre/ring luminance <= {MAX_CENTRE_TO_RING} at every tick',
                       'page_errors': {name: r['page_errors'] for name, r in cls.results.items()},
                       'viewports': {}}
         for vp in VIEWPORTS:
@@ -193,6 +216,9 @@ class BallSizeTest(unittest.TestCase):
                     'head_minus_original_css_px': head - orig,
                     'head_within_limit': abs(head - orig) <= limit,
                     'parent_larger': parent > orig,
+                    'centre_to_ring': {n: cls.sizes[n][vp['name']][mode]['centre_to_ring']
+                                       for n in ('original', 'parent', 'head')},
+                    'head_centre_dark': cls.sizes['head'][vp['name']][mode]['centre_to_ring'] <= MAX_CENTRE_TO_RING,
                     'detail': {n: cls.sizes[n][vp['name']][mode] for n in ('original', 'parent', 'head')}}
         if EVIDENCE:
             out = Path(EVIDENCE)
@@ -219,6 +245,14 @@ class BallSizeTest(unittest.TestCase):
         for vp, modes in self.report['viewports'].items():
             for mode, e in modes.items():
                 self.assertTrue(e['parent_larger'], f'{vp} {mode}: {e["outer_radius_css_px"]}')
+
+    def test_head_centre_darker_than_ring(self):
+        for vp, modes in self.report['viewports'].items():
+            for mode, e in modes.items():
+                c = e['centre_to_ring']
+                print(f'{vp} {mode}: centre/ring luminance original {c["original"]:.2f} '
+                      f'parent {c["parent"]:.2f} head {c["head"]:.2f} (max {MAX_CENTRE_TO_RING})')
+                self.assertTrue(e['head_centre_dark'], f'{vp} {mode}: {c}')
 
 
 if __name__ == '__main__':

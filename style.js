@@ -447,11 +447,13 @@ const STYLE = Object.freeze({
         minScreenRadius: screenHeightPercent(100 * 6 / 1080),
         ringWidthRatio: 0.38,
         ringCoreWidthRatio: 0.35,
-        // Outer soft glow ends here, so the ball does not read bigger
-        haloRadiusRatio: 1.25,
-        haloBlurRatio: 0.9,
-        haloAlpha: 1,
-        haloGlowAlpha: 0.75,
+        rimWidthRatio: 0.22,
+        rimAlpha: 0.85,
+        // Sprite margin for the ring's antialiasing: nothing is drawn outside the ball
+        spriteRadiusRatio: 1.05,
+        haloBlurRatio: 0.45,
+        // Inner halo only tints the rim of the dark centre
+        haloAlpha: 0.35,
         maxSpritePixelScale: 3
     }),
     // Ratios of the rounded rope width (STYLE.strokes.grapnelWidthHeightPercent).

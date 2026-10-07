@@ -34,7 +34,6 @@ function drawWorldLayer()
 
     screen.draw()
     grapnel.drawHook()
-    ninja.draw()
 }
 
 function drawPlayerTrailLayer(gameState)
@@ -60,6 +59,13 @@ function drawBloomLayer(gameState)
 {
     const screenEffects = visualEffects.screenEffects
     visualEffects.bloom.draw(gameState, screenEffects.isShaking ? screenEffects.shakeOffset : NO_SHAKE)
+}
+
+// The ball goes over the trail, rope glow and bloom, so its dark centre and
+// cyan ring stay readable at the small pre-overhaul size
+function drawPlayerLayer()
+{
+    ninja.draw()
 }
 
 // Final colour grade and vignette over the world, under the HUD
@@ -126,6 +132,7 @@ function draw()
     drawWorldLayer()
     drawParticlesAndTrailsLayer(gameState)
     drawBloomLayer(gameState)
+    drawPlayerLayer()
     drawColorGradeLayer()
     drawUILayer(gameState)
     drawFpsCounterLayer(gameState)

@@ -53,7 +53,7 @@ GC_EVENTS = {'MinorGC': 'minor', 'MajorGC': 'major'}
 T0_MARK = 'perf-mobile-t0'
 LAYERS = ['drawBackgroundLayer', 'drawLightsLayer', 'drawBehindForegroundParticlesLayer',
           'drawPlayerTrailLayer', 'drawWorldLayer', 'drawParticlesAndTrailsLayer',
-          'drawBloomLayer', 'drawColorGradeLayer', 'drawUILayer', 'drawFpsCounterLayer']
+          'drawBloomLayer', 'drawPlayerLayer', 'drawColorGradeLayer', 'drawUILayer', 'drawFpsCounterLayer']
 COUNTERS = ['gradients', 'shadow_draws', 'offscreen_element_draws', 'element_draws']
 
 # Mulberry32 replaces Math.random before any game script runs.

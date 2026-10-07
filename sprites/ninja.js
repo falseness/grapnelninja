@@ -207,9 +207,9 @@ class Ninja
 
         ctx.restore()
     }
-    // radius is the ring's outer edge (the stroke is drawn inward); the blurred
-    // halo stays inside the ball and the soft outer glow ends at haloRadiusRatio,
-    // so the ball reads at its pre-overhaul size.
+    // radius is the ring's outer edge (the stroke is drawn inward) and the blurred
+    // halo stays inside the ball, so the ball reads at its pre-overhaul size. The
+    // glow around it comes from the bloom pass (BloomRenderer.drawNinjaRing).
     // One sprite is kept and rebuilt when the radius, colours or pixel density change
     // (version switch, resize)
     static getGlowSprite(radius, fill, stroke, transform)
@@ -225,7 +225,7 @@ class Ninja
 
         const ringWidth = radius * config.ringWidthRatio
         const ringRadius = radius - ringWidth * 0.5
-        const half = radius * config.haloRadiusRatio
+        const half = radius * config.spriteRadiusRatio
         const spriteCanvas = document.createElement('canvas')
         spriteCanvas.width = spriteCanvas.height = Math.max(1, Math.ceil(half * 2 * pixelScale))
         const spriteCtx = spriteCanvas.getContext('2d')
@@ -238,17 +238,6 @@ class Ninja
             spriteCtx.arc(0, 0, ringRadius, 0, Math.PI * 2, false)
         }
 
-        // Soft narrow glow fading out from the ring to the sprite edge
-        const glow = spriteCtx.createRadialGradient(0, 0, radius * 0.8, 0, 0, half)
-        glow.addColorStop(0, STYLE.colors.player.halo)
-        glow.addColorStop(1, 'rgba(34, 200, 255, 0)')
-        spriteCtx.globalAlpha = config.haloGlowAlpha
-        spriteCtx.fillStyle = glow
-        spriteCtx.beginPath()
-        spriteCtx.arc(0, 0, half, 0, Math.PI * 2, false)
-        spriteCtx.fill()
-        spriteCtx.globalAlpha = STYLE.alpha.full
-
         // Dark navy centre, a little lighter towards the ring
         const centre = spriteCtx.createRadialGradient(0, 0, 0, 0, 0, radius)
         centre.addColorStop(0, STYLE.colors.player.centre)
@@ -258,34 +247,39 @@ class Ninja
         spriteCtx.fillStyle = centre
         spriteCtx.fill()
 
-        // Halo: the ring blurred twice (shadowBlur works in canvas pixels),
-        // clipped to the ball so it lights the centre only
+        // Halo: the ring blurred (shadowBlur works in canvas pixels), clipped to
+        // the ball and faint, so the centre stays dark
         spriteCtx.save()
         spriteCtx.clip()
         spriteCtx.globalAlpha = config.haloAlpha
         spriteCtx.strokeStyle = STYLE.colors.player.halo
         spriteCtx.lineWidth = ringWidth
         spriteCtx.shadowColor = STYLE.colors.player.halo
-        for (const blur of [config.haloBlurRatio, config.haloBlurRatio * 0.45])
-        {
-            spriteCtx.shadowBlur = radius * blur * fit
-            ring()
-            spriteCtx.stroke()
-        }
+        spriteCtx.shadowBlur = radius * config.haloBlurRatio * fit
+        ring()
+        spriteCtx.stroke()
         spriteCtx.restore()
 
-        // Thick bright ring with a pale hot core line near its rim: under bloom the
-        // core is what reads as the ball's outline
+        // Thick cyan ring with a thin pale hot core line along its middle
         ring()
         spriteCtx.strokeStyle = stroke
         spriteCtx.lineWidth = ringWidth
         spriteCtx.stroke()
-        const coreWidth = ringWidth * config.ringCoreWidthRatio
-        spriteCtx.beginPath()
-        spriteCtx.arc(0, 0, radius - coreWidth, 0, Math.PI * 2, false)
+        ring()
         spriteCtx.strokeStyle = STYLE.colors.player.highlight
-        spriteCtx.lineWidth = coreWidth
+        spriteCtx.lineWidth = ringWidth * config.ringCoreWidthRatio
         spriteCtx.stroke()
+
+        // Thin dark rim just inside the outer edge: keeps the ball's outline crisp
+        // on the pale cyan trail and bloom glow
+        const rimWidth = ringWidth * config.rimWidthRatio
+        spriteCtx.beginPath()
+        spriteCtx.arc(0, 0, radius - rimWidth * 0.5, 0, Math.PI * 2, false)
+        spriteCtx.globalAlpha = config.rimAlpha
+        spriteCtx.strokeStyle = STYLE.colors.player.centre
+        spriteCtx.lineWidth = rimWidth
+        spriteCtx.stroke()
+        spriteCtx.globalAlpha = STYLE.alpha.full
 
         Ninja.glowSprite = {key, canvas: spriteCanvas, half}
         return Ninja.glowSprite
