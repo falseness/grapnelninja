@@ -1485,8 +1485,14 @@ class ParticleSystem
         this.ctx = context
         this.canvas = targetCanvas
         this.particles = []
+        // Expired particles, reused by acquireParticle (capped at maxCount).
+        this.pool = []
         this.lastTime = 0
         this.lastWorldEmitTime = 0
+        this.trailSparkBudget = 0
+        // Sparks draw from their own stream: Math.random is shared with level
+        // generation (seeded in the captures), so using it here would change gameplay.
+        this.sparkSeed = 181
     }
     shouldDraw()
     {
@@ -1507,6 +1513,7 @@ class ParticleSystem
 
         this.releaseTrampolineSplashLocks(gameState)
         this.updateParticles(dt)
+        this.emitTrailSparks(gameState, dt)
     }
     draw()
     {
@@ -1539,6 +1546,12 @@ class ParticleSystem
             const drawX = particle.worldAnchored ? particle.x + screen.x : particle.x
             const drawY = particle.worldAnchored ? particle.y + screen.y : particle.y
 
+            if (particle.spark)
+            {
+                this.drawSpark(particle, progress, drawX, drawY)
+                continue
+            }
+
             this.ctx.globalAlpha = Math.max(0, progress) * particle.alpha * this.getStableAlphaMultiplier()
             this.ctx.fillStyle = particle.color
             this.ctx.fillRect(
@@ -1550,6 +1563,21 @@ class ParticleSystem
         }
 
         this.ctx.restore()
+    }
+    drawSpark(particle, progress, drawX, drawY)
+    {
+        // Quick fade in, long fade out, so sparks never pop between frames.
+        const config = STYLE.trails.player
+        const alpha = particle.alpha * Math.max(0, Math.min(1, (1 - progress) * 6, progress))
+        const haloSize = particle.size * config.sparkHaloRatio
+
+        this.ctx.globalAlpha = alpha * config.sparkHaloAlpha
+        this.ctx.fillStyle = STYLE.colors.playerTrail.sparkHalo
+        this.ctx.fillRect(drawX - haloSize / 2, drawY - haloSize / 2, haloSize, haloSize)
+
+        this.ctx.globalAlpha = alpha
+        this.ctx.fillStyle = particle.color
+        this.ctx.fillRect(drawX - particle.size / 2, drawY - particle.size / 2, particle.size, particle.size)
     }
     updateParticles(dt)
     {
@@ -1567,9 +1595,20 @@ class ParticleSystem
 
             if (particle.life > 0)
                 particles[kept++] = particle
+            else
+                this.release(particle)
         }
 
         particles.length = kept
+    }
+    acquireParticle()
+    {
+        return this.pool.length ? this.pool.pop() : {}
+    }
+    release(particle)
+    {
+        if (this.pool.length < STYLE.particles.maxCount)
+            this.pool.push(particle)
     }
     emitTrampolineSplash(player, trampoline)
     {
@@ -1650,9 +1689,7 @@ class ParticleSystem
     }
     emitPlayerParticles(player)
     {
-        const speed = Math.sqrt(player.speedX * player.speedX + player.speedY * player.speedY)
-
-        if (speed < STYLE.particles.playerMinSpeed)
+        if (!this.isPlayerMoving(player))
             return
 
         const badParticles = this.getBadVersionParticles()
@@ -1740,25 +1777,97 @@ class ParticleSystem
         const velocity = this.randomRange(speed * 0.35, speed)
         const lifetime = STYLE.particles.lifetimeMs * config.lifetimeMultiplier
         const life = this.randomRange(lifetime * 0.55, lifetime)
+        const size = this.randomRange(
+            STYLE.particles.minSize * config.sizeMultiplier,
+            STYLE.particles.maxSize * config.sizeMultiplier
+        )
 
-        this.particles.push({
-            x,
-            y,
-            vx: Math.cos(angle) * velocity,
-            vy: Math.sin(angle) * velocity,
-            color,
-            life,
-            maxLife: life,
-            size: this.randomRange(
-                STYLE.particles.minSize * config.sizeMultiplier,
-                STYLE.particles.maxSize * config.sizeMultiplier
-            ),
-            alpha,
-            worldAnchored: !!worldAnchored,
-            drawBeforeForeground: !!drawBeforeForeground
-        })
+        this.pushParticle(x, y, Math.cos(angle) * velocity, Math.sin(angle) * velocity,
+            color, life, size, alpha, !!worldAnchored, !!drawBeforeForeground, false)
+    }
+    pushParticle(x, y, vx, vy, color, life, size, alpha, worldAnchored, drawBeforeForeground, spark)
+    {
+        const particle = this.acquireParticle()
 
+        particle.x = x
+        particle.y = y
+        particle.vx = vx
+        particle.vy = vy
+        particle.color = color
+        particle.life = life
+        particle.maxLife = life
+        particle.size = size
+        particle.alpha = alpha
+        particle.worldAnchored = worldAnchored
+        particle.drawBeforeForeground = drawBeforeForeground
+        particle.spark = spark
+
+        this.particles.push(particle)
         this.enforceCap()
+    }
+    emitTrailSparks(gameState, dt)
+    {
+        const ninja = gameState && gameState.ninja
+        const track = ninja && ninja.track
+        const config = STYLE.trails.player
+
+        if (!track || !trackEnabled || !STYLE.features.playerTrail || !QUALITY.playerTrail
+            || track.pos.length < 4 || !this.isPlayerMoving(ninja))
+        {
+            this.trailSparkBudget = 0
+            return
+        }
+
+        this.trailSparkBudget += dt * config.sparkRatePerMs
+
+        const positions = track.pos
+        const first = Math.floor(positions.length * config.sparkTailRatio)
+        const last = Math.max(first + 1, Math.floor(positions.length * config.sparkHeadRatio))
+        const spread = Math.max(track.lineWidth * config.widthRatio * 0.5, config.minScreenWidth / scale[version])
+        const pixelScale = 1 / scale[version]
+
+        while (this.trailSparkBudget >= 1)
+        {
+            this.trailSparkBudget -= 1
+
+            const point = positions[Math.min(positions.length - 1, first + Math.floor(this.sparkRandom() * (last - first)))]
+            const angle = this.sparkRandom() * Math.PI * 2
+            const speed = config.sparkSpeed * pixelScale * this.sparkRange(config.sparkMinSpeedRatio, 1)
+            const life = this.sparkRange(config.sparkLifetimeMs * 0.5, config.sparkLifetimeMs)
+
+            this.pushParticle(
+                point.x + this.sparkRange(-spread, spread),
+                point.y + this.sparkRange(-spread, spread),
+                Math.cos(angle) * speed,
+                Math.sin(angle) * speed,
+                STYLE.colors.playerTrail.spark,
+                life,
+                this.sparkRange(config.sparkMinScreenSize, config.sparkMaxScreenSize) * pixelScale,
+                config.sparkAlpha,
+                true,
+                false,
+                true
+            )
+        }
+    }
+    sparkRandom()
+    {
+        // mulberry32
+        this.sparkSeed = (this.sparkSeed + 0x6D2B79F5) | 0
+        let t = this.sparkSeed
+        t = Math.imul(t ^ (t >>> 15), t | 1)
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    sparkRange(min, max)
+    {
+        return min + this.sparkRandom() * (max - min)
+    }
+    isPlayerMoving(player)
+    {
+        const speed = Math.sqrt(player.speedX * player.speedX + player.speedY * player.speedY)
+
+        return speed >= STYLE.particles.playerMinSpeed
     }
     enforceCap()
     {
@@ -1768,6 +1877,9 @@ class ParticleSystem
             return
 
         const particles = this.particles
+
+        for (let i = 0; i < overage; ++i)
+            this.release(particles[i])
 
         for (let i = overage; i < particles.length; ++i)
             particles[i - overage] = particles[i]
@@ -1869,26 +1981,24 @@ class PlayerTrailRenderer
             return
 
         const config = STYLE.trails.player
-        const badTrails = this.getBadVersionTrails()
         const positions = this.getRibbonPoints(track.pos, track.lineWidth * config.minPointDistanceRatio)
-        const width = track.lineWidth * config.widthRatio * badTrails.widthMultiplier
-        const glowWidth = track.lineWidth * config.glowWidthRatio * badTrails.glowWidthMultiplier
+        const width = this.getRibbonWidth(track)
         const visibleStart = Math.max(1, Math.floor(positions.length * config.minSegmentRatio))
-        const stableAlpha = badTrails.alphaMultiplier * this.getStableAlphaMultiplier()
+        const alpha = this.clampAlpha(config.maxAlpha * this.getBadVersionTrails().alphaMultiplier)
 
         ctx.save()
         ctx.globalCompositeOperation = this.getEffectCompositeOperation()
-        ctx.shadowColor = STYLE.colors.player.trail
 
-        this.drawRibbon(
-            positions,
-            visibleStart,
-            width,
-            glowWidth,
-            this.clampAlpha(config.maxAlpha * stableAlpha)
-        )
+        this.drawRibbon(positions, visibleStart, width, alpha)
 
         ctx.restore()
+    }
+    getRibbonWidth(track)
+    {
+        const config = STYLE.trails.player
+        const width = track.lineWidth * config.widthRatio * this.getBadVersionTrails().widthMultiplier
+
+        return Math.max(width, config.minScreenWidth / scale[version])
     }
     getRibbonPoints(positions, minDistance)
     {
@@ -1918,34 +2028,45 @@ class PlayerTrailRenderer
         ribbonPoints.length = count
         return ribbonPoints
     }
-    drawRibbon(positions, visibleStart, width, glowWidth, alpha)
+    drawRibbon(positions, visibleStart, width, alpha)
     {
-        if (positions.length - visibleStart < 2)
+        // No shadowBlur and no gradient: the fade toward the tail comes from
+        // stacked wedges that each taper to their own start, so alpha builds up
+        // smoothly toward the head.
+        const config = STYLE.trails.player
+        const colors = STYLE.colors.playerTrail
+        const count = positions.length - visibleStart
+
+        if (count < 2)
             return
 
-        const outline = this.getRibbonOutline(positions, visibleStart, width)
+        this.fillRibbon(positions, visibleStart, width * config.haloWidthRatio, colors.halo, alpha * config.haloAlpha)
+
+        for (let i = 0; i < config.bodyLayers; ++i)
+        {
+            const start = visibleStart + Math.floor(count * i / config.bodyLayers)
+
+            this.fillRibbon(positions, start, width, colors.body, alpha * config.bodyAlpha)
+        }
+
+        const coreStart = visibleStart + Math.floor(count * config.coreStartRatio)
+
+        this.fillRibbon(positions, coreStart, width * config.coreWidthRatio, colors.core, alpha * config.coreAlpha)
+    }
+    fillRibbon(positions, start, width, color, alpha)
+    {
+        if (positions.length - start < 2)
+            return
+
+        const outline = this.getRibbonOutline(positions, start, width)
 
         if (!outline.length)
             return
 
-        ctx.fillStyle = STYLE.colors.player.trail
-        ctx.strokeStyle = STYLE.colors.player.trail
-
-        ctx.globalAlpha = this.clampAlpha(alpha * 0.5)
-        ctx.shadowBlur = glowWidth
+        ctx.globalAlpha = this.clampAlpha(alpha)
+        ctx.fillStyle = color
         this.drawRibbonOutline(outline)
         ctx.fill()
-
-        ctx.globalAlpha = alpha
-        ctx.shadowBlur = 0
-        this.drawRibbonOutline(outline)
-        ctx.fill()
-
-        ctx.globalAlpha = this.clampAlpha(STYLE.trails.player.edgeAlpha * alpha)
-        ctx.lineWidth = Math.max(1, width * 0.12)
-        ctx.lineJoin = 'round'
-        this.drawRibbonOutline(outline)
-        ctx.stroke()
     }
     getRibbonOutline(positions, visibleStart, width)
     {
@@ -2019,10 +2140,7 @@ class PlayerTrailRenderer
 
         return {
             widthMultiplier: 0.5,
-            glowWidthMultiplier: 0.5,
-            alphaMultiplier: 1,
-            chunkCount: 4,
-            tailPortion: 0.28
+            alphaMultiplier: 1
         }
     }
     clampAlpha(alpha)
@@ -2034,12 +2152,6 @@ class PlayerTrailRenderer
         return STYLE.visualStability.stableBrightness
             ? STYLE.visualStability.effectCompositeOperation
             : 'lighter'
-    }
-    getStableAlphaMultiplier()
-    {
-        return STYLE.visualStability.stableBrightness
-            ? STYLE.visualStability.stableEffectAlphaMultiplier
-            : 1
     }
 }
 

@@ -74,6 +74,13 @@ const STYLE = Object.freeze({
             halo: '#22c8ff',
             anchorFill: '#050a2e'
         }),
+        playerTrail: Object.freeze({
+            halo: '#1f8fff',
+            body: '#36b8ff',
+            core: '#d8fbff',
+            spark: '#5ff0ff',
+            sparkHalo: '#22c8ff'
+        }),
         cube: Object.freeze({
             fill: '#071425',
             platformFill: '#15181d',
@@ -230,17 +237,34 @@ const STYLE = Object.freeze({
         hazardAlpha: 0.52
     }),
     trails: Object.freeze({
+        // Widths are ratios of the track line width (1.5 ninja radii).
         player: Object.freeze({
-            widthRatio: 3.2,
-            glowWidthRatio: 2.15,
-            minAlpha: 0.06,
-            maxAlpha: 0.42,
-            coreAlpha: 0.7,
-            edgeAlpha: 0.72,
+            widthRatio: 4.2,
+            minScreenWidth: screenHeightPercent(100 * 16 / 1080),
+            haloWidthRatio: 2.1,
+            haloAlpha: 0.24,
+            bodyLayers: 3,
+            bodyAlpha: 0.3,
+            coreWidthRatio: 0.3,
+            coreAlpha: 0.6,
+            coreStartRatio: 0.4,
+            maxAlpha: 1,
             headWidthRatio: 1,
-            tailWidthRatio: 0.18,
+            tailWidthRatio: 0.15,
             minPointDistanceRatio: 0.42,
-            minSegmentRatio: 0
+            minSegmentRatio: 0,
+            // Square sparks scattered along the ribbon (ParticleSystem).
+            sparkRatePerMs: 0.05,
+            sparkMinSpeedRatio: 0.35,
+            sparkLifetimeMs: 700,
+            sparkMinScreenSize: screenHeightPercent(100 * 5 / 1080),
+            sparkMaxScreenSize: screenHeightPercent(100 * 10 / 1080),
+            sparkSpeed: screenHeightPercent(100 * 0.05 / 1080),
+            sparkAlpha: 0.95,
+            sparkHaloRatio: 2.2,
+            sparkHaloAlpha: 0.3,
+            sparkTailRatio: 0.1,
+            sparkHeadRatio: 0.8
         }),
         hazard: Object.freeze({
             minAlpha: 0.04,
@@ -303,10 +327,7 @@ const STYLE = Object.freeze({
         }),
         trails: Object.freeze({
             widthMultiplier: 0.48,
-            glowWidthMultiplier: 0.42,
-            alphaMultiplier: 0.76,
-            chunkCount: 6,
-            tailPortion: 0.4
+            alphaMultiplier: 1
         })
     }),
     playerVisuals: Object.freeze({
