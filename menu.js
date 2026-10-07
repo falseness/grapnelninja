@@ -83,11 +83,7 @@ class Text
         ctx.font        = this.fontSize
         if (this.glow)
             this.strokeNeonTube()
-        ctx.shadowColor = this.glow || this.fill
-        ctx.shadowBlur  = STYLE.ui.textShadowBlur
-        
-        
-        ctx.fillText(this.text, this.x, this.y)
+        drawGlowText(this.text, this.x, this.y, this.glow || this.fill, STYLE.ui.textShadowBlur, false)
         LAYOUT_PROBE.text(this.text, this.x, this.y)
         ctx.restore()
     }
@@ -217,14 +213,21 @@ class Button
                 this.background.stroke, STYLE.ui.neonUnit.button)
         else
         {
-            ctx.shadowColor = this.background.stroke
-            ctx.shadowBlur  = STYLE.ui.buttonShadowBlur
-            ctx.strokeRect(this.background.x, this.background.y, this.background.width, this.background.height)
+            const stroke = this.background.stroke
+            drawGlowRect('button|' + stroke, this.background.x, this.background.y,
+                this.background.width, this.background.height, STYLE.ui.buttonLineWidth, STYLE.ui.buttonShadowBlur,
+                (x, y, w, h) =>
+            {
+                ctx.strokeStyle = stroke
+                ctx.lineWidth = STYLE.ui.buttonLineWidth
+                ctx.shadowColor = stroke
+                ctx.shadowBlur = STYLE.ui.buttonShadowBlur
+                ctx.strokeRect(x, y, w, h)
+            })
         }
         LAYOUT_PROBE.rect('button', this.text.text || 'icon', this.background.x, this.background.y,
             this.background.width, this.background.height)
 
-        ctx.shadowBlur = 0
         ctx.globalAlpha = 0.58
         ctx.strokeRect(
             this.background.x + inset,
@@ -290,22 +293,27 @@ class Checkbox
         strokeNeonRect(boxX, boxY, this.size, this.size, this.stroke, STYLE.ui.neonUnit.small)
         ctx.globalAlpha = 1
         ctx.lineWidth = STYLE.ui.buttonLineWidth
-        ctx.shadowColor = this.stroke
-        ctx.shadowBlur = STYLE.ui.buttonShadowBlur
 
         if (fpsCounter.enabled)
         {
-            ctx.strokeStyle = this.stroke
-            ctx.lineWidth = Math.max(STYLE.ui.buttonLineWidth, this.size * 0.12)
-            ctx.beginPath()
-            ctx.moveTo(boxX + markInset, this.y)
-            ctx.lineTo(boxX + this.size * 0.43, boxY + this.size - markInset)
-            ctx.lineTo(boxX + this.size - markInset, boxY + markInset)
-            ctx.stroke()
+            const stroke = this.stroke, size = this.size, y = this.y
+            const markWidth = Math.max(STYLE.ui.buttonLineWidth, size * 0.12)
+            drawGlowSprite('check|' + stroke + '|' + size + '|' + (y - boxY), boxX, boxY, size, size,
+                markWidth, STYLE.ui.buttonShadowBlur, () =>
+            {
+                ctx.strokeStyle = stroke
+                ctx.lineWidth = markWidth
+                ctx.shadowColor = stroke
+                ctx.shadowBlur = STYLE.ui.buttonShadowBlur
+                ctx.beginPath()
+                ctx.moveTo(boxX + markInset, y)
+                ctx.lineTo(boxX + size * 0.43, boxY + size - markInset)
+                ctx.lineTo(boxX + size - markInset, boxY + markInset)
+                ctx.stroke()
+            })
         }
 
-        ctx.shadowBlur = STYLE.ui.textShadowBlur
-        ctx.fillText(this.label, boxX + this.size * 1.55, this.y)
+        drawGlowText(this.label, boxX + this.size * 1.55, this.y, this.stroke, STYLE.ui.textShadowBlur, false)
         LAYOUT_PROBE.text(this.label, boxX + this.size * 1.55, this.y)
         if (LAYOUT_PROBE.boxes)
         {
@@ -415,19 +423,22 @@ class FpsCounter
         const panelX = x - padding
         const panelY = y - panelHeight / 2
 
-        ctx.fillStyle = STYLE.colors.ui.fpsPanelFill
-        ctx.strokeStyle = STYLE.colors.ui.fpsPanelStroke
-        ctx.lineWidth = STYLE.ui.fpsPanelLineWidth
-        ctx.shadowColor = STYLE.colors.ui.hudGlow
-        ctx.shadowBlur = STYLE.ui.textShadowBlur
-        ctx.fillRect(panelX, panelY, panelWidth, panelHeight)
-        ctx.strokeRect(panelX, panelY, panelWidth, panelHeight)
+        drawGlowRect('fps-panel', panelX, panelY, panelWidth, panelHeight, STYLE.ui.fpsPanelLineWidth,
+            STYLE.ui.textShadowBlur, (x, y, w, h) =>
+        {
+            ctx.fillStyle = STYLE.colors.ui.fpsPanelFill
+            ctx.strokeStyle = STYLE.colors.ui.fpsPanelStroke
+            ctx.lineWidth = STYLE.ui.fpsPanelLineWidth
+            ctx.shadowColor = STYLE.colors.ui.hudGlow
+            ctx.shadowBlur = STYLE.ui.textShadowBlur
+            ctx.fillRect(x, y, w, h)
+            ctx.strokeRect(x, y, w, h)
+        })
 
         ctx.fillStyle = STYLE.colors.ui.hudText
         ctx.strokeStyle = STYLE.colors.ui.hudGlow
         ctx.lineWidth = Math.max(1, STYLE.ui.fpsPanelLineWidth * 0.65)
-        ctx.strokeText(text, x, y)
-        ctx.fillText(text, x, y)
+        drawGlowText(text, x, y, STYLE.colors.ui.hudGlow, STYLE.ui.textShadowBlur, true)
         LAYOUT_PROBE.text(text, x, y)
         ctx.restore()
     }
@@ -593,31 +604,32 @@ class Menu
             {
                 draw: function(x, y, w, h)
                 {
-                    ctx.beginPath()
+                    const lineWidth = Math.round(STYLE.strokes.menuIconWidthRatio * h)
+                    drawGlowSprite('menu-icon|' + w + '|' + h, x, y, w, h, lineWidth, STYLE.ui.buttonShadowBlur, () =>
+                    {
+                        ctx.beginPath()
 
-                    ctx.lineWidth = Math.round(STYLE.strokes.menuIconWidthRatio * h)
+                        ctx.lineWidth = lineWidth
 
-                    let x1 = x + 0.1 * w, x2 = x + 0.9 * w
-                    let y1 = y + 0.3 * h
-                    let dy = 0.2 * h
-                    ctx.moveTo(x1, y1)
-                    ctx.lineTo(x2, y1)
+                        let x1 = x + 0.1 * w, x2 = x + 0.9 * w
+                        let y1 = y + 0.3 * h
+                        let dy = 0.2 * h
+                        ctx.moveTo(x1, y1)
+                        ctx.lineTo(x2, y1)
 
-                    ctx.moveTo(x1, y1 + dy)
-                    ctx.lineTo(x2, y1 + dy)
+                        ctx.moveTo(x1, y1 + dy)
+                        ctx.lineTo(x2, y1 + dy)
 
-                    ctx.moveTo(x1, y1 + dy * 2)
-                    ctx.lineTo(x2, y1 + dy * 2)
+                        ctx.moveTo(x1, y1 + dy * 2)
+                        ctx.lineTo(x2, y1 + dy * 2)
 
-                    ctx.strokeStyle = STYLE.colors.ui.hudGlow
-                    ctx.shadowColor = STYLE.colors.ui.hudGlow
-                    ctx.shadowBlur = STYLE.ui.buttonShadowBlur
-                    ctx.stroke()
-                    ctx.shadowBlur = 0
+                        ctx.strokeStyle = STYLE.colors.ui.hudGlow
+                        ctx.shadowColor = STYLE.colors.ui.hudGlow
+                        ctx.shadowBlur = STYLE.ui.buttonShadowBlur
+                        ctx.stroke()
+                    })
 
                     ctx.lineWidth = STYLE.strokes.defaultWidth
-
-                    ctx.closePath()
                 }
             }
         ]
@@ -1182,13 +1194,17 @@ class ContinueOffer
         ctx.save()
         ctx.fillStyle = STYLE.colors.ui.pauseOverlay
         ctx.fillRect(0, 0, this.width, this.height)
-        ctx.fillStyle   = STYLE.colors.ui.pausePanelFill
-        ctx.strokeStyle = STYLE.colors.ui.pausePanelStroke
-        ctx.lineWidth = STYLE.ui.pausePanelLineWidth
-        ctx.shadowColor = STYLE.colors.ui.pausePanelStroke
-        ctx.shadowBlur = STYLE.ui.buttonShadowBlur
-        ctx.fillRect(this.panel.x, this.panel.y, this.panel.width, this.panel.height)
-        ctx.strokeRect(this.panel.x, this.panel.y, this.panel.width, this.panel.height)
+        drawGlowRect('pause-panel', this.panel.x, this.panel.y, this.panel.width, this.panel.height,
+            STYLE.ui.pausePanelLineWidth, STYLE.ui.buttonShadowBlur, (x, y, w, h) =>
+        {
+            ctx.fillStyle   = STYLE.colors.ui.pausePanelFill
+            ctx.strokeStyle = STYLE.colors.ui.pausePanelStroke
+            ctx.lineWidth = STYLE.ui.pausePanelLineWidth
+            ctx.shadowColor = STYLE.colors.ui.pausePanelStroke
+            ctx.shadowBlur = STYLE.ui.buttonShadowBlur
+            ctx.fillRect(x, y, w, h)
+            ctx.strokeRect(x, y, w, h)
+        })
         ctx.restore()
 
         this.title.draw()

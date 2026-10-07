@@ -387,6 +387,10 @@ const STYLE = Object.freeze({
             envelopeLineWidth: screenHeightPercent(100 * 1.5 / 1080),
             envelopeGlowWidth: screenHeightPercent(100 * 5 / 1080),
             glowBlur: screenHeightPercent(100 * 8 / 1080),
+            // Halo strokes in place of the shadowBlur glow: extra width in
+            // glowBlur units (canvas px) and alpha, wide to narrow
+            haloWidths: Object.freeze([2.4, 1.2]),
+            haloAlphas: Object.freeze([0.07, 0.1]),
             sampleStep: 3
         })
     }),
@@ -478,6 +482,10 @@ const STYLE = Object.freeze({
         shockwaveEndRadius: screenHeightPercent(100 * 170 / 1080),
         shockwaveLineWidth: screenHeightPercent(100 * 3 / 1080),
         shockwaveGlowWidth: screenHeightPercent(100 * 9 / 1080),
+        // Halo strokes in place of the shadowBlur glow: extra width in
+        // shockwaveGlowWidth units (canvas px) and alpha, wide to narrow
+        shockwaveHaloWidths: Object.freeze([2.4, 1.2]),
+        shockwaveHaloAlphas: Object.freeze([0.12, 0.2]),
         shockwaveAlpha: 0.72,
         shakeDurationMs: 180,
         shakeMagnitudeX: screenWidthPercent(100 * 3.5 / 1920),

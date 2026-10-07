@@ -32,8 +32,6 @@ let scoreText =
         ctx.textBaseline = 'middle'
         ctx.font = fontSize + 'px ' + this.fontFamily
         ctx.lineWidth = Math.max(1, viewHeight * STYLE.ui.hudStageLineRatio)
-        ctx.shadowBlur = STYLE.ui.textShadowBlur + STYLE.ui.hudExtraShadowBlur
-        ctx.shadowColor = STYLE.colors.ui.hudGlow
         ctx.fillStyle = this.fill
         ctx.strokeStyle = STYLE.colors.ui.hudGlow
         const scoreTextValue = this.text + this.count[version]
@@ -88,8 +86,7 @@ let scoreText =
     drawHudText: function(text, x, y, align)
     {
         ctx.textAlign = align
-        ctx.strokeText(text, x, y)
-        ctx.fillText(text, x, y)
+        drawGlowText(text, x, y, STYLE.colors.ui.hudGlow, STYLE.ui.textShadowBlur + STYLE.ui.hudExtraShadowBlur, true)
         LAYOUT_PROBE.text(text, x, y)
     },
     drawStageIndicator: function(viewWidth, topY, fontSize)
@@ -111,11 +108,10 @@ let scoreText =
         {
             const x = centerX + (i - 2) * gap
 
-            ctx.shadowColor = i == activeStage ? STYLE.colors.ui.hudGlow : STYLE.colors.ui.hudMuted
-            ctx.strokeStyle = i == activeStage ? STYLE.colors.ui.hudGlow : STYLE.colors.ui.hudMuted
+            const glow = i == activeStage ? STYLE.colors.ui.hudGlow : STYLE.colors.ui.hudMuted
+            ctx.strokeStyle = glow
             ctx.fillStyle = i == activeStage ? STYLE.colors.ui.hudText : STYLE.colors.ui.hudMuted
-            ctx.strokeText(i, x, labelY)
-            ctx.fillText(i, x, labelY)
+            drawGlowText(String(i), x, labelY, glow, STYLE.ui.textShadowBlur + STYLE.ui.hudExtraShadowBlur, true)
 
             ctx.beginPath()
             ctx.arc(x, dotsY, dotRadius, 0, Math.PI * 2)
@@ -125,18 +121,18 @@ let scoreText =
     },
     drawStageDiamond: function(x, y, radius)
     {
-        ctx.save()
-        ctx.beginPath()
-        ctx.translate(x, y)
-        ctx.rotate(Math.PI / 4)
-        ctx.strokeStyle = STYLE.colors.ui.hudGlow
-        ctx.fillStyle = STYLE.colors.ui.transparent
-        ctx.shadowColor = STYLE.colors.ui.hudGlow
-        ctx.shadowBlur = STYLE.ui.textShadowBlur + STYLE.ui.stageExtraShadowBlur
-        ctx.lineWidth = Math.max(1, radius * 0.18)
-        ctx.strokeRect(-radius / 2, -radius / 2, radius, radius)
-        ctx.closePath()
-        ctx.restore()
+        const lineWidth = Math.max(1, radius * 0.18)
+        drawGlowSprite('stage-diamond|' + radius, x - radius, y - radius, radius * 2, radius * 2, lineWidth,
+            STYLE.ui.textShadowBlur + STYLE.ui.stageExtraShadowBlur, () =>
+        {
+            ctx.translate(x, y)
+            ctx.rotate(Math.PI / 4)
+            ctx.strokeStyle = STYLE.colors.ui.hudGlow
+            ctx.shadowColor = STYLE.colors.ui.hudGlow
+            ctx.shadowBlur = STYLE.ui.textShadowBlur + STYLE.ui.stageExtraShadowBlur
+            ctx.lineWidth = lineWidth
+            ctx.strokeRect(-radius / 2, -radius / 2, radius, radius)
+        })
     }
 }
 function scoreTextX()  { return 0.1 * width }

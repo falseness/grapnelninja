@@ -241,6 +241,67 @@ class Floor
         }
     }
 }
+// Glow sprite builders (drawGlowRect) of the ground strips: the only shadowBlur here
+function drawBadGroundGlowRect(x, y, w, h)
+{
+    const obstacleStyle = STYLE.badVersionEffects.obstacles
+    drawGlowRect('bad-ground', x, y, w, h, obstacleStyle.thinStrokeWidth, obstacleStyle.outerGlowWidth,
+        strokeBadGroundRect)
+}
+function drawClassicGroundGlowRect(x, y, w, h)
+{
+    drawGlowRect('classic-ground', x, y, w, h, STYLE.strokes.neonWidth, STYLE.strokes.neonGlowWidth,
+        strokeClassicGroundRect)
+}
+function drawClassicShellGlowRect(x, y, w, h)
+{
+    drawGlowRect('classic-shell', x, y, w, h, Math.max(1, STYLE.strokes.neonWidth) + STYLE.strokes.neonWidth,
+        STYLE.strokes.neonGlowWidth, drawClassicGroundShell)
+}
+// Run start (warmGlowSprites): a strip larger than the sprite core
+function warmGroundGlowSprites()
+{
+    if (version == 'bad')
+        drawBadGroundGlowRect(0, 0, height, height)
+    else
+    {
+        drawClassicGroundGlowRect(0, 0, height, height)
+        drawClassicShellGlowRect(0, 0, height, height)
+    }
+}
+function strokeBadGroundRect(x, y, w, h)
+{
+    const obstacleStyle = STYLE.badVersionEffects.obstacles
+    ctx.strokeStyle = obstacleStyle.groundStroke
+    ctx.lineWidth = obstacleStyle.thinStrokeWidth
+    ctx.globalAlpha = obstacleStyle.groundFillAlpha
+    ctx.shadowColor = obstacleStyle.groundLine
+    ctx.shadowBlur = obstacleStyle.outerGlowWidth
+    ctx.strokeRect(x, y, w, h)
+}
+function strokeClassicGroundRect(x, y, w, h)
+{
+    ctx.strokeStyle = STYLE.colors.ground.stroke
+    ctx.lineWidth = STYLE.strokes.neonWidth
+    ctx.shadowColor = STYLE.colors.ground.line
+    ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+    ctx.strokeRect(x, y, w, h)
+}
+function drawClassicGroundShell(x, y, w, h)
+{
+    const bar = Math.max(1, STYLE.strokes.neonWidth)
+    ctx.strokeStyle = STYLE.colors.ground.line
+    ctx.lineWidth = STYLE.strokes.neonWidth
+    ctx.globalAlpha = 0.58
+    ctx.shadowColor = STYLE.colors.ground.line
+    ctx.shadowBlur = STYLE.strokes.neonGlowWidth
+    ctx.strokeRect(x, y, w, h)
+
+    ctx.globalAlpha = 0.2
+    ctx.fillStyle = STYLE.colors.ground.line
+    ctx.fillRect(x, y, w, bar)
+    ctx.fillRect(x, y + h - bar, w, bar)
+}
 class SideFloor extends Floor
 {
     constructor(bottomBorder, topBorder, creations)
@@ -367,12 +428,7 @@ class SideFloor extends Floor
         ctx.fillStyle = obstacleStyle.groundCapFill
         ctx.fillRect(x, capY, surfaceWidth, capHeight)
 
-        ctx.strokeStyle = obstacleStyle.groundStroke
-        ctx.lineWidth = obstacleStyle.thinStrokeWidth
-        ctx.globalAlpha = obstacleStyle.groundFillAlpha
-        ctx.shadowColor = obstacleStyle.groundLine
-        ctx.shadowBlur = obstacleStyle.outerGlowWidth
-        ctx.strokeRect(x, y, surfaceWidth, surfaceHeight)
+        drawBadGroundGlowRect(x, y, surfaceWidth, surfaceHeight)
         ctx.restore()
 
         this.drawContinuousNeonBoundary(bounds)
@@ -389,11 +445,7 @@ class SideFloor extends Floor
         ctx.fillStyle = STYLE.colors.ground.fill
         ctx.fillRect(x, y, surfaceWidth, surfaceHeight)
 
-        ctx.strokeStyle = STYLE.colors.ground.stroke
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.shadowColor = STYLE.colors.ground.line
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
-        ctx.strokeRect(x, y, surfaceWidth, surfaceHeight)
+        drawClassicGroundGlowRect(x, y, surfaceWidth, surfaceHeight)
         ctx.restore()
 
         this.drawClassicSurfaceShell(bounds)
@@ -412,19 +464,7 @@ class SideFloor extends Floor
         if (shellWidth <= 0 || shellHeight <= 0)
             return
 
-        ctx.save()
-        ctx.strokeStyle = STYLE.colors.ground.line
-        ctx.lineWidth = STYLE.strokes.neonWidth
-        ctx.globalAlpha = 0.58
-        ctx.shadowColor = STYLE.colors.ground.line
-        ctx.shadowBlur = STYLE.strokes.neonGlowWidth
-        ctx.strokeRect(x + inset, y + inset, shellWidth, shellHeight)
-
-        ctx.globalAlpha = 0.2
-        ctx.fillStyle = STYLE.colors.ground.line
-        ctx.fillRect(x + inset, y + inset, shellWidth, Math.max(1, STYLE.strokes.neonWidth))
-        ctx.fillRect(x + inset, y + inset + shellHeight - Math.max(1, STYLE.strokes.neonWidth), shellWidth, Math.max(1, STYLE.strokes.neonWidth))
-        ctx.restore()
+        drawClassicShellGlowRect(x + inset, y + inset, shellWidth, shellHeight)
     }
     drawClassicContinuousBoundary(bounds)
     {

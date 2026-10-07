@@ -2288,6 +2288,12 @@ class BloomRenderer
         grapnel.draw()
         for (let i = 0; i < floors.length; ++i)
             floors[i].drawGlow()
+        // Hazard trail envelopes and shockwave rings: no shadowBlur, their
+        // glow comes from here
+        if (version == 'bad' && visualEffects.playerTrail.shouldDraw())
+            for (let i = 0; i < floors.length; ++i)
+                floors[i].drawTracks()
+        visualEffects.screenEffects.drawShockwaveGlow()
         grapnel.drawHook()
         this.drawNinjaRing(gameState.ninja)
         visualEffects.particles.drawLayer(BloomRenderer.anyParticle)
@@ -2476,42 +2482,67 @@ class ScreenEffects
         const now = performance.now()
         const config = STYLE.screenEffects
 
+        for (let i = this.shockwaves.length - 1; i >= 0; --i)
+        {
+            if (now >= this.shockwaves[i].end)
+                this.shockwaves.splice(i, 1)
+        }
+        if (!this.shockwaves.length)
+            return
+
         this.ctx.save()
         this.ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
             ? STYLE.visualStability.effectCompositeOperation
             : 'lighter'
         this.ctx.strokeStyle = STYLE.colors.player.cyan
-        this.ctx.shadowColor = STYLE.colors.player.cyan
-        this.ctx.lineWidth = config.shockwaveLineWidth
-        this.ctx.shadowBlur = config.shockwaveGlowWidth
 
+        // The radius changes every frame, so the glow is not a sprite: soft
+        // halo strokes as wide as the old shadowBlur (canvas px), plus bloom
+        const blur = config.shockwaveGlowWidth / this.ctx.getTransform().a
+        for (let i = 0; i < config.shockwaveHaloAlphas.length; ++i)
+        {
+            this.strokeShockwaves(this.ctx, now, config.shockwaveLineWidth + blur * config.shockwaveHaloWidths[i],
+                config.shockwaveHaloAlphas[i])
+        }
+        this.strokeShockwaves(this.ctx, now, config.shockwaveLineWidth, 1)
+
+        this.ctx.restore()
+    }
+    // Bloom pass (global ctx is the glow canvas): the rings as plain lines
+    drawShockwaveGlow()
+    {
+        if (!this.shouldApply() || !this.shockwaves.length)
+            return
+
+        ctx.strokeStyle = STYLE.colors.player.cyan
+        this.strokeShockwaves(ctx, performance.now(), STYLE.screenEffects.shockwaveLineWidth, 1)
+        ctx.globalAlpha = 1
+    }
+    strokeShockwaves(context, now, lineWidth, alpha)
+    {
+        const config = STYLE.screenEffects
+        const stableAlpha = STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.stableEffectAlphaMultiplier
+            : 1
+
+        context.lineWidth = lineWidth
         for (let i = this.shockwaves.length - 1; i >= 0; --i)
         {
             const shockwave = this.shockwaves[i]
-
             if (now >= shockwave.end)
-            {
-                this.shockwaves.splice(i, 1)
                 continue
-            }
 
             const progress = (now - shockwave.start) / Math.max(1, config.shockwaveDurationMs)
             const eased = 1 - Math.pow(1 - progress, 2)
             const radius = config.shockwaveStartRadius
                 + (config.shockwaveEndRadius - config.shockwaveStartRadius) * eased
 
-            const stableAlpha = STYLE.visualStability.stableBrightness
-                ? STYLE.visualStability.stableEffectAlphaMultiplier
-                : 1
-
-            this.ctx.globalAlpha = config.shockwaveAlpha * stableAlpha * (1 - progress)
-            this.ctx.beginPath()
-            this.ctx.arc(shockwave.x, shockwave.y, radius, 0, Math.PI * 2)
-            this.ctx.stroke()
-            this.ctx.closePath()
+            context.globalAlpha = config.shockwaveAlpha * stableAlpha * (1 - progress) * alpha
+            context.beginPath()
+            context.arc(shockwave.x, shockwave.y, radius, 0, Math.PI * 2)
+            context.stroke()
+            context.closePath()
         }
-
-        this.ctx.restore()
     }
     end()
     {

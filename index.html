@@ -81,6 +81,7 @@
         </div>
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
+        <script src = "render/glowsprites.js"></script>
         <script src = "platform.js"></script>
         <script src = "progress.js"></script>
         <script src = 'menu.js'></script>
@@ -188,6 +189,7 @@
                 visualEffects.background.resetRandomFlashes()
 
                 chooseVersion()
+                warmGlowSprites()
                 
                 game = requestAnimationFrame(gameLoop)
             }

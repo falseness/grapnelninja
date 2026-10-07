@@ -232,28 +232,41 @@ class MultipointTrackLine extends TrackLine
         ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].min + screen.y)
         ctx.closePath()
 
-        ctx.shadowColor = this.stroke
+        ctx.fillStyle = this.stroke
+        ctx.strokeStyle = this.stroke
+        ctx.lineJoin = 'round'
+
+        // Bloom pass (BloomRenderer): the envelope outline
+        if (bloomPassActive)
+        {
+            ctx.globalAlpha = config.envelopeGlowAlpha
+            ctx.lineWidth = config.envelopeGlowWidth
+            ctx.stroke()
+            ctx.restore()
+            return
+        }
+
         ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
             ? STYLE.visualStability.effectCompositeOperation
             : 'lighter'
 
-        ctx.fillStyle = this.stroke
-        ctx.shadowBlur = config.glowBlur
-        ctx.globalAlpha = config.envelopeGlowAlpha
-        ctx.fill()
+        // The shape changes every frame, so its glow is not a sprite: soft
+        // halo strokes as wide as the old shadowBlur (canvas px), plus bloom
+        const blur = config.glowBlur / ctx.getTransform().a
+        for (let i = 0; i < config.haloAlphas.length; ++i)
+        {
+            ctx.globalAlpha = config.haloAlphas[i]
+            ctx.lineWidth = config.envelopeGlowWidth + blur * config.haloWidths[i]
+            ctx.stroke()
+        }
 
-        ctx.shadowBlur = 0
         ctx.globalAlpha = config.envelopeAlpha
         ctx.fill()
 
-        ctx.strokeStyle = this.stroke
-        ctx.lineJoin = 'round'
         ctx.lineWidth = config.envelopeGlowWidth
-        ctx.shadowBlur = config.glowBlur
         ctx.globalAlpha = config.envelopeGlowAlpha
         ctx.stroke()
 
-        ctx.shadowBlur = 0
         ctx.lineWidth = config.envelopeLineWidth
         ctx.globalAlpha = config.outlineAlpha
         ctx.stroke()

@@ -75,6 +75,37 @@ function drawFpsCounterLayer(gameState)
     visualEffects.ui.drawFpsCounter(gameState)
 }
 
+// Run start: draws the HUD and the ground strips once into a scratch canvas
+// in the game transform, so their glow sprites (render/glowsprites.js) are
+// built here and the first frames do no shadowBlur work
+function warmGlowSprites()
+{
+    if (!warmGlowSprites.ctx)
+        warmGlowSprites.ctx = document.createElement('canvas').getContext('2d')
+
+    const mainCtx = ctx
+    const scratch = warmGlowSprites.ctx
+    const boxes = LAYOUT_PROBE.boxes
+    scratch.setTransform(mainCtx.getTransform())
+    scratch.scale(scale[version], scale[version])
+    LAYOUT_PROBE.boxes = null
+    ctx = scratch
+    try
+    {
+        if (visualEffects.ui.shouldDraw())
+        {
+            scoreText.draw()
+            menu.button.draw()
+        }
+        warmGroundGlowSprites()
+    }
+    finally
+    {
+        ctx = mainCtx
+        LAYOUT_PROBE.boxes = boxes
+    }
+}
+
 function draw()
 {
     drawBackgroundLayer()

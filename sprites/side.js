@@ -162,12 +162,7 @@ class Side extends Rect
         ctx.fillStyle = obstacleStyle.groundCapFill
         ctx.fillRect(x, capY - Math.max(2, screenHeightPercent(STYLE.spriteGeometry.bandHeightPercent)), this.width, Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent)))
 
-        ctx.strokeStyle = obstacleStyle.groundStroke
-        ctx.lineWidth = obstacleStyle.thinStrokeWidth
-        ctx.globalAlpha = obstacleStyle.groundFillAlpha
-        ctx.shadowColor = obstacleStyle.groundLine
-        ctx.shadowBlur = obstacleStyle.outerGlowWidth
-        ctx.strokeRect(x, y, this.width, this.height)
+        drawBadGroundGlowRect(x, y, this.width, this.height)
         ctx.restore()
     }
     drawNeonBoundary()
