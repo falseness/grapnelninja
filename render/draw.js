@@ -68,7 +68,7 @@ function drawPlayerGlowLayer(gameState)
     visualEffects.playerGlow.draw(gameState, effects.isShaking ? effects.shakeOffset : NO_SHAKE)
 }
 
-// The ball goes over particles, bloom and colour grade, so its dark centre and
+// The ball goes over particles, bloom and colour grade, so its blue body and
 // cyan ring stay readable at the small pre-overhaul size
 function drawPlayerLayer()
 {

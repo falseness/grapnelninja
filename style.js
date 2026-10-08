@@ -36,8 +36,8 @@ const STYLE = Object.freeze({
             nearRock: '#0c0726'
         }),
         player: Object.freeze({
-            fill: '#0a1446',
-            stroke: '#38e8ff',
+            fill: '#125dff',
+            stroke: '#30d5c8',
             core: '#6fa8ff',
             highlight: '#b8f7ff',
             centre: '#050a2e',
@@ -472,6 +472,8 @@ const STYLE = Object.freeze({
         rotationMarkerAlpha: 0.55,
         // Pre-overhaul size (e430f92): see Ninja.getRingOuterRadius
         minScreenRadius: screenHeightPercent(100 * 6 / 1080),
+        innerHighlightRadiusRatio: 0.42,
+        innerHighlightAlpha: 0.34,
         ringWidthRatio: 0.38,
         ringCoreWidthRatio: 0.35,
         rimWidthRatio: 0.22,

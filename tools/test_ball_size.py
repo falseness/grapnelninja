@@ -2,7 +2,7 @@
 
 On render_snapshot's frozen clock (same seeded input), bad and classic at
 1920x1080@1 and 844x390@3, the ball's drawn outer radius is measured from
-pixels: along 8 directions from the ninja centre out to RMAX, the outermost
+isolated body pixels (excluding crossing trail/obstacle edges): along 8 directions from the ninja centre out to RMAX, the outermost
 brightness drop of at least EDGE_DROP_RATIO of the largest one marks where the
 ring colour ends (outer edge); the
 median of the 8 directions is the radius of a capture, the median over TICKS
@@ -13,10 +13,8 @@ Asserts per mode/viewport: HEAD (BALL_SIZE_REV, default worktree) within
 max(1 CSS px, 10%) of BALL_SIZE_ORIGINAL (default e430f92, before the
 overhaul), and BALL_SIZE_PARENT (default 1f91051, the enlarged TASK-189 ball)
 larger than the original. Where the hitbox is bigger than the minimum radius
-(classic on desktop) the parent only grew by its wider ring. HEAD's ball also
-keeps its dark centre: the median luminance of the centre (inside
-CENTRE_RATIO of the measured radius) is at most MAX_CENTRE_TO_RING of the
-ring's (between RING_RATIOS of it), so trail and bloom glow do not wash it out.
+(classic on desktop) the parent only grew by its wider ring. HEAD's ball keeps the restored blue fill: centre luminance must be at least
+MIN_CENTRE_TO_RING of the cyan edge (TASK-221 supersedes the dark centre).
 Writes ball-size.json and before-after.png (4x crops)
 into BALL_SIZE_EVIDENCE_DIR when it is set.
 """
@@ -52,7 +50,7 @@ EDGE_DROP_RATIO = 0.5
 CROP_CSS_PX = 24
 CENTRE_RATIO = 0.45
 RING_RATIOS = (0.65, 1.0)
-MAX_CENTRE_TO_RING = 0.6
+MIN_CENTRE_TO_RING = 0.6
 ZOOM = 4
 
 # Centre of the ninja in canvas pixels and canvas pixels per CSS pixel
@@ -131,17 +129,27 @@ def run(rev):
                     page.evaluate(render_snapshot.ADVANCE_SCRIPT, tick)
                     png = render_snapshot.png_bytes(page.evaluate('() => __snap.capture()'))
                     probe = page.evaluate(PROBE_SCRIPT)
-                    result['captures'][(vp['name'], mode, tick)] = {'png': png, 'probe': probe}
+                    # Measure the body on a shared dark backdrop, not trail/bloom edges.
+                    body = page.evaluate('''() => {
+                        const rotation=ninja.visualRotation;
+                        ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#12102c';
+                        ctx.fillRect(0,0,canvas.width,canvas.height);ctx.restore();
+                        ctx.save();ctx.scale(scale[version],scale[version]);ninja.draw();ctx.restore();
+                        ninja.visualRotation=rotation;
+                        return canvas.toDataURL();
+                    }''')
+                    result['captures'][(vp['name'], mode, tick)] = {
+                        'png': png, 'body': render_snapshot.png_bytes(body), 'probe': probe}
                 context.close()
     return result
 
 
-def measure(result):
+def measure(result, isolated=True):
     """{viewport: {mode: {radius_css, per_tick}}} from run()."""
     out = {}
     for (vp_name, mode, tick), c in result['captures'].items():
         vp = next(v for v in VIEWPORTS if v['name'] == vp_name)
-        img = np.asarray(Image.open(io.BytesIO(c['png'])).convert('RGB'))
+        img = np.asarray(Image.open(io.BytesIO(c['body'] if isolated else c['png'])).convert('RGB'))
         p = c['probe']
         rmax = RMAX_FACTOR * max(12 / 1080 * img.shape[0], p['hitbox'])
         radius, samples = outer_radius(img, p['x'], p['y'], rmax)
@@ -197,11 +205,15 @@ class BallSizeTest(unittest.TestCase):
         cls.results = {name: run(rev) for name, rev in
                        [('original', ORIGINAL), ('parent', PARENT), ('head', REV)]}
         cls.sizes = {name: measure(r) for name, r in cls.results.items()}
+        # Keep TASK-212's historical enlargement regression on its original
+        # full-scene measurement; the new restoration comparison isolates the body.
+        legacy_sizes = {name: measure(cls.results[name], isolated=False)
+                        for name in ('original', 'parent')}
         cls.report = {'revs': {name: r['rev'] for name, r in cls.results.items()},
                       'ticks': TICKS, 'directions': DIRECTIONS,
                       'limit': f'|head - original| <= max({TOLERANCE_CSS_PX} CSS px, '
                                f'{TOLERANCE_RATIO:.0%} of original); parent > original; '
-                               f'head centre/ring luminance <= {MAX_CENTRE_TO_RING} at every tick',
+                               f'head centre/ring luminance >= {MIN_CENTRE_TO_RING} at every tick',
                       'page_errors': {name: r['page_errors'] for name, r in cls.results.items()},
                       'viewports': {}}
         for vp in VIEWPORTS:
@@ -215,10 +227,14 @@ class BallSizeTest(unittest.TestCase):
                     'limit_css_px': limit,
                     'head_minus_original_css_px': head - orig,
                     'head_within_limit': abs(head - orig) <= limit,
-                    'parent_larger': parent > orig,
+                    'parent_larger': (legacy_sizes['parent'][vp['name']][mode]['radius_css_px'] >
+                                      legacy_sizes['original'][vp['name']][mode]['radius_css_px']),
+                    'historical_enlargement_scene_radii': {
+                        n: legacy_sizes[n][vp['name']][mode]['radius_css_px']
+                        for n in ('original', 'parent')},
                     'centre_to_ring': {n: cls.sizes[n][vp['name']][mode]['centre_to_ring']
                                        for n in ('original', 'parent', 'head')},
-                    'head_centre_dark': cls.sizes['head'][vp['name']][mode]['centre_to_ring'] <= MAX_CENTRE_TO_RING,
+                    'head_centre_filled': cls.sizes['head'][vp['name']][mode]['centre_to_ring'] >= MIN_CENTRE_TO_RING,
                     'detail': {n: cls.sizes[n][vp['name']][mode] for n in ('original', 'parent', 'head')}}
         if EVIDENCE:
             out = Path(EVIDENCE)
@@ -246,13 +262,13 @@ class BallSizeTest(unittest.TestCase):
             for mode, e in modes.items():
                 self.assertTrue(e['parent_larger'], f'{vp} {mode}: {e["outer_radius_css_px"]}')
 
-    def test_head_centre_darker_than_ring(self):
+    def test_head_centre_is_filled_blue(self):
         for vp, modes in self.report['viewports'].items():
             for mode, e in modes.items():
                 c = e['centre_to_ring']
                 print(f'{vp} {mode}: centre/ring luminance original {c["original"]:.2f} '
-                      f'parent {c["parent"]:.2f} head {c["head"]:.2f} (max {MAX_CENTRE_TO_RING})')
-                self.assertTrue(e['head_centre_dark'], f'{vp} {mode}: {c}')
+                      f'parent {c["parent"]:.2f} head {c["head"]:.2f} (min {MIN_CENTRE_TO_RING})')
+                self.assertTrue(e['head_centre_filled'], f'{vp} {mode}: {c}')
 
 
 if __name__ == '__main__':

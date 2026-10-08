@@ -36,7 +36,7 @@ PROBES = '''() => {
     }
     const player = Ninja.prototype.draw
     Ninja.prototype.draw = function() {
-        const r = this.getRingOuterRadius() * (1 - STYLE.playerVisuals.ringWidthRatio / 2)
+        const r = this.getVisualRadius()
         for (let i = 0; i < 8; i++) {
             const a = i * Math.PI / 4
             point('ring', this.x + screen.x + r * Math.cos(a),
@@ -182,7 +182,7 @@ class LightIsolationTests(unittest.TestCase):
                                     orderProbe.layer = name
                                     if (name === 'drawPlayerLayer') {
                                         Ninja.glowSprite = null
-                                        const r = ninja.getRingOuterRadius() * (1 - STYLE.playerVisuals.ringWidthRatio / 2)
+                                        const r = ninja.getVisualRadius()
                                         orderProbe.points = Array.from({length: 16}, (_, i) => {
                                             const a = i * Math.PI / 8
                                             const p = ctx.getTransform().transformPoint({

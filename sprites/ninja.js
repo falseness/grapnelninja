@@ -201,7 +201,7 @@ class Ninja
         ctx.globalAlpha = blinkAlpha
         if (sprite.halo)
             ctx.drawImage(sprite.halo, -sprite.haloHalf, -sprite.haloHalf, sprite.haloHalf * 2, sprite.haloHalf * 2)
-        // Ring, dark centre and inner rim are one pre-rendered image: no shadowBlur per frame
+        // Blue body, cyan edge and highlight share one cached image.
         ctx.drawImage(sprite.canvas, -sprite.half, -sprite.half, sprite.half * 2, sprite.half * 2)
 
         ctx.rotate(this.visualRotation)
@@ -217,13 +217,14 @@ class Ninja
         const config = STYLE.playerVisuals
         const density = Math.hypot(transform.a, transform.b) || 1
         const pixelScale = Math.max(0.25, Math.min(config.maxSpritePixelScale, Math.ceil(density * 4) / 4))
-        const key = [radius, fill, stroke, pixelScale, STYLE.features.innerGlow, STYLE.player.outerGlow].join('|')
+        const edgeWidth = STYLE.strokes.neonWidth / scale[version]
+        const key = [radius, edgeWidth, fill, stroke, pixelScale, STYLE.features.innerGlow, STYLE.player.outerGlow].join('|')
         const cached = Ninja.glowSprite
 
         if (cached && cached.key === key)
             return cached
 
-        const ringWidth = radius * config.ringWidthRatio
+        const ringWidth = edgeWidth
         const ringRadius = radius - ringWidth * 0.5
         const half = radius * config.spriteRadiusRatio
         const spriteCanvas = document.createElement('canvas')
@@ -238,51 +239,23 @@ class Ninja
             spriteCtx.arc(0, 0, ringRadius, 0, Math.PI * 2, false)
         }
 
-        // Dark navy centre, a little lighter towards the ring
-        const centre = spriteCtx.createRadialGradient(0, 0, 0, 0, 0, radius)
-        centre.addColorStop(0, STYLE.colors.player.centre)
-        centre.addColorStop(1, fill)
-        spriteCtx.beginPath()
-        spriteCtx.arc(0, 0, radius, 0, Math.PI * 2, false)
-        spriteCtx.fillStyle = centre
-        spriteCtx.fill()
-
-        if (STYLE.features.innerGlow)
-        {
-            // Halo: the ring blurred (shadowBlur works in canvas pixels), clipped to
-            // the ball and faint, so the centre stays dark
-            spriteCtx.save()
-            spriteCtx.clip()
-            spriteCtx.globalAlpha = config.haloAlpha
-            spriteCtx.strokeStyle = STYLE.colors.player.halo
-            spriteCtx.lineWidth = ringWidth
-            spriteCtx.shadowColor = STYLE.colors.player.halo
-            spriteCtx.shadowBlur = radius * config.haloBlurRatio * fit
-            ring()
-            spriteCtx.stroke()
-            spriteCtx.restore()
-        }
-
-        // Thick cyan ring with a thin pale hot core line along its middle
+        // Original e430f92 filled body, fitted inside the unchanged outer edge.
         ring()
+        spriteCtx.fillStyle = fill
+        spriteCtx.fill()
         spriteCtx.strokeStyle = stroke
         spriteCtx.lineWidth = ringWidth
         spriteCtx.stroke()
-        ring()
-        spriteCtx.strokeStyle = STYLE.colors.player.highlight
-        spriteCtx.lineWidth = ringWidth * config.ringCoreWidthRatio
-        spriteCtx.stroke()
 
-        // Thin hot rim at the original outer edge keeps the small ring crisp
-        // against its restored halo without changing its drawn radius.
-        const rimWidth = ringWidth * config.rimWidthRatio
-        spriteCtx.beginPath()
-        spriteCtx.arc(0, 0, radius - rimWidth * 0.5, 0, Math.PI * 2, false)
-        spriteCtx.globalAlpha = config.rimAlpha
-        spriteCtx.strokeStyle = STYLE.colors.player.highlight
-        spriteCtx.lineWidth = rimWidth
-        spriteCtx.stroke()
-        spriteCtx.globalAlpha = STYLE.alpha.full
+        if (STYLE.features.innerGlow)
+        {
+            spriteCtx.beginPath()
+            spriteCtx.arc(0, 0, ringRadius * config.innerHighlightRadiusRatio, 0, Math.PI * 2)
+            spriteCtx.fillStyle = STYLE.colors.player.highlight
+            spriteCtx.globalAlpha = config.innerHighlightAlpha
+            spriteCtx.fill()
+            spriteCtx.globalAlpha = STYLE.alpha.full
+        }
 
         // Separate cache keeps the ring's original pixel grid and antialiasing.
         const haloHalf = radius * config.outerHaloRadiusRatio
