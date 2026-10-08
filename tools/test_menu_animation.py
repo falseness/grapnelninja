@@ -8,7 +8,7 @@ from render_snapshot import CLOCK_SCRIPT, boot_frozen
 
 
 class MenuAnimationTest(unittest.TestCase):
-    def test_menu_lifecycle_and_drift(self):
+    def test_menu_lifecycle_and_stillness(self):
         with ExitStack() as stack:
             url, browser = start_browser_test(Path(__file__).resolve().parent.parent, stack.callback)
             context = browser.new_context(viewport={'width': 1920, 'height': 1080})
@@ -53,8 +53,7 @@ class MenuAnimationTest(unittest.TestCase):
             self.assertEqual(result['idle'], {'menus': 2, 'worlds': 0, 'steps': 0})
             self.assertEqual(result['paused'], result['idle'])
             self.assertTrue(result['returned'])
-            self.assertGreater(result['drift'], 0)
-            self.assertLessEqual(result['drift'], 10)
+            self.assertEqual(result['drift'], 0)
 
 
 if __name__ == '__main__':

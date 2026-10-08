@@ -188,12 +188,12 @@ class BackgroundRenderer
         this.drawNearLayer(width, height, this.getMenuLayerShift(1.5))
         this.drawVignette(width, height)
     }
-    // At most 1.7 logical px/s: below the 10 CSS px / 3 s still-camera
-    // cap at the supported viewports. Never inherit a previous game's camera.
+    // Menu cave layers share the spatial camera parallax of the game.
+    // Only the ambient motes have an animation clock.
     getMenuLayerShift(depth)
     {
-        const time = QUALITY.backgroundMotion ? performance.now() / 16000 : 0
-        return {x: Math.sin(time) * 16 * depth, y: (Math.cos(time) - 1) * 8 * depth}
+        const layer = depth == 1 ? STYLE.caveLayers.crystals : STYLE.caveLayers.nearRocks
+        return this.getLayerShift(LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height, layer)
     }
     // The removed decorations consumed the shared gameplay RNG once per scene
     // per run: 40 draws in game, 18 in the menu. Keep those stream positions so
