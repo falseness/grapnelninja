@@ -1233,6 +1233,7 @@ class LightmapRenderer
         this.scale = isTouchFirstDevice()
             ? STYLE.lights.touchResolutionScale : STYLE.lights.resolutionScale
         this.enabled = true
+        this.hasLights = false
         this.lightCanvas = document.createElement('canvas')
         this.lightCtx = this.lightCanvas.getContext('2d')
         // Unit-radius gradients by colour; drawRadialLight scales them to size
@@ -1261,6 +1262,7 @@ class LightmapRenderer
 
         this.resize()
         this.lightCtx.clearRect(0, 0, this.lightCanvas.width, this.lightCanvas.height)
+        this.hasLights = false
     }
     // x, y in world-on-screen units (as drawn under ctx.scale(scale[version])),
     // radius in screen px at 1080. Lights fully off screen are skipped.
@@ -1281,6 +1283,7 @@ class LightmapRenderer
         lightCtx.globalAlpha = alpha
         lightCtx.fillStyle = this.getLightGradient(color)
         lightCtx.fillRect(-1, -1, 2, 2)
+        this.hasLights = true
         return true
     }
     getLightGradient(color)
@@ -1438,7 +1441,9 @@ class LightmapRenderer
     }
     composite()
     {
-        if (!this.shouldDraw())
+        // A fully transparent lightmap cannot affect the frame. Avoid the
+        // full-canvas blend when all world lights were culled.
+        if (!this.shouldDraw() || !this.hasLights)
             return
 
         const viewWidth = LOGICAL_VIEWPORT.width / scale[version]

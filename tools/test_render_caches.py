@@ -6,6 +6,58 @@ from browser_test_support import start_browser_test, wait_for_boot
 
 
 class RenderCacheTests(unittest.TestCase):
+    def test_empty_lightmap_skips_composite_without_changing_pixels(self):
+        url, browser = start_browser_test(Path(__file__).resolve().parents[1], self.addCleanup)
+        page = browser.new_page()
+        self.addCleanup(page.close)
+        page.goto(url + 'index.html')
+        wait_for_boot(page)
+        result = page.evaluate("""() => {
+            startGame('classic')
+            const canvas = document.createElement('canvas')
+            canvas.width = 400; canvas.height = 200
+            const context = canvas.getContext('2d')
+            const lights = new LightmapRenderer(context, canvas)
+            let composites = 0
+            const original = context.drawImage.bind(context)
+            context.drawImage = (...args) => { ++composites; original(...args) }
+            const paint = () => {
+                context.fillStyle = '#102040'
+                context.fillRect(0, 0, 400, 200)
+            }
+            const pixels = () => context.getImageData(0, 0, 400, 200).data
+            paint()
+            const before = pixels()
+            lights.clear()
+            lights.composite()
+            const emptyCalls = composites
+            const offscreen = lights.drawRadialLight(-1e6, -1e6, 140, '#00ffff', .5)
+            lights.composite()
+            const offscreenCalls = composites
+            lights.lightCtx.save()
+            const light = lights.drawRadialLight(100, 100, 140, '#00ffff', .5)
+            lights.lightCtx.restore()
+            lights.composite()
+            const litCalls = composites
+            const litPixels = pixels().some((v, i) => v !== before[i])
+            lights.clear()
+            paint()
+            lights.composite()
+            const clearedCalls = composites
+            const optimized = pixels()
+            // Force the original full-canvas composite of the cleared bitmap.
+            lights.hasLights = true
+            lights.composite()
+            const reference = pixels()
+            return {emptyCalls, offscreen, offscreenCalls, light, litCalls,
+                litPixels, clearedCalls,
+                same: optimized.every((v, i) => v === reference[i] && v === before[i])}
+        }""")
+        self.assertEqual(result, dict(emptyCalls=0, offscreen=False, offscreenCalls=0,
+                                     light=True, litCalls=1, litPixels=True,
+                                     clearedCalls=1, same=True))
+        print('PASS empty lightmap composite:', result, flush=True)
+
     def test_text_metrics_and_font_invalidation(self):
         url, browser = start_browser_test(Path(__file__).resolve().parents[1], self.addCleanup)
         page = browser.new_page()
