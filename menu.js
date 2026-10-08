@@ -530,7 +530,8 @@ class Menu
             y: 0.52 * this.height   ,
             width: 0.4 * this.width ,
             height: 0.1 * this.height,
-            stroke: STYLE.colors.ui.buttonDangerStroke,
+            fill: STYLE.colors.ui.mainButtonFill,
+            stroke: STYLE.colors.ui.mainButtonStroke,
             neon: true
         },
         {

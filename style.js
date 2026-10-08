@@ -107,6 +107,8 @@ const STYLE = Object.freeze({
             buttonFill: 'rgba(6, 3, 26, 0.72)',
             buttonStroke: '#30d5c8',
             buttonDangerStroke: '#ff3d71',
+            mainButtonFill: 'rgba(82, 18, 46, 0.88)',
+            mainButtonStroke: '#ff7097',
             buttonText: '#d8fbff',
             buttonShadow: 'rgba(48, 213, 200, 0.45)',
             transparent: 'rgba(0, 0, 0, 0)',
