@@ -6,11 +6,11 @@ two runs of one revision give byte-identical PNGs and identical game states.
 Usage: python3 tools/visual_gallery.py --rev worktree|<git rev> --out DIR
        python3 tools/visual_gallery.py --compare-state A.json B.json
 --rev writes into DIR: <viewport>-menu.png and <viewport>-<mode>-tick<NNNN>.png
-for desktop 1920x1080@1 and phone 844x390@3; <viewport>-<mode>-pause.png (the
+for desktop 1920x1080@1 and phone 843x390@3; <viewport>-<mode>-pause.png (the
 pause screen opened after the last tick, listed under 'screens': no state
-check, it runs after every state capture); gif-bad.gif and gif-classic.gif
-(GIF_FRAMES consecutive frames at 15 fps from each mode's GIF_CAPTURE, scaled to
-960x540); sheet.png (the reference AI cover top-left, then every capture,
+check, it runs after every state capture); gameplay-gif-{mode}.gif (camera
+parallax); gif-bad.gif and gif-classic.gif (8 s fixed ember scene at 15 fps,
+native phone scale plus labelled 3x crops); phone-{mode}-embers.png; sheet.png (the reference AI cover top-left, then every capture,
 labelled); gif-menu.gif (3 s of idle menu animation); manifest.json (rev,
 viewport, mode, tick and the game state per capture).
 --compare-state prints one line per capture and 'differences: N' (exit 1 if N > 0).
@@ -24,6 +24,8 @@ from contextlib import ExitStack
 from pathlib import Path
 import subprocess
 import sys
+
+import ember_gallery
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -125,6 +127,7 @@ def run(rev, out, log=print):
     out.mkdir(parents=True, exist_ok=True)
     shots, states, gifs, screens, errors = {}, {}, {}, {}, []
     gif_states = {}
+    ember_gifs, ember_info = {}, {}
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
         url, browser = start_browser_test(root, stack.callback)
@@ -179,6 +182,9 @@ def run(rev, out, log=print):
                         gif_states[mode] = frame_states
                     page.evaluate('() => menu.startPause()')
                     screens[f'{vp["name"]}-{mode}-pause'] = png_bytes(page.evaluate('() => __snap.capture()'))
+                if vp['name'] == 'phone' and mode in MODES:
+                    ember_gifs[mode], ember_info[mode] = ember_gallery.capture(page, mode, out)
+                    log(f'ember scene {mode}: 120 frames, native phone + 3x details, shared alpha={ember_info[mode]["peak_shared_alpha"]}')
                 context.close()
                 log(f'rev={rev_id} viewport={vp["name"]} {vp["width"]}x{vp["height"]}@{vp["dpr"]} '
                     f'mode={mode} done')
@@ -196,15 +202,20 @@ def run(rev, out, log=print):
         screen_files[name] = {'file': f'{name}.png', 'width': size[0], 'height': size[1],
                               'sha256': hashlib.sha256(data).hexdigest()}
     for mode, frames in gifs.items():
+        write_gif(frames, out / (f'gameplay-gif-{mode}.gif' if mode in MODES else 'gif-menu.gif'))
+    for mode, frames in ember_gifs.items():
         write_gif(frames, out / f'gif-{mode}.gif')
     items = [('reference: cover-ai-1-original.png', Image.open(REFERENCE))] if REFERENCE.exists() else []
     items += [(f'{name}  ({c["width"]}x{c["height"]})', Image.open(out / c['file']))
               for name, c in list(captures.items()) + list(screen_files.items())]
+    items += [(f'phone-{mode}: fixed ember scene', Image.open(out / info['phone_file']))
+              for mode, info in ember_info.items()]
     write_sheet(out, items, out / 'sheet.png')
     manifest = {
         'rev': rev_sha, 'source': rev_id, 'seed': SEED, 'ticks': TICKS,
         'viewports': VIEWPORTS, 'reference': str(REFERENCE.relative_to(ROOT)) if REFERENCE.exists() else None,
-        'gifs': {mode: {'file': f'gif-{mode}.gif', 'viewport': GIF_CAPTURE[mode][0], 'size': list(GIF_SIZE),
+        'ember_gifs': ember_info,
+        'gifs': {mode: {'file': f'gameplay-gif-{mode}.gif' if mode in MODES else 'gif-menu.gif', 'viewport': GIF_CAPTURE[mode][0], 'size': list(GIF_SIZE),
                         'fps': GIF_FPS, 'frames': len(frames), 'ticks': gif_ticks(mode),
                         'states': gif_states[mode]}
                  for mode, frames in gifs.items()},

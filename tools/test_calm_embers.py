@@ -115,9 +115,9 @@ def capture(rev, mode, legacy):
     folder = OUT / 'before-after'
     folder.mkdir(parents=True, exist_ok=True)
     frames[0].save(folder / f'{name}.gif', save_all=True, append_images=frames[1:], duration=67, loop=0)
-    # Consecutive GIF frames 15..24 (ticks 64..100), enlarged for review.
+    # Ten consecutive samples 21..30 (ticks 88..124), same window at both revisions.
     strip = Image.new('RGB', (410*5, 200*2))
-    for i, frame in enumerate(frames[15:25]):
+    for i, frame in enumerate(frames[21:31]):
         strip.paste(frame, ((i%5)*410, (i//5)*200))
     strip.save(folder / f'{name}-strip.png')
     result['per_obstacle_per_second'] = {k: v/5 for k,v in result['spawns'].items()}
@@ -126,9 +126,10 @@ def capture(rev, mode, legacy):
 
 class CalmEmbersTests(unittest.TestCase):
     def test_frozen_emitter_rates_envelope_and_bloom(self):
-        subject = subprocess.check_output(['git', 'log', '-1', '--format=%s'], cwd=ROOT, text=True)
-        parent = os.environ.get('EMBERS_PARENT', 'HEAD^' if subject.startswith('TASK-204:') else 'HEAD')
-        report = {'method': '5 s / 300 frames, seed 1, 8 triangles + 8 cubes per mode; parent dormant emitter explicitly called at configured cadence; HEAD uses update', 'modes': {}}
+        # Keep the pre-task parent stable across verification-fix commits.
+        first = subprocess.check_output(['git', 'log', '--format=%H', '--grep=^TASK-204:'], cwd=ROOT, text=True).splitlines()[-1]
+        parent = os.environ.get('EMBERS_PARENT', first + '^')
+        report = {'method': 'Configured-emitter comparison only, NOT actual parent gameplay reduction: pre-task parent emitter is dormant. 5 s / 300 frames, seed 1, 8 triangles + 8 cubes per mode; parent emitter explicitly called at configured cadence; HEAD uses update', 'modes': {}}
         for mode in ('bad', 'classic'):
             old = capture(parent, mode, True)
             new = capture('worktree', mode, False)
@@ -137,13 +138,21 @@ class CalmEmbersTests(unittest.TestCase):
                 before = sum(v for k,v in old['spawns'].items() if k.startswith(kind))/40
                 after = sum(v for k,v in new['spawns'].items() if k.startswith(kind))/40
                 ratios[kind] = {'parent_per_obstacle_per_second': before, 'head_per_obstacle_per_second': after, 'ratio': after/before}
-            report['modes'][mode] = {'parent': old, 'head': new, 'rates': ratios}
+            report['modes'][mode] = {'parent': old, 'head': new, 'rates': ratios, 'per_obstacle': {
+                name: {'parent_spawns': old['spawns'].get(name, 0),
+                       'head_spawns': new['spawns'].get(name, 0),
+                       'ratio': new['spawns'].get(name, 0) / old['spawns'][name]}
+                for name in (f'{kind}{i}' for kind in ('triangle', 'cube') for i in range(8))}}
         OUT.mkdir(parents=True, exist_ok=True)
         (OUT / 'embers.json').write_text(json.dumps(report, indent=2)+'\n')
         for mode, data in report['modes'].items():
             new = data['head']
             self.assertEqual(new['page_errors'], [])
             self.assertEqual(data['parent']['page_errors'], [])
+            for name, counts in data['per_obstacle'].items():
+                self.assertGreater(counts['head_spawns'], 0, (mode, name))
+                self.assertLessEqual(counts['ratio'], 1/3, (mode, name, counts))
+                print(f'PASS {mode}/{name}: {counts}', flush=True)
             for kind, rates in data['rates'].items():
                 self.assertGreater(rates['head_per_obstacle_per_second'], 0)
                 self.assertLessEqual(rates['ratio'], 1/3, (mode, kind, rates))

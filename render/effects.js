@@ -1760,7 +1760,8 @@ class ParticleSystem
         this.pushParticle(centerX + Math.cos(angle) * radius,
             centerY + Math.sin(angle) * radius, 0, -config.riseSpeed,
             hazard ? config.hazardColor : config.cubeColor, life,
-            this.sparkRange(STYLE.particles.minSize, STYLE.particles.maxSize),
+            // Keep dim embers legible at the main mode's wider camera scale.
+            this.sparkRange(config.minSize, config.maxSize) / scale[version],
             hazard ? config.alpha : config.cubeAlpha, true, false, false)
         const particle = this.particles[this.particles.length - 1]
         particle.ember = true

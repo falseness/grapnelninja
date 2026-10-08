@@ -58,7 +58,12 @@ class VisualGalleryTest(unittest.TestCase):
                 self.assertTrue((out / f'{name}.png').exists(), name)
 
             for mode in visual_gallery.MODES:
-                gif = Image.open(out / f'gif-{mode}.gif')
+                ember = Image.open(out / f'gif-{mode}.gif')
+                self.assertEqual(ember.n_frames, 120)
+                info = manifest['ember_gifs'][mode]
+                self.assertGreater(info['peak_shared_alpha'], 0.1)
+                self.assertTrue((out / info['phone_file']).exists())
+                gif = Image.open(out / f'gameplay-gif-{mode}.gif')
                 self.assertGreaterEqual(gif.n_frames, 30)
                 self.assertEqual(gif.size, visual_gallery.GIF_SIZE)
                 info = manifest['gifs'][mode]
