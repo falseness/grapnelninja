@@ -8,6 +8,10 @@ class JumpingCube extends Rect
     constructor(object)
     {
         super(object)
+        // Opaque stripes at 60% of the blue outline, computed once per cube.
+        if (this.stroke == STYLE.colors.cube.blueStroke)
+            this.hatchColour = '#' + this.stroke.slice(1).match(/../g)
+                .map(channel => Math.round(parseInt(channel, 16) * .6).toString(16).padStart(2, '0')).join('')
         this.mass = this.height * this.width * blueSpriteDensity
         
         this.track = new CubeTrackLine(this.width, this.height, this.stroke, STYLE.timing.cubeTrailPoints)
@@ -18,6 +22,10 @@ class JumpingCube extends Rect
         {
             this.move()
         }
+    }
+    drawDangerHatch(x, y)
+    {
+        super.drawDangerHatch(x, y, this.hatchColour)
     }
     move()
     {

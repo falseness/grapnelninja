@@ -1,14 +1,15 @@
-// One repeating tile per variant/context, shared by every orange obstacle.
+// One repeating tile per context, variant and colour, shared by obstacles.
 const dangerHatchPatterns = new WeakMap()
-function dangerHatchPattern(context, variant)
+function dangerHatchPattern(context, variant, colour = variant == 'bold' ? '#99501c' : '#b56020')
 {
     let cache = dangerHatchPatterns.get(context)
     if (!cache) { cache = Object.create(null); dangerHatchPatterns.set(context, cache) }
-    if (cache[variant]) return cache[variant]
+    const key = JSON.stringify([variant, colour])
+    if (cache[key]) return cache[key]
     const tile = document.createElement('canvas')
     tile.width = tile.height = 32
     const c = tile.getContext('2d')
-    c.strokeStyle = variant == 'bold' ? '#99501c' : '#b56020'
+    c.strokeStyle = colour
     c.lineWidth = variant == 'bold' ? 9 : variant == 'thin' ? 2 : 3
     c.beginPath()
     for (let i = -32; i <= 64; i += 32) {
@@ -20,7 +21,7 @@ function dangerHatchPattern(context, variant)
         }
     }
     c.stroke()
-    return cache[variant] = context.createPattern(tile, 'repeat')
+    return cache[key] = context.createPattern(tile, 'repeat')
 }
 
 class Rect extends Element
@@ -149,10 +150,10 @@ class Rect extends Element
 
         ctx.restore()
     }
-    drawDangerHatch(x, y)
+    drawDangerHatch(x, y, colour)
     {
-        if (!this.isDangerRect || STYLE.dangerHatch.variant == 'off') return
-        const pattern = dangerHatchPattern(ctx, STYLE.dangerHatch.variant)
+        if ((!this.isDangerRect && !colour) || STYLE.dangerHatch.variant == 'off') return
+        const pattern = dangerHatchPattern(ctx, STYLE.dangerHatch.variant, colour)
         // Leave the neon outline and inner bevel clear. Translation anchors the
         // pattern to the obstacle, including fractional camera movement.
         const inset = Math.max(2, Math.min(this.width, this.height) * .20)
