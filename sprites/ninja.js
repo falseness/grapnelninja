@@ -134,6 +134,8 @@ class Ninja
             bounceSpeed(this, contact.line)
             if (visualEffects && visualEffects.particles)
                 visualEffects.particles.emitTrampolineSplash(this, contact.element)
+            if (visualEffects && visualEffects.screenEffects)
+                visualEffects.screenEffects.triggerLanding(contact)
         }
         const out = this.radius + GAMEPLAY.cubeContactEpsilon
         this.x = contact.x + contact.nx * out

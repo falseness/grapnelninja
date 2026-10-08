@@ -2017,6 +2017,7 @@ class ScreenEffects
     {
         this.ctx = context
         this.shockwaves = []
+        this.landings = []
         this.shakeUntil = 0
         this.shakeStart = 0
         this.shakeOffset = {x: 0, y: 0}
@@ -2025,6 +2026,59 @@ class ScreenEffects
     shouldApply()
     {
         return STYLE.features.screenEffects
+    }
+    triggerLanding(contact)
+    {
+        if (!this.shouldApply())
+            return
+        const now = performance.now()
+        const config = STYLE.screenEffects
+        if (this.landings.length >= config.landingMaxCount)
+            this.landings.shift()
+        this.landings.push({x: contact.x, y: contact.y,
+            angle: Math.atan2(contact.ny, contact.nx), start: now})
+    }
+    drawLandings(now)
+    {
+        const config = STYLE.screenEffects
+        for (let i = this.landings.length - 1; i >= 0; --i)
+            if (now - this.landings[i].start >= config.landingDurationMs)
+                this.landings.splice(i, 1)
+        if (!this.landings.length)
+            return
+
+        const context = this.ctx
+        const unit = 1 / scale[version]
+        context.save()
+        context.globalCompositeOperation = 'source-over'
+        context.lineCap = 'round'
+        // Two plain strokes keep the impact crisp without per-frame blur.
+        for (const impact of this.landings)
+        {
+            const progress = Math.max(0, (now - impact.start) / config.landingDurationMs)
+            const eased = 1 - (1 - progress) * (1 - progress)
+            const radius = (config.landingStartRadius
+                + (config.landingEndRadius - config.landingStartRadius) * eased) * unit
+            context.save()
+            context.translate(impact.x + screen.x, impact.y + screen.y)
+            context.rotate(impact.angle)
+            // Local +x is the contact normal: keep the entire stroke on the
+            // exposed side, including its rounded caps at the surface.
+            context.beginPath()
+            context.rect(0, -radius * 2, radius * 2, radius * 4)
+            context.clip()
+            for (let pass = 0; pass < 2; ++pass)
+            {
+                context.strokeStyle = pass ? '#d8ffff' : STYLE.colors.player.cyan
+                context.lineWidth = config.landingLineWidth * unit * (pass ? 1 : 2.5)
+                context.globalAlpha = config.landingAlpha * (1 - progress) * (pass ? 1 : 0.25)
+                context.beginPath()
+                context.arc(0, 0, radius, -Math.PI / 2, Math.PI / 2)
+                context.stroke()
+            }
+            context.restore()
+        }
+        context.restore()
     }
     triggerDeath(x, y)
     {
@@ -2082,6 +2136,7 @@ class ScreenEffects
         const now = performance.now()
         const config = STYLE.screenEffects
 
+        this.drawLandings(now)
         for (let i = this.shockwaves.length - 1; i >= 0; --i)
         {
             if (now >= this.shockwaves[i].end)

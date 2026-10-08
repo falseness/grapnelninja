@@ -515,6 +515,12 @@ const STYLE = Object.freeze({
         edgeWidth: screenHeightPercent(100 * 1.5 / 1080)
     }),
     screenEffects: Object.freeze({
+        landingDurationMs: 280,
+        landingStartRadius: screenHeightPercent(100 * 8 / 1080),
+        landingEndRadius: screenHeightPercent(100 * 48 / 1080),
+        landingLineWidth: screenHeightPercent(100 * 3 / 1080),
+        landingAlpha: 0.9,
+        landingMaxCount: 8,
         shockwaveDurationMs: 420,
         shockwaveStartRadius: screenHeightPercent(100 * 8 / 1080),
         shockwaveEndRadius: screenHeightPercent(100 * 170 / 1080),
