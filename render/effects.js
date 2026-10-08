@@ -1324,6 +1324,10 @@ class ParticleSystem
             ctx.fillRect(layout[j + 5], layout[j + 6], layout[j + 7], layout[j + 7])
         }
         ctx.restore()
+        // Restore only the motes' historical bloom, without reviving world or
+        // control bloom. The glow pass calls back here with recursion guarded.
+        if (!bloomPassActive)
+            visualEffects.ambientGlow.drawScreen(() => this.drawAmbientMotes(view))
     }
     getFrameMoteLayout(motes)
     {
@@ -1341,7 +1345,7 @@ class ParticleSystem
     {
         const config = STYLE.ambient
         const unit = view ? view.unit : 1 / scale[version]
-        const seconds = visualEffects.background.getAnimationTime() / 1000
+        const seconds = performance.now() / 1000
         // Motes live in screen px at 1080 on a field one halo wider than the view
         const margin = config.moteMaxSize * config.moteHaloRatio
         const fieldWidth = LOGICAL_VIEWPORT.width + margin * 2
@@ -1880,6 +1884,20 @@ class BloomRenderer
     }
 }
 
+// The historical bloom chain restricted to ambient motes. It follows ambient
+// quality, independently of the disabled global bloom feature.
+class AmbientGlowRenderer extends BloomRenderer
+{
+    getConfig()
+    {
+        return STYLE.ambient.glow
+    }
+    shouldDraw()
+    {
+        return visualEffects.particles.shouldDrawAmbientMotes()
+    }
+}
+
 // Player-only glow textures retain the historical downsampled soft halo. The
 // canvases and ribbon paths are reused; no per-frame shadowBlur or filter.
 // Only the player ribbon, square sparks and ring enter these textures: world
@@ -2172,6 +2190,7 @@ class VisualEffects
         this.playerTrail = new PlayerTrailRenderer()
         this.screenEffects = new ScreenEffects(context)
         this.bloom = new BloomRenderer(context, targetCanvas)
+        this.ambientGlow = new AmbientGlowRenderer(context, targetCanvas)
         this.playerGlow = new PlayerGlowRenderer(context, targetCanvas)
         this.colorGrade = new ColorGradeRenderer(context, targetCanvas)
         this.ui = new UIStylingHooks()

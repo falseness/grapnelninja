@@ -266,6 +266,12 @@ const STYLE = Object.freeze({
     // pulse. Both are pure functions of the page clock (frozen in the
     // captures), so they never flicker and draw no random numbers per frame.
     ambient: Object.freeze({
+        // TASK-186 / 2ea4347: retain the original coloured cores and soft bloom.
+        glow: Object.freeze({
+            resolutionScale: 0.25, touchResolutionScale: 0.2, blurLevels: 4,
+            levelAlphas: Object.freeze([0.22, 0.4, 0.65, 0.9]),
+            strength: 1, compositeOperation: 'lighter'
+        }),
         moteCount: 40,
         moteSeed: 186,
         // Screen px at 1080 (divided by scale[version])
@@ -274,16 +280,16 @@ const STYLE = Object.freeze({
         moteHaloRatio: 3.5,
         moteHaloAlpha: 0.3,
         // Drift speed in screen px at 1080 per second; motes rise slowly
-        moteMinSpeed: 1,
-        moteMaxSpeed: 3,
+        moteMinSpeed: 10,
+        moteMaxSpeed: 28,
         moteRiseRatio: 0.7,
         // Part of the camera movement the motes follow (depth parallax)
         moteParallax: 0.25,
         moteMinAlpha: 0.5,
         moteMaxAlpha: 0.95,
         // Each mote fades in and out over its own period (ms)
-        moteMinTwinkleMs: 6000,
-        moteMaxTwinkleMs: 12000,
+        moteMinTwinkleMs: 2200,
+        moteMaxTwinkleMs: 4200,
         moteColors: Object.freeze(['#9feaff', '#c9a8ff', '#e6f6ff', '#7fc4ff']),
         // Neon halo and bloom brightness swing by +-pulseAmount over pulsePeriodMs
         pulsePeriodMs: 2000,
