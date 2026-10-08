@@ -261,7 +261,7 @@ const STYLE = Object.freeze({
         compositeAlpha: 0.3,
         compositeOperation: 'hard-light'
     }),
-    // Bloom: the emissive shapes (outlines, ninja ring, rope, player trail,
+    // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a
     // downsample chain and added over the frame before the HUD.
     bloom: Object.freeze({
@@ -272,7 +272,7 @@ const STYLE = Object.freeze({
         blurLevels: 4,
         // Added alpha of each level (sharp to wide) and overall strength. The
         // sharp level is weak so the lines keep their colour instead of going white.
-        levelAlphas: Object.freeze([0.22, 0.4, 0.65, 0.9]),
+        levelAlphas: Object.freeze([0.12, 0.2, 0.33, 0.45]),
         strength: 1,
         // Outline width in the glow pass, screen px at 1080 (divided by scale[version])
         lineWidth: 14,

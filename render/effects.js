@@ -2302,7 +2302,7 @@ class BloomRenderer
         this.resize()
         this.drawGlowPass(gameState, shakeOffset)
         this.blur()
-        this.composite()
+        this.composite(gameState.ninja)
     }
     // Same world transform as the frame (scale[version], screen shake), mapped
     // onto the glow canvas; the global ctx points at it while the sprites draw.
@@ -2380,26 +2380,11 @@ class BloomRenderer
                 floors[i].drawTracks()
         visualEffects.screenEffects.drawShockwaveGlow()
         grapnel.drawHook()
-        this.drawNinjaRing(gameState.ninja)
         visualEffects.particles.drawLayer(BloomRenderer.anyParticle)
     }
     static anyParticle()
     {
         return true
-    }
-    drawNinjaRing(player)
-    {
-        const radius = player.getRingOuterRadius()
-        const ringWidth = radius * STYLE.playerVisuals.ringWidthRatio
-
-        // Inside the outer edge, like the ring sprite
-        ctx.beginPath()
-        ctx.arc(player.x + screen.x, player.y + screen.y, radius - ringWidth * 0.5, 0, Math.PI * 2, false)
-        ctx.globalAlpha = player.getBlinkAlpha()
-        ctx.strokeStyle = player.stroke
-        ctx.lineWidth = ringWidth
-        ctx.stroke()
-        ctx.globalAlpha = 1
     }
     blur()
     {
@@ -2410,12 +2395,27 @@ class BloomRenderer
             target.ctx.drawImage(source, 0, 0, target.canvas.width, target.canvas.height)
         }
     }
-    composite()
+    composite(player)
     {
         const config = STYLE.bloom
 
         this.ctx.save()
+        const world = this.ctx.getTransform()
         this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+        if (player)
+        {
+            // Clip the final blurred light, including rope/particle spill, out
+            // of the ring and its neighbourhood. Use the frame transform so
+            // the exclusion follows camera shake, game scale and device DPR.
+            this.ctx.beginPath()
+            this.ctx.rect(0, 0, this.canvas.width, this.canvas.height)
+            this.ctx.setTransform(world)
+            this.ctx.moveTo(player.x + screen.x + player.getRingOuterRadius() * 2, player.y + screen.y)
+            this.ctx.arc(player.x + screen.x, player.y + screen.y,
+                player.getRingOuterRadius() * 2, 0, Math.PI * 2)
+            this.ctx.clip('evenodd')
+            this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+        }
         this.ctx.globalCompositeOperation = config.compositeOperation
         this.ctx.imageSmoothingEnabled = true
         for (let i = 0; i < this.levels.length; ++i)

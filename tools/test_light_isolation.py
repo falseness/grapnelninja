@@ -1,4 +1,4 @@
-"""Frozen-clock lightmap on/off pixel probes of actual ring and obstacle edges.
+"""Frozen-clock lightmap and bloom/pulse probes of ring and obstacle edges.
 
 Run directly with --out to save the sampled RGB values and comparison PNGs.
 The STYLE feature is switched before load; each side replays identical input.
@@ -65,12 +65,12 @@ PROBES = '''() => {
 }'''
 
 
-def probe(out=None):
+def probe(out=None, effect="lightmap"):
     out = Path(out) if out else None
     if out:
         out.parent.mkdir(parents=True, exist_ok=True)
     report = {'rev': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
-                                             text=True).strip(), 'captures': {}}
+                                             text=True).strip(), 'effect': effect, 'captures': {}}
     with ExitStack() as stack:
         url, browser = start_browser_test(ROOT, stack.callback)
         for vp in VIEWPORTS:
@@ -82,11 +82,12 @@ def probe(out=None):
                         device_scale_factor=vp['dpr'], is_mobile=vp['touch'], has_touch=vp['touch'])
                     try:
                         if not enabled:
-                            def without_lightmap(route):
+                            def without_effect(route):
                                 response = route.fetch()
                                 route.fulfill(response=response, body=response.text().replace(
-                                    'lightmap: true', 'lightmap: false', 1))
-                            context.route('**/style.js', without_lightmap)
+                                    f'{effect}: true', f'{effect}: false', 1).replace(
+                                    'pulseAmount: 0.08', 'pulseAmount: 0' if effect == 'bloom' else 'pulseAmount: 0.08'))
+                            context.route('**/style.js', without_effect)
                         context.add_init_script(SEED_SCRIPT % 1)
                         context.add_init_script(CLOCK_SCRIPT)
                         page = context.new_page()
@@ -94,7 +95,9 @@ def probe(out=None):
                         page.on('pageerror', lambda e: errors.append(str(e)))
                         page.goto(url)
                         boot_frozen(page)
-                        assert page.evaluate('STYLE.features.lightmap') == enabled
+                        assert page.evaluate(f'STYLE.features.{effect}') == enabled
+                        if effect == 'bloom':
+                            assert page.evaluate('STYLE.ambient.pulseAmount') == (0.08 if enabled else 0)
                         page.evaluate(SETUP_SCRIPT, [input_script(1, 300, vp['width'], vp['height']), vp['touch']])
                         page.evaluate(PROBES)
                         page.evaluate('mode => startGame(mode)', mode)
@@ -105,7 +108,7 @@ def probe(out=None):
                             pixels = np.asarray(Image.open(io.BytesIO(data)).convert('RGB'), dtype=np.int16)
                             sides[enabled, tick] = (pixels, page.evaluate('lightSamples'))
                             if out:
-                                (out.parent / f'{name}-light-{enabled}.png').write_bytes(data)
+                                (out.parent / f'{name}-{effect}-{enabled}.png').write_bytes(data)
                         assert not errors, errors
                     finally:
                         context.close()
@@ -116,6 +119,8 @@ def probe(out=None):
                     assert points == off_points, name
                     samples = []
                     for p in points:
+                        if effect == 'bloom' and p['kind'] != 'ring':
+                            continue
                         a, b = on[p['y'], p['x']], off[p['y'], p['x']]
                         samples.append(dict(p, on=a.tolist(), off=b.tolist(), max_delta=int(abs(a - b).max())))
                     report['captures'][name] = {
@@ -129,14 +134,18 @@ def probe(out=None):
 
 def assert_report(report):
     for name, capture in report['captures'].items():
-        assert {s['kind'] for s in capture['samples']} == {'ring', 'obstacle'}, name
-        assert capture['background_changed_pixels'] > 100, f'{name}: lightmap must visibly affect background'
+        assert {s['kind'] for s in capture['samples']} == (
+            {'ring'} if report['effect'] == 'bloom' else {'ring', 'obstacle'}), name
+        assert capture['background_changed_pixels'] > 100, f'{name}: {report["effect"]} must visibly affect background'
         assert capture['max_delta'] <= 2, (name, capture['max_delta'])
         for s in capture['samples']:
             assert max(s['on']) > 60, (name, 'sample must land on a visible edge', s)
 
 
 class LightIsolationTests(unittest.TestCase):
+    def test_bloom_and_pulse_leave_ring_unchanged(self):
+        assert_report(probe(os.environ.get('BLOOM_ISOLATION_OUT'), effect='bloom'))
+
     def test_obstacle_trails_fade_without_filled_envelopes(self):
         with ExitStack() as stack:
             url, browser = start_browser_test(ROOT, stack.callback)
@@ -186,5 +195,6 @@ class LightIsolationTests(unittest.TestCase):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--effect', choices=['lightmap', 'bloom'], default='lightmap')
     args = parser.parse_args()
-    assert_report(probe(args.out))
+    assert_report(probe(args.out, args.effect))

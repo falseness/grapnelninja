@@ -209,7 +209,7 @@ class Ninja
     }
     // radius is the ring's outer edge (the stroke is drawn inward) and the blurred
     // halo stays inside the ball, so the ball reads at its pre-overhaul size. The
-    // glow around it comes from the bloom pass (BloomRenderer.drawNinjaRing).
+    // bloom composite excludes the ball and its immediate neighbourhood.
     // One sprite is kept and rebuilt when the radius, colours or pixel density change
     // (version switch, resize)
     static getGlowSprite(radius, fill, stroke, transform)
