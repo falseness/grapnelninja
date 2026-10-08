@@ -68,6 +68,12 @@ class VisualGalleryTest(unittest.TestCase):
                 camera_x = [state['screen.x'] for state in info['states']]
                 self.assertGreater(max(camera_x) - min(camera_x), 100,
                                    f'{mode} GIF must demonstrate camera parallax')
+            with Image.open(out / 'gif-menu.gif') as gif:
+                self.assertGreaterEqual(gif.n_frames, 30)
+                gif.seek(0)
+                first = gif.convert('RGB').tobytes()
+                gif.seek(gif.n_frames - 1)
+                self.assertNotEqual(first, gif.convert('RGB').tobytes())
             self.assertTrue((out / 'sheet.png').exists())
 
             same = subprocess.run([sys.executable, str(TOOLS / 'visual_gallery.py'), '--compare-state',

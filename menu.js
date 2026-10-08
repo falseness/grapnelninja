@@ -690,6 +690,7 @@ class Menu
                 menu.draw()
 
                 cancelAnimationFrame(game)
+                game = requestAnimationFrame(gameLoop)
             })
         })
         this.layoutMainFpsCheckbox()
@@ -944,6 +945,7 @@ class Menu
         if (typeof visualEffects != 'undefined' && visualEffects && visualEffects.background)
         {
             visualEffects.background.drawMenuBackground()
+            visualEffects.lightmap.drawMenu([this.classicVersionButton, this.badVersionButton])
             visualEffects.particles.drawAmbientMotes(MENU_MOTES_VIEW)
             visualEffects.colorGrade.draw()
             drawScreenGlow(() =>

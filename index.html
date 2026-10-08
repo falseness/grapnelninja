@@ -191,6 +191,7 @@
                 chooseVersion()
                 warmGlowSprites()
                 
+                cancelAnimationFrame(game)
                 game = requestAnimationFrame(gameLoop)
             }
             function chooseVersion()
@@ -460,6 +461,7 @@
                 
                 //generatePrimaryElements()
                 menu.draw()
+                game = requestAnimationFrame(gameLoop)
             }
 
             function resetPhysicsTiming()
@@ -472,7 +474,12 @@
             {
                 fpsCounter.frame(frameTime)
 
-                if (menu.gamePaused)
+                if (menu.visible)
+                {
+                    resetPhysicsTiming()
+                    menu.draw()
+                }
+                else if (menu.gamePaused)
                 {
                     resetPhysicsTiming()
                     menu.pause()

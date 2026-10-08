@@ -205,11 +205,18 @@ class BackgroundRenderer
         const height = LOGICAL_VIEWPORT.height
 
         this.drawBaseGradient(width, height)
-        this.drawCrystalLayer(width, height, {x: 0, y: 0})
+        this.drawCrystalLayer(width, height, this.getMenuLayerShift(1))
         this.drawHaze(width, height)
         this.drawBadVersionDepth(width, height, this.getMenuBackgroundGeometry(), 0, {forceStatic: true})
-        this.drawNearLayer(width, height, {x: 0, y: 0})
+        this.drawNearLayer(width, height, this.getMenuLayerShift(1.5))
         this.drawVignette(width, height)
+    }
+    // At most 1.7 logical px/s: below the 10 CSS px / 3 s still-camera
+    // cap at the supported viewports. Never inherit a previous game's camera.
+    getMenuLayerShift(depth)
+    {
+        const time = QUALITY.backgroundMotion ? performance.now() / 16000 : 0
+        return {x: Math.sin(time) * 16 * depth, y: (Math.cos(time) - 1) * 8 * depth}
     }
     getMenuBackgroundGeometry()
     {
@@ -1305,6 +1312,34 @@ class LightmapRenderer
         lightCtx.globalCompositeOperation = 'lighter'
         this.drawWorldLights(gameState.floors)
         lightCtx.restore()
+    }
+    // Screen-space lights from the menu neon, using the game's faded falloff.
+    // Composite before motes, grade, bloom and the crisp controls.
+    drawMenu(controls)
+    {
+        if (!this.shouldDraw())
+            return
+        this.clear()
+        const lightCtx = this.lightCtx
+        lightCtx.save()
+        lightCtx.globalCompositeOperation = 'lighter'
+        for (const control of controls)
+        {
+            const box = control.background
+            const radius = STYLE.lights.cubeRadius * LOGICAL_VIEWPORT.height / 1080 * this.scale
+            lightCtx.setTransform(radius, 0, 0, radius,
+                (box.x + box.width / 2) * this.scale,
+                (box.y + box.height / 2) * this.scale)
+            lightCtx.globalAlpha = STYLE.lights.cubeAlpha
+            lightCtx.fillStyle = this.getLightGradient(box.stroke)
+            lightCtx.fillRect(-1, -1, 2, 2)
+        }
+        lightCtx.restore()
+        this.ctx.save()
+        this.ctx.globalAlpha = STYLE.lights.compositeAlpha
+        this.ctx.globalCompositeOperation = STYLE.lights.compositeOperation
+        this.ctx.drawImage(this.lightCanvas, 0, 0, LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height)
+        this.ctx.restore()
     }
     drawWorldLights(floors)
     {

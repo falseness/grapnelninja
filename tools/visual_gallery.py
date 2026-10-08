@@ -11,7 +11,8 @@ pause screen opened after the last tick, listed under 'screens': no state
 check, it runs after every state capture); gif-bad.gif and gif-classic.gif
 (GIF_FRAMES consecutive frames at 15 fps from each mode's GIF_CAPTURE, scaled to
 960x540); sheet.png (the reference AI cover top-left, then every capture,
-labelled); manifest.json (rev, viewport, mode, tick and the game state per capture).
+labelled); gif-menu.gif (3 s of idle menu animation); manifest.json (rev,
+viewport, mode, tick and the game state per capture).
 --compare-state prints one line per capture and 'differences: N' (exit 1 if N > 0).
 """
 import argparse
@@ -41,7 +42,7 @@ MODES = ['bad', 'classic']
 TICKS = [300, 900]
 # Seed 1's desktop bad run hangs at a fixed camera. The phone run scrolls
 # after tick 900; retain the desktop classic swing and its scrolling segment.
-GIF_CAPTURE = {'bad': ('phone', 900), 'classic': ('desktop', 300)}
+GIF_CAPTURE = {'bad': ('phone', 900), 'classic': ('desktop', 300), 'menu': ('desktop', 0)}
 GIF_SIZE = (960, 540)
 GIF_FPS = 15
 GIF_STEP = 60 // GIF_FPS          # game ticks per GIF frame
@@ -155,6 +156,13 @@ def run(rev, out, log=print):
 
                 if mode == 'menu':
                     shoot(capture_name(vp['name'], mode), 0)
+                    if vp['name'] == GIF_CAPTURE['menu'][0]:
+                        frames, frame_states = [], []
+                        for tick in gif_ticks('menu'):
+                            page.evaluate('tick => { __snap.now = tick * 1000 / 60; menu.draw() }', tick)
+                            frames.append(to_gif_frame(png_bytes(page.evaluate('() => __snap.capture()'))))
+                            frame_states.append(page.evaluate(STATE_SCRIPT))
+                        gifs['menu'], gif_states['menu'] = frames, frame_states
                 else:
                     page.evaluate('mode => startGame(mode)', mode)
                     frames = []
