@@ -7,9 +7,12 @@ const widthHeightRatio = 1.8250950570342206
 const LOGICAL_HEIGHT = 1080
 const minViewportAspect = 4 / 3
 const maxViewportAspect = 2
+// MediaQueryList stays live when the primary pointer changes. Reuse it rather
+// than allocating a new query in every bloom frame and coordinate conversion.
+const coarsePointerQuery = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null
 function isTouchFirstDevice()
 {
-    return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+    return !!(coarsePointerQuery && coarsePointerQuery.matches)
 }
 // A phone held upright plays in landscape: the stage (the game canvas and
 // the letterbox bars) is turned 90 degrees clockwise.

@@ -80,6 +80,25 @@ class RotateLandscapeTests(unittest.TestCase):
                                  int(result['backing'][0] * (.2 if touch else .25)))
                 self.assertFalse(errors['page'])
 
+    def test_pointer_query_remains_live_without_recreating_queries(self):
+        page, errors = self.boot(PORTRAIT)
+        cdp = page.context.new_cdp_session(page)
+        self.addCleanup(cdp.detach)
+        page.evaluate('''() => {
+            window.pointerQueryCalls = 0
+            const original = window.matchMedia.bind(window)
+            window.matchMedia = query => {
+                ++window.pointerQueryCalls
+                return original(query)
+            }
+        }''')
+        for enabled in (True, False, True):
+            cdp.send('Emulation.setTouchEmulationEnabled', {'enabled': enabled})
+            page.wait_for_function('(expected) => isTouchFirstDevice() === expected', arg=enabled)
+            self.assertEqual(page.evaluate('isViewRotated()'), enabled)
+        self.assertEqual(page.evaluate('pointerQueryCalls'), 0)
+        self.assertFalse(errors['page'])
+
     def test_portrait_phone_is_rotated_to_landscape(self):
         page, errors = self.boot(PORTRAIT, **PHONE)
         s = page.evaluate(STATE)
