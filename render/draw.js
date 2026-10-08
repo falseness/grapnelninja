@@ -62,6 +62,12 @@ function drawBloomLayer(gameState)
     visualEffects.bloom.draw(gameState, screenEffects.isShaking ? screenEffects.shakeOffset : NO_SHAKE)
 }
 
+function drawPlayerGlowLayer(gameState)
+{
+    const effects = visualEffects.screenEffects
+    visualEffects.playerGlow.draw(gameState, effects.isShaking ? effects.shakeOffset : NO_SHAKE)
+}
+
 // The ball goes over particles, bloom and colour grade, so its dark centre and
 // cyan ring stay readable at the small pre-overhaul size
 function drawPlayerLayer()
@@ -134,6 +140,7 @@ function draw()
     drawParticlesAndTrailsLayer(gameState)
     if (STYLE.features.bloom)
         drawBloomLayer(gameState)
+    drawPlayerGlowLayer(gameState)
     drawColorGradeLayer()
     drawPlayerLayer()
     drawUILayer(gameState)

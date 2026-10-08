@@ -200,16 +200,29 @@ class PlayerAndBloomTests(unittest.TestCase):
                 if enabled:
                     report=dict(meta,rev=rev)
                     report['glow_canvas_ops']=page.evaluate(r"""() => {
-                        let ops=0;const proto=CanvasRenderingContext2D.prototype,originals={};
+                        // Warm resized sprites, then require stable player textures and no
+                        // shadowBlur work during ordinary repeated game frames.
+                        draw();
+                        let ops=0,playerOps=0,shadows=0;
+                        const levels=visualEffects.playerGlow.levels.map(l=>l.canvas);
+                        const proto=CanvasRenderingContext2D.prototype,originals={};
+                        const shadow=Object.getOwnPropertyDescriptor(proto,'shadowBlur');
+                        Object.defineProperty(proto,'shadowBlur',{...shadow,set(value){
+                            if(value>0) ++shadows;
+                            shadow.set.call(this,value);
+                        }});
                         for(const name of ['drawImage','fill','stroke','fillRect','clearRect']) {
                             originals[name]=proto[name];proto[name]=function(...args){
                                 if(visualEffects.bloom.levels.some(l=>l.ctx===this)) ++ops;
+                                if(visualEffects.playerGlow.levels.some(l=>l.ctx===this)) ++playerOps;
                                 return originals[name].apply(this,args);
                             };
                         }
                         for(let i=0;i<3;i++)draw();
                         for(const name in originals)proto[name]=originals[name];
-                        return ops;
+                        Object.defineProperty(proto,'shadowBlur',shadow);
+                        return {world:ops,player:playerOps,shadows,
+                            reused:levels.length===4 && levels.every((c,i)=>c===visualEffects.playerGlow.levels[i].canvas)};
                     }""")
                 context.close()
         on,off=images;delta=ImageChops.difference(on,off)
@@ -233,8 +246,12 @@ class PlayerAndBloomTests(unittest.TestCase):
         print('PLAYER PROBE',report,flush=True)
         # Cached clipped blur can round one channel by a byte at the sprite edge.
         self.assertLessEqual(report['ninja_outside_edge_delta'],2)
-        for key in ('rope_outside_width_pixels','glow_canvas_ops'):
-            self.assertEqual(report[key],0,key)
+        self.assertEqual(report['rope_outside_width_pixels'],0)
+        glow=report['glow_canvas_ops']
+        self.assertEqual(glow['world'],0)
+        self.assertGreater(glow['player'],0)
+        self.assertEqual(glow['shadows'],0)
+        self.assertTrue(glow['reused'])
         self.assertGreater(report['ninja_inner_delta'],0)
         # TASK-216: the player ribbon is the explicit outer-glow exception.
         self.assertGreater(report['trail_outside_width_pixels'],0)

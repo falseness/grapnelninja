@@ -175,7 +175,7 @@ class LightIsolationTests(unittest.TestCase):
                         page.evaluate('mode => startGame(mode)', mode)
                         page.evaluate('''() => {
                             window.orderProbe = {ops: [], layer: null, points: []}
-                            for (const name of ['drawParticlesAndTrailsLayer', 'drawBloomLayer',
+                            for (const name of ['drawParticlesAndTrailsLayer', 'drawBloomLayer', 'drawPlayerGlowLayer',
                                                 'drawColorGradeLayer', 'drawPlayerLayer']) {
                                 const original = window[name]
                                 window[name] = function(...args) {
@@ -217,7 +217,7 @@ class LightIsolationTests(unittest.TestCase):
                                 pixels: orderProbe.points.map(p => Array.from(ctx.getImageData(p.x, p.y, 1, 1).data))})''')
                             ops = result['ops']
                             last = {layer: max((i for i, op in enumerate(ops) if op['layer'] == layer and op['main']), default=-1)
-                                    for layer in ['drawParticlesAndTrailsLayer', 'drawBloomLayer', 'drawColorGradeLayer']}
+                                    for layer in ['drawParticlesAndTrailsLayer', 'drawBloomLayer', 'drawPlayerGlowLayer', 'drawColorGradeLayer']}
                             ring = next(i for i, op in enumerate(ops) if op['layer'] == 'drawPlayerLayer'
                                         and op['op'] == 'stroke' and op['color'] == result['ringColor'])
                             composite = next(i for i, op in enumerate(ops) if op['main'] and op['ringSprite'])

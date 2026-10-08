@@ -1704,10 +1704,14 @@ class BloomRenderer
     {
         return STYLE.features.bloom && QUALITY.bloom
     }
+    getConfig()
+    {
+        return STYLE.bloom
+    }
     // Level 0 is the glow canvas; each next level is half the previous one.
     resize()
     {
-        const config = STYLE.bloom
+        const config = this.getConfig()
         while (this.levels.length < config.blurLevels)
         {
             const levelCanvas = document.createElement('canvas')
@@ -1833,9 +1837,9 @@ class BloomRenderer
             target.ctx.drawImage(source, 0, 0, target.canvas.width, target.canvas.height)
         }
     }
-    composite(player)
+    composite(player, exclusionRadiusRatio = 2)
     {
-        const config = STYLE.bloom
+        const config = this.getConfig()
 
         this.ctx.save()
         const world = this.ctx.getTransform()
@@ -1848,9 +1852,9 @@ class BloomRenderer
             this.ctx.beginPath()
             this.ctx.rect(0, 0, this.canvas.width, this.canvas.height)
             this.ctx.setTransform(world)
-            this.ctx.moveTo(player.x + screen.x + player.getRingOuterRadius() * 2, player.y + screen.y)
+            this.ctx.moveTo(player.x + screen.x + player.getRingOuterRadius() * exclusionRadiusRatio, player.y + screen.y)
             this.ctx.arc(player.x + screen.x, player.y + screen.y,
-                player.getRingOuterRadius() * 2, 0, Math.PI * 2)
+                player.getRingOuterRadius() * exclusionRadiusRatio, 0, Math.PI * 2)
             this.ctx.clip('evenodd')
             this.ctx.setTransform(1, 0, 0, 1, 0, 0)
         }
@@ -1862,6 +1866,48 @@ class BloomRenderer
             this.ctx.drawImage(this.levels[i].canvas, 0, 0, this.canvas.width, this.canvas.height)
         }
         this.ctx.restore()
+    }
+}
+
+// Player-only glow textures retain the historical downsampled soft halo. The
+// canvases and ribbon paths are reused; no per-frame shadowBlur or filter.
+// Only the player ribbon, square sparks and ring enter these textures: world
+// outlines, rope, ambient particles and obstacle trails cannot emit here.
+class PlayerGlowRenderer extends BloomRenderer
+{
+    getConfig()
+    {
+        return STYLE.player.glow
+    }
+    shouldDraw()
+    {
+        return STYLE.player.outerGlow && QUALITY.playerTrail
+    }
+    drawEmissiveShapes(gameState)
+    {
+        visualEffects.playerTrail.drawSmoothPlayerTrailIfEnabled(gameState.ninja.track)
+        visualEffects.particles.drawLayer(PlayerGlowRenderer.isSpark)
+        const player = gameState.ninja
+        const radius = player.getRingOuterRadius()
+        const ringWidth = radius * STYLE.playerVisuals.ringWidthRatio
+        ctx.beginPath()
+        ctx.arc(player.x + screen.x, player.y + screen.y,
+            radius - ringWidth * 0.5, 0, Math.PI * 2)
+        ctx.globalAlpha = player.getBlinkAlpha()
+        ctx.strokeStyle = player.stroke
+        ctx.lineWidth = ringWidth
+        ctx.stroke()
+        ctx.globalAlpha = 1
+    }
+    static isSpark(particle)
+    {
+        return particle.spark
+    }
+    composite(player)
+    {
+        // Leave a narrow contrast margin at the original ring edge. The
+        // cached ball halo still fills it; broad ribbon light starts beyond it.
+        super.composite(player, STYLE.player.glow.ringClearanceRatio)
     }
 }
 
@@ -2115,6 +2161,7 @@ class VisualEffects
         this.playerTrail = new PlayerTrailRenderer()
         this.screenEffects = new ScreenEffects(context)
         this.bloom = new BloomRenderer(context, targetCanvas)
+        this.playerGlow = new PlayerGlowRenderer(context, targetCanvas)
         this.colorGrade = new ColorGradeRenderer(context, targetCanvas)
         this.ui = new UIStylingHooks()
     }

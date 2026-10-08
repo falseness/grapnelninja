@@ -434,7 +434,20 @@ const STYLE = Object.freeze({
         })
     }),
     // The player alone keeps outer glow; obstacles retain their inward light.
-    player: Object.freeze({outerGlow: true}),
+    player: Object.freeze({
+        outerGlow: true,
+        // Historical 40b2fb1 glow, confined to cached player textures. Global
+        // obstacle bloom remains disabled; phone uses the same player kernel.
+        glow: Object.freeze({
+            resolutionScale: 0.25,
+            touchResolutionScale: 0.25,
+            blurLevels: 4,
+            levelAlphas: Object.freeze([0.22, 0.4, 0.65, 0.9]),
+            strength: 1,
+            ringClearanceRatio: 1.2,
+            compositeOperation: 'lighter'
+        })
+    }),
     playerVisuals: Object.freeze({
         rotationSpeed: 0.032,
         rotationMinSpeed: screenHeightPercent(100 * 0.03 / 1080),
