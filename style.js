@@ -496,8 +496,8 @@ const STYLE = Object.freeze({
         haloWidthRatio: 4,
         haloAlpha: 0.45,
         coreWidthRatio: 0.38,
-        anchorRadiusRatio: 0.9,
-        anchorWidthRatio: 0.425,
+        anchorRadiusRatio: 0.45,
+        anchorWidthRatio: 0.2125,
         tipRadiusRatio: 1.1,
         tipCoreRadiusRatio: 0.525
     }),
