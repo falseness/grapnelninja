@@ -8,6 +8,12 @@ class Triangle extends Element
         if (random() < GAMEPLAY.triangleUpwardChancePercent)
             this.speedY *= -1
         
+        // Match the red/pink outline; keep harmless and other colours plain.
+        if (!(this instanceof HarmlessTriangle) &&
+            (this.stroke == STYLE.colors.hazard.stroke || this.stroke == STYLE.colors.hazard.red))
+            this.hatchColour = '#' + this.stroke.slice(1).match(/../g)
+                .map(channel => Math.round(parseInt(channel, 16) * .6).toString(16).padStart(2, '0')).join('')
+
         this.side   =   object.radius * Math.sqrt(3)
         this.height =   this.side * Math.sin(Math.PI / 3)
         this.radius = object.radius
@@ -156,12 +162,28 @@ class Triangle extends Element
                 ctx.lineTo(x, y)
         }
         ctx.closePath()
+        this.drawDangerHatch(centerX, centerY)
         ctx.strokeStyle = this.stroke
         ctx.lineWidth = STYLE.strokes.neonOutline.innerWidth / scale[version]
         ctx.globalAlpha = obstacleStyle.hazardInnerStrokeAlpha
         ctx.stroke()
         ctx.restore()
     }
+    // The current path is the existing inner triangle. Save/restore preserves
+    // it for the border drawn immediately afterwards.
+    drawDangerHatch(x, y)
+    {
+        if (version != 'bad' || bloomPassActive || !this.hatchColour || STYLE.dangerHatch.variant == 'off') return
+        const pattern = dangerHatchPattern(ctx, STYLE.dangerHatch.variant, this.hatchColour)
+        ctx.save()
+        ctx.clip()
+        ctx.translate(x, y)
+        ctx.globalAlpha = 1
+        ctx.fillStyle = pattern
+        ctx.fillRect(-this.side / 2, -this.height / 3, this.side, this.height)
+        ctx.restore()
+    }
+
 }
 
 class HarmlessTriangle extends Triangle{
