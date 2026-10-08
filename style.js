@@ -475,10 +475,10 @@ const STYLE = Object.freeze({
         haloWidthRatio: 4,
         haloAlpha: 0.45,
         coreWidthRatio: 0.38,
-        anchorRadiusRatio: 1.8,
-        anchorWidthRatio: 0.85,
-        tipRadiusRatio: 2.2,
-        tipCoreRadiusRatio: 1.05
+        anchorRadiusRatio: 0.9,
+        anchorWidthRatio: 0.425,
+        tipRadiusRatio: 1.1,
+        tipCoreRadiusRatio: 0.525
     }),
     // Fake-3D back face of rectangles, cubes and green blocks: one shared light
     // direction (back face up-right). The front face stays on the hitbox.
