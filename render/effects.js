@@ -1214,7 +1214,7 @@ function colorWithAlpha(hex, alpha)
     return 'rgba(' + (value >> 16 & 255) + ', ' + (value >> 8 & 255) + ', ' + (value & 255) + ', ' + alpha + ')'
 }
 
-// Coloured light spill: every neon object adds a soft radial light of its own
+// Coloured light spill: obstacles add a soft radial light of their own
 // colour into a small canvas, which is added over the crystal background before
 // the world is drawn, so obstacles themselves are never washed out.
 class LightmapRenderer
@@ -1304,19 +1304,7 @@ class LightmapRenderer
         lightCtx.save()
         lightCtx.globalCompositeOperation = 'lighter'
         this.drawWorldLights(gameState.floors)
-        this.drawPlayerLight(gameState.ninja)
         lightCtx.restore()
-    }
-    drawPlayerLight(player)
-    {
-        const lights = STYLE.lights
-        this.drawRadialLight(
-            player.x + screen.x,
-            player.y + screen.y,
-            lights.playerRadius,
-            STYLE.colors.player.halo,
-            lights.playerAlpha
-        )
     }
     drawWorldLights(floors)
     {

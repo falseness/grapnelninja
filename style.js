@@ -238,14 +238,12 @@ const STYLE = Object.freeze({
     lights: Object.freeze({
         resolutionScale: 0.2,
         touchResolutionScale: 0.15,
-        playerRadius: 210,
         cubeRadius: 140,
         hazardRadius: 150,
         // Cap on the block-size bonus, so the huge classic blocks do not flood the screen
         maxElementRadius: 170,
-        playerAlpha: 0.85,
-        cubeAlpha: 0.65,
-        hazardAlpha: 0.75,
+        cubeAlpha: 0.45,
+        hazardAlpha: 0.5,
         // Blocks wider than this part of the view light only from their edge
         // facing the view centre, fading over edgeFadeViewRatio of the view width
         maxBlockViewWidthRatio: 0.9,
@@ -258,8 +256,9 @@ const STYLE = Object.freeze({
             Object.freeze([1, 0])
         ]),
         // hard-light pushes the crystals toward the light's hue (green stays
-        // green on the blue rock); 'lighter' would only brighten them to cyan
-        compositeAlpha: 1,
+        // green on the blue rock); keep it faint and behind all gameplay art.
+        // There is no player light: its cyan disc hid the cave around the ring.
+        compositeAlpha: 0.3,
         compositeOperation: 'hard-light'
     }),
     // Bloom: the emissive shapes (outlines, ninja ring, rope, player trail,
