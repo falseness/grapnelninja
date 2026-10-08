@@ -2,7 +2,9 @@
 
 Render real Triangle.draw/track code on a dark canvas at desktop and phone
 resolutions. Sample fixed geometric edge/fill locations (not pixels selected
-by their colour). Also compare complete seeded bad-mode frames with the parent.
+by their colour). Also compare complete seeded bad-mode frames with the old
+classic palette applied to the current renderer. Later background, lighting
+and trail changes must be identical on both sides of this palette-only check.
 The normal gallery separately checks the palette in the composited game.
 """
 import colorsys
@@ -11,6 +13,8 @@ import io
 import json
 import os
 from pathlib import Path
+import re
+import subprocess
 import unittest
 
 import numpy as np
@@ -60,7 +64,14 @@ ISOLATE = '''() => {
 }'''
 
 
-def capture(rev):
+def parent_palette():
+    source = subprocess.check_output(['git', 'show', f'{PARENT}:style.js'], text=True,
+                                     cwd=Path(__file__).resolve().parents[1])
+    return {key: re.search(rf"{key}: '([^']+)'", source).group(1)
+            for key in ('classicTriangleFill', 'classicTriangleStroke')}
+
+
+def capture(rev, palette=None):
     result = {'frames': {}, 'triangles': {}, 'errors': []}
     with ExitStack() as stack:
         root, result['rev'] = export_rev(rev, stack.callback)
@@ -71,6 +82,13 @@ def capture(rev):
                                               device_scale_factor=vp['dpr'])
                 context.add_init_script(SEED_SCRIPT % snap.SEED)
                 context.add_init_script(snap.CLOCK_SCRIPT)
+                if palette:
+                    source = (root / 'style.js').read_text()
+                    for key, value in palette.items():
+                        source, count = re.subn(rf"{key}: '[^']+'", f"{key}: '{value}'", source)
+                        assert count == 1, (key, count)
+                    context.route('**/style.js', lambda route:
+                                  route.fulfill(body=source, content_type='application/javascript'))
                 page = context.new_page()
                 page.on('pageerror', lambda e: result['errors'].append(str(e)))
                 page.goto(url + 'index.html', wait_until='load')
@@ -96,9 +114,12 @@ def hsv(rgb):
 class ClassicTriangleColorTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.runs = {name: capture(rev) for name, rev in
-                    [('original', 'e430f92'), ('parent', PARENT), ('head', 'worktree')]}
+        cls.old_palette = parent_palette()
+        cls.runs = {'original': capture('e430f92'),
+                    'parent': capture('worktree', palette=cls.old_palette),
+                    'head': capture('worktree')}
         cls.report = {'revs': {n: r['rev'] for n, r in cls.runs.items()},
+                      'parent_palette_source': PARENT, 'parent_palette': cls.old_palette,
                       'page_errors': {n: r['errors'] for n, r in cls.runs.items()},
                       'classic': {}, 'bad_max_channel_delta': {}}
         for vp in snap.VIEWPORTS:
@@ -125,6 +146,8 @@ class ClassicTriangleColorTest(unittest.TestCase):
         draw = ImageDraw.Draw(sheet)
         for col, (label, run) in enumerate(cls.runs.items()):
             sha = run['rev'].removeprefix('worktree@').split('+')[0]
+            if label == 'parent':
+                label = 'old palette'
             draw.text((col * 300 + 10, 5), f'{label}: {sha[:7]}', fill='white')
             for row, vp in enumerate(snap.VIEWPORTS):
                 img, p = run['triangles'][(vp['name'], 'classic')]
@@ -151,9 +174,15 @@ class ClassicTriangleColorTest(unittest.TestCase):
         print('PASS classic trail, light, particle and emitted ember colors #8fdcff')
 
     def test_bad_unchanged(self):
+        # Prove the control actually uses the historical classic colour, so
+        # equal bad-mode pixels cannot pass because both captures are identical.
+        for vp in snap.VIEWPORTS:
+            control = self.runs['parent']['triangles'][(vp['name'], 'classic')][1]
+            self.assertEqual(control['light'], self.old_palette['classicTriangleStroke'])
+            self.assertNotEqual(control['light'], '#8fdcff')
         for name, delta in self.report['bad_max_channel_delta'].items():
             self.assertLessEqual(delta, 2, name)
-        print('PASS bad-mode triangle/trail and full-frame max channel deltas <= 2:',
+        print('PASS classic-palette isolation: bad-mode triangle/trail and full-frame max channel deltas <= 2:',
               self.report['bad_max_channel_delta'])
 
     def test_no_page_errors(self):
