@@ -143,6 +143,96 @@ def assert_report(report):
 
 
 class LightIsolationTests(unittest.TestCase):
+    def test_player_after_effects_with_visible_ring_and_sparks(self):
+        lines = ['rev=' + subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            'Ring strokes are cached offscreen; force one rebuild per probe frame and also record the main-canvas sprite composite.']
+        with ExitStack() as stack:
+            url, browser = start_browser_test(ROOT, stack.callback)
+            for vp in VIEWPORTS:
+                for mode in ['bad', 'classic']:
+                    context = browser.new_context(
+                        viewport={'width': vp['width'], 'height': vp['height']},
+                        device_scale_factor=vp['dpr'], is_mobile=vp['touch'], has_touch=vp['touch'])
+                    try:
+                        # Grade is optional and currently disabled; exercise its enabled path.
+                        def with_grade(route):
+                            response = route.fetch()
+                            route.fulfill(response=response, body=response.text().replace(
+                                'colorGrade: false', 'colorGrade: true'))
+                        context.route('**/style.js', with_grade)
+                        context.add_init_script(SEED_SCRIPT % 1)
+                        context.add_init_script(CLOCK_SCRIPT)
+                        page = context.new_page()
+                        page.goto(url)
+                        boot_frozen(page)
+                        page.evaluate(SETUP_SCRIPT, [input_script(1, 100, vp['width'], vp['height']), vp['touch']])
+                        page.evaluate('mode => startGame(mode)', mode)
+                        page.evaluate('''() => {
+                            window.orderProbe = {ops: [], layer: null, points: []}
+                            for (const name of ['drawParticlesAndTrailsLayer', 'drawBloomLayer',
+                                                'drawColorGradeLayer', 'drawPlayerLayer']) {
+                                const original = window[name]
+                                window[name] = function(...args) {
+                                    orderProbe.layer = name
+                                    if (name === 'drawPlayerLayer') {
+                                        Ninja.glowSprite = null
+                                        const r = ninja.getRingOuterRadius() * (1 - STYLE.playerVisuals.ringWidthRatio / 2)
+                                        orderProbe.points = Array.from({length: 16}, (_, i) => {
+                                            const a = i * Math.PI / 8
+                                            const p = ctx.getTransform().transformPoint({
+                                                x: ninja.x + screen.x + r * Math.cos(a),
+                                                y: ninja.y + screen.y + r * Math.sin(a)})
+                                            return {x: Math.floor(p.x), y: Math.floor(p.y)}
+                                        })
+                                    }
+                                    try { return original(...args) }
+                                    finally { orderProbe.layer = null }
+                                }
+                            }
+                            const proto = CanvasRenderingContext2D.prototype
+                            for (const op of ['stroke', 'fill', 'fillRect', 'drawImage']) {
+                                const original = proto[op]
+                                proto[op] = function(...args) {
+                                    if (orderProbe.layer) orderProbe.ops.push({
+                                        layer: orderProbe.layer, op, main: this === ctx,
+                                        color: this.strokeStyle,
+                                        ringSprite: op === 'drawImage' && args[0] === Ninja.glowSprite?.canvas})
+                                    return original.apply(this, args)
+                                }
+                            }
+                            const background = drawBackgroundLayer
+                            drawBackgroundLayer = function() { orderProbe.ops = []; background() }
+                        }''')
+                        for tick in range(60, 65):
+                            page.evaluate(ADVANCE_SCRIPT, tick)
+                            result = page.evaluate('''() => ({...orderProbe,
+                                ringColor: ninja.stroke,
+                                sparks: visualEffects.particles.particles.filter(p => p.spark).length,
+                                pixels: orderProbe.points.map(p => Array.from(ctx.getImageData(p.x, p.y, 1, 1).data))})''')
+                            ops = result['ops']
+                            last = {layer: max(i for i, op in enumerate(ops) if op['layer'] == layer and op['main'])
+                                    for layer in ['drawParticlesAndTrailsLayer', 'drawBloomLayer', 'drawColorGradeLayer']}
+                            ring = next(i for i, op in enumerate(ops) if op['layer'] == 'drawPlayerLayer'
+                                        and op['op'] == 'stroke' and op['color'] == result['ringColor'])
+                            composite = next(i for i, op in enumerate(ops) if op['main'] and op['ringSprite'])
+                            visible = sum(g > 100 and b > 100 and g > r + 25 and b > r + 25
+                                          for r, g, b, a in result['pixels'])
+                            self.assertLess(max(last.values()), ring, result)
+                            self.assertLess(ring, composite, result)
+                            self.assertGreater(result['sparks'], 0, result)
+                            self.assertGreaterEqual(visible, 8, result)
+                            line = (f'PASS {vp["name"]} {mode} tick={tick}: last={last} < '
+                                    f'ninja_ring_stroke={ring} < sprite_composite={composite}; '
+                                    f'ring_visible={visible}/16 sparks={result["sparks"]}')
+                            lines.append(line)
+                            lines.append('ops=' + json.dumps(ops))
+                            print(line, flush=True)
+                    finally:
+                        context.close()
+        if os.environ.get('PLAYER_ORDER_OUT'):
+            Path(os.environ['PLAYER_ORDER_OUT']).write_text('\n'.join(lines) + '\n')
+
     def test_bloom_and_pulse_leave_ring_unchanged(self):
         assert_report(probe(os.environ.get('BLOOM_ISOLATION_OUT'), effect='bloom'))
 

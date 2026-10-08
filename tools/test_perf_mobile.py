@@ -69,10 +69,11 @@ class PerfMobileTest(unittest.TestCase):
         self.assertLess(perf_mobile.LAYERS.index('drawParticlesAndTrailsLayer'),
                         perf_mobile.LAYERS.index('drawBloomLayer'))
         self.assertLess(perf_mobile.LAYERS.index('drawBloomLayer'), perf_mobile.LAYERS.index('drawUILayer'))
-        # The colour grade covers the world and the bloom, not the HUD.
+        # The colour grade covers the world and bloom, under the player and HUD.
         self.assertLess(perf_mobile.LAYERS.index('drawBloomLayer'),
                         perf_mobile.LAYERS.index('drawColorGradeLayer'))
-        self.assertLess(perf_mobile.LAYERS.index('drawColorGradeLayer'), perf_mobile.LAYERS.index('drawUILayer'))
+        self.assertLess(perf_mobile.LAYERS.index('drawColorGradeLayer'), perf_mobile.LAYERS.index('drawPlayerLayer'))
+        self.assertLess(perf_mobile.LAYERS.index('drawPlayerLayer'), perf_mobile.LAYERS.index('drawUILayer'))
         for name, ms in result['layers_ms'].items():
             self.assertIsNotNone(ms['p50'], name)
             self.assertIsNotNone(ms['p95'], name)

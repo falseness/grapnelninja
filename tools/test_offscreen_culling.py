@@ -28,6 +28,8 @@ VIEWPORT = render_snapshot.VIEWPORTS[0]
 
 # Init script: wraps every floor element's draw() (once per instance, like
 # perf_mobile --layers) and counts element draws and shadowBlur draws per frame.
+# Floor elements remain in drawWorldLayer; the separate final player layer is
+# deliberately outside the element counter (its canvas ops are still counted).
 COUNT_SCRIPT = '''(() => {
     const counter = window.__cull = {frame: null, frames: []}
     const proto = CanvasRenderingContext2D.prototype

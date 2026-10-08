@@ -61,14 +61,14 @@ function drawBloomLayer(gameState)
     visualEffects.bloom.draw(gameState, screenEffects.isShaking ? screenEffects.shakeOffset : NO_SHAKE)
 }
 
-// The ball goes over the trail, rope glow and bloom, so its dark centre and
+// The ball goes over particles, bloom and colour grade, so its dark centre and
 // cyan ring stay readable at the small pre-overhaul size
 function drawPlayerLayer()
 {
     ninja.draw()
 }
 
-// Final colour grade and vignette over the world, under the HUD
+// Colour grade and vignette over the world, under the player and HUD
 function drawColorGradeLayer()
 {
     visualEffects.colorGrade.draw()
@@ -132,8 +132,8 @@ function draw()
     drawWorldLayer()
     drawParticlesAndTrailsLayer(gameState)
     drawBloomLayer(gameState)
-    drawPlayerLayer()
     drawColorGradeLayer()
+    drawPlayerLayer()
     drawUILayer(gameState)
     drawFpsCounterLayer(gameState)
 
