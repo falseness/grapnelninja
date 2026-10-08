@@ -692,8 +692,8 @@ class LightmapRenderer
         lightCtx.globalAlpha = 1
         // Some obstacle faces are translucent. Erase their silhouettes from
         // every overlapping light, not only from their own cached sprite.
-        lightCtx.lineWidth = 4 / unit
-        lightCtx.lineJoin = 'round'
+        // Fill only: stroking this mask also erases the exterior light and
+        // creates a dark moat when the low-resolution map is enlarged.
         for (const floor of gameState.floors)
             for (const element of floor.elements)
             {
@@ -709,7 +709,6 @@ class LightmapRenderer
                     else lightCtx.lineTo(p.x + screen.x, p.y + screen.y)
                 lightCtx.closePath()
                 lightCtx.fill()
-                lightCtx.stroke()
             }
         lightCtx.beginPath()
         lightCtx.arc(ninja.x + screen.x, ninja.y + screen.y,

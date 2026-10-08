@@ -116,6 +116,23 @@ def probe(out=None, rev='worktree'):
                     return counts
                 }''')
                 values['page_errors'] = errors
+                # Inspect the complete mask, not only the unmasked light sprite.
+                # The old four-lightmap-pixel stroke cleared the exterior too.
+                values['edge_masks'] = page.evaluate('''() => {
+                    const {lights,rect,u} = scene, results=[]
+                    const savedScale=lights.scale
+                    try {
+                        for(const k of [STYLE.lights.resolutionScale, STYLE.lights.touchResolutionScale]) {
+                            lights.scale=k; lights.resize(); lights.enabled=true
+                            lights.clear(); lights.draw({floors:[{elements:[rect]}]})
+                            const alpha=(x,y) => lights.lightCtx.getImageData(
+                                Math.floor(x*k),Math.floor(y*k),1,1).data[3]
+                            results.push({scale:k, exterior:alpha(370,155),
+                                farther:alpha(370,140), interior:alpha(370,175)})
+                        }
+                    } finally { lights.scale=savedScale; lights.resize() }
+                    return results
+                }''')
                 report['captures'][mode] = values
                 print(mode, json.dumps(values), flush=True)
             finally:
@@ -135,6 +152,10 @@ def assert_report(report):
         assert r['background_changed_pixels'] > 100, (mode, r)
         assert r['gradients_per_frame'] == [0]*5, (mode, r)
         assert not r['page_errors'], r
+        for edge in r['edge_masks']:
+            assert edge['exterior'] > 5, (mode, edge)
+            assert edge['exterior'] >= edge['farther'], (mode, edge)
+            assert edge['interior'] == 0, (mode, edge)
         print(f'PASS {mode}: shape difference <= 15%; isolation <= 2; gradients/frame = 0', flush=True)
 
 
