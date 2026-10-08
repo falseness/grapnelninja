@@ -165,24 +165,12 @@ class Grapnel
         }
         ctx.lineTo(ninja.x + screen.x, ninja.y + screen.y)
     }
-    // Glow without shadowBlur: a wide faint stroke, the cyan rope and a pale core.
-    strokeGlow(width)
+    // Flat rope and anchor outline with no exterior halo.
+    strokeRope(width)
     {
-        const look = STYLE.grapnelVisuals
-        const colors = STYLE.colors.grapnel
-
-        ctx.strokeStyle = colors.halo
-        ctx.globalAlpha = look.haloAlpha
-        ctx.lineWidth = width * look.haloWidthRatio
-        ctx.stroke()
-
-        ctx.strokeStyle = colors.rope
+        ctx.strokeStyle = STYLE.colors.grapnel.rope
         ctx.globalAlpha = STYLE.alpha.full
         ctx.lineWidth = width
-        ctx.stroke()
-
-        ctx.strokeStyle = colors.core
-        ctx.lineWidth = width * look.coreWidthRatio
         ctx.stroke()
     }
     draw()
@@ -194,7 +182,7 @@ class Grapnel
             ctx.lineJoin = 'round'
 
             this.tracePath()
-            this.strokeGlow(this.getWidth())
+            this.strokeRope(this.getWidth())
             ctx.restore()
         }
     }
@@ -218,15 +206,10 @@ class Grapnel
             ctx.arc(hookX, hookY, width * look.anchorRadiusRatio, 0, 2 * Math.PI)
             ctx.fillStyle = colors.anchorFill
             ctx.fill()
-            this.strokeGlow(width * look.anchorWidthRatio)
+            this.strokeRope(width * look.anchorWidthRatio)
         }
         else
         {
-            ctx.arc(hookX, hookY, width * look.tipRadiusRatio, 0, 2 * Math.PI)
-            ctx.fillStyle = colors.halo
-            ctx.globalAlpha = look.haloAlpha
-            ctx.fill()
-            ctx.beginPath()
             ctx.arc(hookX, hookY, width * look.tipCoreRadiusRatio, 0, 2 * Math.PI)
             ctx.fillStyle = colors.core
             ctx.globalAlpha = STYLE.alpha.full

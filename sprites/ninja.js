@@ -199,7 +199,7 @@ class Ninja
         ctx.save()
         ctx.translate(centerX, centerY)
         ctx.globalAlpha = blinkAlpha
-        // Ring, dark centre and halo are one pre-rendered image: no shadowBlur per frame
+        // Ring, dark centre and inner rim are one pre-rendered image: no shadowBlur per frame
         ctx.drawImage(sprite.canvas, -sprite.half, -sprite.half, sprite.half * 2, sprite.half * 2)
 
         ctx.rotate(this.visualRotation)
@@ -207,9 +207,7 @@ class Ninja
 
         ctx.restore()
     }
-    // radius is the ring's outer edge (the stroke is drawn inward) and the blurred
-    // halo stays inside the ball, so the ball reads at its pre-overhaul size. The
-    // bloom composite excludes the ball and its immediate neighbourhood.
+    // radius is the ring's outer edge; the rim light stays inside its inner disc.
     // One sprite is kept and rebuilt when the radius, colours or pixel density change
     // (version switch, resize)
     static getGlowSprite(radius, fill, stroke, transform)
@@ -217,7 +215,7 @@ class Ninja
         const config = STYLE.playerVisuals
         const density = Math.hypot(transform.a, transform.b) || 1
         const pixelScale = Math.max(0.25, Math.min(config.maxSpritePixelScale, Math.ceil(density * 4) / 4))
-        const key = [radius, fill, stroke, pixelScale].join('|')
+        const key = [radius, fill, stroke, pixelScale, STYLE.features.innerGlow].join('|')
         const cached = Ninja.glowSprite
 
         if (cached && cached.key === key)
@@ -247,18 +245,23 @@ class Ninja
         spriteCtx.fillStyle = centre
         spriteCtx.fill()
 
-        // Halo: the ring blurred (shadowBlur works in canvas pixels), clipped to
-        // the ball and faint, so the centre stays dark
-        spriteCtx.save()
-        spriteCtx.clip()
-        spriteCtx.globalAlpha = config.haloAlpha
-        spriteCtx.strokeStyle = STYLE.colors.player.halo
-        spriteCtx.lineWidth = ringWidth
-        spriteCtx.shadowColor = STYLE.colors.player.halo
-        spriteCtx.shadowBlur = radius * config.haloBlurRatio * fit
-        ring()
-        spriteCtx.stroke()
-        spriteCtx.restore()
+        // Full-resolution inward strokes, clipped to the inner disc.
+        if (STYLE.features.innerGlow)
+        {
+            const innerRadius = radius - ringWidth
+            spriteCtx.save()
+            spriteCtx.beginPath()
+            spriteCtx.arc(0, 0, innerRadius, 0, Math.PI * 2)
+            spriteCtx.clip()
+            spriteCtx.strokeStyle = STYLE.colors.player.halo
+            for (let i = 0; i < config.innerRimWidths.length; ++i)
+            {
+                spriteCtx.globalAlpha = config.innerRimAlpha * config.innerRimAlphas[i]
+                spriteCtx.lineWidth = ringWidth * config.innerRimWidths[i]
+                spriteCtx.stroke()
+            }
+            spriteCtx.restore()
+        }
 
         // Thick cyan ring with a thin pale hot core line along its middle
         ring()

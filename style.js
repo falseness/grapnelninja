@@ -473,9 +473,9 @@ const STYLE = Object.freeze({
         rimAlpha: 0.85,
         // Sprite margin for the ring's antialiasing: nothing is drawn outside the ball
         spriteRadiusRatio: 1.05,
-        haloBlurRatio: 0.45,
-        // Inner halo only tints the rim of the dark centre
-        haloAlpha: 0.35,
+        innerRimAlpha: 0.18,
+        innerRimWidths: Object.freeze([6, 4, 2]),
+        innerRimAlphas: Object.freeze([0.18, 0.35, 1]),
         maxSpritePixelScale: 3
     }),
     // Ratios of the rounded rope width (STYLE.strokes.grapnelWidthHeightPercent).
@@ -857,7 +857,7 @@ const STYLE = Object.freeze({
         playerTrail: true,
         screenEffects: true,
         uiStyling: true,
-        bloom: true,
+        bloom: false,
         ambient: true,
         colorGrade: false
     })

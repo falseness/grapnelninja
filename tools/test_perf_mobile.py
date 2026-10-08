@@ -61,16 +61,11 @@ class PerfMobileTest(unittest.TestCase):
         self.assertEqual(result['page_errors'], [])
         self.assertFalse(result['provenance']['trace'])
         self.assertTrue(result['provenance']['layers'])
-        self.assertEqual(len(result['provenance']['canvases']['bloom']), 4)
+        self.assertEqual(len(result['provenance']['canvases']['bloom']), 0)
         self.assertGreater(result['provenance']['canvases']['lightmap']['width'], 0)
         self.assertEqual(list(result['layers_ms']), perf_mobile.LAYERS)
-        # The bloom pass runs between the world effects and the HUD.
-        self.assertIn('drawBloomLayer', perf_mobile.LAYERS)
+        self.assertNotIn('drawBloomLayer', perf_mobile.LAYERS)
         self.assertLess(perf_mobile.LAYERS.index('drawParticlesAndTrailsLayer'),
-                        perf_mobile.LAYERS.index('drawBloomLayer'))
-        self.assertLess(perf_mobile.LAYERS.index('drawBloomLayer'), perf_mobile.LAYERS.index('drawUILayer'))
-        # The colour grade covers the world and bloom, under the player and HUD.
-        self.assertLess(perf_mobile.LAYERS.index('drawBloomLayer'),
                         perf_mobile.LAYERS.index('drawColorGradeLayer'))
         self.assertLess(perf_mobile.LAYERS.index('drawColorGradeLayer'), perf_mobile.LAYERS.index('drawPlayerLayer'))
         self.assertLess(perf_mobile.LAYERS.index('drawPlayerLayer'), perf_mobile.LAYERS.index('drawUILayer'))
