@@ -6,6 +6,11 @@ class LeftWall extends Trampoline
     {
         super({x: 0, y: 0, points: [{x: -1, y: -1}, {x: 0, y: -1},
                                   {x: 0, y: 1}, {x: -1, y: 1}]})
+        // Dedicated colours: halve RGB with nearest-integer rounding; retain alpha.
+        this.fill = '#040e09'
+        this.stroke = '#1f8025'
+        this.wallFill = 'rgba(5, 32, 18, 0.8)'
+        this.wallCore = '#6c806c'
         this.update(camera)
         this.dx = this.dy = 0
     }
@@ -42,6 +47,19 @@ class LeftWall extends Trampoline
         who.applyBounce({x: this.x, y: who.y, nx: 1, ny: 0,
                          approaching: who.speedX < 0, line: line, element: this})
         return line
+    }
+    draw()
+    {
+        ctx.save()
+        // Keep even the neon outline inside the collision face. The remaining
+        // polygon edges are a full viewport offscreen, including their glow.
+        ctx.beginPath()
+        ctx.rect(screen.x + this.x + this.points[0].x, screen.y + this.y + this.points[0].y,
+                 -this.points[0].x, this.points[2].y - this.points[0].y)
+        ctx.clip()
+        this.drawBadVersionPolygon(version == 'bad' ? this.wallFill : this.fill,
+                                   this.stroke, {baseFillStyle: this.fill, coreColor: this.wallCore})
+        ctx.restore()
     }
     drawExtrusion() {}
 }

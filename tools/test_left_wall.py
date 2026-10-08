@@ -1,6 +1,7 @@
 """Production-path regression for the persistent camera boundary."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -8,7 +9,7 @@ import unittest
 from browser_test_support import start_browser_test, wait_for_boot
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = ROOT / 'artifacts' / 'TASK-225'
+EVIDENCE = ROOT / os.environ.get('LEFT_WALL_EVIDENCE_DIR', 'artifacts/TASK-225')
 
 PROBE = r'''() => {
     const wall = screen.leftWall;
@@ -106,6 +107,59 @@ LIFECYCLE = r'''() => {
 }'''
 
 
+RENDER_SETUP = r"""() => {
+    screen.x = screen.y = 0; screen.leftWall.update(screen);
+    const u = scale[version], h = height / u;
+    window.greenReference = new Trampoline({x: width * 0.28 / u, y: h * 0.3,
+        points: [{x: 0,y: 0},{x: h * 0.1,y: 0},
+                 {x: h * 0.1,y: h * 0.4},{x: 0,y: h * 0.4}]});
+    floors[1].elements.push(greenReference);
+    return {fill: screen.leftWall.fill, stroke: screen.leftWall.stroke,
+        badFill: screen.leftWall.wallFill, core: screen.leftWall.wallCore,
+        referenceFill: greenReference.fill, referenceStroke: greenReference.stroke,
+        greenFill: STYLE.badVersionEffects.obstacles.greenFill,
+        greenCore: STYLE.strokes.neonOutline.coreColors[greenReference.stroke]};
+}"""
+
+RENDER_MEASURE = r"""() => {
+    const wall = screen.leftWall;
+    wall.update(screen);
+    visualEffects.screenEffects.landings.length = 0;
+    let m;
+    const original = wall.draw;
+    wall.draw = function() {m = ctx.getTransform(); original.call(this)};
+    draw(); wall.draw = original;
+    const rect = canvas.getBoundingClientRect();
+    const face = (wall.x + screen.x) * m.a + m.e;
+    // Isolate the wall using the very same draw transform to locate its raster edge.
+    const main = ctx, probe = document.createElement('canvas');
+    probe.width = canvas.width; probe.height = canvas.height;
+    ctx = probe.getContext('2d'); ctx.setTransform(m);
+    wall.draw();
+    const raster = ctx.getImageData(0, Math.floor(canvas.height / 2), canvas.width, 1).data;
+    let rasterRight = -1;
+    for (let x = 0; x < canvas.width; ++x) if (raster[x*4+3]) rasterRight = x + 1;
+    ctx = main;
+    const ref = (greenReference.x + greenReference.rightPointX + screen.x) * m.a + m.e;
+    const y = Math.floor(canvas.height * 0.5);
+    const sample = x => Array.from(ctx.getImageData(Math.floor(x), y, 1, 1).data);
+    return {camera: {x: screen.x, y: screen.y},
+        backing: {width: canvas.width, height: canvas.height},
+        canvasRect: {x: rect.x,y: rect.y,width: rect.width,height: rect.height},
+        transform: {a: m.a,d: m.d,e: m.e,f: m.f},
+        face, rasterRight, expected: canvas.height * 0.01,
+        collisionFace: (wall.getLines()[0].x1 + screen.x) * m.a + m.e,
+        hiddenEdges: {left: (wall.x + wall.points[0].x + screen.x)*m.a+m.e,
+            top: (wall.y + wall.points[0].y + screen.y)*m.d+m.f,
+            bottom: (wall.y + wall.points[2].y + screen.y)*m.d+m.f},
+        samples: {wall: sample(face - 2 * canvas.height/1080),
+                  green: sample(ref - 2 * canvas.height/1080)},
+        sampleCoordinates: {wallX: Math.floor(face - 2*canvas.height/1080),
+            greenX: Math.floor(ref - 2*canvas.height/1080), y},
+        referenceFace: ref};
+}"""
+
+
 class LeftWallTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -198,8 +252,70 @@ class LeftWallTests(unittest.TestCase):
             'sourceState': 'worktree; exact tested file hashes below',
             'sha256': {f: hashlib.sha256((ROOT / f).read_bytes()).hexdigest() for f in files},
             'settings': [{'mode': r['mode'], 'viewport': r['viewport'], 'zoom': r['zoom']} for r in results],
-            'evidence': ['artifacts/TASK-225/' + f for f in ('tests.log', 'physics.json', 'manifest.json')],
+            'evidence': [str(p.relative_to(ROOT)) for p in sorted(EVIDENCE.iterdir()) if p.is_file()],
             'assertions': 'PASS all four mode/viewport combinations; no skipped scenarios'}
+        (EVIDENCE / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+
+
+    def test_render_native_motion_and_resize(self):
+        results = []
+        for mode in ('bad', 'classic'):
+            for label, w, h, touch in [('desktop', 1920, 1080, False), ('phone', 844, 390, True)]:
+                with self.subTest(mode=mode, viewport=label):
+                    page = self.browser.new_page(viewport={'width': w, 'height': h},
+                                                 is_mobile=touch, has_touch=touch)
+                    errors = []
+                    page.on('pageerror', lambda error: errors.append(str(error)))
+                    try:
+                        page.goto(self.url)
+                        wait_for_boot(page)
+                        page.evaluate("mode => {startGame(mode); cancelAnimationFrame(game); performance.now = () => 1000}", mode)
+                        styles = page.evaluate(RENDER_SETUP)
+                        # Assert independently against the corresponding unchanged green palette.
+                        def rgba(value):
+                            if value.startswith('#'):
+                                return [int(value[i:i+2], 16) for i in (1, 3, 5)] + [1]
+                            return [float(v.strip()) for v in value[5:-1].split(',')]
+                        for wall_key, green_key in [('fill', 'referenceFill'), ('stroke', 'referenceStroke'),
+                                                    ('badFill', 'greenFill'), ('core', 'greenCore')]:
+                            a, b = rgba(styles[wall_key]), rgba(styles[green_key])
+                            self.assertEqual(a[:3], [int(v / 2 + 0.5) for v in b[:3]])
+                            self.assertEqual(a[3], b[3])
+                        captures = []
+                        for name, dx, dy in [('native', 0, 0), ('motion-1', -37, 21), ('motion-2', -49, -33), ('resize', 0, 0)]:
+                            if name == 'resize':
+                                page.set_viewport_size({'width': w - 123, 'height': h - 31})
+                                page.wait_for_timeout(200)
+                            page.evaluate("""([dx,dy]) => {screen.speedX=dx; screen.speedY=dy; screen.move()}""", [dx, dy])
+                            row = page.evaluate(RENDER_MEASURE)
+                            filename = f'{mode}-{label}-{name}.png'
+                            page.screenshot(path=str(EVIDENCE / filename))
+                            row['capture'] = filename
+                            self.assertLessEqual(abs(row['face'] - row['expected']), 1)
+                            self.assertEqual(row['collisionFace'], row['face'])
+                            self.assertLessEqual(abs(row['rasterRight'] - row['collisionFace']), 1)
+                            self.assertLess(row['hiddenEdges']['left'], -row['backing']['width'] * 0.9)
+                            self.assertLess(row['hiddenEdges']['top'], -row['backing']['height'] * 0.9)
+                            self.assertGreater(row['hiddenEdges']['bottom'], row['backing']['height'] * 1.9)
+                            # Actual final framebuffer samples include grade and neon, not constants.
+                            self.assertLess(row['samples']['wall'][1], row['samples']['green'][1], row)
+                            self.assertGreater(row['samples']['wall'][1], row['samples']['wall'][0], row)
+                            self.assertGreater(row['samples']['wall'][1], row['samples']['wall'][2], row)
+                            if name.startswith('motion'):
+                                self.assertLess(abs(row['face'] - captures[0]['face']), 0.001)
+                            row['assertions'] = 'PASS boundary within one backing pixel, collision aligned, hidden edges, rendered darker green, stable motion/resize'
+                            captures.append(row)
+                        self.assertEqual(errors, [])
+                        results.append({'mode': mode, 'viewport': label, 'styles': styles, 'captures': captures})
+                        print(f'PASS render {mode} {label}: native, consecutive motion, resize, half RGB/unchanged alpha, darker rendered pixels', flush=True)
+                    finally:
+                        page.close()
+        (EVIDENCE / 'render.json').write_text(json.dumps(results, indent=2) + '\n')
+        manifest = json.loads((EVIDENCE / 'manifest.json').read_text())
+        manifest['renderSettings'] = {'deviceScaleFactor': 1, 'clockMs': 1000,
+            'pipeline': 'production draw(), green Trampoline reference added to gameplay',
+            'captures': [c['capture'] for r in results for c in r['captures']]}
+        manifest['evidence'] = [str(p.relative_to(ROOT)) for p in sorted(EVIDENCE.iterdir()) if p.is_file()]
         (EVIDENCE / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 
 

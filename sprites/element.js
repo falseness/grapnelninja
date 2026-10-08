@@ -17,7 +17,7 @@ function updateNeonPulse()
         : 1
 }
 
-function strokeNeonPath(color, alpha, unit, shapePath)
+function strokeNeonPath(color, alpha, unit, shapePath, coreColor)
 {
     const neon = STYLE.strokes.neonOutline
     unit = unit === undefined ? 1 / scale[version] : unit
@@ -60,7 +60,7 @@ function strokeNeonPath(color, alpha, unit, shapePath)
     ctx.lineWidth = neon.width * unit
     ctx.stroke()
 
-    ctx.strokeStyle = neon.coreColors[color] || neon.coreColor
+    ctx.strokeStyle = coreColor || neon.coreColors[color] || neon.coreColor
     ctx.globalAlpha = baseAlpha * neon.coreAlpha * neonPulse
     ctx.lineWidth = neon.width * neon.coreWidthRatio * unit
     ctx.stroke()
@@ -301,7 +301,7 @@ class Element
         ctx.fillStyle = fillStyle
         ctx.fill()
 
-        strokeNeonPath(strokeStyle, options.outlineAlpha)
+        strokeNeonPath(strokeStyle, options.outlineAlpha, undefined, undefined, options.coreColor)
 
         ctx.restore()
     }
