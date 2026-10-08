@@ -58,15 +58,21 @@ class VisualGalleryTest(unittest.TestCase):
                 self.assertTrue((out / f'{name}.png').exists(), name)
 
             for mode in visual_gallery.MODES:
-                ember = Image.open(out / f'gif-{mode}.gif')
+                ember = Image.open(out / f'ember-gif-{mode}.gif')
                 self.assertEqual(ember.n_frames, 120)
                 info = manifest['ember_gifs'][mode]
+                self.assertEqual(info['file'], f'ember-gif-{mode}.gif')
                 self.assertGreater(info['peak_shared_alpha'], 0.1)
                 self.assertTrue((out / info['phone_file']).exists())
-                gif = Image.open(out / f'gameplay-gif-{mode}.gif')
+                gif = Image.open(out / f'gif-{mode}.gif')
                 self.assertGreaterEqual(gif.n_frames, 30)
                 self.assertEqual(gif.size, visual_gallery.GIF_SIZE)
                 info = manifest['gifs'][mode]
+                self.assertEqual(info['file'], f'gif-{mode}.gif')
+                if mode == 'bad':
+                    self.assertTrue(all(a['screen.x'] != b['screen.x']
+                                        for a, b in zip(info['states'][:10], info['states'][1:10])),
+                                    'bad first ten GIF frames must move the camera')
                 self.assertEqual(info['viewport'], visual_gallery.GIF_CAPTURE[mode][0])
                 self.assertEqual(info['ticks'], visual_gallery.gif_ticks(mode))
                 self.assertEqual(len(info['states']), gif.n_frames)

@@ -233,7 +233,7 @@ class PlayerAndBloomTests(unittest.TestCase):
     def test_camera_pan(self):
         OUT.mkdir(parents=True,exist_ok=True)
         commits=subprocess.check_output(['git','log','--format=%H','--grep=^TASK-206:'],cwd=ROOT,text=True).splitlines()
-        parent=os.environ.get('INNER_GLOW_PAN_PARENT',commits[0]+'^' if commits else 'HEAD')
+        parent=os.environ.get('INNER_GLOW_PAN_PARENT',commits[-1]+'^' if commits else 'HEAD')
         report={'method':'60 frozen-clock frames, scripted camera x=-frame, fixed rope input, green top edge world band x=330..429 y=242..258; mean absolute RGB pixel change', 'runs':{}}
         for label,rev in [('parent',parent),('head','worktree')]:
             dest=OUT/'before-after'/label;dest.mkdir(parents=True,exist_ok=True)

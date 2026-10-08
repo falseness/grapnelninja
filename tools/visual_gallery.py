@@ -6,10 +6,10 @@ two runs of one revision give byte-identical PNGs and identical game states.
 Usage: python3 tools/visual_gallery.py --rev worktree|<git rev> --out DIR
        python3 tools/visual_gallery.py --compare-state A.json B.json
 --rev writes into DIR: <viewport>-menu.png and <viewport>-<mode>-tick<NNNN>.png
-for desktop 1920x1080@1 and phone 843x390@3; <viewport>-<mode>-pause.png (the
+for desktop 1920x1080@1 and phone 844x390@3; <viewport>-<mode>-pause.png (the
 pause screen opened after the last tick, listed under 'screens': no state
-check, it runs after every state capture); gameplay-gif-{mode}.gif (camera
-parallax); gif-bad.gif and gif-classic.gif (8 s fixed ember scene at 15 fps,
+check, it runs after every state capture); gif-bad.gif and gif-classic.gif (camera
+parallax); ember-gif-{mode}.gif (8 s fixed ember scene at 15 fps,
 native phone scale plus labelled 3x crops); phone-{mode}-embers.png; sheet.png (the reference AI cover top-left, then every capture,
 labelled); gif-menu.gif (3 s of idle menu animation); manifest.json (rev,
 viewport, mode, tick and the game state per capture).
@@ -202,9 +202,10 @@ def run(rev, out, log=print):
         screen_files[name] = {'file': f'{name}.png', 'width': size[0], 'height': size[1],
                               'sha256': hashlib.sha256(data).hexdigest()}
     for mode, frames in gifs.items():
-        write_gif(frames, out / (f'gameplay-gif-{mode}.gif' if mode in MODES else 'gif-menu.gif'))
-    for mode, frames in ember_gifs.items():
         write_gif(frames, out / f'gif-{mode}.gif')
+    for mode, frames in ember_gifs.items():
+        write_gif(frames, out / f'ember-gif-{mode}.gif')
+        ember_info[mode]['file'] = f'ember-gif-{mode}.gif'
     items = [('reference: cover-ai-1-original.png', Image.open(REFERENCE))] if REFERENCE.exists() else []
     items += [(f'{name}  ({c["width"]}x{c["height"]})', Image.open(out / c['file']))
               for name, c in list(captures.items()) + list(screen_files.items())]
@@ -215,7 +216,7 @@ def run(rev, out, log=print):
         'rev': rev_sha, 'source': rev_id, 'seed': SEED, 'ticks': TICKS,
         'viewports': VIEWPORTS, 'reference': str(REFERENCE.relative_to(ROOT)) if REFERENCE.exists() else None,
         'ember_gifs': ember_info,
-        'gifs': {mode: {'file': f'gameplay-gif-{mode}.gif' if mode in MODES else 'gif-menu.gif', 'viewport': GIF_CAPTURE[mode][0], 'size': list(GIF_SIZE),
+        'gifs': {mode: {'file': f'gif-{mode}.gif', 'viewport': GIF_CAPTURE[mode][0], 'size': list(GIF_SIZE),
                         'fps': GIF_FPS, 'frames': len(frames), 'ticks': gif_ticks(mode),
                         'states': gif_states[mode]}
                  for mode, frames in gifs.items()},
