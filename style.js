@@ -291,16 +291,16 @@ const STYLE = Object.freeze({
         moteHaloRatio: 3.5,
         moteHaloAlpha: 0.3,
         // Drift speed in screen px at 1080 per second; motes rise slowly
-        moteMinSpeed: 10,
-        moteMaxSpeed: 28,
+        moteMinSpeed: 1,
+        moteMaxSpeed: 3,
         moteRiseRatio: 0.7,
         // Part of the camera movement the motes follow (depth parallax)
         moteParallax: 0.25,
         moteMinAlpha: 0.5,
         moteMaxAlpha: 0.95,
         // Each mote fades in and out over its own period (ms)
-        moteMinTwinkleMs: 2200,
-        moteMaxTwinkleMs: 4200,
+        moteMinTwinkleMs: 6000,
+        moteMaxTwinkleMs: 12000,
         moteColors: Object.freeze(['#9feaff', '#c9a8ff', '#e6f6ff', '#7fc4ff']),
         // Neon halo and bloom brightness swing by +-pulseAmount over pulsePeriodMs
         pulsePeriodMs: 2000,
@@ -502,8 +502,8 @@ const STYLE = Object.freeze({
         trailPoints: 100,
         cubeTrailPoints: 50,
         triangleTrailPoints: 75,
-        backgroundRotationMs: 18000,
-        backgroundStreakMs: 5200
+        backgroundRotationMs: 72000,
+        backgroundStreakMs: 20800
     }),
     backgroundGeometry: Object.freeze({
         hexagonCount: 5,
@@ -533,12 +533,9 @@ const STYLE = Object.freeze({
             rockHeight: Object.freeze([80, 150]),
             rockHalfWidth: Object.freeze([120, 230]),
             edgeLineWidth: 2,
-            // Fraction of the camera shift the layer follows and the slow
-            // drift amplitude (of the viewport size); both ignore the classic
-            // motion time scale, so the chill version drifts too
-            cameraParallaxXRatio: 0.12,
-            cameraParallaxYRatio: 0.03,
-            driftRatio: 0.02,
+            // Fraction of world translation; no time-driven cave sway.
+            cameraParallaxXRatio: 0.08,
+            cameraParallaxYRatio: 0.015,
             // Highest offscreen pixels per logical unit
             maxPixelScale: 1
         }),
@@ -558,9 +555,8 @@ const STYLE = Object.freeze({
             topHeight: Object.freeze([110, 190]),
             topHalfWidth: Object.freeze([110, 210]),
             rimLineWidth: 2.5,
-            cameraParallaxXRatio: 0.4,
-            cameraParallaxYRatio: 0.08,
-            driftRatio: 0.07,
+            cameraParallaxXRatio: 0.25,
+            cameraParallaxYRatio: 0.04,
             maxShiftYRatio: 0.03,
             maxPixelScale: 1
         }),
@@ -576,11 +572,11 @@ const STYLE = Object.freeze({
             streakSpacingRatio: 0.19,
             streakLengthRatio: 0.34,
             streakLineWidth: screenHeightPercent(100 * 1.45 / 1080),
-            parallaxShiftRatio: 0.009,
+            parallaxShiftRatio: 0,
             cameraParallaxXRatio: 0.018,
             cameraParallaxYRatio: 0.012,
             motionTimeScale: 0.24,
-            hexagonRotationTimeScale: 0.45,
+            hexagonRotationTimeScale: 0.2,
             streakTimeScale: 0.18,
             flashMotionRatio: 0.000,
             triangleRotationScale: 0.05,

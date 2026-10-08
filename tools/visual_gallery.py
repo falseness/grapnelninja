@@ -9,7 +9,7 @@ Usage: python3 tools/visual_gallery.py --rev worktree|<git rev> --out DIR
 for desktop 1920x1080@1 and phone 844x390@3; <viewport>-<mode>-pause.png (the
 pause screen opened after the last tick, listed under 'screens': no state
 check, it runs after every state capture); gif-bad.gif and gif-classic.gif
-(GIF_FRAMES consecutive desktop frames at 15 fps from tick GIF_START, scaled to
+(GIF_FRAMES consecutive frames at 15 fps from each mode's GIF_CAPTURE, scaled to
 960x540); sheet.png (the reference AI cover top-left, then every capture,
 labelled); manifest.json (rev, viewport, mode, tick and the game state per capture).
 --compare-state prints one line per capture and 'differences: N' (exit 1 if N > 0).
@@ -39,11 +39,12 @@ VIEWPORTS = [
 ]
 MODES = ['bad', 'classic']
 TICKS = [300, 900]
-GIF_VIEWPORT = 'desktop'
+# Seed 1's desktop bad run hangs at a fixed camera. The phone run scrolls
+# after tick 900; retain the desktop classic swing and its scrolling segment.
+GIF_CAPTURE = {'bad': ('phone', 900), 'classic': ('desktop', 300)}
 GIF_SIZE = (960, 540)
 GIF_FPS = 15
 GIF_STEP = 60 // GIF_FPS          # game ticks per GIF frame
-GIF_START = 300
 GIF_FRAMES = 45                   # 3 s at 15 fps
 STATE_KEYS = ['ninja.x', 'ninja.y', 'scoreText.count', 'screen.x', 'screen.y', 'version']
 TOLERANCE = 1e-9
@@ -73,8 +74,8 @@ def capture_name(vp, mode, tick=None):
     return f'{vp}-menu' if mode == 'menu' else f'{vp}-{mode}-tick{tick:04d}'
 
 
-def gif_ticks():
-    return [GIF_START + i * GIF_STEP for i in range(GIF_FRAMES)]
+def gif_ticks(mode):
+    return [GIF_CAPTURE[mode][1] + i * GIF_STEP for i in range(GIF_FRAMES)]
 
 
 def to_gif_frame(data):
@@ -122,12 +123,17 @@ def run(rev, out, log=print):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     shots, states, gifs, screens, errors = {}, {}, {}, {}, []
+    gif_states = {}
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
         url, browser = start_browser_test(root, stack.callback)
         for vp in VIEWPORTS:
-            last_tick = max(TICKS + gif_ticks())
-            script = input_script(SEED, last_tick, vp['width'], vp['height'])
+            last_tick = max(TICKS + [tick for mode in MODES for tick in gif_ticks(mode)])
+            # Preserve the baseline input prefix, including throws omitted
+            # because their release would fall after the last state capture.
+            script = input_script(SEED, max(TICKS), vp['width'], vp['height'])
+            script += [event for event in input_script(SEED, last_tick, vp['width'], vp['height'])
+                       if event['tick'] > max(TICKS)]
             for mode in ['menu'] + MODES:
                 context = browser.new_context(viewport={'width': vp['width'], 'height': vp['height']},
                                               device_scale_factor=vp['dpr'],
@@ -152,14 +158,17 @@ def run(rev, out, log=print):
                 else:
                     page.evaluate('mode => startGame(mode)', mode)
                     frames = []
-                    for tick in sorted(set(TICKS + (gif_ticks() if vp['name'] == GIF_VIEWPORT else []))):
+                    frame_states = []
+                    for tick in sorted(set(TICKS + (gif_ticks(mode) if vp['name'] == GIF_CAPTURE[mode][0] else []))):
                         page.evaluate(ADVANCE_SCRIPT, tick)
                         if tick in TICKS:
                             shoot(capture_name(vp['name'], mode, tick), tick)
-                        if vp['name'] == GIF_VIEWPORT and tick in gif_ticks():
+                        if vp['name'] == GIF_CAPTURE[mode][0] and tick in gif_ticks(mode):
                             frames.append(to_gif_frame(png_bytes(page.evaluate('() => __snap.capture()'))))
+                            frame_states.append(page.evaluate(STATE_SCRIPT))
                     if frames:
                         gifs[mode] = frames
+                        gif_states[mode] = frame_states
                     page.evaluate('() => menu.startPause()')
                     screens[f'{vp["name"]}-{mode}-pause'] = png_bytes(page.evaluate('() => __snap.capture()'))
                 context.close()
@@ -187,8 +196,9 @@ def run(rev, out, log=print):
     manifest = {
         'rev': rev_sha, 'source': rev_id, 'seed': SEED, 'ticks': TICKS,
         'viewports': VIEWPORTS, 'reference': str(REFERENCE.relative_to(ROOT)) if REFERENCE.exists() else None,
-        'gifs': {mode: {'file': f'gif-{mode}.gif', 'viewport': GIF_VIEWPORT, 'size': list(GIF_SIZE),
-                        'fps': GIF_FPS, 'frames': len(frames), 'ticks': gif_ticks()}
+        'gifs': {mode: {'file': f'gif-{mode}.gif', 'viewport': GIF_CAPTURE[mode][0], 'size': list(GIF_SIZE),
+                        'fps': GIF_FPS, 'frames': len(frames), 'ticks': gif_ticks(mode),
+                        'states': gif_states[mode]}
                  for mode, frames in gifs.items()},
         'page_errors': errors, 'captures': captures, 'screens': screen_files,
     }

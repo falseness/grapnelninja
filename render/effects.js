@@ -868,16 +868,14 @@ class BackgroundRenderer
             y: screen.y * canvasScale * ratioY
         }
     }
-    // Where a crystal/rock tile sits this frame: it follows a fraction of
-    // the camera (against its motion; the far layer a small one, the near
-    // rocks a larger one) and of the slow background drift
+    // Follow the world translation at a fraction of its speed. Camera
+    // parallax is spatial, independent of the animation clock; a stationary
+    // camera must leave the cave still in both modes.
     getLayerShift(width, height, layer)
     {
         if (this.shouldFreezeBadVersionBackgroundMotion())
             return {x: 0, y: 0}
 
-        const drift = this.getParallaxShift(width, height,
-            {parallaxShiftRatio: layer.driftRatio, ignoreTimeScale: true})
         const camera = this.getCameraParallaxShift({
             cameraParallaxXRatio: layer.cameraParallaxXRatio,
             cameraParallaxYRatio: layer.cameraParallaxYRatio,
@@ -886,8 +884,8 @@ class BackgroundRenderer
         const maxY = height * (layer.maxShiftYRatio || 0.05)
 
         return {
-            x: drift.x - camera.x,
-            y: Math.max(-maxY, Math.min(maxY, drift.y - camera.y))
+            x: camera.x,
+            y: Math.max(-maxY, Math.min(maxY, camera.y))
         }
     }
     // A crystal/rock tile for this viewport size, built once by paint
@@ -1906,7 +1904,7 @@ class ParticleSystem
     {
         const config = STYLE.ambient
         const unit = view ? view.unit : 1 / scale[version]
-        const seconds = performance.now() / 1000
+        const seconds = visualEffects.background.getAnimationTime() / 1000
         // Motes live in screen px at 1080 on a field one halo wider than the view
         const margin = config.moteMaxSize * config.moteHaloRatio
         const fieldWidth = LOGICAL_VIEWPORT.width + margin * 2
