@@ -808,8 +808,9 @@ class LightmapRenderer
     }
     isCubeOrPlatform(element)
     {
-        // The floor/ceiling strips span the whole level; their glow is the bloom's job
-        if (element instanceof Ground)
+        // Both surface types span the level. Their boundary renderer supplies
+        // the neon outline; neither should emit obstacle light onto the cave.
+        if (element instanceof Ground || element instanceof Side)
             return false
 
         return element instanceof Rect || element instanceof Trampoline

@@ -116,6 +116,23 @@ def probe(out=None, rev='worktree'):
                     return counts
                 }''')
                 values['page_errors'] = errors
+                values['surface_lights'] = page.evaluate('''() => {
+                    const {lights,u} = scene
+                    const surfaces = [
+                        new Side({x:0,y:100/u,width:900/u,height:40/u}),
+                        new Ground({x:0,y:800/u,points:[
+                            {x:0,y:0},{x:0,y:40/u},{x:900/u,y:40/u},{x:900/u,y:0}]})
+                    ]
+                    return surfaces.map(element => {
+                        lights.enabled=true; lights.clear()
+                        lights.draw({floors:[{elements:[element]}]})
+                        const pixels=lights.lightCtx.getImageData(0,0,
+                            lights.lightCanvas.width,lights.lightCanvas.height).data
+                        let maxAlpha=0
+                        for(let i=3;i<pixels.length;i+=4) maxAlpha=Math.max(maxAlpha,pixels[i])
+                        return {kind:element.constructor.name,hasLights:lights.hasLights,maxAlpha}
+                    })
+                }''')
                 # Inspect the complete mask, not only the unmasked light sprite.
                 # The old four-lightmap-pixel stroke cleared the exterior too.
                 values['edge_masks'] = page.evaluate('''() => {
@@ -152,6 +169,8 @@ def assert_report(report):
         assert r['background_changed_pixels'] > 100, (mode, r)
         assert r['gradients_per_frame'] == [0]*5, (mode, r)
         assert not r['page_errors'], r
+        for surface in r['surface_lights']:
+            assert not surface['hasLights'] and surface['maxAlpha'] == 0, (mode, surface)
         for edge in r['edge_masks']:
             assert edge['exterior'] > 5, (mode, edge)
             assert edge['exterior'] >= edge['farther'], (mode, edge)
