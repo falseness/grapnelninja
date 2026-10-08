@@ -1480,6 +1480,7 @@ class ParticleSystem
         this.moteLayoutFrame = -1
         this.lastTime = 0
         this.lastWorldEmitTime = 0
+        this.emberBounds = {left: 0, right: 0, top: 0, bottom: 0}
         this.trailSparkBudget = 0
         // Sparks draw from their own stream: Math.random is shared with level
         // generation (seeded in the captures), so using it here would change gameplay.
@@ -1505,6 +1506,8 @@ class ParticleSystem
         this.releaseTrampolineSplashLocks(gameState)
         this.updateParticles(dt)
         this.emitTrailSparks(gameState, dt)
+        if (gameState && gameState.floors)
+            this.emitWorldParticles(gameState.floors)
     }
     draw()
     {
@@ -1536,6 +1539,14 @@ class ParticleSystem
             const progress = particle.life / particle.maxLife
             const drawX = particle.worldAnchored ? particle.x + screen.x : particle.x
             const drawY = particle.worldAnchored ? particle.y + screen.y : particle.y
+
+            if (particle.ember)
+            {
+                this.ctx.globalAlpha = this.emberAlpha(particle)
+                this.ctx.fillStyle = particle.color
+                this.ctx.fillRect(drawX - particle.size / 2, drawY - particle.size / 2, particle.size, particle.size)
+                continue
+            }
 
             if (particle.spark)
             {
@@ -1580,6 +1591,13 @@ class ParticleSystem
         {
             const particle = particles[i]
 
+            if (particle.ember)
+            {
+                const config = STYLE.particles.embers
+                const age = particle.maxLife - particle.life
+                particle.x += config.sway * (Math.sin((age + dt) / config.swayPeriodMs + particle.phase)
+                    - Math.sin(age / config.swayPeriodMs + particle.phase))
+            }
             particle.x += particle.vx * dt
             particle.y += particle.vy * dt
             particle.life -= dt
@@ -1710,46 +1728,51 @@ class ParticleSystem
     }
     emitElementParticles(element)
     {
-        if (!this.isVisible(element))
+        const hazard = this.isHazard(element)
+        if (!hazard && !this.isCubeOrPlatform(element))
             return
 
-        if (this.isHazard(element))
-        {
-            const badParticles = this.getBadVersionParticles()
-            const chance = Math.min(1, STYLE.particles.hazardEmitChance
-                * badParticles.worldChanceMultiplier
-                * badParticles.hazardChanceMultiplier)
-
-            if (Math.random() <= chance)
-            {
-                for (let i = 0; i < badParticles.hazardEmitCount; ++i)
-                {
-                    this.emitAroundElement(
-                        element,
-                        version == 'bad' ? STYLE.colors.hazard.red : element.getGlowStroke(),
-                        STYLE.particles.hazardSpeed * badParticles.speedMultiplier,
-                        this.clampAlpha(STYLE.particles.hazardAlpha * badParticles.alphaMultiplier),
-                        badParticles
-                    )
-                }
-            }
-
+        const config = STYLE.particles.embers
+        const interval = version == 'bad'
+            ? (hazard ? config.badHazardIntervalMs : config.badCubeIntervalMs)
+            : (hazard ? config.hazardIntervalMs : config.cubeIntervalMs)
+        // Cache the phase before moving obstacles change position. No shared RNG:
+        // visual emissions must never consume level-generation randomness.
+        if (element.emberPhase === undefined)
+            element.emberPhase = positiveModulo(element.x * 73 + element.y * 151, interval)
+        const beat = Math.floor((performance.now() + element.emberPhase) / interval)
+        const previous = element.emberBeat
+        element.emberBeat = beat
+        if (previous === undefined || previous === beat)
             return
-        }
 
-        const badParticles = this.getBadVersionParticles()
-        const chance = Math.min(1, STYLE.particles.cubeEmitChance * badParticles.worldChanceMultiplier)
-
-        if (this.isCubeOrPlatform(element) && Math.random() <= chance)
-        {
-            this.emitAroundElement(
-                element,
-                this.getElementParticleColor(element),
-                STYLE.particles.cubeSpeed * badParticles.speedMultiplier,
-                this.clampAlpha(STYLE.particles.cubeAlpha * badParticles.alphaMultiplier),
-                badParticles
-            )
-        }
+        const bounds = element.writeBounds(this.emberBounds)
+        if (bounds.right + screen.x < 0 || bounds.left + screen.x > LOGICAL_VIEWPORT.width / scale[version]
+            || bounds.bottom + screen.y < 0 || bounds.top + screen.y > LOGICAL_VIEWPORT.height / scale[version])
+            return
+        const centerX = (bounds.left + bounds.right) / 2
+        const centerY = (bounds.top + bounds.bottom) / 2
+        const halfWidth = (bounds.right - bounds.left) / 2
+        const halfHeight = (bounds.bottom - bounds.top) / 2
+        const angle = this.sparkRandom() * Math.PI * 2
+        const radius = Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight) * config.radiusRatio
+        const life = this.sparkRange(config.minLifetimeMs, config.maxLifetimeMs)
+        this.pushParticle(centerX + Math.cos(angle) * radius,
+            centerY + Math.sin(angle) * radius, 0, -config.riseSpeed,
+            hazard ? config.hazardColor : config.cubeColor, life,
+            this.sparkRange(STYLE.particles.minSize, STYLE.particles.maxSize),
+            hazard ? config.alpha : config.cubeAlpha, true, false, false)
+        const particle = this.particles[this.particles.length - 1]
+        particle.ember = true
+        particle.phase = angle
+    }
+    emberAlpha(particle)
+    {
+        const config = STYLE.particles.embers
+        const fade = Math.max(0, Math.min(1,
+            (particle.maxLife - particle.life) / config.fadeInMs,
+            particle.life / config.fadeOutMs))
+        return particle.alpha * fade * fade * (3 - 2 * fade)
     }
     emitAroundElement(element, color, speed, alpha, particleConfig)
     {
@@ -1792,6 +1815,8 @@ class ParticleSystem
         particle.worldAnchored = worldAnchored
         particle.drawBeforeForeground = drawBeforeForeground
         particle.spark = spark
+        particle.ember = false
+        particle.phase = 0
 
         this.particles.push(particle)
         this.enforceCap()
@@ -2422,9 +2447,9 @@ class BloomRenderer
         grapnel.drawHook()
         visualEffects.particles.drawLayer(BloomRenderer.anyParticle)
     }
-    static anyParticle()
+    static anyParticle(particle)
     {
-        return true
+        return !particle.ember
     }
     blur()
     {
