@@ -240,6 +240,9 @@ const STYLE = Object.freeze({
         // green on the blue rock); keep it faint and behind all gameplay art.
         // There is no player light: its cyan disc hid the cave around the ring.
         compositeAlpha: 0.3,
+        // Stronger obstacle spill; the cached falloff and background masks
+        // preserve soft edges, cave texture and untouched gameplay art.
+        worldCompositeAlpha: 0.85,
         compositeOperation: 'hard-light'
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,

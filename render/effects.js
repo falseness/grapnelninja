@@ -830,7 +830,7 @@ class LightmapRenderer
         const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
 
         this.ctx.save()
-        this.ctx.globalAlpha = STYLE.lights.compositeAlpha
+        this.ctx.globalAlpha = STYLE.lights.worldCompositeAlpha
         this.ctx.globalCompositeOperation = STYLE.lights.compositeOperation
         this.ctx.imageSmoothingEnabled = true
         this.ctx.drawImage(this.lightCanvas, 0, 0, viewWidth, viewHeight)
