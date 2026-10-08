@@ -1,4 +1,6 @@
 """Smoke test for the visual gallery (tools/visual_gallery.py)."""
+from contextlib import nullcontext
+import os
 import json
 import math
 from pathlib import Path
@@ -16,12 +18,13 @@ TOOLS = Path(__file__).resolve().parent
 
 class VisualGalleryTest(unittest.TestCase):
     def test_worktree_gallery(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        evidence = os.environ.get('VISUAL_GALLERY_EVIDENCE_DIR')
+        with (nullcontext(evidence) if evidence else tempfile.TemporaryDirectory()) as tmp:
             out = Path(tmp) / 'gallery'
             proc = subprocess.run([sys.executable, str(TOOLS / 'visual_gallery.py'),
                                    '--rev', 'worktree', '--out', str(out)],
                                   capture_output=True, text=True)
-            print(proc.stdout[-2000:], proc.stderr[-2000:])
+            print(proc.stdout, proc.stderr)
             self.assertEqual(proc.returncode, 0)
             manifest = json.loads((out / 'manifest.json').read_text())
             head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=TOOLS, text=True).strip()

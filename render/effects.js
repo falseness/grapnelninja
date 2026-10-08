@@ -938,7 +938,17 @@ class ParticleSystem
     drawSpark(particle, progress, drawX, drawY)
     {
         // Quick fade in, long fade out, so sparks never pop between frames.
+        const config = STYLE.trails.player
         const alpha = particle.alpha * Math.max(0, Math.min(1, (1 - progress) * 6, progress))
+        const haloSize = particle.size * config.sparkHaloRatio
+
+        if (STYLE.player.outerGlow)
+        {
+            this.ctx.globalAlpha = alpha * config.sparkHaloAlpha
+            this.ctx.fillStyle = STYLE.colors.playerTrail.sparkHalo
+            this.ctx.fillRect(drawX - haloSize / 2, drawY - haloSize / 2, haloSize, haloSize)
+        }
+
         this.ctx.globalAlpha = alpha
         this.ctx.fillStyle = particle.color
         this.ctx.fillRect(drawX - particle.size / 2, drawY - particle.size / 2, particle.size, particle.size)
@@ -1541,7 +1551,9 @@ class PlayerTrailRenderer
     }
     drawRibbon(positions, visibleStart, width, alpha)
     {
-        // One flat-colour tapered ribbon, with no halo or bright core.
+        // No shadowBlur and no gradient: the fade toward the tail comes from
+        // stacked wedges that each taper to their own start, so alpha builds up
+        // smoothly toward the head.
         const config = STYLE.trails.player
         const colors = STYLE.colors.playerTrail
         const count = positions.length - visibleStart
@@ -1549,9 +1561,20 @@ class PlayerTrailRenderer
         if (count < 2)
             return
 
-        this.fillRibbon(positions, visibleStart, width, colors.body, alpha * config.bodyAlpha)
-    }
+        if (STYLE.player.outerGlow)
+            this.fillRibbon(positions, visibleStart, width * config.haloWidthRatio, colors.halo, alpha * config.haloAlpha)
 
+        for (let i = 0; i < config.bodyLayers; ++i)
+        {
+            const start = visibleStart + Math.floor(count * i / config.bodyLayers)
+
+            this.fillRibbon(positions, start, width, colors.body, alpha * config.bodyAlpha)
+        }
+
+        const coreStart = visibleStart + Math.floor(count * config.coreStartRatio)
+
+        this.fillRibbon(positions, coreStart, width * config.coreWidthRatio, colors.core, alpha * config.coreAlpha)
+    }
     fillRibbon(positions, start, width, color, alpha)
     {
         if (positions.length - start < 2)

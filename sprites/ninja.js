@@ -199,6 +199,8 @@ class Ninja
         ctx.save()
         ctx.translate(centerX, centerY)
         ctx.globalAlpha = blinkAlpha
+        if (sprite.halo)
+            ctx.drawImage(sprite.halo, -sprite.haloHalf, -sprite.haloHalf, sprite.haloHalf * 2, sprite.haloHalf * 2)
         // Ring, dark centre and inner rim are one pre-rendered image: no shadowBlur per frame
         ctx.drawImage(sprite.canvas, -sprite.half, -sprite.half, sprite.half * 2, sprite.half * 2)
 
@@ -207,7 +209,7 @@ class Ninja
 
         ctx.restore()
     }
-    // radius is the ring's outer edge; the rim light stays inside its inner disc.
+    // radius is the crisp ring outer edge; the soft halo has its own sprite margin.
     // One sprite is kept and rebuilt when the radius, colours or pixel density change
     // (version switch, resize)
     static getGlowSprite(radius, fill, stroke, transform)
@@ -215,7 +217,7 @@ class Ninja
         const config = STYLE.playerVisuals
         const density = Math.hypot(transform.a, transform.b) || 1
         const pixelScale = Math.max(0.25, Math.min(config.maxSpritePixelScale, Math.ceil(density * 4) / 4))
-        const key = [radius, fill, stroke, pixelScale, STYLE.features.innerGlow].join('|')
+        const key = [radius, fill, stroke, pixelScale, STYLE.features.innerGlow, STYLE.player.outerGlow].join('|')
         const cached = Ninja.glowSprite
 
         if (cached && cached.key === key)
@@ -245,21 +247,19 @@ class Ninja
         spriteCtx.fillStyle = centre
         spriteCtx.fill()
 
-        // Full-resolution inward strokes, clipped to the inner disc.
         if (STYLE.features.innerGlow)
         {
-            const innerRadius = radius - ringWidth
+            // Halo: the ring blurred (shadowBlur works in canvas pixels), clipped to
+            // the ball and faint, so the centre stays dark
             spriteCtx.save()
-            spriteCtx.beginPath()
-            spriteCtx.arc(0, 0, innerRadius, 0, Math.PI * 2)
             spriteCtx.clip()
+            spriteCtx.globalAlpha = config.haloAlpha
             spriteCtx.strokeStyle = STYLE.colors.player.halo
-            for (let i = 0; i < config.innerRimWidths.length; ++i)
-            {
-                spriteCtx.globalAlpha = config.innerRimAlpha * config.innerRimAlphas[i]
-                spriteCtx.lineWidth = ringWidth * config.innerRimWidths[i]
-                spriteCtx.stroke()
-            }
+            spriteCtx.lineWidth = ringWidth
+            spriteCtx.shadowColor = STYLE.colors.player.halo
+            spriteCtx.shadowBlur = radius * config.haloBlurRatio * fit
+            ring()
+            spriteCtx.stroke()
             spriteCtx.restore()
         }
 
@@ -273,18 +273,35 @@ class Ninja
         spriteCtx.lineWidth = ringWidth * config.ringCoreWidthRatio
         spriteCtx.stroke()
 
-        // Thin dark rim just inside the outer edge: keeps the ball's outline crisp
-        // on the pale cyan trail and bloom glow
+        // Thin hot rim at the original outer edge keeps the small ring crisp
+        // against its restored halo without changing its drawn radius.
         const rimWidth = ringWidth * config.rimWidthRatio
         spriteCtx.beginPath()
         spriteCtx.arc(0, 0, radius - rimWidth * 0.5, 0, Math.PI * 2, false)
         spriteCtx.globalAlpha = config.rimAlpha
-        spriteCtx.strokeStyle = STYLE.colors.player.centre
+        spriteCtx.strokeStyle = STYLE.colors.player.highlight
         spriteCtx.lineWidth = rimWidth
         spriteCtx.stroke()
         spriteCtx.globalAlpha = STYLE.alpha.full
 
-        Ninja.glowSprite = {key, canvas: spriteCanvas, half}
+        // Separate cache keeps the ring's original pixel grid and antialiasing.
+        const haloHalf = radius * config.outerHaloRadiusRatio
+        let haloCanvas = null
+        if (STYLE.player.outerGlow)
+        {
+            haloCanvas = document.createElement('canvas')
+            haloCanvas.width = haloCanvas.height = Math.ceil(haloHalf * 2 * pixelScale)
+            const haloCtx = haloCanvas.getContext('2d')
+            const fit = haloCanvas.width / (haloHalf * 2)
+            haloCtx.setTransform(fit, 0, 0, fit, haloHalf * fit, haloHalf * fit)
+            const halo = haloCtx.createRadialGradient(0, 0, radius * 0.7, 0, 0, haloHalf)
+            halo.addColorStop(0, STYLE.colors.player.halo)
+            halo.addColorStop(1, 'rgba(34, 200, 255, 0)')
+            haloCtx.globalAlpha = config.outerHaloAlpha
+            haloCtx.fillStyle = halo
+            haloCtx.fillRect(-haloHalf, -haloHalf, haloHalf * 2, haloHalf * 2)
+        }
+        Ninja.glowSprite = {key, canvas: spriteCanvas, half, halo: haloCanvas, haloHalf}
         return Ninja.glowSprite
     }
     getVisualRadius()

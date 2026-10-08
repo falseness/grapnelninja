@@ -433,6 +433,8 @@ const STYLE = Object.freeze({
             alphaMultiplier: 1
         })
     }),
+    // The player alone keeps outer glow; obstacles retain their inward light.
+    player: Object.freeze({outerGlow: true}),
     playerVisuals: Object.freeze({
         rotationSpeed: 0.032,
         rotationMinSpeed: screenHeightPercent(100 * 0.03 / 1080),
@@ -446,11 +448,12 @@ const STYLE = Object.freeze({
         ringCoreWidthRatio: 0.35,
         rimWidthRatio: 0.22,
         rimAlpha: 0.85,
-        // Sprite margin for the ring's antialiasing: nothing is drawn outside the ball
+        // Cached soft halo outside the original small, crisp ring.
         spriteRadiusRatio: 1.05,
-        innerRimAlpha: 0.18,
-        innerRimWidths: Object.freeze([6, 4, 2]),
-        innerRimAlphas: Object.freeze([0.18, 0.35, 1]),
+        outerHaloRadiusRatio: 3,
+        outerHaloAlpha: 0.1,
+        haloBlurRatio: 0.45,
+        haloAlpha: 0.35,
         maxSpritePixelScale: 3
     }),
     // Ratios of the rounded rope width (STYLE.strokes.grapnelWidthHeightPercent).

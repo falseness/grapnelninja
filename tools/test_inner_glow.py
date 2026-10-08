@@ -220,15 +220,24 @@ class PlayerAndBloomTests(unittest.TestCase):
                 (outside if d>report['radius']+1 else inside).append(max(delta.getpixel((x,y))))
         report['ninja_outside_edge_delta']=max(outside)
         report['ninja_inner_delta']=max(inside)
+        report['ninja_outer_glow_pixels']=sum(
+            max(on.getpixel((x,y))[:3]) > 0 for y in range(150,250) for x in range(150,250)
+            if ((x+.5-200)**2+(y+.5-200)**2)**.5 > report['radius']+1)
+        self.assertGreater(report['ninja_outer_glow_pixels'],0)
+
         for name,y,width in [('rope',400,report['ropeWidth']),('trail',600,report['trailWidth'])]:
             report[name+'_outside_width_pixels']=sum(max(on.getpixel((x,j))[:3])>0 for x in range(180,420) for j in range(y-40,y+41) if abs(j+.5-y)>width/2+1)
             self.assertGreater(max(on.getpixel((350,y))[:3]),0)
         on.save(OUT/'player-lines.png')
         (OUT/'probe.json').write_text(json.dumps(report,indent=2)+'\n')
         print('PLAYER PROBE',report,flush=True)
-        for key in ('ninja_outside_edge_delta','rope_outside_width_pixels','trail_outside_width_pixels','glow_canvas_ops'):
+        # Cached clipped blur can round one channel by a byte at the sprite edge.
+        self.assertLessEqual(report['ninja_outside_edge_delta'],2)
+        for key in ('rope_outside_width_pixels','glow_canvas_ops'):
             self.assertEqual(report[key],0,key)
         self.assertGreater(report['ninja_inner_delta'],0)
+        # TASK-216: the player ribbon is the explicit outer-glow exception.
+        self.assertGreater(report['trail_outside_width_pixels'],0)
 
     def test_camera_pan(self):
         OUT.mkdir(parents=True,exist_ok=True)
