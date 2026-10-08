@@ -430,13 +430,47 @@ class SideFloor extends Floor
         const surfaceHeight = bounds.bottom - bounds.top
 
         ctx.save()
-        ctx.fillStyle = STYLE.colors.ground.fill
+        ctx.fillStyle = STYLE.colors.cube.dangerFill
         ctx.fillRect(x, y, surfaceWidth, surfaceHeight)
 
         ctx.restore()
 
-        this.drawClassicSurfaceShell(bounds)
+        this.drawClassicBoundaryHatch(bounds)
         this.drawClassicContinuousBoundary(bounds)
+    }
+    drawClassicBoundaryHatch(bounds)
+    {
+        if (STYLE.dangerHatch.variant == 'off') return
+        const inset = Math.max(STYLE.strokes.neonGlowWidth, (bounds.bottom - bounds.top) * .20)
+        const innerHeight = bounds.bottom - bounds.top - inset * 2
+        if (innerHeight <= 0) return
+
+        ctx.save()
+        // The ceiling shares screen space with the HUD. Keep its text and
+        // menu backing clear without changing the strip or its neon edge.
+        const viewWidth = width / scale[version]
+        const viewHeight = height / scale[version]
+        const fontSize = getHudFontSize(viewWidth, viewHeight, version)
+        const hudBottom = getHudCenterY(viewHeight, version) + fontSize * .8
+        ctx.font = fontSize + 'px ' + scoreText.fontFamily
+        const scoreRight = viewWidth * .03 + ctx.measureText(scoreText.text + scoreText.count[version]).width + fontSize * .4
+        const recordLeft = scoreText.getRecordX(viewWidth) - ctx.measureText(scoreText.rtext + scoreText.record[version]).width - fontSize * .4
+        for (const [left, right] of [[0, scoreRight], [recordLeft, viewWidth]])
+        {
+            ctx.beginPath()
+            ctx.rect(0, 0, viewWidth, viewHeight)
+            ctx.rect(left, 0, right - left, Math.max(hudBottom, menu.button.background.y + menu.button.background.height))
+            ctx.clip('evenodd')
+        }
+        // Translate only by the camera: every strip and generated segment
+        // shares the world's pattern origin, including fractional scrolling.
+        ctx.translate(screen.x, screen.y)
+        ctx.beginPath()
+        ctx.rect(bounds.left, bounds.top + inset, bounds.right - bounds.left, innerHeight)
+        ctx.clip()
+        ctx.fillStyle = dangerHatchPattern(ctx, STYLE.dangerHatch.variant)
+        ctx.fillRect(bounds.left, bounds.top + inset, bounds.right - bounds.left, innerHeight)
+        ctx.restore()
     }
     drawClassicSurfaceShell(bounds)
     {
@@ -462,7 +496,7 @@ class SideFloor extends Floor
 
         ctx.moveTo(bounds.left + screen.x, y)
         ctx.lineTo(bounds.right + screen.x, y)
-        strokeNeonPath(STYLE.colors.ground.stroke, undefined, undefined, groundShapePath(bounds))
+        strokeNeonPath(STYLE.colors.cube.dangerStroke, undefined, undefined, groundShapePath(bounds))
 
         ctx.restore()
     }
