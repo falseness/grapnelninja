@@ -12,13 +12,13 @@ const STYLE = Object.freeze({
             vignetteEdge: 'rgba(8, 4, 40, 0.5)',
             // Far crystal layer: back row (lighter, see-through), front row
             // and the rock along the edges; each shard has a shadow and a lit facet
-            crystalBackShadow: 'rgba(65, 48, 151, 0.20)',
-            crystalBackLit: 'rgba(98, 74, 192, 0.22)',
-            crystalFrontShadow: 'rgba(66, 46, 142, 0.26)',
-            crystalFrontLit: 'rgba(100, 72, 183, 0.26)',
-            crystalEdge: 'rgba(170, 140, 255, 0.12)',
-            crystalRock: 'rgba(67, 45, 137, 0.22)',
-            crystalRockLit: 'rgba(94, 63, 166, 0.24)',
+            crystalBackShadow: 'rgba(52, 34, 150, 0.62)',
+            crystalBackLit: 'rgba(98, 70, 210, 0.58)',
+            crystalFrontShadow: '#0a0618',
+            crystalFrontLit: '#241947',
+            crystalEdge: 'rgba(170, 140, 255, 0.34)',
+            crystalRock: '#0a0618',
+            crystalRockLit: '#1c1338',
             // Depth haze over the far layer: a faint lavender at the top (the
             // cave roof stays deep navy), magenta at the bottom, clear in the middle
             hazeTop: 'rgba(150, 112, 255, 0.08)',
@@ -26,12 +26,12 @@ const STYLE = Object.freeze({
             hazeMiddle: 'rgba(110, 80, 220, 0)',
             hazeLower: 'rgba(200, 70, 240, 0.08)',
             hazeBottom: 'rgba(230, 70, 220, 0.24)',
-            // Near rocks: translucent violet facets; size and parallax carry depth
-            nearShadow: 'rgba(70, 47, 139, 0.26)',
-            nearMid: 'rgba(86, 56, 155, 0.26)',
-            nearLit: 'rgba(108, 72, 179, 0.24)',
-            nearRim: 'rgba(208, 125, 236, 0.18)',
-            nearRock: 'rgba(70, 47, 139, 0.26)'
+            // Near rocks: opaque deep-indigo silhouettes with faint violet facets
+            nearShadow: '#0c0726',
+            nearMid: '#100b26',
+            nearLit: '#17102d',
+            nearRim: 'rgba(170, 140, 255, 0.34)',
+            nearRock: '#0c0726'
         }),
         player: Object.freeze({
             fill: '#0a1446',
@@ -540,7 +540,7 @@ const STYLE = Object.freeze({
             // Highest offscreen pixels per logical unit
             maxPixelScale: 1
         }),
-        // Near rocks: large translucent low-poly boulders along the bottom edge with
+        // Near rocks: large dark low-poly boulders along the bottom edge with
         // a few tall outcrops, and short ones hanging from the top. Most of
         // them sit under the HUD band and the ground strip; they follow more
         // of the camera than the far crystals, so they read as closer

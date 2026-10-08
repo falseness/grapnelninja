@@ -494,13 +494,13 @@ class BackgroundRenderer
             colors.crystalFrontShadow, colors.crystalFrontLit, colors.crystalEdge)
         rocks(crystals.rockCount, bottom, -1, crystals.rockHeight)
         rocks(crystals.rockCount, top, 1, crystals.rockHeight.map(h => h * 0.6))
-        // Translucent rock rows at both edges: drawLayerTile extends them over
+        // Solid rock rows at both edges: drawLayerTile extends them over
         // whatever the shifted tile leaves uncovered
         ctx.fillStyle = colors.crystalRock
         ctx.fillRect(0, 0, width, height * 0.012)
         ctx.fillRect(0, height * 0.988, width, height * 0.012)
     }
-    // Large translucent boulders: a shadow, a middle and a lit facet around the
+    // Large dark boulders: a shadow, a middle and a lit facet around the
     // summit, and a faint rim along the lit side
     paintNearTile(ctx, width, height, rocks, tools)
     {
