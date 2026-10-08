@@ -147,54 +147,31 @@ class CubeTrackLine extends TrackLine
         this.width  = width
         this.height = height
     }
-    getSweptHull(a, b)
-    {
-        const w = this.width / 2
-        const h = this.height / 2
-        const corners = []
-        for (const p of [a, b])
-            for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]])
-                corners.push({x: p.x + sx * w, y: p.y + sy * h})
-        corners.sort((p, q) => p.x - q.x || p.y - q.y)
-        // Monotone chain: every hull comes out with the same winding.
-        const cross = (o, p, q) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x)
-        const half = points =>
-        {
-            const chain = []
-            for (const p of points)
-            {
-                while (chain.length >= 2 && cross(chain[chain.length - 2], chain[chain.length - 1], p) <= 0)
-                    chain.pop()
-                chain.push(p)
-            }
-            chain.pop()
-            return chain
-        }
-        return half(corners).concat(half(corners.slice().reverse()))
-    }
     draw()
     {
-        if (trackEnabled && QUALITY.playerTrail && this.pos.length > 0)
-        {
-            const pairs = []
-            for (let i = 0; i < this.pos.length; ++i)
-                pairs.push([this.pos[i], this.pos[Math.min(i + 1, this.pos.length - 1)]])
-            if (this.pos.length > 1)
-                pairs.pop()
+        if (!trackEnabled || !QUALITY.playerTrail || this.pos.length < 2)
+            return
 
-            ctx.beginPath()
-            for (const [a, b] of pairs)
-            {
-                const hull = this.getSweptHull(a, b)
-                ctx.moveTo(hull[0].x + screen.x, hull[0].y + screen.y)
-                for (let i = 1; i < hull.length; ++i)
-                    ctx.lineTo(hull[i].x + screen.x, hull[i].y + screen.y)
-                ctx.closePath()
-            }
-            ctx.globalAlpha = STYLE.alpha.track
-            ctx.fillStyle   = this.stroke
-            ctx.fill('nonzero')
-            ctx.globalAlpha = STYLE.alpha.full
-        }
+        // One fading stroke avoids both flat-ended rectangles and alpha
+        // accumulation where adjacent segments overlap on slow-moving cubes.
+        const first = this.pos[0], last = this.pos[this.pos.length - 1]
+        if (Math.hypot(last.x - first.x, last.y - first.y) < 1)
+            return
+
+        ctx.save()
+        const fade = ctx.createLinearGradient(first.x + screen.x, first.y + screen.y,
+            last.x + screen.x, last.y + screen.y)
+        fade.addColorStop(0, colorWithAlpha(this.stroke, 0))
+        fade.addColorStop(1, colorWithAlpha(this.stroke, STYLE.trails.hazard.maxAlpha))
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.strokeStyle = fade
+        ctx.lineWidth = this.lineWidth * 0.5
+        ctx.beginPath()
+        ctx.moveTo(first.x + screen.x, first.y + screen.y)
+        for (let i = 1; i < this.pos.length; ++i)
+            ctx.lineTo(this.pos[i].x + screen.x, this.pos[i].y + screen.y)
+        ctx.stroke()
+        ctx.restore()
     }
 }
