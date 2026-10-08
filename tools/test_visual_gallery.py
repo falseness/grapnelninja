@@ -61,6 +61,24 @@ class VisualGalleryTest(unittest.TestCase):
                 self.assertTrue((out / f'{name}.png').exists(), name)
 
             for mode in visual_gallery.MODES:
+                hanging = manifest['hanging_still_gifs'][mode]
+                self.assertEqual(hanging['rev'], manifest['source'])
+                self.assertEqual(hanging['page_errors'], [])
+                records = hanging['states']
+                self.assertGreaterEqual(len(records), 10)
+                self.assertEqual(records[-1]['timestamp_ms'] - records[0]['timestamp_ms'], 5000)
+                for record in records:
+                    self.assertEqual(record['state'], records[0]['state'])
+                    self.assertEqual(record['grapnel'], records[0]['grapnel'])
+                    self.assertTrue(record['grapnel']['grappled'])
+                    self.assertTrue(record['grapnel']['throwed'])
+                    self.assertGreater(len(record['grapnel']['points']), 0)
+                with Image.open(out / hanging['file']) as still:
+                    self.assertEqual(still.n_frames, len(records))
+                    still.seek(0)
+                    first = still.convert('RGB').tobytes()
+                    still.seek(still.n_frames - 1)
+                    self.assertNotEqual(first, still.convert('RGB').tobytes())
                 ember = Image.open(out / f'ember-gif-{mode}.gif')
                 self.assertEqual(ember.n_frames, 120)
                 info = manifest['ember_gifs'][mode]

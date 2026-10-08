@@ -11,7 +11,7 @@ pause screen opened after the last tick, listed under 'screens': no state
 check, it runs after every state capture); gif-bad.gif and gif-classic.gif (camera
 parallax); ember-gif-{mode}.gif (8 s fixed ember scene at 15 fps,
 native phone scale plus labelled 3x crops); phone-{mode}-embers.png; sheet.png (the reference AI cover top-left, then every capture,
-labelled); gif-menu.gif (3 s of idle menu animation); manifest.json (rev,
+labelled); hanging-still-{mode}.gif (5 s full-scene frozen physics, live render clock); gif-menu.gif (3 s of idle menu animation); manifest.json (rev,
 viewport, mode, tick and the game state per capture).
 --compare-state prints one line per capture and 'differences: N' (exit 1 if N > 0).
 """
@@ -91,6 +91,70 @@ def write_gif(frames, path):
                    loop=0, optimize=False, disposal=1)
 
 
+def capture_hanging_still(browser, url, mode, out, rev, log):
+    """Freeze a real seeded grapple, then render the entire scene over five seconds.
+
+    Physics/input/timers stop only in this probe; draw(), including motes, stays
+    unmodified. Separate contexts leave baseline gameplay captures untouched.
+    """
+    vp = next(v for v in VIEWPORTS if v['name'] == 'phone')
+    context = browser.new_context(viewport={'width': vp['width'], 'height': vp['height']},
+                                  device_scale_factor=vp['dpr'], is_mobile=True, has_touch=True)
+    try:
+        context.add_init_script(SEED_SCRIPT % SEED)
+        context.add_init_script(CLOCK_SCRIPT)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.goto(url + 'index.html', wait_until='load')
+        boot_frozen(page)
+        page.evaluate(SETUP_SCRIPT, [input_script(SEED, 900, vp['width'], vp['height']), True])
+        page.evaluate('mode => startGame(mode)', mode)
+        for tick in range(1, 901):
+            page.evaluate(ADVANCE_SCRIPT, tick)
+            if page.evaluate("""() => {
+                const z = scale[version], margin = 30;
+                const visible = (x,y) => (x+screen.x)*z > margin &&
+                    (x+screen.x)*z < LOGICAL_VIEWPORT.width-margin &&
+                    (y+screen.y)*z > margin && (y+screen.y)*z < LOGICAL_VIEWPORT.height-margin;
+                return grapnel.throwed && grapnel.grappled && grapnel.pos.length &&
+                    visible(ninja.x,ninja.y) && visible(grapnel.pos[0][0],grapnel.pos[0][1]) &&
+                    (ninja.y-grapnel.pos[0][1])*z > 60;
+            }"""):
+                break
+        else:
+            raise AssertionError(f'{mode}: no visible seeded hanging grapple')
+        # At-rest visual probe: stop velocity-driven foreground emission too.
+        page.evaluate('() => { ninja.speedX = ninja.speedY = 0 }')
+        start = page.evaluate('() => __snap.now')
+        frames, records = [], []
+        for i in range(11):
+            timestamp = start + i * 500
+            page.evaluate('time => { __snap.now = time; draw() }', timestamp)
+            frames.append(to_gif_frame(png_bytes(page.evaluate('() => __snap.capture()'))))
+            records.append({'timestamp_ms': timestamp, 'physics_tick': tick,
+                            'state': page.evaluate(STATE_SCRIPT),
+                            'grapnel': page.evaluate("""() => ({throwed:grapnel.throwed,
+                                grappled:grapnel.grappled, points:grapnel.pos.map(p => p.slice(0,2))})""")})
+        assert not errors, errors
+        assert all(r['state'] == records[0]['state'] and r['grapnel'] == records[0]['grapnel']
+                   for r in records), f'{mode}: frozen world changed'
+        name = f'hanging-still-{mode}.gif'
+        frames[0].save(out / name, save_all=True, append_images=frames[1:], duration=500,
+                       loop=0, optimize=False, disposal=1)
+        with Image.open(out / name) as gif:
+            assert gif.n_frames == 11, f'{mode}: missing temporal frames'
+        log(f'PASS hanging-still {mode}: 11 full-scene frames over 5000 ms; '
+            f'ninja/camera/grapnel identical; grapple attached; rev={rev}')
+        return {'file': name, 'rev': rev, 'viewport': 'phone', 'size': list(GIF_SIZE),
+                'fps': 2, 'frames': 11, 'duration_ms': 5000,
+                'scene': 'real seeded grapple at rest (velocity zero); frozen physics/input/timers; unmodified full draw()',
+                'sha256': hashlib.sha256((out / name).read_bytes()).hexdigest(),
+                'states': records, 'page_errors': errors}
+    finally:
+        context.close()
+
+
 def label_font():
     for name in ('DejaVuSans-Bold.ttf', 'DejaVuSans.ttf'):
         try:
@@ -128,6 +192,7 @@ def run(rev, out, log=print):
     shots, states, gifs, screens, errors = {}, {}, {}, {}, []
     gif_states = {}
     ember_gifs, ember_info = {}, {}
+    hanging_info = {}
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
         url, browser = start_browser_test(root, stack.callback)
@@ -188,6 +253,8 @@ def run(rev, out, log=print):
                 context.close()
                 log(f'rev={rev_id} viewport={vp["name"]} {vp["width"]}x{vp["height"]}@{vp["dpr"]} '
                     f'mode={mode} done')
+        for mode in MODES:
+            hanging_info[mode] = capture_hanging_still(browser, url, mode, out, rev_id, log)
     rev_sha = rev_id.split('@', 1)[1].split('+', 1)[0] if rev_id.startswith('worktree@') else rev_id
     captures = {}
     for name in sorted(shots, key=list(shots).index):
@@ -216,6 +283,7 @@ def run(rev, out, log=print):
         'rev': rev_sha, 'source': rev_id, 'seed': SEED, 'ticks': TICKS,
         'viewports': VIEWPORTS, 'reference': str(REFERENCE.relative_to(ROOT)) if REFERENCE.exists() else None,
         'ember_gifs': ember_info,
+        'hanging_still_gifs': hanging_info,
         'gifs': {mode: {'file': f'gif-{mode}.gif', 'viewport': GIF_CAPTURE[mode][0], 'size': list(GIF_SIZE),
                         'fps': GIF_FPS, 'frames': len(frames), 'ticks': gif_ticks(mode),
                         'states': gif_states[mode]}
