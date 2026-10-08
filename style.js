@@ -361,10 +361,11 @@ const STYLE = Object.freeze({
         hazardAlpha: 0.52
     }),
     trails: Object.freeze({
-        // Widths are ratios of the track line width (1.5 ninja radii).
+        // Halve the base and minimum once; core/halo retain their relative widths.
+        // Track line width (1.5 ninja radii) still controls point sampling.
         player: Object.freeze({
-            widthRatio: 4.2,
-            minScreenWidth: screenHeightPercent(100 * 30 / 1080),
+            widthRatio: 2.1,
+            minScreenWidth: screenHeightPercent(100 * 15 / 1080),
             haloWidthRatio: 2.1,
             haloAlpha: 0.38,
             bodyLayers: 3,
