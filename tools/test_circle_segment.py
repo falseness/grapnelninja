@@ -19,6 +19,7 @@ class CircleSegmentTest(unittest.TestCase):
             const element = {
                 getPoints: () => square,
                 getLines: Element.prototype.getLines,
+                writeBounds: Element.prototype.writeBounds,
                 getCircumscribedCircle: () => ({x: 50, y: 50, radius: Math.hypot(50, 50)}),
                 collision: (who, line) => hits.push([line.x1, line.y1, line.x2, line.y2])
             }

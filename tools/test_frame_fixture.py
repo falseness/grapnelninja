@@ -90,12 +90,18 @@ class FrameFixtureTests(unittest.TestCase):
             if frame not in BASELINE_FRAMES:
                 continue
             row = self.sample(frame, types, 1920, 1080, baseline=True)
-            # Match the viewport verifier's existing numeric tolerance and compare
-            # complete snapshots, including exact object and polygon cardinality.
-            assert_near(row, current[frame], frame, rel_tol=1e-12,
+            # The overhaul intentionally changes fill/stroke. Compare every
+            # geometry/physics field and exact object/polygon cardinality.
+            def geometry(snapshot):
+                return {phase: [{k: v for k, v in element.items()
+                                 if k not in ('fill', 'stroke')}
+                                for element in members]
+                        for phase, members in snapshot.items()}
+
+            assert_near(geometry(row), geometry(current[frame]), frame, rel_tol=1e-12,
                         abs_tol=1e-10, require_finite=False)
             cases += 1
-            print(f'PASS baseline {BASELINE} 1920x1080 {frame}: initial/raw match current; '
+            print(f'PASS baseline {BASELINE} 1920x1080 {frame}: initial/raw geometry match current; '
                   'dynamic identity; 30 isolated motion samples; browser errors=0', flush=True)
         self.assertEqual(cases, len(BASELINE_FRAMES))
         print(f'PASS baseline frame fixture: {cases} cases', flush=True)

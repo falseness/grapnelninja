@@ -1,19 +1,21 @@
 """The colour grade (ColorGradeRenderer, TASK-187) is switched off by
-STYLE.features.colorGrade, and that switch is the only change.
+STYLE.features.colorGrade; the disabled path must do no canvas work.
 
 On render_snapshot's frozen clock (844x390@3, touch):
 (a) the menu and bad/classic games at COLORGRADE_REV (default worktree): every
     CanvasRenderingContext2D call and property set made while
     ColorGradeRenderer.draw runs is counted; it must be 0 on every frame;
 (b) the same rev with the switch forced on by an init script must match
-    COLORGRADE_PARENT (default 66d2713, the commit before the switch went off)
-    within MAX_DELTA per channel.
+    the renderer from COLORGRADE_PARENT (default 66d2713) applied to the same
+    current scene within MAX_DELTA per channel. Comparing whole historical
+    scenes would also compare unrelated palette and backing-DPR changes.
 Writes probe.json into COLORGRADE_EVIDENCE_DIR when it is set.
 """
 from contextlib import ExitStack
 import io
 import json
 import os
+import subprocess
 from pathlib import Path
 import unittest
 
@@ -151,10 +153,23 @@ class ColorGradeOffTest(unittest.TestCase):
             self.assertGreater(summary['forced_on'][name]['grade_ops_per_frame_max'], 0, name)
             self.assertEqual(summary['switch_off'][name]['grade_ops_total'], 0, name)
 
-    def test_b_forced_on_matches_parent(self):
-        parent = run(PARENT)
+    def test_b_forced_on_matches_parent_renderer(self):
+        # Keep the old renderer as an independent pixel oracle, while both
+        # captures use current assets, geometry and the same backing size.
+        source = subprocess.check_output(
+            ['git', 'show', f'{PARENT}:render/effects.js'],
+            cwd=Path(__file__).resolve().parent, text=True)
+        renderer = 'class ColorGradeRenderer' + source.split(
+            'class ColorGradeRenderer', 1)[1].split('class ScreenEffects', 1)[0]
+        reference_init = "addEventListener('load', () => { const Reference = (" + renderer + """
+        );
+        ColorGradeRenderer.prototype.getGradients = Reference.prototype.getGradients;
+        ColorGradeRenderer.prototype.draw = Reference.prototype.draw;
+        })""" + '\n' + FORCE_ON_SCRIPT
+        parent = run(REV, extra_init=reference_init)
         forced = run(REV, extra_init=FORCE_ON_SCRIPT)
-        self.probe['parent_rev'] = parent['rev']
+        self.probe['parent_renderer_rev'] = PARENT
+        self.probe['reference_scene_rev'] = parent['rev']
         self.probe['forced_on_rev'] = forced['rev']
         self.assertEqual(parent['page_errors'], [])
         self.assertEqual(forced['page_errors'], [])

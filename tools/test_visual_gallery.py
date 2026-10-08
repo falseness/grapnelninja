@@ -37,7 +37,12 @@ class VisualGalleryTest(unittest.TestCase):
             for name, c in manifest['captures'].items():
                 self.assertTrue((out / f'{name}.png').exists(), name)
                 vp = next(v for v in visual_gallery.VIEWPORTS if v['name'] == c['viewport'])
-                self.assertEqual((c['width'], c['height']), (vp['width'] * vp['dpr'], vp['height'] * vp['dpr']))
+                # Touch backing stores are capped at DPR 2 by configureStage.
+                dpr = min(vp['dpr'], 2) if vp['touch'] else vp['dpr']
+                self.assertEqual((c['width'], c['height']),
+                                 (vp['width'] * dpr, vp['height'] * dpr))
+                with Image.open(out / c['file']) as png:
+                    self.assertEqual(png.size, (c['width'], c['height']))
                 if c['mode'] == 'menu':
                     continue
                 state = c['state']
