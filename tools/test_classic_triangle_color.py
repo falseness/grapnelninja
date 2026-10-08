@@ -43,20 +43,19 @@ ISOLATE = '''() => {
     if (t.syncTrackStyle) t.syncTrackStyle()
     t.track.draw(); t.draw()
     const emitted = []
-    if (typeof visualEffects !== 'undefined' && visualEffects.particles) {
+    if (typeof visualEffects !== 'undefined' && visualEffects.particles && STYLE.particles.embers) {
         const particles = visualEffects.particles
-        const emit = particles.emitAroundElement, random = Math.random
-        try {
-            particles.emitAroundElement = (element, color) => emitted.push(color)
-            Math.random = () => 0
-            particles.emitElementParticles(t)
-        } finally {
-            particles.emitAroundElement = emit
-            Math.random = random
-        }
+        // TASK-204 emits calm shared-colour embers directly through pushParticle.
+        // Prime the beat before probing: a new obstacle's first call is silent.
+        particles.emitElementParticles(t)
+        t.emberBeat--
+        const first = particles.particles.length
+        particles.emitElementParticles(t)
+        emitted.push(...particles.particles.slice(first).map(p => p.color))
     }
     return {density, top: 120 - t.height / 3,
-            emitted,
+            emitted, emberColor: typeof STYLE.particles.embers !== 'undefined'
+                ? STYLE.particles.embers.hazardColor : null,
             trail: t.track.stroke,
             light: t.getGlowStroke ? t.getGlowStroke() : null,
             particle: typeof visualEffects !== 'undefined' && visualEffects.particles
@@ -170,8 +169,9 @@ class ClassicTriangleColorTest(unittest.TestCase):
             for key in ('trail', 'light', 'particle'):
                 self.assertEqual(c['derived_colors'][key], '#8fdcff', key)
             self.assertTrue(c['derived_colors']['emitted'])
-            self.assertEqual(set(c['derived_colors']['emitted']), {'#8fdcff'})
-        print('PASS classic trail, light, particle and emitted ember colors #8fdcff')
+            self.assertEqual(set(c['derived_colors']['emitted']),
+                             {c['derived_colors']['emberColor']})
+        print('PASS classic trail/light/particle #8fdcff; emitted embers retain TASK-204 configured color')
 
     def test_bad_unchanged(self):
         # Prove the control actually uses the historical classic colour, so

@@ -186,28 +186,127 @@ class MultipointTrackLine extends TrackLine
     }
     draw()
     {
-        if (!trackEnabled || !QUALITY.playerTrail || this.pos.length < 2)
+        if (trackEnabled && QUALITY.playerTrail)
+        {
+            if (version == 'bad')
+            {
+                this.drawBadVersionTrail()
+                return
+            }
+
+            ctx.beginPath()
+
+            //Работает только в частном случае
+            let min0, min1, max0, max1, max2
+
+            let extremum =
+            [
+                {min: this.pos[0][0].y, max: this.pos[0][0].y},
+                {min: this.pos[0][1].y, max: this.pos[0][1].y},
+                {min: this.pos[0][2].y, max: this.pos[0][2].y}
+            ]
+            for (let i = 0; i < this.pos.length; ++i)
+            {
+                for (let j = 0; j < this.pos[i].length; ++j)
+                {
+                    if (this.pos[i][j].y < extremum[j].min)
+                        extremum[j].min = this.pos[i][j].y
+                    if (this.pos[i][j].y > extremum[j].max)
+                        extremum[j].max = this.pos[i][j].y
+                }
+            }
+            ctx.moveTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
+            ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].max + screen.y)
+            ctx.lineTo(this.pos[0][2].x + screen.x, extremum[2].max + screen.y)
+            ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].max + screen.y)
+            ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].min + screen.y)
+            ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
+
+            ctx.globalAlpha = STYLE.alpha.multipointTrack
+            ctx.fillStyle = this.stroke
+            ctx.fill()
+            ctx.globalAlpha = STYLE.alpha.full
+
+            ctx.closePath()  
+        }
+    }
+    drawBadVersionTrail()
+    {
+        if (this.pos.length < 2)
             return
 
-        // Faint historical outlines preserve motion without filling the swept
-        // bounding envelope, which looked like rectangular lighting patches.
         const config = STYLE.trails.hazard
+        const extremum = this.getPointExtremes()
+
         ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(this.pos[0][0].x + screen.x, extremum[0].min + screen.y)
+        ctx.lineTo(this.pos[0][0].x + screen.x, extremum[0].max + screen.y)
+        ctx.lineTo(this.pos[0][2].x + screen.x, extremum[2].max + screen.y)
+        ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].max + screen.y)
+        ctx.lineTo(this.pos[0][1].x + screen.x, extremum[1].min + screen.y)
+        ctx.closePath()
+
+        ctx.fillStyle = this.stroke
         ctx.strokeStyle = this.stroke
         ctx.lineJoin = 'round'
-        ctx.lineWidth = config.envelopeLineWidth
-        for (let i = 0; i < this.pos.length - 1; i += config.sampleStep)
+
+        // Bloom pass (BloomRenderer): the envelope outline
+        if (bloomPassActive)
         {
-            const age = (i + 1) / this.pos.length
-            ctx.globalAlpha = config.maxAlpha * age * age
-            const points = this.pos[i]
-            ctx.beginPath()
-            ctx.moveTo(points[0].x + screen.x, points[0].y + screen.y)
-            for (let j = 1; j < points.length; ++j)
-                ctx.lineTo(points[j].x + screen.x, points[j].y + screen.y)
-            ctx.closePath()
+            ctx.globalAlpha = config.envelopeGlowAlpha
+            ctx.lineWidth = config.envelopeGlowWidth
+            ctx.stroke()
+            ctx.restore()
+            return
+        }
+
+        ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
+            ? STYLE.visualStability.effectCompositeOperation
+            : 'lighter'
+
+        // The shape changes every frame, so its glow is not a sprite: soft
+        // halo strokes as wide as the old shadowBlur (canvas px), plus bloom
+        const blur = config.glowBlur / ctx.getTransform().a
+        for (let i = 0; i < config.haloAlphas.length; ++i)
+        {
+            ctx.globalAlpha = config.haloAlphas[i]
+            ctx.lineWidth = config.envelopeGlowWidth + blur * config.haloWidths[i]
             ctx.stroke()
         }
+
+        ctx.globalAlpha = config.envelopeAlpha
+        ctx.fill()
+
+        ctx.lineWidth = config.envelopeGlowWidth
+        ctx.globalAlpha = config.envelopeGlowAlpha
+        ctx.stroke()
+
+        ctx.lineWidth = config.envelopeLineWidth
+        ctx.globalAlpha = config.outlineAlpha
+        ctx.stroke()
         ctx.restore()
+    }
+    getPointExtremes()
+    {
+        const extremum =
+        [
+            {min: this.pos[0][0].y, max: this.pos[0][0].y},
+            {min: this.pos[0][1].y, max: this.pos[0][1].y},
+            {min: this.pos[0][2].y, max: this.pos[0][2].y}
+        ]
+
+        for (let i = 0; i < this.pos.length; ++i)
+        {
+            for (let j = 0; j < this.pos[i].length; ++j)
+            {
+                if (this.pos[i][j].y < extremum[j].min)
+                    extremum[j].min = this.pos[i][j].y
+                if (this.pos[i][j].y > extremum[j].max)
+                    extremum[j].max = this.pos[i][j].y
+            }
+        }
+
+        return extremum
     }
 }

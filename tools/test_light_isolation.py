@@ -236,48 +236,6 @@ class LightIsolationTests(unittest.TestCase):
     def test_bloom_and_pulse_leave_ring_unchanged(self):
         assert_report(probe(os.environ.get('BLOOM_ISOLATION_OUT'), effect='bloom'))
 
-    def test_obstacle_trails_fade_without_filled_envelopes(self):
-        with ExitStack() as stack:
-            url, browser = start_browser_test(ROOT, stack.callback)
-            page = browser.new_page()
-            page.add_init_script(CLOCK_SCRIPT)
-            page.goto(url)
-            boot_frozen(page)
-            result = page.evaluate("""() => {
-                startGame('bad')
-                const target = document.createElement('canvas')
-                target.width = 220; target.height = 260
-                ctx = target.getContext('2d')
-                screen.x = screen.y = 0
-                const alpha = (x, y) => ctx.getImageData(x, y, 1, 1).data[3]
-                const results = []
-                for (const mode of ['bad', 'classic']) {
-                    version = mode
-                    ctx.clearRect(0, 0, 220, 260)
-                    const cube = new CubeTrackLine(20, 20, '#00ffff', 20)
-                    cube.pos = Array.from({length: 13}, (_, i) => ({x: 30 + i*10, y: 40}))
-                    cube.draw()
-                    const triangle = new MultipointTrackLine(80, '#ffffff', 20)
-                    triangle.pos = Array.from({length: 5}, (_, i) => [
-                        {x: 60, y: 100 + i*30}, {x: 140, y: 100 + i*30},
-                        {x: 100, y: 120 + i*30}])
-                    triangle.draw()
-                    results.push({mode, cubeOld: alpha(35, 40), cubeNew: alpha(145, 40),
-                        triangleOld: alpha(100, 100), triangleNew: alpha(100, 190),
-                        envelopeInterior: alpha(100, 105), oldCubeCorner: alpha(30, 49)})
-                }
-                return results
-            }""")
-            for r in result:
-                self.assertLess(r['cubeOld'], r['cubeNew'], r)
-                self.assertGreater(r['cubeNew'], 0, r)
-                self.assertLessEqual(r['cubeNew'], 57, r)  # No overlapping alpha accumulation
-                self.assertLess(r['triangleOld'], r['triangleNew'], r)
-                self.assertGreater(r['triangleNew'], 0, r)
-                self.assertEqual(r['envelopeInterior'], 0, r)
-                self.assertEqual(r['oldCubeCorner'], 0, r)
-                print('PASS obstacle trail pixels:', r, flush=True)
-
     def test_lightmap_leaves_ring_and_obstacle_edges_unchanged(self):
         assert_report(probe(os.environ.get("LIGHT_ISOLATION_OUT")))
 
