@@ -1,5 +1,5 @@
-// Bold neon outline of the current path (STYLE.strokes.neonOutline): two faint
-// halo strokes, the outline in its colour and a pale core line. No shadowBlur.
+// Full-resolution inner light, clipped to the current shape, then a crisp
+// coloured outline and pale core. No blur or outward halo.
 // Widths are screen pixels, so they are divided by the world scale (or
 // multiplied by unit: the menu and pause screens pass their own). Changes
 // stroke state: callers wrap it in ctx.save()/restore().
@@ -17,7 +17,7 @@ function updateNeonPulse()
         : 1
 }
 
-function strokeNeonPath(color, alpha, unit)
+function strokeNeonPath(color, alpha, unit, shapePath)
 {
     const neon = STYLE.strokes.neonOutline
     unit = unit === undefined ? 1 / scale[version] : unit
@@ -37,12 +37,23 @@ function strokeNeonPath(color, alpha, unit)
     ctx.shadowBlur = 0
     ctx.strokeStyle = color
     ctx.lineJoin = 'round'
-    ctx.globalAlpha = baseAlpha * neon.haloAlpha * neonPulse
-    ctx.lineWidth = neon.haloWidth * unit
-    ctx.stroke()
-    ctx.globalAlpha = baseAlpha * neon.innerHaloAlpha * neonPulse
-    ctx.lineWidth = neon.innerHaloWidth * unit
-    ctx.stroke()
+    if (STYLE.features.innerGlow)
+    {
+        ctx.save()
+        // Open floor boundaries supply their enclosing body as the clip.
+        if (shapePath)
+            ctx.clip(shapePath)
+        else
+            ctx.clip()
+        const glow = STYLE.strokes.innerGlow
+        for (let i = 0; i < glow.widths.length; ++i)
+        {
+            ctx.globalAlpha = baseAlpha * glow.alphas[i]
+            ctx.lineWidth = neon.width * glow.widths[i] * unit
+            ctx.stroke()
+        }
+        ctx.restore()
+    }
 
     ctx.lineJoin = 'miter'
     ctx.globalAlpha = baseAlpha

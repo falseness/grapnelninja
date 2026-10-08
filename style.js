@@ -160,13 +160,13 @@ const STYLE = Object.freeze({
         neonGlowWidth: screenHeightPercent(100 * 5 / 1080),
         // Bold obstacle and floor outlines (strokeNeonPath). Widths are screen
         // pixels at 1080: divided by scale[version] when drawn, so both versions
-        // look the same. Halo and core are plain strokes, no shadowBlur.
+        // look the same. Inner light and core are plain strokes, no shadowBlur.
+        innerGlow: Object.freeze({
+            widths: Object.freeze([2, 4, 8]),
+            alphas: Object.freeze([0.28, 0.14, 0.06])
+        }),
         neonOutline: Object.freeze({
             width: screenHeightPercent(100 * 7 / 1080),
-            haloWidth: screenHeightPercent(100 * 26 / 1080),
-            haloAlpha: 0.16,
-            innerHaloWidth: screenHeightPercent(100 * 14 / 1080),
-            innerHaloAlpha: 0.32,
             coreWidthRatio: 0.36,
             coreColor: '#ffffff',
             // Pale tint of the tube colour for the hot core: a white core on
@@ -849,6 +849,7 @@ const STYLE = Object.freeze({
         stableEffectAlphaMultiplier: 0.42
     }),
     features: Object.freeze({
+        innerGlow: true,
         extrusion: false,
         background: true,
         lightmap: true,

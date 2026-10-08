@@ -2437,8 +2437,7 @@ class BloomRenderer
         visualEffects.particles.drawAmbientMotes()
         visualEffects.playerTrail.drawSmoothPlayerTrailIfEnabled(gameState.ninja.track)
         grapnel.draw()
-        for (let i = 0; i < floors.length; ++i)
-            floors[i].drawGlow()
+        // Obstacle light is clipped inside each full-resolution shape.
         // Hazard trail envelopes and shockwave rings: no shadowBlur, their
         // glow comes from here
         if (version == 'bad' && visualEffects.playerTrail.shouldDraw())

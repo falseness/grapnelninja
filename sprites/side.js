@@ -69,7 +69,13 @@ class Ground extends Trampoline
 
         ctx.moveTo(this.x + screen.x, boundaryY + screen.y)
         ctx.lineTo(this.x + this.points[2].x + screen.x, boundaryY + screen.y)
-        strokeNeonPath(groundStroke)
+        const shape = new Path2D()
+        const points = this.getPoints()
+        shape.moveTo(points[0].x + screen.x, points[0].y + screen.y)
+        for (let i = 1; i < points.length; ++i)
+            shape.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+        shape.closePath()
+        strokeNeonPath(groundStroke, undefined, undefined, shape)
 
         ctx.restore()
     }
@@ -162,7 +168,6 @@ class Side extends Rect
         ctx.fillStyle = obstacleStyle.groundCapFill
         ctx.fillRect(x, capY - Math.max(2, screenHeightPercent(STYLE.spriteGeometry.bandHeightPercent)), this.width, Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent)))
 
-        drawBadGroundGlowRect(x, y, this.width, this.height)
         ctx.restore()
     }
     drawNeonBoundary()
@@ -180,7 +185,13 @@ class Side extends Rect
 
         ctx.moveTo(this.x + screen.x, screenBoundaryY)
         ctx.lineTo(this.x + this.width + screen.x, screenBoundaryY)
-        strokeNeonPath(groundStroke)
+        const shape = new Path2D()
+        const points = this.getPoints()
+        shape.moveTo(points[0].x + screen.x, points[0].y + screen.y)
+        for (let i = 1; i < points.length; ++i)
+            shape.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+        shape.closePath()
+        strokeNeonPath(groundStroke, undefined, undefined, shape)
 
         ctx.restore()
     }
