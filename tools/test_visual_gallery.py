@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 
+import numpy as np
 from PIL import Image
 
 import visual_gallery
@@ -96,7 +97,24 @@ class VisualGalleryTest(unittest.TestCase):
                                     'bad first ten GIF frames must move the camera')
                 self.assertEqual(info['viewport'], visual_gallery.GIF_CAPTURE[mode][0])
                 self.assertEqual(info['ticks'], visual_gallery.gif_ticks(mode))
-                self.assertEqual(len(info['states']), gif.n_frames)
+                self.assertEqual(len(info['states']), info['gameplay_frames'])
+                self.assertEqual(gif.n_frames, info['gameplay_frames'] + info['inspection_frames'])
+                self.assertEqual(info['inspection_frames'], 12)
+                for viewport in ('desktop', 'phone'):
+                    danger = manifest['danger_inspection'][f'{viewport}-{mode}']
+                    self.assertTrue((out / danger['file']).exists())
+                # Lossy GIF palettes must preserve even thin pink/orange edges.
+                png = manifest['danger_inspection'][f'{info["viewport"]}-{mode}']['file']
+                with Image.open(out / png) as source:
+                    rgb = np.asarray(source.convert('RGB').resize(visual_gallery.GIF_SIZE,
+                                                                  Image.LANCZOS)).astype(int)
+                gif.seek(info['gameplay_frames'])
+                encoded = np.asarray(gif.convert('RGB')).astype(int)
+                vivid = (rgb.max(axis=2) > 165) & ((rgb.max(axis=2) - rgb.min(axis=2)) > 120)
+                self.assertGreater(int(vivid.sum()), 1000)
+                delta = float(np.percentile(np.abs(rgb - encoded).max(axis=2)[vivid], 95))
+                self.assertLessEqual(delta, 32, f'{mode}: GIF lost neon colours')
+                print(f'PASS GIF neon palette {mode}: vivid-pixel p95 channel delta={delta} <= 32')
                 camera_x = [state['screen.x'] for state in info['states']]
                 self.assertGreater(max(camera_x) - min(camera_x), 100,
                                    f'{mode} GIF must demonstrate camera parallax')

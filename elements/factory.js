@@ -171,8 +171,9 @@ class RectFactory
             y               : y             ,
             width           : w             ,
             height          : h             ,
-            fill            : STYLE.colors.cube.grayFill,
-            stroke          : STYLE.colors.cube.grayStroke,
+            fill            : STYLE.colors.cube.dangerFill,
+            stroke          : STYLE.colors.cube.dangerStroke,
+            isDangerRect    : true,
             isPairElement   : isPairElement
         }
         
@@ -816,7 +817,7 @@ class Frame8ElementsFactory extends RectFactory
     create(x, y)
     {
         return [
-            this.createFrameRect(this.grayRect, STYLE.colors.cube.grayFill, STYLE.colors.cube.grayStroke),
+            this.createFrameRect(this.grayRect, STYLE.colors.cube.dangerFill, STYLE.colors.cube.dangerStroke),
             ...this.greenRects.map(rect => this.createGreenTrampolineRect(rect))
         ]
     }
@@ -1025,7 +1026,7 @@ class Frame10ElementsFactory extends RectFactory
         return [
             this.createGreenTrampolineRect(this.greenRect),
             ...this.grayRects.map(rect =>
-                this.createFrameRect(rect, STYLE.colors.cube.grayFill, STYLE.colors.cube.grayStroke))
+                this.createFrameRect(rect, STYLE.colors.cube.dangerFill, STYLE.colors.cube.dangerStroke))
         ]
     }
 }
@@ -1096,7 +1097,7 @@ class Frame11ElementsFactory extends RectFactory
         return [
             this.createGreenTrampolineRect(this.greenRect),
             ...this.grayRects.map(rect =>
-                this.createFrameRect(rect, STYLE.colors.cube.grayFill, STYLE.colors.cube.grayStroke))
+                this.createFrameRect(rect, STYLE.colors.cube.dangerFill, STYLE.colors.cube.dangerStroke))
         ]
     }
 }

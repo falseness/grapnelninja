@@ -66,8 +66,11 @@ const STYLE = Object.freeze({
             blue: '#1f7aff',
             blueFill: '#061234',
             blueStroke: '#2f86ff',
+            // Neutral defaults for untagged decorative Rect instances.
             grayFill: '#081a26',
             grayStroke: '#22d8ff',
+            dangerFill: '#261608',
+            dangerStroke: '#ff8a1f',
             greenFill: '#071c12',
             greenStroke: '#3dff4a'
         }),
@@ -148,7 +151,8 @@ const STYLE = Object.freeze({
             // green blows out to cyan after bloom and the grade
             coreColors: Object.freeze({
                 '#3dff4a': '#d8ffd8',
-                '#ff2d95': '#ffd6ea'
+                '#ff2d95': '#ffd6ea',
+                '#ff8a1f': '#ffe0bd'
             }),
             coreAlpha: 0.55,
             innerWidth: screenHeightPercent(100 * 3 / 1080),
@@ -408,8 +412,8 @@ const STYLE = Object.freeze({
             hazardCoreFill: 'rgba(255, 61, 113, 0.14)',
             cubeFill: 'rgba(3, 9, 20, 0.82)',
             cubeHighlightFill: 'rgba(31, 122, 255, 0.12)',
-            grayFill: 'rgba(6, 20, 30, 0.82)',
-            grayHighlightFill: 'rgba(34, 216, 255, 0.13)',
+            dangerFill: '#261608',
+            dangerHighlightFill: 'rgba(255, 138, 31, 0.13)',
             greenFill: 'rgba(10, 64, 36, 0.8)',
             greenHighlightFill: 'rgba(90, 255, 140, 0.3)',
             groundFill: '#030812',

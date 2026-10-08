@@ -4,12 +4,14 @@ class Rect extends Element
     {
         super(object)
         
+        // Semantic factory tag: palette edits must not change the rect type.
+        this.isDangerRect = object.isDangerRect === true
         this.width = object.width
         this.height = object.height
         
         
-        this.fill   = this.fill     || STYLE.colors.cube.grayFill
-        this.stroke = this.stroke   || STYLE.colors.cube.grayStroke
+        this.fill   = this.fill     || (this.isDangerRect ? STYLE.colors.cube.dangerFill : STYLE.colors.cube.grayFill)
+        this.stroke = this.stroke   || (this.isDangerRect ? STYLE.colors.cube.dangerStroke : STYLE.colors.cube.grayStroke)
         this.isPairElement = object.isPairElement || function() {return false}
         
         this.circle =
@@ -92,22 +94,21 @@ class Rect extends Element
         ctx.beginPath()
         ctx.rect(x, y, this.width, this.height)
         strokeNeonPath(this.stroke)
-        const innerFill = this.stroke == STYLE.colors.cube.blueStroke ? STYLE.colors.cube.blueFill : this.stroke
+        const innerFill = !this.isDangerRect && this.stroke == STYLE.colors.cube.blueStroke ? STYLE.colors.cube.blueFill : this.stroke
         this.drawInnerRectangleCopy(x, y, STYLE.badVersionEffects.obstacles.innerCopyInsetRatio, innerFill, this.stroke)
         ctx.restore()
     }
     drawBadVersionRect(x, y)
     {
         const obstacleStyle = STYLE.badVersionEffects.obstacles
-        const isGreenSafe = this.stroke == STYLE.colors.cube.greenStroke || this.stroke == STYLE.colors.hazard.harmlessStroke
-        const isGray = this.stroke == STYLE.colors.cube.grayStroke
-        const fill = isGreenSafe ? obstacleStyle.greenFill : (isGray ? obstacleStyle.grayFill : obstacleStyle.cubeFill)
-        const isBlueCube = this.stroke == STYLE.colors.cube.blueStroke
+        const isGreenSafe = !this.isDangerRect && (this.stroke == STYLE.colors.cube.greenStroke || this.stroke == STYLE.colors.hazard.harmlessStroke)
+        const fill = isGreenSafe ? obstacleStyle.greenFill : (this.isDangerRect ? obstacleStyle.dangerFill : obstacleStyle.cubeFill)
+        const isBlueCube = !this.isDangerRect && this.stroke == STYLE.colors.cube.blueStroke
         const copyFill = isBlueCube
             ? STYLE.colors.cube.blueFill
             : isGreenSafe
             ? obstacleStyle.greenHighlightFill
-            : (isGray ? obstacleStyle.grayHighlightFill : obstacleStyle.cubeHighlightFill)
+            : (this.isDangerRect ? obstacleStyle.dangerHighlightFill : obstacleStyle.cubeHighlightFill)
 
         ctx.save()
         ctx.fillStyle = fill
@@ -124,7 +125,7 @@ class Rect extends Element
     drawInnerRectangleCopy(x, y, insetRatio, fillStyle, strokeStyle)
     {
         const obstacleStyle = STYLE.badVersionEffects.obstacles
-        const isBlueCubeShell = strokeStyle == STYLE.colors.cube.blueStroke
+        const isBlueCubeShell = !this.isDangerRect && strokeStyle == STYLE.colors.cube.blueStroke
         const inset = Math.min(this.width, this.height) * insetRatio
         const width = Math.max(0, this.width - inset * 2)
         const height = Math.max(0, this.height - inset * 2)

@@ -9,7 +9,7 @@ Usage: python3 tools/visual_gallery.py --rev worktree|<git rev> --out DIR
 for desktop 1920x1080@1 and phone 844x390@3; <viewport>-<mode>-pause.png (the
 pause screen opened after the last tick, listed under 'screens': no state
 check, it runs after every state capture); gif-bad.gif and gif-classic.gif (camera
-parallax); ember-gif-{mode}.gif (8 s fixed ember scene at 15 fps,
+parallax followed by labelled factory danger inspection); ember-gif-{mode}.gif (8 s fixed ember scene at 15 fps,
 native phone scale plus labelled 3x crops); phone-{mode}-embers.png; sheet.png (the reference AI cover top-left, then every capture,
 labelled); hanging-still-{mode}.gif (5 s full-scene frozen physics, live render clock); gif-menu.gif (3 s of idle menu animation); manifest.json (rev,
 viewport, mode, tick and the game state per capture).
@@ -26,6 +26,7 @@ import subprocess
 import sys
 
 import ember_gallery
+import danger_gallery
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -83,7 +84,9 @@ def gif_ticks(mode):
 
 def to_gif_frame(data):
     img = Image.open(io.BytesIO(data)).convert('RGB').resize(GIF_SIZE, Image.LANCZOS)
-    return img.quantize(colors=256, method=Image.MEDIANCUT, dither=Image.NONE)
+    # Preserve small, saturated neon edges instead of merging them into the
+    # much larger cave/background colour populations (pink could become orange).
+    return img.quantize(colors=256, method=Image.FASTOCTREE, dither=Image.NONE)
 
 
 def write_gif(frames, path):
@@ -186,6 +189,12 @@ def write_sheet(out, items, path, cols=4):
     sheet.save(path, optimize=False)
 
 
+def image_to_png(image):
+    buffer = io.BytesIO()
+    image.save(buffer, format='PNG')
+    return buffer.getvalue()
+
+
 def run(rev, out, log=print):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -193,6 +202,7 @@ def run(rev, out, log=print):
     gif_states = {}
     ember_gifs, ember_info = {}, {}
     hanging_info = {}
+    danger_info, danger_clips = {}, {}
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
         url, browser = start_browser_test(root, stack.callback)
@@ -250,6 +260,11 @@ def run(rev, out, log=print):
                 if vp['name'] == 'phone' and mode in MODES:
                     ember_gifs[mode], ember_info[mode] = ember_gallery.capture(page, mode, out)
                     log(f'ember scene {mode}: 120 frames, native phone + 3x details, shared alpha={ember_info[mode]["peak_shared_alpha"]}')
+                if mode in MODES:
+                    inspection, info = danger_gallery.capture(page, mode, out, vp['name'])
+                    danger_info[f'{vp["name"]}-{mode}'] = info
+                    if vp['name'] == GIF_CAPTURE[mode][0]:
+                        danger_clips[mode] = [to_gif_frame(image_to_png(im)) for im in inspection]
                 context.close()
                 log(f'rev={rev_id} viewport={vp["name"]} {vp["width"]}x{vp["height"]}@{vp["dpr"]} '
                     f'mode={mode} done')
@@ -269,7 +284,7 @@ def run(rev, out, log=print):
         screen_files[name] = {'file': f'{name}.png', 'width': size[0], 'height': size[1],
                               'sha256': hashlib.sha256(data).hexdigest()}
     for mode, frames in gifs.items():
-        write_gif(frames, out / f'gif-{mode}.gif')
+        write_gif(frames + danger_clips.get(mode, []), out / f'gif-{mode}.gif')
     for mode, frames in ember_gifs.items():
         write_gif(frames, out / f'ember-gif-{mode}.gif')
         ember_info[mode]['file'] = f'ember-gif-{mode}.gif'
@@ -278,14 +293,19 @@ def run(rev, out, log=print):
               for name, c in list(captures.items()) + list(screen_files.items())]
     items += [(f'phone-{mode}: fixed ember scene', Image.open(out / info['phone_file']))
               for mode, info in ember_info.items()]
+    items += [(name + ': danger inspection', Image.open(out / info['file']))
+              for name, info in danger_info.items()]
     write_sheet(out, items, out / 'sheet.png')
     manifest = {
         'rev': rev_sha, 'source': rev_id, 'seed': SEED, 'ticks': TICKS,
         'viewports': VIEWPORTS, 'reference': str(REFERENCE.relative_to(ROOT)) if REFERENCE.exists() else None,
         'ember_gifs': ember_info,
         'hanging_still_gifs': hanging_info,
+        'danger_inspection': danger_info,
         'gifs': {mode: {'file': f'gif-{mode}.gif', 'viewport': GIF_CAPTURE[mode][0], 'size': list(GIF_SIZE),
-                        'fps': GIF_FPS, 'frames': len(frames), 'ticks': gif_ticks(mode),
+                        'fps': GIF_FPS, 'frames': len(frames) + len(danger_clips.get(mode, [])),
+                        'gameplay_frames': len(frames),
+                        'inspection_frames': len(danger_clips.get(mode, [])), 'ticks': gif_ticks(mode),
                         'states': gif_states[mode]}
                  for mode, frames in gifs.items()},
         'page_errors': errors, 'captures': captures, 'screens': screen_files,
