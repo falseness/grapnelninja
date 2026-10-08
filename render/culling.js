@@ -21,7 +21,8 @@ function getCullPadding()
     const maxBand = Math.max(2, screenHeightPercent(geometry.capHeightPercent), screenHeightPercent(geometry.bandHeightPercent))
     const maxShake = Math.max(STYLE.screenEffects.shakeMagnitudeX, STYLE.screenEffects.shakeMagnitudeY)
 
-    const maxExtrusion = STYLE.extrusion.depth / scale[version] + STYLE.extrusion.edgeWidth
+    const maxExtrusion = STYLE.features.extrusion
+        ? STYLE.extrusion.depth / scale[version] + STYLE.extrusion.edgeWidth : 0
     const neon = STYLE.strokes.neonOutline
     const maxNeon = Math.max(neon.haloWidth / 2, neon.innerHaloWidth / 2, 5 * neon.width) / scale[version]
 

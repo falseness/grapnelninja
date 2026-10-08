@@ -828,6 +828,7 @@ const STYLE = Object.freeze({
         stableEffectAlphaMultiplier: 0.42
     }),
     features: Object.freeze({
+        extrusion: false,
         background: true,
         lightmap: true,
         particles: true,
