@@ -68,7 +68,7 @@ PROBE = r'''mode => {
             const p = c.getTransform().transformPoint({x,y})
             const sx=c.canvas.width/w, sy=c.canvas.height/h
             if (p.x>=0 && p.x<c.canvas.width && p.y>=0 && p.y<c.canvas.height)
-                points.push({x:p.x/sx,y:p.y/sy,fill,layer:seed===STYLE.backgroundGeometry.crystals.seed?'far':'near'})
+                points.push({x:p.x/sx,y:p.y/sy,fill,layer:seed===(STYLE.caveLayers || STYLE.backgroundGeometry).crystals.seed?'far':'near'})
             polygon(vertices,fill)
         }
         return t
@@ -83,7 +83,7 @@ PROBE = r'''mode => {
     const samples=[], counts={}
     for (const p of points) {
         const shift = mode==='menu' ? b.getMenuLayerShift(p.layer==='far'?1:1.5) :
-            b.getLayerShift(w,h,STYLE.backgroundGeometry[p.layer==='far'?'crystals':'nearRocks'])
+            b.getLayerShift(w,h,(STYLE.caveLayers || STYLE.backgroundGeometry)[p.layer==='far'?'crystals':'nearRocks'])
         const logicalX=((p.x+shift.x)%w+w)%w, logicalY=p.y+shift.y
         const pos=transform.transformPoint({x:logicalX,y:logicalY})
         const x=Math.round(pos.x), y=Math.round(pos.y)

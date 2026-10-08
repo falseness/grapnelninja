@@ -186,7 +186,7 @@
                 resetPhysicsTiming()
                 trackEnabled = true
                 version = _v
-                visualEffects.background.resetRandomFlashes()
+                visualEffects.background.randomSequenceScenes = 0
 
                 chooseVersion()
                 warmGlowSprites()
@@ -257,7 +257,7 @@
                 if (visualEffects && ninja && screen)
                 {
                     visualEffects.screenEffects.triggerDeath(ninja.x + screen.x, ninja.y + screen.y)
-                    visualEffects.background.resetRandomFlashes()
+                    visualEffects.background.randomSequenceScenes = 0
                 }
                 chooseVersion()
             }

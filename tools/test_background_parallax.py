@@ -19,15 +19,11 @@ PROBE = '''mode => {
     const bg = visualEffects.background
     const width = LOGICAL_VIEWPORT.width, height = LOGICAL_VIEWPORT.height
     const cssScale = getCanvasCssRect().width / width
-    const geometry = STYLE.backgroundGeometry
+    const geometry = STYLE.caveLayers
     const layers = {
         crystals: () => bg.getLayerShift(width, height, geometry.crystals),
         nearRocks: () => bg.getLayerShift(width, height, geometry.nearRocks),
-        geometry: () => {
-            const a = bg.getParallaxShift(width, height, geometry.badVersion)
-            const b = bg.getCameraParallaxShift(geometry.badVersion)
-            return {x: a.x + b.x, y: a.y + b.y}
-        }
+
     }
     const results = {}
     for (const [name, shift] of Object.entries(layers)) {

@@ -1,21 +1,3 @@
-// Decorative templates use a 720-unit square and fit the shorter canvas axis.
-// Keep this isotropic local scale: a radius of 62 is 93 pixels at 1920x1080.
-function backgroundTemplateScale(viewWidth, viewHeight)
-{
-    return Math.min(viewWidth, viewHeight) * (100 / 720) / 100
-}
-
-const DEFAULT_BROKEN_FLASH_SEGMENTS = [
-    {start: 0, end: 0.34},
-    {start: 0.48, end: 0.72},
-    {start: 0.84, end: 1}
-]
-const DEFAULT_FLASH_FRAGMENTS = [
-    {x: 0, y: 0, length: 0.22, angleOffset: 0},
-    {x: 0.04, y: 0.03, length: 0.16, angleOffset: 0.34},
-    {x: -0.03, y: 0.06, length: 0.12, angleOffset: -0.28}
-]
-
 // The bars only show soft gradients and faint lines, so the bar canvases
 // render at a quarter of their CSS size and CSS stretches them: a
 // full-resolution repaint cost ~30% of the frame at 2560x1080
@@ -91,16 +73,11 @@ class BackgroundRenderer
     {
         this.ctx = context
         this.canvas = targetCanvas
-        this.randomFlashCache = new WeakMap()
-        this.randomTriangleCache = new WeakMap()
+        this.randomSequenceScenes = 0
         this.gradientCache = new Map()
-        this.washGradients = null
         this.lastGameGradients = null
         // Offscreen crystal/rock tiles by name ('far', 'near')
         this.layerCache = {}
-        // Reused every frame so the background draws without per-frame garbage.
-        this.flashSegmentCache = new WeakMap()
-        this.trianglePaletteColors = {fill: null, stroke: null}
     }
     draw()
     {
@@ -185,13 +162,13 @@ class BackgroundRenderer
         const width = LOGICAL_VIEWPORT.width
         const height = LOGICAL_VIEWPORT.height
 
-        const backgroundGeometry = STYLE.backgroundGeometry
+        const caveLayers = STYLE.caveLayers
 
         this.drawBaseGradient(width, height)
-        this.drawCrystalLayer(width, height, this.getLayerShift(width, height, backgroundGeometry.crystals))
+        this.drawCrystalLayer(width, height, this.getLayerShift(width, height, caveLayers.crystals))
         this.drawHaze(width, height)
-        this.drawGeometry(width, height)
-        this.drawNearLayer(width, height, this.getLayerShift(width, height, backgroundGeometry.nearRocks))
+        this.preserveGameplayRandomSequence(1, 40)
+        this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks))
         this.drawVignette(width, height)
     }
     paintMenu()
@@ -207,7 +184,7 @@ class BackgroundRenderer
         this.drawBaseGradient(width, height)
         this.drawCrystalLayer(width, height, this.getMenuLayerShift(1))
         this.drawHaze(width, height)
-        this.drawBadVersionDepth(width, height, this.getMenuBackgroundGeometry(), 0, {forceStatic: true})
+        this.preserveGameplayRandomSequence(2, 18)
         this.drawNearLayer(width, height, this.getMenuLayerShift(1.5))
         this.drawVignette(width, height)
     }
@@ -218,13 +195,17 @@ class BackgroundRenderer
         const time = QUALITY.backgroundMotion ? performance.now() / 16000 : 0
         return {x: Math.sin(time) * 16 * depth, y: (Math.cos(time) - 1) * 8 * depth}
     }
-    getMenuBackgroundGeometry()
+    // The removed decorations consumed the shared gameplay RNG once per scene
+    // per run: 40 draws in game, 18 in the menu. Keep those stream positions so
+    // removing visual code cannot change obstacle layouts or seeded replays.
+    // There are no stored random values or decorative objects.
+    preserveGameplayRandomSequence(scene, count)
     {
-        return Object.assign(
-            {},
-            STYLE.backgroundGeometry.badVersion,
-            STYLE.backgroundGeometry.menu || {}
-        )
+        if (this.randomSequenceScenes & scene)
+            return
+        this.randomSequenceScenes |= scene
+        for (let i = 0; i < count; ++i)
+            Math.random()
     }
     // The bar canvases fill other bounds than the game canvas, so their
     // vignette differs: the key includes the bounds being filled
@@ -334,6 +315,7 @@ class BackgroundRenderer
         this.ctx.fillStyle = this.getGradients(width, height).vignette
         this.fillAll()
     }
+    // Motes retain their original mode-specific drift and twinkle clock.
     getAnimationTime()
     {
         if (!QUALITY.backgroundMotion)
@@ -344,550 +326,25 @@ class BackgroundRenderer
     getVersionBackgroundTimeScale()
     {
         if (typeof version != 'undefined' && version == 'classic')
-            return STYLE.backgroundGeometry.classicMotionTimeScale
+            return STYLE.caveLayers.classicMotionTimeScale
 
         return 1
-    }
-    drawGeometry(width, height)
-    {
-        const geometry = STYLE.backgroundGeometry
-        const time = this.getAnimationTime()
-
-        if (this.usesDepthBackground())
-        {
-            this.drawBadVersionDepth(width, height, geometry.badVersion, time)
-            return
-        }
-
-        this.drawHexagons(width, height, geometry, time)
-        this.drawStreaks(width, height, geometry, time)
-    }
-    drawHexagons(width, height, geometry, time)
-    {
-        const minSize = Math.min(width, height)
-        const centerX = width / 2
-        const centerY = height / 2
-        const primaryStroke = STYLE.colors.background.hexagonStroke
-        const accentStroke = STYLE.colors.background.hexagonAccentStroke
-
-        this.drawHexagonSet(width, height, geometry, time, centerX, centerY, primaryStroke, accentStroke)
-    }
-    drawHexagonSet(width, height, geometry, time, centerX, centerY, primaryStroke, accentStroke)
-    {
-        const minSize = Math.min(width, height)
-        const baseRadius = minSize * geometry.hexagonRadiusRatio
-        const radiusStep = minSize * geometry.hexagonRadiusStepRatio
-        const rotationTimeScale = typeof geometry.hexagonRotationTimeScale == 'number'
-            ? geometry.hexagonRotationTimeScale
-            : 1
-        const rotationTime = time * rotationTimeScale
-        const rotation = (rotationTime % STYLE.timing.backgroundRotationMs) / STYLE.timing.backgroundRotationMs * Math.PI * 2
-
-        this.ctx.save()
-        this.ctx.lineWidth = geometry.hexagonLineWidth
-
-        for (let i = 0; i < geometry.hexagonCount; ++i)
-        {
-            const radius = baseRadius + radiusStep * i
-            const direction = i % 2 == 0 ? 1 : -1
-            const angle = rotation * direction + i * Math.PI / 12
-
-            this.ctx.strokeStyle = i % 2 == 0 ? primaryStroke : accentStroke
-            this.drawHexagon(centerX, centerY, radius, angle)
-        }
-
-        this.ctx.restore()
-    }
-    drawHexagon(centerX, centerY, radius, rotation)
-    {
-        this.ctx.beginPath()
-
-        for (let i = 0; i < 6; ++i)
-        {
-            const angle = rotation + Math.PI / 6 + i * Math.PI / 3
-            const x = centerX + Math.cos(angle) * radius
-            const y = centerY + Math.sin(angle) * radius
-
-            if (i == 0)
-                this.ctx.moveTo(x, y)
-            else
-                this.ctx.lineTo(x, y)
-        }
-
-        this.ctx.closePath()
-        this.ctx.stroke()
-    }
-    drawStreaks(width, height, geometry, time)
-    {
-        this.drawStreakSet(width, height, geometry, time, STYLE.colors.background.streak, 0)
-    }
-    drawStreakSet(width, height, geometry, time, strokeStyle, yOffset, xOffset)
-    {
-        yOffset = yOffset || 0
-        xOffset = xOffset || 0
-        const diagonal = Math.sqrt(width * width + height * height)
-        const spacing = Math.max(width, height) * geometry.streakSpacingRatio
-        const length = diagonal * geometry.streakLengthRatio
-        const offset = (time % STYLE.timing.backgroundStreakMs) / STYLE.timing.backgroundStreakMs * spacing
-
-        this.ctx.save()
-        this.ctx.strokeStyle = strokeStyle
-        this.ctx.lineWidth = geometry.streakLineWidth
-
-        for (let i = -2; i < geometry.streakCount; ++i)
-        {
-            const x = i * spacing + offset - spacing * 2 + xOffset
-            const y = height + spacing + yOffset
-
-            this.ctx.beginPath()
-            this.ctx.moveTo(x, y)
-            this.ctx.lineTo(x + length, y - length)
-            this.ctx.stroke()
-        }
-
-        this.ctx.restore()
-    }
-    drawBadVersionDepth(width, height, geometry, time, options)
-    {
-        if (!geometry)
-            return
-
-        options = options || {}
-        const background = STYLE.colors.background
-        const freezeMotion = options.forceStatic || this.shouldFreezeBadVersionBackgroundMotion()
-        const geometryTime = freezeMotion ? 0 : time * geometry.motionTimeScale
-        const streakTime = freezeMotion ? 0 : time * geometry.streakTimeScale
-        const shift = freezeMotion
-            ? {x: 0, y: 0}
-            : this.getParallaxShift(width, height, geometry)
-        const cameraShift = freezeMotion
-            ? {x: 0, y: 0}
-            : this.getCameraParallaxShift(geometry)
-        const totalShift = {
-            x: shift.x + cameraShift.x,
-            y: shift.y + cameraShift.y
-        }
-
-        this.ctx.save()
-        this.ctx.globalCompositeOperation = STYLE.visualStability.stableBrightness
-            ? STYLE.visualStability.backgroundCompositeOperation
-            : 'lighter'
-        this.drawDynamicLightingWash(width, height, geometry)
-        this.drawHexagonSet(
-            width,
-            height,
-            geometry,
-            geometryTime,
-            width * 0.52 + totalShift.x,
-            height * 0.50 + totalShift.y,
-            background.depthHexagonStroke,
-            background.depthHexagonAccentStroke
-        )
-
-        const secondaryGeometry = {
-            hexagonCount: geometry.secondaryHexagonCount,
-            hexagonRadiusRatio: geometry.secondaryHexagonRadiusRatio,
-            hexagonRadiusStepRatio: geometry.secondaryHexagonRadiusStepRatio,
-            hexagonLineWidth: Math.max(1, geometry.hexagonLineWidth * 0.65)
-        }
-
-        this.drawHexagonSet(
-            width,
-            height,
-            secondaryGeometry,
-            geometryTime * 0.72,
-            width * 0.25 - totalShift.x * 0.6,
-            height * 0.36 - totalShift.y * 0.4,
-            background.depthHexagonAccentStroke,
-            background.depthHexagonStroke
-        )
-        this.drawDiagonalFlashes(width, height, geometry, geometryTime, totalShift)
-        this.drawDecorativeTriangles(width, height, geometry, geometryTime, totalShift)
-        this.drawRectangleAccents(width, height, geometry, geometryTime, totalShift)
-        this.ctx.restore()
-    }
-    drawDynamicLightingWash(width, height, geometry)
-    {
-        const washes = this.getWashGradients(width, height, geometry)
-
-        this.ctx.save()
-        this.ctx.fillStyle = washes.blue
-        this.fillAll()
-        this.ctx.fillStyle = washes.red
-        this.fillAll()
-        this.ctx.restore()
-    }
-    // Both washes depend only on the size, the geometry ratios and the colors,
-    // so they are built once and reused every frame
-    getWashGradients(width, height, geometry)
-    {
-        const colors = STYLE.colors.background
-        const radius = Math.max(width, height) * geometry.washRadiusRatio
-        const leftX = width * geometry.washLeftXRatio
-        const rightX = width * geometry.washRightXRatio
-        const y = height * geometry.washYRatio
-        const cached = this.washGradients
-
-        if (cached && cached.radius == radius && cached.leftX == leftX && cached.rightX == rightX &&
-            cached.y == y && cached.colors == colors && cached.blueCore == colors.washBlueCore &&
-            cached.blueMid == colors.washBlueMid && cached.redCore == colors.washRedCore &&
-            cached.redMid == colors.washRedMid && cached.center == colors.washCenter)
-            return cached
-
-        this.washGradients = {
-            radius, leftX, rightX, y, colors,
-            blueCore: colors.washBlueCore, blueMid: colors.washBlueMid,
-            redCore: colors.washRedCore, redMid: colors.washRedMid, center: colors.washCenter,
-            blue: this.createAmbientWash(leftX, y, radius, colors.washBlueCore, colors.washBlueMid, colors.washCenter),
-            red: this.createAmbientWash(rightX, y, radius, colors.washRedCore, colors.washRedMid, colors.washCenter)
-        }
-        return this.washGradients
-    }
-    createAmbientWash(centerX, centerY, radius, coreColor, midColor, edgeColor)
-    {
-        const gradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius)
-        gradient.addColorStop(0, coreColor)
-        gradient.addColorStop(0.42, midColor)
-        gradient.addColorStop(1, edgeColor)
-        return gradient
-    }
-    shouldFreezeBadVersionBackgroundMotion()
-    {
-        return STYLE.visualStability.freezeBadVersionBackground
-    }
-    drawDiagonalFlashes(width, height, geometry, time, shift)
-    {
-        const flashTemplates = geometry.flashes || []
-        shift = shift || {x: 0, y: 0}
-
-        if (!flashTemplates.length)
-            return
-
-        const flashes = this.getRandomizedFlashes(flashTemplates, geometry)
-        const colors = STYLE.colors.background
-        const diagonal = Math.sqrt(width * width + height * height)
-        const animationOffset = QUALITY.backgroundMotion && !this.shouldFreezeBadVersionBackgroundMotion()
-            ? Math.sin(time / STYLE.timing.backgroundStreakMs * Math.PI * 2) * width * geometry.flashMotionRatio
-            : 0
-        const stableMultiplier = STYLE.visualStability.stableBrightness
-            ? geometry.stableFlashAlpha
-            : geometry.flashAlpha
-
-        this.ctx.save()
-        this.ctx.lineCap = 'square'
-
-        for (let i = 0; i < flashes.length; ++i)
-        {
-            const flash = flashes[i]
-            const length = diagonal * (flash.length || geometry.flashLengthRatio)
-            const angle = (typeof flash.angle == 'number' ? flash.angle : -45) * Math.PI / 180
-            const startX = flash.x * width + animationOffset + shift.x
-            const startY = flash.y * height + shift.y
-            const alpha = typeof flash.alpha == 'number' ? flash.alpha : 1
-            const palette = this.getFlashPalette(flash, geometry)
-            const stroke = palette == 'blue' ? colors.flashBlue : colors.flashMagenta
-            const glow = palette == 'blue' ? colors.flashBlueGlow : colors.flashMagentaGlow
-            const segments = this.getFlashSegments(flash, startX, startY, angle, length)
-
-            this.ctx.globalAlpha = stableMultiplier * alpha
-            this.ctx.strokeStyle = glow
-            this.ctx.lineWidth = flash.glowWidth || geometry.flashGlowWidth
-            this.drawFlashSegments(segments)
-
-            this.ctx.globalAlpha = Math.min(1, stableMultiplier * 1.45 * alpha)
-            this.ctx.strokeStyle = stroke
-            this.ctx.lineWidth = flash.width || geometry.flashLineWidth
-            this.drawFlashSegments(segments)
-        }
-
-        this.ctx.restore()
-    }
-    getFlashPalette(flash, geometry)
-    {
-        const split = typeof geometry.flashColorSplitRatio == 'number'
-            ? geometry.flashColorSplitRatio
-            : ((geometry.washLeftXRatio || 0) + (geometry.washRightXRatio || 1)) / 2
-
-        return flash.x < split ? 'blue' : 'magenta'
-    }
-    getRandomizedFlashes(flashTemplates, geometry)
-    {
-        const cached = this.randomFlashCache.get(flashTemplates)
-
-        if (cached)
-            return cached.flashes
-
-        const flashes = flashTemplates.map(flash => Object.assign({}, flash, {
-            x: Math.random(),
-            y: Math.random()
-        }))
-
-        this.randomFlashCache.set(flashTemplates, {flashes})
-
-        return flashes
-    }
-    resetRandomFlashes()
-    {
-        this.randomFlashCache = new WeakMap()
-        this.randomTriangleCache = new WeakMap()
-    }
-    getFlashSegments(flash, startX, startY, angle, length)
-    {
-        const cos = Math.cos(angle)
-        const sin = Math.sin(angle)
-
-        if (flash.form == 'broken')
-        {
-            const segments = flash.segments || DEFAULT_BROKEN_FLASH_SEGMENTS
-            const result = this.getFlashSegmentList(flash, segments.length)
-
-            for (let i = 0; i < segments.length; ++i)
-            {
-                const segment = segments[i]
-                this.setFlashSegment(
-                    result[i],
-                    startX + cos * length * segment.start,
-                    startY + sin * length * segment.start,
-                    startX + cos * length * segment.end,
-                    startY + sin * length * segment.end
-                )
-            }
-
-            return result
-        }
-
-        if (flash.form == 'fragments')
-        {
-            const fragments = flash.fragments || DEFAULT_FLASH_FRAGMENTS
-            const normalX = -sin
-            const normalY = cos
-            const result = this.getFlashSegmentList(flash, fragments.length)
-
-            for (let i = 0; i < fragments.length; ++i)
-            {
-                const fragment = fragments[i]
-                const fragmentLength = length * fragment.length
-                const fragmentAngle = angle + (fragment.angleOffset || 0)
-                const fx = startX + cos * length * (fragment.x || 0) + normalX * length * (fragment.y || 0)
-                const fy = startY + sin * length * (fragment.x || 0) + normalY * length * (fragment.y || 0)
-
-                this.setFlashSegment(
-                    result[i],
-                    fx,
-                    fy,
-                    fx + Math.cos(fragmentAngle) * fragmentLength,
-                    fy + Math.sin(fragmentAngle) * fragmentLength
-                )
-            }
-
-            return result
-        }
-
-        const result = this.getFlashSegmentList(flash, 1)
-        this.setFlashSegment(result[0], startX, startY, startX + cos * length, startY + sin * length)
-        return result
-    }
-    getFlashSegmentList(flash, count)
-    {
-        // One fixed-length list per flash, overwritten by the next getFlashSegments call.
-        let list = this.flashSegmentCache.get(flash)
-
-        if (!list || list.length != count)
-        {
-            list = []
-
-            for (let i = 0; i < count; ++i)
-                list.push({x1: 0, y1: 0, x2: 0, y2: 0})
-
-            this.flashSegmentCache.set(flash, list)
-        }
-
-        return list
-    }
-    setFlashSegment(segment, x1, y1, x2, y2)
-    {
-        segment.x1 = x1
-        segment.y1 = y1
-        segment.x2 = x2
-        segment.y2 = y2
-    }
-    drawFlashSegments(segments)
-    {
-        this.ctx.beginPath()
-
-        for (let i = 0; i < segments.length; ++i)
-        {
-            const segment = segments[i]
-            this.ctx.moveTo(segment.x1, segment.y1)
-            this.ctx.lineTo(segment.x2, segment.y2)
-        }
-
-        this.ctx.stroke()
-    }
-    drawDecorativeTriangles(width, height, geometry, time, shift)
-    {
-        const triangleTemplates = geometry.triangles || []
-        shift = shift || {x: 0, y: 0}
-
-        if (!triangleTemplates.length)
-            return
-
-        const triangles = this.getRandomizedTriangles(triangleTemplates, geometry)
-        const sizeScale = backgroundTemplateScale(width, height)
-        const motion = QUALITY.backgroundMotion && !this.shouldFreezeBadVersionBackgroundMotion()
-            ? time / STYLE.timing.backgroundRotationMs * Math.PI * geometry.triangleRotationScale
-            : 0
-
-        this.ctx.save()
-        this.ctx.lineWidth = geometry.triangleSilhouetteLineWidth
-
-        for (let i = 0; i < triangles.length; ++i)
-        {
-            const triangle = triangles[i]
-            const direction = i % 2 == 0 ? 1 : -1
-            const x = triangle.x * width + shift.x * (0.35 + i * 0.04)
-            const y = triangle.y * height + shift.y * (0.28 + i * 0.03)
-            const radius = triangle.radius * sizeScale
-            const rotation = triangle.rotation + motion * direction
-            const palette = this.getTrianglePalette(triangle, geometry, x / width)
-            const colors = this.getTrianglePaletteColors(palette)
-
-            this.ctx.globalAlpha = triangle.alpha
-            this.ctx.fillStyle = colors.fill
-            this.ctx.strokeStyle = colors.stroke
-            this.drawDecorativeTriangle(x, y, radius, rotation, triangle.points)
-        }
-
-        this.ctx.restore()
-    }
-    getRandomizedTriangles(triangleTemplates, geometry)
-    {
-        const cached = this.randomTriangleCache.get(triangleTemplates)
-
-        if (cached)
-            return cached.triangles
-
-        const triangles = triangleTemplates.map(triangle => Object.assign({}, triangle, {
-            x: Math.random(),
-            y: Math.random()
-        }))
-
-        this.randomTriangleCache.set(triangleTemplates, {triangles})
-
-        return triangles
-    }
-    getTrianglePalette(triangle, geometry, screenXRatio)
-    {
-        if (triangle.palette)
-            return triangle.palette
-
-        const split = typeof geometry.triangleColorSplitRatio == 'number'
-            ? geometry.triangleColorSplitRatio
-            : (typeof geometry.flashColorSplitRatio == 'number'
-                ? geometry.flashColorSplitRatio
-                : ((geometry.washLeftXRatio || 0) + (geometry.washRightXRatio || 1)) / 2)
-        const xRatio = typeof screenXRatio == 'number'
-            ? screenXRatio
-            : triangle.x
-
-        return xRatio < split ? 'blue' : 'magenta'
-    }
-    getTrianglePaletteColors(palette)
-    {
-        const colors = STYLE.colors.background
-        const result = this.trianglePaletteColors
-
-        if (palette == 'magenta')
-        {
-            result.fill = colors.triangleSilhouetteMagentaFill || colors.triangleSilhouetteFill
-            result.stroke = colors.triangleSilhouetteMagentaStroke || colors.triangleSilhouetteStroke
-            return result
-        }
-
-        result.fill = colors.triangleSilhouetteBlueFill || colors.triangleSilhouetteFill
-        result.stroke = colors.triangleSilhouetteBlueStroke || colors.triangleSilhouetteStroke
-        return result
-    }
-    drawDecorativeTriangle(centerX, centerY, radius, rotation, points)
-    {
-        this.ctx.beginPath()
-
-        if (points && points.length >= 3)
-        {
-            for (let i = 0; i < points.length; ++i)
-            {
-                const point = points[i]
-                const rotatedX = point.x * Math.cos(rotation) - point.y * Math.sin(rotation)
-                const rotatedY = point.x * Math.sin(rotation) + point.y * Math.cos(rotation)
-                const x = centerX + rotatedX * radius
-                const y = centerY + rotatedY * radius
-
-                if (i == 0)
-                    this.ctx.moveTo(x, y)
-                else
-                    this.ctx.lineTo(x, y)
-            }
-        }
-        else
-        {
-            for (let i = 0; i < 3; ++i)
-            {
-                const angle = rotation - Math.PI / 2 + i * Math.PI * 2 / 3
-                const x = centerX + Math.cos(angle) * radius
-                const y = centerY + Math.sin(angle) * radius
-
-                if (i == 0)
-                    this.ctx.moveTo(x, y)
-                else
-                    this.ctx.lineTo(x, y)
-            }
-        }
-
-        this.ctx.closePath()
-        this.ctx.fill()
-        this.ctx.stroke()
-    }
-    getParallaxShift(width, height, geometry)
-    {
-        if (!QUALITY.backgroundMotion
-            || (STYLE.visualStability.freezeBackgroundParallax && !STYLE.visualStability.useDistantBackgroundMotion))
-            return {x: 0, y: 0}
-
-        const ratio = geometry.parallaxShiftRatio
-        const time = performance.now() * (geometry.ignoreTimeScale ? 1 : this.getVersionBackgroundTimeScale())
-        const x = Math.sin(time / 3100) * width * ratio
-        const y = Math.cos(time / 3700) * height * ratio
-
-        return {x, y}
-    }
-    getCameraParallaxShift(geometry)
-    {
-        if (!QUALITY.backgroundMotion || typeof screen == 'undefined' || typeof scale == 'undefined' || typeof version == 'undefined')
-            return {x: 0, y: 0}
-
-        const canvasScale = scale[version] || 1
-        const motionScale = geometry.ignoreTimeScale ? 1 : this.getVersionBackgroundTimeScale()
-        const ratioX = (geometry.cameraParallaxXRatio || 0) * motionScale
-        const ratioY = (geometry.cameraParallaxYRatio || 0) * motionScale
-
-        return {
-            x: screen.x * canvasScale * ratioX,
-            y: screen.y * canvasScale * ratioY
-        }
     }
     // Follow the world translation at a fraction of its speed. Camera
     // parallax is spatial, independent of the animation clock; a stationary
     // camera must leave the cave still in both modes.
     getLayerShift(width, height, layer)
     {
-        if (this.shouldFreezeBadVersionBackgroundMotion())
+        if (STYLE.visualStability.freezeBadVersionBackground)
             return {x: 0, y: 0}
 
-        const camera = this.getCameraParallaxShift({
-            cameraParallaxXRatio: layer.cameraParallaxXRatio,
-            cameraParallaxYRatio: layer.cameraParallaxYRatio,
-            ignoreTimeScale: true
-        })
+        const enabled = QUALITY.backgroundMotion && typeof screen != 'undefined'
+            && typeof scale != 'undefined' && typeof version != 'undefined'
+        const canvasScale = enabled ? (scale[version] || 1) : 0
+        const camera = {
+            x: enabled ? screen.x * canvasScale * layer.cameraParallaxXRatio : 0,
+            y: enabled ? screen.y * canvasScale * layer.cameraParallaxYRatio : 0
+        }
         const maxY = height * (layer.maxShiftYRatio || 0.05)
 
         return {
@@ -1087,13 +544,13 @@ class BackgroundRenderer
     }
     drawCrystalLayer(width, height, shift)
     {
-        const layer = this.getLayerTile('far', width, height, STYLE.backgroundGeometry.crystals,
+        const layer = this.getLayerTile('far', width, height, STYLE.caveLayers.crystals,
             (...args) => this.paintCrystalTile(...args))
         this.drawLayerTile(layer, width, height, shift, STYLE.colors.background.crystalRock)
     }
     drawNearLayer(width, height, shift)
     {
-        const layer = this.getLayerTile('near', width, height, STYLE.backgroundGeometry.nearRocks,
+        const layer = this.getLayerTile('near', width, height, STYLE.caveLayers.nearRocks,
             (...args) => this.paintNearTile(...args))
         this.drawLayerTile(layer, width, height, shift, STYLE.colors.background.nearRock)
     }
@@ -1123,94 +580,6 @@ class BackgroundRenderer
             this.ctx.fillRect(bounds.x, bounds.y, bounds.width, shift.y - bounds.y)
         if (shift.y + height < bounds.y + bounds.height)
             this.ctx.fillRect(bounds.x, shift.y + height, bounds.width, bounds.y + bounds.height - shift.y - height)
-    }
-    drawPolygonAccents(width, height, geometry, time)
-    {
-        const accents = geometry.accents || []
-
-        for (let i = 0; i < accents.length; ++i)
-        {
-            const accent = accents[i]
-            const radius = accent.radius * backgroundTemplateScale(width, height)
-            const rotation = accent.rotation + time / STYLE.timing.backgroundRotationMs * Math.PI * (i % 2 == 0 ? 1 : -1)
-            const x = accent.x * width
-            const y = accent.y * height
-
-            this.drawPolygonAccent(x, y, radius, accent.sides, rotation, accent.danger, geometry.accentLineWidth)
-        }
-    }
-    drawPolygonAccent(centerX, centerY, radius, sides, rotation, danger, lineWidth)
-    {
-        const colors = STYLE.colors.background
-
-        this.ctx.save()
-        this.ctx.beginPath()
-
-        for (let i = 0; i < sides; ++i)
-        {
-            const angle = rotation + i * Math.PI * 2 / sides
-            const x = centerX + Math.cos(angle) * radius
-            const y = centerY + Math.sin(angle) * radius
-
-            if (i == 0)
-                this.ctx.moveTo(x, y)
-            else
-                this.ctx.lineTo(x, y)
-        }
-
-        this.ctx.closePath()
-        this.ctx.fillStyle = danger ? colors.polygonDangerFill : colors.polygonAccentFill
-        this.ctx.strokeStyle = danger ? colors.polygonDangerStroke : colors.polygonAccentStroke
-        this.ctx.lineWidth = lineWidth
-        this.ctx.fill()
-        this.ctx.stroke()
-        this.ctx.restore()
-    }
-    drawRectangleAccents(width, height, geometry, time, shift)
-    {
-        const rectangles = geometry.rectangles || []
-        shift = shift || {x: 0, y: 0}
-
-        for (let i = 0; i < rectangles.length; ++i)
-        {
-            const rect = rectangles[i]
-            const sizeScale = backgroundTemplateScale(width, height)
-            const rotation = rect.rotation + time / STYLE.timing.backgroundRotationMs * Math.PI * geometry.rectangleRotationScale * (i % 2 == 0 ? 1 : -1)
-            const x = rect.x * width + shift.x
-            const y = rect.y * height + shift.y
-
-            this.drawRectangleAccent(
-                x,
-                y,
-                rect.width * sizeScale,
-                rect.height * sizeScale,
-                rotation,
-                rect.danger,
-                geometry.accentLineWidth
-            )
-        }
-    }
-    drawRectangleAccent(centerX, centerY, width, height, rotation, danger, lineWidth)
-    {
-        const colors = STYLE.colors.background
-
-        this.ctx.save()
-        this.ctx.translate(centerX, centerY)
-        this.ctx.rotate(rotation)
-        this.ctx.fillStyle = danger ? colors.polygonDangerFill : colors.polygonAccentFill
-        this.ctx.strokeStyle = danger ? colors.polygonDangerStroke : colors.polygonAccentStroke
-        this.ctx.lineWidth = lineWidth
-        this.ctx.fillRect(-width / 2, -height / 2, width, height)
-        this.ctx.strokeRect(-width / 2, -height / 2, width, height)
-        this.ctx.restore()
-    }
-    isBadVersion()
-    {
-        return typeof version != 'undefined' && version == 'bad'
-    }
-    usesDepthBackground()
-    {
-        return typeof version != 'undefined' && (version == 'bad' || version == 'classic')
     }
 }
 

@@ -4,8 +4,7 @@ Both the base rev's render/effects.js (splice, .map and per-point objects) and
 the worktree's (pooled arrays, in-place compaction) are loaded into separate
 node vm contexts with the same stub globals, then fed the same fixed inputs:
 particle compaction and the cap must keep order and drop exactly the expired
-or oldest particles, and the ribbon points/outline, flash segments and
-triangle palette colors must equal the old algorithm's output value for value,
+or oldest particles, and the ribbon points/outline must equal the old algorithm's output value for value,
 including when the pooled arrays are reused with fewer points.
 The allocation test counts bytes per call of each targeted path, old vs new,
 as the heapUsed delta over N warmed-up calls between gc() calls, with a 64 MB
@@ -109,15 +108,6 @@ function run(e) {
                     out.ribbon.push({points: pointsCopy, outline})
                 }
 
-    const background = new e.BackgroundRenderer(null, null)
-    const flashes = [
-        {form: 'broken'}, {form: 'fragments'}, {},
-        {form: 'broken', segments: [{start: 0.1, end: 0.2}, {start: 0.3, end: 0.9}]},
-        {form: 'fragments', fragments: [{x: 0.1, y: -0.2, length: 0.5}]},
-        {form: 'broken'}
-    ]
-    out.flash = flashes.map((flash, i) => copy(background.getFlashSegments(flash, 10 + i, 20 - i, -0.7 + i * 0.3, 300 + i * 17)))
-    out.palette = ['magenta', 'blue', 'other', 'magenta'].map(p => copy(background.getTrianglePaletteColors(p)))
     return out
 }
 
@@ -166,16 +156,10 @@ const particleSets = () => Array.from({length: N}, () =>
 let sink = 0
 
 function paths(e) {
-    const background = new e.BackgroundRenderer(null, null)
-    const broken = {form: 'broken'}
-    const fragments = {form: 'fragments'}
     const trail = new e.PlayerTrailRenderer()
     const track = Array.from({length: 40}, (_, i) => ({x: i * 3 + Math.sin(i) * 2, y: Math.cos(i * 0.7) * 9}))
     const system = new e.ParticleSystem(null, null)
     return {
-        'getFlashSegments broken': i => { sink += background.getFlashSegments(broken, 10, 20, 0.3, 300 + (i & 7)).length },
-        'getFlashSegments fragments': i => { sink += background.getFlashSegments(fragments, 10, 20, 0.3, 300 + (i & 7)).length },
-        'getTrianglePaletteColors': i => { sink += background.getTrianglePaletteColors(i & 1 ? 'magenta' : 'blue').fill.length },
         'getRibbonPoints+getRibbonOutline': i => {
             sink += trail.getRibbonOutline(trail.getRibbonPoints(track, 2.5), 2, 6 + (i & 3)).length
         },
@@ -278,10 +262,6 @@ class EffectsAllocationsTest(unittest.TestCase):
         self.assertGreater(compared, 50)
         print('ribbon cases', len(self.old['ribbon']), 'outlines compared', compared)
 
-    def test_flash_segments_and_triangle_palette_equal_old(self):
-        self.assertEqual(self.new['flash'], self.old['flash'])
-        self.assertEqual(self.new['palette'], self.old['palette'])
-
     def test_targeted_paths_allocate_less_and_pooled_paths_allocate_nothing(self):
         result = subprocess.run(
             ['node', '--expose-gc', '--min-semi-space-size=64', '--max-semi-space-size=64',
@@ -310,7 +290,7 @@ class EffectsAllocationsTest(unittest.TestCase):
             Path(os.environ['EFFECTS_ALLOC_LOG']).write_text(table + '\n')
 
         self.assertEqual(data['gc_inside_counted_loops'], 0)
-        self.assertEqual(len(data['paths']), 6)
+        self.assertEqual(len(data['paths']), 3)
         for name, row in data['paths'].items():
             self.assertTrue(math.isfinite(row['old']) and math.isfinite(row['new']), name)
             self.assertLess(row['new'], row['old'], name)

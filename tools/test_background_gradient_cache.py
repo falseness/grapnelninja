@@ -5,10 +5,11 @@ script counts every createLinearGradient / createRadialGradient call made from
 the background's drawBaseGradient, drawHaze or drawVignette, per frame. The cache must
 create 3 gradients (base, haze, vignette) on the first background frame (the menu drawn at load), none
 on the next 100 menu frames and 101 game frames, and rebuild them once (3)
-after the canvas size changes. Gradients from any caller (the wash, lights,
+after the canvas size changes. Gradients from any caller (lights,
 grade, sprites) are counted too: after WARMUP_FRAMES game frames (the first
 frames build the light and ninja sprite gradients), no game frame may create
-one (zero steady-state churn). Candidate: GRADIENT_REV (default worktree).
+one, except CubeTrackLine.draw: its moving endpoints require a fresh trail
+gradient (TASK-184). Candidate: GRADIENT_REV (default worktree).
 """
 from contextlib import ExitStack
 import os
@@ -29,7 +30,8 @@ COUNT_SCRIPT = '''(() => {
     for (const name of ['createLinearGradient', 'createRadialGradient']) {
         const original = CanvasRenderingContext2D.prototype[name]
         CanvasRenderingContext2D.prototype[name] = function (...args) {
-            counter.all++
+            // Hazard trails deliberately build a gradient from moving endpoints.
+            if (!/CubeTrackLine\\.draw /.test(new Error().stack)) counter.all++
             if (/\\.(drawBaseGradient|drawHaze|drawVignette) /.test(new Error().stack)) counter.frame++
             return original.apply(this, args)
         }
@@ -72,6 +74,7 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         page.goto(url + 'index.html', wait_until='load')
         render_snapshot.boot_frozen(page)
         load = page.evaluate(TAKE_SCRIPT)
+        load_all = page.evaluate(TAKE_ALL_SCRIPT)
         page.evaluate(render_snapshot.SETUP_SCRIPT, [script, True])
         menu = page.evaluate(MENU_SCRIPT, frames)
         page.evaluate('mode => startGame(mode)', mode)
@@ -99,7 +102,7 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         for tick in range(frames + 1, frames + 11):
             page.evaluate(render_snapshot.ADVANCE_SCRIPT, tick)
             resized.append(page.evaluate(TAKE_SCRIPT))
-        return {'rev': rev_id, 'mode': mode, 'frames': frames, 'load': load, 'menu': menu, 'game': game,
+        return {'rev': rev_id, 'mode': mode, 'frames': frames, 'load': load, 'load_all': load_all, 'menu': menu, 'game': game,
                 'game_all': game_all,
                 'resized_canvas': size, 'resized': resized, 'page_errors': errors}
 
@@ -116,6 +119,8 @@ class BackgroundGradientCacheTest(unittest.TestCase):
 
     def test_first_frame_builds_all(self):
         self.assertEqual(self.r['load'], 3)
+        # Base, haze, vignette plus two warmed ninja sprites; no legacy washes.
+        self.assertEqual(self.r['load_all'], 5)
 
     def test_next_frames_build_none(self):
         self.assertEqual(self.r['menu'], [0] * FRAMES)

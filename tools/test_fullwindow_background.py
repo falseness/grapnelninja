@@ -131,6 +131,52 @@ class FullWindowBackgroundTests(unittest.TestCase):
             (errors['console'], errors['page']), ([], [])))
         return page
 
+    def test_only_cave_background_ops(self):
+        """Cold frames include tile construction as well as the main canvas."""
+        page = self.boot((1920, 1080, False))
+        records = page.evaluate('''() => {
+            const records = {}
+            for (const scene of ['bad', 'classic', 'menu']) {
+                version = scene == 'menu' ? 'bad' : scene
+                const ops = [], proto = CanvasRenderingContext2D.prototype
+                const originals = {}
+                for (const name of ['createLinearGradient', 'createRadialGradient',
+                    'beginPath', 'moveTo', 'lineTo', 'closePath', 'fill', 'stroke',
+                    'fillRect', 'strokeRect', 'drawImage']) {
+                    originals[name] = proto[name]
+                    proto[name] = function(...args) {
+                        ops.push({op: name, args: args.map(a => typeof a == 'number' ? a : 'canvas'),
+                            caller: new Error().stack.split('\\n').slice(2, 6).join('\\n')})
+                        return originals[name].apply(this, args)
+                    }
+                }
+                try {
+                    const c = document.createElement('canvas')
+                    c.width = 1920; c.height = 1080
+                    const b = new BackgroundRenderer(c.getContext('2d'), c)
+                    if (scene == 'menu') b.paintMenu(); else b.paint()
+                } finally {
+                    for (const [name, original] of Object.entries(originals)) proto[name] = original
+                }
+                records[scene] = ops
+            }
+            return records
+        }''')
+        for scene, ops in records.items():
+            gradients = [op for op in ops if op['op'].startswith('create')]
+            self.assertEqual([op['op'] for op in gradients],
+                             ['createLinearGradient', 'createLinearGradient', 'createRadialGradient'])
+            for op in gradients:
+                self.assertIn('buildGradients', op['caller'])
+            self.assertTrue(any(op['op'] == 'lineTo' for op in ops))
+            self.assertTrue(any(op['op'] == 'drawImage' for op in ops))
+            self.assertFalse(any(op['op'] == 'strokeRect' for op in ops))
+            for op in ops:
+                self.assertNotRegex(op['caller'], 'Wash|Hexagon|Flash|Triangle|RectangleAccent|PolygonAccent')
+            print(f'{scene}: cave ops PASS; gradients=3; legacy decoration ops=0')
+        if self.evidence:
+            (self.out() / 'ops.json').write_text(json.dumps(records, indent=2) + '\n')
+
     def test_menu_background_fills_window(self):
         records = []
         for viewport in VIEWPORTS:
