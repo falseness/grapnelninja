@@ -225,6 +225,11 @@ const STYLE = Object.freeze({
         maxElementRadius: 170,
         cubeAlpha: 0.45,
         hazardAlpha: 0.5,
+        // Hard-light suppresses the orange source's green channel on blue rock.
+        // Warm the cached sprite and reduce blue bleed-through near its edge;
+        // retain the same soft stroke falloff and the shared composite pass.
+        dangerColor: '#ffcc00',
+        dangerAlpha: 0.95,
         // Blocks wider than this part of the view light only from their edge
         // facing the view centre, fading over edgeFadeViewRatio of the view width
         maxBlockViewWidthRatio: 0.9,

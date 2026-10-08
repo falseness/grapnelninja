@@ -801,7 +801,8 @@ class LightmapRenderer
         }
         this.lightCtx.setTransform(toLight, 0, 0, toLight, 0, 0)
         this.lightCtx.globalAlpha = element instanceof Triangle
-            ? STYLE.lights.hazardAlpha : STYLE.lights.cubeAlpha
+            ? STYLE.lights.hazardAlpha : this.isOrangeDangerLight(element)
+                ? STYLE.lights.dangerAlpha : STYLE.lights.cubeAlpha
         this.lightCtx.drawImage(sprite, x - spread, y - spread,
             sprite.width / toLight, sprite.height / toLight)
         this.hasLights = true
@@ -815,8 +816,16 @@ class LightmapRenderer
 
         return element instanceof Rect || element instanceof Trampoline
     }
+    isOrangeDangerLight(element)
+    {
+        return element instanceof Rect && element.isDangerRect
+            && element.getGlowStroke() == STYLE.colors.cube.dangerStroke
+    }
     getElementLightColor(element)
     {
+        // Compensate only the orange spill for hard-light on the blue cave.
+        // Bodies/outlines, sprite geometry and the shared masks stay unchanged.
+        if (this.isOrangeDangerLight(element)) return STYLE.lights.dangerColor
         return element.getGlowStroke() || STYLE.colors.cube.blue
     }
     composite()
