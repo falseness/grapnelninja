@@ -2,7 +2,7 @@
 
 Run: cd tools && python3 -m unittest test_danger_rects -v
 DANGER_BASE optionally pins the parent before committing. Evidence defaults to
-artifacts/TASK-209. Isolated factory-drawn probes use a black backdrop so nearby
+artifacts/TASK-210. Isolated factory-drawn probes use a black backdrop so nearby
 orange spill cannot contaminate the unchanged-obstacle comparison. We compare
 ALL RGBA pixels of triangles, green trampolines and blue cubes, not just swatches.
 Full gameplay captures retain all effects, camera, layout and seeded input.
@@ -23,7 +23,7 @@ from perf_mobile import ROOT, SEED_SCRIPT, export_rev
 import render_snapshot as snap
 import danger_gallery
 
-OUT = Path(os.environ.get('DANGER_EVIDENCE_DIR', ROOT / 'artifacts/TASK-209'))
+OUT = Path(os.environ.get('DANGER_EVIDENCE_DIR', ROOT / 'artifacts/TASK-210'))
 PROBE = '''() => {
     const oldScreen = {x: screen.x, y: screen.y}, oldScale = scale[version]
     screen.x = screen.y = 0
@@ -175,6 +175,17 @@ class DangerRectsTest(unittest.TestCase):
                 r, g, b = report['recolored_fill_rgb']
                 self.assertGreater(r, g)
                 self.assertGreater(g, b)
+
+    def test_hatch_clipping_and_interior(self):
+        from danger_hatch_probe import collect
+        report = collect(OUT)
+        for variant, data in report.items():
+            for scene, samples in data['samples'].items():
+                for sample in samples:
+                    with self.subTest(variant=variant, scene=scene, width=sample['width']):
+                        self.assertLessEqual(sample['outside_band_max_delta'], 2)
+                        self.assertGreater(sample['interior_variance_on'], sample['interior_variance_off'])
+        print('PASS hatch: all variants/modes/viewports/rects outside delta <= 2; interior variance on > off')
 
     def test_no_page_errors(self):
         self.assertEqual(self.before['page_errors'], [])

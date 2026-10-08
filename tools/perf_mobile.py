@@ -324,7 +324,7 @@ def export_rev(rev, add_cleanup):
 
 
 def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofile=None,
-        warmup=3, heapprofile=None):
+        warmup=3, heapprofile=None, danger_hatch=None):
     script = input_script(seed, seconds)
     # Capture the harness independently of the game exported by --rev. All
     # provenance work stays outside the measured window.
@@ -342,7 +342,7 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
             name: hashlib.sha256(value.encode()).hexdigest()
             for name, value in (('seed', SEED_SCRIPT), ('instrument', INSTRUMENT_SCRIPT),
                                 ('start', START_SCRIPT), ('layers', LAYERS_SCRIPT))},
-        'trace': trace, 'layers': layers,
+        'trace': trace, 'layers': layers, 'danger_hatch': danger_hatch,
         'host_load_before': os.getloadavg(),
     }
     with ExitStack() as stack:
@@ -366,6 +366,8 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
         page.goto(url + 'index.html')
         page.wait_for_function('() => typeof menu != "undefined" && menu.visible')
         wait_for_boot(page)
+        if danger_hatch:
+            page.evaluate("v => STYLE.dangerHatch.variant = v", danger_hatch)
         page.evaluate(INSTRUMENT_SCRIPT)
         if layers:
             page.evaluate(LAYERS_SCRIPT, [LAYERS])
@@ -496,11 +498,12 @@ def main():
     parser.add_argument('--warmup', type=float, default=3,
                         help='seconds after startGame() excluded from the *_after_warmup values')
     parser.add_argument('--heapprofile', help='save the sampling heap profile of the window to this file')
+    parser.add_argument('--danger-hatch', choices=['thin', 'bold', 'cross', 'chevron', 'off'])
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
     result = run(args.rev, args.mode, args.seconds, args.seed, log=lambda s: print(s, flush=True),
                  trace=args.trace, layers=args.layers, cpuprofile=args.cpuprofile,
-                 warmup=args.warmup, heapprofile=args.heapprofile)
+                 warmup=args.warmup, heapprofile=args.heapprofile, danger_hatch=args.danger_hatch)
     Path(args.out).write_text(json.dumps(result, indent=1) + '\n')
     print(f'wrote {args.out}')
 

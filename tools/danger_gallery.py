@@ -30,6 +30,9 @@ SETUP = '''mode => {
 
 STEP = '''ms => {
     __snap.now = __dangerInspectionStart + ms
+    // Fractional camera pan exposes hatch shimmer without advancing physics.
+    screen.x = (ms - 1000) * .02
+    screen.y = (ms - 1000) * .006
     draw()
     return __snap.capture()
 }'''

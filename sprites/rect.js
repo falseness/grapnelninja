@@ -1,3 +1,28 @@
+// One repeating tile per variant/context, shared by every orange obstacle.
+const dangerHatchPatterns = new WeakMap()
+function dangerHatchPattern(context, variant)
+{
+    let cache = dangerHatchPatterns.get(context)
+    if (!cache) { cache = Object.create(null); dangerHatchPatterns.set(context, cache) }
+    if (cache[variant]) return cache[variant]
+    const tile = document.createElement('canvas')
+    tile.width = tile.height = 32
+    const c = tile.getContext('2d')
+    c.strokeStyle = variant == 'bold' ? '#99501c' : '#b56020'
+    c.lineWidth = variant == 'bold' ? 9 : variant == 'thin' ? 2 : 3
+    c.beginPath()
+    for (let i = -32; i <= 64; i += 32) {
+        if (variant == 'chevron') {
+            c.moveTo(i, 0); c.lineTo(i + 16, 16); c.lineTo(i, 32)
+        } else {
+            c.moveTo(i - 32, -32); c.lineTo(i + 64, 64)
+            if (variant == 'cross') { c.moveTo(i + 64, -32); c.lineTo(i - 32, 64) }
+        }
+    }
+    c.stroke()
+    return cache[variant] = context.createPattern(tile, 'repeat')
+}
+
 class Rect extends Element
 {
     constructor(object)
@@ -96,6 +121,7 @@ class Rect extends Element
         strokeNeonPath(this.stroke)
         const innerFill = !this.isDangerRect && this.stroke == STYLE.colors.cube.blueStroke ? STYLE.colors.cube.blueFill : this.stroke
         this.drawInnerRectangleCopy(x, y, STYLE.badVersionEffects.obstacles.innerCopyInsetRatio, innerFill, this.stroke)
+        this.drawDangerHatch(x, y)
         ctx.restore()
     }
     drawBadVersionRect(x, y)
@@ -119,7 +145,25 @@ class Rect extends Element
         strokeNeonPath(this.stroke)
 
         this.drawInnerRectangleCopy(x, y, obstacleStyle.innerCopyInsetRatio, copyFill, this.stroke)
+        this.drawDangerHatch(x, y)
 
+        ctx.restore()
+    }
+    drawDangerHatch(x, y)
+    {
+        if (!this.isDangerRect || STYLE.dangerHatch.variant == 'off') return
+        const pattern = dangerHatchPattern(ctx, STYLE.dangerHatch.variant)
+        // Leave the neon outline and inner bevel clear. Translation anchors the
+        // pattern to the obstacle, including fractional camera movement.
+        const inset = Math.max(2, Math.min(this.width, this.height) * .20)
+        if (this.width <= inset * 2 || this.height <= inset * 2) return
+        ctx.save()
+        ctx.translate(x, y)
+        ctx.beginPath()
+        ctx.rect(inset, inset, this.width - inset * 2, this.height - inset * 2)
+        ctx.clip()
+        ctx.fillStyle = pattern
+        ctx.fillRect(inset, inset, this.width - inset * 2, this.height - inset * 2)
         ctx.restore()
     }
     drawInnerRectangleCopy(x, y, insetRatio, fillStyle, strokeStyle)

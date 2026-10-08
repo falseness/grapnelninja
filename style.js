@@ -1,4 +1,6 @@
 const STYLE = Object.freeze({
+    // Mutable selector for visual comparison; "off" disables the interior only.
+    dangerHatch: {variant: 'bold'},
     colors: Object.freeze({
         background: Object.freeze({
             page: 'black',
