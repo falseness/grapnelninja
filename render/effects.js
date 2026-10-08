@@ -607,6 +607,7 @@ class LightmapRenderer
         this.lightCtx = this.lightCanvas.getContext('2d')
         // Unit-radius gradients by colour; drawRadialLight scales them to size
         this.gradients = new Map()
+        this.shapeLights = new Map()
         this.resize()
     }
     shouldDraw()
@@ -683,6 +684,37 @@ class LightmapRenderer
         lightCtx.save()
         lightCtx.globalCompositeOperation = 'lighter'
         this.drawWorldLights(gameState.floors)
+        // Keep the complete player area unchanged, including its transparent
+        // surroundings. Pad for the low-resolution lightmap's bilinear filter.
+        const unit = this.scale * scale[version]
+        lightCtx.setTransform(unit, 0, 0, unit, 0, 0)
+        lightCtx.globalCompositeOperation = 'destination-out'
+        lightCtx.globalAlpha = 1
+        // Some obstacle faces are translucent. Erase their silhouettes from
+        // every overlapping light, not only from their own cached sprite.
+        lightCtx.lineWidth = 4 / unit
+        lightCtx.lineJoin = 'round'
+        for (const floor of gameState.floors)
+            for (const element of floor.elements)
+            {
+                if (!(element instanceof Rect || element instanceof Trampoline || element instanceof Triangle)) continue
+                const points = element.getPoints()
+                lightCtx.beginPath()
+                const last = points[points.length - 1]
+                lightCtx.moveTo(last.x + screen.x, last.y + screen.y)
+                for (const p of points)
+                    if (p.curvature)
+                        lightCtx.quadraticCurveTo(p.curvature.x + screen.x, p.curvature.y + screen.y,
+                            p.x + screen.x, p.y + screen.y)
+                    else lightCtx.lineTo(p.x + screen.x, p.y + screen.y)
+                lightCtx.closePath()
+                lightCtx.fill()
+                lightCtx.stroke()
+            }
+        lightCtx.beginPath()
+        lightCtx.arc(ninja.x + screen.x, ninja.y + screen.y,
+            ninja.radius * 1.5 + 2 / unit, 0, Math.PI * 2)
+        lightCtx.fill()
         lightCtx.restore()
     }
     // Screen-space lights from the menu neon, using the game's faded falloff.
@@ -726,75 +758,54 @@ class LightmapRenderer
     }
     drawElementLight(element)
     {
-        const lights = STYLE.lights
-        let radius
-        let alpha
-
-        // Every triangle gets the same light, so classic traps stay hidden
-        if (element instanceof Triangle)
-        {
-            radius = lights.hazardRadius
-            alpha = lights.hazardAlpha
-        }
-        else if (this.isCubeOrPlatform(element))
-        {
-            radius = lights.cubeRadius
-            alpha = lights.cubeAlpha
-        }
-        else
+        if (!(element instanceof Triangle) && !this.isCubeOrPlatform(element))
             return
-
-        // The drawn box, not getCircumscribedCircle(): that collision helper's
-        // centre and radius can lie off the shape (Trampoline, Rect)
         const box = getElementCullBox(element)
-        if (!box)
-            return
-
-        const halfWidth = (box.right - box.left) / 2
-        const halfHeight = (box.bottom - box.top) / 2
-        const elementScreenRadius = Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight)
-            * scale[version] * 1080 / height
-        let x = box.left + halfWidth
-        let y = box.top + halfHeight
-
-        // A big block (classic walls) can have its centre far off screen: the
-        // light moves to the centre clamped into the view (still on the block).
-        // Floor/ceiling strips spanning the view give no light, the bloom does that
-        if (elementScreenRadius > lights.maxElementRadius)
+        if (!box) return
+        const toLight = this.scale * scale[version]
+        const spread = STYLE.lights.shapeSpread * height / 1080 / scale[version]
+        const x = box.left + screen.x, y = box.top + screen.y
+        const w = box.right - box.left, h = box.bottom - box.top
+        if ((x + w + spread) * toLight < 0 || (y + h + spread) * toLight < 0
+            || (x - spread) * toLight > this.lightCanvas.width
+            || (y - spread) * toLight > this.lightCanvas.height) return
+        const points = element.getPoints().map(p => ({x: p.x - box.left, y: p.y - box.top}))
+        const color = this.getElementLightColor(element)
+        // Translation is deliberately absent from the key: moving hazards reuse
+        // their sprite. Quantization removes floating point translation noise.
+        const key = JSON.stringify([points.map(p => [p.x.toFixed(3), p.y.toFixed(3)]),
+            color, spread.toFixed(3), toLight])
+        let sprite = this.shapeLights.get(key)
+        if (!sprite)
         {
-            const viewWidth = width / scale[version]
-            const viewHeight = height / scale[version]
-
-            if (box.right < -screen.x || box.left > -screen.x + viewWidth
-                || box.bottom < -screen.y || box.top > -screen.y + viewHeight)
-                return
-
-            y = Math.max(-screen.y, Math.min(-screen.y + viewHeight, y))
-
-            if (box.right - box.left > viewWidth * lights.maxBlockViewWidthRatio)
+            if (this.shapeLights.size >= 128) this.shapeLights.clear()
+            sprite = document.createElement('canvas')
+            sprite.width = Math.ceil((w + spread * 2) * toLight) + 2
+            sprite.height = Math.ceil((h + spread * 2) * toLight) + 2
+            const c = sprite.getContext('2d')
+            c.scale(toLight, toLight)
+            c.translate(spread, spread)
+            c.beginPath()
+            points.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))
+            c.closePath()
+            c.lineJoin = 'round'
+            c.strokeStyle = color
+            // Nested rounded polygon strokes approximate a smooth distance-to-
+            // outline falloff. Built once, with no shadowBlur or live gradients.
+            for (let i = 32; i >= 1; --i)
             {
-                // Wider than the view: only its vertical edge facing the view
-                // centre glows, fading out as that edge nears the centre
-                const centerX = -screen.x + viewWidth / 2
-                const distance = Math.max(box.left - centerX, centerX - box.right)
-                if (distance <= 0)
-                    return
-
-                alpha *= Math.min(1, distance / (viewWidth * lights.edgeFadeViewRatio))
-                x = centerX < box.left ? box.left : box.right
+                c.lineWidth = 2 * spread * i / 32
+                c.globalAlpha = 0.045
+                c.stroke()
             }
-            else
-                x = Math.max(-screen.x, Math.min(-screen.x + viewWidth, x))
+            this.shapeLights.set(key, sprite)
         }
-
-        // Bigger blocks light a wider area, up to maxElementRadius more
-        this.drawRadialLight(
-            x + screen.x,
-            y + screen.y,
-            radius + Math.min(elementScreenRadius, lights.maxElementRadius),
-            this.getElementLightColor(element),
-            alpha
-        )
+        this.lightCtx.setTransform(toLight, 0, 0, toLight, 0, 0)
+        this.lightCtx.globalAlpha = element instanceof Triangle
+            ? STYLE.lights.hazardAlpha : STYLE.lights.cubeAlpha
+        this.lightCtx.drawImage(sprite, x - spread, y - spread,
+            sprite.width / toLight, sprite.height / toLight)
+        this.hasLights = true
     }
     isCubeOrPlatform(element)
     {

@@ -208,11 +208,11 @@ const STYLE = Object.freeze({
         fpsUpdateMs: 250
     }),
     // Coloured light spill on the crystal background (LightmapRenderer).
-    // Radii are screen px at 1080 (the same size in both modes); block lights
-    // also grow by the block's own radius.
+    // Spread and menu radii are screen px at 1080 (the same in both modes).
     lights: Object.freeze({
         resolutionScale: 0.2,
         touchResolutionScale: 0.15,
+        shapeSpread: 95,
         cubeRadius: 140,
         hazardRadius: 150,
         // Cap on the block-size bonus, so the huge classic blocks do not flood the screen
