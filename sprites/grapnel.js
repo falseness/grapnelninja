@@ -61,18 +61,19 @@ class Grapnel
             // A hit lies on both segments, so inside both boxes.
             const reach = segmentBounds(grapnelLine.x1, grapnelLine.y1, grapnelLine.x2, grapnelLine.y2,
                                         defaultEqualityTolerance)
-            for (let k = 0; k < floors.length; ++k)
+            const collisionGroups = [...floors, {elements: [screen.leftWall]}]
+            for (let k = 0; k < collisionGroups.length; ++k)
             {
-                for (let i = 0; i < floors[k].elements.length; ++i)
+                for (let i = 0; i < collisionGroups[k].elements.length; ++i)
                 {
-                    if (!boundsOverlap(reach, elementBounds(floors[k].elements[i], grapnelElementBounds)))
+                    if (!boundsOverlap(reach, elementBounds(collisionGroups[k].elements[i], grapnelElementBounds)))
                         continue
-                    if (circlesIntersect(grapnelLine.circle, floors[k].elements[i].getCircumscribedCircle()))
+                    if (circlesIntersect(grapnelLine.circle, collisionGroups[k].elements[i].getCircumscribedCircle()))
                     {
-                        let lines = floors[k].elements[i].getLines()
+                        let lines = collisionGroups[k].elements[i].getLines()
                         for (let j = 0; j < lines.length; ++j)
                         {
-                            this.grapple(linesCollision(grapnelLine, lines[j]), floors[k].elements[i], q)
+                            this.grapple(linesCollision(grapnelLine, lines[j]), collisionGroups[k].elements[i], q)
                         }
                     }
                 }

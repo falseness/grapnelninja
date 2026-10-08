@@ -110,6 +110,7 @@
         <script src = "sprites/triangle.js"></script>
         <script src = "sprites/trampoline.js"></script>
         <script src = "sprites/side.js"></script>
+        <script src = "sprites/leftwall.js"></script>
         
         <script src = "physics.js"></script>
         <script src = "respawn.js"></script>
@@ -528,6 +529,7 @@
                 if (version && screen)
                 {
                     screen.updateWidthLayout()
+                    screen.leftWall.update(screen)
                     layoutHud()
                     // Factories capture width-derived sizes; they hold no run state.
                     elementsFactory = new ElementsFactory
