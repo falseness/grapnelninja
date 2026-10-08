@@ -544,7 +544,7 @@ const STYLE = Object.freeze({
         inputUntouchMs: 100,
         trailPoints: 100,
         cubeTrailPoints: 50,
-        triangleTrailPoints: 75,
+        triangleTrailPoints: 150,
     }),
     caveLayers: Object.freeze({
         classicMotionTimeScale: 0.01,
