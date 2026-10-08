@@ -9,6 +9,9 @@ behavior. The quantitative trail-only crop excludes sparks and the ring in
 ALL revisions (their glow too), keeping the complete ribbon glow. Player rows
 retain all three sources for visual review independently of the ribbon metric.
 HEAD also retains its production ring contrast margin. Full-scene crops show context.
+TASK-222/223 intentionally narrow and dim the trail: historical brightness MAD
+is descriptive only. test_player_effect_opacity verifies the current 0.5 source
+alpha contract against a saved pre-ticket revision, including bloom paths.
 Phone comparisons normalize the historical DPR 3 backing store to the current
 DPR 2 cap; viewport and input remain 844x390, touch, device scale factor 3.
 """
@@ -119,10 +122,9 @@ def run(out, parent):
             d.text((col*400+5,row*465+300),'Measured ribbon / soft bloom retained',fill='white')
             diffs[label]=float(np.abs(np.asarray(r['trail'],dtype=float)-a).mean())
         ratio=diffs['head']/diffs['parent'];report['captures']['-'.join(key)]={'head_vs_reference':diffs['head'],'parent_vs_reference':diffs['parent'],'ratio':ratio,'box':ref['box']}
-        print(f'{"PASS" if ratio<=.25 else "FAIL"} {key}: trail MAD head={diffs["head"]:.6f} parent={diffs["parent"]:.6f} ratio={ratio:.6f} <= 0.25',flush=True)
+        print(f'INFO {key}: historical trail MAD head={diffs["head"]:.6f} parent={diffs["parent"]:.6f} ratio={ratio:.6f} (descriptive; TASK-223 intentionally halves opacity)',flush=True)
 
     sheet.save(out/'player-crops.png');(out/'player-diff.json').write_text(json.dumps(report,indent=2)+'\n')
-    assert all(c['ratio'] <= .25 for c in report['captures'].values()), report['captures']
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--out',required=True);p.add_argument('--parent',required=True)

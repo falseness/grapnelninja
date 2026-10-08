@@ -200,7 +200,11 @@ class Ninja
         ctx.translate(centerX, centerY)
         ctx.globalAlpha = blinkAlpha
         if (sprite.halo)
+        {
+            ctx.globalAlpha = blinkAlpha * STYLE.player.effectOpacity
             ctx.drawImage(sprite.halo, -sprite.haloHalf, -sprite.haloHalf, sprite.haloHalf * 2, sprite.haloHalf * 2)
+            ctx.globalAlpha = blinkAlpha
+        }
         // Blue body, cyan edge and highlight share one cached image.
         ctx.drawImage(sprite.canvas, -sprite.half, -sprite.half, sprite.half * 2, sprite.half * 2)
 

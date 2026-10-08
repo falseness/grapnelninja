@@ -452,6 +452,9 @@ const STYLE = Object.freeze({
     // The player alone keeps outer glow; obstacles retain their inward light.
     player: Object.freeze({
         outerGlow: true,
+        // Applied once at each player effect source, including emissive draws.
+        // Keep bloom composition at full strength to avoid double attenuation.
+        effectOpacity: 0.5,
         // Historical 40b2fb1 glow, confined to cached player textures. Global
         // obstacle bloom remains disabled; phone uses the same player kernel.
         glow: Object.freeze({

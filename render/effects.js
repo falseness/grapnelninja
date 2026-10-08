@@ -949,7 +949,7 @@ class ParticleSystem
     {
         // Quick fade in, long fade out, so sparks never pop between frames.
         const config = STYLE.trails.player
-        const alpha = particle.alpha * Math.max(0, Math.min(1, (1 - progress) * 6, progress))
+        const alpha = particle.alpha * Math.max(0, Math.min(1, (1 - progress) * 6, progress)) * STYLE.player.effectOpacity
         const haloSize = particle.size * config.sparkHaloRatio
 
         if (STYLE.player.outerGlow)
@@ -1609,7 +1609,7 @@ class PlayerTrailRenderer
             this.ribbonPaths[index] = path
         }
 
-        ctx.globalAlpha = this.clampAlpha(alpha)
+        ctx.globalAlpha = this.clampAlpha(alpha) * STYLE.player.effectOpacity
         ctx.fillStyle = color
         ctx.fill(path)
     }
@@ -1921,7 +1921,7 @@ class PlayerGlowRenderer extends BloomRenderer
         ctx.beginPath()
         ctx.arc(player.x + screen.x, player.y + screen.y,
             radius - ringWidth * 0.5, 0, Math.PI * 2)
-        ctx.globalAlpha = player.getBlinkAlpha()
+        ctx.globalAlpha = player.getBlinkAlpha() * STYLE.player.effectOpacity
         ctx.strokeStyle = player.stroke
         ctx.lineWidth = ringWidth
         ctx.stroke()
