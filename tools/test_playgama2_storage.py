@@ -143,6 +143,44 @@ class Playgama2StorageTests(unittest.TestCase):
                 print('PASS '+case+': read <=1500ms; menu <=5000ms; ordered read/write; record=100/30 time>=625 language=en; recovery/reload; real input',flush=True)
                 page.context.close()
 
+    def test_record_only_offline_reload_recovery(self):
+        page, config = self.open_case('record-only')
+        expected = {'records': {'classic': 100, 'bad': 30}, 'time': 600, 'lang': 'ru'}
+        config['case'] = 'late'
+        page.reload(wait_until='domcontentloaded')
+        support.wait_for_boot(page)
+        self.assertFalse(page.evaluate('PLATFORM.storage.remoteKnown'))
+        page.evaluate('scoreText.record.classic=100; PROGRESS.flush()')
+        self.cases['record-only']['session_changes'] = page.evaluate(STATE)
+        self.assertEqual(page.evaluate(STATE), expected)
+        self.assertEqual(page.evaluate("storageTrace.filter(x=>x.op==='write-start').length"), 0)
+        self.cases['record-only']['before_reload_trace'] = page.evaluate('storageTrace')
+        page.reload(wait_until='domcontentloaded')
+        support.wait_for_boot(page)
+        page.evaluate('PROGRESS.save(); PROGRESS.flush()')
+        self.assertEqual(page.evaluate(STATE), expected)
+        pending = page.evaluate("JSON.parse(localStorage.getItem('grapnelninja.pending'))")
+        self.cases['record-only']['pending_after_offline_reload_save'] = pending
+        self.assertEqual(pending['records'], expected['records'])
+        self.assertEqual(pending['delta'], 0)
+        self.assertFalse(pending['langChanged'])
+        self.assertEqual(page.evaluate("storageTrace.filter(x=>x.op==='write-start').length"), 0)
+        page.evaluate("storageFault='normal'; releaseRead()")
+        page.wait_for_function("storageTrace.some(x=>x.op==='write-result')")
+        self.assertEqual(page.evaluate(STATE), expected)
+        self.assertEqual(page.evaluate("JSON.parse(localStorage.getItem('grapnelninja.pending')).records"), {})
+        trace = page.evaluate('storageTrace')
+        self.assertLess(next(i for i,x in enumerate(trace) if x['op']=='read-result'), next(i for i,x in enumerate(trace) if x['op']=='write-start'))
+        self.cases['record-only'].update(trace=trace, result=page.evaluate(STATE))
+        config.update(case='normal', remote=page.evaluate('remote'))
+        page.reload(wait_until='domcontentloaded')
+        support.wait_for_boot(page)
+        self.assertEqual(page.evaluate(STATE), expected)
+        verdict = 'PASS record-only offline reload/save retains pending record100; late recovery acknowledges it; online reload record=100/30 time=600 language=ru'
+        self.cases['record-only'].update(reloaded=page.evaluate(STATE), verdict=verdict)
+        print(verdict, flush=True)
+        page.context.close()
+
     def test_write_deadline(self):
         page, _ = self.open_case('bounded-write')
         result = page.evaluate("""async () => {

@@ -88,7 +88,10 @@ const PROGRESS = (function()
             langChanged = !!pending.langChanged
             for (const mode of ['classic', 'bad'])
                 scoreText.record[mode] = Math.max(number(records[mode]), number((pending.records || {})[mode]))
-            savedJson = pending.delta || pending.langChanged || JSON.stringify(records) !== snapshot()[recordsKey] ? null : JSON.stringify(snapshot())
+            // An unknown cached snapshot is not an acknowledgement of journaled
+            // records, even when no time or language change accompanies them.
+            const pendingRecords = !known && Object.keys(pending.records || {}).length > 0
+            savedJson = pendingRecords || pending.delta || pending.langChanged || JSON.stringify(records) !== snapshot()[recordsKey] ? null : JSON.stringify(snapshot())
             loaded = true
             if (known && savedJson === null) PROGRESS.save()
         },
