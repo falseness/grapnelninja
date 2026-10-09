@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 import unittest
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
+import test_playgama2_bridge as support
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046')))
@@ -23,11 +24,14 @@ class ObstacleAdvanceTests(unittest.TestCase):
         results = []
         for width, height in [(772, 630), (1280, 720), (1920, 1080)]:
             page = self.browser.new_page(viewport={'width': width, 'height': height})
+            page.route(support.SDK, lambda r: r.fulfill(content_type='application/javascript',
+                body='const FAULT="normal", SAVED_LANGUAGE="en";\n' + support.FAKE))
             page.on('pageerror', lambda error: self.errors.append(str(error)))
             page.on('console', lambda message: self.errors.append(message.text)
                     if message.type == 'error' else None)
             try:
                 page.goto(self.url)
+                wait_for_boot(page)
                 result = page.evaluate(PROBE)
                 results.append(result)
                 print('\n'.join(result['assertions']), flush=True)
@@ -74,11 +78,13 @@ PROBE = r'''() => {
             const right = Math.max(...group.map(e => e.getRightPointX()));
             const V = width/scale.bad, R = -screen.x+V;
             const pixelGap = id > 0 ? (left-predecessor)*scale.bad : null;
-            if (id > 0) assert(pixelGap >= .2*width-1e-6 && pixelGap <= .3*width+1e-6, '20-30% creation gap');
+            const runScore = scoreText.count.bad;
+            const spacingScale = 1 - Math.min(20, Math.max(0, runScore-5)) / 100;
+            if (id > 0) assert(pixelGap >= .2*width*spacingScale-1e-6 && pixelGap <= .3*width*spacingScale+1e-6, 'score-adjusted creation gap');
             if (!initializing) assert(left > R, 'visible post-initialization spawn');
             creations.push({template, canvasWidth:width, canvasHeight:height, frame, id, initializing, left, right, predecessorId:precedingId, predecessorLeft, predecessorRight:predecessor,
                 cameraX:screen.x, scale:scale.bad, visibleRight:R, viewportWidth:V,
-                gap:predecessor === null ? null : left-predecessor, pixelGap, passed:true});
+                gap:predecessor === null ? null : left-predecessor, pixelGap, runScore, spacingScale, passed:true});
         }
         return count;
     };
@@ -112,7 +118,7 @@ PROBE = r'''() => {
     f.deleteElements = originalDelete;
     let scoreCalls = 0, scored = new Set(), removed = new Set(), queueSamples = [];
     const score = changeScoreText;
-    changeScoreText = () => { scoreCalls++; };
+    changeScoreText = () => { scoreCalls++; score(); };
     f.deleteElements = function() {
         const beforeId = this.nextGenerationGroupId;
         const groups = new Map();
@@ -175,7 +181,8 @@ PROBE = r'''() => {
         assert(creations.some(c => c.template === template && !c.initializing),
             'missing gameplay template '+template);
     }
-    assertions.push(`PASS ${width}x${height}: all ${templates.length} gameplay templates; offscreen creation and 20-30% pixel gaps within 1e-6`);
+    assert(creations.some(c => c.runScore >= 25 && c.spacingScale === .8), 'capped progression not reached');
+    assertions.push(`PASS ${width}x${height}: all ${templates.length} gameplay templates; offscreen creation and score-adjusted gaps through score 25 cap within 1e-6`);
     const first = f.elements.filter(e => e.generationGroupId === 0);
     const right = Math.max(...first.map(e => e.getRightPointX()));
     screen.x = -right+1;

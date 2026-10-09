@@ -4,8 +4,9 @@ import os
 from pathlib import Path
 import unittest
 
-from browser_test_support import logical_size, start_browser_test
+from browser_test_support import logical_size, start_browser_test, wait_for_boot
 from verification_scenarios import frames
+import test_playgama2_bridge as support
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046')))
@@ -22,10 +23,13 @@ class ObstacleSpacingTests(unittest.TestCase):
         for viewport in [(772, 630), (1280, 720), (1920, 1080)]:
             with self.subTest(viewport=viewport):
                 page = self.browser.new_page(viewport=dict(zip(('width', 'height'), viewport)))
+                page.route(support.SDK, lambda r: r.fulfill(content_type='application/javascript',
+                    body='const FAULT="normal", SAVED_LANGUAGE="en";\n' + support.FAKE))
                 errors = []
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 try:
                     page.goto(self.url)
+                    wait_for_boot(page)
                     result = page.evaluate(PROBE, frames)
                     self.assertEqual(errors, [])
                     self.assertEqual((result['width'], result['height']), logical_size(*viewport))

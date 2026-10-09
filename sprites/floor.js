@@ -74,8 +74,9 @@ class Floor
             const bound = this.creations[i].chance + sumChances
             if (exclusiveBounds ? num < bound : num <= bound)
             {
+                const spacing = obstacleSpacingScale(scoreText.count[version])
                 const generatedElements = elementsFactory.create(
-                    {min: x + this.elementsIntervalX.min, max: x + this.elementsIntervalX.max},
+                    {min: x + this.elementsIntervalX.min * spacing, max: x + this.elementsIntervalX.max * spacing},
                     {min: this.top, max: this.bottom}   , this.creations[i].type)
                 this.alignBadVersionGeneratedElements(generatedElements, x)
                 const generationGroupId = this.nextGenerationGroupId++
@@ -108,7 +109,8 @@ class Floor
             // If deletion emptied the queue, nextElementX carries that group's bound.
             const precedingRightX = this.elements.length
                 ? this.getGenerationGroup(this.elements.length - 1).rightPointX : nextElementX
-            offsetX = precedingRightX + random(0.20 * width / scale.bad, 0.30 * width / scale.bad) - leftPointX
+            const spacing = obstacleSpacingScale(scoreText.count[version])
+            offsetX = precedingRightX + random(0.20 * width * spacing / scale.bad, 0.30 * width * spacing / scale.bad) - leftPointX
         }
 
         if (!offsetX)

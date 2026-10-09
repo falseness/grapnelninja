@@ -4,8 +4,9 @@ import os
 from pathlib import Path
 import unittest
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 from verification_scenarios import frames
+import test_playgama2_bridge as support
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = Path(os.environ.get('DISTRIBUTION_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-065'))
@@ -26,12 +27,15 @@ class BadSelectionDistributionTests(unittest.TestCase):
 
     def test_weighted_distribution(self):
         page = self.browser.new_page(viewport={'width': 772, 'height': 630})
+        page.route(support.SDK, lambda r: r.fulfill(content_type='application/javascript',
+            body='const FAULT="normal", SAVED_LANGUAGE="en";\n' + support.FAKE))
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.on('console', lambda message: errors.append(message.text)
                 if message.type == 'error' else None)
         try:
             page.goto(self.url)
+            wait_for_boot(page)
             result = page.evaluate(PROBE, SELECTIONS)
         finally:
             page.close()

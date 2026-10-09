@@ -80,6 +80,19 @@ const GAMEPLAY = Object.freeze({
 })
 const defaultEqualityTolerance = 1
 
+// Cleared groups, not elapsed time or saved records, set encounter pacing.
+// Leave the opening intact and cap density so a long run retains clearance.
+const OBSTACLE_PROGRESSION = Object.freeze({startScore: 5, fullScore: 25, maxReduction: 0.20})
+function obstacleSpacingScale(score)
+{
+    if (!Number.isFinite(score))
+        return 1
+    const progress = Math.max(0, Math.min(1,
+        (score - OBSTACLE_PROGRESSION.startScore) /
+        (OBSTACLE_PROGRESSION.fullScore - OBSTACLE_PROGRESSION.startScore)))
+    return 1 - OBSTACLE_PROGRESSION.maxReduction * progress
+}
+
 // A lethal death offers a continue once per run, from this score on.
 const CONTINUE_MIN_SCORE = 5
 // After a continue the ninja ignores lethal hits for this much physics time

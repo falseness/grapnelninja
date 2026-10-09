@@ -96,3 +96,35 @@ in this attempt's `release` and `release-smoke` directories, bound to the task
 commit. Neither archive is evidence of upload or moderation. U4 progression,
 native environments, reviews and authenticated release receipts are still
 required; keep TASK-251 pending.
+
+## Score-based encounter pacing
+
+TASK-251 adds a bounded spacing ramp in both modes. The opening five cleared
+groups retain the original pacing. Each subsequent point reduces the spacing
+for newly generated groups by one percent of the original interval, capped at
+20 percent at score 25. Main's inter-group interval therefore moves from
+20–30 percent of viewport width to 16–24 percent; Chill's spawn-anchor interval
+moves from 35–45 percent to 28–36 percent. This shortens the travel time between
+encounters at a given speed while preserving the authored shapes, selection
+weights, physics and already generated groups. Queued groups retain their
+original spacing, so the effect reaches the player after the queue advances.
+
+Progression uses the current run's score. Pause cannot advance it, a restart or
+mode switch resets it, and a saved record cannot increase a new run's difficulty.
+The cap preserves clearance and prevents indefinitely increasing density.
+
+`tools/test_playgama2_progression.py` checks all templates at three desktop
+sizes, score boundaries and the cap, immutable existing groups, actual group
+scoring, restart, mode switching and width rescaling. Short input sessions use
+explicitly injected starting scores 0/15/25 with production physics and trusted
+mouse input. These are automated integration checks, not evidence of naturally
+reaching a high score or a human balance verdict.
+
+Evidence for this change belongs in the unique `progression-*` attempt under
+`artifacts/TASK-251/`, including the full desktop rerun and rebuilt archive.
+U4 still requires a balance review: play both modes from score zero through
+the ramp and assess recovery space, perceived challenge and fairness at the
+cap. Reduced spacing can also make grappling targets easier to reach, so a
+monotonic spacing measurement alone cannot establish perceived difficulty.
+Native certification, provenance/quality review and authenticated same-release
+upload, hosted QA and moderation receipt remain required. Keep TASK-251 pending.
