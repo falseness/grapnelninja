@@ -1,5 +1,5 @@
-// Progress is reconciled before remote writes. A local journal retains pending
-// session deltas across reloads; unavailable local storage degrades to memory.
+// Bridge Storage owns persistence. Retain unsaved session changes in memory
+// and reconcile them before writing after a delayed or failed initial read.
 const PROGRESS = (function()
 {
     const recordsKey = 'grapnelninja.records'
@@ -7,7 +7,6 @@ const PROGRESS = (function()
     const langKey = 'grapnelninja.lang'
     const tutorialKey = 'grapnelninja.tutorialDone'
     const muteKey = 'grapnelninja.muted'
-    const journalKey = 'grapnelninja.pending'
     const state = {time: 0, lang: null, muted: false, tutorialDone: false}
     let loaded = false, known = false, baseTime = 0, langChanged = false, muteChanged = false
     let savedJson = null, saveTimer = null, writing = false, lastSaveAt = -Infinity
@@ -23,15 +22,6 @@ const PROGRESS = (function()
             [tutorialKey]: String(state.tutorialDone),
             [timeKey]: String(state.time), [langKey]: state.lang || '', [muteKey]: String(state.muted)
         }
-    }
-    function journal()
-    {
-        const values = snapshot()
-        Object.keys(values).forEach(key => PLATFORM.storage.localSet(key, values[key]))
-        PLATFORM.storage.localSet(journalKey, JSON.stringify({
-            records: JSON.stringify(values) === savedJson ? {} : parse(values[recordsKey]), delta: Math.max(0, state.time - baseTime),
-            tutorialDone: state.tutorialDone, lang: state.lang, langChanged, muted: state.muted, muteChanged, known, baseTime
-        }))
     }
     function refresh()
     {
@@ -59,7 +49,6 @@ const PROGRESS = (function()
     {
         saveTimer = null
         if (writing) return
-        journal()
         if (!known) return
         const values = snapshot(), json = JSON.stringify(values)
         if (json === savedJson) return
@@ -74,7 +63,6 @@ const PROGRESS = (function()
             baseTime = sentTime
             if (state.lang === sentLang) langChanged = false
             if (state.muted === sentMuted) muteChanged = false
-            journal()
         }
         if (JSON.stringify(snapshot()) !== savedJson)
             saveTimer = setTimeout(write, 1000)
@@ -83,33 +71,23 @@ const PROGRESS = (function()
         keys: [recordsKey, timeKey, langKey, muteKey, tutorialKey],
         load(values)
         {
-            const pending = parse(PLATFORM.storage.localGet(journalKey))
             const records = parse(values[recordsKey])
-            state.tutorialDone = values[tutorialKey] === 'true' || pending.tutorialDone === true
+            state.tutorialDone = values[tutorialKey] === 'true'
             known = PLATFORM.storage.remoteKnown
             baseTime = number(values[timeKey])
-            // Cached time already includes the journal delta; remote time does not.
-            if (!known) baseTime = Math.max(0, baseTime - number(pending.delta))
-            state.time = known && pending.known && number(pending.delta) > 0
-                ? Math.max(baseTime, number(pending.baseTime) + number(pending.delta))
-                : baseTime + number(pending.delta)
-            state.lang = pending.langChanged ? pending.lang : values[langKey] || null
-            state.muted = pending.muteChanged ? !!pending.muted : values[muteKey] === 'true'
-            muteChanged = !!pending.muteChanged
-            langChanged = !!pending.langChanged
+            state.time = baseTime
+            state.lang = values[langKey] || null
+            state.muted = values[muteKey] === 'true'
+            muteChanged = false
+            langChanged = false
             for (const mode of ['classic', 'bad'])
-                scoreText.record[mode] = Math.max(number(records[mode]), number((pending.records || {})[mode]))
-            // An unknown cached snapshot is not an acknowledgement of journaled
-            // records, even when no time or language change accompanies them.
-            const pendingRecords = !known && Object.keys(pending.records || {}).length > 0
-            savedJson = (state.tutorialDone && values[tutorialKey] !== 'true') || pendingRecords || pending.delta || pending.langChanged || pending.muteChanged || JSON.stringify(records) !== snapshot()[recordsKey] ? null : JSON.stringify(snapshot())
+                scoreText.record[mode] = number(records[mode])
+            savedJson = known ? JSON.stringify(snapshot()) : null
             loaded = true
-            if (known && savedJson === null) PROGRESS.save()
         },
         save()
         {
             if (!loaded) return
-            journal()
             if (saveTimer !== null || writing) return
             const wait = lastSaveAt + 1000 - performance.now()
             if (wait > 0) saveTimer = setTimeout(write, wait)
@@ -118,7 +96,6 @@ const PROGRESS = (function()
         flush()
         {
             if (!loaded) return
-            journal()
             clearTimeout(saveTimer)
             write()
         },

@@ -1,7 +1,7 @@
 // Thin wrapper over the Playgama Bridge v2. When window.bridge is missing or
 // bridge.initialize() rejects or times out, PLATFORM.environment is
 // 'disabled' and every call is a safe no-op: ads report unavailable/skipped,
-// storage falls back to window.localStorage.
+// unsaved progress stays in memory until Bridge Storage recovers.
 const PLATFORM = (function()
 {
     const busyStates = ['loading', 'opened', 'rewarded']
@@ -133,7 +133,7 @@ const PLATFORM = (function()
                 attempted = true
                 document.removeEventListener('bridge-loaded', attach)
                 Promise.resolve().then(() => candidate.initialize({
-                    configFilePath: new URL('playgama-bridge-config.json', document.baseURI).href
+                    configFilePath: './playgama-bridge-config.json'
                 })).then(() =>
                 {
                     bridge = candidate
@@ -164,30 +164,6 @@ const PLATFORM = (function()
     {
         bridge.advertisement.on(event, onState)
         return () => bridge.advertisement.off(event, onState)
-    }
-
-    function localGet(key)
-    {
-        try
-        {
-            return window.localStorage.getItem(key)
-        }
-        catch (e)
-        {
-            return null
-        }
-    }
-
-    function localSet(key, value)
-    {
-        try
-        {
-            window.localStorage.setItem(key, value)
-        }
-        catch (e)
-        {
-            console.warn('localStorage write failed', e)
-        }
     }
 
     // The Bridge JSON-parses stored strings on get ('12' -> 12): turn every
@@ -389,13 +365,11 @@ const PLATFORM = (function()
         {
             get remoteKnown() { return remoteKnown },
             onRecovery(fn) { recoveryListeners.push(fn) },
-            localGet,
-            localSet,
             async getMany(keys)
             {
                 storageKeys = keys.slice()
                 const fallback = {}
-                keys.forEach(key => fallback[key] = localGet(key))
+                keys.forEach(key => fallback[key] = null)
                 if (!bridge) return fallback
                 return await bounded(readRemote(), null) || fallback
             },
