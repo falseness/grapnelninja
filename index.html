@@ -155,8 +155,8 @@
             boot()
             
             // Platform init -> one storage read -> first menu frame -> hide
-            // the loading overlay -> game_ready. Input is attached only
-            // after that, so earlier clicks and keys are ignored.
+            // the loading overlay -> attach input -> paint -> game_ready.
+            // Earlier clicks and keys are ignored until input is attached.
             function boot()
             {
                 if (!bootPromise)
@@ -194,6 +194,8 @@
                 document.getElementById('loading').hidden = true
                 createEvents()
                 bootComplete = true
+                // Let the unobstructed menu reach the display before signaling.
+                await nextFrame()
                 PLATFORM.gameReady()
             }
             function setLoadingProgress(text)

@@ -9,7 +9,46 @@ const PLATFORM = (function()
     let bridge = null
     let initPromise = null
     let warned = false
-    let gameReadySent = false
+    let readyState = 'pending'
+    let readyAttempt = 0
+    let readyPromise = null
+    let readyTimer = null
+    const readyRetryMs = [500, 1000, 2000]
+    const readyEvents = []
+    function readyStage(state, detail = {})
+    {
+        readyState = state
+        readyEvents.push({state, attempt: readyAttempt, ms: performance.now(), ...detail})
+    }
+
+    // Only explicit rejection permits a retry. An unresolved send may still
+    // reach the host, so keep it in flight indefinitely without a second send.
+    function deliverReady()
+    {
+        if (!applicationReady || !bridge || readyState !== 'pending' || readyTimer !== null)
+            return readyPromise || Promise.resolve()
+        readyAttempt++
+        readyStage('inflight')
+        readyPromise = Promise.resolve().then(() => bridge.platform.sendMessage('game_ready')).then(() =>
+        {
+            readyStage('success')
+        }, () =>
+        {
+            if (readyAttempt > readyRetryMs.length)
+            {
+                readyStage('exhausted')
+                return
+            }
+            const delayMs = readyRetryMs[readyAttempt - 1]
+            readyStage('pending', {delayMs})
+            readyTimer = setTimeout(() =>
+            {
+                readyTimer = null
+                deliverReady()
+            }, delayMs)
+        })
+        return readyPromise
+    }
     let applicationReady = false
     let adBusy = false
     const listeners = {pause: [], audio: [], adState: []}
@@ -356,19 +395,27 @@ const PLATFORM = (function()
         // Gameplay lifecycle messages; dropped until game_ready was sent
         sendLifecycle(name, data)
         {
-            if (!gameReadySent)
+            if (readyState !== 'success')
                 return Promise.resolve()
             return PLATFORM.sendMessage(name, data)
         },
 
-        // Call when the first playable frame is ready; sends at most once
+        // Call only after local rendering and input setup, independent of play.
         gameReady()
         {
-            applicationReady = true
-            if (gameReadySent || !bridge)
-                return Promise.resolve()
-            gameReadySent = true
-            return PLATFORM.sendMessage('game_ready')
+            if (!applicationReady)
+            {
+                applicationReady = true
+                readyStage('pending', {localReady: true})
+            }
+            return deliverReady()
+        },
+
+        // Local diagnostics only: snapshots cannot mutate delivery state.
+        get readiness()
+        {
+            return {state: readyState, attempts: readyAttempt, applicationReady,
+                events: readyEvents.map(event => ({...event}))}
         },
 
         isAudioEnabled()
