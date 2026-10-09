@@ -15,7 +15,7 @@ archive/media identity and intended-release hosted QA remain unverified.
 
 The submission checklist retains all 28 other release requirements as
 unresolved, including the recorded U4 difficulty-progression failure, native
-device/browser certification, current desktop coverage, live advertising,
+device/browser certification, live advertising,
 listing agreement and visual/provenance review. The earlier local audit is
 not release certification. Restore supported authenticated developer access
 and obtain the required environments/reviews; do not treat these gaps as PASS.
@@ -31,6 +31,38 @@ Untracked evidence lives in `artifacts/TASK-251/`: `submission-checklist.json`,
 `access-check.json`, `package-inspection.log`, `manifest.json`, `verifier.log`
 and `evidence-audit.log`. `submission-receipt.json` explicitly records failure
 to submit; it is not a successful receipt. The required console capture is
-missing. `python3 artifacts/TASK-251/inspect.py` checks local evidence integrity
-and reports the failed/blocked acceptance conditions; its successful execution
-does not certify submission. No later ticket is a prerequisite.
+missing. The historical `inspect.py` asserts non-submission and overwrites
+failed-snapshot logs; do not run it against new success evidence or use its exit
+status as acceptance. No later ticket is a prerequisite.
+
+
+## Current desktop coverage
+
+The unchanged `tools/test_playgama2_desktop.py` passed all eight cases on
+2026-10-09 in 350.456 seconds (exit 0), using Linux Chromium 148.0.7778.96
+and Playwright 1.60.0. Tested revision: `c5fab1ae6c03a8ca0963afb29cc661d3cfbad71b`.
+Evidence: `artifacts/TASK-251/desktop-20261009T033329Z/`.
+The test harness is identical to the historical TASK-243 harness; this run
+refreshes coverage after TASK-244's input/orientation changes.
+
+Both modes passed at 800x600, 925x925, 1920x1080 and 2560x1080. The evidence
+contains menu, tutorial, settings, gameplay, natural-death and resize captures;
+56 PNG hashes and native dimensions were independently checked. Trusted
+mouse/keyboard controls, unchanged progress through resize, layout bounds,
+aspect ratios and error checks passed. `browser-errors.log` exists and is empty.
+
+This resolves the stale local four-size resize evidence for T4.2.3 and supplies
+current local coverage for T4.2, T5, T5.1, T5.3 and S10. Required target-browser
+and physical-device coverage remains unverified. All 28 original unresolved
+requirements are reconciled individually in this attempt's checklist; U4 still
+fails and remote archive/media/hosted-QA identity remains absent. No runtime or
+package change was needed for the desktop experiment.
+
+Use the attempt's `submission-checklist.json`, `coverage.md`, `manifest.json`
+and `verifier.log` alongside its full `tests.log`, `layout.json`, captures and
+source hashes. Original TASK-251 snapshots are preserved. The existing
+`input-handoff-20261009T032845Z.md` remains the account-owner handoff; working
+supported authenticated lookup is sufficient to resume remote work. Do not
+repeat anonymous access probes or require a manufactured reconnect failure.
+TASK-251 remains pending until the required local/native/review inputs and
+actual same-release submission receipt are available.
