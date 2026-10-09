@@ -1,4 +1,5 @@
 {
+    "disableLoadingLogo": true,
     "advertisement": {
         "minimumDelayBetweenInterstitial": 120,
         "interstitial": {

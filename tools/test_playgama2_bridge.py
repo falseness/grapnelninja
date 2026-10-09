@@ -161,13 +161,14 @@ class Playgama2BridgeTests(unittest.TestCase):
         data = page.evaluate('({calls: probe.calls, subscriptions: probe.subscriptions})')
         names = [c['name'] for c in data['calls']]
         config = next(c['data'] for c in data['calls'] if c['name'] == 'config')
+        self.assertTrue(config['disableLoadingLogo'])
         self.assertNotIn('rewarded', config['advertisement'])
         self.assertEqual(config['advertisement']['minimumDelayBetweenInterstitial'], 120)
         self.assertNotIn('preloadOnStart', config['advertisement']['interstitial'])
         self.assertEqual(config['advertisement']['interstitial']['placements'], [{'id': 'game_over'}])
         self.assertEqual(names.count('initialize'), 1)
         self.assertEqual(next(c['data'] for c in data['calls'] if c['name'] == 'initialize'),
-                         {'configFilePath': './playgama-bridge-config.json'})
+                         {'configFilePath': './playgama-bridge-config.json', 'disableLoadingLogo': True})
         self.assertEqual(names.count('game_ready'), 1)
         self.assertEqual(data['subscriptions'], {'pause': 1, 'audio': 1, 'interstitial': 1, 'rewarded': 1})
         for name in ['level_started', 'level_paused', 'level_resumed', 'storage.get', 'storage.set']:

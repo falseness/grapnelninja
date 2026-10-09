@@ -132,15 +132,23 @@ const PLATFORM = (function()
                     return
                 attempted = true
                 document.removeEventListener('bridge-loaded', attach)
-                Promise.resolve().then(() => candidate.initialize({
-                    configFilePath: './playgama-bridge-config.json'
-                })).then(() =>
+                Promise.resolve().then(() => {
+                    candidate.gameVersion = PLATFORM.buildVersion
+                    return candidate.initialize({
+                    configFilePath: './playgama-bridge-config.json',
+                    // Also used as SDK fallback if the local config request fails.
+                    // Our own loading screen has a bounded timeout; a second SDK
+                    // overlay would otherwise block input if the host never replies.
+                    disableLoadingLogo: true
+                    })
+                }).then(() =>
                 {
                     bridge = candidate
                     PLATFORM.platformId = bridge.platform.id
                     PLATFORM.language = isoLanguage(bridge.platform.language)
                     subscribe()
                     emit('audio', PLATFORM.isAudioEnabled())
+                    emit('pause', !!bridge.platform.isPaused)
                     PLATFORM.environment = 'playgama'
                     if (storageKeys) readRemote()
                     clearTimeout(timer)
@@ -217,6 +225,7 @@ const PLATFORM = (function()
         environment: 'pending',
         platformId: null,
         language: 'en',
+        buildVersion: '2026-10-09-loading2',
         // Leave scheduling headroom inside the three-second startup budget.
         initTimeoutMs: 2900,
         // An interstitial that is not 'opened' by then counts as skipped
@@ -312,6 +321,18 @@ const PLATFORM = (function()
                 console.warn('Playgama sendMessage failed', name, e)
                 return Promise.resolve()
             }
+        },
+
+        // Optional Bridge telemetry must never interrupt rendering or boot.
+        track(name, data)
+        {
+            if (!bridge || readyState !== 'success' || !bridge.analytics) return
+            try
+            {
+                Promise.resolve(bridge.analytics.send(name, {...data, game_version: PLATFORM.buildVersion}))
+                    .catch(() => {})
+            }
+            catch (_) {}
         },
 
         // Gameplay lifecycle messages; dropped until game_ready was sent

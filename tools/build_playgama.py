@@ -41,6 +41,23 @@ def archive(files):
             z.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
     return buffer.getvalue()
 
+def bundle(files):
+    """Inline first-party scripts in their original order, removing cold-load requests.
+
+    The source game already requires inline scripts. Keep the vendor SDK external
+    and async; no eval, minification, dependency reordering or remote assets.
+    """
+    html = files['index.html'].decode()
+    pattern = r'<script\s+src\s*=\s*([\'\"])([^\'\"]+)\1\s*>\s*</script>'
+    def replace(match):
+        path = match.group(2)
+        source = files[path].decode()
+        if re.search(r'</script', source, re.I):
+            raise ValueError('Unsafe inline script terminator in ' + path)
+        return '<script>\n' + source + '\n</script>'
+    html = re.sub(pattern, replace, html)
+    return {'index.html': html.encode(), 'playgama-bridge-config.json': files['playgama-bridge-config.json']}
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--revision', required=True); parser.add_argument('--out', type=Path, required=True)
@@ -48,11 +65,15 @@ def main():
     revision, files = runtime(args.revision)
     release = args.out / 'grapnelninja-playgama.zip'
     if release.exists(): raise FileExistsError(f'Refusing to overwrite {release}')
-    data = archive(files); assert len(data) <= 300 * 1024 * 1024
+    packed = bundle(files)
+    data = archive(packed); assert len(data) <= 300 * 1024 * 1024
     release.write_bytes(data)
     (args.out/'source.json').write_text(json.dumps({'branch':'playgama2', 'revision':revision, 'source':'git blobs only', 'external_sdk':'https://bridge.playgama.com/v2/stable/playgama-bridge.js'}, indent=2)+'\n')
     inventory = [{'path':p, 'size':len(b), 'sha256':sha(b), 'source_blob':git('rev-parse', revision+':'+p).decode().strip(), 'source_blob_equivalent':True} for p,b in sorted(files.items())]
     (args.out/'inventory.json').write_text(json.dumps(inventory, indent=2)+'\n')
+    (args.out/'packed-inventory.json').write_text(json.dumps([
+        {'path': p, 'size': len(b), 'sha256': sha(b)} for p,b in sorted(packed.items())
+    ], indent=2)+'\n')
     print(f'PASS committed source {revision} on playgama2; {len(files)} case-correct Latin runtime paths; index.html at root')
     print(f'PASS release {release} bytes={len(data)} sha256={sha(data)}')
 if __name__ == '__main__': main()

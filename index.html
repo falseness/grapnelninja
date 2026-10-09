@@ -1,7 +1,26 @@
 <!Doctype html>
 <html>
     <head>
-        <script async src="https://bridge.playgama.com/v2/stable/playgama-bridge.js" onload="document.dispatchEvent(new Event('bridge-loaded'))"></script>
+        <script>
+            // Retry only a completed download failure. Never start a second
+            // copy while a slow request is still in flight.
+            window.bridgeDownloadAttempts = 1
+            function retryBridgeDownload(failed)
+            {
+                if (window.bridge || window.bridgeDownloadAttempts >= 3) return
+                const delay = window.bridgeDownloadAttempts++ * 500
+                setTimeout(function() {
+                    if (window.bridge) return
+                    const script = document.createElement('script')
+                    script.src = failed.src
+                    script.async = true
+                    script.onload = function() { document.dispatchEvent(new Event('bridge-loaded')) }
+                    script.onerror = function() { retryBridgeDownload(script) }
+                    document.head.appendChild(script)
+                }, delay)
+            }
+        </script>
+        <script async src="https://bridge.playgama.com/v2/stable/playgama-bridge.js" onload="document.dispatchEvent(new Event('bridge-loaded'))" onerror="retryBridgeDownload(this)"></script>
         <title></title>
         <script src = "i18n.js"></script>
         <meta charset = "UTF-8">
@@ -96,6 +115,7 @@
         <script src = "style.js"></script>
         <script src = "render/glowsprites.js"></script>
         <script src = "platform.js"></script>
+        <script src = "telemetry.js"></script>
         <script src = "audio.js"></script>
         <script src = "mutebutton.js"></script>
         <script src = "progress.js"></script>
@@ -470,6 +490,9 @@
             function gameLoop(frameTime)
             {
                 fpsCounter.frame(frameTime)
+                TELEMETRY.frame(frameTime, bootComplete && !menu.visible && !menu.gamePaused &&
+                    !continueOffer.visible && !adOpen && !interstitialPending && !hostPaused &&
+                    !isViewRotated() && document.visibilityState !== 'hidden', version)
 
                 if (menu.visible)
                 {
@@ -487,7 +510,7 @@
                     draw()
                     continueOffer.draw()
                 }
-                else if (adOpen || interstitialPending)
+                else if (adOpen || interstitialPending || hostPaused)
                 {
                     resetPhysicsTiming()
                     draw()
