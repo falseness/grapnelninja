@@ -16,7 +16,7 @@ def run(root,out):
    sandbox='allow-scripts' if case=='storage-denied' else 'allow-scripts allow-same-origin'
    c.route(url+'embed.html',lambda r:r.fulfill(content_type='text/html',body='<meta name="viewport" content="width=device-width,initial-scale=1"><iframe style="width:390px;height:550px;border:0" sandbox="'+sandbox+'" src="index.html"></iframe>'))
    p=c.new_page();p.set_default_timeout(10000);errors=[];p.on('pageerror',lambda e:errors.append(str(e)));t=time.monotonic();p.goto(url+'embed.html',wait_until='domcontentloaded');f=p.frames[1]
-   f.wait_for_function('document.getElementById("loading").hidden');menu_ms=round((time.monotonic()-t)*1000)
+   f.wait_for_function('document.getElementById("loading") && document.getElementById("loading").hidden');menu_ms=round((time.monotonic()-t)*1000)
    assert menu_ms<5000,(case,menu_ms)
    def tap(expr):
     xy=f.evaluate('expr=>{const b=eval(expr);return canvasCoordsToViewportCoords({x:b.x+b.width/2,y:b.y+b.height/2})}',expr)
