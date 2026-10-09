@@ -1,121 +1,119 @@
-// Records, time in game and settings persisted through PLATFORM.storage
-// (localStorage, with an in-memory fallback in platform.js).
-// Everything is read by one getMany at boot and written by one setMany per
-// meaningful change (run end, pause, menu return), at most once per second.
+// Progress is reconciled before remote writes. A local journal retains pending
+// session deltas across reloads; unavailable local storage degrades to memory.
 const PROGRESS = (function()
 {
     const recordsKey = 'grapnelninja.records'
-    const timeKey    = 'grapnelninja.time'
-    const langKey    = 'grapnelninja.lang'
-    const minSaveIntervalMs = 1000
-
-    // In-memory state
-    const state = { time: 0, lang: null }
-
-    let savedJson = null
-    let lastSaveAt = -Infinity
-    let saveTimer = null
-
-    function readNumber(value)
+    const timeKey = 'grapnelninja.time'
+    const langKey = 'grapnelninja.lang'
+    const journalKey = 'grapnelninja.pending'
+    const state = {time: 0, lang: null}
+    let loaded = false, known = false, baseTime = 0, langChanged = false
+    let savedJson = null, saveTimer = null, writing = false, lastSaveAt = -Infinity
+    function number(value) { const n = Number(value); return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0 }
+    function parse(value)
     {
-        const n = Number(value)
-        return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+        try { return JSON.parse(value) || {} } catch (_) { return {} }
     }
-
-    function readRecords(value)
-    {
-        try
-        {
-            const records = JSON.parse(value)
-            return records && typeof records === 'object' ? records : {}
-        }
-        catch (e)
-        {
-            return {}
-        }
-    }
-
-    // Every key with its string value, in PROGRESS.keys order
     function snapshot()
     {
         return {
-            [recordsKey]: JSON.stringify({
-                classic : scoreText.record.classic,
-                bad     : scoreText.record.bad
-            }),
-            [timeKey]   : String(state.time),
-            [langKey]   : state.lang || ''
+            [recordsKey]: JSON.stringify({classic: scoreText.record.classic, bad: scoreText.record.bad}),
+            [timeKey]: String(state.time), [langKey]: state.lang || ''
         }
     }
-
-    // One setMany with all keys, skipped when nothing changed
-    function write()
+    function journal()
+    {
+        const values = snapshot()
+        Object.keys(values).forEach(key => PLATFORM.storage.localSet(key, values[key]))
+        PLATFORM.storage.localSet(journalKey, JSON.stringify({
+            records: JSON.stringify(values) === savedJson ? {} : parse(values[recordsKey]), delta: Math.max(0, state.time - baseTime),
+            lang: state.lang, langChanged, known, baseTime
+        }))
+    }
+    function refresh()
+    {
+        I18N.language = I18N.pick(state.lang, PLATFORM.language)
+        applyLanguage()
+    }
+    function reconcile(values)
+    {
+        const records = parse(values[recordsKey])
+        const delta = Math.max(0, state.time - baseTime)
+        scoreText.record.classic = Math.max(scoreText.record.classic, number(records.classic))
+        scoreText.record.bad = Math.max(scoreText.record.bad, number(records.bad))
+        baseTime = Math.max(baseTime, number(values[timeKey]))
+        state.time = baseTime + delta
+        if (!langChanged) state.lang = values[langKey] || null
+        known = true
+        refresh()
+        PROGRESS.save()
+    }
+    async function write()
     {
         saveTimer = null
-        const values = snapshot()
-        const json = JSON.stringify(values)
-        if (json === savedJson)
-            return
-        savedJson = json
+        if (writing) return
+        journal()
+        if (!known) return
+        const values = snapshot(), json = JSON.stringify(values)
+        if (json === savedJson) return
+        writing = true
         lastSaveAt = performance.now()
-        PLATFORM.storage.setMany(values)
+        const sentTime = state.time, sentLang = state.lang
+        const ok = await PLATFORM.storage.setMany(values)
+        writing = false
+        if (ok)
+        {
+            savedJson = json
+            baseTime = sentTime
+            if (state.lang === sentLang) langChanged = false
+            journal()
+        }
+        if (JSON.stringify(snapshot()) !== savedJson)
+            saveTimer = setTimeout(write, 1000)
     }
-
-    const PROGRESS =
-    {
-        // Every key read by the single PLATFORM.storage.getMany at boot
+    const PROGRESS = {
         keys: [recordsKey, timeKey, langKey],
-        // Call once with the boot getMany result; missing or bad values -> defaults
         load(values)
         {
-            const records = readRecords(values[recordsKey])
-            scoreText.record.classic = readNumber(records.classic)
-            scoreText.record.bad     = readNumber(records.bad)
-            state.time  = readNumber(values[timeKey])
-            state.lang  = values[langKey] || null
-            savedJson = JSON.stringify(snapshot())
-
-            menu.classicRecord.text = I18N.t('menu.record', {value: scoreText.record.classic})
-            menu.badRecord.text     = I18N.t('menu.record', {value: scoreText.record.bad})
-            menu.timeInGame.text    = I18N.t('menu.timeInGame', {minutes: getTimeInGame()})
+            const pending = parse(PLATFORM.storage.localGet(journalKey))
+            const records = parse(values[recordsKey])
+            known = PLATFORM.storage.remoteKnown
+            baseTime = number(values[timeKey])
+            // Cached time already includes the journal delta; remote time does not.
+            if (!known) baseTime = Math.max(0, baseTime - number(pending.delta))
+            state.time = known && pending.known && number(pending.delta) > 0
+                ? Math.max(baseTime, number(pending.baseTime) + number(pending.delta))
+                : baseTime + number(pending.delta)
+            state.lang = pending.langChanged ? pending.lang : values[langKey] || null
+            langChanged = !!pending.langChanged
+            for (const mode of ['classic', 'bad'])
+                scoreText.record[mode] = Math.max(number(records[mode]), number((pending.records || {})[mode]))
+            savedJson = pending.delta || pending.langChanged || JSON.stringify(records) !== snapshot()[recordsKey] ? null : JSON.stringify(snapshot())
+            loaded = true
+            if (known && savedJson === null) PROGRESS.save()
         },
-        // Save after a meaningful change; throttled to one setMany per second
         save()
         {
-            if (savedJson === null || saveTimer !== null)
-                return
-            const wait = lastSaveAt + minSaveIntervalMs - performance.now()
-            if (wait > 0)
-                saveTimer = setTimeout(write, wait)
-            else
-                write()
+            if (!loaded) return
+            journal()
+            if (saveTimer !== null || writing) return
+            const wait = lastSaveAt + 1000 - performance.now()
+            if (wait > 0) saveTimer = setTimeout(write, wait)
+            else write()
         },
-        // Write a pending change now (the page is going away)
         flush()
         {
-            if (savedJson === null)
-                return
+            if (!loaded) return
+            journal()
             clearTimeout(saveTimer)
             write()
         },
-        getTime()
-        {
-            return state.time
-        },
-        setTime(seconds)
-        {
-            state.time = readNumber(seconds)
-        },
-        getLang()
-        {
-            return state.lang
-        },
-        setLang(lang)
-        {
-            state.lang = lang || null
-        }
+        getTime() { return state.time },
+        setTime(seconds) { state.time = Math.max(state.time, number(seconds)) },
+        getLang() { return state.lang },
+        setLang(lang) { state.lang = lang || null; langChanged = true }
     }
-    // Closing the tab mid-run must not lose a new record
+    PLATFORM.storage.onRecovery(values => { if (loaded) reconcile(values) })
     window.addEventListener('pagehide', () => PROGRESS.flush())
     return PROGRESS
 })()

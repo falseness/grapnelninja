@@ -100,6 +100,7 @@ const PLATFORM = (function()
                     PLATFORM.language = isoLanguage(bridge.platform.language)
                     subscribe()
                     PLATFORM.environment = 'playgama'
+                    if (storageKeys) readRemote()
                     clearTimeout(timer)
                     if (applicationReady)
                         PLATFORM.gameReady()
@@ -159,6 +160,43 @@ const PLATFORM = (function()
         if (value === null || value === undefined)
             return null
         return typeof value === 'string' ? value : JSON.stringify(value)
+    }
+
+    // Keep late results alive, but bound callers' wait. Never issue overlapping
+    // writes: a timed-out write may still reach the host later.
+    let storageKeys = null
+    let remoteKnown = false
+    let readPending = null
+    let writePending = null
+    let retryRead = null
+    const recoveryListeners = []
+    function bounded(promise, fallback)
+    {
+        return new Promise(resolve =>
+        {
+            // Reserve 300ms for a busy render frame inside the 1.5s budget.
+            const timer = setTimeout(() => resolve(fallback), 1200)
+            promise.then(value => { clearTimeout(timer); resolve(value) })
+        })
+    }
+    function readRemote()
+    {
+        if (readPending || !bridge) return readPending
+        clearTimeout(retryRead)
+        readPending = Promise.resolve().then(() => bridge.storage.get(storageKeys.slice())).then(values =>
+        {
+            const result = {}
+            storageKeys.forEach((key, i) => result[key] = storedString((values || [])[i]))
+            remoteKnown = true
+            recoveryListeners.forEach(fn => fn(result))
+            return result
+        }).catch(e =>
+        {
+            console.warn('Playgama storage.get failed', e)
+            retryRead = setTimeout(readRemote, 2000)
+            return null
+        }).finally(() => { readPending = null })
+        return readPending
     }
 
     const PLATFORM =
@@ -356,47 +394,30 @@ const PLATFORM = (function()
 
         storage:
         {
-            // Resolves {key: string | null} with ONE bridge.storage.get call
+            get remoteKnown() { return remoteKnown },
+            onRecovery(fn) { recoveryListeners.push(fn) },
+            localGet,
+            localSet,
             async getMany(keys)
             {
-                const result = {}
-                if (!bridge)
-                {
-                    for (const key of keys)
-                        result[key] = localGet(key)
-                    return result
-                }
-                let values = []
-                try
-                {
-                    values = await bridge.storage.get(keys.slice())
-                }
-                catch (e)
-                {
-                    console.warn('Playgama storage.get failed', e)
-                }
-                keys.forEach((key, i) => result[key] = storedString((values || [])[i]))
-                return result
+                storageKeys = keys.slice()
+                const fallback = {}
+                keys.forEach(key => fallback[key] = localGet(key))
+                if (!bridge) return fallback
+                return await bounded(readRemote(), null) || fallback
             },
-
-            // Saves {key: value} as strings with ONE bridge.storage.set call
             async setMany(obj)
             {
+                // Unknown remote data must be read before any defaults can be sent.
+                if (!bridge || !remoteKnown || writePending) return false
                 const keys = Object.keys(obj)
-                const values = keys.map(key => String(obj[key]))
-                if (!bridge)
-                {
-                    keys.forEach((key, i) => localSet(key, values[i]))
-                    return
-                }
-                try
-                {
-                    await bridge.storage.set(keys, values)
-                }
-                catch (e)
-                {
-                    console.warn('Playgama storage.set failed', e)
-                }
+                writePending = Promise.resolve().then(() => bridge.storage.set(keys, keys.map(key => String(obj[key]))))
+                    .then(() => true).catch(e =>
+                    {
+                        console.warn('Playgama storage.set failed', e)
+                        return false
+                    }).finally(() => { writePending = null })
+                return bounded(writePending, false)
             }
         }
     }
