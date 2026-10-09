@@ -56,6 +56,8 @@ def bundle(files):
             raise ValueError('Unsafe inline script terminator in ' + path)
         return '<script>\n' + source + '\n</script>'
     html = re.sub(pattern, replace, html)
+    if b'<meta charset="UTF-8">' not in html.encode()[:1024]:
+        raise ValueError('UTF-8 declaration must precede bundled scripts in the first 1024 bytes')
     return {'index.html': html.encode(), 'playgama-bridge-config.json': files['playgama-bridge-config.json']}
 
 def main():
