@@ -136,18 +136,16 @@
             let fpsCounter
             let menu
             let continueOffer
-            let continueUsed = false
-            // A pause request (hidden tab, focus loss) while the rewarded
-            // ad plays: applied once the ad respawns the ninja
+            // A pause request during an ad is applied to the next run.
+            let hostPaused = false
             let pauseAfterAd = false
             // A full-screen ad is on top: gameplay and input are frozen
             let adOpen = false
             // The run ended in a death: leaving it (Restart, Menu) shows an
-            // interstitial first; a continue respawn clears it
+            // interstitial first
             let runOver = false
             // An interstitial was requested: gameplay and input wait for it
             let interstitialPending = false
-            let lastInterstitialAt = null
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
             const physicsTiming = {lastFrameTime: 0, accumulatorMs: 0}
             
@@ -183,7 +181,7 @@
                 ctx.lineCap = 'butt'
                 fpsCounter = new FpsCounter()
                 menu = new Menu(width, height)
-                continueOffer = new ContinueOffer(width, height, watchAdToContinue, restartFromOffer)
+                continueOffer = new ContinueOffer(width, height, () => menu.backToMenu.click(), restartFromOffer)
                 // Platform language until the saved choice is read
                 I18N.language = I18N.pick(null, PLATFORM.language)
                 setLoadingProgress(I18N.t('loading.progress'))
@@ -234,12 +232,10 @@
             function chooseVersion()
             {
                 firstCycleInThisTick = true
-                continueUsed = false
                 runOver = false
                 pauseAfterAd = false
                 scoreText.recordAnnounced = false
                 continueOffer.hide()
-                checkAdsAvailable()
                 
                 layoutHud()
                 
@@ -303,76 +299,28 @@
             {
                 return continueOffer.visible || interstitialPending
             }
-            // Lethal hits: offer one continue per run from CONTINUE_MIN_SCORE
-            // when rewarded ads exist, otherwise restart instantly. The offer
-            // freezes physics. Without ads (the local adapter): always restart.
+            // Every death freezes the run and offers free restart or menu.
             function onLethalDeath()
             {
                 if (continueOffer.visible || ninja.isInvulnerable() || interstitialPending)
                     return
                 AUDIO.play('death')
                 runOver = true
-                if (!PLATFORM.isRewardedSupported() || continueUsed ||
-                    scoreText.count[version] < CONTINUE_MIN_SCORE)
-                {
-                    leaveFinishedRun(reStart)
-                    return
-                }
                 PROGRESS.save()
                 continueOffer.show()
-            }
-            // Run start: without rewarded ads the offer would hold only
-            // Restart plus an "Ads unavailable" notice (it is never shown then).
-            function checkAdsAvailable()
-            {
-                continueOffer.setAdsAvailable(PLATFORM.isRewardedSupported())
-            }
-            // One rewarded ad per continue and at most one continue per run.
-            // Input stays ignored (both buttons disabled, physics frozen by
-            // the visible offer) until the SDK answers.
-            function watchAdToContinue()
-            {
-                if (continueUsed || continueOffer.adPending || !continueOffer.watchVisible())
-                    return
-                continueUsed = true
-                pauseAfterAd = false
-                continueOffer.setAdPending(true)
-                // The game stays frozen behind the offer
-                PLATFORM.requestRewarded('continue').then(result =>
-                {
-                    if (!continueOffer.adPending)
-                        return
-                    if (result.status === 'rewarded')
-                    {
-                        continueOffer.setAdPending(false)
-                        continueRun()
-                    }
-                    // No reward: keep the score on the offer, Restart only
-                    else
-                        continueOffer.showAdError()
-                })
-            }
-            // Keeps score, version, floors and screen; the ninja respawns at
-            // rest at a safe point with temporary invulnerability.
-            function continueRun()
-            {
-                continueUsed = true
-                runOver = false
-                continueOffer.hide()
-                respawnNinja()
-                resetPhysicsTiming()
-                if (pauseAfterAd || document.visibilityState == 'hidden')
-                {
-                    pauseAfterAd = false
-                    menu.startPause()
-                }
             }
             function restartFromOffer()
             {
                 leaveFinishedRun(function()
                 {
                     continueOffer.hide()
+                    const shouldPause = pauseAfterAd || hostPaused || document.visibilityState === 'hidden'
                     reStart()
+                    if (shouldPause)
+                    {
+                        draw()
+                        menu.startPause()
+                    }
                     resetPhysicsTiming()
                 })
             }
@@ -383,25 +331,22 @@
             {
                 if (interstitialPending)
                     return
-                // A death without a continue ends the run
+                // A death ends the run
                 if (runOver)
                     PLATFORM.sendLifecycle('level_failed', {world: version})
-                const now = PLATFORM.now()
-                const recent = lastInterstitialAt !== null &&
-                    now - lastInterstitialAt < PLATFORM.interstitialMinGapMs
-                if (!runOver || recent || !PLATFORM.isInterstitialSupported())
+                if (!runOver)
                 {
-                    runOver = false
                     next()
                     return
                 }
-                runOver = false
                 interstitialPending = true
-                PLATFORM.showInterstitial('game_over').then(result =>
+                continueOffer.setAdPending(true)
+                const request = PLATFORM.showInterstitial('game_over')
+                runOver = false
+                request.then(() =>
                 {
                     interstitialPending = false
-                    if (result === 'closed')
-                        lastInterstitialAt = PLATFORM.now()
+                    continueOffer.setAdPending(false)
                     next()
                 })
             }
@@ -617,8 +562,7 @@
                 resizeTimer = setTimeout(onViewportResize, 100)
             })
 
-            // Focus loss and a hidden tab pause the run; during the rewarded
-            // ad the pause waits for the respawn
+            // Focus loss during an ad is reconciled when restarting.
             function pauseRun()
             {
                 if (!bootComplete) return
@@ -638,6 +582,7 @@
             })
             // Host pause pauses the run; resuming is left to the player
             PLATFORM.onPause(function(isPaused) {
+                hostPaused = isPaused
                 AUDIO.setMute('hostPause', isPaused)
                 if (isPaused)
                     pauseRun()

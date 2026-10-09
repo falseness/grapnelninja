@@ -976,258 +976,63 @@ class Menu
         LANGUAGE_BUTTON.draw()
     }
 }
-// Offered after an eligible lethal death: two equally sized and styled
-// buttons, a rewarded continue and a plain restart. The continue button
-// carries an 'AD' badge and the line above it names the reward.
+// Free death choices, shared by every score and ad-support outcome.
 class ContinueOffer
 {
-    constructor(w, h, onContinue, onRestart)
+    constructor(w, h, onMenu, onRestart)
     {
         this.visible = false
-        // Rewarded ad state: ads may be unavailable for the whole run
-        // (adblock, no SDK), fail for this offer, or be playing right now.
-        this.adsAvailable = true
-        this.adFailed = false
         this.adPending = false
-        this.continueButton = new Button(
-            {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false, neon: true},
-            {text: '', fill: STYLE.colors.ui.buttonText},
-            onContinue)
+        this.menuButton = new Button(
+            {x: 0, y: 0, width: 1, height: 1, neon: true},
+            {text: '', fill: STYLE.colors.ui.buttonText}, onMenu)
         this.restartButton = new Button(
-            {x: 0, y: 0, width: 1, height: 1, stroke: STYLE.colors.ui.primary, clickable: false, neon: true},
-            {text: '', fill: STYLE.colors.ui.buttonText},
-            onRestart)
+            {x: 0, y: 0, width: 1, height: 1, neon: true},
+            {text: '', fill: STYLE.colors.ui.buttonText}, onRestart)
         this.relabel(w, h)
     }
-    // Labels in the current language, then a layout that fits them
     relabel(w, h)
     {
-        this.continueButton.text.text = I18N.t('continue.watch')
+        this.menuButton.text.text = I18N.t('pause.backToMenu')
         this.restartButton.text.text = I18N.t('continue.restart')
-        this.adBadgeLabel = I18N.t('continue.adBadge')
-        this.rewardLabel = I18N.t('continue.reward')
         this.layout(w, h)
     }
     layout(w, h)
     {
         this.width = w
         this.height = h
-        // Phones: touch-sized buttons, rows stacked evenly in a wider panel
-        const touch = compactTouchSize(h * 0.11)
-        this.panel =
-        {
-            width: touch ? w * 0.96 : Math.min(w * 0.84, h * 1.3),
-            height: h * 0.7
-        }
-        this.panel.x = (w - this.panel.width) / 2
-        this.panel.y = (h - this.panel.height) / 2
-
-        const centerX = w / 2
-        const buttonWidth = this.panel.width * 0.7
-        const buttonHeight = touch || h * 0.11
-        const buttons = [this.continueButton, this.restartButton]
-        // Names the reward above the watch button
-        const rewardFontSize = Math.min(h * 0.045,
-            this.fittedFontSize(this.rewardLabel, h * 0.045, this.panel.width * (touch ? 0.94 : 0.9)))
-        const y = touch
-            ? stackRows(this.panel.y, this.panel.y + this.panel.height,
-                [h * 0.09, h * 0.05, rewardFontSize, buttonHeight, buttonHeight])
-            : [0.16, 0.33, 0.42, 0.56, 0.78].map(f => this.panel.y + this.panel.height * f)
-
-        for (let i = 0; i < buttons.length; ++i)
-            menu.layoutPauseButton(buttons[i], centerX, y[3 + i], buttonWidth, buttonHeight)
-        this.clearAdBadge()
-
-        // Equal prominence: both labels share the smaller fitted size
-        const fontSize = Math.min(...buttons.map(b => parseFloat(b.text.fontSize)))
-        for (let i = 0; i < buttons.length; ++i)
-            buttons[i].text.fontSize = getArcadeFont(fontSize)
-
-        this.title = new Text(
-        {
-            fill    : STYLE.colors.ui.title,
-            glow    : STYLE.colors.ui.titleGlow,
-            fontSize: h * 0.09,
-            text    : I18N.t('continue.title'),
-            x       : centerX,
-            y       : y[0]
-        })
-        this.score = new Text(
-        {
-            fill    : STYLE.colors.ui.mutedText,
-            fontSize: h * 0.05,
-            text    : '',
-            x       : centerX,
-            y       : y[1]
-        })
-        this.rewardText = new Text(
-        {
-            fill    : STYLE.colors.ui.buttonText,
-            fontSize: rewardFontSize,
-            text    : this.rewardLabel,
-            x       : centerX,
-            y       : y[2]
-        })
-        // Takes the watch button's place when there is no ad to offer
-        this.noticeText = new Text(
-        {
-            fill    : STYLE.colors.ui.mutedText,
-            fontSize: h * 0.05,
-            text    : '',
-            x       : centerX,
-            y       : y[3]
-        })
+        const buttonHeight = Math.max(h * 0.11, minTouchSize())
+        const buttonWidth = Math.min(w * 0.8, h * 0.9)
+        menu.layoutPauseButton(this.restartButton, w / 2, h * 0.55, buttonWidth, buttonHeight)
+        menu.layoutPauseButton(this.menuButton, w / 2, h * 0.73, buttonWidth, buttonHeight)
+        this.title = new Text({x:w/2, y:h*0.25, fontSize:h*0.09,
+            text:I18N.t('continue.title'), fill:STYLE.colors.ui.title})
+        this.score = new Text({x:w/2, y:h*0.38, fontSize:h*0.05,
+            text:'', fill:STYLE.colors.ui.mutedText})
     }
-    // A label that would run under the badge ('Продолжить' next to
-    // 'РЕКЛАМА') is centred and fitted in the space right of it
-    clearAdBadge()
-    {
-        const button = this.continueButton
-        const b = button.background
-        const badge = this.adBadge()
-        const left = badge.x + badge.width + b.height * 0.15
-        const right = b.x + b.width - b.height * 0.22
-        const size = parseFloat(button.text.fontSize)
-
-        ctx.save()
-        ctx.font = button.text.fontSize
-        const textLeft = button.text.x - ctx.measureText(button.text.text).width / 2
-        ctx.restore()
-        if (textLeft >= left)
-            return
-
-        button.text.x = (left + right) / 2
-        button.text.fontSize = getArcadeFont(Math.max(STYLE.ui.buttonMinFontSize,
-            this.fittedFontSize(button.text.text, size, right - left)))
-    }
-    fittedFontSize(label, size, maxWidth)
-    {
-        ctx.save()
-        ctx.font = getArcadeFont(size)
-        const measured = ctx.measureText(label).width
-        ctx.restore()
-        return measured <= maxWidth ? size : size * maxWidth / measured
-    }
-    // Badge box inside the continue button's left edge
-    adBadge()
-    {
-        const b = this.continueButton.background
-        const height = b.height * 0.56
-        // Wide enough for a longer label ('РЕКЛАМА')
-        ctx.save()
-        ctx.font = getArcadeFont(height * 0.7)
-        const width = Math.max(height * 1.5, ctx.measureText(this.adBadgeLabel).width + height * 0.4)
-        ctx.restore()
-        return {x: b.x + b.height * 0.22, y: b.y + (b.height - height) / 2, width: width, height: height}
-    }
-    drawAdBadge()
-    {
-        const badge = this.adBadge()
-        ctx.save()
-        ctx.fillStyle = STYLE.colors.ui.primary
-        ctx.fillRect(badge.x, badge.y, badge.width, badge.height)
-        ctx.fillStyle = STYLE.colors.ui.buttonFill
-        ctx.font = getArcadeFont(badge.height * 0.7)
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(this.adBadgeLabel, badge.x + badge.width / 2, badge.y + badge.height / 2)
-        LAYOUT_PROBE.text(this.adBadgeLabel, badge.x + badge.width / 2, badge.y + badge.height / 2)
-        ctx.restore()
-    }
-    show()
-    {
-        this.adFailed = false
-        this.adPending = false
-        this.setVisible(true)
-    }
-    hide()
-    {
-        this.adPending = false
-        this.setVisible(false)
-    }
-    setVisible(visible)
-    {
-        this.visible = visible
-        this.updateClickable()
-    }
-    watchVisible()
-    {
-        return this.adsAvailable && !this.adFailed
-    }
-    setAdsAvailable(available)
-    {
-        this.adsAvailable = available
-        this.updateClickable()
-    }
-    // While an ad is requested both buttons ignore clicks until a callback
-    setAdPending(pending)
-    {
-        this.adPending = pending
-        this.updateClickable()
-    }
-    showAdError()
-    {
-        this.adPending = false
-        this.adFailed = true
-        this.updateClickable()
-    }
+    show() { this.setVisible(true) }
+    hide() { this.adPending = false; this.setVisible(false) }
+    setVisible(visible) { this.visible = visible; this.updateClickable() }
+    setAdPending(pending) { this.adPending = pending; this.updateClickable() }
     updateClickable()
     {
-        const enabled = this.visible && !this.adPending
-        this.continueButton.clickable = enabled && this.watchVisible()
-        this.restartButton.clickable = enabled
-    }
-    notice()
-    {
-        if (!this.adsAvailable)
-            return I18N.t('continue.adsUnavailable')
-        if (this.adFailed)
-            return I18N.t('continue.adUnavailable')
-        return ''
+        this.restartButton.clickable = this.menuButton.clickable = this.visible && !this.adPending
     }
     click(coord)
     {
-        return this.continueButton.isClickOnButton(coord) ||
-               this.restartButton.isClickOnButton(coord)
+        return this.restartButton.isClickOnButton(coord) || this.menuButton.isClickOnButton(coord)
     }
     draw()
     {
-        this.score.text = scoreText.text + scoreText.count[version]
-
         ctx.save()
         ctx.fillStyle = STYLE.colors.ui.pauseOverlay
         ctx.fillRect(0, 0, this.width, this.height)
-        drawGlowRect('pause-panel', this.panel.x, this.panel.y, this.panel.width, this.panel.height,
-            STYLE.ui.pausePanelLineWidth, STYLE.ui.buttonShadowBlur, (x, y, w, h) =>
-        {
-            ctx.fillStyle   = STYLE.colors.ui.pausePanelFill
-            ctx.strokeStyle = STYLE.colors.ui.pausePanelStroke
-            ctx.lineWidth = STYLE.ui.pausePanelLineWidth
-            ctx.shadowColor = STYLE.colors.ui.pausePanelStroke
-            ctx.shadowBlur = STYLE.ui.buttonShadowBlur
-            ctx.fillRect(x, y, w, h)
-            ctx.strokeRect(x, y, w, h)
-        })
-        ctx.restore()
-
+        this.score.text = scoreText.text + scoreText.count[version]
         this.title.draw()
         this.score.draw()
-
-        ctx.save()
-        if (this.adPending)
-            ctx.globalAlpha = 0.4
-        if (this.watchVisible())
-        {
-            this.rewardText.draw()
-            this.continueButton.draw()
-            this.drawAdBadge()
-        }
-        else
-        {
-            this.noticeText.text = this.notice()
-            this.noticeText.draw()
-        }
+        if (this.adPending) ctx.globalAlpha = 0.4
         this.restartButton.draw()
+        this.menuButton.draw()
         ctx.restore()
     }
 }

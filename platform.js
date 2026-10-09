@@ -50,6 +50,7 @@ const PLATFORM = (function()
         return readyPromise
     }
     let applicationReady = false
+    let lastInterstitialRequestAt = -Infinity
     let adBusy = false
     const listeners = {pause: [], audio: [], adState: []}
 
@@ -102,7 +103,7 @@ const PLATFORM = (function()
         {
             bridge.advertisement.on(event, state =>
             {
-                if (state === 'opened') setAdOpen(event, true)
+                if (state === 'opened' && (event !== names.INTERSTITIAL_STATE_CHANGED || adBusy)) setAdOpen(event, true)
                 else if (state === 'closed' || state === 'failed') setAdOpen(event, false)
             })
         }
@@ -151,11 +152,6 @@ const PLATFORM = (function()
             document.addEventListener('bridge-loaded', attach)
             attach()
         })
-    }
-
-    function rewardedBusy()
-    {
-        return adBusy || busyStates.indexOf(bridge.advertisement.rewardedState) >= 0
     }
 
     function interstitialBusy()
@@ -247,11 +243,6 @@ const PLATFORM = (function()
         language: 'en',
         // Leave scheduling headroom inside the three-second startup budget.
         initTimeoutMs: 2900,
-        // Watchdog for a rewarded ad that never reports an outcome
-        rewardTimeoutMs: 15000,
-        // Once the ad is 'opened' the watchdog restarts with this limit:
-        // rewarded videos often run 15-30 s and must not time out.
-        rewardPlayingTimeoutMs: 120000,
         // An interstitial that is not 'opened' by then counts as skipped
         interstitialOpenTimeoutMs: 3000,
         interstitialPlayingTimeoutMs: 120000,
@@ -272,78 +263,20 @@ const PLATFORM = (function()
             return initPromise
         },
 
-        isRewardedSupported()
-        {
-            return !!(bridge && bridge.advertisement.isRewardedSupported)
-        },
-
         isInterstitialSupported()
         {
             return !!(bridge && bridge.advertisement.isInterstitialSupported)
-        },
-
-        // Resolves {status: 'rewarded' | 'dismissed' | 'unavailable', reason?};
-        // grant the reward ONLY on 'rewarded'. Never rejects.
-        requestRewarded(placement = 'continue')
-        {
-            if (!bridge)
-                return Promise.resolve({status: 'unavailable', reason: 'disabled'})
-            if (!bridge.advertisement.isRewardedSupported)
-                return Promise.resolve({status: 'unavailable', reason: 'unsupported'})
-            if (rewardedBusy())
-                return Promise.resolve({status: 'unavailable', reason: 'busy'})
-            adBusy = true
-            return new Promise(resolve =>
-            {
-                let finished = false
-                let rewarded = false
-                let watchdog = null
-                let unwatch = () => {}
-                function finish(result)
-                {
-                    if (finished) return
-                    finished = true
-                    setAdOpen(bridge.EVENT_NAME.REWARDED_STATE_CHANGED, false)
-                    clearTimeout(watchdog)
-                    unwatch()
-                    adBusy = false
-                    resolve(result)
-                }
-                function startWatchdog(ms)
-                {
-                    clearTimeout(watchdog)
-                    watchdog = setTimeout(() => finish({status: 'unavailable', reason: 'timeout'}), ms)
-                }
-                unwatch = watchAd(bridge.EVENT_NAME.REWARDED_STATE_CHANGED, state =>
-                {
-                    if (state === 'opened')
-                        startWatchdog(PLATFORM.rewardPlayingTimeoutMs)
-                    else if (state === 'rewarded')
-                        rewarded = true
-                    else if (state === 'failed')
-                        finish({status: 'unavailable', reason: 'failed'})
-                    else if (state === 'closed')
-                        finish(rewarded ? {status: 'rewarded'} : {status: 'dismissed'})
-                })
-                startWatchdog(PLATFORM.rewardTimeoutMs)
-                try
-                {
-                    Promise.resolve(bridge.advertisement.showRewarded(placement))
-                        .catch(() => finish({status: 'unavailable', reason: 'exception'}))
-                }
-                catch (e)
-                {
-                    finish({status: 'unavailable', reason: 'exception'})
-                }
-            })
         },
 
         // Resolves 'closed' | 'failed' | 'skipped' (unsupported, disabled,
         // another ad in progress, or not 'opened' in time). Never rejects.
         showInterstitial(placement = 'game_over')
         {
-            if (!bridge || !bridge.advertisement.isInterstitialSupported || interstitialBusy())
+            if (placement !== 'game_over' || typeof runOver === 'undefined' || !runOver ||
+                !continueOffer.visible || !bridge || !bridge.advertisement.isInterstitialSupported ||
+                interstitialBusy() || PLATFORM.now() - lastInterstitialRequestAt < 120000)
                 return Promise.resolve('skipped')
+            lastInterstitialRequestAt = PLATFORM.now()
             adBusy = true
             return new Promise(resolve =>
             {
@@ -362,6 +295,7 @@ const PLATFORM = (function()
                 }
                 unwatch = watchAd(bridge.EVENT_NAME.INTERSTITIAL_STATE_CHANGED, state =>
                 {
+                    if (finished) return
                     if (state === 'opened')
                     {
                         clearTimeout(watchdog)

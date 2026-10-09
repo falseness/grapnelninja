@@ -1,15 +1,13 @@
 {
     "advertisement": {
-        "minimumDelayBetweenInterstitial": 60,
+        "minimumDelayBetweenInterstitial": 120,
         "interstitial": {
-            "preloadOnStart": "game_over",
             "placementFallback": "game_over",
-            "placements": [{"id": "game_over"}]
-        },
-        "rewarded": {
-            "preloadOnStart": "continue",
-            "placementFallback": "continue",
-            "placements": [{"id": "continue"}]
+            "placements": [
+                {
+                    "id": "game_over"
+                }
+            ]
         }
     }
 }
