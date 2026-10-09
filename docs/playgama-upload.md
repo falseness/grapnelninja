@@ -1,43 +1,64 @@
 # Playgama upload handoff (TASK-249)
 
-The upload is blocked as of 2026-10-09. A read-only MCP initialization request to
-`https://developer.playgama.com/api/mcp` returned HTTP 401 Unauthorized. This
-session has no exposed/configured Playgama MCP connection or authenticated browser
-profile. No upload or listing mutation was attempted; TASK-249 remains pending.
-Access checks, verified source hashes and explicitly blocked remote evidence are
-recorded under `artifacts/TASK-249/` (untracked). They are not upload receipts or
-proof of remote state.
+On 2026-10-09, authenticated MCP access succeeded on two fresh connections with
+the same configuration and organization. The current release and three reviewed
+TASK-247 covers were uploaded to existing application
+`cmuu1nvs30d00hj0h49c07spq` (Grapnel Ninja). Earlier access-blocked notes are
+historical; do not repeat consent or upload these files again.
 
-Latest access recheck: `2026-10-09T02:51:03.753295+00:00`. MCP initialization again
-returned HTTP 401. The only configured MCP server is `openaiDeveloperDocs`;
-no Playgama tools or relevant authentication environment variables are exposed.
-Chromium has only a `Crash Reports` directory, no Google Chrome profile exists,
-and no live browser was found. Authenticated developer access must be supplied
-before remote checks can proceed. Earlier plugin discovery found no Playgama match.
+The uploaded ZIP is the prepared source `2fd723fd07e2ef81d9c4a22fee65a5368923eecc`
+release, 104899 bytes, SHA-256
+`cd4611f8d3dc53aba7294bc9b1ed711d6336df91ba2c7a3e75d73937a69a4909`.
+Every ZIP entry matched both that committed source and the pre-upload HEAD.
+Archive `cmv0qbs6c004joj0i8tc458gp` returned processing `DONE`, state `PASSED`,
+Bridge `FOUND`, version `2.3.1`. This is processing acceptance, not moderation
+approval or full hosted QA certification.
 
-The local ZIP, three covers and ten gameplay screenshot candidates still match
-their recorded source hashes. Test steps 1 and 2 remain blocked; step 3 passes
-only the local evidence inspection. All five named proof files exist and explicitly
-record the blocker; native listing captures remain unavailable. These checks do
-not make the task ready for verification.
+| Cover | Confirmed and read-back media ID |
+| --- | --- |
+| Square, 800×800 | `cmv0qbt4h002uqm0hspumkuck` |
+| Portrait, 1080×1920 | `cmv0qbv21004moj0iofftupwe` |
+| Landscape, 1920×1080 | `cmv0qbwzz0032qm0ha745qaqb` |
 
-Resume with authenticated developer tooling and console access:
+Before/after comparison preserves all unrelated listing fields, all four older
+archives and the existing active sandbox archive. Only archives, media,
+coverImage, checksum and updatedAt changed. The form remains `REJECTED`;
+no moderation submission, sandbox publication, campaign or application creation
+was performed. Listing text remains unchanged, including its older rewarded-ad
+description; this upload does not certify listing accuracy.
 
-1. Open existing application `cmuu1nvs30d00hj0h49c07spq`. Record verified identity,
-   latest actual archive ID, moderation, archive history and unrelated listing
-   fields before changing anything. Do not assume the historical archive is current.
-2. Upload the exact `artifacts/TASK-248/grapnelninja-playgama.zip` (104539 bytes;
-   SHA256 `4180a9c142b441fae256aa4b5ea281c122a2bc25a7354d38142668a0c35f1b98`).
-3. Upload the three final covers identified by `artifacts/TASK-247/artwork.json`.
-   Select current real gameplay screenshots from its ten native candidates and
-   replace listing screenshots through the console. Preserve historical archives
-   and unrelated fields; do not create an application or start campaigns.
-4. Record source hash to returned archive/media ID mappings, successful processing
-   and Bridge detection. Read back all three cover orientations and the chosen
-   screenshot set, capture the native listing, and compare preserved remote fields.
-5. Replace the blocked evidence with actual before/after records and receipts;
-   update the manifest and inspect every required proof artifact. Run all three
-   TASK-249 test steps before changing its status to `to-verify`.
+TASK-249 remains **pending**. Screenshot replacement and native listing captures
+are incomplete. The supported MCP tools provide no screenshot upload operation;
+an authenticated developer-console browser session is still needed. The public
+QA page opens without console authentication, but it is not a listing capture.
 
-Do not store credentials or signed upload URLs in evidence. Keep `artifacts/`
-and `screenshots/` out of commits. Existing itch deliverables remain untouched.
+In the existing application's console, replace the screenshot set with
+`main-01.png`, `main-02.png`, `main-04.png`, and `main-10.png` from
+`artifacts/TASK-249/upload-20261009T085213Z/selected-screenshots.zip`.
+These are individually reviewed, real TASK-247 gameplay captures, 1280×720;
+their source hashes and fixture limitations are recorded in
+`screenshot-selection.json`. Save the screenshot changes, then capture the native
+listing showing all three cover orientations and the four screenshots. Read back
+the screenshot media IDs and compare all unrelated fields again. Do not submit
+moderation or start a campaign as part of this remaining step.
+
+Sanitized receipts, exact source mappings, two-connection access proof,
+before/after records, checklist review and independent evidence inspection live
+under `artifacts/TASK-249/upload-20261009T085213Z/`. Root `remote-before.json`,
+`remote-after.json`, `upload-receipts.json`, `manifest.json` and `verifier.log`
+refer to this run. Previous root evidence is preserved in this run's `prior-root/`.
+No credentials or signed upload URLs are retained.
+
+The returned [QA link](https://developer.playgama.com/qa-tool/cmv0qbs6c004joj0i8tc458gp)
+loads the new build and reports `game_ready`, but also reports:
+“Bridge config passed to initialize() as an external URL instead of a path to
+playgama-bridge-config.json”. The screenshot and text are in `qa-entry.png` and
+`qa-entry.json`. Investigate this during hosted QA; it is not a green QA result.
+The pre-upload checklist additionally records the localStorage fallback/journal
+deviation, unverified physical-device/full-playthrough checks and missing product
+telemetry. The user-required exact release was preserved.
+
+After the console step, rerun independent evidence inspection and all four
+TASK-249 test steps. Mark `to-verify` only when the missing screenshot receipts and
+native listing captures actually pass. No later ticket is a prerequisite. Never
+commit `artifacts/` or `screenshots/`; leave itch deliverables unchanged.
