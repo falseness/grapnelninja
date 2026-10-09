@@ -69,7 +69,7 @@ function createEvents()
     }
     function click(event)
     {
-        if (adOpen || interstitialPending)
+        if (adOpen || interstitialPending || isViewRotated())
             return
         if (!unTouch && startEvent(event))
         {
@@ -111,6 +111,7 @@ function createEvents()
     
     document.addEventListener('touchstart', touch, {passive: false})
     document.addEventListener('touchend', offtouch, {passive: false})
+    document.addEventListener('touchcancel', offtouch, {passive: false})
     
     
     document.addEventListener('contextmenu', function(event)
@@ -130,7 +131,7 @@ function createEvents()
     {
         if (scrollKeys.includes(event.key))
             event.preventDefault()
-        if (pauseKeys.includes(event.key) && !menu.visible && !continueOffer.visible && !adOpen && !interstitialPending)
+        if (pauseKeys.includes(event.key) && !isViewRotated() && !menu.visible && !continueOffer.visible && !adOpen && !interstitialPending)
         {
             event.preventDefault()
 

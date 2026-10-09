@@ -57,6 +57,16 @@
             {
                 display: none;
             }
+            #rotate-prompt { display: none; }
+            @media (pointer: coarse) and (orientation: portrait) {
+                #stage { visibility: hidden; }
+                #rotate-prompt {
+                    position: fixed; inset: 0; z-index: 2; display: flex;
+                    align-items: center; justify-content: center;
+                    box-sizing: border-box; padding: 32px; text-align: center;
+                    background: #080322; color: #bfffff; font: 24px/1.5 sans-serif;
+                }
+            }
             #loading-title
             {
                 font-size: 48px;
@@ -75,6 +85,7 @@
             <div id = "loading-progress" data-i18n = "loading.initial"></div>
             <button id="boot-retry" hidden data-i18n="loading.retry" onclick="this.disabled = true; location.reload()"></button>
         </div>
+        <div id="rotate-prompt" role="status" data-i18n="orientation.rotate"></div>
         <script>I18N.applyDom()</script>
         <div id = "stage">
             <canvas class = "window-bar" hidden></canvas>
@@ -198,6 +209,7 @@
                 document.getElementById('loading').hidden = true
                 createEvents()
                 bootComplete = true
+                updateOrientation()
                 AUDIO.enable()
                 MUTE_BUTTON.element.hidden = false
                 // Let the unobstructed menu reach the display before signaling.
@@ -314,7 +326,7 @@
                 leaveFinishedRun(function()
                 {
                     continueOffer.hide()
-                    const shouldPause = pauseAfterAd || hostPaused || document.visibilityState === 'hidden'
+                    const shouldPause = pauseAfterAd || hostPaused || isViewRotated() || document.visibilityState === 'hidden'
                     reStart()
                     if (shouldPause)
                     {
@@ -557,7 +569,15 @@
                 menu.setVisible(old.visible)
                 menu.changeGamePause(old.gamePaused)
             }
+            function updateOrientation()
+            {
+                const portrait = isViewRotated()
+                document.getElementById('stage').inert = portrait
+                AUDIO.setMute('orientation', portrait)
+                if (portrait) pauseRun()
+            }
             window.addEventListener('resize', function() {
+                updateOrientation()
                 clearTimeout(resizeTimer)
                 resizeTimer = setTimeout(onViewportResize, 100)
             })
@@ -566,6 +586,10 @@
             function pauseRun()
             {
                 if (!bootComplete) return
+                if (grapnel) {
+                    grapnel.setGrappled(false)
+                    grapnel.throwed = false
+                }
                 if (continueOffer.visible && continueOffer.adPending)
                     pauseAfterAd = true
                 else if (!menu.visible && !menu.gamePaused && !continueOffer.visible)
