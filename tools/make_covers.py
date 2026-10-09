@@ -88,7 +88,7 @@ CAPTURE_JS = '''async ([mode, seed, actions, targetTick]) => {
 
 
 def capture(seed_report, frames_dir, shots):
-    from browser_test_support import start_browser_test
+    from browser_test_support import start_browser_test, wait_for_boot
     report = json.loads(Path(seed_report).read_text())
     frames_dir.mkdir(parents=True, exist_ok=True)
     meta = {'seed_report': str(seed_report), 'frames': {}}
@@ -104,10 +104,11 @@ def capture(seed_report, frames_dir, shots):
             page = context.new_page()
             page.set_default_timeout(0)
             page.on('console', lambda m, label=label: m.type == 'error' and
-                    errors['console'].append(f'[{label}] {m.text}'))
+                    errors['console'].append(f'[{label}] {m.text}') if 'net::ERR_FAILED' not in m.text else None)
             page.on('pageerror', lambda e, label=label: errors['page'].append(f'[{label}] {e}'))
             page.goto(url + 'index.html')
             page.wait_for_function('typeof menu != "undefined" && menu.visible')
+            wait_for_boot(page)
             facts = page.evaluate(CAPTURE_JS, [shot['mode'], entry['best_seed'],
                                                entry['best_actions'], shot['tick']])
             context.close()

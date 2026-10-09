@@ -129,14 +129,42 @@ function configureStage()
     stage.style.transform = isViewRotated() ? 'rotate(90deg)' : ''
 }
 
+// Retain native sharpness on fast devices; sustained slow visible frames
+// reduce backing-store density without changing CSS size, controls or effects.
+// The floor avoids unreadable text. A page reload retries native density.
+const RENDER_BUDGET = {
+    densityLimit: Infinity, last: null, elapsed: 0, frames: 0,
+    observe(now, active)
+    {
+        if (!active) { this.last = null; this.elapsed = 0; this.frames = 0; return false }
+        const previous = this.last
+        this.last = now
+        if (previous === null) return false
+        const dt = now - previous
+        if (dt <= 0 || dt > 500) { this.elapsed = 0; this.frames = 0; return false }
+        this.elapsed += dt
+        ++this.frames
+        if (this.elapsed < 1800 || this.frames < 8) return false
+        const fps = this.frames * 1000 / this.elapsed
+        this.elapsed = 0; this.frames = 0
+        const current = getRenderDensity()
+        if (fps >= 45 || current <= 0.75) return false
+        this.densityLimit = Math.max(0.75, current * 0.75)
+        return true
+    }
+}
+function getRenderDensity()
+{
+    return Math.min(window.devicePixelRatio || 1, 2, RENDER_BUDGET.densityLimit)
+}
+
 // Sizes the CSS box and backing store (CSS size * capped DPR) and applies the base
 // transform so all drawing code works in logical units.
 function configureCanvasViewport(canvas, context)
 {
     configureStage()
     const rect = getCanvasCssRect()
-    const deviceDpr = window.devicePixelRatio || 1
-    const dpr = isTouchFirstDevice() ? Math.min(deviceDpr, 2) : deviceDpr
+    const dpr = getRenderDensity()
 
     canvas.style.position = 'fixed'
     canvas.style.left = rect.left + 'px'
@@ -189,7 +217,7 @@ function canvasCoordsToViewportCoords(coord)
             y: window.innerHeight / 2 + (x - view.width / 2)}
 }
 
-let scale = 
+let scale =
 {
     classic : 1         ,
     bad     : 1 / 2.2   ,

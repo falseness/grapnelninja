@@ -1,9 +1,10 @@
 <!Doctype html>
 <html>
     <head>
+        <meta charset="UTF-8">
         <title></title>
         <script src = "i18n.js"></script>
-        <meta charset = "UTF-8">
+        <script src="https://cdn.y8.com/minimal-sdk/2-0/y8.min.js" async></script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
         <style>
@@ -82,6 +83,7 @@
         <script src = "gameoptions.js"></script>
         <script src = "style.js"></script>
         <script src = "render/glowsprites.js"></script>
+        <script src="y8config.js"></script>
         <script src = "platform.js"></script>
         <script src = "progress.js"></script>
         <script src = 'menu.js'></script>
@@ -475,6 +477,11 @@
             function gameLoop(frameTime)
             {
                 fpsCounter.frame(frameTime)
+                if (RENDER_BUDGET.observe(frameTime, !document.hidden && !adOpen && !interstitialPending && !menu.gamePaused))
+                {
+                    configureCanvasViewport(canvas, ctx)
+                    ctx.lineCap = 'butt'
+                }
 
                 if (menu.visible)
                 {
@@ -582,6 +589,11 @@
             // ad the pause waits for the respawn
             function pauseRun()
             {
+                if (grapnel)
+                {
+                    grapnel.setGrappled(false)
+                    grapnel.throwed = false
+                }
                 if (continueOffer.visible && continueOffer.adPending)
                     pauseAfterAd = true
                 else if (!menu.visible && !menu.gamePaused && !continueOffer.visible)

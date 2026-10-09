@@ -110,6 +110,7 @@ function createEvents()
     
     document.addEventListener('touchstart', touch, {passive: false})
     document.addEventListener('touchend', offtouch, {passive: false})
+    document.addEventListener('touchcancel', offtouch, {passive: false})
     
     
     document.addEventListener('contextmenu', function(event)

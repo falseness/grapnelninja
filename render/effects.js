@@ -1865,6 +1865,31 @@ class BloomRenderer
     {
         const config = this.getConfig()
 
+        // Sum the four small glow levels before enlargement. This preserves
+        // every light contribution but pays for one full-size blend/clip.
+        if (!this.combinedCanvas)
+        {
+            this.combinedCanvas = document.createElement('canvas')
+            this.combinedCtx = this.combinedCanvas.getContext('2d', {alpha: false})
+        }
+        const combined = this.combinedCanvas, combinedCtx = this.combinedCtx
+        const first = this.levels[0].canvas
+        if (combined.width != first.width || combined.height != first.height)
+        {
+            combined.width = first.width
+            combined.height = first.height
+        }
+        combinedCtx.globalCompositeOperation = 'source-over'
+        combinedCtx.globalAlpha = 1
+        combinedCtx.fillStyle = '#000'
+        combinedCtx.fillRect(0, 0, combined.width, combined.height)
+        combinedCtx.globalCompositeOperation = config.compositeOperation
+        for (let i = 0; i < this.levels.length; ++i)
+        {
+            combinedCtx.globalAlpha = Math.max(0, Math.min(1, config.levelAlphas[i] * config.strength * neonPulse))
+            combinedCtx.drawImage(this.levels[i].canvas, 0, 0, combined.width, combined.height)
+        }
+
         this.ctx.save()
         const world = this.ctx.getTransform()
         this.ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -1884,11 +1909,8 @@ class BloomRenderer
         }
         this.ctx.globalCompositeOperation = config.compositeOperation
         this.ctx.imageSmoothingEnabled = true
-        for (let i = 0; i < this.levels.length; ++i)
-        {
-            this.ctx.globalAlpha = Math.max(0, Math.min(1, config.levelAlphas[i] * config.strength * neonPulse))
-            this.ctx.drawImage(this.levels[i].canvas, 0, 0, this.canvas.width, this.canvas.height)
-        }
+        this.ctx.globalAlpha = 1
+        this.ctx.drawImage(combined, 0, 0, this.canvas.width, this.canvas.height)
         this.ctx.restore()
     }
 }
