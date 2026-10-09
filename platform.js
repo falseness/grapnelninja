@@ -10,6 +10,7 @@ const PLATFORM = (function()
     let initPromise = null
     let warned = false
     let gameReadySent = false
+    let applicationReady = false
     let adBusy = false
     const listeners = {pause: [], audio: [], adState: []}
 
@@ -67,42 +68,47 @@ const PLATFORM = (function()
         }
     }
 
-    async function init()
+    function init()
     {
-        const candidate = window.bridge
-        if (!candidate || typeof candidate.initialize !== 'function')
+        // One deadline covers both download and initialize. Keep the success
+        // continuation alive after fallback so a late SDK can attach in place.
+        return new Promise(resolve =>
         {
-            warn('window.bridge missing')
-            PLATFORM.environment = 'disabled'
-            return PLATFORM.environment
-        }
-        let timer
-        try
-        {
-            await Promise.race([
-                Promise.resolve().then(() => candidate.initialize({configFilePath: new URL('playgama-bridge-config.json', document.baseURI).href})),
-                new Promise((resolve, reject) =>
+            let attempted = false
+            const finish = () => resolve(PLATFORM.environment)
+            const disable = error =>
+            {
+                clearTimeout(timer)
+                warn('initialize failed', error)
+                PLATFORM.environment = 'disabled'
+                finish()
+            }
+            const timer = setTimeout(() => disable(new Error('SDK startup timeout')), PLATFORM.initTimeoutMs)
+            function attach()
+            {
+                const candidate = window.bridge
+                if (attempted || !candidate || typeof candidate.initialize !== 'function')
+                    return
+                attempted = true
+                document.removeEventListener('bridge-loaded', attach)
+                Promise.resolve().then(() => candidate.initialize({
+                    configFilePath: new URL('playgama-bridge-config.json', document.baseURI).href
+                })).then(() =>
                 {
-                    timer = setTimeout(() => reject(new Error('initialize timeout')), PLATFORM.initTimeoutMs)
-                })
-            ])
-            bridge = candidate
-            PLATFORM.platformId = bridge.platform.id
-            PLATFORM.language = isoLanguage(bridge.platform.language)
-            subscribe()
-            PLATFORM.environment = 'playgama'
-        }
-        catch (e)
-        {
-            warn('initialize failed', e)
-            bridge = null
-            PLATFORM.environment = 'disabled'
-        }
-        finally
-        {
-            clearTimeout(timer)
-        }
-        return PLATFORM.environment
+                    bridge = candidate
+                    PLATFORM.platformId = bridge.platform.id
+                    PLATFORM.language = isoLanguage(bridge.platform.language)
+                    subscribe()
+                    PLATFORM.environment = 'playgama'
+                    clearTimeout(timer)
+                    if (applicationReady)
+                        PLATFORM.gameReady()
+                    finish()
+                }).catch(disable)
+            }
+            document.addEventListener('bridge-loaded', attach)
+            attach()
+        })
     }
 
     function rewardedBusy()
@@ -160,7 +166,8 @@ const PLATFORM = (function()
         environment: 'pending',
         platformId: null,
         language: 'en',
-        initTimeoutMs: 8000,
+        // Leave scheduling headroom inside the three-second startup budget.
+        initTimeoutMs: 2900,
         // Watchdog for a rewarded ad that never reports an outcome
         rewardTimeoutMs: 15000,
         // Once the ad is 'opened' the watchdog restarts with this limit:
@@ -319,6 +326,7 @@ const PLATFORM = (function()
         // Call when the first playable frame is ready; sends at most once
         gameReady()
         {
+            applicationReady = true
             if (gameReadySent || !bridge)
                 return Promise.resolve()
             gameReadySent = true

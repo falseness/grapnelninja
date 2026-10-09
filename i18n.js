@@ -8,6 +8,8 @@ const I18N = (function()
         {
             'game.title'            : 'Grapnel Ninja',
             'loading.initial'       : 'Loading...',
+            'loading.failed'        : 'The game could not start. Please retry.',
+            'loading.retry'         : 'Retry',
             'loading.connecting'    : 'Connecting...',
             'loading.progress'      : 'Loading progress...',
             'loading.starting'      : 'Starting...',
@@ -34,6 +36,8 @@ const I18N = (function()
         {
             'game.title'            : 'Grapnel Ninja',
             'loading.initial'       : 'Загрузка...',
+            'loading.failed'        : 'Не удалось запустить игру. Попробуйте ещё раз.',
+            'loading.retry'         : 'Повторить',
             'loading.connecting'    : 'Подключение...',
             'loading.progress'      : 'Загрузка прогресса...',
             'loading.starting'      : 'Запуск...',

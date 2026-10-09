@@ -1,7 +1,7 @@
 <!Doctype html>
 <html>
     <head>
-        <script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>
+        <script async src="https://bridge.playgama.com/v2/stable/playgama-bridge.js" onload="document.dispatchEvent(new Event('bridge-loaded'))"></script>
         <title></title>
         <script src = "i18n.js"></script>
         <meta charset = "UTF-8">
@@ -73,6 +73,7 @@
         <div id = "loading">
             <div id = "loading-title" data-i18n = "game.title"></div>
             <div id = "loading-progress" data-i18n = "loading.initial"></div>
+            <button id="boot-retry" hidden data-i18n="loading.retry" onclick="this.disabled = true; location.reload()"></button>
         </div>
         <script>I18N.applyDom()</script>
         <div id = "stage">
@@ -125,14 +126,13 @@
         <script>
             'use strict'
             let canvas = document.getElementById('canvas')
-            let ctx = canvas.getContext('2d', {alpha: false})
+            let ctx
             let ok = false
             let time
-            ctx.lineCap = 'butt'
             let trackEnabled = true
-            let fpsCounter = new FpsCounter()
-            let menu = new Menu(width, height)
-            let continueOffer = new ContinueOffer(width, height, watchAdToContinue, restartFromOffer)
+            let fpsCounter
+            let menu
+            let continueOffer
             let continueUsed = false
             // A pause request (hidden tab, focus loss) while the rewarded
             // ad plays: applied once the ad respawns the ninja
@@ -150,15 +150,37 @@
             
             let game
             
+            let bootPromise
+            let bootComplete = false
             boot()
             
             // Platform init -> one storage read -> first menu frame -> hide
             // the loading overlay -> game_ready. Input is attached only
             // after that, so earlier clicks and keys are ignored.
-            async function boot()
+            function boot()
+            {
+                if (!bootPromise)
+                    bootPromise = bootApplication().catch(error =>
+                    {
+                        cancelAnimationFrame(game)
+                        console.error('Application boot failed', error)
+                        document.getElementById('loading').hidden = false
+                        setLoadingProgress(I18N.t('loading.failed'))
+                        const retry = document.getElementById('boot-retry')
+                        retry.textContent = I18N.t('loading.retry')
+                        retry.hidden = false
+                    })
+                return bootPromise
+            }
+            async function bootApplication()
             {
                 setLoadingProgress(I18N.t('loading.connecting'))
                 await PLATFORM.init()
+                ctx = canvas.getContext('2d', {alpha: false})
+                ctx.lineCap = 'butt'
+                fpsCounter = new FpsCounter()
+                menu = new Menu(width, height)
+                continueOffer = new ContinueOffer(width, height, watchAdToContinue, restartFromOffer)
                 // Platform language until the saved choice is read
                 I18N.language = I18N.pick(null, PLATFORM.language)
                 setLoadingProgress(I18N.t('loading.progress'))
@@ -171,6 +193,7 @@
                 await nextFrame()
                 document.getElementById('loading').hidden = true
                 createEvents()
+                bootComplete = true
                 PLATFORM.gameReady()
             }
             function setLoadingProgress(text)
@@ -519,6 +542,7 @@
             function onViewportResize()
             {
                 resizeTimer = null
+                if (!bootComplete) return
                 const oldWidth = width
                 updateLogicalViewport()
                 configureCanvasViewport(canvas, ctx)
@@ -583,6 +607,7 @@
             // ad the pause waits for the respawn
             function pauseRun()
             {
+                if (!bootComplete) return
                 if (continueOffer.visible && continueOffer.adPending)
                     pauseAfterAd = true
                 else if (!menu.visible && !menu.gamePaused && !continueOffer.visible)
