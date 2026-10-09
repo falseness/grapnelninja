@@ -8,6 +8,12 @@ Access checks, verified source hashes and explicitly blocked remote evidence are
 recorded under `artifacts/TASK-249/` (untracked). They are not upload receipts or
 proof of remote state.
 
+A subsequent access recheck on 2026-10-09 again returned HTTP 401. Plugin
+discovery for `Playgama` returned no matches. The local ZIP, three covers and ten
+gameplay screenshot candidates still match their recorded source hashes. Remote
+test steps 1 and 2 remain blocked; local evidence inspection alone does not make
+the task ready for verification.
+
 Resume with authenticated developer tooling and console access:
 
 1. Open existing application `cmuu1nvs30d00hj0h49c07spq`. Record verified identity,
