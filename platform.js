@@ -82,6 +82,16 @@ const PLATFORM = (function()
         return /^[a-z]{2}$/.test(code) ? code : 'en'
     }
 
+    const openAds = new Set()
+    function setAdOpen(event, opened)
+    {
+        const wasOpen = openAds.size > 0
+        if (opened) openAds.add(event)
+        else openAds.delete(event)
+        if (wasOpen !== (openAds.size > 0))
+            emit('adState', openAds.size ? 'opened' : 'closed')
+    }
+
     // Host pause/audio and the 'opened'/'closed' of any full-screen ad
     function subscribe()
     {
@@ -90,19 +100,10 @@ const PLATFORM = (function()
         bridge.platform.on(names.AUDIO_STATE_CHANGED, isEnabled => emit('audio', !!isEnabled))
         for (const event of [names.INTERSTITIAL_STATE_CHANGED, names.REWARDED_STATE_CHANGED])
         {
-            let opened = false
             bridge.advertisement.on(event, state =>
             {
-                if (state === 'opened' && !opened)
-                {
-                    opened = true
-                    emit('adState', 'opened')
-                }
-                else if ((state === 'closed' || state === 'failed') && opened)
-                {
-                    opened = false
-                    emit('adState', 'closed')
-                }
+                if (state === 'opened') setAdOpen(event, true)
+                else if (state === 'closed' || state === 'failed') setAdOpen(event, false)
             })
         }
     }
@@ -138,6 +139,7 @@ const PLATFORM = (function()
                     PLATFORM.platformId = bridge.platform.id
                     PLATFORM.language = isoLanguage(bridge.platform.language)
                     subscribe()
+                    emit('audio', PLATFORM.isAudioEnabled())
                     PLATFORM.environment = 'playgama'
                     if (storageKeys) readRemote()
                     clearTimeout(timer)
@@ -293,11 +295,15 @@ const PLATFORM = (function()
             adBusy = true
             return new Promise(resolve =>
             {
+                let finished = false
                 let rewarded = false
                 let watchdog = null
                 let unwatch = () => {}
                 function finish(result)
                 {
+                    if (finished) return
+                    finished = true
+                    setAdOpen(bridge.EVENT_NAME.REWARDED_STATE_CHANGED, false)
                     clearTimeout(watchdog)
                     unwatch()
                     adBusy = false
@@ -322,7 +328,8 @@ const PLATFORM = (function()
                 startWatchdog(PLATFORM.rewardTimeoutMs)
                 try
                 {
-                    bridge.advertisement.showRewarded(placement)
+                    Promise.resolve(bridge.advertisement.showRewarded(placement))
+                        .catch(() => finish({status: 'unavailable', reason: 'exception'}))
                 }
                 catch (e)
                 {
@@ -340,10 +347,14 @@ const PLATFORM = (function()
             adBusy = true
             return new Promise(resolve =>
             {
+                let finished = false
                 let watchdog = null
                 let unwatch = () => {}
                 function finish(result)
                 {
+                    if (finished) return
+                    finished = true
+                    setAdOpen(bridge.EVENT_NAME.INTERSTITIAL_STATE_CHANGED, false)
                     clearTimeout(watchdog)
                     unwatch()
                     adBusy = false
@@ -362,7 +373,8 @@ const PLATFORM = (function()
                 watchdog = setTimeout(() => finish('skipped'), PLATFORM.interstitialOpenTimeoutMs)
                 try
                 {
-                    bridge.advertisement.showInterstitial(placement)
+                    Promise.resolve(bridge.advertisement.showInterstitial(placement))
+                        .catch(() => finish('failed'))
                 }
                 catch (e)
                 {

@@ -85,6 +85,8 @@
         <script src = "style.js"></script>
         <script src = "render/glowsprites.js"></script>
         <script src = "platform.js"></script>
+        <script src = "audio.js"></script>
+        <script src = "mutebutton.js"></script>
         <script src = "progress.js"></script>
         <script src = 'menu.js'></script>
         <script src = "languagebutton.js"></script>
@@ -187,6 +189,9 @@
                 PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
                 I18N.language = I18N.pick(PROGRESS.getLang(), PLATFORM.language)
                 applyLanguage()
+                MUTE_BUTTON.restore(PROGRESS.getMuted())
+                AUDIO.setMute('host', !PLATFORM.isAudioEnabled())
+                AUDIO.startMusic()
                 setLoadingProgress(I18N.t('loading.starting'))
                 await nextFrame()
                 start()
@@ -194,6 +199,8 @@
                 document.getElementById('loading').hidden = true
                 createEvents()
                 bootComplete = true
+                AUDIO.enable()
+                MUTE_BUTTON.element.hidden = false
                 // Let the unobstructed menu reach the display before signaling.
                 await nextFrame()
                 PLATFORM.gameReady()
@@ -301,6 +308,7 @@
             {
                 if (continueOffer.visible || ninja.isInvulnerable() || interstitialPending)
                     return
+                AUDIO.play('death')
                 runOver = true
                 if (!PLATFORM.isRewardedSupported() || continueUsed ||
                     scoreText.count[version] < CONTINUE_MIN_SCORE)
@@ -586,6 +594,7 @@
             function applyLanguage()
             {
                 I18N.applyDom()
+                MUTE_BUTTON.relabel()
                 document.documentElement.lang = I18N.language
                 rebuildMenu()
                 continueOffer.relabel(width, height)
@@ -615,23 +624,28 @@
                 else if (!menu.visible && !menu.gamePaused && !continueOffer.visible)
                     menu.startPause()
             }
-            window.onblur = pauseRun
+            window.onblur = () => { AUDIO.setMute('focus', true); pauseRun() }
+            window.addEventListener('focus', () => AUDIO.setMute('focus', false))
             // A hidden tab pauses
             document.addEventListener('visibilitychange', function() {
                 const hidden = document.visibilityState == 'hidden'
+                AUDIO.setMute('hidden', hidden)
                 if (hidden)
                     pauseRun()
             })
             // Host pause pauses the run; resuming is left to the player
             PLATFORM.onPause(function(isPaused) {
+                AUDIO.setMute('hostPause', isPaused)
                 if (isPaused)
                     pauseRun()
             })
+            PLATFORM.onAudio(enabled => AUDIO.setMute('host', !enabled))
             PLATFORM.onAdState(function(state) {
                 if (state == 'opened')
                     adOpen = true
                 else if (state == 'closed' || state == 'failed')
                     adOpen = false
+                AUDIO.setMute('ad', adOpen)
             })
             
         </script>

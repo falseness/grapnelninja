@@ -34,6 +34,7 @@ function createEvents()
         grapnel.speedY = ratio.sin * grapnelSpeed// + ninja.speedY
         grapnel.speedX = ratio.cos * grapnelSpeed// + ninja.speedX    
         
+        AUDIO.play('throw')
         grapnel.throwed = true
         grapnel.setGrappled(false)   
     }

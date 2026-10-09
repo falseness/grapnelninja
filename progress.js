@@ -5,9 +5,10 @@ const PROGRESS = (function()
     const recordsKey = 'grapnelninja.records'
     const timeKey = 'grapnelninja.time'
     const langKey = 'grapnelninja.lang'
+    const muteKey = 'grapnelninja.muted'
     const journalKey = 'grapnelninja.pending'
-    const state = {time: 0, lang: null}
-    let loaded = false, known = false, baseTime = 0, langChanged = false
+    const state = {time: 0, lang: null, muted: false}
+    let loaded = false, known = false, baseTime = 0, langChanged = false, muteChanged = false
     let savedJson = null, saveTimer = null, writing = false, lastSaveAt = -Infinity
     function number(value) { const n = Number(value); return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0 }
     function parse(value)
@@ -18,7 +19,7 @@ const PROGRESS = (function()
     {
         return {
             [recordsKey]: JSON.stringify({classic: scoreText.record.classic, bad: scoreText.record.bad}),
-            [timeKey]: String(state.time), [langKey]: state.lang || ''
+            [timeKey]: String(state.time), [langKey]: state.lang || '', [muteKey]: String(state.muted)
         }
     }
     function journal()
@@ -27,13 +28,14 @@ const PROGRESS = (function()
         Object.keys(values).forEach(key => PLATFORM.storage.localSet(key, values[key]))
         PLATFORM.storage.localSet(journalKey, JSON.stringify({
             records: JSON.stringify(values) === savedJson ? {} : parse(values[recordsKey]), delta: Math.max(0, state.time - baseTime),
-            lang: state.lang, langChanged, known, baseTime
+            lang: state.lang, langChanged, muted: state.muted, muteChanged, known, baseTime
         }))
     }
     function refresh()
     {
         I18N.language = I18N.pick(state.lang, PLATFORM.language)
         applyLanguage()
+        MUTE_BUTTON.restore(state.muted)
     }
     function reconcile(values)
     {
@@ -44,6 +46,7 @@ const PROGRESS = (function()
         baseTime = Math.max(baseTime, number(values[timeKey]))
         state.time = baseTime + delta
         if (!langChanged) state.lang = values[langKey] || null
+        if (!muteChanged) state.muted = values[muteKey] === 'true'
         known = true
         refresh()
         PROGRESS.save()
@@ -58,7 +61,7 @@ const PROGRESS = (function()
         if (json === savedJson) return
         writing = true
         lastSaveAt = performance.now()
-        const sentTime = state.time, sentLang = state.lang
+        const sentTime = state.time, sentLang = state.lang, sentMuted = state.muted
         const ok = await PLATFORM.storage.setMany(values)
         writing = false
         if (ok)
@@ -66,13 +69,14 @@ const PROGRESS = (function()
             savedJson = json
             baseTime = sentTime
             if (state.lang === sentLang) langChanged = false
+            if (state.muted === sentMuted) muteChanged = false
             journal()
         }
         if (JSON.stringify(snapshot()) !== savedJson)
             saveTimer = setTimeout(write, 1000)
     }
     const PROGRESS = {
-        keys: [recordsKey, timeKey, langKey],
+        keys: [recordsKey, timeKey, langKey, muteKey],
         load(values)
         {
             const pending = parse(PLATFORM.storage.localGet(journalKey))
@@ -85,13 +89,15 @@ const PROGRESS = (function()
                 ? Math.max(baseTime, number(pending.baseTime) + number(pending.delta))
                 : baseTime + number(pending.delta)
             state.lang = pending.langChanged ? pending.lang : values[langKey] || null
+            state.muted = pending.muteChanged ? !!pending.muted : values[muteKey] === 'true'
+            muteChanged = !!pending.muteChanged
             langChanged = !!pending.langChanged
             for (const mode of ['classic', 'bad'])
                 scoreText.record[mode] = Math.max(number(records[mode]), number((pending.records || {})[mode]))
             // An unknown cached snapshot is not an acknowledgement of journaled
             // records, even when no time or language change accompanies them.
             const pendingRecords = !known && Object.keys(pending.records || {}).length > 0
-            savedJson = pendingRecords || pending.delta || pending.langChanged || JSON.stringify(records) !== snapshot()[recordsKey] ? null : JSON.stringify(snapshot())
+            savedJson = pendingRecords || pending.delta || pending.langChanged || pending.muteChanged || JSON.stringify(records) !== snapshot()[recordsKey] ? null : JSON.stringify(snapshot())
             loaded = true
             if (known && savedJson === null) PROGRESS.save()
         },
@@ -111,6 +117,8 @@ const PROGRESS = (function()
             clearTimeout(saveTimer)
             write()
         },
+        getMuted() { return state.muted },
+        setMuted(value) { state.muted = !!value; muteChanged = true },
         getTime() { return state.time },
         setTime(seconds) { state.time = Math.max(state.time, number(seconds)) },
         getLang() { return state.lang },
