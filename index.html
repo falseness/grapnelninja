@@ -88,6 +88,7 @@
         <script src = "audio.js"></script>
         <script src = "mutebutton.js"></script>
         <script src = "progress.js"></script>
+        <script src = "tutorial.js"></script>
         <script src = 'menu.js'></script>
         <script src = "languagebutton.js"></script>
     
@@ -224,6 +225,7 @@
                 visualEffects.screenEffects.landings.length = 0
 
                 chooseVersion()
+                TUTORIAL.show()
                 warmGlowSprites()
                 
                 cancelAnimationFrame(game)
@@ -595,6 +597,7 @@
             {
                 I18N.applyDom()
                 MUTE_BUTTON.relabel()
+                TUTORIAL.relabel()
                 document.documentElement.lang = I18N.language
                 rebuildMenu()
                 continueOffer.relabel(width, height)

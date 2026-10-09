@@ -6,6 +6,9 @@ const I18N = (function()
     {
         en:
         {
+            'tutorial.desktop'      : 'Hold the mouse button to grapple. Release to let go. Move right to score.',
+            'tutorial.touch'        : 'Touch and hold to grapple. Lift your finger to let go. Move right to score.',
+            'tutorial.dismiss'      : 'Got it',
             'game.title'            : 'Grapnel Ninja',
             'loading.initial'       : 'Loading...',
             'loading.failed'        : 'The game could not start. Please retry.',
@@ -34,6 +37,9 @@ const I18N = (function()
         },
         ru:
         {
+            'tutorial.desktop'      : 'Удерживайте кнопку мыши, чтобы зацепиться. Отпустите, чтобы отцепиться. Двигайтесь вправо, чтобы набирать очки.',
+            'tutorial.touch'        : 'Коснитесь и удерживайте палец, чтобы зацепиться. Отпустите, чтобы отцепиться. Двигайтесь вправо, чтобы набирать очки.',
+            'tutorial.dismiss'      : 'Понятно',
             'game.title'            : 'Grapnel Ninja',
             'loading.initial'       : 'Загрузка...',
             'loading.failed'        : 'Не удалось запустить игру. Попробуйте ещё раз.',
