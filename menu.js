@@ -3,7 +3,10 @@ function reuseTimeInGame() {
 }
 function pauseTimeInGame() {
     let thisTime = Math.floor(new Date().getTime() / 1000)
-    let delta = Math.floor(thisTime - time)
+    let delta = Number.isFinite(time) ? Math.floor(thisTime - time) : 0
+    // Pausing/death can be followed by a host pause. Account for this segment
+    // once, and exclude time spent in the death offer, menu or advertisement.
+    time = null
 
     if (Number.isFinite(delta) && delta > 0)
         PROGRESS.setTime(PROGRESS.getTime() + delta)

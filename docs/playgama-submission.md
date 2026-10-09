@@ -5,7 +5,7 @@ initialization returned `401 Unauthorized`; no authenticated Playgama tool is
 exposed in this session. No submission or moderation readback was performed.
 Keep TASK-251 pending until all required checks and actual submission succeed.
 
-Preserve existing application `cmuu1nvs30d00hj0h49c07spq`. The intended package
+Preserve existing application `cmuu1nvs30d00hj0h49c07spq`. The historical package
 is `artifacts/TASK-248/grapnelninja-playgama.zip`, 104539 bytes, SHA256
 `4180a9c142b441fae256aa4b5ea281c122a2bc25a7354d38142668a0c35f1b98`, built from
 revision `9c56950591c6dfa26554f2a80cbc2689ab4382e5`. Independent package
@@ -66,3 +66,33 @@ supported authenticated lookup is sufficient to resume remote work. Do not
 repeat anonymous access probes or require a manufactured reconnect failure.
 TASK-251 remains pending until the required local/native/review inputs and
 actual same-release submission receipt are available.
+
+## Play time and history navigation
+
+The TASK-251 history experiment exposed lost play time in death/restart loops:
+Chill completed nine natural deaths in two minutes while saved time stayed at
+zero. Death now records the current interval before saving progress; restart
+begins a new interval. Stopping an interval is idempotent, so a subsequent host
+pause cannot count time spent in the death offer or advertisement.
+
+`tools/test_play_time.py` checks interval accounting with a controlled clock.
+`tools/test_playgama2_history.py` uses real mouse input for 120 seconds per mode,
+then exercises three actual Back/Forward/Back cycles. SDK storage persists
+across documents at the fixture boundary. The test checks movement, bounded
+obstacle counts, accumulated time, exact progress/preferences after navigation,
+and working grapnel input in the restored document. It does not replace physics,
+inject scores, or represent a human difficulty playtest.
+
+Evidence is under `artifacts/TASK-251/history-20261009T034204Z/`. The interrupted
+first harness run and the pre-fix failing Chill run are preserved. Use the
+`desktop-fixed`, `history-fixed`, `timer`, `storage`, and `ads` results for the
+changed runtime, along with the attempt's manifest, checklist and independent
+verifier. These checks add bounded local coverage for T6/S7/S9; native OS
+interactions and target-browser certification remain unresolved.
+
+The time-accounting fix changes runtime source, so the historical TASK-248 ZIP
+is stale. The replacement local archive and its isolated smoke evidence belong
+in this attempt's `release` and `release-smoke` directories, bound to the task
+commit. Neither archive is evidence of upload or moderation. U4 progression,
+native environments, reviews and authenticated release receipts are still
+required; keep TASK-251 pending.

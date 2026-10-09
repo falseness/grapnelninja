@@ -299,6 +299,7 @@
             function reStart()
             {
                 PROGRESS.save()
+                reuseTimeInGame()
                 if (visualEffects && ninja && screen)
                 {
                     visualEffects.screenEffects.triggerDeath(ninja.x + screen.x, ninja.y + screen.y)
@@ -318,6 +319,7 @@
                     return
                 AUDIO.play('death')
                 runOver = true
+                pauseTimeInGame()
                 PROGRESS.save()
                 continueOffer.show()
             }
