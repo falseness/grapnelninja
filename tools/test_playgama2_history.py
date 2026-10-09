@@ -86,7 +86,9 @@ class HistoryTests(unittest.TestCase):
                 deaths += 1
             page.mouse.move(900, 160)
             page.mouse.down()
-            page.wait_for_timeout(150)
+            # Give the hook time to reach a surface before releasing it. A
+            # 150ms tap often only free-falls in Chill's randomly spaced course.
+            page.wait_for_timeout(1000)
             page.mouse.up()
             page.wait_for_timeout(350)
             sample = page.evaluate('''() => ({x:ninja.x,y:ninja.y,camera:screen.x,

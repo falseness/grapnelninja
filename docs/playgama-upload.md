@@ -1,64 +1,84 @@
-# Playgama upload handoff (TASK-249)
+# Playgama release — 2026-10-09
 
-On 2026-10-09, authenticated MCP access succeeded on two fresh connections with
-the same configuration and organization. The current release and three reviewed
-TASK-247 covers were uploaded to existing application
-`cmuu1nvs30d00hj0h49c07spq` (Grapnel Ninja). Earlier access-blocked notes are
-historical; do not repeat consent or upload these files again.
+The corrected game is uploaded and live in the existing public sandbox:
+https://playgama.ai/play/kjkngkpxox
 
-The uploaded ZIP is the prepared source `2fd723fd07e2ef81d9c4a22fee65a5368923eecc`
-release, 104899 bytes, SHA-256
-`cd4611f8d3dc53aba7294bc9b1ed711d6336df91ba2c7a3e75d73937a69a4909`.
-Every ZIP entry matched both that committed source and the pre-upload HEAD.
-Archive `cmv0qbs6c004joj0i8tc458gp` returned processing `DONE`, state `PASSED`,
-Bridge `FOUND`, version `2.3.1`. This is processing acceptance, not moderation
-approval or full hosted QA certification.
+- Application: `cmuu1nvs30d00hj0h49c07spq` (Grapnel Ninja).
+- Runtime revision: `83e53def34212794aba437c0d0b5e807a315afbe`.
+- Archive: `cmv0qzlea00bxqm0hnjsvkx55` (`grapnelninja-playgama-83e53de`).
+- ZIP: `artifacts/playgama-ready-20261009/release/grapnelninja-playgama.zip`.
+- Size: 104365 bytes; SHA-256: `1abba97b75ef5c8da59aae434e6a5389876351626c5024cd6d8fd9be21e05c3f`.
+- Processing: DONE / PASSED / Bridge FOUND (2.3.1).
+- Sandbox revision: `cmv0r7uno00hfoj0idyijg4a1`, read back against that archive.
+- QA: https://developer.playgama.com/qa-tool/cmv0qzlea00bxqm0hnjsvkx55
 
-| Cover | Confirmed and read-back media ID |
-| --- | --- |
-| Square, 800×800 | `cmv0qbt4h002uqm0hspumkuck` |
-| Portrait, 1080×1920 | `cmv0qbv21004moj0iofftupwe` |
-| Landscape, 1920×1080 | `cmv0qbwzz0032qm0ha745qaqb` |
+This supersedes the `2fd723f` ZIP and its configuration-path error. Do not upload
+that older ZIP again. Older receipts and unsuccessful diagnostic attempts remain
+in their original artifact directories.
 
-Before/after comparison preserves all unrelated listing fields, all four older
-archives and the existing active sandbox archive. Only archives, media,
-coverImage, checksum and updatedAt changed. The form remains `REJECTED`;
-no moderation submission, sandbox publication, campaign or application creation
-was performed. Listing text remains unchanged, including its older rewarded-ad
-description; this upload does not certify listing accuracy.
+## Corrections
 
-TASK-249 remains **pending**. Screenshot replacement and native listing captures
-are incomplete. The supported MCP tools provide no screenshot upload operation;
-an authenticated developer-console browser session is still needed. The public
-QA page opens without console authentication, but it is not a listing capture.
+Bridge initialization passes `./playgama-bridge-config.json`, rather than an
+absolute URL. Hosted QA no longer displays the configuration-path error.
+A regression check rejects absolute configuration URLs and exercises nested paths.
 
-In the existing application's console, replace the screenshot set with
-`main-01.png`, `main-02.png`, `main-04.png`, and `main-10.png` from
+Progress and settings persist only through Bridge Storage. The former direct
+browser-storage cache/journal was removed to comply with the current required
+Storage integration. Pending changes stay in memory during an SDK outage and
+merge safely on recovery. SDK writes are batched. Confirmed saves survive reload;
+closing the page before an unavailable SDK has saved cannot persist those unsaved
+changes. Cloud progress is not overwritten by startup defaults.
+
+The saved English/Russian description and controls now describe free restarts,
+not the removed rewarded-continue offer. Other listing fields remain intact.
+
+## Verification
+
+Evidence is under `artifacts/playgama-ready-20261009/`:
+
+- `release/verification.json`: ZIP integrity, reproducibility, 37 exact source
+  blobs, exclusions, relative config and absence of direct browser persistence.
+- `release-smoke/smoke.json`: eight extracted-only desktop/touch, Main/Chill,
+  normal/rejected-SDK cases; real input and measured audible/muted/restored audio.
+- `browsers/`: 25 cold/fault/throttled cases across Chromium, Firefox and WebKit.
+- `storage/`: delayed/rejected reads and writes, safe reconciliation, SDK reload,
+  bounded waits, and zero direct browser-storage accesses.
+- `history/history.json` Main case and `history-chill/history.json`: two-minute
+  real-input gameplay per mode, natural deaths/restarts, three history cycles,
+  exact saved progress/settings preservation. The earlier Chill input probe used
+  150ms presses that often never attached; the rerun holds for one second while
+  retaining all movement/progress assertions. The unsuccessful run is preserved.
+- `hosted-chromium/hosted.json` desktop cases and `hosted-touch/hosted.json`:
+  real hosted SDK, both modes, readiness, input, movement, mute/language/tutorial
+  persistence through reload, no game exceptions or config-path error. Earlier
+  harness failures (canvas selection, menu-only language control, cached HTTP 304,
+  and tap versus hold) are preserved separately or labeled in the case results.
+- `sandbox-smoke/` and `sandbox-phone/`: actual public sandbox, desktop Main and
+  Pixel 7 landscape-emulated Chill, real SDK saves/reloads and native captures.
+- `host-controls/verification.json`: real host pause/audio events; restoration
+  when the iframe regains focus. Player-controlled resume remains intentional.
+- `host-ad/ad.json`: natural death, real interstitial loading/failed outcome,
+  free Restart and restored audio. No successful served creative is claimed.
+
+## Remaining publication checks
+
+The game has NOT been resubmitted for moderation. `get_submission_state` allows
+submission and reports existing EXTENDED certification; this is not a new
+physical-device test or a moderation receipt.
+
+The Linux hosted WebKit check remains unverified: the QA page crashes on both
+old and fixed archives without GStreamer autoaudiosink; an isolated dependency
+avoids the initial crash but the interactive check stalls. The headed alternative
+cannot start without GTK4. Local WebKit checks pass. Preserve the control logs;
+do not label this as a proved game regression or native Safari success. Native
+Safari/iOS/Android and legacy operating systems have not been tested here.
+
+The three covers are already uploaded. Listing screenshots still require the
+authenticated developer console, which is separate from MCP OAuth. Replace them
+with main-01, main-02, main-04 and main-10 from:
 `artifacts/TASK-249/upload-20261009T085213Z/selected-screenshots.zip`.
-These are individually reviewed, real TASK-247 gameplay captures, 1280×720;
-their source hashes and fixture limitations are recorded in
-`screenshot-selection.json`. Save the screenshot changes, then capture the native
-listing showing all three cover orientations and the four screenshots. Read back
-the screenshot media IDs and compare all unrelated fields again. Do not submit
-moderation or start a campaign as part of this remaining step.
+Save and read back their media IDs and capture the saved listing. Do not upload
+the game ZIP or covers again for this cosmetic step. Final moderation submission
+also requires the console; no supported MCP submit operation is exposed.
 
-Sanitized receipts, exact source mappings, two-connection access proof,
-before/after records, checklist review and independent evidence inspection live
-under `artifacts/TASK-249/upload-20261009T085213Z/`. Root `remote-before.json`,
-`remote-after.json`, `upload-receipts.json`, `manifest.json` and `verifier.log`
-refer to this run. Previous root evidence is preserved in this run's `prior-root/`.
-No credentials or signed upload URLs are retained.
-
-The returned [QA link](https://developer.playgama.com/qa-tool/cmv0qbs6c004joj0i8tc458gp)
-loads the new build and reports `game_ready`, but also reports:
-“Bridge config passed to initialize() as an external URL instead of a path to
-playgama-bridge-config.json”. The screenshot and text are in `qa-entry.png` and
-`qa-entry.json`. Investigate this during hosted QA; it is not a green QA result.
-The pre-upload checklist additionally records the localStorage fallback/journal
-deviation, unverified physical-device/full-playthrough checks and missing product
-telemetry. The user-required exact release was preserved.
-
-After the console step, rerun independent evidence inspection and all four
-TASK-249 test steps. Mark `to-verify` only when the missing screenshot receipts and
-native listing captures actually pass. No later ticket is a prerequisite. Never
-commit `artifacts/` or `screenshots/`; leave itch deliverables unchanged.
+Never commit `artifacts/` or `screenshots/`; existing itch deliverables are unchanged.
