@@ -600,11 +600,16 @@
                     menu.startPause()
             }
             window.onblur = pauseRun
-            // A hidden tab pauses
+            // A hidden tab pauses. Mobile browsers may discard a backgrounded
+            // page without pagehide, so the paused state is written at once
+            // instead of waiting for the save throttle.
             document.addEventListener('visibilitychange', function() {
                 const hidden = document.visibilityState == 'hidden'
                 if (hidden)
+                {
                     pauseRun()
+                    PROGRESS.flush()
+                }
             })
             // Host pause pauses the run; resuming is left to the player
             PLATFORM.onPause(function(isPaused) {
