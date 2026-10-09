@@ -8,11 +8,18 @@ Access checks, verified source hashes and explicitly blocked remote evidence are
 recorded under `artifacts/TASK-249/` (untracked). They are not upload receipts or
 proof of remote state.
 
-A subsequent access recheck on 2026-10-09 again returned HTTP 401. Plugin
-discovery for `Playgama` returned no matches. The local ZIP, three covers and ten
-gameplay screenshot candidates still match their recorded source hashes. Remote
-test steps 1 and 2 remain blocked; local evidence inspection alone does not make
-the task ready for verification.
+Latest access recheck: `2026-10-09T02:51:03.753295+00:00`. MCP initialization again
+returned HTTP 401. The only configured MCP server is `openaiDeveloperDocs`;
+no Playgama tools or relevant authentication environment variables are exposed.
+Chromium has only a `Crash Reports` directory, no Google Chrome profile exists,
+and no live browser was found. Authenticated developer access must be supplied
+before remote checks can proceed. Earlier plugin discovery found no Playgama match.
+
+The local ZIP, three covers and ten gameplay screenshot candidates still match
+their recorded source hashes. Test steps 1 and 2 remain blocked; step 3 passes
+only the local evidence inspection. All five named proof files exist and explicitly
+record the blocker; native listing captures remain unavailable. These checks do
+not make the task ready for verification.
 
 Resume with authenticated developer tooling and console access:
 
