@@ -21,12 +21,12 @@ async function scenario(kind){
  const result=P.requestRewarded().then(r=>{settled=true;return r});
  if(kind==='adThrow'||kind==='adReject'){assert.equal((await result).status,'unavailable');console.log('PASS ad',kind,JSON.stringify({calls,events}));return}
  assert.equal((await P.requestRewarded()).reason,'busy');
- callbacks.beforeReward(()=>{});if(kind!=='noFill')callbacks.beforeAd();await Promise.resolve();assert.equal(settled,false,'promise resolution must not finish ad');
+ callbacks.beforeReward(()=>{});if(!['noFill','frequencyCapped','notReady'].includes(kind))callbacks.beforeAd();await Promise.resolve();assert.equal(settled,false,'promise resolution must not finish ad');
  if(kind==='viewed'){callbacks.adViewed();assert.equal(settled,false);callbacks.adBreakDone({breakStatus:'viewed'});callbacks.adBreakDone({breakStatus:'viewed'})}
  else if(kind==='dismissed'){callbacks.adDismissed();callbacks.adBreakDone({breakStatus:'dismissed'})}
- else if(kind==='noFill'){callbacks.adBreakDone({breakStatus:'noAdPreloaded'})}
+ else if(['noFill','frequencyCapped','notReady'].includes(kind)){callbacks.adBreakDone({breakStatus:kind==='noFill'?'noAdPreloaded':kind})}
  const r=await result; assert.equal(r.status,kind==='viewed'?'rewarded':'unavailable');
  callbacks.adViewed();callbacks.adBreakDone({breakStatus:'viewed'});
- assert.deepEqual(events,kind==='noFill'?['closed']:['opened','closed']);console.log('PASS ad',kind,JSON.stringify({calls,events,result:r}));
+ assert.deepEqual(events,['noFill','frequencyCapped','notReady'].includes(kind)?['closed']:['opened','closed']);console.log('PASS ad',kind,JSON.stringify({calls,events,result:r}));
 }
-(async()=>{for(const k of ['missing','hang','reject','late','initThrow','delayedReady','storageDenied','viewed','dismissed','noFill','timeout','adThrow','adReject'])await scenario(k)})().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{for(const k of ['missing','hang','reject','late','initThrow','delayedReady','storageDenied','viewed','dismissed','noFill','frequencyCapped','notReady','timeout','adThrow','adReject'])await scenario(k)})().catch(e=>{console.error(e);process.exitCode=1});
