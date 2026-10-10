@@ -139,3 +139,21 @@ record local build/test commands and evidence integrity. The extraction is
 this candidate does not replace its validation or certify submission readiness.
 Later verification must use this exact archive; phones, console and hosted ads
 remain owner checks. The existing measured performance failures remain open.
+
+For an exact-candidate offline check, run `tools/verify_y8_candidate.py` with
+`--archive`, its matching extracted `--root`, a fresh `--out`, and each of
+`--suite release`, `embed`, `mobile-embed`, `lifecycle`, and `ads`. The wrapper
+checks every extracted runtime hash before/after each suite and records browser
+versions, context profiles, route actions, request failures and trusted input
+observations. The release suite now explicitly resumes moving gameplay through
+the Resume control in every engine/profile/mode. Document-local input traces
+reset on reload; release/lifecycle input proof also uses the suite's trusted
+Playwright calls and asserted gameplay effects. SDK callbacks, seeded deaths,
+visibility and blur remain local fixtures, not native or hosted certification.
+
+TASK-268 stores the combined case report in `release-checks.json`, with raw
+suite outputs/captures, command logs and a hashed `manifest.json` under
+`artifacts/TASK-268/`. `python3 tools/audit_y8_candidate.py --out artifacts/TASK-268`
+checks the saved results and hashes without repeating the browser suites.
+Candidate verification does not clear inherited performance failures or replace
+owner phone, hosted SDK/ad, console and moderation checks.

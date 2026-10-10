@@ -42,6 +42,12 @@ def run(root,out):
       p.wait_for_timeout(750);p.keyboard.press('p');p.wait_for_function('menu.gamePaused');before=p.evaluate('({x:ninja.x,y:ninja.y})');p.wait_for_timeout(100);assert before==p.evaluate('({x:ninja.x,y:ninja.y})'), 'paused position moved'
       for w,h in [(size[1],size[0]),size]:p.set_viewport_size({'width':w,'height':h});p.wait_for_timeout(250)
       p.screenshot(path=str(out/(engine+'-'+str(touch)+'-'+str(size[0])+'-'+mode+'.png')))
+      p.wait_for_function('!unTouch');pt=point(p,'menu.resume.background')
+      (p.touchscreen.tap if touch else p.mouse.click)(**pt)
+      p.wait_for_function('!menu.gamePaused')
+      before=p.evaluate('({x:ninja.x,y:ninja.y})')
+      p.wait_for_function('before=>ninja.x!==before.x || ninja.y!==before.y',arg=before)
+      row['resume']='PASS trusted Resume restores moving gameplay'
       p.evaluate("PROGRESS.setLang('ru'); PROGRESS.save()");p.reload(wait_until='domcontentloaded');wait_for_boot(p);assert p.evaluate('I18N.language')=='ru'
       assert not row['errors'],row['errors'];row['verdict']='PASS';print('PASS',engine,touch,size,mode,flush=True)
      except Exception as e:
