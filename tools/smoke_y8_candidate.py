@@ -136,17 +136,49 @@ def case(browser, engine, profile, size, mode, sdk, url, out):
             cd=c.new_cdp_session(p) if touch and engine=='chromium' else None
             deadline=time.monotonic()+120
             attempts=0
+            row['recovery_trace']=[]
+            row['recovery_reselections']=[]
+            def reselect():
+                p.keyboard.press('p')
+                p.wait_for_function('menu.gamePaused || smokeDeaths.length')
+                if p.evaluate('smokeDeaths.length'):
+                    if p.evaluate('menu.gamePaused'): p.keyboard.press('p')
+                    return
+                tap('menu.backToMenu.background');p.wait_for_function('menu.visible')
+                tap('menu.'+mode+'VersionButton.background')
+                p.wait_for_function('!menu.visible && !unTouch')
+                p.evaluate('smokeNinja=ninja')  # observation reference for this run
+                row['recovery_reselections'].append(dict(after_attempt=attempts,state=p.evaluate(STATE)))
             while not p.evaluate('smokeDeaths.length') and time.monotonic()<deadline:
                 attempts+=1
                 aim=p.evaluate('''attempt => {
-                    const targets=floors.flatMap(f=>f.elements).filter(e=>e instanceof Rect && !(e instanceof Trampoline))
-                        .map(e=>({x:e.x+e.width/2,y:e.y+e.height/2}))
-                        .filter(t=>t.x>ninja.x && (t.x+screen.x)*scale[version]<width)
+                    const targets=floors.flatMap(f=>f.elements)
+                        .filter(e=>e.collision===Element.prototype.collision)
+                        .map(e=>{const pts=e.getPoints(); return {
+                            x:pts.reduce((s,p)=>s+p.x,0)/pts.length,
+                            y:pts.reduce((s,p)=>s+p.y,0)/pts.length};})
+                        .filter(t=>t.x>ninja.x && (t.x+screen.x)*scale[version]<width
+                            && (t.y+screen.y)*scale[version]>20
+                            && (t.y+screen.y)*scale[version]<height-20)
+                        .filter(t=>{
+                            const ray=lineFormula(ninja.x,ninja.y,t.x,t.y);
+                            return !floors.flatMap(f=>f.elements).some(e=>e instanceof Trampoline &&
+                                e.getLines().some(edge=>linesCollision(ray,edge)));
+                        })
                         .sort((a,b)=>Math.hypot(a.x-ninja.x,a.y-ninja.y)-Math.hypot(b.x-ninja.x,b.y-ninja.y));
-                    const t=targets[(attempt-1)%Math.max(1,Math.min(3,targets.length))];
-                    return t ? canvasCoordsToViewportCoords({x:(t.x+screen.x)*scale[version],y:(t.y+screen.y)*scale[version]})
-                        : canvasCoordsToViewportCoords({x:width*.8,y:height*(.2+.2*(attempt%3))});
+                    const t=targets[0];
+                    return t ? canvasCoordsToViewportCoords({x:(t.x+screen.x)*scale[version],y:(t.y+screen.y)*scale[version]}) : null;
                 }''',attempts)
+                if aim is None and mode=='classic':
+                    # Chill has lethal floor/ceiling boundaries: let its run
+                    # proceed instead of continually resetting before it falls.
+                    aim=p.evaluate('canvasCoordsToViewportCoords({x:width*.8,y:height*.4})')
+                if aim is None:
+                    # No direct route to a lethal obstacle; use the real menu
+                    # to draw another ordinary layout instead of pushing a wall.
+                    reselect()
+                    continue
+                row['recovery_trace'].append(dict(attempt=attempts,aim=aim,before=p.evaluate(STATE)))
                 if cd:
                     cd.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[aim]})
                 else:
@@ -155,16 +187,23 @@ def case(browser, engine, profile, size, mode, sdk, url, out):
                 if cd: cd.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
                 else: p.mouse.up()
                 p.wait_for_timeout(400)
+                row['recovery_trace'][-1]['after']=p.evaluate(STATE)
+                assert not p.evaluate('menu.gamePaused'), 'Recovery aim hit pause control'
+                # Random safe trampoline layouts can trap this simple driver.
+                # Reselect through real UI inputs; never edit physics or obstacles.
+                if attempts%8==0 and not p.evaluate('smokeDeaths.length'):
+                    reselect()
             assert p.evaluate('smokeDeaths.length'), 'No natural collision after 120s trusted input toward visible obstacles'
             row['recovery_attempts']=attempts
             row['checks']['natural_death']=dict(result='PASS',deaths=p.evaluate('smokeDeaths'))
             capture('death')
-            if p.evaluate('continueOffer.visible'):
+            manual_restart=p.evaluate('continueOffer.visible')
+            if manual_restart:
                 tap('continueOffer.restartButton.background')
             p.wait_for_function('ninja !== smokeNinja && !continueOffer.visible && !menu.visible')
             restarted=p.evaluate(STATE);p.wait_for_timeout(250)
             assert p.evaluate(STATE)!=restarted
-            row['checks']['restart']=dict(result='PASS',before=restarted,after=p.evaluate(STATE),automatic=not p.evaluate('smokeEvents.some(e=>e.t>smokeDeaths[0].t)'))
+            row['checks']['restart']=dict(result='PASS',before=restarted,after=p.evaluate(STATE),automatic=not manual_restart)
             capture('restart')
             p.keyboard.press('p');p.wait_for_function('menu.gamePaused')
             tap('menu.backToMenu.background');p.wait_for_function('menu.visible')
@@ -233,7 +272,6 @@ def run(a):
                         row.update(archive_sha256=result['archive_sha256'],source=result['source'])
                         result['results'].append(row)
                         (out/'release-smoke.json').write_text(json.dumps(result,indent=2)+'\n')
-                        if row['verdict']=='FAIL': return 1
     assert actual=={str(p.relative_to(root)):sha(p) for p in root.rglob('*') if p.is_file()}
     passed=all(r['verdict']=='PASS' for r in result['results'])
     print(f"{'PASS' if passed else 'FAIL'} smoke matrix: {len(result['results'])} cases; served hashes unchanged",flush=True)

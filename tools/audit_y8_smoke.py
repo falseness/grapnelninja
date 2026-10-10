@@ -55,13 +55,21 @@ def audit(out):
         assert r['checks']['tutorial']['result']=='NOT_APPLICABLE'
         assert r['checks']['mute']['result']=='NOT_APPLICABLE'
         assert all(not present for present in result['feature_inventory'].values())
+        before=r['checks']['gameplay']['before']; after=r['checks']['gameplay']['after']
+        assert (before['x'],before['y']) != (after['x'],after['y'])
+        assert r['checks']['pause_resume']['paused']['paused']
+        assert not r['checks']['pause_resume']['resumed']['paused']
+        assert r['checks']['restart']['before'] != r['checks']['restart']['after']
+        assert r['checks']['save_reload']['saved'] == r['checks']['save_reload']['restored']
+        assert not r['real_sdk']
+        assert r['checks']['sdk_startup']['environment'] == ('y8' if r['sdk']=='immediate' else 'disabled')
         assert r['checks']['natural_death']['deaths']
         assert all('physics' in d['stack'] for d in r['checks']['natural_death']['deaths'])
         assert not r['errors'] and not r['request_failures'] and not r['external_blocked']
         assert not any(m['type']=='error' for m in r['console'])
         assert r['responses'] and all(q['status']<400 for q in r['responses'])
-        for name in result['file_hashes']:
-            assert any(q['url'].endswith('/'+name) or (name=='index.html' and q['url'].endswith('/')) for q in r['responses']),name
+        for resource in result['file_hashes']:
+            assert any(q['url'].endswith('/'+resource) or (resource=='index.html' and q['url'].endswith('/')) for q in r['responses']),resource
         if r['sdk']=='delayed': assert r['checks']['late_sdk']['result']=='PASS'
         assert {c['stage'] for c in r['captures']}=={'menu','gameplay','pause','death','restart','reload'}
         for c in r['captures']:
