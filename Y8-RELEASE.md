@@ -73,6 +73,33 @@ and a double real-rAF barrier. Canvas API durations cover synchronous calls;
 native Skia trace spans are partial. Neither measures complete GPU raster time.
 The six inherited local regressions and false readiness flags remain binding.
 
+`tools/profile_y8_live_geometry.py --out NEW_DIRECTORY` constructs a separate
+live geometry candidate from the current archive and checks the archive against
+committed runtime source. `tools/y8_live_geometry.js` bounds emitted rectangles,
+player ribbon envelopes and ring strokes under their actual transforms. It
+expands support through the unchanged blur chain and clips only the destination;
+unknown drawing support falls back to the full viewport. It has no pixel scanning
+or recorded-bounds cache. The supported helper and renderer bodies are concatenated into render/effects.js
+for integration, preserving the 34-file runtime inventory. The standalone tools
+remain outside the package.
+
+Validation uses both modes and three seeds, full serialized states, full source
+and final RGBA hashes, moving cameras, long trails, edge sparks, actual shake,
+menu/start, debounced resize, odd backing sizes and empty geometry. Only matching
+validation proceeds to three alternating untraced 30-second pairs per mode, at
+780×390 CSS / DPR2 with fresh contexts. Whole-frame intervals and zero-readback
+counts are retained; pixel hashing and geometry observations stay outside timing.
+`tools/audit_y8_live_geometry.py --out DIRECTORY` independently verifies hashes,
+coverage, comparisons and every paired result. Its exit zero means evidence
+integrity, including an honest rejection; it does not satisfy the release gate.
+The recorded experiment passed 138 full-state/source/final-pixel comparisons
+and all six untraced timing pairs, with candidate FPS of 6.92–7.56. This is a
+partial recovery, not proof that the historical 15.5–16.6 FPS deficit is resolved.
+Final-byte TASK-257 results and current readiness must be read from the evidence
+manifests; the experiment alone cannot mark the package ready.
+The attempt directories also preserve interrupted harness captures and their
+specific coverage/synchronization defects. Never promote their partial checks.
+
 Do not send the draft reviewer response until the local regression is resolved
 and the owner has completed `OWNER-CHECKLIST.txt`. Keep all artifacts, screenshots
 and unrelated `output/` files out of commits.
