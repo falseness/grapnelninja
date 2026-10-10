@@ -1,7 +1,7 @@
 """Build the Y8 upload zip from an explicit allowlist.
 
-The zip holds index.html at its root, the root *.js game files and the
-collision/, elements/, render/ and sprites/ folders. Every local reference in
+The zip holds only the explicit runtime inventory below, read from HEAD.
+Selected working-tree and index files must match that committed revision. Every local reference in
 index.html must be relative and present in the zip; the only external URL
 allowed is the Y8 SDK. The build fails unless y8config.js holds a real
 appId (24 hex chars) and gameId (digits).
@@ -13,6 +13,8 @@ import argparse
 import json
 import re
 import sys
+import subprocess
+import hashlib
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
@@ -21,10 +23,44 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = ROOT / 'artifacts' / 'y8-release' / 'grapnelninja-y8.zip'
 
-ROOT_FILES = ['index.html']
-ROOT_GLOBS = ['*.js']
+# Add runtime resources deliberately; filesystem globs are not release inputs.
+RUNTIME_FILES = [
+    'collision/broadphase.js',
+    'collision/circlewithcircle.js',
+    'collision/circlewithline.js',
+    'collision/linewithline.js',
+    'elements/factory.js',
+    'events.js',
+    'gameoptions.js',
+    'i18n.js',
+    'index.html',
+    'languagebutton.js',
+    'menu.js',
+    'moveScreen.js',
+    'physics.js',
+    'platform.js',
+    'progress.js',
+    'render/culling.js',
+    'render/draw.js',
+    'render/effects.js',
+    'render/glowsprites.js',
+    'respawn.js',
+    'sprites/element.js',
+    'sprites/empty.js',
+    'sprites/floor.js',
+    'sprites/grapnel.js',
+    'sprites/jumpingcube.js',
+    'sprites/leftwall.js',
+    'sprites/ninja.js',
+    'sprites/rect.js',
+    'sprites/scoretext.js',
+    'sprites/side.js',
+    'sprites/trampoline.js',
+    'sprites/triangle.js',
+    'style.js',
+    'y8config.js',
+]
 FOLDERS = ['collision', 'elements', 'render', 'sprites']
-FOLDER_SUFFIXES = {'.js'}
 EXCLUDED = ['tools', 'artifacts', 'screenshots', 'prompts.md', 'AGENTS.md',
             'README.md', '.git', '__pycache__']
 SDK_URL = 'https://cdn.y8.com/minimal-sdk/2-0/y8.min.js'
@@ -41,18 +77,48 @@ REF_ATTRS = {('script', 'src'), ('link', 'href'), ('img', 'src'),
 
 
 def allowlisted_files(root=ROOT):
-    """Return sorted zip paths (posix, relative to root) of the allowlist."""
-    paths = set()
-    for name in ROOT_FILES:
-        paths.add(name)
-    for pattern in ROOT_GLOBS:
-        paths.update(p.name for p in root.glob(pattern) if p.is_file())
-    for folder in FOLDERS:
-        for p in (root / folder).rglob('*'):
-            if p.is_file() and p.suffix in FOLDER_SUFFIXES \
-                    and '__pycache__' not in p.parts:
-                paths.add(p.relative_to(root).as_posix())
-    return sorted(paths)
+    """Explicit runtime paths; unrelated tracked/untracked files cannot enter."""
+    return list(RUNTIME_FILES)
+
+
+def git(root, *args):
+    try:
+        return subprocess.check_output(['git', '-C', str(root), *args],
+                                       stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit('committed Git source required: ' +
+                         exc.stderr.decode(errors='replace')) from exc
+
+
+def committed_source(root):
+    """Validate source identity, then read immutable Git blobs, never symlinks."""
+    root = root.resolve()
+    if Path(git(root, 'rev-parse', '--show-toplevel').decode().strip()) != root:
+        raise SystemExit('source must be a Git repository root')
+    revision = git(root, 'rev-parse', 'HEAD').decode().strip()
+    entries = {}
+    for entry in git(root, 'ls-tree', '-rz', revision).split(b'\0'):
+        if entry:
+            meta, name = entry.split(b'\t', 1)
+            mode, kind, oid = meta.decode().split()
+            entries[name.decode()] = (mode, kind, oid)
+    data = {}
+    for name in RUNTIME_FILES:
+        if name not in entries:
+            raise SystemExit(f'missing committed runtime file: {name}')
+        mode, kind, oid = entries[name]
+        if mode not in ('100644', '100755') or kind != 'blob':
+            raise SystemExit(f'unsafe committed runtime path: {name}')
+        path = root / name
+        if any(p.is_symlink() for p in [path, *path.parents] if p != root):
+            raise SystemExit(f'unsafe symlink runtime path: {name}')
+        blob = git(root, 'cat-file', 'blob', oid)
+        if not path.is_file() or path.read_bytes() != blob:
+            raise SystemExit(f'uncommitted runtime changes: {name}')
+        data[name] = blob
+    if git(root, 'diff', '--cached', revision, '--', *RUNTIME_FILES):
+        raise SystemExit('uncommitted runtime changes in index')
+    return revision, data
 
 
 class RefParser(HTMLParser):
@@ -110,20 +176,14 @@ def excluded_hits(zip_paths):
 
 def build(out, root=ROOT):
     """Write the zip; return (zip_paths, ref_lines). Raises SystemExit on errors."""
-    zip_paths = allowlisted_files(root)
-    missing = [p for p in zip_paths if not (root / p).is_file()]
-    if missing:
-        raise SystemExit(f'missing allowlisted files: {missing}')
-    hits = excluded_hits(zip_paths)
-    if hits:
-        raise SystemExit(f'excluded paths in the allowlist: {hits}')
-    config = root / CONFIG_FILE
-    if not config.is_file():
-        raise SystemExit(f'{CONFIG_FILE} is missing')
-    id_errors = check_y8_config(config.read_text(encoding='utf-8'))
+    revision, data = committed_source(root)
+    zip_paths = sorted(data)
+    id_errors = check_y8_config(data[CONFIG_FILE].decode('utf-8'))
     if id_errors:
         raise SystemExit(f'bad {CONFIG_FILE}:\n' + '\n'.join(id_errors))
-    html = (root / 'index.html').read_text(encoding='utf-8')
+    html = data['index.html'].decode('utf-8')
+    if not re.search(r'<meta\s+charset=[\'"]utf-8[\'"]', html, re.I):
+        raise SystemExit('index.html requires UTF-8 declaration')
     ref_lines, ref_errors = check_references(html, zip_paths)
     if ref_errors:
         raise SystemExit('bad index.html references:\n' + '\n'.join(ref_errors))
@@ -135,7 +195,7 @@ def build(out, root=ROOT):
             info = zipfile.ZipInfo(path, (2020, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
-            zf.writestr(info, (root / path).read_bytes())
+            zf.writestr(info, data[path])
     tmp.replace(out)
     return zip_paths, ref_lines
 
@@ -171,6 +231,7 @@ def main(argv=None):
     ap.add_argument('--listing', type=Path)
     ap.add_argument('--stats', type=Path)
     ap.add_argument('--refs', type=Path)
+    ap.add_argument('--inventory', type=Path, help='committed source and ZIP identity')
     args = ap.parse_args(argv)
 
     zip_paths, ref_lines = build(args.out)
@@ -186,6 +247,21 @@ def main(argv=None):
         args.stats.write_text(json.dumps(stats, indent=2) + '\n')
     if args.refs:
         args.refs.write_text('\n'.join(ref_lines) + '\n')
+    if args.inventory:
+        revision, data = committed_source(ROOT)
+        with zipfile.ZipFile(args.out) as archive:
+            if any(archive.read(p) != data[p] for p in zip_paths):
+                raise SystemExit('source changed during build')
+        args.inventory.write_text(json.dumps({
+            'source_revision': revision,
+            'zip': str(args.out.resolve()),
+            'byte_size': args.out.stat().st_size,
+            'sha256': hashlib.sha256(args.out.read_bytes()).hexdigest(),
+            'external_dependencies': [SDK_URL],
+            'files': [{'path': p, 'byte_size': len(data[p]),
+                       'sha256': hashlib.sha256(data[p]).hexdigest()}
+                      for p in zip_paths],
+        }, indent=2) + '\n')
     if not all(stats['checks'].values()):
         print('FAIL')
         return 1
