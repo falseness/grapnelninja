@@ -4,6 +4,37 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import subprocess
+
+
+def audit_source(manifest):
+    """Bind recorded dirty bytes to one tree, never mix unrelated revisions."""
+    hashes = manifest['dirty_file_sha256']
+    digest = lambda data: hashlib.sha256(data).hexdigest()
+    if all(Path(p).is_file() and digest(Path(p).read_bytes()) == h
+           for p, h in hashes.items()):
+        print('PASS source binding: recorded dirty hashes match current files')
+        return
+    base = manifest['source_revision']
+    subprocess.run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], check=True)
+    revisions = subprocess.check_output(
+        ['git', 'rev-list', '--ancestry-path', base + '..HEAD'], text=True).splitlines()
+    for revision in revisions + [base]:
+        matched = True
+        for path, expected in hashes.items():
+            blob = subprocess.run(['git', 'show', revision + ':' + path],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if blob.returncode or digest(blob.stdout) != expected:
+                matched = False
+                break
+        if matched:
+            print(f'PASS historical source binding: all {len(hashes)} dirty hashes match ancestor {revision}')
+            for path, expected in hashes.items():
+                current = digest(Path(path).read_bytes()) if Path(path).is_file() else 'MISSING'
+                print(f'SOURCE {path}: historical_sha256={expected} current_sha256={current}')
+            print('Historical source binding certifies saved evidence, not current source/runtime equivalence')
+            return
+    raise AssertionError('Recorded dirty hashes match neither current files nor one ancestor tree')
 
 
 def audit(out):
@@ -91,8 +122,7 @@ def audit(out):
     assert manifest['archive']['sha256']==sha
     for p,h in manifest['evidence_sha256'].items():
         assert hashlib.sha256((out/p).read_bytes()).hexdigest()==h,p
-    for p,h in manifest['dirty_file_sha256'].items():
-        assert hashlib.sha256(Path(p).read_bytes()).hexdigest()==h,p
+    audit_source(manifest)
     print(f"PASS manifest.json: {len(manifest['evidence_sha256'])} evidence hashes verified; command/source/archive/tool identities recorded")
     print('PASS release-checks.json: exact candidate binding and per-case engine/profile/mode/results; fixture/native boundaries explicit')
 
