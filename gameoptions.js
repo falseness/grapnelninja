@@ -171,8 +171,10 @@ function configureCanvasViewport(canvas, context)
     canvas.style.top = rect.top + 'px'
     canvas.style.width = rect.width + 'px'
     canvas.style.height = rect.height + 'px'
-    canvas.width = Math.max(1, Math.round(rect.width * dpr))
-    canvas.height = Math.max(1, Math.round(rect.height * dpr))
+    const backingWidth = Math.max(1, Math.round(rect.width * dpr))
+    const backingHeight = Math.max(1, Math.round(rect.height * dpr))
+    if (canvas.width != backingWidth) canvas.width = backingWidth
+    if (canvas.height != backingHeight) canvas.height = backingHeight
 
     context.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0)
 }

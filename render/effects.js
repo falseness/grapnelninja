@@ -52,8 +52,10 @@ function configureWindowBackground()
         barCanvas.style.top = box.top + 'px'
         barCanvas.style.width = box.width + 'px'
         barCanvas.style.height = box.height + 'px'
-        barCanvas.width = Math.max(1, Math.ceil(box.width * WINDOW_BACKGROUND_SCALE))
-        barCanvas.height = Math.max(1, Math.ceil(box.height * WINDOW_BACKGROUND_SCALE))
+        const backingWidth = Math.max(1, Math.ceil(box.width * WINDOW_BACKGROUND_SCALE))
+        const backingHeight = Math.max(1, Math.ceil(box.height * WINDOW_BACKGROUND_SCALE))
+        if (barCanvas.width != backingWidth) barCanvas.width = backingWidth
+        if (barCanvas.height != backingHeight) barCanvas.height = backingHeight
     })
 }
 

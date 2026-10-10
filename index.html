@@ -526,12 +526,18 @@
             {
                 resizeTimer = null
                 const oldWidth = width
-                updateLogicalViewport()
+                const widthChanged = updateLogicalViewport()
                 configureCanvasViewport(canvas, ctx)
                 configureWindowBackground()
                 ctx.lineCap = 'butt'
-                rebuildMenu()
-                continueOffer.layout(width, height)
+                // CSS size changes also change the logical minimum touch target.
+                const layoutKey = [width, minTouchSize()].join()
+                if (onViewportResize.layoutKey != layoutKey)
+                {
+                    rebuildMenu()
+                    continueOffer.layout(width, height)
+                    onViewportResize.layoutKey = layoutKey
+                }
 
                 if (version && screen)
                 {
@@ -539,9 +545,12 @@
                     screen.leftWall.update(screen)
                     layoutHud()
                     // Factories capture width-derived sizes; they hold no run state.
-                    elementsFactory = new ElementsFactory
-                    for (let i = 0; i < floors.length; ++i)
-                        floors[i].rescaleSpacing(width / oldWidth)
+                    if (widthChanged)
+                    {
+                        elementsFactory = new ElementsFactory
+                        for (let i = 0; i < floors.length; ++i)
+                            floors[i].rescaleSpacing(width / oldWidth)
+                    }
                 }
 
                 if (menu.visible)
@@ -584,6 +593,20 @@
                 clearTimeout(resizeTimer)
                 resizeTimer = setTimeout(onViewportResize, 100)
             })
+
+            // Moving between monitors can change DPR without a resize event.
+            // Re-arm the query after each change; keep exactly one listener.
+            function watchPixelDensity()
+            {
+                const query = window.matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)')
+                query.addEventListener('change', function changed() {
+                    query.removeEventListener('change', changed)
+                    configureCanvasViewport(canvas, ctx)
+                    ctx.lineCap = 'butt'
+                    watchPixelDensity()
+                })
+            }
+            watchPixelDensity()
 
             // Focus loss and a hidden tab pause the run; during the rewarded
             // ad the pause waits for the respawn
