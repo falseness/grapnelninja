@@ -1,6 +1,6 @@
 """Assemble the TASK-270 inspection kit; audit integrity separately from readiness.
 
-Offline only. Preserve the previous release before replacing its mutable alias.
+Offline only. Preserve previous releases and select fresh immutable output paths.
 `--audit` validates sealed bytes; `--require-ready` additionally enforces local gates.
 """
 import argparse
@@ -15,18 +15,16 @@ import subprocess
 import sys
 import zipfile
 
+import y8_readiness as readiness_eval
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/TASK-270'
 RELEASE = ROOT / 'artifacts/y8-release'
 KIT = ROOT / 'artifacts/y8-submission-kit.zip'
-OWNER = ['Physical Android Chrome and iPhone Safari', 'Y8 preview/fullscreen',
-         'Native interrupted touch and suspension', 'Natural death/restart on phones',
-         'Hosted live ad outcomes', 'Hardware FPS and interactive DevTools/throttle reproduction',
-         'Console media slots and video requirements', 'Console upload', 'Moderation submission/approval']
-FPS = ('Six inherited matched-density FAIL_MEASURED_REGRESSION results remain unresolved. '
-       'Bounded glow drawing is a partial improvement; adaptive resolution can soften output. '
-       'Reduced-resolution FPS gains are not equal-quality optimization gains. '
-       'Software browser results do not certify native-phone or hardware FPS.')
+OWNER = readiness_eval.OWNER
+FPS = readiness_eval.QUALIFICATION
+INPUTS = None
+HISTORY = OUT / "historical-relocations.json"
 
 
 def sha(p):
@@ -71,15 +69,26 @@ def zip_inventory(path):
     return inventory
 
 
-def check_package():
+def check_package(historical=False):
     m = read(RELEASE / 'manifest.json')
-    expected = {r['path']: r['sha256'] for r in read(ROOT / 'artifacts/TASK-267/candidate.json')['packed_file_inventory']}
+    candidate_path = OUT / 'candidate-input.json'
+    relocations = read(HISTORY) if HISTORY.exists() else {}
+    if candidate_path.exists():
+        candidate = read(candidate_path)
+    else:
+        path = 'artifacts/TASK-267/candidate.json'
+        candidate = json.loads(readiness_eval.historical_bytes(ROOT, path, m['external_evidence_sha256'][path], m['assembly_source_revision'], relocations))
+    expected = {r['path']: r['sha256'] for r in candidate['packed_file_inventory']}
     game = zip_inventory(RELEASE / 'grapnelninja-y8.zip')
     require(game == expected, 'Wrong game inventory')
-    require(sha(RELEASE / 'grapnelninja-y8.zip') == m['zip']['sha256'] == sha(ROOT / 'artifacts/TASK-267/grapnelninja-y8.zip'), 'Candidate identity differs')
+    require(sha(RELEASE / 'grapnelninja-y8.zip') == m['zip']['sha256'] == candidate['sha256'], 'Candidate identity differs')
+    if not historical:
+        require(sha(ROOT / candidate['archive']) == candidate['sha256'], 'Selected current archive differs')
     for n, h in game.items():
-        require(sha(ROOT / n) == h == sha(ROOT / 'artifacts/TASK-267/extracted' / n), 'Current/tested runtime differs: ' + n)
-        blob = subprocess.check_output(['git', 'show', 'HEAD:' + n], cwd=ROOT)
+        if not historical:
+            require(sha(ROOT / n) == h, 'Current/tested runtime differs: ' + n)
+        revision = candidate['source_revision'] if historical else 'HEAD'
+        blob = subprocess.check_output(['git', 'show', revision + ':' + n], cwd=ROOT)
         require(hashlib.sha256(blob).hexdigest() == h, 'Committed runtime differs: ' + n)
     kit = zip_inventory(KIT)
     expected_kit = {str(p.relative_to(RELEASE)): sha(p) for p in RELEASE.rglob('*') if p.is_file()}
@@ -101,42 +110,62 @@ def check_package():
     for p, h in m['files'].items():
         require(sha(RELEASE / p) == h, 'Release member differs: ' + p)
     for p, h in m['external_evidence_sha256'].items():
-        require(sha(ROOT / p) == h, 'External handoff reference differs: ' + p)
+        if historical:
+            readiness_eval.historical_bytes(ROOT, p, h, m['assembly_source_revision'], relocations)
+        else:
+            require(sha(ROOT / p) == h, 'External handoff reference differs: ' + p)
         print('REFERENCE', p, h)
     text = (RELEASE / 'TEST-RESULTS.txt').read_text()
     require(m['zip']['sha256'] in text and m['source_revision'] in text and m['build_tag'] in text, 'Test identity mismatch')
-    require(all(m[k] is False for k in ('package_ready', 'submission_ready', 'moderation_approved', 'uploaded')), 'Unsupported readiness')
+    r = read(OUT / 'readiness.json')
+    require(m['package_ready'] == r['all_required_local_pass'] == read(RELEASE / 'requirements.json')['all_required_local_pass'], 'Readiness propagation differs')
+    require(m['local_blockers'] == r['local_blockers'] == read(RELEASE / 'requirements.json')['local_blockers'], 'Blocker propagation differs')
+    require(all(m[k] is False for k in ('submission_ready', 'moderation_approved', 'uploaded')), 'Unsupported owner claim')
     require('NOT PERFORMED' in text and FPS in text, 'Missing qualifications')
     print('PASS handoff references, 9 media provenance hashes, instructions and strict allowlist; no raw QA, secrets or output/')
-    print('PASS source/build/hash/test agreement; package_ready=false submission_ready=false moderation_approved=false')
+    require('package_ready=' + str(m['package_ready']).lower() in text, 'Text readiness differs')
+    print('PASS source/build/hash/test agreement; package_ready=' + str(m['package_ready']).lower() + ' submission_ready=false moderation_approved=false')
 
 
-def audit():
+def audit(require_current=False):
     m = read(OUT / 'manifest.json')
     require((OUT / 'manifest.sha256').read_text().split()[0] == sha(OUT / 'manifest.json'), 'Manifest seal differs')
+    relocations = read(OUT / 'historical-relocations.json')
+    if HISTORY.exists():
+        relocations.update(read(HISTORY))
     for p, h in m['evidence_sha256'].items():
-        require(sha(ROOT / p) == h, 'Evidence changed: ' + p)
+        readiness_eval.historical_bytes(ROOT, p, h, m['source_revision'], relocations)
     for p, h in m['dirty_file_sha256'].items():
-        require(sha(ROOT / p) == h, 'Source changed: ' + p)
+        snapshot = OUT / 'source-snapshot' / p
+        if snapshot.exists():
+            require(sha(snapshot) == h, 'Captured source differs: ' + p)
+        else:
+            readiness_eval.historical_bytes(ROOT, p, h, m['source_revision'], relocations)
     r = read(OUT / 'readiness.json')
-    current = read(ROOT / 'artifacts/tasks.json')
-    current = current if isinstance(current, list) else current['tasks']
-    selected = [t for t in current if t['id'] in {f'TASK-{n}' for n in range(252, 270)}]
-    require([t['id'] for t in selected] == [t['id'] for t in r['tickets']], 'Wrong readiness scope')
-    for t, saved in zip(selected, r['tickets']):
-        require(t['status'] == saved['status'], 'Task status changed')
-        require({k: t[k] for k in ('artifacts_feedback', 'code_feedback')} == saved['feedback'], 'Feedback changed')
-        require(t['status'] == 'done' or saved['result'] == 'UNRESOLVED', 'Autoskip reported passed')
-    require(not r['all_required_local_pass'] and r['local_blockers'], 'Failure hidden')
+    saved = read(OUT / 'tasks-input.json')
+    require([t['id'] for t in saved] == readiness_eval.SCOPE, 'Wrong readiness scope')
+    if require_current:
+        current = read(ROOT / 'artifacts/tasks.json')
+        current = current if isinstance(current, list) else current['tasks']
+        require(saved == [t for t in current if t['id'] in readiness_eval.SCOPE], 'Task state changed; create a fresh readiness evaluation')
+    require([t['id'] for t in r['tickets']] == readiness_eval.SCOPE, 'Wrong ticket scope')
+    if r.get('schema') == 1:
+        require(sha(r['input']['path']) == r['input']['sha256'], 'Readiness input changed; use fresh evaluation')
+        require(readiness_eval.evaluate_file(r['input']['path']) == r, 'Readiness differs from validated inputs')
+    else:
+        # Legacy snapshots retain their historical verdict. Never reinterpret a
+        # sealed old snapshot as a new ready result or compare it to live tasks.
+        require(not r['all_required_local_pass'] and r['local_blockers'], 'Invalid legacy readiness')
     require(all(v == 'NOT PERFORMED' for v in r['owner_checks'].values()), 'Owner pass invented')
     h = read(OUT / 'handoff.json')
+    require(h.get('package_ready', r['all_required_local_pass']) == r['all_required_local_pass'] and h['local_blockers'] == r['local_blockers'], 'Handoff readiness differs')
     for item in h['files']:
         require(Path(item['path']).is_absolute() and sha(item['path']) == item['sha256'], 'Handoff identity differs')
-    check_package()
+    check_package(historical=not require_current)
     print(f"PASS manifest.json: {len(m['evidence_sha256'])} sealed evidence hashes; commands/exit codes/UTC/source/tool versions")
-    print('PASS readiness.json: exactly TASK-252–269; TASK-265 autoskip UNRESOLVED; owner checks NOT PERFORMED')
+    print('PASS readiness.json: exactly TASK-252–269; snapshot state checked; owner checks NOT PERFORMED')
     print('PASS handoff.json: absolute paths and hashes; honest FPS qualification; local inspection only')
-    print('FAIL required-local-readiness: six measured regressions; TASK-270 must remain pending')
+    print(('PASS' if r['all_required_local_pass'] else 'FAIL') + ' required-local-readiness: ' + '; '.join(r['local_blockers']))
 
 
 def check_prior():
@@ -146,33 +175,35 @@ def check_prior():
         m = read(base / 'manifest.json')
         require((base / 'manifest.sha256').read_text().split()[0] == sha(base / 'manifest.json'), 'Prior manifest seal differs')
         for p, expected in m['evidence_sha256'].items():
-            source = base / p if n == 268 else ROOT / p
-            if source.is_file() and sha(source) == expected:
-                total += 1
-                continue
-            require(not p.startswith('artifacts/'), 'Historical artifact changed: ' + p)
-            subprocess.run(['git', 'merge-base', '--is-ancestor', m['source_revision'], 'HEAD'], cwd=ROOT, check=True)
-            blob = subprocess.check_output(['git', 'show', m['source_revision'] + ':' + p], cwd=ROOT)
-            require(hashlib.sha256(blob).hexdigest() == expected, 'Historical source differs: ' + p)
-            print('PASS historical source at', m['source_revision'], p, expected,
-                  '(current source changed; not a historical evidence failure)')
+            source_path = rel(base / p) if n == 268 and not p.startswith('artifacts/') else p
+            relocations = read(HISTORY) if HISTORY.exists() else {}
+            readiness_eval.historical_bytes(ROOT, source_path, expected, m['source_revision'], relocations)
             total += 1
-    current = read(ROOT / 'artifacts/tasks.json')
-    current = current if isinstance(current, list) else current['tasks']
-    current = {t['id']: t for t in current}
-    for t in read(ROOT / 'artifacts/TASK-266/evidence-audit.json')['tickets']:
-        require(t['status'] == current[t['id']]['status'], 'Prior status changed')
-        require(t['feedback'] == {k:current[t['id']][k] for k in ('artifacts_feedback', 'code_feedback')}, 'Prior feedback changed')
-        for resolution in t['resolutions']:
-            content = (ROOT / resolution['resolution_artifact']).read_text(errors='replace')
-            require(bool(content), 'Empty resolution evidence')
-            require(all(marker in content for marker in resolution['content_markers']), 'Resolution markers missing')
-    print('PASS historical evidence:', total, 'hashes; TASK-252–265 statuses/feedback/resolution markers checked')
+    print('PASS historical evidence:', total, 'hashes; recorded source/relocations; current task state evaluated separately')
 
 
 def assemble():
-    OUT.mkdir(exist_ok=True, parents=True)
-    require(not (OUT / 'manifest.json').exists(), 'Preserve existing run; do not overwrite evidence')
+    global INPUTS
+    require(INPUTS is not None, 'Select immutable --inputs and fresh --out/--release/--kit locations')
+    readiness = readiness_eval.evaluate_file(INPUTS)
+    require(not readiness['synthetic'], 'Synthetic fixtures cannot create release evidence')
+    require(readiness['all_required_local_pass'], 'Required local evidence remains failing: ' + '; '.join(readiness['local_blockers']))
+    selection = read(INPUTS)
+    selected = readiness_eval.load(selection['tasks'], INPUTS.parent)
+    current = read(ROOT / 'artifacts/tasks.json')
+    current = current if isinstance(current, list) else current['tasks']
+    require(selected == [t for t in current if t['id'] in readiness_eval.SCOPE], 'Task inputs stale; evaluate fresh state')
+    candidate_path = INPUTS.parent / selection['candidate']['path']
+    candidate = readiness_eval.load(selection['candidate'], INPUTS.parent)
+    require(candidate == read(ROOT / 'artifacts/TASK-267/candidate.json'), 'Candidate differs from upstream verified selection')
+    require(RELEASE != ROOT / 'artifacts/y8-release' and KIT != ROOT / 'artifacts/y8-submission-kit.zip', 'Use fresh release/kit paths; preserve historical aliases')
+    require(not RELEASE.exists() and not KIT.exists(), 'Output already exists')
+    require(not OUT.exists(), 'Use an absent output directory; preserve all previous attempts')
+    OUT.mkdir(parents=True)
+    INPUTS = readiness_eval.snapshot_inputs(INPUTS, OUT / 'inputs')
+    readiness = readiness_eval.evaluate_file(INPUTS)
+    require(readiness['all_required_local_pass'], 'Input snapshot validation failed')
+    candidate_path = INPUTS.parent / selection['candidate']['path']
     commands = []
     evidence = {}
 
@@ -190,16 +221,16 @@ def assemble():
     require(run(['git', 'branch', '--show-current'], 'branch.log') == 'y8', 'Wrong branch')
     run(['git', 'status', '--short'], 'git-status-before.log')
     run(['git', 'diff', '--check'], 'diff-check.log')
-    run([sys.executable, 'tools/assemble_y8_submission.py', '--prior-check'], 'prior-audit.log')
+    run([sys.executable, 'tools/assemble_y8_submission.py', '--prior-check', '--history', str(HISTORY)], 'prior-audit.log')
     run([sys.executable, 'tools/audit_y8_candidate.py', '--out', 'artifacts/TASK-268'], 'candidate-audit.log')
     run([sys.executable, 'artifacts/TASK-269/audit.py'], 'media-audit.log')
-    # Preserve mutable aliases before their deliberate replacement. Historical
+    # Preserve historical aliases; new release outputs use fresh paths. Historical
     # manifests remain untouched; relocation records bind the exact old bytes.
     previous = OUT / 'previous-release'
     require(not previous.exists(), 'Previous release already saved')
-    shutil.copytree(RELEASE, previous)
-    if KIT.exists():
-        shutil.copyfile(KIT, OUT / 'previous-submission-kit.zip')
+    shutil.copytree(ROOT / 'artifacts/y8-release', previous)
+    if (ROOT / 'artifacts/y8-submission-kit.zip').exists():
+        shutil.copyfile(ROOT / 'artifacts/y8-submission-kit.zip', OUT / 'previous-submission-kit.zip')
     relocations = {}
     for n in (266, 267, 268, 269):
         base = ROOT / f'artifacts/TASK-{n}'
@@ -207,57 +238,27 @@ def assemble():
         evidence[rel(mp)] = sha(mp)
         for p, expected in read(mp)['evidence_sha256'].items():
             source = ROOT / p if p.startswith('artifacts/') or n != 268 else base / p
-            if sha(source) != expected:
-                require(not p.startswith('artifacts/'), 'Historical artifact differs: ' + p)
-                revision_at_capture = read(mp)['source_revision']
-                blob = subprocess.check_output(['git', 'show', revision_at_capture + ':' + p], cwd=ROOT)
-                require(hashlib.sha256(blob).hexdigest() == expected, 'Historical source differs: ' + p)
-                snapshot = OUT / 'historical-source' / f'TASK-{n}' / p
+            blob = readiness_eval.historical_bytes(ROOT, rel(source), expected, read(mp)['source_revision'], read(HISTORY) if HISTORY.exists() else {})
+            if not source.is_file() or sha(source) != expected or source.is_relative_to(ROOT / 'artifacts/y8-release'):
+                snapshot = OUT / 'historical-source' / f'TASK-{n}' / rel(source)
                 snapshot.parent.mkdir(parents=True, exist_ok=True)
                 snapshot.write_bytes(blob)
-                relocations[rel(source)] = dict(path=rel(snapshot), sha256=expected,
-                    source_revision=revision_at_capture, policy='Reconstructed from exact ancestor Git blob; not a new historical run')
+                relocations[rel(source)] = dict(path=rel(snapshot), sha256=expected, source_revision=read(mp)['source_revision'])
                 source = snapshot
-            if source.is_relative_to(RELEASE):
-                replacement = previous / source.relative_to(RELEASE)
-                require(sha(replacement) == expected, 'Preservation failed')
-                relocations[rel(source)] = dict(path=rel(replacement), sha256=expected)
-                source = replacement
             evidence[rel(source)] = expected
     write(OUT / 'historical-relocations.json', relocations)
     print('PASS historical evidence preserved; mutable release references relocated:', len(relocations))
-    current = read(ROOT / 'artifacts/tasks.json')
-    current = current if isinstance(current, list) else current['tasks']
-    selected = [t for t in current if t['id'] in {f'TASK-{n}' for n in range(252, 270)}]
-    require(len(selected) == 18, 'Missing task')
     write(OUT / 'tasks-input.json', selected)
-    prior = {t['id']: t for t in read(ROOT / 'artifacts/TASK-266/evidence-audit.json')['tickets']}
-    tickets = []
-    for t in selected:
-        tickets.append(dict(id=t['id'], status=t['status'],
-            result='UNRESOLVED' if t['status'] != 'done' else 'VERIFIED_EVIDENCE',
-            feedback={k: t[k] for k in ('artifacts_feedback', 'code_feedback')},
-            acceptance_criteria=t['acceptance_criteria'], test_steps=t['test_steps'],
-            prior_resolution=prior.get(t['id']),
-            evidence_manifest=f"artifacts/{t['id']}/manifest.json"))
-    gate_path = ROOT / 'artifacts/TASK-265/live-geometry/final-byte/performance/performance-gate.json'
-    gate = read(gate_path)
-    failures = [r['id'] for r in gate['runs'] if r['verdict'] == 'FAIL_MEASURED_REGRESSION']
-    require(len(failures) == 6, 'Reassess changed performance results')
-    blockers = ['TASK-265 autoskip is unresolved, not PASS', 'Six inherited FAIL_MEASURED_REGRESSION results: ' + ', '.join(failures)]
-    readiness = dict(scope='TASK-252 through TASK-269 only', tickets=tickets,
-        all_required_local_pass=False, local_blockers=blockers,
-        performance_evidence=rel(gate_path), performance_qualification=FPS,
-        owner_checks={k: 'NOT PERFORMED' for k in OWNER}, submission_ready=False,
-        moderation_approved=False, task270_acceptance='FAIL: unresolved local performance; remain pending')
+    write(OUT / 'candidate-input.json', candidate)
+    tickets = readiness['tickets']
+    blockers = readiness['local_blockers']
+    gate_path = INPUTS.parent / selection['performance']['path']
     write(OUT / 'readiness.json', readiness)
-    candidate = read(ROOT / 'artifacts/TASK-267/candidate.json')
     media = read(ROOT / 'artifacts/TASK-269/media-review.json')
     handoff = read(ROOT / 'artifacts/TASK-269/handoff-review.json')
     require(media['candidate'] == handoff['candidate_sha256'] == candidate['sha256'], 'Review candidate differs')
-    # Replace only the generated release; unrelated output/ is never touched.
-    shutil.rmtree(RELEASE)
-    RELEASE.mkdir()
+    # Create the explicitly selected fresh release; preserve old aliases.
+    RELEASE.mkdir(parents=True)
     shutil.copyfile(ROOT / candidate['archive'], RELEASE / 'grapnelninja-y8.zip')
     for a in media['assets']:
         src = ROOT / a['path']
@@ -271,7 +272,7 @@ def assemble():
     (RELEASE / 'LISTING.txt').write_text('\n'.join(sentences[:10]) + '\n')
     (RELEASE / 'REVIEWER-RESPONSE.txt').write_text('DRAFT — owner must validate before sending\n' + '\n'.join(sentences[10:]) + '\n')
     owner = (ROOT / 'Y8-OWNER-CHECKLIST.md').read_text()
-    owner = owner.replace('artifacts/TASK-267/grapnelninja-y8.zip', 'grapnelninja-y8.zip (beside this checklist; workspace: artifacts/y8-release/grapnelninja-y8.zip)')
+    owner = owner.replace('artifacts/TASK-267/grapnelninja-y8.zip', 'grapnelninja-y8.zip (beside this checklist; workspace: ' + rel(RELEASE / 'grapnelninja-y8.zip') + ')')
     owner = owner.replace('Y8-MEDIA-HANDOFF.md', 'LISTING.txt, REVIEWER-RESPONSE.txt and media-manifest.json')
     owner = owner.replace('- artifacts/y8-release/ contains an older archive and historical instructions.\n  Do not select that archive or its stale recapture claim for this handoff.',
         '- This TASK-270 kit supersedes the older release. Historical QA references below\n  are workspace-only evidence, not files required inside the submission kit.')
@@ -280,13 +281,13 @@ def assemble():
     (RELEASE / 'TEST-RESULTS.txt').write_text(identity +
         'PASS archived exact-candidate checks: 18 browser cases, 6 startup/storage cases, 4 mobile embed runs, 160 lifecycle cases, 24 offline ad flows.\n'
         'PASS media review: six covers and three screenshots; original TASK-263 capture provenance retained.\n'
-        'Historical captures are not new final-build screenshots.\n' + FPS + '\n'
-        'FAIL required local readiness: TASK-265 remains autoskip/UNRESOLVED.\n'
+        'Historical captures are not new final-build screenshots.\n' + FPS + '\n' +
+        ('PASS' if readiness['all_required_local_pass'] else 'FAIL') + ' required local readiness: ' + '; '.join(blockers) + '\n' +
         'Owner checks NOT PERFORMED: ' + '; '.join(OWNER) + '\n'
-        'package_ready=false; submission_ready=false; moderation_approved=false; uploaded=false\n'
+        'package_ready=' + str(readiness['all_required_local_pass']).lower() + '; submission_ready=false; moderation_approved=false; uploaded=false\n'
         'Evidence references and hashes: manifest.json external_evidence_sha256 (local workspace, not included in kit).\n')
     (RELEASE / 'UPLOAD.txt').write_text(identity +
-        'LOCAL INSPECTION ONLY — resolve local performance gate before owner submission.\n'
+        'LOCAL PREPARATION ONLY — owner checks remain before submission.\n'
         'Owner later uploads only grapnelninja-y8.zip, with root index.html. This kit is not the game upload.\n'
         'Use LISTING.txt, media/, screenshots/ and media-manifest.json; verify actual console slots.\n'
         'Complete OWNER-CHECKLIST.txt, inspect TEST-RESULTS.txt and requirements.json, then review REVIEWER-RESPONSE.txt.\n'
@@ -294,19 +295,19 @@ def assemble():
     write(RELEASE / 'requirements.json', dict(
         scope=readiness['scope'],
         tickets=[dict(id=t['id'], status=t['status'], result=t['result']) for t in tickets],
-        all_required_local_pass=False, local_blockers=blockers,
+        all_required_local_pass=readiness['all_required_local_pass'], local_blockers=blockers,
         owner_checks=readiness['owner_checks'], performance_qualification=FPS,
-        evidence='External workspace: artifacts/TASK-270/readiness.json'))
+        evidence='External workspace: ' + rel(OUT / 'readiness.json')))
     # The kit carries reference metadata, never the underlying QA payload.
     external = ['artifacts/TASK-267/candidate.json', 'artifacts/TASK-268/release-checks.json',
                 'artifacts/TASK-269/media-review.json', 'artifacts/TASK-269/handoff-review.json',
                 'artifacts/TASK-266/performance-claims.json', rel(gate_path),
-                'artifacts/TASK-270/readiness.json', 'artifacts/TASK-270/historical-relocations.json',
+                rel(OUT / 'readiness.json'), rel(OUT / 'historical-relocations.json'), rel(candidate_path), rel(INPUTS),
                 'artifacts/TASK-268/manifest.json']
     manifest = dict(created_utc=now(), source_revision=candidate['source_revision'],
         assembly_source_revision=revision, build_tag=candidate['build_tag'],
         zip=dict(file='grapnelninja-y8.zip', sha256=candidate['sha256'], bytes=candidate['byte_count']),
-        package_ready=False, local_package_prepared=True, submission_ready=False,
+        package_ready=readiness['all_required_local_pass'], local_package_prepared=True, submission_ready=False,
         moderation_approved=False, uploaded=False, local_blockers=blockers,
         external_evidence_scope='Workspace-only references; raw QA deliberately excluded from kit',
         external_evidence_sha256={p: sha(ROOT / p) for p in external},
@@ -323,9 +324,9 @@ def assemble():
         files=[dict(path=str(p.resolve()), sha256=sha(p)) for p in
                [KIT, RELEASE / 'grapnelninja-y8.zip', RELEASE / 'manifest.json', RELEASE / 'OWNER-CHECKLIST.txt']],
         source_revision=candidate['source_revision'], build_tag=candidate['build_tag'],
-        local_blockers=blockers, outstanding_owner_checks={k:'NOT PERFORMED' for k in OWNER},
+        package_ready=readiness['all_required_local_pass'], local_blockers=blockers, outstanding_owner_checks={k:'NOT PERFORMED' for k in OWNER},
         fps_qualification=FPS, uploaded=False, submission_ready=False, moderation_approved=False))
-    run([sys.executable, 'tools/assemble_y8_submission.py', '--package-check'], 'package-check.log')
+    run([sys.executable, 'tools/assemble_y8_submission.py', '--package-check', '--out', str(OUT), '--release', str(RELEASE), '--kit', str(KIT)], 'package-check.log')
     history = run(['git', 'log', '--format=%H %s', '--name-only', 'b72ff271..HEAD'], 'committed-paths.log')
     require(not any(line.startswith(('artifacts/', 'screenshots/')) for line in history.splitlines()), 'Forbidden committed paths')
     staged = run(['git', 'diff', '--cached', '--name-only'], 'staged-paths.log')
@@ -342,30 +343,45 @@ def assemble():
     for p in external:
         evidence[p] = sha(ROOT / p)
     evidence.update(files(OUT))
-    dirty = {p:sha(ROOT / p) for p in ['tools/assemble_y8_submission.py', 'Y8-SUBMISSION-KIT.md']}
+    dirty = {p:sha(ROOT / p) for p in ['tools/assemble_y8_submission.py', 'tools/y8_readiness.py', 'Y8-SUBMISSION-KIT.md']}
+    for p in dirty:
+        snapshot = OUT / 'source-snapshot' / p
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / p, snapshot)
+    evidence.update(files(OUT / 'source-snapshot'))
     m = dict(created_utc=now(), source_revision=revision, dirty_file_sha256=dirty,
         environment=environment, commands=commands, archive=manifest['zip'], evidence_sha256=evidence,
-        invocation=sys.argv, integrity='PASS: sealed bytes; readiness is a separate failing gate',
+        invocation=sys.argv, integrity='PASS: sealed bytes; readiness evaluated separately',
         historical_relocations=rel(OUT / 'historical-relocations.json'))
     write(OUT / 'manifest.json', m)
-    (OUT / 'manifest.sha256').write_text(sha(OUT / 'manifest.json') + '  artifacts/TASK-270/manifest.json\n')
-    print('PASS inspection kit assembled; required-local-readiness FAIL; TASK-270 remains pending')
+    (OUT / 'manifest.sha256').write_text(sha(OUT / 'manifest.json') + '  ' + rel(OUT / 'manifest.json') + '\n')
+    print('PASS local preparation assembled; owner checks NOT PERFORMED; no submission/moderation claim')
 
 
 def main():
+    global OUT, RELEASE, KIT, INPUTS, HISTORY
     ap = argparse.ArgumentParser(description=__doc__)
     modes = ap.add_mutually_exclusive_group()
     modes.add_argument('--prior-check', action='store_true')
     modes.add_argument('--audit', action='store_true')
     modes.add_argument('--package-check', action='store_true')
     modes.add_argument('--require-ready', action='store_true')
+    ap.add_argument('--inputs', type=Path, help='Immutable readiness selection JSON; required for fresh assembly')
+    ap.add_argument('--out', type=Path, default=OUT)
+    ap.add_argument('--release', type=Path, default=RELEASE)
+    ap.add_argument('--kit', type=Path, default=KIT)
+    ap.add_argument('--history', type=Path, default=HISTORY)
     args = ap.parse_args()
+    OUT, RELEASE, KIT = args.out.resolve(), args.release.resolve(), args.kit.resolve()
+    INPUTS = args.inputs.resolve() if args.inputs else None
+    HISTORY = args.history.resolve()
+    require(all(p.is_relative_to(ROOT / 'artifacts') for p in (OUT, RELEASE, KIT)), 'Outputs must stay in artifacts/')
     if args.prior_check:
         check_prior()
     elif args.package_check:
         check_package()
     elif args.audit or args.require_ready:
-        audit()
+        audit(require_current=args.require_ready)
         if args.require_ready:
             require(read(OUT / 'readiness.json')['all_required_local_pass'], 'Required local performance gate remains FAIL')
     else:

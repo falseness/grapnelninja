@@ -24,16 +24,55 @@ output. Workspace evidence references in manifest.json are explicitly external;
 they are not payloads for upload. Only the inner game ZIP is a future game
 upload, after the unresolved local gate and owner checks are addressed.
 
-`python3 tools/assemble_y8_submission.py` assembles once and preserves previous
-release bytes under `artifacts/TASK-270/previous-release/`. Historical manifests
-are never rewritten. `historical-relocations.json` maps the old mutable release
-references to their saved byte-identical files. Earlier audits that directly
-follow the mutable alias must use this relocation map after assembly.
+The original assembly preserved previous release bytes under
+`artifacts/TASK-270/previous-release/`. Historical manifests remain unchanged;
+`historical-relocations.json` maps replaced aliases to their saved bytes. The
+saved integrity PASS is reusable while runtime, candidate and evidence stay
+unchanged. It is not a performance recovery result. Default assembly now requires
+explicit inputs and fresh output paths, described below.
 
-`python3 tools/assemble_y8_submission.py --audit` checks archive CRCs, full
-inventories, current/committed/tested runtime identity, all sealed evidence
-hashes, handoff references and readiness consistency without running browsers.
-Exit zero means integrity, not performance recovery. `--require-ready` also
-enforces the local gate and must fail while the recorded regressions persist.
-Both results are retained as command/exit-coded evidence. Use a new evidence
-run for future changes; do not overwrite failed attempts or their manifests.
+TASK-270 readiness tooling now evaluates explicit immutable inputs. The finite
+old/new offline comparison is recorded in
+`artifacts/TASK-270/evaluator-experiment/`; its synthetic fixtures test logic,
+not FPS recovery or release acceptance. Do not repeat that experiment or the
+unchanged package checks as a new implementation attempt. The saved real six
+failures still block local readiness; TASK-265 owns the remaining rendering work.
+
+For a genuinely changed candidate and passing upstream evidence, create a
+selection JSON with schema 1 and relative, SHA256-bound references named
+`candidate`, `tasks`, `performance`, and `local_checks`. `tasks` contains exactly
+TASK-252–269 in order, with the current full task objects. `identity` contains
+`source_revision` and `archive_sha256` matching the selected candidate. The
+candidate's `archive` resolves inside the input directory. The performance JSON
+uses the existing matched-density gate schema, with twelve raw sample sets:
+three controls and three candidate repetitions for each emulation mode. Each
+candidate repetition must match the control settings and source, meet its
+relative FPS requirement, and meet the 55-average/30-window absolute thresholds
+when the corresponding control qualifies. Stored PASS labels do not determine
+readiness. A changed source requires matching measurement evidence.
+
+`local_checks` has the same identity and a `checks` mapping covering every
+`TASK-NNN:acceptance_criteria:index` and `TASK-NNN:test_steps:index` obligation.
+Each entry binds the exact requirement text with `requirement_sha256` and a
+hash-bound `receipt`. Receipts include the same identity, argv, start/end UTC,
+exit code, a hash-bound log and nonempty named `assertions` with actual/expected
+values. These must describe the actual check outcomes, not just audit completion
+or a PASS string. Existing historical evidence needs a current applicability
+review and source binding; a done task alone supplies neither. Local review of
+owner-check documentation can pass while the owner checks themselves remain
+NOT PERFORMED. Set `owner_checks` to the complete list in `y8_readiness.OWNER`,
+all NOT PERFORMED; submission, upload and moderation remain false.
+
+Use `python3 tools/assemble_y8_submission.py --inputs <selection.json> --out
+<fresh-artifacts-run> --release <fresh-artifacts-release> --kit
+<fresh-artifacts-kit.zip>`. All output locations must be absent and within
+artifacts/. The assembler refuses failing or synthetic inputs before assembly,
+copies cited inputs into the new run, and propagates the evaluated local verdict
+through readiness, requirements, manifest, test results and handoff. Existing
+release aliases and failed attempts are preserved. Audit the new snapshot using
+the same out/release/kit arguments and `--require-ready` only after real upstream
+evidence changes. `--audit` checks its recorded source and immutable task state;
+a new task state requires a new evaluation. `--package-check` additionally
+checks current runtime identity. Use `--history <relocations.json>` for preserved
+historical aliases or captured dirty source; every relocation must match the
+recorded digest. Integrity acceptance remains separate from local readiness.
