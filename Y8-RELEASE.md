@@ -41,6 +41,19 @@ Use a new output directory for each capture to preserve failed experiments.
 TASK-265 repair diagnostics are under `artifacts/TASK-265/repair/`; the original
 failed performance results remain authoritative until a real fix is retested.
 
+`tools/profile_y8_glow_bounds.py` tests clipping additive glow to nonblack
+source bounds on isolated copies of the release ZIP. The recorded experiment in
+`artifacts/TASK-265/bounds-repair/retry/` preserved all pixels at ticks 60 and 150
+in both modes, with unchanged DPR 2 and 1560×780 output. Its single 30-second
+software sample improved from 5.24 to 7.61 FPS, still below the archived baseline
+of 15.5–16.6 FPS. These sampled pixels do not prove universal equivalence, and
+this diagnostic does not satisfy the six-run gate. No renderer change shipped.
+Run `capture` or `audit` with `--archive` and `--out`; use a fresh directory for
+capture. The source patch, raw frames, matched simulation states, captures,
+offline network logs, environment and dependency hashes are retained. The first
+capture failed because two initialization scripts lacked a separating semicolon;
+its failure is preserved separately from the successful retry.
+
 Do not send the draft reviewer response until the local regression is resolved
 and the owner has completed `OWNER-CHECKLIST.txt`. Keep all artifacts, screenshots
 and unrelated `output/` files out of commits.
