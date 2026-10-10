@@ -181,7 +181,7 @@ def assemble(evidence, release):
         'presentation, and saving pending progress when the page becomes hidden. Local tests of\n'
         'the supplied ZIP passed desktop/emulated touch gameplay, nested embed input, synthetic\n'
         'visibility and reload persistence checks. Ad recovery was checked with offline SDK fixtures.\n'
-        'Rendering changes combine repeated glow blending; adaptive internal pixel density can\n'
+        'The combined glow-buffer experiment was reverted; adaptive internal pixel density can\n'
         'produce softer output. Matched-density software tests measured a regression in all six\n'
         'candidate runs. This remains unresolved and blocks package readiness. Native-phone recovery\n'
         'is unverified; we do not claim a guaranteed frame rate or a proven cause of the rejection.\n\n'

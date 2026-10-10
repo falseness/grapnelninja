@@ -32,6 +32,15 @@ package hashes, readiness claims and staged paths without running browsers.
 A changed runtime requires rebuilding and rerunning affected checks; a new
 performance result requires reassessing the explicit performance gate.
 
+`tools/profile_y8_compositing.py` captures and audits offline, 30-second glow
+ablations against an extracted release. Its control retains the packaged
+visuals; the other cases remove ambient glow, player glow, or both. All retain
+DPR 2 and a 1560×780 backing canvas. These cases diagnose rendering cost but
+cannot establish an equal-quality improvement or satisfy the performance gate.
+Use a new output directory for each capture to preserve failed experiments.
+TASK-265 repair diagnostics are under `artifacts/TASK-265/repair/`; the original
+failed performance results remain authoritative until a real fix is retested.
+
 Do not send the draft reviewer response until the local regression is resolved
 and the owner has completed `OWNER-CHECKLIST.txt`. Keep all artifacts, screenshots
 and unrelated `output/` files out of commits.
