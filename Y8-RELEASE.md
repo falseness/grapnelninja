@@ -129,3 +129,13 @@ not integrated into production. Preserve its per-run results under
 Do not send the draft reviewer response until the local regression is resolved
 and the owner has completed `OWNER-CHECKLIST.txt`. Keep all artifacts, screenshots
 and unrelated `output/` files out of commits.
+
+TASK-267's reproducible candidate is `artifacts/TASK-267/grapnelninja-y8.zip`,
+with build tag `2026-10-10-y8-candidate267`. Its `candidate.json` records the
+full committed source revision, both build hashes, packed inventory and actual
+previous release identity. `build.log`, `archive-check.log` and `manifest.json`
+record local build/test commands and evidence integrity. The extraction is
+`artifacts/TASK-267/extracted/`. The previous release is preserved in place;
+this candidate does not replace its validation or certify submission readiness.
+Later verification must use this exact archive; phones, console and hosted ads
+remain owner checks. The existing measured performance failures remain open.
