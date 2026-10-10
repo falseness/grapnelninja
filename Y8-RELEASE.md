@@ -100,6 +100,17 @@ manifests; the experiment alone cannot mark the package ready.
 The attempt directories also preserve interrupted harness captures and their
 specific coverage/synchronization defects. Never promote their partial checks.
 
+The separate full-source CanvasPattern candidate in
+`artifacts/TASK-265/glow-pattern/attempt1/` is rejected. It retained the live
+destination bounds, source textures, level order, alpha and blend operation,
+but all 23 checked cases had different final pixels despite matching state and
+source pixels. The fail-fast identity gate stopped before timing or remaining
+seeds/modes; there is no performance result or shipping change from this probe.
+`tools/profile_y8_glow_pattern.py --out NEW_DIRECTORY` records this experiment;
+`tools/audit_y8_glow_pattern.py --out DIRECTORY` checks its evidence and rejection.
+Do not rerun the rejected candidate unchanged or weaken pixel equality to ship
+it. The six final-byte regressions still block package readiness.
+
 Do not send the draft reviewer response until the local regression is resolved
 and the owner has completed `OWNER-CHECKLIST.txt`. Keep all artifacts, screenshots
 and unrelated `output/` files out of commits.
