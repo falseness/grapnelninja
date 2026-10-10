@@ -553,6 +553,11 @@
                     }
                 }
 
+                repaintStaticViewport()
+            }
+            // Static screens have no animation redraw after a backing-store reset.
+            function repaintStaticViewport()
+            {
                 if (menu.visible)
                     menu.draw()
                 else if (menu.gamePaused)
@@ -603,6 +608,7 @@
                     query.removeEventListener('change', changed)
                     configureCanvasViewport(canvas, ctx)
                     ctx.lineCap = 'butt'
+                    repaintStaticViewport()
                     watchPixelDensity()
                 })
             }

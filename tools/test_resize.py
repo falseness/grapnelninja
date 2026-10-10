@@ -6,8 +6,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import logical_size
-from game_harness import canvas_to_viewport, click_canvas, open_game, start_game_test
+from browser_test_support import logical_size, wait_for_boot
+from game_harness import canvas_to_viewport, click_canvas, collect_errors, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 START_VIEWPORT = {'width': 1280, 'height': 720}
@@ -115,12 +115,20 @@ class ResizeTests(unittest.TestCase):
                     line + '\n' for line in lines))
 
     def boot(self, viewport):
-        context, page, errors = open_game(self.browser, self.url + 'index.html', viewport)
+        # Offline Y8 fallback: fulfill only the SDK script with an empty body.
+        # Other request/console failures remain errors.
+        context = self.browser.new_context(viewport=viewport)
+        context.route('https://cdn.y8.com/minimal-sdk/2-0/y8.min.js',
+                      lambda route: route.fulfill(status=200, body='', content_type='text/javascript'))
+        page = context.new_page()
+        errors = collect_errors(page)
+        page.goto(self.url + 'index.html')
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "local" && menu.visible')
+        wait_for_boot(page)
+        page.wait_for_function('PLATFORM.environment === "disabled" && menu.visible')
         return page
 
     def write_evidence(self, name, data):

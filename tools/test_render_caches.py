@@ -108,7 +108,7 @@ class RenderCacheTests(unittest.TestCase):
                 if (positions.length - start < 2) return
                 const outline = this.getRibbonOutline(positions, start, width)
                 if (!outline.length) return
-                ctx.globalAlpha = this.clampAlpha(alpha)
+                ctx.globalAlpha = this.clampAlpha(alpha) * STYLE.player.effectOpacity
                 ctx.fillStyle = color
                 this.drawRibbonOutline(outline)
                 ctx.fill()
