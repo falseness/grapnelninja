@@ -1,5 +1,10 @@
 # Y8 local release handoff
 
+Current candidate owner/media instructions: [Y8-MEDIA-HANDOFF.md](Y8-MEDIA-HANDOFF.md)
+and [Y8-OWNER-CHECKLIST.md](Y8-OWNER-CHECKLIST.md). These supersede the older
+release-directory copy below; TASK-269 reuses historical TASK-263 media with
+its original provenance and does not rebuild or promote the old package.
+
 The locally assembled package is in `artifacts/y8-release/`. Upload only
 `grapnelninja-y8.zip`, not the directory. Its manifest identifies the committed
 runtime, archive and media hashes, executed commands and evidence. The owner

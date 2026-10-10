@@ -4,21 +4,21 @@ Local preparation only. All owner checks below are NOT PERFORMED. Console access
 phones and moderation do not gate completion of this preparation checklist.
 
 Package identity (paths relative to /opt/grapnelninja):
-- Current accepted gameplay ZIP: artifacts/TASK-261/grapnelninja-y8.zip
-- SHA256: e2dfd6a06953a80ea863c062bf3616f11e01bee4b8c67a9101f88f59eabb1681
-- Size: 100061 bytes; source: 15aab2256304498eac44d2f37773a7b70174c1da
-- Inventory: artifacts/TASK-261/candidate-release.json
-- Final-package location: artifacts/y8-release/grapnelninja-y8.zip
-  That location currently contains the OLD 99788-byte ZIP, SHA256
-  baf5e3bee031d6c238c3afa074109e22030bb1cff89e6740409643a88d613394.
-  Do not mistake it for the current accepted ZIP above. Package assembly is a
-  separate task; this checklist is usable with the accepted ZIP immediately.
-- Release manifest: artifacts/y8-release/manifest.json
-- Owner upload instructions: artifacts/y8-release/UPLOAD.txt (its build/media
-  references describe the old bundle). Current media: artifacts/TASK-263/media/
-  and artifacts/TASK-263/screenshots/; inventory: artifacts/TASK-263/media-manifest.json.
-- Verify the selected ZIP with sha256sum before upload. Record its SHA256 below;
-  a displayed build label alone does not distinguish these archives.
+- Final candidate for these owner checks: artifacts/TASK-267/grapnelninja-y8.zip
+- SHA256: c96a029eaff51071ea0bab0d260981dd14c0c91629097d49784e812eda01bc12
+- Build: 2026-10-10-y8-candidate267; size: 101612 bytes
+- Source: d858abc8a755d071ee79b76d35e3667bee10e981
+- Inventory: artifacts/TASK-267/candidate.json
+- Exact-candidate offline checks: artifacts/TASK-268/release-checks.json
+- Current copy/media instructions: Y8-MEDIA-HANDOFF.md
+- Media review: artifacts/TASK-269/media-review.json; all nine TASK-263 assets
+  are reused historical captures, NOT newly captured final-build screenshots.
+- artifacts/y8-release/ contains an older archive and historical instructions.
+  Do not select that archive or its stale recapture claim for this handoff.
+- Verify the selected ZIP with sha256sum before upload and record the hash below.
+  A displayed build label alone does not distinguish archives.
+- Local preparation only: inherited matched-density performance failures still
+  block package readiness; no upload, live ads or submission was performed.
 
 Record for EACH run:
 Date/time: ____  Phone model: ____  OS/version: ____  Browser/version: ____
@@ -37,7 +37,7 @@ Mode/seed/actions/duration: ____  Result (PASS/FAIL/NOT PERFORMED): ____
     Game remains visible, menus fit and taps hit the displayed controls.
 [ ] Interrupt a held touch with a system gesture or backgrounding; return and
     resume. No stuck hook, unintended movement or simulation catch-up jump.
-[ ] Pause/resume, lose, restart and return to menu; controls remain usable.
+[ ] Pause/resume, play to a natural lethal death, restart and return to menu; controls remain usable.
     Reload: records/language persist when storage is permitted.
 [ ] Optional rewarded Continue: verified viewed/reward callback rewards once;
     dismissed/no-fill/blocked/error does not reward. After terminal outcome,
@@ -64,7 +64,9 @@ phone/OS/browser, ZIP SHA256, preview URL, orientation/fullscreen, viewport/DPR,
 render density, DevTools/throttle/emulation settings, FPS samples and console
 errors. Preserve a screenshot and network/console log if available.
 
-Archived completed local checks: artifacts/TASK-262/release-smoke.json and its
-manifest describe 18 local emulated browser cases with mocked SDK availability.
+Archived completed local checks: artifacts/TASK-268/release-checks.json and its
+manifest bind release, embed, mobile, lifecycle and ad fixtures to this exact ZIP.
+Gameplay is silent; SDK sound starts off. Confirm ad recovery without inventing
+an audio-resume check or interstitial support (the Y8 adapter disables it).
 Physical Android/iOS, interactive DevTools reproduction, hosted ads, console
 upload and moderation remain NOT PERFORMED. No moderation success is claimed.
