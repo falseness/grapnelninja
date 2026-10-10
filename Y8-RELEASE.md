@@ -111,6 +111,21 @@ seeds/modes; there is no performance result or shipping change from this probe.
 Do not rerun the rejected candidate unchanged or weaken pixel equality to ship
 it. The six final-byte regressions still block package readiness.
 
+`tools/profile_y8_glow_winding.py --out NEW_DIRECTORY` isolates another
+candidate: reverse the player exclusion circle and use the nonzero winding
+rule instead of even-odd clipping. It shares the pattern probe's exact
+state/source/pixel gate and alternating live timing protocol, while retaining
+the current full-image sampling, geometry bounds, alpha and blending. The
+driver and shared harness hashes are recorded with the candidate patch.
+`tools/audit_y8_glow_pattern.py --out DIRECTORY` audits either experiment,
+including actual resize, moving-camera, shake and long-trail coverage.
+Neither an identity pass nor an experiment's timing benefit substitutes for
+the six final-byte release gates.
+The winding experiment passed all 138 exact identity cases but failed its
+consistent-benefit condition: at least one paired control was faster. It is
+not integrated into production. Preserve its per-run results under
+`artifacts/TASK-265/glow-winding/`; do not rerun this candidate unchanged.
+
 Do not send the draft reviewer response until the local regression is resolved
 and the owner has completed `OWNER-CHECKLIST.txt`. Keep all artifacts, screenshots
 and unrelated `output/` files out of commits.

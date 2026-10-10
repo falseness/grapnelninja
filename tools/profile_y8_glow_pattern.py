@@ -55,11 +55,13 @@ MEASURE='''() => {
  };
 }'''
 
-def capture(out):
+def capture(out, *, transform=None, hypothesis=None, driver=None):
  out.mkdir(parents=True,exist_ok=False)
  dependencies=['tools/profile_y8_glow_pattern.py','tools/browser_test_support.py',
   'tools/perf_mobile.py','tools/render_snapshot.py','tools/profile_y8_glow_bounds.py',
   'tools/profile_y8_readback_oracle.py','tools/y8_fps_baseline.py','tools/fixtures/fake-y8-sdk.js']
+ if driver is not None:
+  dependencies.append(str(driver.relative_to(ROOT)))
  save(out/'dependencies.json',{name:sha(ROOT/name) for name in dependencies})
  (out/'tool.py').write_bytes(Path(__file__).read_bytes())
  archive=ROOT/'artifacts/y8-release/grapnelninja-y8.zip'
@@ -75,11 +77,11 @@ def capture(out):
    renderer.ctx.fillRect(0,0,renderer.canvas.width,renderer.canvas.height);
   } else renderer.ctx.drawImage(target,0,0,renderer.canvas.width,renderer.canvas.height);"""
  assert changed.count(old)==1
- changed=changed.replace(old,new)
+ changed=changed.replace(old,new) if transform is None else transform(original)
  f.write_text(changed)
  (out/'candidate.patch').write_text(''.join(difflib.unified_diff(original.splitlines(True),changed.splitlines(True))))
  save(out/'overrides.json',dict(validate=VALIDATE,measure=MEASURE,clock=CLOCK_SCRIPT,setup=SETUP_SCRIPT,seed=SEED_SCRIPT,input=input_script(ticks=180,width=780,height=390)))
- manifest=dict(source_revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),archive_sha256=sha(archive),started_utc=datetime.now(timezone.utc).isoformat(),argv=sys.argv,tool_sha256=sha(Path(__file__)),hypothesis='full-source CanvasPattern with unchanged live bounds and blending',package_ready=False,validation=[],pairs=[])
+ manifest=dict(source_revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),archive_sha256=sha(archive),started_utc=datetime.now(timezone.utc).isoformat(),argv=sys.argv,tool_sha256=sha(Path(__file__)),hypothesis=hypothesis or 'full-source CanvasPattern with unchanged live bounds and blending',package_ready=False,validation=[],pairs=[])
  save(out/'manifest.partial.json',manifest)
  with ExitStack() as stack:
   url,browser=start_browser_test(out,stack.callback)

@@ -1,4 +1,4 @@
-"""Audit the isolated pattern experiment; integrity PASS is not release PASS."""
+"""Audit isolated glow experiments; integrity PASS is not release PASS."""
 import argparse
 import difflib
 import json
@@ -42,6 +42,16 @@ def audit(out):
             a, b = [json.loads((out / f'{mode}-{seed}-{arm}-rows.json').read_text())
                     for arm in ('control', 'candidate')]
             assert [r['case'] for r in a] == cases == [r['case'] for r in b]
+            for samples in (a, b):
+                assert samples[-3]['canvas'] == [1562, 782]
+                assert samples[-2]['canvas'] == [1559, 779]
+                state = json.loads(samples[-4]['state'])
+                shake = state['effects']['screenEffects']['shakeOffset']
+                assert shake['x'] != 0 or shake['y'] != 0
+                assert len(state['ninja']['track']['pos']) == 80
+                cameras = [(json.loads(r['state'])['screen']['x'],
+                            json.loads(r['state'])['screen']['y']) for r in samples[1:19]]
+                assert len(set(cameras)) > 1
             for x, y in zip(a, b):
                 assert x['canvas'] == y['canvas']
                 rows.append(dict(mode=mode, seed=seed, case=x['case'], **{
@@ -69,7 +79,10 @@ def audit(out):
                            for x, y in zip(frames, frames[1:]))
                 duration = frames[-1]['t'] - frames[0]['t']
                 assert duration >= 30000 and abs(duration - r['activeMs']) < 1e-6
-                assert pair[arm] == (len(frames) - 1) * 1000 / duration
+                # The capture sums individual dt values. That sum can differ
+                # from endpoint subtraction by floating-point roundoff; its
+                # agreement with elapsed time is checked immediately above.
+                assert pair[arm] == (len(frames) - 1) * 1000 / r['activeMs']
             assert pair['benefit'] == (pair['candidate'] > pair['control'])
             print('PAIR', json.dumps(pair, sort_keys=True))
         expected = 'PURSUE' if all(p['benefit'] for p in manifest['pairs']) else 'REJECT_INCONSISTENT_BENEFIT'
