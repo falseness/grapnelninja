@@ -54,6 +54,25 @@ offline network logs, environment and dependency hashes are retained. The first
 capture failed because two initialization scripts lacked a separating semicolon;
 its failure is preserved separately from the successful retry.
 
+`tools/profile_y8_readback_oracle.py` isolates readback cost on the same committed
+release bytes. It records bounds outside measurement, verifies every replayed
+frame's state, glow-source SHA256 and final RGBA SHA256, then rotates full
+compositing, readback-and-clip and recorded-bound clipping through three timed
+repetitions in each mode. The oracle is valid only for that replay, never for
+live moving content. Use `capture --archive PATH --out NEW_DIRECTORY`, followed
+by `audit` with the same arguments. The default replay has 120 frames per mode,
+seed 1, DPR 2 and 1560×780 backing; adaptive density is disabled.
+
+Evidence is under `artifacts/TASK-265/readback-oracle/`, including interrupted
+and failed harness attempts. Readback removal did not consistently improve
+frame wall time: bad-mode repetition 2 took 16.31 seconds with oracle bounds
+versus 16.07 seconds with readback. The specified stopping rule rejects this
+hypothesis; averaging repetitions must not hide that counterexample. This is
+not a shipping fix or an acceptance FPS result. Timings include instrumentation
+and a double real-rAF barrier. Canvas API durations cover synchronous calls;
+native Skia trace spans are partial. Neither measures complete GPU raster time.
+The six inherited local regressions and false readiness flags remain binding.
+
 Do not send the draft reviewer response until the local regression is resolved
 and the owner has completed `OWNER-CHECKLIST.txt`. Keep all artifacts, screenshots
 and unrelated `output/` files out of commits.
