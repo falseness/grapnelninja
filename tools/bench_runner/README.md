@@ -132,6 +132,12 @@ against the 60 FPS thresholds: that is the evaluator's job, and
   and every backing-store size change is recorded per run
   (`backing.changes`), so a softened run is visible, never hidden.
 * No tracing, no pixel readback, no per-call timing wrappers.
+* Auto replay input: touch events when the browser reports touch points and
+  `new Touch({...})` works, otherwise `mousedown`/`mouseup` on `document`
+  (the game listens for both). WebKit (iPhone Safari) exposes `Touch` but its
+  constructor throws `Illegal constructor`, so the replay falls back to mouse
+  events there; `device.input_kind_fallback` records the fallback and
+  `run.input_kind` records what was dispatched (`?input=mouse|touch` forces).
 * The panel is a DOM overlay hidden (`display:none`) during the whole measured
   period; its inputs stop event propagation so taps on it never reach the game.
 * Network: the game requests only same-origin files; the page `fetch`es

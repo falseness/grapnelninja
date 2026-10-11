@@ -8,7 +8,9 @@ Browser smoke (Playwright, skipped with BENCH_SKIP_BROWSER=1): serves a copy of
 the built package on 127.0.0.1, runs a short custom-protocol capture on the
 desktop and touch engines (Chromium) and on Firefox desktop, exercises the
 pause gap, export by POST /save and by download, imports both files with the
-validator, and asserts network isolation and measurement invariance.
+validator, and asserts network isolation and measurement invariance. A WebKit
+touch replay (TASK-297) checks that the Touch-constructor fallback keeps the
+game loop running and that an aborted run exports cleanly.
 
 Environment: BENCH_PACKAGE (built package root; otherwise built into a temp
 dir from the enclosing git checkout), BENCH_SMOKE_DIR (copies of the smoke
@@ -513,6 +515,74 @@ class BrowserSmoke(unittest.TestCase):
 
     def test_firefox_desktop_capture_export_import(self):
         self.capture('firefox', 'desktop')
+
+    def test_webkit_touch_replay_keeps_loop_running_and_aborts_cleanly(self):
+        """TASK-297: on WebKit `typeof Touch === 'function'` but `new Touch({...})` throws Illegal constructor.
+        Before the fix the first replay event threw inside the wrapped gameLoop, the next rAF was never scheduled
+        and the game froze. Playwright WebKit reports maxTouchPoints 0 even with has_touch=True, so the touch
+        path is forced with ?input=touch (a real iPhone reaches it through the maxTouchPoints detection)."""
+        label = 'webkit-touch'
+        browser = self.pw.webkit.launch()
+        self.addCleanup(browser.close)
+        errors = []
+        ctx = browser.new_context(accept_downloads=True, service_workers='block', **self.PROFILES['touch'])
+        page = ctx.new_page()
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.on('console', lambda m: errors.append('console.error: ' + m.text) if m.type == 'error' else None)
+        url = (f'{self.origin}/game/index.html?model=Playwright+{label}&refresh=unknown&devtools=closed&throttle=none+(1x)'
+               f'&emulation=emulated&warmup_ms={self.WARMUP}&run_ms={self.RUN}&reps=1&autosend=0&seed=4&mode=bad&input=touch')
+        page.goto(url, wait_until='domcontentloaded')
+        page.wait_for_function('() => window.__bench && window.__bench.ready', timeout=60000)
+        probe = page.evaluate('''() => ({touchPoints: navigator.maxTouchPoints, typeofTouch: typeof Touch,
+            touchCtor: (() => { try { new Touch({identifier: 0, target: document.body, clientX: 1, clientY: 1}); return 'OK' } catch (e) { return e.name + ': ' + e.message } })()})''')
+        self.assertEqual(probe['typeofTouch'], 'function')
+        self.assertIn('Illegal constructor', probe['touchCtor'], 'this test assumes WebKit cannot construct Touch')
+        original_loop = page.evaluate('() => gameLoop.toString()')
+        page.click('#bench-start')
+        # the first replay event (start at 400 ms, end at 856 ms active) must have been dispatched without killing the loop
+        page.wait_for_function('() => window.__bench.run !== null && window.__bench.run.dispatched.length >= 2', timeout=30000)
+        before = page.evaluate('() => ({frames: __bench.run.frames.length, active: __bench.run.active_ms, dispatched: __bench.run.dispatched.length})')
+        page.wait_for_timeout(1000)
+        after = page.evaluate('''() => ({frames: __bench.run.frames.length, active: __bench.run.active_ms, dispatched: __bench.run.dispatched.length,
+            panelVisible: getComputedStyle(document.getElementById('bench-panel')).display !== 'none', input: __bench.run.input_kind,
+            fallback: __bench.session.device.input_kind_fallback, touchCtor: __bench.session.device.touch_constructor})''')
+        # headless WPE WebKit renders this profile at only a few rAF frames per second; a dead loop records none
+        self.assertGreater(after['frames'], before['frames'] + 1, 'game loop stalled after the first replay event: %s -> %s' % (before, after))
+        self.assertGreater(after['active'], before['active'] + 900, 'active time stopped advancing: %s -> %s' % (before, after))
+        self.assertGreater(after['dispatched'], before['dispatched'], 'later replay events were not dispatched: %s -> %s' % (before, after))
+        self.assertFalse(after['panelVisible'], 'panel must stay hidden while recording')
+        self.assertEqual(after['input'], 'mouse')
+        self.assertEqual(after['fallback']['from'], 'touch'); self.assertEqual(after['fallback']['to'], 'mouse')
+        self.assertIn('Illegal constructor', after['fallback']['reason'])
+        self.assertTrue(after['touchCtor'].startswith('THROWS'))
+        self.assertEqual(errors, [], 'page errors during the replay: %s' % errors)
+        # abort (the button is hidden while recording: a DOM click still reaches the handler) and export by download
+        page.evaluate("() => document.getElementById('bench-abort').click()")
+        page.wait_for_function('() => window.__bench.run === null && window.__bench.session.runs.length === 1', timeout=10000)
+        done = page.evaluate('''() => ({result: __bench.session.runs[0].result, frames: __bench.session.runs[0].frames.length,
+            loop: gameLoop.toString(),
+            panelVisible: getComputedStyle(document.getElementById('bench-panel')).display !== 'none'})''')
+        self.assertEqual(done['result'], 'ABORTED by owner')
+        self.assertEqual(done['loop'], original_loop, 'gameLoop must be restored after the abort')
+        self.assertTrue(done['panelVisible'])
+        with page.expect_download(timeout=30000) as dl:
+            page.click('#bench-download')
+        download_path = self.smoke / f'download-{label}.json'
+        dl.value.save_as(download_path)
+        exported = json.loads(download_path.read_text())
+        self.assertEqual(exported['runs'][0]['result'], 'ABORTED by owner')
+        self.assertEqual(exported['runs'][0]['input_kind'], 'mouse')
+        self.assertEqual(exported['device']['input_kind_fallback']['to'], 'mouse')
+        rep = bt.validate_result(exported, self.pkg, allow_custom=True)
+        self.assertEqual(rep['status'], 'ACCEPTED', rep['reasons'])
+        self.assertEqual(rep['complete_runs']['bad'], 0)
+        (self.smoke / f'validate-{label}-{download_path.name}.json').write_text(json.dumps(rep, indent=1, sort_keys=True) + '\n')
+        self.assertEqual(errors, [], 'page errors during abort/export: %s' % errors)
+        log(label, 'Touch ctor %s; input touch -> %s fallback; %d -> %d frames and %.0f -> %.0f active ms over 1 s (%d -> %d dispatched), aborted with %d frames, '
+            'loop restored %s, download %s validate ACCEPTED (aborted run uncounted), page errors %d' % (
+                probe['touchCtor'], after['input'], before['frames'], after['frames'], before['active'], after['active'], before['dispatched'], after['dispatched'], done['frames'],
+                done['loop'] == original_loop, download_path.name, len(errors)))
+        ctx.close()
 
     def test_server_rejects_foreign_documents_and_listings(self):
         import urllib.request

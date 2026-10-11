@@ -205,7 +205,8 @@
                       detected_from: 'navigator.userAgent', navigator_platform: navigator.platform || null,
                       max_touch_points: navigator.maxTouchPoints, hardware_concurrency: navigator.hardwareConcurrency || null,
                       device_memory_gb: navigator.deviceMemory || null, language: navigator.language || null,
-                      ua_client_hints: null}
+                      ua_client_hints: null, touch_constructor: typeof Touch === 'function' ? (touchConstructible().ok ? 'OK' : 'THROWS ' + touchConstructible().error) : 'absent',
+                      input_kind_fallback: inputKindDetail().fallback}
         try {
             if (navigator.userAgentData) {
                 const d = navigator.userAgentData
@@ -274,10 +275,27 @@
         return {x: Math.round((view.height / 2 - sy + innerWidth / 2) * 10) / 10,
                 y: Math.round((sx - view.width / 2 + innerHeight / 2) * 10) / 10}
     }
-    function inputKind() {
-        if (settings.input_kind === 'mouse' || settings.input_kind === 'touch') return settings.input_kind
-        return (navigator.maxTouchPoints > 0 && typeof Touch === 'function') ? 'touch' : 'mouse'
+    // WebKit (iPhone Safari, Playwright WebKit) exposes `typeof Touch === 'function'` but `new Touch({...})`
+    // throws TypeError: Illegal constructor (TASK-286 finding). Probe the constructor once and fall back to the
+    // MouseEvent path: events.js listens for mousedown/mouseup on document, so the replay still drives the game.
+    let touchProbe = null
+    function touchConstructible() {
+        if (touchProbe === null) {
+            try { new Touch({identifier: 0, target: document.body, clientX: 0, clientY: 0}); touchProbe = {ok: true, error: null} }
+            catch (e) { touchProbe = {ok: false, error: String(e && e.name ? e.name + ': ' + e.message : e)} }
+        }
+        return touchProbe
     }
+    // {wanted, used, fallback}: wanted = forced ?input= or the maxTouchPoints/Touch detection, used = what fire() dispatches.
+    function inputKindDetail() {
+        const forced = settings.input_kind === 'mouse' || settings.input_kind === 'touch'
+        const wanted = forced ? settings.input_kind : ((navigator.maxTouchPoints > 0 && typeof Touch === 'function') ? 'touch' : 'mouse')
+        if (wanted === 'touch' && !touchConstructible().ok)
+            return {wanted, used: 'mouse', forced, fallback: {from: 'touch', to: 'mouse', reason: 'new Touch() threw ' + touchConstructible().error +
+                    '; replay dispatches mousedown/mouseup on document instead'}}
+        return {wanted, used: wanted, forced, fallback: null}
+    }
+    function inputKind() { return inputKindDetail().used }
 
     // --------------------------------------------------------------- UI --
     const BENCH = window.__bench = {schema: SCHEMA, settings, session: null, run: null, panel: null,

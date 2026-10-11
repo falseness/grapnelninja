@@ -39,7 +39,9 @@
     "hardware_concurrency": {"type": ["integer", "null"]},
     "device_memory_gb": {"type": ["number", "null"]},
     "language": {"type": ["string", "null"]},
-    "ua_client_hints": {"type": ["object", "null"], "description": "navigator.userAgentData when the browser exposes it (platformVersion/model are high-entropy hints the browser may refuse)."}
+    "ua_client_hints": {"type": ["object", "null"], "description": "navigator.userAgentData when the browser exposes it (platformVersion/model are high-entropy hints the browser may refuse)."},
+    "touch_constructor": {"type": "string", "description": "OK, absent, or THROWS <error>: whether `new Touch({...})` works in this browser (WebKit throws Illegal constructor)."},
+    "input_kind_fallback": {"type": ["object", "null"], "description": "null when the replay used the detected/forced input kind; {from, to, reason} when touch was wanted but the Touch constructor is unusable and the replay dispatched mouse events instead (run.input_kind records what was used)."}
    }
   },
   "display": {
