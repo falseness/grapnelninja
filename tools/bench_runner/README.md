@@ -137,3 +137,28 @@ against the 60 FPS thresholds: that is the evaluator's job, and
 * Network: the game requests only same-origin files; the page `fetch`es
   `build.json` and `POST`s to `../save` on the serving machine. Verify with
   `python3 benchtool.py inspect`.
+
+## 9. Evaluate (TASK-284): acceptance matrix and decision
+
+```
+python3 evaluate.py --package . --results results --acceptance acceptance.json --decision decision.json
+```
+
+`evaluate.py` validates every export with `benchtool.validate_result`,
+recomputes average FPS, rolling 10 s windows, p95 and measured duration from
+the raw intervals (timestamps only; an interval must equal its timestamp
+difference, slow frames are never dropped, a null gap counts only when the page
+recorded an inactive state covering it), classifies the export (desktop /
+Android Chrome / iPhone Safari from the user agent, DevTools state from the
+panel) and fills the required rows: desktop closed/docked/undocked, Android
+Chrome, iPhone Safari, both modes. A row is PASS only with three valid
+repetitions each at average >= 58 FPS, every full 10 s window >= 55 FPS,
+p95 <= 33.3 ms, >= 60 s measured, at unchanged quality (adaptive density never
+reduced the backing, page DPR == display DPR, no emulation, no CPU throttle,
+standard protocol); FAIL when valid repetitions miss a threshold; UNVERIFIED
+when fewer than three valid repetitions exist. `decision.json` separates
+`evaluation_completed` from `60fps_achieved`, which is true only when every
+required row is PASS. Headless/emulated/custom-protocol exports and test
+fixtures never fill a native row. Tests: `python3 test_evaluate.py`
+(set `BENCH_PACKAGE` to a built package to avoid a rebuild).
+
