@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
-from playgama_firefox_perf import capture_command, metrics
+from playgama_firefox_perf import capture_command, metrics, profile_metrics, profile_conclusions
 
 
 class FrameMetricsTests(unittest.TestCase):
@@ -32,6 +32,26 @@ class FrameMetricsTests(unittest.TestCase):
     def test_duplicate_timestamp_rejected(self):
         with self.assertRaises(AssertionError):
             metrics({'frames':[dict(t=1,before={},after={})]*2})
+
+
+class ProfileTests(unittest.TestCase):
+    def test_profile_keeps_slow_intervals_and_excludes_only_warmup(self):
+        raw = {'warmup':1,'frames':2,'names':['drawWorldLayer'],
+               'rows':[dict(t=t,draw_ms=d,costs={'drawWorldLayer':d},skipped=0)
+                       for t,d in ((0,90),(100,3),(110,7))], 'end':1110}
+        self.assertEqual(profile_metrics(raw), {'frame_ms':505,'draw_ms':5,
+                         'layer_ms':{'drawWorldLayer':5},'skipped':0})
+
+    def test_pair_rejects_state_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out=Path(directory)
+            a={'rows':[{'before':{'rng':1},'after':{'rng':2}}]}
+            b={'rows':[{'before':{'rng':1},'after':{'rng':3}}]}
+            (out/'a.json').write_text(json.dumps(a)); (out/'b.json').write_text(json.dumps(b))
+            runs=[dict(engine='firefox',mode='classic',layer='layer',repetition=1,
+                       arm=arm,raw=path) for arm,path in [('control','a.json'),('suppressed','b.json')]]
+            with self.assertRaisesRegex(AssertionError,'unmatched states'):
+                profile_conclusions(out,runs,['layer'])
 
 
 class ConsoleCaptureTests(unittest.TestCase):

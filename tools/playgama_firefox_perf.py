@@ -354,34 +354,257 @@ def capture_command(command, log_path, identity):
     return code
 
 
+# Diagnostic injection only: the served build is never rewritten. Suppress paint
+# calls, not layer functions, so RNG, caches and effect updates still execute.
+PROFILE_PROBE = r'''async ({mode, suppressed, frames}) => {
+ const now = performance.now.bind(performance);
+ let rng = 292, randomCalls = 0;
+ Math.random = () => { randomCalls++; rng = (rng + 0x6D2B79F5) >>> 0;
+   let t = rng; t = Math.imul(t ^ (t >>> 15), t | 1);
+   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+   return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+ startGame(mode); cancelAnimationFrame(game);
+ const names = Object.keys(window).filter(n => /^draw.*Layer$/.test(n));
+ let current = '', costs = {}, skipped = 0;
+ for (const name of names) {
+   const original = window[name];
+   window[name] = function(...args) {
+     const previous = current; current = name; const t = now();
+     try { return original.apply(this,args); }
+     finally { costs[name] = (costs[name] || 0) + now()-t; current = previous; }
+   };
+ }
+ for (const method of ['drawImage','fill','stroke','fillRect','strokeRect','fillText','strokeText']) {
+   const original = CanvasRenderingContext2D.prototype[method];
+   CanvasRenderingContext2D.prototype[method] = function(...args) {
+     if (current === suppressed) { skipped++; return; }
+     return original.apply(this,args);
+   };
+ }
+ const rows = [];
+ const state = () => ({version, ninja:[ninja.x,ninja.y], camera:[screen.x,screen.y],
+   floors:floors.map(f => [f.constructor.name,f.x,f.y,f.width,f.height]),
+   randomCalls, rng, drawFrameId, transform:Array.from(['a','b','c','d','e','f'],k=>ctx.getTransform()[k]),
+   menu:menu.visible, death:continueOffer.visible});
+ for (let i=0; i<frames+8; i++) {
+   const t = await new Promise(requestAnimationFrame);
+   costs = {}; skipped = 0;
+   // The effects' wall clock is matched while timings retain the real clock.
+   Object.defineProperty(performance,'now',{configurable:true,value:()=>1000+i*16.6666667});
+   const before = state(), begin = now();
+   draw();
+   const drawMs = now()-begin, after = state();
+   delete performance.now;
+   rows.push({t,draw_ms:drawMs,costs,skipped,before,after});
+ }
+ const end = await new Promise(requestAnimationFrame);
+ return {rows,end,names,frames,warmup:8,suppressed,mode};
+}'''
+
+
+def profile_metrics(raw):
+    rows=raw['rows']; active=rows[raw['warmup']:]
+    assert len(active)==raw['frames'] and active
+    times=[r['t'] for r in rows]+[raw['end']]
+    intervals=[b-a for a,b in zip(times,times[1:])][raw['warmup']:]
+    assert all(t>0 for t in intervals)
+    return {'frame_ms':sum(intervals)/len(intervals),
+            'draw_ms':sum(r['draw_ms'] for r in active)/len(active),
+            'layer_ms':{n:sum(r['costs'].get(n,0) for r in active)/len(active) for n in raw['names']},
+            'skipped':sum(r['skipped'] for r in active)}
+
+
+def profile_conclusions(out, runs, selected):
+    pairs=[]
+    for engine in ('firefox','chromium'):
+        for mode in ('classic','bad'):
+            for layer in selected:
+                savings=[]; controls=[]
+                for repetition in (1,2):
+                    arms={r['arm']:r for r in runs if (r['engine'],r['mode'],r['layer'],r['repetition'])==
+                          (engine,mode,layer,repetition)}
+                    assert set(arms)=={'control','suppressed'}
+                    a,b=[read(out/arms[k]['raw']) for k in ('control','suppressed')]
+                    assert [(r['before'],r['after']) for r in a['rows']]==[(r['before'],r['after']) for r in b['rows']], 'unmatched states'
+                    assert a['layout']==b['layout'] and not a['errors'] and not b['errors']
+                    am,bm=profile_metrics(a),profile_metrics(b)
+                    assert bm['skipped']>0 and am['skipped']==0
+                    controls.append(am['frame_ms']); savings.append(am['frame_ms']-bm['frame_ms'])
+                noise=abs(controls[0]-controls[1])
+                pairs.append({'engine':engine,'mode':mode,'layer':layer,'savings_ms':savings,
+                    'control_spread_ms':noise,'mean_saving_ms':sum(savings)/2,
+                    'repeatable':min(savings)>max(noise,1.0)})
+    return pairs
+
+
+def profile(args):
+    out=args.out; base=args.baseline.resolve()
+    audit_data(base)
+    build=read(base/'build.json'); write(out/'build.json',build)
+    sources={p:sha((ROOT/p).read_bytes()) for p in build['source_sha256']}
+    write(out/'production-before.json',sources)
+    # Read-only archival references, copied and hashed before any diagnosis.
+    history={}
+    for task,name in [('TASK-281','hypothesis.json'),('TASK-281','decision.json'),
+                      ('TASK-280','decision.json'),('TASK-284','residual-deficit-notes.json')]:
+        path=Path('/opt/grapnelninja/artifacts')/task/name
+        data=path.read_bytes(); dest=f'history-{task}-{name}'
+        (out/dest).write_bytes(data)
+        history[str(path)]={'sha256':sha(data),'copy':dest}
+    write(out/'history.json',history)
+    environment={'os':platform.platform(),'playwright':importlib.metadata.version('playwright'),
+        'native_android':'UNVERIFIED','browsers':{},'execution':'headless desktop; 844x390 DPR2 emulation',
+        'limitations':'Frozen initial scene, no physics; RAF includes deferred rendering and scheduling. Layer timings measure JS/submission only, not exclusive raster costs. Suppression savings are nonadditive upper bounds, not quality-preserving optimizations. Chromium software graphics and unavailable Firefox Canvas2D renderer prevent native attribution.'}
+    runs=[]; pilots=[]
+    with ExitStack() as stack:
+        server=ThreadingHTTPServer(('127.0.0.1',0),partial(QuietHandler,directory=str(base/'served')))
+        stack.callback(server.server_close); Thread(target=server.serve_forever,daemon=True).start()
+        stack.callback(server.shutdown); origin=f'http://127.0.0.1:{server.server_port}'
+        network=stack.enter_context((out/'network.log').open('w'))
+        def route_request(route):
+            url=route.request.url
+            action='LOCAL' if url.startswith(origin+'/') else 'SDK_STUB' if url==SDK else 'BLOCKED'
+            network.write(json.dumps({'url':url,'action':action})+'\n'); network.flush()
+            if action=='LOCAL': route.continue_()
+            elif action=='SDK_STUB': route.fulfill(content_type='application/javascript',body="const FAULT='normal'; const SAVED_LANGUAGE='en';\n"+FAKE)
+            else: route.abort()
+        pw=stack.enter_context(sync_playwright())
+        def measure(browser,engine,mode,layer,repetition,arm):
+            key=f'{engine}-{mode}-{layer}-{repetition}-{arm}'
+            started=utc()
+            with browser.new_context(viewport={'width':844,'height':390},device_scale_factor=2,
+                    has_touch=True,service_workers='block',locale='en-US') as context:
+                context.route('**/*',route_request); context.add_init_script(SEED_SCRIPT % SEED)
+                page=context.new_page(); errors=[]; page.on('pageerror',lambda e:errors.append(str(e)))
+                page.goto(origin+'/index.html'); page.wait_for_function('bootComplete && document.getElementById("loading").hidden',timeout=15000)
+                layout=page.evaluate(LAYOUT)
+                raw=page.evaluate(PROFILE_PROBE,{'mode':mode,'suppressed':layer if arm=='suppressed' else '', 'frames':24})
+                raw.update(layout=layout,errors=errors,engine=engine,build_sha256=ZIP_SHA)
+                write(out/(key+'.json'),raw)
+            result={'engine':engine,'mode':mode,'layer':layer,'repetition':repetition,'arm':arm,
+                    'raw':key+'.json','metrics':profile_metrics(raw),'started_utc':started,'ended_utc':utc()}
+            print('RECORDED '+key+' '+json.dumps(result['metrics']),flush=True)
+            return result
+        # Rank all instrumented layers using both Firefox modes before suppressing any.
+        browser=pw.firefox.launch(headless=True)
+        try:
+            for mode in ('classic','bad'): pilots.append(measure(browser,'firefox',mode,'pilot',0,'control'))
+        finally: browser.close()
+        ranking={n:sum(p['metrics']['layer_ms'][n] for p in pilots)/len(pilots) for n in pilots[0]['metrics']['layer_ms']}
+        selected=sorted(ranking,key=lambda n:(-ranking[n],n))[:3]
+        write(out/'instrumentation.json',{'pilots':pilots,'ranking_ms':ranking,'selected':selected})
+        for engine in ('firefox','chromium'):
+            kind=getattr(pw,engine); browser=kind.launch(headless=True)
+            environment['browsers'][engine]={'version':browser.version,'executable':kind.executable_path,
+                'executable_sha256':sha(Path(kind.executable_path).read_bytes())}
+            write(out/'environment.json',environment)
+            try:
+                for mode in ('classic','bad'):
+                    for layer in selected:
+                        for repetition in (1,2):
+                            for arm in (('control','suppressed') if repetition==1 else ('suppressed','control')):
+                                runs.append(measure(browser,engine,mode,layer,repetition,arm))
+                                write(out/'runs.json',runs)
+            finally: browser.close()
+        network.write(json.dumps({'external_requests_allowed':0})+'\n')
+    pairs=profile_conclusions(out,runs,selected)
+    report={'runs':runs,'comparisons':pairs,'selected':selected,
+        'dominant_repeatable':{f'{e}/{m}':next(iter(sorted([p for p in pairs if p['engine']==e and p['mode']==m and p['repeatable']],key=lambda p:-p['mean_saving_ms'])),None)
+                               for e in ('firefox','chromium') for m in ('classic','bad')},
+        'interpretation':environment['limitations'],
+        'browser_comparison':'Compare savings and control spreads per mode/browser; a Firefox-only repeatable saving is local engine-specific evidence only. Repeated savings in both engines indicate shared drawing work, not proof of a native Firefox defect.'}
+    write(out/'profile.json',report)
+    write(out/'hypothesis.json',{'status':'no-supported-candidate',
+        'reason':'Layer suppression locates cost but removes visible work. No new exact work-elimination mechanism is established by this bounded profile.',
+        'source_references':['render/draw.js:draw','render/effects.js:BackgroundRenderer.paint','render/effects.js:BloomRenderer', 'history.json','profile.json'],
+        'anticipated_removed_work':'None justified without changing quality; diagnostic suppressed paints are not a proposed optimization.',
+        'history_review':'TASK-280 glow-region clipping already integrated; TASK-281 background row clipping rejected as inconsistent; TASK-279 background cache rejected for dither/transform differences (recorded in TASK-281 hypothesis). Do not repeat unchanged. TASK-284 transform pinning is unproven and cannot preserve the existing drifted pixels by assumption.',
+        'native_android':'UNVERIFIED'})
+    after={p:sha((ROOT/p).read_bytes()) for p in sources}
+    write(out/'production-after.json',after); assert sources==after
+    for p,h in build['served_sha256'].items(): assert sha((base/'served'/p).read_bytes())==h
+    write(out/'quality.json',{'production_unchanged':sources==after,'served_unchanged':True,
+        'suppression_location':'PROFILE_PROBE in tools/playgama_firefox_perf.py only; disposable browser contexts',
+        'build_sha256':ZIP_SHA,'native_android':'UNVERIFIED'})
+    audit_profile(out)
+
+
+def audit_profile(out):
+    if (out/'manifest.json').exists():
+        manifest=read(out/'manifest.json'); assert manifest['exit_code']==0
+        for p,h in manifest['evidence_sha256'].items(): assert sha((out/p).read_bytes())==h,p
+        lines=(out/'profile-command.log').read_text().splitlines()
+        identity=json.loads(lines[0].removeprefix('EXECUTION '))
+        for k,v in identity.items(): assert manifest[k]==v
+        ending=json.loads(lines[-1].removeprefix('EXIT ')); assert ending['exit_code']==0
+        assert ending['execution_id']==manifest['execution_id']
+        assert manifest['started_utc']<=ending['ended_utc']<=manifest['ended_utc']
+        assert sum(l.startswith('RECORDED ') for l in lines)==50
+        assert 'PASS profile completion; performance success not asserted; native Android UNVERIFIED' in lines
+    instrumentation=read(out/'instrumentation.json')
+    ranking={}
+    for p in instrumentation['pilots']:
+        actual=profile_metrics(read(out/p['raw'])); assert actual==p['metrics']
+        for n,v in actual['layer_ms'].items(): ranking[n]=ranking.get(n,0)+v/2
+    assert ranking==instrumentation['ranking_ms']
+    selected=sorted(ranking,key=lambda n:(-ranking[n],n))[:3]
+    assert selected==instrumentation['selected']
+    report=read(out/'profile.json'); assert selected==report['selected']
+    assert len(report['runs'])==48
+    for r in report['runs']:
+        raw=read(out/r['raw']); assert profile_metrics(raw)==r['metrics']
+        assert raw['build_sha256']==ZIP_SHA and raw['mode']==r['mode'] and raw['engine']==r['engine']
+        assert raw['suppressed']==(r['layer'] if r['arm']=='suppressed' else '')
+    pairs=profile_conclusions(out,report['runs'],selected); assert pairs==report['comparisons']
+    for key,value in report['dominant_repeatable'].items():
+        e,m=key.split('/')
+        assert value==next(iter(sorted([p for p in pairs if p['engine']==e and p['mode']==m and p['repeatable']],key=lambda p:-p['mean_saving_ms'])),None)
+    assert read(out/'production-before.json')==read(out/'production-after.json')
+    quality=read(out/'quality.json'); assert quality['production_unchanged'] and quality['served_unchanged']
+    assert read(out/'hypothesis.json')['status']=='no-supported-candidate'
+    for item in read(out/'history.json').values(): assert sha((out/item['copy']).read_bytes())==item['sha256']
+    network=[json.loads(l) for l in (out/'network.log').read_text().splitlines()]
+    assert network[-1]['external_requests_allowed']==0
+    for r in network[:-1]:
+        assert r['action'] in ('LOCAL','SDK_STUB','BLOCKED')
+        if r['action']=='LOCAL': assert r['url'].startswith('http://127.0.0.1:')
+        if r['action']=='SDK_STUB': assert r['url']==SDK
+    print('PASS top-three instrumentation ranking; 24 matched pairs; raw timings and noise recomputed')
+    print('PASS production/quality hashes unchanged; prior-history review; no-supported-candidate; network isolated')
+    print('PASS profile completion; performance success not asserted; native Android UNVERIFIED')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='command',required=True)
     b=sub.add_parser('baseline'); b.add_argument('--revision',required=True); b.add_argument('--out',type=Path,required=True)
     b.add_argument('--capture-worker', action='store_true', help=argparse.SUPPRESS)
+    p=sub.add_parser('profile'); p.add_argument('--baseline',type=Path,required=True); p.add_argument('--out',type=Path,required=True)
+    p.add_argument('--capture-worker', action='store_true', help=argparse.SUPPRESS)
     a=sub.add_parser('audit'); a.add_argument('--input',type=Path,required=True)
     args=parser.parse_args()
     if args.command=='audit':
-        audit_data(args.input); return
+        (audit_profile if (args.input/'profile.json').exists() else audit_data)(args.input); return
     if args.capture_worker:
-        baseline(args); return
+        (profile if args.command=='profile' else baseline)(args); return
     # Never overwrite an earlier attempt, including an interrupted capture.
     if args.out.exists() and any(args.out.iterdir()):
         parser.error('Output already contains evidence; preserve it and use an empty directory')
     args.out.mkdir(parents=True, exist_ok=True)
     command=[sys.executable,*sys.argv]
-    worker=[sys.executable,str(Path(__file__).resolve()),'baseline',
-            '--revision',args.revision,'--out',str(args.out.resolve()),'--capture-worker']
+    worker=[sys.executable,str(Path(__file__).resolve()),args.command,
+            *(['--baseline',str(args.baseline.resolve())] if args.command=='profile' else ['--revision',args.revision]),
+            '--out',str(args.out.resolve()),'--capture-worker']
     identity={'execution_id':str(uuid.uuid4()), 'command':command,
               'cwd':str(Path.cwd()), 'started_utc':utc(),
               'worker_command':worker, 'worker_cwd':str(ROOT),
               'source_head':git('rev-parse','HEAD').decode().strip(),
               'harness_sha256':sha(Path(__file__).read_bytes())}
-    code=capture_command(worker,args.out/'baseline-command.log',identity)
-    write(args.out/'manifest.json',dict(identity, task='TASK-292',
+    code=capture_command(worker,args.out/(args.command+'-command.log'),identity)
+    write(args.out/'manifest.json',dict(identity, task='TASK-293' if args.command=='profile' else 'TASK-292',
         result='PASS' if code==0 else 'FAIL', ended_utc=utc(), exit_code=code,
         source_build='build.json', environment='environment.json',
-        scope='TASK-292; prerequisite TASK-287; experiment completion != performance success',
+        scope='TASK-293; prerequisites TASK-292, TASK-287; experiment completion != performance success' if args.command=='profile' else 'TASK-292; prerequisite TASK-287; experiment completion != performance success',
         evidence_sha256={str(p.relative_to(args.out)):sha(p.read_bytes())
             for p in sorted(args.out.rglob('*')) if p.is_file()}))
     raise SystemExit(code)

@@ -56,3 +56,36 @@ checks that identity, the published build marker and all eight recording markers
 Never reconstruct console output from JSON or a later audit. Existing nonempty
 output directories are refused; preserve rejected or interrupted attempts before
 rerunning. Host graphics package versions are collected during the same run.
+
+TASK-293 adds a bounded diagnostic profile of that same published bundle:
+
+```sh
+python3 tools/playgama_firefox_perf.py profile --baseline artifacts/TASK-292 --out artifacts/TASK-293
+python3 tools/playgama_firefox_perf.py audit --input artifacts/TASK-293
+```
+
+The baseline audit must pass first. A Firefox pilot instruments every drawing
+layer in both modes and ranks their mean synchronous submission time. Only the
+largest three are suppressed, in disposable browser contexts. Each browser/mode
+has two fresh-context matched control/suppression pairs per selected layer, with
+reversed order in the second pair. Each arm has eight warmup draws and 24 measured
+draws. Initial gameplay geometry is frozen; physics is not stepped. Effects use a
+fixed clock and seeded randomness; raw before/after geometry, RNG counts and
+transforms must match at every draw. This deliberately bounded scene is not a
+sustained gameplay benchmark or a proof about other gameplay states.
+
+Suppression intercepts paint calls within the selected layer; layer functions,
+updates, random calls, clears and canvas state changes still execute. No served
+or production file changes. RAF intervals include deferred work and scheduling;
+layer timings measure synchronous work only. Savings are nonadditive and may
+include downstream effects of altered pixels. A saving is labelled repeatable
+only if both pairs exceed the greater of 1 ms and the control-to-control spread.
+This conservative descriptive rule is not a statistical significance test.
+
+The audit independently recomputes pilot ranking, every raw metric, matched
+states, pair savings, noise and dominant repeatable costs. Archived historical
+rejections inform the hypothesis; `no-supported-candidate` is a valid result when
+cost attribution does not establish a new quality-preserving mechanism. The
+manifest preserves the original worker output, failed attempts, exact commands,
+build identity, browser executables, environment and evidence hashes. A nonempty
+output directory cannot be reused. Native Android remains UNVERIFIED.
