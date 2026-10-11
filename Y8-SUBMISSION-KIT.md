@@ -1,5 +1,38 @@
 # Current Y8 inspection kit
 
+TASK-285 (2026-10-11) rebuilds `artifacts/y8-release/` and
+`artifacts/y8-submission-kit.zip` from the current committed runtime with
+`python3 tools/y8_package.py` (subcommands `build`, `functional`, `media`,
+`readiness`, `assemble`, `package-check`, `manifest`; see its docstring). The
+current package identity (source revision, build tag, ZIP SHA256) is in
+`artifacts/y8-release/manifest.json`; the runtime build tag is
+`2026-10-11-y8-candidate285`. The previous TASK-270 kit is preserved under
+`artifacts/TASK-285/previous-release/` and `previous-submission-kit.zip`.
+
+What the TASK-285 kit does and does not claim:
+
+- The five offline browser suites (release, embed, mobile-embed, lifecycle,
+  ads) were re-run against the exact new ZIP; the nine media assets were
+  recaptured from it and compared pixel-wise with the TASK-263 captures.
+  `artifacts/TASK-285/readiness.json` keeps functional package preparation,
+  software regression status, native 60-FPS acceptance, submission readiness
+  and moderation status as separate fields.
+- Performance did not succeed: TASK-282 measured the integrated runtime faster
+  than the frozen TASK-271 control in every cell but still about twice the
+  frame time of the original ZIP on the software renderer, and every TASK-284
+  native row is UNVERIFIED (no owner results). `60fps_achieved` and
+  `submission_ready` stay false; nothing was uploaded or submitted.
+- Historical TASK-265/270 statuses are recorded as evidence, not used as
+  hardcoded blockers; the readiness evaluation uses current evidence only.
+- WebKit was not available in the TASK-285 environment (binary removed for
+  disk space; reinstall failed with ENOSPC, log preserved), so the release
+  suite ran on Chromium and Firefox; `tools/verify_y8_release.py` honours a
+  `Y8_ENGINES` override and the omission is recorded in release-checks.json.
+
+The sections below describe the superseded TASK-270 kit.
+
+# TASK-270 inspection kit (superseded)
+
 TASK-270 refreshes `artifacts/y8-release/` and
 `artifacts/y8-submission-kit.zip` from the TASK-267 candidate verified by
 TASK-268. This supersedes the historical release-directory claims in

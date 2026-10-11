@@ -4,21 +4,20 @@ Local preparation only. All owner checks below are NOT PERFORMED. Console access
 phones and moderation do not gate completion of this preparation checklist.
 
 Package identity (paths relative to /opt/grapnelninja):
-- Final candidate for these owner checks: artifacts/TASK-267/grapnelninja-y8.zip
-- SHA256: c96a029eaff51071ea0bab0d260981dd14c0c91629097d49784e812eda01bc12
-- Build: 2026-10-10-y8-candidate267; size: 101612 bytes
-- Source: d858abc8a755d071ee79b76d35e3667bee10e981
-- Inventory: artifacts/TASK-267/candidate.json
-- Exact-candidate offline checks: artifacts/TASK-268/release-checks.json
-- Current copy/media instructions: Y8-MEDIA-HANDOFF.md
-- Media review: artifacts/TASK-269/media-review.json; all nine TASK-263 assets
-  are reused historical captures, NOT newly captured final-build screenshots.
-- artifacts/y8-release/ contains an older archive and historical instructions.
-  Do not select that archive or its stale recapture claim for this handoff.
+- Final candidate for these owner checks: artifacts/y8-release/grapnelninja-y8.zip
+  (identity, SHA256, build tag and source revision: artifacts/y8-release/manifest.json;
+  the kit copy OWNER-CHECKLIST.txt carries the concrete values)
+- Build tag in the runtime: 2026-10-11-y8-candidate285 (TASK-285 rebuild)
+- Inventory and build checks: artifacts/TASK-285/build/candidate.json, package-check.log
+- Exact-ZIP offline checks: artifacts/TASK-285/functional/release-checks.json
+- Media review: artifacts/TASK-285/media/media-review.json; all nine assets were
+  recaptured from this exact ZIP and compared with the TASK-263 captures.
+- Native 60-FPS rows: artifacts/TASK-283/runner/OWNER-CHECKLIST.txt (return
+  results/*.json); TASK-284 reports every row UNVERIFIED until then.
 - Verify the selected ZIP with sha256sum before upload and record the hash below.
   A displayed build label alone does not distinguish archives.
-- Local preparation only: inherited matched-density performance failures still
-  block package readiness; no upload, live ads or submission was performed.
+- Local preparation only: the measured software-renderer regression against the
+  original ZIP (TASK-282) is outstanding; no upload, live ads or submission was performed.
 
 Record for EACH run:
 Date/time: ____  Phone model: ____  OS/version: ____  Browser/version: ____

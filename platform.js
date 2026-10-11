@@ -87,7 +87,7 @@ const PLATFORM = (function()
     {
         environment: 'pending',
         platformId: 'y8',
-        buildVersion: '2026-10-10-y8-candidate267',
+        buildVersion: '2026-10-11-y8-candidate285',
         rewardTimeoutMs: 15000,
         rewardPlayingTimeoutMs: 120000,
         language: 'en',

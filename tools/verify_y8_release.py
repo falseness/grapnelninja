@@ -17,7 +17,7 @@ def run(root,out):
   server=ThreadingHTTPServer(('127.0.0.1',0),partial(QuietHandler,directory=str(root)))
   thread=Thread(target=server.serve_forever,daemon=True);thread.start();stack.callback(server.server_close);stack.callback(server.shutdown)
   pw=stack.enter_context(sync_playwright());url=f'http://127.0.0.1:{server.server_port}/'
-  for engine in ['chromium','firefox','webkit']:
+  for engine in (__import__('os').environ.get('Y8_ENGINES') or 'chromium,firefox,webkit').split(','):
    b=stack.enter_context(getattr(pw,engine).launch())
    for touch,size in [(False,(1280,720)),(True,(390,844)),(True,(844,390))]:
     for mode in ['bad','classic']:
