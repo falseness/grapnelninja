@@ -89,3 +89,32 @@ cost attribution does not establish a new quality-preserving mechanism. The
 manifest preserves the original worker output, failed attempts, exact commands,
 build identity, browser executables, environment and evidence hashes. A nonempty
 output directory cannot be reused. Native Android remains UNVERIFIED.
+
+TASK-294 records the profile's no-supported-candidate outcome on the repaired
+`playgama-start-firefox` branch:
+
+```sh
+python3 tools/playgama_firefox_perf.py compare --profile artifacts/TASK-293 --start-evidence artifacts/TASK-291 --out artifacts/TASK-294
+python3 tools/playgama_firefox_perf.py audit --input artifacts/TASK-294
+python3 -m unittest discover -s tools -p test_playgama_firefox_perf.py -v
+```
+
+This compare path requires the audited profile to say `no-supported-candidate`.
+It freezes the current committed runtime (including the start/telemetry repairs),
+checks it against TASK-291's source receipt, and archives both the source and its
+deterministic bundle. It copies the profile evidence for independent recomputation.
+`decision.json` reports `NO_SUPPORTED_CANDIDATE`, a control SHA256, and null candidate
+hash and hypothesis: no candidate exists and no hypothesis was tested.
+`candidate.diff` is intentionally empty. `paired-metrics.json` and
+`visual-state.json` explicitly mark timing, screenshots, state and resize checks
+not applicable; they are not fabricated successful comparisons. Browsers are not
+launched and there is no network activity in this path. Audit checks current runtime
+bytes, committed control bytes, preserved repair hashes and the rebuilt bundle.
+
+A future supported hypothesis requires implementing its bounded experiment before
+this command can evaluate it; this path refuses supported candidates. Such an
+experiment must record three alternating pairs per mode/engine, 5 seconds warmup
+and 30 active seconds per arm, all mean/p95 results, >=10% median paired mean-frame
+improvement in the targeted Firefox case and <=5% regression in every case. Exact
+same-engine decoded pixels and state must match at deterministic checkpoints,
+including resize. These conditional checks are not claimed by a no-candidate run.

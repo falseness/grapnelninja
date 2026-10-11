@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
-from playgama_firefox_perf import capture_command, metrics, profile_metrics, profile_conclusions
+from playgama_firefox_perf import capture_command, metrics, profile_metrics, profile_conclusions, no_candidate_decision, runtime_files
 
 
 class FrameMetricsTests(unittest.TestCase):
@@ -52,6 +52,32 @@ class ProfileTests(unittest.TestCase):
                        arm=arm,raw=path) for arm,path in [('control','a.json'),('suppressed','b.json')]]
             with self.assertRaisesRegex(AssertionError,'unmatched states'):
                 profile_conclusions(out,runs,['layer'])
+
+
+class CompareTests(unittest.TestCase):
+    def test_no_candidate_is_not_a_performance_or_visual_success(self):
+        result = no_candidate_decision({'status':'no-supported-candidate', 'reason':'No mechanism'}, 'abc')
+        self.assertEqual(result['decision'], 'NO_SUPPORTED_CANDIDATE')
+        self.assertEqual(result['runtime_sha256'], 'abc')
+        self.assertIsNone(result['candidate_sha256'])
+        self.assertIsNone(result['hypothesis_tested'])
+        self.assertFalse(result['performance_success'])
+        self.assertEqual(result['native_android'], 'UNVERIFIED')
+
+    def test_supported_candidate_cannot_silently_skip_experiment(self):
+        with self.assertRaisesRegex(ValueError, 'refusing an untested decision'):
+            no_candidate_decision({'status':'supported-candidate'}, 'abc')
+
+    def test_snapshot_includes_referenced_runtime_and_ignores_sdk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'index.html').write_text('<script src="game.js"></script><script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>')
+            (root/'game.js').write_text('const fixed = true;')
+            (root/'playgama-bridge-config.json').write_text('{}')
+            self.assertEqual(set(runtime_files(root)), {'index.html', 'game.js', 'playgama-bridge-config.json'})
+            (root/'index.html').write_text('<script src="../secret.js"></script>')
+            with self.assertRaisesRegex(ValueError, 'Unsafe runtime reference'):
+                runtime_files(root)
 
 
 class ConsoleCaptureTests(unittest.TestCase):

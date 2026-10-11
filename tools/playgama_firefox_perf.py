@@ -16,6 +16,8 @@ import json
 import math
 from pathlib import Path
 import platform
+import re
+import shutil
 import subprocess
 import sys
 from threading import Thread
@@ -574,6 +576,114 @@ def audit_profile(out):
     print('PASS profile completion; performance success not asserted; native Android UNVERIFIED')
 
 
+def runtime_files(root):
+    """Read the current runtime, including local start/telemetry fixes."""
+    from build_playgama import References
+    files = {p: (root/p).read_bytes() for p in ('index.html', 'playgama-bridge-config.json')}
+    refs = References(); refs.feed(files['index.html'].decode())
+    for path in refs.paths:
+        if path == SDK:
+            continue
+        if not re.fullmatch(r'[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.[A-Za-z0-9]+', path):
+            raise ValueError('Unsafe runtime reference: ' + path)
+        files[path] = (root/path).read_bytes()
+    return files
+
+
+def no_candidate_decision(hypothesis, control):
+    if hypothesis['status'] != 'no-supported-candidate':
+        raise ValueError('Supported candidate requires a new bounded experiment implementation; refusing an untested decision')
+    return {'decision': 'NO_SUPPORTED_CANDIDATE', 'hypothesis_tested': None,
+            'reason': hypothesis['reason'], 'control_sha256': control,
+            'candidate_sha256': None, 'candidate_status': 'NOT_CREATED',
+            'runtime_sha256': control, 'performance_success': False,
+            'experiment_status': 'NOT_RUN_NO_SUPPORTED_CANDIDATE',
+            'native_android': 'UNVERIFIED'}
+
+
+def compare(args):
+    """Honor TASK-293's no-candidate outcome without inventing an optimization."""
+    from build_playgama import archive, bundle
+    out = args.out
+    assert git('branch', '--show-current').decode().strip() == 'playgama-start-firefox'
+    audit_profile(args.profile)
+    hypothesis = read(args.profile/'hypothesis.json')
+    # Fail before making a snapshot if evidence actually proposes a candidate.
+    no_candidate_decision(hypothesis, '')
+    sources = runtime_files(ROOT)
+    source_hashes = {p: sha(b) for p, b in sources.items()}
+    prior = read(args.start_evidence/'manifest.json')
+    assert prior['verdict'].startswith('PASS')
+    assert all(prior['source']['sha256'][p] == h for p, h in source_hashes.items()), 'TASK-291 runtime differs'
+    head = git('rev-parse', 'HEAD').decode().strip()
+    assert all(git('show', head+':'+p) == b for p, b in sources.items()), 'Uncommitted runtime; freeze it before comparing'
+    shutil.copytree(args.profile, out/'profile-evidence')
+    write(out/'start-manifest.json', prior)
+    for p, b in sources.items():
+        path = out/'control'/p; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b)
+    packed = bundle(sources); build = archive(packed)
+    (out/'control.zip').write_bytes(build)
+    write(out/'build.json', {'revision': head, 'source_sha256': source_hashes,
+          'served_sha256': {p: sha(b) for p, b in packed.items()},
+          'zip_sha256': sha(build), 'candidate_sha256': None,
+          'build_kind': 'Frozen repair-branch runtime, deterministic bundle; not published baseline'})
+    write(out/'decision.json', no_candidate_decision(hypothesis, sha(build)))
+    (out/'candidate.diff').write_text('')
+    reason = 'NOT_APPLICABLE: no supported candidate, no timing or visual experiment performed'
+    write(out/'paired-metrics.json', {'status': reason, 'pairs': [], 'raw_timings': []})
+    write(out/'visual-state.json', {'status': reason, 'comparisons': [],
+          'screenshots': [], 'state_digests': [], 'resize': 'NOT_RUN',
+          'pixel_equality': 'NOT_TESTED', 'state_equality': 'NOT_TESTED'})
+    write(out/'environment.json', {'os': platform.platform(), 'browsers': 'NOT_LAUNCHED',
+          'graphics': 'NOT_APPLICABLE', 'external_requests_allowed': 0,
+          'native_android': 'UNVERIFIED', 'profile_environment': 'profile-evidence/environment.json'})
+    audit_compare(out)
+
+
+def audit_compare(out):
+    from build_playgama import archive, bundle
+    manifest_path = out/'manifest.json'
+    if manifest_path.exists():
+        manifest = read(manifest_path)
+        assert manifest['task'] == 'TASK-294' and manifest['result'] == 'PASS' and manifest['exit_code'] == 0
+        for p, h in manifest['evidence_sha256'].items():
+            assert sha((out/p).read_bytes()) == h, p+' hash mismatch'
+        lines = (out/'compare-command.log').read_text().splitlines()
+        identity = json.loads(lines[0].removeprefix('EXECUTION '))
+        for k, v in identity.items(): assert manifest[k] == v
+        ending = json.loads(lines[-1].removeprefix('EXIT '))
+        assert ending['execution_id'] == manifest['execution_id'] and ending['exit_code'] == 0
+        assert manifest['started_utc'] <= ending['ended_utc'] <= manifest['ended_utc']
+        assert 'PASS NO_SUPPORTED_CANDIDATE; no performance success; native Android UNVERIFIED' in lines
+        assert manifest['harness_sha256'] == sha(Path(__file__).read_bytes()), 'Harness changed since execution'
+    audit_profile(out/'profile-evidence')
+    build = read(out/'build.json')
+    sources = runtime_files(out/'control')
+    assert {p: sha(b) for p, b in sources.items()} == build['source_sha256']
+    assert runtime_files(ROOT) == sources, 'Runtime differs from pre-candidate control'
+    assert all(git('show', build['revision']+':'+p) == b for p, b in sources.items())
+    prior = read(out/'start-manifest.json')
+    assert prior['verdict'].startswith('PASS')
+    assert all(prior['source']['sha256'][p] == h for p, h in build['source_sha256'].items())
+    packed = bundle(sources); data = archive(packed)
+    assert {p: sha(b) for p, b in packed.items()} == build['served_sha256']
+    assert data == (out/'control.zip').read_bytes() and sha(data) == build['zip_sha256']
+    assert build['candidate_sha256'] is None
+    expected = no_candidate_decision(read(out/'profile-evidence/hypothesis.json'), sha(data))
+    assert read(out/'decision.json') == expected
+    assert (out/'candidate.diff').read_bytes() == b''
+    reason = 'NOT_APPLICABLE: no supported candidate, no timing or visual experiment performed'
+    assert read(out/'paired-metrics.json') == {'status': reason, 'pairs': [], 'raw_timings': []}
+    assert read(out/'visual-state.json') == {'status': reason, 'comparisons': [],
+          'screenshots': [], 'state_digests': [], 'resize': 'NOT_RUN',
+          'pixel_equality': 'NOT_TESTED', 'state_equality': 'NOT_TESTED'}
+    environment = read(out/'environment.json')
+    assert environment['browsers'] == 'NOT_LAUNCHED' and environment['external_requests_allowed'] == 0
+    print('PASS runtime/control/source/build hashes match; TASK-291 fixes preserved; candidate.diff empty')
+    print('PASS paired metrics and same-engine visual/state/resize checks explicitly NOT_APPLICABLE; no candidate tested')
+    print('PASS NO_SUPPORTED_CANDIDATE; no performance success; native Android UNVERIFIED')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='command',required=True)
@@ -581,19 +691,22 @@ def main():
     b.add_argument('--capture-worker', action='store_true', help=argparse.SUPPRESS)
     p=sub.add_parser('profile'); p.add_argument('--baseline',type=Path,required=True); p.add_argument('--out',type=Path,required=True)
     p.add_argument('--capture-worker', action='store_true', help=argparse.SUPPRESS)
+    c=sub.add_parser('compare'); c.add_argument('--profile',type=Path,required=True)
+    c.add_argument('--start-evidence',type=Path,required=True); c.add_argument('--out',type=Path,required=True)
+    c.add_argument('--capture-worker', action='store_true', help=argparse.SUPPRESS)
     a=sub.add_parser('audit'); a.add_argument('--input',type=Path,required=True)
     args=parser.parse_args()
     if args.command=='audit':
-        (audit_profile if (args.input/'profile.json').exists() else audit_data)(args.input); return
+        (audit_compare if (args.input/'decision.json').exists() else audit_profile if (args.input/'profile.json').exists() else audit_data)(args.input); return
     if args.capture_worker:
-        (profile if args.command=='profile' else baseline)(args); return
+        (compare if args.command=='compare' else profile if args.command=='profile' else baseline)(args); return
     # Never overwrite an earlier attempt, including an interrupted capture.
     if args.out.exists() and any(args.out.iterdir()):
         parser.error('Output already contains evidence; preserve it and use an empty directory')
     args.out.mkdir(parents=True, exist_ok=True)
     command=[sys.executable,*sys.argv]
     worker=[sys.executable,str(Path(__file__).resolve()),args.command,
-            *(['--baseline',str(args.baseline.resolve())] if args.command=='profile' else ['--revision',args.revision]),
+            *(['--profile',str(args.profile.resolve()), '--start-evidence',str(args.start_evidence.resolve())] if args.command=='compare' else ['--baseline',str(args.baseline.resolve())] if args.command=='profile' else ['--revision',args.revision]),
             '--out',str(args.out.resolve()),'--capture-worker']
     identity={'execution_id':str(uuid.uuid4()), 'command':command,
               'cwd':str(Path.cwd()), 'started_utc':utc(),
@@ -601,10 +714,10 @@ def main():
               'source_head':git('rev-parse','HEAD').decode().strip(),
               'harness_sha256':sha(Path(__file__).read_bytes())}
     code=capture_command(worker,args.out/(args.command+'-command.log'),identity)
-    write(args.out/'manifest.json',dict(identity, task='TASK-293' if args.command=='profile' else 'TASK-292',
+    write(args.out/'manifest.json',dict(identity, task='TASK-294' if args.command=='compare' else 'TASK-293' if args.command=='profile' else 'TASK-292',
         result='PASS' if code==0 else 'FAIL', ended_utc=utc(), exit_code=code,
         source_build='build.json', environment='environment.json',
-        scope='TASK-293; prerequisites TASK-292, TASK-287; experiment completion != performance success' if args.command=='profile' else 'TASK-292; prerequisite TASK-287; experiment completion != performance success',
+        scope='TASK-294; prerequisites TASK-291, TASK-293; completion != performance success' if args.command=='compare' else 'TASK-293; prerequisites TASK-292, TASK-287; experiment completion != performance success' if args.command=='profile' else 'TASK-292; prerequisite TASK-287; experiment completion != performance success',
         evidence_sha256={str(p.relative_to(args.out)):sha(p.read_bytes())
             for p in sorted(args.out.rglob('*')) if p.is_file()}))
     raise SystemExit(code)
