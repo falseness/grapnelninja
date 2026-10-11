@@ -1,12 +1,12 @@
 // Synthesized WebAudio sounds (no audio files). The AudioContext is created
 // on the first pointerdown/touchstart/keydown. Everything goes through one
-// master GainNode; muting from any source ('user', 'host', 'ad', 'hidden')
+// master GainNode; muting from any source (including orientation)
 // sets the master gain to 0 and suspends the context. Without AudioContext
 // every call is a safe no-op.
 const AUDIO = (function()
 {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext
-    const muteSources = ['user', 'host', 'hostPause', 'ad', 'hidden', 'focus']
+    const muteSources = ['user', 'host', 'hostPause', 'ad', 'hidden', 'focus', 'orientation']
     const masterVolume = 1
     const musicVolume  = 0.08
 
@@ -30,7 +30,7 @@ const AUDIO = (function()
     const musicNotes = [220, 261.63, 329.63, 293.66]
     const musicStepS = 1.6
 
-    const muted = {user: false, host: false, ad: false, hidden: document.hidden, hostPause: false, focus: false}
+    const muted = {user: false, host: false, ad: false, hidden: document.hidden, hostPause: false, focus: false, orientation: false}
     const log = []
     window.__audioLog = log
     // Last playThrottled time per sound

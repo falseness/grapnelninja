@@ -79,6 +79,7 @@ class Playgama2AudioTests(unittest.TestCase):
         result.update(phase=phase, wav=wav.name, expected_audible=audible)
         self.results.setdefault(case, []).append(result)
         if audible:
+            self.assertGreater(result['samples'], 0, result)
             self.assertGreater(result['rms'], .001, result)
             self.assertEqual(result['state']['state'], 'running')
         else:
@@ -165,6 +166,75 @@ class Playgama2AudioTests(unittest.TestCase):
     def test_ru_desktop(self): self.matrix('ru',False)
     def test_en_touch(self): self.matrix('en',True)
     def test_ru_touch(self): self.matrix('ru',True)
+
+    def test_orientation_audio_mute_and_recovery(self):
+        page = self.open('en', True)
+        case = 'orientation'
+        evidence = {
+            'browser': 'Chromium', 'version': self.browser.version,
+            'emulation': 'Desktop Chromium with has_touch=True; not native Android evidence',
+            'user_agent': page.evaluate('navigator.userAgent'),
+            'offline': True, 'sdk': 'local fake at network boundary',
+            'checkpoints': self.results.setdefault(case, []),
+        }
+        path = self.out / 'orientation-audio.json'
+
+        def checkpoint(phase, portrait=False, source=None):
+            audible = not portrait and source is None
+            self.measure(page, case, phase, audible)
+            result = evidence['checkpoints'][-1]
+            result.update(page.evaluate('''() => ({
+                viewport: {width: innerWidth, height: innerHeight},
+                overlay: getComputedStyle(document.getElementById('rotate-prompt')).display,
+                overlay_visible: !!document.getElementById('rotate-prompt').getClientRects().length,
+                inert: document.getElementById('stage').inert,
+                rotated: isViewRotated(),
+                coarse_pointer: matchMedia('(pointer: coarse)').matches
+            })'''))
+            result.update(expected_portrait=portrait, overlapping_mute=source)
+            path.write_text(json.dumps(evidence, indent=2) + '\n')
+            self.assertTrue(any(i['trusted'] and i['name'] == 'touchstart' for i in result['inputs']))
+            self.assertTrue(result['coarse_pointer'])
+            self.assertEqual(result['inert'], portrait)
+            self.assertEqual(result['rotated'], portrait)
+            self.assertEqual(result['overlay_visible'], portrait)
+            self.assertEqual(result['overlay'], 'flex' if portrait else 'none')
+            self.assertEqual(result['state']['muted']['orientation'], portrait)
+            self.assertEqual(result['state']['gain'], 1 if audible else 0)
+            if source:
+                self.assertTrue(result['state']['muted'][source])
+
+        def rotate(portrait):
+            page.set_viewport_size({'width': 450 if portrait else 800,
+                                    'height': 800 if portrait else 450})
+            page.wait_for_function('(portrait) => document.getElementById("stage").inert === portrait', arg=portrait)
+
+        # Start production gameplay/music through a trusted browser touch.
+        point = page.evaluate('''() => { const b=menu.classicVersionButton.background,r=canvas.getBoundingClientRect();
+            return {x:r.x+(b.x+b.width/2)*r.width/width,y:r.y+(b.y+b.height/2)*r.height/height}; }''')
+        page.touchscreen.tap(**point)
+        self.assertFalse(page.evaluate('menu.visible'))
+        checkpoint('landscape-start')
+        rotate(True)
+        checkpoint('portrait', True)
+        rotate(False)
+        checkpoint('landscape-recovery')
+        for source in ('user', 'host'):
+            if source == 'user':
+                self.toggle(page, True)
+            else:
+                page.evaluate("bridge.platform.isAudioEnabled=false; emitHost('audio',false)")
+            checkpoint(source + '-muted', source=source)
+            rotate(True)
+            checkpoint(source + '-portrait', True, source)
+            rotate(False)
+            checkpoint(source + '-landscape', source=source)
+            if source == 'user':
+                self.toggle(page, True)
+            else:
+                page.evaluate("bridge.platform.isAudioEnabled=true; emitHost('audio',true)")
+            checkpoint(source + '-released')
+        print('PASS orientation audio mute and recovery', flush=True)
 
     def test_initial_host_disabled(self):
         page = self.open('en',False,host=False)
