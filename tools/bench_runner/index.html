@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grapnel Ninja offline benchmark</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;background:#111;color:#eee;margin:0;padding:16px;max-width:720px}
+a{color:#9cf} code{background:#222;padding:1px 4px} .id{font:12px monospace;color:#bbb;word-break:break-all}
+li{margin:4px 0}</style>
+</head>
+<body>
+<h1>Grapnel Ninja offline benchmark</h1>
+<p>Local serving only. This page and the game load nothing from the internet and send results only to the machine serving this page.</p>
+<p><a id="open" href="game/index.html">Open the game with the benchmark panel</a> (landscape on phones; the panel sits at the bottom of the game).</p>
+<p>Preset links: <a href="game/index.html?mode=bad">Main version</a> · <a href="game/index.html?mode=classic">Chill version</a> · <a href="game/index.html?replay=manual">manual replay</a></p>
+<h2>Steps</h2>
+<ol>
+<li>Fill in the actual device model, the display refresh rate (or <code>unknown</code>), DevTools state, CPU throttle and emulation (<code>none</code> on a real device).</li>
+<li>Select the mode, tap <b>Start run</b>, keep the screen on and do not touch the game: 5 s warmup then 60 s of measured active play with the seeded synthetic throws (or play the documented script with <code>manual</code> replay).</li>
+<li>Repeat until 3 complete runs per mode. Results are sent to the serving machine after every run; <b>Download results</b> keeps a copy on the device.</li>
+</ol>
+<p>Full instructions: <code>README.md</code>; what to return: <code>OWNER-CHECKLIST.txt</code>.</p>
+<h2>Served build</h2>
+<div id="build" class="id">loading game/build.json…</div>
+<script>
+fetch('game/build.json', {cache: 'no-store'}).then(r => r.json()).then(b => {
+  document.getElementById('build').textContent = 'source ' + b.source_revision + '\nserved tree ' + b.served_tree_sha256 +
+    '\nbuild ' + b.build_version + '  built ' + b.built_utc + (b.source_dirty_runtime.length ? '\nDIRTY runtime: ' + b.source_dirty_runtime.join(', ') : '')
+}).catch(e => { document.getElementById('build').textContent = 'build.json unavailable: ' + e })
+</script>
+</body>
+</html>
