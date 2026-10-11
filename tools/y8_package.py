@@ -596,14 +596,21 @@ def ticket_audit(task):
     return row
 
 
+def scope_tickets(by_id):
+    """Audit every SCOPE ticket; a scope id absent from the task list is a hard failure, never a silently shorter list."""
+    missing = [i for i in SCOPE if i not in by_id]
+    require(not missing, 'scope tickets missing from the task list: ' + ', '.join(missing))
+    return [ticket_audit(by_id[i]) for i in SCOPE]
+
+
 def cmd_readiness(args):
     candidate = read(args.candidate)
     checks = read(args.functional / 'release-checks.json')
     media = read(args.media / 'media-review.json')
-    tasks = read(ROOT / 'artifacts/tasks.json')
+    tasks = read(args.tasks)
     tasks = tasks if isinstance(tasks, list) else tasks['tasks']
     by_id = {t['id']: t for t in tasks}
-    tickets = [ticket_audit(by_id[i]) for i in SCOPE if i in by_id]
+    tickets = scope_tickets(by_id)
     functional_prepared = (checks['verdict'] == 'PASS' and checks['candidate']['sha256'] == candidate['sha256']
                            and media['verdict'] == 'PASS' and media['candidate'] == candidate['sha256'])
     comparison = read(ROOT / 'artifacts/TASK-282/comparison.json')
@@ -877,11 +884,24 @@ def cmd_package_check(args):
         print(f'REFERENCE {p} {h}')
     text = (release / 'TEST-RESULTS.txt').read_text()
     require(candidate['sha256'] in text and candidate['source_revision'] in text and candidate['build_tag'] in text, 'TEST-RESULTS identity')
-    require(manifest['60fps_achieved'] is False and manifest['submission_ready'] is False and manifest['uploaded'] is False,
-            'readiness flags must stay false while regressions/native rows are outstanding')
+    readiness_paths = [p for p in manifest['external_evidence_sha256'] if p.endswith('/readiness.json')]
+    require(len(readiness_paths) == 1, 'manifest must reference exactly one hash-bound readiness.json')
+    flags = check_manifest_flags(manifest, read(ROOT / readiness_paths[0]))
     print(f"PASS kit {rel(kit)}: {len(members)} members == release directory; media 9/9; external evidence {len(manifest['external_evidence_sha256'])} refs; "
-          f"60fps_achieved=false submission_ready=false uploaded=false")
+          f"60fps_achieved={str(flags['60fps_achieved']).lower()} submission_ready={str(flags['submission_ready']).lower()} "
+          f"uploaded={str(flags['uploaded']).lower()} (manifest == {readiness_paths[0]})")
     return 0
+
+
+def check_manifest_flags(manifest, readiness):
+    """Manifest readiness flags must equal the hash-bound readiness evaluation, never a hard-coded expectation; uploaded stays false."""
+    expected = {'60fps_achieved': readiness['60fps_achieved'],
+                'submission_ready': readiness['submission_readiness']['submission_ready']}
+    actual = {k: manifest.get(k) for k in expected}
+    require(actual == expected, 'manifest readiness flags differ from readiness.json: manifest=%s readiness=%s'
+            % (json.dumps(actual, sort_keys=True), json.dumps(expected, sort_keys=True)))
+    require(manifest.get('uploaded') is False, 'manifest uploaded flag must be false: %r' % (manifest.get('uploaded'),))
+    return dict(expected, uploaded=False)
 
 
 # ------------------------------------------------------------- manifest ----
@@ -1034,6 +1054,7 @@ def main(argv=None):
     p.add_argument('--functional', type=Path, default=task / 'functional')
     p.add_argument('--media', type=Path, default=task / 'media')
     p.add_argument('--out', type=Path, default=task / 'readiness.json')
+    p.add_argument('--tasks', type=Path, default=ROOT / 'artifacts/tasks.json', help='task list audited for the SCOPE tickets')
     p.set_defaults(func=cmd_readiness)
     p = sp.add_parser('assemble')
     p.add_argument('--candidate', type=Path, default=task / 'build/candidate.json')

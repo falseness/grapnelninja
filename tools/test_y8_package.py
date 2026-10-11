@@ -91,6 +91,29 @@ class Inventory(unittest.TestCase):
             with self.assertRaises((SystemExit, zipfile.BadZipFile)):
                 pkg.zip_inventory(corrupt, 'corrupt')
 
+    def test_manifest_flags_disagreeing_with_readiness_fail_package_check(self):
+        readiness = {'60fps_achieved': True, 'submission_readiness': {'submission_ready': False}}
+        manifest = {'60fps_achieved': False, 'submission_ready': False, 'uploaded': False}
+        with self.assertRaises(SystemExit) as ctx:
+            pkg.check_manifest_flags(manifest, readiness)
+        self.assertIn('manifest readiness flags differ from readiness.json', str(ctx.exception))
+        manifest['60fps_achieved'] = True
+        self.assertEqual(pkg.check_manifest_flags(manifest, readiness),
+                         {'60fps_achieved': True, 'submission_ready': False, 'uploaded': False})
+        manifest['uploaded'] = True
+        with self.assertRaises(SystemExit) as ctx:
+            pkg.check_manifest_flags(manifest, readiness)
+        self.assertIn('uploaded flag must be false', str(ctx.exception))
+
+    def test_task_list_missing_a_scope_id_fails_readiness_naming_it(self):
+        by_id = {i: {'id': i, 'status': 'done', 'description': 'x'} for i in pkg.SCOPE if i != 'TASK-283'}
+        with self.assertRaises(SystemExit) as ctx:
+            pkg.scope_tickets(by_id)
+        self.assertIn('TASK-283', str(ctx.exception))
+        self.assertIn('scope tickets missing', str(ctx.exception))
+        by_id['TASK-283'] = {'id': 'TASK-283', 'status': 'done', 'description': 'x'}
+        self.assertEqual([t['id'] for t in pkg.scope_tickets(by_id)], pkg.SCOPE)
+
     def test_ticket_audit_reads_status_and_implemented_note(self):
         row = pkg.ticket_audit({'id': 'TASK-000', 'status': 'done', 'description': 'Do a thing. More text. Implemented: did it.'})
         self.assertEqual(row['historical_result'], 'VERIFIED_EVIDENCE')
