@@ -125,9 +125,25 @@ class IntegrationMapTests(unittest.TestCase):
         self.assertEqual(gr.runtime_body_sha(ROOT), fc.load(ROOT / 'artifacts/TASK-280/decision.json')['candidate']['body_sha256'])
 
     def test_only_effects_js_changed_since_the_frozen_control(self):
+        # TASK-292: runtime = the ZIP allowlist (tools/build-y8-zip.py), compared control commit -> worktree. Accepted entries:
+        # render/effects.js (the integrated TASK-280 body), an optional platform.js whose only changed lines are the
+        # buildVersion tag, and the sealed reviewed hunks in yi.REVIEWED_RUNTIME_CHANGES (menu.js, TASK-290). Any other
+        # runtime diff, any other platform.js line and any further edit of a sealed hunk fails.
         control = fc.load(yi.CONTROL_TASK_DIR / 'manifest.json')['source_revision']
         diff = yi.runtime_diff(control, fc.git('rev-parse', 'HEAD'))
-        self.assertEqual([f['file'] for f in diff['changed_runtime_files']], ['render/effects.js'])
+        files = {f['file']: f for f in diff['changed_runtime_files']}
+        self.assertEqual(yi.unexpected_runtime_changes(diff), [], sorted(files))
+        self.assertEqual(diff['unexpected_runtime_changes'], [])
+        self.assertIn('render/effects.js', files)
+        self.assertFalse([n for n in files if n.endswith('.md') or n not in yi.RUNTIME_ALLOWLIST], sorted(files))
+        optional = set(files) - {'render/effects.js'}
+        self.assertTrue(optional <= {'platform.js', *yi.REVIEWED_RUNTIME_CHANGES}, sorted(optional))
+        if 'platform.js' in files:
+            self.assertTrue(files['platform.js']['build_tag_only'], files['platform.js']['hunks'])
+        for name, sealed in yi.REVIEWED_RUNTIME_CHANGES.items():
+            if name in files:
+                self.assertEqual(files[name]['reviewed'], sealed['task'])
+                self.assertEqual(files[name]['hunks_sha256'], sealed['hunks_sha256'])
 
     def test_sealed_costs_cover_both_modes(self):
         for name, c in yi.SEALED_COSTS.items():

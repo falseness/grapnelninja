@@ -39,9 +39,16 @@ import time
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import importlib.util
 import y8_feature_cost as fc  # noqa: E402
 import y8_glow_region as gr  # noqa: E402
 import y8_chill_ablation as ch  # noqa: E402
+
+# The ZIP runtime allowlist (tools/build-y8-zip.py RUNTIME_FILES) is the definition of "runtime" here, as in tools/y8_package.py.
+_spec = importlib.util.spec_from_file_location('build_y8_zip', Path(__file__).resolve().parent / 'build-y8-zip.py')
+build_zip = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(build_zip)
+RUNTIME_ALLOWLIST = tuple(build_zip.RUNTIME_FILES)
 
 ROOT = fc.ROOT
 MODULE = Path(__file__).resolve()
@@ -74,6 +81,18 @@ CANDIDATES = {
     'TASK-281': {'name': 'transparent-row clip of the cave background tile copies (Path2D clip per tile copy)',
                  'decision': 'artifacts/TASK-281/decision.json', 'candidate': 'tools/y8_background_rows_candidate.js',
                  'markers': ('getLayerContentRows', 'contentRows'), 'region': 'BackgroundRenderer.drawLayerTile tile copies (drawLayerTile itself is a shipped method)'},
+}
+# TASK-292: runtime changes since the frozen control that are accepted by name.
+#   platform.js may differ in its buildVersion string only (TASK-285 tagged the candidate285 runtime): build_tag_only.
+#   menu.js: TASK-290 replaced the NaN globalAlpha sets of Text.strokeNeonTube (STYLE.strokes.neonOutline was deleted by
+#   TASK-205) with the single opaque alpha the canvas had been drawing anyway; artifacts/TASK-290/probe-title-identity.log
+#   proves byte-identical title canvases in classic and bad. The hunk body is sealed by its sha256 so any further edit fails.
+BUILD_TAG_FILE = 'platform.js'
+BUILD_TAG_KEY = 'buildVersion:'
+REVIEWED_RUNTIME_CHANGES = {
+    'menu.js': {'task': 'TASK-290', 'hunks_sha256': '019dbbe07e788f655f015990c77e5b4bcc96f31a63164de8b48984d9c7cf291a',
+                'evidence': 'artifacts/TASK-290/probe-title-identity.log',
+                'reason': 'opaque title halo strokes written explicitly instead of through NaN globalAlpha sets; canvas bytes identical'},
 }
 SEALED_COSTS = {  # ms per frame at 1280x720 dpr1, from the sealed decisions named in each entry
     'glow composite (ambient chain)': {'bad': 38.77, 'classic': 49.25, 'source': 'TASK-276 ranked_stage_arms composite-off median saving',
@@ -170,15 +189,59 @@ def build_trees(out):
             'files_sha256': {t: fc.tree_hashes(trees / t) for t in TREES}, 'trees': {t: str(trees / t) for t in TREES}}
 
 
-def runtime_diff(control_commit, head):
-    names = fc.git('diff', '--name-only', control_commit, head, '--', '.', ':!tools', ':!artifacts').splitlines()
-    files = []
-    for name in names:
-        patch = fc.git('diff', control_commit, head, '--', name)
-        hunks = [l for l in patch.splitlines() if l.startswith('@@')]
-        files.append({'file': name, 'hunks': hunks, 'patch_sha256': fc.sha_bytes(patch.encode()), 'patch_lines': len(patch.splitlines())})
-    return {'control_commit': control_commit, 'head': head, 'changed_runtime_files': files,
+def _hunk_body(patch):
+    """The patch from its first @@ line on: independent of the index/blob header, so a commit and a worktree diff seal alike."""
+    lines = patch.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith('@@'):
+            return '\n'.join(lines[i:]) + '\n'
+    return ''
+
+
+def _changed_lines(patch):
+    return [l for l in patch.splitlines() if (l.startswith('+') or l.startswith('-')) and not l.startswith(('+++', '---'))]
+
+
+def classify_runtime_change(name, patch):
+    """One changed_runtime_files entry; platform.js build-tag-only diffs and sealed reviewed hunks are marked, nothing is dropped."""
+    hunks = [l for l in patch.splitlines() if l.startswith('@@')]
+    body = _hunk_body(patch)
+    entry = {'file': name, 'hunks': hunks, 'changed_lines': len(_changed_lines(patch)),
+             'hunks_sha256': fc.sha_bytes(body.encode()), 'patch_sha256': fc.sha_bytes(patch.encode()), 'patch_lines': len(patch.splitlines())}
+    if name == BUILD_TAG_FILE:
+        changed = _changed_lines(patch)
+        entry['build_tag_only'] = bool(changed) and all(l[1:].strip().startswith(BUILD_TAG_KEY) for l in changed)
+    sealed = REVIEWED_RUNTIME_CHANGES.get(name)
+    if sealed:
+        entry['reviewed'] = sealed['task'] if sealed['hunks_sha256'] == entry['hunks_sha256'] else None
+        entry['reviewed_evidence'] = sealed['evidence']
+    return entry
+
+
+def accepted_runtime_change(entry):
+    return entry['file'] == 'render/effects.js' or bool(entry.get('build_tag_only')) or bool(entry.get('reviewed'))
+
+
+def unexpected_runtime_changes(diff):
+    return [f['file'] for f in diff['changed_runtime_files'] if not accepted_runtime_change(f)]
+
+
+def runtime_diff(control_commit, head, worktree=True):
+    """Runtime (ZIP allowlist) files that differ from the frozen control.
+
+    With worktree=True (default) the comparison is control commit -> working tree, so an uncommitted runtime edit shows up
+    too; `head` is recorded for the report (prepare() has already checked that the worktree runtime equals HEAD).
+    Docs, tools and artifacts are never runtime and never appear.
+    """
+    target = [] if worktree else [head]
+    names = fc.git('diff', '--name-only', control_commit, *target, '--', *RUNTIME_ALLOWLIST).splitlines()
+    files = [classify_runtime_change(name, fc.git('diff', control_commit, *target, '--', name)) for name in names if name in RUNTIME_ALLOWLIST]
+    diff = {'control_commit': control_commit, 'head': head, 'compared_to': 'worktree' if worktree else head,
+            'runtime_allowlist': 'tools/build-y8-zip.py RUNTIME_FILES', 'runtime_allowlist_files': len(RUNTIME_ALLOWLIST),
+            'changed_runtime_files': files,
             'tools_only_commits_between': fc.git('log', '--oneline', f'{control_commit}..{head}').splitlines()}
+    diff['unexpected_runtime_changes'] = unexpected_runtime_changes(diff)
+    return diff
 
 
 def candidate_map(identity):
@@ -224,6 +287,7 @@ def prepare(args):
                                       'geometry-clip block); the rejected TASK-279/281 candidates targeted BackgroundRenderer and were never '
                                       'installed, so no two candidates edit the same code and no conflict resolution was needed',
                'only_effects_js_changed': changed == ['render/effects.js'],
+               'unexpected_runtime_changes': diff['unexpected_runtime_changes'],
                'combination_tested': 'control tree vs integrated tree, nothing injected, identity action (identity-visual.json)'}
     integration = {'task': TASK, 'utc': utc(), 'candidates': mapping, 'runtime_diff': diff, 'overlap': overlap,
                    'all_candidates_consistent_with_final_code': all(m['consistent'] for m in mapping),
