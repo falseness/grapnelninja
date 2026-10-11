@@ -24,10 +24,15 @@ What the TASK-285 kit does and does not claim:
   `submission_ready` stay false; nothing was uploaded or submitted.
 - Historical TASK-265/270 statuses are recorded as evidence, not used as
   hardcoded blockers; the readiness evaluation uses current evidence only.
-- WebKit was not available in the TASK-285 environment (binary removed for
-  disk space; reinstall failed with ENOSPC, log preserved), so the release
-  suite ran on Chromium and Firefox; `tools/verify_y8_release.py` honours a
-  `Y8_ENGINES` override and the omission is recorded in release-checks.json.
+- WebKit had been removed from the host for disk space; the first TASK-285
+  release/lifecycle runs failed or ran without it (attempts preserved under
+  `artifacts/TASK-285/functional/`). It was reinstalled once space was freed,
+  its missing runtime libraries (libavif, libgav1, libyuv, abseil) were placed
+  in the Playwright bundle because apt was blocked by a pre-existing broken
+  kernel upgrade (`artifacts/TASK-285/webkit-libs.log`), and all suites were
+  rerun on Chromium, Firefox and WebKit with
+  `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`. `tools/verify_y8_release.py`
+  honours a `Y8_ENGINES` override for hosts without a browser.
 
 The sections below describe the superseded TASK-270 kit.
 
