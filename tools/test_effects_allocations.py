@@ -20,6 +20,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from browser_test_support import node_binary, node_label
+
 ROOT = Path(__file__).resolve().parent.parent
 TEST_PATH = 'tools/test_effects_allocations.py'
 
@@ -55,6 +57,7 @@ function load(path) {
                                    triangleSilhouetteMagentaFill: 'mf', triangleSilhouetteBlueStroke: 'bs'}}
         }
     }
+    context.window = context  // render/effects.js installs its __geometry* hooks on window at load
     vm.createContext(context)
     vm.runInContext(fs.readFileSync(path, 'utf8') +
         '\n;this.__e = {ParticleSystem, PlayerTrailRenderer, BackgroundRenderer}', context)
@@ -143,6 +146,7 @@ function load(path) {
                                    triangleSilhouetteMagentaFill: 'mf', triangleSilhouetteBlueStroke: 'bs'}}
         }
     }
+    context.window = context  // render/effects.js installs its __geometry* hooks on window at load
     vm.createContext(context)
     vm.runInContext(fs.readFileSync(path, 'utf8') +
         '\n;this.__e = {ParticleSystem, PlayerTrailRenderer, BackgroundRenderer}', context)
@@ -228,14 +232,14 @@ class EffectsAllocationsTest(unittest.TestCase):
         old_path = Path('/tmp/test_effects_allocations_base.js')
         old_path.write_text(git('show', f'{cls.base}:render/effects.js') + '\n')
         result = subprocess.run(
-            ['node', '-e', NODE_SCRIPT, str(old_path), str(ROOT / 'render/effects.js')],
+            [node_binary(), '-e', NODE_SCRIPT, str(old_path), str(ROOT / 'render/effects.js')],
             capture_output=True, text=True)
         if result.returncode:
             raise AssertionError(result.stderr)
         data = json.loads(result.stdout)
         cls.old, cls.new = data['old'], data['new']
         cls.old_path = old_path
-        print(f'\nbase={cls.base} worktree={git("rev-parse", "HEAD")}+worktree')
+        print(f'\nbase={cls.base} worktree={git("rev-parse", "HEAD")}+worktree node={node_label()}')
 
     def test_particle_compaction_keeps_order_and_drops_expired(self):
         lives = [5, 16, 40, 0.5, 17, 100, 16.0001, -1, 30, 2]
@@ -264,7 +268,7 @@ class EffectsAllocationsTest(unittest.TestCase):
 
     def test_targeted_paths_allocate_less_and_pooled_paths_allocate_nothing(self):
         result = subprocess.run(
-            ['node', '--expose-gc', '--min-semi-space-size=64', '--max-semi-space-size=64',
+            [node_binary(), '--expose-gc', '--min-semi-space-size=64', '--max-semi-space-size=64',
              '-e', ALLOC_SCRIPT, str(self.old_path), str(ROOT / 'render/effects.js'), str(ALLOC_N)],
             capture_output=True, text=True)
         if result.returncode:
@@ -274,7 +278,7 @@ class EffectsAllocationsTest(unittest.TestCase):
             f'old={self.base} (render/effects.js)',
             f'new={git("rev-parse", "HEAD")} (worktree render/effects.js, '
             f'dirty={bool(git("status", "--porcelain", "--", "render/effects.js"))})',
-            f'node={subprocess.check_output(["node", "--version"], text=True).strip()} '
+            f'node={node_label()} '
             'flags=--expose-gc --min-semi-space-size=64 --max-semi-space-size=64',
             f'method=heapUsed delta over N={data["N"]} calls after gc(), after {data["warmup_rounds"]}x{data["N"]} '
             f'warm-up calls, min of {data["trials"]} trials, minus the empty-loop baseline '

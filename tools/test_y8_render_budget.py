@@ -1,4 +1,5 @@
 import pathlib,subprocess,unittest
+from browser_test_support import node_binary
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 class BudgetTest(unittest.TestCase):
  def test_sustained_slow_frames_only(self):
@@ -16,4 +17,4 @@ box.b.densityLimit=Infinity;box.b.observe(50000,false);box.b.observe(100000,true
 assert.equal(box.d(),2,'background gap cannot lower density');
 console.log('PASS native cap, fast frames, bounded adaptation, background exclusion');
 """
-  r=subprocess.run(['node','-e',script],cwd=ROOT,text=True,capture_output=True);print(r.stdout,end='');self.assertEqual(r.returncode,0,r.stderr)
+  r=subprocess.run([node_binary(),'-e',script],cwd=ROOT,text=True,capture_output=True);print(r.stdout,end='');self.assertEqual(r.returncode,0,r.stderr)

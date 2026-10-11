@@ -1,7 +1,9 @@
 """Frozen player trail geometry/pixel regression; baseline must be saved before edits.
 
-PLAYER_BASE_REV selects the pre-ticket commit. PLAYER_EVIDENCE_DIR receives
-native scenes, isolated production ribbons, measured outlines and provenance.
+PLAYER_BASE_REV selects the pre-ticket commit (default: artifacts/TASK-222/base-rev.txt,
+skip when neither exists); PLAYER_HEAD pins the measured tree (default: the
+TASK-222 commit). PLAYER_EVIDENCE_DIR receives native scenes, isolated production
+ribbons, measured outlines and provenance (default: artifacts/TASK-222/rerun-<utc>).
 The two clamp probes keep the real frozen centreline and change only the input
 line width. Measurements come from production getRibbonOutline vertices, not
 from the configured width ratios. Blur softness is deliberately not halved.
@@ -15,13 +17,12 @@ import unittest
 
 import numpy as np
 from PIL import Image, ImageDraw
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, ticket_base_rev, ticket_evidence_dir, ticket_head
 from perf_mobile import export_rev, SEED_SCRIPT
 import render_snapshot as snap
 from test_ball_size import PROBE_SCRIPT
 
-OUT = Path(os.environ.get('PLAYER_EVIDENCE_DIR', '../artifacts/TASK-222')).resolve()
-BASE = os.environ['PLAYER_BASE_REV']
+OUT = BASE = None  # resolved lazily in setUpClass (no env read at import)
 VIEWPORTS = [dict(name='desktop', width=1920, height=1080, dpr=1, touch=False),
              dict(name='phone', width=844, height=390, dpr=3, touch=True)]
 
@@ -97,10 +98,13 @@ def capture(label, rev):
 class PlayerTrailWidthTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        global OUT, BASE
+        BASE = ticket_base_rev('PLAYER_BASE_REV', 'artifacts/TASK-222/base-rev.txt')
+        OUT = ticket_evidence_dir('PLAYER_EVIDENCE_DIR', 'TASK-222')
         OUT.mkdir(parents=True,exist_ok=True)
         cls.report=dict(baseline=BASE,seed=snap.SEED,tick=60,viewports=VIEWPORTS,
                         phone_backing_dpr=2,revisions={},captures={})
-        for label,rev in [('reference','e430f92'),('before',BASE),('final',os.environ.get('PLAYER_HEAD','worktree'))]:
+        for label,rev in [('reference','e430f92'),('before',BASE),('final',ticket_head('PLAYER_HEAD','TASK-222'))]:
             revision,records=capture(label,rev)
             cls.report['revisions'][label]=revision;cls.report['captures'][label]=records
         # One shared crop per viewport/mode, derived from the before ribbon pixels.

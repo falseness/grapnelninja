@@ -1,8 +1,10 @@
 """TASK-221: real frozen-clock historical/base/restored player pixels and cache probes.
 
-PLAYER_BASE_REV is required: use the hash saved before editing, never HEAD^.
+PLAYER_BASE_REV is the hash saved before editing (default: the one recorded in
+artifacts/TASK-221/base-rev.txt; the suite skips when neither exists), never
+HEAD^.  PLAYER_HEAD pins the measured tree (default: the TASK-221 commit).
 PLAYER_EVIDENCE_DIR receives native scenes, isolated bodies, labelled crops and
-measured proof. Body size uses sharp RGB edge drops, excluding the soft halo.
+measured proof (default: a fresh artifacts/TASK-221/rerun-<utc> directory). Body size uses sharp RGB edge drops, excluding the soft halo.
 """
 from contextlib import ExitStack
 import hashlib
@@ -14,13 +16,12 @@ import unittest
 
 import numpy as np
 from PIL import Image, ImageDraw
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, ticket_base_rev, ticket_evidence_dir, ticket_head
 from perf_mobile import export_rev, SEED_SCRIPT
 import render_snapshot as snap
 from test_ball_size import PROBE_SCRIPT, outer_radius
 
-OUT = Path(os.environ.get('PLAYER_EVIDENCE_DIR', '../artifacts/TASK-221')).resolve()
-BASE = os.environ['PLAYER_BASE_REV']
+OUT = BASE = None  # resolved lazily in setUpClass (no env read at import)
 VIEWPORTS = [dict(name='desktop', width=1920, height=1080, dpr=1, touch=False),
              dict(name='phone', width=844, height=390, dpr=3, touch=True)]
 
@@ -98,10 +99,13 @@ def capture(label, rev):
 class PlayerBallTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        global OUT, BASE
+        BASE = ticket_base_rev('PLAYER_BASE_REV', 'artifacts/TASK-221/base-rev.txt')
+        OUT = ticket_evidence_dir('PLAYER_EVIDENCE_DIR', 'TASK-221')
         OUT.mkdir(parents=True,exist_ok=True)
         cls.report=dict(baseline=BASE,seed=snap.SEED,tick=60,viewports=VIEWPORTS,
                         phone_backing_dpr=2,revisions={},captures={})
-        for label,rev in [('reference','e430f92'),('before',BASE),('restored',os.environ.get('PLAYER_HEAD','worktree'))]:
+        for label,rev in [('reference','e430f92'),('before',BASE),('restored',ticket_head('PLAYER_HEAD','TASK-221'))]:
             revision,records=capture(label,rev)
             cls.report['revisions'][label]=revision;cls.report['captures'][label]=records
         sheet=Image.new('RGB',(960,4*240),'#12102c');d=ImageDraw.Draw(sheet)

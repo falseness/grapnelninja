@@ -12,6 +12,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import y8_background_rows as br  # noqa: E402
 import y8_feature_cost as fc  # noqa: E402
+from browser_test_support import node_binary  # noqa: E402
 
 
 def raw(case, mode, scene, rep, arm, mean_ms, started, frames=300, window_ms=20000):
@@ -27,15 +28,6 @@ def raw(case, mode, scene, rep, arm, mean_ms, started, frames=300, window_ms=200
          'dimensions': {'canvas': [1280, 720]}, 'started_utc': started, 'result': 'COMPLETE', 'density': None}
     r['summary'] = fc.summarize(r)
     return r
-
-
-def node_binary():
-    try:
-        import playwright
-    except ImportError:
-        return None
-    node = Path(playwright.__file__).resolve().parent / 'driver' / 'node'
-    return str(node) if node.exists() else None
 
 
 # The candidate body references BackgroundRenderer.prototype: a stub class is enough to evaluate it.
@@ -124,7 +116,7 @@ class CandidateFile(unittest.TestCase):
             self.assertEqual(status['runtime_body_sha256'], br.body_sha())
 
     def test_content_runs_and_device_bands_under_node(self):
-        node = node_binary()
+        node = node_binary(fallback=False)
         if not node:
             self.skipTest('playwright node unavailable')
         with tempfile.TemporaryDirectory() as d:

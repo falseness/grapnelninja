@@ -16,6 +16,7 @@ import sys
 import zipfile
 
 import y8_readiness as readiness_eval
+from browser_test_support import node_binary
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/TASK-270'
@@ -333,7 +334,7 @@ def assemble():
     require(not any(line.startswith(('artifacts/', 'screenshots/')) for line in staged.splitlines()), 'Forbidden staged paths')
     run(['git', 'status', '--short'], 'git-status-after.log')
     environment = dict(os=platform.platform(), python=sys.version,
-        git=run(['git', '--version'], 'git-version.log'), node=run(['node', '--version'], 'node-version.log'),
+        git=run(['git', '--version'], 'git-version.log'), node=run([node_binary(), '--version'], 'node-version.log'),
         pillow=importlib.metadata.version('Pillow'), playwright=importlib.metadata.version('playwright'),
         browser_execution='NOT RUN; saved offline evidence audited',
         archived_browsers=read(ROOT / 'artifacts/TASK-269/manifest.json')['environment']['archived_browsers'])

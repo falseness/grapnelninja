@@ -1,7 +1,9 @@
 """TASK-223: frozen production draw-call alpha and controlled composite probes.
 
-Save PLAYER_BASE_REV before editing. PLAYER_EVIDENCE_DIR receives native scenes,
-actual isolated invariant pixels and source/composite alpha measurements. Canvas
+Save PLAYER_BASE_REV before editing (default: artifacts/TASK-223/base-rev.txt, skip
+when neither exists); PLAYER_HEAD pins the measured tree (default: the TASK-223
+commit). PLAYER_EVIDENCE_DIR receives native scenes, actual isolated invariant
+pixels and source/composite alpha measurements (default: artifacts/TASK-223/rerun-<utc>). Canvas
 8-bit probe deltas corroborate draw-call alpha; full-scene brightness is not an
 alpha estimator. Shared bloom weights must stay unchanged.
 """
@@ -13,14 +15,13 @@ from pathlib import Path
 import unittest
 
 from PIL import Image, ImageChops, ImageDraw
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, ticket_base_rev, ticket_evidence_dir, ticket_head
 from perf_mobile import export_rev, SEED_SCRIPT
 import render_snapshot as snap
 from test_ball_size import PROBE_SCRIPT
 from test_player_ball import PROBE as CACHE_PROBE
 
-BASE = os.environ['PLAYER_BASE_REV']
-OUT = Path(os.environ.get('PLAYER_EVIDENCE_DIR', '../artifacts/TASK-223')).resolve()
+OUT = BASE = None  # resolved lazily in setUpClass (no env read at import)
 VIEWPORTS = [dict(name='desktop', width=1920, height=1080, dpr=1, touch=False),
              dict(name='phone', width=844, height=390, dpr=3, touch=True)]
 
@@ -176,10 +177,13 @@ def capture(label, rev):
 class PlayerEffectOpacityTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        global OUT, BASE
+        BASE = ticket_base_rev('PLAYER_BASE_REV', 'artifacts/TASK-223/base-rev.txt')
+        OUT = ticket_evidence_dir('PLAYER_EVIDENCE_DIR', 'TASK-223')
         OUT.mkdir(parents=True,exist_ok=True)
         cls.report=dict(baseline=BASE,seed=snap.SEED,tick=60,viewports=VIEWPORTS,
                         phone_backing_dpr=2,revisions={},captures={})
-        for label,rev in [('reference','e430f92'),('before',BASE),('final',os.environ.get('PLAYER_HEAD','worktree'))]:
+        for label,rev in [('reference','e430f92'),('before',BASE),('final',ticket_head('PLAYER_HEAD','TASK-223'))]:
             revision,records=capture(label,rev)
             cls.report['revisions'][label]=revision;cls.report['captures'][label]=records
         sheet=Image.new('RGB',(1800,4*640),'#12102c');d=ImageDraw.Draw(sheet)

@@ -45,6 +45,7 @@ sys.path.insert(0, str(TOOLS))
 _spec = importlib.util.spec_from_file_location('build_y8_zip', TOOLS / 'build-y8-zip.py')
 build_zip = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(build_zip)
+from browser_test_support import node_label  # noqa: E402
 
 SUITES = ['release', 'embed', 'mobile-embed', 'lifecycle', 'ads']
 SUITE_RESULT = {'release': 'results.json', 'embed': 'results.json', 'mobile-embed': 'mobile-embed.json',
@@ -974,7 +975,7 @@ def cmd_manifest(args):
                                  'artifacts/TASK-285/rec.py': sha(out / 'rec.py') if (out / 'rec.py').exists() else None,
                                  'tools/fixtures/fake-y8-sdk.js': fixture},
         environment=dict(os=platform.platform(), python=platform.python_version(), cpu_count=os.cpu_count(), git=git('--version'),
-                         node=subprocess.run(['node', '--version'], capture_output=True, text=True).stdout.strip(),
+                         node=node_label(),
                          playwright=_playwright_version(), browsers=browsers, gpu=gpu_probe(),
                          renderer_note='headless software rendering on the build host; the functional suites certify offline behaviour of the exact ZIP, '
                                        'not any device or FPS'),

@@ -13,6 +13,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from browser_test_support import node_binary
+
 ROOT = Path(__file__).resolve().parent.parent
 
 NODE_SCRIPT = r'''
@@ -82,7 +84,7 @@ process.stdout.write(JSON.stringify(result))
 
 
 def simulate():
-    out = subprocess.check_output(['node', '-e', NODE_SCRIPT, str(ROOT)], text=True)
+    out = subprocess.check_output([node_binary(), '-e', NODE_SCRIPT, str(ROOT)], text=True)
     return json.loads(out)
 
 

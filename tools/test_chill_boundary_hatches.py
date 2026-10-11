@@ -1,4 +1,10 @@
-"""Baseline-controlled production Chill strips, collisions, phase and cache probes."""
+"""Baseline-controlled production Chill strips, collisions, phase and cache probes.
+
+CHILL_BOUNDARY_BASE_REV selects the pre-ticket commit (default: artifacts/TASK-233/BASE_REV,
+skip when neither exists); CHILL_BOUNDARY_HEAD pins the measured tree (default: the
+TASK-233 commit); CHILL_BOUNDARY_EVIDENCE_DIR (relative to the repo root) receives the
+evidence (default: a fresh artifacts/TASK-233/rerun-<utc> directory).
+"""
 from contextlib import ExitStack
 import hashlib
 import io
@@ -10,7 +16,7 @@ import unittest
 
 import numpy as np
 from PIL import Image, ImageDraw
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, ticket_base_rev, ticket_evidence_dir, ticket_head
 from perf_mobile import SEED_SCRIPT, export_rev
 from render_snapshot import CLOCK_SCRIPT, boot_frozen
 from test_obstacle_hatches import decoded, CACHE
@@ -66,11 +72,12 @@ def pixels(page, kind):
 
 class ChillBoundaryTests(unittest.TestCase):
     def test_boundaries_baseline_controls_motion_collision_and_cache(self):
-        base=os.environ['CHILL_BOUNDARY_BASE_REV']
-        out=ROOT/os.environ.get('CHILL_BOUNDARY_EVIDENCE_DIR','artifacts/TASK-233')
+        base=ticket_base_rev('CHILL_BOUNDARY_BASE_REV','artifacts/TASK-233/BASE_REV','artifacts/TASK-233/base-rev.txt')
+        head=ticket_head('CHILL_BOUNDARY_HEAD','TASK-233')
+        out=ticket_evidence_dir('CHILL_BOUNDARY_EVIDENCE_DIR','TASK-233',relative_to=ROOT)
         out.mkdir(parents=True,exist_ok=True)
         settings={};results={};images={};controls={};bodies={};contacts={};native={}
-        for phase,rev in [('baseline',base),('final','worktree')]:
+        for phase,rev in [('baseline',base),('final',head)]:
             with ExitStack() as stack:
                 root,_=export_rev(rev,stack.callback)
                 url,browser=start_browser_test(root,stack.callback)
@@ -204,7 +211,7 @@ class ChillBoundaryTests(unittest.TestCase):
         (out/'measurements.json').write_text(json.dumps(results,indent=2)+'\n')
         files=subprocess.check_output(['git','ls-files'],cwd=ROOT,text=True).splitlines()
         files=[f for f in files if f.endswith(('.js','.html'))]+['tools/test_chill_boundary_hatches.py']
-        manifest={'baseline':base,'final':'worktree source hashes','sha256':{f:hashlib.sha256((ROOT/f).read_bytes()).hexdigest() for f in files},
+        manifest={'baseline':base,'final':head,'finalSourceHashes':'worktree' if head=='worktree' else f'worktree (measured tree: {head})','sha256':{f:hashlib.sha256((ROOT/f).read_bytes()).hexdigest() for f in files},
             'settings':settings,'cameraMotion':{k:v.get('motionAndSeams',[]) for k,v in results.items()},'seed':1,'dpr':1,'evidence':[str(p.relative_to(ROOT)) for p in sorted(out.glob('*.png'))]+['artifacts/TASK-233/measurements.json','artifacts/TASK-233/tests.log']}
         (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
         print('PASS all four mode/viewport probes; no skipped visual or behavioral probes',flush=True)

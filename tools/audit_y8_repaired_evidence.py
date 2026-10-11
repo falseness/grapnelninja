@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+from browser_test_support import node_binary  # noqa: E402
 
 
 def digest(p):
@@ -109,7 +111,7 @@ def main():
     run(['git', 'merge-base', '--is-ancestor', 'b72ff27120656518282e7196de32aaa2a0e8f035', 'HEAD'])
     run(['git', 'show', '9a062f7', '--', 'index.html'])
     run(['git', 'diff', '--check'])
-    run(['git', '--version']); run(['node', '--version']); run([sys.executable, '--version'])
+    run(['git', '--version']); run([node_binary(), '--version']); run([sys.executable, '--version'])
     index = (ROOT / 'index.html').read_text()
     assert re.search(r"visibilitychange[\s\S]{0,500}PROGRESS\.flush\(\)", index)
     lines.append('PASS lifecycle flush commit 9a062f7 ancestry and current visibility handler')

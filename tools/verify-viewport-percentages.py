@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 from verification_support import assert_near, load_baseline_sources, baseline_route
+from browser_test_support import node_binary
 from verification_scenarios import scenario as gameplay, setup, motion, frames, expected
 from pathlib import Path
 import re
@@ -195,7 +196,7 @@ def main():
                         "function screenHeightPercent(p){return {axis:'Height',percent:p}};"
                         + Path('style.js').read_text()
                         + ";process.stdout.write(JSON.stringify(STYLE));")
-                    tagged = json.loads(subprocess.check_output(['node','-e',tagged_source],text=True))
+                    tagged = json.loads(subprocess.check_output([node_binary(),'-e',tagged_source],text=True))
                     def check_dimensions(template, actual, path='STYLE'):
                         if isinstance(template,dict) and set(template)=={'axis','percent'}:
                             extent = w if template['axis']=='Width' else h
