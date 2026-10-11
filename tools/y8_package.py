@@ -25,6 +25,7 @@ Nothing here claims 60 FPS or release readiness: a passing package audit is a
 statement about bytes and offline functional behaviour, never a performance verdict.
 """
 import argparse
+import difflib
 import hashlib
 import importlib.util
 import json
@@ -682,6 +683,86 @@ def decide(functional_prepared, regression_outstanding, native_counts, owner_che
             'submission_blockers': blockers}
 
 
+BUILD_VERSION_LINE = re.compile(r"^\s*buildVersion:\s*'[^']*',?\s*$")
+
+
+def build_tag_only_difference(runner_text, candidate_text):
+    """True when the two platform.js bodies differ in exactly one line and that line is the buildVersion string."""
+    diff = [l for l in difflib.unified_diff(runner_text.splitlines(), candidate_text.splitlines(), lineterm='', n=0)
+            if (l.startswith('+') or l.startswith('-')) and not l.startswith('+++') and not l.startswith('---')]
+    removed = [l[1:] for l in diff if l.startswith('-')]
+    added = [l[1:] for l in diff if l.startswith('+')]
+    return (len(removed) == 1 and len(added) == 1
+            and bool(BUILD_VERSION_LINE.match(removed[0])) and bool(BUILD_VERSION_LINE.match(added[0])))
+
+
+def runner_runtime_binding(candidate_files, candidate_root, runner_game, decision_package):
+    """Bind the runtime the owner measured (bench runner package, game/build.json) to the candidate ZIP members.
+
+    Every runtime member of the candidate must hash-equal the served member of the runner package; index.html is
+    compared with the committed (unpatched) index the runner recorded, because the served copy swaps the SDK tag
+    for bench.js. A platform.js whose sole differing line is buildVersion is tolerated and listed under
+    build_tag_only. Anything else lands in differing and the binding is not matched. The package on disk must be
+    the one decision.json names (served_tree_sha256 / source_revision / build_version) and its served files must
+    still hash to build.json, otherwise the binding is not matched either."""
+    runner_game, candidate_root = Path(runner_game), Path(candidate_root)
+    build_path = runner_game / 'build.json'
+    binding = dict(runner_package=rel(runner_game.parent), build_json=rel(build_path), matched=False, differing=[],
+                   build_tag_only=[], package_matches_decision=False, served_tree_intact=False, problems=[])
+    if not build_path.is_file():
+        binding['problems'].append(f'runner package build.json missing: {rel(build_path)}')
+        binding['differing'] = ['<runner package build.json missing>']
+        return binding
+    build = read(build_path)
+    served = build.get('served_files_sha256', {})
+    binding.update(runner_source_revision=build.get('source_revision'), runner_build_version=build.get('build_version'),
+                   runner_served_tree_sha256=build.get('served_tree_sha256'))
+    identity_keys = (('served_tree_sha256', 'served_tree_sha256'), ('source_revision', 'source_revision'),
+                     ('build_version', 'build_version'))
+    mismatched = [k for k, d in identity_keys if decision_package.get(d) != build.get(k)]
+    binding['package_matches_decision'] = not mismatched
+    if mismatched:
+        binding['problems'].append('runner package identity differs from decision.json package: ' + ', '.join(mismatched))
+    actual = {str(p.relative_to(runner_game).as_posix()): sha(p) for p in runner_game.rglob('*')
+              if p.is_file() and p.name not in ('build.json', 'PATCH.diff')}
+    binding['served_tree_intact'] = actual == served
+    if not binding['served_tree_intact']:
+        binding['problems'].append('runner package game/ files no longer hash to their build.json')
+    members = {}
+    for f in candidate_files:
+        path, digest = f['path'], f['sha256']
+        expected = build.get('committed_index_html_sha256') if path == 'index.html' else served.get(path)
+        if expected == digest:
+            members[path] = 'matched'
+        elif path == 'platform.js' and (runner_game / path).is_file() and (candidate_root / path).is_file() \
+                and build_tag_only_difference((runner_game / path).read_text(), (candidate_root / path).read_text()):
+            members[path] = 'build_tag_only'
+            binding['build_tag_only'].append(path)
+        else:
+            members[path] = 'differing' if expected else 'missing_from_runner'
+            binding['differing'].append(path)
+    binding['differing'].sort()
+    binding['build_tag_only'].sort()
+    binding['members'] = members
+    binding['matched'] = (not binding['differing'] and binding['package_matches_decision'] and binding['served_tree_intact'])
+    return binding
+
+
+def native_acceptance(decision, binding):
+    """Counts/status/blocker actually used by the decision rule: the recorded counts only count when the owner
+    measured the same runtime bytes as the candidate; otherwise every row is UNVERIFIED and a blocker names the files."""
+    recorded = dict(decision['counts'])
+    blockers = []
+    if binding['matched']:
+        counts = recorded
+    else:
+        counts = {'PASS': 0, 'FAIL': 0, 'UNVERIFIED': sum(recorded.values())}
+        what = ', '.join(binding['differing']) if binding['differing'] else '; '.join(binding['problems'])
+        blockers.append(f'runner package runtime differs from candidate: {what}')
+    status = 'UNVERIFIED' if counts.get('UNVERIFIED') else ('FAIL' if counts.get('FAIL') else 'PASS')
+    return dict(counts=counts, counts_as_recorded=recorded, status=status, blockers=blockers)
+
+
 def ticket_audit(task):
     tid = task['id']
     directory = ROOT / 'artifacts' / tid
@@ -738,7 +819,9 @@ def cmd_readiness(args):
     runtime_match = {f['path']: (task282_runtime.get(f['path']) == f['sha256']) for f in candidate['files']}
     differing = sorted(p for p, ok in runtime_match.items() if not ok)
     decision = read(ROOT / 'artifacts/TASK-284/decision.json')
-    native_counts = decision['counts']
+    binding = runner_runtime_binding(candidate['files'], ROOT / candidate['extracted'], args.runner / 'game', decision['package'])
+    native = native_acceptance(decision, binding)
+    native_counts = native['counts']
     historical = {}
     gate = ROOT / 'artifacts/TASK-265/live-geometry/final-byte/performance/performance-gate.json'
     if gate.is_file():
@@ -750,6 +833,8 @@ def cmd_readiness(args):
     historical['TASK-270'] = dict(status=by_id.get('TASK-270', {}).get('status'),
                                   note='historical packaging ticket; its pending status is recorded, not required to change')
     verdict = decide(functional_prepared, regression_outstanding, native_counts, owner_checks_performed=False)
+    for blocker in reversed(native['blockers']):
+        verdict['submission_blockers'].insert(0, blocker)
     if engines_missing:
         verdict['submission_blockers'].insert(0, 'release suite engines neither run nor explained: ' + ', '.join(engines_missing))
     readiness = dict(
@@ -783,23 +868,35 @@ def cmd_readiness(args):
             cells=cells, identity_exact_vs_control=ranking.get('integrated_identity_exact'),
             historical_failures_preserved=historical, qualification=QUALIFICATION),
         native_60fps_acceptance=dict(
-            status='UNVERIFIED' if native_counts.get('UNVERIFIED') else ('FAIL' if native_counts.get('FAIL') else 'PASS'),
+            status=native['status'],
             evidence='artifacts/TASK-284/decision.json', evaluation_completed=decision['evaluation_completed'],
-            counts=native_counts, row_verdicts=decision['row_verdicts'],
-            note='owner-returned native results fill these rows; nothing local can; the TASK-283 runner package serves the candidate267 runtime '
-                 'whose render code equals this ZIP (only the buildVersion string differs)'),
+            counts=native_counts, counts_as_recorded=native['counts_as_recorded'], row_verdicts=decision['row_verdicts'],
+            runner_runtime_binding={k: binding[k] for k in ('matched', 'differing', 'build_tag_only')},
+            note=('owner-returned native results fill these rows; nothing local can; the runner package named by decision.json serves '
+                  'the same runtime bytes as this ZIP' + (' except platform.js, which differs only by the buildVersion line'
+                                                          if binding['build_tag_only'] else '')
+                  if binding['matched'] else
+                  'the runner package named by decision.json does not serve this ZIP\'s runtime bytes; recorded rows are not '
+                  'evidence for this candidate and every row is treated as UNVERIFIED')),
+        runner_runtime_binding=binding,
         **{'60fps_achieved': verdict['60fps_achieved']},
         submission_readiness=dict(submission_ready=verdict['submission_ready'], blockers=verdict['submission_blockers'],
                                   owner_checks={k: 'NOT PERFORMED' for k in OWNER_CHECKS}),
         moderation_status=dict(status='NOT_SUBMITTED', uploaded=False, moderation_approved=False,
                                note='owner controls console upload and moderation; no public gameplay, production ads or upload occurred'),
-        decision_rule=dict(fps='60fps_achieved is true only when all 10 TASK-284 native rows PASS and no measured regression against the '
-                               'original ZIP is outstanding; it is independent of the package audit',
+        decision_rule=dict(fps='60fps_achieved is true only when all 10 TASK-284 native rows PASS, the runner package the owner measured '
+                               'serves the same runtime bytes as this ZIP (platform.js may differ only by buildVersion) and no measured '
+                               'regression against the original ZIP is outstanding; it is independent of the package audit',
                            submission='submission_ready requires 60fps_achieved, a prepared functional package and performed owner checks',
                            historical='historical autoskip/pending statuses are recorded, never used as hardcoded blockers; '
                                       'current evidence is evaluated separately',
                            no_retry='unchanged package checks are not repeated to force a green field'))
     write(args.out, readiness)
+    print(f"runner_runtime_binding: matched={binding['matched']} build_tag_only={binding['build_tag_only']} "
+          f"differing={binding['differing']} package_matches_decision={binding['package_matches_decision']} "
+          f"runner={binding['runner_package']} counts_as_recorded={json.dumps(native['counts_as_recorded'], sort_keys=True)}")
+    for blocker in native['blockers']:
+        print('BLOCKER ' + blocker)
     print(f"PASS readiness written: functional_package_prepared={functional_prepared} software_regression="
           f"{readiness['software_regression_status']['status']} native60={readiness['native_60fps_acceptance']['status']} "
           f"60fps_achieved={verdict['60fps_achieved']} submission_ready={verdict['submission_ready']} moderation=NOT_SUBMITTED")
@@ -1169,6 +1266,8 @@ def main(argv=None):
     p.add_argument('--media', type=Path, default=task / 'media')
     p.add_argument('--out', type=Path, default=task / 'readiness.json')
     p.add_argument('--tasks', type=Path, default=ROOT / 'artifacts/tasks.json', help='task list audited for the SCOPE tickets')
+    p.add_argument('--runner', type=Path, default=ROOT / 'artifacts/TASK-283/runner',
+                   help='bench runner package (game/build.json) the owner measured; must be the one decision.json names')
     p.set_defaults(func=cmd_readiness)
     p = sp.add_parser('assemble')
     p.add_argument('--candidate', type=Path, default=task / 'build/candidate.json')

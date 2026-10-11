@@ -123,6 +123,98 @@ class Inventory(unittest.TestCase):
         self.assertEqual(row['historical_result'], 'HISTORICAL_UNRESOLVED')
 
 
+class RunnerBinding(unittest.TestCase):
+    """TASK-296: the native 60-FPS rows only count when the runner package the owner measured serves the same runtime
+    bytes as the candidate ZIP; a build-tag-only platform.js is tolerated, anything else forces UNVERIFIED."""
+    PLATFORM = "const cfg = {\n    environment: 'pending',\n    buildVersion: '%s',\n    language: 'en',\n};\n"
+    RUNTIME = {'index.html': b'<meta charset="utf-8"><script src="https://cdn.y8.com/sdk.js"></script>',
+               'render/effects.js': b'effects v1', 'physics.js': b'physics'}
+
+    def make_pair(self, d, candidate_effects=b'effects v1', tamper=False, wrong_decision=False):
+        runner, cand = Path(d) / 'runner' / 'game', Path(d) / 'candidate'
+        served, files = {}, []
+        for name, data in self.RUNTIME.items():
+            served_data = data.replace(b'<script src="https://cdn.y8.com/sdk.js"></script>', b'<script src="bench.js"></script>')
+            (runner / name).parent.mkdir(parents=True, exist_ok=True)
+            (runner / name).write_bytes(served_data)
+            served[name] = pkg.sha_bytes(served_data)
+            cand_data = candidate_effects if name == 'render/effects.js' else data
+            (cand / name).parent.mkdir(parents=True, exist_ok=True)
+            (cand / name).write_bytes(cand_data)
+            files.append(dict(path=name, sha256=pkg.sha_bytes(cand_data)))
+        (runner / 'platform.js').write_text(self.PLATFORM % 'candidate267')
+        served['platform.js'] = pkg.sha(runner / 'platform.js')
+        (cand / 'platform.js').write_text(self.PLATFORM % 'candidate285')
+        files.append(dict(path='platform.js', sha256=pkg.sha(cand / 'platform.js')))
+        (runner / 'bench.js').write_bytes(b'bench')
+        served['bench.js'] = pkg.sha_bytes(b'bench')
+        tree = pkg.sha_bytes('\n'.join(f'{k} {v}' for k, v in sorted(served.items())).encode())
+        build = dict(package='grapnelninja-bench-runner', source_revision='f8bd602', build_version='candidate267',
+                     served_files_sha256=served, served_tree_sha256=tree,
+                     committed_index_html_sha256=pkg.sha_bytes(self.RUNTIME['index.html']))
+        (runner / 'build.json').write_text(json.dumps(build))
+        (runner / 'PATCH.diff').write_text('x')
+        if tamper:
+            (runner / 'physics.js').write_bytes(b'physics tampered')
+        package = dict(build_version='candidate267', served_tree_sha256='0' * 64 if wrong_decision else tree, source_revision='f8bd602')
+        decision = dict(counts={'PASS': 10, 'FAIL': 0, 'UNVERIFIED': 0}, package=package)
+        return files, cand, runner, decision
+
+    def test_runtime_differing_in_effects_forces_unverified_and_fps_false_despite_pass_10(self):
+        with tempfile.TemporaryDirectory() as d:
+            files, cand, runner, decision = self.make_pair(d, candidate_effects=b'effects v2 (later runtime commit)')
+            binding = pkg.runner_runtime_binding(files, cand, runner, decision['package'])
+            self.assertFalse(binding['matched'])
+            self.assertEqual(binding['differing'], ['render/effects.js'])
+            self.assertEqual(binding['build_tag_only'], ['platform.js'])
+            self.assertTrue(binding['package_matches_decision'])
+            self.assertTrue(binding['served_tree_intact'])
+            native = pkg.native_acceptance(decision, binding)
+            self.assertEqual(native['status'], 'UNVERIFIED')
+            self.assertEqual(native['counts'], {'PASS': 0, 'FAIL': 0, 'UNVERIFIED': 10})
+            self.assertEqual(native['counts_as_recorded'], {'PASS': 10, 'FAIL': 0, 'UNVERIFIED': 0})
+            self.assertEqual(native['blockers'], ['runner package runtime differs from candidate: render/effects.js'])
+            verdict = pkg.decide(True, False, native['counts'], owner_checks_performed=True)
+            self.assertFalse(verdict['60fps_achieved'])
+            self.assertFalse(verdict['submission_ready'])
+
+    def test_build_tag_only_platform_difference_keeps_the_binding_matched(self):
+        with tempfile.TemporaryDirectory() as d:
+            files, cand, runner, decision = self.make_pair(d)
+            binding = pkg.runner_runtime_binding(files, cand, runner, decision['package'])
+            self.assertTrue(binding['matched'])
+            self.assertEqual((binding['differing'], binding['build_tag_only']), ([], ['platform.js']))
+            self.assertEqual(binding['members']['index.html'], 'matched')  # committed index, not the bench-patched copy
+            native = pkg.native_acceptance(decision, binding)
+            self.assertEqual((native['status'], native['blockers']), ('PASS', []))
+            self.assertTrue(pkg.decide(True, False, native['counts'], owner_checks_performed=True)['60fps_achieved'])
+            # a second changed line in platform.js is no longer build-tag-only
+            (cand / 'platform.js').write_text((self.PLATFORM % 'candidate285').replace("'en'", "'de'"))
+            files = [f if f['path'] != 'platform.js' else dict(path='platform.js', sha256=pkg.sha(cand / 'platform.js')) for f in files]
+            binding = pkg.runner_runtime_binding(files, cand, runner, decision['package'])
+            self.assertEqual((binding['matched'], binding['differing'], binding['build_tag_only']), (False, ['platform.js'], []))
+            self.assertFalse(pkg.build_tag_only_difference('a\nb\n', 'a\nb\n'))  # identical: zero differing lines
+
+    def test_tampered_or_wrong_runner_package_never_binds(self):
+        with tempfile.TemporaryDirectory() as d:
+            files, cand, runner, decision = self.make_pair(d, tamper=True)
+            binding = pkg.runner_runtime_binding(files, cand, runner, decision['package'])
+            self.assertFalse(binding['matched'])
+            self.assertFalse(binding['served_tree_intact'])
+            self.assertIn('runner package runtime differs from candidate', pkg.native_acceptance(decision, binding)['blockers'][0])
+        with tempfile.TemporaryDirectory() as d:
+            files, cand, runner, decision = self.make_pair(d, wrong_decision=True)
+            binding = pkg.runner_runtime_binding(files, cand, runner, decision['package'])
+            self.assertFalse(binding['matched'])
+            self.assertFalse(binding['package_matches_decision'])
+            self.assertEqual(binding['differing'], [])
+            self.assertEqual(pkg.native_acceptance(decision, binding)['status'], 'UNVERIFIED')
+        with tempfile.TemporaryDirectory() as d:
+            binding = pkg.runner_runtime_binding([], Path(d), Path(d) / 'nope', {})
+            self.assertFalse(binding['matched'])
+            self.assertIn('build.json missing', binding['problems'][0])
+
+
 class EngineCoverage(unittest.TestCase):
     """TASK-294: the release suite must run on chromium, firefox and webkit, or record a reason for each engine it skipped."""
 
