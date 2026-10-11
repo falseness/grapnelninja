@@ -64,6 +64,84 @@ class StartupTelemetryTests(unittest.TestCase):
                 with self.subTest(mode=mode, case=case):
                     self.run_case(mode, case)
 
+    def test_portrait_menu_milestone(self):
+        context = self.browser.new_context(viewport={'width':390, 'height':844},
+                                           has_touch=True, is_mobile=True, locale='en')
+        self.addCleanup(context.close)
+        body = 'const FAULT="normal", SAVED_LANGUAGE="en", CASE="immediate";' + support.FAKE + TRANSPORT
+        context.route(support.SDK, lambda r: r.fulfill(content_type='application/javascript', body=body))
+        # Keep raw adapter entries here: the existing funnel observer deduplicates
+        # occurrences and therefore cannot catch redundant menu milestone calls.
+        context.route('**/platform.js', lambda r: r.fulfill(content_type='application/javascript',
+            body=(support.ROOT / 'platform.js').read_text() + OBSERVE.replace(
+                'if (!occurrences.some(e => e.stage === stage)) ', '')))
+        context.add_init_script("""
+            window.touchInputs = [];
+            document.addEventListener('touchstart', e => touchInputs.push({
+                trusted:e.isTrusted, ms:performance.now()}), true);
+        """)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.goto(self.url + 'current/index.html')
+        support.wait_for_boot(page)
+        page.wait_for_function("PLATFORM.readiness.state === 'success'")
+
+        def snapshot():
+            return page.evaluate("""({bootComplete, inert:document.getElementById('stage').inert,
+                rotateVisible:getComputedStyle(document.getElementById('rotate-prompt')).display !== 'none',
+                readiness:PLATFORM.readiness, menu:menu.visible,
+                menuCount:occurrences.filter(e=>e.stage==='menu_interactive').length,
+                sentMenuCount:probe.calls.filter(e=>e.name==='startup_funnel' && e.data.stage==='menu_interactive').length,
+                occurrences, calls:probe.calls, inputs:touchInputs,
+                ninja:!!ninja, grapnel:!!grapnel, floors:floors?.length || 0})""")
+
+        portrait = snapshot()
+        self.assertTrue(portrait['bootComplete'] and portrait['inert'] and portrait['rotateVisible'])
+        self.assertEqual(portrait['readiness']['state'], 'success')
+        self.assertEqual((portrait['menuCount'], portrait['sentMenuCount']), (0, 0))
+        self.assertTrue(portrait['menu'])
+        page.screenshot(path=str(self.out / 'portrait.png'))
+        page.set_viewport_size({'width':844, 'height':390})
+        page.wait_for_function("occurrences.some(e=>e.stage==='menu_interactive')")
+        page.wait_for_timeout(200)  # let the debounced canvas layout settle
+        landscape = snapshot()
+        self.assertFalse(landscape['inert'] or landscape['rotateVisible'])
+        self.assertTrue(landscape['menu'])
+        self.assertEqual((landscape['menuCount'], landscape['sentMenuCount']), (1, 1))
+        page.screenshot(path=str(self.out / 'landscape.png'))
+        point = page.evaluate("""() => {
+            const b=menu.classicVersionButton.background, r=canvas.getBoundingClientRect();
+            return {x:r.x+(b.x+b.width/2)*r.width/width,
+                    y:r.y+(b.y+b.height/2)*r.height/height};
+        }""")
+        page.touchscreen.tap(**point)
+        page.wait_for_function("occurrences.some(e=>e.stage==='first_gameplay_frame')")
+        started = snapshot()
+        self.assertFalse(started['menu'])
+        self.assertTrue(started['ninja'] and started['grapnel'] and started['floors'] > 0)
+        self.assertEqual(len(started['inputs']), 1)
+        self.assertTrue(started['inputs'][0]['trusted'])
+        self.assertEqual(list(dict.fromkeys(e['stage'] for e in started['occurrences'])),
+                         ['menu_interactive', 'mode_selected', 'run_initialized', 'first_gameplay_frame'])
+        page.set_viewport_size({'width':390, 'height':844})
+        page.wait_for_function("document.getElementById('stage').inert")
+        page.set_viewport_size({'width':844, 'height':390})
+        page.wait_for_function("!document.getElementById('stage').inert")
+        page.evaluate('for(let i=0;i<20;i++) PLATFORM.gameReady(); updateOrientation(); updateOrientation()')
+        page.wait_for_timeout(200)
+        repeated = snapshot()
+        self.assertEqual((repeated['menuCount'], repeated['sentMenuCount']), (1, 1))
+        self.assertEqual(errors, [])
+        verdict = 'PASS portrait menu milestone deferred until interactive landscape'
+        trace = dict(environment='Chromium touch emulation', browser=self.browser.version,
+                     portrait=portrait, landscape=landscape, started=started, repeated=repeated,
+                     screenshots={'portrait.png':'Chromium touch emulation: portrait rotate overlay',
+                                  'landscape.png':'Chromium touch emulation: unobstructed landscape menu'},
+                     errors=errors, verdict=verdict)
+        (self.out / 'portrait-regression.json').write_text(json.dumps(trace, indent=2) + '\n')
+        print(verdict, flush=True)
+
     def run_case(self, mode, case):
         context = self.browser.new_context(viewport={'width':1280, 'height':720}, locale='en')
         self.addCleanup(context.close)

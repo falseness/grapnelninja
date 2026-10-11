@@ -184,6 +184,7 @@
             
             let bootPromise
             let bootComplete = false
+            let menuInteractive = false
             boot()
             
             // Platform init -> one storage read -> first menu frame -> hide
@@ -234,7 +235,7 @@
                 MUTE_BUTTON.element.hidden = false
                 // Let the unobstructed menu reach the display before signaling.
                 await nextFrame()
-                PLATFORM.startup('menu_interactive')
+                markMenuInteractive()
                 PLATFORM.gameReady()
             }
             function setLoadingProgress(text)
@@ -599,12 +600,24 @@
                 menu.setVisible(old.visible)
                 menu.changeGamePause(old.gamePaused)
             }
+            function markMenuInteractive()
+            {
+                if (menuInteractive || !bootComplete || !menu.visible || isViewRotated() ||
+                    document.getElementById('stage').inert || !document.getElementById('loading').hidden)
+                    return
+                menuInteractive = true
+                PLATFORM.startup('menu_interactive')
+            }
             function updateOrientation()
             {
                 const portrait = isViewRotated()
                 document.getElementById('stage').inert = portrait
                 AUDIO.setMute('orientation', portrait)
                 if (portrait) pauseRun()
+                else if (bootComplete && !menuInteractive)
+                    // Two frames allow the newly unobstructed menu to paint;
+                    // recheck orientation in case it changes again meanwhile.
+                    nextFrame().then(nextFrame).then(markMenuInteractive)
             }
             window.addEventListener('resize', function() {
                 updateOrientation()
