@@ -159,5 +159,92 @@ class EngineCoverage(unittest.TestCase):
         self.assertIn('unknown engines: edge', str(ctx.exception))
 
 
+class MediaReview(unittest.TestCase):
+    """TASK-295: --review is applied in the same run it is given, and a recorded verdict survives a plain re-run only
+    while the captures stay byte-identical. No browser: a fake capture writes the 'assets' and a fake build_review
+    hashes them."""
+
+    def fakes(self, out, payloads, calls):
+        def capture(out_dir):
+            calls.append('capture')
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for name, data in payloads.items():
+                (out_dir / name).parent.mkdir(parents=True, exist_ok=True)
+                (out_dir / name).write_bytes(data)
+            (out_dir / 'media-manifest.json').write_text('{}')
+
+        def build_review(out_dir):
+            names = sorted(payloads)
+            return dict(task='T', regenerated_assets=len(names), pixel_identical_to_historical='0/0',
+                        assets=[dict(path=n, sha256=pkg.sha(out_dir / n)) for n in names if n.startswith('media/')],
+                        source_frames=[dict(file=n, sha256=pkg.sha(out_dir / n)) for n in names if not n.startswith('media/')],
+                        visual_review=pkg.REVIEW_PENDING, verdict='PENDING')
+        return capture, build_review
+
+    def run_media(self, out, note, payloads, calls):
+        import contextlib
+        import io
+        capture, build_review = self.fakes(out, payloads, calls)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            review = pkg.run_media_review(out, note, capture, build_review)
+        self.assertEqual(review, json.loads((out / 'media-review.json').read_text()))
+        return review, buf.getvalue()
+
+    def test_a_first_run_with_review_records_pass_in_the_same_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            out, calls = Path(d) / 'media', []
+            review, printed = self.run_media(out, 'PASS: contact sheet reviewed', {'media/a.png': b'A', 'f.png': b'F'}, calls)
+            self.assertEqual(calls, ['capture'])
+            self.assertEqual(review['verdict'], 'PASS')
+            self.assertEqual(review['visual_review'], 'PASS: contact sheet reviewed')
+            self.assertTrue(review['visual_review_utc'])
+            self.assertFalse(review['review_carried_over'])
+            self.assertNotIn('WARNING', printed)
+            # a FAIL note is recorded as FAIL, also on the first run
+            review, _ = self.run_media(Path(d) / 'media2', 'FAIL: title clipped', {'media/a.png': b'A'}, [])
+            self.assertEqual(review['verdict'], 'FAIL')
+
+    def test_b_plain_rerun_after_pass_keeps_the_verdict_with_carry_over_recorded(self):
+        with tempfile.TemporaryDirectory() as d:
+            out, calls, payloads = Path(d) / 'media', [], {'media/a.png': b'A', 'f.png': b'F'}
+            first, _ = self.run_media(out, 'PASS: reviewed', payloads, calls)
+            second, printed = self.run_media(out, None, payloads, calls)
+            self.assertEqual(calls, ['capture'])  # manifest present: no recapture
+            self.assertEqual(second['verdict'], 'PASS')
+            self.assertEqual(second['visual_review'], 'PASS: reviewed')
+            self.assertTrue(second['review_carried_over'])
+            self.assertEqual(second['review_carried_over_from_utc'], first['visual_review_utc'])
+            self.assertEqual(second['visual_review_utc'], first['visual_review_utc'])
+            self.assertNotIn('WARNING', printed)
+            # a third plain run carries the same note again; a new note replaces it in the same run
+            third, _ = self.run_media(out, None, payloads, calls)
+            self.assertEqual(third['review_carried_over_from_utc'], first['visual_review_utc'])
+            fourth, _ = self.run_media(out, 'FAIL: looked again', payloads, calls)
+            self.assertEqual((fourth['verdict'], fourth['review_carried_over']), ('FAIL', False))
+            self.assertNotIn('review_carried_over_from_utc', fourth)
+
+    def test_recapture_with_different_bytes_resets_to_pending_with_a_warning(self):
+        with tempfile.TemporaryDirectory() as d:
+            out, calls = Path(d) / 'media', []
+            first, _ = self.run_media(out, 'PASS: reviewed', {'media/a.png': b'A', 'f.png': b'F'}, calls)
+            (out / 'media-manifest.json').unlink()  # force a recapture over the existing review
+            second, printed = self.run_media(out, None, {'media/a.png': b'A', 'f.png': b'G'}, calls)
+            self.assertEqual(calls, ['capture', 'capture'])
+            self.assertEqual(second['verdict'], 'PENDING')
+            self.assertEqual(second['visual_review'], pkg.REVIEW_PENDING)
+            self.assertFalse(second['review_carried_over'])
+            self.assertIn('f.png', second['review_reset_reason'])
+            self.assertNotIn('media/a.png', second['review_reset_reason'])
+            self.assertEqual(second['previous_review']['verdict'], 'PASS')
+            self.assertEqual(second['previous_review']['visual_review_utc'], first['visual_review_utc'])
+            self.assertIn('WARNING previous PASS visual review discarded', printed)
+            self.assertIn('f.png', printed)
+            # the pure rule on its own: a PENDING previous review carries nothing over
+            review, warning = pkg.carry_over_review(dict(assets=[], source_frames=[], verdict='PENDING'),
+                                                    dict(assets=[], source_frames=[], verdict='PENDING'))
+            self.assertEqual((review['verdict'], review['review_carried_over'], warning), ('PENDING', False, None))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -505,26 +505,91 @@ def pixel_compare(new, old):
                     max_channel_diff=max(i for i, count in enumerate(histogram) if count), bbox=list(maximum.getbbox()))
 
 
+REVIEW_PENDING = 'PENDING: open contact-sheet.png and record a note with --review'
+
+
+def capture_fingerprint(review):
+    """sha256 of every shipped asset and source frame a media review describes: the bytes the visual review was given on."""
+    return {**{a['path']: a['sha256'] for a in review.get('assets', [])},
+            **{f['file']: f['sha256'] for f in review.get('source_frames', [])}}
+
+
+def carry_over_review(review, previous):
+    """Pure rule (TASK-295): keep the previous visual_review/verdict only when the captures are byte-identical.
+
+    Returns (review, warning). `review` is updated in place: a carried-over note records review_carried_over=True
+    and the utc it was first recorded at; differing captures reset the verdict to PENDING explicitly and the warning
+    names the files that changed."""
+    if not previous or previous.get('verdict') not in ('PASS', 'FAIL'):
+        review['review_carried_over'] = False
+        return review, None
+    before, after = capture_fingerprint(previous), capture_fingerprint(review)
+    if before and before == after:
+        review.update(visual_review=previous['visual_review'], visual_review_utc=previous.get('visual_review_utc'),
+                      verdict=previous['verdict'], review_carried_over=True,
+                      review_carried_over_from_utc=previous.get('visual_review_utc'),
+                      review_carry_over_basis=f'{len(after)} captures byte-identical to the reviewed ones')
+        return review, None
+    changed = sorted(n for n in set(before) | set(after) if before.get(n) != after.get(n))
+    review.update(visual_review=REVIEW_PENDING, verdict='PENDING', review_carried_over=False,
+                  review_reset_reason='captures differ from the ones the previous note reviewed: ' + ', '.join(changed),
+                  previous_review=dict(verdict=previous['verdict'], visual_review=previous['visual_review'],
+                                       visual_review_utc=previous.get('visual_review_utc')))
+    review.pop('visual_review_utc', None)
+    return review, (f"previous {previous['verdict']} visual review discarded: {len(changed)} capture(s) differ from the reviewed "
+                    f"ones ({', '.join(changed)}); verdict reset to PENDING, review contact-sheet.png again and pass --review")
+
+
+def apply_review_note(review, note):
+    """Record a --review note on the review dict that is about to be written (same run as the captures)."""
+    review.update(visual_review=note, visual_review_utc=now(), verdict='PASS' if note.upper().startswith('PASS') else 'FAIL',
+                  review_carried_over=False)
+    review.pop('review_carried_over_from_utc', None)
+    review.pop('review_carry_over_basis', None)
+    review.pop('review_reset_reason', None)
+    return review
+
+
+def run_media_review(out, review_note, capture, build_review):
+    """Capture (only when media-manifest.json is missing), build the review, carry over or reset a previous note,
+    apply --review in the same run, then write media-review.json once. Returns the written review."""
+    review_path = out / 'media-review.json'
+    previous = read(review_path) if review_path.exists() else None
+    if not (out / 'media-manifest.json').exists():
+        capture(out)
+    review = build_review(out)
+    review, warning = carry_over_review(review, previous)
+    if warning:
+        print('WARNING ' + warning, flush=True)
+    if review_note:
+        apply_review_note(review, review_note)
+    write(review_path, review)
+    return review
+
+
 def cmd_media(args):
     candidate = read(args.candidate)
     out = args.out
     inventory = Path(candidate['archive']).resolve().parent / 'inventory.json'
     require(inventory.exists() and read(inventory)['sha256'] == candidate['sha256'], 'build inventory.json missing or stale')
-    review_path = out / 'media-review.json'
-    if not (out / 'media-manifest.json').exists():
+
+    def capture(out):
         run, _ = receipt_runner(out)
         for stage in ('covers', 'screenshots', 'inventory'):
             rc = run([sys.executable, 'tools/prepare_y8_media.py', stage, '--candidate', rel(inventory),
                       '--seeds', SEEDS, '--out', rel(out)], f'{stage}.log')
             require(rc == 0, f'media stage {stage} failed (log preserved: {stage}.log)')
-    if review_path.exists() and args.review:
-        review = read(review_path)
-        review['visual_review'] = args.review
-        review['visual_review_utc'] = now()
-        review['verdict'] = 'PASS' if args.review.upper().startswith('PASS') else 'FAIL'
-        write(review_path, review)
-        print(f"PASS media review note recorded; verdict={review['verdict']}")
-        return 0
+
+    review = run_media_review(out, args.review, capture, lambda out: build_media_review(out, candidate))
+    print(f"PASS media: {review['regenerated_assets']} assets recaptured from exact ZIP {candidate['sha256']} at "
+          f"{candidate['source_revision']}; pixel-identical to TASK-263 historical captures: "
+          f"{review['pixel_identical_to_historical']}; verdict={review['verdict']}"
+          + ('; review carried over from ' + str(review.get('review_carried_over_from_utc')) if review.get('review_carried_over')
+             else '; visual review pending' if review['verdict'] == 'PENDING' else ''))
+    return 0
+
+
+def build_media_review(out, candidate):
     manifest = read(out / 'media-manifest.json')
     require(manifest['archive_sha256'] == candidate['sha256'], 'media captured from a different archive')
     frames = {}
@@ -593,11 +658,8 @@ def cmd_media(args):
         tools_sha256={n: sha(ROOT / n) for n in MEDIA_TOOLS},
         console_slots='OWNER-VERIFIED: console dimensions, format, byte/count limits and video requirement not accessible here',
         contact_sheet=rel(out / 'contact-sheet.png'),
-        visual_review='PENDING: open contact-sheet.png and record a note with --review', verdict='PENDING')
-    write(review_path, review)
-    print(f"PASS media: {len(assets)} assets recaptured from exact ZIP {candidate['sha256']} at {candidate['source_revision']}; "
-          f"pixel-identical to TASK-263 historical captures: {identical}/{len(assets)}; visual review pending")
-    return 0
+        visual_review=REVIEW_PENDING, verdict='PENDING')
+    return review
 
 
 # ------------------------------------------------------------ readiness ----
