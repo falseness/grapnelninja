@@ -15,6 +15,11 @@ const PLATFORM = (function()
     let readyTimer = null
     const readyRetryMs = [500, 1000, 2000]
     const readyEvents = []
+    // Fixed vocabulary and page-lifetime deduplication bound retention to six.
+    const startupStages = new Set(['menu_interactive', 'mode_selected', 'run_initialized',
+        'first_gameplay_frame', 'first_grapple', 'tutorial_dismissed'])
+    const startupSeen = new Set()
+    const startupQueue = []
     const lifecycleQueue = []
     const lifecycleCapacity = 64
     let lifecycleOverflow = 0
@@ -39,12 +44,15 @@ const PLATFORM = (function()
             // or unresolved lifecycle send must never block or replay others.
             for (const event of lifecycleQueue.splice(0))
                 PLATFORM.sendMessage(event.name, event.data)
+            for (const data of startupQueue.splice(0))
+                PLATFORM.track('startup_funnel', data)
         }, () =>
         {
             if (readyAttempt > readyRetryMs.length)
             {
                 readyStage('exhausted')
                 lifecycleQueue.length = 0
+                startupQueue.length = 0
                 return
             }
             const delayMs = readyRetryMs[readyAttempt - 1]
@@ -343,6 +351,17 @@ const PLATFORM = (function()
             catch (_) {}
         },
 
+        // performance.now() measures milliseconds since this page's time origin.
+        startup(stage, mode)
+        {
+            if (!startupStages.has(stage) || startupSeen.has(stage)) return
+            startupSeen.add(stage)
+            const data = {stage, elapsed_ms: Math.round(performance.now())}
+            if (mode === 'classic' || mode === 'bad') data.mode = mode
+            if (readyState === 'success') PLATFORM.track('startup_funnel', data)
+            else if (readyState !== 'exhausted') startupQueue.push(data)
+        },
+
         // Buffer during SDK/readiness recovery without gating local gameplay.
         sendLifecycle(name, data)
         {
@@ -375,6 +394,7 @@ const PLATFORM = (function()
         get readiness()
         {
             return {state: readyState, attempts: readyAttempt, applicationReady,
+                startup: {queued: startupQueue.length, capacity: startupStages.size, seen: startupSeen.size},
                 lifecycle: {queued: lifecycleQueue.length, capacity: lifecycleCapacity,
                     overflow: lifecycleOverflow},
                 events: readyEvents.map(event => ({...event}))}

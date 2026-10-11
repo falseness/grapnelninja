@@ -24,6 +24,7 @@ TUTORIAL.button.addEventListener('click', () =>
 {
     TUTORIAL.element.hidden = true
     PROGRESS.completeTutorial()
+    PLATFORM.startup('tutorial_dismissed', version)
 })
 TUTORIAL.element.append(TUTORIAL.text, TUTORIAL.button)
 document.getElementById('stage').appendChild(TUTORIAL.element)
