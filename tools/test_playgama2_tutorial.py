@@ -2,6 +2,7 @@
 import hashlib
 import json
 import subprocess
+import time
 import unittest
 from datetime import datetime, timezone
 
@@ -21,12 +22,16 @@ class Playgama2TutorialTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         (cls.out / 'tutorial-cases.json').write_text(json.dumps(cls.results, indent=2, ensure_ascii=False) + '\n')
+        (cls.out / 'storage-fault-traces.json').write_text(json.dumps({
+            k: v for k, v in cls.results.items() if v['fault'] != 'normal'
+        }, indent=2) + '\n')
 
     def snapshot(self, page):
         return page.evaluate('''() => ({ms:performance.now(), visible:!TUTORIAL.element.hidden,
             text:TUTORIAL.text.textContent, done:PROGRESS.getTutorialDone(),
             loading:!document.getElementById('loading').hidden, readiness:PLATFORM.readiness,
-            throwed:!!grapnel?.throwed, calls:probe.calls, inputs:window.inputs})''')
+            throwed:!!grapnel?.throwed, calls:probe.calls, inputs:window.inputs,
+            directStorageAccesses:window.directStorageAccesses})''')
 
     def start(self, page, touch):
         point = page.evaluate('''() => { const b=menu.classicVersionButton.background,r=canvas.getBoundingClientRect();
@@ -42,14 +47,60 @@ class Playgama2TutorialTests(unittest.TestCase):
         context = self.browser.new_context(viewport={'width':800 if touch else 1280,'height':450 if touch else 720}, has_touch=touch)
         self.addCleanup(context.close)
         context.add_init_script("window.inputs=[]; for(const name of ['mousedown','mouseup','touchstart','touchend','click']) window.addEventListener(name,e=>inputs.push({name,trusted:e.isTrusted,target:e.target.tagName,ms:performance.now()}),true)")
-        fake = support.FAKE.replace('keys.forEach((key, i) => values[key] = data[i]);', "if (FAULT === 'write_rejected') throw Error('INJECTED write rejection'); keys.forEach((key,i)=>{values[key]=data[i];localStorage.setItem('sdk:'+key,data[i])});")
+        # Remote fixture state survives document reloads without browser storage.
+        remote = {'grapnelninja.lang': lang}
+        operations = record['sdk_operations'] = []
+        boundary = {'fault': fault, 'reload_epoch': 0}
+        def operation(op, **data):
+            operations.append({'seq': len(operations), 'reload_epoch': boundary['reload_epoch'],
+                               'op': op, **data})
+        def get(keys):
+            rejected = boundary['fault'] == 'storage_rejected'
+            result = [remote.get(k) for k in keys]
+            operation('read-rejected' if rejected else 'read-success', keys=keys, values=result)
+            return {'rejected': rejected, 'values': result}
+        def set_values(keys, values):
+            rejected = boundary['fault'] == 'write_rejected'
+            if not rejected:
+                remote.update(zip(keys, values))
+            operation('write-rejected' if rejected else 'write-success', keys=keys, values=values)
+            return {'rejected': rejected}
+        context.expose_function('fixtureGet', get)
+        context.expose_function('fixtureSet', set_values)
+        # Fail and count every direct access, including property-style storage use.
+        context.add_init_script('''window.directStorageAccesses=[];
+            for (const name of ['localStorage','sessionStorage'])
+                Object.defineProperty(window,name,{get(){
+                    directStorageAccesses.push(name); throw Error('Direct storage forbidden: '+name);
+                }});''')
+        fake = support.FAKE + '''
+            bridge.storage.get = async keys => {
+                const result = await fixtureGet(keys);
+                if (result.rejected) throw Error('INJECTED read rejection');
+                return result.values;
+            };
+            bridge.storage.set = async (keys, values) => {
+                const result = await fixtureSet(keys, values);
+                if (result.rejected) throw Error('INJECTED write rejection');
+            };
+        '''
         fake += '\nbridge.platform.language=' + json.dumps(lang) + ';'
-        fake += "\nvalues['grapnelninja.tutorialDone']=localStorage.getItem('sdk:grapnelninja.tutorialDone');"
         context.route(support.SDK, lambda r: r.fulfill(content_type='application/javascript', body='const FAULT='+json.dumps(fault)+', SAVED_LANGUAGE='+json.dumps(lang)+';\n'+fake))
         page = context.new_page()
         page.set_default_timeout(12000)
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
+        def checkpoint(name):
+            state = self.snapshot(page)
+            state.update(reload_epoch=boundary['reload_epoch'], operation_count=len(operations), remote=dict(remote))
+            record[name] = state
+            self.assertEqual(state['directStorageAccesses'], [])
+            return state
+        def wait_boundary(predicate):
+            deadline = time.monotonic() + 12
+            while not predicate():
+                self.assertLess(time.monotonic(), deadline, 'SDK boundary condition timed out')
+                page.wait_for_timeout(50)
         page.goto(self.url+'current/index.html')
         support.wait_for_boot(page)
         page.wait_for_function("PLATFORM.readiness.state === 'success'")
@@ -82,7 +133,7 @@ class Playgama2TutorialTests(unittest.TestCase):
         button=page.locator('#tutorial button')
         if touch: button.tap()
         else: button.click()
-        record['dismissed']=self.snapshot(page)
+        record['dismissed']=checkpoint('dismissed')
         self.assertFalse(record['dismissed']['visible']); self.assertTrue(record['dismissed']['done'])
         self.assertTrue(any(e['trusted'] and e['target']=='BUTTON' and e['name']=='click' for e in record['dismissed']['inputs']))
         # Hold, observe the real grapnel, then release without changing application state.
@@ -98,15 +149,37 @@ class Playgama2TutorialTests(unittest.TestCase):
         else: page.mouse.up()
         record['released']=self.snapshot(page)
         self.assertFalse(record['released']['throwed'])
-        if fault=='normal':
-            page.wait_for_function("localStorage.getItem('sdk:grapnelninja.tutorialDone') === 'true'")
-            # Remove local application cache to prove remote storage restores completion.
-            page.evaluate("Object.keys(localStorage).filter(k=>k.startsWith('grapnelninja.')).forEach(k=>localStorage.removeItem(k))")
-        else:
-            self.assertEqual(page.evaluate("localStorage.getItem('grapnelninja.tutorialDone')"),'true')
+        if fault != 'normal':
+            rejected = 'read-rejected' if fault == 'storage_rejected' else 'write-rejected'
+            wait_boundary(lambda: any(op['op'] == rejected for op in operations))
+            self.assertTrue(any(op['op'] == rejected for op in operations))
+            before = checkpoint('before_unsaved_reload')
+            self.assertTrue(before['done'])
+            self.assertNotEqual(remote.get('grapnelninja.tutorialDone'), 'true')
+            # Keep the fault active through pagehide so its flush cannot save.
+            boundary['reload_epoch'] += 1
+            page.reload(); support.wait_for_boot(page)
+            self.start(page, touch)
+            unsaved = checkpoint('reload_before_save')
+            self.assertFalse(unsaved['done']); self.assertTrue(unsaved['visible'])
+            self.assertFalse(any(op['op'] == 'write-success' for op in operations))
+            page.locator('#tutorial button').click()
+            again = checkpoint('dismissed_before_recovery')
+            self.assertTrue(again['done']); self.assertFalse(again['visible'])
+            self.assertTrue(any(e['trusted'] and e['target']=='BUTTON' and e['name']=='click' for e in again['inputs']))
+            operation('recovery-enabled')
+            boundary['fault'] = 'normal'
+        # Poll only the SDK fixture; application retries and reconciliation do the save.
+        wait_boundary(lambda: remote.get('grapnelninja.tutorialDone') == 'true')
+        saved = checkpoint('confirmed_save')
+        self.assertTrue(saved['done'])
+        self.assertTrue(any(op['op'] == 'write-success' and
+                            dict(zip(op['keys'], op['values'])).get('grapnelninja.tutorialDone') == 'true'
+                            for op in operations))
+        boundary['reload_epoch'] += 1
         page.reload(); support.wait_for_boot(page)
         self.start(page,touch)
-        record['reload']=self.snapshot(page)
+        record['reload']=checkpoint('reload')
         self.assertFalse(record['reload']['visible']); self.assertTrue(record['reload']['done'])
         self.assertFalse(record['reload']['loading'])
         self.assertEqual(errors,[])
