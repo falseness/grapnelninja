@@ -19,7 +19,7 @@ import platform
 import subprocess
 import sys
 from threading import Thread
-import traceback
+import uuid
 
 from playwright.sync_api import sync_playwright
 from browser_test_support import QuietHandler
@@ -178,10 +178,18 @@ def baseline(args):
              'served_sha256':{p:sha(b) for p,b in packed.items()},
              'quality':'Unmodified published bundle; no density, rendering or physics overrides'}
     write(out/'build.json', build)
+    print(f'BUILD revision={revision} zip_sha256={sha(archive)}', flush=True)
     runs, startup, layouts = [], [], []
     environment = {'os':platform.platform(), 'os_release':Path('/etc/os-release').read_text(),
                    'playwright':importlib.metadata.version('playwright'), 'browsers':{},
                    'native_android':'UNVERIFIED', 'execution':'headless desktop engines; mobile sizes are emulation'}
+    graphics_command=['dpkg-query','-W','libgl1-mesa-dri','libegl-mesa0']
+    graphics_started=utc()
+    graphics=subprocess.run(graphics_command,capture_output=True,text=True,cwd=ROOT)
+    environment['host_graphics_packages']={'command':graphics_command,'cwd':str(ROOT),
+        'started_utc':graphics_started,'ended_utc':utc(),'exit_code':graphics.returncode,
+        'stdout':graphics.stdout,'stderr':graphics.stderr}
+    environment['graphics_note']='Installed Mesa versions; actual Canvas2D renderer unavailable when not exposed by browser'
     with ExitStack() as stack:
         server = ThreadingHTTPServer(('127.0.0.1',0), partial(QuietHandler,directory=str(root.resolve())))
         stack.callback(server.server_close)
@@ -274,6 +282,21 @@ def audit_data(out):
         for path, expected in manifest['evidence_sha256'].items():
             assert sha((out/path).read_bytes()) == expected, path+' hash mismatch'
         assert manifest['result']=='PASS', 'baseline attempt failed'
+        lines=(out/'baseline-command.log').read_text().splitlines()
+        identity=json.loads(lines[0].removeprefix('EXECUTION '))
+        ending=json.loads(lines[-1].removeprefix('EXIT '))
+        for key, value in identity.items():
+            assert manifest[key]==value, 'console execution identity mismatch: '+key
+        assert ending['execution_id']==manifest['execution_id'] and ending['exit_code']==0
+        assert manifest['started_utc']<=ending['ended_utc']<=manifest['ended_utc']
+        assert f'BUILD revision={REVISION} zip_sha256={ZIP_SHA}' in lines
+        for engine in ('firefox','chromium'):
+            for mode in ('classic','bad'):
+                for repetition in (1,2):
+                    marker=f'RECORDED {engine}-{mode}-{repetition} '
+                    assert sum(line.startswith(marker) for line in lines)==1, marker
+        assert 'PASS experiment completion; performance success not asserted; native Android UNVERIFIED' in lines
+        print('PASS original console capture; matching execution identity, exit, build and eight samples')
     build=read(out/'build.json')
     assert build['zip_sha256']==ZIP_SHA==sha((out/'baseline.zip').read_bytes())
     for path, expected in build['served_sha256'].items():
@@ -313,30 +336,54 @@ def audit_data(out):
     print('PASS experiment completion; performance success not asserted; native Android UNVERIFIED')
 
 
+def capture_command(command, log_path, identity):
+    """Archive the child's original merged output before hashing the receipt."""
+    with log_path.open('x') as log:
+        log.write('EXECUTION ' + json.dumps(identity, sort_keys=True) + '\n')
+        log.flush()
+        process = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT)
+        for line in iter(process.stdout.readline, b''):
+            text = line.decode('utf-8', errors='replace')
+            log.write(text); log.flush()
+            sys.stdout.write(text); sys.stdout.flush()
+        process.stdout.close()
+        code = process.wait()
+        log.write('EXIT ' + json.dumps({'execution_id':identity['execution_id'],
+                  'ended_utc':utc(), 'exit_code':code}) + '\n')
+    return code
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='command',required=True)
     b=sub.add_parser('baseline'); b.add_argument('--revision',required=True); b.add_argument('--out',type=Path,required=True)
+    b.add_argument('--capture-worker', action='store_true', help=argparse.SUPPRESS)
     a=sub.add_parser('audit'); a.add_argument('--input',type=Path,required=True)
     args=parser.parse_args()
     if args.command=='audit':
         audit_data(args.input); return
-    started=utc(); code=1
-    try:
-        baseline(args); code=0
-    except Exception:
-        traceback.print_exc()
-    finally:
-        if args.out.exists() and not (args.out/'manifest.json').exists():
-            write(args.out/'manifest.json',{'task':'TASK-292','result':'PASS' if code==0 else 'FAIL',
-                'command':[sys.executable,*sys.argv], 'cwd':str(Path.cwd()),
-                'started_utc':started,'ended_utc':utc(),'exit_code':code,
-                'source_head':git('rev-parse','HEAD').decode().strip(),
-                'harness_sha256':sha(Path(__file__).read_bytes()),
-                'source_build':'build.json','environment':'environment.json',
-                'scope':'TASK-292; prerequisite TASK-287; experiment completion != performance success',
-                'evidence_sha256':{str(p.relative_to(args.out)):sha(p.read_bytes())
-                    for p in sorted(args.out.rglob('*')) if p.is_file()}})
+    if args.capture_worker:
+        baseline(args); return
+    # Never overwrite an earlier attempt, including an interrupted capture.
+    if args.out.exists() and any(args.out.iterdir()):
+        parser.error('Output already contains evidence; preserve it and use an empty directory')
+    args.out.mkdir(parents=True, exist_ok=True)
+    command=[sys.executable,*sys.argv]
+    worker=[sys.executable,str(Path(__file__).resolve()),'baseline',
+            '--revision',args.revision,'--out',str(args.out.resolve()),'--capture-worker']
+    identity={'execution_id':str(uuid.uuid4()), 'command':command,
+              'cwd':str(Path.cwd()), 'started_utc':utc(),
+              'worker_command':worker, 'worker_cwd':str(ROOT),
+              'source_head':git('rev-parse','HEAD').decode().strip(),
+              'harness_sha256':sha(Path(__file__).read_bytes())}
+    code=capture_command(worker,args.out/'baseline-command.log',identity)
+    write(args.out/'manifest.json',dict(identity, task='TASK-292',
+        result='PASS' if code==0 else 'FAIL', ended_utc=utc(), exit_code=code,
+        source_build='build.json', environment='environment.json',
+        scope='TASK-292; prerequisite TASK-287; experiment completion != performance success',
+        evidence_sha256={str(p.relative_to(args.out)):sha(p.read_bytes())
+            for p in sorted(args.out.rglob('*')) if p.is_file()}))
     raise SystemExit(code)
 
 

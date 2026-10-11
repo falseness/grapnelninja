@@ -1,6 +1,12 @@
 """Measurement integrity: slow frames and inactive boundaries are not interchangeable."""
 import unittest
-from playgama_firefox_perf import metrics
+import contextlib
+import io
+import json
+from pathlib import Path
+import sys
+import tempfile
+from playgama_firefox_perf import capture_command, metrics
 
 
 class FrameMetricsTests(unittest.TestCase):
@@ -26,6 +32,23 @@ class FrameMetricsTests(unittest.TestCase):
     def test_duplicate_timestamp_rejected(self):
         with self.assertRaises(AssertionError):
             metrics({'frames':[dict(t=1,before={},after={})]*2})
+
+
+class ConsoleCaptureTests(unittest.TestCase):
+    def test_original_stdout_stderr_and_failure_are_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'baseline-command.log'
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = capture_command([sys.executable, '-u', '-c',
+                    "import sys; print('original stdout'); print('original stderr', file=sys.stderr); sys.exit(7)"],
+                    path, {'execution_id':'test-run'})
+            lines = path.read_text().splitlines()
+            self.assertEqual(code, 7)
+            self.assertEqual(lines[1:3], ['original stdout', 'original stderr'])
+            self.assertEqual(json.loads(lines[0][10:])['execution_id'], 'test-run')
+            self.assertEqual(json.loads(lines[-1][5:])['exit_code'], 7)
+            with self.assertRaises(FileExistsError):
+                capture_command([], path, {})
 
 
 if __name__ == '__main__':

@@ -46,3 +46,13 @@ Different backing dimensions fail the comparison instead of being normalized.
 The receipt distinguishes experiment completion from performance success: there
 is no performance threshold and no improvement claimed. Graphics information is
 reported when exposed; unavailable renderer information remains explicit.
+
+The baseline command archives its worker's original merged stdout/stderr live in
+`baseline-command.log`, including tracebacks on failure. Its execution header and
+exit footer share an execution ID with `manifest.json`; the manifest hashes the
+closed log alongside the raw evidence. Both the invoked command and worker command,
+working directories, UTC times, harness hash and source HEAD are recorded. Audit
+checks that identity, the published build marker and all eight recording markers.
+Never reconstruct console output from JSON or a later audit. Existing nonempty
+output directories are refused; preserve rejected or interrupted attempts before
+rerunning. Host graphics package versions are collected during the same run.
