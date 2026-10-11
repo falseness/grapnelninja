@@ -100,10 +100,15 @@ def extent(im):
 class TriangleTrailTests(unittest.TestCase):
     def test_history_rendering_and_gameplay(self):
         out = ROOT / os.environ.get('TRIANGLE_TRAIL_EVIDENCE_DIR', 'artifacts/TASK-230')
+        if 'TRIANGLE_TRAIL_BASE_REV' not in os.environ:
+            self.skipTest('set TRIANGLE_TRAIL_BASE_REV to the pre-TASK-230 revision (artifacts/TASK-230/BASE_REV)'
+                          ' and TRIANGLE_TRAIL_HEAD to the tree to measure (0a9ffc9): the settings equality'
+                          ' holds only on that tree')
         out.mkdir(parents=True, exist_ok=True)
-        base = os.environ.get('TRIANGLE_TRAIL_BASE_REV') or (out/'BASE_REV').read_text().strip()
+        base = os.environ['TRIANGLE_TRAIL_BASE_REV']
+        head = os.environ.get('TRIANGLE_TRAIL_HEAD', 'worktree')
         measurements, settings, bodies, native, captures = {}, {}, {}, {}, []
-        for phase, rev, bound in [('baseline', base, 75), ('final', 'worktree', 150)]:
+        for phase, rev, bound in [('baseline', base, 75), ('final', head, 150)]:
             with ExitStack() as stack:
                 root, _ = export_rev(rev, stack.callback)
                 url, browser = start_browser_test(root, stack.callback)

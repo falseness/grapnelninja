@@ -47,7 +47,7 @@ SEED = 1
 # Manual clock. Runs before every game script, so all game timing reads it.
 CLOCK_SCRIPT = '''(() => {
     const STEP = 1000 / 60, EPOCH = 1767225600000
-    const snap = window.__snap = {now: 0, tick: 0, timers: [], nextId: 1, rafs: 0}
+    const snap = window.__snap = {now: 0, tick: 0, timers: [], nextId: 1, rafs: 0, bootJumps: []}
     performance.now = () => snap.now
     const RealDate = Date
     class FrozenDate extends RealDate {
@@ -91,15 +91,38 @@ CLOCK_SCRIPT = '''(() => {
         }
     }
     // One boot round: due timers and the queued rAFs; true once booted
-    // (trees without #loading boot synchronously on load).
+    // (trees without #loading boot synchronously on load).  A boot that
+    // awaits a timeout (the Y8 adapter's 2900 ms SDK fallback) has no rAF
+    // queued and no timer due: the clock fast-forwards to the earliest
+    // pending timer (tick = ceil(now / STEP)), fires the due timers, then
+    // resets to 0 with the remaining timers keeping their distance, so only
+    // the fired callbacks ever see the jump: the first menu frame and the
+    // gameplay ticks run at the same clock as a boot that needed no jump.
+    // snap.bootJumps records the ms skipped by each jump.
     snap.pumpBoot = () => {
-        snap.runTimers()
+        if (!snap.booted && !snap.bootRafs.length && snap.timers.length
+                && !snap.timers.some(t => t.due <= snap.now)) {
+            snap.now = Math.min(...snap.timers.map(t => t.due))
+            snap.tick = Math.ceil(snap.now / STEP)
+            snap.bootJumps.push(snap.now)
+            snap.runTimers()
+            snap.resetClock()
+        } else
+            snap.runTimers()
         for (const cb of snap.bootRafs.splice(0))
             cb(snap.now)
         const loading = document.getElementById('loading')
         snap.booted = !loading || loading.hidden
         return snap.booted
     }
+    snap.resetClock = () => {
+        for (const t of snap.timers)
+            t.due -= snap.now
+        snap.now = 0
+        snap.tick = 0
+    }
+    snap.pendingTimers = () => snap.timers.map(t => ({id: t.id, due: t.due, ms: t.ms,
+        repeat: t.repeat, fn: String(t.fn).slice(0, 80)}))
     snap.step = () => {
         snap.tick++
         snap.now = snap.tick * STEP
@@ -115,12 +138,20 @@ def boot_frozen(page, rounds=500):
 
     boot() awaits rAF, which the frozen clock never fires on its own; the real
     event loop runs between rounds so async boot work (storage, fonts) can settle.
+    A round with no rAF queued and no timer due fast-forwards the clock to the
+    earliest pending timer, fires it and resets the clock to 0 (the skipped ms
+    are recorded in __snap.bootJumps), so the first menu frame and gameplay
+    never see the jump.  Raises with the pending timers if boot never finishes.
     """
     for _ in range(rounds):
         if page.evaluate('() => __snap.pumpBoot()'):
             return
         page.wait_for_timeout(5)
-    raise RuntimeError('boot() did not finish under the frozen clock')
+    state = page.evaluate('() => ({now: __snap.now, tick: __snap.tick, bootJumps: __snap.bootJumps,'
+                          ' bootRafs: __snap.bootRafs.length, timers: __snap.pendingTimers()})')
+    raise RuntimeError(f'boot() did not finish under the frozen clock after {rounds} rounds: '
+                       f'now={state["now"]} tick={state["tick"]} bootJumps={state["bootJumps"]} '
+                       f'bootRafs={state["bootRafs"]} pending timers={state["timers"]}')
 
 
 # After load: input dispatch (touch or mouse) and the black composite capture.

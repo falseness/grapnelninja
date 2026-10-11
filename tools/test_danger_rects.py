@@ -114,10 +114,13 @@ def pixels(data):
 class DangerRectsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if 'DANGER_BASE' not in os.environ:
+            raise unittest.SkipTest('set DANGER_BASE to the pre-TASK-210 revision (828bbbd^) and DANGER_HEAD'
+                                    ' to the tree to measure (828bbbd): the probe asserts that ticket\'s'
+                                    ' orange light #ff8a1f, which later tickets recoloured')
         OUT.mkdir(parents=True, exist_ok=True)
-        base = os.environ.get('DANGER_BASE', 'HEAD^')
-        cls.before = capture(base, 'parent')
-        cls.after = capture('worktree', 'head')
+        cls.before = capture(os.environ['DANGER_BASE'], 'parent')
+        cls.after = capture(os.environ.get('DANGER_HEAD', 'worktree'), 'head')
         cls.report = {'parent': cls.before['rev'], 'current': cls.after['rev'],
                       'limits': {'hue_degrees': [20, 40], 'edge_saturation_min_exclusive': 0.6,
                                  'other_max_channel_delta': 2}, 'modes': {}}

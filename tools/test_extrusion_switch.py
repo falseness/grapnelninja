@@ -1,7 +1,9 @@
 """Frozen-clock extrusion call counts and flag-on parent pixel equivalence.
 
-Writes TASK-203 evidence by default; EXTRUSION_OUT and EXTRUSION_PARENT
-can override the evidence directory and reference revision for later use.
+Writes TASK-203 evidence by default; EXTRUSION_OUT, EXTRUSION_PARENT and
+EXTRUSION_HEAD (default worktree) override the evidence directory and the
+reference / measured revisions.  The unittest case is bound to TASK-203
+(flag-on pixels equal the parent's) and skips without EXTRUSION_PARENT.
 """
 from contextlib import ExitStack
 import hashlib
@@ -85,8 +87,9 @@ def capture(rev, label, force=False):
 def probe():
     subject = subprocess.check_output(['git', 'log', '-1', '--format=%s'], cwd=ROOT, text=True)
     parent = os.environ.get('EXTRUSION_PARENT', 'HEAD^' if subject.startswith('TASK-203:') else 'HEAD')
-    report = {'parent': capture(parent, 'parent'), 'off': capture('worktree', 'off'),
-              'on': capture('worktree', 'on', True),
+    head = os.environ.get('EXTRUSION_HEAD', 'worktree')
+    report = {'parent': capture(parent, 'parent'), 'off': capture(head, 'off'),
+              'on': capture(head, 'on', True),
               'harness_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     for name, entry in report['on']['captures'].items():
         a = np.asarray(Image.open(OUT / 'parent' / f'{name}.png').convert('RGB'), dtype=np.int16)
@@ -106,6 +109,9 @@ def probe():
 
 class ExtrusionSwitchTests(unittest.TestCase):
     def test_switch_and_parent_pixels(self):
+        if 'EXTRUSION_PARENT' not in os.environ:
+            self.skipTest('set EXTRUSION_PARENT to the pre-TASK-203 revision (ee81f6d^) and EXTRUSION_HEAD'
+                          ' to the tree to measure (ee81f6d): flag-on pixels equal the parent only there')
         report = probe()
         for label in ('parent', 'off', 'on'):
             self.assertEqual(report[label]['page_errors'], [])

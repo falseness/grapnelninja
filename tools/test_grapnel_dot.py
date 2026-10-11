@@ -1,6 +1,8 @@
 """Measure actual drawHook pixels against the parent, under a frozen clock.
 
-Save the baseline before editing and supply it via DOT_PARENT or --parent.
+Save the baseline before editing and supply it via DOT_PARENT or --parent
+(TASK-224's is artifacts/TASK-224/BASE_REV); the unittest case skips without it.
+DOT_HEAD (default worktree) selects the tree measured against that baseline.
 DOT_EVIDENCE_DIR preserves JSON, native gameplay captures and 4x crops.
 An 8x raster avoids quantization bias for the subpixel phone tip. Radius is
 median of eight alpha-boundary rays, in logical screen pixels, not JS ratios.
@@ -199,9 +201,12 @@ def probe(out, parent='HEAD^', head='worktree'):
 
 class GrapnelDotTest(unittest.TestCase):
     def test_anchor_halved_tip_and_rope_unchanged(self):
+        if 'DOT_PARENT' not in os.environ:
+            self.skipTest('set DOT_PARENT to the pre-TASK-224 revision (artifacts/TASK-224/BASE_REV)'
+                          ' and DOT_HEAD to the tree to measure; the probe asserts the anchor halved')
         with tempfile.TemporaryDirectory() as tmp:
-            probe(os.environ.get('DOT_EVIDENCE_DIR', tmp),
-                  os.environ.get('DOT_PARENT', 'HEAD^'))
+            probe(os.environ.get('DOT_EVIDENCE_DIR', tmp), os.environ['DOT_PARENT'],
+                  os.environ.get('DOT_HEAD', 'worktree'))
 
 
 if __name__ == '__main__':

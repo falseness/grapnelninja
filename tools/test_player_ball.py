@@ -101,7 +101,7 @@ class PlayerBallTest(unittest.TestCase):
         OUT.mkdir(parents=True,exist_ok=True)
         cls.report=dict(baseline=BASE,seed=snap.SEED,tick=60,viewports=VIEWPORTS,
                         phone_backing_dpr=2,revisions={},captures={})
-        for label,rev in [('reference','e430f92'),('before',BASE),('restored','worktree')]:
+        for label,rev in [('reference','e430f92'),('before',BASE),('restored',os.environ.get('PLAYER_HEAD','worktree'))]:
             revision,records=capture(label,rev)
             cls.report['revisions'][label]=revision;cls.report['captures'][label]=records
         sheet=Image.new('RGB',(960,4*240),'#12102c');d=ImageDraw.Draw(sheet)

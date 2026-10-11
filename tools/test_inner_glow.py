@@ -93,11 +93,13 @@ def capture(rev, enabled=True):
 
 class InnerGlowTests(unittest.TestCase):
     def test_clipped_obstacle_pixels(self):
+        if 'INNER_GLOW_PARENT' not in os.environ:
+            self.skipTest('set INNER_GLOW_PARENT to the pre-TASK-205 revision (c4504bb^) and INNER_GLOW_HEAD'
+                          ' to the tree to measure (c4504bb): edge > mid > centre is asserted on that tree')
         OUT.mkdir(parents=True,exist_ok=True)
-        on,off=capture('worktree'),capture('worktree',False)
-        commits=subprocess.check_output(['git','log','--format=%H','--grep=^TASK-205:'],cwd=ROOT,text=True).splitlines()
-        parent=os.environ.get('INNER_GLOW_PARENT',commits[-1]+'^' if commits else 'HEAD')
-        before=capture(parent)
+        head=os.environ.get('INNER_GLOW_HEAD','worktree')
+        on,off=capture(head),capture(head,False)
+        before=capture(os.environ['INNER_GLOW_PARENT'])
         sheet=Image.new('RGB',(1600,640),'#14103c');draw=ImageDraw.Draw(sheet)
         report={'parent_rev':before['bad'][1]['rev'], 'modes':{}}
         for row,mode in enumerate(('bad','classic')):
