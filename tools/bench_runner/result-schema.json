@@ -1,0 +1,179 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "$id": "grapnelninja-bench-result/1",
+ "title": "Grapnel Ninja owner benchmark result (one device session, one or more runs)",
+ "description": "Exported by game/bench.js. Every field is recorded as observed or as supplied by the owner; unknown values are null plus an explicit marker, never inferred. Verdict inputs are recomputed by benchtool.py validate from runs[].frames.",
+ "type": "object",
+ "required": ["schema", "build", "device", "display", "gpu", "settings", "platform_at_session_start", "build_version", "page_url", "started_utc", "exported_utc", "runs"],
+ "properties": {
+  "schema": {"const": "grapnelninja-bench-result/1"},
+  "bench_js": {"type": "string"},
+  "build": {
+   "type": "object",
+   "description": "Copied from game/build.json served with the game: binds the result to the exact served bytes.",
+   "required": ["source_revision", "served_tree_sha256", "served_files_sha256", "bench_js_sha256", "build_version", "committed_index_html_sha256", "served_index_html_sha256"],
+   "properties": {
+    "source_revision": {"type": "string", "minLength": 40},
+    "served_tree_sha256": {"type": "string", "minLength": 64},
+    "served_files_sha256": {"type": "object"},
+    "bench_js_sha256": {"type": "string", "minLength": 64},
+    "benchtool_sha256": {"type": "string"},
+    "build_version": {"type": ["string", "null"]},
+    "committed_index_html_sha256": {"type": "string", "minLength": 64},
+    "served_index_html_sha256": {"type": "string", "minLength": 64},
+    "source_dirty_runtime": {"type": "array"},
+    "built_utc": {"type": "string"}
+   }
+  },
+  "device": {
+   "type": "object",
+   "required": ["model_supplied", "user_agent", "os_family_detected", "browser_family_detected", "detected_from", "max_touch_points", "ua_client_hints"],
+   "properties": {
+    "model_supplied": {"type": "string", "minLength": 1, "description": "Actual hardware model typed by the owner (required; emulated devices are not native results)."},
+    "user_agent": {"type": "string", "minLength": 1},
+    "os_family_detected": {"type": ["string", "null"], "description": "Token found in navigator.userAgent, or null when absent."},
+    "browser_family_detected": {"type": ["string", "null"]},
+    "detected_from": {"type": "string"},
+    "navigator_platform": {"type": ["string", "null"]},
+    "max_touch_points": {"type": "integer", "minimum": 0},
+    "hardware_concurrency": {"type": ["integer", "null"]},
+    "device_memory_gb": {"type": ["number", "null"]},
+    "language": {"type": ["string", "null"]},
+    "ua_client_hints": {"type": ["object", "null"], "description": "navigator.userAgentData when the browser exposes it (platformVersion/model are high-entropy hints the browser may refuse)."}
+   }
+  },
+  "display": {
+   "type": "object",
+   "required": ["refresh_rate_hz_supplied", "refresh_rate_marker", "raf_estimate", "screen", "dpr", "orientation", "viewport"],
+   "properties": {
+    "refresh_rate_hz_supplied": {"type": ["number", "null"]},
+    "refresh_rate_marker": {"enum": ["manual", "unknown"], "description": "manual = the owner typed the display refresh rate; unknown = not supplied (value null). Never inferred."},
+    "raf_estimate": {"type": ["object", "null"], "description": "Median requestAnimationFrame cadence on the static menu before the first run: an estimate, not the refresh rate."},
+    "screen": {"type": "array", "minItems": 2},
+    "screen_available": {"type": "array"},
+    "color_depth": {"type": ["integer", "null"]},
+    "dpr": {"type": "number", "minimum": 0},
+    "orientation": {"type": ["string", "null"]},
+    "visual_viewport_scale": {"type": ["number", "null"]},
+    "viewport": {"type": "array", "minItems": 2}
+   }
+  },
+  "gpu": {
+   "type": "object",
+   "required": ["available"],
+   "properties": {
+    "available": {"type": "boolean"},
+    "vendor": {"type": ["string", "null"]},
+    "renderer": {"type": ["string", "null"]},
+    "source": {"type": "string"},
+    "reason": {"type": "string"}
+   }
+  },
+  "settings": {
+   "type": "object",
+   "required": ["seed", "replay_kind", "input_kind", "warmup_ms", "run_ms", "repetitions_target", "protocol", "devtools", "cpu_throttle", "emulation", "notes", "density", "sdk_isolation", "hooks", "autosend", "autostart", "seed_installed_at_load"],
+   "properties": {
+    "seed": {"type": "string", "minLength": 1, "description": "Decimal seed for the page's Math.random (mulberry32) or 'none'."},
+    "replay_kind": {"enum": ["auto", "manual"]},
+    "input_kind": {"type": "string"},
+    "warmup_ms": {"type": "integer", "minimum": 1},
+    "run_ms": {"type": "integer", "minimum": 1},
+    "repetitions_target": {"type": "integer", "minimum": 1},
+    "protocol": {"enum": ["standard", "custom"], "description": "standard = 5000 ms warmup + 60000 ms measured x 3 repetitions per mode."},
+    "devtools": {"enum": ["closed", "docked", "undocked", "unknown"], "description": "Owner-supplied DevTools state for this session."},
+    "cpu_throttle": {"type": "string", "minLength": 1, "description": "Owner-supplied DevTools CPU throttling setting (e.g. 'none (1x)', '4x')."},
+    "emulation": {"enum": ["none", "emulated", "unknown"], "description": "emulated = DevTools device emulation: never a native-device result."},
+    "notes": {"type": "string"},
+    "density": {"type": "string"},
+    "sdk_isolation": {"type": "string"},
+    "hooks": {"type": "string"},
+    "autosend": {"type": "boolean"},
+    "autostart": {"type": "boolean"},
+    "seed_installed_at_load": {"type": "string"}
+   }
+  },
+  "platform_at_session_start": {"type": "string", "description": "PLATFORM.environment; must be 'disabled' (no SDK)."},
+  "build_version": {"type": ["string", "null"]},
+  "page_url": {"type": "string"},
+  "started_utc": {"type": "string"},
+  "exported_utc": {"type": "string"},
+  "runs": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": ["index", "mode", "started_utc", "ended_utc", "seed_installed", "replay_kind", "input_kind", "replay_fractions_sha256", "replay_events", "dimensions_at_start", "dimensions_at_end", "frames", "excluded", "excluded_samples", "interruptions", "deaths", "dispatched", "backing", "warmup_end_active_ms", "active_ms", "result", "error", "frames_sha256", "verdict_inputs"],
+    "properties": {
+     "index": {"type": "integer", "minimum": 1},
+     "mode": {"enum": ["bad", "classic"], "description": "bad = Main version, classic = Chill version (startGame argument)."},
+     "started_utc": {"type": "string"},
+     "ended_utc": {"type": "string"},
+     "seed_installed": {"type": "string"},
+     "replay_kind": {"enum": ["auto", "manual"]},
+     "input_kind": {"enum": ["mouse", "touch"]},
+     "replay_fractions_sha256": {"type": "string", "minLength": 64},
+     "replay_events": {"type": "integer", "minimum": 0},
+     "dimensions_at_start": {"$ref": "#/definitions/dimensions"},
+     "dimensions_at_end": {"$ref": "#/definitions/dimensions"},
+     "frames": {
+      "type": "array", "minItems": 2,
+      "description": "Active frames only: [rAF timestamp ms, interval ms or null]. null = first frame, or first active frame after a menu/pause/hidden/offer/ad gap (interval not counted).",
+      "items": {"type": "array", "minItems": 2}
+     },
+     "excluded": {"type": "integer", "minimum": 0, "description": "Count of gameLoop calls in an inactive state during the run."},
+     "excluded_samples": {"type": "array"},
+     "interruptions": {"type": "array", "description": "visibilitychange / blur events during the run with performance.now() stamps."},
+     "deaths": {"type": "array", "description": "reStart calls (lethal deaths; the local adapter restarts instantly) with active_ms."},
+     "dispatched": {"type": "array", "description": "Synthetic replay inputs fired (auto replay) with window coordinates and active_ms."},
+     "backing": {
+      "type": "object", "required": ["initial", "changes"],
+      "properties": {"initial": {"type": ["array", "null"]}, "changes": {"type": "array"}},
+      "description": "Canvas backing store at the first active frame and every change (adaptive density is NOT pinned)."
+     },
+     "warmup_end_active_ms": {"type": ["number", "null"]},
+     "active_ms": {"type": "number", "minimum": 0},
+     "result": {"type": "string", "description": "COMPLETE, ABORTED by owner, or FAILED: <reason>; non-complete attempts are preserved, never counted."},
+     "error": {"type": ["string", "null"]},
+     "frames_sha256": {"type": "string", "minLength": 64, "description": "SHA-256 of the canonical JSON of frames (sorted keys, no spaces)."},
+     "verdict_inputs": {
+      "type": "object",
+      "required": ["warmup_ms", "run_ms", "measured_start_frame", "measured", "rolling_10s_windows", "rolling_10s_min_fps", "backing_constant", "backing_sizes", "inactive_frames_excluded", "deaths", "dispatched_inputs", "measured_active_ms_reached"],
+      "properties": {
+       "warmup_ms": {"type": "integer"},
+       "run_ms": {"type": "integer"},
+       "measured_start_frame": {"type": ["integer", "null"]},
+       "measured": {"type": ["object", "null"], "description": "intervals, gaps, active_ms, wall_ms, average_fps, frame_ms{p50,p95,p99,max} over the measured region (page-side; recomputed by the validator)."},
+       "rolling_10s_windows": {"type": "integer"},
+       "rolling_10s_min_fps": {"type": ["number", "null"]},
+       "backing_constant": {"type": "boolean"},
+       "backing_sizes": {"type": "array"},
+       "inactive_frames_excluded": {"type": "integer"},
+       "deaths": {"type": "integer"},
+       "dispatched_inputs": {"type": "integer"},
+       "measured_active_ms_reached": {"type": "boolean"}
+      }
+     }
+    }
+   }
+  }
+ },
+ "definitions": {
+  "dimensions": {
+   "type": "object",
+   "required": ["canvas_backing", "canvas_css", "dpr", "viewport", "logical", "rotated", "render_density", "density_limit", "platform", "build_version", "fps_counter_enabled", "version"],
+   "properties": {
+    "canvas_backing": {"type": "array", "minItems": 2},
+    "canvas_css": {"type": "array", "minItems": 2},
+    "dpr": {"type": "number"},
+    "viewport": {"type": "array", "minItems": 2},
+    "logical": {"type": "array", "minItems": 2},
+    "rotated": {"type": ["boolean", "null"]},
+    "render_density": {"type": ["number", "null"]},
+    "density_limit": {"type": ["number", "string", "null"], "description": "RENDER_BUDGET.densityLimit ('Infinity' when adaptive density has not reduced the backing)."},
+    "platform": {"type": "string"},
+    "build_version": {"type": ["string", "null"]},
+    "fps_counter_enabled": {"type": ["boolean", "null"]},
+    "version": {"type": ["string", "null"]}
+   }
+  }
+ }
+}
