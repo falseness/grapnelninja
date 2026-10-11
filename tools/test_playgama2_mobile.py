@@ -57,7 +57,13 @@ class MobileTests(unittest.TestCase):
         p=self.p
         p.evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
         entry={'phase':phase,'utc':datetime.now(timezone.utc).isoformat(),'viewport':p.viewport_size,
-               'canvas':p.locator('#canvas').bounding_box()}
+               # Portrait deliberately hides the stage; geometry must not wait for visibility.
+               'canvas':p.locator('#canvas').evaluate('(e)=>e.getBoundingClientRect().toJSON()'),
+               'orientation':{
+                   'rotate_visible':p.locator('#rotate-prompt').is_visible(),
+                   'stage_inert':p.locator('#stage').evaluate('(e)=>e.inert'),
+                   'canvas_visible':p.locator('#canvas').is_visible()}}
+        self.assert_capture_orientation(entry['orientation'], portrait=not bool(draw))
         if draw:
             raw=p.evaluate(PROBE,draw); result,_=evaluate(raw,True)
             entry['layout']=result
@@ -68,9 +74,6 @@ class MobileTests(unittest.TestCase):
             entry['dom']=dom
             for d in dom: self.assertTrue(d['fits'] and d['unclipped'] and d['hit'],d)
         else:
-            self.assertTrue(p.locator('#rotate-prompt').is_visible())
-            self.assertTrue(p.evaluate("document.getElementById('stage').inert"))
-            self.assertFalse(p.locator('#canvas').is_visible())
             self.assertTrue(p.locator('#rotate-prompt').evaluate('(e)=>e.scrollWidth<=e.clientWidth && e.scrollHeight<=e.clientHeight'))
             entry['prompt']=p.locator('#rotate-prompt').inner_text()
             self.assertIn('landscape',entry['prompt'])
@@ -78,6 +81,11 @@ class MobileTests(unittest.TestCase):
         p.screenshot(path=str(self.out/name))
         entry['capture']={'path':name,'sha256':hashlib.sha256((self.out/name).read_bytes()).hexdigest(),'native':True}
         self.rec['screens'].append(entry)
+
+    def assert_capture_orientation(self, state, portrait):
+        self.assertEqual(state['rotate_visible'], portrait, state)
+        self.assertEqual(state['stage_inert'], portrait, state)
+        self.assertEqual(state['canvas_visible'], not portrait, state)
 
     def run_profile(self,name):
         self.name=name;w,h,dpr=PROFILES[name]
