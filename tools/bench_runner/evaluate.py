@@ -76,21 +76,43 @@ def required_rows():
 
 
 def classify_target(data):
-    """Target device class from the recorded user agent and touch points; None when unrecognised."""
+    """Target device class from the recorded user agent; None when unrecognised.
+
+    Phone rows are selected only by the Android / iOS user-agent tokens (Chrome on
+    Android, Safari on iOS; other browsers on those systems are rejected). Every
+    other recognised desktop OS token (Windows NT, Macintosh, X11 / Linux without
+    Android, CrOS) is the desktop class regardless of navigator.maxTouchPoints:
+    Chrome on a touchscreen laptop (Surface, XPS, Yoga; maxTouchPoints 10) is a
+    desktop export, the touch count is only recorded in the row (TASK-299). An
+    iPad (its own token, or the Macintosh desktop-mode UA with touch points) is
+    neither the iPhone row nor a desktop and stays unassigned."""
     ua = data['device']['user_agent']
     os_fam = (data['device'].get('os_family_detected') or '')
     browser = (data['device'].get('browser_family_detected') or '')
-    touch = data['device'].get('max_touch_points') or 0
     if re.search(r'Android', ua) or os_fam == 'Android':
         return 'android-chrome' if (re.search(r'Chrome/', ua) and not re.search(r'OPR/|SamsungBrowser|EdgA/|Firefox', ua)) else None
-    if re.search(r'iPhone|iPad|iPod', ua) or os_fam in ('iOS', 'iPhone'):
+    touch = touch_points(data)
+    if re.search(r'iPad', ua) or os_fam == 'iPadOS':
+        return None  # a tablet is neither the iPhone row nor a desktop
+    if re.search(r'iPhone|iPod', ua) or os_fam in ('iOS', 'iPhone'):
         # every iOS browser uses WebKit; only Safari itself is the required row
         return 'iphone-safari' if (re.search(r'Safari/', ua) and not re.search(r'CriOS|FxiOS|EdgiOS|OPT/', ua)) else None
-    if touch == 0 and (re.search(r'Windows|Macintosh|X11|Linux', ua) or os_fam in ('Windows', 'macOS', 'Linux')):
+    if re.search(r'Macintosh', ua) and touch:
+        return None  # iPadOS Safari in desktop mode reports a Macintosh UA; real Macs have no touch points
+    if re.search(r'Windows NT|Macintosh|X11|Linux|CrOS', ua) or os_fam in ('Windows', 'macOS', 'Linux', 'ChromeOS'):
         return 'desktop'
-    if browser and touch == 0:
+    if browser:
         return 'desktop'
     return None
+
+
+def touch_points(data):
+    """navigator.maxTouchPoints as recorded by the page (None when the export does not carry it)."""
+    try:
+        t = data['device'].get('max_touch_points')
+    except (KeyError, TypeError, AttributeError):
+        return None
+    return t if isinstance(t, int) and not isinstance(t, bool) else None
 
 
 def gap_explained(run, gap_frame_index):
@@ -177,7 +199,7 @@ def evaluate_run(run, settings, display):
 def evaluate_file(path, package_root):
     """One export -> {file, sha256, validation, target, devtools, eligible, runs: [evaluate_run...]}"""
     entry = {'file': str(path), 'sha256': bt.sha_file(path), 'validation': None, 'target': None, 'devtools': None,
-             'model_supplied': None, 'eligible': False, 'ineligible_reasons': [], 'runs': [], 'display': None}
+             'model_supplied': None, 'touch_points': None, 'eligible': False, 'ineligible_reasons': [], 'runs': [], 'display': None}
     try:
         data = json.loads(Path(path).read_text())
     except ValueError as e:
@@ -195,12 +217,14 @@ def evaluate_file(path, package_root):
         # still record what the file says about itself, so wrong-build / rejected files appear in the audit trail
         try:
             entry['model_supplied'] = data['device']['model_supplied']
+            entry['touch_points'] = touch_points(data)
             entry['target'] = classify_target(data)
             entry['devtools'] = data['settings']['devtools']
         except (KeyError, TypeError):
             pass
         return entry
     entry['model_supplied'] = data['device']['model_supplied']
+    entry['touch_points'] = touch_points(data)
     entry['display'] = data['display']
     entry['target'] = classify_target(data)
     entry['devtools'] = data['settings']['devtools']
@@ -227,6 +251,7 @@ def build_matrix(entries):
     rows = {k: {'row': k, 'target': k.split('/')[0], 'devtools': k.split('/')[1], 'mode': k.split('/')[2],
                 'verdict': 'UNVERIFIED', 'repetitions_required': THRESHOLDS['repetitions_required'],
                 'valid_repetitions': 0, 'repetitions': [], 'rejected_attempts': [], 'non_complete_attempts': [], 'devices': [], 'viewports': [], 'dprs': [],
+                'touch_points': [], 'note': None,
                 'reason': 'no eligible native result file for this row'} for k in required_rows()}
     for e in entries:
         if not e['eligible']:
@@ -237,7 +262,7 @@ def build_matrix(entries):
                 continue
             row = rows[key]
             rec = {'file': e['file'], 'sha256': e['sha256'], 'run_index': r['index'], 'model_supplied': e['model_supplied'],
-                   'valid': r['valid'], 'verdict': r['verdict'], 'reasons': r['reasons'], 'thresholds_failed': r['thresholds_failed'],
+                   'touch_points': e['touch_points'], 'valid': r['valid'], 'verdict': r['verdict'], 'reasons': r['reasons'], 'thresholds_failed': r['thresholds_failed'],
                    'metrics': r['metrics']}
             if r['valid']:
                 row['repetitions'].append(rec)
@@ -248,11 +273,18 @@ def build_matrix(entries):
                 row['rejected_attempts'].append(rec)
             if e['model_supplied'] not in row['devices']:
                 row['devices'].append(e['model_supplied'])
+            if e['touch_points'] not in row['touch_points']:
+                row['touch_points'].append(e['touch_points'])
             if r['metrics'] and r['metrics']['viewport'] not in row['viewports']:
                 row['viewports'].append(r['metrics']['viewport'])
             if r['metrics'] and r['metrics']['page_dpr'] not in row['dprs']:
                 row['dprs'].append(r['metrics']['page_dpr'])
     for row in rows.values():
+        if row['touch_points']:
+            row['note'] = ('navigator.maxTouchPoints recorded per contributing export: '
+                           + ', '.join(str(t) for t in row['touch_points'])
+                           + ('; a touchscreen desktop (touch points > 0) still fills the desktop rows, the class comes from the UA OS token'
+                              if row['target'] == 'desktop' and any(t for t in row['touch_points'] if t) else ''))
         n = row['valid_repetitions']
         if n < THRESHOLDS['repetitions_required']:
             row['verdict'] = 'UNVERIFIED'
@@ -313,7 +345,7 @@ def evaluate(result_paths, package_root, notes=None):
         'docking_comparison': docking_comparison(rows),
         'result_files': entries,
         'unassigned_or_ineligible_files': [{'file': e['file'], 'sha256': e['sha256'], 'reasons': e['ineligible_reasons'],
-                                            'model_supplied': e['model_supplied'], 'target': e['target']}
+                                            'model_supplied': e['model_supplied'], 'target': e['target'], 'touch_points': e['touch_points']}
                                            for e in entries if not e['eligible']],
     }
     all_pass = bool(required) and all(v == 'PASS' for v in verdicts.values())

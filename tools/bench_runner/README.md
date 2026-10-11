@@ -162,7 +162,9 @@ recomputes average FPS, rolling 10 s windows, p95 and measured duration from
 the raw intervals (timestamps only; an interval must equal its timestamp
 difference, slow frames are never dropped, a null gap counts only when the page
 recorded an inactive state covering it), classifies the export (desktop /
-Android Chrome / iPhone Safari from the user agent, DevTools state from the
+Android Chrome / iPhone Safari from the user-agent OS token only: a touchscreen
+laptop with `maxTouchPoints` 10 is still desktop, an iPad is neither row, the
+touch count is recorded in the row `note`; DevTools state from the
 panel) and fills the required rows: desktop closed/docked/undocked, Android
 Chrome, iPhone Safari, both modes. A row is PASS only with three valid
 repetitions each at average >= 58 FPS, every full 10 s window >= 55 FPS,

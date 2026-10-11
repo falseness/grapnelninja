@@ -280,6 +280,49 @@ class Fixtures(unittest.TestCase):
         self.assertIsNone(ev.classify_target(doc))
         log('classification: desktop / android-chrome / iphone-safari recognised; Chrome on iOS is not the Safari row')
 
+    def test_touchscreen_windows_chrome_is_desktop(self):
+        # TASK-299: Chrome on a touchscreen laptop (Surface / XPS / Yoga, maxTouchPoints 10) is a desktop export
+        doc = native_result(self.pkg, target='desktop')
+        self.assertIn('Windows NT', doc['device']['user_agent'])
+        doc['device']['max_touch_points'] = 10
+        self.assertEqual(ev.classify_target(doc), 'desktop')
+        self.assertEqual(ev.touch_points(doc), 10)
+        p = self.write('win-touch.json', doc)
+        acc, dec = ev.evaluate([p], self.pkg)
+        row = self.row(acc, 'desktop/closed/bad')
+        self.assertEqual(row['verdict'], 'PASS')
+        self.assertEqual(row['touch_points'], [10])
+        self.assertIn('maxTouchPoints recorded', row['note'])
+        self.assertIn('touchscreen desktop', row['note'])
+        self.assertTrue(all(r['touch_points'] == 10 for r in row['repetitions']))
+        self.assertEqual(acc['result_files'][0]['touch_points'], 10)
+        log('classification: Windows Chrome with maxTouchPoints 10 is desktop; the touch count is recorded in the row note')
+
+    def test_android_without_touch_points_is_still_android_chrome(self):
+        # TASK-299: the phone rows are chosen by the UA OS token, never by the touch count
+        doc = native_result(self.pkg, target='android-chrome')
+        doc['device']['max_touch_points'] = 0
+        self.assertEqual(ev.classify_target(doc), 'android-chrome')
+        doc['device']['user_agent'] = doc['device']['user_agent'].replace('Chrome/148.0.0.0', 'Chrome/148.0.0.0 EdgA/148.0')
+        self.assertIsNone(ev.classify_target(doc), 'Edge on Android is still rejected')
+        log('classification: Android UA with maxTouchPoints 0 is android-chrome; Edge on Android stays rejected')
+
+    def test_ipad_is_not_the_iphone_row(self):
+        # TASK-299: an iPad never fills the iPhone Safari row (nor a desktop row), with either UA form
+        doc = native_result(self.pkg, target='iphone-safari')
+        doc['device']['user_agent'] = ('Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 '
+                                       '(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')
+        doc['device']['os_family_detected'] = 'iPadOS'
+        self.assertIsNone(ev.classify_target(doc))
+        doc['device']['user_agent'] = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
+                                       '(KHTML, like Gecko) Version/18.0 Safari/605.1.15')
+        doc['device']['os_family_detected'] = 'macOS'
+        doc['device']['max_touch_points'] = 5
+        self.assertIsNone(ev.classify_target(doc), 'iPadOS desktop-mode Safari (Macintosh UA + touch points) is not a Mac')
+        doc['device']['max_touch_points'] = 0
+        self.assertEqual(ev.classify_target(doc), 'desktop', 'a real Mac has no touch points')
+        log('classification: iPad UA (own token or Macintosh desktop mode with touch points) is None; Mac without touch is desktop')
+
     def test_aborted_attempt_keeps_the_complete_repetitions(self):
         """TASK-298: one 3-second aborted run (before the 5 s warmup) plus three COMPLETE runs:
         the file validates ACCEPTED and the row counts the three repetitions."""
