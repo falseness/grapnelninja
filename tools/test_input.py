@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from game_harness import canvas_to_viewport, open_game, start_game_test
+from game_harness import READY, canvas_to_viewport, open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 TOUCH_VIEWPORT = {'width': 844, 'height': 390}
@@ -17,7 +17,7 @@ def open_touch_game(browser, url):
     """Return (context, page, errors) for a mobile landscape touch context."""
     context, page, errors = open_game(browser, url + 'index.html', TOUCH_VIEWPORT,
                                       has_touch=True, is_mobile=True)
-    page.wait_for_function('menu.visible && typeof Grapnel !== "undefined"')
+    page.wait_for_function(READY, timeout=15000)
     return context, page, errors
 
 
@@ -77,7 +77,9 @@ class InputTests(unittest.TestCase):
         context, page, errors = open_game(self.browser, 'about:blank', DESKTOP_VIEWPORT)
         self.track(context, errors)
         page.goto(self.url + 'index.html')
-        page.wait_for_function('PLATFORM.environment === "local" && menu.visible')
+        page.wait_for_function(READY, timeout=15000)
+        self.assertEqual(page.evaluate('[PLATFORM.environment, PLATFORM.platformId]'),
+                         ['disabled', 'y8'])
         return page
 
     def out(self):

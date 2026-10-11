@@ -1,8 +1,10 @@
 """Safe respawn after a continue (TASK-081).
 
 Each case drives physics by hand (no requestAnimationFrame, no input after
-the continue): advance the run, die for real through ninja.move(), answer the
-continue offer and then run RESPAWN_INVULNERABLE_MS + 500 ms of physics.
+the continue): advance the run, die for real through ninja.move() (an
+obstacle or the top side floor), answer the continue offer through the fake
+Y8 SDK's rewarded break and then run RESPAWN_INVULNERABLE_MS + 500 ms of
+physics.
 
 Env: RESPAWN_EVIDENCE_DIR receives frames/<case>/t*.png, contact.png,
 respawn-cases.json, replenish-check.json and console/page-errors.log.
@@ -14,7 +16,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from game_harness import open_game, start_game_test
+from game_harness import READY, install_kill, open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
@@ -23,12 +25,10 @@ FRAMES_MS = (0, 300, 500, 1000, 2000, 2500)
 
 # window.__rs: seeded runs, a manual camera advance with deaths disabled,
 # real lethal deaths, the continue and per-tick measurements.
+# The page runs against the fake Y8 SDK (rewardOutcome 'viewed'), so the
+# continue goes through PLATFORM.requestRewarded and the SDK's rewarded break
+# before respawn.js respawns the ninja.
 SETUP = r'''() => {
-    // The local build has no rewarded ads, so the continue (and its safe
-    // respawn in respawn.js) is unreachable in play; a stub ad that always
-    // rewards keeps the respawn path under test.
-    PLATFORM.isRewardedSupported = () => true
-    PLATFORM.requestRewarded = () => Promise.resolve({status: 'rewarded'})
     const realLethal = window.onLethalDeath
     const realRestart = window.reStart
     const rs = window.__rs = {deaths: 0, reStarts: 0, lethalCalls: 0, deathsEnabled: true}
@@ -111,7 +111,9 @@ SETUP = r'''() => {
         invulnerableMs: ninja.invulnerableMs, offer: continueOffer.visible,
         continueUsed: continueUsed, deaths: rs.deaths, reStarts: rs.reStarts,
         throwed: grapnel.throwed, grappled: grapnel.isGrappled(), blinkAlpha: ninja.getBlinkAlpha()})
-    // A real lethal death: obstacle contact or falling behind the left border.
+    // A real lethal death: obstacle contact, or the top side floor's spikes
+    // (window.__placeOnTopSide; the camera-fixed left wall bounces instead of
+    // letting the ninja fall behind the border since TASK-225).
     rs.die = (cause, score) => {
         let element = null
         const v = rs.visible()
@@ -130,11 +132,11 @@ SETUP = r'''() => {
                 physics()
             }
             rs.deathsEnabled = true
-            if (!lethalOnScreen().length) cause = 'behind-border'
+            if (!lethalOnScreen().length) cause = 'side'
         }
         scoreText.count[version] = score
-        if (cause == 'behind-border') {
-            ninja.x = screen.getDeletionBorder() - screen.x - 10 * ninja.radius
+        if (cause == 'side') {
+            element = window.__placeOnTopSide()
         } else {
             const candidates = lethalOnScreen()
             element = candidates.find(e => !(e instanceof JumpingCube) && e.speedY == 0) || candidates[0]
@@ -151,10 +153,10 @@ SETUP = r'''() => {
         const before = rs.deaths
         physics()
         if (!continueOffer.visible || rs.deaths != before + 1) throw Error('death did not open the offer')
-        return {cause: cause == 'behind-border' ? cause : 'obstacle:' + element.constructor.name,
+        return {cause: cause == 'side' ? 'side:' + element.element : 'obstacle:' + element.constructor.name,
                 deathX: ninja.x, deathY: ninja.y, score: scoreText.count[version]}
     }
-    // The continue arrives with the stub rewarded ad's result
+    // The continue arrives with the fake SDK's rewarded result
     rs.pressContinue = async () => {
         const b = continueOffer.continueButton.background
         if (!continueOffer.click({x: b.x + b.width / 2, y: b.y + b.height / 2}))
@@ -253,11 +255,16 @@ class SafeRespawnTests(unittest.TestCase):
         sheet.save(out / 'contact.png')
 
     def boot(self):
-        context, page, errors = open_game(self.browser, self.url + 'index.html', VIEWPORT)
+        context, page, errors = open_game(self.browser, self.url + 'index.html', VIEWPORT,
+                                          fake_sdk={'rewardOutcome': 'viewed'})
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual((errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "local" && menu.visible')
+        page.wait_for_function(READY, timeout=15000)
+        self.assertEqual(page.evaluate('[PLATFORM.environment, PLATFORM.platformId]'),
+                         ['y8', 'y8'])
+        self.assertTrue(page.evaluate('PLATFORM.isRewardedSupported()'))
+        install_kill(page)
         page.evaluate(SETUP)
         return page
 
@@ -349,8 +356,8 @@ class SafeRespawnTests(unittest.TestCase):
     def test_classic_obstacle(self):
         self.run_case('classic-obstacle', 'classic', None, 101, 'obstacle')
 
-    def test_classic_behind_border(self):
-        self.run_case('classic-behind-border', 'classic', None, 202, 'behind-border')
+    def test_classic_side(self):
+        self.run_case('classic-side', 'classic', None, 202, 'side')
 
     def test_bad_frame1(self):
         self.run_case('bad-frame1Elements', 'bad', 'frame1Elements', 11, 'obstacle')
@@ -374,7 +381,7 @@ class SafeRespawnTests(unittest.TestCase):
         page.evaluate('([v, y]) => window.__rs.advance(90, v, y)', [0.8, hold_y])
         page.evaluate(SPAWN_HOOK)
         page.evaluate("() => { window.__rs.phase = 'before-continue' }")
-        page.evaluate('([c, s]) => window.__rs.die(c, s)', ['behind-border', 7])
+        page.evaluate('([c, s]) => window.__rs.die(c, s)', ['side', 7])
         page.evaluate("() => { window.__rs.phase = 'continue' }")
         respawn = page.evaluate('() => window.__rs.pressContinue()')
         # 30 s of physics with no input and the camera forced forward

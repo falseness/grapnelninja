@@ -1,4 +1,8 @@
-"""Records, time in game and settings persist through PLATFORM storage (localStorage)."""
+"""Records, time in game and settings persist through PLATFORM.storage.
+
+The Y8 adapter backs storage with localStorage; the harness observes the
+adapter's getMany/setMany calls (window.__storageSpy, see game_harness).
+"""
 import json
 import os
 from pathlib import Path
@@ -6,7 +10,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from game_harness import (local_store, open_game, seed_store, start_game_test,
+from game_harness import (READY, local_store, open_game, seed_store, start_game_test,
                           storage_calls as all_storage_calls)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -14,8 +18,6 @@ VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
 TIME_KEY = 'grapnelninja.time'
 KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang']
-READY = ('PLATFORM.environment !== "pending" && menu.visible'
-         ' && document.getElementById("loading").hidden')
 
 
 def log(message):
@@ -44,16 +46,18 @@ class ProgressTests(unittest.TestCase):
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
         page.goto(self.url + 'index.html')
-        page.wait_for_function(READY)
+        page.wait_for_function(READY, timeout=15000)
         # Freeze physics so the ninja never dies on its own: run ends come
         # only from the test's own reStart() calls.
         page.evaluate('runFixedPhysics = function () {}')
-        self.assertEqual(page.evaluate('PLATFORM.environment'), 'local')
+        # SDK stubbed offline: the Y8 adapter settles to "disabled"
+        self.assertEqual(page.evaluate('[PLATFORM.environment, PLATFORM.platformId]'),
+                         ['disabled', 'y8'])
         return page
 
     def reload(self, page):
         page.reload()
-        page.wait_for_function(READY)
+        page.wait_for_function(READY, timeout=15000)
         page.evaluate('runFixedPhysics = function () {}')
 
     def fake_store(self, page):
