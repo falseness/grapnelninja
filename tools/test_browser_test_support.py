@@ -3,7 +3,6 @@ from contextlib import ExitStack
 import importlib.util
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import time
 import unittest
 from unittest.mock import Mock, patch
 from urllib.request import urlopen
@@ -88,6 +87,40 @@ class BrowserTestSupportTests(unittest.TestCase):
             playwright.assert_not_called()
 
 
+# In-page settle probe.  boot() writes the loading text right before
+# `await PLATFORM.init()` (environment "pending") and right after it resolves,
+# so the mutation marks bracket init() on the page's own clock, independent of
+# how long start() later blocks the main thread.  DOMContentLoaded records the
+# environment and the SDK script's resource timing.
+SETTLE_PROBE_SCRIPT = """
+    window.__settle = {marks: []}
+    new MutationObserver(records => {
+        const el = document.getElementById('loading-progress')
+        if (!el) return
+        if (records.some(r => r.target === el || r.target.parentNode === el))
+            __settle.marks.push({at: performance.now(), text: el.textContent,
+                                 env: typeof PLATFORM == 'undefined' ? null : PLATFORM.environment})
+    }).observe(document, {childList: true, characterData: true, subtree: true})
+    document.addEventListener('DOMContentLoaded', () => {
+        const sdk = performance.getEntriesByType('resource').find(e => /y8\\.min\\.js/.test(e.name))
+        Object.assign(__settle, {dclNow: performance.now(), envAtDcl: PLATFORM.environment,
+                                 sdkResponseEnd: sdk ? sdk.responseEnd : null})
+    })
+"""
+
+
+def settle_elapsed_ms(settle):
+    """Milliseconds from boot() calling PLATFORM.init() (last mark with environment
+    "pending") to boot() resuming after it settled (first mark with a settled
+    environment), on the in-page clock."""
+    marks = settle['marks']
+    called = [m for m in marks if m['env'] == 'pending']
+    settled = [m for m in marks if m['env'] in ('disabled', 'y8')]
+    if not called or not settled:
+        return None
+    return settled[0]['at'] - called[-1]['at']
+
+
 class OfflineSdkStubTests(unittest.TestCase):
     """index.html's cdn.y8.com SDK script is served by the inline stub, not aborted."""
     @classmethod
@@ -102,20 +135,28 @@ class OfflineSdkStubTests(unittest.TestCase):
     def test_sdk_stub_boots_disabled_without_console_errors(self):
         context = self.browser.new_context(viewport={'width': 1280, 'height': 720})
         self.addCleanup(context.close)
+        # The settle is measured in-page: boot() calls PLATFORM.init() from the
+        # inline script, before DOMContentLoaded, so with the stub the
+        # environment is already "disabled" when DOMContentLoaded fires.  (A
+        # Python-side rAF poll would instead measure start()'s main-thread
+        # work, 300-600 ms on a loaded host.)
+        context.add_init_script(SETTLE_PROBE_SCRIPT)
         page = context.new_page()
         errors = []
         page.on('console', lambda msg: msg.type == 'error' and errors.append(msg.text))
         page.on('pageerror', lambda exc: errors.append(str(exc)))
         page.on('requestfailed', lambda req: errors.append(f'requestfailed {req.url}'))
-        # boot() calls PLATFORM.init() from the inline script, before DOMContentLoaded;
-        # the aborted-SDK path only settled after init()'s 2900 ms fallback timer.
         page.goto(self.url + 'index.html', wait_until='domcontentloaded')
-        start = time.monotonic()
-        page.wait_for_function('() => PLATFORM.environment != "pending"', timeout=500)
-        elapsed_ms = (time.monotonic() - start) * 1000
+        settle = page.evaluate('() => window.__settle')
+        self.assertEqual(settle['envAtDcl'], 'disabled', settle)
+        self.assertIsNotNone(settle['sdkResponseEnd'], settle)
+        self.assertLess(settle['sdkResponseEnd'], settle['dclNow'], settle)
+        # init() called -> settled, in-page: no 2900 ms fallback timer wait
+        elapsed_ms = settle_elapsed_ms(settle)
+        self.assertIsNotNone(elapsed_ms, settle)
+        self.assertLess(elapsed_ms, 500, settle)
         self.assertEqual(page.evaluate('() => PLATFORM.environment'), 'disabled')
         self.assertFalse(page.evaluate('() => PLATFORM.isRewardedSupported()'))
-        self.assertLess(elapsed_ms, 500)
         support.wait_for_boot(page)
         page.wait_for_timeout(100)
         self.assertEqual(errors, [])

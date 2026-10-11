@@ -7,8 +7,8 @@ from threading import Thread
 from playwright.sync_api import sync_playwright
 
 
-# Any request that is not to the local test server (the game loads no
-# external scripts; older baseline trees may still reference an SDK URL)
+# Any request that is not to the local test server (index.html's only
+# external script is the Y8 SDK, served by the stub route below)
 EXTERNAL_URL = re.compile(r'^(?!https?://127\.0\.0\.1[:/])(?:https?|wss?)://')
 # index.html's Y8 minimal SDK script.  Aborting it logs a console error
 # (net::ERR_FAILED) and leaves PLATFORM.init() waiting for its 2900 ms
