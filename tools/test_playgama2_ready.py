@@ -6,7 +6,7 @@ import unittest
 
 import test_playgama2_bridge as support
 
-# Hold only the post-overlay animation frame at the browser boundary so real
+# Hold only the direct boot continuation at the browser boundary so real
 # mouse input and native menu proof can precede readiness deterministically.
 # Production functions, input handlers and renderers are never replaced.
 FRAME_PROBE = r"""
@@ -21,12 +21,22 @@ document.addEventListener('mousedown', e => {
 });
 const raf = window.requestAnimationFrame.bind(window);
 window.requestAnimationFrame = fn => {
-    if (!window.frameHeld && document.getElementById('loading')?.hidden) {
+    const stack = new Error().stack;
+    // Orientation also schedules nextFrame during boot. Match the immediate
+    // caller of nextFrame, not a frame ordinal or any ancestor named boot.
+    const bootContinuation = /at nextFrame [^\n]*\n\s*at bootApplication /.test(stack);
+    if (document.getElementById('loading')?.hidden && stack.includes('at updateOrientation '))
+        readyProbe.events.push({name:'orientation-frame-passed', ms:performance.now(), stack});
+    if (!window.frameHeld && document.getElementById('loading')?.hidden && bootContinuation) {
         window.frameHeld = true;
+        readyProbe.heldStack = stack;
         return raf(t => {
             readyProbe.events.push({name:'paint', ms:t, draws:readyProbe.draws});
             function release() {
-                if (window.releaseReadyFrame) raf(fn);
+                if (window.releaseReadyFrame) {
+                    readyProbe.events.push({name:'release', ms:performance.now()});
+                    raf(fn);
+                }
                 else setTimeout(release, 10);
             }
             release();
@@ -105,8 +115,22 @@ class Playgama2ReadyTests(unittest.TestCase):
         self.assertTrue(input_proof['inputs'][0]['trusted'])
         capture = self.out / (case + '-menu.png')
         subprocess.run(['import', '-window', 'root', str(capture)], env=self.env, check=True, timeout=12)
+        before_release = page.evaluate('''({ms:performance.now(), readiness:PLATFORM.readiness,
+            bootComplete, menuVisible:menu.visible, menuInteractive,
+            loadingHidden:document.getElementById('loading').hidden,
+            draws:readyProbe.draws, inputs:readyProbe.inputs, events:readyProbe.events,
+            heldStack:readyProbe.heldStack, released:!!window.releaseReadyFrame})''')
+        if gated:
+            self.assertEqual(before_release['readiness']['attempts'], 0)
+            self.assertFalse(before_release['readiness']['applicationReady'])
+            self.assertTrue(before_release['bootComplete'] and before_release['menuVisible']
+                            and before_release['loadingHidden'] and before_release['menuInteractive'])
+            self.assertGreater(before_release['draws'], 0)
+            self.assertTrue(any(e['name'] == 'orientation-frame-passed' for e in before_release['events']))
+            self.assertNotIn('at updateOrientation ', before_release['heldStack'])
         page.evaluate('window.releaseReadyFrame = true')
         page.wait_for_function('PLATFORM.readiness.applicationReady')
+        after_release = page.evaluate('({ms:performance.now(), readiness:PLATFORM.readiness, released:!!window.releaseReadyFrame})')
         late_pending = None
         if case == 'late-init':
             late_pending = page.evaluate('({ms:performance.now(), readiness:PLATFORM.readiness})')
@@ -165,9 +189,10 @@ class Playgama2ReadyTests(unittest.TestCase):
                 self.assertGreaterEqual(actual, target-10)
                 self.assertLessEqual(actual, target+350)
                 delays.append(actual)
-        result.update(verdict='PASS ' + case, input=input_proof, unresolved=unresolved, late_pending=late_pending, retry_delays_ms=delays,
+        result.update(verdict='PASS ' + case, before_release=before_release, after_release=after_release,
+            input=input_proof, unresolved=unresolved, late_pending=late_pending, retry_delays_ms=delays,
             capture={'path':capture.name, 'sha256':hashlib.sha256(capture.read_bytes()).hexdigest()},
-            scheduler='post-overlay frame held for real input proof' if gated else 'unaltered browser scheduling')
+            scheduler='direct boot nextFrame held for real input proof' if gated else 'unaltered browser scheduling')
         self.results[case] = result
         print(f'PASS {case}: sends={expected_count} pending={expected_count} inflight={expected_count} success={len(successes)} maxActive=1; retries={delays}; rendered menu, hidden loading, trusted language input; no duplicate on repeated calls/init/lifecycle', flush=True)
         context.close()
