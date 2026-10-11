@@ -54,3 +54,51 @@ kernel/package repair was attempted. Edge and Opera were unavailable.
 hash checks and case coverage reconciliation. `manifest.json` seals the retained
 evidence. The wrapper command receipts identify this run; historical task labels
 embedded by older checker modules do not identify its invocation.
+
+## Readiness review — TASK-302
+
+The branch is not production-ready: rotating a touch viewport to portrait leaves
+music audible behind the rotate prompt. `index.html:615` requests an `orientation`
+mute, but `audio.js:9,33` does not register that source and `setMute` ignores it.
+TASK-303 tracks the focused fix and an audio regression covering rotation and
+overlapping mute reasons.
+
+The offline reproduction used the unmodified page and trusted Chromium touch.
+With the rotate prompt visible and the stage inert, WebAudio remained running at
+master gain 1; measured portrait PCM RMS was 0.0242008. The trace, actual sampled
+WAV files and original console output are in `artifacts/TASK-302/orientation/`
+and `orientation.log`. This is desktop touch emulation, not native-device proof.
+
+The review used `git diff master...HEAD`, every nonblocked task's requirements,
+and the existing repair documentation. `artifacts/prd.txt` is absent. The reviewed
+source is `33cedcd311be01c4e92dfca615bf50e9241b9320`; `source.json` pins its bytes.
+`branch.diff`, `tasks-before.json` and `review.txt` preserve review scope, while
+`commands.json`, test logs and `manifest.json` retain execution and evidence
+identity. The readiness finding concerns current code, not publication state.
+
+The readiness checker also needs repair (TASK-304). Its frame fixture holds the
+first animation-frame request after the loading overlay hides. TASK-299 added an
+orientation frame before boot's readiness frame, so the fixture now holds the
+wrong callback. Four cases fail their pre-release zero-attempt assertion.
+`ready-gate/gate.json` records the callback stack through `updateOrientation`,
+with the gate unreleased and readiness already successful. The natural scheduler
+case and all 13 isolated lifecycle scenarios pass; the failing suite is retained
+as evidence, not reported as a successful check.
+
+TASK-305 tracks a second runtime defect: starting a mode while the host is already
+paused starts the saved play-time clock although physics stays frozen.
+`index.html:252` starts the segment unconditionally; `menu.js:927` uses the same
+clock entry for resume. With trusted mode input and Escape, and a controlled
+60-second Date offset, saved time increased from 120 to 184 while the ninja's
+position remained unchanged. `paused-time/paused-time.json` and `paused-time.log`
+retain the reproduction. The fix must exclude frozen time and retain correct
+accounting after host release and player resume.
+
+Mobile checks are also incomplete (TASK-306). Both iPhone profiles passed before
+the combined command reached its eight-minute budget. An isolated Pixel 7 run
+then failed at `tools/test_playgama2_mobile.py:61` during portrait geometry
+capture, with `Locator.evaluate` timing out and zero completed captures.
+`pixel-7.log` retains the full traceback. The locator requests attachment, so its
+hidden-canvas message alone does not establish a visibility wait or a production
+bug. TASK-306 calls for a single DOM snapshot, capture-stage timing diagnostics
+and passing separate profile runs while preserving the existing assertions.
