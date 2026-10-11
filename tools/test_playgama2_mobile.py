@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from time import perf_counter
 import unittest
 from datetime import datetime, timezone
 
@@ -55,32 +56,66 @@ class MobileTests(unittest.TestCase):
 
     def capture(self, phase, draw=None):
         p=self.p
-        p.evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
-        entry={'phase':phase,'utc':datetime.now(timezone.utc).isoformat(),'viewport':p.viewport_size,
-               # Portrait deliberately hides the stage; geometry must not wait for visibility.
-               'canvas':p.locator('#canvas').evaluate('(e)=>e.getBoundingClientRect().toJSON()'),
-               'orientation':{
-                   'rotate_visible':p.locator('#rotate-prompt').is_visible(),
-                   'stage_inert':p.locator('#stage').evaluate('(e)=>e.inert'),
-                   'canvas_visible':p.locator('#canvas').is_visible()}}
-        self.assert_capture_orientation(entry['orientation'], portrait=not bool(draw))
+        entry={'phase':phase,'utc':datetime.now(timezone.utc).isoformat(),
+               'viewport':p.viewport_size,'timings':{},'completed':False}
+        self.rec['screens'].append(entry)
+
+        def checkpoint():
+            (self.out/'mobile-events.json').write_text(json.dumps(self.records, indent=2)+'\n')
+
+        def timed(stage, action):
+            timing={'started':datetime.now(timezone.utc).isoformat(),'status':'running'}
+            entry['timings'][stage]=timing
+            checkpoint()  # Preserve the active stage even if the outer budget kills the run.
+            started=perf_counter()
+            try:
+                result=action()
+                timing['status']='PASS'
+                return result
+            except Exception as exc:
+                timing.update(status='FAIL',error=str(exc))
+                raise
+            finally:
+                timing['duration_ms']=round((perf_counter()-started)*1000,3)
+                checkpoint()
+
+        timed('animation_frames', lambda: p.evaluate(
+            'new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))'))
+        # Locator.evaluate waits for attachment (not visibility). Avoid all locator
+        # round trips here and sample geometry and orientation from the same DOM turn.
+        entry.update(timed('dom_snapshot', lambda: p.evaluate("""() => {
+            const canvas=document.querySelector('#canvas');
+            const stage=document.querySelector('#stage');
+            const prompt=document.querySelector('#rotate-prompt');
+            if (!canvas || !stage || !prompt) throw new Error('Missing capture DOM');
+            const visible=e=>{const r=e.getBoundingClientRect();
+                return getComputedStyle(e).visibility==='visible' && r.width>0 && r.height>0};
+            return {canvas:canvas.getBoundingClientRect().toJSON(),
+                orientation:{rotate_visible:visible(prompt),stage_inert:stage.inert,
+                             canvas_visible:visible(canvas)},
+                prompt:prompt.innerText,
+                prompt_unclipped:prompt.scrollWidth<=prompt.clientWidth &&
+                                 prompt.scrollHeight<=prompt.clientHeight};
+        }""")))
+        timed('orientation_assertions', lambda: self.assert_capture_orientation(
+            entry['orientation'], portrait=not bool(draw)))
         if draw:
-            raw=p.evaluate(PROBE,draw); result,_=evaluate(raw,True)
+            raw=timed('layout_probe', lambda: p.evaluate(PROBE,draw)); result,_=evaluate(raw,True)
             entry['layout']=result
             self.assertEqual(result['failures'],[],result)
-            dom=p.evaluate('''()=>[...document.querySelectorAll('#mute-button,#tutorial')].filter(e=>!e.hidden).map(e=>{
+            dom=timed('dom_bounds', lambda: p.evaluate('''()=>[...document.querySelectorAll('#mute-button,#tutorial')].filter(e=>!e.hidden).map(e=>{
                 const r=e.getBoundingClientRect();return {id:e.id,rect:r.toJSON(),fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,
-                unclipped:e.scrollWidth<=e.clientWidth,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}})''')
+                unclipped:e.scrollWidth<=e.clientWidth,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}})'''))
             entry['dom']=dom
             for d in dom: self.assertTrue(d['fits'] and d['unclipped'] and d['hit'],d)
         else:
-            self.assertTrue(p.locator('#rotate-prompt').evaluate('(e)=>e.scrollWidth<=e.clientWidth && e.scrollHeight<=e.clientHeight'))
-            entry['prompt']=p.locator('#rotate-prompt').inner_text()
+            self.assertTrue(entry['prompt_unclipped'])
             self.assertIn('landscape',entry['prompt'])
         name=self.name+'-'+phase+'.png'
-        p.screenshot(path=str(self.out/name))
-        entry['capture']={'path':name,'sha256':hashlib.sha256((self.out/name).read_bytes()).hexdigest(),'native':True}
-        self.rec['screens'].append(entry)
+        timed('screenshot', lambda: p.screenshot(path=str(self.out/name)))
+        entry['capture']={'path':name,'sha256':hashlib.sha256((self.out/name).read_bytes()).hexdigest(),'kind':'desktop Chromium device emulation'}
+        entry['completed']=True
+        checkpoint()
 
     def assert_capture_orientation(self, state, portrait):
         self.assertEqual(state['rotate_visible'], portrait, state)
@@ -182,7 +217,7 @@ class MobileTests(unittest.TestCase):
         inputs=p.evaluate('mobileInputs');self.assertTrue(inputs and all(e['trusted'] for e in inputs))
         self.assertEqual(errors,[])
         self.rec.update(inputs=inputs,errors=errors,verdict='PASS',finished=datetime.now(timezone.utc).isoformat())
-        print('PASS '+name+': portrait/landscape; menu/mute/tutorial/death/restart; both modes touch hold/release/cancel; long press/swipe; repeated rotation exact continuity; orientation/focus/background/host pause; native captures; no browser errors',flush=True)
+        print('PASS profile test_'+name.replace('-','_')+': portrait/landscape; menu/mute/tutorial/death/restart; both modes touch hold/release/cancel; long press/swipe; repeated rotation exact continuity; orientation/focus/background/host pause; desktop Chromium emulated captures; no browser errors',flush=True)
 
 
 for name in PROFILES:
