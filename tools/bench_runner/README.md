@@ -75,7 +75,10 @@ and are recorded as `replay_kind: manual`.
 
 The page's `Math.random` is seeded (mulberry32, seed 4, re-seeded at every run
 start) so the obstacle sequence is comparable between devices; `?seed=none`
-restores the native generator. This changes nothing about rendering, resolution
+restores the native generator. The seed is converted like JavaScript
+`Number(seed) >>> 0` (`4.5` → 4, `0x10` → 16, garbage → 0) and the validator
+mirrors that conversion, so the recorded `seed_installed` must equal the value
+derived from `settings.seed`. This changes nothing about rendering, resolution
 or effects.
 
 ## 5. Runs: 5 s warmup + 60 s measured, three per mode
@@ -118,7 +121,11 @@ difference, null intervals only after gaps), the seals (`frames_sha256`,
 numbers equal an independent recomputation, and that each COMPLETE run holds
 ≥ 60 000 ms of measured active intervals. It recomputes the verdict inputs
 (average FPS, p50/p95/p99/max frame time, every rolling 10 s window and its
-minimum FPS, gaps, deaths, backing-store sizes). It never decides PASS/FAIL
+minimum FPS, gaps, deaths, backing-store sizes). A non-complete attempt
+(aborted or short) only has to carry an intact `frames_sha256` seal: it is
+reported as "preserved as a non-complete attempt (not counted)" even when it
+holds fewer than two frames or ended before the warmup, and it never makes the
+COMPLETE repetitions of the same file ineligible. It never decides PASS/FAIL
 against the 60 FPS thresholds: that is the evaluator's job, and
 `acceptance_eligible` is false for custom durations or emulated devices.
 

@@ -114,6 +114,51 @@ def replay_fractions(seed, total_ms):
     return events
 
 
+# ------------------------------------------------------------------ seed --
+
+_JS_DECIMAL_RE = re.compile(r'^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$')
+_JS_RADIX_RE = re.compile(r'^0([xXoObB])([0-9a-fA-F]+)$')
+SEED_NONE_INSTALLED = 'none (native Math.random)'
+
+
+def js_number(text):
+    """Mirror of JavaScript Number(string) for the ?seed= query value: trimmed
+    decimal / exponent / 0x 0o 0b / Infinity forms, '' -> 0, anything else NaN."""
+    t = str(text).strip()
+    if t == '':
+        return 0.0
+    if _JS_DECIMAL_RE.match(t):
+        return float(t)
+    m = _JS_RADIX_RE.match(t)
+    if m:
+        base = {'x': 16, 'o': 8, 'b': 2}[m.group(1).lower()]
+        try:
+            return float(int(m.group(2), base))
+        except ValueError:
+            return math.nan
+    if re.match(r'^[+-]?Infinity$', t):
+        return -math.inf if t.startswith('-') else math.inf
+    return math.nan
+
+
+def to_uint32(x):
+    """JavaScript `x >>> 0`: NaN / +-Infinity -> 0, truncate toward zero, modulo 2**32."""
+    if math.isnan(x) or math.isinf(x):
+        return 0
+    return int(math.trunc(x)) % 0x100000000
+
+
+def seed_value(seed_setting):
+    """bench.js: settings.seed === 'none' ? null : (Number(settings.seed) >>> 0)."""
+    return None if seed_setting == 'none' else to_uint32(js_number(seed_setting))
+
+
+def seed_installed_label(seed_setting):
+    """bench.js installSeed(): 'mulberry32(<uint32>)' or 'none (native Math.random)'."""
+    v = seed_value(seed_setting)
+    return SEED_NONE_INSTALLED if v is None else f'mulberry32({v})'
+
+
 # --------------------------------------------------------------- metrics --
 
 def percentile(ordered, p):
@@ -210,7 +255,7 @@ def load_schema():
 
 def validate_schema(value, schema, path='$', errors=None, root=None):
     """Minimal JSON-schema subset: type, properties, required, additionalProperties,
-    items, enum, const, minimum, minLength, minItems, local $ref. Returns the error list."""
+    items, enum, const, minimum, minLength, minItems, if/then/else, local $ref. Returns the error list."""
     errors = [] if errors is None else errors
     root = schema if root is None else root
     if '$ref' in schema:
@@ -218,6 +263,10 @@ def validate_schema(value, schema, path='$', errors=None, root=None):
         for part in schema['$ref'].lstrip('#/').split('/'):
             target = target[part]
         return validate_schema(value, target, path, errors, root)
+    if 'if' in schema:
+        branch = schema.get('then') if not validate_schema(value, schema['if'], path, [], root) else schema.get('else')
+        if branch is not None:
+            validate_schema(value, branch, path, errors, root)
     types = {'object': dict, 'array': list, 'string': str, 'number': (int, float), 'integer': int,
              'boolean': bool, 'null': type(None)}
     if 'type' in schema:
@@ -492,19 +541,44 @@ def validate_result(data, package_root=None, allow_custom=False):
         warnings.append('emulation=' + s['emulation'] + ': not a native-device result')
     if s['replay_kind'] == 'auto' and s['seed'] == 'none':
         warnings.append('auto replay without a seed')
+    seed = seed_value(s['seed'])  # == bench.js Number(seed) >>> 0 (4.5 -> 4, 0x10 -> 16, garbage -> 0); never raises
+    expected_installed = seed_installed_label(s['seed'])
+    report['seed'] = {'setting': s['seed'], 'value': seed, 'installed_label': expected_installed}
+    if s['seed_installed_at_load'] != expected_installed:
+        reasons.append(f'settings.seed_installed_at_load {s["seed_installed_at_load"]!r} is not {expected_installed!r} '
+                       f'(Number({s["seed"]!r}) >>> 0 = {seed})')
     complete = {'bad': 0, 'classic': 0}
+    preserved = 0
     for run in data['runs']:
         r = {'index': run['index'], 'mode': run['mode'], 'result': run['result'], 'checks': []}
         report['runs'].append(r)
         try:
+            if run['result'] != 'COMPLETE':
+                # Aborted / short attempts are evidence of the session, never of performance: only the
+                # seal is binding. Arithmetic and verdict inputs are recomputed when the frames allow it
+                # (informational); an attempt stopped before the warmup or with < 2 frames is still fine.
+                if sha_canonical(run['frames']) != run['frames_sha256']:
+                    raise Rejected('frames_sha256 does not seal the frames')
+                r['checks'].append('frames seal OK')
+                try:
+                    check_frames(run['frames'])
+                    r['verdict_inputs'] = verdict_inputs(run, s)
+                    r['checks'].append('frame arithmetic and verdict inputs recomputed (informational, not counted)')
+                except Rejected as e:
+                    r['checks'].append(f'verdict inputs not recomputable ({e}); informational only')
+                r['checks'].append('preserved as a non-complete attempt (not counted)')
+                preserved += 1
+                continue
             check_frames(run['frames'])
             r['checks'].append('frame arithmetic OK')
             if sha_canonical(run['frames']) != run['frames_sha256']:
                 raise Rejected('frames_sha256 does not seal the frames')
             r['checks'].append('frames seal OK')
+            if run['seed_installed'] != expected_installed:
+                raise Rejected(f'seed_installed {run["seed_installed"]!r} is not {expected_installed!r} derived from settings.seed {s["seed"]!r}')
+            r['checks'].append('seed OK')
             if run['replay_kind'] == 'auto':
-                seed = 0 if s['seed'] == 'none' else int(s['seed'])
-                expected_sha = sha_canonical(replay_fractions(seed, s['warmup_ms'] + s['run_ms'] + 1000))
+                expected_sha = sha_canonical(replay_fractions(0 if seed is None else seed, s['warmup_ms'] + s['run_ms'] + 1000))
                 if run['replay_fractions_sha256'] != expected_sha:
                     raise Rejected('replay_fractions_sha256 differs from the deterministic replay for this seed')
                 r['checks'].append('replay seal OK')
@@ -525,9 +599,6 @@ def validate_result(data, package_root=None, allow_custom=False):
                     and abs(page['rolling_10s_min_fps'] - vi['rolling_10s_min_fps']) > 1e-6:
                 raise Rejected('page-side rolling minimum differs from recomputed')
             r['checks'].append('page-side inputs match recomputation')
-            if run['result'] != 'COMPLETE':
-                r['checks'].append('preserved as a non-complete attempt (not counted)')
-                continue
             if not vi['measured_active_ms_reached']:
                 raise Rejected(f'measured active time {vi["measured"]["active_ms"]:.0f} ms < {s["run_ms"]} ms')
             if vi['measured']['gaps']:
@@ -540,6 +611,7 @@ def validate_result(data, package_root=None, allow_custom=False):
             r['rejected'] = str(e)
             reasons.append(f'run {run["index"]}: {e}')
     report['complete_runs'] = complete
+    report['non_complete_attempts_preserved'] = preserved
     if not reasons:
         report['status'] = 'ACCEPTED'
         report['acceptance_eligible'] = standard and s['emulation'] == 'none'
@@ -574,7 +646,7 @@ def summarize(args):
             m = vi['measured'] if vi else None
             rows.append(f'{path.name} run {r["index"]} {r["mode"]:8s} {r["result"]:9s} ' + (
                 f'avg {m["average_fps"]:7.2f} fps  min10s {vi["rolling_10s_min_fps"] if vi["rolling_10s_min_fps"] is None else round(vi["rolling_10s_min_fps"], 2)}  '
-                f'p95 {m["frame_ms"]["p95"]:6.2f} ms  gaps {m["gaps"]}  backing {"const" if vi["backing_constant"] else "CHANGED"}' if m else r.get('rejected', '')))
+                f'p95 {m["frame_ms"]["p95"]:6.2f} ms  gaps {m["gaps"]}  backing {"const" if vi["backing_constant"] else "CHANGED"}' if m else r.get('rejected') or (r['checks'][-1] if r['checks'] else '')))
         rows.append(f'{path.name}: {rep["status"]} ' + '; '.join(rep['reasons'] + rep['warnings']))
     print('\n'.join(rows) if rows else 'no results')
     return 0
@@ -665,8 +737,10 @@ def inspect(args):
 
 
 def replay(args):
-    events = replay_fractions(args.seed, args.total_ms)
-    print(json.dumps({'seed': args.seed, 'total_ms': args.total_ms, 'events': len(events),
+    seed = seed_value(args.seed)
+    seed = 0 if seed is None else seed
+    events = replay_fractions(seed, args.total_ms)
+    print(json.dumps({'seed': seed, 'seed_setting': args.seed, 'total_ms': args.total_ms, 'events': len(events),
                       'sha256': sha_canonical(events), 'first': events[:4]}, indent=1))
     return 0
 
@@ -703,7 +777,7 @@ def main(argv=None):
     i.add_argument('--report')
     i.set_defaults(fn=inspect)
     r = sub.add_parser('replay')
-    r.add_argument('--seed', type=int, default=4)
+    r.add_argument('--seed', default='4', help="as typed in ?seed= (converted like the page: Number(seed) >>> 0)")
     r.add_argument('--total-ms', type=int, default=STANDARD['warmup_ms'] + STANDARD['run_ms'] + 1000)
     r.set_defaults(fn=replay)
     args = p.parse_args(argv)

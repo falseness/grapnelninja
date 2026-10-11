@@ -98,9 +98,9 @@ def dims(mode='bad', backing=(1280, 720)):
 
 
 def make_run(index, mode, frames, settings, result='COMPLETE', replay_kind='auto'):
-    seed = 0 if settings['seed'] == 'none' else int(settings['seed'])
-    replay = bt.replay_fractions(seed, settings['warmup_ms'] + settings['run_ms'] + 1000) if replay_kind == 'auto' else []
-    run = {'index': index, 'mode': mode, 'started_utc': 'u', 'ended_utc': 'u', 'seed_installed': 'mulberry32(4)',
+    seed = bt.seed_value(settings['seed'])  # what the page installs: Number(seed) >>> 0
+    replay = bt.replay_fractions(0 if seed is None else seed, settings['warmup_ms'] + settings['run_ms'] + 1000) if replay_kind == 'auto' else []
+    run = {'index': index, 'mode': mode, 'started_utc': 'u', 'ended_utc': 'u', 'seed_installed': bt.seed_installed_label(settings['seed']),
            'replay_kind': replay_kind, 'input_kind': 'mouse', 'replay_fractions_sha256': bt.sha_canonical(replay),
            'replay_events': len(replay), 'dimensions_at_start': dims(mode), 'dimensions_at_end': dims(mode),
            'frames': frames, 'excluded': 0, 'excluded_samples': [], 'interruptions': [], 'deaths': [], 'dispatched': [],
@@ -119,11 +119,11 @@ def make_run(index, mode, frames, settings, result='COMPLETE', replay_kind='auto
     return run
 
 
-def make_result(build=None, warmup_ms=5000, run_ms=60000, reps=3, emulation='none', frames=None, modes=('bad',)):
-    settings = {'seed': '4', 'replay_kind': 'auto', 'input_kind': 'auto', 'warmup_ms': warmup_ms, 'run_ms': run_ms,
+def make_result(build=None, warmup_ms=5000, run_ms=60000, reps=3, emulation='none', frames=None, modes=('bad',), seed='4'):
+    settings = {'seed': seed, 'replay_kind': 'auto', 'input_kind': 'auto', 'warmup_ms': warmup_ms, 'run_ms': run_ms,
                 'repetitions_target': reps, 'protocol': 'standard' if (warmup_ms, run_ms, reps) == (5000, 60000, 3) else 'custom',
                 'devtools': 'closed', 'cpu_throttle': 'none (1x)', 'emulation': emulation, 'notes': '', 'density': 'NOT pinned',
-                'sdk_isolation': 'x', 'hooks': 'x', 'autosend': True, 'autostart': False, 'seed_installed_at_load': 'mulberry32(4)'}
+                'sdk_isolation': 'x', 'hooks': 'x', 'autosend': True, 'autostart': False, 'seed_installed_at_load': bt.seed_installed_label(seed)}
     if build is None:
         build = {'source_revision': 'f' * 40, 'served_tree_sha256': 'a' * 64, 'served_files_sha256': {}, 'bench_js_sha256': 'b' * 64,
                  'build_version': 'x', 'committed_index_html_sha256': 'c' * 64, 'served_index_html_sha256': 'd' * 64}
@@ -293,6 +293,74 @@ class Schema(unittest.TestCase):
         self.assertEqual(rep['status'], 'ACCEPTED')
         self.assertEqual(rep['complete_runs']['bad'], 0)
         log('tampered interval, broken seal, foreign replay, wrong mode, SDK present, page-side drift, short run rejected; aborted run preserved uncounted')
+
+    def test_early_aborted_attempt_does_not_reject_the_session(self):
+        """TASK-298: an owner abort a few seconds in (warmup never completed, or < 2 frames)
+        must stay a preserved, uncounted attempt; the COMPLETE repetitions in the same file remain valid."""
+        r = make_result(modes=('bad', 'bad', 'bad'))
+        s = r['settings']
+        three_seconds = synthetic_frames(int(3000 / (1000 / 60)))  # 3 s active < 5 s warmup
+        aborted = make_run(2, 'bad', three_seconds, s, result='ABORTED by owner')
+        single = make_run(3, 'bad', [[1000.0, None]], s, result='ABORTED by owner')
+        empty = make_run(4, 'bad', [], s, result='FAILED: aborted before the first active frame')
+        self.assertIsNone(aborted['verdict_inputs']['measured'])
+        r['runs'] = [r['runs'][0], aborted, single, empty] + [dict(x, index=i) for i, x in zip((5, 6), r['runs'][1:])]
+        rep = bt.validate_result(r, None)
+        self.assertEqual(rep['status'], 'ACCEPTED', rep['reasons'])
+        self.assertTrue(rep['acceptance_eligible'])
+        self.assertEqual(rep['complete_runs'], {'bad': 3, 'classic': 0})
+        self.assertEqual(rep['non_complete_attempts_preserved'], 3)
+        for idx in (1, 2, 3):
+            checks = rep['runs'][idx]['checks']
+            self.assertIn('preserved as a non-complete attempt (not counted)', checks, checks)
+            self.assertIn('frames seal OK', checks)
+            self.assertNotIn('rejected', rep['runs'][idx])
+        self.assertTrue(any('warmup never completed' in c for c in rep['runs'][1]['checks']), rep['runs'][1]['checks'])
+        self.assertTrue(any('fewer than two frames' in c for c in rep['runs'][2]['checks']), rep['runs'][2]['checks'])
+        for idx in (0, 4, 5):
+            self.assertIn('COMPLETE run accepted', rep['runs'][idx]['checks'])
+        # the seal still binds a non-complete attempt: a tampered aborted run rejects the file
+        tampered = copy.deepcopy(r)
+        tampered['runs'][1]['frames'][5][0] += 1.0
+        rep2 = bt.validate_result(tampered, None)
+        self.assertEqual(rep2['status'], 'REJECTED')
+        self.assertTrue(any('run 2: frames_sha256 does not seal' in x for x in rep2['reasons']), rep2['reasons'])
+        # schema: an empty frames array is fine for a non-complete attempt, never for a COMPLETE run
+        bad = copy.deepcopy(r)
+        bad['runs'][0]['frames'] = []
+        bad['runs'][0]['frames_sha256'] = bt.sha_canonical([])
+        rep3 = bt.validate_result(bad, None)
+        self.assertTrue(any('runs[0].frames: fewer than 2 items' in x for x in rep3['reasons']), rep3['reasons'])
+        log('3 s / 1-frame / 0-frame aborted attempts preserved (not counted), 3 COMPLETE runs accepted; tampered aborted seal rejects; '
+            'empty frames rejected only for COMPLETE:', rep['runs'][1]['checks'])
+
+    def test_seed_converted_like_the_page(self):
+        """TASK-298: settings.seed is converted as bench.js does (Number(seed) >>> 0); a page that used 4
+        for ?seed=4.5 validates, and a seed the page did not install is Rejected, never a ValueError."""
+        table = {'4': 4, '4.5': 4, '0x10': 16, 'abc': 0, '': 0, ' 7 ': 7, '-4': 4294967292, '1e3': 1000, '1e400': 0,
+                 'Infinity': 0, '0b101': 5, '.5': 0, '4.': 4, '1_000': 0, '0x': 0, '+Infinity': 0, '0o17': 15}  # values from node: Number(s) >>> 0
+        for text, want in table.items():
+            self.assertEqual(bt.seed_value(text), want, text)
+        self.assertIsNone(bt.seed_value('none'))
+        self.assertEqual(bt.seed_installed_label('none'), 'none (native Math.random)')
+        for text in ('4.5', '0x10', 'abc', 'none'):
+            r = make_result(seed=text)
+            rep = bt.validate_result(r, None)
+            self.assertEqual(rep['status'], 'ACCEPTED', (text, rep['reasons']))
+            self.assertEqual(rep['seed'], {'setting': text, 'value': bt.seed_value(text), 'installed_label': r['runs'][0]['seed_installed']})
+            self.assertIn('seed OK', rep['runs'][0]['checks'])
+        r = make_result(seed='4.5')
+        self.assertEqual(r['runs'][0]['seed_installed'], 'mulberry32(4)')
+        r['runs'][0]['seed_installed'] = 'mulberry32(5)'
+        rep = bt.validate_result(r, None)
+        self.assertEqual(rep['status'], 'REJECTED')
+        self.assertTrue(any("run 1: seed_installed 'mulberry32(5)' is not 'mulberry32(4)'" in x for x in rep['reasons']), rep['reasons'])
+        r = make_result(seed='4.5')
+        r['settings']['seed_installed_at_load'] = 'mulberry32(5)'
+        rep = bt.validate_result(r, None)
+        self.assertTrue(any('seed_installed_at_load' in x for x in rep['reasons']), rep['reasons'])
+        log('seed table matches node (17 spellings); 4.5 / 0x10 / abc / none accepted when the page installed the converted value; '
+            'mismatched seed_installed -> Rejected reason, no ValueError')
 
     def test_gap_in_measured_region_is_warned_not_hidden(self):
         frames = synthetic_frames(4000, gap_after=1500, gap_ms=5000.0)

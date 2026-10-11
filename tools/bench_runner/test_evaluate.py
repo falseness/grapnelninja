@@ -280,6 +280,31 @@ class Fixtures(unittest.TestCase):
         self.assertIsNone(ev.classify_target(doc))
         log('classification: desktop / android-chrome / iphone-safari recognised; Chrome on iOS is not the Safari row')
 
+    def test_aborted_attempt_keeps_the_complete_repetitions(self):
+        """TASK-298: one 3-second aborted run (before the 5 s warmup) plus three COMPLETE runs:
+        the file validates ACCEPTED and the row counts the three repetitions."""
+        r = native_result(self.pkg, modes=('bad', 'bad', 'bad'))
+        aborted = make_run(2, 'bad', synthetic_frames(int(3000 / FPS60)), r['settings'], result='ABORTED by owner')
+        aborted['dimensions_at_start']['dpr'] = aborted['dimensions_at_end']['dpr'] = 1
+        r['runs'] = [r['runs'][0], aborted] + [dict(x, index=i) for i, x in zip((3, 4), r['runs'][1:])]
+        rep = bt.validate_result(r, self.pkg)
+        self.assertEqual(rep['status'], 'ACCEPTED', rep['reasons'])
+        self.assertIn('preserved as a non-complete attempt (not counted)', rep['runs'][1]['checks'])
+        p = self.write('aborted-plus-three.json', r)
+        acc, dec = ev.evaluate([p], self.pkg)
+        entry = acc['result_files'][0]
+        self.assertTrue(entry['eligible'], entry['ineligible_reasons'])
+        self.assertEqual(entry['validation']['status'], 'ACCEPTED')
+        row = self.row(acc, 'desktop/closed/bad')
+        self.assertEqual(row['valid_repetitions'], 3, row['reason'])
+        self.assertEqual(row['verdict'], 'PASS', row['reason'])
+        self.assertEqual([x['run_index'] for x in row['repetitions']], [1, 3, 4])
+        self.assertEqual(len(row['non_complete_attempts']), 1)
+        self.assertEqual(row['non_complete_attempts'][0]['run_index'], 2)
+        self.assertEqual(row['rejected_attempts'], [])
+        self.assertIn('non-complete attempt preserved, not counted: ABORTED by owner', row['non_complete_attempts'][0]['reasons'])
+        log('aborted 3 s run + 3 COMPLETE: file ACCEPTED/eligible, desktop/closed/bad PASS with 3 repetitions (runs 1,3,4), 1 non-complete attempt preserved')
+
     def test_real_smoke_exports_are_ineligible(self):
         smoke = Path(os.environ.get('BENCH_SMOKE_EXPORTS', self.pkg.parent / 'smoke'))
         files = sorted(smoke.glob('saved-*.json'))

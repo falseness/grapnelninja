@@ -104,6 +104,8 @@
    "items": {
     "type": "object",
     "required": ["index", "mode", "started_utc", "ended_utc", "seed_installed", "replay_kind", "input_kind", "replay_fractions_sha256", "replay_events", "dimensions_at_start", "dimensions_at_end", "frames", "excluded", "excluded_samples", "interruptions", "deaths", "dispatched", "backing", "warmup_end_active_ms", "active_ms", "result", "error", "frames_sha256", "verdict_inputs"],
+    "if": {"required": ["result"], "properties": {"result": {"const": "COMPLETE"}}},
+    "then": {"properties": {"frames": {"minItems": 2}}},
     "properties": {
      "index": {"type": "integer", "minimum": 1},
      "mode": {"enum": ["bad", "classic"], "description": "bad = Main version, classic = Chill version (startGame argument)."},
@@ -117,8 +119,8 @@
      "dimensions_at_start": {"$ref": "#/definitions/dimensions"},
      "dimensions_at_end": {"$ref": "#/definitions/dimensions"},
      "frames": {
-      "type": "array", "minItems": 2,
-      "description": "Active frames only: [rAF timestamp ms, interval ms or null]. null = first frame, or first active frame after a menu/pause/hidden/offer/ad gap (interval not counted).",
+      "type": "array", "minItems": 0,
+      "description": "Active frames only: [rAF timestamp ms, interval ms or null]. null = first frame, or first active frame after a menu/pause/hidden/offer/ad gap (interval not counted). At least 2 for a COMPLETE run (see the if/then below); a non-complete attempt may hold 0 or 1.",
       "items": {"type": "array", "minItems": 2}
      },
      "excluded": {"type": "integer", "minimum": 0, "description": "Count of gameLoop calls in an inactive state during the run."},

@@ -226,7 +226,7 @@ def evaluate_file(path, package_root):
 def build_matrix(entries):
     rows = {k: {'row': k, 'target': k.split('/')[0], 'devtools': k.split('/')[1], 'mode': k.split('/')[2],
                 'verdict': 'UNVERIFIED', 'repetitions_required': THRESHOLDS['repetitions_required'],
-                'valid_repetitions': 0, 'repetitions': [], 'rejected_attempts': [], 'devices': [], 'viewports': [], 'dprs': [],
+                'valid_repetitions': 0, 'repetitions': [], 'rejected_attempts': [], 'non_complete_attempts': [], 'devices': [], 'viewports': [], 'dprs': [],
                 'reason': 'no eligible native result file for this row'} for k in required_rows()}
     for e in entries:
         if not e['eligible']:
@@ -242,6 +242,8 @@ def build_matrix(entries):
             if r['valid']:
                 row['repetitions'].append(rec)
                 row['valid_repetitions'] += 1
+            elif r['result'] != 'COMPLETE':
+                row['non_complete_attempts'].append(rec)  # aborted / short: preserved in the file, never counted either way
             else:
                 row['rejected_attempts'].append(rec)
             if e['model_supplied'] not in row['devices']:
@@ -256,7 +258,8 @@ def build_matrix(entries):
             row['verdict'] = 'UNVERIFIED'
             row['reason'] = (f'{n} valid repetition(s) < {THRESHOLDS["repetitions_required"]} required'
                              + (f'; {len(row["rejected_attempts"])} attempt(s) rejected' if row['rejected_attempts'] else '')
-                             + ('' if n or row['rejected_attempts'] else ' (no eligible native result file for this row)'))
+                             + (f'; {len(row["non_complete_attempts"])} non-complete attempt(s) preserved, not counted' if row['non_complete_attempts'] else '')
+                             + ('' if n or row['rejected_attempts'] or row['non_complete_attempts'] else ' (no eligible native result file for this row)'))
             continue
         failing = [r for r in row['repetitions'] if r['verdict'] != 'PASS']
         if failing:
