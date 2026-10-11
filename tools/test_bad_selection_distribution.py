@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import unittest
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 from verification_scenarios import frames
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +32,7 @@ class BadSelectionDistributionTests(unittest.TestCase):
                 if message.type == 'error' else None)
         try:
             page.goto(self.url)
+            wait_for_boot(page)
             result = page.evaluate(PROBE, SELECTIONS)
         finally:
             page.close()

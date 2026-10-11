@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import unittest
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046')))
@@ -28,6 +28,7 @@ class ObstacleAdvanceTests(unittest.TestCase):
                     if message.type == 'error' else None)
             try:
                 page.goto(self.url)
+                wait_for_boot(page)
                 result = page.evaluate(PROBE)
                 results.append(result)
                 print('\n'.join(result['assertions']), flush=True)

@@ -87,21 +87,21 @@ class Text
         LAYOUT_PROBE.text(this.text, this.x, this.y)
         ctx.restore()
     }
-    // Halo strokes of the letters in the glow colour, like strokeNeonPath
+    // Opaque tube strokes of the letters in the glow colour, like
+    // strokeNeonPath. TASK-205 dropped the neonOutline halo alphas, so the
+    // halo widths have drawn opaque since (a NaN globalAlpha is ignored by
+    // the canvas); this keeps that reviewed look without the NaN sets.
     strokeNeonTube()
     {
-        const neon = STYLE.strokes.neonOutline
         const size = parseFloat(this.fontSize)
 
         ctx.strokeStyle = this.glow
         ctx.lineJoin = 'round'
-        ctx.globalAlpha = neon.haloAlpha * neonPulse
+        ctx.globalAlpha = 1
         ctx.lineWidth = size * STYLE.ui.titleHaloWidthRatio
         ctx.strokeText(this.text, this.x, this.y)
-        ctx.globalAlpha = neon.innerHaloAlpha * neonPulse
         ctx.lineWidth = size * STYLE.ui.titleInnerHaloWidthRatio
         ctx.strokeText(this.text, this.x, this.y)
-        ctx.globalAlpha = 1
         ctx.lineWidth = size * STYLE.ui.titleTubeWidthRatio
         ctx.strokeText(this.text, this.x, this.y)
     }

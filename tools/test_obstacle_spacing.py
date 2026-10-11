@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import unittest
 
-from browser_test_support import logical_size, start_browser_test
+from browser_test_support import logical_size, start_browser_test, wait_for_boot
 from verification_scenarios import frames
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +26,7 @@ class ObstacleSpacingTests(unittest.TestCase):
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 try:
                     page.goto(self.url)
+                    wait_for_boot(page)
                     result = page.evaluate(PROBE, frames)
                     self.assertEqual(errors, [])
                     self.assertEqual((result['width'], result['height']), logical_size(*viewport))

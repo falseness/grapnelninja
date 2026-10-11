@@ -23,11 +23,15 @@ class CircleSegmentTest(unittest.TestCase):
                 getCircumscribedCircle: () => ({x: 50, y: 50, radius: Math.hypot(50, 50)}),
                 collision: (who, line) => hits.push([line.x1, line.y1, line.x2, line.y2])
             }
-            const saved = floors
+            const saved = floors, savedScreen = screen
             floors = [{elements: [element]}]
+            // No run is active: Ninja.collision resolves the TASK-225 left wall
+            // through `screen`, which only startGame() creates
+            screen = {x: 0, y: 0, leftWall: {resolve: () => false}}
             const ninja = new Ninja({x, y, radius: r, fill: '#fff', stroke: '#fff'})
-            const result = ninja.collision()
-            floors = saved
+            let result
+            try { result = ninja.collision() }
+            finally { floors = saved; screen = savedScreen }
             return {hits, result: !!result}
         }
         const eps = 1e-6
