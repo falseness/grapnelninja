@@ -1,12 +1,17 @@
-"""Assert resource ordering, partial failure, serving, and import safety."""
+"""Assert resource ordering, partial failure, serving, import safety and the offline Y8 SDK stub."""
+from contextlib import ExitStack
 import importlib.util
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import time
 import unittest
 from unittest.mock import Mock, patch
 from urllib.request import urlopen
 
 import browser_test_support as support
+import render_snapshot
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class BrowserTestSupportTests(unittest.TestCase):
@@ -81,6 +86,50 @@ class BrowserTestSupportTests(unittest.TestCase):
             server.assert_not_called()
             thread.assert_not_called()
             playwright.assert_not_called()
+
+
+class OfflineSdkStubTests(unittest.TestCase):
+    """index.html's cdn.y8.com SDK script is served by the inline stub, not aborted."""
+    @classmethod
+    def setUpClass(cls):
+        cls.stack = ExitStack()
+        cls.url, cls.browser = support.start_browser_test(ROOT, cls.stack.callback)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.stack.close()
+
+    def test_sdk_stub_boots_disabled_without_console_errors(self):
+        context = self.browser.new_context(viewport={'width': 1280, 'height': 720})
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        page.on('console', lambda msg: msg.type == 'error' and errors.append(msg.text))
+        page.on('pageerror', lambda exc: errors.append(str(exc)))
+        page.on('requestfailed', lambda req: errors.append(f'requestfailed {req.url}'))
+        # boot() calls PLATFORM.init() from the inline script, before DOMContentLoaded;
+        # the aborted-SDK path only settled after init()'s 2900 ms fallback timer.
+        page.goto(self.url + 'index.html', wait_until='domcontentloaded')
+        start = time.monotonic()
+        page.wait_for_function('() => PLATFORM.environment != "pending"', timeout=500)
+        elapsed_ms = (time.monotonic() - start) * 1000
+        self.assertEqual(page.evaluate('() => PLATFORM.environment'), 'disabled')
+        self.assertFalse(page.evaluate('() => PLATFORM.isRewardedSupported()'))
+        self.assertLess(elapsed_ms, 500)
+        support.wait_for_boot(page)
+        page.wait_for_timeout(100)
+        self.assertEqual(errors, [])
+
+    def test_boot_frozen_completes_with_no_pending_timers(self):
+        context = self.browser.new_context(viewport={'width': 1920, 'height': 1080})
+        self.addCleanup(context.close)
+        context.add_init_script(render_snapshot.CLOCK_SCRIPT)
+        page = context.new_page()
+        page.goto(self.url + 'index.html', wait_until='load')
+        render_snapshot.boot_frozen(page)
+        self.assertEqual(page.evaluate('() => __snap.timers'), [])
+        self.assertEqual(page.evaluate('() => __snap.now'), 0)
+        self.assertEqual(page.evaluate('() => PLATFORM.environment'), 'disabled')
 
 
 if __name__ == '__main__':

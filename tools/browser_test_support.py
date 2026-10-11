@@ -10,6 +10,16 @@ from playwright.sync_api import sync_playwright
 # Any request that is not to the local test server (the game loads no
 # external scripts; older baseline trees may still reference an SDK URL)
 EXTERNAL_URL = re.compile(r'^(?!https?://127\.0\.0\.1[:/])(?:https?|wss?)://')
+# index.html's Y8 minimal SDK script.  Aborting it logs a console error
+# (net::ERR_FAILED) and leaves PLATFORM.init() waiting for its 2900 ms
+# fallback timer, which never fires under render_snapshot's frozen clock.
+Y8_SDK_URL = re.compile(r'^https?://cdn\.y8\.com/minimal-sdk/.*y8\.min\.js')
+# Offline stand-in: sdk().init() rejects, so PLATFORM.init() settles to
+# environment "disabled" through its catch path, with no timer and no
+# console error; isRewardedSupported() stays false.
+Y8_SDK_STUB = ('window.y8 = {sdk: () => ({init: () => Promise.reject(new Error("offline test stub"))}),'
+               ' emitReadyEvent() { window.dispatchEvent(new Event("y8sdk.ready")) }};'
+               ' window.y8.emitReadyEvent()')
 LOGICAL_HEIGHT = 1080
 
 
@@ -29,10 +39,26 @@ def block_external(route):
     route.abort()
 
 
+def stub_y8_sdk(route):
+    """Fulfil the Y8 SDK script with the inline offline stub."""
+    route.fulfill(status=200, content_type='text/javascript', body=Y8_SDK_STUB)
+
+
+def route_offline(context):
+    """Abort every external URL except the Y8 SDK script, which gets the stub.
+
+    Playwright consults routes in reverse registration order, so the SDK
+    route is registered last to be matched before the generic abort.
+    """
+    context.route(EXTERNAL_URL, block_external)
+    context.route(Y8_SDK_URL, stub_y8_sdk)
+
+
 class OfflineBrowser:
     """Browser whose pages never reach the network beyond the test server.
 
-    Routes added later take precedence.
+    Routes added later take precedence (verify_y8_release.py relies on this
+    to replace the SDK stub with its full fake).
     """
     def __init__(self, browser):
         self._browser = browser
@@ -42,12 +68,12 @@ class OfflineBrowser:
 
     def new_context(self, **kwargs):
         context = self._browser.new_context(**kwargs)
-        context.route(EXTERNAL_URL, block_external)
+        route_offline(context)
         return context
 
     def new_page(self, **kwargs):
         page = self._browser.new_page(**kwargs)
-        page.context.route(EXTERNAL_URL, block_external)
+        route_offline(page.context)
         return page
 
 
