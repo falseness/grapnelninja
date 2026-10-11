@@ -1,4 +1,35 @@
-# Playgama release — 2026-10-09
+# Playgama repair archive — 2026-10-11
+
+TASK-297 uploaded the exact verified TASK-296 repair ZIP to the existing Grapnel
+Ninja application `cmuu1nvs30d00hj0h49c07spq`. Playgama confirmed the upload and
+reported processing `DONE`, certification `PASSED`, and Bridge `FOUND` (2.3.1).
+
+- Archive: `cmv4c2pch08dtnk0h2r6nkj7e` (`grapnelninja-2026-10-11-start-firefox`).
+- Source revision: `d36f68e53ff4cf2c2b003c52cdd8c6b7a6b4ab65`.
+- ZIP: `artifacts/TASK-296/release/grapnelninja-2026-10-11-start-firefox.zip`.
+- Size: 91541 bytes; SHA-256: `bbbdfcc236f1c2377e16e962e7c4366616dfb2ec484e1f81ad956e7679f73836`.
+- Official QA: https://developer.playgama.com/qa-tool/cmv4c2pch08dtnk0h2r6nkj7e
+
+The sandbox still uses archive `cmv0yeu170489oj0iy0psx1i2`. This task did not
+publish the sandbox, submit moderation, start traffic, or spend money. The
+existing application moderation rejection remains; archive certification does
+not constitute moderation approval. Native Android Firefox remains unverified,
+repair-build performance was not measured, and no performance improvement is
+claimed. Native iOS/Safari and successful served-ad creative behavior also remain
+unverified.
+
+The current 36-item checklist, exact-byte preflight, sanitized upload receipt,
+server status history, hosted QA results, and hashed evidence manifest are in
+`artifacts/TASK-297/`. These files are intentionally untracked. Retain this archive
+ID for any follow-up; do not allocate another archive to repeat this upload.
+
+Hosted Chromium checks passed in both modes with desktop and emulated touch
+input: real SDK readiness, movement, progress/settings save and reload, and no
+page exceptions or configuration error. The first process exited with code 143
+after the two desktop passes; its partial evidence is preserved, and both touch
+cases passed a separate run with unchanged assertions.
+
+## Historical release — 2026-10-09
 
 The corrected game is uploaded and live in the existing public sandbox:
 https://playgama.ai/play/kjkngkpxox
