@@ -15,6 +15,9 @@ const PLATFORM = (function()
     let readyTimer = null
     const readyRetryMs = [500, 1000, 2000]
     const readyEvents = []
+    const lifecycleQueue = []
+    const lifecycleCapacity = 64
+    let lifecycleOverflow = 0
     function readyStage(state, detail = {})
     {
         readyState = state
@@ -32,11 +35,16 @@ const PLATFORM = (function()
         readyPromise = Promise.resolve().then(() => bridge.platform.sendMessage('game_ready')).then(() =>
         {
             readyStage('success')
+            // Submit in order, without waiting for host responses. A rejected
+            // or unresolved lifecycle send must never block or replay others.
+            for (const event of lifecycleQueue.splice(0))
+                PLATFORM.sendMessage(event.name, event.data)
         }, () =>
         {
             if (readyAttempt > readyRetryMs.length)
             {
                 readyStage('exhausted')
+                lifecycleQueue.length = 0
                 return
             }
             const delayMs = readyRetryMs[readyAttempt - 1]
@@ -335,12 +343,21 @@ const PLATFORM = (function()
             catch (_) {}
         },
 
-        // Gameplay lifecycle messages; dropped until game_ready was sent
+        // Buffer during SDK/readiness recovery without gating local gameplay.
         sendLifecycle(name, data)
         {
-            if (readyState !== 'success')
-                return Promise.resolve()
-            return PLATFORM.sendMessage(name, data)
+            if (readyState === 'success')
+                return PLATFORM.sendMessage(name, data)
+            if (readyState !== 'exhausted')
+            {
+                if (lifecycleQueue.length === lifecycleCapacity)
+                {
+                    lifecycleQueue.shift()
+                    lifecycleOverflow++
+                }
+                lifecycleQueue.push({name, data})
+            }
+            return Promise.resolve()
         },
 
         // Call only after local rendering and input setup, independent of play.
@@ -358,6 +375,8 @@ const PLATFORM = (function()
         get readiness()
         {
             return {state: readyState, attempts: readyAttempt, applicationReady,
+                lifecycle: {queued: lifecycleQueue.length, capacity: lifecycleCapacity,
+                    overflow: lifecycleOverflow},
                 events: readyEvents.map(event => ({...event}))}
         },
 

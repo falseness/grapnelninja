@@ -64,10 +64,18 @@ class Playgama2ReadyTests(unittest.TestCase):
     def setUpClass(cls):
         support.Playgama2BridgeTests.setUpClass.__func__(cls)
         cls.results = {}
+        cls.lifecycle_results = {}
 
     @classmethod
     def tearDownClass(cls):
         (cls.out / 'ready-events.json').write_text(json.dumps(cls.results, indent=2) + '\n')
+        (cls.out / 'lifecycle-traces.json').write_text(json.dumps({
+            'baseline': 'artifacts/TASK-288/start-traces.json',
+            'gameplay_after': 'start-traces.json',
+            'scope': 'Isolated real PLATFORM contract probes; run sequences are injected lifecycle calls. '
+                     'Real input and advancing gameplay are covered separately in start-traces.json.',
+            'cases': cls.lifecycle_results,
+        }, indent=2) + '\n')
 
     def run_case(self, case, gated=True):
         context = self.browser.new_context(viewport={'width':1280, 'height':720}, locale='en')
@@ -132,6 +140,11 @@ class Playgama2ReadyTests(unittest.TestCase):
         self.assertEqual(result['diagnostics']['attempts'], expected_count)
         self.assertEqual(result['maxActiveSends'], 1)
         self.assertEqual(result['activeSends'], 0)
+        self.assertEqual(result['diagnostics']['lifecycle']['queued'], 0)
+        if case == 'exhausted':
+            self.assertFalse(any(c['name'] == 'level_paused' for c in result['calls']))
+        else:
+            self.assertTrue(any(c['name'] == 'level_paused' for c in result['calls']))
         self.assertEqual(len(errors), 0, errors)
         self.assertTrue(all(e['loadingHidden'] and e['menuVisible'] and e['bootComplete'] and e['draws'] > 0 for e in sends))
         if gated:
@@ -165,6 +178,100 @@ class Playgama2ReadyTests(unittest.TestCase):
     def test_unresolved_send(self): self.run_case('unresolved')
     def test_late_init(self): self.run_case('late-init')
     def test_unaltered_scheduler(self): self.run_case('natural', gated=False)
+
+    def test_lifecycle_queue_contract(self):
+        cases = ('immediate', 'delayed', 'ended-before-recovery', 'multiple-runs',
+                 'rejected-recovered', 'late-init', 'unavailable', 'unresolved',
+                 'exhausted', 'overflow', 'lifecycle-rejected', 'lifecycle-throws',
+                 'lifecycle-unresolved')
+        for case in cases:
+            with self.subTest(case=case):
+                context = self.browser.new_context()
+                self.addCleanup(context.close)
+                context.route('**/lifecycle-harness.html', lambda r: r.fulfill(
+                    content_type='text/html', body='<!doctype html><title>Offline lifecycle probe</title>'))
+                page = context.new_page()
+                page.goto(self.url + 'current/lifecycle-harness.html')
+                page.add_script_tag(url=self.url + 'current/platform.js')
+                result = page.evaluate(LIFECYCLE_PROBE, case)
+                self.lifecycle_results[case] = result
+                self.assertEqual(result['maxActive'], 0 if case == 'unavailable' else 1)
+                self.assertEqual(result['before']['lifecycle']['queued'], result['expectedQueued'])
+                self.assertEqual(result['before']['lifecycle']['overflow'], result['expectedOverflow'])
+                self.assertEqual(result['submittedBefore'], result['expectedBefore'])
+                self.assertEqual(result['submitted'], result['expected'])
+                self.assertEqual(result['after']['state'], result['expectedState'])
+                self.assertEqual(result['after']['attempts'], result['expectedAttempts'])
+                self.assertEqual(result['after']['lifecycle']['queued'],
+                                 64 if case in ('unavailable', 'unresolved') else 0)
+                self.assertEqual(result['after']['lifecycle']['overflow'], result['expectedOverflow'])
+                result['verdict'] = ('PASS ' + case + ': cap=64; overflow=' + str(result['expectedOverflow']) +
+                    '; retained order and exactly-once submission verified; maxActive=' + str(result['maxActive']) +
+                    '; terminal queue=' + str(result['after']['lifecycle']['queued']))
+                print(result['verdict'], flush=True)
+                context.close()
+
+
+LIFECYCLE_PROBE = r"""async kind => {
+    const calls = [], outcomes = [];
+    let resolveReady, resolveInit, sends = 0, active = 0, maxActive = 0;
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    window.bridge = {
+        initialize: () => kind === 'late-init' ? new Promise(r => resolveInit = r) : Promise.resolve(),
+        EVENT_NAME: {}, advertisement: {on() {}},
+        platform: {on() {}, sendMessage(name, data) {
+            calls.push({name, data});
+            if (name !== 'game_ready') {
+                if (kind === 'lifecycle-throws' && name === 'level_started') throw Error('INJECTED lifecycle throw');
+                if (kind === 'lifecycle-rejected' && name === 'level_started') return Promise.reject(Error('INJECTED lifecycle rejection'));
+                if (kind === 'lifecycle-unresolved' && name === 'level_started') return new Promise(() => {});
+                return Promise.resolve();
+            }
+            sends++; active++; maxActive = Math.max(maxActive, active);
+            return new Promise((resolve, reject) => {
+                resolveReady = () => { active--; outcomes.push('resolve'); resolve(); };
+                if (kind === 'exhausted' || (kind === 'rejected-recovered' && sends === 1)) {
+                    active--; outcomes.push('reject'); reject(Error('INJECTED readiness rejection'));
+                } else if (kind === 'immediate') resolveReady();
+            });
+        }}
+    };
+    if (kind === 'unavailable') delete window.bridge;
+    const init = PLATFORM.init();
+    if (!['late-init', 'unavailable'].includes(kind)) await init;
+    PLATFORM.gameReady();
+    await tick();
+    const many = ['overflow', 'unavailable', 'unresolved'].includes(kind);
+    let sequence = ['level_started', 'level_paused', 'level_resumed'];
+    if (kind === 'ended-before-recovery') sequence.push('level_failed');
+    if (kind === 'multiple-runs') sequence = [...sequence, 'level_failed', ...sequence, 'level_failed'];
+    if (many) sequence = Array.from({length:80}, (_, i) => ['level_started','level_paused','level_failed'][i % 3]);
+    const expectedAll = sequence.map((name, i) => ({name, data: {sequence:i}}));
+    for (const event of expectedAll) {
+        // Awaiting this promise must complete even while readiness cannot settle.
+        await PLATFORM.sendLifecycle(event.name, event.data);
+        PLATFORM.gameReady();
+    }
+    const before = PLATFORM.readiness;
+    const submittedBefore = calls.filter(c => c.name !== 'game_ready');
+    if (kind === 'late-init') { resolveInit(); await init; await tick(); }
+    if (kind === 'rejected-recovered') while (sends < 2) await tick();
+    if (kind === 'exhausted') {
+        while (PLATFORM.readiness.state !== 'exhausted') await tick();
+        for (const event of expectedAll) await PLATFORM.sendLifecycle(event.name, event.data);
+    } else if (!['immediate', 'unavailable', 'unresolved'].includes(kind)) resolveReady();
+    await tick();
+    for (let i = 0; i < 20; i++) PLATFORM.gameReady();
+    await tick();
+    return {before, after:PLATFORM.readiness, calls, outcomes, maxActive, active,
+        submittedBefore, expectedBefore:kind === 'immediate' ? expectedAll : [],
+        submitted:calls.filter(c => c.name !== 'game_ready'),
+        expected:['unavailable', 'unresolved', 'exhausted'].includes(kind) ? [] : expectedAll.slice(-64),
+        expectedQueued:kind === 'immediate' ? 0 : Math.min(64, sequence.length),
+        expectedOverflow:many ? 16 : 0,
+        expectedState:kind === 'unavailable' ? 'pending' : kind === 'unresolved' ? 'inflight' : kind === 'exhausted' ? 'exhausted' : 'success',
+        expectedAttempts:kind === 'unavailable' ? 0 : kind === 'exhausted' ? 4 : kind === 'rejected-recovered' ? 2 : 1};
+}"""
 
 
 if __name__ == '__main__':

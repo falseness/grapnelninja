@@ -1,6 +1,6 @@
-"""Baseline characterization: real clicks/rendering, faults only in the SDK.
+"""Readiness recovery regression: real clicks/rendering, faults only in the SDK.
 
-Missing lifecycle starts are expected here, not a gameplay-success assertion.
+Before-fix characterization is preserved under artifacts/TASK-288.
 The shared offline harness blocks production analytics, SDK traffic and ads.
 """
 import json
@@ -118,16 +118,18 @@ class StartFlowTests(unittest.TestCase):
             self.assertLess(result['probe']['inputs'][0]['ms'], frames[0]['ms'])
             self.assertTrue(all(f['ninja'] and f['grapnel'] and f['floors'] > 0 and not f['menu'] for f in frames))
             self.assertGreater(len({(f['ninja']['x'], f['ninja']['y']) for f in frames}), 1)
-            self.assertEqual(len(starts), 1 if case == 'immediate' else 0)
+            self.assertEqual(len(starts), 1)
+            self.assertEqual(result['readiness']['lifecycle']['queued'], 0)
             self.assertFalse(after['menu'])
             self.assertFalse(after['runOver'])
             self.assertTrue(initialized['tutorialVisible'])
             success = next(e['ms'] for e in result['readiness']['events'] if e['state']=='success')
-            if starts:
-                self.assertLess(success, starts[0]['ms'])
+            self.assertLessEqual(success, starts[0]['ms'])
+            if case == 'immediate':
                 self.assertFalse(starts[0]['tutorialVisible'])
             else:
                 self.assertLess(frames[0]['ms'], success)
+                self.assertTrue(starts[0]['tutorialVisible'])
             self.assertTrue(all(r['status']==200 and (r['url']==support.SDK or r['url'].startswith(self.url)) for r in network))
             result['verdict'] = f'PASS {key}: trusted input; initialized/advancing gameplay; level_started={len(starts)}; readiness=success; no replay observed'
             print(result['verdict'], flush=True)
@@ -136,7 +138,7 @@ class StartFlowTests(unittest.TestCase):
             (self.out / 'start-traces.json').write_text(json.dumps(self.results, indent=2)+'\n')
             context.close()
 
-    def test_eight_baseline_cases(self):
+    def test_eight_recovery_cases(self):
         for mode in ('classic', 'bad'):
             for case in ('immediate', 'delayed', 'rejected-recovered', 'late-init'):
                 with self.subTest(mode=mode, readiness=case):
