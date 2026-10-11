@@ -1,0 +1,50 @@
+Grapnel Ninja — owner native benchmark checklist (TASK-283 runner)
+
+Status of every row below: NOT PERFORMED until the owner returns the files.
+Local preparation only: no upload, no public gameplay, no ads, no submission.
+Emulation (DevTools device mode, simulators, remote-rendered previews) is NOT a
+native result; label it Emulation = emulated and it will be reported separately.
+
+Package identity (fill from game/build.json shown on the landing page):
+  source revision ____________________________________________
+  served tree SHA-256 ________________________________________
+  build version ______________________________________________
+
+Required rows (actual hardware; write the real model name, not "phone"):
+  [ ] Desktop, DevTools CLOSED, CPU throttle none, emulation none
+        model/CPU/GPU ________________  OS ________  browser/version ________
+        Main x3 ____  Chill x3 ____  files ________________________________
+  [ ] Desktop, DevTools DOCKED (same window size as the closed row; record the
+        viewport the panel shows), CPU throttle none
+        Main x3 ____  Chill x3 ____  files ________________________________
+  [ ] Desktop, DevTools UNDOCKED, CPU throttle none
+        Main x3 ____  Chill x3 ____  files ________________________________
+  [ ] Android phone, Chrome, native (no emulation), landscape, screen kept on
+        model ________________  Android ______  Chrome ______  refresh Hz ____
+        Main x3 ____  Chill x3 ____  files ________________________________
+  [ ] iPhone, Safari, native, landscape, Low Power Mode OFF, screen kept on
+        model ________________  iOS ______  Safari ______  refresh Hz ____
+        Main x3 ____  Chill x3 ____  files ________________________________
+
+For every session:
+  1. python3 benchtool.py serve --lan   (desktop rows: plain `serve` is enough)
+  2. Open http://<serving-machine-ip>:8765/ on the device, tap the game link.
+  3. Fill the panel: device model (required), display refresh rate (Hz or
+     unknown — never guess), DevTools state, CPU throttle, Emulation = none.
+  4. Mode = Main, Start run, hands off until the panel returns (~65 s active),
+     repeat to 3 COMPLETE runs; Mode = Chill, 3 more. Pauses/hidden gaps are
+     excluded automatically but keep them to a minimum; aborted/short runs stay
+     in the file as non-complete attempts — just run again.
+  5. Results are sent to results/ on the serving machine after each run;
+     also tap Download results on the device as a backup.
+  6. Return the JSON files unchanged (results/*.json and/or the downloads),
+     plus server.log. Do not retype numbers; do not edit the files.
+
+Record as well (per session): date/time, whether the screen stayed on, any
+thermal/low-battery warning, other apps running, Wi-Fi vs. cellular (only the
+local Wi-Fi is needed), and anything unusual on screen (softening, stutter).
+
+What completion means: these rows are evidence for the separate evaluation
+ticket. A returned file is not a pass; the evaluator recomputes everything from
+the raw intervals and reports PASS/FAIL/UNVERIFIED per row. Missing rows stay
+UNVERIFIED; nothing here claims 60 FPS or release readiness.
