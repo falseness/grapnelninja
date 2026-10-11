@@ -653,6 +653,10 @@
                 AUDIO.setMute('hostPause', isPaused)
                 if (isPaused)
                     pauseRun()
+                else if (bootComplete && !menu.opened() && !continueOffer.visible &&
+                    !adOpen && !interstitialPending && !isViewRotated() &&
+                    document.visibilityState !== 'hidden')
+                    reuseTimeInGame()
             })
             PLATFORM.onAudio(enabled => AUDIO.setMute('host', !enabled))
             PLATFORM.onAdState(function(state) {

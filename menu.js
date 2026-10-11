@@ -1,4 +1,8 @@
 function reuseTimeInGame() {
+    // A player can start/resume while the host still freezes gameplay.
+    // Host release will open the segment once the run is permitted again.
+    if (typeof hostPaused !== 'undefined' && hostPaused) return
+    if (Number.isFinite(time)) return
     time = Math.floor(new Date().getTime() / 1000)
 }
 function pauseTimeInGame() {
