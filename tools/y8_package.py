@@ -48,6 +48,7 @@ _spec.loader.exec_module(build_zip)
 from browser_test_support import node_label  # noqa: E402
 
 SUITES = ['release', 'embed', 'mobile-embed', 'lifecycle', 'ads']
+REQUIRED_ENGINES = ('chromium', 'firefox', 'webkit')  # every engine must be run or explained (TASK-294)
 SUITE_RESULT = {'release': 'results.json', 'embed': 'results.json', 'mobile-embed': 'mobile-embed.json',
                 'lifecycle': 'mobile-lifecycle.json', 'ads': 'ad-outcomes.json'}
 TESTED_TOOLS = ['tools/verify_y8_candidate.py', 'tools/verify_y8_release.py', 'tools/verify_y8_embed.py',
@@ -227,6 +228,38 @@ def cmd_build(args):
 
 # ----------------------------------------------------------- functional ----
 
+def parse_engine_notes(engine_notes, webkit_note=None):
+    """--engine-note ENGINE=reason (repeatable) plus the --webkit-note alias -> {engine: reason}; unknown engines fail."""
+    notes = {}
+    for note in list(engine_notes or []) + (['webkit=' + webkit_note] if webkit_note else []):
+        engine, sep, reason = note.partition('=')
+        engine, reason = engine.strip(), reason.strip()
+        require(bool(sep) and engine in REQUIRED_ENGINES and bool(reason),
+                f'engine note must be ENGINE=reason with ENGINE in {", ".join(REQUIRED_ENGINES)}: {note!r}')
+        notes[engine] = reason
+    return notes
+
+
+def engine_coverage(engines_run, engines_not_run):
+    """Pure rule: every REQUIRED engine is either run or explained; returns the sorted list of engines that are neither.
+
+    An engine that was run must not also carry a not-run note (a stale note would otherwise hide a missing run)."""
+    run, explained = set(engines_run), set(engines_not_run)
+    overlap = sorted(run & explained)
+    require(not overlap, 'engines both run and noted as not run: ' + ', '.join(overlap))
+    unknown = sorted((run | explained) - set(REQUIRED_ENGINES))
+    require(not unknown, 'unknown engines: ' + ', '.join(unknown))
+    return sorted(set(REQUIRED_ENGINES) - run - explained)
+
+
+def require_engine_coverage(engines_run, engines_not_run, where):
+    missing = engine_coverage(engines_run, engines_not_run)
+    require(not missing, f'{where}: engines neither run nor explained: {", ".join(missing)} '
+                         f'(run: {", ".join(sorted(engines_run)) or "none"}; required: {", ".join(REQUIRED_ENGINES)}; '
+                         f'pass --engine-note ENGINE=reason for every engine that cannot run)')
+    return missing
+
+
 def cmd_functional(args):
     candidate = read(args.candidate)
     archive, root = ROOT / candidate['archive'], ROOT / candidate['extracted']
@@ -235,6 +268,10 @@ def cmd_functional(args):
     run, commands = receipt_runner(out)
     failures = read(out / 'failures.json') if (out / 'failures.json').exists() else []
     env = dict(os.environ)
+    requested = [e.strip() for e in args.engines.split(',') if e.strip()] if args.engines else list(REQUIRED_ENGINES)
+    engines_not_run = parse_engine_notes(getattr(args, 'engine_note', None), getattr(args, 'webkit_note', None))
+    # fail before any browser work: every engine left out of --engines needs an --engine-note ENGINE=reason
+    require_engine_coverage(requested, engines_not_run, 'functional --engines')
     if args.engines:
         env['Y8_ENGINES'] = args.engines
     for suite in SUITES:
@@ -295,6 +332,8 @@ def cmd_functional(args):
                                          'effects. Document-local input trace resets on reload in release/lifecycle suites; '
                                          'other suites retain isTrusted traces.',
                            boundaries=instrument['boundaries']))
+    engines_run = sorted({p['engine'] for s in suites if s['suite'] == 'release' for p in s['profiles']})
+    require_engine_coverage(engines_run, engines_not_run, 'release suite')
     write(out / 'release-checks.json', dict(
         candidate=identity, verdict='PASS', package_ready=False, suites=suites,
         unavailable=['Native Android/iOS physical rotation, OS backgrounding/memory kills: owner only; NOT RUN.',
@@ -302,8 +341,8 @@ def cmd_functional(args):
         inherited_limitations=['Measured software-renderer regression against the original ZIP remains open (TASK-282); '
                                'no performance claim is derived from these functional suites.'],
         runtime_changes=False, reused_historical_expensive_evidence=False,
-        engines_run=sorted({p['engine'] for s in suites for p in s['profiles']}),
-        engines_not_run=({'webkit': args.webkit_note} if args.webkit_note else {}),
+        engines_run=engines_run,
+        engines_not_run=engines_not_run,
         resolved_harness_failures=[dict(log=f['log'], cause=f['cause'], resolution=f['resolution'],
                                         initial_runner=f['initial_runner']) for f in failures]))
     for name in TESTED_TOOLS:
@@ -355,11 +394,16 @@ def audit_functional(out):
     print('PASS commands.json: actual commands and UTC intervals; nonzero exits matched to documented harness failures')
     release = load('release/results.json')
     engines = sorted({r['engine'] for r in release})
+    engines_run, engines_not_run = report.get('engines_run', engines), report.get('engines_not_run', {})
+    require(all(isinstance(v, str) and v.strip() for v in engines_not_run.values()), 'engines_not_run notes must be non-empty reasons')
+    require_engine_coverage(engines, engines_not_run, 'release/results.json')
+    require(sorted(engines_run) == engines, f"release-checks engines_run {sorted(engines_run)} != release results {engines}")
     require(len(release) == 6 * len(engines), 'release case count')
     require({(r['engine'], r['mode']) for r in release} == {(e, m) for e in engines for m in ('bad', 'classic')}, 'release engine/mode matrix')
     require(all(r['verdict'] == 'PASS' and r['resume'].startswith('PASS') and not r['errors'] for r in release), 'release verdicts')
     require(all(r.get('cancel') == 'PASS' for r in release if r['engine'] == 'chromium' and r['touch']), 'chromium touch cancel')
-    print(f"PASS release/results.json: {len(release)} Main/Chill browser/profile cases on {', '.join(engines)}; trusted Resume and save/reload")
+    print(f"PASS release/results.json: {len(release)} Main/Chill browser/profile cases on {', '.join(engines)}; trusted Resume and save/reload"
+          + (f"; not run with recorded reasons: {', '.join(sorted(engines_not_run))}" if engines_not_run else ''))
     embed = load('embed/results.json')
     require({r['case'] for r in embed} == {'portrait-frame', 'storage-denied', 'sdk-missing', 'sdk-hang', 'sdk-reject', 'sdk-ready-never'}, 'embed cases')
     require(all(r['verdict'] == 'PASS' and not r['errors'] and r['menu_ms'] < 5000 for r in embed), 'embed verdicts')
@@ -611,8 +655,9 @@ def cmd_readiness(args):
     tasks = tasks if isinstance(tasks, list) else tasks['tasks']
     by_id = {t['id']: t for t in tasks}
     tickets = scope_tickets(by_id)
+    engines_missing = engine_coverage(checks.get('engines_run', []), checks.get('engines_not_run', {}))
     functional_prepared = (checks['verdict'] == 'PASS' and checks['candidate']['sha256'] == candidate['sha256']
-                           and media['verdict'] == 'PASS' and media['candidate'] == candidate['sha256'])
+                           and media['verdict'] == 'PASS' and media['candidate'] == candidate['sha256'] and not engines_missing)
     comparison = read(ROOT / 'artifacts/TASK-282/comparison.json')
     ranking = read(ROOT / 'artifacts/TASK-282/cost-ranking.json')
     identity = read(ROOT / 'artifacts/TASK-282/identity.json')
@@ -643,6 +688,8 @@ def cmd_readiness(args):
     historical['TASK-270'] = dict(status=by_id.get('TASK-270', {}).get('status'),
                                   note='historical packaging ticket; its pending status is recorded, not required to change')
     verdict = decide(functional_prepared, regression_outstanding, native_counts, owner_checks_performed=False)
+    if engines_missing:
+        verdict['submission_blockers'].insert(0, 'release suite engines neither run nor explained: ' + ', '.join(engines_missing))
     readiness = dict(
         task='TASK-285', generated_utc=now(), scope='TASK-271 through TASK-284 plus applicable functional evidence; later tasks excluded',
         candidate=dict(sha256=candidate['sha256'], source_revision=candidate['source_revision'], build_tag=candidate['build_tag'],
@@ -651,6 +698,8 @@ def cmd_readiness(args):
         ticket_status_counts={s: sum(1 for t in tickets if t['status'] == s) for s in sorted({t['status'] for t in tickets})},
         functional_package_preparation=dict(
             status='PREPARED' if functional_prepared else 'INCOMPLETE', functional_package_prepared=functional_prepared,
+            engines=dict(required=list(REQUIRED_ENGINES), run=sorted(checks.get('engines_run', [])),
+                         not_run=checks.get('engines_not_run', {}), neither_run_nor_explained=engines_missing),
             exact_zip_functional_checks=dict(path=rel(args.functional / 'release-checks.json'), verdict=checks['verdict'],
                                              candidate_sha256=checks['candidate']['sha256'],
                                              suites={s['suite']: (len(s['results']) if isinstance(s['results'], list) else
@@ -1041,8 +1090,11 @@ def main(argv=None):
     p.add_argument('--candidate', type=Path, default=task / 'build/candidate.json')
     p.add_argument('--out', type=Path, default=task / 'functional')
     p.add_argument('--failure-note', action='append', help='LOG=cause, documents a preserved failed attempt')
-    p.add_argument('--engines', help='comma list for the release suite (Y8_ENGINES), e.g. chromium,firefox when webkit is absent')
-    p.add_argument('--webkit-note', help='why webkit was not run; recorded verbatim in release-checks.json engines_not_run')
+    p.add_argument('--engines', help='comma list for the release suite (Y8_ENGINES), e.g. chromium,firefox when webkit is absent; '
+                                     'every engine of %s left out needs an --engine-note' % ','.join(REQUIRED_ENGINES))
+    p.add_argument('--engine-note', action='append', metavar='ENGINE=reason',
+                   help='why ENGINE was not run; recorded verbatim in release-checks.json engines_not_run (repeatable)')
+    p.add_argument('--webkit-note', help='alias for --engine-note webkit=REASON')
     p.set_defaults(func=cmd_functional)
     p = sp.add_parser('media')
     p.add_argument('--candidate', type=Path, default=task / 'build/candidate.json')

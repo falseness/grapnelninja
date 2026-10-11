@@ -123,5 +123,41 @@ class Inventory(unittest.TestCase):
         self.assertEqual(row['historical_result'], 'HISTORICAL_UNRESOLVED')
 
 
+class EngineCoverage(unittest.TestCase):
+    """TASK-294: the release suite must run on chromium, firefox and webkit, or record a reason for each engine it skipped."""
+
+    def test_one_engine_without_note_fails_naming_the_missing_engines(self):
+        with self.assertRaises(SystemExit) as ctx:
+            pkg.require_engine_coverage(['chromium'], {}, 'release/results.json')
+        message = str(ctx.exception)
+        self.assertIn('neither run nor explained: firefox, webkit', message)
+        self.assertIn('release/results.json', message)
+        self.assertNotIn('chromium,', message.split('neither run nor explained:')[1].split('(')[0])
+        self.assertEqual(pkg.engine_coverage(['chromium'], {}), ['firefox', 'webkit'])
+        # two engines run, one silent -> only that one is named
+        with self.assertRaises(SystemExit) as ctx:
+            pkg.require_engine_coverage(['chromium', 'firefox'], {}, 'functional --engines')
+        self.assertIn('neither run nor explained: webkit', str(ctx.exception))
+
+    def test_one_engine_with_notes_passes_with_engines_not_run_populated(self):
+        notes = pkg.parse_engine_notes(['firefox=no Gecko build on this host'], webkit_note='WPE bundle missing libavif')
+        self.assertEqual(notes, {'firefox': 'no Gecko build on this host', 'webkit': 'WPE bundle missing libavif'})
+        self.assertEqual(pkg.require_engine_coverage(['chromium'], notes, 'release/results.json'), [])
+        self.assertEqual(pkg.engine_coverage(['chromium', 'firefox', 'webkit'], {}), [])
+        # --engine-note alone (no --webkit-note alias) also explains webkit
+        self.assertEqual(pkg.parse_engine_notes(['webkit=absent']), {'webkit': 'absent'})
+
+    def test_bad_notes_and_contradictory_coverage_fail(self):
+        for bad in (['webkit'], ['webkit='], ['opera=not a target'], ['=reason']):
+            with self.assertRaises(SystemExit, msg=bad):
+                pkg.parse_engine_notes(bad)
+        with self.assertRaises(SystemExit) as ctx:  # run AND noted as not run
+            pkg.engine_coverage(['chromium', 'webkit'], {'webkit': 'stale note'})
+        self.assertIn('both run and noted as not run: webkit', str(ctx.exception))
+        with self.assertRaises(SystemExit) as ctx:
+            pkg.engine_coverage(['chromium', 'edge'], {})
+        self.assertIn('unknown engines: edge', str(ctx.exception))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
