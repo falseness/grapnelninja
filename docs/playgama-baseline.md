@@ -30,11 +30,17 @@ the required task-status update and progress append. `progress.md` already
 existed and was not created by preparation. Neither artifacts nor
 screenshots belong in this task's commit.
 
-The preservation audit observed concurrent changes in `/opt/grapnelninja`
-(including another process's `artifacts/TASK-287` evidence). This task made
-no writes there, but cannot certify the literal whole-tree unchanged
-criterion. TASK-287 remains pending; see the before/after inventories and
-failure details in `baseline.json` before proceeding with a handoff.
+When resuming preparation, verify ancestry instead of requiring `HEAD` to
+equal the baseline: the branch may already contain repair commits. Record
+its tip before and after preparation and require those tips to match.
+
+The initial preservation audit observed concurrent changes in
+`/opt/grapnelninja`. That failed attempt is retained under
+`artifacts/TASK-287/prior-attempt/`. The subsequent preparation and archive
+verification passed the full recursive preservation check (mode, size,
+mtime and ctime; access times excluded). See `baseline.json` and the
+`opt-before.json` / `opt-after.json` inventories for the measured interval.
+No task writes were made to the reference checkout.
 
 Environment discovery found Python 3.10.12 (`python3`; no `python` alias),
 Playwright 1.60.0 (`python3 -m playwright`), and cached Chromium, Firefox,
