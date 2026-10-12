@@ -1,15 +1,26 @@
 """Complete sealed SYNTHETIC 50-FPS fixtures are validator-only, never release proof."""
 import copy
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
 import re
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import build_playgama as build
 import playgama_release_fps as gate
-from test_playgama_fps_gate import trace
+from test_playgama_fps_gate import trace as legacy_trace
+
+
+def trace(intervals):
+    raw = legacy_trace(intervals)
+    for frame in raw['frames']:
+        for side in ('before', 'after'):
+            frame[side] = dict.fromkeys(gate.ACTIVITY_FLAGS, False)
+    return raw
 
 
 def make_release(out):
@@ -118,6 +129,54 @@ class ReleaseTests(unittest.TestCase):
                 gate.evaluate(out, self.runtime, self.archive)
             print(f'PASS {label}: INVALID; sealed SYNTHETIC validator-only negative fixture')
 
+    def test_complete_sealed_malformed_activity_states(self):
+        # Every case has all six sealed runs. Mutate the last run's final
+        # snapshot too: arithmetic does not consult that final `after` map.
+        cases = [('empty-all', None, None)]
+        for side in ('before', 'after'):
+            cases.extend((f'{side}-{label}', side, value) for label, value in (
+                ('missing-snapshot', 'missing'), ('null-snapshot', None),
+                ('list-snapshot', []), ('unknown-flag', {'unknown': False})))
+            for flag in sorted(gate.ACTIVITY_FLAGS):
+                cases.append((f'{side}-missing-{flag}', side, (flag, 'missing')))
+                for label, value in (('integer-zero', 0), ('integer-one', 1),
+                                     ('string', 'false'), ('null', None),
+                                     ('list', []), ('map', {})):
+                    cases.append((f'{side}-{flag}-{label}', side, (flag, value)))
+        for label, side, value in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory(dir=self.root) as d:
+                out = Path(d)/'capture'
+                fixture(out, 'chrome', self.identity)
+                data = gate.read(out/'results.json')
+                self.assertEqual(len(data['runs']), 6)
+                targets = data['runs'] if side is None else data['runs'][-1:]
+                for run in targets:
+                    path = out/run['raw']; raw = gate.read(path)
+                    if side is None:
+                        for frame in raw['frames']:
+                            frame['before'] = {}; frame['after'] = {}
+                    else:
+                        frame = raw['frames'][-1]
+                        if isinstance(value, tuple):
+                            flag, replacement = value
+                            if replacement == 'missing': del frame[side][flag]
+                            else: frame[side][flag] = replacement
+                        elif value == 'missing': del frame[side]
+                        elif isinstance(value, dict): frame[side].update(value)
+                        else: frame[side] = value
+                    gate.write(path, raw)
+                reseal(out)
+                output = io.StringIO()
+                argv = ['playgama_release_fps.py', 'evaluate', '--capture', str(out),
+                        '--runtime', str(self.runtime), '--zip', str(self.archive)]
+                with patch('sys.argv', argv), contextlib.redirect_stderr(output), \
+                        patch.object(gate, 'active_metrics', wraps=gate.active_metrics) as metrics:
+                    self.assertEqual(gate.main(), 2)
+                self.assertIn('INVALID evidence: invalid activity state:', output.getvalue())
+                self.assertEqual(metrics.call_count, 0 if side is None else 5)
+                print(f'PASS sealed six-run {label}: {output.getvalue().strip()}; '
+                      'exit=2; rejected before affected-run metrics; SYNTHETIC validator-only')
+
     def test_zip_extraction_and_committed_build(self):
         extra = self.runtime/'extra.txt'; extra.write_text('extra')
         try:
@@ -132,7 +191,8 @@ class ReleaseTests(unittest.TestCase):
 
     def test_inactive_gap_and_death_ending(self):
         raw = trace([5000, 2000, 99999]+[20]*1400)
-        raw['frames'][2]['after']['paused'] = True
+        raw['frames'][2]['after']['death'] = True
+        gate.validate_activity_states(raw)
         metrics = gate.active_metrics(raw)
         self.assertEqual(metrics['measured_ms'], 30000)
         self.assertEqual(metrics['excluded_gap_ms'], 99999)

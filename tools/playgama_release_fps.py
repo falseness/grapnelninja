@@ -92,6 +92,20 @@ def seal(out, metadata):
     write(out/'seal.json', {'manifest_sha256': sha((out/'manifest.json').read_bytes())})
 
 
+ACTIVITY_FLAGS = frozenset(('menu', 'pause', 'death', 'ad', 'host', 'portrait', 'hidden'))
+
+
+def validate_activity_states(raw):
+    """Require complete probe snapshots before release FPS arithmetic."""
+    for index, frame in enumerate(raw['frames']):
+        for side in ('before', 'after'):
+            state = frame.get(side)
+            if (not isinstance(state, dict) or set(state) != ACTIVITY_FLAGS
+                    or any(type(value) is not bool for value in state.values())):
+                raise ValueError(f'invalid activity state: frame={index} {side}; '
+                                 'expected exactly seven boolean probe flags')
+
+
 def evaluate(capture, runtime, archive=None):
     receipt = read(capture/'manifest.json')
     assert read(capture/'seal.json') == {'manifest_sha256': sha((capture/'manifest.json').read_bytes())}, 'seal mismatch'
@@ -131,6 +145,7 @@ def evaluate(capture, runtime, archive=None):
         assert raw['seed'] == SEED and raw['input_policy'] == INPUT, 'input protocol'
         assert raw['source_sha256'] == identity['members'], 'raw identity'
         validate_capture_layout(raw['layout'])
+        validate_activity_states(raw)
         metrics = active_metrics(raw)
         assert metrics == r['metrics'], 'declared metrics differ'
         rows.append(dict(engine=p['engine'], mode=r['mode'], run=r['run'], **metrics))
