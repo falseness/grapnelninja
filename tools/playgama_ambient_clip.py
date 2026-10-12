@@ -70,7 +70,7 @@ METHODS = r'''
 '''
 
 
-def prepare(source, out):
+def prepare(source, out, skip_last_level=False):
     assert not out.exists(), 'preserve previous experiments'
     out.mkdir(parents=True)
     for arm in ('control', 'candidate'):
@@ -80,12 +80,22 @@ def prepare(source, out):
     marker = 'class AmbientGlowRenderer extends BloomRenderer\n{'
     assert original.count(marker) == 1
     path.chmod(0o644)
-    path.write_text(original.replace(marker, marker+'\n'+METHODS))
+    methods = METHODS
+    if skip_last_level:
+        methods = methods.replace(
+            '            this.ctx.beginPath()',
+            '            if (i < this.levels.length - 1) {\n'
+            '            this.ctx.beginPath()')
+        methods = methods.replace('            this.ctx.clip()',
+                                  '            this.ctx.clip()\n            }')
+    path.write_text(original.replace(marker, marker+'\n'+methods))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--skip-last-level', action='store_true',
+                        help='Screen clipping only sparse levels; leave final composite unclipped')
     args = parser.parse_args()
-    prepare(args.source, args.out)
+    prepare(args.source, args.out, args.skip_last_level)
