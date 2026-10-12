@@ -233,10 +233,15 @@ def triangle_clip(meta, shape):
     return mask
 
 
+TASK_229_PARENT='0b5a6f55ef710ca2cf5f5fba8f83ce4ed0dfc062'
+
+
 class TriangleHatchTests(unittest.TestCase):
     def test_triangles_rendered_controls_motion_cache(self):
         out=ROOT/os.environ.get('HATCH_EVIDENCE_DIR','artifacts/TASK-229');out.mkdir(parents=True,exist_ok=True)
-        base=os.environ.get('HATCH_BASE_REV') or (out/'BASE_REV').read_text().strip()
+        # Default to TASK-229's own parent (a810250^): pre-triangle-hatch tree,
+        # so no uncommitted artifacts/TASK-229/BASE_REV is needed.
+        base=os.environ.get('HATCH_BASE_REV') or TASK_229_PARENT
         measurements={};settings={};pictures={};native={};rows=[]
         for phase,rev in [('baseline',base),('final','worktree')]:
             with ExitStack() as stack:
