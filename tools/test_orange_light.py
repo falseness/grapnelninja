@@ -1,4 +1,9 @@
-"""Matched native danger-spill pixels, controls, masks and warm-cache costs."""
+"""Matched native danger-spill pixels, controls, masks and warm-cache costs.
+
+The baseline comes from ORANGE_LIGHT_BASE_REV, else <ORANGE_LIGHT_EVIDENCE_DIR or artifacts/TASK-227>/BASE_REV;
+with neither the test is skipped. Run from the repo root:
+  ORANGE_LIGHT_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_orange_light.py -v
+"""
 from contextlib import ExitStack
 import colorsys
 import hashlib
@@ -67,6 +72,10 @@ def rgb_hsv(pixels):
     return {'rgb':rgb,'hsv':[h*360,s,v]}
 
 
+BASE_REV_FILE = ROOT / os.environ.get('ORANGE_LIGHT_EVIDENCE_DIR', 'artifacts/TASK-227') / 'BASE_REV'
+
+
+@unittest.skipUnless(os.environ.get('ORANGE_LIGHT_BASE_REV') or BASE_REV_FILE.is_file(), f'requires ORANGE_LIGHT_BASE_REV or {BASE_REV_FILE}; run: ORANGE_LIGHT_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_orange_light.py -v')
 class OrangeLightTests(unittest.TestCase):
     def test_matched_pixels_controls_masks_and_cost(self):
         out = ROOT / os.environ.get('ORANGE_LIGHT_EVIDENCE_DIR','artifacts/TASK-227')

@@ -4,6 +4,8 @@ Save PLAYER_BASE_REV before editing. PLAYER_EVIDENCE_DIR receives native scenes,
 actual isolated invariant pixels and source/composite alpha measurements. Canvas
 8-bit probe deltas corroborate draw-call alpha; full-scene brightness is not an
 alpha estimator. Shared bloom weights must stay unchanged.
+Without PLAYER_BASE_REV the test is skipped. Run from the repo root:
+  PLAYER_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_player_effect_opacity.py -v
 """
 from contextlib import ExitStack
 import hashlib
@@ -19,7 +21,7 @@ import render_snapshot as snap
 from test_ball_size import PROBE_SCRIPT
 from test_player_ball import PROBE as CACHE_PROBE
 
-BASE = os.environ['PLAYER_BASE_REV']
+BASE = os.environ.get('PLAYER_BASE_REV')
 OUT = Path(os.environ.get('PLAYER_EVIDENCE_DIR', '../artifacts/TASK-223')).resolve()
 VIEWPORTS = [dict(name='desktop', width=1920, height=1080, dpr=1, touch=False),
              dict(name='phone', width=844, height=390, dpr=3, touch=True)]
@@ -173,6 +175,7 @@ def capture(label, rev):
     return revision,records
 
 
+@unittest.skipUnless(BASE, 'requires PLAYER_BASE_REV (pre-ticket commit hash); run: PLAYER_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_player_effect_opacity.py -v')
 class PlayerEffectOpacityTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

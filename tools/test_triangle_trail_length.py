@@ -1,4 +1,9 @@
-"""Measure production triangle history and raster envelopes against a saved revision."""
+"""Measure production triangle history and raster envelopes against a saved revision.
+
+The baseline comes from TRIANGLE_TRAIL_BASE_REV, else <TRIANGLE_TRAIL_EVIDENCE_DIR or artifacts/TASK-230>/BASE_REV;
+with neither the test is skipped. Run from the repo root:
+  TRIANGLE_TRAIL_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_triangle_trail_length.py -v
+"""
 from contextlib import ExitStack
 import base64
 import hashlib
@@ -97,6 +102,10 @@ def extent(im):
     return [int(x.min()), int(y.min()), int(x.max()), int(y.max())] if len(x) else None
 
 
+BASE_REV_FILE = ROOT / os.environ.get('TRIANGLE_TRAIL_EVIDENCE_DIR', 'artifacts/TASK-230') / 'BASE_REV'
+
+
+@unittest.skipUnless(os.environ.get('TRIANGLE_TRAIL_BASE_REV') or BASE_REV_FILE.is_file(), f'requires TRIANGLE_TRAIL_BASE_REV or {BASE_REV_FILE}; run: TRIANGLE_TRAIL_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_triangle_trail_length.py -v')
 class TriangleTrailTests(unittest.TestCase):
     def test_history_rendering_and_gameplay(self):
         out = ROOT / os.environ.get('TRIANGLE_TRAIL_EVIDENCE_DIR', 'artifacts/TASK-230')

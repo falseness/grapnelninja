@@ -2,6 +2,8 @@
 
 REAL_BRIDGE_DIR points to downloaded official SDK files. External requests are
 blocked; only the vendor scripts are served from their original CDN URLs.
+Without REAL_BRIDGE_DIR the test is skipped. Run it from the repo root with:
+  REAL_BRIDGE_DIR=/path/to/bridge-sdk python3 -m unittest discover -s tools -p test_loading_real_sdk.py -v
 """
 import json,os,tempfile,unittest
 from pathlib import Path
@@ -16,6 +18,7 @@ SDK=support.SDK
 
 ROOT=Path(__file__).resolve().parents[1]
 
+@unittest.skipUnless(os.environ.get('REAL_BRIDGE_DIR'), 'requires REAL_BRIDGE_DIR (official Bridge SDK files); run: REAL_BRIDGE_DIR=/path/to/bridge-sdk python3 -m unittest discover -s tools -p test_loading_real_sdk.py -v')
 class RealSDKTests(unittest.TestCase):
     def test_real_sdk_normal_and_unresponsive_host(self):
         vendor=Path(os.environ['REAL_BRIDGE_DIR'])

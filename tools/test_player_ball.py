@@ -3,6 +3,8 @@
 PLAYER_BASE_REV is required: use the hash saved before editing, never HEAD^.
 PLAYER_EVIDENCE_DIR receives native scenes, isolated bodies, labelled crops and
 measured proof. Body size uses sharp RGB edge drops, excluding the soft halo.
+Without PLAYER_BASE_REV the test is skipped. Run from the repo root:
+  PLAYER_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_player_ball.py -v
 """
 from contextlib import ExitStack
 import hashlib
@@ -20,7 +22,7 @@ import render_snapshot as snap
 from test_ball_size import PROBE_SCRIPT, outer_radius
 
 OUT = Path(os.environ.get('PLAYER_EVIDENCE_DIR', '../artifacts/TASK-221')).resolve()
-BASE = os.environ['PLAYER_BASE_REV']
+BASE = os.environ.get('PLAYER_BASE_REV')
 VIEWPORTS = [dict(name='desktop', width=1920, height=1080, dpr=1, touch=False),
              dict(name='phone', width=844, height=390, dpr=3, touch=True)]
 
@@ -95,6 +97,7 @@ def capture(label, rev):
     return revision,records
 
 
+@unittest.skipUnless(BASE, 'requires PLAYER_BASE_REV (pre-ticket commit hash); run: PLAYER_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_player_ball.py -v')
 class PlayerBallTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

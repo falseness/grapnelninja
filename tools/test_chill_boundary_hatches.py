@@ -1,4 +1,8 @@
-"""Baseline-controlled production Chill strips, collisions, phase and cache probes."""
+"""Baseline-controlled production Chill strips, collisions, phase and cache probes.
+
+Without CHILL_BOUNDARY_BASE_REV the test is skipped. Run from the repo root:
+  CHILL_BOUNDARY_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_chill_boundary_hatches.py -v
+"""
 from contextlib import ExitStack
 import hashlib
 import io
@@ -64,6 +68,7 @@ def pixels(page, kind):
     return np.array(decoded(page.evaluate(ISOLATE, kind)))
 
 
+@unittest.skipUnless(os.environ.get('CHILL_BOUNDARY_BASE_REV'), 'requires CHILL_BOUNDARY_BASE_REV (baseline commit hash); run: CHILL_BOUNDARY_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_chill_boundary_hatches.py -v')
 class ChillBoundaryTests(unittest.TestCase):
     def test_boundaries_baseline_controls_motion_collision_and_cache(self):
         base=os.environ['CHILL_BOUNDARY_BASE_REV']

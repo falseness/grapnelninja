@@ -3,6 +3,10 @@
 The isolated lifecycle probe receives the adapter extracted from the ZIP's
 inline script. Full-page tests serve index.html byte-for-byte. All SDK requests
 are fulfilled locally and other external requests are blocked.
+
+This is a CLI, not a discoverable module: unittest discovery only reports a
+skip. Run it from the repo root with:
+  python3 tools/test_playgama_repair_archive.py --zip <build.zip> --out <evidence dir>
 """
 import argparse
 from functools import partial
@@ -108,6 +112,18 @@ class TelemetryTests(unittest.TestCase):
                     (self.out/'packaged-telemetry.json').write_text(json.dumps(results,indent=2)+'\n')
                     print('PASS packaged telemetry '+mode+'-'+case,flush=True)
                     context.close()
+
+
+class ArchiveCLI(unittest.TestCase):
+    @unittest.skip('requires --zip; run: python3 tools/test_playgama_repair_archive.py --zip <build.zip> --out <evidence dir>')
+    def test_requires_zip_cli(self):
+        pass
+
+
+def load_tests(loader, tests, pattern):
+    # Discovery would otherwise collect the imported suites against the checkout
+    # and TelemetryTests without expected_build_version; main() builds its own.
+    return loader.loadTestsFromTestCase(ArchiveCLI)
 
 
 def main():

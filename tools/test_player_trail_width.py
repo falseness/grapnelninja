@@ -5,6 +5,8 @@ native scenes, isolated production ribbons, measured outlines and provenance.
 The two clamp probes keep the real frozen centreline and change only the input
 line width. Measurements come from production getRibbonOutline vertices, not
 from the configured width ratios. Blur softness is deliberately not halved.
+Without PLAYER_BASE_REV the test is skipped. Run from the repo root:
+  PLAYER_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_player_trail_width.py -v
 """
 from contextlib import ExitStack
 import hashlib
@@ -21,7 +23,7 @@ import render_snapshot as snap
 from test_ball_size import PROBE_SCRIPT
 
 OUT = Path(os.environ.get('PLAYER_EVIDENCE_DIR', '../artifacts/TASK-222')).resolve()
-BASE = os.environ['PLAYER_BASE_REV']
+BASE = os.environ.get('PLAYER_BASE_REV')
 VIEWPORTS = [dict(name='desktop', width=1920, height=1080, dpr=1, touch=False),
              dict(name='phone', width=844, height=390, dpr=3, touch=True)]
 
@@ -94,6 +96,7 @@ def capture(label, rev):
     return revision,records
 
 
+@unittest.skipUnless(BASE, 'requires PLAYER_BASE_REV (pre-ticket commit hash); run: PLAYER_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_player_trail_width.py -v')
 class PlayerTrailWidthTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
