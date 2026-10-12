@@ -19,7 +19,7 @@ def raw():
 
 
 def runs():
-    layout = {'viewport': [844,390], 'dpr':2, 'backing':[1688,780], 'logical':[844,390], 'css':[844,390]}
+    layout = {'viewport': [844,390], 'dpr':2, 'backing':[1688,780], 'logical':[2337,1080], 'css':[844,390]}
     return [dict(engine=e, mode=m, pair=n, arm=a, layout=copy.deepcopy(layout),
                  metrics={'mean_ms':10, 'p95_ms':20, 'warmup_ms':5000, 'measured_ms':30000})
             for e in PROTOCOL['engines'] for m in PROTOCOL['modes']
@@ -90,11 +90,15 @@ def visual_fixture(out):
 
 
 LAYOUT_CASES = [
-    ('full backing accepted', None, None, None),
+    ('realistic layout accepted', None, None, None),
     ('half backing rejected', 'backing', [844, 390], 'capture backing dimensions'),
     ('1x1 backing rejected', 'backing', [1, 1], 'capture backing dimensions'),
-    ('wrong logical/CSS rejected', 'logical', [843, 390], 'capture logical dimensions'),
-    ('wrong logical/CSS rejected', 'css', [844, 389], 'capture CSS dimensions'),
+    ('wrong logical dimensions rejected', 'logical', [844, 390], 'capture logical dimensions'),
+    ('wrong logical dimensions rejected', 'logical', [2338, 1080], 'capture logical dimensions'),
+    ('wrong logical dimensions rejected', 'logical', [2337, 1079], 'capture logical dimensions'),
+    ('wrong CSS rejected', 'css', [844, 389], 'capture CSS dimensions'),
+    ('wrong viewport rejected', 'viewport', [843, 390], 'viewport/DPR'),
+    ('wrong DPR rejected', 'dpr', 1, 'viewport/DPR'),
 ]
 
 

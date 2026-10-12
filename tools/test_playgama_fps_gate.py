@@ -1,9 +1,11 @@
 """Boundary and state-exclusion checks for the mandatory active-FPS gate."""
 import unittest
 import tempfile
+import os
+import shutil
 from pathlib import Path
 from test_playgama_render_compare import capture_fixture, LAYOUT_CASES
-from playgama_render_compare import ROOT
+from playgama_render_compare import ROOT, aggregate, audit
 from playgama_fps_gate import active_metrics, evaluate
 
 
@@ -16,17 +18,23 @@ def trace(intervals):
 
 class FPSLayoutTests(unittest.TestCase):
     def test_complete_evaluate_layout(self):
-        for label, field, value, error in LAYOUT_CASES:
+        for index, (label, field, value, error) in enumerate(LAYOUT_CASES):
             with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as d:
                 out = Path(d)
-                capture_fixture(out, field, value)
+                runs = capture_fixture(out, field, value)
                 if error:
+                    with self.assertRaisesRegex(AssertionError, error): aggregate(runs)
+                    with self.assertRaisesRegex(AssertionError, error): audit(out)
                     with self.assertRaisesRegex(AssertionError, error): evaluate(out, ROOT, 'candidate')
                 else:
+                    aggregate(runs)
+                    audit(out)
                     result = evaluate(out, ROOT, 'candidate')
                     self.assertEqual(result['gate'], 'PASS')
                     self.assertEqual(len(result['runs']), 6)
-                print(f'PASS {label}; complete evaluate; field={field}; SYNTHETIC validator evidence only')
+                if evidence := os.environ.get('LAYOUT_EVIDENCE_DIR'):
+                    shutil.copytree(out, Path(evidence)/f'synthetic-{index}')
+                print(f'PASS {label} through aggregate audit evaluate; field={field}; value={value}; SYNTHETIC validator evidence only')
 
 
 class FPSGateTests(unittest.TestCase):

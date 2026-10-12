@@ -101,7 +101,10 @@ def validate_capture_layout(layout):
     viewport = PROTOCOL['viewport']
     assert layout['viewport'] == viewport and layout['dpr'] == PROTOCOL['dpr'], 'viewport/DPR'
     assert layout['backing'] == [v * PROTOCOL['dpr'] for v in viewport], 'capture backing dimensions'
-    assert layout['logical'] == viewport, 'capture logical dimensions'
+    # Touch geometry in gameoptions.js fixes height at 1080 and floors the
+    # aspect-scaled width; logical units are independent of CSS pixels/DPR.
+    logical = [math.floor(1080 * viewport[0] / viewport[1]), 1080]
+    assert layout['logical'] == logical, 'capture logical dimensions'
     assert layout['css'] == viewport, 'capture CSS dimensions'
 
 
