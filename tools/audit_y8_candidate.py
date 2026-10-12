@@ -6,23 +6,27 @@ from pathlib import Path
 import struct
 import subprocess
 
+# Evidence paths recorded in the reports (dirty_file_sha256 keys, candidate.archive, candidate.root)
+# are repo-relative; resolve them against the repository, not the process cwd (TASK-301).
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def audit_source(manifest):
     """Bind recorded dirty bytes to one tree, never mix unrelated revisions."""
     hashes = manifest['dirty_file_sha256']
     digest = lambda data: hashlib.sha256(data).hexdigest()
-    if all(Path(p).is_file() and digest(Path(p).read_bytes()) == h
+    if all((ROOT / p).is_file() and digest((ROOT / p).read_bytes()) == h
            for p, h in hashes.items()):
         print('PASS source binding: recorded dirty hashes match current files')
         return
     base = manifest['source_revision']
-    subprocess.run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], check=True)
+    subprocess.run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], check=True, cwd=ROOT)
     revisions = subprocess.check_output(
-        ['git', 'rev-list', '--ancestry-path', base + '..HEAD'], text=True).splitlines()
+        ['git', 'rev-list', '--ancestry-path', base + '..HEAD'], text=True, cwd=ROOT).splitlines()
     for revision in revisions + [base]:
         matched = True
         for path, expected in hashes.items():
-            blob = subprocess.run(['git', 'show', revision + ':' + path],
+            blob = subprocess.run(['git', 'show', revision + ':' + path], cwd=ROOT,
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if blob.returncode or digest(blob.stdout) != expected:
                 matched = False
@@ -30,7 +34,7 @@ def audit_source(manifest):
         if matched:
             print(f'PASS historical source binding: all {len(hashes)} dirty hashes match ancestor {revision}')
             for path, expected in hashes.items():
-                current = digest(Path(path).read_bytes()) if Path(path).is_file() else 'MISSING'
+                current = digest((ROOT / path).read_bytes()) if (ROOT / path).is_file() else 'MISSING'
                 print(f'SOURCE {path}: historical_sha256={expected} current_sha256={current}')
             print('Historical source binding certifies saved evidence, not current source/runtime equivalence')
             return
@@ -43,7 +47,7 @@ def audit(out):
     assert report['verdict'] == 'PASS' and report['package_ready'] is False
     sha = report['candidate']['sha256']
     assert len(sha) == 64 and report['candidate']['source_revision']
-    assert hashlib.sha256(Path(report['candidate']['archive']).read_bytes()).hexdigest()==sha
+    assert hashlib.sha256((ROOT / report['candidate']['archive']).read_bytes()).hexdigest()==sha
     commands = load('commands.json')
     assert commands and all(c['start_utc'] and c['end_utc'] for c in commands)
     assert {c['log'] for c in commands if c['exit_code']} == {f['log'] for f in report.get('resolved_harness_failures', [])}
@@ -97,7 +101,7 @@ def audit(out):
         expected=load('release/instrumentation.json')['candidate']['runtime_sha256']
         assert data['candidate']['runtime_sha256']==expected
         for name,h in expected.items():
-            assert hashlib.sha256((Path(data['candidate']['root'])/name).read_bytes()).hexdigest()==h
+            assert hashlib.sha256((ROOT / data['candidate']['root'] / name).read_bytes()).hexdigest()==h
         fixture_hash=hashlib.sha256((out/'sources/tools/fixtures/fake-y8-sdk.js').read_bytes()).hexdigest()
         for c in data['contexts']:
             assert c['transport'] and not c['errors']

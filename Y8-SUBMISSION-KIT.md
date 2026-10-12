@@ -73,7 +73,11 @@ TASK-270 readiness tooling now evaluates explicit immutable inputs. The finite
 old/new offline comparison is recorded in
 `artifacts/TASK-270/evaluator-experiment/`; its synthetic fixtures test logic,
 not FPS recovery or release acceptance. Do not repeat that experiment or the
-unchanged package checks as a new implementation attempt. The saved real six
+unchanged package checks as a new implementation attempt. The experiment script
+is `tools/y8_readiness_experiment.py` (an argparse script, named
+`tools/test_y8_readiness.py` until TASK-301); `tools/test_y8_readiness.py` is now
+a real unittest that replays it on the recorded fixture inputs and asserts the
+report verdicts (`cd tools && python3 -m unittest -v test_y8_readiness`). The saved real six
 failures still block local readiness; TASK-265 owns the remaining rendering work.
 
 For a genuinely changed candidate and passing upstream evidence, create a

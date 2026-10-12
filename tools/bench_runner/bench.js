@@ -300,7 +300,7 @@
 
     // --------------------------------------------------------------- UI --
     const BENCH = window.__bench = {schema: SCHEMA, settings, session: null, run: null, panel: null,
-                                    seed_installed_at_load: seedInstalledAtLoad, log: []}
+                                    seed_installed_at_load: seedInstalledAtLoad, log: [], build: null, refused: null}
     const el = (tag, attrs, children) => {
         const e = document.createElement(tag)
         for (const k in attrs || {}) { if (k === 'text') e.textContent = attrs[k]; else e.setAttribute(k, attrs[k]) }
@@ -389,10 +389,24 @@
     }
 
     // ------------------------------------------------------------ session --
+    // TASK-301: build.json is read once at boot. Without build.served_tree_sha256 (game/ opened from disk
+    // over file://, a copied folder without build.json, a foreign server) every exported result would be
+    // REJECTED by the result schema, so the panel refuses to start a run instead of recording one that can
+    // never be accepted. The refusal is shown in the status line and startRun() throws it.
+    async function fetchBuild() {
+        try { return await (await fetch('build.json', {cache: 'no-store'})).json() }
+        catch (e) { return {error: 'build.json unavailable: ' + e} }
+    }
+    function buildRefusal(build) {
+        if (build && typeof build.served_tree_sha256 === 'string' && build.served_tree_sha256.length === 64) return null
+        return 'REFUSED: no served build identity (' + (build && build.error ? build.error : 'build.json carries no served_tree_sha256') +
+            '; page protocol ' + location.protocol + '). Results without build.served_tree_sha256 are rejected by the result schema. ' +
+            'Serve the package with `python3 benchtool.py serve` and open the game through that server address (port 8765), not from disk (file://).'
+    }
     async function newSession(form) {
-        let build = null
-        try { build = await (await fetch('build.json', {cache: 'no-store'})).json() }
-        catch (e) { build = {error: 'build.json unavailable: ' + e} }
+        const build = BENCH.build || await fetchBuild()
+        const refusal = buildRefusal(build)
+        if (refusal) throw new Error(refusal)
         const dims = dimensions()
         return {schema: SCHEMA, bench_js: 'bench.js', build,
                 device: Object.assign({model_supplied: form.model}, await deviceInfo()),
@@ -424,6 +438,7 @@
 
     // ---------------------------------------------------------------- run --
     async function startRun() {
+        if (BENCH.refused) throw new Error(BENCH.refused)
         if (BENCH.run) throw new Error('a run is already recording')
         if (!gameBooted()) throw new Error('game not booted yet')
         const form = readForm()
@@ -583,8 +598,11 @@
     }
 
     // --------------------------------------------------------------- boot --
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         buildPanel()
+        BENCH.build = await fetchBuild()
+        BENCH.refused = buildRefusal(BENCH.build)
+        if (BENCH.refused) { ui.buttons.start.disabled = true; setStatus(BENCH.refused, true); return }
         const wait = () => {
             if (!gameBooted()) { setTimeout(wait, 200); return }
             const d = dimensions()

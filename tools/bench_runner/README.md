@@ -33,8 +33,11 @@ Ctrl-C when done. Do not expose the port beyond the local network.
 
 ## 2. Open the game with the panel
 
-Open `http://<address>:8765/` on the device and tap the link (or open
-`game/index.html` directly). The game boots exactly as shipped: the SDK is
+Open `http://<address>:8765/` on the device and tap the link. Always go
+through the server: a copy opened from disk (`file://`) cannot read
+`build.json`, every result it exported would be REJECTED by the result schema
+(no `build.served_tree_sha256`), so the panel refuses to start a run there and
+says why in its status line. The game boots exactly as shipped: the SDK is
 absent, so `PLATFORM.environment` becomes `disabled` after its 2.9 s timeout,
 rewarded ads are unsupported and a lethal death restarts instantly (the same
 isolation the local harness uses). The benchmark panel appears at the bottom.
