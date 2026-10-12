@@ -45,7 +45,7 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
-EVIDENCE_DIR = ROOT / 'artifacts/TASK-307'  # default evidence directory; its name is the default --task label
+EVIDENCE_DIR = ROOT / 'artifacts/TASK-313'  # default evidence directory; its name is the default --task label
 LEGACY_RUNNER = ROOT / 'artifacts/TASK-283/runner'  # bench runner package used until an evidence directory ships its own runner/
 sys.path.insert(0, str(TOOLS))
 

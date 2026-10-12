@@ -34,6 +34,24 @@ What the TASK-285 kit does and does not claim:
   `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`. `tools/verify_y8_release.py`
   honours a `Y8_ENGINES` override for hosts without a browser.
 
+TASK-313 rebuild note (2026-10-12): TASK-311 changed `render/effects.js` and
+`platform.js` (runtime build tag `2026-10-12-y8-candidate311`), so the
+TASK-307 kit no longer matches HEAD (`package-check` reports `committed HEAD
+differs`) and the TASK-283 bench runner package (`candidate267`) no longer
+matches the runtime. The kit is rebuilt again in three tickets: TASK-313
+switches the default evidence directory of `tools/y8_package.py` (and so the
+default `--task` label, TASK-312) from `artifacts/TASK-307` to
+`artifacts/TASK-313`, rebuilds the ZIP with `build --out
+artifacts/TASK-313/build` on the committed tree, reruns the five exact-ZIP
+suites on Chromium, Firefox and WebKit with `functional`, and rebuilds the
+bench runner package with `python3 tools/bench_runner/benchtool.py build
+--output artifacts/TASK-313/runner` so `readiness --runner` defaults to a
+package built from the current runtime; TASK-314 redoes `media`, `readiness`,
+`assemble` and `package-check`, TASK-315 closes the chain. Until those land,
+`artifacts/y8-release/` still holds the TASK-307 package (labelled TASK-285 in
+its manifest, see the TASK-312 note) and `artifacts/TASK-313/` holds the new
+build, functional and runner evidence.
+
 TASK-307 rebuild note (2026-10-12): the TASK-285 ZIP was built at c3daa29;
 TASK-290 (menu.js) and TASK-302 (moveScreen.js, physics.js) changed the
 runtime afterwards, and TASK-303/304 changed `tools/verify_y8_embed.py` and
