@@ -103,7 +103,7 @@ def make_run(index, mode, frames, settings, result='COMPLETE', replay_kind='auto
     run = {'index': index, 'mode': mode, 'started_utc': 'u', 'ended_utc': 'u', 'seed_installed': bt.seed_installed_label(settings['seed']),
            'replay_kind': replay_kind, 'input_kind': 'mouse', 'replay_fractions_sha256': bt.sha_canonical(replay),
            'replay_events': len(replay), 'dimensions_at_start': dims(mode), 'dimensions_at_end': dims(mode),
-           'frames': frames, 'excluded': 0, 'excluded_samples': [], 'interruptions': [], 'deaths': [], 'dispatched': [],
+           'frames': frames, 'excluded': 0, 'excluded_samples': [], 'inactive_stretches': [], 'interruptions': [], 'deaths': [], 'dispatched': [],
            'backing': {'initial': [1280, 720], 'changes': []}, 'warmup_end_active_ms': None,
            'active_ms': sum(f[1] for f in frames if f[1] is not None), 'result': result, 'error': None,
            'frames_sha256': bt.sha_canonical(frames)}
@@ -225,6 +225,32 @@ class Arithmetic(unittest.TestCase):
         self.assertAlmostEqual(max(w['fps'] for w in windows), 100.0)
         log('rolling 100 ms windows: min %.2f fps inside the slow stretch, max %.2f fps elsewhere' % (
             min(w['fps'] for w in windows), max(w['fps'] for w in windows)))
+
+
+    def test_gap_covered_by_stretch_sample_or_interruption(self):
+        """TASK-300: a null interval is explained by a recorded inactive stretch {first_t, last_t} (new exports),
+        by an excluded_samples entry (older exports, capped at 500 per run) or by a blur/visibility stamp."""
+        frames = synthetic_frames(40, dt=16.0, gap_after=10, gap_ms=12000.0)
+        gap = 11
+        t0, t1 = frames[10][0], frames[11][0]
+        run = {'frames': frames, 'excluded_samples': [], 'inactive_stretches': [], 'interruptions': []}
+        self.assertIsNone(bt.gap_covered_by(run, gap))
+        self.assertFalse(bt.gap_explained(run, gap))
+        run['inactive_stretches'] = [{'first_t': t0 + 16.0, 'last_t': t1 - 16.0, 'frames': 700, 'state': {'paused': True}}]
+        self.assertEqual(bt.gap_covered_by(run, gap), 'stretch')
+        # a stretch outside the gap does not explain it (edges must fall inside the gap +- tolerance)
+        run['inactive_stretches'] = [{'first_t': t1 + 1000.0, 'last_t': t1 + 2000.0, 'frames': 60, 'state': {'paused': True}}]
+        self.assertIsNone(bt.gap_covered_by(run, gap))
+        run['inactive_stretches'] = []
+        run['excluded_samples'] = [{'t': t0 + 500.0, 'state': {'menu': True}}]
+        self.assertEqual(bt.gap_covered_by(run, gap), 'sample')
+        run['excluded_samples'] = []
+        run['interruptions'] = [{'t': t1 - 100.0, 'kind': 'blur'}]
+        self.assertEqual(bt.gap_covered_by(run, gap), 'interruption')
+        run['interruptions'] = [{'t': t0 - 1000.0, 'kind': 'blur'}]
+        self.assertIsNone(bt.gap_covered_by(run, gap))
+        self.assertEqual(bt.unexplained_gaps(run, 0), [gap])
+        log('gap cover: none -> None; stretch inside gap -> stretch; stretch outside -> None; sample -> sample; blur -> interruption; unexplained_gaps [%d]' % gap)
 
 
 class Schema(unittest.TestCase):
@@ -367,8 +393,15 @@ class Schema(unittest.TestCase):
         rep = bt.validate_result(make_result(frames=frames), None)
         self.assertEqual(rep['status'], 'ACCEPTED', rep['reasons'])
         self.assertTrue(any('gap(s) excluded' in w for w in rep['warnings']))
+        self.assertTrue(any('1 without a recorded inactive state at frames [1501]' in w for w in rep['warnings']), rep['warnings'])
         self.assertEqual(rep['runs'][0]['verdict_inputs']['measured']['gaps'], 1)
         log('5 s pause gap inside the measured region: accepted with warning,', rep['warnings'])
+        covered = make_result(frames=frames)
+        covered['runs'][0]['inactive_stretches'] = [{'first_t': frames[1500][0] + 16.0, 'last_t': frames[1501][0] - 16.0, 'frames': 300, 'state': {'paused': True}}]
+        rep = bt.validate_result(covered, None)
+        self.assertEqual(rep['status'], 'ACCEPTED', rep['reasons'])
+        self.assertTrue(any('every gap covered by a recorded inactive stretch' in w for w in rep['warnings']), rep['warnings'])
+        log('same gap with an inactive stretch recorded (TASK-300): still accepted, warning now says covered')
 
 
 class BuildMatch(unittest.TestCase):
@@ -509,6 +542,7 @@ class BrowserSmoke(unittest.TestCase):
         page.wait_for_function('() => window.__bench.session && window.__bench.session.runs.length === 1', timeout=90000)
         after = page.evaluate('''() => ({loop: gameLoop.toString(), run: (r => ({result: r.result, frames: r.frames.length, excluded: r.excluded,
             gaps: r.frames.slice(1).filter(f => f[1] === null).length, input: r.input_kind, dispatched: r.dispatched.length, deaths: r.deaths.length,
+            stretches: r.inactive_stretches, samples: r.excluded_samples.length, gap_frames: r.frames.map((f, i) => [i, f]).filter(x => x[0] > 0 && x[1][1] === null).map(x => x[0]),
             replay_sha: r.replay_fractions_sha256, frames_sha: r.frames_sha256, backing: r.backing, vi: r.verdict_inputs,
             dims_start: r.dimensions_at_start, dims_end: r.dimensions_at_end}))(__bench.session.runs[0]),
             panelVisible: getComputedStyle(document.getElementById('bench-panel')).display !== 'none'})''')
@@ -531,6 +565,16 @@ class BrowserSmoke(unittest.TestCase):
             self.assertGreater(after['run']['excluded'], 0)
             self.assertGreaterEqual(after['run']['gaps'], 1)
             self.assertGreaterEqual(after['run']['vi']['measured']['gaps'], 1, 'the pause gap must be excluded inside the measured region')
+            # TASK-300: one compact stretch per inactive run, frames summing to `excluded`, every gap covered by a stretch
+            stretches = after['run']['stretches']
+            self.assertGreaterEqual(len(stretches), 1)
+            self.assertEqual(sum(st['frames'] for st in stretches), after['run']['excluded'])
+            self.assertEqual(after['run']['vi']['inactive_stretches'], len(stretches))
+            self.assertLessEqual(after['run']['samples'], sum(min(st['frames'], 50) + 1 for st in stretches))
+            run_doc = page.evaluate('() => __bench.session.runs[0]')
+            self.assertEqual([bt.gap_covered_by(run_doc, i) for i in after['run']['gap_frames']], ['stretch'] * len(after['run']['gap_frames']))
+            log(label, 'inactive stretches: %s; %d excluded samples; gaps at frames %s all covered by a stretch' % (
+                [(st['first_t'], st['last_t'], st['frames']) for st in stretches], after['run']['samples'], after['run']['gap_frames']))
         expected_replay = bt.sha_canonical(bt.replay_fractions(4, self.WARMUP + self.RUN + 1000))
         self.assertEqual(after['run']['replay_sha'], expected_replay, 'JS and Python replay generators disagree')
         # export 1: POST /save (auto-send after the run)

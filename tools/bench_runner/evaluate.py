@@ -20,8 +20,9 @@ fewer than three valid repetitions exist for the row (missing owner data,
 rejected evidence). Metrics are normalised only by the recorded frame
 timestamps: an interval must equal its timestamp difference, slow frames are
 never dropped, and a null interval (gap) is accepted only when the page
-recorded an inactive state (menu/pause/offer/hidden/ad or a visibility/blur
-interruption) that explains it; an unexplained gap rejects the repetition.
+recorded an inactive state (menu/pause/offer/hidden/ad stretch or sample, or a
+visibility/blur interruption) that explains it; an unexplained gap rejects the
+repetition.
 
 Outputs acceptance.json (rows, repetitions, metrics, evidence files, reasons)
 and decision.json (evaluation_completed vs 60fps_achieved, the latter true only
@@ -44,7 +45,7 @@ THRESHOLDS = {'average_fps_min': 58.0, 'rolling_10s_window_fps_min': 55.0, 'p95_
 TARGETS = ['desktop', 'android-chrome', 'iphone-safari']
 DEVTOOLS_STATES = {'desktop': ['closed', 'docked', 'undocked'], 'android-chrome': ['closed'], 'iphone-safari': ['closed']}
 MODES = ['bad', 'classic']
-GAP_TOLERANCE_MS = 250.0  # an inactive-state sample must fall inside the gap, with this slack at either edge
+GAP_TOLERANCE_MS = bt.GAP_TOLERANCE_MS  # an inactive-state stretch edge / sample must fall inside the gap, with this slack at either edge
 
 
 def rolling_windows(frames, window_ms=THRESHOLDS['rolling_window_ms']):
@@ -116,21 +117,12 @@ def touch_points(data):
 
 
 def gap_explained(run, gap_frame_index):
-    """A null interval inside the measured region must be covered by a recorded
-    inactive-state sample or an interruption between the previous frame and this one."""
-    frames = run['frames']
-    t1 = frames[gap_frame_index][0]
-    t0 = frames[gap_frame_index - 1][0]
-    lo, hi = t0 - GAP_TOLERANCE_MS, t1 + GAP_TOLERANCE_MS
-    for s in run.get('excluded_samples') or []:
-        t = s.get('t')
-        if isinstance(t, (int, float)) and lo <= t <= hi:
-            return True
-    for s in run.get('interruptions') or []:
-        t = s.get('t') if isinstance(s.get('t'), (int, float)) else s.get('t_ms')
-        if isinstance(t, (int, float)) and lo <= t <= hi:
-            return True
-    return False
+    """A null interval inside the measured region must be covered by a recorded inactive
+    stretch (TASK-300: {first_t, last_t, frames, state} per maximal inactive run, never
+    capped), an inactive-state sample (older exports: at most 500 per run, so a long menu
+    pause in the warmup used to leave a later short pause without evidence) or an
+    interruption between the previous frame and this one. Shared with benchtool."""
+    return bt.gap_explained(run, gap_frame_index, GAP_TOLERANCE_MS)
 
 
 def evaluate_run(run, settings, display):
@@ -163,7 +155,8 @@ def evaluate_run(run, settings, display):
                'density_limit_at_start': run['dimensions_at_start'].get('density_limit'),
                'page_dpr': run['dimensions_at_start'].get('dpr'), 'display_dpr': display.get('dpr'),
                'viewport': run['dimensions_at_start'].get('viewport'), 'deaths': len(run['deaths']),
-               'inactive_frames_excluded': run['excluded'], 'dispatched_inputs': len(run['dispatched'])}
+               'inactive_frames_excluded': run['excluded'], 'inactive_stretches': len(run.get('inactive_stretches') or []),
+               'gap_cover': [bt.gap_covered_by(run, i, GAP_TOLERANCE_MS) for i in gaps], 'dispatched_inputs': len(run['dispatched'])}
     out['metrics'] = metrics
     if unexplained:
         out['reasons'].append(f'{len(unexplained)} gap(s) in the measured region without a recorded inactive state at frames {unexplained[:5]}: '

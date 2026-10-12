@@ -31,6 +31,21 @@ def frames_for(run_ms=60000, dt=FPS60, warmup_ms=5000, slack=5):
     return synthetic_frames(int((warmup_ms + run_ms) / dt) + slack, dt=dt)
 
 
+def frames_with_gaps(count, gaps, dt=FPS60, t0=1000.0):
+    """[t, dt] frames at a fixed cadence with a null-interval gap of gaps[i] ms after frame i (several gaps)."""
+    frames, t = [], t0
+    for i in range(count):
+        if i == 0:
+            frames.append([t, None])
+        elif (i - 1) in gaps:
+            t += gaps[i - 1]
+            frames.append([t, None])
+        else:
+            t += dt
+            frames.append([t, dt])
+    return frames
+
+
 def frames_from_dts(dts, t0=1000.0):
     frames, t = [[t0, None]], t0
     for d in dts:
@@ -187,6 +202,63 @@ class Fixtures(unittest.TestCase):
         self.assertEqual(row['repetitions'][0]['metrics']['gaps'], 1)
         self.assertEqual(row['repetitions'][0]['metrics']['unexplained_gaps'], 0)
         log('explained pause gap: accepted, windows none spanning it, PASS; gaps=1 unexplained=0')
+
+    def test_two_pause_run_both_gaps_explained_by_stretches(self):
+        """TASK-300 (TASK-286 finding): bench.js recorded inactive samples only while excluded_samples.length < 500
+        per RUN, so a 12 s menu pause in the warmup exhausted the cap and a later 1 s pause inside the measured
+        region had no sample and no interruption -> gap_explained false -> the COMPLETE repetition was rejected
+        as dropped frames. The page now records one compact {first_t, last_t, frames, state} stretch per inactive
+        run (never capped) and the evaluator accepts a gap covered by a stretch."""
+        frames = frames_with_gaps(int(66000 / FPS60) + 800, {100: 12000.0, 2000: 1000.0})  # 12 s pause in warmup, 1 s pause measured
+        warm_gap, meas_gap = 101, 2001
+        self.assertIsNone(frames[warm_gap][1]); self.assertIsNone(frames[meas_gap][1])
+        self.assertAlmostEqual(frames[warm_gap][0] - frames[warm_gap - 1][0], 12000.0)
+        self.assertAlmostEqual(frames[meas_gap][0] - frames[meas_gap - 1][0], 1000.0)
+        doc = native_result(self.pkg, modes=('bad', 'bad', 'bad'), frames=frames)
+        # what the old page recorded: 500 samples at 60 Hz, all inside the 12 s pause (8.3 s), nothing for the 1 s pause
+        old_samples = [{'t': frames[warm_gap - 1][0] + FPS60 * (k + 1), 'state': {'menu': False, 'paused': True, 'offer': False, 'hidden': False, 'ad': False}}
+                       for k in range(500)]
+        self.assertLess(old_samples[-1]['t'], frames[warm_gap][0] - 3000)
+        stretches = [{'first_t': frames[warm_gap - 1][0] + FPS60, 'last_t': frames[warm_gap][0] - FPS60, 'frames': 719,
+                      'state': {'menu': False, 'paused': True, 'offer': False, 'hidden': False, 'ad': False}},
+                     {'first_t': frames[meas_gap - 1][0] + FPS60, 'last_t': frames[meas_gap][0] - FPS60, 'frames': 59,
+                      'state': {'menu': False, 'paused': True, 'offer': False, 'hidden': False, 'ad': False}}]
+        for run in doc['runs']:
+            run['excluded'] = 719 + 59
+            run['excluded_samples'] = old_samples
+            run['inactive_stretches'] = stretches
+            run['interruptions'] = []
+        # before the fix (no stretches): the measured-region gap has no evidence -> repetition rejected
+        before = copy.deepcopy(doc)
+        for run in before['runs']:
+            del run['inactive_stretches']
+        p = self.write('two-pause-before.json', before)
+        acc, dec = ev.evaluate([p], self.pkg)
+        row = self.row(acc, 'desktop/closed/bad')
+        self.assertEqual(row['valid_repetitions'], 0)
+        self.assertEqual(len(row['rejected_attempts']), 3)
+        self.assertIn('1 gap(s) in the measured region without a recorded inactive state at frames [%d]' % meas_gap, row['rejected_attempts'][0]['reasons'][0])
+        self.assertEqual(row['rejected_attempts'][0]['metrics']['gap_cover'], [None])
+        # with the stretches: both gaps explained, valid repetition
+        p = self.write('two-pause.json', doc)
+        self.assertEqual(bt.validate_result(doc, self.pkg)['status'], 'ACCEPTED')
+        acc, dec = ev.evaluate([p], self.pkg)
+        row = self.row(acc, 'desktop/closed/bad')
+        self.assertEqual(row['valid_repetitions'], 3, row['reason'])
+        self.assertEqual(row['verdict'], 'PASS', row['reason'])
+        rep = row['repetitions'][0]
+        self.assertEqual(rep['metrics']['gaps'], 1)  # only the measured-region gap counts as a measured gap
+        self.assertEqual(rep['metrics']['unexplained_gaps'], 0)
+        self.assertEqual(rep['metrics']['gap_cover'], ['stretch'])
+        self.assertEqual(rep['metrics']['inactive_stretches'], 2)
+        run = doc['runs'][0]
+        self.assertTrue(ev.gap_explained(run, warm_gap)); self.assertTrue(ev.gap_explained(run, meas_gap))
+        self.assertEqual(bt.gap_covered_by(run, warm_gap), 'stretch')  # stretches are checked before the (old-style) samples
+        self.assertEqual(bt.gap_covered_by(run, meas_gap), 'stretch')
+        self.assertGreaterEqual(rep['metrics']['active_ms'], 60000)
+        log('two-pause run: 12 s pause in warmup (frame %d) + 1 s pause measured (frame %d); without stretches -> 3 rejected (without a recorded inactive state); '
+            'with stretches -> valid repetition, gap_explained warmup=%s measured=%s, cover %s, PASS 3/3' % (
+                warm_gap, meas_gap, ev.gap_explained(run, warm_gap), ev.gap_explained(run, meas_gap), rep['metrics']['gap_cover']))
 
     def test_insufficient_duration(self):
         frames = frames_for(run_ms=50000)

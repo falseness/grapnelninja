@@ -10,6 +10,7 @@
 (function () {
     'use strict'
     const SCHEMA = 'grapnelninja-bench-result/1'
+    const INACTIVE_SAMPLES_PER_STRETCH = 50  // + the stretch's last sample; the compact stretch itself is always recorded
     const DEFAULTS = {seed: '4', replay: 'auto', input: 'auto', warmup_ms: 5000, run_ms: 60000, reps: 3,
                       autosend: '1', autostart: '0', mode: 'bad'}
     const params = new URLSearchParams(location.search)
@@ -438,10 +439,10 @@
         const run = BENCH.run = {index: BENCH.session.runs.length + 1, mode: form.mode, started_utc: new Date().toISOString(),
             seed_installed: seedNote, replay_kind: settings.replay_kind, input_kind: kind,
             replay_fractions_sha256: sha256Hex(canonical(replay)), replay_events: replay.length,
-            dimensions_at_start: null, frames: [], excluded: 0, excluded_samples: [], interruptions: [], deaths: [], dispatched: [],
+            dimensions_at_start: null, frames: [], excluded: 0, excluded_samples: [], inactive_stretches: [], interruptions: [], deaths: [], dispatched: [],
             backing: {initial: null, changes: []}, warmup_end_active_ms: null, active_ms: 0, result: 'RECORDING', error: null}
         const queue = replay.slice()
-        let previous = null, touch = null, done = false
+        let previous = null, touch = null, done = false, stretch = null
         const fire = ev => {
             const p = stagePoint(ev.fx, ev.fy)
             const target = document.elementFromPoint(p.x, p.y) || document.body
@@ -455,6 +456,27 @@
             }
             run.dispatched.push({t_ms: ev.t_ms, type: ev.type, x: p.x, y: p.y, active_ms: Math.round(run.active_ms * 10) / 10})
         }
+        // Inactive stretches (TASK-300): every maximal run of inactive gameLoop calls between two active
+        // frames is one compact entry {first_t, last_t, frames, state} in run.inactive_stretches, recorded in
+        // full however many stretches there are; excluded_samples keeps at most INACTIVE_SAMPLES_PER_STRETCH
+        // samples per stretch plus its last one (the old cap was 500 samples per RUN, so a 12 s menu pause in
+        // the warmup exhausted it and a later 1 s pause inside the measured region left no evidence at all).
+        let stretchSamples = 0, stretchLastState = null
+        const recordInactive = (ts, s) => {
+            if (stretch === null) {
+                stretch = {first_t: ts, last_t: ts, frames: 1, state: s}
+                run.inactive_stretches.push(stretch)
+                stretchSamples = 1; stretchLastState = s
+                run.excluded_samples.push({t: ts, state: s, stretch: run.inactive_stretches.length - 1})
+                return
+            }
+            stretch.last_t = ts; stretch.frames++; stretchLastState = s
+            if (stretchSamples < INACTIVE_SAMPLES_PER_STRETCH) { stretchSamples++; run.excluded_samples.push({t: ts, state: s, stretch: run.inactive_stretches.length - 1}) }
+        }
+        const closeStretch = () => {
+            if (stretch.frames > stretchSamples) run.excluded_samples.push({t: stretch.last_t, state: stretchLastState, stretch: run.inactive_stretches.length - 1, last: true})
+            stretch = null
+        }
         const onVis = () => run.interruptions.push({t: Math.round(performance.now() * 10) / 10, kind: document.hidden ? 'hidden' : 'visible'})
         const onBlur = () => run.interruptions.push({t: Math.round(performance.now() * 10) / 10, kind: 'blur'})
         document.addEventListener('visibilitychange', onVis)
@@ -465,6 +487,7 @@
             if (!done) {
                 const s = gameState()
                 if (isActive(s)) {
+                    if (stretch !== null) closeStretch()
                     const dt = previous === null ? null : t - previous
                     previous = t
                     if (dt !== null) run.active_ms += dt
@@ -479,7 +502,7 @@
                     if (ui && !ui.panel.hidden) ui.panel.hidden = true
                 } else {
                     run.excluded++
-                    if (run.excluded_samples.length < 500) run.excluded_samples.push({t: Math.round(t * 10) / 10, state: s})
+                    recordInactive(Math.round(t * 10) / 10, s)
                     previous = null
                     if (ui && ui.panel.hidden) { ui.panel.hidden = false; setStatus(`run ${run.index} paused/inactive: ${run.active_ms.toFixed(0)} active ms of ${settings.warmup_ms + settings.run_ms}. Resume in the game, or abort.`, true) }
                 }
@@ -489,6 +512,7 @@
         }
         run._cleanup = () => {
             done = true
+            if (stretch !== null) closeStretch()
             window.gameLoop = originalLoop; window.reStart = originalRestart
             document.removeEventListener('visibilitychange', onVis); window.removeEventListener('blur', onBlur)
         }
@@ -516,7 +540,7 @@
             measured, rolling_10s_windows: windows.length,
             rolling_10s_min_fps: windows.length ? Math.min.apply(null, windows.map(w => w.fps)) : null,
             backing_constant: run.backing.changes.length === 0, backing_sizes: [run.backing.initial].concat(run.backing.changes.map(c => c.backing)),
-            inactive_frames_excluded: run.excluded, deaths: run.deaths.length, dispatched_inputs: run.dispatched.length,
+            inactive_frames_excluded: run.excluded, inactive_stretches: run.inactive_stretches.length, deaths: run.deaths.length, dispatched_inputs: run.dispatched.length,
             measured_active_ms_reached: !!(measured && measured.active_ms >= settings.run_ms)}
         if (result === 'COMPLETE' && !run.verdict_inputs.measured_active_ms_reached) run.result = 'FAILED: measured active time short'
         BENCH.session.runs.push(run)

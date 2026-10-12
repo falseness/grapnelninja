@@ -219,6 +219,45 @@ def rolling_windows(frames, window_ms=ROLLING_MS):
     return out
 
 
+GAP_TOLERANCE_MS = 250.0  # an inactive-state sample / stretch edge must fall inside the gap, with this slack at either edge
+
+
+def gap_covered_by(run, gap_frame_index, tolerance_ms=GAP_TOLERANCE_MS):
+    """What explains the null interval at frames[gap_frame_index] (the first active frame
+    after an inactive stretch): 'stretch' when a recorded inactive stretch (TASK-300:
+    {first_t, last_t, frames, state}, one per maximal inactive run, never capped) starts or
+    ends inside the gap, 'sample' when an excluded_samples entry (older exports: at most 500
+    per run) falls inside it, 'interruption' for a visibilitychange / blur stamp inside it;
+    None when nothing recorded covers the gap (dropped frames)."""
+    frames = run['frames']
+    t1 = frames[gap_frame_index][0]
+    t0 = frames[gap_frame_index - 1][0]
+    lo, hi = t0 - tolerance_ms, t1 + tolerance_ms
+    inside = lambda t: isinstance(t, (int, float)) and not isinstance(t, bool) and lo <= t <= hi
+    for st in run.get('inactive_stretches') or []:
+        if isinstance(st, dict) and (inside(st.get('first_t')) or inside(st.get('last_t'))):
+            return 'stretch'
+    for smp in run.get('excluded_samples') or []:
+        if isinstance(smp, dict) and inside(smp.get('t')):
+            return 'sample'
+    for it in run.get('interruptions') or []:
+        if isinstance(it, dict) and inside(it.get('t') if isinstance(it.get('t'), (int, float)) else it.get('t_ms')):
+            return 'interruption'
+    return None
+
+
+def gap_explained(run, gap_frame_index, tolerance_ms=GAP_TOLERANCE_MS):
+    """True when the page recorded an inactive stretch, an inactive-state sample or an
+    interruption between the previous active frame and this one (see gap_covered_by)."""
+    return gap_covered_by(run, gap_frame_index, tolerance_ms) is not None
+
+
+def unexplained_gaps(run, start_frame):
+    """Indices of null intervals at or after start_frame (exclusive of the region's own first frame)
+    that no recorded inactive state covers."""
+    return [i for i in range(start_frame + 1, len(run['frames'])) if run['frames'][i][1] is None and not gap_explained(run, i)]
+
+
 def measured_region(frames, warmup_ms):
     acc = 0.0
     for i, f in enumerate(frames):
@@ -602,7 +641,10 @@ def validate_result(data, package_root=None, allow_custom=False):
             if not vi['measured_active_ms_reached']:
                 raise Rejected(f'measured active time {vi["measured"]["active_ms"]:.0f} ms < {s["run_ms"]} ms')
             if vi['measured']['gaps']:
-                warnings.append(f'run {run["index"]}: {vi["measured"]["gaps"]} pause/hidden gap(s) excluded from the measured region')
+                bad = unexplained_gaps(run, vi['measured_start_frame'])
+                warnings.append(f'run {run["index"]}: {vi["measured"]["gaps"]} pause/hidden gap(s) excluded from the measured region'
+                                + (f', {len(bad)} without a recorded inactive state at frames {bad[:5]} (the evaluator rejects the repetition)' if bad else
+                                   ' (every gap covered by a recorded inactive stretch / sample / interruption)'))
             if not vi['backing_constant']:
                 warnings.append(f'run {run["index"]}: backing size changed during the run (adaptive density) {vi["backing_sizes"]}')
             complete[run['mode']] += 1

@@ -94,6 +94,16 @@ and short runs are kept in the export as non-complete attempts and never
 counted. After each run the panel shows the summary and (by default) sends the
 whole session so far to the serving machine (`results/…json`).
 
+Every inactive stretch (a maximal run of `gameLoop` calls in a menu / pause /
+offer / hidden / ad state between two active frames) is exported as one compact
+`inactive_stretches` entry `{first_t, last_t, frames, state}`, however many
+there are; `excluded_samples` keeps the first 50 samples of each stretch plus
+its last one. The evaluator accepts a null interval as explained when a
+stretch, a sample or a blur/visibility interruption falls inside it, so a long
+menu pause in the warmup no longer hides a later short pause inside the
+measured region (TASK-300; older exports without `inactive_stretches` still
+validate and are judged from their samples).
+
 Do three complete runs in Main, then switch Mode and do three in Chill. Do not
 reset the session between runs of the same device. Changing DevTools state or
 throttle is a new session (reload the page).

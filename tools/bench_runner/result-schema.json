@@ -124,7 +124,13 @@
       "items": {"type": "array", "minItems": 2}
      },
      "excluded": {"type": "integer", "minimum": 0, "description": "Count of gameLoop calls in an inactive state during the run."},
-     "excluded_samples": {"type": "array"},
+     "excluded_samples": {"type": "array", "description": "Inactive-state samples {t, state[, stretch, last]}: TASK-300 keeps the first 50 samples of every inactive stretch plus its last one (older exports: at most 500 per run)."},
+     "inactive_stretches": {
+      "type": "array",
+      "description": "TASK-300 (optional, absent in older exports): one compact entry per maximal run of inactive gameLoop calls between two active frames, never capped; the evaluator accepts a null interval as explained when a stretch starts or ends inside it.",
+      "items": {"type": "object", "required": ["first_t", "last_t", "frames", "state"],
+                "properties": {"first_t": {"type": "number"}, "last_t": {"type": "number"}, "frames": {"type": "integer", "minimum": 1}, "state": {"type": "object"}}}
+     },
      "interruptions": {"type": "array", "description": "visibilitychange / blur events during the run with performance.now() stamps."},
      "deaths": {"type": "array", "description": "reStart calls (lethal deaths; the local adapter restarts instantly) with active_ms."},
      "dispatched": {"type": "array", "description": "Synthetic replay inputs fired (auto replay) with window coordinates and active_ms."},
@@ -151,6 +157,7 @@
        "backing_constant": {"type": "boolean"},
        "backing_sizes": {"type": "array"},
        "inactive_frames_excluded": {"type": "integer"},
+       "inactive_stretches": {"type": "integer", "description": "TASK-300 (optional): number of recorded inactive stretches."},
        "deaths": {"type": "integer"},
        "dispatched_inputs": {"type": "integer"},
        "measured_active_ms_reached": {"type": "boolean"}
