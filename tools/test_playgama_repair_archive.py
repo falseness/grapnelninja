@@ -12,6 +12,7 @@ from http.server import ThreadingHTTPServer
 import json
 import os
 import re
+import signal
 import subprocess
 from pathlib import Path
 import tempfile
@@ -37,6 +38,21 @@ class Scripts(HTMLParser):
         if tag == 'script': self.active = False
     def handle_data(self, data):
         if self.active: self.scripts.append(data)
+
+
+class BoundedResult(unittest.TextTestResult):
+    """Bound each test (including all its browser arms) to 120 seconds."""
+    def startTest(self, test):
+        super().startTest(test)
+        def expired(signum, frame):
+            raise TimeoutError('Extracted-ZIP test exceeded 120 seconds')
+        self.previous_handler = signal.signal(signal.SIGALRM, expired)
+        signal.alarm(120)
+
+    def stopTest(self, test):
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, self.previous_handler)
+        super().stopTest(test)
 
 
 class TelemetryTests(unittest.TestCase):
@@ -140,7 +156,7 @@ def main():
                     expected_build_version=TelemetryTests.expected_build_version,
                     adapter_sha256=hashlib.sha256(adapter.encode()).hexdigest(),runtime_source='extracted ZIP only',external_network='blocked; SDK fulfilled locally')
         suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (Playgama2ReadyTests,StartFlowTests,StartInputTests,TelemetryTests))
-        result=unittest.TextTestRunner(verbosity=2).run(suite)
+        result=unittest.TextTestRunner(verbosity=2, resultclass=BoundedResult).run(suite)
         report.update(tests_run=result.testsRun,successful=result.wasSuccessful())
         assert members=={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in extracted.iterdir()}
         report['unchanged_extracted_members'] = True
