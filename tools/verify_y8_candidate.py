@@ -13,6 +13,8 @@ import zipfile
 
 from playwright.sync_api import Browser, Route
 
+from browser_test_support import OfflineBrowser, Y8_SDK_URL
+
 SUITES = {'release': 'verify_y8_release', 'embed': 'verify_y8_embed',
           'mobile-embed': 'verify_y8_mobile_embed',
           'lifecycle': 'verify_y8_mobile_lifecycle', 'ads': 'verify_y8_ads'}
@@ -42,6 +44,26 @@ def run(args):
                              'Trusted browser input; synthetic visibility/blur, seeded deaths and callback fixtures.',
                              'Linux browser emulation; native devices, Y8 host and real ads NOT RUN.']}
     original_context = Browser.new_context
+    offline_context, offline_page = OfflineBrowser.new_context, OfflineBrowser.new_page
+    # Release boundary: the SDK is deliberately blocked unless the selected suite fulfils it with its fixture.
+    # Since TASK-287 OfflineBrowser serves cdn.y8.com/.../y8.min.js with an inline stub for the ordinary suites;
+    # the release checks register an abort after it (later routes win) so the suites' own fixture routes still
+    # replace it, while contexts without a fixture record an 'abort' as they did before the stub existed.
+
+    def blocked_sdk(route):
+        route.abort()
+
+    def offline_new_context(offline, **kwargs):
+        context = offline_context(offline, **kwargs)
+        context.route(Y8_SDK_URL, blocked_sdk)
+        return context
+
+    def offline_new_page(offline, **kwargs):
+        page = offline_page(offline, **kwargs)
+        page.context.route(Y8_SDK_URL, blocked_sdk)
+        return page
+
+    OfflineBrowser.new_context, OfflineBrowser.new_page = offline_new_context, offline_new_page
     originals = {name: getattr(Route, name) for name in ('fulfill', 'abort', 'continue_')}
     owners = {}
 

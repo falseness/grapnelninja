@@ -10,7 +10,10 @@ def run(root,out):
   url,b=start_browser_test(root,stack.callback)
   for case in ['portrait-frame','storage-denied','sdk-missing','sdk-hang','sdk-reject','sdk-ready-never']:
    c=b.new_context(viewport={'width':1000,'height':650},has_touch=True,is_mobile=True,device_scale_factor=2)
+   # sdk-missing must abort the SDK script explicitly: since TASK-287 the shared OfflineBrowser fulfils it with an inline stub,
+   # and the release audit (y8_package.audit_functional) accepts only the fake-y8-sdk.js fixture as a non-local fulfil.
    if case!='sdk-missing':c.route(SDK,lambda r:r.fulfill(content_type='text/javascript',body=FAKE))
+   else:c.route(SDK,lambda r:r.abort())
    config={'sdk-hang':{'initHang':True},'sdk-reject':{'initReject':True},'sdk-ready-never':{'readyNever':True}}.get(case,{})
    c.add_init_script('window.__y8Fake='+json.dumps(config))
    sandbox='allow-scripts' if case=='storage-denied' else 'allow-scripts allow-same-origin'
