@@ -11,22 +11,26 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def audit_source(manifest):
-    """Bind recorded dirty bytes to one tree, never mix unrelated revisions."""
+def audit_source(manifest, root=ROOT):
+    """Bind recorded dirty bytes to one tree, never mix unrelated revisions.
+
+    `root` is the repository whose files and history are consulted; the CLI passes the
+    real repo (ROOT, TASK-301) and tests pass a fixture repository (TASK-304).
+    """
     hashes = manifest['dirty_file_sha256']
     digest = lambda data: hashlib.sha256(data).hexdigest()
-    if all((ROOT / p).is_file() and digest((ROOT / p).read_bytes()) == h
+    if all((root / p).is_file() and digest((root / p).read_bytes()) == h
            for p, h in hashes.items()):
         print('PASS source binding: recorded dirty hashes match current files')
         return
     base = manifest['source_revision']
-    subprocess.run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], check=True, cwd=ROOT)
+    subprocess.run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], check=True, cwd=root)
     revisions = subprocess.check_output(
-        ['git', 'rev-list', '--ancestry-path', base + '..HEAD'], text=True, cwd=ROOT).splitlines()
+        ['git', 'rev-list', '--ancestry-path', base + '..HEAD'], text=True, cwd=root).splitlines()
     for revision in revisions + [base]:
         matched = True
         for path, expected in hashes.items():
-            blob = subprocess.run(['git', 'show', revision + ':' + path], cwd=ROOT,
+            blob = subprocess.run(['git', 'show', revision + ':' + path], cwd=root,
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if blob.returncode or digest(blob.stdout) != expected:
                 matched = False
@@ -34,7 +38,7 @@ def audit_source(manifest):
         if matched:
             print(f'PASS historical source binding: all {len(hashes)} dirty hashes match ancestor {revision}')
             for path, expected in hashes.items():
-                current = digest((ROOT / path).read_bytes()) if (ROOT / path).is_file() else 'MISSING'
+                current = digest((root / path).read_bytes()) if (root / path).is_file() else 'MISSING'
                 print(f'SOURCE {path}: historical_sha256={expected} current_sha256={current}')
             print('Historical source binding certifies saved evidence, not current source/runtime equivalence')
             return

@@ -17,6 +17,7 @@ class SourceBindingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             try:
                 os.chdir(directory)
+                root = Path(directory)
                 def git(*args):
                     return subprocess.check_output(['git', *args], stderr=subprocess.PIPE, text=True).strip()
                 def commit():
@@ -33,20 +34,20 @@ class SourceBindingTest(unittest.TestCase):
                 recorded = hashes()
                 manifest = {'source_revision': base, 'dirty_file_sha256': recorded}
                 with contextlib.redirect_stdout(io.StringIO()) as output:
-                    audit_source(manifest)
+                    audit_source(manifest, root=root)
                 self.assertIn('match current files', output.getvalue())
                 captured = commit()
                 Path('a').write_text('later'); commit()
                 with contextlib.redirect_stdout(io.StringIO()) as output:
-                    audit_source(manifest)
+                    audit_source(manifest, root=root)
                 self.assertIn('match ancestor ' + captured, output.getvalue())
                 # Each blob exists in history, but no single tree contains this pair.
                 mixed = {'a': hashlib.sha256(b'base').hexdigest(), 'b': recorded['b']}
                 with self.assertRaisesRegex(AssertionError, 'one ancestor tree'):
-                    audit_source(dict(manifest, dirty_file_sha256=mixed))
+                    audit_source(dict(manifest, dirty_file_sha256=mixed), root=root)
                 tampered = dict(recorded, a='0' * 64)
                 with self.assertRaisesRegex(AssertionError, 'one ancestor tree'):
-                    audit_source(dict(manifest, dirty_file_sha256=tampered))
+                    audit_source(dict(manifest, dirty_file_sha256=tampered), root=root)
                 print('PASS current bytes, historical tree, mixed-revision rejection, tampered-hash rejection')
             finally:
                 os.chdir(previous)
