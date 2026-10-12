@@ -42,3 +42,19 @@ An exit of 1 with `FAIL TASK-312 acceptance` is the expected current result,
 even when evidence integrity passes. A valid new six-run capture passing
 the unchanged protocol is still required before marking the task to-verify.
 Later packaging and upload do not resolve this failure.
+
+The subsequent read-only recheck reproduced all six failures and verified
+the original functional, mobile and visual evidence against unchanged
+source, build and tool hashes. Its local receipts are in
+`artifacts/TASK-312/recheck/`. The host exposes `/dev/dri/renderD128` through
+`virtio_gpu` (PCI vendor `0x1af4`, device `0x0010`); device-node presence
+alone does not prove Firefox Canvas2D acceleration. The software-renderer
+diagnostic is therefore not evidence that no graphics device exists.
+
+Before spending another six-run capture, identify a concrete runtime or
+graphics-environment change and record it with the new commands and hashes.
+Preserve the failed captures. A changed runtime also invalidates reuse of
+its old functional and visual proof; rerun the affected checks and the
+required baseline comparison. An environment change still requires all six
+FPS runs to pass the same protocol. Neither a new environment nor an
+integrity-only audit is a passing FPS result.
