@@ -315,4 +315,18 @@ class HarnessTests(unittest.TestCase):
         print('PASS audit rejects tampered sample/hash/layout fixtures, including recomputed receipt hashes')
 
 
+class SupportProtocolTests(unittest.TestCase):
+    def test_support_inventory_cannot_omit_mode_or_scenario(self):
+        from playgama_render_compare import selected_protocol
+        for engine in ('firefox', 'chrome'):
+            protocol = selected_protocol(engine, True)
+            validate_protocol(protocol)
+            for checkpoint in list(protocol['visual_checkpoints']):
+                altered = copy.deepcopy(protocol)
+                altered['visual_checkpoints'].remove(checkpoint)
+                with self.assertRaisesRegex(AssertionError, 'protocol differs'):
+                    validate_protocol(altered)
+        self.assertEqual(len(PROTOCOL['visual_checkpoints']), 10)
+
+
 if __name__ == '__main__': unittest.main()

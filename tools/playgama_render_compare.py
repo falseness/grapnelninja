@@ -61,7 +61,11 @@ STATE = '''() => ({mode:version,menu:menu.visible,pause:menu.gamePaused,
 LEGACY_MODE_LABELS = {'classic': 'Main', 'bad': 'Chill'}
 
 
-def selected_protocol(engine=None):
+def selected_protocol(engine=None, support=False):
+    if support:
+        from playgama_support_visuals import CHECKPOINTS
+        return dict(selected_protocol(engine), support_visuals=True,
+                    visual_checkpoints=PROTOCOL['visual_checkpoints'] + CHECKPOINTS)
     if engine is None:
         return dict(PROTOCOL)
     assert engine in ('firefox', 'chrome', 'chromium'), 'unknown engine'
@@ -133,7 +137,7 @@ def validate_protocol(protocol):
     if 'protocol_version' in normalized:
         engines = normalized.get('engines', [])
         assert len(engines) == 1 and engines[0] in ('firefox', 'chrome', 'chromium'), 'protocol differs: engine inventory'
-        expected = selected_protocol(engines[0])
+        expected = selected_protocol(engines[0], normalized.get('support_visuals', False))
         assert not legacy, 'protocol differs: selected labels'
     assert normalized == expected, 'protocol differs'
     if legacy:
@@ -278,7 +282,7 @@ def audit(out):
         assert aggregate(data['runs'], data['smoke'], protocol) == data['comparison'], 'aggregate mismatch'
         print('PASS raw metric recomputation; duration/order/backing/hash; inactive gaps excluded; slow active/death-ending retained')
     else:
-        expected = [(e, c) for e in protocol['engines'] for c in PROTOCOL['visual_checkpoints']]
+        expected = [(e, c) for e in protocol['engines'] for c in protocol['visual_checkpoints']]
         assert [(r['engine'], r['checkpoint']) for r in data['comparisons']] == expected
         for r in data['comparisons']:
             actual = pixel_diff(out/r['control'], out/r['candidate'])
@@ -292,7 +296,7 @@ def audit(out):
 
 def worker(args):
     out = args.out
-    protocol = selected_protocol(args.engine)
+    protocol = selected_protocol(args.engine, args.support_visuals)
     def timeout(signum, frame):
         raise TimeoutError('arm exceeded 120 seconds' if signum == signal.SIGALRM else 'invocation budget exceeded')
     signal.signal(signal.SIGALRM, timeout)
@@ -379,8 +383,11 @@ def worker(args):
                             page.evaluate('''() => {window.stepVisual = n => {for(let i=0;i<n;i++) {
                                 __snap.tick++; __snap.now=__snap.tick*1000/60; __snap.runTimers(); gameLoop(__snap.now);
                             }}; menu.draw();}''')
-                            for checkpoint in PROTOCOL['visual_checkpoints']:
-                                if checkpoint in ('classic', 'bad'):
+                            for checkpoint in protocol['visual_checkpoints']:
+                                if checkpoint.startswith('support:'):
+                                    from playgama_support_visuals import apply
+                                    apply(page, checkpoint)
+                                elif checkpoint in ('classic', 'bad'):
                                     page.evaluate('(mode)=>{startGame(mode); stepVisual(25)}', checkpoint)
                                 elif checkpoint == 'pause': page.evaluate('menu.gamePaused=true; gameLoop(__snap.now)')
                                 elif checkpoint == 'death': page.evaluate('menu.gamePaused=false; continueOffer.visible=true; gameLoop(__snap.now)')
@@ -398,11 +405,15 @@ def worker(args):
                                         visualEffects.screenEffects.triggerDeath(ninja.x,ninja.y); draw()''')
                                 key = f'{engine}-{checkpoint}-{arm}'
                                 page.screenshot(path=str(out/(key+'.png')), timeout=15000)
-                                write(out/(key+'-state.json'), page.evaluate(STATE))
+                                state = page.evaluate(STATE)
+                                if checkpoint.startswith('support:'):
+                                    from playgama_support_visuals import state as support_state
+                                    state['support_fixture'] = support_state(page)
+                                write(out/(key+'-state.json'), state)
                                 captures[checkpoint, arm] = key
                             context.close()
                             signal.alarm(0)
-                        for checkpoint in PROTOCOL['visual_checkpoints']:
+                        for checkpoint in protocol['visual_checkpoints']:
                             a, b = [captures[checkpoint, arm] for arm in ('control', 'candidate')]
                             diff = pixel_diff(out/(a+'.png'), out/(b+'.png'), out/(a+'-diff.png'))
                             equal = read(out/(a+'-state.json')) == read(out/(b+'-state.json'))
@@ -431,16 +442,21 @@ def main():
         for arg in ('control', 'candidate', 'out'): p.add_argument('--'+arg, type=Path, required=True)
         p.add_argument('--engine', choices=('firefox', 'chrome', 'chromium'),
                        help='select one engine; chrome uses official Google Chrome; default: historical Firefox/Chromium matrix')
+        p.add_argument('--support-visuals', action='store_true', help='append both-mode support fixtures; requires --engine and visuals')
         p.add_argument('--smoke', action='store_true', help='bounded plumbing run; never performance acceptance')
         p.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     p = subs.add_parser('audit'); p.add_argument('--input', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'audit': audit(args.input); return
+    if args.support_visuals:
+        assert args.command == 'visuals' and args.engine, 'support fixtures require selected-engine visuals'
     if args.worker: worker(args); return
     assert not args.out.exists(), 'preserve prior attempts; use a fresh output directory'
     args.out.mkdir(parents=True)
     tested_harness = Path(__file__).read_bytes()
     (args.out/'tested-harness.py').write_bytes(tested_harness)
+    if args.support_visuals:
+        (args.out/'tested-support-fixtures.py').write_bytes(Path(__file__).with_name('playgama_support_visuals.py').read_bytes())
     command = ['timeout', '--signal=TERM', '--kill-after=5s', '715s', sys.executable, str(Path(__file__).resolve()), *sys.argv[1:], '--worker']
     identity = {'command': [sys.executable, *sys.argv], 'cwd': str(Path.cwd()),
                 'started_utc': utc(), 'execution_id': str(time.time_ns())}
