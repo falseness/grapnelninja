@@ -19,6 +19,20 @@ CanvasRenderingContext2D.prototype.fillText = function(...args) {
 document.addEventListener('mousedown', e => {
     readyProbe.inputs.push({ms: performance.now(), trusted: e.isTrusted});
 });
+// Observe only: pair every retry-length timer with an identical reference timer
+// scheduled right after it. Equal-delay timers fire in order, so the reference
+// measures how late the host ran the product's timer without changing it.
+readyProbe.timers = [];
+const nativeSetTimeout = window.setTimeout.bind(window);
+window.setTimeout = (fn, delay, ...args) => {
+    const id = nativeSetTimeout(fn, delay, ...args);
+    if ([500, 1000, 2000].includes(delay)) {
+        const ref = {delay, scheduledMs: performance.now()};
+        readyProbe.timers.push(ref);
+        nativeSetTimeout(() => { ref.firedMs = performance.now(); }, delay);
+    }
+    return id;
+};
 const raf = window.requestAnimationFrame.bind(window);
 window.requestAnimationFrame = fn => {
     const stack = new Error().stack;
@@ -181,20 +195,29 @@ class Playgama2ReadyTests(unittest.TestCase):
         self.assertEqual(sum(e['state']=='pending' for e in stages), expected_count)
         if successes:
             self.assertGreaterEqual(successes[0]['ms'], outcomes[-1]['ms'])
-        delays = []
+        delays, timer_lateness = [], []
         if expected_count == 4:
             self.assertEqual([e['delayMs'] for e in stages if 'delayMs' in e], [500,1000,2000])
+            pendings = [e for e in stages if 'delayMs' in e]
             for i, target in enumerate([500,1000,2000]):
                 actual = sends[i+1]['ms'] - outcomes[i]['ms']
+                # The reference timer scheduled in the same task as the retry timer.
+                ref = next(t for t in result['probe']['timers'] if t['delay'] == target and t['scheduledMs'] >= pendings[i]['ms'])
+                self.assertLessEqual(ref['scheduledMs'] - pendings[i]['ms'], 5)
+                host_late = max(0, ref['firedMs'] - ref['scheduledMs'] - target)
                 self.assertGreaterEqual(actual, target-10)
-                self.assertLessEqual(actual, target+350)
-                delays.append(actual)
+                # No product delay beyond its own timer: the retry is sent before
+                # the identical reference fires...
+                self.assertLessEqual(sends[i+1]['ms'], ref['firedMs'])
+                # ...and within the original window plus only the measured host lateness.
+                self.assertLessEqual(actual, target+350+host_late)
+                delays.append(actual); timer_lateness.append(round(host_late, 1))
         result.update(verdict='PASS ' + case, before_release=before_release, after_release=after_release,
-            input=input_proof, unresolved=unresolved, late_pending=late_pending, retry_delays_ms=delays,
+            input=input_proof, unresolved=unresolved, late_pending=late_pending, retry_delays_ms=delays, host_timer_lateness_ms=timer_lateness,
             capture={'path':capture.name, 'sha256':hashlib.sha256(capture.read_bytes()).hexdigest()},
             scheduler='direct boot nextFrame held for real input proof' if gated else 'unaltered browser scheduling')
         self.results[case] = result
-        print(f'PASS {case}: sends={expected_count} pending={expected_count} inflight={expected_count} success={len(successes)} maxActive=1; retries={delays}; rendered menu, hidden loading, trusted language input; no duplicate on repeated calls/init/lifecycle', flush=True)
+        print(f'PASS {case}: sends={expected_count} pending={expected_count} inflight={expected_count} success={len(successes)} maxActive=1; retries={delays} host_timer_late={timer_lateness}; rendered menu, hidden loading, trusted language input; no duplicate on repeated calls/init/lifecycle', flush=True)
         context.close()
 
     def test_immediate_success(self): self.run_case('immediate')

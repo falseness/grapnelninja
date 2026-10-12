@@ -9,6 +9,7 @@ skip. Run it from the repo root with:
   python3 tools/test_playgama_repair_archive.py --zip <build.zip> --out <evidence dir>
 """
 import argparse
+import contextlib
 from functools import partial
 import hashlib
 from html.parser import HTMLParser
@@ -18,9 +19,12 @@ import os
 import re
 import signal
 import subprocess
+import sys
 from pathlib import Path
 import tempfile
+import threading
 from threading import Thread
+import time
 import unittest
 import zipfile
 
@@ -44,18 +48,77 @@ class Scripts(HTMLParser):
         if self.active: self.scripts.append(data)
 
 
+def descendants():
+    """PIDs of every descendant process (Playwright driver, browsers, Xvfb) via /proc."""
+    children = {}
+    for entry in Path('/proc').iterdir():
+        try:
+            fields = (entry / 'stat').read_text().rsplit(')', 1)[1].split()
+            children.setdefault(int(fields[1]), []).append(int(entry.name))
+        except (ValueError, OSError, IndexError):
+            continue
+    pending, found = [os.getpid()], []
+    while pending:
+        for pid in children.get(pending.pop(), []):
+            found.append(pid); pending.append(pid)
+    return found
+
+
+def kill_descendants():
+    found = descendants()
+    for pid in found:
+        try: os.kill(pid, signal.SIGKILL)
+        except OSError: pass
+    return found
+
+
 class BoundedResult(unittest.TextTestResult):
-    """Bound each test (including all its browser arms) to 120 seconds."""
+    """Bound each browser arm (a subTest, or a test without subTests) to `timeout` seconds.
+
+    The deadline runs on a watchdog thread. Raising from a SIGALRM handler inside
+    Playwright's sync dispatcher killed its event loop and left cleanup spinning
+    forever, so expiry prints a named FAIL, writes watchdog.json, kills the
+    browser processes and hard-exits with status 3.
+    """
+    timeout = 120
+    evidence = None
+
+    def arm(self, name):
+        self.disarm()
+        started = time.monotonic()
+        def expired():
+            elapsed = time.monotonic() - started
+            line = f'FAIL: {name} exceeded {self.timeout} seconds watchdog (elapsed {elapsed:.1f} s); killing browser processes, exit 3'
+            print('\n' + line, flush=True)
+            if self.evidence:
+                (self.evidence / 'watchdog.json').write_text(json.dumps(dict(
+                    test=name, timeout_s=self.timeout, elapsed_s=round(elapsed, 1),
+                    tests_run=self.testsRun, failures=[t.id() for t, _ in self.failures],
+                    errors=[t.id() for t, _ in self.errors]), indent=2) + '\n')
+            kill_descendants()
+            sys.stdout.flush(); sys.stderr.flush()
+            os._exit(3)
+        self.watchdog = threading.Timer(self.timeout, expired)
+        self.watchdog.daemon = True
+        self.watchdog.start()
+
+    def disarm(self):
+        if getattr(self, 'watchdog', None): self.watchdog.cancel()
+
     def startTest(self, test):
         super().startTest(test)
-        def expired(signum, frame):
-            raise TimeoutError('Extracted-ZIP test exceeded 120 seconds')
-        self.previous_handler = signal.signal(signal.SIGALRM, expired)
-        signal.alarm(120)
+        self.arm(test.id())
+        # unittest only reports subTests once the whole test ends, so re-arm on entry.
+        enter = test.subTest
+        @contextlib.contextmanager
+        def subTest(msg=None, **params):
+            self.arm(test.id() + ' ' + ' '.join(f'{k}={v}' for k, v in params.items()))
+            with (enter(msg, **params) if msg else enter(**params)):
+                yield
+        test.subTest = subTest
 
     def stopTest(self, test):
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, self.previous_handler)
+        self.disarm()
         super().stopTest(test)
 
 
@@ -129,7 +192,9 @@ def load_tests(loader, tests, pattern):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--zip',type=Path,required=True);parser.add_argument('--out',type=Path,required=True)
+    parser.add_argument('--test-timeout',type=float,default=BoundedResult.timeout,help='per browser arm watchdog seconds')
     args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=True)
+    BoundedResult.timeout=args.test_timeout;BoundedResult.evidence=args.out
     with tempfile.TemporaryDirectory() as directory:
         root=Path(directory); extracted=root/'current';extracted.mkdir()
         with zipfile.ZipFile(args.zip) as archive:
