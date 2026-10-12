@@ -85,7 +85,9 @@ def capture(rev, label, force=False):
 def probe():
     subject = subprocess.check_output(['git', 'log', '-1', '--format=%s'], cwd=ROOT, text=True)
     parent = os.environ.get('EXTRUSION_PARENT', 'HEAD^' if subject.startswith('TASK-203:') else 'HEAD')
-    report = {'parent': capture(parent, 'parent'), 'off': capture('worktree', 'off'),
+    # Force the flag on for the reference too: FORCE_ON is a no-op before TASK-203
+    # (ee81f6d), and since then the default parent HEAD renders extrusion off.
+    report = {'parent': capture(parent, 'parent', True), 'off': capture('worktree', 'off'),
               'on': capture('worktree', 'on', True),
               'harness_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     for name, entry in report['on']['captures'].items():
@@ -113,6 +115,7 @@ class ExtrusionSwitchTests(unittest.TestCase):
             off = report['off']['captures'][name]
             self.assertFalse(off['flag'])
             self.assertTrue(on['flag'])
+            self.assertTrue(report['parent']['captures'][name]['flag'], name)
             for method, count in off['counts'].items():
                 self.assertEqual(count, 0, (name, method))
                 self.assertGreater(on['counts'][method], 0, (name, method))
