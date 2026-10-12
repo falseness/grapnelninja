@@ -10,6 +10,7 @@ import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+SDK_URL = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
 def git(*args):
     return subprocess.check_output(['git', *args], cwd=ROOT)
 def sha(data):
@@ -31,7 +32,7 @@ def runtime(revision, base_revision=None):
     files = {'index.html': blob('index.html'), 'playgama-bridge-config.json': blob('playgama-bridge-config.json')}
     refs = References(); refs.feed(files['index.html'].decode())
     for path in refs.paths:
-        if path == 'https://bridge.playgama.com/v2/stable/playgama-bridge.js': continue
+        if path == SDK_URL: continue
         if not re.fullmatch(r'[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.[A-Za-z0-9]+', path):
             raise ValueError('Non-relative or non-Latin runtime reference: ' + path)
         files[path] = blob(path)  # Git lookup is case-sensitive; never reads the checkout.
@@ -61,6 +62,11 @@ def bundle(files):
             raise ValueError('Unsafe inline script terminator in ' + path)
         return '<script>\n' + source + '\n</script>'
     html = re.sub(pattern, replace, html)
+    refs = References(); refs.feed(html)
+    dangling = [path for path in refs.paths if path != SDK_URL]
+    if dangling:
+        # Only plain '<script src>' is inlined; anything else would ship a reference absent from the ZIP.
+        raise ValueError('Unsupported local runtime references left after bundling: ' + ', '.join(dangling))
     if b'<meta charset="UTF-8">' not in html.encode()[:1024]:
         raise ValueError('UTF-8 declaration must precede bundled scripts in the first 1024 bytes')
     return {'index.html': html.encode(), 'playgama-bridge-config.json': files['playgama-bridge-config.json']}

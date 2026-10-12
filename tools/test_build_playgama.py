@@ -39,6 +39,19 @@ class BuilderTests(unittest.TestCase):
                     builder.runtime(repair)
                 print('PASS default playgama2 behavior accepts contained revision and rejects repair descendant')
 
+    def test_bundle_rejects_unsupported_local_references(self):
+        config = {'playgama-bridge-config.json': b'{}'}
+        head = '<meta charset="UTF-8"><script src="%s" async></script>' % builder.SDK_URL
+        packed = builder.bundle({**config, 'index.html': (head + '<script src="a.js"></script>').encode(), 'a.js': b'A()'})
+        self.assertEqual(packed['index.html'].decode(), head + '<script>\nA()\n</script>')
+        print('PASS plain script src inlined; SDK URL kept external')
+        for markup in ('<link rel="stylesheet" href="style.css">', '<script defer src="a.js"></script>',
+                       '<script type="module" src="a.js"></script>', '<img src="a.png">'):
+            files = {**config, 'index.html': (head + markup).encode(), 'a.js': b'A()', 'style.css': b'', 'a.png': b''}
+            with self.assertRaises(ValueError) as raised:
+                builder.bundle(files)
+            print('PASS rejected ' + markup + ': ' + type(raised.exception).__name__ + ': ' + str(raised.exception))
+
 
 if __name__ == '__main__':
     unittest.main()
