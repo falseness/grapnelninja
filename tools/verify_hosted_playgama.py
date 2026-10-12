@@ -44,6 +44,23 @@ def game_frame(page):
     raise AssertionError('Hosted game iframe missing')
 
 
+def context_options(devices, engine, touch, phone):
+    """new_context options for one case; the case label's touch flag always wins."""
+    options = {'viewport':{'width':1280,'height':720}}
+    if phone:
+        options.update(devices['Pixel 7'])
+        options.pop('default_browser_type', None)
+        options.update(viewport={'width':915,'height':412}, screen={'width':915,'height':412})
+        if not touch:
+            # Desktop keeps the phone-sized screen but not the mobile identity.
+            options.pop('user_agent', None)
+    options['has_touch'] = touch
+    if engine == 'firefox' or not touch:
+        # Firefox rejects is_mobile; a desktop case must not be a mobile context.
+        options.pop('is_mobile', None)
+    return options
+
+
 def run(args):
     args.out.mkdir(parents=True, exist_ok=True)
     report = {'url':args.url, 'cases':[], 'limitations':[
@@ -63,11 +80,8 @@ def run(args):
                 case = f'{args.engine}-{"touch" if touch else "desktop"}-{mode}'
                 row = {'case':case, 'verdict':'INCOMPLETE', 'page_errors':[], 'requests':[], 'console':[]}
                 report['cases'].append(row)
-                options = {'viewport':{'width':1280,'height':720}, 'has_touch':touch}
-                if args.phone:
-                    options.update(pw.devices['Pixel 7'])
-                    options.pop('default_browser_type', None)
-                    options.update(viewport={'width':915,'height':412}, screen={'width':915,'height':412})
+                options = context_options(pw.devices, args.engine, touch, args.phone)
+                row['context_options'] = options
                 context = browser.new_context(**options)
                 page = context.new_page()
                 page.set_default_timeout(20000)
