@@ -1,7 +1,8 @@
 """Current immutable runtime comparison; desktop emulation, never device FPS proof.
 
 capture defaults to the full AB/BA/AB protocol. --smoke is plumbing validation
-only. visuals uses a manual clock and explicit fixtures, never performance data.
+only. --engine selects firefox, actual Google chrome, or chromium; omitted keeps
+the historical Firefox/Chromium matrix. visuals uses a manual clock and explicit fixtures, never performance data.
 Every attempt has a fresh output directory; failed command output is retained.
 """
 import argparse
@@ -13,6 +14,7 @@ import importlib.metadata
 import math
 from pathlib import Path
 import platform
+import signal
 import statistics
 import sys
 from threading import Thread
@@ -59,12 +61,81 @@ STATE = '''() => ({mode:version,menu:menu.visible,pause:menu.gamePaused,
 LEGACY_MODE_LABELS = {'classic': 'Main', 'bad': 'Chill'}
 
 
+def selected_protocol(engine=None):
+    if engine is None:
+        return dict(PROTOCOL)
+    assert engine in ('firefox', 'chrome', 'chromium'), 'unknown engine'
+    return dict(PROTOCOL, protocol_version='selected-engine-v1', engines=[engine],
+                acceptance='Selected-engine diagnostics only; no historical matrix acceptance')
+
+
+def launch_browser(pw, engine):
+    """Read the actual Linux process, never infer provenance from a UA."""
+    before = {p.name for p in Path('/proc').iterdir() if p.name.isdigit()}
+    kind = pw.firefox if engine == 'firefox' else pw.chromium
+    options = {'headless': True}
+    if engine == 'chrome':
+        options['channel'] = 'chrome'  # Errors propagate; never substitute Chromium.
+    browser = kind.launch(**options)
+    try:
+        matches = []
+        marker = '-juggler-pipe' if engine == 'firefox' else '--remote-debugging-pipe'
+        for proc in Path('/proc').iterdir():
+            if not proc.name.isdigit() or proc.name in before:
+                continue
+            try:
+                argv = (proc/'cmdline').read_bytes().decode().rstrip('\0').split('\0')
+                if marker in argv and not any(a.startswith('--type=') for a in argv):
+                    executable = (proc/'exe').resolve(strict=True)
+                    matches.append(dict(pid=int(proc.name), executable_path=str(executable),
+                        executable_sha256=sha(executable.read_bytes()), launch_arguments=argv))
+            except (FileNotFoundError, PermissionError, ProcessLookupError):
+                continue
+        assert len(matches) == 1, 'cannot resolve launched browser process'
+        provenance = dict(matches[0], version=browser.version, engine=engine,
+                          channel=options.get('channel'), launch_options=options)
+        if engine == 'chrome':
+            assert provenance['executable_path'] == '/opt/google/chrome/chrome', 'not official Google Chrome executable'
+        print('LAUNCH ' + json.dumps(provenance, sort_keys=True), flush=True)
+        return browser, provenance
+    except BaseException:
+        browser.close()
+        raise
+
+
+def audit_browsers(environment, protocol, lines):
+    browsers = environment['browsers']
+    assert set(browsers) == set(protocol['engines']), 'browser inventory'
+    launches = [json.loads(line[7:]) for line in lines if line.startswith('LAUNCH ')]
+    assert launches == [browsers[e] for e in protocol['engines']], 'launch identity/inventory'
+    for engine, info in browsers.items():
+        assert info['engine'] == engine and info['version'] and info['pid'] > 0, 'browser identity'
+        path = Path(info['executable_path'])
+        assert path.is_absolute() and path.resolve() == path, 'resolved executable'
+        assert sha(path.read_bytes()) == info['executable_sha256'], 'executable hash'
+        marker = '-juggler-pipe' if engine == 'firefox' else '--remote-debugging-pipe'
+        assert marker in info['launch_arguments'], 'launch arguments'
+        assert Path(info['launch_arguments'][0]).resolve() == path, 'launched executable'
+        options = dict(headless=True)
+        if engine == 'chrome':
+            options['channel'] = 'chrome'
+            assert str(path) == '/opt/google/chrome/chrome', 'not official Google Chrome executable'
+        assert info['channel'] == options.get('channel') and info['launch_options'] == options, 'launch channel'
+    print('PASS selected engine inventory; launched executable path/version/SHA256/arguments bound to original log')
+
+
 def validate_protocol(protocol):
     normalized = dict(protocol)
     legacy = normalized.get('mode_labels') == LEGACY_MODE_LABELS
     if legacy:
         normalized['mode_labels'] = PROTOCOL['mode_labels']
-    assert normalized == PROTOCOL, 'protocol differs'
+    expected = PROTOCOL
+    if 'protocol_version' in normalized:
+        engines = normalized.get('engines', [])
+        assert len(engines) == 1 and engines[0] in ('firefox', 'chrome', 'chromium'), 'protocol differs: engine inventory'
+        expected = selected_protocol(engines[0])
+        assert not legacy, 'protocol differs: selected labels'
+    assert normalized == expected, 'protocol differs'
     if legacy:
         print('PASS known legacy labels explicitly normalized; '
               'classic=Chill, bad=Main for reporting only; sealed metadata unchanged')
@@ -108,8 +179,9 @@ def validate_capture_layout(layout):
     assert layout['css'] == viewport, 'capture CSS dimensions'
 
 
-def aggregate(runs, smoke=False):
-    expected = [(e, m, n, a) for e in PROTOCOL['engines'] for m in PROTOCOL['modes']
+def aggregate(runs, smoke=False, protocol=None):
+    protocol = validate_protocol(PROTOCOL if protocol is None else protocol)
+    expected = [(e, m, n, a) for e in protocol['engines'] for m in PROTOCOL['modes']
                 for n, order in enumerate(PROTOCOL['orders'][:1] if smoke else PROTOCOL['orders'])
                 for a in order]
     assert [(r['engine'], r['mode'], r['pair'], r['arm']) for r in runs] == expected, 'arm order'
@@ -126,13 +198,13 @@ def aggregate(runs, smoke=False):
         for metric in ('mean_ms', 'p95_ms'):
             p[metric+'_regression'] = b['metrics'][metric]/a['metrics'][metric]-1
         pairs.append(p)
-    for e in PROTOCOL['engines']:
+    for e in protocol['engines']:
         for m in PROTOCOL['modes']:
             ps = [p for p in pairs if (p['engine'], p['mode']) == (e, m)]
             groups[e+'/'+m] = {k: statistics.median(p[k] for p in ps)
                               for k in ('mean_ms_regression', 'p95_ms_regression')}
     # Tiny epsilon handles floating representation of the inclusive boundaries only.
-    accepted = (any(groups['firefox/'+m]['mean_ms_regression'] <= -.10+1e-12 for m in PROTOCOL['modes'])
+    accepted = ('protocol_version' not in protocol and any(groups['firefox/'+m]['mean_ms_regression'] <= -.10+1e-12 for m in PROTOCOL['modes'])
                 and all(v <= .05+1e-12 for g in groups.values() for v in g.values()))
     return {'pairs': pairs, 'medians': groups, 'performance_accepted': accepted if not smoke else False,
             'scope': 'SMOKE_ONLY_NO_GAIN_CLAIM' if smoke else 'desktop comparison; visual review also required'}
@@ -173,7 +245,14 @@ def audit(out):
     assert receipt['started_utc'] <= ending['ended_utc'] <= receipt['ended_utc'], 'command timing'
     assert 'PASS capture completed; no device FPS claim' in lines
     assert sha((out/'tested-harness.py').read_bytes()) == receipt['harness_sha256'], 'harness hash mismatch'
-    validate_protocol(read(out/'protocol.json'))
+    protocol = validate_protocol(read(out/'protocol.json'))
+    if 'protocol_version' in protocol:
+        require_seals(('environment.json',))
+        audit_browsers(read(out/'environment.json'), protocol, lines)
+        command = receipt['command']
+        selections = [command[i+1] if token == '--engine' else token.split('=', 1)[1]
+                      for i, token in enumerate(command) if token == '--engine' or token.startswith('--engine=')]
+        assert selections == protocol['engines'], 'command engine'
     data = read(out/'results.json')
     assert data['kind'] in ('capture', 'visuals'), 'unknown receipt kind'
     if data['kind'] == 'capture':
@@ -196,10 +275,10 @@ def audit(out):
             assert raw['source_sha256'] == data['sources'][r['arm']], 'raw source mismatch'
             assert raw['seed'] == SEED and raw['input_policy'] == INPUT, 'input policy mismatch'
             assert raw['inputs'] and raw['transitions'], 'missing input/state traces'
-        assert aggregate(data['runs'], data['smoke']) == data['comparison'], 'aggregate mismatch'
+        assert aggregate(data['runs'], data['smoke'], protocol) == data['comparison'], 'aggregate mismatch'
         print('PASS raw metric recomputation; duration/order/backing/hash; inactive gaps excluded; slow active/death-ending retained')
     else:
-        expected = [(e, c) for e in PROTOCOL['engines'] for c in PROTOCOL['visual_checkpoints']]
+        expected = [(e, c) for e in protocol['engines'] for c in PROTOCOL['visual_checkpoints']]
         assert [(r['engine'], r['checkpoint']) for r in data['comparisons']] == expected
         for r in data['comparisons']:
             actual = pixel_diff(out/r['control'], out/r['candidate'])
@@ -213,6 +292,11 @@ def audit(out):
 
 def worker(args):
     out = args.out
+    protocol = selected_protocol(args.engine)
+    def timeout(signum, frame):
+        raise TimeoutError('arm exceeded 120 seconds' if signum == signal.SIGALRM else 'invocation budget exceeded')
+    signal.signal(signal.SIGALRM, timeout)
+    signal.signal(signal.SIGTERM, timeout)
     roots = {a: getattr(args, a).resolve() for a in ('control', 'candidate')}
     sources = {a: hashes(r) for a, r in roots.items()}
     errors, network, runs, comparisons = [], [], [], []
@@ -222,7 +306,7 @@ def worker(args):
             'visual_method': 'Manual clock and seeded gameLoop; explicit pause/death flags, edge player placement, emitPlayerParticles and triggerDeath fixtures. Full-page touch viewport screenshots. These are deterministic rendering fixtures, not natural-timing gameplay or device input proof.'}
     environment = {'os': platform.platform(), 'playwright': importlib.metadata.version('playwright'), 'browsers': {}, 'native_android': 'UNVERIFIED',
                    'kind': 'headless desktop; touch/viewport emulation', 'layouts': []}
-    write(out/'protocol.json', PROTOCOL)
+    write(out/'protocol.json', protocol)
     with ExitStack() as stack:
         origins = {}
         for arm, root in roots.items():
@@ -240,11 +324,9 @@ def worker(args):
             else: route.abort()
         pw = stack.enter_context(sync_playwright())
         try:
-            for engine in PROTOCOL['engines']:
-                kind = getattr(pw, engine)
-                browser = kind.launch(headless=True)
-                environment['browsers'][engine] = {'version': browser.version,
-                    'executable_sha256': sha(Path(kind.executable_path).read_bytes())}
+            for engine in protocol['engines']:
+                browser, provenance = launch_browser(pw, engine)
+                environment['browsers'][engine] = provenance
                 try:
                     def open_page(arm, frozen=False):
                         context = browser.new_context(viewport={'width': 844, 'height': 390},
@@ -264,6 +346,7 @@ def worker(args):
                         for mode in PROTOCOL['modes']:
                             for pair, order in enumerate(PROTOCOL['orders'][:1] if args.smoke else PROTOCOL['orders']):
                                 for arm in order:
+                                    signal.alarm(120)
                                     key = f'{engine}-{mode}-{pair}-{arm}'
                                     context, page = open_page(arm)
                                     layout = page.evaluate(LAYOUT)
@@ -285,11 +368,13 @@ def worker(args):
                                         'layout': layout, 'metrics': result, 'raw': key+'-raw.json'})
                                     print(f'RECORDED {key} measured_ms={result["measured_ms"]}', flush=True)
                                     context.close()
+                                    signal.alarm(0)
                                     write(out/'results.json', data)
-                        data['comparison'] = aggregate(runs, args.smoke) if engine == 'chromium' else None
+                        data['comparison'] = aggregate(runs, args.smoke, protocol) if engine == protocol['engines'][-1] else None
                     else:
                         captures = {}
                         for arm in ('control', 'candidate'):
+                            signal.alarm(120)
                             context, page = open_page(arm, True)
                             page.evaluate('''() => {window.stepVisual = n => {for(let i=0;i<n;i++) {
                                 __snap.tick++; __snap.now=__snap.tick*1000/60; __snap.runTimers(); gameLoop(__snap.now);
@@ -316,6 +401,7 @@ def worker(args):
                                 write(out/(key+'-state.json'), page.evaluate(STATE))
                                 captures[checkpoint, arm] = key
                             context.close()
+                            signal.alarm(0)
                         for checkpoint in PROTOCOL['visual_checkpoints']:
                             a, b = [captures[checkpoint, arm] for arm in ('control', 'candidate')]
                             diff = pixel_diff(out/(a+'.png'), out/(b+'.png'), out/(a+'-diff.png'))
@@ -328,6 +414,7 @@ def worker(args):
                             print(f'VISUAL {engine} {checkpoint} state_equal={equal} changed_pixels={diff["changed_pixels"]}', flush=True)
                 finally: browser.close()
         finally:
+            signal.alarm(0)
             write(out/'results.json', data)
             write(out/'environment.json', environment)
             write(out/'network.json', network)
@@ -342,6 +429,8 @@ def main():
     for name in ('capture', 'visuals'):
         p = subs.add_parser(name)
         for arg in ('control', 'candidate', 'out'): p.add_argument('--'+arg, type=Path, required=True)
+        p.add_argument('--engine', choices=('firefox', 'chrome', 'chromium'),
+                       help='select one engine; chrome uses official Google Chrome; default: historical Firefox/Chromium matrix')
         p.add_argument('--smoke', action='store_true', help='bounded plumbing run; never performance acceptance')
         p.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     p = subs.add_parser('audit'); p.add_argument('--input', type=Path, required=True)
@@ -352,7 +441,7 @@ def main():
     args.out.mkdir(parents=True)
     tested_harness = Path(__file__).read_bytes()
     (args.out/'tested-harness.py').write_bytes(tested_harness)
-    command = [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:], '--worker']
+    command = ['timeout', '--signal=TERM', '--kill-after=5s', '715s', sys.executable, str(Path(__file__).resolve()), *sys.argv[1:], '--worker']
     identity = {'command': [sys.executable, *sys.argv], 'cwd': str(Path.cwd()),
                 'started_utc': utc(), 'execution_id': str(time.time_ns())}
     started = time.monotonic()
