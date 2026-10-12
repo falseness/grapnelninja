@@ -47,6 +47,7 @@ TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
 EVIDENCE_DIR = ROOT / 'artifacts/TASK-313'  # default evidence directory; its name is the default --task label
 LEGACY_RUNNER = ROOT / 'artifacts/TASK-283/runner'  # bench runner package used until an evidence directory ships its own runner/
+LEGACY_DECISION = ROOT / 'artifacts/TASK-284/decision.json'  # evaluate.py decision over LEGACY_RUNNER, used until an evidence directory ships its own decision.json
 sys.path.insert(0, str(TOOLS))
 
 _spec = importlib.util.spec_from_file_location('build_y8_zip', TOOLS / 'build-y8-zip.py')
@@ -120,6 +121,13 @@ def default_runner(task_dir):
     """readiness --runner default: the evidence directory's own runner/ package when present, else the TASK-283 runner."""
     own = Path(task_dir) / 'runner'
     return own if own.is_dir() else LEGACY_RUNNER
+
+
+def default_decision(task_dir):
+    """readiness --decision default: the evidence directory's own decision.json (tools/bench_runner/evaluate.py over its runner/
+    package and the owner results returned for it) when present, else the TASK-284 decision over the TASK-283 runner."""
+    own = Path(task_dir) / 'decision.json'
+    return own if own.is_file() else LEGACY_DECISION
 
 
 def rel(path):
@@ -830,7 +838,7 @@ def cmd_readiness(args):
     task282_runtime = identity['files_sha256']['integrated']
     runtime_match = {f['path']: (task282_runtime.get(f['path']) == f['sha256']) for f in candidate['files']}
     differing = sorted(p for p, ok in runtime_match.items() if not ok)
-    decision = read(ROOT / 'artifacts/TASK-284/decision.json')
+    decision = read(args.decision)
     binding = runner_runtime_binding(candidate['files'], ROOT / candidate['extracted'], args.runner / 'game', decision['package'])
     native = native_acceptance(decision, binding)
     native_counts = native['counts']
@@ -881,7 +889,7 @@ def cmd_readiness(args):
             historical_failures_preserved=historical, qualification=QUALIFICATION),
         native_60fps_acceptance=dict(
             status=native['status'],
-            evidence='artifacts/TASK-284/decision.json', evaluation_completed=decision['evaluation_completed'],
+            evidence=rel(args.decision), evaluation_completed=decision['evaluation_completed'],
             counts=native_counts, counts_as_recorded=native['counts_as_recorded'], row_verdicts=decision['row_verdicts'],
             runner_runtime_binding={k: binding[k] for k in ('matched', 'differing', 'build_tag_only')},
             note=('owner-returned native results fill these rows; nothing local can; the runner package named by decision.json serves '
@@ -1019,9 +1027,10 @@ def cmd_assemble(args):
         submission_blockers=readiness['submission_readiness']['blockers'], moderation_status=readiness['moderation_status']['status'],
         owner_checks=readiness['submission_readiness']['owner_checks'], performance_qualification=QUALIFICATION,
         evidence='External workspace: ' + rel(args.readiness)))
+    decision = ROOT / readiness['native_60fps_acceptance']['evidence']  # the evaluate.py decision readiness bound the runner package to
     external = [args.candidate, args.functional / 'release-checks.json', args.functional / 'manifest.json', args.media / 'media-review.json',
                 args.readiness, ROOT / 'artifacts/TASK-282/comparison.json', ROOT / 'artifacts/TASK-282/cost-ranking.json',
-                ROOT / 'artifacts/TASK-282/identity.json', ROOT / 'artifacts/TASK-284/decision.json', ROOT / 'artifacts/TASK-284/acceptance.json']
+                ROOT / 'artifacts/TASK-282/identity.json', decision, decision.with_name('acceptance.json')]
     manifest = dict(created_utc=now(), task=args.task, source_revision=candidate['source_revision'], assembly_source_revision=git('rev-parse', 'HEAD'),
                     build_tag=candidate['build_tag'], zip=dict(file='grapnelninja-y8.zip', sha256=candidate['sha256'], bytes=candidate['byte_count']),
                     functional_package_prepared=readiness['functional_package_preparation']['functional_package_prepared'],
@@ -1058,7 +1067,7 @@ def cmd_assemble(args):
                                                      for r in ranking['modes']['bad']['ranking']],
                             statement='integrated frame time is about 2x the original ZIP on the headless software renderer; '
                                       'the almost-empty scene reaches 60 FPS on the same host'),
-        native_60fps=dict(status=native['status'], counts=native['counts'], source='artifacts/TASK-284/decision.json'),
+        native_60fps=dict(status=native['status'], counts=native['counts'], source=rel(decision)),
         **{'60fps_achieved': readiness['60fps_achieved']}, submission_ready=readiness['submission_readiness']['submission_ready'],
         owner_only_checks={k: 'NOT PERFORMED' for k in OWNER_CHECKS},
         no_upload=dict(uploaded=False, public_gameplay=False, production_ads=False, moderation_submitted=False,
@@ -1306,6 +1315,10 @@ def build_parser():
     p.add_argument('--runner', type=Path,
                    help='bench runner package (game/build.json) the owner measured; must be the one decision.json names '
                         '(default: artifacts/<task>/runner when that directory exists, else %s)' % rel(LEGACY_RUNNER))
+    p.add_argument('--decision', type=Path,
+                   help='tools/bench_runner/evaluate.py decision.json over that runner package and the owner results returned for it; '
+                        'its package identity must equal the runner game/build.json '
+                        '(default: artifacts/<task>/decision.json when that file exists, else %s)' % rel(LEGACY_DECISION))
     p.set_defaults(func=cmd_readiness)
     p = sub('assemble')
     path_option(p, 'candidate')
@@ -1340,6 +1353,8 @@ def parse_args(argv=None):
             setattr(args, name, task_dir if below == '.' else task_dir / below)
     if args.command == 'readiness' and args.runner is None:
         args.runner = default_runner(task_dir)
+    if args.command == 'readiness' and args.decision is None:
+        args.decision = default_decision(task_dir)
     return args
 
 

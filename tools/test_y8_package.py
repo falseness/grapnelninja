@@ -359,6 +359,8 @@ class TaskLabel(unittest.TestCase):
         self.assertEqual((args.task, args.candidate, args.out),
                          ('TASK-999', pkg.ROOT / 'artifacts/TASK-999/build/candidate.json', pkg.ROOT / 'artifacts/TASK-999/readiness.json'))
         self.assertEqual(args.runner, pkg.LEGACY_RUNNER)
+        self.assertEqual(args.decision, pkg.LEGACY_DECISION)
+        self.assertEqual(pkg.parse_args(['readiness', '--decision', '/tmp/d.json']).decision, Path('/tmp/d.json'))
         self.assertEqual(pkg.parse_args(['build', '--task', 'TASK-999', '--out', '/tmp/elsewhere']).out, Path('/tmp/elsewhere'))
         self.assertIsNone(pkg.parse_args(['assemble']).runner)
         with self.assertRaises(SystemExit):
@@ -367,6 +369,9 @@ class TaskLabel(unittest.TestCase):
             self.assertEqual(pkg.default_runner(Path(d)), pkg.LEGACY_RUNNER)
             (Path(d) / 'runner').mkdir()
             self.assertEqual(pkg.default_runner(Path(d)), Path(d) / 'runner')
+            self.assertEqual(pkg.default_decision(Path(d)), pkg.LEGACY_DECISION)
+            (Path(d) / 'decision.json').write_text('{}')
+            self.assertEqual(pkg.default_decision(Path(d)), Path(d) / 'decision.json')
 
     @unittest.skipUnless(all(p.exists() for p in READINESS_INPUTS), 'TASK-307 build/functional/media evidence not in this workspace')
     def test_generated_candidate_and_readiness_task_equal_the_evidence_directory_name(self):
@@ -386,6 +391,37 @@ class TaskLabel(unittest.TestCase):
             self.assertEqual(readiness['runner_runtime_binding']['runner_package'], pkg.rel(pkg.default_runner(pkg.EVIDENCE_DIR)))
             self.assertEqual(pkg.main(['readiness', '--task', 'TASK-999', *inputs, '--out', str(out / 'readiness-999.json')]), 0)
             self.assertEqual(json.loads((out / 'readiness-999.json').read_text())['task'], 'TASK-999')
+
+    @unittest.skipUnless(all(p.exists() for p in READINESS_INPUTS), 'TASK-307 build/functional/media evidence not in this workspace')
+    def test_readiness_binds_the_runner_to_the_decision_it_was_given_and_records_that_decision(self):
+        """TASK-314: the native rows count only when decision.json names the runner package on disk; the decision path is recorded
+        under native_60fps_acceptance.evidence and a decision naming another package keeps the binding unmatched with the blocker."""
+        import contextlib
+        import io
+        inputs = ['--candidate', 'artifacts/TASK-307/build/candidate.json', '--functional', 'artifacts/TASK-307/functional',
+                  '--media', 'artifacts/TASK-307/media', '--tasks', 'artifacts/TASK-307/tasks-with-scope-restored.json',
+                  '--runner', str(pkg.LEGACY_RUNNER)]
+        legacy = json.loads(pkg.LEGACY_DECISION.read_text())
+        build = json.loads((pkg.LEGACY_RUNNER / 'game/build.json').read_text())
+        self.assertEqual(legacy['package'], {k: build[k] for k in ('source_revision', 'served_tree_sha256', 'build_version')})
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+            out = Path(d)
+            self.assertEqual(pkg.main(['readiness', *inputs, '--decision', str(pkg.LEGACY_DECISION), '--out', str(out / 'same.json')]), 0)
+            same = json.loads((out / 'same.json').read_text())
+            self.assertEqual(same['native_60fps_acceptance']['evidence'], pkg.rel(pkg.LEGACY_DECISION))
+            self.assertTrue(same['runner_runtime_binding']['package_matches_decision'])
+            self.assertNotIn('runner package identity differs', ' '.join(same['runner_runtime_binding']['problems']))
+            other = dict(legacy, package=dict(legacy['package'], served_tree_sha256='0' * 64))
+            (out / 'decision.json').write_text(json.dumps(other))
+            self.assertEqual(pkg.main(['readiness', *inputs, '--decision', str(out / 'decision.json'), '--out', str(out / 'other.json')]), 0)
+            mismatch = json.loads((out / 'other.json').read_text())
+            self.assertEqual(mismatch['native_60fps_acceptance']['evidence'], pkg.rel(out / 'decision.json'))
+            self.assertFalse(mismatch['runner_runtime_binding']['matched'])
+            self.assertFalse(mismatch['runner_runtime_binding']['package_matches_decision'])
+            self.assertTrue(any('runner package runtime differs from candidate' in b for b in mismatch['submission_readiness']['blockers']))
+            # TASK-307 candidate vs TASK-283 runner: member bytes differ (menu.js/moveScreen.js/physics.js, TASK-309), never the identity
+            self.assertFalse(any('identity differs' in b for b in same['submission_readiness']['blockers']))
+            self.assertEqual(mismatch['native_60fps_acceptance']['counts'], {'PASS': 0, 'FAIL': 0, 'UNVERIFIED': 10})
 
     @unittest.skipUnless((pkg.HISTORICAL_MEDIA / 'media-manifest.json').exists(), 'TASK-263 historical media not in this workspace')
     def test_build_media_review_labels_the_review_with_the_passed_task_and_has_no_free_args_reference(self):

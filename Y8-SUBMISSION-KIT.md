@@ -34,6 +34,21 @@ What the TASK-285 kit does and does not claim:
   `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`. `tools/verify_y8_release.py`
   honours a `Y8_ENGINES` override for hosts without a browser.
 
+TASK-314 rebuild note (2026-10-12): `readiness` binds the bench runner
+package to the native 60-FPS decision it was evaluated with, and that decision
+now follows the runner: `readiness --decision` defaults to
+`artifacts/<task>/decision.json` when that file exists (written by
+`python3 tools/bench_runner/evaluate.py --package artifacts/<task>/runner
+--results artifacts/<task>/runner/results ...`, the TASK-284 procedure over the
+current runner package and the owner results returned for it), else to
+`artifacts/TASK-284/decision.json` over the TASK-283 runner. The decision
+package identity must equal the runner's `game/build.json`, otherwise the
+binding stays unmatched and every native row is UNVERIFIED. `readiness.json`
+records the decision used under `native_60fps_acceptance.evidence`, and
+`assemble` hash-binds that decision (and its sibling `acceptance.json`) into
+the kit manifest instead of the TASK-284 files. With no owner results returned
+the rows stay UNVERIFIED and `submission_ready` false by design.
+
 TASK-313 rebuild note (2026-10-12): TASK-311 changed `render/effects.js` and
 `platform.js` (runtime build tag `2026-10-12-y8-candidate311`), so the
 TASK-307 kit no longer matches HEAD (`package-check` reports `committed HEAD
