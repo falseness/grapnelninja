@@ -153,6 +153,23 @@ def runtime_body_sha(root=ROOT):
     return body_sha(src) if BODY_BEGIN in src else None
 
 
+# TASK-311: the shipped body is the TASK-280 tested body plus one sealed hunk in rectangle(): CanvasRenderingContext2D.filter is
+# undefined in WebKit (artifacts/TASK-310/ctx-filter-probe.log), so `c.filter!=='none'` marked every frame full there
+# (artifacts/TASK-310/webkit-region-live.log: webkit full=328 region=0). A missing filter property is now read as 'none'.
+# Chromium/Firefox report 'none' so the change is a literal no-op there (artifacts/TASK-311/compare.json 18/18 identical).
+# Any further edit of the body changes this sha and fails every accepted-body check.
+TASK311_BODY_SHA256 = '522e0a215906fa06499303fe94e1819c6aa1fb70872dd6bb5e20cd51a612fc4a'
+
+
+def accepted_runtime_bodies(tested_body_sha256):
+    """Body shas the shipped runtime may carry when the TASK-280 verdict is ACCEPT: the tested body and the TASK-311 sealed hunk."""
+    return {tested_body_sha256, TASK311_BODY_SHA256}
+
+
+def runtime_body_accepted(tested_body_sha256, root=ROOT):
+    return runtime_body_sha(root) in accepted_runtime_bodies(tested_body_sha256)
+
+
 def preserve_module(out):
     folder = Path(out) / MODULE_AT_CAPTURE
     folder.mkdir(parents=True, exist_ok=True)
@@ -1361,7 +1378,7 @@ def audit(args):
     check(decision['verdict'] == decision_file['verdict'], f'decision re-derived: {decision["verdict"]}')
     check(decision['integration']['consistent_with_verdict'], 'runtime state consistent with the verdict (candidate in runtime iff ACCEPT, bodies equal)')
     if decision['verdict'] == 'ACCEPT':
-        check(runtime_body_sha(ROOT) == hyp['candidate']['body_sha256'], 'integrated body sha == tested (hypothesis) body sha')
+        check(runtime_body_accepted(hyp['candidate']['body_sha256']), 'integrated body sha == tested (hypothesis) body sha or the TASK-311 sealed body')
     # manifest seals
     for p, digest in manifest['sha256'].items():
         check((out / p).exists() and fc.sha_file(out / p) == digest, f'seal {p}')

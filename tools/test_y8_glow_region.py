@@ -93,7 +93,7 @@ class CandidateFile(unittest.TestCase):
     def test_shipping_runtime_state_matches_a_non_accept_unless_integrated(self):
         src = (gr.ROOT / 'render/effects.js').read_text()
         if gr.runtime_has_candidate(gr.ROOT):
-            self.assertEqual(gr.runtime_body_sha(gr.ROOT), gr.body_sha(), 'integrated body must equal the tested body')
+            self.assertIn(gr.runtime_body_sha(gr.ROOT), gr.accepted_runtime_bodies(gr.body_sha()), 'integrated body must equal the tested body or the TASK-311 sealed body')
             self.assertEqual(src.count(gr.BODY_BEGIN), 1)
         else:
             self.assertFalse(any(m in src for m in gr.CANDIDATE_MARKERS))

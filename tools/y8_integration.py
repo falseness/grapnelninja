@@ -91,6 +91,11 @@ CANDIDATES = {
 #   implicit global `cycle` and deleted the dead Screen.isMoving(); artifacts/TASK-302/compare.json shows 18/18 captures with
 #   differing_pixels 0 and artifacts/TASK-302/globals.log shows the global gone. Sealed by TASK-306 after the TASK-303 checker
 #   rerun caught the unsealed hunks (artifacts/TASK-303/suites/test_y8_integration.log).
+#   render/effects.js / platform.js: TASK-311 guards the undefined CanvasRenderingContext2D.filter of WebKit in the TASK-280
+#   rectangle() (a missing property reads as 'none'; before, every WebKit frame was marked full and the region clip never fired:
+#   artifacts/TASK-310/webkit-region-live.log) and tags the runtime '2026-10-12-y8-candidate311'. Both hunks are sealed:
+#   the whole control->worktree effects.js diff (TASK-280 body + the TASK-311 line) and the one-line platform.js tag.
+#   artifacts/TASK-311/region-live.log (webkit region>0 full=0) and artifacts/TASK-311/compare.json (18/18 identical).
 BUILD_TAG_FILE = 'platform.js'
 BUILD_TAG_KEY = 'buildVersion:'
 REVIEWED_RUNTIME_CHANGES = {
@@ -103,6 +108,12 @@ REVIEWED_RUNTIME_CHANGES = {
     'physics.js': {'task': 'TASK-302', 'hunks_sha256': 'b991aeb985b9cbbcef6deecab40ea9a0edff324faf4e9183dce5419e50f3cef4',
                    'evidence': 'artifacts/TASK-302/compare.json (18/18 captures differing_pixels 0), artifacts/TASK-302/globals.log',
                    'reason': 'physics() loop variable declared locally, dead Screen.isMoving() deleted; 18/18 captures pixel-identical'},
+    'render/effects.js': {'task': 'TASK-311', 'hunks_sha256': '39668979f1e7d3c3046915a9fe188b4013550e74ce31687d8a162b1c30f0e64c',
+                          'evidence': 'artifacts/TASK-311/region-live.log (webkit region>0 full=0), artifacts/TASK-311/compare.json (18/18 differing_pixels 0)',
+                          'reason': 'TASK-280 body plus the TASK-311 undefined-filter guard in rectangle(); WebKit region clip restored, Chromium no-op'},
+    'platform.js': {'task': 'TASK-311', 'hunks_sha256': 'd5be462bd9cb7e0a080b9a6cf1d9025c54a758ce59b554534b48be8a82deffa3',
+                    'evidence': 'artifacts/TASK-311/grep.log',
+                    'reason': "buildVersion '2026-10-11-y8-candidate285' -> '2026-10-12-y8-candidate311' (runtime change gets a new tag, TASK-285 precedent)"},
 }
 SEALED_COSTS = {  # ms per frame at 1280x720 dpr1, from the sealed decisions named in each entry
     'glow composite (ambient chain)': {'bad': 38.77, 'classic': 49.25, 'source': 'TASK-276 ranked_stage_arms composite-off median saving',
@@ -272,7 +283,8 @@ def candidate_map(identity):
             entry['integrated_body_sha256'] = gr.runtime_body_sha(integrated_root)
             entry['tested_body_sha256'] = decision['candidate']['body_sha256']
             entry['final_code'] = 'render/effects.js lines between the BEGIN/END TASK-280 candidate body markers'
-            entry['in_final_code'] = entry['integrated_body_sha256'] == entry['tested_body_sha256'] and any(present_int.values())
+            entry['accepted_body_sha256'] = sorted(gr.accepted_runtime_bodies(entry['tested_body_sha256']))  # TASK-311 sealed hunk
+            entry['in_final_code'] = entry['integrated_body_sha256'] in entry['accepted_body_sha256'] and any(present_int.values())
             entry['consistent'] = entry['in_final_code']
         else:
             entry['final_code'] = 'none (rejected candidate never integrated)'
@@ -952,7 +964,7 @@ def audit(args):
         A.check(fc.tree_hashes(out / 'trees' / t) == ident['files_sha256'][t], f'tree {t} differs from identity.json')
     A.check(all(fc.sha_file(ROOT / name) == digest for name, digest in ident['files_sha256']['integrated'].items()),
             'shipped runtime differs from the integrated tree')
-    A.check(gr.runtime_body_sha(ROOT) == fc.load(ROOT / 'artifacts/TASK-280/decision.json')['candidate']['body_sha256'], 'runtime body != TASK-280 tested body')
+    A.check(gr.runtime_body_accepted(fc.load(ROOT / 'artifacts/TASK-280/decision.json')['candidate']['body_sha256']), 'runtime body != TASK-280 tested body (or the TASK-311 sealed body)')
     integration = fc.load(out / 'integration.json')
     A.check(integration['all_candidates_consistent_with_final_code'], 'integration map inconsistent with final code')
     for cand in integration['candidates']:

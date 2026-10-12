@@ -9,7 +9,8 @@
  };
  function rectangle(c,x,y,w,h,pad=0) {
   const s=bounds.get(c); if(!s?.active)return;
-  if(c.filter!=='none'||c.shadowBlur||c.shadowOffsetX||c.shadowOffsetY) {s.full=true;return;}
+  const filter=c.filter; // undefined in WebKit (no CanvasRenderingContext2D.filter): treat as 'none', TASK-311
+  if((filter!==undefined&&filter!=='none')||c.shadowBlur||c.shadowOffsetX||c.shadowOffsetY) {s.full=true;return;}
   const m=c.getTransform();
   for(const [u,v] of [[x-pad,y-pad],[x+w+pad,y-pad],[x-pad,y+h+pad],[x+w+pad,y+h+pad]]) {
    const a=m.a*u+m.c*v+m.e,b=m.b*u+m.d*v+m.f;
