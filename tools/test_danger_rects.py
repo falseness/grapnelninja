@@ -74,7 +74,7 @@ PROBE = '''() => {
     })
     ctx.restore()
     screen.x = oldScreen.x; screen.y = oldScreen.y; scale[version] = oldScale
-    return {samples, factoryTags, recoloredFill}
+    return {samples, factoryTags, recoloredFill, dangerLight: STYLE.lights.dangerColor}
 }'''
 
 
@@ -124,7 +124,7 @@ class DangerRectsTest(unittest.TestCase):
         for mode in ('bad', 'classic'):
             a = cls.after['modes'][mode]
             r = {'rects': {}, 'others': {}, 'factory_tags': a['factoryTags'],
-                 'recolored_fill_rgb': a['recoloredFill']}
+                 'recolored_fill_rgb': a['recoloredFill'], 'danger_light': a['dangerLight']}
             for name, sample in a['samples'].items():
                 if name.startswith('danger_'):
                     r['rects'][name] = {key: {'rgb': sample[key], 'hsv': hsv(sample[key])}
@@ -156,7 +156,10 @@ class DangerRectsTest(unittest.TestCase):
                         self.assertGreaterEqual(rect[key]['hsv'][0], 20)
                         self.assertLessEqual(rect[key]['hsv'][0], 40)
                     self.assertGreater(rect['edge']['hsv'][1], 0.6)
-                    self.assertEqual(rect['light'], '#ff8a1f')
+                    # TASK-227 (2b7ba0d) warms the orange stroke's light sprite to
+                    # compensate hard-light on the blue cave; the spill stays orange.
+                    self.assertEqual(rect['light'], '#ffcc00')
+                    self.assertEqual(rect['light'], report['danger_light'])
 
     def test_other_obstacles_identical(self):
         for mode, report in self.report['modes'].items():
