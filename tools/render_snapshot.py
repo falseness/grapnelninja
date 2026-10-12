@@ -3,8 +3,12 @@
 The page clock is frozen before any game script runs: performance.now(),
 Date.now() / new Date(), requestAnimationFrame and setTimeout/setInterval all
 run on a manual clock that advances exactly 1000/60 ms per step, and
-Math.random is seeded. The game is never driven by rAF: after startGame(mode)
-each step advances the clock, fires due timers and the seeded scripted input
+Math.random is seeded. Playgama trees wait in boot() for the Bridge SDK, which
+the offline harness aborts; boot_frozen fires the pending boot timers
+(PLATFORM.initTimeoutMs fallback, SDK download retries) early without moving
+the clock, so the game boots at time 0 in its documented 'disabled'
+environment, like the SDK-less trees. The game is never driven by rAF: after
+startGame(mode) each step advances the clock, fires due timers and the seeded scripted input
 of that tick (the same script for every revision), then calls physics() and
 draw() by hand. Captures are the canvas composited over opaque black (the
 body color), so alpha differences that are invisible on screen do not count.
@@ -100,6 +104,16 @@ CLOCK_SCRIPT = '''(() => {
         snap.booted = !loading || loading.hidden
         return snap.booted
     }
+    // Boot is idle and waits on a timer (e.g. the SDK startup fallback):
+    // make the earliest one due now, so boot still ends at time 0; false if
+    // no timer is pending.
+    snap.advanceBoot = () => {
+        if (!snap.timers.length)
+            return false
+        const t = snap.timers.reduce((a, b) => b.due < a.due || (b.due == a.due && b.id < a.id) ? b : a)
+        t.due = snap.now
+        return true
+    }
     snap.step = () => {
         snap.tick++
         snap.now = snap.tick * STEP
@@ -110,15 +124,22 @@ CLOCK_SCRIPT = '''(() => {
     }
 })()'''
 
-def boot_frozen(page, rounds=500):
+def boot_frozen(page, rounds=500, idle_rounds=20):
     """Drive index.html's async boot() to the first menu frame under CLOCK_SCRIPT.
 
     boot() awaits rAF, which the frozen clock never fires on its own; the real
     event loop runs between rounds so async boot work (storage, fonts) can settle.
+    After idle_rounds rounds without booting, the next pending timer fires early
+    (the clock stays put): offline, PLATFORM.init() only resolves through its
+    initTimeoutMs fallback.
     """
+    idle = 0
     for _ in range(rounds):
         if page.evaluate('() => __snap.pumpBoot()'):
             return
+        idle += 1
+        if idle >= idle_rounds and page.evaluate('() => __snap.advanceBoot()'):
+            idle = 0
         page.wait_for_timeout(5)
     raise RuntimeError('boot() did not finish under the frozen clock')
 
