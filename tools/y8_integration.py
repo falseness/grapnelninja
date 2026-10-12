@@ -87,12 +87,22 @@ CANDIDATES = {
 #   menu.js: TASK-290 replaced the NaN globalAlpha sets of Text.strokeNeonTube (STYLE.strokes.neonOutline was deleted by
 #   TASK-205) with the single opaque alpha the canvas had been drawing anyway; artifacts/TASK-290/probe-title-identity.log
 #   proves byte-identical title canvases in classic and bad. The hunk body is sealed by its sha256 so any further edit fails.
+#   moveScreen.js / physics.js: TASK-302 (commit 768ed67) declared the physics() loop variable locally instead of leaking an
+#   implicit global `cycle` and deleted the dead Screen.isMoving(); artifacts/TASK-302/compare.json shows 18/18 captures with
+#   differing_pixels 0 and artifacts/TASK-302/globals.log shows the global gone. Sealed by TASK-306 after the TASK-303 checker
+#   rerun caught the unsealed hunks (artifacts/TASK-303/suites/test_y8_integration.log).
 BUILD_TAG_FILE = 'platform.js'
 BUILD_TAG_KEY = 'buildVersion:'
 REVIEWED_RUNTIME_CHANGES = {
     'menu.js': {'task': 'TASK-290', 'hunks_sha256': '019dbbe07e788f655f015990c77e5b4bcc96f31a63164de8b48984d9c7cf291a',
                 'evidence': 'artifacts/TASK-290/probe-title-identity.log',
                 'reason': 'opaque title halo strokes written explicitly instead of through NaN globalAlpha sets; canvas bytes identical'},
+    'moveScreen.js': {'task': 'TASK-302', 'hunks_sha256': '976fbdc26a467834f89cf330c8cff04cd05508990f63497783f006cbee5f66e3',
+                      'evidence': 'artifacts/TASK-302/compare.json (18/18 captures differing_pixels 0), artifacts/TASK-302/globals.log',
+                      'reason': 'physics() loop variable declared locally, dead Screen.isMoving() deleted; 18/18 captures pixel-identical'},
+    'physics.js': {'task': 'TASK-302', 'hunks_sha256': 'b991aeb985b9cbbcef6deecab40ea9a0edff324faf4e9183dce5419e50f3cef4',
+                   'evidence': 'artifacts/TASK-302/compare.json (18/18 captures differing_pixels 0), artifacts/TASK-302/globals.log',
+                   'reason': 'physics() loop variable declared locally, dead Screen.isMoving() deleted; 18/18 captures pixel-identical'},
 }
 SEALED_COSTS = {  # ms per frame at 1280x720 dpr1, from the sealed decisions named in each entry
     'glow composite (ambient chain)': {'bad': 38.77, 'classic': 49.25, 'source': 'TASK-276 ranked_stage_arms composite-off median saving',

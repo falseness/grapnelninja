@@ -127,7 +127,7 @@ class IntegrationMapTests(unittest.TestCase):
     def test_only_effects_js_changed_since_the_frozen_control(self):
         # TASK-292: runtime = the ZIP allowlist (tools/build-y8-zip.py), compared control commit -> worktree. Accepted entries:
         # render/effects.js (the integrated TASK-280 body), an optional platform.js whose only changed lines are the
-        # buildVersion tag, and the sealed reviewed hunks in yi.REVIEWED_RUNTIME_CHANGES (menu.js, TASK-290). Any other
+        # buildVersion tag, and the sealed reviewed hunks in yi.REVIEWED_RUNTIME_CHANGES (menu.js TASK-290; moveScreen.js, physics.js TASK-302). Any other
         # runtime diff, any other platform.js line and any further edit of a sealed hunk fails.
         control = fc.load(yi.CONTROL_TASK_DIR / 'manifest.json')['source_revision']
         diff = yi.runtime_diff(control, fc.git('rev-parse', 'HEAD'))
