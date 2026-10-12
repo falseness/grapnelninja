@@ -132,18 +132,35 @@ def pixel_diff(a, b, dest=None):
 def audit(out):
     receipt = read(out/'manifest.json')
     assert receipt['exit_code'] == 0, 'failed attempt'
+    identity_keys = ('command', 'cwd', 'started_utc', 'execution_id')
+    assert all(receipt.get(k) for k in identity_keys), 'missing execution identity'
+    assert receipt.get('ended_utc') and receipt.get('harness_sha256'), 'missing execution identity'
+    seals = receipt['evidence_sha256']
+    def require_seals(paths):
+        for p in sorted(set(paths)):
+            assert p in seals, 'missing evidence seal: ' + p
+            assert (out/p).is_file(), 'missing evidence file: ' + p
+    require_seals(('results.json', 'protocol.json', 'network.json',
+                   'command.log', 'tested-harness.py'))
     for p, h in receipt['evidence_sha256'].items():
         assert sha((out/p).read_bytes()) == h, p+' hash mismatch'
-    if 'execution_id' in receipt:
-        lines = (out/'command.log').read_text().splitlines()
-        identity = json.loads(lines[0].removeprefix('EXECUTION '))
-        ending = json.loads(lines[-1].removeprefix('EXIT '))
-        assert all(receipt[k] == v for k, v in identity.items()), 'command identity'
-        assert ending['execution_id'] == receipt['execution_id'] and ending['exit_code'] == 0
-        assert receipt['started_utc'] <= ending['ended_utc'] <= receipt['ended_utc']
-        assert 'PASS capture completed; no device FPS claim' in lines
-        assert sha((out/'tested-harness.py').read_bytes()) == receipt['harness_sha256']
+    lines = (out/'command.log').read_text().splitlines()
+    assert lines and lines[0].startswith('EXECUTION ') and lines[-1].startswith('EXIT '), 'command identity'
+    identity = json.loads(lines[0].removeprefix('EXECUTION '))
+    ending = json.loads(lines[-1].removeprefix('EXIT '))
+    assert all(identity.get(k) == receipt[k] for k in identity_keys), 'command identity'
+    assert ending['execution_id'] == receipt['execution_id'] and ending['exit_code'] == 0, 'command exit identity'
+    assert receipt['started_utc'] <= ending['ended_utc'] <= receipt['ended_utc'], 'command timing'
+    assert 'PASS capture completed; no device FPS claim' in lines
+    assert sha((out/'tested-harness.py').read_bytes()) == receipt['harness_sha256'], 'harness hash mismatch'
+    assert read(out/'protocol.json') == PROTOCOL, 'protocol differs'
     data = read(out/'results.json')
+    assert data['kind'] in ('capture', 'visuals'), 'unknown receipt kind'
+    if data['kind'] == 'capture':
+        require_seals(r['raw'] for r in data['runs'])
+    else:
+        require_seals(r[k] for r in data['comparisons']
+                      for k in ('control', 'candidate', 'control_state', 'candidate_state'))
     for arm, root in data['roots'].items():
         assert hashes(Path(root)) == data['sources'][arm], 'runtime hash mismatch'
     assert data['fixture_sha256'] == sha(FIXTURE.encode()), 'SDK fixture mismatch'

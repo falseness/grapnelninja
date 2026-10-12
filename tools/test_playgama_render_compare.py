@@ -1,5 +1,8 @@
 """Synthetic arithmetic/validation tests only: never FPS evidence."""
 import copy
+import contextlib
+import io
+import json
 import tempfile
 from pathlib import Path
 import unittest
@@ -24,7 +27,17 @@ def runs():
 
 
 def seal(out):
-    write(out/'manifest.json', dict(exit_code=0, evidence_sha256={
+    identity = dict(command=['synthetic-validator-fixture'], cwd=str(ROOT),
+                    started_utc='2026-01-01T00:00:00Z', execution_id='synthetic-317')
+    ending = dict(execution_id=identity['execution_id'], exit_code=0,
+                  ended_utc='2026-01-01T00:00:01Z')
+    if not (out/'command.log').exists():
+        (out/'command.log').write_text('EXECUTION ' + json.dumps(identity) + '\n'
+            'PASS capture completed; no device FPS claim\nEXIT ' + json.dumps(ending) + '\n')
+        (out/'tested-harness.py').write_bytes(Path(__import__('playgama_render_compare').__file__).read_bytes())
+    write(out/'protocol.json', PROTOCOL)
+    write(out/'manifest.json', dict(identity, exit_code=0, ended_utc=ending['ended_utc'],
+        harness_sha256=sha((out/'tested-harness.py').read_bytes()), evidence_sha256={
         p.name: sha(p.read_bytes()) for p in out.iterdir() if p.name != 'manifest.json'}))
 
 
@@ -59,6 +72,23 @@ def capture_fixture(out, field=None, value=None):
     return rs
 
 
+def visual_fixture(out):
+    from PIL import Image
+    Image.new('RGBA', (64, 48)).save(out/'resize.png')
+    (out/'candidate.png').write_bytes((out/'resize.png').read_bytes())
+    write(out/'state.json', dict(backing=[64, 48], portrait=False))
+    (out/'candidate-state.json').write_bytes((out/'state.json').read_bytes())
+    comparisons = [dict(engine=e, checkpoint=c, control='resize.png',
+        candidate='candidate.png', control_state='state.json', candidate_state='candidate-state.json',
+        state_equal=True, pixels=pixel_diff(out/'resize.png', out/'resize.png'))
+        for e in PROTOCOL['engines'] for c in PROTOCOL['visual_checkpoints']]
+    write(out/'results.json', dict(kind='visuals', roots={'control': str(ROOT)},
+        sources={'control': hashes(ROOT)}, fixture_sha256=sha(FIXTURE.encode()),
+        errors=[], comparisons=comparisons))
+    write(out/'network.json', [dict(action='SDK_STUB', url=SDK)])
+    seal(out)
+
+
 LAYOUT_CASES = [
     ('full backing accepted', None, None, None),
     ('half backing rejected', 'backing', [844, 390], 'capture backing dimensions'),
@@ -83,22 +113,85 @@ class CaptureLayoutTests(unittest.TestCase):
                 print(f'PASS {label}; aggregate/audit; field={field}; SYNTHETIC validator evidence only')
 
     def test_visual_resize_audit_remains_independent(self):
-        from PIL import Image
         with tempfile.TemporaryDirectory() as d:
             out = Path(d)
-            Image.new('RGBA', (64, 48)).save(out/'resize.png')
-            write(out/'state.json', dict(backing=[64, 48], portrait=False))
-            comparisons = [dict(engine=e, checkpoint=c, control='resize.png',
-                candidate='resize.png', control_state='state.json', candidate_state='state.json',
-                state_equal=True, pixels=pixel_diff(out/'resize.png', out/'resize.png'))
-                for e in PROTOCOL['engines'] for c in PROTOCOL['visual_checkpoints']]
-            write(out/'results.json', dict(kind='visuals', roots={'control': str(ROOT)},
-                sources={'control': hashes(ROOT)}, fixture_sha256=sha(FIXTURE.encode()),
-                errors=[], comparisons=comparisons))
-            write(out/'network.json', [dict(action='SDK_STUB', url=SDK)])
-            seal(out)
+            visual_fixture(out)
             audit(out)
         print('PASS visual checkpoint resize independent; SYNTHETIC validator evidence only')
+
+
+class ManifestCoverageTests(unittest.TestCase):
+    def test_complete_receipts_and_manifest_coverage(self):
+        for kind, fixture in (('capture', capture_fixture), ('visuals', visual_fixture)):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as d:
+                out = Path(d)
+                fixture(out)
+                audit(out)
+                print(f'PASS valid {kind} receipt; SYNTHETIC validator evidence only; no browser FPS claim')
+                original = {p.name: p.read_bytes() for p in out.iterdir()}
+                referenced = ('raw-0.json',) if kind == 'capture' else ('resize.png', 'candidate.png', 'state.json', 'candidate-state.json')
+                for path in ('results.json', 'protocol.json', 'network.json', 'command.log', 'tested-harness.py', *referenced):
+                    for mutation in ('omit', 'missing', 'tamper'):
+                        with self.subTest(path=path, mutation=mutation):
+                            for name, data in original.items(): (out/name).write_bytes(data)
+                            receipt = read(out/'manifest.json')
+                            if mutation == 'omit':
+                                del receipt['evidence_sha256'][path]
+                                # Rewrite the outer manifest, and modify the unsealed bytes.
+                                (out/path).write_bytes(original[path] + b' ')
+                                write(out/'manifest.json', receipt)
+                                expected = 'missing evidence seal: ' + path
+                            elif mutation == 'missing':
+                                (out/path).unlink()
+                                # Base files are checked before the hash loop; references in it.
+                                expected = 'missing evidence file: ' + path if path not in referenced else path
+                            else:
+                                (out/path).write_bytes(original[path] + b' ')
+                                expected = path + ' hash mismatch'
+                            output = io.StringIO()
+                            with contextlib.redirect_stdout(output):
+                                with self.assertRaises((AssertionError, FileNotFoundError)) as caught:
+                                    audit(out)
+                            self.assertIn(expected, str(caught.exception))
+                            self.assertNotIn('PASS snapshot hashes', output.getvalue())
+                            label = ('raw' if path.startswith('raw-') else 'visual' if path in referenced else path.removesuffix('.json'))
+                            marker = f'missing {label} seal rejected' if mutation == 'omit' else 'sealed byte tampering rejected' if mutation == 'tamper' else 'missing evidence file rejected'
+                            print(f'PASS {marker}; {kind}/{path}; rejection={caught.exception}')
+                for mutation in ('empty', 'identity', 'log-identity'):
+                    for name, data in original.items(): (out/name).write_bytes(data)
+                    receipt = read(out/'manifest.json')
+                    if mutation == 'empty':
+                        receipt['evidence_sha256'] = {}
+                        expected, marker = 'missing evidence seal:', 'empty seal map rejected'
+                    elif mutation == 'identity':
+                        del receipt['execution_id']
+                        expected, marker = 'missing execution identity', 'missing execution identity rejected'
+                    else:
+                        lines = (out/'command.log').read_text().splitlines()
+                        lines[0] = 'EXECUTION {}'
+                        (out/'command.log').write_text('\n'.join(lines) + '\n')
+                        receipt['evidence_sha256']['command.log'] = sha((out/'command.log').read_bytes())
+                        expected, marker = 'command identity', 'incomplete command identity rejected'
+                    write(out/'manifest.json', receipt)
+                    with self.assertRaisesRegex(AssertionError, expected) as caught: audit(out)
+                    print(f'PASS {marker}; {kind}; rejection={caught.exception}')
+        print('PASS valid capture and visual receipts; actual audit entry point; synthetic only')
+
+    def test_resealed_state_and_arithmetic_recomputed(self):
+        for fixture, path, expected in ((capture_fixture, 'raw-0.json', 'raw metric mismatch'),
+                                      (visual_fixture, 'candidate-state.json', 'state equality mismatch')):
+            with tempfile.TemporaryDirectory() as d:
+                out = Path(d)
+                fixture(out)
+                data = read(out/path)
+                if path.startswith('raw'):
+                    data['frames'][-1]['t'] += 1
+                else:
+                    data['portrait'] = True
+                write(out/path, data)
+                seal(out)
+                with self.assertRaisesRegex(AssertionError, expected): audit(out)
+                print(f'PASS resealed evidence recomputation; rejection={expected}')
 
 
 class HarnessTests(unittest.TestCase):
@@ -152,7 +245,7 @@ class HarnessTests(unittest.TestCase):
             write(out/'results.json',data); write(out/'raw.json',sample)
             write(out/'network.json',[{'action':'SDK_STUB','url':__import__('playgama_render_compare').SDK}])
             def receipt():
-                write(out/'manifest.json',dict(exit_code=0,evidence_sha256={p.name:sha(p.read_bytes()) for p in out.iterdir() if p.name!='manifest.json'}))
+                seal(out)
             receipt()
             sample['frames'][2]['t'] += 1; write(out/'raw.json',sample)
             with self.assertRaisesRegex(AssertionError,'hash mismatch'): audit(out)
