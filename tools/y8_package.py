@@ -593,7 +593,7 @@ def cmd_media(args):
                       '--seeds', SEEDS, '--out', rel(out)], f'{stage}.log')
             require(rc == 0, f'media stage {stage} failed (log preserved: {stage}.log)')
 
-    review = run_media_review(out, args.review, capture, lambda out: build_media_review(out, candidate))
+    review = run_media_review(out, args.review, capture, lambda out: build_media_review(out, candidate, args.task))
     print(f"PASS media: {review['regenerated_assets']} assets recaptured from exact ZIP {candidate['sha256']} at "
           f"{candidate['source_revision']}; pixel-identical to TASK-263 historical captures: "
           f"{review['pixel_identical_to_historical']}; verdict={review['verdict']}"
@@ -602,7 +602,7 @@ def cmd_media(args):
     return 0
 
 
-def build_media_review(out, candidate):
+def build_media_review(out, candidate, task):
     manifest = read(out / 'media-manifest.json')
     require(manifest['archive_sha256'] == candidate['sha256'], 'media captured from a different archive')
     frames = {}
@@ -657,9 +657,9 @@ def build_media_review(out, candidate):
                                      **pixel_compare(out / frame['folder'] / name, HISTORICAL_MEDIA / old['folder'] / name))
         frame_rows.append(row)
     review = dict(
-        task=args.task, candidate=candidate['sha256'], source_revision=candidate['source_revision'], build_tag=candidate['build_tag'],
+        task=task, candidate=candidate['sha256'], source_revision=candidate['source_revision'], build_tag=candidate['build_tag'],
         decision='REFRESHED', regenerated_assets=len(assets), reused_assets=0,
-        reuse_or_refresh=f'All {len(assets)} shipped assets were recaptured from the exact {args.task} ZIP; the TASK-263 captures '
+        reuse_or_refresh=f'All {len(assets)} shipped assets were recaptured from the exact {task} ZIP; the TASK-263 captures '
                          f'(source 15aab22...) are kept only as the comparison baseline and are not shipped.',
         pixel_identical_to_historical=f'{identical}/{len(assets)}',
         comparison_meaning='pixel identity with the historical captures independently confirms that the TASK-280 render change '

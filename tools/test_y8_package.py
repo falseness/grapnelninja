@@ -338,10 +338,6 @@ class MediaReview(unittest.TestCase):
             self.assertEqual((review['verdict'], review['review_carried_over'], warning), ('PENDING', False, None))
 
 
-if __name__ == '__main__':
-    unittest.main(verbosity=2)
-
-
 class TaskLabel(unittest.TestCase):
     """TASK-312: every generated JSON carries the --task label, by default the evidence directory name, never a stale literal;
     the label also roots the artifacts/<task> path defaults and the readiness runner default."""
@@ -390,3 +386,35 @@ class TaskLabel(unittest.TestCase):
             self.assertEqual(readiness['runner_runtime_binding']['runner_package'], pkg.rel(pkg.default_runner(pkg.EVIDENCE_DIR)))
             self.assertEqual(pkg.main(['readiness', '--task', 'TASK-999', *inputs, '--out', str(out / 'readiness-999.json')]), 0)
             self.assertEqual(json.loads((out / 'readiness-999.json').read_text())['task'], 'TASK-999')
+
+    @unittest.skipUnless((pkg.HISTORICAL_MEDIA / 'media-manifest.json').exists(), 'TASK-263 historical media not in this workspace')
+    def test_build_media_review_labels_the_review_with_the_passed_task_and_has_no_free_args_reference(self):
+        # the e4b830d defect: build_media_review read a module-global `args` that never existed (NameError on `media`)
+        self.assertNotIn('args', pkg.build_media_review.__code__.co_names)
+        self.assertEqual(pkg.build_media_review.__code__.co_varnames[:3], ('out', 'candidate', 'task'))
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            name = 'fixture-only-not-in-task-263.png'
+            (out / 'screenshots').mkdir()
+            (out / 'screenshots' / name).write_bytes(b'not a real png; no historical twin so no pixel comparison runs')
+            frame = dict(file=name, mode='bad', seed=4, tick=180, dpr=1, deathTick=None, score=0, canvas=[16, 9], ninja=[0.1, 0.2])
+            for folder, frames in (('source-frames', {}), ('screenshots', {'fixture': frame})):
+                (out / folder).mkdir(exist_ok=True)
+                pkg.write(out / folder / 'source-frames.json',
+                          dict(frames=frames, captured_utc='2026-10-12T00:00:00+00:00', archive_sha256='abc', source_revision='rev1'))
+            pkg.write(out / 'media-manifest.json', dict(archive_sha256='abc', assets=[
+                dict(path=str(out / 'screenshots' / name), dimensions=[16, 9], format='PNG', bytes=1, sha256='x')]))
+            candidate = dict(sha256='abc', source_revision='rev1', build_tag='tag')
+            review = pkg.build_media_review(out, candidate, 'TASK-999')
+            self.assertEqual(review['task'], 'TASK-999')
+            self.assertIn('exact TASK-999 ZIP', review['reuse_or_refresh'])
+            self.assertEqual((review['regenerated_assets'], review['pixel_identical_to_historical'], review['verdict']), (1, '0/1', 'PENDING'))
+            self.assertEqual(review['assets'][0]['path'], 'screenshots/' + name)
+            self.assertIsNone(review['assets'][0]['historical'])
+            self.assertEqual(review['source_frames'][0]['sha256'], pkg.sha(out / 'screenshots' / name))
+            with self.assertRaises(SystemExit):
+                pkg.build_media_review(out, dict(candidate, sha256='other'), 'TASK-999')
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
