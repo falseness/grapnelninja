@@ -11,6 +11,8 @@ import hashlib
 import io
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -18,9 +20,15 @@ import unittest
 import numpy as np
 from PIL import Image, ImageDraw
 from browser_test_support import start_browser_test
-from perf_mobile import SEED_SCRIPT, export_rev
+from perf_mobile import ROOT, SEED_SCRIPT, export_rev
 from render_snapshot import CLOCK_SCRIPT, boot_frozen, png_bytes, SETUP_SCRIPT, ADVANCE_SCRIPT, input_script
 
+# HEAD^ stopped being the pre-halving baseline once later commits landed, and
+# 6f714dd^ lacks later visual changes, so the native diff would not be local.
+# BASELINE is the current tracked tree with only 6f714dd (TASK-224) reverted.
+BASELINE = 'worktree-without-TASK-224'
+TASK_224 = [('anchorRadiusRatio: 0.45,', 'anchorRadiusRatio: 0.9,'),
+            ('anchorWidthRatio: 0.2125,', 'anchorWidthRatio: 0.425,')]
 ZOOM = 8
 SIZE = 512
 SCENE = '''([mode, attached]) => {
@@ -73,10 +81,30 @@ NATIVE = '''() => {
 }'''
 
 
+def export_baseline(add_cleanup):
+    """Copy tracked worktree files and restore the pre-TASK-224 ring ratios."""
+    _, head_id = export_rev('worktree', add_cleanup)
+    scratch = tempfile.TemporaryDirectory(prefix='grapnel-dot-')
+    add_cleanup(scratch.cleanup)
+    root = Path(scratch.name)
+    files = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode().split('\0')
+    for name in filter(None, files):
+        if (ROOT/name).is_file():
+            (root/name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT/name, root/name)
+    style = (root/'style.js').read_text()
+    for new, old in TASK_224:
+        assert style.count(new) == 1, new
+        style = style.replace(new, old)
+    (root/'style.js').write_text(style)
+    return root, f'{head_id}-TASK-224-reverted'
+
+
 def capture(rev, out, label):
     images, values, native = {}, {}, {}
     with ExitStack() as stack:
-        root, rev_id = export_rev(rev, stack.callback)
+        root, rev_id = (export_baseline(stack.callback) if rev == BASELINE
+                        else export_rev(rev, stack.callback))
         url, browser = start_browser_test(root, stack.callback)
         for viewport, width, height, touch in [('desktop', 1920, 1080, False),
                                                ('phone', 844, 390, True)]:
@@ -116,7 +144,7 @@ def capture(rev, out, label):
     return rev_id, values, images, native
 
 
-def probe(out, parent='HEAD^', head='worktree'):
+def probe(out, parent=BASELINE, head='worktree'):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     parent_rev, before, a, na = capture(parent, out, 'parent')
@@ -145,9 +173,10 @@ def probe(out, parent='HEAD^', head='worktree'):
     manifest = dict(baseline=parent_rev, final_capture_revision=head_rev, reference=reference_rev,
         seed=1, tick=60, viewports={'desktop':[1920,1080,1], 'phone':[844,390,3]},
         phone_backing_dpr=2, native={'parent':na,'final':nb,'reference':nr},
-        source_sha256={str(p):hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in [*Path('..').glob('*.js'), *Path('../sprites').glob('*.js'),
-                      *Path('../render').glob('*.js'), Path('test_grapnel_dot.py')]},
+        # Resolve from the repo root so discover from any cwd hashes the same files.
+        source_sha256={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in [*ROOT.glob('*.js'), *(ROOT/'sprites').glob('*.js'),
+                      *(ROOT/'render').glob('*.js'), Path(__file__).resolve()]},
         outputs=sorted(p.name for p in out.glob('*.png')))
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     for key, value in report['captures'].items():
@@ -201,13 +230,13 @@ class GrapnelDotTest(unittest.TestCase):
     def test_anchor_halved_tip_and_rope_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             probe(os.environ.get('DOT_EVIDENCE_DIR', tmp),
-                  os.environ.get('DOT_PARENT', 'HEAD^'))
+                  os.environ.get('DOT_PARENT', BASELINE))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', required=True)
-    parser.add_argument('--parent', default='HEAD^')
+    parser.add_argument('--parent', default=BASELINE)
     parser.add_argument('--head', default='worktree')
     args = parser.parse_args()
     probe(args.out, args.parent, args.head)
