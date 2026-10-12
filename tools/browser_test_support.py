@@ -7,9 +7,14 @@ from threading import Thread
 from playwright.sync_api import sync_playwright
 
 
-# Any request that is not to the local test server (the game loads no
-# external scripts; older baseline trees may still reference an SDK URL)
+# Any request that is not to the local test server
 EXTERNAL_URL = re.compile(r'^(?!https?://127\.0\.0\.1[:/])(?:https?|wss?)://')
+# index.html loads the Bridge SDK from here. Offline, it is served a script
+# that defines no window.bridge: the download "succeeds" (no ERR_FAILED console
+# error, no retries) and PLATFORM.init() falls back to 'disabled' at its
+# initTimeoutMs, exactly as when the SDK is unreachable.
+SDK_URL = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
+OFFLINE_SDK = '// offline test fixture: no Playgama Bridge (window.bridge stays undefined)\n'
 LOGICAL_HEIGHT = 1080
 
 
@@ -25,8 +30,11 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 
 def block_external(route):
-    """Abort the request so pages run offline."""
-    route.abort()
+    """Serve the offline SDK fixture; abort every other external request."""
+    if route.request.url == SDK_URL:
+        route.fulfill(content_type='application/javascript', body=OFFLINE_SDK)
+    else:
+        route.abort()
 
 
 class OfflineBrowser:

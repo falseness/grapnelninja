@@ -82,6 +82,39 @@ class BrowserTestSupportTests(unittest.TestCase):
             thread.assert_not_called()
             playwright.assert_not_called()
 
+    def test_offline_sdk_fixture_in_real_browser(self):
+        """The SDK URL loads the fixture without a console error; other external requests stay aborted."""
+        owner = unittest.TestCase()
+        with TemporaryDirectory() as root:
+            Path(root, 'index.html').write_text(
+                '<script>window.events = []</script>'
+                f'<script src="{support.SDK_URL}" onload="events.push(\'sdk-load\')"'
+                ' onerror="events.push(\'sdk-error\')"></script>'
+                '<script src="https://example.com/other.js" onload="events.push(\'other-load\')"'
+                ' onerror="events.push(\'other-error\')"></script>')
+            try:
+                url, browser = support.start_browser_test(Path(root), owner.addCleanup)
+                for open_page in (lambda: browser.new_page(),
+                                  lambda: browser.new_context().new_page()):
+                    page = open_page()
+                    errors, failed = [], []
+                    page.on('console', lambda m: errors.append((m.location['url'], m.text))
+                            if m.type == 'error' else None)
+                    page.on('pageerror', lambda e: errors.append(('pageerror', str(e))))
+                    page.on('requestfailed', lambda r: failed.append(r.url))
+                    page.goto(url)
+                    page.wait_for_function('events.length == 2')
+                    result = page.evaluate('[events, typeof window.bridge]')
+                    print('OFFLINE_SDK', result, 'failed', failed, 'console errors', errors)
+                    self.assertEqual(result, [['sdk-load', 'other-error'], 'undefined'])
+                    self.assertEqual(failed, ['https://example.com/other.js'])
+                    # Only the aborted non-SDK script logs a load failure
+                    self.assertEqual(errors, [('https://example.com/other.js',
+                                               'Failed to load resource: net::ERR_FAILED')])
+                    page.close()
+            finally:
+                owner.doCleanups()
+
 
 if __name__ == '__main__':
     unittest.main()

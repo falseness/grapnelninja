@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import logical_size
+from browser_test_support import logical_size, wait_for_boot
 from game_harness import canvas_to_viewport, click_canvas, open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -120,7 +120,9 @@ class ResizeTests(unittest.TestCase):
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "local" && menu.visible')
+        # Offline the SDK fixture defines no bridge: boot ends 'disabled'
+        wait_for_boot(page)
+        page.wait_for_function('PLATFORM.environment === "disabled" && menu.visible')
         return page
 
     def write_evidence(self, name, data):

@@ -8,7 +8,7 @@ import unittest
 
 # Allow `python3 -m unittest tools/test_grapnel_moving_cube.py` from the root.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -168,6 +168,7 @@ class GrapnelMovingCubeTests(unittest.TestCase):
                 if message.type == 'error' else None)
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.goto(self.url)
+        wait_for_boot(page)
         page.evaluate("startGame('bad'); cancelAnimationFrame(game)")
         return page
 

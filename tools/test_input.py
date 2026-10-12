@@ -6,6 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from browser_test_support import wait_for_boot
 from game_harness import canvas_to_viewport, open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -17,6 +18,7 @@ def open_touch_game(browser, url):
     """Return (context, page, errors) for a mobile landscape touch context."""
     context, page, errors = open_game(browser, url + 'index.html', TOUCH_VIEWPORT,
                                       has_touch=True, is_mobile=True)
+    wait_for_boot(page)
     page.wait_for_function('menu.visible && typeof Grapnel !== "undefined"')
     return context, page, errors
 
@@ -77,7 +79,9 @@ class InputTests(unittest.TestCase):
         context, page, errors = open_game(self.browser, 'about:blank', DESKTOP_VIEWPORT)
         self.track(context, errors)
         page.goto(self.url + 'index.html')
-        page.wait_for_function('PLATFORM.environment === "local" && menu.visible')
+        # Offline the SDK fixture defines no bridge: boot ends 'disabled'
+        wait_for_boot(page)
+        page.wait_for_function('PLATFORM.environment === "disabled" && menu.visible')
         return page
 
     def out(self):
