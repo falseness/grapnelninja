@@ -94,9 +94,12 @@ class ViewportEffectsTests(unittest.TestCase):
         page.goto(self.url)
         # Since TASK-117 boot() waits for animation frames before start(),
         # and the checker's init script stubs requestAnimationFrame: run
-        # the rest of boot by hand (draw the menu, hide #loading)
+        # the rest of boot by hand (draw the menu, hide #loading).
+        # Offline, boot first waits out PLATFORM.initTimeoutMs for the Bridge
+        # SDK; poll on a timer, since the default rAF polling never fires
+        # under the stubbed requestAnimationFrame.
         page.wait_for_function("document.getElementById('loading-progress')"
-                               ".textContent == 'Starting...'")
+                               ".textContent == 'Starting...'", polling=100)
         page.evaluate("() => { start(); document.getElementById('loading').hidden = true }")
         self.assertEqual(page.evaluate('[width, height]'), list(logical_size(*viewport)), viewport)
         return page, errors

@@ -190,6 +190,9 @@ const STYLE = Object.freeze({
         titleHaloWidthRatio: 0.16,
         titleInnerHaloWidthRatio: 0.07,
         titleTubeWidthRatio: 0.03,
+        // Title halo alphas (the obstacle neonOutline ones were dropped in TASK-205)
+        titleHaloAlpha: 0.16,
+        titleInnerHaloAlpha: 0.32,
         hudTopRatio: 0.06,
         hudFontRatio: 0.042,
         hudBadMaxFontWidthRatio: 0.078,

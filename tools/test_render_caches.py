@@ -108,7 +108,8 @@ class RenderCacheTests(unittest.TestCase):
                 if (positions.length - start < 2) return
                 const outline = this.getRibbonOutline(positions, start, width)
                 if (!outline.length) return
-                ctx.globalAlpha = this.clampAlpha(alpha)
+                // Same opacity as production (TASK-223, 393e7f6), drawn without the cache.
+                ctx.globalAlpha = this.clampAlpha(alpha) * STYLE.player.effectOpacity
                 ctx.fillStyle = color
                 this.drawRibbonOutline(outline)
                 ctx.fill()

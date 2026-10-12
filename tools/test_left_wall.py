@@ -83,14 +83,30 @@ PROBE = r'''() => {
         attached, anchors, transforms};
 }'''
 
-LIFECYCLE = r'''() => {
+LIFECYCLE = r'''async () => {
+    // In-run continues were removed (TASK-242, 8519216): a death now offers a
+    // free restart. The wall must survive the frozen offer, and the restart
+    // must drop it together with every anchor on it.
     const old = screen.leftWall;
-    continueRun(); cancelAnimationFrame(game);
-    const continued = screen.leftWall === old && !grapnel.throwed && grapnel.pos.length === 0;
+    ninja.invulnerableMs = 0;
+    ninja.x = old.x + 10 * ninja.radius; ninja.speedX = ninja.speedY = 0;
+    grapnel.throwed = true; grapnel.speedX = -1; grapnel.speedY = 0;
+    grapnel.pos = [[old.x - 1, ninja.y, new Empty()]];
+    grapnel.collision();
+    const anchoredBeforeDeath = grapnel.isGrappled() && grapnel.pos[0][2] === old;
+    onLethalDeath();
+    const offered = isRunFrozen() && screen.leftWall === old;
     const continuationGeometry = {face: old.x, cameraX: screen.x};
+    restartFromOffer();
+    for (let i = 0; i < 200 && isRunFrozen(); ++i) await new Promise(r => setTimeout(r, 10));
+    cancelAnimationFrame(game);
+    const continued = anchoredBeforeDeath && offered && !isRunFrozen() &&
+        screen.leftWall !== old && !grapnel.throwed && grapnel.pos.length === 0 &&
+        !grapnel.pos.some(p => p[2] === old);
+    const restartedOld = screen.leftWall;
     chooseVersion(); cancelAnimationFrame(game);
     const wall = screen.leftWall;
-    const restarted = wall !== old && grapnel.pos.length === 0;
+    const restarted = wall !== old && wall !== restartedOld && grapnel.pos.length === 0;
     screen.speedX = -10 * width; screen.speedY = 73; screen.move();
     wall.update(screen);
     const countsBefore = floors.map(f => f.elements.length);
@@ -102,7 +118,7 @@ LIFECYCLE = r'''() => {
         removedCount: oldElements.filter(e => !elements.includes(e)).length,
         activeBoundaries: [screen.leftWall, ...elements].filter(e => e instanceof LeftWall).length,
         persistent: screen.leftWall === wall, outsideProcedural: !elements.includes(wall),
-        staleAnchors: grapnel.pos.some(p => p[2] === old),
+        staleAnchors: grapnel.pos.some(p => p[2] === old || p[2] === restartedOld),
         face: wall.x, cameraX: screen.x, offset: (wall.x + screen.x) * scale[version]};
 }'''
 
@@ -239,7 +255,7 @@ class LeftWallTests(unittest.TestCase):
                         self.assertAlmostEqual(resize['faceOffset'], resize['expectedOffset'])
                         self.assertEqual(resize['linesFace'], resize['face'])
                         self.assertEqual(errors, [])
-                        row['assertions'] = 'PASS contacts, nonpenetration, camera transforms, anchor tracking, stationary displacement, continue, restart, procedural deletion, resize'
+                        row['assertions'] = 'PASS contacts, nonpenetration, camera transforms, anchor tracking, stationary displacement, death offer + free restart, restart, procedural deletion, resize'
                         print(f'PASS {mode} {label}: {row["assertions"]}', flush=True)
                     finally:
                         page.close()

@@ -97,15 +97,14 @@ class Text
     // Halo strokes of the letters in the glow colour, like strokeNeonPath
     strokeNeonTube()
     {
-        const neon = STYLE.strokes.neonOutline
         const size = parseFloat(this.fontSize)
 
         ctx.strokeStyle = this.glow
         ctx.lineJoin = 'round'
-        ctx.globalAlpha = neon.haloAlpha * neonPulse
+        ctx.globalAlpha = STYLE.ui.titleHaloAlpha * neonPulse
         ctx.lineWidth = size * STYLE.ui.titleHaloWidthRatio
         ctx.strokeText(this.text, this.x, this.y)
-        ctx.globalAlpha = neon.innerHaloAlpha * neonPulse
+        ctx.globalAlpha = STYLE.ui.titleInnerHaloAlpha * neonPulse
         ctx.lineWidth = size * STYLE.ui.titleInnerHaloWidthRatio
         ctx.strokeText(this.text, this.x, this.y)
         ctx.globalAlpha = 1

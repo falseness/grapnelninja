@@ -1,4 +1,9 @@
-"""The local PLATFORM adapter: offline boot, storage, no ads, hidden-tab pause."""
+"""PLATFORM offline: disabled-Bridge boot, storage, no ads, hidden-tab pause.
+
+The master-era local adapter was replaced by the Playgama adapter (TASK-236,
+7fd7a46). Offline, the Bridge SDK is served a no-op fixture
+(browser_test_support.OFFLINE_SDK) and PLATFORM falls back to 'disabled'.
+"""
 import json
 import os
 from pathlib import Path
@@ -7,12 +12,12 @@ import unittest
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import start_browser_test, wait_for_boot
+from browser_test_support import SDK_URL, start_browser_test, wait_for_boot
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
-READY = ('PLATFORM.environment === "local" && menu.visible'
+READY = ('PLATFORM.environment === "disabled" && menu.visible'
          ' && document.getElementById("loading").hidden')
 
 # A cross-origin iframe with blocked storage: every localStorage access throws
@@ -21,8 +26,9 @@ BLOCK_STORAGE = '''Object.defineProperty(window, 'localStorage', {
     get() { throw new DOMException('The operation is insecure.', 'SecurityError') }
 })'''
 
-# Count physics ticks; window.__kill moves the ninja behind the deletion
-# border before the next tick (a real lethal death through ninja.move()).
+# Count physics ticks; window.__kill moves the ninja into the deadly bottom
+# side band before the next tick (a real lethal hit through ninja.move()).
+# The persistent left wall (TASK-225) keeps it off the deletion border.
 # Otherwise the ninja is pinned so it never dies on its own.
 INSTRUMENT_RUN = '''() => {
     window.__ticks = 0
@@ -39,7 +45,8 @@ INSTRUMENT_RUN = '''() => {
         if (!window.__pin) window.__pin = {x: ninja.x, y: ninja.y}
         if (window.__kill) {
             window.__kill = false
-            ninja.x = screen.getDeletionBorder() - screen.x - 10 * ninja.radius
+            ninja.invulnerableMs = 0
+            ninja.y = 0.95 * height - screen.y
             ninja.speedX = 0
             ninja.speedY = 0
             return physicsStep.apply(this, arguments)
@@ -106,14 +113,18 @@ class ItchPlatformTests(unittest.TestCase):
         before = page.evaluate(STATE)
         self.assertEqual(before['score'], points)
         page.evaluate('window.__kill = true')
-        page.wait_for_function('!window.__kill && window.__reStarts > 0')
+        # Every death freezes the run on the free restart offer (TASK-242,
+        # 8519216); take the restart the offer's button runs.
+        page.wait_for_function('!window.__kill && continueOffer.visible')
+        page.evaluate('restartFromOffer()')
+        page.wait_for_function('window.__reStarts > 0')
         page.wait_for_timeout(200)
         return before, page.evaluate(STATE)
 
     def test_a_offline_boot(self):
         page, errors, requests = self.open()
         self.boot(page)
-        self.assertEqual(page.evaluate('PLATFORM.environment'), 'local')
+        self.assertEqual(page.evaluate('PLATFORM.environment'), 'disabled')
         self.assertEqual(page.evaluate('typeof window.bridge'), 'undefined')
         page.wait_for_timeout(500)
         foreign = [u for u in requests if not u.startswith(self.origin + '/')]
@@ -123,26 +134,14 @@ class ItchPlatformTests(unittest.TestCase):
                  'requests': requests}, indent=1) + '\n')
             page.screenshot(path=str(self.out('screens/menu.png')))
         self.assertTrue(requests)
-        self.assertEqual(foreign, [])
+        # The only off-origin request is the Bridge SDK script, served offline
+        self.assertEqual(sorted(set(foreign)), [SDK_URL])
         self.assertEqual(errors, [])
 
-    def test_b_storage_round_trip(self):
-        page, _, _ = self.open()
-        self.boot(page)
-        page.evaluate('''() => {
-            scoreText.record.classic = 42
-            scoreText.record.bad = 7
-            setLanguage('ru')
-            PROGRESS.flush()
-        }''')
-        stored = page.evaluate('() => localStorage.getItem("%s")' % RECORDS_KEY)
-        self.assertEqual(json.loads(stored), {'classic': 42, 'bad': 7})
-        page.reload()
-        wait_for_boot(page)
-        page.wait_for_function(READY)
-        after = page.evaluate('''() => ({classic: scoreText.record.classic,
-            bad: scoreText.record.bad, lang: I18N.language})''')
-        self.assertEqual(after, {'classic': 42, 'bad': 7, 'lang': 'ru'})
+    # test_b_storage_round_trip retired: offline progress no longer persists
+    # (localStorage dropped in 7fd7a46/83e53de, progress goes only through the
+    # Bridge). Covered by test_playgama2_storage.test_storage_recovery_and_reload
+    # and test_playgama2_bridge.test_saved_language_precedes_host.
 
     def test_c_blocked_storage(self):
         page, errors, _ = self.open(BLOCK_STORAGE)
@@ -153,14 +152,19 @@ class ItchPlatformTests(unittest.TestCase):
         _, after = self.score_and_die(page, 3)
         self.assertEqual(after['record'], 3)
         page.evaluate('PROGRESS.flush()')
+        # Disabled: progress stays in memory; storage reports nothing stored
+        # and refuses writes, without touching the blocked localStorage.
         stored = page.evaluate('async () => PLATFORM.storage.getMany(["%s"])' % RECORDS_KEY)
-        self.assertEqual(json.loads(stored[RECORDS_KEY])['classic'], 3)
+        self.assertEqual(stored, {RECORDS_KEY: None})
+        self.assertFalse(page.evaluate('async () => PLATFORM.storage.setMany({"%s": "{}"})' % RECORDS_KEY))
+        self.assertEqual(page.evaluate('scoreText.record.classic'), 3)
         self.assertEqual(errors, [])
 
-    def test_d_no_continue_offer(self):
+    def test_d_no_ads_on_restart(self):
         page, _, _ = self.open()
         self.boot(page)
-        self.assertFalse(page.evaluate('PLATFORM.isRewardedSupported()'))
+        # Rewarded continues no longer exist (TASK-242, 8519216)
+        self.assertEqual(page.evaluate('typeof PLATFORM.isRewardedSupported'), 'undefined')
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialSupported()'))
         self.start_run(page)
         before, after = self.score_and_die(page, max(5, page.evaluate('CONTINUE_MIN_SCORE')))
@@ -168,7 +172,7 @@ class ItchPlatformTests(unittest.TestCase):
             page.screenshot(path=str(self.out('screens/after-death-score5.png')))
             self.out('death-state.json').write_text(json.dumps(
                 {'before': before, 'after': after}, indent=1) + '\n')
-        # Develop's instant restart: a new run, no offer, no interstitial
+        # The free restart: a new run, offer gone, no interstitial or ad
         self.assertEqual(after['reStarts'], 1)
         self.assertFalse(after['offer'])
         self.assertFalse(after['interstitialPending'])

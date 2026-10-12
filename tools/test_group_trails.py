@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 import os
 
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +27,7 @@ class GroupTrailsTests(unittest.TestCase):
         page.on('console', lambda message: self.errors.append(message.text)
                 if message.type == 'error' else None)
         page.goto(self.url)
+        wait_for_boot(page)
         lines = page.evaluate('''() => {
             startGame('bad');
             cancelAnimationFrame(game);

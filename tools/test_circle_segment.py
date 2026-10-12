@@ -69,6 +69,10 @@ class CircleSegmentTest(unittest.TestCase):
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.goto(url + 'index.html', wait_until='load')
             wait_for_boot(page)
+            # Ninja.collision resolves the camera-owned left wall last, which
+            # exists only once a run has started. Its face (x ~ 11) is far
+            # from every probe circle below.
+            page.evaluate("() => {startGame('classic'); cancelAnimationFrame(game)}")
             cls.r = page.evaluate(cls.CASES)
             cls.errors = errors
 
