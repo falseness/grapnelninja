@@ -1,11 +1,15 @@
 """Boundary and state-exclusion checks for the mandatory active-FPS gate."""
+import copy
+import contextlib
+import io
+import json
 import unittest
 import tempfile
 import os
 import shutil
 from pathlib import Path
 from test_playgama_render_compare import capture_fixture, LAYOUT_CASES
-from playgama_render_compare import ROOT, aggregate, audit
+from playgama_render_compare import ROOT, aggregate, audit, PROTOCOL, LEGACY_MODE_LABELS, read, write, sha, summarize
 from playgama_fps_gate import active_metrics, evaluate
 
 
@@ -35,6 +39,93 @@ class FPSLayoutTests(unittest.TestCase):
                 if evidence := os.environ.get('LAYOUT_EVIDENCE_DIR'):
                     shutil.copytree(out, Path(evidence)/f'synthetic-{index}')
                 print(f'PASS {label} through aggregate audit evaluate; field={field}; value={value}; SYNTHETIC validator evidence only')
+
+
+class FPSProtocolTests(unittest.TestCase):
+    """Complete sealed synthetic validator evidence; never browser FPS proof."""
+
+    def reseal(self, out, protocol):
+        write(out/'protocol.json', protocol)
+        receipt = read(out/'manifest.json')
+        receipt['evidence_sha256'] = {
+            p.name: sha(p.read_bytes()) for p in out.iterdir()
+            if p.name != 'manifest.json'}
+        write(out/'manifest.json', receipt)
+
+    def archive(self, out, name):
+        if evidence := os.environ.get('FPS_PROTOCOL_EVIDENCE_DIR'):
+            shutil.copytree(out, Path(evidence)/name)
+
+    def test_complete_evaluate_current_and_legacy(self):
+        for name, intervals, fps, verdict in (
+                ('passing', [5000]+[20]*1500, 50, 'PASS'),
+                ('exactly-30', [5000]+[25, 25, 50]*300, 30, 'FAIL'),
+                ('below-30', [5000]+[40]*750, 25, 'FAIL')):
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as d:
+                out = Path(d)
+                capture_fixture(out)
+                data = read(out/'results.json')
+                for run in data['runs']:
+                    sample = read(out/run['raw'])
+                    sample['frames'] = trace(intervals)['frames']
+                    run['metrics'] = summarize(sample)
+                    write(out/run['raw'], sample)
+                data['comparison'] = aggregate(data['runs'])
+                write(out/'results.json', data)
+                results = []
+                for label, labels in (('current', PROTOCOL['mode_labels']),
+                                      ('legacy', LEGACY_MODE_LABELS)):
+                    self.reseal(out, dict(PROTOCOL, mode_labels=dict(labels)))
+                    before = {p.name: p.read_bytes() for p in out.iterdir()}
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                        result = evaluate(out, ROOT, 'candidate')
+                    self.assertEqual({p.name: p.read_bytes() for p in out.iterdir()}, before)
+                    self.assertEqual(result['gate'], verdict)
+                    self.assertEqual([(r['mode'], r['run']) for r in result['runs']],
+                                     [(m, p) for m in ('classic', 'bad') for p in (1, 2, 3)])
+                    for row in result['runs']:
+                        self.assertEqual(row['average_fps'], fps)
+                        self.assertEqual(row['gate'], verdict)
+                    if label == 'legacy':
+                        self.assertIn('PASS known legacy labels explicitly normalized', output.getvalue())
+                    print(output.getvalue(), end='')
+                    print(f'PASS {label} labels evaluate; case={name}; gate={verdict}; '
+                          f'protocol bytes/hash unchanged SHA256={sha(before["protocol.json"])}; '
+                          'all sealed bytes unchanged; SYNTHETIC validator evidence only')
+                    print(json.dumps(result, sort_keys=True))
+                    results.append(result)
+                    self.archive(out, f'{name}-{label}')
+                self.assertEqual(results[0], results[1])
+                print(f'PASS identical six per-mode FPS metrics and gate verdicts; case={name}; '
+                      f'average_fps={fps}; gate={verdict}; raw mode IDs/measurements preserved')
+
+    def test_complete_evaluate_rejects_protocol_changes(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            capture_fixture(out)
+            cases = [('unknown labels', 'mode_labels', {'classic': 'Unknown', 'bad': 'Main'}),
+                     ('non-label protocol changes', 'seed', PROTOCOL['seed']+1),
+                     ('non-label protocol changes', 'warmup_ms', 1),
+                     ('non-label protocol changes', 'orders', []),
+                     ('non-label protocol changes', 'extra', True)]
+            for index, (label, key, value) in enumerate(cases):
+                for variant, labels in (('current', PROTOCOL['mode_labels']),
+                                        ('legacy', LEGACY_MODE_LABELS)):
+                    with self.subTest(key=key, labels=variant):
+                        protocol = copy.deepcopy(PROTOCOL)
+                        protocol['mode_labels'] = dict(labels)
+                        protocol[key] = value
+                        self.reseal(out, protocol)
+                        before = {p.name: p.read_bytes() for p in out.iterdir()}
+                        for check in (lambda: audit(out), lambda: evaluate(out, ROOT, 'candidate')):
+                            with self.assertRaisesRegex(AssertionError, '^protocol differs$'):
+                                check()
+                        self.assertEqual({p.name: p.read_bytes() for p in out.iterdir()}, before)
+                        self.archive(out, f'rejected-{index}-{variant}')
+                        print(f'PASS {label} rejected; field={key}; labels={variant}; '
+                              'audit/evaluate reason=protocol differs; all sealed bytes unchanged; '
+                              'SYNTHETIC validator evidence only')
 
 
 class FPSGateTests(unittest.TestCase):

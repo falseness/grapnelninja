@@ -11,7 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from playgama_render_compare import audit, hashes, PROTOCOL, validate_capture_layout
+from playgama_render_compare import audit, hashes, validate_protocol, validate_capture_layout
 
 
 def active_metrics(raw):
@@ -47,7 +47,8 @@ def evaluate(capture, runtime, arm):
     data = json.loads((capture/'results.json').read_text())
     protocol = json.loads((capture/'protocol.json').read_text())
     assert data['kind'] == 'capture' and not data['smoke']
-    assert protocol == PROTOCOL, 'protocol differs'
+    with contextlib.redirect_stdout(sys.stderr):
+        validate_protocol(protocol)
     source = hashes(runtime)
     assert source == data['sources'][arm], 'tested runtime differs'
     # Also bind to committed bytes, not just the working tree.
