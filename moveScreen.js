@@ -31,10 +31,6 @@ class Screen
     {
         return this.deletionBorder
     }
-    isMoving()
-    {
-        return this.speed
-    }
     move()
     {
         this.x += this.speedX

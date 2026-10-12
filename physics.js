@@ -3,7 +3,7 @@ const GRAVITY = screenHeightPercent(GAMEPLAY.gravityHeightPercent) / Math.pow(cy
 function physics()
 {
     firstCycleInThisTick = true
-    for (cycle = 0; cycle < cyclesPerTick - 1; ++cycle)
+    for (let cycle = 0; cycle < cyclesPerTick - 1; ++cycle)
     {
         calcPhysics()
         firstCycleInThisTick = false
