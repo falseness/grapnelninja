@@ -1,12 +1,86 @@
 """First-run guidance through production boot, storage, and trusted browser input."""
+import gc
 import hashlib
+import inspect
 import json
 import subprocess
 import time
 import unittest
 from datetime import datetime, timezone
 
+from playwright._impl._connection import from_channel
+from playwright._impl._errors import TargetClosedError
+from playwright._impl._helper import serialize_error
+from playwright._impl._js_handle import parse_result, serialize_argument
+from playwright._impl._page import BindingCall
+
 import test_playgama2_bridge as support
+
+FIXTURE_BINDINGS = ('fixtureGet', 'fixtureSet')
+# Playwright 1.60 answers a failed resolve with an unawaited reject task, so a
+# fixture reply racing page/context close leaks "Task exception was never retrieved".
+BINDING_CALL_SHA256 = '8cc0ce2ca14041278a751a600b813fe44d8cac90bb7e60fee475317521ccb35f'
+
+
+class RunnerErrors:
+    """Fixture binding replies and asyncio errors on the Playwright loop.
+
+    Only a fixture reply rejected with TargetClosedError after the checker closed
+    its page or context is expected; callback errors and any other loop error are not.
+    """
+    def __init__(self):
+        self.expected, self.unexpected = [], []
+
+    def install(self, loop):
+        source = inspect.getsource(BindingCall.call).encode()
+        if hashlib.sha256(source).hexdigest() != BINDING_CALL_SHA256:
+            raise RuntimeError('Unreviewed Playwright BindingCall.call; recheck fixture shutdown handling')
+        original, monitor = BindingCall.call, self
+        async def call(binding, func):
+            if binding._initializer['name'] not in FIXTURE_BINDINGS:
+                return await original(binding, func)
+            await monitor.fixture_call(binding, func)
+        BindingCall.call = call
+        loop.set_exception_handler(self.loop_error)
+        def uninstall():
+            BindingCall.call = original
+            loop.set_exception_handler(None)
+        return uninstall
+
+    async def fixture_call(self, binding, func):
+        name = binding._initializer['name']
+        frame = from_channel(binding._initializer['frame'])
+        page = frame._page
+        try:
+            result = func(dict(context=page.context, page=page, frame=frame),
+                          *map(parse_result, binding._initializer['args']))
+            if inspect.iscoroutine(result):
+                result = await result
+            reply = 'resolve', dict(result=serialize_argument(result))
+        except Exception as error:
+            self.unexpected.append(f'fixture callback {name} raised {error!r}')
+            reply = 'reject', dict(error=dict(error=serialize_error(error, error.__traceback__)))
+        try:
+            await binding._channel.send(reply[0], None, reply[1])
+        except TargetClosedError as error:
+            closing = 'page closed' if page._close_was_called else \
+                'context closed' if page.context._closing_or_closed else None
+            if closing is None:
+                self.unexpected.append(f'fixture {name} {reply[0]} failed on a live page: {error!r}')
+            else:
+                self.expected.append({'binding': name, 'reply': reply[0], 'cancelled_by': closing})
+        except Exception as error:
+            self.unexpected.append(f'fixture {name} {reply[0]} failed: {error!r}')
+
+    def loop_error(self, loop, context):
+        self.unexpected.append('unexpected runner error: ' + context['message'] +
+                               ': ' + repr(context.get('exception')))
+        loop.default_exception_handler(context)
+
+    def settle(self, browser):
+        """Let loop work queued by a close finish, then surface dropped task errors."""
+        browser.new_context().close()
+        gc.collect()
 
 
 class Playgama2TutorialTests(unittest.TestCase):
@@ -14,6 +88,8 @@ class Playgama2TutorialTests(unittest.TestCase):
     def setUpClass(cls):
         support.Playgama2BridgeTests.setUpClass.__func__(cls)
         cls.results = {}
+        cls.runner = RunnerErrors()
+        cls.addClassCleanup(cls.runner.install(cls.browser._impl_obj._loop))
         paths = subprocess.check_output(['git','ls-files'],cwd=support.ROOT,text=True).splitlines()
         paths += ['tutorial.js','tools/test_playgama2_tutorial.py']
         hashes = {p:hashlib.sha256((support.ROOT/p).read_bytes()).hexdigest() for p in sorted(set(paths)) if (support.ROOT/p).is_file() and not p.startswith(('artifacts/','screenshots/'))}
@@ -21,10 +97,16 @@ class Playgama2TutorialTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls.runner.settle(cls.browser)
+        (cls.out / 'runner-errors.json').write_text(json.dumps({
+            'expected_shutdown_cancellations': cls.runner.expected,
+            'unexpected': cls.runner.unexpected}, indent=2) + '\n')
         (cls.out / 'tutorial-cases.json').write_text(json.dumps(cls.results, indent=2, ensure_ascii=False) + '\n')
         (cls.out / 'storage-fault-traces.json').write_text(json.dumps({
             k: v for k, v in cls.results.items() if v['fault'] != 'normal'
         }, indent=2) + '\n')
+        if cls.runner.unexpected:
+            raise AssertionError('Unexpected runner errors: ' + '; '.join(cls.runner.unexpected))
 
     def snapshot(self, page):
         return page.evaluate('''() => ({ms:performance.now(), visible:!TUTORIAL.element.hidden,
@@ -44,6 +126,7 @@ class Playgama2TutorialTests(unittest.TestCase):
     def matrix(self, lang, touch, fault='normal'):
         case = lang + ('-touch' if touch else '-desktop') + ('' if fault == 'normal' else '-' + fault)
         record = self.results[case] = {'utc':datetime.now(timezone.utc).isoformat(), 'fault':fault}
+        unexpected = len(self.runner.unexpected)
         context = self.browser.new_context(viewport={'width':800 if touch else 1280,'height':450 if touch else 720}, has_touch=touch)
         self.addCleanup(context.close)
         context.add_init_script("window.inputs=[]; for(const name of ['mousedown','mouseup','touchstart','touchend','click']) window.addEventListener(name,e=>inputs.push({name,trusted:e.isTrusted,target:e.target.tagName,ms:performance.now()}),true)")
@@ -85,7 +168,15 @@ class Playgama2TutorialTests(unittest.TestCase):
             };
         '''
         fake += '\nbridge.platform.language=' + json.dumps(lang) + ';'
-        context.route(support.SDK, lambda r: r.fulfill(content_type='application/javascript', body='const FAULT='+json.dumps(fault)+', SAVED_LANGUAGE='+json.dumps(lang)+';\n'+fake))
+        sdk = 'const FAULT='+json.dumps(fault)+', SAVED_LANGUAGE='+json.dumps(lang)+';\n'+fake
+        def fulfill_sdk(route):
+            try:
+                route.fulfill(content_type='application/javascript', body=sdk)
+            except TargetClosedError:
+                if not closing: raise
+                self.runner.expected.append({'route': 'sdk', 'cancelled_by': 'context closed'})
+        closing = []
+        context.route(support.SDK, fulfill_sdk)
         page = context.new_page()
         page.set_default_timeout(12000)
         errors = []
@@ -182,10 +273,14 @@ class Playgama2TutorialTests(unittest.TestCase):
         record['reload']=checkpoint('reload')
         self.assertFalse(record['reload']['visible']); self.assertTrue(record['reload']['done'])
         self.assertFalse(record['reload']['loading'])
+        closing.append(True)
+        context.close()
+        self.runner.settle(self.browser)
+        record['runner_errors'] = self.runner.unexpected[unexpected:]
+        self.assertEqual(record['runner_errors'], [], 'unexpected runner errors')
         self.assertEqual(errors,[])
         record['verdict']='PASS first display, device wording, native dismissal, hold/release, readiness before dismissal, persisted reload'
         print('PASS '+case+': '+record['verdict'][5:],flush=True)
-        context.close()
 
     def test_en_desktop(self): self.matrix('en',False)
     def test_en_touch(self): self.matrix('en',True)
