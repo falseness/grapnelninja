@@ -216,7 +216,7 @@ def main():
     tested=Path(__file__).read_bytes();(args.out/'tested-harness.py').write_bytes(tested)
     manifest={'started_utc':utc(),'cwd':str(Path.cwd()),'head':git('rev-parse','HEAD').decode().strip(),
               'source_sha256':source,'commands':[], 'harness_sha256':sha(tested),
-              'protocol':'AB then BA; 120s per arm, <=600s experiment; Main/classic; timer-only; nested timings are inclusive'}
+              'protocol':'AB then BA; 120s per arm, <=600s experiment; Chill/classic; timer-only; nested timings are inclusive'}
     start=time.monotonic()
     for i,arm in enumerate('ABBA'):
         command=[sys.executable,str(Path(__file__).resolve()),'--out',str(args.out),'--arm',arm,'--index',str(i)]

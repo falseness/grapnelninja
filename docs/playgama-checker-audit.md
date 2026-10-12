@@ -24,9 +24,11 @@ integrity, with positive and negative capture and visual fixtures.
 
 TASK-318 covers reversed display-mode reporting in
 `tools/playgama_render_compare.py:37` and benchmark documentation. The menu
-starts `classic` from Chill and `bad` from Main, while the protocol labels them
-Main and Chill respectively. The browser-rendered landscape screenshot and
-`labels.log` confirm the mismatch. Correct reporting must preserve gameplay,
+starts `classic` from Chill and `bad` from Main, while the historical protocol
+labeled them Main and Chill respectively. TASK-318 corrects current reporting to Chill/classic
+and Main/bad and explicitly recognizes that legacy metadata without rewriting
+sealed evidence or relaxing any other protocol field. The browser-rendered
+landscape screenshot and `labels.log` confirm the mismatch. Correct reporting must preserve gameplay,
 saved mode IDs, raw measurements, and explicit compatibility with historical
 protocol metadata.
 

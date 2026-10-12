@@ -34,7 +34,7 @@ TIMING_PROBE = PROBE.replace(
 FIXTURE = "const FAULT='normal'; const SAVED_LANGUAGE='en';\n" + FAKE
 PROTOCOL = {
     'engines': ['firefox', 'chromium'], 'modes': ['classic', 'bad'],
-    'mode_labels': {'classic': 'Main', 'bad': 'Chill'},
+    'mode_labels': {'classic': 'Chill', 'bad': 'Main'},
     'execution': 'sequential engines, modes, pairs and arms; AB, BA, AB',
     'orders': [['control', 'candidate'], ['candidate', 'control'], ['control', 'candidate']],
     'viewport': [844, 390], 'dpr': 2, 'identical_backing': True,
@@ -52,6 +52,23 @@ STATE = '''() => ({mode:version,menu:menu.visible,pause:menu.gamePaused,
  shake:QUALITY.screenShake && performance.now()<visualEffects.screenEffects.shakeUntil,
  shake_offset:visualEffects.screenEffects.shakeOffset, particles:visualEffects.particles.particles.length,
  portrait:isViewRotated(),backing:[canvas.width,canvas.height]})'''
+
+
+# Only this exact historical display mapping is compatible. Raw mode IDs and
+# sealed files are never rewritten; every other protocol field stays strict.
+LEGACY_MODE_LABELS = {'classic': 'Main', 'bad': 'Chill'}
+
+
+def validate_protocol(protocol):
+    normalized = dict(protocol)
+    legacy = normalized.get('mode_labels') == LEGACY_MODE_LABELS
+    if legacy:
+        normalized['mode_labels'] = PROTOCOL['mode_labels']
+    assert normalized == PROTOCOL, 'protocol differs'
+    if legacy:
+        print('PASS known legacy labels explicitly normalized; '
+              'classic=Chill, bad=Main for reporting only; sealed metadata unchanged')
+    return normalized
 
 
 def hashes(root):
@@ -153,7 +170,7 @@ def audit(out):
     assert receipt['started_utc'] <= ending['ended_utc'] <= receipt['ended_utc'], 'command timing'
     assert 'PASS capture completed; no device FPS claim' in lines
     assert sha((out/'tested-harness.py').read_bytes()) == receipt['harness_sha256'], 'harness hash mismatch'
-    assert read(out/'protocol.json') == PROTOCOL, 'protocol differs'
+    validate_protocol(read(out/'protocol.json'))
     data = read(out/'results.json')
     assert data['kind'] in ('capture', 'visuals'), 'unknown receipt kind'
     if data['kind'] == 'capture':

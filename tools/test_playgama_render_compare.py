@@ -6,7 +6,7 @@ import json
 import tempfile
 from pathlib import Path
 import unittest
-from playgama_render_compare import PROTOCOL, summarize, aggregate, audit, write, sha, FIXTURE, SEED, INPUT, ROOT, SDK, hashes, read, pixel_diff
+from playgama_render_compare import PROTOCOL, LEGACY_MODE_LABELS, validate_protocol, summarize, aggregate, audit, write, sha, FIXTURE, SEED, INPUT, ROOT, SDK, hashes, read, pixel_diff
 
 
 def raw():
@@ -96,6 +96,59 @@ LAYOUT_CASES = [
     ('wrong logical/CSS rejected', 'logical', [843, 390], 'capture logical dimensions'),
     ('wrong logical/CSS rejected', 'css', [844, 389], 'capture CSS dimensions'),
 ]
+
+
+class ProtocolLabelTests(unittest.TestCase):
+    def test_label_compatibility_through_audit(self):
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy), tempfile.TemporaryDirectory() as d:
+                out = Path(d)
+                visual_fixture(out)
+                protocol = copy.deepcopy(PROTOCOL)
+                if legacy:
+                    protocol['mode_labels'] = dict(LEGACY_MODE_LABELS)
+                write(out/'protocol.json', protocol)
+                receipt = read(out/'manifest.json')
+                receipt['evidence_sha256']['protocol.json'] = sha((out/'protocol.json').read_bytes())
+                write(out/'manifest.json', receipt)
+                original = {p.name:p.read_bytes() for p in out.iterdir()}
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    audit(out)
+                self.assertEqual({p.name:p.read_bytes() for p in out.iterdir()}, original)
+                if legacy:
+                    self.assertIn('PASS known legacy labels explicitly normalized', output.getvalue())
+                    print(output.getvalue(), end='')
+                else:
+                    print('PASS corrected labels accepted; complete sealed audit receipt')
+
+    def test_unrelated_protocol_changes_rejected(self):
+        for labels in (PROTOCOL['mode_labels'], LEGACY_MODE_LABELS):
+            protocol = copy.deepcopy(PROTOCOL)
+            protocol['mode_labels'] = dict(labels)
+            original = copy.deepcopy(protocol)
+            self.assertEqual(validate_protocol(protocol), PROTOCOL)
+            self.assertEqual(protocol, original)
+            for key in PROTOCOL:
+                if key == 'mode_labels':
+                    continue
+                for action in ('change', 'remove'):
+                    changed = copy.deepcopy(protocol)
+                    if action == 'change':
+                        changed[key] = None
+                    else:
+                        del changed[key]
+                    with self.subTest(key=key, action=action, labels=labels):
+                        with self.assertRaisesRegex(AssertionError, 'protocol differs'):
+                            validate_protocol(changed)
+            changed = dict(protocol, extra='unexpected')
+            with self.assertRaisesRegex(AssertionError, 'protocol differs'):
+                validate_protocol(changed)
+        for labels in (None, {}, {'classic':'Chill', 'bad':'Chill'},
+                       {'classic':'Chill', 'bad':'Main', 'other':'Other'}):
+            with self.assertRaisesRegex(AssertionError, 'protocol differs'):
+                validate_protocol(dict(PROTOCOL, mode_labels=labels))
+        print('PASS unrelated protocol changes rejected; every non-label field changed/removed, extra field, unknown labels')
 
 
 class CaptureLayoutTests(unittest.TestCase):

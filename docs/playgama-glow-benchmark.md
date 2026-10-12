@@ -1,9 +1,16 @@
 # Smaller player-glow targets: TASK-311
 
+TASK-318 label correction: the English menu starts Chill as `classic` and
+Main as `bad`. Historical protocol metadata reversed these display labels.
+Values below remain attributed to their original internal mode IDs; no FPS
+values, raw runs, or sealed evidence were rewritten. The validator explicitly
+recognizes only that known legacy label mapping; all other protocol fields
+remain strict. Earlier unresolved absolute-FPS requirements remain unresolved.
+
 Outcome: **ACCEPTED**. Adopted the exact TASK-310 candidate bytes.
 
 One full desktop headless comparison used Firefox and Chromium sequentially,
-Main/classic and Chill/bad, 844×390 at DPR 2, identical backing dimensions,
+Chill/classic and Main/bad, 844×390 at DPR 2, identical backing dimensions,
 fixed seed and active-time input policy. Each engine/mode used AB, BA, AB:
 three paired runs, at least five active seconds warmup and thirty measured
 active seconds per arm. Inactive gaps were excluded; slow active intervals,
@@ -46,7 +53,7 @@ The selected runtime passed startup, both gameplay modes, pause/death and
 portrait/landscape/resize smoke checks in both browsers, with production
 analytics and ads isolated behind the local SDK fixture.
 
-The prior evidence audit overlapped part of the first Firefox Main pair.
+The prior evidence audit overlapped part of the first Firefox Chill/classic pair.
 This environmental limitation remains recorded; no pairs were discarded or
 rerun to seek a favorable result. These measurements do not establish a
 guaranteed device FPS target. Native Android Firefox remains unverified.
