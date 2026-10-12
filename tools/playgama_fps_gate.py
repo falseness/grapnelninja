@@ -11,7 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from playgama_render_compare import audit, hashes, PROTOCOL
+from playgama_render_compare import audit, hashes, PROTOCOL, validate_capture_layout
 
 
 def active_metrics(raw):
@@ -63,8 +63,7 @@ def evaluate(capture, runtime, arm):
         assert raw['done'] and raw['inputs'] and raw['transitions']
         assert raw['seed'] == protocol['seed'] and raw['input_policy'] == protocol['input']
         assert raw['source_sha256'] == source
-        assert raw['layout']['viewport'] == [844, 390] and raw['layout']['dpr'] == 2
-        assert raw['layout']['backing'] == runs[0]['layout']['backing']
+        validate_capture_layout(raw['layout'])
         metrics = active_metrics(raw)
         for key in ('warmup_ms', 'measured_ms', 'p95_ms'):
             assert metrics[key] == run['metrics'][key]

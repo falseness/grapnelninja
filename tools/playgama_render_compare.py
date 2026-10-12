@@ -79,16 +79,23 @@ def summarize(raw, warmup=5000):
             'intervals_ms': samples, 'excluded_gaps': gaps}
 
 
+def validate_capture_layout(layout):
+    """Full-resolution landscape capture only; visual checkpoints may resize."""
+    viewport = PROTOCOL['viewport']
+    assert layout['viewport'] == viewport and layout['dpr'] == PROTOCOL['dpr'], 'viewport/DPR'
+    assert layout['backing'] == [v * PROTOCOL['dpr'] for v in viewport], 'capture backing dimensions'
+    assert layout['logical'] == viewport, 'capture logical dimensions'
+    assert layout['css'] == viewport, 'capture CSS dimensions'
+
+
 def aggregate(runs, smoke=False):
     expected = [(e, m, n, a) for e in PROTOCOL['engines'] for m in PROTOCOL['modes']
                 for n, order in enumerate(PROTOCOL['orders'][:1] if smoke else PROTOCOL['orders'])
                 for a in order]
     assert [(r['engine'], r['mode'], r['pair'], r['arm']) for r in runs] == expected, 'arm order'
-    layout = runs[0]['layout']
     pairs, groups = [], {}
     for r in runs:
-        assert r['layout']['viewport'] == [844, 390] and r['layout']['dpr'] == 2, 'viewport/DPR'
-        assert all(r['layout'][k] == layout[k] for k in ('backing', 'logical', 'css')), 'backing/layout mismatch'
+        validate_capture_layout(r['layout'])
         assert r['metrics']['warmup_ms'] >= (100 if smoke else 5000), 'warmup duration'
         assert r['metrics']['measured_ms'] >= (300 if smoke else 30000), 'measured duration'
     for i in range(0, len(runs), 2):

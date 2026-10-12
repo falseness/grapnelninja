@@ -3,8 +3,7 @@ import copy
 import tempfile
 from pathlib import Path
 import unittest
-from unittest.mock import patch
-from playgama_render_compare import PROTOCOL, summarize, aggregate, audit, write, sha, FIXTURE, SEED, INPUT
+from playgama_render_compare import PROTOCOL, summarize, aggregate, audit, write, sha, FIXTURE, SEED, INPUT, ROOT, SDK, hashes, read, pixel_diff
 
 
 def raw():
@@ -22,6 +21,84 @@ def runs():
                  metrics={'mean_ms':10, 'p95_ms':20, 'warmup_ms':5000, 'measured_ms':30000})
             for e in PROTOCOL['engines'] for m in PROTOCOL['modes']
             for n, order in enumerate(PROTOCOL['orders']) for a in order]
+
+
+def seal(out):
+    write(out/'manifest.json', dict(exit_code=0, evidence_sha256={
+        p.name: sha(p.read_bytes()) for p in out.iterdir() if p.name != 'manifest.json'}))
+
+
+def capture_fixture(out, field=None, value=None):
+    """Complete synthetic capture with real runtime hashes; never measured FPS."""
+    source = hashes(ROOT)
+    rs = runs()
+    frames = [dict(t=t, before={'paused': False}, after={'paused': False})
+              for t in range(0, 35021, 20)]
+    for i, run in enumerate(rs):
+        sample = dict(frames=frames, layout=run['layout'], source_sha256=source,
+                      seed=SEED, input_policy=INPUT, inputs=[{'synthetic': True}],
+                      transitions=[{'synthetic': True}], done=True)
+        run.update(raw=f'raw-{i}.json', metrics=summarize(sample))
+        write(out/run['raw'], sample)
+    comparison = aggregate(rs)
+    # Mutate every arm consistently, then reseal: layout validation must reject
+    # the dimensions themselves, not a hash, order or cross-arm mismatch.
+    if field:
+        for run in rs:
+            run['layout'][field] = value
+            sample = read(out/run['raw'])
+            sample['layout'] = run['layout']
+            write(out/run['raw'], sample)
+    write(out/'results.json', dict(kind='capture', smoke=False,
+        roots={a: str(ROOT) for a in ('control', 'candidate')},
+        sources={a: source for a in ('control', 'candidate')},
+        fixture_sha256=sha(FIXTURE.encode()), errors=[], runs=rs, comparison=comparison))
+    write(out/'protocol.json', PROTOCOL)
+    write(out/'network.json', [dict(action='SDK_STUB', url=SDK)])
+    seal(out)
+    return rs
+
+
+LAYOUT_CASES = [
+    ('full backing accepted', None, None, None),
+    ('half backing rejected', 'backing', [844, 390], 'capture backing dimensions'),
+    ('1x1 backing rejected', 'backing', [1, 1], 'capture backing dimensions'),
+    ('wrong logical/CSS rejected', 'logical', [843, 390], 'capture logical dimensions'),
+    ('wrong logical/CSS rejected', 'css', [844, 389], 'capture CSS dimensions'),
+]
+
+
+class CaptureLayoutTests(unittest.TestCase):
+    def test_complete_aggregate_and_audit_layout(self):
+        for label, field, value, error in LAYOUT_CASES:
+            with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as d:
+                out = Path(d)
+                rs = capture_fixture(out, field, value)
+                if error:
+                    with self.assertRaisesRegex(AssertionError, error): aggregate(rs)
+                    with self.assertRaisesRegex(AssertionError, error): audit(out)
+                else:
+                    aggregate(rs)
+                    audit(out)
+                print(f'PASS {label}; aggregate/audit; field={field}; SYNTHETIC validator evidence only')
+
+    def test_visual_resize_audit_remains_independent(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            Image.new('RGBA', (64, 48)).save(out/'resize.png')
+            write(out/'state.json', dict(backing=[64, 48], portrait=False))
+            comparisons = [dict(engine=e, checkpoint=c, control='resize.png',
+                candidate='resize.png', control_state='state.json', candidate_state='state.json',
+                state_equal=True, pixels=pixel_diff(out/'resize.png', out/'resize.png'))
+                for e in PROTOCOL['engines'] for c in PROTOCOL['visual_checkpoints']]
+            write(out/'results.json', dict(kind='visuals', roots={'control': str(ROOT)},
+                sources={'control': hashes(ROOT)}, fixture_sha256=sha(FIXTURE.encode()),
+                errors=[], comparisons=comparisons))
+            write(out/'network.json', [dict(action='SDK_STUB', url=SDK)])
+            seal(out)
+            audit(out)
+        print('PASS visual checkpoint resize independent; SYNTHETIC validator evidence only')
 
 
 class HarnessTests(unittest.TestCase):

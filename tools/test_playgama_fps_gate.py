@@ -1,6 +1,10 @@
 """Boundary and state-exclusion checks for the mandatory active-FPS gate."""
 import unittest
-from playgama_fps_gate import active_metrics
+import tempfile
+from pathlib import Path
+from test_playgama_render_compare import capture_fixture, LAYOUT_CASES
+from playgama_render_compare import ROOT
+from playgama_fps_gate import active_metrics, evaluate
 
 
 def trace(intervals):
@@ -8,6 +12,21 @@ def trace(intervals):
     for dt in intervals:
         frames.append(dict(t=frames[-1]['t']+dt, before={'paused': False}, after={'paused': False}))
     return {'frames': frames}
+
+
+class FPSLayoutTests(unittest.TestCase):
+    def test_complete_evaluate_layout(self):
+        for label, field, value, error in LAYOUT_CASES:
+            with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as d:
+                out = Path(d)
+                capture_fixture(out, field, value)
+                if error:
+                    with self.assertRaisesRegex(AssertionError, error): evaluate(out, ROOT, 'candidate')
+                else:
+                    result = evaluate(out, ROOT, 'candidate')
+                    self.assertEqual(result['gate'], 'PASS')
+                    self.assertEqual(len(result['runs']), 6)
+                print(f'PASS {label}; complete evaluate; field={field}; SYNTHETIC validator evidence only')
 
 
 class FPSGateTests(unittest.TestCase):
