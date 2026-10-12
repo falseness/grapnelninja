@@ -68,6 +68,9 @@ const PLATFORM = (function()
     let applicationReady = false
     let lastInterstitialRequestAt = -Infinity
     let adBusy = false
+    // Our interstitial request the SDK has not yet closed or failed: a late
+    // 'opened' after the open watchdog is still our ad and freezes the game
+    let interstitialOutstanding = false
     const listeners = {pause: [], audio: [], adState: []}
 
     function warn(message, e)
@@ -119,8 +122,13 @@ const PLATFORM = (function()
         {
             bridge.advertisement.on(event, state =>
             {
-                if (state === 'opened' && (event !== names.INTERSTITIAL_STATE_CHANGED || adBusy)) setAdOpen(event, true)
-                else if (state === 'closed' || state === 'failed') setAdOpen(event, false)
+                const interstitial = event === names.INTERSTITIAL_STATE_CHANGED
+                if (state === 'opened' && (!interstitial || adBusy || interstitialOutstanding)) setAdOpen(event, true)
+                else if (state === 'closed' || state === 'failed')
+                {
+                    if (interstitial) interstitialOutstanding = false
+                    setAdOpen(event, false)
+                }
             })
         }
     }
@@ -279,16 +287,25 @@ const PLATFORM = (function()
                 return Promise.resolve('skipped')
             lastInterstitialRequestAt = PLATFORM.now()
             adBusy = true
+            interstitialOutstanding = true
             return new Promise(resolve =>
             {
                 let finished = false
                 let watchdog = null
                 let unwatch = () => {}
-                function finish(result)
+                // The open watchdog ('skipped') leaves the request outstanding;
+                // the playing watchdog keeps the ad open while the SDK still
+                // reports it opened. Either way its 'closed'/'failed' ends it.
+                function finish(result, sdkMayStillShow = false)
                 {
                     if (finished) return
                     finished = true
-                    setAdOpen(bridge.EVENT_NAME.INTERSTITIAL_STATE_CHANGED, false)
+                    const stillOpen = sdkMayStillShow && bridge.advertisement.interstitialState === 'opened'
+                    if (!stillOpen)
+                    {
+                        if (result !== 'skipped') interstitialOutstanding = false
+                        setAdOpen(bridge.EVENT_NAME.INTERSTITIAL_STATE_CHANGED, false)
+                    }
                     clearTimeout(watchdog)
                     unwatch()
                     adBusy = false
@@ -300,12 +317,12 @@ const PLATFORM = (function()
                     if (state === 'opened')
                     {
                         clearTimeout(watchdog)
-                        watchdog = setTimeout(() => finish('closed'), PLATFORM.interstitialPlayingTimeoutMs)
+                        watchdog = setTimeout(() => finish('closed', true), PLATFORM.interstitialPlayingTimeoutMs)
                     }
                     else if (state === 'closed' || state === 'failed')
                         finish(state)
                 })
-                watchdog = setTimeout(() => finish('skipped'), PLATFORM.interstitialOpenTimeoutMs)
+                watchdog = setTimeout(() => finish('skipped', true), PLATFORM.interstitialOpenTimeoutMs)
                 try
                 {
                     Promise.resolve(bridge.advertisement.showInterstitial(placement))

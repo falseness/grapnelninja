@@ -17,6 +17,8 @@ bridge.advertisement.off=(event,fn)=>probe.handlers[event]=probe.handlers[event]
 bridge.advertisement.showRewarded=()=>record('REWARDED_REQUEST');
 bridge.advertisement.showInterstitial=placement=>{
     record('ad-request',{placement,outcome,runOver,death:continueOffer.visible,menu:menu.visible});
+    if(outcome==='late') return;
+    if(outcome==='stuck') bridge.advertisement.interstitialState='opened';
     emitHost('interstitial','opened');
     if(outcome==='throw') throw Error('INJECTED SDK throw');
     if(outcome==='reject') return Promise.reject(Error('INJECTED SDK reject'));
@@ -128,6 +130,57 @@ class Playgama2AdsTests(unittest.TestCase):
         self.snap(p,'post-ad-menu',True)
         self.click(p,'menu.classicVersionButton');self.restarted(p,'menu-new-run')
         self.finish_case(p)
+
+    def frozen(self,p,label):
+        r=p.evaluate("({adOpen,pending:interstitialPending,muted:AUDIO.getState().muted.ad})")
+        before=p.evaluate('[ninja.x,ninja.y]');p.wait_for_timeout(150)
+        after=p.evaluate('[ninja.x,ninja.y]')
+        print(f'ASSERT {label}: adOpen={r["adOpen"]} pending={r["pending"]} ad-muted={r["muted"]} ninja {before} -> {after}',flush=True)
+        self.assertTrue(r['adOpen']);self.assertTrue(r['muted']);self.assertFalse(r['pending'])
+        self.assertEqual(before,after)
+
+    def released(self,p,label):
+        p.evaluate("emitHost('interstitial','closed')")
+        r=p.evaluate("({adOpen,muted:AUDIO.getState().muted.ad})")
+        before=p.evaluate('[ninja.x,ninja.y]');p.wait_for_function('([x,y])=>ninja.x!==x||ninja.y!==y',arg=before)
+        print(f'ASSERT {label} closed: adOpen={r["adOpen"]} ad-muted={r["muted"]} ninja moves from {before}',flush=True)
+        self.assertFalse(r['adOpen']);self.assertFalse(r['muted'])
+
+    def ad_states(self,p):
+        return p.evaluate("adStates")
+
+    def test_late_open_after_open_watchdog(self):
+        # TASK-340: the SDK opens our interstitial after the 'skipped' watchdog.
+        p=self.open('late')
+        p.evaluate("outcome='late';PLATFORM.interstitialOpenTimeoutMs=300;window.adStates=[];PLATFORM.onAdState(s=>adStates.push(s));window.adResults=[];const show=PLATFORM.showInterstitial;PLATFORM.showInterstitial=(...a)=>show(...a).then(r=>(adResults.push(r),r))")
+        self.death(p);self.click(p,'continueOffer.restartButton')
+        p.wait_for_function('!interstitialPending && !continueOffer.visible')
+        self.assertFalse(p.evaluate('adOpen'))
+        self.assertEqual(len(self.requests(p)),1);self.assertEqual(p.evaluate('adResults.at(-1)'),'skipped')
+        print('ASSERT showInterstitial resolved '+json.dumps(p.evaluate('adResults.at(-1)'))+'; run restarted; adStates='+json.dumps(self.ad_states(p)),flush=True)
+        p.evaluate("emitHost('interstitial','loading');emitHost('interstitial','opened')")
+        self.assertEqual(self.ad_states(p),['opened'])
+        print('ASSERT late opened emitted adState '+json.dumps(self.ad_states(p)),flush=True)
+        self.frozen(p,'late opened');self.released(p,'late')
+        self.assertEqual(self.ad_states(p),['opened','closed'])
+        # A host interstitial nobody requested after that close is not ours.
+        p.evaluate("emitHost('interstitial','opened')")
+        self.assertFalse(p.evaluate('adOpen'))
+        print('ASSERT unrequested opened after close ignored: adStates='+json.dumps(self.ad_states(p)),flush=True)
+        p.evaluate("emitHost('interstitial','closed')")
+
+    def test_playing_watchdog_while_sdk_open(self):
+        # TASK-340: the playing watchdog fires while the SDK still reports 'opened'.
+        p=self.open('stuck')
+        p.evaluate("outcome='stuck';PLATFORM.interstitialPlayingTimeoutMs=300;window.adStates=[];PLATFORM.onAdState(s=>adStates.push(s));window.adResults=[];const show=PLATFORM.showInterstitial;PLATFORM.showInterstitial=(...a)=>show(...a).then(r=>(adResults.push(r),r))")
+        self.death(p);self.click(p,'continueOffer.restartButton')
+        p.wait_for_function('!interstitialPending && !continueOffer.visible')
+        self.assertEqual(len(self.requests(p)),1);self.assertEqual(p.evaluate('adResults.at(-1)'),'closed')
+        print('ASSERT playing watchdog resolved '+json.dumps(p.evaluate('adResults.at(-1)'))+' while SDK interstitialState='+p.evaluate('bridge.advertisement.interstitialState'),flush=True)
+        self.frozen(p,'playing watchdog, SDK still opened')
+        p.evaluate("bridge.advertisement.interstitialState='closed'")
+        self.released(p,'stuck')
+        self.assertEqual(self.ad_states(p),['opened','closed'])
 
     def test_unsupported(self): self.failure('unsupported')
     def test_rejected(self): self.failure('reject')
