@@ -28,7 +28,10 @@ SCENE = r'''mode => {
                 visualEffects.playerTrail.shouldDraw = () => false;
                 visualEffects.screenEffects.drawShockwaveGlow = () => {};
                 grapnel.draw = grapnel.drawHook = () => {};
-            
+                // a810250 (TASK-229) hatches the red triangle's inner area; its
+                // stripes are not glow and land on the centre sample.
+                if (STYLE.dangerHatch) STYLE.dangerHatch.variant = 'off';
+
     ctx.setTransform(1,0,0,1,0,0); ctx.globalAlpha = 1;
     ctx.fillStyle = '#14103c'; ctx.fillRect(0,0,canvas.width,canvas.height);
     const items = [
