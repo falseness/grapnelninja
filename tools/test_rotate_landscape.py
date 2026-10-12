@@ -66,10 +66,15 @@ class RotateLandscapeTests(unittest.TestCase):
                     LAYOUT_PROBE.boxes = null
                     visualEffects.bloom.resize()
                     return {css, backing: [canvas.width, canvas.height], probe,
+                            density: getRenderDensity(),
                             lightScale: visualEffects.lightmap.scale,
                             bloomWidth: visualEffects.bloom.levels[0].canvas.width}
                 }""")
-                ratio = min(dpr, 2) if touch else dpr
+                # gameoptions.js getRenderDensity() caps every device (touch or
+                # desktop) at Math.min(devicePixelRatio, 2, densityLimit): a DPR-3
+                # desktop window gets a 2x backing store, not 3x.
+                ratio = min(dpr, 2)
+                self.assertEqual(result['density'], ratio)
                 self.assertEqual(result['backing'],
                                  [int(result['css'][axis] * ratio + .5)
                                   for axis in ('width', 'height')])
