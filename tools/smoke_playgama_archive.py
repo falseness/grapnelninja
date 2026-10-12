@@ -1,4 +1,4 @@
-"""Smoke an isolated ZIP extraction with SDK boundary fixtures and native browser captures."""
+"""Historical: smoke a pre-inlining multi-file ZIP; not used by docs/playgama-release.md."""
 import argparse
 from contextlib import ExitStack
 import hashlib
