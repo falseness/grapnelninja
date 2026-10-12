@@ -1,4 +1,8 @@
-"""Rebuild and audit the current local Y8 package (TASK-285).
+"""Rebuild and audit the current local Y8 package.
+
+Every generated JSON and the kit checklist carry the --task label, by default the
+name of the evidence directory (EVIDENCE_DIR), which is also the root of the
+path defaults (artifacts/<task>/build, functional, media, readiness.json).
 
 Subcommands, each offline and receipt-friendly (run them through a receipt
 wrapper so UTC/exit codes land in commands.jsonl):
@@ -41,6 +45,8 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
+EVIDENCE_DIR = ROOT / 'artifacts/TASK-307'  # default evidence directory; its name is the default --task label
+LEGACY_RUNNER = ROOT / 'artifacts/TASK-283/runner'  # bench runner package used until an evidence directory ships its own runner/
 sys.path.insert(0, str(TOOLS))
 
 _spec = importlib.util.spec_from_file_location('build_y8_zip', TOOLS / 'build-y8-zip.py')
@@ -108,6 +114,12 @@ def now():
 def require(ok, message):
     if not ok:
         raise SystemExit('FAIL ' + message)
+
+
+def default_runner(task_dir):
+    """readiness --runner default: the evidence directory's own runner/ package when present, else the TASK-283 runner."""
+    own = Path(task_dir) / 'runner'
+    return own if own.is_dir() else LEGACY_RUNNER
 
 
 def rel(path):
@@ -216,7 +228,7 @@ def cmd_build(args):
     actual = {str(p.relative_to(extracted)): sha(p) for p in extracted.rglob('*') if p.is_file()}
     require(actual == expected, 'extraction holds extra or missing files')
     print(f'PASS source/member hashes: 34 members == committed {revision} blobs == working tree == extraction {rel(extracted)}')
-    candidate = dict(task='TASK-285', source_revision=revision, build_tag=build_tag, archive=rel(zip1),
+    candidate = dict(task=args.task, source_revision=revision, build_tag=build_tag, archive=rel(zip1),
                      zip=str(zip1.resolve()), repeat_archive=rel(zip2), extracted=rel(extracted),
                      byte_count=zip1.stat().st_size, sha256=sha(zip1), identical_sha256=True,
                      external_dependencies=[build_zip.SDK_URL], files=inventory['files'], built_utc=now(),
@@ -645,9 +657,9 @@ def build_media_review(out, candidate):
                                      **pixel_compare(out / frame['folder'] / name, HISTORICAL_MEDIA / old['folder'] / name))
         frame_rows.append(row)
     review = dict(
-        task='TASK-285', candidate=candidate['sha256'], source_revision=candidate['source_revision'], build_tag=candidate['build_tag'],
+        task=args.task, candidate=candidate['sha256'], source_revision=candidate['source_revision'], build_tag=candidate['build_tag'],
         decision='REFRESHED', regenerated_assets=len(assets), reused_assets=0,
-        reuse_or_refresh=f'All {len(assets)} shipped assets were recaptured from the exact TASK-285 ZIP; the TASK-263 captures '
+        reuse_or_refresh=f'All {len(assets)} shipped assets were recaptured from the exact {args.task} ZIP; the TASK-263 captures '
                          f'(source 15aab22...) are kept only as the comparison baseline and are not shipped.',
         pixel_identical_to_historical=f'{identical}/{len(assets)}',
         comparison_meaning='pixel identity with the historical captures independently confirms that the TASK-280 render change '
@@ -838,7 +850,7 @@ def cmd_readiness(args):
     if engines_missing:
         verdict['submission_blockers'].insert(0, 'release suite engines neither run nor explained: ' + ', '.join(engines_missing))
     readiness = dict(
-        task='TASK-285', generated_utc=now(), scope='TASK-271 through TASK-284 plus applicable functional evidence; later tasks excluded',
+        task=args.task, generated_utc=now(), scope='TASK-271 through TASK-284 plus applicable functional evidence; later tasks excluded',
         candidate=dict(sha256=candidate['sha256'], source_revision=candidate['source_revision'], build_tag=candidate['build_tag'],
                        archive=candidate['archive']),
         tickets=tickets,
@@ -863,7 +875,7 @@ def cmd_readiness(args):
             regression_outstanding=regression_outstanding, faster_than_frozen_control=all(c['verdict_vs_control'] == 'FASTER' for c in cells.values()),
             evidence='artifacts/TASK-282/comparison.json and cost-ranking.json (headless software Chromium, SwiftShader, 1280x720 dpr1 and 844x390 dpr2, pinned density)',
             runtime_binding=dict(task282_integrated_runtime_equals_this_zip=not differing, differing_files=differing,
-                                 note='platform.js differs only by the buildVersion string (candidate267 -> candidate285); render/effects.js is the '
+                                 note='platform.js differs only by the buildVersion string (candidate267 -> ' + candidate['build_tag'].rsplit('-', 1)[-1] + '); render/effects.js is the '
                                       'TASK-280 body measured by TASK-282' if differing == ['platform.js'] else 'see differing_files'),
             cells=cells, identity_exact_vs_control=ranking.get('integrated_identity_exact'),
             historical_failures_preserved=historical, qualification=QUALIFICATION),
@@ -924,6 +936,9 @@ def cmd_assemble(args):
             'candidate identity differs between build, functional, media and readiness')
     require(media['verdict'] == 'PASS', 'media visual review not recorded as PASS')
     release, kit, out = args.release, args.kit, args.out
+    runner = args.runner or ROOT / readiness['runner_runtime_binding']['runner_package']
+    require(rel(runner) == readiness['runner_runtime_binding']['runner_package'],
+            'runner package differs from the one readiness.json recorded: ' + rel(runner))
     previous = out / 'previous-release'
     require(not previous.exists() and not (out / 'previous-submission-kit.zip').exists(), 'previous release already preserved here')
     if release.exists():
@@ -950,7 +965,7 @@ def cmd_assemble(args):
     reg = readiness['software_regression_status']
     native = readiness['native_60fps_acceptance']
     (release / 'TEST-RESULTS.txt').write_text(identity +
-        f"PASS exact-ZIP offline checks (TASK-285, this archive): release {suites['release']} browser cases ({', '.join(engines)}), "
+        f"PASS exact-ZIP offline checks ({args.task}, this archive): release {suites['release']} browser cases ({', '.join(engines)}), "
         f"embed {suites['embed']} startup/storage cases, mobile-embed {suites['mobile-embed']} nested-frame runs, "
         f"lifecycle {suites['lifecycle']} runs / {lifecycle_cases} cases, ads {suites['ads']} offline rewarded flows.\n"
         f"PASS media: six covers and three screenshots recaptured from this exact ZIP at {candidate['source_revision']}; "
@@ -980,7 +995,7 @@ def cmd_assemble(args):
     owner_doc = (ROOT / 'Y8-OWNER-CHECKLIST.md').read_text()
     body = owner_doc.split('Record for EACH run:', 1)[1]
     (release / 'OWNER-CHECKLIST.txt').write_text(
-        'Grapnel Ninja - owner preview and phone checklist (TASK-285 kit)\n\n'
+        f'Grapnel Ninja - owner preview and phone checklist ({args.task} kit)\n\n'
         'Local preparation only. All owner checks below are NOT PERFORMED. Console access,\n'
         'phones and moderation do not gate completion of this preparation checklist.\n\n'
         'Package identity (paths relative to /opt/grapnelninja):\n'
@@ -990,7 +1005,7 @@ def cmd_assemble(args):
         f"- Exact-ZIP offline checks: {rel(args.functional / 'release-checks.json')}\n"
         '- Current copy/media instructions: LISTING.txt, REVIEWER-RESPONSE.txt and media-manifest.json\n'
         f"- Media review: {rel(args.media / 'media-review.json')}; all nine assets recaptured from this exact ZIP.\n"
-        '- Native 60-FPS benchmark rows: artifacts/TASK-283/runner/OWNER-CHECKLIST.txt (return results/*.json; TASK-284 rows are UNVERIFIED).\n'
+        f"- Native 60-FPS benchmark rows: {rel(runner)}/OWNER-CHECKLIST.txt (return results/*.json; TASK-284 rows are {native['status']}).\n"
         '- Verify the selected ZIP with sha256sum before upload and record the hash below.\n'
         '  A displayed build label alone does not distinguish archives.\n'
         '- Local preparation only: the measured software-renderer regression against the original ZIP (TASK-282) is outstanding;\n'
@@ -1007,7 +1022,7 @@ def cmd_assemble(args):
     external = [args.candidate, args.functional / 'release-checks.json', args.functional / 'manifest.json', args.media / 'media-review.json',
                 args.readiness, ROOT / 'artifacts/TASK-282/comparison.json', ROOT / 'artifacts/TASK-282/cost-ranking.json',
                 ROOT / 'artifacts/TASK-282/identity.json', ROOT / 'artifacts/TASK-284/decision.json', ROOT / 'artifacts/TASK-284/acceptance.json']
-    manifest = dict(created_utc=now(), task='TASK-285', source_revision=candidate['source_revision'], assembly_source_revision=git('rev-parse', 'HEAD'),
+    manifest = dict(created_utc=now(), task=args.task, source_revision=candidate['source_revision'], assembly_source_revision=git('rev-parse', 'HEAD'),
                     build_tag=candidate['build_tag'], zip=dict(file='grapnelninja-y8.zip', sha256=candidate['sha256'], bytes=candidate['byte_count']),
                     functional_package_prepared=readiness['functional_package_preparation']['functional_package_prepared'],
                     software_regression_status=reg['status'], native_60fps_acceptance=native['status'],
@@ -1031,7 +1046,7 @@ def cmd_assemble(args):
     committed = git('log', '--format=%H %s', '--name-only', 'b72ff271..HEAD')
     forbidden = [l for l in committed.splitlines() if l.startswith(('artifacts/', 'screenshots/', 'output/'))]
     handoff = dict(
-        task='TASK-285', generated_utc=now(), scope='Local inspection kit rebuilt from the current runtime; not submission-ready',
+        task=args.task, generated_utc=now(), scope='Local inspection kit rebuilt from the current runtime; not submission-ready',
         zip=dict(path=str((release / 'grapnelninja-y8.zip').resolve()), bytes=candidate['byte_count'], sha256=candidate['sha256'],
                  build=candidate['build_tag'], source_revision=candidate['source_revision'], members=len(candidate['files'])),
         kit=dict(path=str(kit.resolve()), bytes=kit.stat().st_size, sha256=sha(kit), members=len(manifest['files']) + 1),
@@ -1187,7 +1202,7 @@ def cmd_manifest(args):
     attempts = sorted(str(p.relative_to(ROOT)) for p in out.rglob('*attempt*') if p.is_file() or p.is_dir())
     readiness = read(out / 'readiness.json')
     manifest = dict(
-        task='TASK-285', generated_utc=now(),
+        task=args.task, generated_utc=now(),
         purpose='rebuild and audit the current local Y8 package after the TASK-271..284 experiment series; package audit only, no performance verdict',
         utc_start=min(c['utc_start'] for c in all_cmds), utc_end=max(c['utc_end'] for c in all_cmds),
         commands=receipts, suite_commands=sub, exit_codes=sorted({c['exit_code'] for c in all_cmds}),
@@ -1200,7 +1215,7 @@ def cmd_manifest(args):
                      files=read(release / 'manifest.json')['files']),
         executed_harness_hashes={**{n: sha(ROOT / n) for n in TESTED_TOOLS}, **{n: sha(ROOT / n) for n in MEDIA_TOOLS},
                                  'tools/build-y8-zip.py': sha(TOOLS / 'build-y8-zip.py'), 'tools/y8_package.py': sha(__file__),
-                                 'artifacts/TASK-285/rec.py': sha(out / 'rec.py') if (out / 'rec.py').exists() else None,
+                                 f'{rel(out)}/rec.py': sha(out / 'rec.py') if (out / 'rec.py').exists() else None,
                                  'tools/fixtures/fake-y8-sdk.js': fixture},
         environment=dict(os=platform.platform(), python=platform.python_version(), cpu_count=os.cpu_count(), git=git('--version'),
                          node=node_label(),
@@ -1238,16 +1253,38 @@ def cmd_manifest(args):
 
 # ----------------------------------------------------------------- main ----
 
-def main(argv=None):
+PATH_DEFAULTS = {  # per subcommand: path option -> location under artifacts/<task> used when the option is not given
+    'build': dict(out='build'),
+    'functional': dict(candidate='build/candidate.json', out='functional'),
+    'media': dict(candidate='build/candidate.json', out='media'),
+    'readiness': dict(candidate='build/candidate.json', functional='functional', media='media', out='readiness.json'),
+    'assemble': dict(candidate='build/candidate.json', functional='functional', media='media', readiness='readiness.json', out='.'),
+    'package-check': dict(candidate='build/candidate.json', functional='functional'),
+    'manifest': dict(out='.'),
+}
+
+
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    task_help = ('evidence label written into every generated JSON and the kit checklist, and the artifacts/<task> directory '
+                 'behind the path defaults (default: %s)' % EVIDENCE_DIR.name)
+    ap.add_argument('--task', default=EVIDENCE_DIR.name, help=task_help)
     sp = ap.add_subparsers(dest='command', required=True)
-    task = ROOT / 'artifacts/TASK-307'
-    p = sp.add_parser('build')
-    p.add_argument('--out', type=Path, default=task / 'build')
+
+    def sub(name):
+        p = sp.add_parser(name)
+        p.add_argument('--task', default=argparse.SUPPRESS, help=task_help)
+        return p
+
+    def path_option(p, name, help=None):
+        p.add_argument('--' + name, type=Path, help=(help or '') + ' (default: artifacts/<task>/%s)' % PATH_DEFAULTS[p.prog.split()[-1]][name])
+
+    p = sub('build')
+    path_option(p, 'out')
     p.set_defaults(func=cmd_build)
-    p = sp.add_parser('functional')
-    p.add_argument('--candidate', type=Path, default=task / 'build/candidate.json')
-    p.add_argument('--out', type=Path, default=task / 'functional')
+    p = sub('functional')
+    path_option(p, 'candidate')
+    path_option(p, 'out')
     p.add_argument('--failure-note', action='append', help='LOG=cause, documents a preserved failed attempt')
     p.add_argument('--engines', help='comma list for the release suite (Y8_ENGINES), e.g. chromium,firefox when webkit is absent; '
                                      'every engine of %s left out needs an --engine-note' % ','.join(REQUIRED_ENGINES))
@@ -1255,39 +1292,59 @@ def main(argv=None):
                    help='why ENGINE was not run; recorded verbatim in release-checks.json engines_not_run (repeatable)')
     p.add_argument('--webkit-note', help='alias for --engine-note webkit=REASON')
     p.set_defaults(func=cmd_functional)
-    p = sp.add_parser('media')
-    p.add_argument('--candidate', type=Path, default=task / 'build/candidate.json')
-    p.add_argument('--out', type=Path, default=task / 'media')
+    p = sub('media')
+    path_option(p, 'candidate')
+    path_option(p, 'out')
     p.add_argument('--review', help='visual review note (PASS ... / FAIL ...) recorded after viewing contact-sheet.png')
     p.set_defaults(func=cmd_media)
-    p = sp.add_parser('readiness')
-    p.add_argument('--candidate', type=Path, default=task / 'build/candidate.json')
-    p.add_argument('--functional', type=Path, default=task / 'functional')
-    p.add_argument('--media', type=Path, default=task / 'media')
-    p.add_argument('--out', type=Path, default=task / 'readiness.json')
+    p = sub('readiness')
+    path_option(p, 'candidate')
+    path_option(p, 'functional')
+    path_option(p, 'media')
+    path_option(p, 'out')
     p.add_argument('--tasks', type=Path, default=ROOT / 'artifacts/tasks.json', help='task list audited for the SCOPE tickets')
-    p.add_argument('--runner', type=Path, default=ROOT / 'artifacts/TASK-283/runner',
-                   help='bench runner package (game/build.json) the owner measured; must be the one decision.json names')
+    p.add_argument('--runner', type=Path,
+                   help='bench runner package (game/build.json) the owner measured; must be the one decision.json names '
+                        '(default: artifacts/<task>/runner when that directory exists, else %s)' % rel(LEGACY_RUNNER))
     p.set_defaults(func=cmd_readiness)
-    p = sp.add_parser('assemble')
-    p.add_argument('--candidate', type=Path, default=task / 'build/candidate.json')
-    p.add_argument('--functional', type=Path, default=task / 'functional')
-    p.add_argument('--media', type=Path, default=task / 'media')
-    p.add_argument('--readiness', type=Path, default=task / 'readiness.json')
-    p.add_argument('--out', type=Path, default=task)
+    p = sub('assemble')
+    path_option(p, 'candidate')
+    path_option(p, 'functional')
+    path_option(p, 'media')
+    path_option(p, 'readiness')
+    path_option(p, 'out')
     p.add_argument('--release', type=Path, default=ROOT / 'artifacts/y8-release')
     p.add_argument('--kit', type=Path, default=ROOT / 'artifacts/y8-submission-kit.zip')
+    p.add_argument('--runner', type=Path, help='runner package printed into OWNER-CHECKLIST.txt; must equal the one readiness.json '
+                                               'recorded (default: that recorded runner_runtime_binding.runner_package)')
     p.set_defaults(func=cmd_assemble)
-    p = sp.add_parser('package-check')
-    p.add_argument('--candidate', type=Path, default=task / 'build/candidate.json')
-    p.add_argument('--functional', type=Path, default=task / 'functional')
+    p = sub('package-check')
+    path_option(p, 'candidate')
+    path_option(p, 'functional')
     p.add_argument('--release', type=Path, default=ROOT / 'artifacts/y8-release')
     p.add_argument('--kit', type=Path, default=ROOT / 'artifacts/y8-submission-kit.zip')
     p.set_defaults(func=cmd_package_check)
-    p = sp.add_parser('manifest')
-    p.add_argument('--out', type=Path, default=task)
+    p = sub('manifest')
+    path_option(p, 'out')
     p.set_defaults(func=cmd_manifest)
-    args = ap.parse_args(argv)
+    return ap
+
+
+def parse_args(argv=None):
+    """Parse argv and resolve the artifacts/<task> path defaults; --task is accepted before or after the subcommand."""
+    args = build_parser().parse_args(argv)
+    require(re.fullmatch(r'[A-Za-z0-9._-]+', args.task) is not None, 'invalid --task label (one path component expected): ' + args.task)
+    task_dir = ROOT / 'artifacts' / args.task
+    for name, below in PATH_DEFAULTS[args.command].items():
+        if getattr(args, name) is None:
+            setattr(args, name, task_dir if below == '.' else task_dir / below)
+    if args.command == 'readiness' and args.runner is None:
+        args.runner = default_runner(task_dir)
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
     os.chdir(ROOT)
     return args.func(args)
 

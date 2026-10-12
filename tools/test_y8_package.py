@@ -340,3 +340,53 @@ class MediaReview(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class TaskLabel(unittest.TestCase):
+    """TASK-312: every generated JSON carries the --task label, by default the evidence directory name, never a stale literal;
+    the label also roots the artifacts/<task> path defaults and the readiness runner default."""
+    TASK307 = pkg.ROOT / 'artifacts/TASK-307'
+    READINESS_INPUTS = [TASK307 / 'build/candidate.json', TASK307 / 'build/extracted', TASK307 / 'functional/release-checks.json',
+                        TASK307 / 'media/media-review.json', TASK307 / 'tasks-with-scope-restored.json',
+                        pkg.ROOT / 'artifacts/TASK-282/comparison.json', pkg.ROOT / 'artifacts/TASK-284/decision.json',
+                        pkg.LEGACY_RUNNER / 'game/build.json']
+
+    def test_task_defaults_to_the_evidence_directory_name_and_roots_the_path_defaults(self):
+        self.assertEqual(pkg.EVIDENCE_DIR.parent, pkg.ROOT / 'artifacts')
+        for command in pkg.PATH_DEFAULTS:
+            args = pkg.parse_args([command])
+            self.assertEqual(args.task, pkg.EVIDENCE_DIR.name, command)
+            for name, below in pkg.PATH_DEFAULTS[command].items():
+                self.assertEqual(getattr(args, name), pkg.EVIDENCE_DIR if below == '.' else pkg.EVIDENCE_DIR / below, (command, name))
+        self.assertEqual(pkg.parse_args(['--task', 'TASK-999', 'build']).out, pkg.ROOT / 'artifacts/TASK-999/build')
+        args = pkg.parse_args(['readiness', '--task', 'TASK-999'])
+        self.assertEqual((args.task, args.candidate, args.out),
+                         ('TASK-999', pkg.ROOT / 'artifacts/TASK-999/build/candidate.json', pkg.ROOT / 'artifacts/TASK-999/readiness.json'))
+        self.assertEqual(args.runner, pkg.LEGACY_RUNNER)
+        self.assertEqual(pkg.parse_args(['build', '--task', 'TASK-999', '--out', '/tmp/elsewhere']).out, Path('/tmp/elsewhere'))
+        self.assertIsNone(pkg.parse_args(['assemble']).runner)
+        with self.assertRaises(SystemExit):
+            pkg.parse_args(['--task', '../escape', 'build'])
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(pkg.default_runner(Path(d)), pkg.LEGACY_RUNNER)
+            (Path(d) / 'runner').mkdir()
+            self.assertEqual(pkg.default_runner(Path(d)), Path(d) / 'runner')
+
+    @unittest.skipUnless(all(p.exists() for p in READINESS_INPUTS), 'TASK-307 build/functional/media evidence not in this workspace')
+    def test_generated_candidate_and_readiness_task_equal_the_evidence_directory_name(self):
+        import contextlib
+        import io
+        inputs = ['--candidate', 'artifacts/TASK-307/build/candidate.json', '--functional', 'artifacts/TASK-307/functional',
+                  '--media', 'artifacts/TASK-307/media', '--tasks', 'artifacts/TASK-307/tasks-with-scope-restored.json']
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+            out = Path(d)
+            self.assertEqual(pkg.main(['build', '--out', str(out / 'default')]), 0)
+            self.assertEqual(json.loads((out / 'default/candidate.json').read_text())['task'], pkg.EVIDENCE_DIR.name)
+            self.assertEqual(pkg.main(['--task', 'TASK-999', 'build', '--out', str(out / 'labelled')]), 0)
+            self.assertEqual(json.loads((out / 'labelled/candidate.json').read_text())['task'], 'TASK-999')
+            self.assertEqual(pkg.main(['readiness', *inputs, '--out', str(out / 'readiness.json')]), 0)
+            readiness = json.loads((out / 'readiness.json').read_text())
+            self.assertEqual(readiness['task'], pkg.EVIDENCE_DIR.name)
+            self.assertEqual(readiness['runner_runtime_binding']['runner_package'], pkg.rel(pkg.default_runner(pkg.EVIDENCE_DIR)))
+            self.assertEqual(pkg.main(['readiness', '--task', 'TASK-999', *inputs, '--out', str(out / 'readiness-999.json')]), 0)
+            self.assertEqual(json.loads((out / 'readiness-999.json').read_text())['task'], 'TASK-999')

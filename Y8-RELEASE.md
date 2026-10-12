@@ -1,8 +1,11 @@
 # Y8 local release handoff
 
-Current package (TASK-285): see [Y8-SUBMISSION-KIT.md](Y8-SUBMISSION-KIT.md);
-`tools/y8_package.py` rebuilds and audits `artifacts/y8-release/`. The notes
-below are historical (TASK-265/269/270 era).
+Current package: `artifacts/y8-release/`, rebuilt and audited by
+`tools/y8_package.py` (`--task` labels the evidence directory; the kit's
+`artifacts/y8-release/manifest.json` names it in `task`); see
+[Y8-SUBMISSION-KIT.md](Y8-SUBMISSION-KIT.md). TASK-285 was the first kit built
+this way; later rebuilds replace it in place. The notes below are historical
+(TASK-265/269/270 era).
 
 Current candidate owner/media instructions: [Y8-MEDIA-HANDOFF.md](Y8-MEDIA-HANDOFF.md)
 and [Y8-OWNER-CHECKLIST.md](Y8-OWNER-CHECKLIST.md). These supersede the older

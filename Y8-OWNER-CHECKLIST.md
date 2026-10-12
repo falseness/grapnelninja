@@ -7,13 +7,19 @@ Package identity (paths relative to /opt/grapnelninja):
 - Final candidate for these owner checks: artifacts/y8-release/grapnelninja-y8.zip
   (identity, SHA256, build tag and source revision: artifacts/y8-release/manifest.json;
   the kit copy OWNER-CHECKLIST.txt carries the concrete values)
-- Build tag in the runtime: 2026-10-11-y8-candidate285 (TASK-285 rebuild)
-- Inventory and build checks: artifacts/TASK-285/build/candidate.json, package-check.log
-- Exact-ZIP offline checks: artifacts/TASK-285/functional/release-checks.json
-- Media review: artifacts/TASK-285/media/media-review.json; all nine assets were
+- Build tag in the runtime: `build_tag` in artifacts/y8-release/manifest.json
+  (the kit's TEST-RESULTS.txt and OWNER-CHECKLIST.txt repeat it)
+- Evidence directory of the current kit: artifacts/<task>/ where <task> is the
+  `task` value of artifacts/y8-release/manifest.json (TASK-285 was the first
+  such rebuild; later rebuilds replace the kit and the pointer together)
+- Inventory and build checks: artifacts/<task>/build/candidate.json, package-check.log
+- Exact-ZIP offline checks: artifacts/<task>/functional/release-checks.json
+- Media review: artifacts/<task>/media/media-review.json; all nine assets were
   recaptured from this exact ZIP and compared with the TASK-263 captures.
-- Native 60-FPS rows: artifacts/TASK-283/runner/OWNER-CHECKLIST.txt (return
-  results/*.json); TASK-284 reports every row UNVERIFIED until then.
+- Native 60-FPS rows: OWNER-CHECKLIST.txt of the runner package recorded in
+  artifacts/<task>/readiness.json runner_runtime_binding.runner_package (the
+  kit's OWNER-CHECKLIST.txt prints that path; return results/*.json); TASK-284
+  reports every row UNVERIFIED until then.
 - Verify the selected ZIP with sha256sum before upload and record the hash below.
   A displayed build label alone does not distinguish archives.
 - Local preparation only: the measured software-renderer regression against the
