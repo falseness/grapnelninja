@@ -58,3 +58,32 @@ its old functional and visual proof; rerun the affected checks and the
 required baseline comparison. An environment change still requires all six
 FPS runs to pass the same protocol. Neither a new environment nor an
 integrity-only audit is a passing FPS result.
+
+Privileged backend diagnostics now have a separate collector:
+
+```sh
+python3 tools/playgama_firefox_backend.py --out /tmp/firefox-backend-new
+```
+
+It uses the harness's Playwright Firefox executable and headless launcher,
+adding a local Marionette endpoint and system-access flag to query
+`nsIGfxInfo`. The output records effective graphics preferences, feature
+histories, canvas backend, compositor, raw protocol responses, browser hash,
+command, elapsed time and exit. Output directories must be new. Optional
+`--prefs <json>` applies explicit `gfx.*`/`layers.*` overrides at startup;
+requested or force-enabled preferences do not establish a working backend.
+These diagnostic flags differ from the timing harness, and the collector
+makes no gameplay performance claim.
+
+The local `backend-01` investigation reports Skia canvas and software
+WebRender. Default accelerated Canvas2D is blocklisted with
+`FEATURE_FAILURE_GLXTEST_FAILED`; hardware compositing is blocked with
+`FEATURE_FAILURE_COMP_HEADLESSMODE`. A startup acceleration override reports
+Canvas2D `force_enabled`, but actual full-backing context initialization logs
+`CanvasTranslator failed creating WebGL shared context`. The compositor
+remains software. Therefore no functioning alternative backend was verified,
+and no backend ABBA or unchanged final FPS capture was run. This establishes
+a concrete diagnostic limitation, not an external-only cause or proof that
+30 FPS is impossible. Runtime, quality, final-gate thresholds and pending
+status remain unchanged. Preserve these results and do not repeat this same
+force-pref attempt without a distinct mechanism addressing the context failure.
