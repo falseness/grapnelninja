@@ -241,7 +241,7 @@ const PLATFORM = (function()
         environment: 'pending',
         platformId: null,
         language: 'en',
-        buildVersion: '2026-10-11-start-firefox',
+        buildVersion: '2026-10-12-fps-review',
         // Leave scheduling headroom inside the three-second startup budget.
         initTimeoutMs: 2900,
         // An interstitial that is not 'opened' by then counts as skipped
