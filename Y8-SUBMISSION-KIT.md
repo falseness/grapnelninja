@@ -34,6 +34,21 @@ What the TASK-285 kit does and does not claim:
   `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`. `tools/verify_y8_release.py`
   honours a `Y8_ENGINES` override for hosts without a browser.
 
+TASK-307 rebuild note (2026-10-12): the TASK-285 ZIP was built at c3daa29;
+TASK-290 (menu.js) and TASK-302 (moveScreen.js, physics.js) changed the
+runtime afterwards, and TASK-303/304 changed `tools/verify_y8_embed.py` and
+`tools/audit_y8_candidate.py`, so `package-check` reported `committed HEAD
+differs` and the TESTED_TOOLS binding was stale (TASK-303 finding). TASK-307
+rebuilds the kit in three tickets: this one switches the default evidence
+directory of `tools/y8_package.py` from `artifacts/TASK-285` to
+`artifacts/TASK-307`, rebuilds the ZIP with `build --out
+artifacts/TASK-307/build` on the committed tree and reruns the five exact-ZIP
+suites on Chromium, Firefox and WebKit with `functional`; TASK-308/309 redo
+`media`, `readiness`, `assemble` and `package-check`. Until those land,
+`artifacts/y8-release/` still holds the TASK-285 package; the TASK-285
+paragraphs above describe that package, and `artifacts/TASK-307/` holds the
+new build and functional evidence.
+
 The sections below describe the superseded TASK-270 kit.
 
 # TASK-270 inspection kit (superseded)

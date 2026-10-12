@@ -1241,7 +1241,7 @@ def cmd_manifest(args):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest='command', required=True)
-    task = ROOT / 'artifacts/TASK-285'
+    task = ROOT / 'artifacts/TASK-307'
     p = sp.add_parser('build')
     p.add_argument('--out', type=Path, default=task / 'build')
     p.set_defaults(func=cmd_build)
