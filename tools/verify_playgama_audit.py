@@ -9,6 +9,18 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sys
+
+# Case keys and interstitial request counts written by the TASK-246 rerun suites.
+EXPECTED_CASES = {
+    'ready': {'immediate', 'retries', 'exhausted', 'unresolved', 'late-init', 'natural'},
+    'tutorial': {'en-desktop', 'en-touch', 'ru-desktop', 'ru-touch',
+                 'en-desktop-storage_rejected', 'en-desktop-write_rejected'},
+    'audio': {'en-desktop', 'ru-desktop', 'en-touch', 'ru-touch', 'host-disabled'},
+}
+STORAGE_CASES = {'normal', 'late', 'reject-read', 'reject-write', 'delay-write', 'no-local',
+                 'record-only'}
+AD_REQUESTS = {'supported': 2, 'reject': 1, 'failed': 1, 'throw': 1, 'unsupported': 0}
 
 
 def digest(path):
@@ -87,6 +99,10 @@ def inspect(root):
                             ('storage', 'storage-cases.json'),
                             ('tutorial', 'tutorial-cases.json')]:
         data = json.loads((root / 'reruns' / suite / filename).read_text())
+        if suite == 'storage':
+            require(STORAGE_CASES <= set(data), 'storage structured cases recorded')
+        else:
+            require(set(data) == EXPECTED_CASES[suite], suite + ' structured cases recorded')
         require(all(v['verdict'].startswith('PASS') for v in data.values()),
                 suite + ' structured case verdicts agree with logs')
     storage = json.loads((root / 'reruns/storage/storage-cases.json').read_text())
@@ -94,16 +110,19 @@ def inspect(root):
             storage['record-only']['reloaded']['records']['classic'] == 100,
             'record-only offline recovery/reload classic=100')
     audio = json.loads((root / 'reruns/audio/audio-events.json').read_text())
+    require(set(audio) == EXPECTED_CASES['audio'], 'audio structured cases recorded')
     for case, events in audio.items():
-        require(all(e['verdict'].startswith('PASS') and
+        require(bool(events) and all(e['verdict'].startswith('PASS') and
                     ((e['rms'] > 0.0001) if e['expected_audible'] else e['rms'] < 0.0001)
                     for e in events), case + ' measured PCM agrees with audible/silent expectation')
     ads = json.loads((root / 'reruns/ads/ad-events.json').read_text())
-    require(set(ads) == {'supported', 'reject', 'failed', 'throw', 'unsupported'},
-            'all five advertising outcomes recorded')
+    require(set(ads) == set(AD_REQUESTS), 'all five advertising outcomes recorded')
     for case, events in ads.items():
-        require(events[-1]['verdict'].startswith('PASS'), case + ' advertising case verdict')
+        require(bool(events) and events[-1]['verdict'].startswith('PASS'),
+                case + ' advertising case verdict')
         times = events[-1]['request_timestamps']
+        require(len(times) == AD_REQUESTS[case],
+                f'{case} advertising requests recorded: {AD_REQUESTS[case]}')
         require(all(b-a >= 120000 for a, b in zip(times, times[1:])),
                 case + ' advertising cooldown >=120000ms')
     for key in ('baseline_revision', 'baseline_source_hashes', 'final_source_hashes',
@@ -137,4 +156,11 @@ def inspect(root):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('evidence_dir', type=Path)
-    inspect(parser.parse_args().evidence_dir)
+    try:
+        inspect(parser.parse_args().evidence_dir)
+    except AssertionError as error:
+        print('FAIL: ' + str(error))
+        sys.exit(1)
+    except Exception as error:
+        print(f'FAIL: malformed evidence: {type(error).__name__}: {error}')
+        sys.exit(1)
