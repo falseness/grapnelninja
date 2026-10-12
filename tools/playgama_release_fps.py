@@ -3,6 +3,13 @@
 Six sequential runs per engine, Chill=classic and Main=bad. --smoke exercises
 collector plumbing only and is always INVALID for release. ZIP builds require
 source.json beside the archive, as produced by build_playgama.py.
+
+Tool provenance: manifest tool_sha256 must equal the git blobs of tools/<name>
+at the recorded source_revision, so captures need committed tools. Schema
+release-fps-tools-v2 binds every local module the collector imports (launch,
+layout, probe and metrics). Legacy manifests without tool_schema are
+release-fps-tools-v1: only the five direct tools are hash-bound; their
+transitive modules are identified solely by source_revision.
 """
 import argparse
 from contextlib import ExitStack
@@ -80,10 +87,22 @@ def release_identity(runtime, archive=None, revision=None):
                 members=members, zip=packed)
 
 
-def tool_identity():
-    return {name: sha((ROOT/'tools'/name).read_bytes()) for name in (
-        'playgama_release_fps.py', 'playgama_render_compare.py', 'playgama_fps_gate.py',
-        'playgama_firefox_perf.py', 'build_playgama.py')}
+LEGACY_TOOLS = ('playgama_release_fps.py', 'playgama_render_compare.py', 'playgama_fps_gate.py',
+    'playgama_firefox_perf.py', 'build_playgama.py')
+# Transitive local imports of the collector, lazy ones included (tests check the
+# import graph).
+COLLECTOR_TOOLS = LEGACY_TOOLS + ('render_snapshot.py', 'browser_test_support.py',
+    'test_playgama2_bridge.py', 'perf_mobile.py', 'playgama_support_visuals.py')
+TOOL_SCHEMA = 'release-fps-tools-v2'
+TOOL_SCHEMAS = {'release-fps-tools-v1': LEGACY_TOOLS, TOOL_SCHEMA: COLLECTOR_TOOLS}
+
+
+def tool_identity(names=COLLECTOR_TOOLS):
+    return {name: sha((ROOT/'tools'/name).read_bytes()) for name in names}
+
+
+def committed_tools(revision, names=COLLECTOR_TOOLS):
+    return {name: sha(git('show', f'{revision}:tools/{name}')) for name in names}
 
 
 def seal(out, metadata):
@@ -153,8 +172,11 @@ def evaluate(capture, runtime, archive=None):
         assert sha((capture/name).read_bytes()) == digest, 'tampering: '+name
     assert receipt['exit_code'] == 0, 'capture failed'
     assert git('rev-parse', receipt['source_revision']+'^{commit}').decode().strip() == receipt['source_revision'], 'source revision'
-    assert set(receipt['tool_sha256']) == set(tool_identity()), 'tool inventory'
-    assert all(re.fullmatch('[0-9a-f]{64}', h) for h in receipt['tool_sha256'].values()), 'tool identities'
+    names = TOOL_SCHEMAS.get(receipt.get('tool_schema', 'release-fps-tools-v1'))
+    assert names, 'unsupported tool schema'
+    assert set(receipt['tool_sha256']) == set(names), 'tool inventory'
+    assert receipt['tool_sha256'] == committed_tools(receipt['source_revision'], names), \
+        'tool identity differs from source revision '+receipt['source_revision']
     assert receipt['command'] and receipt['cwd'] and receipt['started_utc'] and receipt['ended_utc'], 'command receipt'
     assert 0 <= receipt['duration_seconds'] <= 720, 'invocation duration'
     p = read(capture/'protocol.json')
@@ -267,11 +289,14 @@ def worker(args):
 
 
 def capture(args):
+    revision = git('rev-parse', 'HEAD').decode().strip()
+    tools, committed = tool_identity(), committed_tools(revision)
+    dirty = sorted(name for name in tools if tools[name] != committed[name])
+    assert not dirty, 'unsupported dirty collector tools (commit before capture): '+', '.join(dirty)
     args.out.mkdir(parents=True, exist_ok=False)
     command = [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:], '--worker']
     metadata = dict(command=command, cwd=str(Path.cwd()), started_utc=utc(),
-        source_revision=git('rev-parse', 'HEAD').decode().strip(),
-        tool_sha256=tool_identity())
+        source_revision=revision, tool_schema=TOOL_SCHEMA, tool_sha256=tools)
     started = time.monotonic()
     with (args.out/'command.log').open('w') as log:
         try:

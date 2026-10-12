@@ -1,4 +1,5 @@
 """Complete sealed SYNTHETIC 50-FPS fixtures are validator-only, never release proof."""
+import ast
 import copy
 import contextlib
 import io
@@ -82,10 +83,30 @@ def fixture(out, engine, identity, intervals=None, prepare=lambda raw: raw):
     reseal(out)
 
 
-def reseal(out):
+def head():
+    return gate.git('rev-parse', 'HEAD').decode().strip()
+
+
+def reseal(out, revision=None, tools=None, schema=gate.TOOL_SCHEMA):
+    revision = revision or head()
+    tools = gate.committed_tools(revision, gate.TOOL_SCHEMAS.get(schema or 'release-fps-tools-v1', gate.COLLECTOR_TOOLS)) if tools is None else tools
+    receipt = dict(source_revision=revision, tool_sha256=tools)
+    if schema is not None: receipt['tool_schema'] = schema
     gate.seal(out, dict(command=['SYNTHETIC validator-only'], cwd=str(gate.ROOT),
-        started_utc=gate.utc(), ended_utc=gate.utc(), duration_seconds=0, exit_code=0,
-        source_revision=gate.git('rev-parse', 'HEAD').decode().strip(), tool_sha256=gate.tool_identity()))
+        started_utc=gate.utc(), ended_utc=gate.utc(), duration_seconds=0, exit_code=0, **receipt))
+
+
+def local_imports(name, seen=None):
+    """Transitive tools/ modules imported by name."""
+    seen = set() if seen is None else seen
+    seen.add(name)
+    for node in ast.walk(ast.parse((gate.ROOT/'tools'/name).read_text())):
+        modules = [a.name for a in node.names] if isinstance(node, ast.Import) else \
+            [node.module] if isinstance(node, ast.ImportFrom) and node.module else []
+        for module in modules:
+            path = module.split('.')[0]+'.py'
+            if (gate.ROOT/'tools'/path).is_file() and path not in seen: local_imports(path, seen)
+    return seen
 
 
 class ReleaseTests(unittest.TestCase):
@@ -283,6 +304,69 @@ class ReleaseTests(unittest.TestCase):
                                  r'input timing not bound to active frame|input not dispatched on first eligible active frame)')
                 self.assertEqual(calls, 0 if every else 5)
                 print(f'PASS sealed six-run {label}: {output}; exit=2; rejected before affected-run metrics; SYNTHETIC validator-only')
+
+    def test_collector_tool_inventory_is_transitive_import_graph(self):
+        self.assertEqual(local_imports('playgama_release_fps.py'), set(gate.COLLECTOR_TOOLS))
+        self.assertEqual(len(gate.COLLECTOR_TOOLS), len(set(gate.COLLECTOR_TOOLS)))
+        print(f'PASS release-fps-tools-v2 inventory equals transitive local import graph: {sorted(gate.COLLECTOR_TOOLS)}')
+
+    def test_complete_sealed_tool_provenance(self):
+        current, historical = head(), 'ade0043b42a2f182d8584dc63cdcf11a4a197816'
+        root = gate.git('rev-list', '--max-parents=0', 'HEAD').decode().split()[0]  # no tools/
+        unrelated = '4ab6d37f942b574ade583a43a66d4534eaf53399'  # differs from HEAD in playgama_release_fps.py
+        committed = gate.committed_tools(current)
+        self.assertNotEqual(gate.committed_tools(unrelated)['playgama_release_fps.py'], committed['playgama_release_fps.py'])
+        def modified(name):
+            return dict(committed, **{name: gate.sha(gate.git('show', f'{current}:tools/{name}')+b'\n# dirty harness\n')})
+        valid = [
+            ('current-v2', {}),
+            ('historical-v1-TASK-330-revision', dict(revision=historical, schema=None)),
+            ('historical-v1-explicit', dict(revision=historical, schema='release-fps-tools-v1')),
+            ('historical-v2-revision', dict(revision=unrelated))]
+        invalid = [
+            ('false-zero-digests', dict(tools=dict.fromkeys(committed, '0'*64)), 'tool identity differs'),
+            ('false-zero-digests-v1', dict(revision=historical, schema=None, tools=dict.fromkeys(gate.LEGACY_TOOLS, '0'*64)), 'tool identity differs'),
+            ('unrelated-source-revision', dict(revision=unrelated, tools=committed), 'tool identity differs'),
+            ('historical-revision-current-hashes', dict(revision=historical, schema=None,
+                tools={n: committed[n] for n in gate.LEGACY_TOOLS}), 'tool identity differs'),
+            ('revision-without-tools', dict(revision=root, tools=committed), "Command '\\['git', 'show'"),
+            ('nonexistent-revision', dict(revision='f'*40, tools=committed), 'Command'),
+            ('modified-release-fps', dict(tools=modified('playgama_release_fps.py')), 'tool identity differs'),
+            ('modified-transitive-perf-mobile', dict(tools=modified('perf_mobile.py')), 'tool identity differs'),
+            ('modified-transitive-browser-support', dict(tools=modified('browser_test_support.py')), 'tool identity differs'),
+            ('v1-claims-v2-inventory', dict(schema=None, tools=committed), 'tool inventory'),
+            ('v2-omits-transitive', dict(tools={n: committed[n] for n in gate.LEGACY_TOOLS}), 'tool inventory'),
+            ('unknown-schema', dict(schema='release-fps-tools-v9', tools=committed), 'unsupported tool schema')]
+        for label, options, *message in valid+invalid:
+            with self.subTest(case=label), tempfile.TemporaryDirectory(dir=self.root) as d:
+                out = Path(d)/'capture'
+                fixture(out, 'chrome', self.identity)
+                reseal(out, **options)
+                self.assertEqual(gate.read(out/'seal.json'), {'manifest_sha256': gate.sha((out/'manifest.json').read_bytes())})
+                code, output, calls = self.evaluate_main(out)
+                if message:
+                    self.assertEqual((code, calls), (2, 0))
+                    self.assertRegex(output, '^INVALID evidence: '+message[0])
+                    print(f'PASS sealed six-run {label}: {output}; exit=2; SYNTHETIC validator-only')
+                else:
+                    self.assertEqual((code, output, calls), (0, '', 6))
+                    receipt = gate.read(out/'manifest.json')
+                    print(f'PASS sealed six-run valid {label}: revision={receipt["source_revision"]} '
+                          f'schema={receipt.get("tool_schema", "legacy v1")} tools={len(receipt["tool_sha256"])}; exit=0 PASS; SYNTHETIC validator-only')
+
+    def test_capture_rejects_dirty_collector_tools(self):
+        dirty = dict(gate.committed_tools(head()), **{'perf_mobile.py': '0'*64})
+        with tempfile.TemporaryDirectory(dir=self.root) as d:
+            out = Path(d)/'capture'
+            argv = ['playgama_release_fps.py', 'capture', '--engine', 'chrome', '--out', str(out),
+                    '--runtime', str(self.runtime), '--zip', str(self.archive)]
+            output = io.StringIO()
+            with patch('sys.argv', argv), contextlib.redirect_stderr(output), \
+                    patch.object(gate, 'tool_identity', return_value=dirty):
+                self.assertEqual(gate.main(), 2)
+            self.assertEqual(output.getvalue().strip(), 'INVALID evidence: unsupported dirty collector tools (commit before capture): perf_mobile.py')
+            self.assertFalse(out.exists())
+        print(f'PASS capture refuses dirty collector tool before any output/browser: {output.getvalue().strip()}')
 
     def test_zip_extraction_and_committed_build(self):
         extra = self.runtime/'extra.txt'; extra.write_text('extra')
