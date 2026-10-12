@@ -23,6 +23,26 @@ def trace(intervals):
     return raw
 
 
+def dispatch(raw):
+    """Replay the PROBE input loop over raw frames, as the browser would."""
+    raw['inputs'], active, previous, pending = [], 0, None, copy.deepcopy(gate.INPUT)
+    for frame in raw['frames']:
+        live = not any(frame['before'].values())
+        if previous and live and not any(previous['after'].values()):
+            active += frame['t'] - previous['t']
+        while live and pending and pending[0]['at_active_ms'] <= active:
+            raw['inputs'].append(dict(pending.pop(0), actual_active_ms=active, t=frame['t']))
+        frame['activeMs'] = active; previous = frame
+    assert not pending, 'synthetic trace too short for INPUT'
+    return raw
+
+
+def pause(raw, first, last):
+    for frame in raw['frames'][first:last+1]:
+        frame['before']['pause'] = frame['after']['pause'] = True
+    return raw
+
+
 def make_release(out):
     revision, files = build.runtime('HEAD', gate.git('rev-parse', 'HEAD').decode().strip())
     packed = build.bundle(files)
@@ -35,7 +55,7 @@ def make_release(out):
     return runtime, archive
 
 
-def fixture(out, engine, identity, intervals=None):
+def fixture(out, engine, identity, intervals=None, prepare=lambda raw: raw):
     out.mkdir()
     executable = Path('/opt/google/chrome/chrome') if engine == 'chrome' else next(Path('/root/.cache/ms-playwright').glob('firefox-*/firefox/firefox'))
     executable = executable.resolve()
@@ -50,8 +70,8 @@ def fixture(out, engine, identity, intervals=None):
     data = dict(smoke=False, fixture_sha256=gate.sha(gate.FIXTURE.encode()), errors=[],
         origin='http://127.0.0.1:12345', environment={'browsers': {engine: browser}}, runs=[])
     for mode, number in gate.protocol(engine, identity)['order']:
-        raw = trace(intervals or [5000]+[20]*1500)
-        raw.update(done=True, mode=mode, run=number, inputs=copy.deepcopy(gate.INPUT), transitions=[{'synthetic': True}],
+        raw = dispatch(prepare(trace(intervals or [5000]+[20]*1500)))
+        raw.update(done=True, mode=mode, run=number, transitions=[{'synthetic': True}],
             state={'mode': mode}, seed=gate.SEED, input_policy=gate.INPUT, source_sha256=identity['members'],
             layout=dict(viewport=[844, 390], dpr=2, backing=[1688, 780], css=[844, 390], logical=[2337, 1080]))
         name = f'{engine}-{mode}-{number}-raw.json'
@@ -176,6 +196,93 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(metrics.call_count, 0 if side is None else 5)
                 print(f'PASS sealed six-run {label}: {output.getvalue().strip()}; '
                       'exit=2; rejected before affected-run metrics; SYNTHETIC validator-only')
+
+    def evaluate_main(self, out):
+        output = io.StringIO()
+        argv = ['playgama_release_fps.py', 'evaluate', '--capture', str(out),
+                '--runtime', str(self.runtime), '--zip', str(self.archive)]
+        with patch('sys.argv', argv), contextlib.redirect_stderr(output), contextlib.redirect_stdout(io.StringIO()), \
+                patch.object(gate, 'active_metrics', wraps=gate.active_metrics) as metrics:
+            code = gate.main()
+        return code, output.getvalue().strip(), metrics.call_count
+
+    def test_complete_sealed_valid_input_timing(self):
+        gap = dict(intervals=[5000]+[20]*200+[9999]+[20]*1500, prepare=lambda raw: pause(raw, 201, 203))
+        for label, options in (('default', {}), ('delayed-by-slow-frame', dict(intervals=[5000]+[20]*500+[3000]+[20]*1500)),
+                               ('inactive-gap', gap)):
+            with tempfile.TemporaryDirectory(dir=self.root) as d:
+                out = Path(d)/'capture'
+                fixture(out, 'chrome', self.identity, **options)
+                data = gate.read(out/'results.json')
+                self.assertEqual(len(data['runs']), 6)
+                raw = gate.read(out/data['runs'][-1]['raw'])
+                frames = {f['t']: f for f in raw['frames']}
+                self.assertEqual(len(raw['inputs']), len(gate.INPUT))
+                if label == 'delayed-by-slow-frame':
+                    slow = raw['frames'][502]['t']
+                    self.assertEqual([e['at_active_ms'] for e in raw['inputs'] if e['t'] == slow], list(range(15500, 18001, 500)))
+                    self.assertEqual(raw['frames'][502]['t'] - raw['frames'][501]['t'], 3000)
+                if label == 'inactive-gap':
+                    self.assertFalse(any(any(frames[e['t']]['before'].values()) for e in raw['inputs']))
+                    self.assertEqual(next(e for e in raw['inputs'] if e['at_active_ms'] == 9000)['t'], raw['frames'][205]['t'])
+                    self.assertEqual(raw['frames'][204]['activeMs'], 8980)
+                code, output, calls = self.evaluate_main(out)
+                self.assertEqual((code, output, calls), (0, '', 6))
+                print(f'PASS sealed six-run valid {label}: accepted exit=0; inputs bound to first eligible active frames; SYNTHETIC validator-only')
+
+    def test_complete_sealed_invalid_input_timing(self):
+        def event(raw, index=30): return raw['inputs'][index]
+        def frame_of(raw, e): return next(i for i, f in enumerate(raw['frames']) if f['t'] == e['t'])
+        def rebind(raw, offset):
+            e = event(raw); f = raw['frames'][frame_of(raw, e)+offset]
+            e.update(t=f['t'], actual_active_ms=f['activeMs'])
+        def swap(raw):
+            a, b = event(raw, 30), event(raw, 31)
+            (a['t'], a['actual_active_ms']), (b['t'], b['actual_active_ms']) = (b['t'], b['actual_active_ms']), (a['t'], a['actual_active_ms'])
+        def inactive(raw):
+            f = raw['frames'][202]; self.assertTrue(f['before']['pause'])
+            event(raw, 18).update(t=f['t'], actual_active_ms=f['activeMs'])
+        def all_events(update):
+            def apply(raw):
+                for e in raw['inputs']: update(e)
+            return apply
+        gap = dict(intervals=[5000]+[20]*200+[9999]+[20]*1500, prepare=lambda raw: pause(raw, 201, 203))
+        cases = [
+            ('missing-all-runs', True, {}, all_events(lambda e: (e.pop('actual_active_ms'), e.pop('t')))),
+            ('false-all-runs-minus-one', True, {}, all_events(lambda e: e.update(actual_active_ms=-1, t=-1))),
+            ('missing-actual', False, {}, lambda raw: event(raw).pop('actual_active_ms')),
+            ('missing-t', False, {}, lambda raw: event(raw).pop('t')),
+            ('null-actual', False, {}, lambda raw: event(raw).update(actual_active_ms=None)),
+            ('nan-actual', False, {}, lambda raw: event(raw).update(actual_active_ms=float('nan'))),
+            ('infinite-actual', False, {}, lambda raw: event(raw).update(actual_active_ms=float('-inf'))),
+            ('nan-t', False, {}, lambda raw: event(raw).update(t=float('nan'))),
+            ('infinite-t', False, {}, lambda raw: event(raw).update(t=float('inf'))),
+            ('boolean-actual', False, {}, lambda raw: event(raw).update(actual_active_ms=True)),
+            ('string-t', False, {}, lambda raw: event(raw).update(t=str(event(raw)['t']))),
+            ('negative-actual', False, {}, lambda raw: event(raw).update(actual_active_ms=-1)),
+            ('negative-t', False, {}, lambda raw: event(raw).update(t=-1)),
+            ('out-of-trace-between-frames', False, {}, lambda raw: event(raw).update(t=event(raw)['t']+0.5)),
+            ('out-of-trace-after-last-frame', False, {}, lambda raw: event(raw).update(t=raw['frames'][-1]['t']+20)),
+            ('mismatched-actual', False, {}, lambda raw: event(raw).update(actual_active_ms=event(raw)['actual_active_ms']+1)),
+            ('early-previous-frame', False, {}, lambda raw: rebind(raw, -1)),
+            ('late-next-frame', False, {}, lambda raw: rebind(raw, 1)),
+            ('reordered-swapped-timings', False, {}, swap),
+            ('inactive-frame', False, gap, inactive)]
+        for label, every, options, mutate in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory(dir=self.root) as d:
+                out = Path(d)/'capture'
+                fixture(out, 'chrome', self.identity, **options)
+                data = gate.read(out/'results.json')
+                self.assertEqual(len(data['runs']), 6)
+                for run in data['runs'] if every else data['runs'][-1:]:
+                    path = out/run['raw']; raw = gate.read(path); mutate(raw); gate.write(path, raw)
+                reseal(out)
+                code, output, calls = self.evaluate_main(out)
+                self.assertEqual(code, 2)
+                self.assertRegex(output, r'^INVALID evidence: (invalid input timing|input timing outside trace|'
+                                 r'input timing not bound to active frame|input not dispatched on first eligible active frame)')
+                self.assertEqual(calls, 0 if every else 5)
+                print(f'PASS sealed six-run {label}: {output}; exit=2; rejected before affected-run metrics; SYNTHETIC validator-only')
 
     def test_zip_extraction_and_committed_build(self):
         extra = self.runtime/'extra.txt'; extra.write_text('extra')

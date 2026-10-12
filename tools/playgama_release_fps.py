@@ -10,6 +10,7 @@ from functools import partial
 from http.server import ThreadingHTTPServer
 import importlib.metadata
 import json
+import math
 from pathlib import Path, PurePosixPath
 import re
 import signal
@@ -106,6 +107,42 @@ def validate_activity_states(raw):
                                  'expected exactly seven boolean probe flags')
 
 
+def number(value):
+    return type(value) in (int, float) and math.isfinite(value)
+
+
+def validate_input_timing(raw):
+    """Replay PROBE accumulation and require each input on its first eligible frame."""
+    frames, inputs = raw['frames'], raw['inputs']
+    active, at, previous = 0, {}, None
+    eligible = []
+    for index, frame in enumerate(frames):
+        t = frame.get('t')
+        if not number(t) or (previous is not None and t <= previous['t']):
+            raise ValueError(f'invalid frame timestamp: frame={index}')
+        live = not any(frame['before'].values())
+        # PROBE: accumulate only across active after -> active before boundaries.
+        if previous is not None and live and not any(previous['after'].values()):
+            active += t - previous['t']
+        if live: eligible.append((index, active))
+        at[t] = (index, active, live)
+        previous = frame
+    cursor = 0
+    for position, event in enumerate(inputs):
+        actual, t = event.get('actual_active_ms'), event.get('t')
+        if not number(actual) or not number(t) or actual < 0 or t < 0:
+            raise ValueError(f'invalid input timing: input={position}; '
+                             'expected finite non-negative actual_active_ms and t')
+        if t not in at:
+            raise ValueError(f'input timing outside trace: input={position} t={t}')
+        index, accumulated, live = at[t]
+        if not live or actual != accumulated:
+            raise ValueError(f'input timing not bound to active frame: input={position} frame={index}')
+        while cursor < len(eligible) and eligible[cursor][1] < event['at_active_ms']: cursor += 1
+        if cursor == len(eligible) or eligible[cursor][0] != index:
+            raise ValueError(f'input not dispatched on first eligible active frame: input={position} frame={index}')
+
+
 def evaluate(capture, runtime, archive=None):
     receipt = read(capture/'manifest.json')
     assert read(capture/'seal.json') == {'manifest_sha256': sha((capture/'manifest.json').read_bytes())}, 'seal mismatch'
@@ -146,6 +183,7 @@ def evaluate(capture, runtime, archive=None):
         assert raw['source_sha256'] == identity['members'], 'raw identity'
         validate_capture_layout(raw['layout'])
         validate_activity_states(raw)
+        validate_input_timing(raw)
         metrics = active_metrics(raw)
         assert metrics == r['metrics'], 'declared metrics differ'
         rows.append(dict(engine=p['engine'], mode=r['mode'], run=r['run'], **metrics))
