@@ -175,6 +175,8 @@
             // The run ended in a death: leaving it (Restart, Menu) shows an
             // interstitial first
             let runOver = false
+            // level_started was sent and no terminal event has followed yet
+            let runInProgress = false
             // An interstitial was requested: gameplay and input wait for it
             let interstitialPending = false
             let ninja, grapnel, floors, elementsFactory, screen, version, visualEffects, firstCycleInThisTick = true, unTouch = false
@@ -278,6 +280,7 @@
                 scoreText.count[version] = 0
                 menu.setVisible(false)
                 PLATFORM.sendLifecycle('level_started', {world: version})
+                runInProgress = true
                 
                 if (version == 'classic')
                     startClassicVersion()
@@ -369,9 +372,11 @@
             {
                 if (interstitialPending)
                     return
-                // A death ends the run
-                if (runOver)
+                // A death, or abandoning a live run from the pause menu, ends
+                // the run: one terminal event per level_started
+                if (runOver || runInProgress)
                     PLATFORM.sendLifecycle('level_failed', {world: version})
+                runInProgress = false
                 if (!runOver)
                 {
                     next()

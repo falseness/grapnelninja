@@ -186,6 +186,45 @@ class Playgama2BridgeTests(unittest.TestCase):
         self.write('network.json', {'verdict': 'PASS SDK, config and nested runtime references: all HTTP 200', 'requests': network})
         print('PASS normal: initialize=1 game_ready=1 subscriptions pause/audio/interstitial/rewarded=1; host ru; SDK storage round-trip; level_started/paused/resumed; nested requests all 200', flush=True)
 
+    def lifecycle_calls(self, page):
+        return page.evaluate("probe.calls.filter(c => c.name.startsWith('level_')).map(c => [c.name, c.data ?? null])")
+
+    def test_menu_abandon_sends_one_terminal_event(self):
+        page, _, _ = self.open()
+        page.evaluate('PLATFORM.gameReady()')
+        page.wait_for_function("probe.calls.some(c => c.name === 'game_ready')")
+        self.click_mode(page, 'classic')
+        page.evaluate("emitHost('pause', true)")
+        self.assertTrue(page.evaluate('menu.gamePaused'))
+        point = page.evaluate('''() => {
+            const b = menu.backToMenu.background;
+            const r = canvas.getBoundingClientRect();
+            return {x:r.x+(b.x+b.width/2)*r.width/width,
+                    y:r.y+(b.y+b.height/2)*r.height/height};
+        }''')
+        page.mouse.click(**point)
+        page.wait_for_function('menu.visible && !menu.gamePaused')
+        self.click_mode(page, 'bad')
+        sequence = self.lifecycle_calls(page)
+        print('ASSERT pause->menu->start sequence', json.dumps(sequence), flush=True)
+        self.assertEqual(sequence, [['level_started', {'world': 'classic'}], ['level_paused', None],
+                                    ['level_failed', {'world': 'classic'}], ['level_started', {'world': 'bad'}]])
+        # Death -> continue offer Menu: exactly one level_failed for the run
+        page.evaluate('onLethalDeath()')
+        self.assertTrue(page.evaluate('continueOffer.visible'))
+        page.evaluate('menu.backToMenu.click(); menu.backToMenu.click()')
+        page.wait_for_function('menu.visible && !interstitialPending')
+        page.evaluate('menu.backToMenu.click()')
+        death = self.lifecycle_calls(page)[4:]
+        print('ASSERT death->menu tail', json.dumps(death), flush=True)
+        self.assertEqual(death, [['level_failed', {'world': 'bad'}]])
+        self.click_mode(page, 'classic')
+        final = self.lifecycle_calls(page)
+        print('ASSERT full sequence', json.dumps([n for n, _ in final]), flush=True)
+        self.assertEqual([n for n, _ in final], ['level_started', 'level_paused', 'level_failed', 'level_started',
+                                                 'level_failed', 'level_started'])
+        print('PASS menu abandon: one level_failed per run (pause->menu and death->menu)', flush=True)
+
     def test_saved_language_precedes_host(self):
         page, _, _ = self.open(saved='en')
         self.assertEqual(page.evaluate('[PLATFORM.language, I18N.language]'), ['ru', 'en'])
