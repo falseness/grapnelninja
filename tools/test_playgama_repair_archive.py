@@ -11,6 +11,7 @@ from html.parser import HTMLParser
 from http.server import ThreadingHTTPServer
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 import tempfile
@@ -73,7 +74,7 @@ class TelemetryTests(unittest.TestCase):
                     events=[c for c in result['calls'] if c['name']=='startup_funnel']
                     stages=['menu_interactive'] if case=='menu-only' else ['menu_interactive','mode_selected','run_initialized','first_gameplay_frame','first_grapple','tutorial_dismissed']
                     self.assertEqual([e['data']['stage'] for e in events], [] if case=='exhausted' else stages)
-                    self.assertEqual(result['build'],'2026-10-11-start-firefox')
+                    self.assertEqual(result['build'],self.expected_build_version)
                     times=[]
                     for e in events:
                         d=e['data']; self.assertEqual(set(d), {'stage','elapsed_ms','game_version'} | (set() if d['stage']=='menu_interactive' else {'mode'}))
@@ -108,6 +109,9 @@ def main():
         adapters=[s for s in scripts if 'const PLATFORM = (function()' in s]
         assert len(adapters)==1
         adapter=adapters[0]
+        versions = re.findall(r"buildVersion:\s*'([^']+)'", adapter)
+        assert len(versions) == 1, 'Expected one buildVersion in packaged adapter'
+        TelemetryTests.expected_build_version = versions[0]
         # Compatibility URL for the isolated lifecycle unit probe; its bytes
         # come exclusively from the archive, not platform.js in the checkout.
         class Handler(QuietHandler):
@@ -133,11 +137,13 @@ def main():
         support.ROOT=extracted
         os.environ['PLAYGAMA2_EVIDENCE_DIR']=str(args.out/'input')
         report=dict(zip_sha256=hashlib.sha256(args.zip.read_bytes()).hexdigest(),extracted_members=members,
+                    expected_build_version=TelemetryTests.expected_build_version,
                     adapter_sha256=hashlib.sha256(adapter.encode()).hexdigest(),runtime_source='extracted ZIP only',external_network='blocked; SDK fulfilled locally')
         suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(c) for c in (Playgama2ReadyTests,StartFlowTests,StartInputTests,TelemetryTests))
         result=unittest.TextTestRunner(verbosity=2).run(suite)
         report.update(tests_run=result.testsRun,successful=result.wasSuccessful())
         assert members=={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in extracted.iterdir()}
+        report['unchanged_extracted_members'] = True
         (args.out/'suite.json').write_text(json.dumps(report,indent=2)+'\n')
         if not result.wasSuccessful(): raise SystemExit(1)
         print('PASS exact ZIP readiness/recovery/ordered lifecycle/input/orientation/tutorial/telemetry; Chromium and Firefox; unchanged member hashes')
