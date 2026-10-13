@@ -2,6 +2,15 @@
 
 Captures are native-resolution Chromium viewport PNGs, without resampling.
 No physics, renderer, input handler, or application state is replaced.
+
+The title menu is gone (TASK-364): the page boots straight into a 'bad' run,
+'classic' is reached through the pause screen's mode switch, and the death
+screen (shown when a game over interstitial is due, TASK-370) switches back.
+The language button sits on the pause and death screens, the fps counter on
+the pause screen. Runnable from the repo root or tools/: git and source
+hashes resolve against ROOT.
+
+PLAYGAMA2_EVIDENCE_DIR selects the output directory (default artifacts/TASK-393).
 """
 import hashlib
 import json
@@ -14,6 +23,7 @@ from datetime import datetime, timezone
 from browser_test_support import start_browser_test, wait_for_boot
 from layout_matrix import PROBE, evaluate
 import test_playgama2_bridge as support
+from test_mode_switch import EXTRA
 
 SIZES = [(800, 600), (925, 925), (1920, 1080), (2560, 1080)]
 
@@ -21,13 +31,13 @@ SIZES = [(800, 600), (925, 925), (1920, 1080), (2560, 1080)]
 class DesktopTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('PLAYGAMA2_EVIDENCE_DIR', 'artifacts/TASK-243'))
+        cls.out = Path(os.environ.get('PLAYGAMA2_EVIDENCE_DIR', support.ROOT / 'artifacts/TASK-393'))
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(support.ROOT, cls.addClassCleanup)
         cls.results, cls.errors, cls.console = {}, [], []
-        paths = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
+        paths = subprocess.check_output(['git', 'ls-files'], text=True, cwd=support.ROOT).splitlines()
         paths += ['tools/test_playgama2_desktop.py']
-        cls.hashes = {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in sorted(set(paths))
+        cls.hashes = {p: hashlib.sha256((support.ROOT / p).read_bytes()).hexdigest() for p in sorted(set(paths))
                       if not p.startswith(('artifacts/', 'screenshots/'))}
         (cls.out / 'tested-source-hashes.json').write_text(json.dumps(cls.hashes, indent=2)+'\n')
 
@@ -69,6 +79,14 @@ class DesktopTests(unittest.TestCase):
         p.screenshot(path=str(self.out/name))
         row['capture'] = {'path':name, 'sha256':hashlib.sha256((self.out/name).read_bytes()).hexdigest(), 'native_viewport':p.viewport_size}
 
+    # Real clicks: HUD menu button, then the pause screen's mode switch
+    def switch_on_pause(self, p, target):
+        self.click(p, 'menu.button.background', True)
+        p.wait_for_function('menu.gamePaused')
+        self.assertEqual(p.evaluate('menu.backToMenu.text.text'), p.evaluate("I18N.t('menu.chillVersion')"))
+        self.click(p, 'menu.backToMenu.background')
+        p.wait_for_function('t => version === t && !!ninja && runInProgress && !menu.gamePaused', arg=target)
+
     def matrix(self, size, mode):
         self.case = f'{size[0]}x{size[1]}-{mode}'
         self.record = self.results[self.case] = {'screens':[], 'hits':[], 'utc':datetime.now(timezone.utc).isoformat()}
@@ -76,7 +94,7 @@ class DesktopTests(unittest.TestCase):
         self.addCleanup(ctx.close)
         ctx.add_init_script("window.realInputs=[]; for(const n of ['mousedown','mouseup','keydown','click']) addEventListener(n,e=>realInputs.push({type:n,trusted:e.isTrusted}),true)")
         fault = 'storage_rejected' if size == SIZES[-1] else 'normal'
-        ctx.route(support.SDK, lambda r:r.fulfill(content_type='application/javascript',body='const FAULT='+json.dumps(fault)+', SAVED_LANGUAGE="en";\n'+support.FAKE+'\nbridge.platform.language="en";'))
+        ctx.route(support.SDK, lambda r:r.fulfill(content_type='application/javascript',body='const FAULT='+json.dumps(fault)+', SAVED_LANGUAGE="en";\n'+support.FAKE+EXTRA+'\nbridge.platform.language="en";'))
         p = ctx.new_page(); p.set_default_timeout(20000)
         errors=[]
         p.on('pageerror', lambda e:errors.append(str(e)))
@@ -84,32 +102,33 @@ class DesktopTests(unittest.TestCase):
         p.on('console', lambda m:errors.append(m.text) if m.type=='error' else None)
         self.addCleanup(lambda:self.errors.extend(self.case+' '+e for e in errors))
         p.goto(self.url+'index.html'); wait_for_boot(p)
-        self.shot(p, 'menu', 'menu.draw()')
-        self.click(p, 'LANGUAGE_BUTTON.rect()')
-        self.assertEqual(p.evaluate('I18N.language'), 'ru')
-        self.click(p, 'LANGUAGE_BUTTON.rect()')
-        self.assertEqual(p.evaluate('I18N.language'), 'en')
+        # Boot run (TASK-360): a 'bad' run with the tutorial hint, no title menu
+        p.wait_for_function('bootComplete && runInProgress && !!ninja')
+        self.assertEqual(p.evaluate('[version, TUTORIAL_HINT.visible, menu.gamePaused]'), ['bad', True, False])
+        self.shot(p, 'boot-run')
         p.locator('#mute-button').click()
         self.assertTrue(p.evaluate('MUTE_BUTTON.muted'))
         p.locator('#mute-button').click()
         self.assertFalse(p.evaluate('MUTE_BUTTON.muted'))
-        self.click(p, 'menu.mainFpsCounterCheckbox.hitRect()')
-        self.assertTrue(p.evaluate('fpsCounter.enabled'))
-        self.click(p, 'menu.mainFpsCounterCheckbox.hitRect()')
-        self.assertFalse(p.evaluate('fpsCounter.enabled'))
-        self.click(p, 'menu.'+mode+'VersionButton.background')
-        p.wait_for_function('!menu.visible && !unTouch')
+        if mode == 'classic':
+            self.switch_on_pause(p, 'classic')
+        self.assertEqual(p.evaluate('version'), mode)
         self.shot(p, 'tutorial')
-        p.locator('#tutorial button').click()
-        self.assertTrue(p.evaluate('TUTORIAL.element.hidden && PROGRESS.getTutorialDone()'))
+        self.assertTrue(p.evaluate('TUTORIAL_HINT.visible && !TUTORIAL_HINT.pressed'))
         p.mouse.move(size[0]*.7,size[1]*.3); p.mouse.down()
         p.wait_for_function('grapnel.throwed')
+        self.assertTrue(p.evaluate('TUTORIAL_HINT.pressed'))
         p.mouse.up(); self.assertFalse(p.evaluate('grapnel.throwed'))
         p.keyboard.press('p'); self.assertTrue(p.evaluate('menu.gamePaused'))
         self.shot(p, 'settings', 'menu.drawPauseScreen()')
+        self.click(p, 'LANGUAGE_BUTTON.rect()')
+        self.assertEqual(p.evaluate('I18N.language'), 'ru')
+        self.click(p, 'LANGUAGE_BUTTON.rect()')
+        self.assertEqual(p.evaluate('I18N.language'), 'en')
         self.click(p, 'menu.pauseFpsCounterCheckbox.hitRect()')
         self.assertTrue(p.evaluate('fpsCounter.enabled'))
         self.click(p, 'menu.pauseFpsCounterCheckbox.hitRect()')
+        self.assertFalse(p.evaluate('fpsCounter.enabled'))
         before = p.evaluate('({score:scoreText.count[version],mode:version,x:ninja.x,y:ninja.y,time:PROGRESS.getTime(),record:scoreText.record[version]})')
         other = SIZES[(SIZES.index(size)+1)%len(SIZES)]
         for target in [other,size]:
@@ -127,20 +146,25 @@ class DesktopTests(unittest.TestCase):
         # Death UI is shared between modes. Cover it at each viewport through
         # Chill's natural idle death; Main can bounce indefinitely without death.
         if mode == 'bad':
-            p.keyboard.press('p')
-            self.click(p, 'menu.backToMenu.background')
-            p.wait_for_function('menu.visible')
-            self.click(p, 'menu.classicVersionButton.background')
-        p.wait_for_function('continueOffer.visible', timeout=60000)
+            self.switch_on_pause(p, 'classic')
+        # No interstitial was requested yet, so a game over ad is due and the
+        # death screen opens (TASK-370)
+        self.assertTrue(p.evaluate('PLATFORM.isInterstitialDue()'))
+        p.wait_for_function('continueOffer.visible && !continueOffer.adPending', timeout=60000)
         self.record['death_mode'] = p.evaluate('version')
+        self.assertEqual(self.record['death_mode'], 'classic')
+        self.assertEqual(p.evaluate('continueOffer.switchButton.text.text'), p.evaluate("I18N.t('menu.mainVersion')"))
         self.shot(p,'death','continueOffer.draw()')
-        self.click(p,'continueOffer.menuButton.background'); p.wait_for_function('menu.visible')
+        self.click(p,'continueOffer.switchButton.background')
+        p.wait_for_function("version === 'bad' && !!ninja && runInProgress && !continueOffer.visible && !interstitialPending && !menu.gamePaused")
+        self.assertIn('game_over', p.evaluate("probe.calls.filter(c => c.name === 'interstitial_request').map(c => c.data)"))
+        self.shot(p,'switched')
         self.assertTrue(p.evaluate('realInputs.length>10 && realInputs.every(e=>e.trusted)'))
         p.mouse.wheel(0,800); p.keyboard.press('PageDown')
         self.assertEqual(p.evaluate('[scrollX,scrollY]'),[0,0])
         self.assertEqual(errors,[])
         self.record.update(verdict='PASS', fault=fault, inputs=p.evaluate('realInputs'))
-        print('PASS '+self.case+': menu/tutorial/settings/gameplay/death; native mouse/keyboard dismissal; resize progress identical; bounds, hit tests, aspect, no deformation/scroll/overlap/errors',flush=True)
+        print('PASS '+self.case+': boot-run/tutorial-hint/settings/gameplay/death-switch; native mouse/keyboard dismissal; resize progress identical; bounds, hit tests, aspect, no deformation/scroll/overlap/errors',flush=True)
         ctx.close()
 
 
