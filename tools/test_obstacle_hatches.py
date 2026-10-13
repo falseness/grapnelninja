@@ -17,7 +17,15 @@ from render_snapshot import CLOCK_SCRIPT, boot_frozen
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENE = r'''mode => {
+    // Since TASK-360 the current tree boots into a 'bad' run and paints its
+    // first frame; the pre-TASK-360 baseline boots to the title menu. Replay
+    // that boot run on the baseline so both trees reach the scene from the
+    // same game and draw history.
+    if (menu.visible) {startGame('bad');draw()}
     startGame(mode); screen.x=screen.y=0;
+    // The baseline predates the first-run hint; its vignette would otherwise
+    // darken the whole current frame. Hide it so only hatch pixels differ.
+    if (typeof TUTORIAL_HINT!='undefined') TUTORIAL_HINT.visible=false;
     for (const f of floors) f.elements=[];
     const u=scale[version];
     const cube=new JumpingCube({x:width*.36/u,y:height*.4/u,width:180,height:180,
