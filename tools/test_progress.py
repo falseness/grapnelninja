@@ -1,4 +1,10 @@
-"""Records, time in game and settings persist through PLATFORM storage (localStorage)."""
+"""Records, time in game and settings persist through PLATFORM storage.
+
+Since 7fd7a46/83e53de (TASK-236) PLATFORM has no 'local' localStorage
+adapter: offline it is 'disabled' and nothing persists. Each page gets
+game_harness.LOCAL_BRIDGE, a fake Bridge whose storage lives in localStorage,
+so persistence across reload is still driven through PLATFORM.storage.
+"""
 import json
 import os
 from pathlib import Path
@@ -13,7 +19,10 @@ ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
 TIME_KEY = 'grapnelninja.time'
-KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang']
+# PROGRESS.keys order (one get). A set carries the same keys in snapshot()
+# order (progress.js), so sets are compared as key sets.
+KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang', 'grapnelninja.muted',
+        'grapnelninja.tutorialDone']
 READY = ('PLATFORM.environment !== "pending" && menu.visible'
          ' && document.getElementById("loading").hidden')
 
@@ -39,7 +48,8 @@ class ProgressTests(unittest.TestCase):
         return out
 
     def boot(self):
-        context, page, errors = open_game(self.browser, 'about:blank', VIEWPORT)
+        context, page, errors = open_game(self.browser, 'about:blank', VIEWPORT,
+                                          fake_bridge=True)
         self.addCleanup(context.close)
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
@@ -48,7 +58,8 @@ class ProgressTests(unittest.TestCase):
         # Freeze physics so the ninja never dies on its own: run ends come
         # only from the test's own reStart() calls.
         page.evaluate('runFixedPhysics = function () {}')
-        self.assertEqual(page.evaluate('PLATFORM.environment'), 'local')
+        self.assertEqual(page.evaluate('[PLATFORM.environment, PLATFORM.platformId]'),
+                         ['playgama', 'local-fake'])
         return page
 
     def reload(self, page):
@@ -87,7 +98,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(storage_calls(page, 'storage.set'), [])
 
     def test_records_survive_reload(self):
-        """Classic and bad records come back from localStorage after reload."""
+        """Classic and bad records come back from Bridge storage after reload."""
         page = self.boot()
         self.score(page, 'classic', 7)
         page.evaluate('reStart()')
@@ -147,8 +158,8 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(json.loads(self.fake_store(page)[RECORDS_KEY]),
                          {'classic': 3, 'bad': 0})
 
-    def test_local_storage_keys(self):
-        """Progress goes to localStorage under exactly PROGRESS.keys and survives reload."""
+    def test_storage_keys(self):
+        """Progress goes to Bridge storage under exactly PROGRESS.keys and survives reload."""
         page = self.boot()
         self.score(page, 'classic', 4)
         page.evaluate('reStart()')
@@ -180,7 +191,7 @@ class ProgressTests(unittest.TestCase):
         log(f'sets during 10 points={during} after pause={len(after_pause)}')
         self.assertEqual(during, 0)
         self.assertEqual(len(after_pause), 1)
-        self.assertEqual(after_pause[0]['args'][0], KEYS)
+        self.assertEqual(sorted(after_pause[0]['args'][0]), sorted(KEYS))
 
         page.keyboard.press('Escape')
         self.wait_throttle(page)
@@ -190,7 +201,7 @@ class ProgressTests(unittest.TestCase):
         sets = storage_calls(page, 'storage.set')
         log(f'sets after run end={len(sets)}')
         self.assertEqual(len(sets), 2)
-        self.assertEqual(sets[1]['args'][0], KEYS)
+        self.assertEqual(sorted(sets[1]['args'][0]), sorted(KEYS))
         # Nothing changed: a further run end writes nothing
         self.wait_throttle(page)
         page.evaluate('reStart()')
@@ -261,13 +272,13 @@ class ProgressTests(unittest.TestCase):
             sets = [c for c in calls if c['name'] == 'storage.set']
             self.assertEqual(len(gets), 1, f'boot {i}')
             for c in sets:
-                self.assertEqual(c['args'][0], KEYS)
+                self.assertEqual(sorted(c['args'][0]), sorted(KEYS))
                 self.assertEqual(len(c['args'][1]), len(KEYS))
         session['boots'] = [{
             'boot': i + 1,
             'storageGetCount': sum(c['name'] == 'storage.get' for c in calls),
             'storageSetCount': sum(c['name'] == 'storage.set' for c in calls),
-            'everySetHasAllKeys': all(c['args'][0] == KEYS for c in calls
+            'everySetHasAllKeys': all(sorted(c['args'][0]) == sorted(KEYS) for c in calls
                                       if c['name'] == 'storage.set'),
             'calls': calls,
         } for i, calls in enumerate(boots)]

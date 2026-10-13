@@ -137,8 +137,10 @@ def open_page(browser, url, size, touch, locale):
     if touch:
         kwargs.update(has_touch=True, is_mobile=True, device_scale_factor=2)
     context, page, errors = open_game(browser, url + 'index.html',
-                                      {'width': w, 'height': h}, **kwargs)
-    page.wait_for_function(READY, timeout=15000)
+                                      {'width': w, 'height': h}, fake_bridge=True, **kwargs)
+    # Portrait 390x844 at dpr 2 draws 200-450 ms software frames here, so its
+    # boot took 7.7-17 s under host load (artifacts/TASK-357/notes.md)
+    page.wait_for_function(READY, timeout=30000)
     return context, page, errors
 
 

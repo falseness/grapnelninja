@@ -1,12 +1,18 @@
 """Open game pages in a shared test browser and observe PLATFORM storage.
 
-The local build has no SDK: PLATFORM.storage goes to localStorage. An init
-script wraps Storage.prototype.getItem/setItem on localStorage and groups the
-calls made in one synchronous run (one getMany or setMany) into one record
+Offline, the SDK fixture defines no window.bridge, so PLATFORM is 'disabled'
+and nothing persists. open_game(..., fake_bridge=True) serves LOCAL_BRIDGE
+instead: a Playgama Bridge whose platform.language is navigator.language
+(the context locale) and whose storage persists in the page's localStorage,
+so storage and language survive page.reload() like on a real host.
+
+An init script wraps Storage.prototype.getItem/setItem on localStorage and groups
+the calls made in one synchronous run into one record
 {name: 'storage.get' | 'storage.set', args: [keys, values], t} in
-window.__storageSpy.calls, the call log shape the tests expect.
+window.__storageSpy.calls, the call log shape the tests expect. LOCAL_BRIDGE
+logs one such record per bridge.storage.get/set and uses the raw methods.
 """
-from browser_test_support import start_browser_test
+from browser_test_support import SDK_URL, start_browser_test
 
 STORAGE_SPY = r'''(() => {
     if (window.__storageSpy) return
@@ -41,15 +47,49 @@ STORAGE_SPY = r'''(() => {
 })()'''
 
 
+# Removed local adapter (7fd7a46/83e53de) rebuilt behind the Bridge boundary
+LOCAL_BRIDGE = r'''(() => {
+    const spy = window.__storageSpy
+    const raw = spy ? spy.raw : {getItem: Storage.prototype.getItem, setItem: Storage.prototype.setItem}
+    const log = (name, args) => spy && spy.calls.push({name: name, args: args, t: performance.now()})
+    const noop = () => {}
+    window.bridge = {
+        async initialize() {},
+        EVENT_NAME: {PAUSE_STATE_CHANGED: 'pause', AUDIO_STATE_CHANGED: 'audio',
+            INTERSTITIAL_STATE_CHANGED: 'interstitial', REWARDED_STATE_CHANGED: 'rewarded'},
+        platform: {id: 'local-fake', language: navigator.language, isAudioEnabled: true,
+            on: noop, sendMessage: () => Promise.resolve()},
+        advertisement: {on: noop, off: noop, isInterstitialSupported: false, isRewardedSupported: false},
+        storage: {
+            async get(keys) {
+                log('storage.get', [keys.slice()])
+                return keys.map(key => raw.getItem.call(localStorage, key))
+            },
+            async set(keys, values) {
+                log('storage.set', [keys.slice(), values.slice()])
+                keys.forEach((key, i) => raw.setItem.call(localStorage, key, values[i]))
+            }
+        }
+    }
+})()
+'''
+
+
 def start_game_test(root, add_cleanup):
     """Return URL/browser from the shared server/browser lifetime."""
     return start_browser_test(root, add_cleanup)
 
 
-def open_game(browser, url, viewport, **context_options):
-    """Return (context, page, errors); errors has 'console' and 'page' lists."""
+def open_game(browser, url, viewport, fake_bridge=False, **context_options):
+    """Return (context, page, errors); errors has 'console' and 'page' lists.
+
+    fake_bridge serves LOCAL_BRIDGE as the SDK (see the module docstring).
+    """
     context = browser.new_context(viewport=viewport, **context_options)
     context.add_init_script(STORAGE_SPY)
+    if fake_bridge:
+        context.route(SDK_URL, lambda route: route.fulfill(
+            content_type='application/javascript', body=LOCAL_BRIDGE))
     page = context.new_page()
     errors = collect_errors(page)
     page.goto(url)
@@ -70,7 +110,7 @@ def collect_errors(page):
 
 
 def storage_calls(page):
-    """Return the recorded localStorage get/set batches ([] without the spy)."""
+    """Return the recorded storage get/set batches ([] without the spy)."""
     return page.evaluate(
         '() => (window.__storageSpy && window.__storageSpy.calls) || []')
 

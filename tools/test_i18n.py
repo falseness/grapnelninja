@@ -1,10 +1,12 @@
 """English + Russian localization (TASK-126).
 
-The browser locale is navigator.language, which the local PLATFORM reports
-as its language. Boot language: the saved 'grapnelninja.lang' storage value,
+The browser locale is navigator.language. The 'local' PLATFORM that reported
+it was removed in 7fd7a46 (TASK-236); each page now gets game_harness.LOCAL_BRIDGE,
+a fake Bridge whose platform.language is navigator.language. Boot language: the saved 'grapnelninja.lang' storage value,
 else 'ru' for a platform language starting with 'ru', else 'en'. The menu's
 LANGUAGE_BUTTON switches language at once and saves it through the single
-storage write (localStorage, observed by game_harness's storage spy).
+storage write (fake Bridge storage in localStorage, observed by
+game_harness's storage spy).
 
 Env: I18N_EVIDENCE_DIR receives key-parity.txt, ru-strings.md and
 screens/{en,ru}/{menu,pause,hud}.png (1280x720) plus the same under
@@ -59,7 +61,7 @@ class I18nTests(unittest.TestCase):
 
     def open(self, language, viewport=VIEWPORT):
         context, page, errors = open_game(self.browser, self.url + 'index.html',
-                                          viewport, locale=language)
+                                          viewport, locale=language, fake_bridge=True)
         self.addCleanup(context.close)
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
