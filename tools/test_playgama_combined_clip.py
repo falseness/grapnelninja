@@ -147,9 +147,11 @@ class CombinedSupportTests(unittest.TestCase):
 
     def test_menu_lights_unchanged_and_reproducible_scope(self):
         output=candidate(self.original).decode(); original=self.original.decode()
-        menu=lambda s:s[s.index('    drawMenu(controls)'):s.index('    drawWorldLights(floors)')]
-        self.assertEqual(menu(output),menu(original))
+        # The title-menu lights (drawMenu) were removed with the title menu
+        # (TASK-386); the candidate must not bring them back.
+        self.assertNotIn('    drawMenu(controls)',original)
+        self.assertNotIn('    drawMenu(controls)',output)
         self.assertEqual(candidate(self.original),candidate(self.original))
-        print('PASS menu lights unchanged; reproducible candidate')
+        print('PASS menu lights absent in source and candidate; reproducible candidate')
 
 if __name__=='__main__':unittest.main(verbosity=2)

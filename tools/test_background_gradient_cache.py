@@ -44,7 +44,9 @@ TAKE_SCRIPT = '''() => { const n = __bgGradients.frame; __bgGradients.frame = 0;
 MENU_SCRIPT = '''frames => {
     const counts = []
     for (let i = 0; i < frames; i++) {
-        visualEffects.background.drawMenuBackground()
+        const b = visualEffects.background
+        b.paintMenu()
+        b.drawWindowBars('menu', () => b.paintMenu())
         counts.push(__bgGradients.frame)
         __bgGradients.frame = 0
     }

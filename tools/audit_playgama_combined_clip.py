@@ -59,9 +59,12 @@ def audit(ticket):
             i=s.index(start);j=s.index(end,i);s=s[:i]+s[j:]
         return s
     assert outside(original['render/effects.js'])==outside(produced)
-    # Menu's method is byte identical, not merely semantically similar.
+    # Menu's method is byte identical, not merely semantically similar; trees
+    # without the title menu (TASK-386) have it in neither.
     def menu(b):
-        s=b.decode();return s[s.index('    drawMenu(controls)'):s.index('    drawWorldLights(floors)')]
+        s=b.decode()
+        if '    drawMenu(controls)' not in s:return None
+        return s[s.index('    drawMenu(controls)'):s.index('    drawWorldLights(floors)')]
     assert menu(original['render/effects.js'])==menu(produced)
     print('PASS reproducible candidate generation; only two support clips and explicit ambient callback; menu unchanged')
     geometry=(ticket/'geometry.log').read_text()

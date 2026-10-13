@@ -84,11 +84,6 @@ class BackgroundRenderer
         this.paint()
         this.drawWindowBars('game', () => this.paint())
     }
-    drawMenuBackground()
-    {
-        this.paintMenu()
-        this.drawWindowBars('menu', () => this.paintMenu())
-    }
     // Area the full-size fills cover: the logical viewport, or a bar canvas
     // (in logical units) while drawWindowBars paints the bars.
     fillBounds()
@@ -715,34 +710,6 @@ class LightmapRenderer
             ninja.radius * 1.5 + 2 / unit, 0, Math.PI * 2)
         lightCtx.fill()
         lightCtx.restore()
-    }
-    // Screen-space lights from the menu neon, using the game's faded falloff.
-    // Composite before motes, grade, bloom and the crisp controls.
-    drawMenu(controls)
-    {
-        if (!this.shouldDraw())
-            return
-        this.clear()
-        const lightCtx = this.lightCtx
-        lightCtx.save()
-        lightCtx.globalCompositeOperation = 'lighter'
-        for (const control of controls)
-        {
-            const box = control.background
-            const radius = STYLE.lights.cubeRadius * LOGICAL_VIEWPORT.height / 1080 * this.scale
-            lightCtx.setTransform(radius, 0, 0, radius,
-                (box.x + box.width / 2) * this.scale,
-                (box.y + box.height / 2) * this.scale)
-            lightCtx.globalAlpha = STYLE.lights.cubeAlpha
-            lightCtx.fillStyle = this.getLightGradient(box.stroke)
-            lightCtx.fillRect(-1, -1, 2, 2)
-        }
-        lightCtx.restore()
-        this.ctx.save()
-        this.ctx.globalAlpha = STYLE.lights.compositeAlpha
-        this.ctx.globalCompositeOperation = STYLE.lights.compositeOperation
-        this.ctx.drawImage(this.lightCanvas, 0, 0, LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height)
-        this.ctx.restore()
     }
     drawWorldLights(floors)
     {

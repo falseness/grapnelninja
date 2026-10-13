@@ -1,6 +1,6 @@
 """Frozen-world background probe: only the clock or camera changes, never physics.
 
-Covers cave, haze, vignette, faded obstacle/menu spill, grade and ambient bloom.
+Covers cave, haze, vignette, faded obstacle spill, grade and ambient bloom.
 Foreground sprites/trails/UI are omitted. Motes are hidden only for the pixel
 assertion; a second pass records their unchanged drift/twinkle for eye review.
 Run directly or via unittest; STATIC_BACKGROUND_EVIDENCE_DIR selects the output.
@@ -29,32 +29,16 @@ PROBE = r'''([scene, time, visible, camera]) => {
     const originalMotes = effects.particles.drawAmbientMotes
     if (!visible) effects.particles.drawAmbientMotes = () => {}
     try {
-        if (scene === 'menu') {
-            // Menu draw() does not update the gameplay neon pulse.
-            effects.background.drawMenuBackground()
-            effects.lightmap.drawMenu([menu.classicVersionButton, menu.badVersionButton])
-            effects.particles.drawAmbientMotes(MENU_MOTES_VIEW)
-            effects.colorGrade.draw()
-            drawScreenGlow(() => {
-                effects.particles.drawAmbientMotes(MENU_MOTES_VIEW)
-                menu.mainText.drawGlow()
-                menu.classicVersionButton.drawGlow()
-                menu.badVersionButton.drawGlow()
-                menu.mainFpsCounterCheckbox.drawGlow()
-                LANGUAGE_BUTTON.drawGlow()
-            })
-        } else {
-            drawBackgroundLayer()
-            ctx.save()
-            ctx.scale(scale[version], scale[version])
-            updateNeonPulse()
-            drawLightsLayer(effects.getGameState())
-            effects.particles.drawAmbientMotes()
-            // Foreground emission (rope, trail, shocks) is outside this probe.
-            effects.bloom.drawScreen(() => effects.particles.drawAmbientMotes())
-            drawColorGradeLayer()
-            ctx.restore()
-        }
+        drawBackgroundLayer()
+        ctx.save()
+        ctx.scale(scale[version], scale[version])
+        updateNeonPulse()
+        drawLightsLayer(effects.getGameState())
+        effects.particles.drawAmbientMotes()
+        // Foreground emission (rope, trail, shocks) is outside this probe.
+        effects.bloom.drawScreen(() => effects.particles.drawAmbientMotes())
+        drawColorGradeLayer()
+        ctx.restore()
         return __snap.capture()
     } finally {
         effects.particles.drawAmbientMotes = originalMotes
@@ -78,7 +62,8 @@ def probe(out=OUT, rev='worktree'):
     with ExitStack() as stack:
         root, result['rev'] = export_rev(rev, stack.callback)
         url, browser = start_browser_test(root, stack.callback)
-        for scene in ['bad', 'classic', 'menu']:
+        # The title menu is gone (TASK-364); the pause screen draws no lightmap.
+        for scene in ['bad', 'classic']:
             context = browser.new_context(viewport={'width': 844, 'height': 390},
                                           device_scale_factor=3, is_mobile=True, has_touch=True)
             try:
@@ -90,9 +75,7 @@ def probe(out=OUT, rev='worktree'):
                 page.goto(url + 'index.html', wait_until='load')
                 snap.boot_frozen(page)
                 page.evaluate(snap.SETUP_SCRIPT, [[], True])
-                page.evaluate('mode => startGame(mode)', 'bad' if scene == 'menu' else scene)
-                if scene == 'menu':
-                    page.evaluate('() => { menu.startPause(); menu.backToMenu.click() }')
+                page.evaluate('mode => startGame(mode)', scene)
                 camera = page.evaluate('() => [screen.x, screen.y]')
 
                 def capture(time, visible=False, move=False):
