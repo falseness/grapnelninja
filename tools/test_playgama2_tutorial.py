@@ -264,12 +264,24 @@ class Playgama2TutorialTests(unittest.TestCase):
         page.wait_for_function('TUTORIAL_HINT.done', timeout=20000)
         record['dismissed']=checkpoint('dismissed')
         self.assertFalse(record['dismissed']['visible']); self.assertEqual(record['dismissed']['alpha'], 0)
-        # A new run on the same page (death -> Restart) does not show it again.
-        page.evaluate('() => { onLethalDeath = window.__onLethalDeath; onLethalDeath() }')
-        page.wait_for_function('continueOffer.visible')
-        page.evaluate('restartFromOffer()')
-        page.wait_for_function('runInProgress && !continueOffer.visible && !interstitialPending')
+        # A new run on the same page does not show it again. No game over ad is
+        # due this soon, so the death fast-restarts (TASK-370) without the offer.
+        restart = page.evaluate('''() => {
+            window.__offerShown = 0; let offerVisible = continueOffer.visible;
+            Object.defineProperty(continueOffer, 'visible', {configurable: true,
+                get: () => offerVisible, set: value => { if (value) __offerShown++; offerVisible = value }});
+            const world = probe.calls.filter(c => c.name === 'level_started').at(-1).data.world;
+            const starts = probe.calls.filter(c => c.name === 'level_started').length;
+            onLethalDeath = window.__onLethalDeath; onLethalDeath();
+            return {world, starts}}''')
+        page.wait_for_function('''r => runInProgress && !continueOffer.visible && !interstitialPending &&
+            probe.calls.filter(c => c.name === 'level_started').length > r.starts''', arg=restart)
+        page.wait_for_timeout(200)
         record['restarted']=checkpoint('restarted')
+        level = [[c['name'], c['data']] for c in record['restarted']['calls'] if c['name'].startswith('level_')]
+        self.assertEqual(level[-2:], [['level_failed', {'world': restart['world']}],
+                                      ['level_started', {'world': restart['world']}]])
+        self.assertEqual(page.evaluate('__offerShown'), 0)
         self.assertFalse(record['restarted']['visible']); self.assertEqual(record['restarted']['dismissed'], 1)
         if page.evaluate('menu.gamePaused'): page.evaluate('menu.unPause()')
         release = self.press(page, context, touch); release()
