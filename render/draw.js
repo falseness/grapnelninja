@@ -82,6 +82,12 @@ function drawColorGradeLayer()
     visualEffects.colorGrade.draw()
 }
 
+// First-run control hint: above the world and the player, under the HUD
+function drawTutorialHintLayer()
+{
+    TUTORIAL_HINT.draw(ctx, TUTORIAL_HINT.alpha, TUTORIAL_HINT.time)
+}
+
 function drawUILayer(gameState)
 {
     visualEffects.ui.draw(gameState)
@@ -144,6 +150,8 @@ function draw()
     drawPlayerGlowLayer(gameState)
     drawColorGradeLayer()
     drawPlayerLayer()
+    if (TUTORIAL_HINT.visible)
+        drawTutorialHintLayer()
     drawUILayer(gameState)
     drawFpsCounterLayer(gameState)
 

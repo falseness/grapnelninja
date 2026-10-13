@@ -154,6 +154,7 @@
         <script src = "moveScreen.js"></script>
         
         <script src = "render/effects.js"></script>
+        <script src = "render/tutorialhint.js"></script>
         <script src = "render/draw.js"></script>
         
         <script src = "events.js"></script>
@@ -571,6 +572,7 @@
                 configureCanvasViewport(canvas, ctx)
                 configureWindowBackground()
                 ctx.lineCap = 'butt'
+                TUTORIAL_HINT.invalidate()
                 rebuildMenu()
                 continueOffer.layout(width, height)
 
@@ -610,6 +612,7 @@
                 I18N.applyDom()
                 MUTE_BUTTON.relabel()
                 TUTORIAL.relabel()
+                TUTORIAL_HINT.invalidate()
                 document.documentElement.lang = I18N.language
                 rebuildMenu()
                 continueOffer.relabel(width, height)

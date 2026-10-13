@@ -121,6 +121,16 @@ const STYLE = Object.freeze({
             fpsPanelStroke: 'rgba(48, 213, 200, 0.7)',
             debug: '#008000',
             debugAccent: '#ff0000'
+        }),
+        // First-run control hint (render/tutorialhint.js)
+        tutorial: Object.freeze({
+            glow: '#30d5c8',
+            core: '#eafeff',
+            grappleCore: '#bfffff',
+            score: '#5dff6a',
+            scoreCore: '#e8ffe9',
+            vignette: 'rgba(6, 2, 30, 0.5)',
+            vignetteEdge: 'rgba(6, 2, 30, 0)'
         })
     }),
     alpha: Object.freeze({
