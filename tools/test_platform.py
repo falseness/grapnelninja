@@ -34,6 +34,17 @@ BLOCK_STORAGE = '''Object.defineProperty(window, 'localStorage', {
 INSTRUMENT_RUN = '''() => {
     window.__ticks = 0
     window.__reStarts = 0
+    // Record every time the death offer is shown
+    window.__offerShown = 0
+    let offerVisible = continueOffer.visible
+    Object.defineProperty(continueOffer, 'visible', {
+        configurable: true,
+        get: () => offerVisible,
+        set: value => {
+            if (value) window.__offerShown++
+            offerVisible = value
+        }
+    })
     const original = window.reStart
     window.reStart = function() {
         window.__reStarts++
@@ -109,12 +120,12 @@ class ItchPlatformTests(unittest.TestCase):
         before = page.evaluate(STATE)
         self.assertEqual(before['score'], points)
         page.evaluate('window.__kill = true')
-        # Every death freezes the run on the free restart offer (TASK-242,
-        # 8519216); take the restart the offer's button runs.
-        page.wait_for_function('!window.__kill && continueOffer.visible')
-        page.evaluate('restartFromOffer()')
-        page.wait_for_function('window.__reStarts > 0')
+        # Without a Bridge no interstitial is ever due, so every death is a
+        # fast restart (TASK-370, e882a5e): no offer is shown.
+        page.wait_for_function('!window.__kill && window.__reStarts > 0'
+                               ' && !continueOffer.visible')
         page.wait_for_timeout(200)
+        self.assertEqual(page.evaluate('window.__offerShown'), 0)
         return before, page.evaluate(STATE)
 
     def test_a_offline_boot(self):
@@ -168,7 +179,7 @@ class ItchPlatformTests(unittest.TestCase):
             page.screenshot(path=str(self.out('screens/after-death-score5.png')))
             self.out('death-state.json').write_text(json.dumps(
                 {'before': before, 'after': after}, indent=1) + '\n')
-        # The free restart: a new run, offer gone, no interstitial or ad
+        # The fast restart: a new run, no offer, no interstitial or ad
         self.assertEqual(after['reStarts'], 1)
         self.assertFalse(after['offer'])
         self.assertFalse(after['interstitialPending'])
