@@ -186,12 +186,12 @@
             
             let bootPromise
             let bootComplete = false
-            let menuInteractive = false
             boot()
             
-            // Platform init -> one storage read -> first menu frame -> hide
-            // the loading overlay -> attach input -> paint -> game_ready.
-            // Earlier clicks and keys are ignored until input is attached.
+            // Platform init -> one storage read -> canvas setup -> hide the
+            // loading overlay -> attach input -> start a main-version run ->
+            // paint its first frame -> game_ready. Earlier clicks and keys are
+            // ignored until input is attached.
             function boot()
             {
                 if (!bootPromise)
@@ -228,16 +228,26 @@
                 setLoadingProgress(I18N.t('loading.starting'))
                 await nextFrame()
                 start()
-                await nextFrame()
                 document.getElementById('loading').hidden = true
                 createEvents()
                 bootComplete = true
                 updateOrientation()
                 AUDIO.enable()
                 MUTE_BUTTON.element.hidden = false
-                // Let the unobstructed menu reach the display before signaling.
+                // Every launch skips the title menu and starts a main-version
+                // run. Its level_started waits in PLATFORM's lifecycle queue
+                // until game_ready has been delivered.
+                const shouldPause = hostPaused || isViewRotated() || document.visibilityState === 'hidden'
+                startGame('bad')
+                if (shouldPause)
+                {
+                    draw()
+                    menu.startPause()
+                }
+                // The first gameplay frame runs in the next animation frame;
+                // the one after it follows its paint.
                 await nextFrame()
-                markMenuInteractive()
+                await nextFrame()
                 PLATFORM.gameReady()
             }
             function setLoadingProgress(text)
@@ -485,9 +495,6 @@
                 configureWindowBackground()
                 visualEffects = new VisualEffects(ctx, canvas)
                 
-                //generatePrimaryElements()
-                menu.draw()
-                game = requestAnimationFrame(gameLoop)
             }
 
             function resetPhysicsTiming()
@@ -605,24 +612,12 @@
                 menu.setVisible(old.visible)
                 menu.changeGamePause(old.gamePaused)
             }
-            function markMenuInteractive()
-            {
-                if (menuInteractive || !bootComplete || !menu.visible || isViewRotated() ||
-                    document.getElementById('stage').inert || !document.getElementById('loading').hidden)
-                    return
-                menuInteractive = true
-                PLATFORM.startup('menu_interactive')
-            }
             function updateOrientation()
             {
                 const portrait = isViewRotated()
                 document.getElementById('stage').inert = portrait
                 AUDIO.setMute('orientation', portrait)
                 if (portrait) pauseRun()
-                else if (bootComplete && !menuInteractive)
-                    // Two frames allow the newly unobstructed menu to paint;
-                    // recheck orientation in case it changes again meanwhile.
-                    nextFrame().then(nextFrame).then(markMenuInteractive)
             }
             window.addEventListener('resize', function() {
                 updateOrientation()

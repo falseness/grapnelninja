@@ -15,8 +15,8 @@ const PLATFORM = (function()
     let readyTimer = null
     const readyRetryMs = [500, 1000, 2000]
     const readyEvents = []
-    // Fixed vocabulary and page-lifetime deduplication bound retention to six.
-    const startupStages = new Set(['menu_interactive', 'mode_selected', 'run_initialized',
+    // Fixed vocabulary and page-lifetime deduplication bound retention to five.
+    const startupStages = new Set(['mode_selected', 'run_initialized',
         'first_gameplay_frame', 'first_grapple', 'tutorial_dismissed'])
     const startupSeen = new Set()
     const startupQueue = []
