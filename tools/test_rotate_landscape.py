@@ -1,9 +1,12 @@
-"""An upright phone plays in landscape: the stage turns 90 degrees clockwise.
+"""An upright phone lays out in landscape: the stage turns 90 degrees clockwise.
 
 Touch-first portrait windows rotate the stage (#stage: the game canvas and
 the letterbox bars) so the logical viewport is laid out for the long side;
-taps map through the rotation; turning the phone mid-run re-lays out with
-no errors. Desktop portrait windows and landscape phones are not rotated.
+canvas <-> window coordinates map through the rotation. Since 8d9b25e
+(TASK-244) the turned stage is hidden and inert behind #rotate-prompt: a
+portrait tap does not start a run, and turning the phone mid-run pauses it.
+Turning to landscape re-lays out with no errors and the same tap starts the
+run. Desktop portrait windows and landscape phones are not rotated.
 """
 from pathlib import Path
 import sys
@@ -45,14 +48,23 @@ class RotateLandscapeTests(unittest.TestCase):
     def tap_button(self, page, path):
         c = page.evaluate(CENTER, path)
         point = canvas_to_viewport(page, c['x'], c['y'])
-        self.assertTrue(0 <= point['x'] <= PORTRAIT['width'] and 0 <= point['y'] <= PORTRAIT['height'],
+        size = page.viewport_size
+        self.assertTrue(0 <= point['x'] <= size['width'] and 0 <= point['y'] <= size['height'],
                         point)
         page.touchscreen.tap(point['x'], point['y'])
         return point
 
+    def assert_rotate_prompt(self, page):
+        """Portrait phone (TASK-244): the prompt covers the hidden, inert stage."""
+        self.assertTrue(page.locator('#rotate-prompt').is_visible())
+        self.assertTrue(page.evaluate("document.getElementById('stage').inert"))
+        self.assertFalse(page.locator('#canvas').is_visible())
+
     def test_backing_resolution_and_css_probe(self):
         for touch, dpr in [(True, 3), (True, 1), (False, 1), (False, 3)]:
             with self.subTest(touch=touch, dpr=dpr):
+                # Four live pages (the last 1920x1080@3) overload a busy
+                # host: each subtest closes its context before the next boots
                 page, errors = self.boot(LANDSCAPE if touch else
                                          {'width': 1920, 'height': 1080},
                                          has_touch=touch, is_mobile=touch,
@@ -79,6 +91,7 @@ class RotateLandscapeTests(unittest.TestCase):
                 self.assertEqual(result['bloomWidth'],
                                  int(result['backing'][0] * (.2 if touch else .25)))
                 self.assertFalse(errors['page'])
+                page.context.close()
 
     def test_pointer_query_remains_live_without_recreating_queries(self):
         page, errors = self.boot(PORTRAIT)
@@ -129,15 +142,26 @@ class RotateLandscapeTests(unittest.TestCase):
         self.assertGreater(corner['x'], PORTRAIT['width'] / 2)
         self.assertLess(corner['y'], PORTRAIT['height'] / 2)
 
+        # Upright, the button tap lands on the rotate prompt: no run starts
+        self.assert_rotate_prompt(page)
+        version = page.evaluate('version')
+        self.tap_button(page, 'menu.classicVersionButton')
+        page.wait_for_timeout(500)
+        self.assertEqual(page.evaluate('[menu.visible, version]'), [True, version])
+
+        # Turned to landscape, the same button starts the run
+        page.set_viewport_size(LANDSCAPE)
+        page.wait_for_function('!isViewRotated() && !document.getElementById("stage").inert',
+                               timeout=5000)
+        page.wait_for_timeout(300)
         self.tap_button(page, 'menu.classicVersionButton')
         page.wait_for_function('!menu.visible && version === "classic"', timeout=5000)
         self.assertEqual(errors, {'console': [], 'page': []})
 
     def test_turning_the_phone_mid_run(self):
         page, errors = self.boot(PORTRAIT, **PHONE)
-        self.tap_button(page, 'menu.badVersionButton')
-        page.wait_for_function('!menu.visible && version === "bad"', timeout=5000)
         portrait = page.evaluate(STATE)
+        self.assert_rotate_prompt(page)
 
         page.set_viewport_size(LANDSCAPE)
         page.wait_for_function('!isViewRotated() && document.getElementById("stage").style.transform === ""',
@@ -148,13 +172,24 @@ class RotateLandscapeTests(unittest.TestCase):
         self.assertGreater(landscape['canvas']['width'], landscape['canvas']['height'])
         # Same screen in both orientations: the same logical viewport
         self.assertEqual(landscape['width'], portrait['width'])
+        self.tap_button(page, 'menu.badVersionButton')
+        page.wait_for_function('!menu.visible && version === "bad"', timeout=5000)
 
+        # Turned upright mid-run: re-laid out, the run pauses behind the prompt
         page.set_viewport_size(PORTRAIT)
         page.wait_for_function('isViewRotated() && document.getElementById("stage").style.transform !== ""',
                                timeout=5000)
         page.wait_for_timeout(300)
         self.assertEqual(page.evaluate(STATE)['width'], portrait['width'])
-        self.assertFalse(page.evaluate('menu.visible'))
+        self.assert_rotate_prompt(page)
+        self.assertEqual(page.evaluate('[menu.visible, menu.gamePaused, version]'),
+                         [False, True, 'bad'])
+
+        page.set_viewport_size(LANDSCAPE)
+        page.wait_for_function('!isViewRotated() && !document.getElementById("stage").inert',
+                               timeout=5000)
+        page.wait_for_timeout(300)
+        self.assertEqual(page.evaluate(STATE)['width'], portrait['width'])
         self.assertEqual(errors, {'console': [], 'page': []})
 
     def test_desktop_portrait_window_is_not_rotated(self):

@@ -43,7 +43,8 @@ class BrowserTestSupportTests(unittest.TestCase):
                     self.assertIsInstance(actual_browser, support.OfflineBrowser)
                     self.assertIs(actual_browser._browser, browser)
                 thread.start.assert_called_once_with()
-                playwright.chromium.launch.assert_called_once_with(args=['--no-sandbox'])
+                playwright.chromium.launch.assert_called_once_with(
+                    args=['--no-sandbox'], **support.shared_memory_launch_options())
                 self.assertEqual(events, [])
             finally:
                 owner.doCleanups()
@@ -114,6 +115,18 @@ class BrowserTestSupportTests(unittest.TestCase):
                     page.close()
             finally:
                 owner.doCleanups()
+
+    def test_shared_memory_follows_the_roomier_filesystem(self):
+        """TASK-359: a full temp dir crashed 1920x1080@3 renderers."""
+        def usage(free_shm, free_tmp):
+            return lambda path: Mock(free=free_shm if path == '/dev/shm' else free_tmp)
+        with patch.object(support.shutil, 'disk_usage', usage(8 << 30, 50 << 20)):
+            self.assertEqual(support.shared_memory_launch_options(),
+                             {'ignore_default_args': ['--disable-dev-shm-usage']})
+        with patch.object(support.shutil, 'disk_usage', usage(64 << 20, 100 << 30)):
+            self.assertEqual(support.shared_memory_launch_options(), {})
+        with patch.object(support.shutil, 'disk_usage', Mock(side_effect=FileNotFoundError)):
+            self.assertEqual(support.shared_memory_launch_options(), {})
 
 
 if __name__ == '__main__':

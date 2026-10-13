@@ -290,6 +290,21 @@ class FullWindowBackgroundTests(unittest.TestCase):
         for viewport in CLICK_VIEWPORTS:
             with self.subTest(viewport=viewport_name(viewport)):
                 page = self.boot(viewport)
+                if viewport[2] and viewport[0] < viewport[1]:
+                    # Since 8d9b25e (TASK-244) an upright phone hides the
+                    # inert stage behind #rotate-prompt and ignores the
+                    # click: the button starts the run once turned landscape
+                    self.assertTrue(page.locator('#rotate-prompt').is_visible())
+                    self.assertTrue(page.evaluate("document.getElementById('stage').inert"))
+                    point = click_canvas(page, *page.evaluate('''() => {
+                        const b = menu.classicVersionButton.background
+                        return [b.x + b.width / 2, b.y + b.height / 2]
+                    }'''))
+                    page.wait_for_timeout(500)
+                    self.assertTrue(page.evaluate('menu.visible'))
+                    page.set_viewport_size({'width': viewport[1], 'height': viewport[0]})
+                    page.wait_for_function('() => !isViewRotated() && !document.getElementById("stage").inert')
+                    page.wait_for_timeout(300)
                 button = page.evaluate('''() => {
                     const b = menu.classicVersionButton.background
                     return {x: b.x + b.width / 2, y: b.y + b.height / 2,

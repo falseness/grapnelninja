@@ -2,6 +2,8 @@
 from functools import partial
 import re
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import shutil
+import tempfile
 from threading import Thread
 
 from playwright.sync_api import sync_playwright
@@ -68,6 +70,22 @@ def wait_for_boot(page):
         "() => { const el = document.getElementById('loading'); return !el || el.hidden }")
 
 
+def shared_memory_launch_options():
+    """Keep Chromium's shared memory in /dev/shm when the temp dir has less room.
+
+    Playwright passes --disable-dev-shm-usage, which moves the renderer's
+    shared memory files to the temp dir. With under 64 MB free there, a
+    1920x1080@3 canvas (5760x3240) crashes the renderer (int3 trap) and READY
+    never comes (TASK-359). A small Docker /dev/shm keeps the default.
+    """
+    try:
+        if shutil.disk_usage('/dev/shm').free > shutil.disk_usage(tempfile.gettempdir()).free:
+            return {'ignore_default_args': ['--disable-dev-shm-usage']}
+    except OSError:
+        pass
+    return {}
+
+
 def start_browser_test(root, add_cleanup):
     """Return URL/browser; register acquired resources with a LIFO cleanup stack."""
     server = ThreadingHTTPServer(('127.0.0.1', 0),
@@ -80,6 +98,6 @@ def start_browser_test(root, add_cleanup):
     url = f'http://127.0.0.1:{server.server_port}/'
     playwright = sync_playwright().start()
     add_cleanup(playwright.stop)
-    browser = playwright.chromium.launch(args=['--no-sandbox'])
+    browser = playwright.chromium.launch(args=['--no-sandbox'], **shared_memory_launch_options())
     add_cleanup(browser.close)
     return url, OfflineBrowser(browser)
