@@ -130,15 +130,19 @@ class FastRestartTests(unittest.TestCase):
         page.evaluate('window.fakeNow += 119999')
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
         page.evaluate('scoreText.count.bad = 7')
-        # One evaluate: headless frames take ~120 ms, so separate round trips
-        # would outlast the 420 ms death shockwave. Frame 3 is read from the
-        # canvas in the rAF callback queued after that frame's gameLoop.
+        # One evaluate, and performance.now() (the effect clock) is a virtual
+        # clock advanced 16 ms per frame, so the 420 ms death shockwave's age
+        # at frame 3 does not depend on how slow headless frames are. Frame 3
+        # is read from the canvas in the rAF callback after its gameLoop.
         result = page.evaluate('''async () => {
             const version0 = version, ninja0 = ninja
             const from = probe.messages.length, ads = probe.interstitials.length
             const burst = visualEffects.screenEffects.triggerDeath
             let bursts = 0
             visualEffects.screenEffects.triggerDeath = function() { bursts++; return burst.apply(this, arguments) }
+            const realNow = performance.now
+            let clock = realNow.call(performance)
+            performance.now = () => clock
             onLethalDeath()
             visualEffects.screenEffects.triggerDeath = burst
             const state = {before: version0, version, newNinja: ninja !== ninja0, bursts,
@@ -148,6 +152,7 @@ class FastRestartTests(unittest.TestCase):
             for (let i = 1; i <= 10; ++i)
             {
                 await new Promise(resolve => requestAnimationFrame(resolve))
+                clock += 16
                 state.frames.push(continueOffer.visible)
                 if (i === 3)
                 {
@@ -158,6 +163,8 @@ class FastRestartTests(unittest.TestCase):
                             .map(s => ({x: Math.round(s.x), y: Math.round(s.y), ageMs: Math.round(now - s.start)}))}
                 }
             }
+            performance.now = realNow
+            resetPhysicsTiming()
             return state
         }''')
         png = result.pop('png')
@@ -165,7 +172,7 @@ class FastRestartTests(unittest.TestCase):
         frames = result.pop('frames')
         print('ASSERT fast-restart.png (frame 3 after the restart)', json.dumps(result['frame3']), flush=True)
         self.assertFalse(result['frame3']['offer'])
-        self.assertEqual(len(result['frame3']['shockwaves']), 1)
+        self.assertEqual([s['ageMs'] for s in result['frame3']['shockwaves']], [48])
         after = page.evaluate('m => probe.messages.slice(m).filter(x => x[0].startsWith("level_"))', result['from'])
         print('ASSERT fast restart', json.dumps({**result, 'frames': frames, 'lifecycleAfter': after}), flush=True)
         self.assertEqual(result['before'], 'bad')
