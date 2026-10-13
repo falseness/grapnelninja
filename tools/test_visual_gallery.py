@@ -142,5 +142,45 @@ class VisualGalleryTest(unittest.TestCase):
             self.assertIn('differences: 1', diff.stdout)
 
 
+class DangerInspectionClockTest(unittest.TestCase):
+    def test_inspection_after_rewound_clock(self):
+        """A death before an earlier probe rewinds __snap.now (as ember_gallery
+        does) must not leave a shockwave starting after the inspection clock."""
+        from contextlib import ExitStack
+        from browser_test_support import start_browser_test
+        from perf_mobile import SEED_SCRIPT, export_rev
+        from render_snapshot import CLOCK_SCRIPT, SETUP_SCRIPT, boot_frozen
+        import danger_gallery
+        vp = next(v for v in visual_gallery.VIEWPORTS if v['name'] == 'phone')
+        with ExitStack() as stack, tempfile.TemporaryDirectory() as tmp:
+            root, _ = export_rev('worktree', stack.callback)
+            url, browser = start_browser_test(root, stack.callback)
+            context = browser.new_context(viewport={'width': vp['width'], 'height': vp['height']},
+                                          device_scale_factor=vp['dpr'], is_mobile=True, has_touch=True)
+            context.add_init_script(SEED_SCRIPT % visual_gallery.SEED)
+            context.add_init_script(CLOCK_SCRIPT)
+            page = context.new_page()
+            errors = []
+            page.on('pageerror', lambda e: errors.append(str(e)))
+            page.goto(url + 'index.html', wait_until='load')
+            boot_frozen(page)
+            page.evaluate(SETUP_SCRIPT, [[], True])
+            page.evaluate("""mode => {
+                startGame(mode)
+                __snap.now = 20000
+                visualEffects.screenEffects.triggerDeath(ninja.x, ninja.y)
+                __snap.now = 0
+            }""", 'classic')
+            end = page.evaluate('() => visualEffects.screenEffects.shockwaves.at(-1).end')
+            self.assertGreater(end, page.evaluate('() => __snap.now'))
+            images, info = danger_gallery.capture(page, 'classic', Path(tmp), vp['name'])
+            self.assertEqual(len(images), info['frames'])
+            first = page.evaluate('() => __dangerInspectionStart')
+            self.assertGreater(first, end)
+            self.assertEqual(errors, [])
+            context.close()
+            print(f'PASS danger inspection after rewound clock: start={first} > shockwave end={end}')
+
+
 if __name__ == '__main__':
     unittest.main()

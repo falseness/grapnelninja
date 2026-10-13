@@ -25,7 +25,11 @@ SETUP = '''mode => {
     ninja.x = w * .08; ninja.y = h * .5
     ninja.speedX = ninja.speedY = 0
     // Advance past prior effects; rewinding would reactivate old screen shakes.
-    window.__dangerInspectionStart = __snap.now + 1000
+    // Earlier probes (ember gallery) may rewind __snap.now below a prior death,
+    // so start after the latest shockwave/shake too, not just the current clock.
+    const effects = visualEffects?.screenEffects
+    window.__dangerInspectionStart = Math.max(__snap.now, effects?.shakeUntil || 0,
+        ...(effects?.shockwaves || []).map(s => s.end)) + 1000
 }'''
 
 STEP = '''ms => {

@@ -45,7 +45,9 @@ MODES = ['bad', 'classic']
 TICKS = [300, 900]
 # Seed 1's desktop bad run hangs at a fixed camera. The phone run scrolls
 # after tick 900; retain the desktop classic swing and its scrolling segment.
-GIF_CAPTURE = {'bad': ('phone', 900), 'classic': ('desktop', 300), 'menu': ('desktop', 0)}
+# Since 8519216 (TASK-242) every death freezes on the restart offer, so the
+# classic run scrolls over ticks ~85-150 and then holds until tick ~300.
+GIF_CAPTURE = {'bad': ('phone', 900), 'classic': ('desktop', 60), 'menu': ('desktop', 0)}
 GIF_SIZE = (960, 540)
 GIF_FPS = 15
 GIF_STEP = 60 // GIF_FPS          # game ticks per GIF frame
