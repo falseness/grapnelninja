@@ -70,15 +70,15 @@ class Playgama2StorageTests(unittest.TestCase):
         events = page.evaluate('bootProbe.events')
         times = {e['name']: e['ms'] for e in events}
         start = page.evaluate("storageTrace.find(x=>x.op==='read-start').ms")
-        # Menu includes rendering after the read deadline; measure the read itself
+        # Boot includes rendering after the read deadline; measure the read itself
         # with loading.starting DOM text observed by a boundary-only observer.
         read_done = page.evaluate('window.storageFinished')
         self.assertLessEqual(read_done - start, 1500)
-        self.assertLessEqual(times['menu'] - times['sdk_start'], 5000)
-        self.timings[case] = {'read_ms':read_done-start, 'menu_ms':times['menu']-times['sdk_start'], 'verdict':'PASS read <=1500ms; interactive menu <=5000ms'}
-        path = case + '-menu.png'
+        self.assertLessEqual(times['loading_hidden'] - times['sdk_start'], 5000)
+        self.timings[case] = {'read_ms':read_done-start, 'loading_hidden_ms':times['loading_hidden']-times['sdk_start'], 'verdict':'PASS read <=1500ms; loading hidden <=5000ms'}
+        path = case + '-boot.png'
         subprocess.run(['import','-window','root', str(self.out/path)], env=self.env, check=True, timeout=12)
-        self.captures.append({'path':path,'sha256':hashlib.sha256((self.out/path).read_bytes()).hexdigest(), 'loadingHidden':page.locator('#loading').evaluate('(e)=>e.hidden'), 'menuVisible':page.evaluate('menu.visible')})
+        self.captures.append({'path':path,'sha256':hashlib.sha256((self.out/path).read_bytes()).hexdigest(), 'loadingHidden':page.locator('#loading').evaluate('(e)=>e.hidden'), 'gamePaused':page.evaluate('menu.gamePaused')})
         self.cases[case] = {'initial':page.evaluate(STATE), 'delayed_remote':REMOTE, 'console':console}
         return page, config
 
@@ -136,7 +136,7 @@ class Playgama2StorageTests(unittest.TestCase):
                 self.assertEqual(reloaded,final)
                 self.cases[case].update(reloaded=reloaded, verdict='PASS no default writes before reconciliation; records/time monotonic; session language wins; recovery/reload preserved')
                 if case != 'delay-write': self.click_mode(page,'classic')
-                print('PASS '+case+': read <=1500ms; menu <=5000ms; ordered read/write; record=100/30 time>=625 language=en; recovery/reload; real input',flush=True)
+                print('PASS '+case+': read <=1500ms; loading hidden <=5000ms; ordered read/write; record=100/30 time>=625 language=en; recovery/reload; real input',flush=True)
                 page.context.close()
 
     def test_record_only_delayed_read_recovery_and_sdk_reload(self):
