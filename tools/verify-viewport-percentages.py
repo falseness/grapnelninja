@@ -40,7 +40,7 @@ scenario=r'''mode=>{
  const wrap=t=>new Proxy(t,{get(t,k){let v=t[k];return typeof v==='function'? (...a)=>{trace.push([k,...a.map(norm)]);return v.apply(t,a)}:v},set(t,k,v){trace.push(['set',k,norm(v)]);t[k]=v;return true}});
  ctx=wrap(real);visualEffects=new VisualEffects(ctx,canvas);visualEffects.lightmap.lightCtx=wrap(visualEffects.lightmap.lightCtx);
  const parts={};const capture=(name,fn)=>{trace=[];fn();parts[name]=trace.slice()};
- capture('menu',()=>menu.draw());
+ capture('pause',()=>menu.drawPauseScreen());
  capture('background',()=>visualEffects.background.draw());
  ctx.scale(scale[mode],scale[mode]);
  const state=visualEffects.getGameState();
@@ -56,7 +56,7 @@ scenario=r'''mode=>{
  const shake={...visualEffects.screenEffects.shakeOffset};
  ctx.scale(1/scale[mode],1/scale[mode]);
  window.drawTestGame=()=>draw();drawTestGame();
- window.drawTestMenu=()=>menu.draw();window.drawTestPause=()=>menu.drawPauseScreen();
+ window.drawTestPause=()=>{draw();menu.drawPauseScreen()};window.drawTestDeath=()=>{continueOffer.show();draw();continueOffer.draw()};
  const quality={};QUALITY.setLowPower(true);
  capture('lowPower',()=>{ps.update(state);ps.draw();visualEffects.playerTrail.draw(state);visualEffects.lightmap.draw(state);visualEffects.lightmap.composite(state);visualEffects.screenEffects.begin()});
  quality.low={...QUALITY,particles:ps.particles.length,backgroundTime:visualEffects.background.getAnimationTime(),shaking:visualEffects.screenEffects.isShaking};
@@ -161,22 +161,22 @@ def main():
                     for part in ['particles','trails','hud','screenEffects']:
                         assert len(effects['parts'][part])>5
                     row['modes'][mode] = {'gameplay': values, 'effects': effects}
-                    for stage, fn in [('game','drawTestGame'),('menu','drawTestMenu'),('pause','drawTestPause')]:
+                    for stage, fn in [('game','drawTestGame'),('pause','drawTestPause'),('death','drawTestDeath')]:
                         page.evaluate(fn+'()')
                         page.screenshot(path=str(args.output/f'{key}-{mode}-{stage}.png'))
                     if revision=='current':
                         old = results['baseline-1920x1080']['modes'][mode]
                         if w==1920:
                             near(old['gameplay'], values, mode+'.gameplay')
-                            for stage in ['game','menu','pause']:
+                            for stage in ['game','pause','death']:
                                 a=Image.open(args.output/f'baseline-1920x1080-{mode}-{stage}.png')
                                 b=Image.open(args.output/f'current-1920x1080-{mode}-{stage}.png')
                                 assert not ImageChops.difference(a,b).getbbox(), (mode,stage)
-                            print(f'PASS 1920x1080 {mode}: game/menu/pause screenshots pixel-identical to pre-conversion',flush=True)
+                            print(f'PASS 1920x1080 {mode}: game/pause/death screenshots pixel-identical to pre-conversion',flush=True)
                             for field in ['parts','particles','shake','quality','panel']:
                                 near(old['effects'][field], effects[field], mode+'.'+field)
                             near(normalized_style(old['effects']['style']), normalized_style(effects['style']))
-                            print(f'PASS 1920x1080 {mode}: pre-conversion physics and 240 substeps, HUD/effects draw traces, dimensions, particle states, menu/pause match', flush=True)
+                            print(f'PASS 1920x1080 {mode}: pre-conversion physics and 240 substeps, HUD/effects draw traces, dimensions, particle states, pause match', flush=True)
                         else:
                             original = old['gameplay']['values']
                             for field in ['gravity','throwSpeed','pullSpeed','triangleSpeed','ninjaCap','cameraTop','cameraBottom','cameraCenter','cornerTolerance','firstPointTolerance','coordinateTolerance']:

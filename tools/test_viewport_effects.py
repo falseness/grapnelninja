@@ -3,7 +3,7 @@
 What must stay true whatever the art looks like: obstacle geometry scales with
 the logical viewport (the checker's check_geometry, which test_scaled_geometry
 also exercises), no canvas call gets a NaN/Infinity argument, and both modes,
-the menu and the pause screen draw without browser errors.
+the pause screen and the death screen draw without browser errors.
 
 This suite no longer requires pixel-identical screenshots or matching draw-call
 traces against rev a6b41aa: the graphics overhaul changes the look on purpose.
@@ -94,7 +94,7 @@ class ViewportEffectsTests(unittest.TestCase):
         page.goto(self.url)
         # Since TASK-117 boot() waits for animation frames before start(),
         # and the checker's init script stubs requestAnimationFrame: run
-        # the rest of boot by hand (draw the menu, hide #loading).
+        # the rest of boot by hand (start the run, hide #loading).
         # Offline, boot first waits out PLATFORM.initTimeoutMs for the Bridge
         # SDK; poll on a timer, since the default rAF polling never fires
         # under the stubbed requestAnimationFrame.
@@ -122,7 +122,7 @@ class ViewportEffectsTests(unittest.TestCase):
                         effects = page.evaluate(CHECKER.scenario, mode)
                         for part in ['particles', 'trails', 'hud', 'screenEffects']:
                             self.assertGreater(len(effects['parts'][part]), 5, part)
-                        for stage in ['game', 'menu', 'pause']:
+                        for stage in ['game', 'pause', 'death']:
                             page.evaluate(f'drawTest{stage.title()}()')
                             with Image.open(BytesIO(page.screenshot())) as image:
                                 # Something was drawn: not a single flat colour
@@ -130,7 +130,7 @@ class ViewportEffectsTests(unittest.TestCase):
                         calls = self.assert_clean(page, errors, label)
                     finally:
                         page.close()
-                    print(f'PASS {label}: effects scenario + game/menu/pause drawn; '
+                    print(f'PASS {label}: effects scenario + game/pause/death drawn; '
                           f'{calls} canvas calls, non-finite args=0, browser errors=0', flush=True)
                     passed.append(label)
         self.assertEqual(len(passed), 6)
