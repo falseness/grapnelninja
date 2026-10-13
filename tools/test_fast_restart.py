@@ -9,6 +9,9 @@ no interstitial request.
 
 Uses the fake Bridge of test_playgama2_bridge.py with interstitials
 supported and PLATFORM.now() replaced by a frozen clock (window.fakeNow).
+TASK-371: a press held across a fast restart (stalePress in events.js) throws
+no grapnel in the new run until it is released.
+
 Saves fast-restart.png to FAST_RESTART_EVIDENCE_DIR (default
 artifacts/TASK-370).
 """
@@ -87,9 +90,18 @@ class FastRestartTests(unittest.TestCase):
     def setUpClass(cls):
         OUT.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        # Printed after the run so `test_held_press_across_fast_restart ... ok`
+        # stays on one line of the -v output
+        cls.report = []
 
-    def open(self, bridge=True):
-        context = self.browser.new_context(viewport={'width': 1280, 'height': 720}, locale='en-US')
+    @classmethod
+    def tearDownClass(cls):
+        for line in cls.report:
+            print(line, flush=True)
+
+    def open(self, bridge=True, has_touch=False):
+        context = self.browser.new_context(viewport={'width': 1280, 'height': 720}, locale='en-US',
+                                           has_touch=has_touch)
         self.addCleanup(context.close)
         if bridge:
             context.route(SDK_URL, lambda route: route.fulfill(content_type='application/javascript',
@@ -240,6 +252,69 @@ class FastRestartTests(unittest.TestCase):
         self.assertEqual(result['messages'][:2], [['level_failed', {'world': 'bad'}], ['level_started', {'world': 'bad'}]])
         self.assertNotIn(True, frames)
         print('PASS (d) host-paused fast restart ends with menu.gamePaused === true', flush=True)
+
+    def held_press_across_fast_restart(self, page, down, extra, up):
+        """down() holds a trusted press, extra() presses again while it is
+        held, up() releases every press; returns the observed states."""
+        page.evaluate('bridge.advertisement.isInterstitialSupported = false')
+        self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
+        down()
+        page.wait_for_function('grapnel.throwed && pressHeld')
+        state = page.evaluate('''() => {
+            const ninja0 = ninja
+            onLethalDeath()
+            return {newNinja: ninja !== ninja0, offer: continueOffer.visible, paused: menu.gamePaused,
+                throwed: grapnel.throwed, pressHeld, stalePress}
+        }''')
+        state['frames'] = page.evaluate('''n => new Promise(resolve => {
+            const seen = []
+            const step = () => {
+                seen.push(grapnel.throwed)
+                if (seen.length === n) resolve(seen)
+                else requestAnimationFrame(step)
+            }
+            requestAnimationFrame(step)
+        })''', 30)
+        extra()
+        state['afterExtraPress'] = page.evaluate('({throwed: grapnel.throwed, stalePress})')
+        up()
+        state['afterRelease'] = page.evaluate('({throwed: grapnel.throwed, pressHeld, stalePress})')
+        down()
+        page.wait_for_function('grapnel.throwed')
+        state['afterNextPress'] = page.evaluate('({throwed: grapnel.throwed, stalePress})')
+        up()
+        self.assertTrue(state['newNinja'])
+        self.assertFalse(state['offer'])
+        self.assertFalse(state['paused'])
+        self.assertFalse(state['throwed'])
+        self.assertTrue(state['pressHeld'])
+        self.assertTrue(state['stalePress'])
+        self.assertEqual(state['frames'], [False] * 30)
+        self.assertEqual(state['afterExtraPress'], {'throwed': False, 'stalePress': True})
+        self.assertEqual(state['afterRelease'], {'throwed': False, 'pressHeld': False, 'stalePress': False})
+        self.assertEqual(state['afterNextPress'], {'throwed': True, 'stalePress': False})
+        return state
+
+    def test_held_press_across_fast_restart(self):
+        page = self.open()
+        mouse = page.mouse
+        mouse.move(640, 300)
+        state = self.held_press_across_fast_restart(page, mouse.down,
+            lambda: mouse.down(button='right'), lambda: (mouse.up(button='right'), mouse.up()))
+        self.report.append('ASSERT held mouse press ' + json.dumps(state))
+        self.report.append('PASS (e) mouse: held across fast restart -> 30 frames throwed false (and a second '
+                           'button press ignored); mouseup then mousedown -> throwed true')
+
+        page = self.open(has_touch=True)
+        cdp = page.context.new_cdp_session(page)
+        finger = {'x': 640, 'y': 300, 'id': 0}
+        second = {'x': 700, 'y': 320, 'id': 1}
+        touch = lambda kind, points: cdp.send('Input.dispatchTouchEvent', {'type': kind, 'touchPoints': points})
+        state = self.held_press_across_fast_restart(page, lambda: touch('touchStart', [finger]),
+            lambda: touch('touchStart', [finger, second]), lambda: touch('touchEnd', []))
+        self.report.append('ASSERT held touch press ' + json.dumps(state))
+        self.report.append('PASS (f) touch (has_touch): held across fast restart -> 30 frames throwed false '
+                           '(and a second finger ignored); touchend then touchstart -> throwed true')
 
 
 if __name__ == '__main__':

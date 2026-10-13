@@ -71,6 +71,7 @@ function createEvents()
     }
     function click(event)
     {
+        pressHeld = true
         if (adOpen || interstitialPending || isViewRotated())
             return
         if (!unTouch && startEvent(event))
@@ -83,7 +84,7 @@ function createEvents()
             }, STYLE.timing.inputUntouchMs)
             return
         }
-        if (!menu.opened() && !continueOffer.visible)
+        if (!menu.opened() && !continueOffer.visible && !stalePress)
             throwGrapnel(event)
     }
     // preventDefault stops the emulated mousedown/mouseup after a tap
@@ -98,6 +99,8 @@ function createEvents()
     }
     function offclick()
     {
+        pressHeld = false
+        stalePress = false
         if (adOpen || interstitialPending)
             return
         pickUpGrapnel()
