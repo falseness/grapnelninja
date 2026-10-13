@@ -13,7 +13,7 @@ of that tick (the same script for every revision), then calls physics() and
 draw() by hand. Captures are the canvas composited over opaque black (the
 body color), so alpha differences that are invisible on screen do not count.
 
-Captures (18): the main menu, and bad and classic at ticks 60, 300, 600 and
+Captures (18): the boot run's first frame, and bad and classic at ticks 60, 300, 600 and
 1200, at 844x390@DPR3 (mobile, touch) and 1920x1080@DPR1 (mouse).
 
 Usage: python3 tools/render_snapshot.py --capture --rev worktree|<git rev> --out DIR
@@ -128,7 +128,7 @@ CLOCK_SCRIPT = '''(() => {
 })()'''
 
 def boot_frozen(page, rounds=500, idle_rounds=20):
-    """Drive index.html's async boot() to the first menu frame under CLOCK_SCRIPT.
+    """Drive index.html's async boot() to the first frame under CLOCK_SCRIPT.
 
     boot() awaits rAF, which the frozen clock never fires on its own; the real
     event loop runs between rounds so async boot work (storage, fonts) can settle.
@@ -209,7 +209,7 @@ def input_script(seed=SEED, ticks=TICKS[-1], width=1, height=1):
 def capture_names():
     names = []
     for vp in VIEWPORTS:
-        names.append(f'{vp["name"]}-menu')
+        names.append(f'{vp["name"]}-boot')
         names += [f'{vp["name"]}-{mode}-tick{tick:04d}' for mode in MODES for tick in TICKS]
     return names
 
@@ -240,11 +240,14 @@ def capture(rev, out, extra_init=None, log=print):
                 page.on('pageerror', lambda e, n=vp['name']: errors.append(f'{n}: {e}'))
                 page.goto(url + 'index.html', wait_until='load')
                 boot_frozen(page)
-                if not page.evaluate('() => typeof menu != "undefined" && menu.visible'):
-                    raise RuntimeError('menu not visible after load')
+                # boot() skips the title menu and starts a 'bad' run (TASK-364)
+                if not page.evaluate('() => bootComplete && runInProgress'):
+                    raise RuntimeError('boot run not started after load')
                 page.evaluate(SETUP_SCRIPT, [script, vp['touch']])
                 if mode is None:
-                    shots[f'{vp["name"]}-menu'] = png_bytes(page.evaluate('() => __snap.capture()'))
+                    # The frozen clock never runs the boot run's gameLoop
+                    page.evaluate('() => draw()')
+                    shots[f'{vp["name"]}-boot'] = png_bytes(page.evaluate('() => __snap.capture()'))
                 else:
                     page.evaluate('mode => startGame(mode)', mode)
                     for tick in TICKS:
@@ -253,7 +256,7 @@ def capture(rev, out, extra_init=None, log=print):
                             page.evaluate('() => __snap.capture()'))
                 context.close()
                 log(f'rev={rev_id} viewport={vp["name"]} {vp["width"]}x{vp["height"]}@{vp["dpr"]} '
-                    f'mode={mode or "menu"} done')
+                    f'mode={mode or "boot"} done')
     captures = {}
     for name in capture_names():
         data = shots[name]

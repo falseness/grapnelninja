@@ -11,7 +11,7 @@ import render_snapshot
 TOOLS = Path(__file__).resolve().parent
 
 # Draws one opaque red device pixel after every draw(): a deliberate one-pixel
-# canvas change that the menu capture does not see but every game tick does.
+# canvas change that the boot frame and every game tick see.
 ONE_PIXEL_CHANGE = '''window.addEventListener('load', () => {
     const draw0 = window.draw
     window.draw = function() {
@@ -63,13 +63,15 @@ class RenderSnapshotTest(unittest.TestCase):
             report = json.loads((out / 'compare.json').read_text())
             captures = report['captures']
             for vp in ('mobile', 'desktop'):
-                self.assertEqual(captures[f'{vp}-menu']['differing_pixels'], 0)
+                boot = captures[f'{vp}-boot']
+                self.assertGreaterEqual(boot['differing_pixels'], 1)
+                self.assertTrue(Path(boot['diff_png']).exists())
                 for mode in render_snapshot.MODES:
                     for t in render_snapshot.TICKS:
                         entry = captures[f'{vp}-{mode}-tick{t:04d}']
                         self.assertGreaterEqual(entry['differing_pixels'], 1)
                         self.assertTrue(Path(entry['diff_png']).exists())
-            self.assertEqual(len(report['differing_captures']), 16)
+            self.assertEqual(len(report['differing_captures']), 18)
 
 
 if __name__ == '__main__':
