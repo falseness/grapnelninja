@@ -490,87 +490,12 @@ class Menu
         
         this.gamePaused = false
         
-        this.visible= true   
-        
         this.center = 
         {
             x: this.width  / 2,
             y: this.height / 2,
         }
         
-        this.mainText = new Text(
-        {
-            fill    : STYLE.colors.ui.title,
-            glow    : STYLE.colors.ui.titleGlow,
-            fontSize: 0.075 * this.width,
-            text    : I18N.t('game.title'),
-            x       : this.center.x     ,
-            y       : 0.2 * this.height
-        })
-        
-        this.classicVersionButton = new Button(
-        {
-            x: this.center.x        ,
-            y: 0.35 * this.height   ,
-            width: 0.4 * this.width ,
-            height: 0.1 * this.height,
-            stroke: STYLE.colors.ui.primary,
-            neon: true
-        },
-        {
-            fill: STYLE.colors.ui.buttonText,
-            text: I18N.t('menu.chillVersion')
-        },
-        function(){startGame('classic')})
-        this.classicRecord = new Text(
-        {
-            x       : this.center.x                     ,
-            y       : 0.43 * this.height                ,
-            fontSize: 0.05 * this.height                ,
-            fill    : STYLE.colors.ui.mutedText         ,
-            text    : I18N.t('menu.record', {value: scoreText.record.classic})
-        })
-        this.badVersionButton = new Button(
-        {
-            x: this.center.x        ,
-            y: 0.52 * this.height   ,
-            width: 0.4 * this.width ,
-            height: 0.1 * this.height,
-            fill: STYLE.colors.ui.mainButtonFill,
-            stroke: STYLE.colors.ui.mainButtonStroke,
-            neon: true
-        },
-        {
-            fill: STYLE.colors.ui.buttonText,
-            text: I18N.t('menu.mainVersion')
-        },
-        function(){startGame('bad')})
-        this.badRecord = new Text(
-        {
-            x       : this.center.x                     ,
-            y       : 0.60 * this.height                ,
-            fontSize: 0.05 * this.height                ,
-            fill    : STYLE.colors.ui.mutedText         ,
-            text    : I18N.t('menu.record', {value: scoreText.record.bad})
-        })
-
-        this.mainFpsCounterCheckbox = new Checkbox(
-        {
-            x       : this.center.x,
-            y       : 0.70 * this.height,
-            size    : 0.05 * this.height,
-            fontSize: 0.05 * this.height,
-            fill    : STYLE.colors.ui.text,
-            stroke  : STYLE.colors.ui.primary,
-            label   : I18N.t('menu.fpsCounter'),
-            clickable: true
-        },
-        function()
-        {
-            fpsCounter.toggle()
-            menu.draw()
-        })
-
         this.timeInGame = new Text(
             {
             x       : this.center.x                     ,
@@ -693,56 +618,6 @@ class Menu
             })
         })
         this.relabelPauseSwitch()
-        this.layoutMainFpsCheckbox()
-        this.compactLayout()
-    }
-    // The fps label is no taller than the record text (but stays readable,
-    // >= buttonMinFontSize CSS px) and the box + label row is centred on the
-    // menu column
-    layoutMainFpsCheckbox()
-    {
-        const check = this.mainFpsCounterCheckbox
-        const recordSize = parseFloat(this.classicRecord.fontSize)
-        const height = (m) => m.actualBoundingBoxAscent + m.actualBoundingBoxDescent
-
-        ctx.save()
-        ctx.font = this.classicRecord.fontSize
-        const recordHeight = height(ctx.measureText(this.classicRecord.text))
-        ctx.font = getArcadeFont(recordSize)
-        const label = ctx.measureText(check.label)
-        ctx.restore()
-
-        const cssHeight = getCanvasCssRect().height
-        const minSize = cssHeight > 0 ? STYLE.ui.buttonMinFontSize * this.height / cssHeight : 0
-        const size = Math.max(Math.min(recordSize, minSize),
-            recordSize * Math.min(1, recordHeight / height(label)))
-        const rowWidth = size * 1.55 + label.width * size / recordSize
-
-        check.size = size
-        check.fontSize = getArcadeFont(size)
-        check.x = this.center.x - rowWidth / 2
-    }
-    // Phones: buttons grow to the touch floor and the rows are stacked
-    // evenly below the corner button (language)
-    compactLayout()
-    {
-        const touch = compactTouchSize(0.1 * this.height)
-        if (!touch)
-            return
-        const margin = LANGUAGE_BUTTON.marginRatio * this.height
-        const top = 2 * margin + Math.max(LANGUAGE_BUTTON.sizeRatio * this.height, touch)
-        const recordSize = parseFloat(this.classicRecord.fontSize)
-        const check = this.mainFpsCounterCheckbox
-        const rows = stackRows(top, this.height - margin, [parseFloat(this.mainText.fontSize),
-            touch, recordSize, touch, recordSize, check.hitRect().height, recordSize])
-
-        this.mainText.y = rows[0]
-        this.layoutPauseButton(this.classicVersionButton, this.center.x, rows[1], 0.4 * this.width, touch)
-        this.classicRecord.y = rows[2]
-        this.layoutPauseButton(this.badVersionButton, this.center.x, rows[3], 0.4 * this.width, touch)
-        this.badRecord.y = rows[4]
-        check.y = rows[5]
-        this.timeInGame.y = rows[6]
     }
     getPausePanel()
     {
@@ -847,24 +722,13 @@ class Menu
     }
     click(coord)
     {
-        return  this.classicVersionButton.isClickOnButton(coord)    ||
-                this.badVersionButton.isClickOnButton(coord)        ||
-                this.resume.isClickOnButton(coord)                  ||
-                this.mainFpsCounterCheckbox.isClickOnButton(coord)  ||
+        return  this.resume.isClickOnButton(coord)                  ||
                 this.pauseFpsCounterCheckbox.isClickOnButton(coord) ||
                 this.backToMenu.isClickOnButton(coord)
     }
     clickToPause(coord)
     {
-        return (this.visible)?false:this.button.isClickOnButton(coord)   
-    }
-    setVisible(visible)
-    {
-        this.visible = visible
-        
-        this.classicVersionButton.clickable     = visible
-        this.badVersionButton.clickable         = visible
-        this.mainFpsCounterCheckbox.clickable   = visible
+        return this.button.isClickOnButton(coord)
     }
     changeGamePause(isPaused)
     {
@@ -934,7 +798,7 @@ class Menu
     }
     opened()
     {
-        return menu.gamePaused || menu.visible
+        return menu.gamePaused
     }
     pause()
     {
@@ -944,43 +808,6 @@ class Menu
         добавь прыгающий куб в classic
         */
         
-    }
-    // The crystal background with the game's motes and colour grade, the
-    // bloom of the neon controls, then the crisp controls
-    draw()
-    {
-        this.layoutMainFpsCheckbox()
-        if (typeof visualEffects != 'undefined' && visualEffects && visualEffects.background)
-        {
-            visualEffects.background.drawMenuBackground()
-            visualEffects.lightmap.drawMenu([this.classicVersionButton, this.badVersionButton])
-            visualEffects.particles.drawAmbientMotes(MENU_MOTES_VIEW)
-            visualEffects.colorGrade.draw()
-            drawScreenGlow(() =>
-            {
-                visualEffects.particles.drawAmbientMotes(MENU_MOTES_VIEW)
-                this.mainText.drawGlow()
-                this.classicVersionButton.drawGlow()
-                this.badVersionButton.drawGlow()
-                this.mainFpsCounterCheckbox.drawGlow()
-                LANGUAGE_BUTTON.drawGlow()
-            })
-        }
-        else
-            ctx.clearRect(0, 0, this.width, this.height)
-        
-        this.mainText.draw()
-        
-        this.classicVersionButton.draw()
-        this.classicRecord.draw()
-        
-        this.badVersionButton.draw()
-        this.badRecord.draw()
-
-        this.mainFpsCounterCheckbox.draw()
-        this.timeInGame.draw()
-
-        LANGUAGE_BUTTON.draw()
     }
 }
 // Free death choices, shared by every score and ad-support outcome:

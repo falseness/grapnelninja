@@ -99,8 +99,7 @@ function createEvents()
     {
         if (adOpen || interstitialPending)
             return
-        if (!menu.visible)
-            pickUpGrapnel()
+        pickUpGrapnel()
     }
     function offtouch(event)
     {
@@ -132,7 +131,7 @@ function createEvents()
     {
         if (scrollKeys.includes(event.key))
             event.preventDefault()
-        if (pauseKeys.includes(event.key) && !isViewRotated() && !menu.visible && !continueOffer.visible && !adOpen && !interstitialPending)
+        if (pauseKeys.includes(event.key) && !isViewRotated() && !continueOffer.visible && !adOpen && !interstitialPending)
         {
             event.preventDefault()
 

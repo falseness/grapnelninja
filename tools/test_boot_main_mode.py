@@ -56,10 +56,10 @@ class BootMainModeTests(unittest.TestCase):
         page = self.open()
         # game_ready is sent after the first gameplay frame was painted
         page.screenshot(path=str(self.out / 'boot.png'))
-        state = page.evaluate('''({version, menuVisible: menu.visible, paused: menu.gamePaused,
+        state = page.evaluate('''({version, titleMenu: "visible" in menu || "classicVersionButton" in menu || "draw" in menu, paused: menu.gamePaused,
             tutorial: !document.getElementById('tutorial').hidden,
             loading: !document.getElementById('loading').hidden, ninja: !!ninja})''')
-        self.assertEqual(state, {'version': 'bad', 'menuVisible': False, 'paused': False,
+        self.assertEqual(state, {'version': 'bad', 'titleMenu': False, 'paused': False,
                                  'tutorial': True, 'loading': False, 'ninja': True})
         # Queued startup events are flushed with game_ready
         page.wait_for_function("probe.calls.some(c => c.name === 'startup_funnel' && c.data.stage === 'first_gameplay_frame')")
@@ -72,14 +72,14 @@ class BootMainModeTests(unittest.TestCase):
         self.assertNotIn('menu_interactive', stages)
         self.assertEqual(stages[:3], ['mode_selected', 'run_initialized', 'first_gameplay_frame'])
         self.assertTrue(all(c[1].get('mode') == 'bad' for c in calls if c[0] == 'startup_funnel'))
-        print('PASS boot: version=bad menu hidden tutorial shown; order', [m[0] for m in messages],
+        print('PASS boot: version=bad no title menu, tutorial shown; order', [m[0] for m in messages],
               'stages', stages, flush=True)
 
     def test_boot_with_host_paused_starts_paused(self):
         page = self.open('host_paused')
         page.wait_for_function("probe.calls.some(c => c.name === 'level_paused')")
-        state = page.evaluate('({version, hostPaused, menuVisible: menu.visible, paused: menu.gamePaused})')
-        self.assertEqual(state, {'version': 'bad', 'hostPaused': True, 'menuVisible': False, 'paused': True})
+        state = page.evaluate('({version, hostPaused, titleMenu: "visible" in menu || "classicVersionButton" in menu || "draw" in menu, paused: menu.gamePaused})')
+        self.assertEqual(state, {'version': 'bad', 'hostPaused': True, 'titleMenu': False, 'paused': True})
         messages = [c for c in self.calls(page) if c[0] == 'game_ready' or c[0].startswith('level_')]
         self.assertEqual(messages, [['game_ready', None], ['level_started', {'world': 'bad'}], ['level_paused', None]])
         print('PASS host-paused boot:', state, [m[0] for m in messages], flush=True)

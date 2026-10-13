@@ -288,7 +288,6 @@
                 layoutHud()
                 
                 scoreText.count[version] = 0
-                menu.setVisible(false)
                 PLATFORM.sendLifecycle('level_started', {world: version})
                 runInProgress = true
                 
@@ -523,17 +522,12 @@
             function gameLoop(frameTime)
             {
                 fpsCounter.frame(frameTime)
-                const activelyPlaying = bootComplete && !menu.visible && !menu.gamePaused &&
+                const activelyPlaying = bootComplete && !menu.gamePaused &&
                     !continueOffer.visible && !adOpen && !interstitialPending && !hostPaused &&
                     !isViewRotated() && document.visibilityState !== 'hidden'
                 TELEMETRY.frame(frameTime, activelyPlaying, version)
 
-                if (menu.visible)
-                {
-                    resetPhysicsTiming()
-                    menu.draw()
-                }
-                else if (menu.gamePaused)
+                if (menu.gamePaused)
                 {
                     resetPhysicsTiming()
                     menu.pause()
@@ -591,9 +585,7 @@
                         floors[i].rescaleSpacing(width / oldWidth)
                 }
 
-                if (menu.visible)
-                    menu.draw()
-                else if (menu.gamePaused)
+                if (menu.gamePaused)
                 {
                     draw()
                     menu.drawPauseScreen()
@@ -606,9 +598,7 @@
                 applyLanguage()
                 PROGRESS.setLang(I18N.language)
                 PROGRESS.save()
-                if (menu.visible)
-                    menu.draw()
-                else if (menu.gamePaused)
+                if (menu.gamePaused)
                 {
                     draw()
                     menu.drawPauseScreen()
@@ -631,7 +621,6 @@
                 const old = menu
                 menu = new Menu(width, height)
                 menu.button = old.button
-                menu.setVisible(old.visible)
                 menu.changeGamePause(old.gamePaused)
             }
             function updateOrientation()
@@ -657,7 +646,7 @@
                 }
                 if (continueOffer.visible && continueOffer.adPending)
                     pauseAfterAd = true
-                else if (!menu.visible && !menu.gamePaused && !continueOffer.visible)
+                else if (!menu.gamePaused && !continueOffer.visible)
                     menu.startPause()
             }
             window.onblur = () => { AUDIO.setMute('focus', true); pauseRun() }

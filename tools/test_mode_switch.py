@@ -159,7 +159,7 @@ class ModeSwitchTests(unittest.TestCase):
         after = self.messages(page)[before:]
         self.assertEqual(after, [['level_failed', {'world': 'bad'}], ['interstitial_request', 'game_over'],
                                  ['level_started', {'world': 'classic'}]])
-        self.assertFalse(page.evaluate('menu.visible || menu.gamePaused'))
+        self.assertFalse(page.evaluate('menu.gamePaused'))
         self.log('PASS switch bad -> classic:', json.dumps(after))
 
         self.die(page)
@@ -198,7 +198,7 @@ class ModeSwitchTests(unittest.TestCase):
         self.assertEqual(after, [['level_paused', None], ['level_failed', {'world': 'classic'}],
                                  ['level_started', {'world': 'bad'}]])
         self.assertFalse(page.evaluate("probe.calls.some(c => c.name === 'interstitial_request')"))
-        self.assertFalse(page.evaluate('menu.visible || continueOffer.visible || interstitialPending'))
+        self.assertFalse(page.evaluate('continueOffer.visible || interstitialPending'))
         self.log('PASS pause switch classic -> bad, no interstitial:', json.dumps(after))
 
         # Resume keeps the same run going
@@ -228,7 +228,7 @@ class ModeSwitchTests(unittest.TestCase):
         self.assertEqual(page.evaluate('I18N.language'), 'ru')
         labels = page.evaluate('[menu.backToMenu.text.text, menu.resume.text.text]')
         self.assertEqual(labels, [chill_ru, '\u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c'])
-        self.assertTrue(page.evaluate('menu.gamePaused && !menu.visible'))
+        self.assertTrue(page.evaluate('menu.gamePaused'))
         boxes = {k: page.evaluate(self.pause_rect(k)) for k in ('resume', 'backToMenu')}
         boxes['fps'] = page.evaluate('menu.pauseFpsCounterCheckbox.hitRect()')
         boxes['language'] = page.evaluate(LANGUAGE)
