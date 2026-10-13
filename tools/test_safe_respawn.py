@@ -1,8 +1,16 @@
-"""Safe respawn after a continue (TASK-081).
+"""Safe respawn geometry (TASK-081).
 
 Each case drives physics by hand (no requestAnimationFrame, no input after
-the continue): advance the run, die for real through ninja.move(), answer the
-continue offer and then run RESPAWN_INVULNERABLE_MS + 500 ms of physics.
+the respawn): advance the run, die for real through ninja.move(), respawn
+from the frozen death and then run RESPAWN_INVULNERABLE_MS + 500 ms of physics.
+
+8519216 (TASK-242) removed the rewarded continue (continueRun, continueUsed,
+the Continue button): a death now freezes on free Restart/Menu choices, so no
+button reaches respawnNinja() in play. respawn.js still ships it; rs.respawn
+replays what continueRun did around it to keep the geometry under test.
+2555291 (TASK-225) added the bouncing left wall, so falling behind the
+deletion border no longer kills: the fallback death is a lethal Side edge.
+2fd723f (TASK-251) scales new group spacing by obstacleSpacingScale(score).
 
 Env: RESPAWN_EVIDENCE_DIR receives frames/<case>/t*.png, contact.png,
 respawn-cases.json, replenish-check.json and console/page-errors.log.
@@ -22,13 +30,8 @@ VIEWPORT = {'width': 1280, 'height': 720}
 FRAMES_MS = (0, 300, 500, 1000, 2000, 2500)
 
 # window.__rs: seeded runs, a manual camera advance with deaths disabled,
-# real lethal deaths, the continue and per-tick measurements.
+# real lethal deaths, the respawn and per-tick measurements.
 SETUP = r'''() => {
-    // The local build has no rewarded ads, so the continue (and its safe
-    // respawn in respawn.js) is unreachable in play; a stub ad that always
-    // rewards keeps the respawn path under test.
-    PLATFORM.isRewardedSupported = () => true
-    PLATFORM.requestRewarded = () => Promise.resolve({status: 'rewarded'})
     const realLethal = window.onLethalDeath
     const realRestart = window.reStart
     const rs = window.__rs = {deaths: 0, reStarts: 0, lethalCalls: 0, deathsEnabled: true}
@@ -109,9 +112,11 @@ SETUP = r'''() => {
     rs.state = () => ({x: ninja.x, y: ninja.y, speedX: ninja.speedX, speedY: ninja.speedY,
         screenX: screen.x, screenY: screen.y, score: scoreText.count[version],
         invulnerableMs: ninja.invulnerableMs, offer: continueOffer.visible,
-        continueUsed: continueUsed, deaths: rs.deaths, reStarts: rs.reStarts,
+        deaths: rs.deaths, reStarts: rs.reStarts,
         throwed: grapnel.throwed, grappled: grapnel.isGrappled(), blinkAlpha: ninja.getBlinkAlpha()})
-    // A real lethal death: obstacle contact or falling behind the left border.
+    // A real lethal death: obstacle contact or the top edge of the floors[2]
+    // Side under the ninja (classic: the floor; bad: the ceiling, whose
+    // bottom edge alone bounces).
     rs.die = (cause, score) => {
         let element = null
         const v = rs.visible()
@@ -120,6 +125,7 @@ SETUP = r'''() => {
             .filter(e => e.getLeftPointX() + screen.x > 0.3 * v.w && e.getRightPointX() + screen.x < v.w)
         // Obstacle deaths need a lethal element on screen: move the camera on
         // until one shows up (some templates, e.g. frame5Rects, have none).
+        // Then the Side is the fallback.
         if (cause == 'obstacle') {
             rs.deathsEnabled = false
             for (let i = 0; i < 600 && !lethalOnScreen().length; ++i) {
@@ -130,11 +136,13 @@ SETUP = r'''() => {
                 physics()
             }
             rs.deathsEnabled = true
-            if (!lethalOnScreen().length) cause = 'behind-border'
+            if (!lethalOnScreen().length) cause = 'side'
         }
         scoreText.count[version] = score
-        if (cause == 'behind-border') {
-            ninja.x = screen.getDeletionBorder() - screen.x - 10 * ninja.radius
+        if (cause == 'side') {
+            element = floors[2].elements.find(e => e instanceof Side &&
+                e.getLeftPointX() <= ninja.x && ninja.x <= e.getRightPointX())
+            ninja.y = element.y
         } else {
             const candidates = lethalOnScreen()
             element = candidates.find(e => !(e instanceof JumpingCube) && e.speedY == 0) || candidates[0]
@@ -151,17 +159,17 @@ SETUP = r'''() => {
         const before = rs.deaths
         physics()
         if (!continueOffer.visible || rs.deaths != before + 1) throw Error('death did not open the offer')
-        return {cause: cause == 'behind-border' ? cause : 'obstacle:' + element.constructor.name,
+        return {cause: cause + ':' + element.constructor.name,
                 deathX: ninja.x, deathY: ninja.y, score: scoreText.count[version]}
     }
-    // The continue arrives with the stub rewarded ad's result
-    rs.pressContinue = async () => {
-        const b = continueOffer.continueButton.background
-        if (!continueOffer.click({x: b.x + b.width / 2, y: b.y + b.height / 2}))
-            throw Error('continue click ignored')
-        for (let i = 0; i < 200 && continueOffer.visible; ++i)
-            await new Promise(resolve => setTimeout(resolve, 10))
-        if (continueOffer.visible) throw Error('rewarded ad did not finish')
+    // The removed continueRun (8519216^:index.html) around respawnNinja():
+    // the run, score and floors are kept, no level_failed, no reStart.
+    rs.respawn = () => {
+        if (!continueOffer.visible || interstitialPending) throw Error('death is not frozen on the offer')
+        runOver = false
+        continueOffer.hide()
+        respawnNinja()
+        resetPhysicsTiming()
         rs.deaths = 0
         const p = lastRespawn
         const s = scale[version]
@@ -181,7 +189,7 @@ SETUP = r'''() => {
 }'''
 
 # Records every group the play floor generates: the anchor x, the preceding
-# right edge and the new group's bounds.
+# right edge, the new group's bounds and its obstacleSpacingScale at spawn.
 SPAWN_HOOK = r'''() => {
     const rs = window.__rs
     rs.spawns = []
@@ -192,10 +200,11 @@ SPAWN_HOOK = r'''() => {
         const lastGroupRight = this.elements.length && version == 'bad'
             ? this.getGenerationGroup(this.elements.length - 1).rightPointX : null
         const begin = this.elements.length
+        const spacing = obstacleSpacingScale(scoreText.count[version])
         const n = original.apply(this, arguments)
         const group = this.elements.slice(begin)
         if (group.length)
-            rs.spawns.push({tick: rs.tickNo || 0, phase: rs.phase, anchor: x, prevRight, lastGroupRight,
+            rs.spawns.push({tick: rs.tickNo || 0, phase: rs.phase, anchor: x, prevRight, lastGroupRight, spacing,
                 left: Math.min(...group.map(e => e.getLeftPointX())),
                 right: Math.max(...group.map(e => e.getRightPointX())),
                 types: group.map(e => e.constructor.name),
@@ -257,7 +266,8 @@ class SafeRespawnTests(unittest.TestCase):
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual((errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "local" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "disabled" && menu.visible'
+                               ' && document.getElementById("loading").hidden')
         page.evaluate(SETUP)
         return page
 
@@ -283,7 +293,7 @@ class SafeRespawnTests(unittest.TestCase):
         hold_y = 0.2 * 1080 if mode == 'classic' else 1.2 * 1080
         page.evaluate('([v, y]) => window.__rs.advance(90, v, y)', [0.8, hold_y])
         death = page.evaluate('([c, s]) => window.__rs.die(c, s)', [cause, 7])
-        respawn = page.evaluate('() => window.__rs.pressContinue()')
+        respawn = page.evaluate('() => window.__rs.respawn()')
         after = page.evaluate('() => window.__rs.state()')
 
         inv_ms, step_ms = page.evaluate('[RESPAWN_INVULNERABLE_MS, physicsStepMs]')
@@ -291,7 +301,7 @@ class SafeRespawnTests(unittest.TestCase):
         self.assertEqual((after['speedX'], after['speedY'], after['throwed'], after['grappled']),
                          (0, 0, False, False))
         self.assertEqual(after['score'], death['score'])
-        self.assertTrue(after['continueUsed'])
+        self.assertEqual((after['offer'], after['reStarts']), (False, 0))
         self.assertLess(after['blinkAlpha'], 1)
 
         window_ticks = round((inv_ms + 500) / step_ms)
@@ -349,8 +359,8 @@ class SafeRespawnTests(unittest.TestCase):
     def test_classic_obstacle(self):
         self.run_case('classic-obstacle', 'classic', None, 101, 'obstacle')
 
-    def test_classic_behind_border(self):
-        self.run_case('classic-behind-border', 'classic', None, 202, 'behind-border')
+    def test_classic_side(self):
+        self.run_case('classic-side', 'classic', None, 202, 'side')
 
     def test_bad_frame1(self):
         self.run_case('bad-frame1Elements', 'bad', 'frame1Elements', 11, 'obstacle')
@@ -367,20 +377,20 @@ class SafeRespawnTests(unittest.TestCase):
     def test_bad_mixed(self):
         self.run_case('bad-mixed', 'bad', None, 55, 'obstacle')
 
-    def replenish_check(self, mode, seed):
+    def replenish_check(self, mode, seed, cause):
         page = self.boot()
         page.evaluate('([m, s]) => window.__rs.start(m, null, s)', [mode, seed])
         hold_y = 0.2 * 1080 if mode == 'classic' else 1.2 * 1080
         page.evaluate('([v, y]) => window.__rs.advance(90, v, y)', [0.8, hold_y])
         page.evaluate(SPAWN_HOOK)
-        page.evaluate("() => { window.__rs.phase = 'before-continue' }")
-        page.evaluate('([c, s]) => window.__rs.die(c, s)', ['behind-border', 7])
-        page.evaluate("() => { window.__rs.phase = 'continue' }")
-        respawn = page.evaluate('() => window.__rs.pressContinue()')
+        page.evaluate("() => { window.__rs.phase = 'before-respawn' }")
+        page.evaluate('([c, s]) => window.__rs.die(c, s)', [cause, 7])
+        page.evaluate("() => { window.__rs.phase = 'respawn' }")
+        respawn = page.evaluate('() => window.__rs.respawn()')
         # 30 s of physics with no input and the camera forced forward
         result = page.evaluate(r'''() => {
             const rs = window.__rs
-            rs.phase = 'after-continue'
+            rs.phase = 'after-respawn'
             rs.deathsEnabled = false
             const ticks = Math.round(30000 / physicsStepMs)
             const step = 12 * rs.visible().w / ticks
@@ -403,19 +413,19 @@ class SafeRespawnTests(unittest.TestCase):
         checks = []
         for s in result['spawns']:
             if mode == 'bad':
-                # same check as test_obstacle_spacing.py: random(20%, 30%) of the canvas width
+                # same check as test_obstacle_spacing.py: random(20%, 30%) of the canvas width, times the spacing scale
                 gap = (s['left'] - s['lastGroupRight']) * result['scaleBad']
-                lo, hi = 0.20 * width, 0.30 * width
+                lo, hi = 0.20 * width * s['spacing'], 0.30 * width * s['spacing']
             else:
-                # classic: the group is placed within the floor interval past the anchor
+                # classic: the group is placed within the floor interval past the anchor, times the spacing scale
                 gap = s['left'] - s['triangleShift'] - s['anchor']
-                lo, hi = result['interval']['min'], result['interval']['max']
+                lo, hi = result['interval']['min'] * s['spacing'], result['interval']['max'] * s['spacing']
             ok = lo - 1e-6 <= gap <= hi + 1e-6
             checks.append(dict(s, measuredGap=gap, min=lo, max=hi, passed=ok))
-        after = [c for c in checks if c['phase'] != 'before-continue']
+        after = [c for c in checks if c['phase'] != 'before-respawn']
         record = {'mode': mode, 'seed': seed, 'respawn': respawn,
                   'physicsMs': result['ms'], 'cameraDistance': result['cameraDistance'],
-                  'groupsSpawnedAfterContinue': len(after),
+                  'groupsSpawnedAfterRespawn': len(after),
                   'spacingFailures': [c for c in after if not c['passed']],
                   'minRightEdgeBeyondViewport': result['minRightEdgeBeyondViewport'],
                   'elementsAtEnd': result['elementsAtEnd'], 'spawns': after}
@@ -423,15 +433,15 @@ class SafeRespawnTests(unittest.TestCase):
         self.assertGreaterEqual(len(after), 5)
         self.assertEqual(record['spacingFailures'], [])
         self.assertGreater(result['minRightEdgeBeyondViewport'], 0)
-        print(f'\n  replenish {mode}: {len(after)} groups spawned in 30 s after the continue, '
-              f'all gaps within [{after[0]["min"]:.1f}, {after[0]["max"]:.1f}]; floor always reaches '
+        print(f'\n  replenish {mode}: {len(after)} groups spawned in 30 s after the respawn, '
+              f'all gaps within their score-scaled bounds (first [{after[0]["min"]:.1f}, {after[0]["max"]:.1f}]); floor always reaches '
               f'{result["minRightEdgeBeyondViewport"]:.1f} past the viewport: pass', file=sys.stderr)
 
     def test_replenish_classic(self):
-        self.replenish_check('classic', 303)
+        self.replenish_check('classic', 303, 'side')
 
     def test_replenish_bad(self):
-        self.replenish_check('bad', 404)
+        self.replenish_check('bad', 404, 'obstacle')
 
 
 if __name__ == '__main__':
