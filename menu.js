@@ -982,25 +982,48 @@ class Menu
         LANGUAGE_BUTTON.draw()
     }
 }
-// Free death choices, shared by every score and ad-support outcome.
+// Free death choices, shared by every score and ad-support outcome:
+// Restart, a switch to the other mode and the fps counter
 class ContinueOffer
 {
-    constructor(w, h, onMenu, onRestart)
+    constructor(w, h, onSwitch, onRestart)
     {
         this.visible = false
         this.adPending = false
-        this.menuButton = new Button(
+        this.switchButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, neon: true},
-            {text: '', fill: STYLE.colors.ui.buttonText}, onMenu)
+            {text: '', fill: STYLE.colors.ui.buttonText}, onSwitch)
         this.restartButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, neon: true},
             {text: '', fill: STYLE.colors.ui.buttonText}, onRestart)
+        // Same state as the pause screen checkbox: both read fpsCounter
+        this.fpsCounterCheckbox = new Checkbox(
+        {
+            x: 0, y: 0, size: 1, fontSize: 1,
+            fill    : STYLE.colors.ui.text,
+            stroke  : STYLE.colors.ui.primary,
+            label   : I18N.t('menu.fpsCounter'),
+            clickable: false
+        },
+        () =>
+        {
+            fpsCounter.toggle()
+            // A fresh frame under the screen, so the tint does not stack
+            draw()
+            this.draw()
+        })
         this.relabel(w, h)
+    }
+    // The mode a switch leads to
+    otherVersion()
+    {
+        return version === 'bad' ? 'classic' : 'bad'
     }
     relabel(w, h)
     {
-        this.menuButton.text.text = I18N.t('pause.backToMenu')
+        this.switchButton.text.text = I18N.t(version === 'bad' ? 'menu.chillVersion' : 'menu.mainVersion')
         this.restartButton.text.text = I18N.t('continue.restart')
+        this.fpsCounterCheckbox.label = I18N.t('menu.fpsCounter')
         this.layout(w, h)
     }
     layout(w, h)
@@ -1009,24 +1032,51 @@ class ContinueOffer
         this.height = h
         const buttonHeight = Math.max(h * 0.11, minTouchSize())
         const buttonWidth = Math.min(w * 0.8, h * 0.9)
-        menu.layoutPauseButton(this.restartButton, w / 2, h * 0.55, buttonWidth, buttonHeight)
-        menu.layoutPauseButton(this.menuButton, w / 2, h * 0.73, buttonWidth, buttonHeight)
+        const check = this.fpsCounterCheckbox
+        menu.layoutPauseButton(this.restartButton, w / 2, h * 0.5, buttonWidth, buttonHeight)
+        menu.layoutPauseButton(this.switchButton, w / 2, h * 0.5 + buttonHeight * 1.25, buttonWidth, buttonHeight)
+
+        const fontSize = parseFloat(this.restartButton.text.fontSize)
+        ctx.save()
+        ctx.font = getArcadeFont(fontSize)
+        const labelWidth = ctx.measureText(check.label).width
+        ctx.restore()
+        check.size = fontSize
+        check.fontSize = getArcadeFont(fontSize)
+        check.x = w / 2 - (fontSize * 1.55 + labelWidth) / 2
+        check.y = h * 0.5 + buttonHeight * 2.5
         this.title = new Text({x:w/2, y:h*0.25, fontSize:h*0.09,
             text:I18N.t('continue.title'), fill:STYLE.colors.ui.title})
-        this.score = new Text({x:w/2, y:h*0.38, fontSize:h*0.05,
+        this.score = new Text({x:w/2, y:h*0.36, fontSize:h*0.05,
             text:'', fill:STYLE.colors.ui.mutedText})
+        // Phones: the touch-sized rows are stacked evenly below the title
+        if (!compactTouchSize(h * 0.11))
+            return
+        const rows = stackRows(h * 0.03, h * 0.97, [h * 0.09, h * 0.05,
+            buttonHeight, buttonHeight, check.hitRect().height])
+        this.title.y = rows[0]
+        this.score.y = rows[1]
+        menu.layoutPauseButton(this.restartButton, w / 2, rows[2], buttonWidth, buttonHeight)
+        menu.layoutPauseButton(this.switchButton, w / 2, rows[3], buttonWidth, buttonHeight)
+        check.y = rows[4]
     }
-    show() { this.setVisible(true) }
+    show()
+    {
+        this.relabel(this.width, this.height)
+        this.setVisible(true)
+    }
     hide() { this.adPending = false; this.setVisible(false) }
     setVisible(visible) { this.visible = visible; this.updateClickable() }
     setAdPending(pending) { this.adPending = pending; this.updateClickable() }
     updateClickable()
     {
-        this.restartButton.clickable = this.menuButton.clickable = this.visible && !this.adPending
+        this.restartButton.clickable = this.switchButton.clickable =
+            this.fpsCounterCheckbox.clickable = this.visible && !this.adPending
     }
     click(coord)
     {
-        return this.restartButton.isClickOnButton(coord) || this.menuButton.isClickOnButton(coord)
+        return this.restartButton.isClickOnButton(coord) || this.switchButton.isClickOnButton(coord) ||
+            this.fpsCounterCheckbox.isClickOnButton(coord)
     }
     draw()
     {
@@ -1038,7 +1088,8 @@ class ContinueOffer
         this.score.draw()
         if (this.adPending) ctx.globalAlpha = 0.4
         this.restartButton.draw()
-        this.menuButton.draw()
+        this.switchButton.draw()
+        this.fpsCounterCheckbox.draw()
         ctx.restore()
     }
 }
