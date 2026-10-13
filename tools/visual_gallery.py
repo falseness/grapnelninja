@@ -49,8 +49,10 @@ TICKS = [300, 900]
 # Since 8519216 (TASK-242) every death freezes on the restart offer, so the
 # classic run scrolls over ticks ~85-150 and then holds until tick ~300.
 # Since the boot run (TASK-360) draws from the seeded Math.random first, the
-# phone bad run scrolls over ticks ~622-736 instead.
-GIF_CAPTURE = {'bad': ('phone', 620), 'classic': ('desktop', 60)}
+# phone bad run scrolls over ticks ~622-736 instead. Since e882a5e (TASK-370)
+# its tick-174 death fast-restarts instead of waiting for the tick-301 tap on
+# the offer, so the swing starts at tick 646 and holds from tick ~760.
+GIF_CAPTURE = {'bad': ('phone', 646), 'classic': ('desktop', 60)}
 GIF_SIZE = (960, 540)
 GIF_FPS = 15
 GIF_STEP = 60 // GIF_FPS          # game ticks per GIF frame
