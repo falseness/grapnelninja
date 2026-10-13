@@ -1,6 +1,14 @@
 """Production mobile paths with trusted Chromium touches and SDK-boundary faults.
 
 Device names describe viewport/DPR emulation, never physical Safari/Android tests.
+
+The title menu is gone (TASK-364): the page boots straight into a 'bad' run
+(paused while the view is portrait), 'classic' is reached by touch taps on the
+HUD menu button and the pause screen's mode switch, and the death screen opens
+when a game over interstitial is due (TASK-370). Runnable from the repo root or
+tools/: git and source hashes resolve against ROOT.
+
+PLAYGAMA2_EVIDENCE_DIR selects the output directory (default artifacts/TASK-395).
 """
 import hashlib
 import json
@@ -14,6 +22,7 @@ from datetime import datetime, timezone
 from browser_test_support import start_browser_test, wait_for_boot
 from layout_matrix import PROBE, evaluate
 import test_playgama2_bridge as support
+from test_mode_switch import EXTRA
 
 PROFILES = {'iphone-se': (375, 667, 2), 'iphone-13': (390, 844, 3), 'pixel-7': (412, 915, 2.625)}
 STATE = '({score:scoreText.count[version],mode:version,x:ninja.x,y:ninja.y,time:PROGRESS.getTime(),record:scoreText.record[version],paused:menu.gamePaused,held:grapnel.throwed})'
@@ -22,12 +31,12 @@ STATE = '({score:scoreText.count[version],mode:version,x:ninja.x,y:ninja.y,time:
 class MobileTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('PLAYGAMA2_EVIDENCE_DIR', 'artifacts/TASK-244'))
+        cls.out = Path(os.environ.get('PLAYGAMA2_EVIDENCE_DIR', support.ROOT / 'artifacts/TASK-395'))
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(support.ROOT, cls.addClassCleanup)
         cls.records = {}
-        paths = subprocess.check_output(['git', 'ls-files'], text=True).splitlines() + ['tools/test_playgama2_mobile.py']
-        cls.hashes = {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in sorted(set(paths))
+        paths = subprocess.check_output(['git', 'ls-files'], text=True, cwd=support.ROOT).splitlines() + ['tools/test_playgama2_mobile.py']
+        cls.hashes = {p: hashlib.sha256((support.ROOT / p).read_bytes()).hexdigest() for p in sorted(set(paths))
                       if not p.startswith(('artifacts/', 'screenshots/'))}
         (cls.out/'tested-source-hashes.json').write_text(json.dumps(cls.hashes, indent=2)+'\n')
 
@@ -53,6 +62,14 @@ class MobileTests(unittest.TestCase):
         self.assertEqual(p.evaluate('p=>document.elementFromPoint(p.x,p.y).id',point),'canvas')
         p.touchscreen.tap(**point)
         self.rec['checks'].append({'control':expression,'point':point,'result':'PASS'})
+
+    # Touch taps: HUD menu button, then the pause screen's mode switch
+    def switch_on_pause(self, target):
+        p=self.p
+        self.tap('menu.button.background',True);p.wait_for_function('menu.gamePaused')
+        self.assertEqual(p.evaluate('menu.backToMenu.text.text'),p.evaluate("I18N.t(version==='bad'?'menu.chillVersion':'menu.mainVersion')"))
+        self.tap('menu.backToMenu.background')
+        p.wait_for_function('t => version === t && !!ninja && runInProgress && !menu.gamePaused && !unTouch',arg=target)
 
     def capture(self, phase, draw=None):
         p=self.p
@@ -128,25 +145,30 @@ class MobileTests(unittest.TestCase):
         ctx=self.browser.new_context(viewport={'width':w,'height':h},device_scale_factor=dpr,is_mobile=True,has_touch=True,locale='en-US')
         self.addCleanup(ctx.close)
         ctx.add_init_script("window.mobileInputs=[];for(const n of ['touchstart','touchend','touchcancel','touchmove','click'])addEventListener(n,e=>mobileInputs.push({type:n,trusted:e.isTrusted,target:e.target.id||e.target.tagName,ms:performance.now()}),true)")
-        ctx.route(support.SDK,lambda r:r.fulfill(content_type='application/javascript',body='const FAULT="normal",SAVED_LANGUAGE="en";'+support.FAKE))
+        ctx.route(support.SDK,lambda r:r.fulfill(content_type='application/javascript',body='const FAULT="normal",SAVED_LANGUAGE="en";'+support.FAKE+EXTRA))
         self.p=p=ctx.new_page();p.set_default_timeout(20000)
         errors=[];p.on('pageerror',lambda e:errors.append(str(e)))
         p.goto(self.url);wait_for_boot(p)
         self.capture('portrait-launch')
         p.set_viewport_size({'width':h,'height':w});p.wait_for_timeout(250)
-        self.capture('landscape-menu','menu.draw()')
+        # Boot run (TASK-360): a 'bad' run with the tutorial hint, no title menu.
+        # The portrait launch paused it; resume with a touch tap on the pause screen.
+        p.wait_for_function('bootComplete && runInProgress && !!ninja')
+        self.assertEqual(p.evaluate('[version, TUTORIAL_HINT.visible, TUTORIAL_HINT.pressed, menu.gamePaused]'),['bad',True,False,True])
+        self.capture('landscape-boot-pause','menu.drawPauseScreen()')
         p.locator('#mute-button').tap();self.assertTrue(p.evaluate('MUTE_BUTTON.muted'))
         p.locator('#mute-button').tap();self.assertFalse(p.evaluate('MUTE_BUTTON.muted'))
         self.rec['checks'].append({'control':'mute toggle twice','result':'PASS'})
-        self.tap('menu.badVersionButton.background')
-        p.wait_for_function('!menu.visible && !unTouch')
-        self.capture('tutorial','draw()')
-        p.locator('#tutorial button').tap();self.assertTrue(p.evaluate('TUTORIAL.element.hidden && PROGRESS.getTutorialDone()'))
-        self.rec['checks'].append({'control':'tutorial dismiss','result':'PASS'})
+        self.tap('menu.resume.background')
+        p.wait_for_function('!menu.gamePaused && !unTouch')
+        self.capture('boot-run','draw()')
+        self.assertTrue(p.evaluate('TUTORIAL_HINT.visible && !TUTORIAL_HINT.pressed'))
         cd=ctx.new_cdp_session(p)
         def hold(): cd.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':h*.72,'y':w*.28}]})
         for end in ('touchEnd','touchCancel'):
             hold();self.assertTrue(p.evaluate('grapnel.throwed'))
+            # The first trusted throw dismisses the tutorial hint
+            self.assertTrue(p.evaluate('TUTORIAL_HINT.pressed'))
             cd.send('Input.dispatchTouchEvent',{'type':end,'touchPoints':[]})
             self.assertFalse(p.evaluate('grapnel.throwed'))
             self.rec['checks'].append({'control':end,'held_before':True,'held_after':False,'result':'PASS'})
@@ -197,27 +219,30 @@ class MobileTests(unittest.TestCase):
             p.evaluate(restore);self.assertEqual(p.evaluate(STATE),frozen)
             self.capture(reason+'-pause','menu.drawPauseScreen()')
             self.rec['pauses'].append({'reason':reason,'injection':'platform boundary; not native physical transition','before':frozen,'after':p.evaluate(STATE),'result':'PASS'})
-        self.tap('menu.backToMenu.background');p.wait_for_function('menu.visible')
-        self.tap('menu.classicVersionButton.background');p.wait_for_function('!menu.visible && !unTouch')
+        # Still paused after the host pause: tap the pause screen's mode switch
+        self.assertEqual(p.evaluate('menu.backToMenu.text.text'),p.evaluate("I18N.t('menu.chillVersion')"))
+        self.tap('menu.backToMenu.background')
+        p.wait_for_function("version === 'classic' && !!ninja && runInProgress && !menu.gamePaused && !unTouch")
         hold();self.assertTrue(p.evaluate('grapnel.throwed'));cd.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
         self.assertFalse(p.evaluate('grapnel.throwed'))
         self.rec['checks'].append({'control':'chill-mode touch hold/release','result':'PASS'})
         self.capture('gameplay','draw()')
-        p.wait_for_function('continueOffer.visible',timeout=60000)
+        # No interstitial requested yet, so a game over ad is due and the death screen opens
+        self.assertTrue(p.evaluate('PLATFORM.isInterstitialDue()'))
+        p.wait_for_function('continueOffer.visible && !continueOffer.adPending',timeout=60000)
         self.capture('death','continueOffer.draw()')
         self.tap('continueOffer.restartButton.background')
         p.wait_for_function('!continueOffer.visible && !unTouch')
-        self.assertFalse(p.evaluate('menu.visible'))
-        self.tap('menu.button.background',True);self.tap('menu.backToMenu.background')
-        p.wait_for_function('menu.visible')
-        self.tap('menu.badVersionButton.background');p.wait_for_function('!menu.visible && !unTouch')
+        # Restart resumes a live classic run (the title menu no longer exists)
+        self.assertEqual(p.evaluate('[version, runInProgress, !!ninja, menu.gamePaused]'),['classic',True,True,False])
+        self.switch_on_pause('bad')
         hold();self.assertTrue(p.evaluate('grapnel.throwed'));cd.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
         self.assertFalse(p.evaluate('grapnel.throwed'));self.assertEqual(p.evaluate('version'),'bad')
         self.rec['checks'].append({'control':'main-mode touch hold/release','result':'PASS'})
         inputs=p.evaluate('mobileInputs');self.assertTrue(inputs and all(e['trusted'] for e in inputs))
         self.assertEqual(errors,[])
         self.rec.update(inputs=inputs,errors=errors,verdict='PASS',finished=datetime.now(timezone.utc).isoformat())
-        print('PASS profile test_'+name.replace('-','_')+': portrait/landscape; menu/mute/tutorial/death/restart; both modes touch hold/release/cancel; long press/swipe; repeated rotation exact continuity; orientation/focus/background/host pause; desktop Chromium emulated captures; no browser errors',flush=True)
+        print('PASS profile test_'+name.replace('-','_')+': portrait/landscape; boot-run/mute/tutorial-hint/pause-switch/death/restart; both modes touch hold/release/cancel; long press/swipe; repeated rotation exact continuity; orientation/focus/background/host pause; desktop Chromium emulated captures; no browser errors',flush=True)
 
 
 for name in PROFILES:
