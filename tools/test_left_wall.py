@@ -83,10 +83,12 @@ PROBE = r'''() => {
         attached, anchors, transforms};
 }'''
 
-LIFECYCLE = r'''async () => {
-    // In-run continues were removed (TASK-242, 8519216): a death now offers a
-    // free restart. The wall must survive the frozen offer, and the restart
-    // must drop it together with every anchor on it.
+LIFECYCLE = r'''async (due) => {
+    // A death fast-restarts at once unless a game over interstitial is due
+    // (TASK-370, e882a5e). Only then does it freeze on the free-restart offer,
+    // which must keep the wall until restartFromOffer drops it together with
+    // every anchor on it. `due` stubs PLATFORM.isInterstitialDue for the
+    // killing call only.
     const old = screen.leftWall;
     ninja.invulnerableMs = 0;
     ninja.x = old.x + 10 * ninja.radius; ninja.speedX = ninja.speedY = 0;
@@ -94,15 +96,20 @@ LIFECYCLE = r'''async () => {
     grapnel.pos = [[old.x - 1, ninja.y, new Empty()]];
     grapnel.collision();
     const anchoredBeforeDeath = grapnel.isGrappled() && grapnel.pos[0][2] === old;
-    onLethalDeath();
-    const offered = isRunFrozen() && screen.leftWall === old;
-    const continuationGeometry = {face: old.x, cameraX: screen.x};
-    restartFromOffer();
-    for (let i = 0; i < 200 && isRunFrozen(); ++i) await new Promise(r => setTimeout(r, 10));
+    const isDue = PLATFORM.isInterstitialDue;
+    PLATFORM.isInterstitialDue = () => due;
+    try {onLethalDeath()} finally {PLATFORM.isInterstitialDue = isDue}
     cancelAnimationFrame(game);
-    const continued = anchoredBeforeDeath && offered && !isRunFrozen() &&
-        screen.leftWall !== old && !grapnel.throwed && grapnel.pos.length === 0 &&
-        !grapnel.pos.some(p => p[2] === old);
+    const offered = isRunFrozen() && continueOffer.visible && screen.leftWall === old;
+    const continuationGeometry = {face: old.x, cameraX: screen.x};
+    if (offered) {
+        restartFromOffer();
+        for (let i = 0; i < 200 && isRunFrozen(); ++i) await new Promise(r => setTimeout(r, 10));
+        cancelAnimationFrame(game);
+    }
+    const deathRestart = anchoredBeforeDeath && offered === due && !isRunFrozen() &&
+        !continueOffer.visible && screen.leftWall !== old && !grapnel.throwed &&
+        grapnel.pos.length === 0 && !grapnel.pos.some(p => p[2] === old);
     const restartedOld = screen.leftWall;
     chooseVersion(); cancelAnimationFrame(game);
     const wall = screen.leftWall;
@@ -113,7 +120,7 @@ LIFECYCLE = r'''async () => {
     const oldElements = floors.flatMap(f => f.elements);
     for (const f of floors) {f.replenishElements(); f.deleteElements()}
     const elements = floors.flatMap(f => f.elements);
-    return {continued, continuationGeometry, restarted, countsBefore,
+    return {due, offered, deathRestart, continuationGeometry, restarted, countsBefore,
         countsAfter: floors.map(f => f.elements.length),
         removedCount: oldElements.filter(e => !elements.includes(e)).length,
         activeBoundaries: [screen.leftWall, ...elements].filter(e => e instanceof LeftWall).length,
@@ -197,7 +204,7 @@ class LeftWallTests(unittest.TestCase):
                         page.evaluate('(mode) => {startGame(mode); cancelAnimationFrame(game)}', mode)
                         row = page.evaluate(PROBE)
                         row['viewport'] = {'label': label, 'width': w, 'height': h, 'touch': touch}
-                        row['lifecycle'] = page.evaluate(LIFECYCLE)
+                        row['lifecycle'] = [page.evaluate(LIFECYCLE, due) for due in (False, True)]
                         page.evaluate('''() => {
                             window.resizeWall = screen.leftWall;
                             ninja.x = resizeWall.x + 10 * ninja.radius;
@@ -240,12 +247,13 @@ class LeftWallTests(unittest.TestCase):
                         for transform in row['transforms']:
                             # CSS layout quantizes canvas dimensions to fractional pixels.
                             self.assertLess(abs(transform['error']), 0.001)
-                        life = row['lifecycle']
-                        for key in ('continued', 'restarted', 'persistent', 'outsideProcedural'):
-                            self.assertTrue(life[key], life)
-                        self.assertFalse(life['staleAnchors'])
-                        self.assertEqual(life['activeBoundaries'], 1)
-                        self.assertGreater(life['removedCount'], 0)
+                        for life in row['lifecycle']:
+                            self.assertEqual(life['offered'], life['due'], life)
+                            for key in ('deathRestart', 'restarted', 'persistent', 'outsideProcedural'):
+                                self.assertTrue(life[key], life)
+                            self.assertFalse(life['staleAnchors'], life)
+                            self.assertEqual(life['activeBoundaries'], 1)
+                            self.assertGreater(life['removedCount'], 0)
                         resize = row['resize']
                         self.assertTrue(resize['same'])
                         self.assertTrue(resize['anchorAttached'])
@@ -255,7 +263,7 @@ class LeftWallTests(unittest.TestCase):
                         self.assertAlmostEqual(resize['faceOffset'], resize['expectedOffset'])
                         self.assertEqual(resize['linesFace'], resize['face'])
                         self.assertEqual(errors, [])
-                        row['assertions'] = 'PASS contacts, nonpenetration, camera transforms, anchor tracking, stationary displacement, death offer + free restart, restart, procedural deletion, resize'
+                        row['assertions'] = 'PASS contacts, nonpenetration, camera transforms, anchor tracking, stationary displacement, fast restart when no ad is due, death offer + free restart when due, restart, procedural deletion, resize'
                         print(f'PASS {mode} {label}: {row["assertions"]}', flush=True)
                     finally:
                         page.close()
