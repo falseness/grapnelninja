@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import logical_size, wait_for_boot
-from game_harness import canvas_to_viewport, click_canvas, open_game, start_game_test
+from game_harness import switch_mode, canvas_to_viewport, click_canvas, open_game, start_game_test
 
 ROOT = Path(__file__).resolve().parent.parent
 START_VIEWPORT = {'width': 1280, 'height': 720}
@@ -89,7 +89,7 @@ def mapped_click(page, x, y):
 
 def run_state(page):
     return page.evaluate('''() => ({version: version, count: scoreText.count[version],
-        reStarts: window.__reStarts, gamePaused: menu.gamePaused, menuVisible: menu.visible,
+        reStarts: window.__reStarts, gamePaused: menu.gamePaused,
         width: width, height: height, menuWidth: menu.width,
         rect: canvas.getBoundingClientRect().toJSON(),
         hudButton: menu.button.background, scale: scale[version]})''')
@@ -122,7 +122,7 @@ class ResizeTests(unittest.TestCase):
             (errors['console'], errors['page']), ([], [])))
         # Offline the SDK fixture defines no bridge: boot ends 'disabled'
         wait_for_boot(page)
-        page.wait_for_function('PLATFORM.environment === "disabled" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "disabled" && bootComplete && runInProgress')
         return page
 
     def write_evidence(self, name, data):
@@ -133,11 +133,8 @@ class ResizeTests(unittest.TestCase):
 
     def start_run(self, page, mode):
         page.evaluate(INSTRUMENT_RUN)
-        page.evaluate('''mode => {
-            const b = (mode == 'bad' ? menu.badVersionButton : menu.classicVersionButton).background
-            menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2})
-        }''', mode)
-        page.wait_for_function('mode => !menu.visible && version === mode', arg=mode)
+        # Boot runs 'bad'; classic comes from the pause-screen mode switch
+        switch_mode(page, mode)
 
     def check_live_resize(self, mode):
         page = self.boot(START_VIEWPORT)
@@ -213,7 +210,6 @@ class ResizeTests(unittest.TestCase):
                 try { (0, eval)(script)(arg) } finally { window.__fontTag = null }
             }''', [tag, script, arg])
 
-        measure('menu', '() => menu.draw()')
         for mode in ('classic', 'bad'):
             self.start_run(page, mode)
             page.evaluate('fpsCounter.enabled = true')
@@ -221,10 +217,12 @@ class ResizeTests(unittest.TestCase):
             measure(f'hud-{mode}', '() => draw()')
             page.keyboard.press('p')
             measure(f'pause-{mode}', '() => menu.drawPauseScreen()')
+            # The pause switch (formerly back-to-menu) starts the other mode
             page.evaluate('() => { fpsCounter.enabled = false; menu.backToMenu.click() }')
-            page.wait_for_function('menu.visible')
+            page.wait_for_function('!menu.gamePaused && runInProgress')
         fonts = page.evaluate('window.__fonts')
-        groups = {'menu': ['menu'], 'hud': ['hud-classic', 'hud-bad'],
+        # The title menu group is gone with the menu (TASK-364)
+        groups = {'hud': ['hud-classic', 'hud-bad'],
                   'pause': ['pause-classic', 'pause-bad']}
         result = {'viewport': '800x450', 'minCssPx': MIN_CSS_FONT_PX, 'groups': {}}
         for group, tags in groups.items():
@@ -238,7 +236,7 @@ class ResizeTests(unittest.TestCase):
         for group, data in result['groups'].items():
             self.assertGreater(data['samples'], 0, group)
             self.assertGreaterEqual(data['minCssPx'], MIN_CSS_FONT_PX, group)
-        print('\n  ASSERT menu/HUD/pause min font >= 12 CSS px at 800x450: pass',
+        print('\n  ASSERT HUD/pause min font >= 12 CSS px at 800x450: pass',
               file=sys.stderr)
 
 

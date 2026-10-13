@@ -23,8 +23,13 @@ TIME_KEY = 'grapnelninja.time'
 # order (progress.js), so sets are compared as key sets.
 KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang', 'grapnelninja.muted',
         'grapnelninja.tutorialDone']
-READY = ('PLATFORM.environment !== "pending" && menu.visible'
+READY = ('PLATFORM.environment !== "pending" && bootComplete && runInProgress'
          ' && document.getElementById("loading").hidden')
+FREEZE = '''() => {
+    runFixedPhysics = function () {}
+    reuseTimeInGame = function () {}
+    time = null
+}'''
 
 
 def log(message):
@@ -56,8 +61,10 @@ class ProgressTests(unittest.TestCase):
         page.goto(self.url + 'index.html')
         page.wait_for_function(READY)
         # Freeze physics so the ninja never dies on its own: run ends come
-        # only from the test's own reStart() calls.
-        page.evaluate('runFixedPhysics = function () {}')
+        # only from the test's own reStart() calls. Boot now starts a live
+        # run, so also stop its time-in-game segments: stored time changes
+        # only through the test's own setTime().
+        page.evaluate(FREEZE)
         self.assertEqual(page.evaluate('[PLATFORM.environment, PLATFORM.platformId]'),
                          ['playgama', 'local-fake'])
         return page
@@ -65,14 +72,19 @@ class ProgressTests(unittest.TestCase):
     def reload(self, page):
         page.reload()
         page.wait_for_function(READY)
-        page.evaluate('runFixedPhysics = function () {}')
+        page.evaluate(FREEZE)
 
     def fake_store(self, page):
         return local_store(page)
 
     def seed_and_reload(self, page, store):
+        # Seed from a same-origin non-game page: the live boot run's pagehide
+        # flush would otherwise overwrite the seeded store on reload.
+        page.goto(self.url + 'progress.js')
         seed_store(page, store)
-        self.reload(page)
+        page.goto(self.url + 'index.html')
+        page.wait_for_function(READY)
+        page.evaluate(FREEZE)
 
     def score(self, page, mode, points):
         page.evaluate('''([mode, points]) => {
@@ -84,8 +96,10 @@ class ProgressTests(unittest.TestCase):
         page.wait_for_timeout(1100)
 
     def menu_texts(self, page):
-        return page.evaluate('''({classic: menu.classicRecord.text,
-            bad: menu.badRecord.text, time: menu.timeInGame.text})''')
+        # The title menu's record labels are gone (TASK-364); the loaded
+        # records are the HUD's scoreText.record, shown as 'record: N'
+        return page.evaluate('''({classic: 'record: ' + scoreText.record.classic,
+            bad: 'record: ' + scoreText.record.bad, time: menu.timeInGame.text})''')
 
     def test_boot_reads_all_keys_with_one_get(self):
         """One storage.get at boot carries every PROGRESS key; no set at boot."""
@@ -261,11 +275,12 @@ class ProgressTests(unittest.TestCase):
             self.wait_throttle(page)
         page.evaluate('menu.startPause(); menu.backToMenu.click()')
         self.wait_throttle(page)
-        self.assertTrue(page.evaluate('menu.visible'))
-        boots.append(snap('menu'))
+        # The pause switch replaced back-to-menu: classic -> a bad run
+        self.assertTrue(page.evaluate('version === "bad" && runInProgress && !menu.gamePaused'))
+        boots.append(snap('switch'))
         self.reload(page)
         boots.append(snap('reload'))
-        self.assertEqual(page.evaluate('menu.classicRecord.text'), 'record: 9')
+        self.assertEqual(page.evaluate('scoreText.record.classic'), 9)
 
         for i, calls in enumerate(boots):
             gets = [c for c in calls if c['name'] == 'storage.get']

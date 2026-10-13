@@ -19,7 +19,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from game_harness import READY, canvas_to_viewport, open_game, start_game_test, storage_calls
+from game_harness import READY, canvas_to_viewport, open_game, start_game_test, storage_calls, switch_mode
 import test_continue as continue_test
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,6 +58,7 @@ class I18nTests(unittest.TestCase):
     def setUpClass(cls):
         cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
         cls.evidence = os.environ.get('I18N_EVIDENCE_DIR')
+        cls.marks = {}
 
     def open(self, language, viewport=VIEWPORT):
         context, page, errors = open_game(self.browser, self.url + 'index.html',
@@ -66,21 +67,39 @@ class I18nTests(unittest.TestCase):
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
         page.wait_for_function(READY, timeout=15000)
+        # A fresh store shows the tutorial over the boot run; its button
+        # covers the bottom-left language button. Dismissing it saves every
+        # key, so saved_langs() only counts storage calls made after it.
+        if page.evaluate("!document.getElementById('tutorial').hidden"):
+            page.click('#tutorial button')
+            page.wait_for_function('''() => window.__storageSpy.calls.some(c =>
+                c.name == 'storage.set')''')
+        self.marks[id(page)] = len(storage_calls(page))
         return page
 
     def ui(self, page):
+        # The pause switch is relabelled for the running mode on pause
+        page.evaluate('() => { if (!menu.gamePaused) menu.startPause() }')
         return page.evaluate('''() => ({lang: I18N.language, title: document.title,
             htmlLang: document.documentElement.lang,
-            chill: menu.classicVersionButton.text.text, button: I18N.t('language.name')})''')
+            chill: menu.backToMenu.text.text, button: I18N.t('language.name')})''')
 
     def click_language(self, page):
+        # The language button lives on the pause and death screens (TASK-363)
+        page.evaluate('() => { if (!menu.gamePaused) menu.startPause() }')
+        page.wait_for_function('LANGUAGE_BUTTON.active() && !unTouch')
         r = page.evaluate('LANGUAGE_BUTTON.rect()')
         p = canvas_to_viewport(page, r['x'] + r['width'] / 2, r['y'] + r['height'] / 2)
         page.mouse.click(p['x'], p['y'])
 
+    def wait_lang_saved(self, page):
+        page.wait_for_function(f'''mark => window.__storageSpy.calls.slice(mark).some(c =>
+            c.name == 'storage.set' && c.args[0].includes({json.dumps(LANG_KEY)}))''',
+                               arg=self.marks.get(id(page), 0))
+
     def saved_langs(self, page):
         out = []
-        for c in storage_calls(page):
+        for c in storage_calls(page)[self.marks.get(id(page), 0):]:
             if c['name'] == 'storage.set' and LANG_KEY in c['args'][0]:
                 out.append(c['args'][1][c['args'][0].index(LANG_KEY)])
         return out
@@ -107,8 +126,7 @@ class I18nTests(unittest.TestCase):
         ui = self.ui(page)
         self.assertEqual((ui['lang'], ui['chill'], ui['button'], ui['htmlLang']),
                          ('ru', 'спокойный режим', 'Русский', 'ru'))
-        page.wait_for_function(f'''() => window.__storageSpy.calls.some(c =>
-            c.name == 'storage.set' && c.args[0].includes({json.dumps(LANG_KEY)}))''')
+        self.wait_lang_saved(page)
         self.assertEqual(self.saved_langs(page), ['ru'])
         page.reload()
         page.wait_for_function(READY, timeout=15000)
@@ -120,8 +138,7 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(self.ui(page)['lang'], 'ru')
         self.click_language(page)
         self.assertEqual(self.ui(page)['lang'], 'en')
-        page.wait_for_function(f'''() => window.__storageSpy.calls.some(c =>
-            c.name == 'storage.set' && c.args[0].includes({json.dumps(LANG_KEY)}))''')
+        self.wait_lang_saved(page)
         self.assertEqual(self.saved_langs(page), ['en'])
         page.reload()
         page.wait_for_function(READY, timeout=15000)
@@ -188,9 +205,8 @@ class I18nTests(unittest.TestCase):
         page = self.open(locale, viewport)
         self.assertEqual(page.evaluate('I18N.language'), lang)
         page.evaluate(continue_test.INSTRUMENT_RUN)
-        page.screenshot(path=str(out / 'menu.png'))
-        page.evaluate('''() => { const b = menu.classicVersionButton.background
-            menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2}) }''')
+        page.screenshot(path=str(out / 'boot.png'))
+        switch_mode(page, 'classic')
         page.evaluate('() => { scoreText.count[version] = 7 }')
         page.wait_for_timeout(600)
         page.screenshot(path=str(out / 'hud.png'))
@@ -198,7 +214,7 @@ class I18nTests(unittest.TestCase):
         page.wait_for_timeout(100)
         page.screenshot(path=str(out / 'pause.png'))
         page.evaluate('menu.unPause()')
-        log(f'{lang} {viewport["width"]}x{viewport["height"]}: menu/hud/pause saved')
+        log(f'{lang} {viewport["width"]}x{viewport["height"]}: boot/hud/pause saved')
 
 
 if __name__ == '__main__':

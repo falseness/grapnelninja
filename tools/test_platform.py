@@ -13,11 +13,12 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import SDK_URL, start_browser_test, wait_for_boot
+from game_harness import switch_mode
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
-READY = ('PLATFORM.environment === "disabled" && menu.visible'
+READY = ('PLATFORM.environment === "disabled" && bootComplete && runInProgress'
          ' && document.getElementById("loading").hidden')
 
 # A cross-origin iframe with blocked storage: every localStorage access throws
@@ -61,14 +62,9 @@ INSTRUMENT_RUN = '''() => {
     }
 }'''
 
-START_CLASSIC = '''() => {
-    const b = menu.classicVersionButton.background
-    menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2})
-}'''
-
 STATE = '''() => ({offer: continueOffer.visible, score: scoreText.count[version],
     record: scoreText.record[version], reStarts: window.__reStarts,
-    menuVisible: menu.visible, gamePaused: menu.gamePaused,
+    inRun: runInProgress, version, gamePaused: menu.gamePaused,
     interstitialPending: interstitialPending, adOpen: adOpen})'''
 
 
@@ -105,7 +101,7 @@ class ItchPlatformTests(unittest.TestCase):
 
     def start_run(self, page):
         page.evaluate(INSTRUMENT_RUN)
-        page.evaluate(START_CLASSIC)
+        switch_mode(page, 'classic')
         page.wait_for_function('window.__ticks > 10')
 
     def score_and_die(self, page, points):
@@ -177,7 +173,7 @@ class ItchPlatformTests(unittest.TestCase):
         self.assertFalse(after['offer'])
         self.assertFalse(after['interstitialPending'])
         self.assertFalse(after['adOpen'])
-        self.assertFalse(after['menuVisible'])
+        self.assertEqual([after['inRun'], after['version']], [True, 'classic'])
         self.assertEqual(after['score'], 0)
         self.assertEqual(after['record'], 5)
         page.wait_for_timeout(300)

@@ -62,12 +62,14 @@ class OfflineBrowser:
 
 
 def wait_for_boot(page):
-    """Wait until index.html's async boot() has run start().
+    """Wait until index.html's async boot() has run start() and its boot run.
 
-    Older trees (verification baselines) boot synchronously, without #loading.
+    Older trees (verification baselines) boot synchronously, without #loading
+    or bootComplete; current trees boot straight into a 'bad' run.
     """
     page.wait_for_function(
-        "() => { const el = document.getElementById('loading'); return !el || el.hidden }")
+        "() => { const el = document.getElementById('loading'); return !el || el.hidden"
+        " && (typeof bootComplete === 'undefined' || bootComplete) }")
 
 
 def shared_memory_launch_options():

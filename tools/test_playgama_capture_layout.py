@@ -24,7 +24,7 @@ class ProductionLayoutTests(unittest.TestCase):
         page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
         page.goto(url + 'index.html')
         wait_for_boot(page)
-        page.wait_for_function('bootComplete && menu.visible')
+        page.wait_for_function('bootComplete && runInProgress')
         layout = page.evaluate(LAYOUT)
         observation = dict(layout, browser=browser.version, errors=errors,
                            scope='offline geometry only; NOT performance measurement')

@@ -155,6 +155,22 @@ def click_canvas(page, x, y):
     return point
 
 
-# The game booted: platform ready, menu drawn, loading overlay hidden
-READY = ('PLATFORM.environment !== "pending" && menu.visible'
+# The game booted: platform ready, loading overlay hidden, and the boot-time
+# main-version ('bad') run started (there is no title menu)
+READY = ('PLATFORM.environment !== "pending" && bootComplete && runInProgress'
          ' && document.getElementById("loading").hidden')
+
+
+def switch_mode(page, mode):
+    """Make mode ('classic'/'bad') the running mode via the pause-screen switch.
+
+    The title menu is gone: the other mode is entered by pausing and clicking
+    menu.backToMenu (the mode switch). No-op when mode is already running.
+    """
+    page.evaluate('''mode => {
+        if (version === mode && runInProgress) return
+        if (!menu.gamePaused) menu.startPause()
+        menu.backToMenu.click()
+    }''', mode)
+    page.wait_for_function(
+        'mode => version === mode && runInProgress && !menu.gamePaused', arg=mode)

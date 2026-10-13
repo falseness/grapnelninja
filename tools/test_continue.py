@@ -4,15 +4,15 @@ The ad SDK build offered a rewarded Continue after an eligible death
 (TASK-080/093/125). 8519216 (TASK-242) removed rewarded continues: every
 lethal death, at any score, freezes the run on free Restart/Menu choices and
 nothing brings the ninja back into the same run. Leaving the death sends one
-level_failed (TASK-341); Restart starts a new run at score 0 and Menu returns
-to the menu.
+level_failed (TASK-341); Restart starts a new run at score 0 and the mode
+switch (TASK-361, formerly Menu) starts a run of the other mode.
 """
 from pathlib import Path
 import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from game_harness import open_game, start_game_test
+from game_harness import open_game, start_game_test, switch_mode
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -73,8 +73,8 @@ PRESS = '''name => {
 def state(page):
     return page.evaluate('''() => ({offer: continueOffer.visible, score: scoreText.count[version],
         reStarts: window.__reStarts, events: window.__events.slice(),
-        clickable: [continueOffer.restartButton.clickable, continueOffer.menuButton.clickable],
-        gamePaused: menu.gamePaused, menuVisible: menu.visible})''')
+        clickable: [continueOffer.restartButton.clickable, continueOffer.switchButton.clickable],
+        gamePaused: menu.gamePaused, version})''')
 
 
 class NoContinueTests(unittest.TestCase):
@@ -88,14 +88,12 @@ class NoContinueTests(unittest.TestCase):
         self.addCleanup(context.close)
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "disabled" && menu.visible'
+        page.wait_for_function('PLATFORM.environment === "disabled" && bootComplete && runInProgress'
                                ' && document.getElementById("loading").hidden', timeout=15000)
         self.assertEqual(page.evaluate(NO_CONTINUE), ['undefined', 'undefined', 'undefined', False])
+        # Boot runs 'bad'; the deaths below are classic deaths
+        switch_mode(page, 'classic')
         page.evaluate(INSTRUMENT_RUN)
-        page.evaluate('''() => {
-            const b = menu.classicVersionButton.background
-            menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2})
-        }''')
         page.wait_for_timeout(300)
         return page
 
@@ -110,17 +108,17 @@ class NoContinueTests(unittest.TestCase):
         page.wait_for_timeout(100)
 
     def check_frozen_death(self, page, score, restarts, events):
-        """The death freezes the run on Restart/Menu; nothing restarts it yet."""
+        """The death freezes the run on Restart/switch; nothing restarts it yet."""
         self.kill(page, score)
         s = state(page)
         self.assertEqual((s['offer'], s['reStarts'], s['score'], s['events'], s['clickable']),
                          (True, restarts, score, events, [True, True]), f'score {score}')
-        self.assertFalse(s['gamePaused'] or s['menuVisible'], f'score {score}')
-        print(f'  ASSERT score {score} death -> frozen Restart/Menu, no continue, no reStart: pass',
+        self.assertEqual((s['gamePaused'], s['version']), (False, 'classic'), f'score {score}')
+        print(f'  ASSERT score {score} death -> frozen Restart/switch, no continue, no reStart: pass',
               file=sys.stderr)
 
     def check_deaths(self, page, scores):
-        events = [['level_started', 'classic']]
+        events = []
         for i, score in enumerate(scores):
             self.check_frozen_death(page, score, i, events)
             self.press(page, 'restartButton')
@@ -128,24 +126,25 @@ class NoContinueTests(unittest.TestCase):
             s = state(page)
             self.assertEqual((s['offer'], s['reStarts'], s['score'], s['events']),
                              (False, i + 1, 0, events), f'score {score}')
-            self.assertFalse(s['gamePaused'] or s['menuVisible'], f'score {score}')
+            self.assertEqual((s['gamePaused'], s['version']), (False, 'classic'), f'score {score}')
             print(f'  ASSERT score {score} Restart -> one level_failed, new run at score 0: pass',
                   file=sys.stderr)
-        # One more death, left through Menu
+        # One more death, left through the mode switch
         score = scores[-1]
         self.check_frozen_death(page, score, len(scores), events)
-        self.press(page, 'menuButton')
+        self.press(page, 'switchButton')
         s = state(page)
-        self.assertEqual((s['offer'], s['reStarts'], s['menuVisible'], s['events']),
-                         (False, len(scores), True, events + [['level_failed', 'classic']]))
-        print(f'  ASSERT score {score} Menu -> one level_failed, menu visible, no reStart: pass',
+        self.assertEqual((s['offer'], s['reStarts'], s['version'], s['events']),
+                         (False, len(scores), 'bad', events + [['level_failed', 'classic'],
+                                                                ['level_started', 'bad']]))
+        print(f'  ASSERT score {score} switch -> one level_failed, bad run started, no reStart: pass',
               file=sys.stderr)
 
-    def test_death_offers_restart_or_menu_mouse(self):
+    def test_death_offers_restart_or_switch_mouse(self):
         page = self.boot({'width': 1280, 'height': 720})
         self.check_deaths(page, [4, 5, 7])
 
-    def test_death_offers_restart_or_menu_touch_844x390(self):
+    def test_death_offers_restart_or_switch_touch_844x390(self):
         page = self.boot({'width': 844, 'height': 390}, has_touch=True, is_mobile=True)
         self.check_deaths(page, [5, 6])
 

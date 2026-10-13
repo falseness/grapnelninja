@@ -116,15 +116,34 @@ class Playgama2BridgeTests(unittest.TestCase):
         return page, network, console
 
     def click_mode(self, page, mode):
-        point = page.evaluate('''mode => {
-            const b = menu[mode + 'VersionButton'].background;
+        """Real clicks that leave a run of mode going.
+
+        Trees with the title menu click its version button. Current trees boot
+        straight into a 'bad' run (TASK-360/364): another mode is reached by
+        a real click on the HUD menu button and then on the pause-screen mode
+        switch; the running mode needs no click.
+        """
+        want = 'classic' if mode == 'classic' else 'bad'
+        center = '''([expr, scaled]) => {
+            const b = eval(expr), s = scaled ? scale[version] : 1;
             const r = canvas.getBoundingClientRect();
-            return {x:r.x+(b.x+b.width/2)*r.width/width,
-                    y:r.y+(b.y+b.height/2)*r.height/height};
-        }''', mode)
-        page.mouse.click(**point)
-        page.wait_for_function('!menu.visible && !!ninja')
-        self.assertEqual(page.evaluate('version'), 'classic' if mode == 'classic' else 'bad')
+            return {x:r.x+(b.x+b.width/2)*s*r.width/width,
+                    y:r.y+(b.y+b.height/2)*s*r.height/height};
+        }'''
+        if page.evaluate("'classicVersionButton' in menu"):
+            page.mouse.click(**page.evaluate(center, [f'menu.{mode}VersionButton.background', False]))
+            page.wait_for_function('!menu.visible && !!ninja')
+        else:
+            page.wait_for_function('bootComplete && runInProgress')
+            if page.evaluate('version') != want:
+                if not page.evaluate('menu.gamePaused'):
+                    page.wait_for_function('!unTouch')
+                    page.mouse.click(**page.evaluate(center, ['menu.button.background', True]))
+                    page.wait_for_function('menu.gamePaused')
+                page.wait_for_function('!unTouch')
+                page.mouse.click(**page.evaluate(center, ['menu.backToMenu.background', False]))
+                page.wait_for_function('want => version === want && !!ninja', arg=want)
+        self.assertEqual(page.evaluate('version'), want)
 
     def test_normal_contract_storage_events_and_nested_network(self):
         page, network, _ = self.open()
@@ -203,27 +222,33 @@ class Playgama2BridgeTests(unittest.TestCase):
                     y:r.y+(b.y+b.height/2)*r.height/height};
         }''')
         page.mouse.click(**point)
-        page.wait_for_function('menu.visible && !menu.gamePaused')
+        # The pause switch (formerly back-to-menu) starts the other mode
+        page.wait_for_function("version === 'bad' && runInProgress")
         self.click_mode(page, 'bad')
         sequence = self.lifecycle_calls(page)
-        print('ASSERT pause->menu->start sequence', json.dumps(sequence), flush=True)
-        self.assertEqual(sequence, [['level_started', {'world': 'classic'}], ['level_paused', None],
+        print('ASSERT pause->switch->start sequence', json.dumps(sequence), flush=True)
+        # Boot runs 'bad' (TASK-360); click_mode('classic') leaves it through the pause switch
+        self.assertEqual(sequence, [['level_started', {'world': 'bad'}], ['level_paused', None],
+                                    ['level_failed', {'world': 'bad'}],
+                                    ['level_started', {'world': 'classic'}], ['level_paused', None],
                                     ['level_failed', {'world': 'classic'}], ['level_started', {'world': 'bad'}]])
-        # Death -> continue offer Menu: exactly one level_failed for the run
+        # Death -> the offer's mode switch (formerly Menu), clicked twice:
+        # exactly one level_failed for the run, then one new run, which waits
+        # paused after the game-over interstitial (pauseAfterAd)
         page.evaluate('onLethalDeath()')
         self.assertTrue(page.evaluate('continueOffer.visible'))
-        page.evaluate('menu.backToMenu.click(); menu.backToMenu.click()')
-        page.wait_for_function('menu.visible && !interstitialPending')
-        page.evaluate('menu.backToMenu.click()')
-        death = self.lifecycle_calls(page)[4:]
-        print('ASSERT death->menu tail', json.dumps(death), flush=True)
-        self.assertEqual(death, [['level_failed', {'world': 'bad'}]])
-        self.click_mode(page, 'classic')
+        page.evaluate('continueOffer.switchButton.click(); continueOffer.switchButton.click()')
+        page.wait_for_function("!continueOffer.visible && !interstitialPending && version === 'classic'")
+        death = self.lifecycle_calls(page)[7:]
+        print('ASSERT death->switch tail', json.dumps(death), flush=True)
+        self.assertEqual(death, [['level_failed', {'world': 'bad'}], ['level_started', {'world': 'classic'}],
+                                 ['level_paused', None]])
         final = self.lifecycle_calls(page)
         print('ASSERT full sequence', json.dumps([n for n, _ in final]), flush=True)
-        self.assertEqual([n for n, _ in final], ['level_started', 'level_paused', 'level_failed', 'level_started',
-                                                 'level_failed', 'level_started'])
-        print('PASS menu abandon: one level_failed per run (pause->menu and death->menu)', flush=True)
+        self.assertEqual([n for n, _ in final], ['level_started', 'level_paused', 'level_failed',
+                                                 'level_started', 'level_paused', 'level_failed', 'level_started',
+                                                 'level_failed', 'level_started', 'level_paused'])
+        print('PASS run abandon: one level_failed per run (pause->switch and death->switch)', flush=True)
 
     def test_saved_language_precedes_host(self):
         page, _, _ = self.open(saved='en')
@@ -253,8 +278,9 @@ class Playgama2BridgeTests(unittest.TestCase):
                 page.wait_for_timeout(150)
                 name = f'{tree}-{mode}.png'
                 subprocess.run(['import', '-window', 'root', str(self.out / name)], env=self.env, check=True, timeout=12)
-                state = page.evaluate('({menu:menu.visible, version: typeof version === "undefined" ? null : version, loading:document.getElementById("loading").hidden})')
-                self.assertEqual(state['menu'], mode == 'menu')
+                state = page.evaluate('({menu:!!menu.visible, version: typeof version === "undefined" ? null : version, loading:document.getElementById("loading").hidden})')
+                # Current trees have no title menu: 'menu' is the boot run
+                self.assertEqual(state['menu'], mode == 'menu' and tree == 'baseline')
                 self.assertTrue(state['loading'])
                 captures.append({'path': name, 'time': time.time(), 'state': state,
                     'sha256': hashlib.sha256((self.out / name).read_bytes()).hexdigest()})

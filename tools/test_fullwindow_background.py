@@ -45,13 +45,13 @@ def viewport_name(viewport):
 
 
 def boot_menu(browser, url, viewport):
-    """Open the game at viewport and wait for the main menu."""
+    """Open the game at viewport and wait for the boot-time 'bad' run."""
     width, height, touch = viewport
     options = {'has_touch': True, 'is_mobile': True} if touch else {}
     context, page, errors = open_game(
         browser, url + 'index.html', {'width': width, 'height': height}, **options)
     wait_for_boot(page)
-    page.wait_for_function('() => menu.visible')
+    page.wait_for_function('() => bootComplete && runInProgress')
     page.wait_for_timeout(200)
     return context, page, errors
 
@@ -268,9 +268,9 @@ class FullWindowBackgroundTests(unittest.TestCase):
         }''')
         page.wait_for_function('() => window.__frames >= 24', timeout=120000)
         run = page.evaluate('''() => ({frames: __frames, paints: __barsPaints,
-            every: WINDOW_BARS_EVERY_FRAMES, menu: menu.visible})''')
+            every: WINDOW_BARS_EVERY_FRAMES, paused: menu.gamePaused})''')
         self.assertEqual(run['every'], 4)
-        self.assertFalse(run['menu'])
+        self.assertFalse(run['paused'])
         # rAF callbacks and game frames are counted apart: allow one frame each way
         self.assertGreaterEqual(run['paints'], (run['frames'] - 1) // 4)
         self.assertLessEqual(run['paints'], (run['frames'] + 1) // 4 + 1)
@@ -296,29 +296,42 @@ class FullWindowBackgroundTests(unittest.TestCase):
                     # click: the button starts the run once turned landscape
                     self.assertTrue(page.locator('#rotate-prompt').is_visible())
                     self.assertTrue(page.evaluate("document.getElementById('stage').inert"))
+                    # The boot run waits paused behind the prompt
                     point = click_canvas(page, *page.evaluate('''() => {
-                        const b = menu.classicVersionButton.background
+                        const b = menu.backToMenu.background
                         return [b.x + b.width / 2, b.y + b.height / 2]
                     }'''))
                     page.wait_for_timeout(500)
-                    self.assertTrue(page.evaluate('menu.visible'))
+                    self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
                     page.set_viewport_size({'width': viewport[1], 'height': viewport[0]})
                     page.wait_for_function('() => !isViewRotated() && !document.getElementById("stage").inert')
                     page.wait_for_timeout(300)
+                # No title menu (TASK-364): a real click on the HUD menu
+                # button pauses the boot run, and the pause screen's mode
+                # switch ('chill version') starts classic
+                if not page.evaluate('menu.gamePaused'):
+                    page.wait_for_function('!unTouch')
+                    click_canvas(page, *page.evaluate('''() => {
+                        const b = menu.button.background, s = scale[version]
+                        return [(b.x + b.width / 2) * s, (b.y + b.height / 2) * s]
+                    }'''))
+                    page.wait_for_function('() => menu.gamePaused')
+                page.wait_for_function('!unTouch')
                 button = page.evaluate('''() => {
-                    const b = menu.classicVersionButton.background
+                    const b = menu.backToMenu.background
                     return {x: b.x + b.width / 2, y: b.y + b.height / 2,
-                            label: menu.classicVersionButton.text.text}
+                            label: menu.backToMenu.text.text}
                 }''')
                 point = click_canvas(page, button['x'], button['y'])
-                page.wait_for_function('() => !menu.visible')
-                state = page.evaluate('''() => ({version, menuVisible: menu.visible,
+                page.wait_for_function('() => version === "classic" && !menu.gamePaused')
+                state = page.evaluate('''() => ({version, label: menu.backToMenu.text.text,
                     gamePaused: menu.gamePaused, score: scoreText.count[version]})''')
                 lines.append(f'{viewport_name(viewport)} label={button["label"]!r} '
                              f'logical=({button["x"]:.1f},{button["y"]:.1f}) '
                              f'css=({point["x"]:.1f},{point["y"]:.1f}) state={json.dumps(state)}')
                 self.assertEqual(state['version'], 'classic')
-                self.assertFalse(state['menuVisible'])
+                self.assertFalse(state['gamePaused'])
+                self.assertEqual(button['label'], 'chill version')
         print('\n  ' + '\n  '.join(lines), file=sys.stderr)
         if self.evidence:
             (self.out() / 'click.log').write_text('\n'.join(lines) + '\n')

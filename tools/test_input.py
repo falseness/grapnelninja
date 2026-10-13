@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import wait_for_boot
-from game_harness import canvas_to_viewport, open_game, start_game_test
+from game_harness import READY, canvas_to_viewport, open_game, start_game_test, switch_mode
 
 ROOT = Path(__file__).resolve().parent.parent
 TOUCH_VIEWPORT = {'width': 844, 'height': 390}
@@ -19,17 +19,13 @@ def open_touch_game(browser, url):
     context, page, errors = open_game(browser, url + 'index.html', TOUCH_VIEWPORT,
                                       has_touch=True, is_mobile=True)
     wait_for_boot(page)
-    page.wait_for_function('menu.visible && typeof Grapnel !== "undefined"')
+    page.wait_for_function(READY + ' && typeof Grapnel !== "undefined"')
     return context, page, errors
 
 
 def start_classic(page):
-    """Start the classic run directly and let the input guard expire."""
-    page.evaluate('''() => {
-        const b = menu.classicVersionButton.background
-        menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2})
-    }''')
-    page.wait_for_function('!menu.visible && version === "classic"')
+    """Switch the boot run to classic and let the input guard expire."""
+    switch_mode(page, 'classic')
     page.wait_for_timeout(page.evaluate('STYLE.timing.inputUntouchMs') + 300)
 
 
@@ -81,7 +77,7 @@ class InputTests(unittest.TestCase):
         page.goto(self.url + 'index.html')
         # Offline the SDK fixture defines no bridge: boot ends 'disabled'
         wait_for_boot(page)
-        page.wait_for_function('PLATFORM.environment === "disabled" && menu.visible')
+        page.wait_for_function('PLATFORM.environment === "disabled" && bootComplete && runInProgress')
         return page
 
     def out(self):
@@ -110,16 +106,24 @@ class InputTests(unittest.TestCase):
         print('  ASSERT one tap -> exactly 1 grapnel throw: pass', file=sys.stderr)
 
     def test_first_tap_on_menu_starts_game(self):
-        # A fresh load has no grapnel yet; the tap must reach the menu button
+        # Boot runs 'bad' with no title menu: real taps on the HUD menu button
+        # and then the pause-screen mode switch must start classic
         context, page, errors = open_touch_game(self.browser, self.url)
         self.track(context, errors)
-        self.assertTrue(page.evaluate('typeof grapnel == "undefined"'))
-        c = page.evaluate('''(() => { const b = menu.classicVersionButton.background
+        self.assertEqual(page.evaluate('version'), 'bad')
+        page.wait_for_function('!unTouch')
+        c = page.evaluate('''(() => { const b = menu.button.background, s = scale[version]
+            return {x: (b.x + b.width / 2) * s, y: (b.y + b.height / 2) * s} })()''')
+        point = canvas_to_viewport(page, c['x'], c['y'])
+        page.touchscreen.tap(point['x'], point['y'])
+        page.wait_for_function('menu.gamePaused', timeout=5000)
+        page.wait_for_function('!unTouch')
+        c = page.evaluate('''(() => { const b = menu.backToMenu.background
             return {x: b.x + b.width / 2, y: b.y + b.height / 2} })()''')
         point = canvas_to_viewport(page, c['x'], c['y'])
         page.touchscreen.tap(point['x'], point['y'])
-        page.wait_for_function('!menu.visible && version === "classic"', timeout=5000)
-        print('\n  ASSERT first menu tap starts classic, no page error: pass', file=sys.stderr)
+        page.wait_for_function('!menu.gamePaused && version === "classic"', timeout=5000)
+        print('\n  ASSERT HUD menu tap + mode switch tap starts classic, no page error: pass', file=sys.stderr)
 
     def test_default_prevented(self):
         page = self.boot_desktop()

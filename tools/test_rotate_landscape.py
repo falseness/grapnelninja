@@ -142,20 +142,21 @@ class RotateLandscapeTests(unittest.TestCase):
         self.assertGreater(corner['x'], PORTRAIT['width'] / 2)
         self.assertLess(corner['y'], PORTRAIT['height'] / 2)
 
-        # Upright, the button tap lands on the rotate prompt: no run starts
+        # The boot run starts paused behind the prompt. Upright, a tap on the
+        # pause screen's mode switch lands on the rotate prompt: no switch
         self.assert_rotate_prompt(page)
-        version = page.evaluate('version')
-        self.tap_button(page, 'menu.classicVersionButton')
+        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
+        self.tap_button(page, 'menu.backToMenu')
         page.wait_for_timeout(500)
-        self.assertEqual(page.evaluate('[menu.visible, version]'), [True, version])
+        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
 
-        # Turned to landscape, the same button starts the run
+        # Turned to landscape, the same switch starts a classic run
         page.set_viewport_size(LANDSCAPE)
         page.wait_for_function('!isViewRotated() && !document.getElementById("stage").inert',
                                timeout=5000)
         page.wait_for_timeout(300)
-        self.tap_button(page, 'menu.classicVersionButton')
-        page.wait_for_function('!menu.visible && version === "classic"', timeout=5000)
+        self.tap_button(page, 'menu.backToMenu')
+        page.wait_for_function('!menu.gamePaused && version === "classic"', timeout=5000)
         self.assertEqual(errors, {'console': [], 'page': []})
 
     def test_turning_the_phone_mid_run(self):
@@ -172,8 +173,10 @@ class RotateLandscapeTests(unittest.TestCase):
         self.assertGreater(landscape['canvas']['width'], landscape['canvas']['height'])
         # Same screen in both orientations: the same logical viewport
         self.assertEqual(landscape['width'], portrait['width'])
-        self.tap_button(page, 'menu.badVersionButton')
-        page.wait_for_function('!menu.visible && version === "bad"', timeout=5000)
+        # The boot run waited paused behind the prompt: resume it
+        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
+        self.tap_button(page, 'menu.resume')
+        page.wait_for_function('!menu.gamePaused && version === "bad"', timeout=5000)
 
         # Turned upright mid-run: re-laid out, the run pauses behind the prompt
         page.set_viewport_size(PORTRAIT)
@@ -182,8 +185,7 @@ class RotateLandscapeTests(unittest.TestCase):
         page.wait_for_timeout(300)
         self.assertEqual(page.evaluate(STATE)['width'], portrait['width'])
         self.assert_rotate_prompt(page)
-        self.assertEqual(page.evaluate('[menu.visible, menu.gamePaused, version]'),
-                         [False, True, 'bad'])
+        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
 
         page.set_viewport_size(LANDSCAPE)
         page.wait_for_function('!isViewRotated() && !document.getElementById("stage").inert',

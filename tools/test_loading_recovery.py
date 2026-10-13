@@ -30,7 +30,7 @@ class RecoveryTests(unittest.TestCase):
                 support.wait_for_boot(page)
                 page.wait_for_timeout(1700)
                 self.assertEqual(len(requests), min(failures + 1, 3))
-                self.assertTrue(page.evaluate('bootComplete && menu.visible'))
+                self.assertTrue(page.evaluate('bootComplete && runInProgress'))
                 if failures < 3:
                     self.assertEqual(page.evaluate('PLATFORM.readiness.state'), 'success')
                     for event in ('initialize', 'game_ready'):
@@ -95,5 +95,13 @@ class RecoveryTests(unittest.TestCase):
         page.wait_for_timeout(250)
         self.assertEqual(page.evaluate('({x:ninja.x,y:ninja.y})'),initial)
         page.evaluate("emitHost('pause',false)")
+        # The boot run started paused behind the host pause; once released,
+        # a real click on Resume lets physics run
+        page.wait_for_timeout(250)
+        self.assertEqual(page.evaluate('({x:ninja.x,y:ninja.y})'),initial)
+        point=page.evaluate('''() => { const b=menu.resume.background, r=canvas.getBoundingClientRect();
+            return {x:r.x+(b.x+b.width/2)*r.width/width, y:r.y+(b.y+b.height/2)*r.height/height} }''')
+        page.wait_for_function('menu.gamePaused && !unTouch')
+        page.mouse.click(**point)
         page.wait_for_function('(y)=>ninja.y!==y',arg=initial['y'])
         ctx.close()

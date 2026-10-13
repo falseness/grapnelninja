@@ -266,7 +266,7 @@ class SafeRespawnTests(unittest.TestCase):
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual((errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "disabled" && menu.visible'
+        page.wait_for_function('PLATFORM.environment === "disabled" && bootComplete && runInProgress'
                                ' && document.getElementById("loading").hidden')
         page.evaluate(SETUP)
         return page
