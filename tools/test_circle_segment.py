@@ -14,7 +14,9 @@ class CircleSegmentTest(unittest.TestCase):
         const hit = (x1, y1, x2, y2, x, y, r) => collisionCircleWithLine(lineFormula(x1, y1, x2, y2), x, y, r)
         const square = [{x: 0, y: 0}, {x: 100, y: 0}, {x: 100, y: 100}, {x: 0, y: 100}]
         // Ninja.collision against one fake element; records the lines it reports.
-        const centreInside = (x, y, r) => {
+        // The probe stands in for the global ninja: TASK-372 runs deadly
+        // callbacks only for the current player (sprites/ninja.js hitLine).
+        const centreInside = (x, y, r, asPlayer = true) => {
             const hits = []
             const element = {
                 getPoints: () => square,
@@ -24,11 +26,17 @@ class CircleSegmentTest(unittest.TestCase):
                 collision: (who, line) => hits.push([line.x1, line.y1, line.x2, line.y2])
             }
             const saved = floors
+            const savedNinja = ninja
             floors = [{elements: [element]}]
-            const ninja = new Ninja({x, y, radius: r, fill: '#fff', stroke: '#fff'})
-            const result = ninja.collision()
-            floors = saved
-            return {hits, result: !!result}
+            const probe = new Ninja({x, y, radius: r, fill: '#fff', stroke: '#fff'})
+            if (asPlayer)
+                ninja = probe
+            try {
+                return {hits, result: !!probe.collision()}
+            } finally {
+                floors = saved
+                ninja = savedNinja
+            }
         }
         const eps = 1e-6
         return {
@@ -56,7 +64,8 @@ class CircleSegmentTest(unittest.TestCase):
             nearest: (l => [l.x1, l.y1, l.x2, l.y2])(nearestLine(Element.prototype.getLines.call({getPoints: () => square}), 50, 90)),
             centreDeep: centreInside(50, 80, 5),
             centreNearEdge: centreInside(50, 97, 5),
-            centreOutside: centreInside(50, 150, 5)
+            centreOutside: centreInside(50, 150, 5),
+            centreDeepNotPlayer: centreInside(50, 80, 5, false)
         }
     }'''
 
@@ -121,6 +130,12 @@ class CircleSegmentTest(unittest.TestCase):
 
     def test_centre_outside_misses(self):
         self.assertEqual(self.r['centreOutside'], {'hits': [], 'result': False})
+
+    def test_non_player_ninja_gets_no_deadly_callback(self):
+        # A replaced ninja still detects the hit but must not kill the new run.
+        other = self.r['centreDeepNotPlayer']
+        self.assertTrue(other['result'])
+        self.assertEqual(other['hits'], [])
 
 
 if __name__ == '__main__':
