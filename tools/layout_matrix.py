@@ -1,8 +1,10 @@
 """Layout checks per screen, size and language.
 
 For each (language, size) one page is opened (browser locale = language)
-and walked through menu -> hud -> pause. The local build has no rewarded
-ad, so the continue offer and ad-unavailable screens never show.
+and walked through hud -> pause -> death. There is no title menu: boot
+starts a 'bad' run and switch_mode turns it into a classic run. The death
+screen is the free continue offer (Restart, mode switch, fps checkbox,
+LANGUAGE_BUTTON) after a real kill.
 Every screen is drawn once with LAYOUT_PROBE.boxes on (menu.js), which
 returns the text and button boxes in CSS px relative to the canvas.
 
@@ -18,7 +20,7 @@ Checks per shot:
 """
 from pathlib import Path
 
-from game_harness import READY, open_game
+from game_harness import READY, open_game, switch_mode
 from test_continue import INSTRUMENT_RUN
 
 SIZES = [(360, 640, True), (390, 844, True), (915, 412, True), (844, 390, True),
@@ -27,7 +29,7 @@ SIZES = [(360, 640, True), (390, 844, True), (915, 412, True), (844, 390, True),
          (2560, 1080, False), (1280, 500, False), (925, 925, False), (1024, 768, False),
          (1280, 1024, False)]
 LANGS = {'en': 'en-US', 'ru': 'ru-RU'}
-SCREENS = ['menu', 'hud', 'pause']
+SCREENS = ['hud', 'pause', 'death']
 MAX_ASPECT = 2.0
 MIN_FONT_PX = 12
 MIN_BUTTON_PX = 44
@@ -49,9 +51,9 @@ PROBE = '''(code) => {
                      bsw: document.body.scrollWidth, bsh: document.body.scrollHeight}}
 }'''
 DRAW = {
-    'menu': 'menu.draw()',
     'hud': 'draw()',
     'pause': 'menu.drawPauseScreen()',
+    'death': 'continueOffer.draw()',
 }
 
 
@@ -144,12 +146,23 @@ def open_page(browser, url, size, touch, locale):
     return context, page, errors
 
 
+def die(page):
+    """A real lethal death that leaves the continue offer (death screen) up.
+
+    The offer shows when a game over interstitial is due; the fake bridge
+    has none, so it is switched on just before the kill (INSTRUMENT_RUN).
+    """
+    page.evaluate('() => { bridge.advertisement.isInterstitialSupported = true; window.__kill = true }')
+    page.wait_for_function('continueOffer.visible && !window.__kill && !menu.gamePaused')
+
+
 def walk(browser, url, lang, size, touch, shots_dir=None):
     """Rows for every screen of one language at one size."""
     context, page, errors = open_page(browser, url, size, touch, LANGS[lang])
     rows = []
     try:
         assert page.evaluate('I18N.language') == lang
+        switch_mode(page, 'classic')
         page.evaluate(INSTRUMENT_RUN)
 
         def shot(screen):
@@ -164,14 +177,15 @@ def walk(browser, url, lang, size, touch, shots_dir=None):
                        canvas=result['canvas'], box_list=boxes)
             rows.append(row)
 
-        shot('menu')
-        page.evaluate('''() => { const b = menu.classicVersionButton.background
-            menu.click({x: b.x + b.width / 2, y: b.y + b.height / 2}) }''')
         page.evaluate('() => { scoreText.count[version] = 7 }')
         page.wait_for_timeout(450)
         shot('hud')
         page.evaluate('menu.startPause()')
         shot('pause')
+        page.evaluate('menu.resume.click()')
+        page.wait_for_function('!menu.gamePaused')
+        die(page)
+        shot('death')
         assert (errors['console'], errors['page']) == ([], []), errors
     finally:
         context.close()
