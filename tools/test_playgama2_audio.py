@@ -87,6 +87,15 @@ class Playgama2AudioTests(unittest.TestCase):
         result['verdict'] = 'PASS ' + phase
         print(f"PASS {case}/{phase}: rms={result['rms']:.7f} samples={result['samples']} state={result['state']} t={result['ms']:.1f}ms", flush=True)
 
+    def start(self, page, touch):
+        # The run (and its music request) starts at boot, before any input; the
+        # AudioContext must only appear on the first trusted gesture. That gesture
+        # is the real HUD-menu then pause-switch click/tap into classic.
+        self.assertTrue(page.evaluate('runInProgress && !menu.visible'))
+        support.Playgama2BridgeTests.click_mode(self, page, 'classic', touch)
+        self.assertTrue(page.evaluate('runInProgress && !menu.visible && !menu.gamePaused'))
+        self.assertTrue(page.evaluate('AUDIO.getState().started'))
+
     def toggle(self, page, touch):
         button = page.get_by_role('button', name=page.locator('#mute-button').get_attribute('aria-label'), exact=True)
         if touch: button.tap()
@@ -104,12 +113,7 @@ class Playgama2AudioTests(unittest.TestCase):
         page = self.open(lang,touch)
         self.measure(page,case,'before-gesture',False)
         self.assertFalse(page.evaluate('AUDIO.getState().started'))
-        # Trusted first gesture starts gameplay, including the production music graph.
-        point = page.evaluate('''() => { const b=menu.classicVersionButton.background,r=canvas.getBoundingClientRect();
-            return {x:r.x+(b.x+b.width/2)*r.width/width,y:r.y+(b.y+b.height/2)*r.height/height}; }''')
-        if touch: page.touchscreen.tap(**point)
-        else: page.mouse.click(**point)
-        self.assertFalse(page.evaluate('menu.visible'))
+        self.start(page, touch)
         self.measure(page,case,'fresh-unlocked',True)
         self.assertTrue(page.evaluate('audioProbe.inputs.some(e=>e.trusted)'))
         self.capture(page,case,'fresh')
@@ -210,10 +214,8 @@ class Playgama2AudioTests(unittest.TestCase):
             page.wait_for_function('(portrait) => document.getElementById("stage").inert === portrait', arg=portrait)
 
         # Start production gameplay/music through a trusted browser touch.
-        point = page.evaluate('''() => { const b=menu.classicVersionButton.background,r=canvas.getBoundingClientRect();
-            return {x:r.x+(b.x+b.width/2)*r.width/width,y:r.y+(b.y+b.height/2)*r.height/height}; }''')
-        page.touchscreen.tap(**point)
-        self.assertFalse(page.evaluate('menu.visible'))
+        self.assertFalse(page.evaluate('AUDIO.getState().started'))
+        self.start(page, True)
         checkpoint('landscape-start')
         rotate(True)
         checkpoint('portrait', True)

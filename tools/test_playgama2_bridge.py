@@ -115,8 +115,8 @@ class Playgama2BridgeTests(unittest.TestCase):
         self.addCleanup(lambda: self.assertEqual(errors, []))
         return page, network, console
 
-    def click_mode(self, page, mode):
-        """Real clicks that leave a run of mode going.
+    def click_mode(self, page, mode, touch=False):
+        """Real clicks (or touchscreen taps) that leave a run of mode going.
 
         Trees with the title menu click its version button. Current trees boot
         straight into a 'bad' run (TASK-360/364): another mode is reached by
@@ -130,18 +130,19 @@ class Playgama2BridgeTests(unittest.TestCase):
             return {x:r.x+(b.x+b.width/2)*s*r.width/width,
                     y:r.y+(b.y+b.height/2)*s*r.height/height};
         }'''
+        press = (lambda p: page.touchscreen.tap(**p)) if touch else (lambda p: page.mouse.click(**p))
         if page.evaluate("'classicVersionButton' in menu"):
-            page.mouse.click(**page.evaluate(center, [f'menu.{mode}VersionButton.background', False]))
+            press(page.evaluate(center, [f'menu.{mode}VersionButton.background', False]))
             page.wait_for_function('!menu.visible && !!ninja')
         else:
             page.wait_for_function('bootComplete && runInProgress')
             if page.evaluate('version') != want:
                 if not page.evaluate('menu.gamePaused'):
                     page.wait_for_function('!unTouch')
-                    page.mouse.click(**page.evaluate(center, ['menu.button.background', True]))
+                    press(page.evaluate(center, ['menu.button.background', True]))
                     page.wait_for_function('menu.gamePaused')
                 page.wait_for_function('!unTouch')
-                page.mouse.click(**page.evaluate(center, ['menu.backToMenu.background', False]))
+                press(page.evaluate(center, ['menu.backToMenu.background', False]))
                 page.wait_for_function('want => version === want && !!ninja', arg=want)
         self.assertEqual(page.evaluate('version'), want)
 
