@@ -28,7 +28,6 @@ const PROGRESS = (function()
         I18N.language = I18N.pick(state.lang, PLATFORM.language)
         applyLanguage()
         MUTE_BUTTON.restore(state.muted)
-        if (state.tutorialDone) TUTORIAL.element.hidden = true
     }
     function reconcile(values)
     {
@@ -99,8 +98,6 @@ const PROGRESS = (function()
             clearTimeout(saveTimer)
             write()
         },
-        getTutorialDone() { return state.tutorialDone },
-        completeTutorial() { state.tutorialDone = true; PROGRESS.save() },
         getMuted() { return state.muted },
         setMuted(value) { state.muted = !!value; muteChanged = true },
         getTime() { return state.time },

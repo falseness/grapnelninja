@@ -37,6 +37,7 @@ function createEvents()
         AUDIO.play('throw')
         grapnel.throwed = true
         PLATFORM.startup('first_grapple', version)
+        TUTORIAL_HINT.press(version)
         grapnel.setGrappled(false)   
     }
     function pickUpGrapnel()

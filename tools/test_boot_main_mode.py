@@ -57,7 +57,7 @@ class BootMainModeTests(unittest.TestCase):
         # game_ready is sent after the first gameplay frame was painted
         page.screenshot(path=str(self.out / 'boot.png'))
         state = page.evaluate('''({version, titleMenu: "visible" in menu || "classicVersionButton" in menu || "draw" in menu, paused: menu.gamePaused,
-            tutorial: !document.getElementById('tutorial').hidden,
+            tutorial: TUTORIAL_HINT.visible && TUTORIAL_HINT.alpha === 1,
             loading: !document.getElementById('loading').hidden, ninja: !!ninja})''')
         self.assertEqual(state, {'version': 'bad', 'titleMenu': False, 'paused': False,
                                  'tutorial': True, 'loading': False, 'ninja': True})

@@ -67,13 +67,6 @@ class I18nTests(unittest.TestCase):
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
         page.wait_for_function(READY, timeout=15000)
-        # A fresh store shows the tutorial over the boot run; its button
-        # covers the bottom-left language button. Dismissing it saves every
-        # key, so saved_langs() only counts storage calls made after it.
-        if page.evaluate("!document.getElementById('tutorial').hidden"):
-            page.click('#tutorial button')
-            page.wait_for_function('''() => window.__storageSpy.calls.some(c =>
-                c.name == 'storage.set')''')
         self.marks[id(page)] = len(storage_calls(page))
         return page
 
@@ -90,6 +83,8 @@ class I18nTests(unittest.TestCase):
         page.wait_for_function('LANGUAGE_BUTTON.active() && !unTouch')
         r = page.evaluate('LANGUAGE_BUTTON.rect()')
         p = canvas_to_viewport(page, r['x'] + r['width'] / 2, r['y'] + r['height'] / 2)
+        # Pausing saves progress (language unchanged); count only later saves
+        self.marks[id(page)] = len(storage_calls(page))
         page.mouse.click(p['x'], p['y'])
 
     def wait_lang_saved(self, page):

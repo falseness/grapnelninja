@@ -119,7 +119,6 @@
         <script src = "audio.js"></script>
         <script src = "mutebutton.js"></script>
         <script src = "progress.js"></script>
-        <script src = "tutorial.js"></script>
         <script src = 'menu.js'></script>
         <script src = "languagebutton.js"></script>
     
@@ -272,7 +271,6 @@
 
                 chooseVersion()
                 PLATFORM.startup('run_initialized', version)
-                TUTORIAL.show()
                 warmGlowSprites()
                 
                 cancelAnimationFrame(game)
@@ -291,6 +289,7 @@
                 scoreText.count[version] = 0
                 PLATFORM.sendLifecycle('level_started', {world: version})
                 runInProgress = true
+                TUTORIAL_HINT.runStarted()
                 
                 if (version == 'classic')
                     startClassicVersion()
@@ -546,7 +545,8 @@
                 }
                 else
                 {
-                    runFixedPhysics(frameTime)
+                    const steps = runFixedPhysics(frameTime)
+                    if (activelyPlaying) TUTORIAL_HINT.advance(steps * physicsStepMs)
                     draw()
                     if (activelyPlaying) PLATFORM.startup('first_gameplay_frame', version)
                 }
@@ -555,8 +555,10 @@
 
             function runFixedPhysics(frameTime)
             {
-                for (let steps = computePhysicsSteps(physicsTiming, frameTime); steps > 0; steps--)
+                const steps = computePhysicsSteps(physicsTiming, frameTime)
+                for (let i = 0; i < steps; i++)
                     physics()
+                return steps
             }
 
             // Live re-layout when the iframe resizes (fullscreen toggle,
@@ -611,7 +613,6 @@
             {
                 I18N.applyDom()
                 MUTE_BUTTON.relabel()
-                TUTORIAL.relabel()
                 TUTORIAL_HINT.invalidate()
                 document.documentElement.lang = I18N.language
                 rebuildMenu()

@@ -4,14 +4,56 @@
 // device pixels; draw() only blits it, so a frame does no blur work.
 const TUTORIAL_HINT = {
     visible: false,
-    // Set by the tutorial lifecycle: fade (0..1) and seconds since the drift began
+    // Fade (0..1) and seconds of active game time since the first press
     alpha: 1,
     time: 0,
+    fadeSeconds: 5,
+    // The first press of this page load started the fade
+    pressed: false,
+    // The fade has finished: the hint stays hidden for this page load
+    done: false,
     sprite: null,
     spriteKey: '',
     // Strings baked into the current sprite, and how many sprites were built
     lines: null,
     buildCount: 0,
+
+    // Every run start until the first press shows the hint at full strength
+    runStarted()
+    {
+        if (this.pressed)
+            return
+        this.visible = true
+        this.alpha = 1
+        this.time = 0
+    },
+
+    // The first grapnel throw starts the fade; the throw itself is unaffected
+    press(mode)
+    {
+        if (this.pressed || !this.visible)
+            return
+        this.pressed = true
+        PLATFORM.startup('tutorial_dismissed', mode)
+    },
+
+    // Active game time only: the game loop calls this for simulated steps,
+    // so pauses, ads, the death screen and hidden or rotated views freeze it
+    advance(ms)
+    {
+        if (!this.pressed || this.done)
+            return
+        this.time = Math.min(this.fadeSeconds, this.time + ms / 1000)
+        this.alpha = Math.pow(1 - this.time / this.fadeSeconds, 1.6)
+        // A float sum of whole physics steps can land just under 5 s
+        if (this.time >= this.fadeSeconds - 1e-9)
+        {
+            this.time = this.fadeSeconds
+            this.alpha = 0
+            this.visible = false
+            this.done = true
+        }
+    },
 
     cacheKey(canvas)
     {

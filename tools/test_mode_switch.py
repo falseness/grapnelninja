@@ -93,8 +93,6 @@ class ModeSwitchTests(unittest.TestCase):
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.goto(self.url + 'index.html')
         page.wait_for_function(BOOT_DONE)
-        if page.evaluate("!document.getElementById('tutorial').hidden"):
-            page.click('#tutorial button')
         return page
 
     def die(self, page):

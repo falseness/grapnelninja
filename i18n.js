@@ -7,9 +7,6 @@ const I18N = (function()
         en:
         {
             'orientation.rotate'    : 'Rotate your phone to landscape to play. Your game is paused.',
-            'tutorial.desktop'      : 'Hold the mouse button to grapple. Release to let go. Move right to score.',
-            'tutorial.touch'        : 'Touch and hold to grapple. Lift your finger to let go. Move right to score.',
-            'tutorial.dismiss'      : 'Got it',
             'tutorial.hold.desktop' : 'HOLD',
             'tutorial.hold.touch'   : 'TOUCH & HOLD',
             'tutorial.grapple'      : 'TO GRAPPLE',
@@ -43,9 +40,6 @@ const I18N = (function()
         ru:
         {
             'orientation.rotate'    : 'Поверните телефон горизонтально, чтобы играть. Игра на паузе.',
-            'tutorial.desktop'      : 'Удерживайте кнопку мыши, чтобы зацепиться. Отпустите, чтобы отцепиться. Двигайтесь вправо, чтобы набирать очки.',
-            'tutorial.touch'        : 'Коснитесь и удерживайте палец, чтобы зацепиться. Отпустите, чтобы отцепиться. Двигайтесь вправо, чтобы набирать очки.',
-            'tutorial.dismiss'      : 'Понятно',
             'tutorial.hold.desktop' : 'ДЕРЖИ',
             'tutorial.hold.touch'   : 'КОСНИСЬ И ДЕРЖИ',
             'tutorial.grapple'      : '— ЗАЦЕПИШЬСЯ',

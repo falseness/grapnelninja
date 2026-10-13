@@ -1,15 +1,20 @@
 """The canvas tutorial hint (render/tutorialhint.js) over a running 'bad' run.
 
-TUTORIAL_HINT.visible is forced by the tests (the tutorial lifecycle does not
-drive it yet). Checks: the hint is drawn between the player and the HUD; a
-visible hint adds no shadowBlur sets to the main context once its sprite is
-built; a language change rebuilds the sprite once, with Russian text.
+The rendering tests force TUTORIAL_HINT.visible. Rendering checks: the hint is
+drawn between the player and the HUD; a visible hint adds no shadowBlur sets
+to the main context once its sprite is built; a language change rebuilds the
+sprite once, with Russian text. test_lifecycle drives the real lifecycle on
+the manual clock from render_snapshot (one 1000/60 ms physics step per
+frame): shown from boot until the first press, then a 5 s fade of active
+game time.
 
 Uses the fake Playgama Bridge from test_playgama2_bridge. Requires Playwright
 Chromium. No remote requests.
 
-TUTORIAL_HINT_EVIDENCE_DIR (default: artifacts/TASK-366) receives
-hint-desktop.png, hint-mobile.png, hint-ru.png and compare.png.
+TUTORIAL_HINT_EVIDENCE_DIR (default: artifacts/TASK-367) receives
+hint-desktop.png, hint-mobile.png, hint-ru.png and compare.png;
+TUTORIAL_LIFECYCLE_EVIDENCE_DIR (default: artifacts/TASK-367) receives
+fade-0s.png, fade-1s.png, fade-2.5s.png, fade-4s.png and fade-5s.png.
 """
 import json
 import os
@@ -17,6 +22,7 @@ from pathlib import Path
 import unittest
 
 from browser_test_support import start_browser_test
+from render_snapshot import CLOCK_SCRIPT
 from test_playgama2_bridge import FAKE, SDK
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +56,29 @@ CENTRE = '''() => {
 }'''
 
 
+# On top of CLOCK_SCRIPT: rAF callbacks always queue (cancel works) and
+# __frames(n) runs n animation frames, each one 1000/60 ms clock step later
+FRAMES_SCRIPT = '''(() => {
+    const snap = window.__snap, queue = new Map()
+    window.requestAnimationFrame = cb => { queue.set(++snap.rafs, cb); return snap.rafs }
+    window.cancelAnimationFrame = id => queue.delete(id)
+    window.__frames = n => {
+        for (let i = 0; i < n; ++i) {
+            snap.tick++
+            snap.now = snap.tick * 1000 / 60
+            snap.runTimers()
+            const due = [...queue.values()]
+            queue.clear()
+            for (const cb of due) cb(snap.now)
+        }
+        return snap.now
+    }
+})()'''
+HINT = '({visible: TUTORIAL_HINT.visible, alpha: TUTORIAL_HINT.alpha, time: TUTORIAL_HINT.time})'
+DISMISSED = "probe.calls.filter(c => c.name === 'startup_funnel' && " \
+    "c.data.stage === 'tutorial_dismissed').map(c => c.data)"
+
+
 def changed_pixels(a, b, threshold=40):
     return sum(1 for i in range(0, len(a), 4)
                if max(abs(a[i + k] - b[i + k]) for k in range(3)) > threshold)
@@ -58,9 +87,19 @@ def changed_pixels(a, b, threshold=40):
 class TutorialHintTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('TUTORIAL_HINT_EVIDENCE_DIR', ROOT / 'artifacts/TASK-366'))
+        cls.out = Path(os.environ.get('TUTORIAL_HINT_EVIDENCE_DIR', ROOT / 'artifacts/TASK-367'))
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.notes = []
+
+    @classmethod
+    def tearDownClass(cls):
+        # test_lifecycle's lines, kept off its own '... ok' result line
+        for line in cls.notes:
+            print(line, flush=True)
+
+    def note(self, *parts):
+        self.notes.append(' '.join(str(p) for p in parts))
 
     def open(self, viewport=(1920, 1080), dpr=1, touch=False):
         context = self.browser.new_context(
@@ -80,11 +119,126 @@ class TutorialHintTests(unittest.TestCase):
                          {'version': 'bad', 'runInProgress': True, 'paused': False})
         return page
 
+    def frames(self, page, n, until=None, limit=2000):
+        """Runs n frames, or batches of n frames until the JS condition holds."""
+        if until is None:
+            return page.evaluate('n => __frames(n)', n)
+        for _ in range(limit // n):
+            page.evaluate('n => __frames(n)', n)
+            if page.evaluate(until):
+                return
+            page.wait_for_timeout(1)
+        self.fail('timed out waiting for ' + until)
+
+    def leave_run(self, page, action, check_hidden=False):
+        """action (JS) leaves the run; frames until the new run plays."""
+        page.evaluate(action)
+        for _ in range(400):
+            self.frames(page, 1)
+            if check_hidden:
+                self.assertFalse(page.evaluate('TUTORIAL_HINT.visible'))
+            if page.evaluate('runInProgress && !continueOffer.visible && !interstitialPending'):
+                break
+            page.wait_for_timeout(1)
+        if page.evaluate('menu.gamePaused'):
+            page.evaluate('menu.unPause()')
+
+    def test_lifecycle(self):
+        out = Path(os.environ.get('TUTORIAL_LIFECYCLE_EVIDENCE_DIR', ROOT / 'artifacts/TASK-367'))
+        out.mkdir(parents=True, exist_ok=True)
+        context = self.browser.new_context(viewport={'width': 1920, 'height': 1080}, locale='en-US')
+        self.addCleanup(context.close)
+        context.add_init_script(CLOCK_SCRIPT)
+        context.add_init_script(FRAMES_SCRIPT)
+        context.route(SDK, lambda route: route.fulfill(content_type='application/javascript', body=
+            'const FAULT = "normal"; const SAVED_LANGUAGE = "en";\n' + FAKE +
+            'bridge.analytics = {send(name, data) { record(name, data); }};\n'))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.goto(self.url + 'index.html')
+        self.frames(page, 1, until=BOOT_DONE)
+        page.evaluate('() => { window.onblur = null }')
+        self.assertIsNone(page.evaluate('document.getElementById("tutorial")'))
+
+        # Boot run: full strength, the game is not blocked, nothing pressed
+        full = {'visible': True, 'alpha': 1, 'time': 0}
+        self.assertEqual(page.evaluate(HINT), full)
+        y0 = page.evaluate('ninja.y')
+        self.frames(page, 30)
+        y1 = page.evaluate('ninja.y')
+        self.assertNotEqual(y0, y1)
+        self.assertEqual(page.evaluate(HINT), full)
+        self.note(f'PASS boot: hint visible alpha 1; ninja.y {y0:.1f} -> {y1:.1f} '
+              'over 30 frames with no input')
+
+        # A death before any press (an idle ninja lands on the ground, so the
+        # normal death path is taken by hand); Restart shows it again
+        page.evaluate('onLethalDeath()')
+        self.frames(page, 10, until='continueOffer.visible')
+        self.assertEqual(page.evaluate(HINT), full)
+        self.leave_run(page, 'restartFromOffer()')
+        self.assertEqual(page.evaluate(HINT), full)
+        self.note('PASS death before any press -> Restart: hint visible alpha 1')
+
+        # A death would freeze the fade on the death screen; the captures
+        # keep the run alive instead
+        page.evaluate('() => { window.__onLethalDeath = onLethalDeath; onLethalDeath = () => {} }')
+        page.mouse.move(1300, 250)
+        page.mouse.down()
+        self.assertTrue(page.evaluate('grapnel.throwed'))
+        page.evaluate('draw()')
+        page.screenshot(path=str(out / 'fade-0s.png'))
+        self.note('PASS fade-0s.png: trusted press threw the grapnel', page.evaluate(HINT))
+        self.frames(page, 60)
+        page.screenshot(path=str(out / 'fade-1s.png'))
+        state = page.evaluate(HINT)
+        self.assertTrue(state['visible'] and state['alpha'] < 1, state)
+        self.assertAlmostEqual(state['alpha'], (1 - 1 / 5) ** 1.6, places=6)
+        self.note('PASS fade-1s.png', state)
+        self.frames(page, 90)
+        page.screenshot(path=str(out / 'fade-2.5s.png'))
+        self.note('PASS fade-2.5s.png', page.evaluate(HINT))
+        page.mouse.up()
+
+        # A 3 s pause halfway freezes the fade
+        before = page.evaluate(HINT)
+        page.evaluate('menu.startPause()')
+        self.frames(page, 180)
+        self.assertEqual(page.evaluate(HINT), before)
+        page.evaluate('menu.unPause()')
+        self.note('PASS 3 s pause at t=2.5 s: hint unchanged', before)
+
+        self.frames(page, 90)
+        page.screenshot(path=str(out / 'fade-4s.png'))
+        self.note('PASS fade-4s.png', page.evaluate(HINT))
+        self.frames(page, 60)
+        page.screenshot(path=str(out / 'fade-5s.png'))
+        self.assertEqual(page.evaluate(HINT), {'visible': False, 'alpha': 0, 'time': 5})
+        self.note('PASS fade-5s.png: faded out after 5 s of active time', page.evaluate(HINT))
+
+        # After the fade neither Restart nor the mode switch shows it again
+        page.evaluate('() => { onLethalDeath = window.__onLethalDeath; onLethalDeath() }')
+        self.frames(page, 10, until='continueOffer.visible')
+        self.leave_run(page, 'restartFromOffer()', check_hidden=True)
+        self.frames(page, 30)
+        self.assertFalse(page.evaluate('TUTORIAL_HINT.visible'))
+        self.leave_run(page, '() => { menu.startPause(); menu.backToMenu.click() }', check_hidden=True)
+        self.frames(page, 30)
+        self.assertEqual(page.evaluate('({version, visible: TUTORIAL_HINT.visible})'),
+                         {'version': 'classic', 'visible': False})
+        self.note('PASS after the fade: Restart and mode switch keep the hint hidden')
+
+        dismissed = page.evaluate(DISMISSED)
+        self.assertEqual(len(dismissed), 1, dismissed)
+        self.note('PASS startup_funnel tutorial_dismissed x1', dismissed)
+        self.assertIsNone(page.evaluate('document.getElementById("tutorial")'))
+        self.note('PASS document.getElementById("tutorial") is null')
+
     def capture(self, page, name):
         """Shows the hint over the live run for a few frames, then screenshots."""
-        # The DOM first-run pop-up stays (lifecycle unchanged); it is hidden
-        # here only so the capture shows the canvas hint alone
-        page.evaluate('''() => { TUTORIAL.element.hidden = true; TUTORIAL_HINT.visible = true }''')
+        page.evaluate('TUTORIAL_HINT.visible = true')
         page.evaluate('() => new Promise(r => { let n = 10; (function f() { --n ? requestAnimationFrame(f) : r() })() })')
         state = page.evaluate('''() => ({version, runInProgress, lines: TUTORIAL_HINT.lines,
             ninja: ninja.x !== undefined, key: TUTORIAL_HINT.spriteKey})''')
@@ -95,6 +249,8 @@ class TutorialHintTests(unittest.TestCase):
     def test_hint_drawn_without_per_frame_shadow_blur(self):
         page = self.open()
         page.evaluate(FREEZE)
+        # The boot run shows the hint; hide it for the baseline
+        page.evaluate('TUTORIAL_HINT.visible = false')
         hidden = page.evaluate(CENTRE)
         hidden_again = page.evaluate(CENTRE)
         page.evaluate('TUTORIAL_HINT.visible = true')
