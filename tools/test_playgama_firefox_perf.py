@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 import sys
 import tempfile
-from playgama_firefox_perf import capture_command, metrics, profile_metrics, profile_conclusions, no_candidate_decision, runtime_files
+from playgama_firefox_perf import (INPUT, PROBE, ROOT, SEED, capture_command, metrics, profile_metrics,
+                                   profile_conclusions, no_candidate_decision, runtime_files)
+from browser_test_support import start_browser_test
+from perf_mobile import SEED_SCRIPT
 
 
 class FrameMetricsTests(unittest.TestCase):
@@ -78,6 +81,35 @@ class CompareTests(unittest.TestCase):
             (root/'index.html').write_text('<script src="../secret.js"></script>')
             with self.assertRaisesRegex(ValueError, 'Unsafe runtime reference'):
                 runtime_files(root)
+
+
+class StartScriptTests(unittest.TestCase):
+    def test_start_script_starts_both_modes_from_boot_run(self):
+        # The current tree has no title menu (TASK-364): 'bad' is the boot run,
+        # 'classic' comes from the HUD button and the pause mode switch.
+        url, browser = start_browser_test(ROOT, self.addCleanup)
+        for mode in ('bad', 'classic'):
+            with self.subTest(mode=mode):
+                context = browser.new_context(viewport={'width':844,'height':390}, device_scale_factor=2,
+                                              has_touch=True, service_workers='block', locale='en-US')
+                self.addCleanup(context.close)
+                context.add_init_script(SEED_SCRIPT % SEED)
+                page = context.new_page(); page.set_default_timeout(20000)
+                errors = []; page.on('pageerror', lambda e: errors.append(str(e)))
+                page.goto(url+'index.html')
+                page.wait_for_function('bootComplete && document.getElementById("loading").hidden')
+                page.evaluate(PROBE, {'mode':mode, 'inputs':INPUT, 'seed':SEED})
+                frames = page.evaluate('perfReceipt.frames.length')
+                page.wait_for_function('n => perfReceipt.frames.length > n + 5', arg=frames)
+                state = page.evaluate('''({version, running:runInProgress, paused:menu.gamePaused,
+                    accepted:perfReceipt.accepted_input_ms, first:perfReceipt.first_active_frame_ms})''')
+                self.assertEqual(state['version'], mode)
+                self.assertTrue(state['running'])
+                self.assertFalse(state['paused'])
+                self.assertIsInstance(state['accepted'], (int, float))
+                self.assertIsInstance(state['first'], (int, float))
+                self.assertLessEqual(state['accepted'], state['first'] + 50)
+                self.assertEqual(errors, [])
 
 
 class ConsoleCaptureTests(unittest.TestCase):
