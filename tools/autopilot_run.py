@@ -24,7 +24,7 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import start_browser_test
+from browser_test_support import start_browser_test, wait_for_boot_run
 
 ROOT = Path(__file__).resolve().parent.parent
 AUTOPILOT = Path(__file__).with_name('autopilot.js')
@@ -95,7 +95,7 @@ class Runner:
                 self.errors['console'].append(f'[{label}] {m.text}'))
         page.on('pageerror', lambda e: self.errors['page'].append(f'[{label}] {e}'))
         page.goto(self.url + 'index.html')
-        page.wait_for_function('typeof menu != "undefined" && menu.visible')
+        wait_for_boot_run(page)
         return context, page
 
     def search(self, mode, seed, max_ticks):

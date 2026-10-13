@@ -72,6 +72,19 @@ def wait_for_boot(page):
         " && (typeof bootComplete === 'undefined' || bootComplete) }")
 
 
+def wait_for_boot_run(page):
+    """Wait for the menu-less boot: bootComplete and its live 'bad' run.
+
+    Older trees (verification baselines) have no bootComplete and boot to the
+    title menu instead, so there the visible menu is the ready state.
+    """
+    page.wait_for_function(
+        "() => typeof bootComplete === 'undefined'"
+        " ? typeof menu != 'undefined' && menu.visible"
+        " : bootComplete && runInProgress")
+    wait_for_boot(page)
+
+
 def shared_memory_launch_options():
     """Keep Chromium's shared memory in /dev/shm when the temp dir has less room.
 

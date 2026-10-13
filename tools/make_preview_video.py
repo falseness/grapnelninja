@@ -80,7 +80,7 @@ FRAME_JS = '''(ticks) => {
 
 
 def capture(seed_report, frames_dir, mode, start_tick, end_tick):
-    from browser_test_support import start_browser_test
+    from browser_test_support import start_browser_test, wait_for_boot_run
     entry = json.loads(Path(seed_report).read_text())['modes'][mode]
     frames_dir.mkdir(parents=True, exist_ok=True)
     errors = {'console': [], 'page': []}
@@ -95,7 +95,7 @@ def capture(seed_report, frames_dir, mode, start_tick, end_tick):
         page.on('console', lambda m: m.type == 'error' and errors['console'].append(m.text))
         page.on('pageerror', lambda e: errors['page'].append(str(e)))
         page.goto(url + 'index.html')
-        page.wait_for_function('typeof menu != "undefined" && menu.visible')
+        wait_for_boot_run(page)
         tick = page.evaluate(SETUP_JS, [mode, entry['best_seed'], entry['best_actions'], start_tick])
         ticks = 0  # the first frame shows start_tick itself
         while tick < end_tick:
