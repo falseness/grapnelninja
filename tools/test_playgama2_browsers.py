@@ -2,6 +2,14 @@
 
 Fresh contexts disable caches through routing. Timings are local controlled
 measurements, not a production-network SLA or legacy-device certification.
+
+The title menu is gone (TASK-360/364): the page boots straight into a 'bad'
+run and 'classic' is reached through the pause screen's mode switch; the
+language button sits on the pause screen. Runnable from the repo root or
+tools/: git and source hashes resolve against ROOT. Engines without an
+installed executable are reported as unittest skips.
+
+PLAYGAMA2_EVIDENCE_DIR selects the output directory (default artifacts/TASK-396/browsers).
 """
 import hashlib
 import json
@@ -23,11 +31,11 @@ import test_playgama2_bridge as support
 from test_playgama2_ads import AD_FAKE
 
 ROOT = support.ROOT
-COMMAND = "PLAYGAMA2_EVIDENCE_DIR=artifacts/TASK-245 python3 -m unittest discover -s tools -p 'test_playgama2_browsers.py' -v"
+COMMAND = "cd tools && python3 -m unittest test_playgama2_browsers -v"
 
 
 def hashes():
-    paths = subprocess.check_output(['git', 'ls-files'], text=True).splitlines()
+    paths = subprocess.check_output(['git', 'ls-files'], text=True, cwd=ROOT).splitlines()
     paths.append('tools/test_playgama2_browsers.py')
     return {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in sorted(set(paths))
             if not p.startswith(('artifacts/', 'screenshots/'))}
@@ -36,10 +44,10 @@ def hashes():
 class BrowserTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('PLAYGAMA2_EVIDENCE_DIR', 'artifacts/TASK-245'))
+        cls.out = Path(os.environ.get('PLAYGAMA2_EVIDENCE_DIR', ROOT/'artifacts/TASK-396/browsers'))
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.initial_hashes = hashes()
-        cls.baseline = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+        cls.baseline = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True, cwd=ROOT).strip()
         cls.matrix, cls.runs, cls.logs = {}, [], []
         cls.server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(ROOT)))
         cls.addClassCleanup(cls.server.server_close)
@@ -75,7 +83,7 @@ class BrowserTests(unittest.TestCase):
             'summary': 'min/median/max across three fresh-context baseline runs per engine; all stages milliseconds'},
             'runs': cls.runs, 'summary': summary})
         (cls.out/'browser.log').write_text('\n'.join(cls.logs)+'\n')
-        cls.write('manifest.json', {'task': 'TASK-245', 'baseline_revision': cls.baseline,
+        cls.write('manifest.json', {'task': 'TASK-396', 'baseline_revision': cls.baseline,
             'baseline_source_hashes': cls.initial_hashes, 'final_source_hashes': hashes(), 'commands': [COMMAND],
             'environment': {'os': platform.platform(), 'python': platform.python_version(), 'playwright': subprocess.check_output(['python3', '-m', 'pip', 'show', 'playwright'], text=True).split('Version: ')[1].splitlines()[0]},
             'limitations': limitations, 'evidence_paths': sorted(str(p) for p in cls.out.iterdir() if p.is_file())})
@@ -95,6 +103,9 @@ class BrowserTests(unittest.TestCase):
 
     def run_engine(self, engine, executable=None):
         browser_type = getattr(self.pw, engine if engine in ('chromium', 'firefox', 'webkit') else 'chromium')
+        if not executable and not os.path.exists(browser_type.executable_path):
+            self.matrix[engine] = {'available': False, 'version': None, 'reason': 'Not installed: '+browser_type.executable_path}
+            self.skipTest(engine+' not installed: '+browser_type.executable_path)
         browser = browser_type.launch(headless=True, **({'executable_path': executable} if executable else {}))
         self.addCleanup(browser.close)
         self.matrix[engine] = {'available': True, 'version': browser.version, 'executable': executable or browser_type.executable_path, 'checks': []}
@@ -169,10 +180,13 @@ class BrowserTests(unittest.TestCase):
             self.runs.append(row)
             if case == 'cold-1':
                 row['menu_capture'] = self.capture(p, engine+'-menu')
-            self.click(p, 'menu.classicVersionButton')
-            p.wait_for_function('!menu.visible && !unTouch')
-            if p.locator('#tutorial button').is_visible():
-                p.locator('#tutorial button').click()
+            # Boot run (TASK-360): a 'bad' run with the tutorial hint, no title
+            # menu; real clicks on the HUD menu button and the pause switch
+            # start the classic run
+            p.wait_for_function('bootComplete && runInProgress && !!ninja')
+            self.assertEqual(p.evaluate('[version, TUTORIAL_HINT.visible, menu.gamePaused]'), ['bad', True, False])
+            support.Playgama2BridgeTests.click_mode(self, p, 'classic')
+            p.wait_for_function("version === 'classic' && runInProgress && !menu.gamePaused && !unTouch")
             p.mouse.move(900, 200); p.mouse.down()
             p.wait_for_function('grapnel.throwed')
             p.mouse.up()
@@ -198,10 +212,11 @@ class BrowserTests(unittest.TestCase):
         self.click(p, 'menu.resume')
         row['checks'].append('PASS background pause freezes position/score; resume')
         for outcome in ['hold', 'reject']:
-            p.wait_for_function('continueOffer.visible', timeout=60000)
-            # Advance only the monotonic clock boundary for second ad cooldown.
+            # Advance only the monotonic clock boundary for second ad cooldown;
+            # before the death, as a death with no ad due restarts at once
             if outcome == 'reject':
                 p.evaluate('const now=performance.now.bind(performance);performance.now=()=>now()+120001')
+            p.wait_for_function('continueOffer.visible && !continueOffer.adPending', timeout=60000)
             p.evaluate('(v)=>outcome=v', outcome)
             self.click(p, 'continueOffer.restartButton')
             if outcome == 'hold':
@@ -211,14 +226,20 @@ class BrowserTests(unittest.TestCase):
             self.assertFalse(p.evaluate('adOpen || AUDIO.isMuted()'))
             row['checks'].append('PASS ad '+outcome+' real death/restart reconciles audio and pause')
         self.assertEqual(p.evaluate("probe.calls.filter(x=>x.name==='ad-request').length"), 2)
+        # The pause screen's mode switch replaces back-to-menu: a real click
+        # leaves a live 'bad' run; the language button is on the pause screen
         p.keyboard.press('Escape')
+        p.wait_for_function('menu.gamePaused && !unTouch')
         self.click(p, 'menu.backToMenu')
-        p.wait_for_function('menu.visible && !unTouch')
+        p.wait_for_function("bootComplete && runInProgress && version === 'bad' && !menu.gamePaused")
+        p.keyboard.press('Escape')
+        p.wait_for_function('menu.gamePaused && !unTouch')
         point = p.evaluate('''() => {const b=LANGUAGE_BUTTON.rect(),r=canvas.getBoundingClientRect();return {x:r.x+(b.x+b.width/2)*r.width/width,y:r.y+(b.y+b.height/2)*r.height/height}}''')
         p.mouse.click(**point)
         self.assertEqual(p.evaluate('I18N.language'), 'ru')
         p.wait_for_function("JSON.parse(localStorage.getItem('fixture.remote'))['grapnelninja.lang']==='ru'")
         p.reload(); wait_for_boot(p)
+        p.wait_for_function('bootComplete && runInProgress')
         self.assertEqual(p.evaluate('I18N.language'), 'ru')
         row['checks'].append('PASS host storage language survives reload')
         self.matrix[engine]['checks'] = row['checks']
@@ -233,7 +254,9 @@ class BrowserTests(unittest.TestCase):
                 self.run_engine(name, executable)
             else:
                 self.matrix[name] = {'available': False, 'version': None, 'reason': 'No installed executable found: '+', '.join(candidates)}
-                print(name+' unavailable (not a skipped required installed-engine probe)', flush=True)
+        missing = [n for n in ['edge', 'opera'] if not self.matrix[n]['available']]
+        if missing:
+            self.skipTest('not installed: '+'; '.join(self.matrix[n]['reason'] for n in missing))
 
 
 if __name__ == '__main__':
