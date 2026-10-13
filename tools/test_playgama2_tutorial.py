@@ -91,7 +91,7 @@ class Playgama2TutorialTests(unittest.TestCase):
         cls.runner = RunnerErrors()
         cls.addClassCleanup(cls.runner.install(cls.browser._impl_obj._loop))
         paths = subprocess.check_output(['git','ls-files'],cwd=support.ROOT,text=True).splitlines()
-        paths += ['tutorial.js','tools/test_playgama2_tutorial.py']
+        paths += ['render/tutorialhint.js','tools/test_playgama2_tutorial.py']
         hashes = {p:hashlib.sha256((support.ROOT/p).read_bytes()).hexdigest() for p in sorted(set(paths)) if (support.ROOT/p).is_file() and not p.startswith(('artifacts/','screenshots/'))}
         (cls.out/'tested-source-hashes.json').write_text(json.dumps(hashes,indent=2)+'\n')
 
@@ -109,19 +109,36 @@ class Playgama2TutorialTests(unittest.TestCase):
             raise AssertionError('Unexpected runner errors: ' + '; '.join(cls.runner.unexpected))
 
     def snapshot(self, page):
-        return page.evaluate('''() => ({ms:performance.now(), visible:!TUTORIAL.element.hidden,
-            text:TUTORIAL.text.textContent, done:PROGRESS.getTutorialDone(),
+        return page.evaluate('''() => ({ms:performance.now(), visible:TUTORIAL_HINT.visible,
+            alpha:TUTORIAL_HINT.alpha, pressed:TUTORIAL_HINT.pressed, done:TUTORIAL_HINT.done,
+            lines:TUTORIAL_HINT.lines, shown:window.hintShown,
+            dismissed:probe.calls.filter(c => c.name === 'startup_funnel' && c.data.stage === 'tutorial_dismissed').length,
             loading:!document.getElementById('loading').hidden, readiness:PLATFORM.readiness,
             throwed:!!grapnel?.throwed, calls:probe.calls, inputs:window.inputs,
             directStorageAccesses:window.directStorageAccesses})''')
 
     def start(self, page, touch):
-        point = page.evaluate('''() => { const b=menu.classicVersionButton.background,r=canvas.getBoundingClientRect();
-            return {x:r.x+(b.x+b.width/2)*r.width/width,y:r.y+(b.y+b.height/2)*r.height/height}; }''')
-        if touch: page.touchscreen.tap(**point)
-        else: page.mouse.click(**point)
-        page.wait_for_function('!menu.visible && !!ninja')
+        # Current trees boot straight into a run (TASK-360/364); no click starts it.
+        page.wait_for_function('bootComplete && runInProgress && !!ninja')
         page.wait_for_function('!unTouch')
+        # The hint's sprite (and its baked lines) is built on the first draw.
+        page.wait_for_function('TUTORIAL_HINT.lines !== null')
+
+    def press(self, page, context, touch):
+        """Trusted hold on the play field: throws the grapnel, which starts the hint fade."""
+        if touch:
+            cdp = context.new_cdp_session(page)
+            cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':600,'y':140}]})
+            release = lambda: cdp.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+        else:
+            page.mouse.move(850,200); page.mouse.down()
+            release = page.mouse.up
+        page.wait_for_function('grapnel.throwed')
+        return release
+
+    def trusted_press(self, inputs, touch):
+        name = 'touchstart' if touch else 'mousedown'
+        return any(e['trusted'] and e['target']=='CANVAS' and e['name']==name for e in inputs)
 
     def matrix(self, lang, touch, fault='normal'):
         case = lang + ('-touch' if touch else '-desktop') + ('' if fault == 'normal' else '-' + fault)
@@ -130,6 +147,12 @@ class Playgama2TutorialTests(unittest.TestCase):
         context = self.browser.new_context(viewport={'width':800 if touch else 1280,'height':450 if touch else 720}, has_touch=touch)
         self.addCleanup(context.close)
         context.add_init_script("window.inputs=[]; for(const name of ['mousedown','mouseup','touchstart','touchend','click']) window.addEventListener(name,e=>inputs.push({name,trusted:e.isTrusted,target:e.target.tagName,ms:performance.now()}),true)")
+        # State at the first frame the hint is visible on each page load.
+        context.add_init_script('''window.hintShown=null; (function watch() {
+            try { if (TUTORIAL_HINT.visible) hintShown = {ms:performance.now(), bootComplete,
+                loading:!document.getElementById('loading').hidden, readiness:PLATFORM.readiness.state} }
+            catch (_) {}
+            if (!hintShown) requestAnimationFrame(watch) })()''')
         # Remote fixture state survives document reloads without browser storage.
         remote = {'grapnelninja.lang': lang}
         operations = record['sdk_operations'] = []
@@ -166,6 +189,7 @@ class Playgama2TutorialTests(unittest.TestCase):
                 const result = await fixtureSet(keys, values);
                 if (result.rejected) throw Error('INJECTED write rejection');
             };
+            bridge.analytics = {send(name, data) { record(name, data); }};
         '''
         fake += '\nbridge.platform.language=' + json.dumps(lang) + ';'
         sdk = 'const FAULT='+json.dumps(fault)+', SAVED_LANGUAGE='+json.dumps(lang)+';\n'+fake
@@ -192,54 +216,65 @@ class Playgama2TutorialTests(unittest.TestCase):
             while not predicate():
                 self.assertLess(time.monotonic(), deadline, 'SDK boundary condition timed out')
                 page.wait_for_timeout(50)
+        def boot():
+            support.wait_for_boot(page)
+            page.wait_for_function("PLATFORM.readiness.state === 'success'")
+            # Another context's focus must not pause this page's run.
+            page.evaluate('() => { window.onblur = null }')
+            self.start(page, touch)
+        def shown_after_boot(state):
+            # The hint first appears only once boot finished, behind no loading screen.
+            self.assertTrue(state['visible']); self.assertEqual(state['alpha'], 1)
+            self.assertFalse(state['pressed']); self.assertEqual(state['dismissed'], 0)
+            self.assertTrue(state['shown']['bootComplete']); self.assertFalse(state['shown']['loading'])
         page.goto(self.url+'current/index.html')
-        support.wait_for_boot(page)
-        page.wait_for_function("PLATFORM.readiness.state === 'success'")
-        record['boot'] = self.snapshot(page)
-        self.assertFalse(record['boot']['loading'])
-        self.assertFalse(record['boot']['visible'])
-        self.start(page,touch)
-        record['first'] = self.snapshot(page)
-        self.assertTrue(record['first']['visible'])
-        self.assertFalse(record['first']['done'])
+        boot()
+        record['first'] = checkpoint('first')
+        self.assertFalse(record['first']['loading'])
+        shown_after_boot(record['first'])
         expected = {
-            ('en',False):'Hold the mouse button to grapple. Release to let go. Move right to score.',
-            ('en',True):'Touch and hold to grapple. Lift your finger to let go. Move right to score.',
-            ('ru',False):'Удерживайте кнопку мыши, чтобы зацепиться. Отпустите, чтобы отцепиться. Двигайтесь вправо, чтобы набирать очки.',
-            ('ru',True):'Коснитесь и удерживайте палец, чтобы зацепиться. Отпустите, чтобы отцепиться. Двигайтесь вправо, чтобы набирать очки.'}
-        self.assertEqual(record['first']['text'],expected[lang,touch])
-        geometry = page.evaluate('''() => {const a=TUTORIAL.element.getBoundingClientRect(),b=MUTE_BUTTON.element.getBoundingClientRect();
-            const r=canvas.getBoundingClientRect(), m=menu.button.background;
-            const hud={left:r.x+m.x*scale[version]*r.width/width,top:r.y+m.y*scale[version]*r.height/height,
-                right:r.x+(m.x+m.width)*scale[version]*r.width/width,bottom:r.y+(m.y+m.height)*scale[version]*r.height/height};
-            const overlap=(x,y)=>x.left<y.right&&x.right>y.left&&x.top<y.bottom&&x.bottom>y.top;
-            return {rect:a.toJSON(),fits:a.left>=0&&a.top>=0&&a.right<=innerWidth&&a.bottom<=innerHeight,
-                muteOverlap:overlap(a,b),hudOverlap:overlap(a,hud),clipped:TUTORIAL.element.scrollWidth>TUTORIAL.element.clientWidth};}''')
+            ('en',False):['HOLD','TO GRAPPLE','MOVE RIGHT TO SCORE  →'],
+            ('en',True):['TOUCH & HOLD','TO GRAPPLE','MOVE RIGHT TO SCORE  →'],
+            ('ru',False):['ДЕРЖИ','— ЗАЦЕПИШЬСЯ','ДВИГАЙСЯ ВПРАВО  →'],
+            ('ru',True):['КОСНИСЬ И ДЕРЖИ','— ЗАЦЕПИШЬСЯ','ДВИГАЙСЯ ВПРАВО  →']}
+        self.assertEqual(record['first']['lines'],expected[lang,touch])
+        # The hint is one canvas-sized sprite under the UI layer; DOM controls stay on top.
+        geometry = page.evaluate('''() => {const r=canvas.getBoundingClientRect(),s=TUTORIAL_HINT.sprite;
+            const b=MUTE_BUTTON.element.getBoundingClientRect();
+            return {rect:r.toJSON(),sprite:[s.width,s.height],canvas:[canvas.width,canvas.height],
+                fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,
+                muteOnTop:document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)===MUTE_BUTTON.element};}''')
         record['geometry'] = geometry
-        self.assertTrue(geometry['fits']); self.assertFalse(geometry['clipped'])
-        self.assertFalse(geometry['muteOverlap']); self.assertFalse(geometry['hudOverlap'])
+        self.assertTrue(geometry['fits']); self.assertEqual(geometry['sprite'], geometry['canvas'])
+        self.assertTrue(geometry['muteOnTop'])
         capture = self.out / (case+'.png')
         subprocess.run(['import','-window','root',str(capture)],env=self.env,check=True,timeout=12)
         record['capture'] = {'path':capture.name,'sha256':hashlib.sha256(capture.read_bytes()).hexdigest()}
-        button=page.locator('#tutorial button')
-        if touch: button.tap()
-        else: button.click()
-        record['dismissed']=checkpoint('dismissed')
-        self.assertFalse(record['dismissed']['visible']); self.assertTrue(record['dismissed']['done'])
-        self.assertTrue(any(e['trusted'] and e['target']=='BUTTON' and e['name']=='click' for e in record['dismissed']['inputs']))
-        # Hold, observe the real grapnel, then release without changing application state.
-        if touch:
-            cdp=context.new_cdp_session(page)
-            cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':600,'y':140}]})
-        else:
-            page.mouse.move(850,200); page.mouse.down()
-        page.wait_for_function('grapnel.throwed')
-        record['held']=self.snapshot(page)
-        self.assertTrue(record['held']['throwed'])
-        if touch: cdp.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
-        else: page.mouse.up()
+        # A death would freeze the fade on the death screen; keep the run alive for it.
+        page.evaluate('() => { window.__onLethalDeath = onLethalDeath; onLethalDeath = () => {} }')
+        # Hold, observe the real grapnel, then release; the trusted press dismisses the hint.
+        release = self.press(page, context, touch)
+        record['held']=checkpoint('held')
+        self.assertTrue(record['held']['throwed']); self.assertTrue(record['held']['pressed'])
+        self.assertEqual(record['held']['dismissed'], 1)
+        self.assertTrue(self.trusted_press(record['held']['inputs'], touch))
+        release()
         record['released']=self.snapshot(page)
         self.assertFalse(record['released']['throwed'])
+        page.wait_for_function('TUTORIAL_HINT.done', timeout=20000)
+        record['dismissed']=checkpoint('dismissed')
+        self.assertFalse(record['dismissed']['visible']); self.assertEqual(record['dismissed']['alpha'], 0)
+        # A new run on the same page (death -> Restart) does not show it again.
+        page.evaluate('() => { onLethalDeath = window.__onLethalDeath; onLethalDeath() }')
+        page.wait_for_function('continueOffer.visible')
+        page.evaluate('restartFromOffer()')
+        page.wait_for_function('runInProgress && !continueOffer.visible && !interstitialPending')
+        record['restarted']=checkpoint('restarted')
+        self.assertFalse(record['restarted']['visible']); self.assertEqual(record['restarted']['dismissed'], 1)
+        if page.evaluate('menu.gamePaused'): page.evaluate('menu.unPause()')
+        release = self.press(page, context, touch); release()
+        record['pressed_again']=checkpoint('pressed_again')
+        self.assertFalse(record['pressed_again']['visible']); self.assertEqual(record['pressed_again']['dismissed'], 1)
         if fault != 'normal':
             rejected = 'read-rejected' if fault == 'storage_rejected' else 'write-rejected'
             wait_boundary(lambda: any(op['op'] == rejected for op in operations))
@@ -249,29 +284,28 @@ class Playgama2TutorialTests(unittest.TestCase):
             self.assertNotEqual(remote.get('grapnelninja.tutorialDone'), 'true')
             # Keep the fault active through pagehide so its flush cannot save.
             boundary['reload_epoch'] += 1
-            page.reload(); support.wait_for_boot(page)
-            self.start(page, touch)
+            page.reload(); boot()
             unsaved = checkpoint('reload_before_save')
-            self.assertFalse(unsaved['done']); self.assertTrue(unsaved['visible'])
+            shown_after_boot(unsaved)
             self.assertFalse(any(op['op'] == 'write-success' for op in operations))
-            page.locator('#tutorial button').click()
+            release = self.press(page, context, touch); release()
             again = checkpoint('dismissed_before_recovery')
-            self.assertTrue(again['done']); self.assertFalse(again['visible'])
-            self.assertTrue(any(e['trusted'] and e['target']=='BUTTON' and e['name']=='click' for e in again['inputs']))
+            self.assertTrue(again['pressed']); self.assertEqual(again['dismissed'], 1)
+            self.assertTrue(self.trusted_press(again['inputs'], touch))
             operation('recovery-enabled')
             boundary['fault'] = 'normal'
-        # Poll only the SDK fixture; application retries and reconciliation do the save.
-        wait_boundary(lambda: remote.get('grapnelninja.tutorialDone') == 'true')
-        saved = checkpoint('confirmed_save')
-        self.assertTrue(saved['done'])
-        self.assertTrue(any(op['op'] == 'write-success' and
-                            dict(zip(op['keys'], op['values'])).get('grapnelninja.tutorialDone') == 'true'
-                            for op in operations))
+            recovery = len(operations)
+            # Poll only the SDK fixture; application retries and reconciliation do the save.
+            page.evaluate('onLethalDeath()')
+            wait_boundary(lambda: any(op['op'] == 'write-success' for op in operations[recovery:]))
+            checkpoint('confirmed_save')
+        # Dismissal is not stored: the legacy tutorialDone key is only ever written as 'false'.
+        self.assertFalse(any(dict(zip(op['keys'], op['values'])).get('grapnelninja.tutorialDone') == 'true'
+                             for op in operations if op['op'].startswith('write')))
         boundary['reload_epoch'] += 1
-        page.reload(); support.wait_for_boot(page)
-        self.start(page,touch)
+        page.reload(); boot()
         record['reload']=checkpoint('reload')
-        self.assertFalse(record['reload']['visible']); self.assertTrue(record['reload']['done'])
+        shown_after_boot(record['reload'])
         self.assertFalse(record['reload']['loading'])
         closing.append(True)
         context.close()
@@ -279,7 +313,7 @@ class Playgama2TutorialTests(unittest.TestCase):
         record['runner_errors'] = self.runner.unexpected[unexpected:]
         self.assertEqual(record['runner_errors'], [], 'unexpected runner errors')
         self.assertEqual(errors,[])
-        record['verdict']='PASS first display, device wording, native dismissal, hold/release, readiness before dismissal, persisted reload'
+        record['verdict']='PASS shown after boot, device wording, trusted-press fade, one tutorial_dismissed, hidden on restart, shown again after reload'
         print('PASS '+case+': '+record['verdict'][5:],flush=True)
 
     def test_en_desktop(self): self.matrix('en',False)
