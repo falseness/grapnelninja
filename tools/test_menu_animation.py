@@ -1,4 +1,9 @@
-"""Menu animation must not step gameplay or replace the paused game."""
+"""Pause and the continue offer must freeze gameplay in gameLoop.
+
+While menu.gamePaused the loop calls menu.pause() only: no physics step and
+no world redraw over the frozen pause frame. While continueOffer.visible the
+world and offer are redrawn but physics does not step.
+"""
 from contextlib import ExitStack
 from pathlib import Path
 import unittest
@@ -7,53 +12,60 @@ from browser_test_support import start_browser_test
 from render_snapshot import CLOCK_SCRIPT, boot_frozen
 
 
-class MenuAnimationTest(unittest.TestCase):
-    def test_menu_lifecycle_and_stillness(self):
+class PauseLoopTest(unittest.TestCase):
+    def test_pause_and_continue_offer_freeze_physics(self):
         with ExitStack() as stack:
             url, browser = start_browser_test(Path(__file__).resolve().parent.parent, stack.callback)
             context = browser.new_context(viewport={'width': 1920, 'height': 1080})
             stack.callback(context.close)
             context.add_init_script(CLOCK_SCRIPT)
             page = context.new_page()
+            errors = []
+            page.on('pageerror', lambda e: errors.append(str(e)))
+            page.on('console', lambda m: m.type == 'error' and errors.append(m.text))
             page.goto(url + 'index.html')
             boot_frozen(page)
             result = page.evaluate('''() => {
-                const bg = visualEffects.background;
-                const shifts = [];
-                for (let time = 0; time <= 3000; time += 50) {
-                    __snap.now = time;
-                    shifts.push(bg.getMenuLayerShift(1.5));
+                const originals = {pause: menu.pause, draw, physics, offerDraw: continueOffer.draw};
+                let counts;
+                const reset = () => counts = {pauses: 0, worlds: 0, steps: 0, offers: 0};
+                menu.pause = () => counts.pauses++;
+                draw = () => counts.worlds++;
+                physics = () => counts.steps++;
+                continueOffer.draw = () => counts.offers++;
+                let time = 3000;
+                const frames = n => { for (let i = 0; i < n; i++) gameLoop(time += 17); return {...counts}; };
+                try {
+                    reset(); const running = frames(2);
+                    menu.startPause();
+                    reset(); const paused = frames(2);
+                    menu.unPause();
+                    reset(); const resumed = frames(2);
+                    continueOffer.show();
+                    reset(); const offer = frames(2);
+                    continueOffer.hide();
+                    return {running, paused, resumed, offer, gamePaused: menu.gamePaused};
+                } finally {
+                    menu.pause = originals.pause;
+                    draw = originals.draw;
+                    physics = originals.physics;
+                    continueOffer.draw = originals.offerDraw;
                 }
-                let drift = 0;
-                for (const a of shifts) for (const b of shifts)
-                    drift = Math.max(drift, Math.hypot(a.x-b.x, a.y-b.y));
-                let menus = 0, worlds = 0, steps = 0;
-                const originalMenu = menu.draw, originalDraw = draw, originalPhysics = physics;
-                menu.draw = () => menus++;
-                draw = () => worlds++;
-                physics = () => steps++;
-                gameLoop(3000);
-                gameLoop(3017);
-                const idle = {menus, worlds, steps};
-                menu.draw = originalMenu;
-                draw = originalDraw;
-                physics = originalPhysics;
-                startGame('bad');
-                menu.startPause();
-                menu.draw = () => menus++;
-                draw = () => worlds++;
-                physics = () => steps++;
-                gameLoop(3034);
-                const paused = {menus, worlds, steps};
-                menu.backToMenu.click();
-                const before = menus;
-                gameLoop(3051);
-                return {idle, paused, returned: menus === before + 1, drift};
             }''')
-            self.assertEqual(result['idle'], {'menus': 2, 'worlds': 0, 'steps': 0})
-            self.assertEqual(result['paused'], result['idle'])
-            self.assertTrue(result['returned'])
-            self.assertEqual(result['drift'], 0)
+            # Baseline: an unpaused run steps physics and redraws the world every frame.
+            self.assertEqual(result['running']['worlds'], 2)
+            self.assertGreater(result['running']['steps'], 0)
+            self.assertEqual(result['running']['pauses'], 0)
+            # Paused: only menu.pause() runs; physics and world redraw are frozen.
+            self.assertEqual(result['paused'], {'pauses': 2, 'worlds': 0, 'steps': 0, 'offers': 0})
+            # Leaving pause returns to the stepping branch.
+            self.assertFalse(result['gamePaused'])
+            self.assertEqual(result['resumed']['pauses'], 0)
+            self.assertEqual(result['resumed']['worlds'], 2)
+            self.assertGreater(result['resumed']['steps'], 0)
+            # Continue offer: world and offer redraw, physics does not step.
+            self.assertEqual(result['offer'], {'pauses': 0, 'worlds': 2, 'steps': 0, 'offers': 2})
+            self.assertEqual(errors, [])
 
 
 if __name__ == '__main__':
