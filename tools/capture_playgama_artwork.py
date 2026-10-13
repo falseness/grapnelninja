@@ -11,18 +11,18 @@ import json
 from pathlib import Path
 import subprocess
 from PIL import Image, ImageOps, ImageDraw
-from browser_test_support import start_browser_test, wait_for_boot
+from browser_test_support import start_browser_test, wait_for_boot_run
 import test_playgama2_bridge as support
 from test_playgama2_ads import AD_FAKE
 
 ROOT = Path(__file__).resolve().parents[1]
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 def sources():
-    return {p: digest(ROOT/p) for p in subprocess.check_output(['git','ls-files'],text=True).splitlines()
+    return {p: digest(ROOT/p) for p in subprocess.check_output(['git','ls-files'],cwd=ROOT,text=True).splitlines()
             if not p.startswith(('artifacts/','screenshots/')) and (ROOT/p).is_file()}
 def capture(out):
     dest=out/'screenshots'; dest.mkdir(parents=True,exist_ok=True)
-    report={'revision': subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+    report={'revision': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
             'source_hashes':sources(), 'viewport':{'width':1280,'height':720}, 'dpr':1,
             'limitations':['Local current Playgama application; SDK network-boundary fixture, not live portal.',
                             'Seed and timestamped trusted inputs recorded; realtime RAF scheduling is not bit-exact replay.'], 'screenshots':[]}
@@ -38,14 +38,20 @@ def capture(out):
             ctx.route(support.SDK,lambda r:r.fulfill(content_type='application/javascript',body='const FAULT="normal",SAVED_LANGUAGE="en";'+support.FAKE+AD_FAKE))
             p=ctx.new_page(); errors=[]
             p.on('pageerror',lambda e:errors.append(str(e)))
-            p.goto(url+'index.html'); wait_for_boot(p); p.wait_for_function('bootComplete && !unTouch')
-            point=p.evaluate('''() => {const b=menu.badVersionButton.background,r=canvas.getBoundingClientRect();return {x:r.x+(b.x+b.width/2)*r.width/width,y:r.y+(b.y+b.height/2)*r.height/height}}''')
-            p.mouse.click(**point);p.wait_for_function('!menu.visible && !unTouch')
-            if p.locator('#tutorial button').is_visible(): p.locator('#tutorial button').click()
+            # The game boots straight into a live Main ('bad') run
+            p.goto(url+'index.html'); wait_for_boot_run(p); p.wait_for_function("version==='bad' && !unTouch")
+            # The first trusted press throws and starts the canvas hint fade;
+            # wait until it is gone so the art shows bare gameplay
+            p.mouse.move(870,150);p.mouse.down();p.wait_for_timeout(300);p.mouse.up()
+            p.wait_for_function('TUTORIAL_HINT.done',timeout=20000)
+            if p.evaluate('continueOffer.visible'):
+                point=p.evaluate('''() => {const b=continueOffer.restartButton.background,r=canvas.getBoundingClientRect();return {x:r.x+(b.x+b.width/2)*r.width/width,y:r.y+(b.y+b.height/2)*r.height/height}}''')
+                p.mouse.click(**point)
+            p.wait_for_function("runInProgress && !continueOffer.visible && !menu.gamePaused && !unTouch")
             p.mouse.move(870+i*20,150+i*11);p.mouse.down()
             p.wait_for_timeout(500+i*110)
-            state=p.evaluate('({mode:version,menu:menu.visible,paused:menu.gamePaused,score:scoreText.count[version],ninja:{x:ninja.x,y:ninja.y},grapple:grapnel.throwed,ms:performance.now()})')
-            assert state['mode']=='bad' and not state['menu'] and not state['paused'],state
+            state=p.evaluate('({mode:version,paused:menu.gamePaused,offer:continueOffer.visible,hint:TUTORIAL_HINT.visible,score:scoreText.count[version],ninja:{x:ninja.x,y:ninja.y},grapple:grapnel.throwed,ms:performance.now()})')
+            assert state['mode']=='bad' and not state['paused'] and not state['offer'] and not state['hint'],state
             path=dest/f'main-{i+1:02d}.png';p.screenshot(path=str(path))
             inputs=p.evaluate('artInputs');assert inputs and all(x['trusted'] for x in inputs)
             assert not errors,errors
