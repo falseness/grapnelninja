@@ -16,7 +16,7 @@ bridge.advertisement.isRewardedSupported=true;
 bridge.advertisement.off=(event,fn)=>probe.handlers[event]=probe.handlers[event].filter(h=>h!==fn);
 bridge.advertisement.showRewarded=()=>record('REWARDED_REQUEST');
 bridge.advertisement.showInterstitial=placement=>{
-    record('ad-request',{placement,outcome,runOver,death:continueOffer.visible,menu:menu.visible});
+    record('ad-request',{placement,outcome,runOver,death:continueOffer.visible,paused:menu.gamePaused,mode:version});
     if(outcome==='late') return;
     if(outcome==='stuck') bridge.advertisement.interstitialState='opened';
     emitHost('interstitial','opened');
@@ -31,7 +31,7 @@ class Playgama2AdsTests(unittest.TestCase):
     def setUpClass(cls):
         support.Playgama2BridgeTests.setUpClass.__func__(cls)
         cls.results={}
-        paths=subprocess.check_output(['git','ls-files'],text=True).splitlines()+['tools/test_playgama2_ads.py']
+        paths=subprocess.check_output(['git','ls-files'],text=True,cwd=support.ROOT).splitlines()+['tools/test_playgama2_ads.py']
         (cls.out/'tested-source-hashes.json').write_text(json.dumps({p:hashlib.sha256((support.ROOT/p).read_bytes()).hexdigest() for p in sorted(set(paths)) if not p.startswith(('artifacts/','screenshots/'))},indent=2))
 
     @classmethod
@@ -52,10 +52,34 @@ class Playgama2AdsTests(unittest.TestCase):
         self.snap(page,'startup')
         self.assertEqual(self.requests(page),[])
         self.assertEqual(page.evaluate('PLATFORM.showInterstitial()'),'skipped')
-        self.click(page,'menu.classicVersionButton')
+        # TASK-360/364: no title menu; the boot run is 'bad'. Real clicks on the HUD
+        # menu button and the pause-screen mode switch start a classic run mid-run.
+        support.Playgama2BridgeTests.click_mode(self,page,'classic')
         self.assertEqual(page.evaluate('PLATFORM.showInterstitial()'),'skipped')
+        self.assertEqual(self.requests(page),[])
         self.snap(page,'active-play-no-ad')
         return page
+
+    def lifecycle(self,p,name):
+        return p.evaluate('n=>probe.calls.filter(e=>e.name===n).length',name)
+
+    def fast_restart(self,p,phase):
+        # TASK-370 (e882a5e): a natural death with no game over interstitial due
+        # restarts the same mode at once: no death screen, no ad request.
+        n=self.lifecycle(p,'level_failed');started=self.lifecycle(p,'level_started')
+        requests=len(self.requests(p));mode=p.evaluate('version')
+        seen=p.evaluate_handle('n=>{const w={death:false};(function poll(){if(continueOffer.visible)w.death=true;if(probe.calls.filter(e=>e.name==="level_failed").length===n)requestAnimationFrame(poll)})();return w}',n)
+        p.wait_for_function('n=>probe.calls.filter(e=>e.name==="level_failed").length>n',arg=n)
+        self.assertFalse(seen.evaluate('w=>w.death'))
+        r=self.snap(p,phase,True)
+        self.assertFalse(r['death']);self.assertFalse(r['pending']);self.assertFalse(r['adOpen'])
+        self.assertEqual(r['score'],0)
+        self.assertTrue(p.evaluate('runInProgress && !runOver && !continueOffer.visible'))
+        self.assertEqual(p.evaluate('version'),mode)
+        self.assertEqual(self.lifecycle(p,'level_failed'),n+1)
+        self.assertEqual(self.lifecycle(p,'level_started'),started+1)
+        self.assertEqual(len(self.requests(p)),requests)
+        return r
 
     def requests(self,p):
         return p.evaluate("probe.calls.filter(e=>e.name==='ad-request')")
@@ -83,13 +107,21 @@ class Playgama2AdsTests(unittest.TestCase):
         self.assertEqual(p.evaluate('typeof PLATFORM.requestRewarded'),'undefined')
         self.assertEqual(p.evaluate('continueOffer.title.text'),'Game over')
         self.assertEqual(p.evaluate('continueOffer.restartButton.text.text'),'Restart')
-        self.assertEqual(p.evaluate('continueOffer.menuButton.text.text'),'back to menu')
-        self.snap(p,'death-menu',True)
+        self.assertEqual(p.evaluate('continueOffer.switchButton.text.text'),'main version' if p.evaluate('version')=='classic' else 'chill version')
+        self.assertFalse(p.evaluate("'menuButton' in continueOffer"))
+        self.snap(p,'death-screen',True)
+
+    def switched(self,p,frm,to):
+        # The death screen switch (TASK-360/364) replaces 'back to menu': it starts a run of the other mode.
+        p.wait_for_function('to=>version===to && runInProgress && !interstitialPending && !continueOffer.visible',arg=to)
+        r=self.restarted(p,f'switch-{frm}-to-{to}')
+        self.assertEqual(p.evaluate('version'),to)
+        return r
 
     def restarted(self,p,phase='post-ad'):
         p.wait_for_function('!interstitialPending && !continueOffer.visible')
         r=self.snap(p,phase,True)
-        self.assertFalse(r['menu']);self.assertFalse(r['adOpen'])
+        self.assertFalse(r['death']);self.assertFalse(r['adOpen'])
         self.assertEqual(r['score'],0)
         self.assertFalse(r['audio']['muted']['ad'])
         return r
@@ -98,10 +130,10 @@ class Playgama2AdsTests(unittest.TestCase):
         requests=self.requests(p)
         for a,b in zip(requests,requests[1:]): self.assertGreaterEqual(b['ms']-a['ms'],120000)
         for r in requests:
-            self.assertTrue(r['data']['runOver']);self.assertTrue(r['data']['death']);self.assertFalse(r['data']['menu'])
+            self.assertTrue(r['data']['runOver']);self.assertTrue(r['data']['death']);self.assertFalse(r['data']['paused'])
         self.assertEqual(p.evaluate("probe.calls.filter(e=>e.name==='REWARDED_REQUEST').length"),0)
         self.assertTrue(p.evaluate('inputs.every(e=>e.trusted)'))
-        self.results[self.case].append({'verdict':'PASS natural deaths; free native restart/menu; zero startup/active-play/rewarded requests; request gaps >=120000ms; audio/pause reconciled','request_timestamps':[r['ms'] for r in requests]})
+        self.results[self.case].append({'verdict':'PASS natural deaths; death screen only when an interstitial is due, fast restart otherwise; free native restart/switch; zero startup/active-play/rewarded requests; request gaps >=120000ms; audio/pause reconciled','request_timestamps':[r['ms'] for r in requests]})
         print('PASS '+self.case+': '+self.results[self.case][-1]['verdict'][5:],flush=True)
 
     def test_supported_cooldown_duplicates(self):
@@ -119,16 +151,16 @@ class Playgama2AdsTests(unittest.TestCase):
         p.evaluate("emitHost('pause',false)")
         self.click(p,'menu.resume')
         self.assertFalse(p.evaluate('AUDIO.isMuted()'))
-        self.death(p);self.click(p,'continueOffer.restartButton');self.restarted(p,'before-cooldown')
+        # Within the 120 s cooldown a death fast-restarts (TASK-370) instead of showing the death screen.
+        self.fast_restart(p,'before-cooldown')
         self.assertEqual(len(self.requests(p)),1)
-        self.death(p)
-        # Clock boundary advance preserves all production cooldown checks and callbacks.
+        # Clock boundary advance preserves all production cooldown checks and callbacks;
+        # it must precede the death, which decides whether an interstitial is due.
         p.evaluate('clockOffset+=120000')
-        self.click(p,'continueOffer.menuButton');self.assertEqual(len(self.requests(p)),2)
+        self.death(p)
+        self.click(p,'continueOffer.switchButton');self.assertEqual(len(self.requests(p)),2)
         p.evaluate("emitHost('interstitial','closed');emitHost('interstitial','closed')")
-        p.wait_for_function('menu.visible && !interstitialPending')
-        self.snap(p,'post-ad-menu',True)
-        self.click(p,'menu.classicVersionButton');self.restarted(p,'menu-new-run')
+        self.switched(p,'classic','bad')
         self.finish_case(p)
 
     def frozen(self,p,label):
@@ -190,11 +222,24 @@ class Playgama2AdsTests(unittest.TestCase):
     def failure(self,outcome):
         p=self.open(outcome)
         p.evaluate('(v)=>{outcome=v;bridge.advertisement.isInterstitialSupported=v!=="unsupported"}',outcome)
+        if outcome=='unsupported':
+            # TASK-370: no interstitial is ever due, so every death fast-restarts.
+            self.fast_restart(p,'death-fast-restart');self.fast_restart(p,'death-fast-restart-2')
+            self.assertFalse(p.evaluate('AUDIO.isMuted()'))
+            # A mode switch from the pause screen is the remaining way to leave the run: no ad.
+            support.Playgama2BridgeTests.click_mode(self,p,'bad');self.snap(p,'pause-switch',True)
+            self.assertEqual(len(self.requests(p)),0)
+            self.finish_case(p);return
         self.death(p);self.click(p,'continueOffer.restartButton');self.restarted(p)
         self.assertFalse(p.evaluate('AUDIO.isMuted()'))
-        self.death(p);self.click(p,'continueOffer.menuButton')
-        p.wait_for_function('menu.visible && !interstitialPending');self.snap(p,'post-ad-menu',True)
-        self.assertEqual(len(self.requests(p)),0 if outcome=='unsupported' else 1)
+        # Within the cooldown (a failed request still counts) the next death fast-restarts.
+        self.fast_restart(p,'before-cooldown')
+        self.assertEqual(len(self.requests(p)),1)
+        p.evaluate('clockOffset+=120000')
+        self.death(p);self.click(p,'continueOffer.switchButton')
+        self.switched(p,'classic','bad')
+        self.assertEqual(len(self.requests(p)),2)
+        self.assertFalse(p.evaluate('AUDIO.isMuted()'))
         self.finish_case(p)
 
 if __name__=='__main__':unittest.main()

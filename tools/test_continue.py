@@ -6,15 +6,43 @@ lethal death, at any score, freezes the run on free Restart/Menu choices and
 nothing brings the ninja back into the same run. Leaving the death sends one
 level_failed (TASK-341); Restart starts a new run at score 0 and the mode
 switch (TASK-361, formerly Menu) starts a run of the other mode.
+
+e882a5e (TASK-370) shows that death screen only when a game over
+interstitial is due (PLATFORM.isInterstitialDue()); any other death sends
+level_failed and restarts the same mode at once (fast restart). The suite
+serves the fake Bridge of test_playgama2_bridge.py with interstitials
+supported (as test_fast_restart.py does) and freezes PLATFORM.now() at
+window.fakeNow: advancing it by PLATFORM.interstitialMinGapMs makes the next
+death due; a death right after the ad requested by leaving a death screen is
+not due and fast-restarts.
 """
 from pathlib import Path
 import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from game_harness import open_game, start_game_test, switch_mode
+from browser_test_support import SDK_URL
+from game_harness import collect_errors, start_game_test, switch_mode
+from test_playgama2_bridge import FAKE
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Interstitials supported: each request is recorded, then opens and closes
+# (the ADS fixture of test_fast_restart.py)
+ADS = r"""
+probe.interstitials = [];
+Object.assign(bridge.advertisement, {
+    isInterstitialSupported: true,
+    interstitialState: 'closed',
+    showInterstitial(placement) {
+        probe.interstitials.push(placement);
+        const set = state => { bridge.advertisement.interstitialState = state; emitHost('interstitial', state); };
+        set('loading');
+        setTimeout(() => set('opened'), 20);
+        setTimeout(() => set('closed'), 60);
+    }
+});
+"""
 
 # Count reStart calls and pin the ninja at its start state after every physics
 # tick so it never dies on its own. window.__kill puts it on the top edge of
@@ -74,7 +102,8 @@ def state(page):
     return page.evaluate('''() => ({offer: continueOffer.visible, score: scoreText.count[version],
         reStarts: window.__reStarts, events: window.__events.slice(),
         clickable: [continueOffer.restartButton.clickable, continueOffer.switchButton.clickable],
-        gamePaused: menu.gamePaused, version})''')
+        gamePaused: menu.gamePaused, version, ads: probe.interstitials.slice(),
+        due: PLATFORM.isInterstitialDue()})''')
 
 
 class NoContinueTests(unittest.TestCase):
@@ -83,13 +112,18 @@ class NoContinueTests(unittest.TestCase):
         cls.url, cls.browser = start_game_test(ROOT, cls.addClassCleanup)
 
     def boot(self, viewport, **context_options):
-        context, page, errors = open_game(self.browser, self.url + 'index.html', viewport,
-                                          **context_options)
+        context = self.browser.new_context(viewport=viewport, **context_options)
         self.addCleanup(context.close)
+        context.route(SDK_URL, lambda route: route.fulfill(content_type='application/javascript',
+            body='const FAULT = "normal"; const SAVED_LANGUAGE = null;\n' + FAKE + ADS))
+        page = context.new_page()
+        errors = collect_errors(page)
+        page.goto(self.url + 'index.html')
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "disabled" && bootComplete && runInProgress'
+        page.wait_for_function('PLATFORM.environment === "playgama" && bootComplete && runInProgress'
                                ' && document.getElementById("loading").hidden', timeout=15000)
+        page.evaluate('window.fakeNow = 1000000; PLATFORM.now = () => window.fakeNow')
         self.assertEqual(page.evaluate(NO_CONTINUE), ['undefined', 'undefined', 'undefined', False])
         # Boot runs 'bad'; the deaths below are classic deaths
         switch_mode(page, 'classic')
@@ -107,38 +141,65 @@ class NoContinueTests(unittest.TestCase):
         page.wait_for_function('!continueOffer.visible && !interstitialPending')
         page.wait_for_timeout(100)
 
-    def check_frozen_death(self, page, score, restarts, events):
-        """The death freezes the run on Restart/switch; nothing restarts it yet."""
+    def make_due(self, page):
+        """Let PLATFORM.interstitialMinGapMs pass on the frozen clock."""
+        page.evaluate('window.fakeNow += PLATFORM.interstitialMinGapMs')
+        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
+
+    def check_frozen_death(self, page, score, restarts, events, ads):
+        """A death with an ad due freezes the run on Restart/switch; nothing
+        restarts it yet and no ad is requested yet."""
+        self.make_due(page)
         self.kill(page, score)
         s = state(page)
-        self.assertEqual((s['offer'], s['reStarts'], s['score'], s['events'], s['clickable']),
-                         (True, restarts, score, events, [True, True]), f'score {score}')
+        self.assertEqual((s['offer'], s['reStarts'], s['score'], s['events'], s['clickable'], s['ads']),
+                         (True, restarts, score, events, [True, True], ads), f'score {score}')
         self.assertEqual((s['gamePaused'], s['version']), (False, 'classic'), f'score {score}')
-        print(f'  ASSERT score {score} death -> frozen Restart/switch, no continue, no reStart: pass',
+        print(f'  ASSERT score {score} death (ad due) -> frozen Restart/switch, no continue, no reStart: pass',
               file=sys.stderr)
+
+    def check_fast_restart(self, page, score, restarts, events, ads):
+        """A death with no ad due (one was just requested) restarts at once."""
+        self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
+        self.kill(page, score)
+        events = events + [['level_failed', 'classic'], ['level_started', 'classic']]
+        s = state(page)
+        self.assertEqual((s['offer'], s['reStarts'], s['score'], s['events'], s['ads']),
+                         (False, restarts + 1, 0, events, ads), f'score {score}')
+        self.assertEqual((s['gamePaused'], s['version']), (False, 'classic'), f'score {score}')
+        print(f'  ASSERT score {score} death (no ad due) -> fast restart: one level_failed, '
+              f'new classic run at score 0, no ad: pass', file=sys.stderr)
+        return events
 
     def check_deaths(self, page, scores):
         events = []
-        for i, score in enumerate(scores):
-            self.check_frozen_death(page, score, i, events)
+        ads = []
+        restarts = 0
+        for score in scores:
+            self.check_frozen_death(page, score, restarts, events, ads)
             self.press(page, 'restartButton')
+            restarts += 1
+            ads = ads + ['game_over']
             events = events + [['level_failed', 'classic'], ['level_started', 'classic']]
             s = state(page)
-            self.assertEqual((s['offer'], s['reStarts'], s['score'], s['events']),
-                             (False, i + 1, 0, events), f'score {score}')
+            self.assertEqual((s['offer'], s['reStarts'], s['score'], s['events'], s['ads']),
+                             (False, restarts, 0, events, ads), f'score {score}')
             self.assertEqual((s['gamePaused'], s['version']), (False, 'classic'), f'score {score}')
-            print(f'  ASSERT score {score} Restart -> one level_failed, new run at score 0: pass',
-                  file=sys.stderr)
+            print(f'  ASSERT score {score} Restart -> one level_failed, one game_over ad, '
+                  f'new run at score 0: pass', file=sys.stderr)
+            events = self.check_fast_restart(page, score, restarts, events, ads)
+            restarts += 1
         # One more death, left through the mode switch
         score = scores[-1]
-        self.check_frozen_death(page, score, len(scores), events)
+        self.check_frozen_death(page, score, restarts, events, ads)
         self.press(page, 'switchButton')
         s = state(page)
-        self.assertEqual((s['offer'], s['reStarts'], s['version'], s['events']),
-                         (False, len(scores), 'bad', events + [['level_failed', 'classic'],
-                                                                ['level_started', 'bad']]))
-        print(f'  ASSERT score {score} switch -> one level_failed, bad run started, no reStart: pass',
-              file=sys.stderr)
+        self.assertEqual((s['offer'], s['reStarts'], s['version'], s['events'], s['ads']),
+                         (False, restarts, 'bad', events + [['level_failed', 'classic'],
+                                                            ['level_started', 'bad']],
+                          ads + ['game_over']))
+        print(f'  ASSERT score {score} switch -> one level_failed, one game_over ad, '
+              f'bad run started, no reStart: pass', file=sys.stderr)
 
     def test_death_offers_restart_or_switch_mouse(self):
         page = self.boot({'width': 1280, 'height': 720})

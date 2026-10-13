@@ -11,6 +11,10 @@ replays what continueRun did around it to keep the geometry under test.
 2555291 (TASK-225) added the bouncing left wall, so falling behind the
 deletion border no longer kills: the fallback death is a lethal Side edge.
 2fd723f (TASK-251) scales new group spacing by obstacleSpacingScale(score).
+e882a5e (TASK-370) freezes a death on the offer only when a game over ad is
+due (PLATFORM.isInterstitialDue()); otherwise it restarts at once. rs.die
+makes the ad due for its one physics tick so the respawn cases still start
+from a frozen death; fast_restart_case covers the no-ad path.
 
 Env: RESPAWN_EVIDENCE_DIR receives frames/<case>/t*.png, contact.png,
 respawn-cases.json, replenish-check.json and console/page-errors.log.
@@ -34,7 +38,12 @@ FRAMES_MS = (0, 300, 500, 1000, 2000, 2500)
 SETUP = r'''() => {
     const realLethal = window.onLethalDeath
     const realRestart = window.reStart
-    const rs = window.__rs = {deaths: 0, reStarts: 0, lethalCalls: 0, deathsEnabled: true}
+    const realLifecycle = PLATFORM.sendLifecycle
+    const rs = window.__rs = {deaths: 0, reStarts: 0, lethalCalls: 0, levelFailed: 0, deathsEnabled: true}
+    PLATFORM.sendLifecycle = function(name) {
+        if (name === 'level_failed') rs.levelFailed++
+        return realLifecycle.apply(this, arguments)
+    }
     window.onLethalDeath = function() {
         rs.lethalCalls++
         if (!rs.deathsEnabled) return
@@ -117,7 +126,7 @@ SETUP = r'''() => {
     // A real lethal death: obstacle contact or the top edge of the floors[2]
     // Side under the ninja (classic: the floor; bad: the ceiling, whose
     // bottom edge alone bounces).
-    rs.die = (cause, score) => {
+    rs.die = (cause, score, adDue = true) => {
         let element = null
         const v = rs.visible()
         const lethalOnScreen = () => floors[1].elements
@@ -156,10 +165,21 @@ SETUP = r'''() => {
         grapnel.throwed = true
         grapnel.setGrappled(true)
         grapnel.pos = [[ninja.x + 50, ninja.y - 50, new Empty()]]
-        const before = rs.deaths
-        physics()
-        if (!continueOffer.visible || rs.deaths != before + 1) throw Error('death did not open the offer')
+        const before = rs.deaths, restartsBefore = rs.reStarts
+        // e882a5e (TASK-370): only a death with a game over ad due freezes on
+        // the offer; any other one restarts at once. rs.respawn replays the
+        // removed continue from that frozen death, so the ad is made due.
+        const isInterstitialDue = PLATFORM.isInterstitialDue
+        if (adDue) PLATFORM.isInterstitialDue = () => true
+        try { physics() } finally { PLATFORM.isInterstitialDue = isInterstitialDue }
+        // The fast restart path returns the counts for the test to assert
+        // (TASK-372: one death could restart twice in one collision pass).
+        if (adDue && rs.deaths != before + 1)
+            throw Error('expected one lethal death, got ' + (rs.deaths - before) + ' (restarts ' + (rs.reStarts - restartsBefore) + ')')
+        if (adDue && (!continueOffer.visible || rs.reStarts != restartsBefore))
+            throw Error('death did not open the offer')
         return {cause: cause + ':' + element.constructor.name,
+                deaths: rs.deaths - before, reStarts: rs.reStarts - restartsBefore,
                 deathX: ninja.x, deathY: ninja.y, score: scoreText.count[version]}
     }
     // The removed continueRun (8519216^:index.html) around respawnNinja():
@@ -376,6 +396,47 @@ class SafeRespawnTests(unittest.TestCase):
 
     def test_bad_mixed(self):
         self.run_case('bad-mixed', 'bad', None, 55, 'obstacle')
+
+    # e882a5e (TASK-370): with no game over ad due a death restarts the same
+    # mode at once (no offer, no respawnNinja): the new run must start clear.
+    def fast_restart_case(self, name, mode, seed, cause):
+        page = self.boot()
+        page.evaluate('([m, s]) => window.__rs.start(m, null, s)', [mode, seed])
+        hold_y = 0.2 * 1080 if mode == 'classic' else 1.2 * 1080
+        page.evaluate('([v, y]) => window.__rs.advance(90, v, y)', [0.8, hold_y])
+        death = page.evaluate('([c, s]) => window.__rs.die(c, s, false)', [cause, 7])
+        after = page.evaluate('''() => Object.assign(window.__rs.state(), window.__rs.minLethalGap(),
+            {visible: window.__rs.inVisible(), runInProgress, runOver, frozen: isRunFrozen(), version,
+             levelFailed: window.__rs.levelFailed})''')
+        # one death, one reStart, one level_failed (TASK-372: a death crossing
+        # several lethal edges in one collision pass used to restart per edge)
+        self.assertEqual((death['deaths'], death['reStarts'], after['levelFailed']), (1, 1, 1),
+                         f'{name}: (deaths, reStarts, level_failed) for one death')
+        self.assertEqual((after['offer'], after['frozen'], after['runOver'], after['runInProgress']),
+                         (False, False, False, True))
+        self.assertEqual((after['reStarts'], after['version'], after['score']), (1, mode, 0))
+        self.assertTrue(after['visible'], f'{name}: restarted ninja outside the visible area')
+        self.assertGreater(after['gap'], 0, f'{name}: restarted ninja overlaps a lethal element')
+        step_ms = page.evaluate('physicsStepMs')
+        ticks = round(500 / step_ms)
+        for tick in range(1, ticks + 1):
+            s = page.evaluate('() => window.__rs.tick()')
+            self.assertEqual((s['deaths'], s['reStarts']), (1, 1), f'{name}: died at tick {tick} of the new run')
+            self.assertTrue(s['visible'], f'{name}: ninja left the visible area at tick {tick}')
+        print(f'\n  {name}: cause {death["cause"]} with no ad due; fast restart to a new {mode} run at'
+              f' ({after["x"]:.1f}, {after["y"]:.1f}), gap {after["gap"]:.1f}, no offer;'
+              f' 0 deaths in {ticks * step_ms:.0f} ms: pass', file=sys.stderr)
+
+    def test_fast_restart_classic(self):
+        self.fast_restart_case('fast-restart-classic', 'classic', 202, 'side')
+
+    # TASK-372 regressions: these deaths cross two lethal edges in one
+    # collision pass (obstacle vertex; bad ceiling Side)
+    def test_fast_restart_bad_obstacle(self):
+        self.fast_restart_case('fast-restart-bad-obstacle', 'bad', 55, 'obstacle')
+
+    def test_fast_restart_bad_side(self):
+        self.fast_restart_case('fast-restart-bad-side', 'bad', 55, 'side')
 
     def replenish_check(self, mode, seed, cause):
         page = self.boot()

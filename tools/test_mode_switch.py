@@ -14,6 +14,12 @@ pause-ru.png and death-ru.png.
 The pause screen's switch (menu.backToMenu) abandons the live run: one
 level_failed, no interstitial, then level_started in the other mode.
 
+TASK-370 (e882a5e): the death screen opens only when a game over interstitial
+is due (PLATFORM.isInterstitialDue(): >= interstitialMinGapMs since the last
+request). test_death_switch freezes PLATFORM.now() at window.fakeNow, so a
+death right after the switch's ad fast-restarts the same mode with no switch
+offered, and one after advancing the clock past the gap shows it again.
+
 The language button sits on the pause and death screens and relabels them in
 place; it ignores clicks while an interstitial is pending.
 """
@@ -100,6 +106,15 @@ class ModeSwitchTests(unittest.TestCase):
         page.wait_for_function('continueOffer.visible')
         page.wait_for_timeout(300)
 
+    # A death with no ad due: no death screen, the same mode restarts at once
+    def die_fast_restart(self, page):
+        before = len(self.messages(page))
+        page.evaluate(KILL)
+        page.wait_for_function('n => probe.calls.filter(c => c.name.startsWith("level_") || '
+                               'c.name === "interstitial_request").length >= n', arg=before + 2)
+        page.wait_for_timeout(300)
+        return self.messages(page)[before:]
+
     def click(self, page, rect):
         page.mouse.click(**page.evaluate(CENTER, rect))
 
@@ -132,6 +147,9 @@ class ModeSwitchTests(unittest.TestCase):
     def test_death_switch(self):
         page = self.open({'width': 1280, 'height': 720})
         self.assertEqual(page.evaluate('version'), 'bad')
+        # Frozen interstitial clock (TASK-370): no request yet, so an ad is due
+        page.evaluate('window.fakeNow = 1000000; PLATFORM.now = () => window.fakeNow')
+        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
         before = len(self.messages(page))
         self.die(page)
         self.assertEqual(page.evaluate('continueOffer.switchButton.text.text'), 'chill version')
@@ -160,6 +178,17 @@ class ModeSwitchTests(unittest.TestCase):
         self.assertFalse(page.evaluate('menu.gamePaused'))
         self.log('PASS switch bad -> classic:', json.dumps(after))
 
+        # The switch's ad was 0 s ago: a death fast-restarts classic, no switch offered
+        self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
+        fast = self.die_fast_restart(page)
+        self.assertEqual(fast, [['level_failed', {'world': 'classic'}], ['level_started', {'world': 'classic'}]])
+        self.assertEqual(page.evaluate('[version, continueOffer.visible, interstitialPending, runOver]'),
+                         ['classic', False, False, False])
+        self.log('PASS no ad due: classic death fast-restarts classic, no death screen:', json.dumps(fast))
+
+        # interstitialMinGapMs later an ad is due again: the death screen returns
+        page.evaluate('window.fakeNow += PLATFORM.interstitialMinGapMs')
+        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
         self.die(page)
         self.assertEqual(page.evaluate('continueOffer.switchButton.text.text'), 'main version')
         self.check_layout(page, 'death-classic.png')

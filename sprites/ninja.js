@@ -79,7 +79,10 @@ class Ninja
             (element instanceof Side && element.isBadVersionCeilingBoundary(line))
         if (!bouncy)
         {
-            element.collision(this, line)
+            // A fast restart (TASK-370) already replaced this ninja during
+            // this pass: its other deadly edges must not kill the new run
+            if (ninja === this)
+                element.collision(this, line)
             return best
         }
         const contact = this.contactWith(line, element.getPoints())

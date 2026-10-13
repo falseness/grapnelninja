@@ -232,6 +232,27 @@ class Playgama2BridgeTests(unittest.TestCase):
                                     ['level_failed', {'world': 'bad'}],
                                     ['level_started', {'world': 'classic'}], ['level_paused', None],
                                     ['level_failed', {'world': 'classic'}], ['level_started', {'world': 'bad'}]])
+        # TASK-370 (e882a5e): the death screen shows only when a game over
+        # interstitial is due. Make one due: interstitials supported, each
+        # request recorded, then opened and closed by the host. The gap clock
+        # is frozen so the not-due death below is deterministic.
+        page.evaluate('''() => {
+            probe.interstitials = [];
+            window.fakeNow = 1000000;
+            PLATFORM.now = () => window.fakeNow;
+            Object.assign(bridge.advertisement, {
+                isInterstitialSupported: true,
+                interstitialState: 'closed',
+                showInterstitial(placement) {
+                    probe.interstitials.push(placement);
+                    const set = state => { bridge.advertisement.interstitialState = state; emitHost('interstitial', state); };
+                    set('loading');
+                    setTimeout(() => set('opened'), 20);
+                    setTimeout(() => set('closed'), 60);
+                }
+            });
+        }''')
+        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
         # Death -> the offer's mode switch (formerly Menu), clicked twice:
         # exactly one level_failed for the run, then one new run, which waits
         # paused after the game-over interstitial (pauseAfterAd)
@@ -243,12 +264,28 @@ class Playgama2BridgeTests(unittest.TestCase):
         print('ASSERT death->switch tail', json.dumps(death), flush=True)
         self.assertEqual(death, [['level_failed', {'world': 'bad'}], ['level_started', {'world': 'classic'}],
                                  ['level_paused', None]])
+        self.assertEqual(page.evaluate('probe.interstitials'), ['game_over'])
+        # The ad just requested is not due again within interstitialMinGapMs:
+        # a death restarts the same mode at once, still one level_failed for
+        # the run, no death screen and no further ad
+        page.evaluate('window.fakeNow += PLATFORM.interstitialMinGapMs - 1')
+        self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
+        page.evaluate('onLethalDeath()')
+        self.assertFalse(page.evaluate('continueOffer.visible'))
+        self.assertFalse(page.evaluate('interstitialPending'))
+        self.assertEqual(page.evaluate('version'), 'classic')
+        fast = self.lifecycle_calls(page)[10:]
+        print('ASSERT not-due death tail', json.dumps(fast), flush=True)
+        self.assertEqual(fast, [['level_failed', {'world': 'classic'}], ['level_started', {'world': 'classic'}],
+                                ['level_paused', None]])
+        self.assertEqual(page.evaluate('probe.interstitials'), ['game_over'])
         final = self.lifecycle_calls(page)
         print('ASSERT full sequence', json.dumps([n for n, _ in final]), flush=True)
         self.assertEqual([n for n, _ in final], ['level_started', 'level_paused', 'level_failed',
                                                  'level_started', 'level_paused', 'level_failed', 'level_started',
+                                                 'level_failed', 'level_started', 'level_paused',
                                                  'level_failed', 'level_started', 'level_paused'])
-        print('PASS run abandon: one level_failed per run (pause->switch and death->switch)', flush=True)
+        print('PASS run abandon: one level_failed per run (pause->switch, death->switch, not-due death fast restart)', flush=True)
 
     def test_saved_language_precedes_host(self):
         page, _, _ = self.open(saved='en')
