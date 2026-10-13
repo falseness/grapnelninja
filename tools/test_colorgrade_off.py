@@ -2,7 +2,7 @@
 STYLE.features.colorGrade; the disabled path must do no canvas work.
 
 On render_snapshot's frozen clock (844x390@3, touch):
-(a) the menu and bad/classic games at COLORGRADE_REV (default worktree): every
+(a) the pause screen over the boot run and bad/classic games at COLORGRADE_REV (default worktree): every
     CanvasRenderingContext2D call and property set made while
     ColorGradeRenderer.draw runs is counted; it must be 0 on every frame;
 (b) the same rev with the switch forced on by an init script must match
@@ -34,7 +34,7 @@ TICKS = [60, 300]
 MAX_DELTA = 2
 
 # Counts the canvas calls and property sets made inside ColorGradeRenderer.draw,
-# and how often draw is entered, per stepped frame (and for the menu frame).
+# and how often draw is entered, per stepped frame (and for the pause frame).
 COUNT_SCRIPT = '''(() => {
     const grade = window.__grade = {depth: 0, ops: 0, calls: 0}
     const proto = CanvasRenderingContext2D.prototype
@@ -75,8 +75,9 @@ FORCE_ON_SCRIPT = '''addEventListener('load', () => {
 
 
 def run(rev, extra_init=None, count=False):
-    """Menu capture plus captures of each mode at TICKS; with count, grade ops
-    and draw calls of the menu frame and of every game frame."""
+    """Pause-screen capture over the boot run plus captures of each mode at
+    TICKS; with count, grade ops and draw calls of the pause frame and of every
+    game frame."""
     result = {'captures': {}, 'frames': {}, 'page_errors': []}
     with ExitStack() as stack:
         root, rev_id = export_rev(rev, stack.callback)
@@ -94,17 +95,18 @@ def run(rev, extra_init=None, count=False):
             if extra_init:
                 context.add_init_script(extra_init)
             page = context.new_page()
-            page.on('pageerror', lambda e, m=mode: result['page_errors'].append(f'{m or "menu"}: {e}'))
+            page.on('pageerror', lambda e, m=mode: result['page_errors'].append(f'{m or "pause"}: {e}'))
             page.goto(url + 'index.html', wait_until='load')
             render_snapshot.boot_frozen(page)
             page.evaluate(render_snapshot.SETUP_SCRIPT, [script, True])
-            name = mode or 'menu'
+            name = mode or 'pause'
             if mode is None:
+                # The title menu is gone (TASK-364): the boot run starts at
+                # once, so its only menu scene is the pause screen over a frame
+                page.evaluate('() => { draw(); menu.drawPauseScreen() }')
                 if count:
-                    # One more menu frame on top of the boot frame
-                    page.evaluate('() => menu.draw()')
-                    result['frames']['menu'] = [page.evaluate('() => ({ops: __grade.ops, calls: __grade.calls})')]
-                result['captures']['menu'] = render_snapshot.png_bytes(page.evaluate('() => __snap.capture()'))
+                    result['frames']['pause'] = [page.evaluate('() => ({ops: __grade.ops, calls: __grade.calls})')]
+                result['captures']['pause'] = render_snapshot.png_bytes(page.evaluate('() => __snap.capture()'))
             else:
                 page.evaluate('mode => startGame(mode)', mode)
                 for tick in TICKS:
@@ -146,7 +148,7 @@ class ColorGradeOffTest(unittest.TestCase):
                                      'grade_draw_calls_total': sum(f['calls'] for f in frames)}
                               for name, frames in result['frames'].items()}
         self.probe['grade_ops'] = summary
-        for name in ['menu'] + MODES:
+        for name in ['pause'] + MODES:
             # The grade is still asked to draw every frame, so the counter is live...
             self.assertGreater(summary['switch_off'][name]['grade_draw_calls_total'], 0, name)
             # ...and with the switch on it does draw: the counter sees its fills

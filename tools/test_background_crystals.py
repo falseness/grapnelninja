@@ -25,34 +25,40 @@ PROBE = r'''mode => {
     const clear = () => { ctx.save(); ctx.resetTransform(); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.restore() }
     // Only obstacle geometry, preserving the game's actual world transform.
     clear()
-    if (mode !== 'menu') {
-        ctx.save(); ctx.scale(scale[version], scale[version])
-        for (let i=1; i<floors.length-1; i++) floors[i].drawExtrusions()
-        for (let i=1; i<floors.length-1; i++) floors[i].draw()
-        floors[0].draw(); floors[floors.length-1].draw()
-        ctx.restore()
-    }
+    ctx.save(); ctx.scale(scale[version], scale[version])
+    for (let i=1; i<floors.length-1; i++) floors[i].drawExtrusions()
+    for (let i=1; i<floors.length-1; i++) floors[i].draw()
+    floors[0].draw(); floors[floors.length-1].draw()
+    ctx.restore()
     // Mask other foreground objects as well, so facet probes cannot hit UI,
     // ninja, rope or trails.
-    if (mode !== 'menu') {
-        ctx.save(); ctx.scale(scale[version],scale[version])
-        grapnel.draw(); grapnel.drawHook(); ninja.draw()
-        drawPlayerTrailLayer(visualEffects.getGameState())
-        drawUILayer(visualEffects.getGameState())
-        ctx.restore()
-    } else {
-        for (const item of [menu.mainText,menu.classicVersionButton,menu.classicRecord,
-            menu.badVersionButton,menu.badRecord,menu.mainFpsCounterCheckbox,menu.timeInGame,LANGUAGE_BUTTON]) item.draw()
+    ctx.save(); ctx.scale(scale[version],scale[version])
+    grapnel.draw(); grapnel.drawHook(); ninja.draw()
+    drawPlayerTrailLayer(visualEffects.getGameState())
+    drawUILayer(visualEffects.getGameState())
+    ctx.restore()
+    // The pause screen's controls; its tint and see-through panel stay
+    // part of the cave picture (below), the panel's neon stroke is rejected
+    // by the full-vs-background comparison.
+    if (mode === 'pause') {
+        const panel = menu.getPausePanel()
+        for (const item of [menu.getPauseTitle(panel),menu.resume,menu.backToMenu,
+            menu.pauseFpsCounterCheckbox,LANGUAGE_BUTTON]) item.draw()
     }
     const foreground = ctx.getImageData(0,0,canvas.width,canvas.height)
     b.layerCache = {}
-    clear(); mode==='menu' ? b.paintMenu() : b.paint()
+    clear(); b.paint()
+    // The paused picture of the cave: tint, then the see-through panel
+    if (mode === 'pause') {
+        const panel = menu.getPausePanel()
+        ctx.fillStyle = STYLE.colors.ui.pauseOverlay; ctx.fillRect(0, 0, menu.width, menu.height)
+        ctx.fillStyle = STYLE.colors.ui.pausePanelFill; ctx.fillRect(panel.x, panel.y, panel.width, panel.height)
+    }
     const background = ctx.getImageData(0,0,canvas.width,canvas.height)
     const pixel = (data,x,y) => Array.from(data.data.slice((y*data.width+x)*4,(y*data.width+x)*4+3))
     const samples=[]
     const geometry = STYLE.caveLayers || STYLE.backgroundGeometry
-    const shift = layer => mode==='menu' ? b.getMenuLayerShift(layer==='far'?1:1.5) :
-        b.getLayerShift(w,h,geometry[layer==='far'?'crystals':'nearRocks'])
+    const shift = layer => b.getLayerShift(w,h,geometry[layer==='far'?'crystals':'nearRocks'])
     const tiles = Object.fromEntries(['far','near'].map(layer => {
         const c=b.layerCache[layer].canvas
         return [layer,c.getContext('2d').getImageData(0,0,c.width,c.height)]
@@ -101,7 +107,7 @@ def capture(rev, positions=None):
         root, rev_id = export_rev(rev, stack.callback)
         url, browser = start_browser_test(root, stack.callback)
         for vp in snap.VIEWPORTS:
-            for mode in ['menu', 'bad', 'classic']:
+            for mode in ['pause', 'bad', 'classic']:
                 context = browser.new_context(viewport={k:vp[k] for k in ('width','height')},
                                               device_scale_factor=vp['dpr'], is_mobile=vp['touch'], has_touch=vp['touch'])
                 try:
@@ -113,11 +119,12 @@ def capture(rev, positions=None):
                     page.goto(url+'index.html', wait_until='load')
                     snap.boot_frozen(page)
                     page.evaluate(snap.SETUP_SCRIPT, [snap.input_script(ticks=300,width=vp['width'],height=vp['height']),vp['touch']])
-                    if mode != 'menu':
-                        page.evaluate('mode => startGame(mode)',mode)
-                        page.evaluate(snap.ADVANCE_SCRIPT,300)
-                    else:
-                        page.evaluate('() => { __snap.now=5000; menu.draw() }')
+                    # The title menu is gone (TASK-364); its menu scene is
+                    # now the pause screen over the classic run.
+                    page.evaluate('mode => startGame(mode)','classic' if mode == 'pause' else mode)
+                    page.evaluate(snap.ADVANCE_SCRIPT,300)
+                    if mode == 'pause':
+                        page.evaluate('() => { draw(); menu.drawPauseScreen() }')
                     name = vp['name']+'-'+mode
                     if positions is None:
                         result[name] = page.evaluate(PROBE,mode)
