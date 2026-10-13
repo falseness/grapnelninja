@@ -2,6 +2,11 @@
 
 Uses fresh anonymous browser contexts. Saves traces and native screenshots, never
 certifies physical devices or submits moderation. Run after uploading the ZIP.
+
+Boot starts a 'bad' run with no title menu (TASK-360/364). Classic is reached
+by real clicks on the HUD menu button and the pause-screen mode switch
+(TASK-362); the first held press dismisses the canvas tutorial hint
+(TASK-366/367); a death with no interstitial due restarts at once (TASK-370).
 """
 import argparse
 import hashlib
@@ -13,20 +18,21 @@ from playwright.sync_api import sync_playwright
 
 
 def state(frame):
-    return frame.evaluate('''() => ({mode:version, menu:menu.visible,
+    return frame.evaluate('''() => ({mode:version, running:runInProgress,
         paused:menu.gamePaused, dead:continueOffer.visible, x:ninja?.x ?? null,
         time:PROGRESS.getTime(), records:{...scoreText.record},
         muted:PROGRESS.getMuted(), language:I18N.language,
-        tutorial:PROGRESS.getTutorialDone(), readiness:PLATFORM.readiness,
+        hint:{visible:TUTORIAL_HINT.visible, pressed:TUTORIAL_HINT.pressed}, readiness:PLATFORM.readiness,
         platform:PLATFORM.platformId, environment:PLATFORM.environment,
         audio:AUDIO.getState(), viewport:{width:innerWidth,height:innerHeight},
         scroll:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight}})''')
 
 
-def click(page, frame, expression, touch=False):
+def click(page, frame, expression, touch=False, scaled=False):
+    """Real click/tap on a canvas rect; HUD menu button rects are in scale[version] units."""
     frame.wait_for_function('!unTouch && !interstitialPending && !adOpen')
-    point = frame.evaluate('''() => {const b=''' + expression + ''';
-        return {x:(b.x+b.width/2)/width,y:(b.y+b.height/2)/height}}''')
+    point = frame.evaluate('''scaled => {const b=''' + expression + ''', s=scaled ? scale[version] : 1;
+        return {x:(b.x+b.width/2)*s/width,y:(b.y+b.height/2)*s/height}}''', scaled)
     bounds = frame.locator('#canvas').bounding_box()
     (page.touchscreen.tap if touch else page.mouse.click)(
         bounds['x'] + point['x'] * bounds['width'],
@@ -61,7 +67,26 @@ def context_options(devices, engine, touch, phone):
     return options
 
 
-def run(args):
+def pause(page, frame, touch):
+    """Real click on the HUD menu button."""
+    if not frame.evaluate('menu.gamePaused'):
+        click(page, frame, 'menu.button.background', touch, scaled=True)
+        frame.wait_for_function('menu.gamePaused')
+
+
+def start_mode(page, frame, mode, touch):
+    """Leave a running, unpaused run of `mode` using real input only."""
+    if frame.evaluate('version') != mode:
+        pause(page, frame, touch)
+        click(page, frame, 'menu.backToMenu.background', touch)
+    elif frame.evaluate('menu.gamePaused'):
+        # A host-paused, rotated or hidden boot run waits on the pause screen
+        click(page, frame, 'menu.resume.background', touch)
+    frame.wait_for_function('m => version === m && runInProgress && !menu.gamePaused && !unTouch', arg=mode)
+
+
+def run(args, prepare=None):
+    """`prepare(context)` may install routes; the offline flow test uses it."""
     args.out.mkdir(parents=True, exist_ok=True)
     report = {'url':args.url, 'cases':[], 'limitations':[
         'Fresh anonymous Linux browser contexts; touch profiles emulate devices.',
@@ -83,6 +108,7 @@ def run(args):
                 options = context_options(pw.devices, args.engine, touch, args.phone)
                 row['context_options'] = options
                 context = browser.new_context(**options)
+                if prepare: prepare(context)
                 page = context.new_page()
                 page.set_default_timeout(20000)
                 page.on('pageerror', lambda e: row['page_errors'].append(str(e)))
@@ -97,18 +123,18 @@ def run(args):
                     frame = game_frame(page)
                     row['ready_wall_ms'] = round((time.monotonic()-start)*1000)
                     row['frame_url'] = frame.url
-                    row['menu'] = state(frame)
-                    assert row['menu']['environment'] == 'playgama'
-                    assert row['menu']['readiness']['attempts'] == 1
+                    row['boot'] = state(frame)
+                    assert row['boot']['environment'] == 'playgama'
+                    assert row['boot']['readiness']['attempts'] == 1
+                    assert row['boot']['running'] and row['boot']['mode'] == 'bad', row['boot']
+                    assert row['boot']['hint'] == {'visible':True, 'pressed':False}, row['boot']['hint']
                     body = page.locator('body').inner_text()
                     assert 'config passed to initialize() as an external URL' not in body, body
                     assert not row['page_errors'], row['page_errors']
-                    page.screenshot(path=str(args.out/(case+'-menu.png')))
-                    click(page, frame, 'menu.'+mode+'VersionButton.background', touch)
-                    if frame.locator('#tutorial button').is_visible():
-                        (frame.locator('#tutorial button').tap if touch else frame.locator('#tutorial button').click)()
-                    frame.wait_for_function('!unTouch && !menu.visible')
+                    page.screenshot(path=str(args.out/(case+'-boot.png')))
+                    start_mode(page, frame, mode, touch)
                     row['started'] = state(frame)
+                    assert row['started']['hint'] == {'visible':True, 'pressed':False}, row['started']['hint']
                     samples=[]
                     for _ in range(12):
                         if frame.evaluate('continueOffer.visible'): break
@@ -127,13 +153,14 @@ def run(args):
                         samples.append(state(frame))
                     row['gameplay']=samples
                     assert samples and any(s['x'] != row['started']['x'] for s in samples), 'No horizontal movement from held grapple input'
+                    assert samples[-1]['hint']['pressed'], 'Held press did not dismiss the tutorial hint'
+                    assert all(s['mode'] == mode for s in samples), 'Run left the mode under test'
                     page.screenshot(path=str(args.out/(case+'-gameplay.png')))
                     if frame.evaluate('continueOffer.visible'):
                         row['natural_death']=True
                     else:
                         # Real input pauses and commits elapsed play before reload.
-                        page.keyboard.press('p')
-                        frame.wait_for_function('menu.gamePaused')
+                        pause(page, frame, touch)
                         row['paused']=state(frame)
                     row['after_run']=state(frame)
                     page.wait_for_timeout(1400)
@@ -145,7 +172,8 @@ def run(args):
                     mute=frame.locator('#mute-button')
                     (mute.tap if touch else mute.click)()
                     frame.wait_for_function('PROGRESS.getMuted()')
-                    # Language control is part of the menu/HUD and uses ordinary input.
+                    # The language button is on the pause screen; pausing also saves.
+                    pause(page,frame,touch)
                     click(page,frame,'LANGUAGE_BUTTON.rect()',touch)
                     frame.wait_for_function('I18N.language === "ru"')
                     page.wait_for_timeout(1400)
@@ -157,8 +185,10 @@ def run(args):
                     page.reload(wait_until='domcontentloaded')
                     frame=game_frame(page)
                     row['reloaded']=state(frame)
-                    for key in ['time','records','muted','language','tutorial']:
+                    for key in ['time','records','muted','language']:
                         assert row['saved'][key]==row['reloaded'][key], (key,row['saved'][key],row['reloaded'][key])
+                    # The hint is not persisted: every page load shows it on the boot run
+                    assert row['reloaded']['hint'] == {'visible':True, 'pressed':False}, row['reloaded']['hint']
                     assert not row['page_errors'],row['page_errors']
                     assert all(r['status'] in (200,304) for r in row['requests']),row['requests']
                     assert any(r['url'].split('?')[0].endswith('/playgama-bridge-config.json') for r in row['requests'])
@@ -166,7 +196,7 @@ def run(args):
                     assert 'config passed to initialize() as an external URL' not in row['qa_text']
                     page.screenshot(path=str(args.out/(case+'-reload.png')))
                     row['verdict']='PASS'
-                    print('PASS',case,'real ready/input/movement/audio settings/SDK save/reload; config error absent',flush=True)
+                    print('PASS',case,'real ready/boot run/mode switch/input/hint dismissal/movement/audio settings/SDK save/reload; config error absent',flush=True)
                 except Exception as error:
                     row['verdict']='FAIL';row['error']=str(error)
                     save()

@@ -34,7 +34,7 @@ import test_playgama2_bridge as support
 from test_playgama2_ready import Playgama2ReadyTests
 from test_playgama_start_flow import StartFlowTests
 from test_playgama_start_input import StartInputTests
-from test_playgama_startup_telemetry import TRANSPORT
+from test_playgama_startup_telemetry import STAGES, TRANSPORT
 
 
 class Scripts(HTMLParser):
@@ -128,9 +128,16 @@ class TelemetryTests(unittest.TestCase):
         support.Playgama2BridgeTests.setUpClass.__func__(cls)
 
     def test_packaged_funnel(self):
+        # Boot starts a 'bad' run with no title menu (TASK-360/364): the first
+        # three stages come from the boot run, classic is reached through the
+        # pause switch, and the first trusted press sends first_grapple and
+        # tutorial_dismissed (canvas hint, TASK-366/367).
         results = {}
         for mode in ('classic', 'bad'):
-            for case in ('immediate', 'delayed', 'late-init', 'menu-only', 'exhausted', 'throws', 'rejects'):
+            for case in ('immediate', 'delayed', 'late-init', 'boot-only', 'exhausted', 'throws', 'rejects'):
+                # A page without input stays in the boot run's mode
+                if (mode, case) == ('classic', 'boot-only'):
+                    continue
                 with self.subTest(mode=mode, case=case):
                     context = self.browser.new_context(viewport={'width':1280,'height':720})
                     self.addCleanup(context.close)
@@ -140,37 +147,44 @@ class TelemetryTests(unittest.TestCase):
                     page.on('pageerror', lambda e: errors.append(str(e)))
                     page.goto(self.url+'current/index.html'); support.wait_for_boot(page)
                     page.wait_for_function('PLATFORM.readiness.applicationReady && !unTouch')
-                    if case != 'menu-only':
+                    stages=STAGES[:3] if case=='boot-only' else STAGES
+                    if case != 'boot-only':
                         support.Playgama2BridgeTests.click_mode(self, page, mode)
-                        page.wait_for_function('PLATFORM.readiness.startup.seen >= 4 && !unTouch')
+                        page.wait_for_function('PLATFORM.readiness.startup.seen >= 3 && !menu.gamePaused && !unTouch')
                         page.mouse.click(800,250)
-                        page.locator('#tutorial button').click()
-                        page.wait_for_function('PLATFORM.readiness.startup.seen === 6')
+                        page.wait_for_function('PLATFORM.readiness.startup.seen === 5')
                     if case in ('delayed','late-init'):
-                        self.assertEqual(page.evaluate('PLATFORM.readiness.startup.queued'),6)
+                        self.assertEqual(page.evaluate('PLATFORM.readiness.startup.queued'),len(stages))
                         page.evaluate('releaseReady()' if case=='delayed' else 'releaseInit()')
                     page.wait_for_function('s => PLATFORM.readiness.state === s', arg='exhausted' if case=='exhausted' else 'success')
-                    if case != 'menu-only':
+                    if case != 'boot-only':
                         page.evaluate("startGame('bad');startGame('classic');for(let i=0;i<20;i++)PLATFORM.gameReady()")
                     page.wait_for_timeout(150)
                     result = page.evaluate('({calls:probe.calls,readiness:PLATFORM.readiness,build:PLATFORM.buildVersion,now:performance.now()})')
                     events=[c for c in result['calls'] if c['name']=='startup_funnel']
-                    stages=['menu_interactive'] if case=='menu-only' else ['menu_interactive','mode_selected','run_initialized','first_gameplay_frame','first_grapple','tutorial_dismissed']
                     self.assertEqual([e['data']['stage'] for e in events], [] if case=='exhausted' else stages)
                     self.assertEqual(result['build'],self.expected_build_version)
+                    # The boot run is 'bad'; the press happens in the mode under test
+                    modes=['bad','bad','bad',mode,mode]
                     times=[]
-                    for e in events:
-                        d=e['data']; self.assertEqual(set(d), {'stage','elapsed_ms','game_version'} | (set() if d['stage']=='menu_interactive' else {'mode'}))
+                    for e, expected_mode in zip(events, modes):
+                        d=e['data']; self.assertEqual(set(d), {'stage','elapsed_ms','game_version','mode'})
                         self.assertEqual(d['game_version'],result['build'])
-                        if 'mode' in d: self.assertEqual(d['mode'],mode)
+                        self.assertEqual(d['mode'],expected_mode)
                         self.assertTrue(0<=d['elapsed_ms']<=result['now']);times.append(d['elapsed_ms'])
                     self.assertEqual(times,sorted(times))
-                    self.assertEqual(result['readiness']['startup'],dict(queued=0,capacity=6,seen=len(stages)))
+                    self.assertEqual(result['readiness']['startup'],dict(queued=0,capacity=5,seen=len(stages)))
+                    lifecycle=[c['name'] for c in result['calls'] if c['name'].startswith('level_')]
+                    # Boot run; classic leaves it through the pause switch; then
+                    # the two direct startGame calls
+                    after_boot=['level_paused','level_failed','level_started'] if mode=='classic' else []
+                    expected_lifecycle=([] if case=='exhausted' else ['level_started'] if case=='boot-only'
+                                        else ['level_started']+after_boot+['level_started']*2)
+                    self.assertEqual(lifecycle, expected_lifecycle)
                     names=[c['name'] for c in result['calls']]
-                    self.assertEqual([n for n in names if n.startswith('level_')], [] if case in ('menu-only','exhausted') else ['level_started']*3)
                     if case in ('delayed','late-init'): self.assertLess(names.index('level_started'),names.index('startup_funnel'))
                     self.assertEqual(errors,[])
-                    result['verdict']='PASS bounded packaged telemetry payload/order/privacy; capacity=6; no page errors'
+                    result['verdict']='PASS bounded packaged telemetry payload/order/privacy; capacity=5; no page errors'
                     results[mode+'-'+case]=result
                     (self.out/'packaged-telemetry.json').write_text(json.dumps(results,indent=2)+'\n')
                     print('PASS packaged telemetry '+mode+'-'+case,flush=True)

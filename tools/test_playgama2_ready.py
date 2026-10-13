@@ -7,7 +7,9 @@ import unittest
 import test_playgama2_bridge as support
 
 # Hold only the direct boot continuation at the browser boundary so real
-# mouse input and native menu proof can precede readiness deterministically.
+# mouse input on the boot run can precede readiness deterministically.
+# Boot starts a 'bad' run with no title menu (TASK-360/364); the language
+# button is reached through the pause screen (TASK-363).
 # Production functions, input handlers and renderers are never replaced.
 FRAME_PROBE = r"""
 window.readyProbe = {events: [], draws: 0, inputs: []};
@@ -36,11 +38,9 @@ window.setTimeout = (fn, delay, ...args) => {
 const raf = window.requestAnimationFrame.bind(window);
 window.requestAnimationFrame = fn => {
     const stack = new Error().stack;
-    // Orientation also schedules nextFrame during boot. Match the immediate
-    // caller of nextFrame, not a frame ordinal or any ancestor named boot.
+    // Match the immediate caller of nextFrame, not a frame ordinal or any
+    // ancestor named boot (gameLoop also requests frames during boot).
     const bootContinuation = /at nextFrame [^\n]*\n\s*at bootApplication /.test(stack);
-    if (document.getElementById('loading')?.hidden && stack.includes('at updateOrientation '))
-        readyProbe.events.push({name:'orientation-frame-passed', ms:performance.now(), stack});
     if (!window.frameHeld && document.getElementById('loading')?.hidden && bootContinuation) {
         window.frameHeld = true;
         readyProbe.heldStack = stack;
@@ -64,7 +64,7 @@ sendMessage(name, data) {
     record(name, data);
     if (name !== 'game_ready') return Promise.resolve();
     const event = {name:'send', ms:performance.now(), loadingHidden:document.getElementById('loading').hidden,
-        menuVisible:menu.visible, bootComplete, draws:readyProbe.draws, language:I18N.language};
+        runInProgress, bootComplete, draws:readyProbe.draws, language:I18N.language};
     readyProbe.events.push(event);
     window.sendCount = (window.sendCount || 0) + 1;
     window.activeSends = (window.activeSends || 0) + 1;
@@ -81,6 +81,13 @@ sendMessage(name, data) {
     });
 }
 """
+
+
+# Canvas centre of a button, in page coordinates
+CENTER = '''([expr, scaled]) => {
+    const b = eval(expr), s = scaled ? scale[version] : 1, r = canvas.getBoundingClientRect();
+    return {x:r.x+(b.x+b.width/2)*s*r.width/width, y:r.y+(b.y+b.height/2)*s*r.height/height};
+}'''
 
 
 class Playgama2ReadyTests(unittest.TestCase):
@@ -118,30 +125,35 @@ class Playgama2ReadyTests(unittest.TestCase):
         if gated:
             page.wait_for_function('frameHeld && readyProbe.events.some(e => e.name === "paint")')
             self.assertEqual(page.evaluate('PLATFORM.readiness.attempts'), 0)
-        point = page.evaluate('''() => {
-            const b = LANGUAGE_BUTTON.rect(), r = canvas.getBoundingClientRect();
-            return {x:r.x+(b.x+b.width/2)*r.width/width, y:r.y+(b.y+b.height/2)*r.height/height};
-        }''')
-        page.mouse.click(**point)
+        # Real clicks: HUD menu button pauses the boot run, then the pause
+        # screen's language button switches to Russian
+        page.wait_for_function('runInProgress && !unTouch')
+        page.mouse.click(**page.evaluate(CENTER, ['menu.button.background', True]))
+        page.wait_for_function('menu.gamePaused && !unTouch')
+        page.mouse.click(**page.evaluate(CENTER, ['LANGUAGE_BUTTON.rect()', False]))
         page.wait_for_function("I18N.language === 'ru'")
-        input_proof = page.evaluate("({ms:performance.now(), language:I18N.language, menu:menu.visible, loadingHidden:document.getElementById('loading').hidden, inputs:readyProbe.inputs})")
-        self.assertTrue(input_proof['menu'] and input_proof['loadingHidden'])
-        self.assertTrue(input_proof['inputs'][0]['trusted'])
-        capture = self.out / (case + '-menu.png')
+        input_proof = page.evaluate("({ms:performance.now(), language:I18N.language, version, runInProgress, paused:menu.gamePaused, loadingHidden:document.getElementById('loading').hidden, inputs:readyProbe.inputs})")
+        self.assertTrue(input_proof['runInProgress'] and input_proof['paused'] and input_proof['loadingHidden'])
+        self.assertEqual(input_proof['version'], 'bad')
+        self.assertEqual(len(input_proof['inputs']), 2)
+        self.assertTrue(all(i['trusted'] for i in input_proof['inputs']))
+        capture = self.out / (case + '-pause.png')
         subprocess.run(['import', '-window', 'root', str(capture)], env=self.env, check=True, timeout=12)
         before_release = page.evaluate('''({ms:performance.now(), readiness:PLATFORM.readiness,
-            bootComplete, menuVisible:menu.visible, menuInteractive,
+            bootComplete, runInProgress, version,
             loadingHidden:document.getElementById('loading').hidden,
             draws:readyProbe.draws, inputs:readyProbe.inputs, events:readyProbe.events,
             heldStack:readyProbe.heldStack, released:!!window.releaseReadyFrame})''')
         if gated:
             self.assertEqual(before_release['readiness']['attempts'], 0)
             self.assertFalse(before_release['readiness']['applicationReady'])
-            self.assertTrue(before_release['bootComplete'] and before_release['menuVisible']
-                            and before_release['loadingHidden'] and before_release['menuInteractive'])
+            self.assertTrue(before_release['bootComplete'] and before_release['runInProgress']
+                            and before_release['loadingHidden'])
+            self.assertEqual(before_release['version'], 'bad')
             self.assertGreater(before_release['draws'], 0)
-            self.assertTrue(any(e['name'] == 'orientation-frame-passed' for e in before_release['events']))
-            self.assertNotIn('at updateOrientation ', before_release['heldStack'])
+            # updateOrientation no longer schedules frames; only the boot
+            # continuation is held
+            self.assertRegex(before_release['heldStack'], r'at nextFrame [^\n]*\n\s*at bootApplication ')
         page.evaluate('window.releaseReadyFrame = true')
         page.wait_for_function('PLATFORM.readiness.applicationReady')
         after_release = page.evaluate('({ms:performance.now(), readiness:PLATFORM.readiness, released:!!window.releaseReadyFrame})')
@@ -184,7 +196,7 @@ class Playgama2ReadyTests(unittest.TestCase):
         else:
             self.assertTrue(any(c['name'] == 'level_paused' for c in result['calls']))
         self.assertEqual(len(errors), 0, errors)
-        self.assertTrue(all(e['loadingHidden'] and e['menuVisible'] and e['bootComplete'] and e['draws'] > 0 for e in sends))
+        self.assertTrue(all(e['loadingHidden'] and e['runInProgress'] and e['bootComplete'] and e['draws'] > 0 for e in sends))
         if gated:
             self.assertLess(input_proof['ms'], sends[0]['ms'])
             self.assertLess(next(e['ms'] for e in events if e['name']=='paint'), sends[0]['ms'])
@@ -217,7 +229,7 @@ class Playgama2ReadyTests(unittest.TestCase):
             capture={'path':capture.name, 'sha256':hashlib.sha256(capture.read_bytes()).hexdigest()},
             scheduler='direct boot nextFrame held for real input proof' if gated else 'unaltered browser scheduling')
         self.results[case] = result
-        print(f'PASS {case}: sends={expected_count} pending={expected_count} inflight={expected_count} success={len(successes)} maxActive=1; retries={delays} host_timer_late={timer_lateness}; rendered menu, hidden loading, trusted language input; no duplicate on repeated calls/init/lifecycle', flush=True)
+        print(f'PASS {case}: sends={expected_count} pending={expected_count} inflight={expected_count} success={len(successes)} maxActive=1; retries={delays} host_timer_late={timer_lateness}; rendered boot run, hidden loading, trusted pause+language input; no duplicate on repeated calls/init/lifecycle', flush=True)
         context.close()
 
     def test_immediate_success(self): self.run_case('immediate')

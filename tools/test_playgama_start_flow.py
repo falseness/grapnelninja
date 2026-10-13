@@ -2,6 +2,10 @@
 
 Before-fix characterization is preserved under artifacts/TASK-288.
 The shared offline harness blocks production analytics, SDK traffic and ads.
+
+Boot starts a 'bad' run with no title menu (TASK-360/364); classic is reached
+through the pause-screen switch (TASK-362). A trusted canvas press then throws
+the grapnel and dismisses the canvas tutorial hint (TASK-366/367).
 """
 import json
 import unittest
@@ -11,20 +15,25 @@ import test_playgama2_bridge as support
 OBSERVE = r"""
 window.startProbe = {inputs: [], frames: [], checkpoints: []};
 window.runSnapshot = () => ({ms:performance.now(), readiness:PLATFORM.readiness,
-    menu:menu.visible, version, ninja: ninja ? {x:ninja.x,y:ninja.y,speedY:ninja.speedY}:null,
+    paused:menu.gamePaused, runInProgress, version,
+    ninja: ninja ? {x:ninja.x,y:ninja.y,speedY:ninja.speedY}:null,
     floors:floors ? floors.length : 0, grapnel:!!grapnel, runOver,
-    tutorialVisible:!document.getElementById('tutorial').hidden});
+    hintVisible:TUTORIAL_HINT.visible, hintPressed:TUTORIAL_HINT.pressed});
 document.addEventListener('mousedown', e => {
     startProbe.inputs.push({ms:performance.now(), trusted:e.isTrusted, x:e.clientX,y:e.clientY});
     setTimeout(() => startProbe.checkpoints.push({name:'after-input-task', ...runSnapshot()}), 0);
 }, true);
 // Browser-boundary observation only: invoke each callback exactly once with its
 // original timestamp and preserve the browser's handle/cancellation semantics.
+// Records the first 12 unpaused gameplay frames after the last trusted input.
 const nativeRAF = window.requestAnimationFrame.bind(window);
 window.requestAnimationFrame = callback => nativeRAF(t => {
     callback(t);
-    if (typeof bootComplete !== 'undefined' && bootComplete &&
-        !menu.visible && ninja && startProbe.frames.length < 12) {
+    const after = startProbe.inputs.at(-1)?.ms;
+    if (typeof bootComplete !== 'undefined' && bootComplete && runInProgress &&
+        !menu.gamePaused && ninja && after !== undefined && performance.now() > after) {
+        startProbe.frames = startProbe.frames.filter(f => f.ms > after);
+        if (startProbe.frames.length >= 12) return;
         const frame = {name:'gameplay-frame', frameTimestamp:t, ...runSnapshot()};
         startProbe.frames.push(frame);
         console.log('START_FLOW_FRAME ' + JSON.stringify(frame));
@@ -35,7 +44,7 @@ SEND = r"""
 sendMessage(name, data) {
     record(name, data);
     if (name === 'level_started') {
-        probe.calls[probe.calls.length-1].tutorialVisible = !document.getElementById('tutorial').hidden;
+        probe.calls[probe.calls.length-1].hintVisible = TUTORIAL_HINT.visible;
     }
     if (name !== 'game_ready') return Promise.resolve();
     window.readySends = (window.readySends || 0) + 1;
@@ -86,8 +95,14 @@ class StartFlowTests(unittest.TestCase):
             page.wait_for_function('PLATFORM.readiness.attempts === 2')
         before = page.evaluate('runSnapshot()')
         try:
+            self.assertEqual((before['version'], before['runInProgress']), ('bad', True))
+            self.assertTrue(before['hintVisible'])
             support.Playgama2BridgeTests.click_mode(self, page, mode)
-            page.wait_for_function('startProbe.frames.length >= 6')
+            page.wait_for_function('!menu.gamePaused && !unTouch')
+            # The boot or switched run is shown with its hint until a press
+            self.assertTrue(page.evaluate('TUTORIAL_HINT.visible && !TUTORIAL_HINT.pressed'))
+            page.mouse.click(800, 250)
+            page.wait_for_function('TUTORIAL_HINT.pressed && startProbe.frames.length >= 6')
             initialized = page.evaluate('runSnapshot()')
             page.screenshot(path=str(self.out / (key + '-before-ready.png')))
             if case == 'late-init':
@@ -112,24 +127,35 @@ class StartFlowTests(unittest.TestCase):
             self.results[key] = result
             frames = result['probe']['frames']
             starts = [c for c in result['calls'] if c['name']=='level_started']
+            lifecycle = [(c['name'], c['data']) for c in result['calls'] if c['name'].startswith('level_')]
+            inputs = result['probe']['inputs']
             self.assertEqual(errors, [])
-            self.assertEqual(len(result['probe']['inputs']), 1)
-            self.assertTrue(result['probe']['inputs'][0]['trusted'])
-            self.assertLess(result['probe']['inputs'][0]['ms'], frames[0]['ms'])
-            self.assertTrue(all(f['ninja'] and f['grapnel'] and f['floors'] > 0 and not f['menu'] for f in frames))
+            # Classic: HUD menu button + pause switch; then the press
+            self.assertEqual(len(inputs), 3 if mode == 'classic' else 1)
+            self.assertTrue(all(i['trusted'] for i in inputs))
+            self.assertLess(inputs[-1]['ms'], frames[0]['ms'])
+            self.assertTrue(all(f['ninja'] and f['grapnel'] and f['floors'] > 0 and not f['paused']
+                                and f['version'] == mode for f in frames))
             self.assertGreater(len({(f['ninja']['x'], f['ninja']['y']) for f in frames}), 1)
-            self.assertEqual(len(starts), 1)
+            # One level_started per run, none replayed: the boot run, then the
+            # classic run that the pause switch starts
+            expected = [('level_started', {'world':'bad'})]
+            if mode == 'classic':
+                expected += [('level_paused', None), ('level_failed', {'world':'bad'}), ('level_started', {'world':'classic'})]
+            self.assertEqual([n for n, _ in lifecycle], [n for n, _ in expected])
+            self.assertEqual([d for (_, d), (_, e) in zip(lifecycle, expected) if e is not None],
+                             [e for _, e in expected if e is not None])
             self.assertEqual(result['readiness']['lifecycle']['queued'], 0)
-            self.assertFalse(after['menu'])
+            self.assertFalse(after['paused'])
             self.assertFalse(after['runOver'])
-            self.assertTrue(initialized['tutorialVisible'])
+            self.assertEqual(after['version'], mode)
+            self.assertTrue(initialized['hintPressed'])
             success = next(e['ms'] for e in result['readiness']['events'] if e['state']=='success')
+            # The queued boot level_started is delivered only after game_ready
             self.assertLessEqual(success, starts[0]['ms'])
-            if case == 'immediate':
-                self.assertFalse(starts[0]['tutorialVisible'])
-            else:
+            self.assertTrue(starts[0]['hintVisible'])
+            if case != 'immediate':
                 self.assertLess(frames[0]['ms'], success)
-                self.assertTrue(starts[0]['tutorialVisible'])
             self.assertTrue(all(r['status']==200 and (r['url']==support.SDK or r['url'].startswith(self.url)) for r in network))
             result['verdict'] = f'PASS {key}: trusted input; initialized/advancing gameplay; level_started={len(starts)}; readiness=success; no replay observed'
             print(result['verdict'], flush=True)
