@@ -348,7 +348,9 @@
             {
                 return continueOffer.visible || interstitialPending
             }
-            // Every death freezes the run and offers free restart or a mode switch.
+            // A death with a game over ad due freezes the run and offers free
+            // restart or a mode switch (the ad plays on leaving it). Any other
+            // death restarts the same mode at once, as before 8519216.
             function onLethalDeath()
             {
                 if (continueOffer.visible || ninja.isInvulnerable() || interstitialPending)
@@ -357,7 +359,22 @@
                 runOver = true
                 pauseTimeInGame()
                 PROGRESS.save()
-                continueOffer.show()
+                if (PLATFORM.isInterstitialDue())
+                {
+                    continueOffer.show()
+                    return
+                }
+                PLATFORM.sendLifecycle('level_failed', {world: version})
+                runInProgress = false
+                runOver = false
+                const shouldPause = pauseAfterAd || hostPaused || isViewRotated() || document.visibilityState === 'hidden'
+                reStart()
+                if (shouldPause)
+                {
+                    draw()
+                    menu.startPause()
+                }
+                resetPhysicsTiming()
             }
             function restartFromOffer()
             {

@@ -277,13 +277,21 @@ const PLATFORM = (function()
             return !!(bridge && bridge.advertisement.isInterstitialSupported)
         },
 
+        // A game over interstitial would be requested now: supported, no ad
+        // in progress and PLATFORM.interstitialMinGapMs since the last one
+        isInterstitialDue()
+        {
+            return !!bridge && !!bridge.advertisement.isInterstitialSupported &&
+                !interstitialBusy() &&
+                PLATFORM.now() - lastInterstitialRequestAt >= PLATFORM.interstitialMinGapMs
+        },
+
         // Resolves 'closed' | 'failed' | 'skipped' (unsupported, disabled,
         // another ad in progress, or not 'opened' in time). Never rejects.
         showInterstitial(placement = 'game_over')
         {
             if (placement !== 'game_over' || typeof runOver === 'undefined' || !runOver ||
-                !continueOffer.visible || !bridge || !bridge.advertisement.isInterstitialSupported ||
-                interstitialBusy() || PLATFORM.now() - lastInterstitialRequestAt < 120000)
+                !continueOffer.visible || !PLATFORM.isInterstitialDue())
                 return Promise.resolve('skipped')
             lastInterstitialRequestAt = PLATFORM.now()
             adBusy = true
