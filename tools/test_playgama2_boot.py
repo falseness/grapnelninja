@@ -32,12 +32,15 @@ window.requestAnimationFrame = fn => {
 window.cancelAnimationFrame = id => { loops.delete(id); cancel(id); };
 const add = EventTarget.prototype.addEventListener;
 EventTarget.prototype.addEventListener = function(name, fn, opts) {
-    if (name === 'mousedown' && fn.name === 'click' && this === document) bootProbe.inputListeners++;
+    if (name === 'mousedown' && fn.name === 'click' && this === document) {
+        // Input deadline: createEvents() attaching the game's document listener.
+        if (!bootProbe.inputListeners++) mark('input');
+    }
     return add.call(this, name, fn, opts);
 };
 new MutationObserver(() => {
     const el = document.getElementById('loading');
-    if (el && el.hidden && !bootProbe.events.some(e => e.name === 'menu')) mark('menu');
+    if (el && el.hidden && !bootProbe.events.some(e => e.name === 'loading_hidden')) mark('loading_hidden');
 }).observe(document, {subtree:true, attributes:true, attributeFilter:['hidden']});
 """
 
@@ -115,7 +118,7 @@ class Playgama2BootTests(unittest.TestCase):
                 self.assertEqual(page.evaluate('PLATFORM.environment'), 'disabled')
                 self.assertFalse(page.locator('#boot-retry').is_visible())
                 self.click_mode(page, 'classic')
-                page.evaluate("mark('input', {version, visible:menu.visible}); window.originalNinja = ninja")
+                page.evaluate("window.originalNinja = ninja")
                 self.capture(page, fault + '-input')
                 if fault in ('init_late', 'download_late'):
                     if pending:
@@ -136,9 +139,9 @@ class Playgama2BootTests(unittest.TestCase):
                 result = page.evaluate('bootProbe')
                 events = {e['name']:e['ms'] for e in result['events']}
                 result['sdk_wait_ms'] = events['disabled'] - events['sdk_start']
-                result['menu_ms'] = events['menu'] - events['sdk_start']
+                result['loading_hidden_ms'] = events['loading_hidden'] - events['sdk_start']
                 self.assertLessEqual(result['sdk_wait_ms'], 3000)
-                self.assertLessEqual(result['menu_ms'], 5000)
+                self.assertLessEqual(result['loading_hidden_ms'], 5000)
                 result['input_ms'] = events['input'] - events['sdk_start']
                 self.assertLessEqual(result['input_ms'], 5000)
                 self.assertEqual(result['maxLoops'], 1)
@@ -150,9 +153,9 @@ class Playgama2BootTests(unittest.TestCase):
                 if fault == 'download_stalled':
                     self.assertFalse(any(r['url'] == support.SDK and r['phase'] == 'response' for r in requests))
                 self.networks[fault + '-en']['verdict'] = 'PASS async SDK; local scripts HTTP 200; input works'
-                result.update(verdict='PASS SDK <=3000ms; menu <=5000ms; real input; one loop/listener', sdk=data)
+                result.update(verdict='PASS SDK <=3000ms; loading hidden <=5000ms; input attached <=5000ms; real input; one loop/listener', sdk=data)
                 self.timings[fault] = result
-                print(f"PASS {fault}: SDK={result['sdk_wait_ms']:.1f}ms menu={result['menu_ms']:.1f}ms input={result['input_ms']:.1f}ms/classic loops=1 listeners=1" + (' initialize=1 game_ready=1 subscriptions=1 each; same ninja' if data else ''), flush=True)
+                print(f"PASS {fault}: SDK={result['sdk_wait_ms']:.1f}ms loading_hidden={result['loading_hidden_ms']:.1f}ms input={result['input_ms']:.1f}ms classic=clicked loops=1 listeners=1" + (' initialize=1 game_ready=1 subscriptions=1 each; same ninja' if data else ''), flush=True)
                 for route in pending:
                     route.abort()
                 page.context.close()
@@ -172,7 +175,7 @@ class Playgama2BootTests(unittest.TestCase):
                     page.locator('#boot-retry').click()
                 support.wait_for_boot(page)
                 self.click_mode(page, 'classic')
-                page.evaluate("mark('input'); boot(); boot()")
+                page.evaluate("boot(); boot()")
                 self.capture(page, 'retry-' + lang + '-recovered')
                 result = page.evaluate('bootProbe')
                 self.assertEqual(result['maxLoops'], 1)

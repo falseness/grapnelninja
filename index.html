@@ -201,6 +201,8 @@
                     bootPromise = bootApplication().catch(error =>
                     {
                         cancelAnimationFrame(game)
+                        // Pause handlers must not draw over the retry screen
+                        bootComplete = false
                         console.error('Application boot failed', error)
                         document.getElementById('loading').hidden = false
                         setLoadingProgress(I18N.t('loading.failed'))
