@@ -34,7 +34,7 @@ class VisualGalleryTest(unittest.TestCase):
 
             names = []
             for vp in visual_gallery.VIEWPORTS:
-                names.append(f'{vp["name"]}-menu')
+                names.append(f'{vp["name"]}-boot')
                 names += [f'{vp["name"]}-{mode}-tick{tick:04d}'
                           for mode in visual_gallery.MODES for tick in visual_gallery.TICKS]
             self.assertEqual(sorted(manifest['captures']), sorted(names))
@@ -47,10 +47,9 @@ class VisualGalleryTest(unittest.TestCase):
                                  (vp['width'] * dpr, vp['height'] * dpr))
                 with Image.open(out / c['file']) as png:
                     self.assertEqual(png.size, (c['width'], c['height']))
-                if c['mode'] == 'menu':
-                    continue
                 state = c['state']
-                self.assertEqual(state['version'], c['mode'])
+                # Boot starts a 'bad' run under the tutorial hint (TASK-360/367)
+                self.assertEqual(state['version'], 'bad' if c['mode'] == 'boot' else c['mode'])
                 for key in visual_gallery.STATE_KEYS[:-1]:
                     self.assertIsInstance(state[key], (int, float), f'{name} {key}')
                     self.assertTrue(math.isfinite(state[key]), f'{name} {key}')
@@ -118,12 +117,15 @@ class VisualGalleryTest(unittest.TestCase):
                 camera_x = [state['screen.x'] for state in info['states']]
                 self.assertGreater(max(camera_x) - min(camera_x), 100,
                                    f'{mode} GIF must demonstrate camera parallax')
-            with Image.open(out / 'gif-menu.gif') as gif:
-                self.assertGreaterEqual(gif.n_frames, 30)
-                gif.seek(0)
-                first = gif.convert('RGB').tobytes()
-                gif.seek(gif.n_frames - 1)
-                self.assertNotEqual(first, gif.convert('RGB').tobytes())
+            # The boot shot replaced the title menu and its idle GIF: it shows the
+            # boot run under the full-strength tutorial hint, which the seeded
+            # first press fades out within 5 s of active play (TASK-367)
+            self.assertFalse((out / 'gif-menu.gif').exists())
+            for name, c in manifest['captures'].items():
+                if c['mode'] == 'boot':
+                    self.assertEqual(c['hint'], {'visible': True, 'alpha': 1}, name)
+                elif c['tick'] == max(visual_gallery.TICKS):
+                    self.assertFalse(c['hint']['visible'], name)
             self.assertTrue((out / 'sheet.png').exists())
 
             same = subprocess.run([sys.executable, str(TOOLS / 'visual_gallery.py'), '--compare-state',

@@ -120,6 +120,9 @@ CLOCK_SCRIPT = '''(() => {
         snap.runTimers()
         snap.fireInput(snap.tick)
         physics()
+        // As gameLoop: active game time fades the tutorial hint (TASK-367)
+        if (typeof TUTORIAL_HINT != 'undefined')
+            TUTORIAL_HINT.advance(STEP)
         draw()
     }
 })()'''

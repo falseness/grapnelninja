@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import tempfile
 import time
 import unittest
 
@@ -18,7 +19,7 @@ import test_playgama2_bridge as support
 class ProgressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ['PLAYGAMA2_EVIDENCE_DIR'])
+        cls.out = Path(os.environ.get('PLAYGAMA2_EVIDENCE_DIR') or tempfile.mkdtemp())
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(support.ROOT, cls.addClassCleanup)
         cls.results, cls.errors = {}, []
@@ -53,19 +54,14 @@ class ProgressionTests(unittest.TestCase):
                   'bounded decreasing gaps; existing groups unchanged; reset/mode isolation; resize', flush=True)
             page.context.close()
 
-    def click(self, page, expression):
-        page.wait_for_function('!unTouch')
-        point = page.evaluate('''() => {const b=''' + expression + ''';
-            return canvasCoordsToViewportCoords({x:b.x+b.width/2,y:b.y+b.height/2})}''')
-        page.mouse.click(**point)
-
     def test_input_sessions(self):
         for mode in ('classic', 'bad'):
             for score in (0, 15, 25):
                 key = f'{mode}-{score}'
                 page = self.page({'width': 1280, 'height': 720})
-                self.click(page, 'menu.' + mode + 'VersionButton.background')
-                page.locator('#tutorial button').click()
+                # Boot runs 'bad'; classic is reached through the pause switch.
+                # The canvas tutorial hint needs no dismiss click (TASK-367).
+                support.Playgama2BridgeTests.click_mode(self, page, mode)
                 # Explicit late-stage setup: retain production factories/physics/input.
                 page.evaluate('''score => {
                     scoreText.count[version]=score;

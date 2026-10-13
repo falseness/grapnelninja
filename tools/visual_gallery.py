@@ -5,14 +5,15 @@ two runs of one revision give byte-identical PNGs and identical game states.
 
 Usage: python3 tools/visual_gallery.py --rev worktree|<git rev> --out DIR
        python3 tools/visual_gallery.py --compare-state A.json B.json
---rev writes into DIR: <viewport>-menu.png and <viewport>-<mode>-tick<NNNN>.png
+--rev writes into DIR: <viewport>-boot.png (the first frame after boot: the boot
+run with the tutorial hint, or the title menu on older revisions) and <viewport>-<mode>-tick<NNNN>.png
 for desktop 1920x1080@1 and phone 844x390@3; <viewport>-<mode>-pause.png (the
 pause screen opened after the last tick, listed under 'screens': no state
 check, it runs after every state capture); gif-bad.gif and gif-classic.gif (camera
 parallax followed by labelled factory danger inspection); ember-gif-{mode}.gif (8 s fixed ember scene at 15 fps,
 native phone scale plus labelled 3x crops); phone-{mode}-embers.png; sheet.png (the reference AI cover top-left, then every capture,
-labelled); hanging-still-{mode}.gif (5 s full-scene frozen physics, live render clock); gif-menu.gif (3 s of idle menu animation); manifest.json (rev,
-viewport, mode, tick and the game state per capture).
+labelled); hanging-still-{mode}.gif (5 s full-scene frozen physics, live render clock); manifest.json (rev,
+viewport, mode, tick, the game state and the tutorial hint per capture).
 --compare-state prints one line per capture and 'differences: N' (exit 1 if N > 0).
 """
 import argparse
@@ -47,7 +48,9 @@ TICKS = [300, 900]
 # after tick 900; retain the desktop classic swing and its scrolling segment.
 # Since 8519216 (TASK-242) every death freezes on the restart offer, so the
 # classic run scrolls over ticks ~85-150 and then holds until tick ~300.
-GIF_CAPTURE = {'bad': ('phone', 900), 'classic': ('desktop', 60), 'menu': ('desktop', 0)}
+# Since the boot run (TASK-360) draws from the seeded Math.random first, the
+# phone bad run scrolls over ticks ~622-736 instead.
+GIF_CAPTURE = {'bad': ('phone', 620), 'classic': ('desktop', 60)}
 GIF_SIZE = (960, 540)
 GIF_FPS = 15
 GIF_STEP = 60 // GIF_FPS          # game ticks per GIF frame
@@ -72,12 +75,17 @@ STATE_SCRIPT = '''() => {
 }'''
 
 
+# The canvas tutorial hint (TASK-366/367); null on older revisions
+HINT_SCRIPT = '''() => typeof TUTORIAL_HINT == 'undefined' ? null :
+    {visible: TUTORIAL_HINT.visible, alpha: TUTORIAL_HINT.alpha}'''
+
+
 def git_head():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
 
 
 def capture_name(vp, mode, tick=None):
-    return f'{vp}-menu' if mode == 'menu' else f'{vp}-{mode}-tick{tick:04d}'
+    return f'{vp}-boot' if mode == 'boot' else f'{vp}-{mode}-tick{tick:04d}'
 
 
 def gif_ticks(mode):
@@ -215,7 +223,7 @@ def run(rev, out, log=print):
             script = input_script(SEED, max(TICKS), vp['width'], vp['height'])
             script += [event for event in input_script(SEED, last_tick, vp['width'], vp['height'])
                        if event['tick'] > max(TICKS)]
-            for mode in ['menu'] + MODES:
+            for mode in ['boot'] + MODES:
                 context = browser.new_context(viewport={'width': vp['width'], 'height': vp['height']},
                                               device_scale_factor=vp['dpr'],
                                               is_mobile=vp['touch'], has_touch=vp['touch'])
@@ -225,26 +233,30 @@ def run(rev, out, log=print):
                 page.on('pageerror', lambda e, n=vp['name']: errors.append(f'{n}: {e}'))
                 page.goto(url + 'index.html', wait_until='load')
                 boot_frozen(page)
-                if not page.evaluate('() => typeof menu != "undefined" && menu.visible'):
-                    raise RuntimeError('menu not visible after load')
+                # Current trees boot straight into a 'bad' run (TASK-360/364);
+                # older revisions open the title menu
+                if not page.evaluate('''() => typeof menu != "undefined" && (menu.visible ||
+                        typeof runInProgress != "undefined" && runInProgress)'''):
+                    raise RuntimeError('neither the menu nor the boot run is shown after load')
                 page.evaluate(SETUP_SCRIPT, [script, vp['touch']])
 
                 def shoot(name, tick):
                     shots[name] = png_bytes(page.evaluate('() => __snap.capture()'))
                     states[name] = {'viewport': vp['name'], 'mode': mode, 'tick': tick,
-                                    'state': page.evaluate(STATE_SCRIPT)}
+                                    'state': page.evaluate(STATE_SCRIPT), 'hint': page.evaluate(HINT_SCRIPT)}
 
-                if mode == 'menu':
+                if mode == 'boot':
+                    # The frozen clock never runs the boot run's gameLoop
+                    page.evaluate('() => menu.visible ? menu.draw() : draw()')
                     shoot(capture_name(vp['name'], mode), 0)
-                    if vp['name'] == GIF_CAPTURE['menu'][0]:
-                        frames, frame_states = [], []
-                        for tick in gif_ticks('menu'):
-                            page.evaluate('tick => { __snap.now = tick * 1000 / 60; menu.draw() }', tick)
-                            frames.append(to_gif_frame(png_bytes(page.evaluate('() => __snap.capture()'))))
-                            frame_states.append(page.evaluate(STATE_SCRIPT))
-                        gifs['menu'], gif_states['menu'] = frames, frame_states
                 else:
-                    page.evaluate('mode => startGame(mode)', mode)
+                    # A seeded tap can land on the death screen's mode switch
+                    # (TASK-361, formerly Menu): keep it in the captured mode
+                    page.evaluate('''mode => {
+                        startGame(mode)
+                        if (typeof continueOffer != 'undefined' && continueOffer.otherVersion)
+                            continueOffer.otherVersion = () => version
+                    }''', mode)
                     frames = []
                     frame_states = []
                     for tick in sorted(set(TICKS + (gif_ticks(mode) if vp['name'] == GIF_CAPTURE[mode][0] else []))):
