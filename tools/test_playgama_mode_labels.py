@@ -1,64 +1,129 @@
-"""Offline English canvas-button labels and trusted input → runtime mode proof.
+"""Mode-switch labels in en and ru, and trusted input -> runtime mode proof.
 
-MODE_LABELS_EVIDENCE_DIR selects the output directory (default artifacts/TASK-318).
+The title menu and its version buttons are gone (TASK-364): the mode labels
+live on the pause switch (menu.backToMenu) and on the death screen's
+continueOffer.switchButton, each labelled with the mode it leads to. A 'bad'
+run reads menu.chillVersion, a 'classic' run menu.mainVersion; a real click
+starts the other mode with exactly one level_started for it.
+
+Uses the fake Playgama Bridge (test_playgama2_bridge) with interstitials
+supported and a frozen interstitial clock, so a game over ad is due and the
+death screen opens. Requires Playwright Chromium. No remote requests.
+
+MODE_LABELS_EVIDENCE_DIR selects the output directory (default artifacts/TASK-392).
 """
 import json
 import os
-from pathlib import Path
 import unittest
 
-from browser_test_support import start_browser_test, wait_for_boot
-from playgama_render_compare import PROTOCOL, ROOT, SDK, FIXTURE
+from browser_test_support import start_browser_test
+from playgama_render_compare import PROTOCOL
+from test_mode_switch import BOOT_DONE, CENTER, EXTRA, KILL, PAUSE_BUTTON, ROOT, page_rect
+from test_playgama2_bridge import FAKE, SDK
+
+LABELS = {'en': {'classic': 'chill version', 'bad': 'main version'},
+          'ru': {'classic': 'спокойный режим', 'bad': 'основной режим'}}
+OTHER = {'bad': 'classic', 'classic': 'bad'}
 
 
 class ModeLabelTests(unittest.TestCase):
-    def test_english_labels_and_handlers(self):
-        url, browser = start_browser_test(ROOT, self.addCleanup)
-        out = Path(os.environ.get('MODE_LABELS_EVIDENCE_DIR', 'artifacts/TASK-318'))
-        out.mkdir(parents=True, exist_ok=True)
+    @classmethod
+    def setUpClass(cls):
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+
+    def open(self, language):
+        context = self.browser.new_context(viewport={'width': 844, 'height': 390}, locale=language)
+        self.addCleanup(context.close)
+        context.route(SDK, lambda r: r.fulfill(content_type='application/javascript', body=
+            f'const FAULT = "normal"; const SAVED_LANGUAGE = {json.dumps(language)};\n' + FAKE + EXTRA))
+        context.add_init_script("""
+            window.labelInputs = [];
+            document.addEventListener('mousedown', e => labelInputs.push({
+                type:e.type, trusted:e.isTrusted, x:e.clientX, y:e.clientY}), true);
+        """)
+        page = context.new_page()
+        page.set_default_timeout(20000)
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.goto(self.url + 'index.html')
+        page.wait_for_function(BOOT_DONE)
+        page.wait_for_function('lang => I18N.language === lang', arg=language)
+        # Frozen interstitial clock (TASK-370): no request yet, so an ad is due
+        page.evaluate('window.fakeNow = 1000000; PLATFORM.now = () => window.fakeNow')
+        return page, errors
+
+    def click(self, page, expression):
+        page.wait_for_function('!unTouch')
+        page.mouse.click(**page.evaluate(CENTER, page.evaluate(page_rect(expression))))
+
+    def messages(self, page):
+        return page.evaluate('''probe.calls.filter(c => c.name.startsWith('level_') ||
+            c.name === 'interstitial_request').map(c => [c.name, c.data ?? null])''')
+
+    # Shows the pause or death screen of the running mode; returns the switch
+    def reach(self, page, screen):
+        if screen == 'pause':
+            page.wait_for_function('!unTouch')
+            page.mouse.click(**page.evaluate(CENTER, page.evaluate(PAUSE_BUTTON)))
+            page.wait_for_function('menu.gamePaused')
+            return 'menu.backToMenu'
+        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
+        page.evaluate(KILL)
+        page.wait_for_function('continueOffer.visible && !continueOffer.adPending')
+        return 'continueOffer.switchButton'
+
+    def test_switch_labels_and_handlers(self):
         observations = []
-        for mode, label in (('classic', 'Chill'), ('bad', 'Main')):
-            with self.subTest(mode=mode):
-                context = browser.new_context(viewport={'width':844, 'height':390}, locale='en')
-                self.addCleanup(context.close)
-                context.route(SDK, lambda r: r.fulfill(content_type='application/javascript', body=FIXTURE))
-                context.add_init_script("""
-                    window.labelInputs = [];
-                    document.addEventListener('mousedown', e => labelInputs.push({
-                        type:e.type, trusted:e.isTrusted, x:e.clientX, y:e.clientY}), true);
-                """)
-                page = context.new_page()
-                errors = []
-                page.on('pageerror', lambda e: errors.append(str(e)))
-                page.goto(url + 'index.html')
-                wait_for_boot(page)
-                page.wait_for_function("menu.visible && I18N.language === 'en' && !unTouch")
-                before = page.evaluate("""mode => {
-                    const button = menu[mode+'VersionButton'];
-                    const b=button.background, r=canvas.getBoundingClientRect();
-                    return {label:button.text.text, language:I18N.language,
-                        records:scoreText.record,
-                        point:{x:r.x+(b.x+b.width/2)*r.width/width,
-                               y:r.y+(b.y+b.height/2)*r.height/height}};
-                }""", mode)
-                self.assertEqual(before['label'], label.lower() + ' version')
-                self.assertEqual(before['records'], {'classic':12, 'bad':7})
-                page.mouse.click(**before['point'])
-                page.wait_for_function('!menu.visible && !!ninja')
-                after = page.evaluate('({version, inputs:labelInputs, records:scoreText.record})')
-                self.assertEqual(after['version'], mode)
-                self.assertEqual(after['records'], before['records'])
-                self.assertEqual(len(after['inputs']), 1)
-                self.assertTrue(after['inputs'][0]['trusted'])
-                self.assertEqual(PROTOCOL['mode_labels'][after['version']], label)
+        for language, labels in LABELS.items():
+            with self.subTest(language=language):
+                page, errors = self.open(language)
+                records = page.evaluate('scoreText.record')
+                self.assertEqual(records, {'classic': 12, 'bad': 7})
+                clicks = 0
+                # Boot runs 'bad' (TASK-360): pause bad->classic, pause
+                # classic->bad, death bad->classic, death classic->bad
+                for screen in ('pause', 'pause', 'death', 'death'):
+                    mode = page.evaluate('version')
+                    target = OTHER[mode]
+                    if screen == 'death' and mode == 'classic':
+                        page.evaluate('window.fakeNow += PLATFORM.interstitialMinGapMs')
+                    before = len(self.messages(page))
+                    switch = self.reach(page, screen)
+                    clicks += screen == 'pause'
+                    label = page.evaluate(f'{switch}.text.text')
+                    key = 'menu.chillVersion' if mode == 'bad' else 'menu.mainVersion'
+                    self.assertEqual(label, labels[target])
+                    self.assertEqual(label, page.evaluate('key => I18N.t(key)', key))
+                    if language == 'en':
+                        self.assertEqual(label, PROTOCOL['mode_labels'][target].lower() + ' version')
+                    self.click(page, f'{switch}.background')
+                    clicks += 1
+                    page.wait_for_function('''want => version === want && !!ninja && !menu.gamePaused &&
+                        !continueOffer.visible && !interstitialPending''', arg=target)
+                    page.wait_for_timeout(300)
+                    after = self.messages(page)[before:]
+                    expected = ([['level_paused', None], ['level_failed', {'world': mode}],
+                                 ['level_started', {'world': target}]] if screen == 'pause' else
+                                [['level_failed', {'world': mode}], ['interstitial_request', 'game_over'],
+                                 ['level_started', {'world': target}]])
+                    self.assertEqual(after, expected)
+                    self.assertEqual(page.evaluate('version'), target)
+                    verdict = f'PASS {language} {screen} {mode}: {key}={label!r} -> {target}'
+                    observation = dict(verdict=verdict, language=language, screen=screen, mode=mode,
+                                       switch=switch, label=label, messages=after)
+                    observations.append(observation)
+                    print(verdict + '; ' + json.dumps(after, ensure_ascii=False), flush=True)
+                inputs = page.evaluate('labelInputs')
+                self.assertEqual(len(inputs), clicks)
+                self.assertTrue(all(i['trusted'] for i in inputs))
+                self.assertEqual(page.evaluate('scoreText.record'), records)
                 self.assertEqual(errors, [])
-                verdict = f'PASS {mode}={label}'
-                observation = dict(verdict=verdict, before=before, after=after,
-                    protocol_label=PROTOCOL['mode_labels'][mode], browser=browser.version, errors=errors)
-                observations.append(observation)
-                (out/'mode-labels.json').write_text(json.dumps(observations, indent=2)+'\n')
-                print(verdict + '; ' + json.dumps(observation), flush=True)
-                context.close()
+                print(f'PASS {language}: {clicks} trusted clicks, records unchanged, no page errors', flush=True)
+        out = os.environ.get('MODE_LABELS_EVIDENCE_DIR', ROOT / 'artifacts/TASK-392')
+        os.makedirs(out, exist_ok=True)
+        with open(os.path.join(out, 'mode-labels.json'), 'w') as f:
+            json.dump(observations, f, indent=2, ensure_ascii=False)
+            f.write('\n')
 
 
 if __name__ == '__main__':
