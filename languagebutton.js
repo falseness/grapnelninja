@@ -1,5 +1,6 @@
-// Language toggle in the top-left corner of the menu: a globe and the
-// current language's name in that language. A click switches to the next
+// Language toggle on the pause and death screens (bottom-left corner, clear
+// of the HUD score) and the title menu (top-left): a globe and the current
+// language's name in that language. A click switches to the next
 // language at once, re-lays out the screens and saves the choice. Drawn and
 // hit-tested in logical canvas units.
 const LANGUAGE_BUTTON =
@@ -15,16 +16,23 @@ const LANGUAGE_BUTTON =
         ctx.font = getArcadeFont(this.fontSize(size))
         const textWidth = ctx.measureText(I18N.t('language.name')).width
         ctx.restore()
-        return {x: margin, y: margin, width: size * 1.1 + textWidth + size * 0.3, height: size}
+        const y = menu.visible ? margin : height - margin - size
+        return {x: margin, y, width: size * 1.1 + textWidth + size * 0.3, height: size}
     },
     fontSize(size)
     {
         return size * 0.5
     },
+    // On the pause and death screens, never while an ad is pending
+    active()
+    {
+        return (menu.visible || menu.gamePaused || continueOffer.visible) &&
+            !continueOffer.adPending && !adOpen && !interstitialPending
+    },
     // coords: logical canvas coordinates; true when the click was taken
     click(coords)
     {
-        if (!menu.visible || menu.gamePaused)
+        if (!this.active())
             return false
         const r = this.rect()
         if (r.x < coords.x && coords.x < r.x + r.width &&

@@ -915,6 +915,7 @@ class Menu
             this.resume.drawGlow()
             this.backToMenu.drawGlow()
             this.pauseFpsCounterCheckbox.drawGlow()
+            LANGUAGE_BUTTON.drawGlow()
         })
         
         title.draw()
@@ -923,6 +924,7 @@ class Menu
         
         this.resume.draw()
         this.backToMenu.draw()
+        LANGUAGE_BUTTON.draw()
     }
     unPause()
     {
@@ -1089,6 +1091,7 @@ class ContinueOffer
         this.restartButton.draw()
         this.switchButton.draw()
         this.fpsCounterCheckbox.draw()
+        LANGUAGE_BUTTON.draw()
         ctx.restore()
     }
 }

@@ -7,11 +7,15 @@ game over interstitial, then level_started in the other mode.
 Uses the fake Playgama Bridge from test_playgama2_bridge with interstitials
 supported. Requires Playwright Chromium. No remote requests.
 
-MODE_SWITCH_EVIDENCE_DIR (default: artifacts/TASK-362) receives death-bad.png,
-death-classic.png, death-phone.png, pause-classic.png and pause-bad.png.
+MODE_SWITCH_EVIDENCE_DIR (default: artifacts/TASK-363) receives death-bad.png,
+death-classic.png, death-phone.png, pause-classic.png, pause-bad.png,
+pause-ru.png and death-ru.png.
 
 The pause screen's switch (menu.backToMenu) abandons the live run: one
 level_failed, no interstitial, then level_started in the other mode.
+
+The language button sits on the pause and death screens and relabels them in
+place; it ignores clicks while an interstitial is pending.
 """
 import json
 import os
@@ -51,6 +55,7 @@ RECTS = '''() => {
     return {restart: b(continueOffer.restartButton), switch: b(continueOffer.switchButton),
         fps: continueOffer.fpsCounterCheckbox.hitRect(), touch: minTouchSize(), width, height}
 }'''
+LANGUAGE = '(r => ({x: r.x, y: r.y, width: r.width, height: r.height}))(LANGUAGE_BUTTON.rect())'
 PAUSE_BUTTON = '''(b => ({x: b.x * scale[version], y: b.y * scale[version],
     width: b.width * scale[version], height: b.height * scale[version]}))(menu.button.background)'''
 
@@ -62,7 +67,7 @@ def page_rect(expression):
 class ModeSwitchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('MODE_SWITCH_EVIDENCE_DIR', ROOT / 'artifacts/TASK-362'))
+        cls.out = Path(os.environ.get('MODE_SWITCH_EVIDENCE_DIR', ROOT / 'artifacts/TASK-363'))
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         cls.lines = []
@@ -100,13 +105,7 @@ class ModeSwitchTests(unittest.TestCase):
     def click(self, page, rect):
         page.mouse.click(**page.evaluate(CENTER, rect))
 
-    def check_layout(self, page, name):
-        r = page.evaluate(RECTS)
-        boxes = {k: r[k] for k in ('restart', 'switch', 'fps')}
-        for key, box in boxes.items():
-            self.assertGreaterEqual(box['height'], r['touch'] - 0.01, key)
-            self.assertTrue(0 <= box['x'] and box['x'] + box['width'] <= r['width'] and
-                            0 <= box['y'] and box['y'] + box['height'] <= r['height'], (key, box))
+    def assert_apart(self, boxes):
         keys = list(boxes)
         for i, a in enumerate(keys):
             for b in keys[i + 1:]:
@@ -114,6 +113,16 @@ class ModeSwitchTests(unittest.TestCase):
                 overlap = (p['x'] < q['x'] + q['width'] and q['x'] < p['x'] + p['width'] and
                            p['y'] < q['y'] + q['height'] and q['y'] < p['y'] + p['height'])
                 self.assertFalse(overlap, (a, b, p, q))
+
+    def check_layout(self, page, name):
+        r = page.evaluate(RECTS)
+        boxes = {k: r[k] for k in ('restart', 'switch', 'fps')}
+        boxes['language'] = page.evaluate(LANGUAGE)
+        for key, box in boxes.items():
+            self.assertGreaterEqual(box['height'], r['touch'] - 0.01, key)
+            self.assertTrue(0 <= box['x'] and box['x'] + box['width'] <= r['width'] and
+                            0 <= box['y'] and box['y'] + box['height'] <= r['height'], (key, box))
+        self.assert_apart(boxes)
         page.screenshot(path=str(self.out / name))
         self.log(f'PASS layout {name}: no overlap, touch >= {r["touch"]:.1f}:',
               json.dumps({k: [round(v) for v in b.values()] for k, b in boxes.items()}))
@@ -204,6 +213,56 @@ class ModeSwitchTests(unittest.TestCase):
         self.assertEqual(after, [['level_paused', None], ['level_resumed', None]])
         self.assertTrue(page.evaluate("version === 'bad' && runInProgress && !runOver"))
         self.log('PASS second pause + Resume resumes the bad run:', json.dumps(after))
+
+
+    def test_language_on_pause(self):
+        page = self.open({'width': 1280, 'height': 720})
+        self.assertEqual(page.evaluate('[version, I18N.language]'), ['bad', 'en'])
+        chill_ru = '\u0441\u043f\u043e\u043a\u043e\u0439\u043d\u044b\u0439 \u0440\u0435\u0436\u0438\u043c'
+
+        # Pause: a real click on the language button relabels the screen in place
+        self.pause(page)
+        self.assertEqual(page.evaluate('menu.backToMenu.text.text'), 'chill version')
+        page.wait_for_function('!unTouch')
+        self.click(page, page.evaluate(LANGUAGE))
+        self.assertEqual(page.evaluate('I18N.language'), 'ru')
+        labels = page.evaluate('[menu.backToMenu.text.text, menu.resume.text.text]')
+        self.assertEqual(labels, [chill_ru, '\u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c'])
+        self.assertTrue(page.evaluate('menu.gamePaused && !menu.visible'))
+        boxes = {k: page.evaluate(self.pause_rect(k)) for k in ('resume', 'backToMenu')}
+        boxes['fps'] = page.evaluate('menu.pauseFpsCounterCheckbox.hitRect()')
+        boxes['language'] = page.evaluate(LANGUAGE)
+        self.assert_apart(boxes)
+        self.assert_apart({'panel': page.evaluate('menu.getPausePanel()'), 'language': boxes['language']})
+        page.screenshot(path=str(self.out / 'pause-ru.png'))
+        self.log('PASS pause language en -> ru, no overlap with panel/controls:', json.dumps(labels, ensure_ascii=False))
+
+        # Death: a click switches back and relabels Restart and the switch
+        page.wait_for_function('!unTouch')
+        self.click(page, page.evaluate(self.pause_rect('resume')))
+        page.wait_for_function('!menu.gamePaused')
+        self.die(page)
+        texts = '[continueOffer.restartButton.text.text, continueOffer.switchButton.text.text]'
+        ru = page.evaluate(texts)
+        self.assertEqual(ru, ['\u0417\u0430\u043d\u043e\u0432\u043e', chill_ru])
+        self.check_layout(page, 'death-ru.png')
+        page.wait_for_function('!unTouch')
+        self.click(page, page.evaluate(LANGUAGE))
+        self.assertEqual(page.evaluate('I18N.language'), 'en')
+        en = page.evaluate(texts)
+        self.assertEqual(en, ['Restart', 'chill version'])
+        self.log('PASS death language ru -> en:', json.dumps([ru, en], ensure_ascii=False))
+
+        # While the game over interstitial is pending the click is ignored
+        page.wait_for_function('!unTouch')
+        page.evaluate("leaveFinishedRun(() => startGame('bad'))")
+        self.assertTrue(page.evaluate('interstitialPending && continueOffer.adPending && continueOffer.visible'))
+        self.assertFalse(page.evaluate('LANGUAGE_BUTTON.active()'))
+        self.click(page, page.evaluate(LANGUAGE))
+        self.assertEqual(page.evaluate('I18N.language'), 'en')
+        page.wait_for_function('!interstitialPending && !continueOffer.visible')
+        self.assertEqual(page.evaluate('I18N.language'), 'en')
+        self.log('PASS interstitial pending: language click ignored')
 
 
 if __name__ == '__main__':

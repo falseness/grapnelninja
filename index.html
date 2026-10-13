@@ -599,7 +599,7 @@
                     menu.drawPauseScreen()
                 }
             }
-            // Menu toggle: switch now, re-lay out every screen, save the choice
+            // Language toggle: switch now, re-lay out every screen, save the choice
             function setLanguage(lang)
             {
                 I18N.language = lang
@@ -608,6 +608,11 @@
                 PROGRESS.save()
                 if (menu.visible)
                     menu.draw()
+                else if (menu.gamePaused)
+                {
+                    draw()
+                    menu.drawPauseScreen()
+                }
             }
             // Text in the current language everywhere: page, menu, offer
             function applyLanguage()

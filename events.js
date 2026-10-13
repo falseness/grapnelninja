@@ -47,6 +47,8 @@ function createEvents()
     function startEvent(event)
     {
         let coords = viewportCoordsToCanvasCoords(getCoords(event))
+        if (LANGUAGE_BUTTON.click(coords))
+            return true
         if (continueOffer.visible && !menu.gamePaused)
         {
             if (continueOffer.click(coords))
@@ -56,8 +58,6 @@ function createEvents()
             // The HUD menu button still opens the pause menu: Menu after a death
             return menu.clickToPause({x: coords.x / scale[version], y: coords.y / scale[version]})
         }
-        if (LANGUAGE_BUTTON.click(coords))
-            return true
         if (menu.opened())
         {
             let isButtonClicked     = false
