@@ -677,29 +677,22 @@ class Menu
             neon: true
         },
         {
-            text: I18N.t('pause.backToMenu'),
+            text: '',
             fill: STYLE.colors.ui.buttonText
         },
+        // The pause switch: abandons the live run (level_failed, no
+        // interstitial) and starts one in the other mode
         function()
         {
+            const other = version === 'bad' ? 'classic' : 'bad'
             PROGRESS.save()
-            // After a death the game over interstitial plays first
             leaveFinishedRun(function()
             {
                 menu.changeGamePause(false)
-                continueOffer.hide()
-
-                menu.setVisible(true)
-
-                menu.classicRecord.text = I18N.t('menu.record', {value: scoreText.record.classic})
-                menu.badRecord.text     = I18N.t('menu.record', {value: scoreText.record.bad})
-
-                menu.draw()
-
-                cancelAnimationFrame(game)
-                game = requestAnimationFrame(gameLoop)
+                startGame(other)
             })
         })
+        this.relabelPauseSwitch()
         this.layoutMainFpsCheckbox()
         this.compactLayout()
     }
@@ -881,8 +874,14 @@ class Menu
         this.resume.clickable                   = isPaused
         this.backToMenu.clickable               = isPaused
     }
+    // Labelled with the mode it switches to
+    relabelPauseSwitch()
+    {
+        this.backToMenu.text.text = I18N.t(version === 'bad' ? 'menu.chillVersion' : 'menu.mainVersion')
+    }
     startPause()
     {
+        this.relabelPauseSwitch()
         pauseTimeInGame()
         PROGRESS.save()
         this.timeInGame.text = I18N.t('menu.timeInGame', {minutes: getTimeInGame()})

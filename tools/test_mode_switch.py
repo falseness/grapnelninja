@@ -7,8 +7,11 @@ game over interstitial, then level_started in the other mode.
 Uses the fake Playgama Bridge from test_playgama2_bridge with interstitials
 supported. Requires Playwright Chromium. No remote requests.
 
-MODE_SWITCH_EVIDENCE_DIR (default: artifacts/TASK-361) receives death-bad.png,
-death-classic.png and death-phone.png.
+MODE_SWITCH_EVIDENCE_DIR (default: artifacts/TASK-362) receives death-bad.png,
+death-classic.png, death-phone.png, pause-classic.png and pause-bad.png.
+
+The pause screen's switch (menu.backToMenu) abandons the live run: one
+level_failed, no interstitial, then level_started in the other mode.
 """
 import json
 import os
@@ -48,12 +51,18 @@ RECTS = '''() => {
     return {restart: b(continueOffer.restartButton), switch: b(continueOffer.switchButton),
         fps: continueOffer.fpsCounterCheckbox.hitRect(), touch: minTouchSize(), width, height}
 }'''
+PAUSE_BUTTON = '''(b => ({x: b.x * scale[version], y: b.y * scale[version],
+    width: b.width * scale[version], height: b.height * scale[version]}))(menu.button.background)'''
+
+
+def page_rect(expression):
+    return f'(b => ({{x: b.x, y: b.y, width: b.width, height: b.height}}))({expression})'
 
 
 class ModeSwitchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('MODE_SWITCH_EVIDENCE_DIR', ROOT / 'artifacts/TASK-361'))
+        cls.out = Path(os.environ.get('MODE_SWITCH_EVIDENCE_DIR', ROOT / 'artifacts/TASK-362'))
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         cls.lines = []
@@ -154,6 +163,47 @@ class ModeSwitchTests(unittest.TestCase):
         self.die(page)
         self.assertEqual(page.evaluate('continueOffer.switchButton.text.text'), 'chill version')
         self.check_layout(page, 'death-phone.png')
+
+    # A real click on the HUD menu button (drawn at scale[version])
+    def pause(self, page):
+        page.wait_for_function('!unTouch')
+        self.click(page, page.evaluate(PAUSE_BUTTON))
+        page.wait_for_function('menu.gamePaused')
+
+    def pause_rect(self, name):
+        return page_rect(f'menu.{name}.background')
+
+    def test_pause_switch(self):
+        page = self.open({'width': 1280, 'height': 720})
+        page.evaluate("startGame('classic')")
+        page.wait_for_timeout(300)
+        before = len(self.messages(page))
+
+        self.pause(page)
+        self.assertEqual(page.evaluate('menu.backToMenu.text.text'), 'main version')
+        page.screenshot(path=str(self.out / 'pause-classic.png'))
+        self.click(page, page.evaluate(self.pause_rect('backToMenu')))
+        page.wait_for_function("version === 'bad' && !menu.gamePaused")
+        page.wait_for_timeout(300)
+        after = self.messages(page)[before:]
+        self.assertEqual(after, [['level_paused', None], ['level_failed', {'world': 'classic'}],
+                                 ['level_started', {'world': 'bad'}]])
+        self.assertFalse(page.evaluate("probe.calls.some(c => c.name === 'interstitial_request')"))
+        self.assertFalse(page.evaluate('menu.visible || continueOffer.visible || interstitialPending'))
+        self.log('PASS pause switch classic -> bad, no interstitial:', json.dumps(after))
+
+        # Resume keeps the same run going
+        before = len(self.messages(page))
+        self.pause(page)
+        self.assertEqual(page.evaluate('menu.backToMenu.text.text'), 'chill version')
+        page.screenshot(path=str(self.out / 'pause-bad.png'))
+        self.click(page, page.evaluate(self.pause_rect('resume')))
+        page.wait_for_function('!menu.gamePaused')
+        page.wait_for_timeout(200)
+        after = self.messages(page)[before:]
+        self.assertEqual(after, [['level_paused', None], ['level_resumed', None]])
+        self.assertTrue(page.evaluate("version === 'bad' && runInProgress && !runOver"))
+        self.log('PASS second pause + Resume resumes the bad run:', json.dumps(after))
 
 
 if __name__ == '__main__':
