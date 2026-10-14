@@ -7,7 +7,7 @@ const TUTORIAL_HINT = {
     // Fade (0..1) and seconds of active game time since the first press
     alpha: 1,
     time: 0,
-    fadeSeconds: 5,
+    fadeSeconds: 2.5,
     // The first press of this page load started the fade
     pressed: false,
     // The fade has finished: the hint stays hidden for this page load
@@ -45,7 +45,7 @@ const TUTORIAL_HINT = {
             return
         this.time = Math.min(this.fadeSeconds, this.time + ms / 1000)
         this.alpha = Math.pow(1 - this.time / this.fadeSeconds, 1.6)
-        // A float sum of whole physics steps can land just under 5 s
+        // A float sum of whole physics steps can land just under the fade length
         if (this.time >= this.fadeSeconds - 1e-9)
         {
             this.time = this.fadeSeconds

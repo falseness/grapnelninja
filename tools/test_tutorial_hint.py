@@ -5,8 +5,8 @@ drawn between the player and the HUD; a visible hint adds no shadowBlur sets
 to the main context once its sprite is built; a language change rebuilds the
 sprite once, with Russian text. test_lifecycle drives the real lifecycle on
 the manual clock from render_snapshot (one 1000/60 ms physics step per
-frame): shown from boot until the first press, then a 5 s fade of active
-game time. Deaths take the TASK-370 fast restart unless the test makes a
+frame): shown from boot until the first press, then a 2.5 s fade of active
+game time. test_fade_duration pins that length on the same clock. Deaths take the TASK-370 fast restart unless the test makes a
 game over interstitial due, which shows the death screen.
 
 Uses the fake Playgama Bridge from test_playgama2_bridge. Requires Playwright
@@ -15,7 +15,9 @@ Chromium. No remote requests.
 TUTORIAL_HINT_EVIDENCE_DIR (default: artifacts/TASK-367) receives
 hint-desktop.png, hint-mobile.png, hint-ru.png and compare.png;
 TUTORIAL_LIFECYCLE_EVIDENCE_DIR (default: artifacts/TASK-367) receives
-fade-0s.png, fade-1s.png, fade-2.5s.png, fade-4s.png and fade-5s.png.
+fade-0s.png, fade-1s.png, fade-1.25s.png, fade-2s.png and fade-2.5s.png;
+TUTORIAL_FADE_EVIDENCE_DIR (default: artifacts/TASK-411) receives
+hint-1.25s.png and hint-2.5s.png.
 """
 import json
 import os
@@ -176,9 +178,8 @@ class TutorialHintTests(unittest.TestCase):
         if page.evaluate('menu.gamePaused'):
             page.evaluate('menu.unPause()')
 
-    def test_lifecycle(self):
-        out = Path(os.environ.get('TUTORIAL_LIFECYCLE_EVIDENCE_DIR', ROOT / 'artifacts/TASK-367'))
-        out.mkdir(parents=True, exist_ok=True)
+    def open_clocked(self):
+        """The game on the manual frame clock, booted and with the hint shown."""
         context = self.browser.new_context(viewport={'width': 1920, 'height': 1080}, locale='en-US')
         self.addCleanup(context.close)
         context.add_init_script(CLOCK_SCRIPT)
@@ -193,6 +194,46 @@ class TutorialHintTests(unittest.TestCase):
         page.goto(self.url + 'index.html')
         self.frames(page, 1, until=BOOT_DONE)
         page.evaluate('() => { window.onblur = null }')
+        return page
+
+    def test_fade_duration(self):
+        out = Path(os.environ.get('TUTORIAL_FADE_EVIDENCE_DIR', ROOT / 'artifacts/TASK-411'))
+        out.mkdir(parents=True, exist_ok=True)
+        page = self.open_clocked()
+        self.assertEqual(page.evaluate('TUTORIAL_HINT.fadeSeconds'), 2.5)
+        self.assertEqual(page.evaluate(HINT), {'visible': True, 'alpha': 1, 'time': 0})
+        # Keep the run alive: a death would freeze the fade on the death screen
+        page.evaluate('() => { onLethalDeath = () => {} }')
+        page.mouse.move(1300, 250)
+        page.mouse.down()
+        self.assertTrue(page.evaluate('grapnel.throwed'))
+        # 75, 144 and 150 physics steps of 1000/60 ms
+        self.frames(page, 75)
+        page.screenshot(path=str(out / 'hint-1.25s.png'))
+        state = page.evaluate(HINT)
+        self.assertTrue(state['visible'], state)
+        self.assertAlmostEqual(state['time'], 1.25, delta=1e-6)
+        self.assertAlmostEqual(state['alpha'], 0.5 ** 1.6, delta=1e-6)
+        print(f"FADE 1.25s: alpha={state['alpha']:.9f} expected={0.5 ** 1.6:.9f} "
+              f"visible={state['visible']} time={state['time']:.9f} hint-1.25s.png", flush=True)
+        self.frames(page, 69)
+        state = page.evaluate(HINT)
+        self.assertTrue(state['visible'] and state['alpha'] > 0, state)
+        print(f"FADE 2.4s: alpha={state['alpha']:.9f} > 0 visible={state['visible']} "
+              f"time={state['time']:.9f}", flush=True)
+        self.frames(page, 6)
+        page.screenshot(path=str(out / 'hint-2.5s.png'))
+        state = page.evaluate('({visible: TUTORIAL_HINT.visible, alpha: TUTORIAL_HINT.alpha, '
+                              'time: TUTORIAL_HINT.time, done: TUTORIAL_HINT.done})')
+        self.assertEqual(state, {'visible': False, 'alpha': 0, 'time': 2.5, 'done': True})
+        print(f"FADE 2.5s: alpha={state['alpha']} visible={state['visible']} done={state['done']} "
+              f"time={state['time']} hint-2.5s.png", flush=True)
+        page.mouse.up()
+
+    def test_lifecycle(self):
+        out = Path(os.environ.get('TUTORIAL_LIFECYCLE_EVIDENCE_DIR', ROOT / 'artifacts/TASK-367'))
+        out.mkdir(parents=True, exist_ok=True)
+        page = self.open_clocked()
         self.assertIsNone(page.evaluate('document.getElementById("tutorial")'))
 
         # Boot run: full strength, the game is not blocked, nothing pressed
@@ -245,11 +286,11 @@ class TutorialHintTests(unittest.TestCase):
         page.screenshot(path=str(out / 'fade-1s.png'))
         state = page.evaluate(HINT)
         self.assertTrue(state['visible'] and state['alpha'] < 1, state)
-        self.assertAlmostEqual(state['alpha'], (1 - 1 / 5) ** 1.6, places=6)
+        self.assertAlmostEqual(state['alpha'], (1 - 1 / 2.5) ** 1.6, places=6)
         self.note('PASS fade-1s.png', state)
-        self.frames(page, 90)
-        page.screenshot(path=str(out / 'fade-2.5s.png'))
-        self.note('PASS fade-2.5s.png', page.evaluate(HINT))
+        self.frames(page, 15)
+        page.screenshot(path=str(out / 'fade-1.25s.png'))
+        self.note('PASS fade-1.25s.png', page.evaluate(HINT))
         page.mouse.up()
 
         # A 3 s pause halfway freezes the fade
@@ -258,15 +299,15 @@ class TutorialHintTests(unittest.TestCase):
         self.frames(page, 180)
         self.assertEqual(page.evaluate(HINT), before)
         page.evaluate('menu.unPause()')
-        self.note('PASS 3 s pause at t=2.5 s: hint unchanged', before)
+        self.note('PASS 3 s pause at t=1.25 s: hint unchanged', before)
 
-        self.frames(page, 90)
-        page.screenshot(path=str(out / 'fade-4s.png'))
-        self.note('PASS fade-4s.png', page.evaluate(HINT))
-        self.frames(page, 60)
-        page.screenshot(path=str(out / 'fade-5s.png'))
-        self.assertEqual(page.evaluate(HINT), {'visible': False, 'alpha': 0, 'time': 5})
-        self.note('PASS fade-5s.png: faded out after 5 s of active time', page.evaluate(HINT))
+        self.frames(page, 45)
+        page.screenshot(path=str(out / 'fade-2s.png'))
+        self.note('PASS fade-2s.png', page.evaluate(HINT))
+        self.frames(page, 30)
+        page.screenshot(path=str(out / 'fade-2.5s.png'))
+        self.assertEqual(page.evaluate(HINT), {'visible': False, 'alpha': 0, 'time': 2.5})
+        self.note('PASS fade-2.5s.png: faded out after 2.5 s of active time', page.evaluate(HINT))
 
         # After the fade neither a fast restart, the death screen's Restart
         # nor the mode switch shows it again. The last ad was requested
