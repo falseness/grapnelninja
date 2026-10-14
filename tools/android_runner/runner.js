@@ -23,7 +23,10 @@ $('start').onclick = async () => {
       await new Promise((resolve,reject) => { const timer=setTimeout(()=>reject(Error('load timeout')),15000); frame.onload=()=>{clearTimeout(timer);resolve();};frame.src=`${arm}/index.html?run=${receipt.runs.length}`; });
       const w=frame.contentWindow;
       const deadline=performance.now()+180000;
-      while (!w.eval('typeof menu !== "undefined" && menu.visible && typeof canvas !== "undefined"')) { if(performance.now()>deadline)throw Error('menu timeout');await delay(100); }
+      // Current trees boot straight into a 'bad' run (TASK-364); trees without bootComplete boot to the title menu.
+      const ready='typeof canvas !== "undefined" && (typeof bootComplete === "undefined" ? typeof menu !== "undefined" && menu.visible : bootComplete && runInProgress)';
+      while (!w.eval(ready)) { if(performance.now()>deadline)throw Error('boot run timeout');await delay(100); }
+      w.startGame(mode);
       await delay(500);
       w.eval(probe);
       const visibility=[];
@@ -32,9 +35,9 @@ $('start').onclick = async () => {
       const graphics=gl?{version:gl.getParameter(gl.VERSION),renderer:gl.getParameter(gl.RENDERER),vendor:gl.getParameter(gl.VENDOR)}:{renderer:'UNAVAILABLE'};
       const run={layout_changes:[],graphics,mode,pair,arm,build_sha256:builds[arm].zip_sha256,layout:layout(w),visibility,started_utc:new Date().toISOString()};
       w.addEventListener('resize',()=>run.layout_changes.push(layout(w)));
-      w.installProbe({mode,seed:292,inputs:Array.from({length:69},(_,i)=>({at_active_ms:(i+1)*500,type:i%2?'mouseup':'mousedown',x:650,y:100}))});
+      await w.installProbe({mode,seed:292,inputs:Array.from({length:69},(_,i)=>({at_active_ms:(i+1)*500,type:i%2?'mouseup':'mousedown',x:650,y:100}))});
       while(!w.perfReceipt.done) {if(performance.now()>deadline)throw Error('active duration timeout');await delay(100);}
-      Object.assign(run,{frames:w.perfReceipt.frames,inputs:w.perfReceipt.inputs,transitions:w.perfReceipt.transitions,end_layout:layout(w),ended_utc:new Date().toISOString()});
+      Object.assign(run,{frames:w.perfReceipt.frames,inputs:w.perfReceipt.inputs,transitions:w.perfReceipt.transitions,started_version:w.eval("version"),end_layout:layout(w),ended_utc:new Date().toISOString()});
       receipt.runs.push(run);frame.src='about:blank';
     }
     $('status').textContent='Capture complete. Download and validate JSON; completion is not performance acceptance.';
