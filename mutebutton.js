@@ -29,7 +29,11 @@ const MUTE_BUTTON = {
 MUTE_BUTTON.element.id = 'mute-button'
 MUTE_BUTTON.element.hidden = true
 MUTE_BUTTON.element.style.cssText = 'position:absolute;right:12px;bottom:12px;min-width:44px;min-height:44px;padding:8px 12px;border:2px solid #30d5c8;background:#080322;color:#bfffff;font:16px sans-serif;cursor:pointer;'
-for (const event of ['mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown'])
+// Only presses are kept from the game: a mouse drag thrown on the canvas and
+// released over the button must still reach offclick. touchend targets the
+// touchstart element, so it is stopped only for taps that began here (the
+// document's preventDefault would otherwise cancel the button's click).
+for (const event of ['mousedown', 'touchstart', 'touchend', 'keydown'])
     MUTE_BUTTON.element.addEventListener(event, e => e.stopPropagation())
 MUTE_BUTTON.element.addEventListener('click', () => MUTE_BUTTON.toggle())
 document.getElementById('stage').appendChild(MUTE_BUTTON.element)
