@@ -81,7 +81,29 @@ class RecoveryTests(unittest.TestCase):
         page.goto(self.url+'current/index.html'); support.wait_for_boot(page)
         page.evaluate("PLATFORM.track('active_play_milestone',{seconds:30,mode:'bad'})")
         support.Playgama2BridgeTests.click_mode(self,page,'bad')
-        self.assertTrue(page.evaluate('!menu.visible && bootComplete'))
+        self.assertTrue(page.evaluate('bootComplete && runInProgress && !menu.gamePaused && !continueOffer.visible && version==="bad"'))
+        self.assertEqual(errors,[])
+        ctx.close()
+
+    def test_running_state_assertions_are_not_vacuous(self):
+        # menu has no visible flag any more, so negating it was always true;
+        # the real running-state expression must flip when the run is paused
+        here, old = Path(__file__).resolve().parent, '!menu' + '.visible'
+        for name in ('test_loading_recovery.py', 'test_loading_real_sdk.py', 'test_playgama2_audio.py', 'test_playgama2_boot.py'):
+            self.assertNotIn(old, (here/name).read_text(), name)
+        ctx = self.browser.new_context()
+        ctx.route(support.SDK, lambda r:r.fulfill(content_type='application/javascript',body=
+            'const FAULT="normal",SAVED_LANGUAGE="en";'+support.FAKE))
+        page=ctx.new_page(); errors=[]
+        page.on('pageerror',lambda e:errors.append(str(e)))
+        page.goto(self.url+'current/index.html'); support.wait_for_boot(page)
+        running = 'bootComplete && runInProgress && !menu.gamePaused && !continueOffer.visible && version==="bad"'
+        page.wait_for_function('bootComplete && runInProgress')
+        self.assertIsNone(page.evaluate('menu' + '.visible'))
+        self.assertTrue(page.evaluate(running))
+        page.evaluate("emitHost('pause',true)")
+        self.assertFalse(page.evaluate(running))
+        self.assertTrue(page.evaluate(old + ' && bootComplete'))
         self.assertEqual(errors,[])
         ctx.close()
 

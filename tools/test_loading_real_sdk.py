@@ -46,7 +46,7 @@ class RealSDKTests(unittest.TestCase):
                         expected='playgama' if fault=='normal' else 'disabled'
                         self.assertEqual(page.evaluate('PLATFORM.environment'),expected)
                         support.Playgama2BridgeTests.click_mode(self,page,'bad')
-                        self.assertTrue(page.evaluate('!menu.visible && version==="bad"'))
+                        self.assertTrue(page.evaluate('bootComplete && runInProgress && !menu.gamePaused && !continueOffer.visible && version==="bad"'))
                         self.assertEqual(errors,[])
                         row=page.evaluate('({ready:PLATFORM.readiness,downloadAttempts:bridgeDownloadAttempts,mode:version,environment:PLATFORM.environment})')
                         row.update(engine=engine,fault=fault,verdict='PASS');rows.append(row)

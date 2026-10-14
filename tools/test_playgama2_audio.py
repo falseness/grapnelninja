@@ -91,9 +91,9 @@ class Playgama2AudioTests(unittest.TestCase):
         # The run (and its music request) starts at boot, before any input; the
         # AudioContext must only appear on the first trusted gesture. That gesture
         # is the real HUD-menu then pause-switch click/tap into classic.
-        self.assertTrue(page.evaluate('runInProgress && !menu.visible'))
+        self.assertTrue(page.evaluate('bootComplete && runInProgress && !continueOffer.visible && version==="bad"'))
         support.Playgama2BridgeTests.click_mode(self, page, 'classic', touch)
-        self.assertTrue(page.evaluate('runInProgress && !menu.visible && !menu.gamePaused'))
+        self.assertTrue(page.evaluate('runInProgress && !menu.gamePaused && !continueOffer.visible && version==="classic"'))
         self.assertTrue(page.evaluate('AUDIO.getState().started'))
 
     def toggle(self, page, touch):

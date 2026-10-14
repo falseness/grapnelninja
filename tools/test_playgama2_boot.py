@@ -66,7 +66,7 @@ class Playgama2BootTests(unittest.TestCase):
                        env=self.env, check=True, timeout=12)
         self.captures.append({'path': name + '.png',
             'sha256': hashlib.sha256((self.out / (name + '.png')).read_bytes()).hexdigest(),
-            'state': page.evaluate('({loadingHidden:document.getElementById("loading").hidden, retryVisible:!document.getElementById("boot-retry").hidden, menuVisible:menu.visible, version:version || null, ms:performance.now()})')})
+            'state': page.evaluate('({loadingHidden:document.getElementById("loading").hidden, retryVisible:!document.getElementById("boot-retry").hidden, runInProgress, gamePaused:menu.gamePaused, version:version || null, ms:performance.now()})')})
 
     def open_case(self, fault, lang='en'):
         context = self.browser.new_context(viewport={'width':1280, 'height':720}, locale=lang)
@@ -128,7 +128,7 @@ class Playgama2BootTests(unittest.TestCase):
                     page.wait_for_function("PLATFORM.environment === 'playgama'")
                     page.evaluate("Promise.all([boot(), boot(), PLATFORM.init(), PLATFORM.init()]); PLATFORM.gameReady()")
                     page.wait_for_timeout(150)
-                    self.assertTrue(page.evaluate('originalNinja === ninja && !menu.visible'))
+                    self.assertTrue(page.evaluate('originalNinja === ninja && runInProgress && !menu.gamePaused && !continueOffer.visible && version === "classic"'))
                     data = page.evaluate('({calls:probe.calls, subscriptions:probe.subscriptions})')
                     self.assertEqual(data['subscriptions'], {'pause':1,'audio':1,'interstitial':1,'rewarded':1})
                     for name in ['initialize','game_ready']:
