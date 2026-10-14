@@ -136,8 +136,8 @@ class FullWindowBackgroundTests(unittest.TestCase):
         page = self.boot((1920, 1080, False))
         records = page.evaluate('''() => {
             const records = {}
-            for (const scene of ['bad', 'classic', 'menu']) {
-                version = scene == 'menu' ? 'bad' : scene
+            for (const scene of ['bad', 'classic']) {
+                version = scene
                 const ops = [], proto = CanvasRenderingContext2D.prototype
                 const originals = {}
                 for (const name of ['createLinearGradient', 'createRadialGradient',
@@ -154,7 +154,7 @@ class FullWindowBackgroundTests(unittest.TestCase):
                     const c = document.createElement('canvas')
                     c.width = 1920; c.height = 1080
                     const b = new BackgroundRenderer(c.getContext('2d'), c)
-                    if (scene == 'menu') b.paintMenu(); else b.paint()
+                    b.paint()
                 } finally {
                     for (const [name, original] of Object.entries(originals)) proto[name] = original
                 }

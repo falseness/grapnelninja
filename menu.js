@@ -76,11 +76,6 @@ class Text
             y: object.alignY || 'middle'
         }
     }
-    getWidth()
-    {
-        ctx.font = this.fontSize
-        return ctx.measureText(this.text).width
-    }
     draw()
     {
         ctx.save()
@@ -473,8 +468,6 @@ class FpsCounter
         return Math.max(minX, maxX)
     }
 }
-// Menu motes: logical px, no camera
-const MENU_MOTES_VIEW = Object.freeze({unit: 1, cameraX: 0, cameraY: 0})
 // Bloom of the menu and pause controls (BloomRenderer.drawScreen)
 function drawScreenGlow(drawShapes)
 {
@@ -711,14 +704,34 @@ class Menu
         this.pauseFpsCounterCheckbox.size = boxSize
         this.pauseFpsCounterCheckbox.fontSize = getArcadeFont(fpsFontSize)
 
+        // Play time under the fps row, fitted to the panel width
+        const timeFontSize = this.getPauseTimeFontSize(panel, fpsFontSize * 0.7)
+        this.timeInGame.x = centerX
+        this.timeInGame.y = panel.y + panel.height * 0.89
+        this.timeInGame.fontSize = getArcadeFont(timeFontSize)
+
         if (!touch)
             return
         const rows = stackRows(panel.y, panel.y + panel.height, [this.getPauseTitleFontSize(panel),
-            buttonHeight, buttonHeight, this.pauseFpsCounterCheckbox.hitRect().height])
+            buttonHeight, buttonHeight, this.pauseFpsCounterCheckbox.hitRect().height, timeFontSize])
         this.pauseTitleY = rows[0]
         this.layoutPauseButton(this.resume, centerX, rows[1], buttonWidth, buttonHeight)
         this.layoutPauseButton(this.backToMenu, centerX, rows[2], buttonWidth, buttonHeight)
         this.pauseFpsCounterCheckbox.y = rows[3]
+        this.timeInGame.y = rows[4]
+    }
+    getPauseTimeFontSize(panel, preferredSize)
+    {
+        const maxWidth = panel.width * 0.9
+        ctx.save()
+        ctx.font = getArcadeFont(preferredSize)
+        const measuredWidth = ctx.measureText(this.timeInGame.text).width
+        ctx.restore()
+
+        if (measuredWidth <= maxWidth)
+            return preferredSize
+
+        return preferredSize * maxWidth / measuredWidth
     }
     click(coord)
     {
@@ -793,6 +806,7 @@ class Menu
         title.draw()
         
         this.pauseFpsCounterCheckbox.draw()
+        this.timeInGame.draw()
         
         this.resume.draw()
         this.backToMenu.draw()
@@ -815,15 +829,6 @@ class Menu
     opened()
     {
         return menu.gamePaused
-    }
-    pause()
-    {
-        /*
-        Добавь функцию clickOn/off для button
-        добавь кнопку resume и back to menu
-        добавь прыгающий куб в classic
-        */
-        
     }
 }
 // Free death choices, shared by every score and ad-support outcome:

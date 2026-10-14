@@ -1,7 +1,7 @@
 """Pause and the continue offer must freeze gameplay in gameLoop.
 
-While menu.gamePaused the loop calls menu.pause() only: no physics step and
-no world redraw over the frozen pause frame. While continueOffer.visible the
+While menu.gamePaused the loop does nothing: no physics step and no world
+redraw over the frozen pause frame (drawn once by menu.startPause). While continueOffer.visible the
 world and offer are redrawn but physics does not step.
 """
 from contextlib import ExitStack
@@ -26,10 +26,10 @@ class PauseLoopTest(unittest.TestCase):
             page.goto(url + 'index.html')
             boot_frozen(page)
             result = page.evaluate('''() => {
-                const originals = {pause: menu.pause, draw, physics, offerDraw: continueOffer.draw};
+                const originals = {pauseScreen: menu.drawPauseScreen, draw, physics, offerDraw: continueOffer.draw};
                 let counts;
                 const reset = () => counts = {pauses: 0, worlds: 0, steps: 0, offers: 0};
-                menu.pause = () => counts.pauses++;
+                menu.drawPauseScreen = () => counts.pauses++;
                 draw = () => counts.worlds++;
                 physics = () => counts.steps++;
                 continueOffer.draw = () => counts.offers++;
@@ -46,7 +46,7 @@ class PauseLoopTest(unittest.TestCase):
                     continueOffer.hide();
                     return {running, paused, resumed, offer, gamePaused: menu.gamePaused};
                 } finally {
-                    menu.pause = originals.pause;
+                    menu.drawPauseScreen = originals.pauseScreen;
                     draw = originals.draw;
                     physics = originals.physics;
                     continueOffer.draw = originals.offerDraw;
@@ -56,8 +56,8 @@ class PauseLoopTest(unittest.TestCase):
             self.assertEqual(result['running']['worlds'], 2)
             self.assertGreater(result['running']['steps'], 0)
             self.assertEqual(result['running']['pauses'], 0)
-            # Paused: only menu.pause() runs; physics and world redraw are frozen.
-            self.assertEqual(result['paused'], {'pauses': 2, 'worlds': 0, 'steps': 0, 'offers': 0})
+            # Paused: physics, world and pause-screen redraw are all frozen.
+            self.assertEqual(result['paused'], {'pauses': 0, 'worlds': 0, 'steps': 0, 'offers': 0})
             # Leaving pause returns to the stepping branch.
             self.assertFalse(result['gamePaused'])
             self.assertEqual(result['resumed']['pauses'], 0)

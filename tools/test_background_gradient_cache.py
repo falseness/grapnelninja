@@ -45,8 +45,10 @@ MENU_SCRIPT = '''frames => {
     const counts = []
     for (let i = 0; i < frames; i++) {
         const b = visualEffects.background
-        b.paintMenu()
-        b.drawWindowBars('menu', () => b.paintMenu())
+        // Trees before TASK-407 still have the title menu's paintMenu
+        const paint = () => b.paintMenu ? b.paintMenu() : b.paint()
+        paint()
+        b.drawWindowBars('menu', paint)
         counts.push(__bgGradients.frame)
         __bgGradients.frame = 0
     }

@@ -166,32 +166,9 @@ class BackgroundRenderer
         this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks))
         this.drawVignette(width, height)
     }
-    paintMenu()
-    {
-        this.clearAll()
-
-        if (!STYLE.features.background)
-            return
-
-        const width = LOGICAL_VIEWPORT.width
-        const height = LOGICAL_VIEWPORT.height
-
-        this.drawBaseGradient(width, height)
-        this.drawCrystalLayer(width, height, this.getMenuLayerShift(1))
-        this.drawHaze(width, height)
-        this.preserveGameplayRandomSequence(2, 18)
-        this.drawNearLayer(width, height, this.getMenuLayerShift(1.5))
-        this.drawVignette(width, height)
-    }
-    // Menu cave layers share the spatial camera parallax of the game.
-    // Only the ambient motes have an animation clock.
-    getMenuLayerShift(depth)
-    {
-        const layer = depth == 1 ? STYLE.caveLayers.crystals : STYLE.caveLayers.nearRocks
-        return this.getLayerShift(LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height, layer)
-    }
     // The removed decorations consumed the shared gameplay RNG once per scene
-    // per run: 40 draws in game, 18 in the menu. Keep those stream positions so
+    // per run: 40 draws in game (the title menu's 18 left with the menu,
+    // TASK-364). Keep those stream positions so
     // removing visual code cannot change obstacle layouts or seeded replays.
     // There are no stored random values or decorative objects.
     preserveGameplayRandomSequence(scene, count)

@@ -33,7 +33,7 @@ SAMPLE = r'''([scene, time, isolated, historical]) => {
                          canvas.height/LOGICAL_VIEWPORT.height,0,0);
         if (scene !== 'menu') ctx.scale(scale[version],scale[version]);
         if (scene !== 'menu') updateNeonPulse(); else neonPulse = 1;
-        const view = scene === 'menu' ? MENU_MOTES_VIEW : undefined;
+        const view = scene === 'menu' ? {unit: 1, cameraX: 0, cameraY: 0} : undefined;
         visualEffects.particles.drawAmbientMotes(view);
         if (historical) visualEffects.bloom.drawScreen(
             () => visualEffects.particles.drawAmbientMotes(view));
