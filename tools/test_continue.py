@@ -23,7 +23,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import SDK_URL
 from game_harness import collect_errors, start_game_test, switch_mode
-from test_playgama2_bridge import FAKE
+from game_test_support import FAKE
 
 ROOT = Path(__file__).resolve().parent.parent
 

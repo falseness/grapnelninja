@@ -24,7 +24,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import SDK_URL, start_browser_test, wait_for_boot
-from test_playgama2_bridge import FAKE
+from game_test_support import FAKE
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = Path(os.environ.get('FAST_RESTART_EVIDENCE_DIR', ROOT / 'artifacts/TASK-370'))

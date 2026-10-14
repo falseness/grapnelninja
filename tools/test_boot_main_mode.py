@@ -11,7 +11,7 @@ from pathlib import Path
 import unittest
 
 from browser_test_support import start_browser_test
-from test_playgama2_bridge import FAKE, SDK
+from game_test_support import FAKE, SDK
 
 ROOT = Path(__file__).resolve().parents[1]
 # Analytics recording, and an optional host pause raised once PLATFORM has

@@ -5,7 +5,7 @@ machine. The in-game "fps counter" checkbox in the menu and the steps below
 measure the player's real browser. Server headless FPS (about 6-7 FPS in the
 automated runs) does not reflect a real browser and is not used here.
 
-Nothing on this page talks to Playgama or any other service. The profiler and
+Nothing on this page talks to any other service. The profiler and
 the switches only change what is drawn and what is shown on the canvas.
 
 ## 1. Serve the repo locally

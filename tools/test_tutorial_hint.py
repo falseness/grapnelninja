@@ -26,7 +26,7 @@ import unittest
 
 from browser_test_support import start_browser_test
 from render_snapshot import CLOCK_SCRIPT
-from test_playgama2_bridge import FAKE, SDK
+from game_test_support import FAKE, SDK
 
 ROOT = Path(__file__).resolve().parents[1]
 CONCEPT = ROOT / 'artifacts/tutorial-concept'

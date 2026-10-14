@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 from browser_test_support import start_browser_test, wait_for_boot
-import test_playgama2_bridge as support
+import game_test_support as support
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = Path(os.environ.get('OBSTACLE_EVIDENCE_DIR', os.environ.get('TASK_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-046')))

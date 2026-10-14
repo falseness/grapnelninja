@@ -13,7 +13,7 @@ import unittest
 
 from browser_test_support import start_browser_test
 from playgama_firefox_perf import PROBE
-from test_playgama2_bridge import FAKE, SDK
+from game_test_support import FAKE, SDK
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTIVE_MS = int(os.environ.get('ANDROID_RUNNER_ACTIVE_MS', '1500'))

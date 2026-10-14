@@ -2,26 +2,6 @@
 <html>
     <head>
         <meta charset="UTF-8">
-        <script>
-            // Retry only a completed download failure. Never start a second
-            // copy while a slow request is still in flight.
-            window.bridgeDownloadAttempts = 1
-            function retryBridgeDownload(failed)
-            {
-                if (window.bridge || window.bridgeDownloadAttempts >= 3) return
-                const delay = window.bridgeDownloadAttempts++ * 500
-                setTimeout(function() {
-                    if (window.bridge) return
-                    const script = document.createElement('script')
-                    script.src = failed.src
-                    script.async = true
-                    script.onload = function() { document.dispatchEvent(new Event('bridge-loaded')) }
-                    script.onerror = function() { retryBridgeDownload(script) }
-                    document.head.appendChild(script)
-                }, delay)
-            }
-        </script>
-        <script async src="https://bridge.playgama.com/v2/stable/playgama-bridge.js" onload="document.dispatchEvent(new Event('bridge-loaded'))" onerror="retryBridgeDownload(this)"></script>
         <title></title>
         <link rel="icon" type="image/svg+xml" href="favicon.svg">
         <script src = "i18n.js"></script>
