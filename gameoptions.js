@@ -149,7 +149,9 @@ function configureCanvasViewport(canvas, context)
     configureStage()
     const rect = getCanvasCssRect()
     const deviceDpr = window.devicePixelRatio || 1
-    const dpr = isTouchFirstDevice() ? Math.min(deviceDpr, 2) : deviceDpr
+    // The adaptive quality (render/backdrop.js) may lower the resolution
+    const resolution = typeof BACKDROP != 'undefined' ? BACKDROP.resolution : 1
+    const dpr = (isTouchFirstDevice() ? Math.min(deviceDpr, 2) : deviceDpr) * resolution
 
     canvas.style.position = 'fixed'
     canvas.style.left = rect.left + 'px'
