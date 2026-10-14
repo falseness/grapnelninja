@@ -978,13 +978,16 @@ class Frame10ElementsFactory extends RectFactory
             width: 100 * 397 / FRAME_REFERENCE.width,
             height: 100 * 52 / FRAME_REFERENCE.height
         }
+        // The lower danger block reaches the bad-mode ground top
+        // (2 * height of a 2.2 * height world).
+        const groundTop = FRAME_REFERENCE.height * 2 / 2.2
         this.grayRects =
         [
             {
                 x: 100 * 292 / FRAME_REFERENCE.width,
                 y: 100 * 427.5 / FRAME_REFERENCE.height,
                 width: 100 * 52 / FRAME_REFERENCE.width,
-                height: 100 * 126 / FRAME_REFERENCE.height
+                height: 100 * (groundTop - 427.5) / FRAME_REFERENCE.height
             },
             {
                 x: 100 * 292 / FRAME_REFERENCE.width,
