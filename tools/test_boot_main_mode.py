@@ -35,8 +35,9 @@ class BootMainModeTests(unittest.TestCase):
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
 
-    def open(self, fault='normal'):
-        context = self.browser.new_context(viewport={'width': 1280, 'height': 720}, locale='en-US')
+    def open(self, fault='normal', **context_options):
+        options = {'viewport': {'width': 1280, 'height': 720}, **context_options}
+        context = self.browser.new_context(locale='en-US', **options)
         self.addCleanup(context.close)
         context.route(SDK, lambda route: route.fulfill(content_type='application/javascript', body=
             'const FAULT = ' + json.dumps(fault) + '; const SAVED_LANGUAGE = null;\n' + FAKE + EXTRA))
@@ -83,6 +84,28 @@ class BootMainModeTests(unittest.TestCase):
         messages = [c for c in self.calls(page) if c[0] == 'game_ready' or c[0].startswith('level_')]
         self.assertEqual(messages, [['game_ready', None], ['level_started', {'world': 'bad'}], ['level_paused', None]])
         print('PASS host-paused boot:', state, [m[0] for m in messages], flush=True)
+
+    def lifecycle_after_boot(self, page):
+        # Two more frames: a late pause would have been sent by then
+        page.evaluate('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
+        return [c[0] for c in self.calls(page) if c[0].startswith('level_')]
+
+    def test_portrait_touch_boot_starts_then_pauses_once(self):
+        page = self.open(viewport={'width': 390, 'height': 844}, has_touch=True, is_mobile=True)
+        page.wait_for_function("probe.calls.some(c => c.name === 'level_paused')")
+        state = page.evaluate('({version, rotated: isViewRotated(), paused: menu.gamePaused, inert: document.getElementById("stage").inert})')
+        self.assertEqual(state, {'version': 'bad', 'rotated': True, 'paused': True, 'inert': True})
+        levels = self.lifecycle_after_boot(page)
+        self.assertEqual(levels, ['level_started', 'level_paused'])
+        print('PASS portrait boot:', state, levels, flush=True)
+
+    def test_landscape_touch_boot_only_starts(self):
+        page = self.open(viewport={'width': 844, 'height': 390}, has_touch=True, is_mobile=True)
+        state = page.evaluate('({version, rotated: isViewRotated(), paused: menu.gamePaused})')
+        self.assertEqual(state, {'version': 'bad', 'rotated': False, 'paused': False})
+        levels = self.lifecycle_after_boot(page)
+        self.assertEqual(levels, ['level_started'])
+        print('PASS landscape boot:', state, levels, flush=True)
 
 
 if __name__ == '__main__':
