@@ -1,5 +1,6 @@
 """Build a deterministic, runtime-only ZIP directly from a committed playgama2 tree."""
 import argparse
+import base64
 import hashlib
 from html.parser import HTMLParser
 import io
@@ -62,8 +63,12 @@ def bundle(files):
             raise ValueError('Unsafe inline script terminator in ' + path)
         return '<script>\n' + source + '\n</script>'
     html = re.sub(pattern, replace, html)
+    # The SVG favicon becomes a data URI: the archive loads no other files
+    icon = r'<link\s+rel\s*=\s*"icon"\s+type\s*=\s*"image/svg\+xml"\s+href\s*=\s*"([^"]+\.svg)"\s*>'
+    html = re.sub(icon, lambda m: '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,' +
+                  base64.b64encode(files[m.group(1)]).decode() + '">', html)
     refs = References(); refs.feed(html)
-    dangling = [path for path in refs.paths if path != SDK_URL]
+    dangling = [path for path in refs.paths if path != SDK_URL and not path.startswith('data:image/svg+xml;base64,')]
     if dangling:
         # Only plain '<script src>' is inlined; anything else would ship a reference absent from the ZIP.
         raise ValueError('Unsupported local runtime references left after bundling: ' + ', '.join(dangling))

@@ -45,6 +45,12 @@ class BuilderTests(unittest.TestCase):
         packed = builder.bundle({**config, 'index.html': (head + '<script src="a.js"></script>').encode(), 'a.js': b'A()'})
         self.assertEqual(packed['index.html'].decode(), head + '<script>\nA()\n</script>')
         print('PASS plain script src inlined; SDK URL kept external')
+        icon = '<link rel="icon" type="image/svg+xml" href="favicon.svg">'
+        packed = builder.bundle({**config, 'index.html': (head + icon).encode(), 'favicon.svg': b'<svg/>'})
+        self.assertEqual(packed['index.html'].decode(),
+                         head + '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2Zy8+">')
+        self.assertNotIn('favicon.svg', packed)
+        print('PASS SVG favicon inlined as a data URI')
         for markup in ('<link rel="stylesheet" href="style.css">', '<script defer src="a.js"></script>',
                        '<script type="module" src="a.js"></script>', '<img src="a.png">'):
             files = {**config, 'index.html': (head + markup).encode(), 'a.js': b'A()', 'style.css': b'', 'a.png': b''}
