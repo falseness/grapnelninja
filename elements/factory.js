@@ -290,9 +290,16 @@ class Frame14RectFactory extends Frame5RectFactory
         super()
         // Derived from screenshots/Frame 14.svg: the right pillar stands on
         // the ground, the column hangs from the ceiling with the segment at
-        // its bottom. The pillar keeps Frame 5's doubled gap after the segment.
-        this.verticalRects[0].x = 100 * (688.5 + 116) / FRAME_REFERENCE.width
-        this.verticalRects[0].y = 100 * 287.5 / FRAME_REFERENCE.height
+        // its bottom. The pillar keeps Frame 5's doubled gap after the segment
+        // and reaches the bad-mode ground top (2 * height of a 2.2 * height world).
+        const groundTop = FRAME_REFERENCE.height * 2 / 2.2
+        this.verticalRects[0] =
+        {
+            x: 100 * (688.5 + 116) / FRAME_REFERENCE.width,
+            y: 100 * 287.5 / FRAME_REFERENCE.height,
+            width: this.verticalRects[0].width,
+            height: 100 * (groundTop - 287.5) / FRAME_REFERENCE.height
+        }
         this.verticalRects[1] =
         {
             x: 100 * 333.5 / FRAME_REFERENCE.width,
