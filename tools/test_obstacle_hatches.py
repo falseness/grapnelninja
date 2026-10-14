@@ -17,6 +17,19 @@ from render_snapshot import CLOCK_SCRIPT, boot_frozen
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENE = r'''mode => {
+    // Layers that changed on purpose since the baselines (the far tile baked
+    // with its gradient and haze, the glow levels summed before one blend:
+    // at most a few levels per channel, whole frame) are drawn the same way
+    // in both trees, so only the hatches can differ: the background as its
+    // three plain gradient fills without the crystal tiles, and no mote or
+    // player glow.
+    visualEffects.background.draw = function() {
+        const w = LOGICAL_VIEWPORT.width, h = LOGICAL_VIEWPORT.height, g = this.getGradients(w, h)
+        this.clearAll()
+        for (const style of [g.gradient, g.haze, g.vignette]) { this.ctx.fillStyle = style; this.fillAll() }
+    }
+    if (visualEffects.ambientGlow) visualEffects.ambientGlow.drawScreen = () => {};
+    if (visualEffects.playerGlow) visualEffects.playerGlow.draw = () => {};
     // Since TASK-360 the current tree boots into a 'bad' run and paints its
     // first frame; the pre-TASK-360 baseline boots to the title menu. Replay
     // that boot run on the baseline so both trees reach the scene from the

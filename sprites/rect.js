@@ -56,10 +56,15 @@ class Rect extends Element
         circle.radius = this.circle.radius
         return circle
     }
+    // The same array until the rect moves or resizes: callers only read it
+    // (trails keep earlier arrays, so a change builds a new one)
     getPoints()
     {   
         let x = this.getX()
         let y = this.getY()
+        const cache = this.pointsCache
+        if (cache && cache.x === x && cache.y === y && cache.width === this.width && cache.height === this.height)
+            return cache.points
         
         let xPlusMarginX = x + this.width
         let yPlusMarginY = y + this.height
@@ -71,6 +76,7 @@ class Rect extends Element
             {x: xPlusMarginX, y: yPlusMarginY   },
             {x: x           , y: yPlusMarginY   }
         ]
+        this.pointsCache = {x, y, width: this.width, height: this.height, points}
         
         return points
     }

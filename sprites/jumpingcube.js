@@ -145,6 +145,17 @@ class JumpingCube extends Rect
     }
 }
 
+// Scratch buffers of CubeTrackLine.writeSweptHull (8 corners, hull of at most 8)
+const CUBE_HULL = {
+    xs: new Float64Array(8), ys: new Float64Array(8),
+    order: new Int8Array(8), chain: new Int8Array(8), out: new Float64Array(16)
+}
+
+function hullCross(xs, ys, o, p, q)
+{
+    return (xs[p] - xs[o]) * (ys[q] - ys[o]) - (ys[p] - ys[o]) * (xs[q] - xs[o])
+}
+
 // Trail of cube centres drawn as the union of the squares swept between them,
 // so it matches the cube silhouette for motion in any direction.
 class CubeTrackLine extends TrackLine
@@ -155,48 +166,77 @@ class CubeTrackLine extends TrackLine
         this.width  = width
         this.height = height
     }
-    getSweptHull(a, b)
+    // Convex hull of the two squares centred on a and b, written as x, y
+    // pairs into CUBE_HULL.out; returns the vertex count. Andrew's monotone
+    // chain over the same 8 corners in the same order as before (stable
+    // sort, collinear points dropped), so every hull has the same winding,
+    // but on reused typed arrays: no allocation per trail segment.
+    writeSweptHull(a, b)
     {
         const w = this.width / 2
         const h = this.height / 2
-        const corners = []
-        for (const p of [a, b])
-            for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]])
-                corners.push({x: p.x + sx * w, y: p.y + sy * h})
-        corners.sort((p, q) => p.x - q.x || p.y - q.y)
-        // Monotone chain: every hull comes out with the same winding.
-        const cross = (o, p, q) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x)
-        const half = points =>
+        const {xs, ys, order, chain, out} = CUBE_HULL
+        let n = 0
+        for (let k = 0; k < 2; ++k)
         {
-            const chain = []
-            for (const p of points)
-            {
-                while (chain.length >= 2 && cross(chain[chain.length - 2], chain[chain.length - 1], p) <= 0)
-                    chain.pop()
-                chain.push(p)
-            }
-            chain.pop()
-            return chain
+            const p = k ? b : a
+            xs[n] = p.x - w; ys[n] = p.y - h; ++n
+            xs[n] = p.x + w; ys[n] = p.y - h; ++n
+            xs[n] = p.x + w; ys[n] = p.y + h; ++n
+            xs[n] = p.x - w; ys[n] = p.y + h; ++n
         }
-        return half(corners).concat(half(corners.slice().reverse()))
+        // Stable insertion sort by x, then y
+        for (let i = 0; i < 8; ++i)
+            order[i] = i
+        for (let i = 1; i < 8; ++i)
+        {
+            const v = order[i]
+            let j = i - 1
+            while (j >= 0 && (xs[order[j]] - xs[v] || ys[order[j]] - ys[v]) > 0)
+            {
+                order[j + 1] = order[j]
+                --j
+            }
+            order[j + 1] = v
+        }
+        let count = 0
+        for (let pass = 0; pass < 2; ++pass)
+        {
+            let length = 0
+            for (let i = 0; i < 8; ++i)
+            {
+                const p = order[pass ? 7 - i : i]
+                while (length >= 2 && hullCross(xs, ys, chain[length - 2], chain[length - 1], p) <= 0)
+                    --length
+                chain[length++] = p
+            }
+            // The chain's last point starts the other half
+            for (let i = 0; i < length - 1; ++i)
+            {
+                out[count * 2] = xs[chain[i]]
+                out[count * 2 + 1] = ys[chain[i]]
+                ++count
+            }
+        }
+        return count
     }
     draw()
     {
         if (trackEnabled && QUALITY.playerTrail && this.pos.length > 0)
         {
-            const pairs = []
-            for (let i = 0; i < this.pos.length; ++i)
-                pairs.push([this.pos[i], this.pos[Math.min(i + 1, this.pos.length - 1)]])
-            if (this.pos.length > 1)
-                pairs.pop()
+            // Segment i joins pos[i] and pos[i + 1]; a single point is one
+            // square
+            const pos = this.pos
+            const segments = pos.length > 1 ? pos.length - 1 : 1
+            const out = CUBE_HULL.out
 
             ctx.beginPath()
-            for (const [a, b] of pairs)
+            for (let i = 0; i < segments; ++i)
             {
-                const hull = this.getSweptHull(a, b)
-                ctx.moveTo(hull[0].x + screen.x, hull[0].y + screen.y)
-                for (let i = 1; i < hull.length; ++i)
-                    ctx.lineTo(hull[i].x + screen.x, hull[i].y + screen.y)
+                const count = this.writeSweptHull(pos[i], pos[Math.min(i + 1, pos.length - 1)])
+                ctx.moveTo(out[0] + screen.x, out[1] + screen.y)
+                for (let j = 1; j < count; ++j)
+                    ctx.lineTo(out[j * 2] + screen.x, out[j * 2 + 1] + screen.y)
                 ctx.closePath()
             }
             ctx.globalAlpha = STYLE.alpha.track

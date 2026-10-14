@@ -272,16 +272,21 @@ const PLATFORM = (function()
             return initPromise
         },
 
+        // The playgama.ai sandbox page runs with its ads disabled: the Bridge
+        // still reports interstitials as supported, but every request fails
+        // and the host page logs 'Playgama Ads SDK is not initialized'
+        // (wrap-host.v1.js). Never ask for one there.
         isInterstitialSupported()
         {
-            return !!(bridge && bridge.advertisement.isInterstitialSupported)
+            return !!(bridge && bridge.advertisement.isInterstitialSupported) &&
+                PLATFORM.platformId !== 'playgama_sandbox'
         },
 
         // A game over interstitial would be requested now: supported, no ad
         // in progress and PLATFORM.interstitialMinGapMs since the last one
         isInterstitialDue()
         {
-            return !!bridge && !!bridge.advertisement.isInterstitialSupported &&
+            return PLATFORM.isInterstitialSupported() &&
                 !interstitialBusy() &&
                 PLATFORM.now() - lastInterstitialRequestAt >= PLATFORM.interstitialMinGapMs
         },

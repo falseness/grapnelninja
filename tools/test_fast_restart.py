@@ -131,6 +131,26 @@ class FastRestartTests(unittest.TestCase):
         self.assertEqual(page.evaluate('probe.interstitials').count('game_over') - before, 1)
         self.assertEqual(page.evaluate('probe.interstitials.length') - before, 1)
 
+    def test_sandbox_never_requests_an_interstitial(self):
+        # The playgama.ai sandbox page runs with ads disabled: its Bridge
+        # reports interstitials as supported, but a request only makes the
+        # host page log 'Playgama Ads SDK is not initialized'
+        page = self.open()
+        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
+        page.evaluate("PLATFORM.platformId = 'playgama_sandbox'")
+        state = page.evaluate('''() => {
+            const ads = probe.interstitials.length
+            const before = {supported: PLATFORM.isInterstitialSupported(), due: PLATFORM.isInterstitialDue()}
+            scoreText.count[version] = 5
+            onLethalDeath()
+            return {...before, offer: continueOffer.visible, pending: interstitialPending,
+                running: runInProgress, score: scoreText.count[version], ads: probe.interstitials.length - ads}
+        }''')
+        print('ASSERT sandbox death:', state, flush=True)
+        self.assertEqual(state, {'supported': False, 'due': False, 'offer': False, 'pending': False,
+                                 'running': True, 'score': 0, 'ads': 0})
+        print('PASS playgama_sandbox: no interstitial requested, death restarts at once', flush=True)
+
     def test_fast_restart_when_no_ad_due(self):
         page = self.open()
         # (b) none requested yet: death screen, Restart -> one interstitial

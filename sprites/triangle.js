@@ -61,10 +61,15 @@ class Triangle extends Element
     {
         return this.getY() + this.height * (2 / 3)
     }
+    // The same array until the triangle moves or resizes: callers only read
+    // it (its trail keeps earlier arrays, so a change builds a new one)
     getPoints()
     {
         let x = this.getX()
         let y = this.getY()
+        const cache = this.pointsCache
+        if (cache && cache.x === x && cache.y === y && cache.side === this.side && cache.height === this.height)
+            return cache.points
         
         let points = 
         [
@@ -72,6 +77,7 @@ class Triangle extends Element
             {x: x + this.side / 2   , y: y - this.height * (1 / 3)},
             {x: x                   , y: y + this.height * (2 / 3)}
         ]
+        this.pointsCache = {x, y, side: this.side, height: this.height, points}
         return points
     }
     writeBounds(out)

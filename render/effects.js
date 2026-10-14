@@ -623,16 +623,6 @@ class LightmapRenderer
         this.resize()
         this.lightCtx.clearRect(0, 0, this.lightCanvas.width, this.lightCanvas.height)
         this.hasLights = false
-        this.lightBox = null
-    }
-    // Grows the lit area [left, top, right, bottom] (lightmap px) by a light
-    // drawn there; everything outside it stays transparent
-    addLightBox(left, top, right, bottom)
-    {
-        const box = this.lightBox
-        this.lightBox = box
-            ? [Math.min(box[0], left), Math.min(box[1], top), Math.max(box[2], right), Math.max(box[3], bottom)]
-            : [left, top, right, bottom]
     }
     // x, y in world-on-screen units (as drawn under ctx.scale(scale[version])),
     // radius in screen px at 1080. Lights fully off screen are skipped.
@@ -654,7 +644,6 @@ class LightmapRenderer
         lightCtx.fillStyle = this.getLightGradient(color)
         lightCtx.fillRect(-1, -1, 2, 2)
         this.hasLights = true
-        this.addLightBox(lightX - lightRadius, lightY - lightRadius, lightX + lightRadius, lightY + lightRadius)
         return true
     }
     getLightGradient(color)
@@ -741,12 +730,22 @@ class LightmapRenderer
         if ((x + w + spread) * toLight < 0 || (y + h + spread) * toLight < 0
             || (x - spread) * toLight > this.lightCanvas.width
             || (y - spread) * toLight > this.lightCanvas.height) return
-        const points = element.getPoints().map(p => ({x: p.x - box.left, y: p.y - box.top}))
         const color = this.getElementLightColor(element)
         // Translation is deliberately absent from the key: moving hazards reuse
         // their sprite. Quantization removes floating point translation noise.
-        const key = JSON.stringify([points.map(p => [p.x.toFixed(3), p.y.toFixed(3)]),
-            color, spread.toFixed(3), toLight])
+        // An element whose points, colour and scale did not change keeps its key.
+        const worldPoints = element.getPoints()
+        let lightKey = element.lightKey
+        if (!lightKey || lightKey.points !== worldPoints || lightKey.color !== color ||
+            lightKey.spread !== spread || lightKey.toLight !== toLight)
+        {
+            const relative = worldPoints.map(p => ({x: p.x - box.left, y: p.y - box.top}))
+            lightKey = element.lightKey = {points: worldPoints, color, spread, toLight, relative,
+                key: JSON.stringify([relative.map(p => [p.x.toFixed(3), p.y.toFixed(3)]),
+                    color, spread.toFixed(3), toLight])}
+        }
+        const points = lightKey.relative
+        const key = lightKey.key
         let sprite = this.shapeLights.get(key)
         if (!sprite)
         {
@@ -779,8 +778,6 @@ class LightmapRenderer
         this.lightCtx.drawImage(sprite, x - spread, y - spread,
             sprite.width / toLight, sprite.height / toLight)
         this.hasLights = true
-        this.addLightBox((x - spread) * toLight, (y - spread) * toLight,
-            (x - spread) * toLight + sprite.width, (y - spread) * toLight + sprite.height)
     }
     isCubeOrPlatform(element)
     {
@@ -813,24 +810,11 @@ class LightmapRenderer
         const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
         const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
 
-        // Only the lit part is blended: transparent lightmap pixels leave the
-        // frame unchanged, and a software canvas (Firefox) pays per pixel.
-        // Two px of padding keep the bilinear edge of the enlarged map.
-        const lightWidth = this.lightCanvas.width, lightHeight = this.lightCanvas.height
-        const box = this.lightBox || [0, 0, lightWidth, lightHeight]
-        const left = Math.max(0, Math.floor(box[0]) - 2), top = Math.max(0, Math.floor(box[1]) - 2)
-        const right = Math.min(lightWidth, Math.ceil(box[2]) + 2)
-        const bottom = Math.min(lightHeight, Math.ceil(box[3]) + 2)
-        if (right <= left || bottom <= top)
-            return
-        const toViewX = viewWidth / lightWidth, toViewY = viewHeight / lightHeight
-
         this.ctx.save()
         this.ctx.globalAlpha = STYLE.lights.worldCompositeAlpha
         this.ctx.globalCompositeOperation = STYLE.lights.compositeOperation
         this.ctx.imageSmoothingEnabled = true
-        this.ctx.drawImage(this.lightCanvas, left, top, right - left, bottom - top,
-            left * toViewX, top * toViewY, (right - left) * toViewX, (bottom - top) * toViewY)
+        this.ctx.drawImage(this.lightCanvas, 0, 0, viewWidth, viewHeight)
         this.ctx.restore()
     }
 }
@@ -1953,33 +1937,47 @@ class PlayerGlowRenderer extends BloomRenderer
         const ratio = isTouchFirstDevice() ? config.touchResolutionScale : config.resolutionScale
         let fw = Math.max(1, Math.floor(this.canvas.width * ratio))
         let fh = Math.max(1, Math.floor(this.canvas.height * ratio))
-        const full = []
+        // Per-level full-grid sizes, reused from frame to frame
+        const full = this.fullSizes || (this.fullSizes = [])
+        full.length = config.blurLevels
         for (let i = 0; i < config.blurLevels; ++i) {
-            full.push([fw, fh]); fw = Math.max(1, Math.floor(fw / 2)); fh = Math.max(1, Math.floor(fh / 2))
+            const size = full[i] || (full[i] = [0, 0])
+            size[0] = fw; size[1] = fh; fw = Math.max(1, Math.floor(fw / 2)); fh = Math.max(1, Math.floor(fh / 2))
         }
         const sx = full[0][0] / width * scale[version]
         const sy = full[0][1] / height * scale[version]
         const player = gameState.ninja
-        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
-        const include = (x, y, radius) => {
-            x += shakeOffset.x; y += shakeOffset.y
-            left = Math.min(left, (x-radius)*sx); right = Math.max(right, (x+radius)*sx)
-            top = Math.min(top, (y-radius)*sy); bottom = Math.max(bottom, (y+radius)*sy)
-        }
-        include(player.x+screen.x, player.y+screen.y, player.getRingOuterRadius())
+        // Bounds of the glow sources on the level-0 grid (inlined: a closure
+        // over these numbers would allocate on every assignment)
+        const ox = shakeOffset.x, oy = shakeOffset.y
+        const ringRadius = player.getRingOuterRadius()
+        let left = (player.x+screen.x+ox-ringRadius)*sx, right = (player.x+screen.x+ox+ringRadius)*sx
+        let top = (player.y+screen.y+oy-ringRadius)*sy, bottom = (player.y+screen.y+oy+ringRadius)*sy
         const trail = visualEffects.playerTrail
         if (trail.shouldDraw()) {
             const radius = trail.getRibbonWidth(player.track) * Math.max(1, STYLE.trails.player.headWidthRatio)
-            for (const p of player.track.pos) include(p.x+screen.x, p.y+screen.y, radius)
+            const pos = player.track.pos
+            for (let i = 0; i < pos.length; ++i) {
+                const x = pos[i].x+screen.x+ox, y = pos[i].y+screen.y+oy
+                if ((x-radius)*sx < left) left = (x-radius)*sx
+                if ((x+radius)*sx > right) right = (x+radius)*sx
+                if ((y-radius)*sy < top) top = (y-radius)*sy
+                if ((y+radius)*sy > bottom) bottom = (y+radius)*sy
+            }
         }
-        for (const p of visualEffects.particles.particles) if (p.spark)
-            include(p.x+(p.worldAnchored?screen.x:0), p.y+(p.worldAnchored?screen.y:0), p.size)
+        const particles = visualEffects.particles.particles
+        for (let i = 0; i < particles.length; ++i) {
+            const p = particles[i]
+            if (!p.spark) continue
+            const x = p.x+(p.worldAnchored?screen.x:0)+ox, y = p.y+(p.worldAnchored?screen.y:0)+oy, r = p.size
+            if ((x-r)*sx < left) left = (x-r)*sx
+            if ((x+r)*sx > right) right = (x+r)*sx
+            if ((y-r)*sy < top) top = (y-r)*sy
+            if ((y+r)*sy > bottom) bottom = (y+r)*sy
+        }
         // Four texels at the coarsest level cover the bilinear chain and halo.
         const padding = 4 * Math.max(full[0][0]/full.at(-1)[0], full[0][1]/full.at(-1)[1])
         left -= padding; top -= padding; right += padding; bottom += padding
-        this.prototypeAllocations = this.prototypeAllocations || 0
-        this.prototypeResizes = this.prototypeResizes || 0
-        const geometry = []
         for (let i = 0; i < full.length; ++i) {
             const [w,h] = full[i], rx = w/full[0][0], ry = h/full[0][1]
             const x = Math.max(0, Math.min(w-1, Math.floor(left*rx)))
@@ -1990,18 +1988,14 @@ class PlayerGlowRenderer extends BloomRenderer
             if (!this.levels[i]) {
                 const canvas = document.createElement('canvas')
                 this.levels[i] = {canvas, ctx:canvas.getContext('2d',{alpha:false})}
-                ++this.prototypeAllocations
             }
             const level = this.levels[i]
             if (level.canvas.width !== cw || level.canvas.height !== ch) {
-                level.canvas.width = cw; level.canvas.height = ch; ++this.prototypeResizes
+                level.canvas.width = cw; level.canvas.height = ch
             }
-            level.origin = [x,y]; level.full = [w,h]
-            geometry.push({old:[w,h],new:[cw,ch],origin:[x,y],scale:[rx,ry]})
+            if (!level.origin) { level.origin = [0,0]; level.full = [0,0] }
+            level.origin[0] = x; level.origin[1] = y; level.full[0] = w; level.full[1] = h
         }
-        this.prototypeGeometry = {levels:geometry, bounds:[left,top,right,bottom],padding,
-            sampling:'integer origins on original per-level grids', allocations:this.prototypeAllocations,
-            resizes:this.prototypeResizes, shake:shakeOffset, camera:{x:screen.x,y:screen.y}}
         const first = this.levels[0]
         this.renderGlow(sx,0,0,sy,shakeOffset.x*sx-first.origin[0],shakeOffset.y*sy-first.origin[1],this.drawEmissiveShapes,gameState)
         for (let i=1;i<this.levels.length;++i) {

@@ -90,11 +90,17 @@ class Trampoline extends Element
     {
         return this.x + this.leftPointX
     }
+    // The same array until the trampoline moves (its points are fixed at
+    // construction): callers only read it
     getPoints()
     {
+        const cache = this.pointsCache
+        if (cache && cache.x === this.x && cache.y === this.y)
+            return cache.points
         let res = []
         for (let i = 0; i < this.points.length; ++i)
             res.push({x: this.points[i].x + this.x, y: this.points[i].y + this.y, curvature: this.points[i].curvature})
+        this.pointsCache = {x: this.x, y: this.y, points: res}
         return res
     }
     writeBounds(out)
