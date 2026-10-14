@@ -1,8 +1,9 @@
 """URL A/B switches (render/abswitches.js, TASK-416).
 
 ?off=<name> skips that draw() layer: over 60 draw() calls its function runs
-0 times while every other layer runs 60 times (bloom only when
-STYLE.features.bloom, which draw() checks itself). Counts are spied on the
+0 times while every other layer runs 60 times. STYLE.features.bloom is off by
+default and draw() checks it itself, so the spied runs serve style.js with
+bloom on to make every layer, bloom included, run. Counts are spied on the
 original layer functions, so they are independent of the switch's no-op.
 ?scale=0.5 halves canvas.width/height versus no params while
 clientWidth/clientHeight stay equal, and a tap still throws the grapnel.
@@ -38,6 +39,10 @@ LAYERS = {
 }
 FRAMES = 60
 VIEWPORT = {'width': 844, 'height': 390}
+
+# draw() only calls drawBloomLayer with the (frozen) feature on.
+BLOOM_OFF = '        bloom: false,\n        ambient:'
+BLOOM_ON = '        bloom: true,\n        ambient:'
 
 # Prepended to render/abswitches.js: wraps the original layer functions
 # right before the switch replaces any of them, so a skipped layer counts 0.
@@ -82,6 +87,10 @@ class AbSwitchesTest(unittest.TestCase):
             body = SPY_PREFIX % json.dumps(LAYERS) + source
             page.route('**/render/abswitches.js', lambda route: route.fulfill(
                 content_type='application/javascript', body=body))
+            style = (ROOT / 'style.js').read_text()
+            self.assertEqual(style.count(BLOOM_OFF), 1)
+            page.route('**/style.js', lambda route: route.fulfill(
+                content_type='application/javascript', body=style.replace(BLOOM_OFF, BLOOM_ON)))
         page.goto(self.url + 'index.html' + query)
         wait_for_boot(page)
         page.wait_for_function(READY)
@@ -102,8 +111,9 @@ class AbSwitchesTest(unittest.TestCase):
                 page, warnings = self.open('?off=' + name, spy=True)
                 page.evaluate('() => { TUTORIAL_HINT.visible = true }')
                 bloom = page.evaluate('() => STYLE.features.bloom')
+                self.assertTrue(bloom)
                 calls = self.count_layer_calls(page)
-                expected = {n: FRAMES for n in LAYERS if n != name and (n != 'bloom' or bloom)}
+                expected = {n: FRAMES for n in LAYERS if n != name}
                 actual = {n: calls.get(n, 0) for n in LAYERS}
                 print(f'off={name}: {name}={actual[name]} others={dict((n, actual[n]) for n in LAYERS if n != name)}'
                       f' (bloom feature={bloom})', flush=True)
