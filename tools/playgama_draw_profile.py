@@ -35,8 +35,7 @@ TIMERS = r'''() => {
  };
  for (const key of Object.keys(window).filter(k=>/^draw.*Layer$/.test(k)))
    wrap(window,key,key);
- for (const key of ['draw','paint','clearAll','drawBaseGradient','drawCrystalLayer',
-                    'drawHaze','drawNearLayer','drawVignette'])
+ for (const key of ['draw','paint','clearAll','drawCrystalLayer','drawNearLayer','drawVignette'])
    wrap(visualEffects.background,key,'background.'+key);
  for (const key of ['drawScreen','resize','renderGlow','blur','composite'])
    wrap(visualEffects.ambientGlow,key,'ambient.'+key);

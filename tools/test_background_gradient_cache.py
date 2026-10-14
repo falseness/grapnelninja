@@ -2,7 +2,7 @@
 
 The game runs on render_snapshot's frozen clock (844x390@3, touch). An init
 script counts every createLinearGradient / createRadialGradient call made from
-the background's drawBaseGradient, drawHaze or drawVignette, per frame. The cache must
+the background's gradient cache (buildGradients), per frame. The cache must
 create 3 gradients (base, haze, vignette) on the first background frame (the menu drawn at load), none
 on the next 100 menu frames and 101 game frames, and rebuild them once (3)
 after the canvas size changes. Gradients from any caller (lights,
@@ -24,7 +24,9 @@ WARMUP_FRAMES = 2
 VIEWPORT = render_snapshot.VIEWPORTS[0]
 
 # Init script: counts gradient creations whose caller is the background's
-# drawBaseGradient/drawHaze/drawVignette (directly or via a helper), from page load on.
+# gradient cache (buildGradients, directly or via a helper), from page load on.
+# The baked far tile's own gradients are built once per tile size and fall
+# under the any-caller count.
 COUNT_SCRIPT = '''(() => {
     const counter = window.__bgGradients = {frame: 0, all: 0}
     for (const name of ['createLinearGradient', 'createRadialGradient']) {
@@ -32,7 +34,7 @@ COUNT_SCRIPT = '''(() => {
         CanvasRenderingContext2D.prototype[name] = function (...args) {
             // Hazard trails deliberately build a gradient from moving endpoints.
             if (!/CubeTrackLine\\.draw /.test(new Error().stack)) counter.all++
-            if (/\\.(drawBaseGradient|drawHaze|drawVignette) /.test(new Error().stack)) counter.frame++
+            if (/\\.buildGradients /.test(new Error().stack)) counter.frame++
             return original.apply(this, args)
         }
     }
@@ -123,8 +125,9 @@ class BackgroundGradientCacheTest(unittest.TestCase):
 
     def test_first_frame_builds_all(self):
         self.assertEqual(self.r['load'], 3)
-        # Base, haze, vignette plus two warmed ninja sprites; no legacy washes.
-        self.assertEqual(self.r['load_all'], 5)
+        # Base, haze, vignette, the baked far tile's base and haze, plus two
+        # warmed ninja sprites; no legacy washes.
+        self.assertEqual(self.r['load_all'], 7)
 
     def test_next_frames_build_none(self):
         self.assertEqual(self.r['menu'], [0] * FRAMES)

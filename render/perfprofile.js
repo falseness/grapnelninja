@@ -31,12 +31,12 @@ if (new URLSearchParams(location.search).get('perf') === '1')
         const frameTimes = new Float64Array(WINDOW)
         let frames = 0
 
-        function wrap(name, globalName)
+        function wrap(name, globalName, owner = window)
         {
-            const fn = window[globalName]
+            const fn = owner[globalName]
             const entry = {name, samples: new Float64Array(WINDOW), count: 0}
             entries.push(entry)
-            window[globalName] = function()
+            owner[globalName] = function()
             {
                 const start = performance.now()
                 try
@@ -52,6 +52,9 @@ if (new URLSearchParams(location.search).get('perf') === '1')
 
         for (const name in LAYERS)
             wrap(name, LAYERS[name])
+        // Mote glow and copy of the reduced backdrop (render/backdrop.js);
+        // no samples while the frame is at full quality
+        wrap('backdrop', 'end', BACKDROP)
 
         // The game loop and its physics step live in index.html's inline
         // script, which has run by DOMContentLoaded

@@ -63,6 +63,12 @@ Notes:
   warning in the console (F12 → Console).
 - Switching a layer off makes the game look wrong on purpose; it is only
   there to see how much that layer costs.
+- Adaptive backdrop (render/backdrop.js): when frames stay slower than about
+  45 FPS for 2 s after a 5 s warm-up, the background, the obstacle light spill
+  and the mote glow are drawn at half resolution into one offscreen canvas.
+  `backdrop=1` added to any URL above keeps full quality (turns the switch
+  off), `backdrop=0.5` forces the fast backdrop from the first frame. After
+  10 s, `BACKDROP.scale` in the console tells which one is running (1 or 0.5).
 
 ## 3. Reading the overlay
 
@@ -141,6 +147,8 @@ Direct2D:
 
 ## 6. What happens next
 
-Optimization tickets will be cut after you report these numbers. Which
-layers they target, and whether lowering the resolution is worth it,
-depends on what your Firefox shows.
+The first Firefox optimizations are in: the far crystals are baked with the
+base gradient and the haze into one tile, the mote and player glow levels are
+added on their small canvases before one full-frame blend, the light spill
+blends only its lit area, and the adaptive backdrop above. Further work
+depends on what your Firefox shows with them.

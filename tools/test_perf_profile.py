@@ -78,14 +78,15 @@ class PerfProfileTest(unittest.TestCase):
         self.assertGreaterEqual(snap['frames'], MIN_FRAMES)
         self.assertTrue(math.isfinite(snap['rafFps']) and snap['rafFps'] > 0)
         names = [e['name'] for e in snap['entries']]
-        self.assertEqual(sorted(names), sorted(LAYERS + ['update']))
+        self.assertEqual(sorted(names), sorted(LAYERS + ['update', 'backdrop']))
         for e in snap['entries']:
             for key in ('meanMs', 'p95Ms'):
                 self.assertTrue(math.isfinite(e[key]) and e[key] >= 0, (e['name'], key, e[key]))
             self.assertTrue(0 <= e['samples'] <= 120, e)
         means = [e['meanMs'] for e in snap['entries']]
         self.assertEqual(means, sorted(means, reverse=True))
-        drawn = {e['name'] for e in snap['entries'] if e['samples']}
+        # The adaptive backdrop may or may not have switched on in this browser
+        drawn = {e['name'] for e in snap['entries'] if e['samples']} - {'backdrop'}
         bloom_on = page.evaluate('() => STYLE.features.bloom')
         self.assertEqual(drawn, set(LAYERS + ['update']) - (set() if bloom_on else {'bloom'}))
         print(f'bloom feature={bloom_on}; entries with samples: {sorted(drawn)}', flush=True)

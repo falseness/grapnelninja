@@ -132,6 +132,10 @@ function warmGlowSprites()
 function draw()
 {
     ++drawFrameId
+    BACKDROP.observe(performance.now())
+    // Slow canvases: background, light spill and mote glow go into the
+    // reduced-resolution backdrop (render/backdrop.js)
+    const backdrop = BACKDROP.begin()
     drawBackgroundLayer()
 
     ctx.scale(scale[version], scale[version])
@@ -139,8 +143,12 @@ function draw()
     const gameState = visualEffects.getGameState()
     updateNeonPulse()
     visualEffects.screenEffects.begin(gameState)
+    if (backdrop)
+        BACKDROP.syncTransform()
 
     drawLightsLayer(gameState)
+    if (backdrop)
+        BACKDROP.end()
     drawBehindForegroundParticlesLayer(gameState)
     drawPlayerTrailLayer(gameState)
     drawWorldLayer()

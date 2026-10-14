@@ -159,9 +159,8 @@ class BackgroundRenderer
 
         const caveLayers = STYLE.caveLayers
 
-        this.drawBaseGradient(width, height)
+        // Base gradient, far crystals and haze come baked in one opaque tile
         this.drawCrystalLayer(width, height, this.getLayerShift(width, height, caveLayers.crystals))
-        this.drawHaze(width, height)
         this.preserveGameplayRandomSequence(1, 40)
         this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks))
         this.drawVignette(width, height)
@@ -222,18 +221,7 @@ class BackgroundRenderer
     {
 
         const background = STYLE.colors.background
-        const gradient = this.ctx.createLinearGradient(0, 0, 0, height)
-        gradient.addColorStop(0, background.gradientTop)
-        gradient.addColorStop(0.54, background.gradientMiddle)
-        gradient.addColorStop(1, background.gradientBottom)
-
-        // Between the far crystals and the near rocks
-        const haze = this.ctx.createLinearGradient(0, 0, 0, height)
-        haze.addColorStop(0, background.hazeTop)
-        haze.addColorStop(0.24, background.hazeUpper)
-        haze.addColorStop(0.5, background.hazeMiddle)
-        haze.addColorStop(0.74, background.hazeLower)
-        haze.addColorStop(1, background.hazeBottom)
+        const {gradient, haze} = this.createVerticalGradients(this.ctx, height)
 
         const radius = Math.sqrt(width * width + height * height) * 0.58
         const innerRadius = radius * 0.18
@@ -272,15 +260,23 @@ class BackgroundRenderer
         this.gradientCache.set(key, entry)
         return entry
     }
-    drawBaseGradient(width, height)
+    // The base gradient and the haze (between the far crystals and the near
+    // rocks), top to bottom over height
+    createVerticalGradients(ctx, height)
     {
-        this.ctx.fillStyle = this.getGradients(width, height).gradient
-        this.fillAll()
-    }
-    drawHaze(width, height)
-    {
-        this.ctx.fillStyle = this.getGradients(width, height).haze
-        this.fillAll()
+        const background = STYLE.colors.background
+        const gradient = ctx.createLinearGradient(0, 0, 0, height)
+        gradient.addColorStop(0, background.gradientTop)
+        gradient.addColorStop(0.54, background.gradientMiddle)
+        gradient.addColorStop(1, background.gradientBottom)
+
+        const haze = ctx.createLinearGradient(0, 0, 0, height)
+        haze.addColorStop(0, background.hazeTop)
+        haze.addColorStop(0.24, background.hazeUpper)
+        haze.addColorStop(0.5, background.hazeMiddle)
+        haze.addColorStop(0.74, background.hazeLower)
+        haze.addColorStop(1, background.hazeBottom)
+        return {gradient, haze}
     }
     drawVignette(width, height)
     {
@@ -514,11 +510,27 @@ class BackgroundRenderer
         ctx.fillRect(0, 0, width, height * 0.012)
         ctx.fillRect(0, height * 0.988, width, height * 0.012)
     }
+    // The base gradient and the haze are vertical, so they are baked into
+    // the far tile with it (one drawImage instead of two full-frame gradient
+    // fills, which software canvases such as Firefox's pay per pixel). They
+    // follow the tile's small vertical parallax; the uncovered edge rows get
+    // the rock colour and the haze as before.
     drawCrystalLayer(width, height, shift)
     {
-        const layer = this.getLayerTile('far', width, height, STYLE.caveLayers.crystals,
+        const far = this.getLayerTile('far', width, height, STYLE.caveLayers.crystals,
             (...args) => this.paintCrystalTile(...args))
-        this.drawLayerTile(layer, width, height, shift, STYLE.colors.background.crystalRock)
+        const baked = this.getLayerTile('farBaked', width, height, STYLE.caveLayers.crystals,
+            (ctx, w, h) =>
+            {
+                const gradients = this.createVerticalGradients(ctx, h)
+                ctx.fillStyle = gradients.gradient
+                ctx.fillRect(0, 0, w, h)
+                ctx.drawImage(far.canvas, 0, 0, w, h)
+                ctx.fillStyle = gradients.haze
+                ctx.fillRect(0, 0, w, h)
+            })
+        this.drawLayerTile(baked, width, height, shift, STYLE.colors.background.crystalRock,
+            this.getGradients(width, height).haze)
     }
     drawNearLayer(width, height, shift)
     {
@@ -529,7 +541,7 @@ class BackgroundRenderer
     // Tiles a layer across fillBounds() at shift. Tile edges are snapped to
     // device pixels so neighbouring copies neither overlap nor leave a gap;
     // edgeFill covers what the shifted tile leaves uncovered above and below
-    drawLayerTile(layer, width, height, shift, edgeFill)
+    drawLayerTile(layer, width, height, shift, edgeFill, edgeOverlay)
     {
         const bounds = this.fillBounds()
         const transform = this.ctx.getTransform()
@@ -547,11 +559,17 @@ class BackgroundRenderer
             ++k
         }
 
-        this.ctx.fillStyle = edgeFill
+        const edges = []
         if (bounds.y < shift.y)
-            this.ctx.fillRect(bounds.x, bounds.y, bounds.width, shift.y - bounds.y)
+            edges.push([bounds.x, bounds.y, bounds.width, shift.y - bounds.y])
         if (shift.y + height < bounds.y + bounds.height)
-            this.ctx.fillRect(bounds.x, shift.y + height, bounds.width, bounds.y + bounds.height - shift.y - height)
+            edges.push([bounds.x, shift.y + height, bounds.width, bounds.y + bounds.height - shift.y - height])
+        for (const style of edgeOverlay ? [edgeFill, edgeOverlay] : [edgeFill])
+        {
+            this.ctx.fillStyle = style
+            for (const edge of edges)
+                this.ctx.fillRect(...edge)
+        }
     }
 }
 
@@ -605,6 +623,16 @@ class LightmapRenderer
         this.resize()
         this.lightCtx.clearRect(0, 0, this.lightCanvas.width, this.lightCanvas.height)
         this.hasLights = false
+        this.lightBox = null
+    }
+    // Grows the lit area [left, top, right, bottom] (lightmap px) by a light
+    // drawn there; everything outside it stays transparent
+    addLightBox(left, top, right, bottom)
+    {
+        const box = this.lightBox
+        this.lightBox = box
+            ? [Math.min(box[0], left), Math.min(box[1], top), Math.max(box[2], right), Math.max(box[3], bottom)]
+            : [left, top, right, bottom]
     }
     // x, y in world-on-screen units (as drawn under ctx.scale(scale[version])),
     // radius in screen px at 1080. Lights fully off screen are skipped.
@@ -626,6 +654,7 @@ class LightmapRenderer
         lightCtx.fillStyle = this.getLightGradient(color)
         lightCtx.fillRect(-1, -1, 2, 2)
         this.hasLights = true
+        this.addLightBox(lightX - lightRadius, lightY - lightRadius, lightX + lightRadius, lightY + lightRadius)
         return true
     }
     getLightGradient(color)
@@ -750,6 +779,8 @@ class LightmapRenderer
         this.lightCtx.drawImage(sprite, x - spread, y - spread,
             sprite.width / toLight, sprite.height / toLight)
         this.hasLights = true
+        this.addLightBox((x - spread) * toLight, (y - spread) * toLight,
+            (x - spread) * toLight + sprite.width, (y - spread) * toLight + sprite.height)
     }
     isCubeOrPlatform(element)
     {
@@ -782,11 +813,24 @@ class LightmapRenderer
         const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
         const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
 
+        // Only the lit part is blended: transparent lightmap pixels leave the
+        // frame unchanged, and a software canvas (Firefox) pays per pixel.
+        // Two px of padding keep the bilinear edge of the enlarged map.
+        const lightWidth = this.lightCanvas.width, lightHeight = this.lightCanvas.height
+        const box = this.lightBox || [0, 0, lightWidth, lightHeight]
+        const left = Math.max(0, Math.floor(box[0]) - 2), top = Math.max(0, Math.floor(box[1]) - 2)
+        const right = Math.min(lightWidth, Math.ceil(box[2]) + 2)
+        const bottom = Math.min(lightHeight, Math.ceil(box[3]) + 2)
+        if (right <= left || bottom <= top)
+            return
+        const toViewX = viewWidth / lightWidth, toViewY = viewHeight / lightHeight
+
         this.ctx.save()
         this.ctx.globalAlpha = STYLE.lights.worldCompositeAlpha
         this.ctx.globalCompositeOperation = STYLE.lights.compositeOperation
         this.ctx.imageSmoothingEnabled = true
-        this.ctx.drawImage(this.lightCanvas, 0, 0, viewWidth, viewHeight)
+        this.ctx.drawImage(this.lightCanvas, left, top, right - left, bottom - top,
+            left * toViewX, top * toViewY, (right - left) * toViewX, (bottom - top) * toViewY)
         this.ctx.restore()
     }
 }
@@ -1279,7 +1323,7 @@ class ParticleSystem
         ctx.restore()
         // Restore only the motes' historical bloom, without reviving world or
         // control bloom. The glow pass calls back here with recursion guarded.
-        if (!bloomPassActive)
+        if (!bloomPassActive && BACKDROP.glowFrame !== drawFrameId)
             visualEffects.ambientGlow.drawScreen(() => this.drawAmbientMotes(view))
     }
     getFrameMoteLayout(motes)
@@ -1849,6 +1893,49 @@ class AmbientGlowRenderer extends BloomRenderer
     {
         return visualEffects.particles.shouldDrawAmbientMotes()
     }
+    // The blur levels are added together at glow resolution first, so the
+    // frame gets one upscaled full-frame draw instead of one per level (a
+    // software canvas such as Firefox's pays each of them per pixel). The
+    // levels are added either way ('lighter'), so the sum is the same.
+    composite(player, exclusionRadiusRatio)
+    {
+        const config = this.getConfig()
+        if (player || config.compositeOperation !== 'lighter')
+            return super.composite(player, exclusionRadiusRatio)
+
+        const glow = this.levels[0].canvas
+        if (!this.sum)
+        {
+            const canvas = document.createElement('canvas')
+            this.sum = {canvas, ctx: canvas.getContext('2d', {alpha: false})}
+        }
+        const sum = this.sum
+        if (sum.canvas.width != glow.width || sum.canvas.height != glow.height)
+        {
+            sum.canvas.width = glow.width
+            sum.canvas.height = glow.height
+        }
+        const sumCtx = sum.ctx
+        sumCtx.globalCompositeOperation = 'source-over'
+        sumCtx.globalAlpha = 1
+        sumCtx.fillStyle = 'black'
+        sumCtx.fillRect(0, 0, glow.width, glow.height)
+        sumCtx.globalCompositeOperation = 'lighter'
+        sumCtx.imageSmoothingEnabled = true
+        for (let i = 0; i < this.levels.length; ++i)
+        {
+            sumCtx.globalAlpha = Math.max(0, Math.min(1, config.levelAlphas[i] * config.strength * neonPulse))
+            sumCtx.drawImage(this.levels[i].canvas, 0, 0, glow.width, glow.height)
+        }
+
+        this.ctx.save()
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+        this.ctx.globalCompositeOperation = 'lighter'
+        this.ctx.globalAlpha = 1
+        this.ctx.imageSmoothingEnabled = true
+        this.ctx.drawImage(sum.canvas, 0, 0, this.canvas.width, this.canvas.height)
+        this.ctx.restore()
+    }
 }
 
 // Player-only glow textures retain the historical downsampled soft halo. The
@@ -1933,12 +2020,50 @@ class PlayerGlowRenderer extends BloomRenderer
         context.arc(player.x+screen.x,player.y+screen.y,radius,0,Math.PI*2)
         context.clip('evenodd'); context.setTransform(1,0,0,1,0,0)
         context.globalCompositeOperation=config.compositeOperation; context.imageSmoothingEnabled=true
-        for(let i=0;i<this.levels.length;++i) {
+        if (config.compositeOperation === 'lighter') this.compositeSummed(context, config)
+        else for(let i=0;i<this.levels.length;++i) {
             const l=this.levels[i], rx=this.canvas.width/l.full[0], ry=this.canvas.height/l.full[1]
             context.globalAlpha=Math.max(0,Math.min(1,config.levelAlphas[i]*config.strength*neonPulse))
             context.drawImage(l.canvas,l.origin[0]*rx,l.origin[1]*ry,l.canvas.width*rx,l.canvas.height*ry)
         }
         context.restore()
+    }
+    // Adds the levels together on the level-0 grid over the union of their
+    // crops, then draws that once through the ring clip: the frame pays one
+    // upscaled blend instead of one per level ('lighter' adds either way).
+    compositeSummed(context, config)
+    {
+        const full = this.levels[0].full
+        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+        for (const l of this.levels) {
+            const rx = full[0]/l.full[0], ry = full[1]/l.full[1]
+            left = Math.min(left, l.origin[0]*rx); top = Math.min(top, l.origin[1]*ry)
+            right = Math.max(right, (l.origin[0]+l.canvas.width)*rx); bottom = Math.max(bottom, (l.origin[1]+l.canvas.height)*ry)
+        }
+        left = Math.floor(left); top = Math.floor(top)
+        const w = Math.max(1, Math.ceil(right-left)), h = Math.max(1, Math.ceil(bottom-top))
+        if (!this.sum) {
+            const canvas = document.createElement('canvas')
+            this.sum = {canvas, ctx:canvas.getContext('2d',{alpha:false})}
+        }
+        const sum = this.sum
+        // Bucketed like the levels, so a moving trail rarely reallocates
+        const cw = Math.ceil(w/16)*16, ch = Math.ceil(h/16)*16
+        if (sum.canvas.width < cw || sum.canvas.height < ch || sum.canvas.width > cw*2 || sum.canvas.height > ch*2) {
+            sum.canvas.width = cw; sum.canvas.height = ch
+        }
+        const c = sum.ctx
+        c.setTransform(1,0,0,1,0,0); c.globalCompositeOperation='source-over'; c.globalAlpha=1
+        c.fillStyle='black'; c.fillRect(0,0,w,h)
+        c.globalCompositeOperation='lighter'; c.imageSmoothingEnabled=true
+        for (let i=0;i<this.levels.length;++i) {
+            const l=this.levels[i], rx=full[0]/l.full[0], ry=full[1]/l.full[1]
+            c.globalAlpha=Math.max(0,Math.min(1,config.levelAlphas[i]*config.strength*neonPulse))
+            c.drawImage(l.canvas,l.origin[0]*rx-left,l.origin[1]*ry-top,l.canvas.width*rx,l.canvas.height*ry)
+        }
+        const rx=this.canvas.width/full[0], ry=this.canvas.height/full[1]
+        context.globalAlpha=1
+        context.drawImage(sum.canvas,0,0,w,h,left*rx,top*ry,w*rx,h*ry)
     }
 
     getConfig()
