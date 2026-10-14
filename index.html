@@ -387,13 +387,7 @@
                 leaveFinishedRun(function()
                 {
                     continueOffer.hide()
-                    const shouldPause = pauseAfterAd || hostPaused || isViewRotated() || document.visibilityState === 'hidden'
-                    reStart()
-                    if (shouldPause)
-                    {
-                        draw()
-                        menu.startPause()
-                    }
+                    startRunPausedIfPending(reStart)
                     resetPhysicsTiming()
                 })
             }
@@ -405,14 +399,22 @@
                 leaveFinishedRun(function()
                 {
                     continueOffer.hide()
-                    const shouldPause = pauseAfterAd || hostPaused || isViewRotated() || document.visibilityState === 'hidden'
-                    startGame(other)
-                    if (shouldPause)
-                    {
-                        draw()
-                        menu.startPause()
-                    }
+                    startRunPausedIfPending(() => startGame(other))
                 })
+            }
+            // Starts the next run and pauses it if a pause is owed: an ad
+            // blurred the window, the host paused, the view is rotated or
+            // the page is hidden. Read before start(), since chooseVersion
+            // clears pauseAfterAd.
+            function startRunPausedIfPending(start)
+            {
+                const shouldPause = pauseAfterAd || hostPaused || isViewRotated() || document.visibilityState === 'hidden'
+                start()
+                if (shouldPause)
+                {
+                    draw()
+                    menu.startPause()
+                }
             }
             // Game over interstitial: after a death, never mid-run, at most
             // once per PLATFORM.interstitialMinGapMs. next() runs once the

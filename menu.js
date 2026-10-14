@@ -614,7 +614,7 @@ class Menu
             leaveFinishedRun(function()
             {
                 menu.changeGamePause(false)
-                startGame(other)
+                startRunPausedIfPending(() => startGame(other))
             })
         })
         this.relabelPauseSwitch()

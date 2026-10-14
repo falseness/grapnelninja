@@ -241,6 +241,34 @@ class ModeSwitchTests(unittest.TestCase):
         self.assertTrue(page.evaluate("version === 'bad' && runInProgress && !runOver"))
         self.log('PASS second pause + Resume resumes the bad run:', json.dumps(after))
 
+    # TASK-403: the pause switch over the death screen shows the game over
+    # interstitial; focus lost to the ad leaves the next run paused
+    def test_pause_switch_after_ad_blur(self):
+        page = self.open({'width': 1280, 'height': 720})
+        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
+        self.die(page)
+        self.pause(page)
+        # The ad opens and stays open until the test closes it
+        page.evaluate('''bridge.advertisement.showInterstitial = function(placement) {
+            record('interstitial_request', placement)
+            setTimeout(() => emitHost('interstitial', 'opened'), 50)
+        }''')
+        before = len(self.messages(page))
+        self.click(page, page.evaluate(self.pause_rect('backToMenu')))
+        page.wait_for_function('adOpen && interstitialPending')
+        # One focus loss while the ad is up
+        page.evaluate("window.dispatchEvent(new Event('blur'))")
+        self.assertTrue(page.evaluate('pauseAfterAd'))
+        page.evaluate("emitHost('interstitial', 'closed')")
+        page.wait_for_function("version === 'classic' && !interstitialPending")
+        page.wait_for_timeout(200)
+        after = self.messages(page)[before:]
+        self.assertEqual(after, [['level_failed', {'world': 'bad'}], ['interstitial_request', 'game_over'],
+                                 ['level_started', {'world': 'classic'}], ['level_paused', None]])
+        self.assertEqual(page.evaluate('[version, menu.gamePaused, runInProgress, continueOffer.visible]'),
+                         ['classic', True, True, False])
+        self.log('PASS pause switch after ad blur: classic run starts paused:', json.dumps(after))
+
 
     def test_language_on_pause(self):
         page = self.open({'width': 1280, 'height': 720})
