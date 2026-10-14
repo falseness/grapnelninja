@@ -19,8 +19,9 @@ const BACKDROP = (function()
 {
     const FAST_SCALE = 0.5
     // Shader compilation and first tile builds make the first seconds slow
-    // on every device: they are not judged
-    const WARMUP_MS = 5000
+    // on every device: they are not judged (Playgama: no automatic quality
+    // downgrade within the first 5-10 s)
+    const WARMUP_MS = 10000
     const WINDOW_MS = 2000
     // Below about 45 FPS
     const SLOW_FRAME_MS = 1000 / 45

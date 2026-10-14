@@ -4,7 +4,7 @@ Under Playwright (navigator.webdriver) the switch stays off without
 ?adaptive=1, so headless test frame rates never change what tests render.
 With ?adaptive=1, BACKDROP.observe() is fed synthetic frame times (the real
 game loop keeps running, so the state is reset first): a 2 s window of 30 ms
-frames after the 5 s warm-up switches to the half-resolution backdrop; the
+frames after the 10 s warm-up switches to the half-resolution backdrop; the
 next slow window, after the 1 s settle, lowers the canvas resolution to 0.75
 through a resize (canvas.width follows); fast 16 ms windows change nothing;
 gaps over 250 ms (pauses, hidden tabs) are not counted. ?backdrop=1 turns the
@@ -79,8 +79,12 @@ class AdaptiveQualityTest(unittest.TestCase):
     def test_slow_frames_step_down(self):
         page, errors = self.open('?adaptive=1')
         width = page.evaluate('canvas.width')
-        # Warm-up (5 s) then one 2 s window of 30 ms frames
-        state = self.feed(page, 1e9, 30, 7100)
+        # Nothing changes inside the warm-up (10 s)
+        state = self.feed(page, 1e9, 30, 9900)
+        print('ASSERT slow frames inside the warm-up:', state, flush=True)
+        self.assertEqual((state['scale'], state['resolution']), (1, 1))
+        # Then one 2 s window of 30 ms frames
+        state = self.feed(page, 1e9 + 9930, 30, 2200)
         print('ASSERT first slow window:', state, flush=True)
         self.assertEqual((state['scale'], state['resolution']), (0.5, 1))
         page.wait_for_function('BACKDROP.canvas && BACKDROP.canvas.width > 0')
@@ -88,7 +92,7 @@ class AdaptiveQualityTest(unittest.TestCase):
         print('ASSERT backdrop canvas / frame width:', sizes, flush=True)
         self.assertEqual(sizes[0], round(sizes[1] * 0.5))
         # Settle (1 s) then the next slow window lowers the resolution
-        state = self.feed(page, 1e9 + 7130, 30, 3100)
+        state = self.feed(page, 1e9 + 12160, 30, 3100)
         print('ASSERT second slow window:', state, flush=True)
         self.assertEqual(state['resolution'], 0.75)
         page.wait_for_function(f'canvas.width === Math.round({width} * 0.75)', timeout=10000)

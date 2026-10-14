@@ -64,13 +64,13 @@ Notes:
 - Switching a layer off makes the game look wrong on purpose; it is only
   there to see how much that layer costs.
 - Adaptive backdrop (render/backdrop.js): when frames stay slower than about
-  45 FPS for 2 s after a 5 s warm-up, the background, the obstacle light spill
+  45 FPS for 2 s after a 10 s warm-up, the background, the obstacle light spill
   and the mote glow are drawn at half resolution into one offscreen canvas.
   If the next 2 s windows are still slow, the whole canvas resolution drops
   to 0.75, then 0.5 (never below 0.6 backing px per CSS px).
   `backdrop=1` added to any URL above keeps full quality (turns the switch
   off), `backdrop=0.5` forces the fast backdrop from the first frame. After
-  15 s, `BACKDROP.scale` and `BACKDROP.resolution` in the console tell which
+  20 s, `BACKDROP.scale` and `BACKDROP.resolution` in the console tell which
   step is running. Automated browsers (WebDriver/Playwright) keep full
   quality unless `adaptive=1` is added.
 
