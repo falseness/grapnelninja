@@ -209,6 +209,57 @@ class NoContinueTests(unittest.TestCase):
         page = self.boot({'width': 844, 'height': 390}, has_touch=True, is_mobile=True)
         self.check_deaths(page, [5, 6])
 
+    # TASK-402: the HUD menu button opens the pause screen over the death
+    # screen; Resume must not restart the play clock nor send level_resumed
+    # for the finished run. Date is shifted by window.__dateShift ms.
+    def test_pause_over_death_screen_keeps_clock_stopped(self):
+        page = self.boot({'width': 1280, 'height': 720})
+        page.evaluate('''() => {
+            window.__dateShift = 0
+            const RealDate = Date
+            window.Date = class extends RealDate {
+                constructor(...args) {
+                    if (args.length) super(...args)
+                    else super(RealDate.now() + window.__dateShift)
+                }
+                static now() { return RealDate.now() + window.__dateShift }
+            }
+        }''')
+        self.check_frozen_death(page, 4, 0, [], [])
+        events = page.evaluate('window.__events.length')
+        progress = page.evaluate('PROGRESS.getTime()')
+        clock = 'Number.isFinite(time)'
+        self.assertFalse(page.evaluate(clock))
+
+        click = '''name => {
+            const b = name === 'button' ? menu.button.background : menu[name].background
+            const point = {x: b.x + b.width / 2, y: b.y + b.height / 2}
+            if (!(name === 'button' ? menu.clickToPause(point) : menu.click(point)))
+                throw Error(name + ' click ignored')
+        }'''
+        for cycle in range(2):
+            page.evaluate(click, 'button')
+            self.assertTrue(page.evaluate('menu.gamePaused && continueOffer.visible'))
+            page.evaluate(click, 'resume')
+            self.assertEqual(page.evaluate('[menu.gamePaused, continueOffer.visible]'), [False, True])
+            # Death-screen time after the resume
+            page.evaluate('window.__dateShift += 5000')
+            page.wait_for_timeout(300)
+            s = state(page)
+            self.assertFalse(page.evaluate(clock), f'cycle {cycle}: play clock restarted')
+            self.assertEqual(page.evaluate('PROGRESS.getTime()'), progress, f'cycle {cycle}')
+            new_events = [e[0] for e in s['events'][events:]]
+            self.assertNotIn('level_resumed', new_events, f'cycle {cycle}')
+            self.assertEqual(new_events, ['level_paused'] * (cycle + 1), f'cycle {cycle}')
+            self.assertEqual((s['offer'], s['clickable'], s['reStarts']), (True, [True, True], 0))
+        print('  ASSERT pause + resume over the death screen, +5 s twice -> clock stopped, '
+              'PROGRESS time unchanged, no level_resumed, death screen kept: pass', file=sys.stderr)
+        # The death screen still works: Restart starts a new, timed run
+        self.press(page, 'restartButton')
+        s = state(page)
+        self.assertEqual((s['offer'], s['reStarts'], s['events'][-1]), (False, 1, ['level_started', 'classic']))
+        self.assertTrue(page.evaluate(clock))
+
 
 if __name__ == '__main__':
     unittest.main()

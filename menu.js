@@ -753,6 +753,14 @@ class Menu
         this.changeGamePause(true)
         PLATFORM.sendLifecycle('level_paused')
 
+        // A fresh frame under the panel: over the death screen its buttons
+        // would otherwise show through stale. (A pause during boot has no
+        // world to draw yet.)
+        if (continueOffer.visible)
+        {
+            draw()
+            continueOffer.draw()
+        }
         this.drawPauseScreen()
     }
     // Over the frozen last frame of the run, which stays visible through a
@@ -792,8 +800,16 @@ class Menu
     }
     unPause()
     {
-        reuseTimeInGame()
         menu.changeGamePause(false)
+        // Over the death screen the run is over: its clock stays stopped and
+        // there is no level to resume
+        if (continueOffer.visible)
+        {
+            draw()
+            continueOffer.draw()
+            return
+        }
+        reuseTimeInGame()
         PLATFORM.sendLifecycle('level_resumed')
     }
     opened()
