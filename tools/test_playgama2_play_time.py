@@ -76,17 +76,17 @@ class HostPauseTimeTests(unittest.TestCase):
                 row['accounted'] = snap()
                 self.assertEqual(row['during']['ninja'], row['before']['ninja'])
                 self.assertEqual(row['accounted']['saved'], row['before']['saved'])
-                # A real preference click forces a Bridge write even if time is unchanged.
-                p.locator('#mute-button').click()
+                # A preference change forces a Bridge write even if time is unchanged.
                 p.wait_for_function("probe.calls.some(c=>c.name==='game_ready')")
+                p.evaluate("PROGRESS.setLang('ru'); PROGRESS.save()")
                 for _ in range(40):
-                    if remote.get('grapnelninja.muted') == 'true':
+                    if remote.get('grapnelninja.lang') == 'ru':
                         break
                     p.wait_for_timeout(100)
-                self.assertEqual(remote.get('grapnelninja.muted'), 'true')
+                self.assertEqual(remote.get('grapnelninja.lang'), 'ru')
                 row['frozen_remote'] = dict(remote)
                 row['frozen_storage'] = list(storage)
-                # Return focus from the native mute button to the canvas.
+                # Focus the canvas before the keyboard resume attempt.
                 p.mouse.click(10, 10)
                 # Resume is attempted while the host still holds pause.
                 p.keyboard.press('Escape')

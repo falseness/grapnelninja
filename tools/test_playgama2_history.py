@@ -55,7 +55,7 @@ class HistoryTests(unittest.TestCase):
 
     def snapshot(self, page):
         return page.evaluate('''() => ({time:PROGRESS.getTime(), records:{...scoreText.record},
-            muted:PROGRESS.getMuted(), language:I18N.language})''')
+            language:I18N.language})''')
 
     def assert_one_run(self, page):
         """Back restored a running game with a single gameLoop."""
@@ -155,11 +155,9 @@ class HistoryTests(unittest.TestCase):
         # every frame. A surviving run legitimately has zero cached time.
         result['active_seconds'] = page.evaluate('PROGRESS.getTime()')
         self.assertGreater(result['active_seconds'], 30, 'insufficient active gameplay')
-        page.locator('#mute-button').click()
         self.click(page, 'LANGUAGE_BUTTON.rect()')
         page.wait_for_timeout(1200)
         before = self.snapshot(page)
-        self.assertTrue(before['muted'])
         self.assertEqual(before['language'], 'ru')
         committed, since = before['time'], time.monotonic()
         for cycle in range(3):

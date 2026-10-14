@@ -117,8 +117,6 @@
         <script src = "render/glowsprites.js"></script>
         <script src = "platform.js"></script>
         <script src = "telemetry.js"></script>
-        <script src = "audio.js"></script>
-        <script src = "mutebutton.js"></script>
         <script src = "progress.js"></script>
         <script src = 'menu.js'></script>
         <script src = "languagebutton.js"></script>
@@ -230,9 +228,6 @@
                 PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
                 I18N.language = I18N.pick(PROGRESS.getLang(), PLATFORM.language)
                 applyLanguage()
-                MUTE_BUTTON.restore(PROGRESS.getMuted())
-                AUDIO.setMute('host', !PLATFORM.isAudioEnabled())
-                AUDIO.startMusic()
                 setLoadingProgress(I18N.t('loading.starting'))
                 await nextFrame()
                 start()
@@ -252,8 +247,6 @@
                 // After the run exists: a portrait boot is already paused, so
                 // no level_paused goes out ahead of level_started.
                 updateOrientation()
-                AUDIO.enable()
-                MUTE_BUTTON.element.hidden = false
                 // The first gameplay frame runs in the next animation frame;
                 // the one after it follows its paint.
                 await nextFrame()
@@ -365,7 +358,6 @@
             {
                 if (continueOffer.visible || ninja.isInvulnerable() || interstitialPending)
                     return
-                AUDIO.play('death')
                 runOver = true
                 pauseTimeInGame()
                 PROGRESS.save()
@@ -644,7 +636,6 @@
             function applyLanguage()
             {
                 I18N.applyDom()
-                MUTE_BUTTON.relabel()
                 TUTORIAL_HINT.invalidate()
                 document.documentElement.lang = I18N.language
                 rebuildMenu()
@@ -664,7 +655,6 @@
             {
                 const portrait = isViewRotated()
                 document.getElementById('stage').inert = portrait
-                AUDIO.setMute('orientation', portrait)
                 if (portrait) pauseRun()
             }
             window.addEventListener('resize', function() {
@@ -686,19 +676,16 @@
                 else if (!menu.gamePaused && !continueOffer.visible)
                     menu.startPause()
             }
-            window.onblur = () => { AUDIO.setMute('focus', true); pauseRun() }
-            window.addEventListener('focus', () => AUDIO.setMute('focus', false))
+            window.onblur = pauseRun
             // A hidden tab pauses
             document.addEventListener('visibilitychange', function() {
                 const hidden = document.visibilityState == 'hidden'
-                AUDIO.setMute('hidden', hidden)
                 if (hidden)
                     pauseRun()
             })
             // Host pause pauses the run; resuming is left to the player
             PLATFORM.onPause(function(isPaused) {
                 hostPaused = isPaused
-                AUDIO.setMute('hostPause', isPaused)
                 if (isPaused)
                     pauseRun()
                 else if (bootComplete && !menu.opened() && !continueOffer.visible &&
@@ -706,13 +693,11 @@
                     document.visibilityState !== 'hidden')
                     reuseTimeInGame()
             })
-            PLATFORM.onAudio(enabled => AUDIO.setMute('host', !enabled))
             PLATFORM.onAdState(function(state) {
                 if (state == 'opened')
                     adOpen = true
                 else if (state == 'closed' || state == 'failed')
                     adOpen = false
-                AUDIO.setMute('ad', adOpen)
             })
             
         </script>

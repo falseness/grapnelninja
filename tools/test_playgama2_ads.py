@@ -90,7 +90,7 @@ class Playgama2AdsTests(unittest.TestCase):
         p.mouse.click(**point)
 
     def snap(self,p,phase,capture=False):
-        r=p.evaluate('''() => ({ms:performance.now(),menu:menu.visible,paused:menu.gamePaused,death:continueOffer.visible,pending:interstitialPending,adOpen,score:scoreText.count[version],audio:AUDIO.getState(),host_events:probe.calls.filter(e=>e.name==='host-event'),requests:probe.calls.filter(e=>e.name==='ad-request'||e.name==='REWARDED_REQUEST'),inputs})''')
+        r=p.evaluate('''() => ({ms:performance.now(),menu:menu.visible,paused:menu.gamePaused,death:continueOffer.visible,pending:interstitialPending,adOpen,score:scoreText.count[version],host_events:probe.calls.filter(e=>e.name==='host-event'),requests:probe.calls.filter(e=>e.name==='ad-request'||e.name==='REWARDED_REQUEST'),inputs})''')
         r['phase']=phase
         if capture:
             p.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
@@ -123,7 +123,6 @@ class Playgama2AdsTests(unittest.TestCase):
         r=self.snap(p,phase,True)
         self.assertFalse(r['death']);self.assertFalse(r['adOpen'])
         self.assertEqual(r['score'],0)
-        self.assertFalse(r['audio']['muted']['ad'])
         return r
 
     def finish_case(self,p):
@@ -133,24 +132,23 @@ class Playgama2AdsTests(unittest.TestCase):
             self.assertTrue(r['data']['runOver']);self.assertTrue(r['data']['death']);self.assertFalse(r['data']['paused'])
         self.assertEqual(p.evaluate("probe.calls.filter(e=>e.name==='REWARDED_REQUEST').length"),0)
         self.assertTrue(p.evaluate('inputs.every(e=>e.trusted)'))
-        self.results[self.case].append({'verdict':'PASS natural deaths; death screen only when an interstitial is due, fast restart otherwise; free native restart/switch; zero startup/active-play/rewarded requests; request gaps >=120000ms; audio/pause reconciled','request_timestamps':[r['ms'] for r in requests]})
+        self.results[self.case].append({'verdict':'PASS natural deaths; death screen only when an interstitial is due, fast restart otherwise; free native restart/switch; zero startup/active-play/rewarded requests; request gaps >=120000ms; pause reconciled','request_timestamps':[r['ms'] for r in requests]})
         print('PASS '+self.case+': '+self.results[self.case][-1]['verdict'][5:],flush=True)
 
     def test_supported_cooldown_duplicates(self):
         p=self.open('supported');self.death(p)
         self.click(p,'continueOffer.restartButton')
         self.assertEqual(len(self.requests(p)),1)
-        self.assertTrue(p.evaluate('interstitialPending && adOpen && AUDIO.isMuted()'))
+        self.assertTrue(p.evaluate('interstitialPending && adOpen'))
         before=p.evaluate('[ninja.x,ninja.y]');p.wait_for_timeout(150)
         self.assertEqual(before,p.evaluate('[ninja.x,ninja.y]'))
         self.click(p,'continueOffer.restartButton')
         self.assertEqual(len(self.requests(p)),1)
         self.snap(p,'ad-open')
         p.evaluate("emitHost('pause',true); emitHost('interstitial','closed'); emitHost('interstitial','closed'); emitHost('interstitial','failed'); emitHost('interstitial','opened')")
-        r=self.restarted(p);self.assertTrue(r['paused']);self.assertTrue(r['audio']['muted']['hostPause'])
+        r=self.restarted(p);self.assertTrue(r['paused'])
         p.evaluate("emitHost('pause',false)")
         self.click(p,'menu.resume')
-        self.assertFalse(p.evaluate('AUDIO.isMuted()'))
         # Within the 120 s cooldown a death fast-restarts (TASK-370) instead of showing the death screen.
         self.fast_restart(p,'before-cooldown')
         self.assertEqual(len(self.requests(p)),1)
@@ -164,19 +162,19 @@ class Playgama2AdsTests(unittest.TestCase):
         self.finish_case(p)
 
     def frozen(self,p,label):
-        r=p.evaluate("({adOpen,pending:interstitialPending,muted:AUDIO.getState().muted.ad})")
+        r=p.evaluate("({adOpen,pending:interstitialPending})")
         before=p.evaluate('[ninja.x,ninja.y]');p.wait_for_timeout(150)
         after=p.evaluate('[ninja.x,ninja.y]')
-        print(f'ASSERT {label}: adOpen={r["adOpen"]} pending={r["pending"]} ad-muted={r["muted"]} ninja {before} -> {after}',flush=True)
-        self.assertTrue(r['adOpen']);self.assertTrue(r['muted']);self.assertFalse(r['pending'])
+        print(f'ASSERT {label}: adOpen={r["adOpen"]} pending={r["pending"]} ninja {before} -> {after}',flush=True)
+        self.assertTrue(r['adOpen']);self.assertFalse(r['pending'])
         self.assertEqual(before,after)
 
     def released(self,p,label):
         p.evaluate("emitHost('interstitial','closed')")
-        r=p.evaluate("({adOpen,muted:AUDIO.getState().muted.ad})")
+        r=p.evaluate("({adOpen})")
         before=p.evaluate('[ninja.x,ninja.y]');p.wait_for_function('([x,y])=>ninja.x!==x||ninja.y!==y',arg=before)
-        print(f'ASSERT {label} closed: adOpen={r["adOpen"]} ad-muted={r["muted"]} ninja moves from {before}',flush=True)
-        self.assertFalse(r['adOpen']);self.assertFalse(r['muted'])
+        print(f'ASSERT {label} closed: adOpen={r["adOpen"]} ninja moves from {before}',flush=True)
+        self.assertFalse(r['adOpen'])
 
     def ad_states(self,p):
         return p.evaluate("adStates")
@@ -225,13 +223,11 @@ class Playgama2AdsTests(unittest.TestCase):
         if outcome=='unsupported':
             # TASK-370: no interstitial is ever due, so every death fast-restarts.
             self.fast_restart(p,'death-fast-restart');self.fast_restart(p,'death-fast-restart-2')
-            self.assertFalse(p.evaluate('AUDIO.isMuted()'))
             # A mode switch from the pause screen is the remaining way to leave the run: no ad.
             support.Playgama2BridgeTests.click_mode(self,p,'bad');self.snap(p,'pause-switch',True)
             self.assertEqual(len(self.requests(p)),0)
             self.finish_case(p);return
         self.death(p);self.click(p,'continueOffer.restartButton');self.restarted(p)
-        self.assertFalse(p.evaluate('AUDIO.isMuted()'))
         # Within the cooldown (a failed request still counts) the next death fast-restarts.
         self.fast_restart(p,'before-cooldown')
         self.assertEqual(len(self.requests(p)),1)
@@ -239,7 +235,6 @@ class Playgama2AdsTests(unittest.TestCase):
         self.death(p);self.click(p,'continueOffer.switchButton')
         self.switched(p,'classic','bad')
         self.assertEqual(len(self.requests(p)),2)
-        self.assertFalse(p.evaluate('AUDIO.isMuted()'))
         self.finish_case(p)
 
 if __name__=='__main__':unittest.main()

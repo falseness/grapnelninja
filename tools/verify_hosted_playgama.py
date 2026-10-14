@@ -21,10 +21,10 @@ def state(frame):
     return frame.evaluate('''() => ({mode:version, running:runInProgress,
         paused:menu.gamePaused, dead:continueOffer.visible, x:ninja?.x ?? null,
         time:PROGRESS.getTime(), records:{...scoreText.record},
-        muted:PROGRESS.getMuted(), language:I18N.language,
+        language:I18N.language,
         hint:{visible:TUTORIAL_HINT.visible, pressed:TUTORIAL_HINT.pressed}, readiness:PLATFORM.readiness,
         platform:PLATFORM.platformId, environment:PLATFORM.environment,
-        audio:AUDIO.getState(), viewport:{width:innerWidth,height:innerHeight},
+        viewport:{width:innerWidth,height:innerHeight},
         scroll:{width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight}})''')
 
 
@@ -169,9 +169,6 @@ def run(args, prepare=None):
                     row['run_reloaded']=state(frame)
                     assert row['run_reloaded']['time'] == row['after_run']['time']
                     assert row['run_reloaded']['records'] == row['after_run']['records']
-                    mute=frame.locator('#mute-button')
-                    (mute.tap if touch else mute.click)()
-                    frame.wait_for_function('PROGRESS.getMuted()')
                     # The language button is on the pause screen; pausing also saves.
                     pause(page,frame,touch)
                     click(page,frame,'LANGUAGE_BUTTON.rect()',touch)
@@ -179,13 +176,11 @@ def run(args, prepare=None):
                     page.wait_for_timeout(1400)
                     row['saved']=state(frame)
                     row['sdk_values']=frame.evaluate('Promise.race([bridge.storage.get(PROGRESS.keys),new Promise((_,reject)=>setTimeout(()=>reject(Error("SDK read timeout")),5000))])')
-                    assert row['saved']['audio']['muted']['user'], row['saved']['audio']
-                    assert row['saved']['audio']['gain'] == 0, row['saved']['audio']
                     assert row['saved']['time']>0, 'Play time did not persist on pause/death'
                     page.reload(wait_until='domcontentloaded')
                     frame=game_frame(page)
                     row['reloaded']=state(frame)
-                    for key in ['time','records','muted','language']:
+                    for key in ['time','records','language']:
                         assert row['saved'][key]==row['reloaded'][key], (key,row['saved'][key],row['reloaded'][key])
                     # The hint is not persisted: every page load shows it on the boot run
                     assert row['reloaded']['hint'] == {'visible':True, 'pressed':False}, row['reloaded']['hint']
@@ -196,7 +191,7 @@ def run(args, prepare=None):
                     assert 'config passed to initialize() as an external URL' not in row['qa_text']
                     page.screenshot(path=str(args.out/(case+'-reload.png')))
                     row['verdict']='PASS'
-                    print('PASS',case,'real ready/boot run/mode switch/input/hint dismissal/movement/audio settings/SDK save/reload; config error absent',flush=True)
+                    print('PASS',case,'real ready/boot run/mode switch/input/hint dismissal/movement/SDK save/reload; config error absent',flush=True)
                 except Exception as error:
                     row['verdict']='FAIL';row['error']=str(error)
                     save()

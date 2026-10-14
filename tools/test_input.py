@@ -169,38 +169,6 @@ class InputTests(unittest.TestCase):
         print('\n  ASSERT visibilitychange hidden -> gamePaused: pass',
               file=sys.stderr)
 
-    def test_release_over_mute_button_picks_up_grapnel(self):
-        page = self.boot_desktop()
-        start_classic(page)
-        page.wait_for_function('!MUTE_BUTTON.element.hidden')
-        box = page.locator('#mute-button').bounding_box()
-        start = canvas_to_viewport(page, page.evaluate('menu.width') * 0.6,
-                                   page.evaluate('menu.height') * 0.3)
-        page.mouse.move(start['x'], start['y'])
-        page.mouse.down()
-        held = page.evaluate('({throwed: grapnel.throwed, pressHeld})')
-        page.mouse.move(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2, steps=5)
-        page.mouse.up()
-        released = page.evaluate('({throwed: grapnel.throwed, pressHeld})')
-        print(f'\n  held={held} released over mute={released}', file=sys.stderr)
-        self.assertEqual(held, {'throwed': True, 'pressHeld': True})
-        self.assertEqual(released, {'throwed': False, 'pressHeld': False})
-        print('  ASSERT canvas press released over #mute-button -> grapnel picked up, '
-              'pressHeld false: pass', file=sys.stderr)
-
-        # A click on the button itself (cursor is still over it) toggles mute only
-        page.wait_for_function('!unTouch')
-        muted = page.evaluate('MUTE_BUTTON.muted')
-        page.mouse.down()
-        down = page.evaluate('({throwed: grapnel.throwed, pressHeld})')
-        page.mouse.up()
-        clicked = page.evaluate('({muted: MUTE_BUTTON.muted, throwed: grapnel.throwed})')
-        print(f'  mute click down={down} after={clicked}', file=sys.stderr)
-        self.assertEqual(down, {'throwed': False, 'pressHeld': False})
-        self.assertEqual(clicked, {'muted': not muted, 'throwed': False})
-        print('  ASSERT click on #mute-button toggles muted, throws no grapnel: pass',
-              file=sys.stderr)
-
     def test_computed_style(self):
         page = self.boot_desktop()
         style = page.evaluate('''() => Object.fromEntries(['body', 'canvas'].map(sel => {

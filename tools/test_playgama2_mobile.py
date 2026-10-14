@@ -120,7 +120,7 @@ class MobileTests(unittest.TestCase):
             raw=timed('layout_probe', lambda: p.evaluate(PROBE,draw)); result,_=evaluate(raw,True)
             entry['layout']=result
             self.assertEqual(result['failures'],[],result)
-            dom=timed('dom_bounds', lambda: p.evaluate('''()=>[...document.querySelectorAll('#mute-button,#tutorial')].filter(e=>!e.hidden).map(e=>{
+            dom=timed('dom_bounds', lambda: p.evaluate('''()=>[...document.querySelectorAll('#tutorial')].filter(e=>!e.hidden).map(e=>{
                 const r=e.getBoundingClientRect();return {id:e.id,rect:r.toJSON(),fits:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,
                 unclipped:e.scrollWidth<=e.clientWidth,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}})'''))
             entry['dom']=dom
@@ -156,9 +156,6 @@ class MobileTests(unittest.TestCase):
         p.wait_for_function('bootComplete && runInProgress && !!ninja')
         self.assertEqual(p.evaluate('[version, TUTORIAL_HINT.visible, TUTORIAL_HINT.pressed, menu.gamePaused]'),['bad',True,False,True])
         self.capture('landscape-boot-pause','menu.drawPauseScreen()')
-        p.locator('#mute-button').tap();self.assertTrue(p.evaluate('MUTE_BUTTON.muted'))
-        p.locator('#mute-button').tap();self.assertFalse(p.evaluate('MUTE_BUTTON.muted'))
-        self.rec['checks'].append({'control':'mute toggle twice','result':'PASS'})
         self.tap('menu.resume.background')
         p.wait_for_function('!menu.gamePaused && !unTouch')
         self.capture('boot-run','draw()')
@@ -242,7 +239,7 @@ class MobileTests(unittest.TestCase):
         inputs=p.evaluate('mobileInputs');self.assertTrue(inputs and all(e['trusted'] for e in inputs))
         self.assertEqual(errors,[])
         self.rec.update(inputs=inputs,errors=errors,verdict='PASS',finished=datetime.now(timezone.utc).isoformat())
-        print('PASS profile test_'+name.replace('-','_')+': portrait/landscape; boot-run/mute/tutorial-hint/pause-switch/death/restart; both modes touch hold/release/cancel; long press/swipe; repeated rotation exact continuity; orientation/focus/background/host pause; desktop Chromium emulated captures; no browser errors',flush=True)
+        print('PASS profile test_'+name.replace('-','_')+': portrait/landscape; boot-run/tutorial-hint/pause-switch/death/restart; both modes touch hold/release/cancel; long press/swipe; repeated rotation exact continuity; orientation/focus/background/host pause; desktop Chromium emulated captures; no browser errors',flush=True)
 
 
 for name in PROFILES:

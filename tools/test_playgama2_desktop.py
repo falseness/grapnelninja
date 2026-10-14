@@ -106,10 +106,6 @@ class DesktopTests(unittest.TestCase):
         p.wait_for_function('bootComplete && runInProgress && !!ninja')
         self.assertEqual(p.evaluate('[version, TUTORIAL_HINT.visible, menu.gamePaused]'), ['bad', True, False])
         self.shot(p, 'boot-run')
-        p.locator('#mute-button').click()
-        self.assertTrue(p.evaluate('MUTE_BUTTON.muted'))
-        p.locator('#mute-button').click()
-        self.assertFalse(p.evaluate('MUTE_BUTTON.muted'))
         if mode == 'classic':
             self.switch_on_pause(p, 'classic')
         self.assertEqual(p.evaluate('version'), mode)

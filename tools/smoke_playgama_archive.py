@@ -55,17 +55,9 @@ def main():
                             (p.locator('#tutorial button').tap if touch else p.locator('#tutorial button').click)()
                         p.wait_for_function('!unTouch')
                         (p.touchscreen.tap if touch else p.mouse.click)(700,180)
-                        state=p.evaluate('({mode:version,menu:menu.visible,grapple:__audioLog.some(e=>e.name==="throw" && !e.muted)})')
+                        state=p.evaluate('({mode:version,menu:menu.visible,grapple:grapnel.throwed})')
                         assert state['mode']==mode and not state['menu'] and state['grapple'],state
                         capture=args.out/(case+'.png');p.screenshot(path=str(capture))
-                        audio=[]
-                        for muted in (False,True,False):
-                            if audio: (p.locator('#mute-button').tap if touch else p.locator('#mute-button').click)()
-                            p.wait_for_timeout(150);p.evaluate('audioProbe.chunks=[]');p.wait_for_timeout(350)
-                            sample=p.evaluate('''()=>{const pcm=audioProbe.chunks.flatMap(c=>c.pcm);return {samples:pcm.length,rms:Math.sqrt(pcm.reduce((s,v)=>s+v*v,0)/Math.max(1,pcm.length)),state:AUDIO.getState()}}''')
-                            assert muted or sample['samples']>0,sample
-                            assert sample['rms']<.00001 if muted else sample['rms']>.001,sample
-                            audio.append(sample)
                         inputs=p.evaluate('audioProbe.inputs');assert any(i['trusted'] for i in inputs)
                         assert not errors,errors
                         for req in network:
@@ -77,8 +69,8 @@ def main():
                         requested={unquote(urlparse(r['url']).path).removeprefix('/nested/game/release/') for r in network if r['url']!=SDK}
                         expected=set(report['extracted_files'])-({'playgama-bridge-config.json'} if fault!='normal' else set())
                         assert expected<=requested,expected-requested
-                        report['cases'].append(dict(case=case,readiness=readiness,state=state,audio=audio,inputs=inputs,network=network,errors=errors,console=console,capture=str(capture),capture_sha256=hashlib.sha256(capture.read_bytes()).hexdigest(),verdict='PASS'))
-                        print(f'PASS {case}: extracted-only nested requests all 200; trusted input/grapple; audio audible/muted/restored; readiness; native capture {capture.name}',flush=True)
+                        report['cases'].append(dict(case=case,readiness=readiness,state=state,inputs=inputs,network=network,errors=errors,console=console,capture=str(capture),capture_sha256=hashlib.sha256(capture.read_bytes()).hexdigest(),verdict='PASS'))
+                        print(f'PASS {case}: extracted-only nested requests all 200; trusted input/grapple; readiness; native capture {capture.name}',flush=True)
                     finally:
                         (args.out/'smoke.json').write_text(json.dumps(report,indent=2)+'\n')
                         ctx.close()

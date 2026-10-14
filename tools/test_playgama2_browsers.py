@@ -223,8 +223,8 @@ class BrowserTests(unittest.TestCase):
                 self.assertTrue(p.evaluate('interstitialPending && adOpen'))
                 p.evaluate("emitHost('interstitial','closed')")
             p.wait_for_function('!interstitialPending && !continueOffer.visible')
-            self.assertFalse(p.evaluate('adOpen || AUDIO.isMuted()'))
-            row['checks'].append('PASS ad '+outcome+' real death/restart reconciles audio and pause')
+            self.assertFalse(p.evaluate('adOpen'))
+            row['checks'].append('PASS ad '+outcome+' real death/restart reconciles pause')
         self.assertEqual(p.evaluate("probe.calls.filter(x=>x.name==='ad-request').length"), 2)
         # The pause screen's mode switch replaces back-to-menu: a real click
         # leaves a live 'bad' run; the language button is on the pause screen

@@ -34,7 +34,6 @@ function createEvents()
         grapnel.speedY = ratio.sin * grapnelSpeed// + ninja.speedY
         grapnel.speedX = ratio.cos * grapnelSpeed// + ninja.speedX    
         
-        AUDIO.play('throw')
         grapnel.throwed = true
         PLATFORM.startup('first_grapple', version)
         TUTORIAL_HINT.press(version)

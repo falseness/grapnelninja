@@ -92,7 +92,7 @@ class OfflineHostedFlowTest(unittest.TestCase):
                   'boot', row['boot']['mode'], row['boot']['hint'],
                   'started', row['started']['mode'],
                   'dismissed', row['gameplay'][-1]['hint'],
-                  'reloaded', {k: row['reloaded'][k] for k in ('time', 'muted', 'language', 'hint')}, flush=True)
+                  'reloaded', {k: row['reloaded'][k] for k in ('time', 'language', 'hint')}, flush=True)
         self.assertEqual([(r['case'], r['verdict']) for r in report['cases']],
                          [(f'chromium-{d}-{m}', 'PASS') for d in ('desktop', 'touch') for m in ('bad', 'classic')])
 

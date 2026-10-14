@@ -6,9 +6,8 @@ const PROGRESS = (function()
     const timeKey = 'grapnelninja.time'
     const langKey = 'grapnelninja.lang'
     const tutorialKey = 'grapnelninja.tutorialDone'
-    const muteKey = 'grapnelninja.muted'
-    const state = {time: 0, lang: null, muted: false, tutorialDone: false}
-    let loaded = false, known = false, baseTime = 0, langChanged = false, muteChanged = false
+    const state = {time: 0, lang: null, tutorialDone: false}
+    let loaded = false, known = false, baseTime = 0, langChanged = false
     let savedJson = null, saveTimer = null, writing = false, lastSaveAt = -Infinity
     function number(value) { const n = Number(value); return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0 }
     function parse(value)
@@ -20,14 +19,13 @@ const PROGRESS = (function()
         return {
             [recordsKey]: JSON.stringify({classic: scoreText.record.classic, bad: scoreText.record.bad}),
             [tutorialKey]: String(state.tutorialDone),
-            [timeKey]: String(state.time), [langKey]: state.lang || '', [muteKey]: String(state.muted)
+            [timeKey]: String(state.time), [langKey]: state.lang || ''
         }
     }
     function refresh()
     {
         I18N.language = I18N.pick(state.lang, PLATFORM.language)
         applyLanguage()
-        MUTE_BUTTON.restore(state.muted)
         redrawOverlays()
     }
     function reconcile(values)
@@ -40,7 +38,6 @@ const PROGRESS = (function()
         baseTime = Math.max(baseTime, number(values[timeKey]))
         state.time = baseTime + delta
         if (!langChanged) state.lang = values[langKey] || null
-        if (!muteChanged) state.muted = values[muteKey] === 'true'
         known = true
         refresh()
         PROGRESS.save()
@@ -54,7 +51,7 @@ const PROGRESS = (function()
         if (json === savedJson) return
         writing = true
         lastSaveAt = performance.now()
-        const sentTime = state.time, sentLang = state.lang, sentMuted = state.muted
+        const sentTime = state.time, sentLang = state.lang
         const ok = await PLATFORM.storage.setMany(values)
         writing = false
         if (ok)
@@ -62,13 +59,12 @@ const PROGRESS = (function()
             savedJson = json
             baseTime = sentTime
             if (state.lang === sentLang) langChanged = false
-            if (state.muted === sentMuted) muteChanged = false
         }
         if (JSON.stringify(snapshot()) !== savedJson)
             saveTimer = setTimeout(write, 1000)
     }
     const PROGRESS = {
-        keys: [recordsKey, timeKey, langKey, muteKey, tutorialKey],
+        keys: [recordsKey, timeKey, langKey, tutorialKey],
         load(values)
         {
             const records = parse(values[recordsKey])
@@ -77,8 +73,6 @@ const PROGRESS = (function()
             baseTime = number(values[timeKey])
             state.time = baseTime
             state.lang = values[langKey] || null
-            state.muted = values[muteKey] === 'true'
-            muteChanged = false
             langChanged = false
             for (const mode of ['classic', 'bad'])
                 scoreText.record[mode] = number(records[mode])
@@ -99,8 +93,6 @@ const PROGRESS = (function()
             clearTimeout(saveTimer)
             write()
         },
-        getMuted() { return state.muted },
-        setMuted(value) { state.muted = !!value; muteChanged = true },
         getTime() { return state.time },
         setTime(seconds) { state.time = Math.max(state.time, number(seconds)) },
         getLang() { return state.lang },
