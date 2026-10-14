@@ -120,9 +120,9 @@ class ResizeTests(unittest.TestCase):
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
-        # Offline the SDK fixture defines no bridge: boot ends 'disabled'
+        # The local adapter (no SDK) boots to 'local'
         wait_for_boot(page)
-        page.wait_for_function('PLATFORM.environment === "disabled" && bootComplete && runInProgress')
+        page.wait_for_function('PLATFORM.environment === "local" && bootComplete && runInProgress')
         return page
 
     def write_evidence(self, name, data):

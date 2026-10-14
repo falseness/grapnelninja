@@ -1,8 +1,8 @@
-"""PLATFORM offline: disabled-Bridge boot, storage, no ads, hidden-tab pause.
+"""PLATFORM local adapter: boot, localStorage, no ads, hidden-tab pause.
 
-The master-era local adapter was replaced by the Playgama adapter (TASK-236,
-7fd7a46). Offline, the Bridge SDK is served a no-op fixture
-(browser_test_support.OFFLINE_SDK) and PLATFORM falls back to 'disabled'.
+master loads no platform SDK (c232782): platform.js is the local adapter,
+PLATFORM.environment is 'local' and progress persists in localStorage, with
+an in-memory fallback when storage is blocked.
 """
 import json
 import os
@@ -12,13 +12,13 @@ import unittest
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_test_support import SDK_URL, start_browser_test, wait_for_boot
+from browser_test_support import start_browser_test, wait_for_boot
 from game_harness import switch_mode
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
-READY = ('PLATFORM.environment === "disabled" && bootComplete && runInProgress'
+READY = ('PLATFORM.environment === "local" && bootComplete && runInProgress'
          ' && document.getElementById("loading").hidden')
 
 # A cross-origin iframe with blocked storage: every localStorage access throws
@@ -120,8 +120,8 @@ class ItchPlatformTests(unittest.TestCase):
         before = page.evaluate(STATE)
         self.assertEqual(before['score'], points)
         page.evaluate('window.__kill = true')
-        # Without a Bridge no interstitial is ever due, so every death is a
-        # fast restart (TASK-370, e882a5e): no offer is shown.
+        # The local adapter never has an interstitial due, so every death is
+        # a fast restart (TASK-370, e882a5e): no offer is shown.
         page.wait_for_function('!window.__kill && window.__reStarts > 0'
                                ' && !continueOffer.visible')
         page.wait_for_timeout(200)
@@ -131,7 +131,7 @@ class ItchPlatformTests(unittest.TestCase):
     def test_a_offline_boot(self):
         page, errors, requests = self.open()
         self.boot(page)
-        self.assertEqual(page.evaluate('PLATFORM.environment'), 'disabled')
+        self.assertEqual(page.evaluate('PLATFORM.environment'), 'local')
         self.assertEqual(page.evaluate('typeof window.bridge'), 'undefined')
         page.wait_for_timeout(500)
         foreign = [u for u in requests if not u.startswith(self.origin + '/')]
@@ -141,14 +141,24 @@ class ItchPlatformTests(unittest.TestCase):
                  'requests': requests}, indent=1) + '\n')
             page.screenshot(path=str(self.out('screens/menu.png')))
         self.assertTrue(requests)
-        # The only off-origin request is the Bridge SDK script, served offline
-        self.assertEqual(sorted(set(foreign)), [SDK_URL])
+        # No SDK script or any other off-origin request
+        self.assertEqual(foreign, [])
         self.assertEqual(errors, [])
 
-    # test_b_storage_round_trip retired: offline progress no longer persists
-    # (localStorage dropped in 7fd7a46/83e53de, progress goes only through the
-    # Bridge). Covered by test_playgama2_storage.test_storage_recovery_and_reload
-    # and test_playgama2_bridge.test_saved_language_precedes_host.
+    def test_b_storage_round_trip(self):
+        page, errors, _ = self.open()
+        self.boot(page)
+        self.start_run(page)
+        self.score_and_die(page, 4)
+        page.evaluate('PROGRESS.flush()')
+        page.wait_for_function('localStorage.getItem("%s") !== null' % RECORDS_KEY)
+        stored = json.loads(page.evaluate('localStorage.getItem("%s")' % RECORDS_KEY))
+        self.assertEqual(stored['classic'], 4)
+        page.reload()
+        wait_for_boot(page)
+        page.wait_for_function(READY)
+        self.assertEqual(page.evaluate('scoreText.record.classic'), 4)
+        self.assertEqual(errors, [])
 
     def test_c_blocked_storage(self):
         page, errors, _ = self.open(BLOCK_STORAGE)
@@ -159,11 +169,10 @@ class ItchPlatformTests(unittest.TestCase):
         _, after = self.score_and_die(page, 3)
         self.assertEqual(after['record'], 3)
         page.evaluate('PROGRESS.flush()')
-        # Disabled: progress stays in memory; storage reports nothing stored
-        # and refuses writes, without touching the blocked localStorage.
+        # Blocked localStorage: the local adapter keeps progress in its
+        # in-memory map, so reads return what was written this session.
         stored = page.evaluate('async () => PLATFORM.storage.getMany(["%s"])' % RECORDS_KEY)
-        self.assertEqual(stored, {RECORDS_KEY: None})
-        self.assertFalse(page.evaluate('async () => PLATFORM.storage.setMany({"%s": "{}"})' % RECORDS_KEY))
+        self.assertEqual(json.loads(stored[RECORDS_KEY])['classic'], 3)
         self.assertEqual(page.evaluate('scoreText.record.classic'), 3)
         self.assertEqual(errors, [])
 

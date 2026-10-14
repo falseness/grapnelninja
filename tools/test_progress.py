@@ -1,9 +1,9 @@
 """Records, time in game and settings persist through PLATFORM storage.
 
-Since 7fd7a46/83e53de (TASK-236) PLATFORM has no 'local' localStorage
-adapter: offline it is 'disabled' and nothing persists. Each page gets
-game_harness.LOCAL_BRIDGE, a fake Bridge whose storage lives in localStorage,
-so persistence across reload is still driven through PLATFORM.storage.
+master's PLATFORM is the local adapter (c232782): storage is localStorage.
+game_harness.STORAGE_SPY groups each synchronous run of localStorage
+getItem/setItem calls into one storage.get/storage.set record, so one
+PLATFORM.storage.getMany/setMany shows up as one call.
 """
 import json
 import os
@@ -52,8 +52,7 @@ class ProgressTests(unittest.TestCase):
         return out
 
     def boot(self):
-        context, page, errors = open_game(self.browser, 'about:blank', VIEWPORT,
-                                          fake_bridge=True)
+        context, page, errors = open_game(self.browser, 'about:blank', VIEWPORT)
         self.addCleanup(context.close)
         self.addCleanup(lambda: self.assertEqual(
             (errors['console'], errors['page']), ([], [])))
@@ -65,7 +64,7 @@ class ProgressTests(unittest.TestCase):
         # only through the test's own setTime().
         page.evaluate(FREEZE)
         self.assertEqual(page.evaluate('[PLATFORM.environment, PLATFORM.platformId]'),
-                         ['playgama', 'local-fake'])
+                         ['local', 'local'])
         return page
 
     def reload(self, page):
@@ -111,7 +110,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(storage_calls(page, 'storage.set'), [])
 
     def test_records_survive_reload(self):
-        """Classic and bad records come back from Bridge storage after reload."""
+        """Classic and bad records come back from localStorage after reload."""
         page = self.boot()
         self.score(page, 'classic', 7)
         page.evaluate('reStart()')
@@ -172,7 +171,7 @@ class ProgressTests(unittest.TestCase):
                          {'classic': 3, 'bad': 0})
 
     def test_storage_keys(self):
-        """Progress goes to Bridge storage under exactly PROGRESS.keys and survives reload."""
+        """Progress goes to localStorage under exactly PROGRESS.keys and survives reload."""
         page = self.boot()
         self.score(page, 'classic', 4)
         page.evaluate('reStart()')

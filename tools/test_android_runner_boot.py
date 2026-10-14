@@ -2,7 +2,7 @@
 
 The runner must pass the menu-less boot wait (bootComplete && runInProgress),
 start each measured mode and record frames; only the probe's active duration
-is shortened, the same way playgama_android_runner.prepare() rewrites it.
+is shortened (the probe lives in game_test_support.PROBE).
 """
 import json
 import os
@@ -12,8 +12,7 @@ import tempfile
 import unittest
 
 from browser_test_support import start_browser_test
-from playgama_firefox_perf import PROBE
-from game_test_support import FAKE, SDK
+from game_test_support import FAKE, PROBE, SDK
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTIVE_MS = int(os.environ.get('ANDROID_RUNNER_ACTIVE_MS', '1500'))

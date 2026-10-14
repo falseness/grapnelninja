@@ -6,11 +6,10 @@ to the main context once its sprite is built; a language change rebuilds the
 sprite once, with Russian text. test_lifecycle drives the real lifecycle on
 the manual clock from render_snapshot (one 1000/60 ms physics step per
 frame): shown from boot until the first press, then a 2.5 s fade of active
-game time. test_fade_duration pins that length on the same clock. Deaths take the TASK-370 fast restart unless the test makes a
-game over interstitial due, which shows the death screen.
+game time. test_fade_duration pins that length on the same clock. The local
+adapter never makes an ad due, so every death takes the TASK-370 fast restart.
 
-Uses the fake Playgama Bridge from test_playgama2_bridge. Requires Playwright
-Chromium. No remote requests.
+Requires Playwright Chromium. No remote requests.
 
 TUTORIAL_HINT_EVIDENCE_DIR (default: artifacts/TASK-367) receives
 hint-desktop.png, hint-mobile.png, hint-ru.png and compare.png;
@@ -26,12 +25,10 @@ import unittest
 
 from browser_test_support import start_browser_test
 from render_snapshot import CLOCK_SCRIPT
-from game_test_support import FAKE, SDK
 
 ROOT = Path(__file__).resolve().parents[1]
 CONCEPT = ROOT / 'artifacts/tutorial-concept'
-BOOT_DONE = "probe.calls.some(c => c.name === 'game_ready') && " \
-    "probe.calls.some(c => c.name === 'level_started')"
+BOOT_DONE = "PLATFORM.environment === 'local' && bootComplete && runInProgress"
 # Stops the game loop and freezes the clock and randomness, so draw() can be
 # repeated on identical frames
 FREEZE = '''() => {
@@ -78,40 +75,19 @@ FRAMES_SCRIPT = '''(() => {
     }
 })()'''
 HINT = '({visible: TUTORIAL_HINT.visible, alpha: TUTORIAL_HINT.alpha, time: TUTORIAL_HINT.time})'
-# Interstitials, unsupported until a step makes one due: each request is
-# recorded in probe.interstitials, then opens and closes on the frozen clock
-ADS = r"""
-probe.interstitials = [];
-Object.assign(bridge.advertisement, {
-    isInterstitialSupported: false,
-    interstitialState: 'closed',
-    showInterstitial(placement) {
-        probe.interstitials.push(placement);
-        const set = state => { bridge.advertisement.interstitialState = state; emitHost('interstitial', state); };
-        set('loading');
-        setTimeout(() => set('opened'), 20);
-        setTimeout(() => set('closed'), 60);
-    }
-});
-"""
-# A death on the current run; the level_ calls it sent and the run after it
+# A death on the current run and the run after it
 DEATH = """() => {
-    const from = probe.calls.length, ninja0 = ninja
+    const ninja0 = ninja
     onLethalDeath()
-    return {offer: continueOffer.visible, runInProgress, newNinja: ninja !== ninja0, version,
-        calls: probe.calls.slice(from).filter(c => c.name.startsWith('level_')).map(c => [c.name, c.data])}
+    return {offer: continueOffer.visible, runInProgress, newNinja: ninja !== ninja0, version}
 }"""
-FAST = {'offer': False, 'runInProgress': True, 'newNinja': True, 'version': 'bad',
-        'calls': [['level_failed', {'world': 'bad'}], ['level_started', {'world': 'bad'}]]}
-OFFER = {'offer': True, 'runInProgress': True, 'newNinja': False, 'version': 'bad', 'calls': []}
-# Advances the frozen clock 120 s (PLATFORM.interstitialMinGapMs) without
-# running frames
-SKIP_GAP = """() => {
-    __snap.tick += 120 * 60
-    __snap.now = __snap.tick * 1000 / 60
+FAST = {'offer': False, 'runInProgress': True, 'newNinja': True, 'version': 'bad'}
+# Records PLATFORM.startup stages (a no-op locally) in window.__startups
+STARTUPS = """() => {
+    window.__startups = []
+    PLATFORM.startup = (stage, data) => { __startups.push({stage, data}) }
 }"""
-DISMISSED = "probe.calls.filter(c => c.name === 'startup_funnel' && " \
-    "c.data.stage === 'tutorial_dismissed').map(c => c.data)"
+DISMISSED = "__startups.filter(s => s.stage === 'tutorial_dismissed')"
 
 
 def changed_pixels(a, b, threshold=40):
@@ -141,8 +117,6 @@ class TutorialHintTests(unittest.TestCase):
             viewport={'width': viewport[0], 'height': viewport[1]}, device_scale_factor=dpr,
             is_mobile=touch, has_touch=touch, locale='en-US')
         self.addCleanup(context.close)
-        context.route(SDK, lambda route: route.fulfill(content_type='application/javascript', body=
-            'const FAULT = "normal"; const SAVED_LANGUAGE = "en";\n' + FAKE))
         page = context.new_page()
         page.set_default_timeout(20000)
         errors = []
@@ -184,9 +158,6 @@ class TutorialHintTests(unittest.TestCase):
         self.addCleanup(context.close)
         context.add_init_script(CLOCK_SCRIPT)
         context.add_init_script(FRAMES_SCRIPT)
-        context.route(SDK, lambda route: route.fulfill(content_type='application/javascript', body=
-            'const FAULT = "normal"; const SAVED_LANGUAGE = "en";\n' + FAKE +
-            'bridge.analytics = {send(name, data) { record(name, data); }};\n' + ADS))
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
@@ -194,6 +165,7 @@ class TutorialHintTests(unittest.TestCase):
         page.goto(self.url + 'index.html')
         self.frames(page, 1, until=BOOT_DONE)
         page.evaluate('() => { window.onblur = null }')
+        page.evaluate(STARTUPS)
         return page
 
     def test_fade_duration(self):
@@ -248,7 +220,7 @@ class TutorialHintTests(unittest.TestCase):
               'over 30 frames with no input')
 
         # A death before any press (an idle ninja lands on the ground, so the
-        # normal death path is taken by hand). No ad is due: the new run
+        # normal death path is taken by hand). No ad is ever due: the new run
         # starts at once (TASK-370 fast restart) and shows it again
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
         self.assertEqual(page.evaluate(DEATH), FAST)
@@ -256,22 +228,7 @@ class TutorialHintTests(unittest.TestCase):
         self.frames(page, 10)
         self.assertEqual(page.evaluate('[continueOffer.visible, runInProgress]'), [False, True])
         self.assertEqual(page.evaluate(HINT), full)
-        self.note('PASS death before any press, no ad due -> fast restart '
-                  '[level_failed bad, level_started bad], no death screen: hint visible alpha 1')
-
-        # With an ad due (supported, none requested yet) the death screen
-        # shows; it keeps the hint and Restart (one interstitial) shows it again
-        page.evaluate('bridge.advertisement.isInterstitialSupported = true')
-        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
-        self.assertEqual(page.evaluate(DEATH), OFFER)
-        self.frames(page, 10)
-        self.assertTrue(page.evaluate('continueOffer.visible'))
-        self.assertEqual(page.evaluate(HINT), full)
-        self.leave_run(page, 'restartFromOffer()')
-        self.assertEqual(page.evaluate('probe.interstitials'), ['game_over'])
-        self.assertEqual(page.evaluate(HINT), full)
-        self.note('PASS death before any press, ad due -> death screen -> Restart '
-                  '(1 game_over interstitial): hint visible alpha 1')
+        self.note('PASS death before any press -> fast restart, no death screen: hint visible alpha 1')
 
         # A death would freeze the fade on the death screen; the captures
         # keep the run alive instead
@@ -309,9 +266,8 @@ class TutorialHintTests(unittest.TestCase):
         self.assertEqual(page.evaluate(HINT), {'visible': False, 'alpha': 0, 'time': 2.5})
         self.note('PASS fade-2.5s.png: faded out after 2.5 s of active time', page.evaluate(HINT))
 
-        # After the fade neither a fast restart, the death screen's Restart
-        # nor the mode switch shows it again. The last ad was requested
-        # seconds ago, so the first death is not due
+        # After the fade neither a fast restart nor the mode switch shows it
+        # again
         page.evaluate('() => { onLethalDeath = window.__onLethalDeath }')
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
         self.assertEqual(page.evaluate(DEATH), FAST)
@@ -319,23 +275,15 @@ class TutorialHintTests(unittest.TestCase):
             self.frames(page, 1)
             self.assertFalse(page.evaluate('TUTORIAL_HINT.visible'))
         self.assertEqual(page.evaluate('[continueOffer.visible, runInProgress]'), [False, True])
-        # 120 s later on the frozen clock the next ad is due: death screen
-        page.evaluate(SKIP_GAP)
-        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
-        self.assertEqual(page.evaluate(DEATH), OFFER)
-        self.leave_run(page, 'restartFromOffer()', check_hidden=True)
-        self.assertEqual(page.evaluate('probe.interstitials'), ['game_over', 'game_over'])
-        self.frames(page, 30)
-        self.assertFalse(page.evaluate('TUTORIAL_HINT.visible'))
         self.leave_run(page, '() => { menu.startPause(); menu.backToMenu.click() }', check_hidden=True)
         self.frames(page, 30)
         self.assertEqual(page.evaluate('({version, visible: TUTORIAL_HINT.visible})'),
                          {'version': 'classic', 'visible': False})
-        self.note('PASS after the fade: fast restart, death screen Restart and mode switch keep the hint hidden')
+        self.note('PASS after the fade: fast restart and mode switch keep the hint hidden')
 
         dismissed = page.evaluate(DISMISSED)
         self.assertEqual(len(dismissed), 1, dismissed)
-        self.note('PASS startup_funnel tutorial_dismissed x1', dismissed)
+        self.note('PASS PLATFORM.startup tutorial_dismissed x1', dismissed)
         self.assertIsNone(page.evaluate('document.getElementById("tutorial")'))
         self.note('PASS document.getElementById("tutorial") is null')
 

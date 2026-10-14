@@ -75,9 +75,9 @@ class InputTests(unittest.TestCase):
         context, page, errors = open_game(self.browser, 'about:blank', DESKTOP_VIEWPORT)
         self.track(context, errors)
         page.goto(self.url + 'index.html')
-        # Offline the SDK fixture defines no bridge: boot ends 'disabled'
+        # The local adapter (no SDK) boots to 'local'
         wait_for_boot(page)
-        page.wait_for_function('PLATFORM.environment === "disabled" && bootComplete && runInProgress')
+        page.wait_for_function('PLATFORM.environment === "local" && bootComplete && runInProgress')
         return page
 
     def out(self):

@@ -1,31 +1,37 @@
 """Launch boots straight into a main-version ('bad') run, not the title menu.
 
-Uses the fake Playgama Bridge from test_playgama2_bridge. Requires Playwright
-Chromium. No remote requests.
+Spies on the local PLATFORM adapter's gameReady/sendLifecycle/startup calls.
+Requires Playwright Chromium. No remote requests.
 
 BOOT_EVIDENCE_DIR (default: artifacts/TASK-360) receives boot.png.
 """
-import json
 import os
 from pathlib import Path
 import unittest
 
 from browser_test_support import start_browser_test
-from game_test_support import FAKE, SDK
 
 ROOT = Path(__file__).resolve().parents[1]
-# Analytics recording, and an optional host pause raised once PLATFORM has
-# subscribed (init) but before the boot run starts (the storage read).
-EXTRA = r"""
-bridge.analytics = {send(name, data) { record(name, data); }};
-const fakeGet = bridge.storage.get;
-bridge.storage.get = async function(keys) {
-    if (FAULT === 'host_paused') emitHost('pause', true);
-    return fakeGet.call(this, keys);
-};
+# Appended to platform.js: records the adapter calls the game makes as probe.calls
+SPY = r"""
+window.probe = {calls: []};
+for (const name of ['gameReady', 'sendLifecycle', 'startup']) {
+    const original = PLATFORM[name];
+    PLATFORM[name] = function(...args) {
+        if (name === 'gameReady') probe.calls.push({name: 'game_ready'});
+        else if (name === 'sendLifecycle') probe.calls.push({name: args[0], data: args[1]});
+        else probe.calls.push({name: 'startup_funnel', data: {stage: args[0], mode: args[1]}});
+        return original.apply(this, args);
+    };
+}
 """
 BOOT_DONE = "probe.calls.some(c => c.name === 'game_ready') && " \
     "probe.calls.some(c => c.name === 'level_started')"
+
+
+def serve_spied_platform(route):
+    response = route.fetch()
+    route.fulfill(response=response, body=response.text() + SPY)
 
 
 class BootMainModeTests(unittest.TestCase):
@@ -35,12 +41,11 @@ class BootMainModeTests(unittest.TestCase):
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
 
-    def open(self, fault='normal', **context_options):
+    def open(self, **context_options):
         options = {'viewport': {'width': 1280, 'height': 720}, **context_options}
         context = self.browser.new_context(locale='en-US', **options)
         self.addCleanup(context.close)
-        context.route(SDK, lambda route: route.fulfill(content_type='application/javascript', body=
-            'const FAULT = ' + json.dumps(fault) + '; const SAVED_LANGUAGE = null;\n' + FAKE + EXTRA))
+        context.route('**/platform.js', serve_spied_platform)
         page = context.new_page()
         page.set_default_timeout(20000)
         errors = []
@@ -60,13 +65,14 @@ class BootMainModeTests(unittest.TestCase):
         state = page.evaluate('''({version, titleMenu: "visible" in menu || "classicVersionButton" in menu || "draw" in menu, paused: menu.gamePaused,
             tutorial: TUTORIAL_HINT.visible && TUTORIAL_HINT.alpha === 1,
             loading: !document.getElementById('loading').hidden, ninja: !!ninja})''')
+        self.assertEqual(page.evaluate('[PLATFORM.environment, PLATFORM.isInterstitialDue()]'), ['local', False])
         self.assertEqual(state, {'version': 'bad', 'titleMenu': False, 'paused': False,
                                  'tutorial': True, 'loading': False, 'ninja': True})
-        # Queued startup events are flushed with game_ready
+        # The adapter has no queue: level_started precedes game_ready
         page.wait_for_function("probe.calls.some(c => c.name === 'startup_funnel' && c.data.stage === 'first_gameplay_frame')")
         calls = self.calls(page)
         messages = [c for c in calls if c[0] == 'game_ready' or c[0].startswith('level_')]
-        self.assertEqual(messages[:2], [['game_ready', None], ['level_started', {'world': 'bad'}]])
+        self.assertEqual(messages[:2], [['level_started', {'world': 'bad'}], ['game_ready', None]])
         self.assertEqual([c[0] for c in calls].count('level_started'), 1)
         self.assertEqual([c[0] for c in calls].count('game_ready'), 1)
         stages = [c[1]['stage'] for c in calls if c[0] == 'startup_funnel']
@@ -74,16 +80,7 @@ class BootMainModeTests(unittest.TestCase):
         self.assertEqual(stages[:3], ['mode_selected', 'run_initialized', 'first_gameplay_frame'])
         self.assertTrue(all(c[1].get('mode') == 'bad' for c in calls if c[0] == 'startup_funnel'))
         print('PASS boot: version=bad no title menu, tutorial shown; order', [m[0] for m in messages],
-              'stages', stages, flush=True)
-
-    def test_boot_with_host_paused_starts_paused(self):
-        page = self.open('host_paused')
-        page.wait_for_function("probe.calls.some(c => c.name === 'level_paused')")
-        state = page.evaluate('({version, hostPaused, titleMenu: "visible" in menu || "classicVersionButton" in menu || "draw" in menu, paused: menu.gamePaused})')
-        self.assertEqual(state, {'version': 'bad', 'hostPaused': True, 'titleMenu': False, 'paused': True})
-        messages = [c for c in self.calls(page) if c[0] == 'game_ready' or c[0].startswith('level_')]
-        self.assertEqual(messages, [['game_ready', None], ['level_started', {'world': 'bad'}], ['level_paused', None]])
-        print('PASS host-paused boot:', state, [m[0] for m in messages], flush=True)
+              'stages', stages[:3], flush=True)
 
     def lifecycle_after_boot(self, page):
         # Two more frames: a late pause would have been sent by then

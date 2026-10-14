@@ -4,7 +4,7 @@ With ?perf=1 the game runs under real requestAnimationFrame until at least
 150 frames; window.PERF_PROFILE.snapshot() must list every draw() layer and
 the physics update with finite, non-negative meanMs/p95Ms, sorted by meanMs
 descending. Every request of that run is recorded: only the local server and
-the stubbed Bridge SDK URL. Without the flag PERF_PROFILE is undefined and
+no platform SDK (master loads none). Without the flag PERF_PROFILE is undefined and
 no layer is wrapped. A fixed-seed frozen-clock render (render_snapshot.py)
 with and without ?perf=1 must have 0 differing pixels; the ?perf=1 panel
 (PERF_OVERLAY, TASK-415, test_perf_overlay.py) is switched off for it.
@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 
-from browser_test_support import SDK_URL, start_browser_test
+from browser_test_support import start_browser_test
 from perf_mobile import SEED_SCRIPT
 from render_snapshot import (ADVANCE_SCRIPT, CLOCK_SCRIPT, SEED, SETUP_SCRIPT, boot_frozen,
                              input_script, pixels, png_bytes)
@@ -94,16 +94,15 @@ class PerfProfileTest(unittest.TestCase):
               f'entries={len(names)} names={names} sorted desc', flush=True)
 
         local = f'http://{urlparse(self.url).netloc}/'
-        foreign = [u for u in requests if not u.startswith(local) and u != SDK_URL]
+        foreign = [u for u in requests if not u.startswith(local)]
         if self.evidence:
             (self.evidence / 'snapshot.json').write_text(json.dumps(snap, indent=1) + '\n')
             hosts = sorted({urlparse(u).netloc for u in requests})
             (self.evidence / 'network.log').write_text(
                 '\n'.join(requests) + f'\n--- {len(requests)} requests; hosts: {hosts}; '
-                f'foreign (not local, not stubbed SDK): {len(foreign)}\n')
-        self.assertIn(SDK_URL, requests)
+                f'foreign (not local): {len(foreign)}\n')
         self.assertEqual(foreign, [])
-        print(f'PASS network: {len(requests)} requests, only {local} and the stubbed SDK', flush=True)
+        print(f'PASS network: {len(requests)} requests, only {local}', flush=True)
 
     def test_no_flag_is_untouched(self):
         page = self.open('')

@@ -1,27 +1,17 @@
-"""The death screen switches to the other mode and toggles the fps counter.
+"""Mode switches and the death path with the local platform adapter.
 
-Restart, a switch to the other mode (labelled with that mode) and the shared
-fps-counter checkbox. The switch sends one level_failed for the dead run, the
-game over interstitial, then level_started in the other mode.
+With no ads (PLATFORM.isInterstitialDue() is always false) every death
+fast-restarts the same mode: no death screen, no interstitial. The pause
+screen's switch (menu.backToMenu) abandons the live run: one level_failed,
+no interstitial, then level_started in the other mode. Lifecycle events are
+read from a spy on PLATFORM.sendLifecycle.
 
-Uses the fake Playgama Bridge from test_playgama2_bridge with interstitials
-supported. Requires Playwright Chromium. No remote requests.
+Requires Playwright Chromium. No remote requests.
 
-MODE_SWITCH_EVIDENCE_DIR (default: artifacts/TASK-363) receives death-bad.png,
-death-classic.png, death-phone.png, pause-classic.png, pause-bad.png,
-pause-ru.png and death-ru.png.
+MODE_SWITCH_EVIDENCE_DIR (default: artifacts/TASK-363) receives
+pause-classic.png, pause-bad.png and pause-ru.png.
 
-The pause screen's switch (menu.backToMenu) abandons the live run: one
-level_failed, no interstitial, then level_started in the other mode.
-
-TASK-370 (e882a5e): the death screen opens only when a game over interstitial
-is due (PLATFORM.isInterstitialDue(): >= interstitialMinGapMs since the last
-request). test_death_switch freezes PLATFORM.now() at window.fakeNow, so a
-death right after the switch's ad fast-restarts the same mode with no switch
-offered, and one after advancing the clock past the gap shows it again.
-
-The language button sits on the pause and death screens and relabels them in
-place; it ignores clicks while an interstitial is pending.
+The language button sits on the pause screen and relabels it in place.
 """
 import json
 import os
@@ -29,20 +19,16 @@ from pathlib import Path
 import unittest
 
 from browser_test_support import start_browser_test
-from game_test_support import FAKE, SDK
 
 ROOT = Path(__file__).resolve().parents[1]
-# Interstitials are supported: a request is recorded, opens and closes
-EXTRA = r"""
-bridge.advertisement.isInterstitialSupported = true;
-bridge.advertisement.showInterstitial = function(placement) {
-    record('interstitial_request', placement);
-    setTimeout(() => emitHost('interstitial', 'opened'), 50);
-    setTimeout(() => emitHost('interstitial', 'closed'), 150);
-};
-"""
-BOOT_DONE = "probe.calls.some(c => c.name === 'game_ready') && " \
-    "probe.calls.some(c => c.name === 'level_started')"
+BOOT_DONE = 'bootComplete && runInProgress'
+# Records PLATFORM lifecycle events and interstitial requests
+SPY = '''() => {
+    window.lifecycle = []
+    const send = PLATFORM.sendLifecycle, show = PLATFORM.showInterstitial
+    PLATFORM.sendLifecycle = (name, data) => { lifecycle.push([name, data ?? null]); return send(name, data) }
+    PLATFORM.showInterstitial = placement => { lifecycle.push(['interstitial_request', placement]); return show(placement) }
+}'''
 # A real lethal hit inside ninja.move(): its next collision check is a
 # lethal element's
 KILL = '''() => {
@@ -54,12 +40,6 @@ CENTER = '''rect => {
     const r = canvas.getBoundingClientRect()
     return {x: r.x + (rect.x + rect.width / 2) * r.width / width,
             y: r.y + (rect.y + rect.height / 2) * r.height / height}
-}'''
-RECTS = '''() => {
-    const b = button => ({x: button.background.x, y: button.background.y,
-        width: button.background.width, height: button.background.height})
-    return {restart: b(continueOffer.restartButton), switch: b(continueOffer.switchButton),
-        fps: continueOffer.fpsCounterCheckbox.hitRect(), touch: minTouchSize(), width, height}
 }'''
 LANGUAGE = '(r => ({x: r.x, y: r.y, width: r.width, height: r.height}))(LANGUAGE_BUTTON.rect())'
 PAUSE_BUTTON = '''(b => ({x: b.x * scale[version], y: b.y * scale[version],
@@ -90,8 +70,6 @@ class ModeSwitchTests(unittest.TestCase):
     def open(self, viewport, **options):
         context = self.browser.new_context(viewport=viewport, locale='en-US', **options)
         self.addCleanup(context.close)
-        context.route(SDK, lambda route: route.fulfill(content_type='application/javascript', body=
-            'const FAULT = "normal"; const SAVED_LANGUAGE = "en";\n' + FAKE + EXTRA))
         page = context.new_page()
         page.set_default_timeout(20000)
         errors = []
@@ -99,19 +77,16 @@ class ModeSwitchTests(unittest.TestCase):
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.goto(self.url + 'index.html')
         page.wait_for_function(BOOT_DONE)
+        self.assertEqual(page.evaluate('PLATFORM.environment'), 'local')
+        page.evaluate(SPY)
         return page
 
-    def die(self, page):
-        page.evaluate(KILL)
-        page.wait_for_function('continueOffer.visible')
-        page.wait_for_timeout(300)
-
-    # A death with no ad due: no death screen, the same mode restarts at once
+    # No ad is ever due: no death screen, the same mode restarts at once
     def die_fast_restart(self, page):
+        page.wait_for_function('!ninja.isInvulnerable()')
         before = len(self.messages(page))
         page.evaluate(KILL)
-        page.wait_for_function('n => probe.calls.filter(c => c.name.startsWith("level_") || '
-                               'c.name === "interstitial_request").length >= n', arg=before + 2)
+        page.wait_for_function('n => lifecycle.length >= n', arg=before + 2)
         page.wait_for_timeout(300)
         return self.messages(page)[before:]
 
@@ -127,78 +102,26 @@ class ModeSwitchTests(unittest.TestCase):
                            p['y'] < q['y'] + q['height'] and q['y'] < p['y'] + p['height'])
                 self.assertFalse(overlap, (a, b, p, q))
 
-    def check_layout(self, page, name):
-        r = page.evaluate(RECTS)
-        boxes = {k: r[k] for k in ('restart', 'switch', 'fps')}
-        boxes['language'] = page.evaluate(LANGUAGE)
-        for key, box in boxes.items():
-            self.assertGreaterEqual(box['height'], r['touch'] - 0.01, key)
-            self.assertTrue(0 <= box['x'] and box['x'] + box['width'] <= r['width'] and
-                            0 <= box['y'] and box['y'] + box['height'] <= r['height'], (key, box))
-        self.assert_apart(boxes)
-        page.screenshot(path=str(self.out / name))
-        self.log(f'PASS layout {name}: no overlap, touch >= {r["touch"]:.1f}:',
-              json.dumps({k: [round(v) for v in b.values()] for k, b in boxes.items()}))
-
     def messages(self, page):
-        return page.evaluate('''probe.calls.filter(c => c.name.startsWith('level_') ||
-            c.name === 'interstitial_request').map(c => [c.name, c.data ?? null])''')
+        return page.evaluate('lifecycle.slice()')
 
-    def test_death_switch(self):
+    def test_death_fast_restart(self):
         page = self.open({'width': 1280, 'height': 720})
         self.assertEqual(page.evaluate('version'), 'bad')
-        # Frozen interstitial clock (TASK-370): no request yet, so an ad is due
-        page.evaluate('window.fakeNow = 1000000; PLATFORM.now = () => window.fakeNow')
-        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
-        before = len(self.messages(page))
-        self.die(page)
-        self.assertEqual(page.evaluate('continueOffer.switchButton.text.text'), 'chill version')
-        self.check_layout(page, 'death-bad.png')
-
-        # The death-screen checkbox toggles the counter shared with the pause screen
-        fps = page.evaluate('continueOffer.fpsCounterCheckbox.hitRect()')
-        self.assertFalse(page.evaluate('fpsCounter.enabled'))
-        self.click(page, fps)
-        self.assertTrue(page.evaluate('fpsCounter.enabled'))
-        self.click(page, fps)
-        self.assertFalse(page.evaluate('fpsCounter.enabled'))
-        page.evaluate('menu.pauseFpsCounterCheckbox.click()')
-        self.assertTrue(page.evaluate('fpsCounter.enabled && continueOffer.visible'))
-        self.click(page, fps)
-        self.assertFalse(page.evaluate('fpsCounter.enabled'))
-        self.log('PASS fps checkbox: death click on/off, pause checkbox state shared')
-
-        self.click(page, page.evaluate('(b => ({x: b.x, y: b.y, width: b.width, height: b.height}))'
-                                       '(continueOffer.switchButton.background)'))
-        page.wait_for_function("version === 'classic' && !continueOffer.visible && !interstitialPending")
-        page.wait_for_timeout(200)
-        after = self.messages(page)[before:]
-        self.assertEqual(after, [['level_failed', {'world': 'bad'}], ['interstitial_request', 'game_over'],
-                                 ['level_started', {'world': 'classic'}]])
-        self.assertFalse(page.evaluate('menu.gamePaused'))
-        self.log('PASS switch bad -> classic:', json.dumps(after))
-
-        # The switch's ad was 0 s ago: a death fast-restarts classic, no switch offered
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
         fast = self.die_fast_restart(page)
+        self.assertEqual(fast, [['level_failed', {'world': 'bad'}], ['level_started', {'world': 'bad'}]])
+        self.assertEqual(page.evaluate('[version, continueOffer.visible, interstitialPending, runOver, runInProgress]'),
+                         ['bad', False, False, False, True])
+        self.log('PASS bad death fast-restarts bad, no death screen:', json.dumps(fast))
+
+        page.evaluate("startGame('classic')")
+        page.wait_for_timeout(300)
+        fast = self.die_fast_restart(page)
         self.assertEqual(fast, [['level_failed', {'world': 'classic'}], ['level_started', {'world': 'classic'}]])
-        self.assertEqual(page.evaluate('[version, continueOffer.visible, interstitialPending, runOver]'),
-                         ['classic', False, False, False])
-        self.log('PASS no ad due: classic death fast-restarts classic, no death screen:', json.dumps(fast))
-
-        # interstitialMinGapMs later an ad is due again: the death screen returns
-        page.evaluate('window.fakeNow += PLATFORM.interstitialMinGapMs')
-        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
-        self.die(page)
-        self.assertEqual(page.evaluate('continueOffer.switchButton.text.text'), 'main version')
-        self.check_layout(page, 'death-classic.png')
-        self.log('PASS second death in classic: switch reads main version')
-
-    def test_death_layout_phone(self):
-        page = self.open({'width': 844, 'height': 390}, has_touch=True, is_mobile=True)
-        self.die(page)
-        self.assertEqual(page.evaluate('continueOffer.switchButton.text.text'), 'chill version')
-        self.check_layout(page, 'death-phone.png')
+        self.assertEqual(page.evaluate('[version, continueOffer.visible, interstitialPending, runOver, runInProgress]'),
+                         ['classic', False, False, False, True])
+        self.log('PASS classic death fast-restarts classic, no death screen:', json.dumps(fast))
 
     # A real click on the HUD menu button (drawn at scale[version])
     def pause(self, page):
@@ -224,7 +147,6 @@ class ModeSwitchTests(unittest.TestCase):
         after = self.messages(page)[before:]
         self.assertEqual(after, [['level_paused', None], ['level_failed', {'world': 'classic'}],
                                  ['level_started', {'world': 'bad'}]])
-        self.assertFalse(page.evaluate("probe.calls.some(c => c.name === 'interstitial_request')"))
         self.assertFalse(page.evaluate('continueOffer.visible || interstitialPending'))
         self.log('PASS pause switch classic -> bad, no interstitial:', json.dumps(after))
 
@@ -240,35 +162,6 @@ class ModeSwitchTests(unittest.TestCase):
         self.assertEqual(after, [['level_paused', None], ['level_resumed', None]])
         self.assertTrue(page.evaluate("version === 'bad' && runInProgress && !runOver"))
         self.log('PASS second pause + Resume resumes the bad run:', json.dumps(after))
-
-    # TASK-403: the pause switch over the death screen shows the game over
-    # interstitial; focus lost to the ad leaves the next run paused
-    def test_pause_switch_after_ad_blur(self):
-        page = self.open({'width': 1280, 'height': 720})
-        self.assertTrue(page.evaluate('PLATFORM.isInterstitialDue()'))
-        self.die(page)
-        self.pause(page)
-        # The ad opens and stays open until the test closes it
-        page.evaluate('''bridge.advertisement.showInterstitial = function(placement) {
-            record('interstitial_request', placement)
-            setTimeout(() => emitHost('interstitial', 'opened'), 50)
-        }''')
-        before = len(self.messages(page))
-        self.click(page, page.evaluate(self.pause_rect('backToMenu')))
-        page.wait_for_function('adOpen && interstitialPending')
-        # One focus loss while the ad is up
-        page.evaluate("window.dispatchEvent(new Event('blur'))")
-        self.assertTrue(page.evaluate('pauseAfterAd'))
-        page.evaluate("emitHost('interstitial', 'closed')")
-        page.wait_for_function("version === 'classic' && !interstitialPending")
-        page.wait_for_timeout(200)
-        after = self.messages(page)[before:]
-        self.assertEqual(after, [['level_failed', {'world': 'bad'}], ['interstitial_request', 'game_over'],
-                                 ['level_started', {'world': 'classic'}], ['level_paused', None]])
-        self.assertEqual(page.evaluate('[version, menu.gamePaused, runInProgress, continueOffer.visible]'),
-                         ['classic', True, True, False])
-        self.log('PASS pause switch after ad blur: classic run starts paused:', json.dumps(after))
-
 
     def test_language_on_pause(self):
         page = self.open({'width': 1280, 'height': 720})
@@ -292,32 +185,13 @@ class ModeSwitchTests(unittest.TestCase):
         page.screenshot(path=str(self.out / 'pause-ru.png'))
         self.log('PASS pause language en -> ru, no overlap with panel/controls:', json.dumps(labels, ensure_ascii=False))
 
-        # Death: a click switches back and relabels Restart and the switch
-        page.wait_for_function('!unTouch')
-        self.click(page, page.evaluate(self.pause_rect('resume')))
-        page.wait_for_function('!menu.gamePaused')
-        self.die(page)
-        texts = '[continueOffer.restartButton.text.text, continueOffer.switchButton.text.text]'
-        ru = page.evaluate(texts)
-        self.assertEqual(ru, ['\u0417\u0430\u043d\u043e\u0432\u043e', chill_ru])
-        self.check_layout(page, 'death-ru.png')
+        # A second click switches back
         page.wait_for_function('!unTouch')
         self.click(page, page.evaluate(LANGUAGE))
         self.assertEqual(page.evaluate('I18N.language'), 'en')
-        en = page.evaluate(texts)
-        self.assertEqual(en, ['Restart', 'chill version'])
-        self.log('PASS death language ru -> en:', json.dumps([ru, en], ensure_ascii=False))
-
-        # While the game over interstitial is pending the click is ignored
-        page.wait_for_function('!unTouch')
-        page.evaluate("leaveFinishedRun(() => startGame('bad'))")
-        self.assertTrue(page.evaluate('interstitialPending && continueOffer.adPending && continueOffer.visible'))
-        self.assertFalse(page.evaluate('LANGUAGE_BUTTON.active()'))
-        self.click(page, page.evaluate(LANGUAGE))
-        self.assertEqual(page.evaluate('I18N.language'), 'en')
-        page.wait_for_function('!interstitialPending && !continueOffer.visible')
-        self.assertEqual(page.evaluate('I18N.language'), 'en')
-        self.log('PASS interstitial pending: language click ignored')
+        labels = page.evaluate('[menu.backToMenu.text.text, menu.resume.text.text]')
+        self.assertEqual(labels, ['chill version', page.evaluate("I18N.t('pause.resume')")])
+        self.log('PASS pause language ru -> en:', json.dumps(labels))
 
 
 if __name__ == '__main__':
