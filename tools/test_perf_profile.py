@@ -6,7 +6,8 @@ the physics update with finite, non-negative meanMs/p95Ms, sorted by meanMs
 descending. Every request of that run is recorded: only the local server and
 the stubbed Bridge SDK URL. Without the flag PERF_PROFILE is undefined and
 no layer is wrapped. A fixed-seed frozen-clock render (render_snapshot.py)
-with and without ?perf=1 must have 0 differing pixels.
+with and without ?perf=1 must have 0 differing pixels; the ?perf=1 panel
+(PERF_OVERLAY, TASK-415, test_perf_overlay.py) is switched off for it.
 Set PERF_PROFILE_EVIDENCE_DIR=<absolute dir> to write snapshot.json,
 network.log and pixels.log there.
 """
@@ -124,6 +125,8 @@ class PerfProfileTest(unittest.TestCase):
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.goto(self.url + 'index.html' + query, wait_until='load')
         boot_frozen(page)
+        # The profiler itself must not change the game's pixels; its panel does
+        page.evaluate('() => { if (window.PERF_OVERLAY) PERF_OVERLAY.enabled = false }')
         page.evaluate(SETUP_SCRIPT, [input_script(SEED, PIXEL_TICKS[-1], VIEWPORT['width'],
                                                   VIEWPORT['height']), False])
         page.evaluate('() => draw()')

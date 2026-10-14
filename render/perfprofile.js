@@ -3,6 +3,9 @@
 // Read it from the console with PERF_PROFILE.snapshot(). It never sends
 // anything anywhere. samples is how many of the last WINDOW calls an entry
 // holds (0: the layer was not drawn, e.g. bloom off at this quality).
+// With the flag a panel in the canvas's bottom-left corner shows the RAF
+// FPS, the frame count and the slowest entries, drawn after the HUD and
+// refreshed at most every REFRESH_MS (PERF_OVERLAY).
 // Without the flag nothing is wrapped and PERF_PROFILE stays undefined.
 if (new URLSearchParams(location.search).get('perf') === '1')
 {
@@ -86,6 +89,67 @@ if (new URLSearchParams(location.search).get('perf') === '1')
                     entries: entries.map(stats).sort((a, b) => b.meanMs - a.meanMs),
                 }
             },
+        }
+
+        const REFRESH_MS = 500
+        const TOP_ENTRIES = 6
+        const FONT_CSS_PX = 12
+        const LINE_CSS_PX = 15
+        const PADDING_CSS_PX = 6
+        const MARGIN_CSS_PX = 8
+
+        // Panel in CSS px relative to the canvas; rect is the last drawn one
+        window.PERF_OVERLAY = {
+            enabled: true,
+            lines: null,
+            refreshedAt: -Infinity,
+            refreshes: 0,
+            rect: null,
+            refresh(now)
+            {
+                const snap = PERF_PROFILE.snapshot()
+                this.lines = ['FPS ' + snap.rafFps.toFixed(2) + '  frames ' + snap.frames]
+                for (const e of snap.entries.slice(0, TOP_ENTRIES))
+                    this.lines.push(e.name + ' ' + e.meanMs.toFixed(2) + ' / ' + e.p95Ms.toFixed(2))
+                this.refreshedAt = now
+                ++this.refreshes
+            },
+            draw()
+            {
+                if (!this.enabled)
+                    return
+                const now = performance.now()
+                if (!this.lines || now - this.refreshedAt >= REFRESH_MS)
+                    this.refresh(now)
+
+                const css = getCanvasCssRect()
+                ctx.save()
+                ctx.setTransform(canvas.width / css.width, 0, 0, canvas.height / css.height, 0, 0)
+                ctx.font = FONT_CSS_PX + 'px ' + STYLE.ui.fontFamily
+                ctx.textAlign = 'start'
+                ctx.textBaseline = 'middle'
+                const textWidth = Math.max(...this.lines.map(line => ctx.measureText(line).width))
+                const w = Math.min(textWidth + PADDING_CSS_PX * 2, css.width - MARGIN_CSS_PX * 2)
+                const h = this.lines.length * LINE_CSS_PX + PADDING_CSS_PX * 2
+                const x = MARGIN_CSS_PX
+                const y = css.height - MARGIN_CSS_PX - h
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+                ctx.fillRect(x, y, w, h)
+                ctx.fillStyle = '#e8fff4'
+                this.lines.forEach((line, i) =>
+                    ctx.fillText(line, x + PADDING_CSS_PX, y + PADDING_CSS_PX + (i + 0.5) * LINE_CSS_PX))
+                this.rect = {x, y, width: w, height: h, fontPx: FONT_CSS_PX}
+                LAYOUT_PROBE.rect('perf', 'perf-panel', x, y, w, h)
+                ctx.restore()
+            },
+        }
+
+        const draw = window.draw
+        window.draw = function()
+        {
+            const result = draw.apply(this, arguments)
+            PERF_OVERLAY.draw()
+            return result
         }
     })()
 }
