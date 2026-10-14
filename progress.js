@@ -28,6 +28,7 @@ const PROGRESS = (function()
         I18N.language = I18N.pick(state.lang, PLATFORM.language)
         applyLanguage()
         MUTE_BUTTON.restore(state.muted)
+        redrawOverlays()
     }
     function reconcile(values)
     {

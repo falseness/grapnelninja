@@ -616,11 +616,7 @@
                         floors[i].rescaleSpacing(width / oldWidth)
                 }
 
-                if (menu.gamePaused)
-                {
-                    draw()
-                    menu.drawPauseScreen()
-                }
+                redrawOverlays()
             }
             // Language toggle: switch now, re-lay out every screen, save the choice
             function setLanguage(lang)
@@ -629,11 +625,20 @@
                 applyLanguage()
                 PROGRESS.setLang(I18N.language)
                 PROGRESS.save()
+                redrawOverlays()
+            }
+            // The loop is stopped under the pause and death screens: after a
+            // re-layout or relabel, redraw them so what is drawn matches the
+            // new buttons' hit boxes. (Also after a late storage reconcile.)
+            function redrawOverlays()
+            {
+                if (!menu.gamePaused && !continueOffer.visible)
+                    return
+                draw()
+                if (continueOffer.visible)
+                    continueOffer.draw()
                 if (menu.gamePaused)
-                {
-                    draw()
                     menu.drawPauseScreen()
-                }
             }
             // Text in the current language everywhere: page, menu, offer
             function applyLanguage()
@@ -653,6 +658,7 @@
                 menu = new Menu(width, height)
                 menu.button = old.button
                 menu.changeGamePause(old.gamePaused)
+                menu.relabelPauseSwitch()
             }
             function updateOrientation()
             {

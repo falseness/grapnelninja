@@ -47,14 +47,18 @@ class Playgama2StorageTests(unittest.TestCase):
 
     click_mode = support.Playgama2BridgeTests.click_mode
 
-    def open_case(self, case):
-        context = self.browser.new_context(viewport={'width':1280, 'height':720})
+    def open_case(self, case, host_language=None, **options):
+        options.setdefault('viewport', {'width':1280, 'height':720})
+        context = self.browser.new_context(**options)
         self.addCleanup(context.close)
         context.add_init_script(INSTRUMENT)
         context.add_init_script("window.localStorageAccesses=0; Object.defineProperty(window,'localStorage',{get(){localStorageAccesses++; throw Error('Direct local storage is forbidden')}})")
         config = {'case': case, 'remote': REMOTE}
         def sdk(route):
-            body = "const FAULT='normal', SAVED_LANGUAGE='ru';\n" + support.FAKE
+            fake = support.FAKE
+            if host_language:
+                fake = fake.replace("language: 'ru-RU'", 'language: ' + json.dumps(host_language))
+            body = "const FAULT='normal', SAVED_LANGUAGE='ru';\n" + fake
             body += '\nconst CASE=' + json.dumps(config['case']) + ', INITIAL=' + json.dumps(config['remote']) + ';\n' + BOUNDARY
             route.fulfill(content_type='application/javascript', body=body)
         context.route(support.SDK, sdk)
@@ -168,6 +172,53 @@ class Playgama2StorageTests(unittest.TestCase):
         self.cases['record-only'].update(reloaded=page.evaluate(STATE), verdict=verdict)
         print(verdict, flush=True)
         page.context.close()
+
+    def test_late_language_relayouts_paused_screen(self):
+        """A read landing after the 1.2 s deadline into a paused boot redraws
+        the pause screen in the saved language, with hit boxes on the drawn
+        buttons (touch-stacked layout)."""
+        page, _ = self.open_case('late', host_language='en-US',
+                                 viewport={'width':844, 'height':390}, has_touch=True)
+        self.assertFalse(page.evaluate('PLATFORM.storage.remoteKnown'))
+        page.wait_for_function('bootComplete && runInProgress')
+        page.evaluate("emitHost('pause', true)")
+        self.assertEqual(page.evaluate('[I18N.language, menu.gamePaused]'), ['en', True])
+        # The pause screen's own layout probe records what each redraw draws
+        page.wait_for_timeout(300)
+        page.evaluate("LAYOUT_PROBE.boxes = []; storageFault='normal'; releaseRead()")
+        page.wait_for_function("storageTrace.some(x=>x.op==='read-result') && I18N.language === 'ru'")
+        late = page.evaluate("(t => t.find(x=>x.op==='read-result').ms - t.find(x=>x.op==='read-start').ms)(storageTrace)")
+        self.assertGreater(late, 1200)
+        ru = page.evaluate("[I18N.t('pause.resume'), I18N.t('menu.chillVersion'), I18N.t('menu.mainVersion')]")
+        state = page.evaluate("""() => {
+            const r = canvas.getBoundingClientRect(), css = b => ({x: b.x * r.width / width,
+                y: b.y * r.height / height, width: b.width * r.width / width, height: b.height * r.height / height})
+            const boxes = LAYOUT_PROBE.boxes; LAYOUT_PROBE.boxes = null
+            return {paused: menu.gamePaused, resume: menu.resume.text.text, switch: menu.backToMenu.text.text,
+                buttons: boxes.filter(b => b.kind === 'button'), texts: boxes.map(b => b.name),
+                hit: {resume: css(menu.resume.background), switch: css(menu.backToMenu.background)}}
+        }""")
+        self.assertTrue(state['paused'])
+        self.assertEqual(state['resume'], ru[0])
+        self.assertIn(state['switch'], ru[1:])
+        self.assertIn(ru[0], state['texts'], 'pause screen not redrawn in ru')
+        self.assertIn(state['switch'], state['texts'])
+        self.assertNotIn('resume', state['texts'])
+        for key, label in [('resume', state['resume']), ('switch', state['switch'])]:
+            drawn = [b for b in state['buttons'] if b['name'] == label]
+            self.assertTrue(drawn, key + ' button not drawn')
+            for axis in ('x', 'y', 'width', 'height'):
+                self.assertAlmostEqual(drawn[-1][axis], state['hit'][key][axis], delta=1,
+                                       msg=f'{key} hit box {axis} differs from the drawn button')
+        drawn = [b for b in state['buttons'] if b['name'] == state['resume']][-1]
+        # A tap on the drawn centre-bottom 10% of Resume resumes the run
+        point = page.evaluate("""b => { const r = canvas.getBoundingClientRect();
+            return {x: r.x + b.x + b.width / 2, y: r.y + b.y + b.height * 0.95} }""", drawn)
+        page.touchscreen.tap(**point)
+        page.wait_for_function('!menu.gamePaused')
+        verdict = 'PASS late ru read into paused en boot: pause screen redrawn in ru; Resume hit box == drawn rect; bottom tap resumes'
+        self.cases['late-language-paused'] = {'read_ms': late, 'drawn_resume': drawn, 'tap': point, 'state': state, 'verdict': verdict}
+        print(verdict, flush=True)
 
     def test_write_deadline(self):
         page, _ = self.open_case('bounded-write')

@@ -172,5 +172,9 @@ def switch_mode(page, mode):
         if (!menu.gamePaused) menu.startPause()
         menu.backToMenu.click()
     }''', mode)
+    # A rotated (portrait touch) view starts the new run paused (TASK-403);
+    # resume it as the switch did before, so callers get a live run
+    page.wait_for_function('mode => version === mode && runInProgress', arg=mode)
+    page.evaluate('() => { if (menu.gamePaused && isViewRotated()) menu.unPause() }')
     page.wait_for_function(
         'mode => version === mode && runInProgress && !menu.gamePaused', arg=mode)
