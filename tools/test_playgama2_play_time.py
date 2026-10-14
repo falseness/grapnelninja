@@ -61,7 +61,10 @@ class HostPauseTimeTests(unittest.TestCase):
                     p.evaluate("emitHost('pause',true)")
                     row['host_pause'] = snap()
                     self.assertEqual(row['host_pause']['saved'], 132)
-                    p.keyboard.press('Escape')
+                else:
+                    # The pause switch starts the run paused while the host holds pause (TASK-403)
+                    self.assertTrue(row['started']['paused'])
+                p.keyboard.press('Escape')
                 row['before'] = snap()
                 self.assertTrue(row['before']['hostPaused'])
                 self.assertFalse(row['before']['paused'])

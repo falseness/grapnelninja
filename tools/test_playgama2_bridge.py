@@ -228,11 +228,13 @@ class Playgama2BridgeTests(unittest.TestCase):
         self.click_mode(page, 'bad')
         sequence = self.lifecycle_calls(page)
         print('ASSERT pause->switch->start sequence', json.dumps(sequence), flush=True)
-        # Boot runs 'bad' (TASK-360); click_mode('classic') leaves it through the pause switch
+        # Boot runs 'bad' (TASK-360); click_mode('classic') leaves it through the pause switch.
+        # The host pause is still held, so the switched-to run starts paused (TASK-403)
         self.assertEqual(sequence, [['level_started', {'world': 'bad'}], ['level_paused', None],
                                     ['level_failed', {'world': 'bad'}],
                                     ['level_started', {'world': 'classic'}], ['level_paused', None],
-                                    ['level_failed', {'world': 'classic'}], ['level_started', {'world': 'bad'}]])
+                                    ['level_failed', {'world': 'classic'}], ['level_started', {'world': 'bad'}],
+                                    ['level_paused', None]])
         # TASK-370 (e882a5e): the death screen shows only when a game over
         # interstitial is due. Make one due: interstitials supported, each
         # request recorded, then opened and closed by the host. The gap clock
@@ -261,7 +263,7 @@ class Playgama2BridgeTests(unittest.TestCase):
         self.assertTrue(page.evaluate('continueOffer.visible'))
         page.evaluate('continueOffer.switchButton.click(); continueOffer.switchButton.click()')
         page.wait_for_function("!continueOffer.visible && !interstitialPending && version === 'classic'")
-        death = self.lifecycle_calls(page)[7:]
+        death = self.lifecycle_calls(page)[8:]
         print('ASSERT death->switch tail', json.dumps(death), flush=True)
         self.assertEqual(death, [['level_failed', {'world': 'bad'}], ['level_started', {'world': 'classic'}],
                                  ['level_paused', None]])
@@ -275,7 +277,7 @@ class Playgama2BridgeTests(unittest.TestCase):
         self.assertFalse(page.evaluate('continueOffer.visible'))
         self.assertFalse(page.evaluate('interstitialPending'))
         self.assertEqual(page.evaluate('version'), 'classic')
-        fast = self.lifecycle_calls(page)[10:]
+        fast = self.lifecycle_calls(page)[11:]
         print('ASSERT not-due death tail', json.dumps(fast), flush=True)
         self.assertEqual(fast, [['level_failed', {'world': 'classic'}], ['level_started', {'world': 'classic'}],
                                 ['level_paused', None]])
@@ -284,7 +286,7 @@ class Playgama2BridgeTests(unittest.TestCase):
         print('ASSERT full sequence', json.dumps([n for n, _ in final]), flush=True)
         self.assertEqual([n for n, _ in final], ['level_started', 'level_paused', 'level_failed',
                                                  'level_started', 'level_paused', 'level_failed', 'level_started',
-                                                 'level_failed', 'level_started', 'level_paused',
+                                                 'level_paused', 'level_failed', 'level_started', 'level_paused',
                                                  'level_failed', 'level_started', 'level_paused'])
         print('PASS run abandon: one level_failed per run (pause->switch, death->switch, not-due death fast restart)', flush=True)
 
