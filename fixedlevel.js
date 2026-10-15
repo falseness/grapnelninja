@@ -54,7 +54,7 @@ function validateFixedLevel(data)
     for (const e of data.elements)
     {
         point(e, e.id)
-        if (!['bounce', 'solid'].includes(e.role)) fail('InvalidSurfaceRole', e.id + '.role')
+        if (!['bounce', 'solid', 'hazard'].includes(e.role)) fail('InvalidSurfaceRole', e.id + '.role')
         const p = e.points
         if (!Array.isArray(p) || p.length < 3) fail('MalformedPolygon', e.id)
         p.forEach((v, i) => point(v, e.id + '.points[' + i + ']'))
@@ -119,6 +119,11 @@ class PersistentWorld extends Floor
         this.elapsedSteps = 0
         this.elements = this.level.elements.map(model => {
             const element = new Trampoline(model)
+            if (model.role === 'hazard')
+            {
+                element.fill = STYLE.colors.hazard.fill
+                element.stroke = STYLE.colors.hazard.stroke
+            }
             if (model.role === 'solid')
             {
                 element.fill = '#182028'

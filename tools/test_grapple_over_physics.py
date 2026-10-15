@@ -29,7 +29,7 @@ RECT = '[{x:0,y:0},{x:600,y:0},{x:600,y:100},{x:0,y:100}]'
 class Task447Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.evidence = EvidenceWriter('TASK-447')
+        cls.evidence = EvidenceWriter(getattr(cls, 'task_id', 'TASK-447'))
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         hashes = source_hashes()
         for name in ('tools/test_grapple_over_physics.py', 'tools/test_ninja_bounce.py'):
@@ -158,3 +158,129 @@ class Task447Tests(unittest.TestCase):
             baseline_path='artifacts/TASK-444/baseline.json',green_reflection_unchanged=True,
             classic_bad_baseline_equal=True))
         print('PASS green reflection: 60 velocities per mode plus flat/sloped runtime contacts; classic/bad baseline equal')
+
+
+class Task454Tests(unittest.TestCase):
+    task_id = 'TASK-454'
+    setUpClass = classmethod(Task447Tests.setUpClass.__func__)
+    open = Task447Tests.open
+
+    def test_nonlethal_contacts_cooldown_and_input(self):
+        page = self.open()
+        rows = page.evaluate('''() => {
+            const rows=[];
+            const events={death:0,restart:0,offer:0,ad:0};
+            for (const [name,key] of [['onLethalDeath','death'],['reStart','restart']]) {
+                const original=window[name]; window[name]=(...args)=>{events[key]++;return original(...args)};
+            }
+            const show=continueOffer.show.bind(continueOffer);
+            continueOffer.show=(...args)=>{events.offer++;return show(...args)};
+            const due=PLATFORM.isInterstitialDue.bind(PLATFORM);
+            PLATFORM.isInterstitialDue=(...args)=>{events.ad++;return due(...args)};
+            const originalNinja=ninja;
+            for(const kind of ['flat','fast','corner','sunk','separating','moving','simultaneous']) {
+                const d=structuredClone(GRAPPLE_OVER_LEVEL);
+                d.elements=[{id:'hazard',x:400,y:700,role:'hazard',points:RECT}];
+                d.encounters[0].elements=['hazard'];
+                if(kind==='moving') d.movers=[{id:'move',element:'hazard',axis:'y',min:690,max:710,periodMs:1000,phase:0.25}];
+                if(kind==='simultaneous') {
+                    d.elements.push({...d.elements[0],id:'shallow',y:701});
+                    d.encounters[0].elements.push('shallow');
+                }
+                floors=[loadFixedLevel(d)];
+                if(kind==='moving') floors[0].moveElements();
+                const e=floors[0].elements[0];
+                const nx=kind==='corner'?-Math.SQRT1_2:0, ny=kind==='corner'?-Math.SQRT1_2:-1;
+                const offset=kind==='sunk'?-2:ninja.radius-2;
+                ninja.x=(kind==='corner'?e.x:e.x+300)+nx*offset;ninja.y=e.y+ny*offset;
+                const vn=kind==='fast'?-3:kind==='separating'?0.2:-0.2;
+                ninja.speedX=vn*nx-0.4*ny;ninja.speedY=vn*ny+0.4*nx;
+                ninja.hazardCooldownMs=0;
+                pressHeld=true;stalePress=false;grapnel.throwed=grapnel.grappled=true;
+                grapnel.pos=[[500,500,e]];
+                const before=[ninja.speedX,ninja.speedY];
+                let calls=0;const apply=ninja.applyHazardContact;
+                ninja.applyHazardContact=function(c){calls++;return apply.call(this,c)};
+                ninja.collision();delete ninja.applyHazardContact;
+                const c=ninja.contactWith(nearestLine(e.getLines(),ninja.x,ninja.y),e.getPoints());
+                rows.push({kind,normal:[nx,ny],before,after:[ninja.speedX,ninja.speedY],
+                    normalSpeed:(ninja.speedX*nx+ninja.speedY*ny)*480,
+                    penetration:c.depth,contacts:calls,cooldown:ninja.hazardCooldownMs,
+                    detached:!grapnel.throwed&&!grapnel.grappled&&grapnel.pos.length===0,
+                    held:pressHeld,stale:stalePress,moverDisplacement:e.dy||0});
+            }
+            // Repeat impacts during cooldown: separation but no renewed impulse.
+            const e=floors[0].elements[0];
+            const collide=()=>{ninja.x=700;ninja.y=700-ninja.radius+2;ninja.speedX=0.4;ninja.speedY=0.2;ninja.collision();
+                return {velocity:[ninja.speedX,ninja.speedY],cooldown:ninja.hazardCooldownMs,
+                    penetration:ninja.contactWith(nearestLine(e.getLines(),ninja.x,ninja.y),e.getPoints()).depth}};
+            const repeated=Array.from({length:5},collide);
+            menu.gamePaused=true;
+            for(let i=0;i<60;i++){gameLoop(1000+i*16.7);cancelAnimationFrame(game)}
+            const pausedCooldown=ninja.hazardCooldownMs;
+            menu.gamePaused=false;
+            floors[0].elements=[];ninja.x=700;ninja.y=400;ninja.speedX=ninja.speedY=0;
+            for(let i=0;i<167;i++)calcPhysics();
+            const beforeExpiry=ninja.hazardCooldownMs;
+            floors[0].elements=[e];const blocked=collide();
+            floors[0].elements=[];calcPhysics();floors[0].elements=[e];const expired=collide();
+            return {rows,repeated,pausedCooldown,beforeExpiry,blocked,expired,events,
+                sameNinja:ninja===originalNinja,continueVisible:continueOffer.visible};
+        }'''.replace('RECT', RECT))
+        for row in rows['rows']:
+            self.assertLessEqual(row['penetration'], 1e-7, row)
+            self.assertEqual(row['contacts'], 1)
+            self.assertTrue(row['detached'] and row['held'] and row['stale'])
+            self.assertEqual(row['cooldown'], 350)
+            nx, ny = row['normal']
+            a, b = row['before'], row['after']
+            self.assertAlmostEqual(-a[0]*ny+a[1]*nx, -b[0]*ny+b[1]*nx)
+            self.assertAlmostEqual(row['normalSpeed'], max(420, abs(a[0]*nx+a[1]*ny)*480))
+        self.assertNotEqual(rows['rows'][5]['moverDisplacement'], 0)
+        for row in rows['repeated'] + [rows['blocked']]:
+            self.assertEqual(row['velocity'], [0.4, 0])
+            self.assertLessEqual(row['penetration'], 1e-7)
+        self.assertEqual(rows['pausedCooldown'], 350)
+        self.assertAlmostEqual(rows['beforeExpiry'], 350/168)
+        self.assertEqual(rows['expired']['velocity'], [0.4, -420/480])
+        self.assertEqual(rows['expired']['cooldown'], 350)
+        self.assertEqual(rows['events'], dict(death=0,restart=0,offer=0,ad=0))
+        self.assertTrue(rows['sameNinja'])
+        self.assertFalse(rows['continueVisible'])
+        page.mouse.move(700, 300)
+        page.mouse.down()
+        self.assertFalse(page.evaluate('grapnel.throwed'))
+        page.mouse.up()
+        self.assertFalse(page.evaluate('stalePress'))
+        page.mouse.down()
+        self.assertTrue(page.evaluate('grapnel.throwed'))
+        rows['release_then_new_press_throws'] = True
+        self.evidence.write('knockback.json', dict(self.proof, observations=rows, assertions_pass=True))
+        print('PASS flat/corner/moving/simultaneous: normal >=420, tangent preserved, detached, stale until release; cooldown 350ms, pause frozen, no penetration/death/continue/restart/ad')
+
+    def test_legacy_hazards(self):
+        rows=[]
+        for mode in ('classic','bad'):
+            for ad_due in (False, True):
+                page=self.open(mode)
+                row=page.evaluate('''adDue => {
+                    PLATFORM.isInterstitialDue=()=>adDue;
+                    const old=ninja;
+                    floors[0].elements=[new Rect({x:400,y:700,width:600,height:100,isDangerRect:true})];
+                    for(let i=1;i<floors.length;i++)floors[i].elements=[];
+                    ninja.x=700;ninja.y=700-ninja.radius+2;ninja.speedY=1;
+                    let deaths=0,restarts=0;const death=onLethalDeath,restart=reStart;
+                    onLethalDeath=(...args)=>{deaths++;return death(...args)};
+                    reStart=(...args)=>{restarts++;return restart(...args)};
+                    ninja.collision();cancelAnimationFrame(game);
+                    return {mode:version,adDue,deaths,restarts,replaced:ninja!==old,
+                        continueVisible:continueOffer.visible,runOver};
+                }''', ad_due)
+                self.assertEqual(row['deaths'], 1)
+                self.assertEqual(row['restarts'], int(not ad_due))
+                self.assertEqual(row['replaced'], not ad_due)
+                self.assertEqual(row['continueVisible'], ad_due)
+                self.assertEqual(row['runOver'], ad_due)
+                rows.append(row)
+        self.evidence.write('legacy-hazards.json',dict(self.proof,observations=rows,original_lethal_flow_pass=True))
+        print('PASS classic/bad lethal contacts: immediate restart without ad due; continue offer and frozen run when ad due (4 cases)')

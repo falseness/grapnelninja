@@ -17,6 +17,7 @@ class Ninja
         this.stroke = object.stroke
         this.visualRotation = 0
         this.invulnerableMs = 0
+        this.hazardCooldownMs = 0
 
         this.track = new TrackLine(this.radius * 1.5, STYLE.colors.player.trail, STYLE.timing.trailPoints)
         this.track.addPos(this.x, this.y, true)
@@ -25,6 +26,7 @@ class Ninja
     {
         let collision = false
         this.bounce = null
+        const hazards = []
         // A line hit lies on the element within radius of the centre.
         const reach = circleBounds(this.x, this.y, this.radius, defaultEqualityTolerance)
         for (let k = 0; k < floors.length; ++k)
@@ -56,6 +58,17 @@ class Ninja
                         }
                         continue
                     }
+                    if (version === 'grapple_over' && element.surfaceRole === 'hazard')
+                    {
+                        const line = nearestLine(lines, this.x, this.y)
+                        const contact = this.contactWith(line, element.getPoints())
+                        if (contact.depth >= 0)
+                        {
+                            hazards.push({element, contact})
+                            collision = line
+                        }
+                        continue
+                    }
                     let hit = false
                     let contact = null
                     for (let j = 0; j < lines.length; ++j)
@@ -80,6 +93,17 @@ class Ninja
         }
         if (this.bounce)
             this.applyBounce(this.bounce)
+        if (hazards.length)
+        {
+            // Choose by depth, not edge count or approach direction.
+            const deepest = hazards.reduce((a, b) => a.contact.depth >= b.contact.depth ? a : b)
+            this.applyHazardContact(deepest.contact)
+            for (const {element} of hazards)
+            {
+                const contact = this.contactWith(nearestLine(element.getLines(), this.x, this.y), element.getPoints())
+                if (contact.depth >= 0) this.applySolidContact(contact)
+            }
+        }
         // Resolve last so another obstacle cannot push the player behind it.
         if (screen.leftWall) collision = screen.leftWall.resolve(this) || collision
         return collision
@@ -157,6 +181,20 @@ class Ninja
         const out = this.radius + GAMEPLAY.cubeContactEpsilon
         this.x = contact.x + contact.nx * out
         this.y = contact.y + contact.ny * out
+    }
+    applyHazardContact(contact)
+    {
+        grapnel.endShot()
+        if (this.hazardCooldownMs <= physicsStepEpsilonMs)
+        {
+            // Velocities are world units per physics cycle, not per second.
+            const normalSpeed = this.speedX * contact.nx + this.speedY * contact.ny
+            const outward = Math.max(Math.abs(normalSpeed), 420 / (physicsTicksPerSecond * cyclesPerTick))
+            this.speedX += (outward - normalSpeed) * contact.nx
+            this.speedY += (outward - normalSpeed) * contact.ny
+            this.hazardCooldownMs = 350
+        }
+        this.applySolidContact(contact)
     }
     applyBounce(contact)
     {

@@ -19,6 +19,9 @@ function calcPhysics()
     if (continueOffer.visible)
         return
 
+    if (version === 'grapple_over')
+        ninja.hazardCooldownMs = Math.max(0, ninja.hazardCooldownMs - physicsStepMs / cyclesPerTick)
+
     ninja.speedY += GRAVITY
 
     if (version !== 'grapple_over' && screen.shouldStartMove())
