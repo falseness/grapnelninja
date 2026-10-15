@@ -516,12 +516,12 @@
                 screen.min = -(1.9 * height - height + screenMargin)
                 screen.max = -(0 - screenMargin)
             }
-            // Small fixed-world fixture: no procedural generation or checkpoints.
+            // Authored partial mountain: no procedural generation or checkpoints.
             // Shared Ninja/Grapnel/Trampoline retain all existing physics constants.
             function startGrappleOverVersion()
             {
                 screen = new Screen(true, 0)
-                const world = loadFixedLevel()
+                const world = loadMountainLevel()
                 floors = [world]
                 ninja = new Ninja({...world.level.spawn, radius: 0.01 * height,
                     fill: STYLE.colors.player.fill, stroke: STYLE.colors.player.stroke})

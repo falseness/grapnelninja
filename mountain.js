@@ -1,6 +1,5 @@
 // Mountain design contract. Planned positions are schematic reservations, NOT
-// collision terrain or verified routes. Keep the calibration fixture active until
-// section authoring supplies playable encounters. Geometry uses the fixed-world loader.
+// collision terrain or verified routes. Built encounters use the fixed-world loader.
 const MOUNTAIN_BRIEF = [
     {
         "name": "Foundations",
@@ -119,6 +118,33 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     connectors.push({id:'summit-approach', from:'S08-04', to:'summit', status:'planned', intent:'Controlled final landing'})
     const rectangle = (id,x,y,w,h,grapplable) => ({id,x,y,role:'solid',grapplable,
         points:[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})
+    // Broken loading yard: a low dock, torn crane beam, and raised loading bay.
+    // These polygons are both the rendered silhouettes and the collision shapes.
+    const yard = [
+        rectangle('S01-rest-dock',1860,18,600,64,true),
+        {id:'S01-crane-beam',x:2310,y:-330,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:180,y:0},{x:180,y:20},{x:150,y:40},{x:0,y:40}]},
+        {id:'S01-loading-bay',x:2460,y:-120,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:560,y:0},{x:560,y:-60},{x:600,y:-60},{x:600,y:210},{x:520,y:210},
+                {x:520,y:55},{x:80,y:55},{x:80,y:210},{x:0,y:210}]},
+        {id:'S01-broken-mast',x:1980,y:-480,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:35,y:15},{x:35,y:430},{x:0,y:430}]},
+        rectangle('S01-next-beam',2740,-440,240,35,true)
+    ];
+    Object.assign(sections[0], {status:'partial', landmark:{id:'S01-landmark',
+        name:'broken loading yard',x:2460,y:-240}});
+    Object.assign(encounters[0], {status:'built',x:2160,y:0,
+        elements:['S01-rest-dock','S01-crane-beam','S01-broken-mast'],
+        start:{x:2160,y:0},target:{x:2390,y:-310},
+        exit:{left:2200,right:2460,top:-330,bottom:-80},
+        action:'Press the visible torn crane beam from the entrance dock'});
+    Object.assign(encounters[1], {status:'built',x:2540,y:-120,
+        elements:['S01-crane-beam','S01-loading-bay','S01-next-beam'],
+        start:{from:'S01-01'},target:{x:2860,y:-425},
+        exit:{left:2480,right:3040,top:-140,bottom:-120},
+        action:'Release the crane pull onto the wide loading bay',
+        temporaryExit:'Rest on the loading bay; no unfinished encounter or finish trigger required'});
+    connectors[0].status='built';connectors[1].status='built';
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
@@ -126,7 +152,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false)], movers:[]},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard], movers:[]},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         completion:'planned; no summit trigger until authored',
