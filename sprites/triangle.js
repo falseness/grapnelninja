@@ -176,17 +176,18 @@ class Triangle extends Element
         ctx.restore()
     }
     // The current path is the existing inner triangle. Save/restore preserves
-    // it for the border drawn immediately afterwards.
+    // the drawing state; the helper uses a separate Path2D to preserve the border.
     drawDangerHatch(x, y)
     {
         if (version != 'bad' || bloomPassActive || !this.hatchColour || STYLE.dangerHatch.variant == 'off') return
-        const pattern = dangerHatchPattern(ctx, STYLE.dangerHatch.variant, this.hatchColour)
         ctx.save()
         ctx.clip()
         ctx.translate(x, y)
         ctx.globalAlpha = 1
-        ctx.fillStyle = pattern
-        ctx.fillRect(-this.side / 2, -this.height / 3, this.side, this.height)
+        const innerScale = STYLE.badVersionEffects.obstacles.hazardInnerScale
+        drawDangerHatchLines(ctx, STYLE.dangerHatch.variant, this.hatchColour,
+            -this.side / 2 * innerScale, -this.height / 3 * innerScale,
+            this.side / 2 * innerScale, this.height * 2 / 3 * innerScale)
         ctx.restore()
     }
 

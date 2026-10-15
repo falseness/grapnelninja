@@ -24,6 +24,50 @@ function dangerHatchPattern(context, variant, colour = variant == 'bold' ? '#995
     return cache[key] = context.createPattern(tile, 'repeat')
 }
 
+// Bounds and coordinates are object-local. Inverse-transform the backing
+// viewport so even enormous mostly-offscreen objects enumerate visible lines only.
+// Path2D deliberately leaves the caller's current path (triangle border) intact.
+function drawDangerHatchLines(context, variant, colour = variant == 'bold' ? '#99501c' : '#b56020', left, top, right, bottom)
+{
+    if (variant == 'off') return
+    const inverse = context.getTransform().inverse()
+    const corners = [[0, 0], [context.canvas.width, 0], [0, context.canvas.height],
+        [context.canvas.width, context.canvas.height]].map(([x, y]) => inverse.transformPoint({x, y}))
+    left = Math.max(left, Math.min(...corners.map(p => p.x)))
+    right = Math.min(right, Math.max(...corners.map(p => p.x)))
+    top = Math.max(top, Math.min(...corners.map(p => p.y)))
+    bottom = Math.min(bottom, Math.max(...corners.map(p => p.y)))
+    if (!(left < right && top < bottom)) return
+    const lineWidth = variant == 'bold' ? 9 : variant == 'thin' ? 2 : 3
+    // Include stroke coverage at the clip edges and complete chevron joins.
+    const pad = lineWidth * 2
+    left -= pad; right += pad; top -= pad; bottom += pad
+    const path = new Path2D()
+    if (variant == 'chevron') {
+        for (let y = Math.floor(top / 32) * 32; y <= bottom; y += 32)
+            for (let x = Math.ceil((left - 16) / 32) * 32; x <= right; x += 32) {
+                path.moveTo(x, y); path.lineTo(x + 16, y + 16); path.lineTo(x, y + 32)
+            }
+    } else {
+        for (let d = Math.ceil((left - bottom) / 32) * 32; d <= right - top; d += 32) {
+            path.moveTo(top + d, top); path.lineTo(bottom + d, bottom)
+        }
+        if (variant == 'cross')
+            for (let d = Math.ceil((left + top) / 32) * 32; d <= right + bottom; d += 32) {
+                path.moveTo(d - top, top); path.lineTo(d - bottom, bottom)
+            }
+    }
+    context.save()
+    context.strokeStyle = colour
+    context.lineWidth = lineWidth
+    context.lineCap = 'butt'
+    context.lineJoin = 'miter'
+    context.miterLimit = 10
+    context.setLineDash([])
+    context.stroke(path)
+    context.restore()
+}
+
 class Rect extends Element
 {
     constructor(object)
@@ -159,18 +203,17 @@ class Rect extends Element
     drawDangerHatch(x, y, colour)
     {
         if ((!this.isDangerRect && !colour) || STYLE.dangerHatch.variant == 'off') return
-        const pattern = dangerHatchPattern(ctx, STYLE.dangerHatch.variant, colour)
         // Leave the neon outline and inner bevel clear. Translation anchors the
         // pattern to the obstacle, including fractional camera movement.
         const inset = Math.max(2, Math.min(this.width, this.height) * .20)
         if (this.width <= inset * 2 || this.height <= inset * 2) return
         ctx.save()
         ctx.translate(x, y)
-        ctx.beginPath()
-        ctx.rect(inset, inset, this.width - inset * 2, this.height - inset * 2)
-        ctx.clip()
-        ctx.fillStyle = pattern
-        ctx.fillRect(inset, inset, this.width - inset * 2, this.height - inset * 2)
+        const clip = new Path2D()
+        clip.rect(inset, inset, this.width - inset * 2, this.height - inset * 2)
+        ctx.clip(clip)
+        drawDangerHatchLines(ctx, STYLE.dangerHatch.variant, colour,
+            inset, inset, this.width - inset, this.height - inset)
         ctx.restore()
     }
     drawInnerRectangleCopy(x, y, insetRatio, fillStyle, strokeStyle)

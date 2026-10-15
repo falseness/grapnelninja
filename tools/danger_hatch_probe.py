@@ -192,11 +192,9 @@ def collect_motion(revision, out):
         import imageio_ffmpeg
         ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()
     base=subprocess.check_output(['git','rev-parse', 'HEAD' if revision=='worktree' else revision],text=True).strip()
-    # A worktree capture can name an immutable runtime only if runtime files match HEAD.
+    # BASE_REV names the parent; hashes below identify the actual captured runtime.
     runtime=[p for p in subprocess.check_output(['git','ls-files'],text=True).splitlines()
              if p.endswith(('.js','.html','.css','.svg')) and not p.startswith('tools/')]
-    if revision=='worktree':
-        subprocess.run(['git','diff','--exit-code',base,'--',*runtime],check=True)
     (out/'BASE_REV').write_text(base+'\n')
     manifest={'BASE_REV':base,'requested_rev':revision,'seed':snap.SEED,'cases':{},
               'harness_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -208,7 +206,8 @@ def collect_motion(revision, out):
     with ExitStack() as stack:
         root,resolved=export_rev(revision,stack.callback)
         url,browser=start_browser_test(root,stack.callback)
-        manifest.update(resolved_rev=resolved,browser=browser.version)
+        manifest.update(resolved_rev=resolved,browser=browser.version,
+                        runtime_sha256={p:hashlib.sha256((Path(root)/p).read_bytes()).hexdigest() for p in runtime})
         for viewport,w,h,dpr in [('desktop',1920,1080,1),('phone',844,390,3)]:
             context=browser.new_context(viewport={'width':w,'height':h},device_scale_factor=dpr,
                                         is_mobile=viewport=='phone',has_touch=viewport=='phone')
