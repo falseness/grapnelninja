@@ -175,6 +175,8 @@ class Floor
     }
     deleteElements()
     {
+        // Fixed climb geometry survives falls and camera movement.
+        if (version == 'grapple_over') return
         let newElements = 0
         for (let i = 0; i < this.elements.length - newElements; ++i)
         {
@@ -329,6 +331,8 @@ class SideFloor extends Floor
     }
     deleteElements()
     {
+        // Fixed climb geometry survives falls and camera movement.
+        if (version == 'grapple_over') return
         if (this.elements[0].getRightPointX() + screen.x < this.leftPointX)
         {
             this.elements.splice(0, 1)

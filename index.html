@@ -245,6 +245,8 @@
             
             function startGame(_v)
             {
+                if (!Object.hasOwn(MODE_DEFINITIONS, _v))
+                    throw new Error('Unknown game mode: ' + _v)
                 reuseTimeInGame()
                 resetPhysicsTiming()
                 trackEnabled = true
@@ -279,8 +281,8 @@
                     startClassicVersion()
                 else if (version == 'bad')
                     startBadVersion()
-                else
-                    console.log('error version in startGame()')
+                else if (version == 'grapple_over')
+                    startGrappleOverVersion()
             }
             // Width-derived HUD values: score text and the menu button.
             function layoutHud()
@@ -507,6 +509,27 @@
                 const screenMargin = 0.1 * height
                 screen.min = -(1.9 * height - height + screenMargin)
                 screen.max = -(0 - screenMargin)
+            }
+            // Small fixed-world fixture: no procedural generation or checkpoints.
+            // Shared Ninja/Grapnel/Trampoline retain all existing physics constants.
+            function startGrappleOverVersion()
+            {
+                screen = new Screen(true, 0)
+                screen.min = -2000
+                screen.max = 2000
+                elementsFactory = new ElementsFactory
+                const floor = new Floor(-1000, 1200, {min: 0, max: 0}, [])
+                floor.elements = [
+                    [120, 1100, 1000, 60],
+                    [600, 800, 300, 40],
+                    [240, 500, 280, 40],
+                    [650, 200, 300, 40]
+                ].map(([x, y, w, h]) => new Trampoline({x, y, points: [
+                    {x: 0, y: 0}, {x: w, y: 0}, {x: w, y: h}, {x: 0, y: h}]}))
+                floors = [floor]
+                ninja = new Ninja({x: 360, y: 980, radius: 0.01 * height,
+                    fill: STYLE.colors.player.fill, stroke: STYLE.colors.player.stroke})
+                grapnel = new Grapnel({points: [0, 0, 0, 0], stroke: STYLE.colors.player.cyan})
             }
             function start()
             {

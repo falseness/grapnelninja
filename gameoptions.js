@@ -204,11 +204,15 @@ function canvasCoordsToViewportCoords(coord)
             y: window.innerHeight / 2 + (x - view.width / 2)}
 }
 
-let scale = 
-{
-    classic : 1         ,
-    bad     : 1 / 2.2   ,
-}
+// Internal mode dispatch; navigation remains limited to the shipped modes.
+const MODE_DEFINITIONS = Object.freeze({
+    classic: Object.freeze({cameraScale: 1, hudStyle: 'classic'}),
+    bad: Object.freeze({cameraScale: 1 / 2.2, hudStyle: 'bad'}),
+    grapple_over: Object.freeze({cameraScale: 0.75, acquisitionRadius: 540,
+        hudStyle: 'classic'})
+})
+const scale = Object.fromEntries(Object.entries(MODE_DEFINITIONS)
+    .map(([id, definition]) => [id, definition.cameraScale]))
 
 const cyclesPerTick = 8
 const physicsTicksPerSecond = 60

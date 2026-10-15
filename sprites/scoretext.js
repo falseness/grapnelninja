@@ -4,7 +4,8 @@ let scoreText =
     count: 
     {
         bad     : 0                     ,
-        classic : 0
+        classic : 0,
+        grapple_over: 0
     }                                   ,                
     get rtext() { return I18N.t('hud.record') },
     // Reset at each run start; a new record is announced once per run
@@ -12,7 +13,8 @@ let scoreText =
     record: 
     {
         bad     : 0,
-        classic : 0
+        classic : 0,
+        grapple_over: 0
     }                                   ,
     x: Math.floor(0.1 * width)       ,
     rx: 0.8 * width                     ,

@@ -632,6 +632,7 @@ const STYLE = Object.freeze({
 
 function getHudCenterY(viewHeight, selectedVersion)
 {
+    selectedVersion = MODE_DEFINITIONS[selectedVersion].hudStyle
     if (selectedVersion == 'bad')
         return getBadHudCeilingBoundaryY(viewHeight, selectedVersion) / 2
 
@@ -649,6 +650,7 @@ function getBadHudCeilingBoundaryY(viewHeight, selectedVersion)
 
 function getHudFontSize(viewWidth, viewHeight, selectedVersion)
 {
+    selectedVersion = MODE_DEFINITIONS[selectedVersion].hudStyle
     const heightSize = viewHeight * STYLE.ui.hudFontRatio
     const size = selectedVersion == 'bad'
         ? Math.min(heightSize, viewWidth * STYLE.ui.hudBadMaxFontWidthRatio)
@@ -660,6 +662,7 @@ function getHudFontSize(viewWidth, viewHeight, selectedVersion)
 
 function getHudMenuButtonLayout(viewWidth, viewHeight, selectedVersion, fallbackButton)
 {
+    selectedVersion = MODE_DEFINITIONS[selectedVersion].hudStyle
     if (selectedVersion != 'bad')
     {
         return {
