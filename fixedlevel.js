@@ -210,8 +210,10 @@ function captureClimbState()
         grapple: {
             throwed: grapnel.throwed, grappled: grapnel.grappled,
             speedX: grapnel.speedX ?? 0, speedY: grapnel.speedY ?? 0,
-            traveled: grapnel.traveled, shotStep: grapnel.shotStep && {...grapnel.shotStep},
-            segments: grapnel.pos.map(([x, y, e]) => ({id: e.isEmpty() ? null : e.id,
+            // Release retains unused rope/flight data in the live object. Save
+            // only active data so ordinary mouse/touch release can roundtrip.
+            traveled: grapnel.traveled, shotStep: grapnel.throwed && grapnel.shotStep ? {...grapnel.shotStep} : null,
+            segments: (grapnel.throwed ? grapnel.pos : []).map(([x, y, e]) => ({id: e.isEmpty() ? null : e.id,
                 x: e.isEmpty() ? x : x - e.x, y: e.isEmpty() ? y : y - e.y}))
         }
     }

@@ -62,8 +62,29 @@ class Task456Tests(unittest.TestCase):
     def test_roundtrip_600_ticks(self):
         page=self.open()
         fixtures=[]
-        for kind in ('free-fall','flight','wrapped-moving','knockback','completed'):
-            original=page.evaluate(FIXTURE,kind)
+        kinds=('free-fall','flight','wrapped-moving','knockback','completed',
+               'release-attached-mouse','release-flight-mouse',
+               'release-attached-touch','release-flight-touch')
+        for kind in kinds:
+            fixture=('wrapped-moving' if 'attached' in kind else 'flight') if kind.startswith('release-') else kind
+            original=page.evaluate(FIXTURE,fixture)
+            release=None
+            if kind.startswith('release-'):
+                release=page.evaluate('''kind => {
+                    const before=captureClimbState();
+                    const event=kind.endsWith('mouse') ? new MouseEvent('mouseup',{bubbles:true}) :
+                        new Event('touchend',{bubbles:true,cancelable:true});
+                    document.dispatchEvent(event);
+                    return {before,after:captureClimbState(),retainedSegments:grapnel.pos.length};
+                }''',kind)
+                original=release['after']
+                self.assertTrue(release['before']['grapple']['throwed'])
+                self.assertGreater(release['retainedSegments'],0)
+                self.assertFalse(original['grapple']['throwed'])
+                self.assertFalse(original['grapple']['grappled'])
+                self.assertFalse(original['input']['pressHeld'])
+                self.assertEqual(original['grapple']['segments'],[])
+                self.assertIsNone(original['grapple']['shotStep'])
             if kind=='wrapped-moving':
                 self.assertEqual([p['id'] for p in original['grapple']['segments']],['right-step']*2)
             if kind=='knockback':
@@ -88,9 +109,10 @@ class Task456Tests(unittest.TestCase):
             compare(original,restored);compare(first,second)
             fixtures.append(dict(kind=kind,original=original,restored=restored,
                 original_run=first,restored_run=second,ticks=600,max_error=max(errors),
-                exact_ids_and_events=True))
+                exact_ids_and_events=True,release=release))
         self.evidence.write('roundtrip.json',dict(self.proof,fixtures=fixtures,roundtrip_pass=True))
-        print('PASS roundtrip: 5 fixtures x 600 physics ticks; max error <=1e-6; exact element IDs and gameplay events')
+        print(f'PASS roundtrip: {len(kinds)} fixtures x 600 physics ticks; max error <=1e-6; exact element IDs and gameplay events')
+        print('PASS release: attached and flight mouseup/touchend captures restore and replay 600 ticks')
 
     def test_invalid_atomic_rejection(self):
         page=self.open()
