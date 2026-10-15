@@ -226,6 +226,33 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(recoveries[1], {status:'built',
         elements:['S02-rest-ledge','S02-left-balcony','S02-catch-balcony','S01-exit'],
         localRejoin:'S02-01'});
+    // Interrupted viaduct: tapered departure girder, torn deck and lower bridge.
+    const viaduct = [
+        {id:'S03-departure-beam',x:4620,y:-3510,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:240,y:0},{x:240,y:25},{x:190,y:55},{x:0,y:35}]},
+        {id:'S03-test-exit',x:5180,y:-3280,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:360,y:0},{x:360,y:-60},{x:400,y:-60},{x:400,y:65},{x:310,y:65},
+                {x:310,y:170},{x:275,y:170},{x:275,y:65},{x:45,y:40}]},
+        {id:'S03-lower-bridge',x:4630,y:-3245,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:310,y:0},{x:280,y:35},{x:80,y:60},{x:0,y:60}]}
+    ];
+    Object.assign(sections[2], {status:'partial',landmark:{id:'S03-landmark',
+        name:'interrupted elevated bridge',x:4800,y:-3420}});
+    Object.assign(encounters[8], {status:'built',x:4430,y:-3240,
+        elements:['S02-exit','S03-departure-beam'],start:{x:4430,y:-3190.8,from:'S02-04'},
+        target:{x:4740,y:-3480},exit:{left:4600,right:4900,top:-3500,bottom:-3280},
+        action:'Build rightward speed under the departure beam before release'});
+    Object.assign(encounters[9], {status:'built',x:4870,y:-3400,
+        elements:['S03-departure-beam','S03-test-exit','S03-lower-bridge'],
+        start:{from:'S03-01'},target:{x:5230,y:-3260},
+        exit:{left:5191,right:5529,top:-3292,bottom:-3280},
+        action:'Release across the broken span beyond direct acquisition range, then catch the far deck'});
+    Object.assign(connectors[8], {status:'built',intent:'Pull from Switchback exit into departure beam'});
+    connectors[9].status='built';
+    Object.assign(recoveries[2], {openingElements:['S03-lower-bridge','S02-exit'],
+        openingRejoin:'S02-04',sideRoute:'Release left from the lower broken bridge to the shaft exit'});
+    Object.assign(shortcuts[0], {openingElements:['S03-departure-beam','S03-test-exit'],
+        openingExit:'S03-02',intent:'Optional early high-speed release; faster exposed flight to the temporary exit; upper continuation planned'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
@@ -233,7 +260,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft], movers:[]},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct], movers:[]},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         completion:'planned; no summit trigger until authored',

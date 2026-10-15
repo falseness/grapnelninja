@@ -769,3 +769,103 @@ class Task470Tests(unittest.TestCase):
         self.evidence.write('clips/recovery/input.json',m)
         self.evidence.write('clips/recovery/result.json',dict(passed=True,matching_traces=True,physical_catch=True,returned_to_Foundations=True))
         print('PASS recovery: local miss, physical catch, input-driven return to Foundations; matching replay')
+
+
+class Task471Tests(unittest.TestCase):
+    """Broken Viaduct opening, with production physics and trusted inputs."""
+    task_id = 'TASK-471'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+
+    def test_01_geometry(self):
+        page = self.open()
+        r = page.evaluate('''() => {const m=GRAPPLE_OVER_MOUNTAIN;
+            validateMountainManifest(m);
+            return {manifest:m,runtime:floors[0].level,
+                colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))};}''')
+        m = r['manifest']
+        self.assertEqual(m['sections'][2]['status'], 'partial')
+        self.assertEqual([e['status'] for e in m['encounters'][8:12]], ['built','built','planned','planned'])
+        self.assertEqual(r['runtime']['elements'],m['geometry']['elements'])
+        for actual, model in zip(r['colliders'],m['geometry']['elements']):
+            self.assertEqual(actual,{k:model[k] for k in ('id','x','y','points','role')})
+        self.assertEqual([c['status'] for c in m['connectors'][8:10]],['built','built'])
+        self.assertIsNone(r['runtime']['finish'])
+        bridge = [e for e in m['geometry']['elements'] if e['id'].startswith('S03')]
+        self.assertEqual(len(bridge),3)
+        self.assertEqual(len({json.dumps(e['points']) for e in bridge}),3)
+        self.assertTrue(all(e['role']=='solid' and e['grapplable'] for e in bridge))
+        self.assertGreater(5180-4600, m['range'])
+        self.assertTrue(all(-4860 <= e['y'] <= -3240 for e in bridge))
+        r.update(self.proof,structural_validations_pass=True,
+            encounters=m['encounters'][8:10],calibration_reference='artifacts/TASK-463/calibration.json',
+            range=540,radius=10.8,gap_width=580,
+            surface_roles={'solid':'gray industrial silhouettes; identical visible/collision polygons'},
+            landing_margins={'temporary_exit':{'safe_center':[5190.8,5529.2],'top':-3280},
+                             'lower_bridge':{'safe_center':[4640.8,4929.2],'top':-3245}},
+            band_note='S03 anchor/deck tops in assigned band; bridge support legs overlap the S02 connector band',
+            camera_sightlines='All presses checked inside 1280x720; nominal release screenshot shows far deck',
+            temporary_exit='S03-test-exit; upper encounters remain planned',
+            recovery='Lower bridge catches short release; pull left to physically rejoin S02-exit',
+            shortcut='Earlier faster release from same beam skips the conservative swing; exposed overshoot risk')
+        self.evidence.write('geometry.json',r)
+        print('PASS geometry: S03-01/02; structural_validations_pass; matching colliders; starts/exits; roles; landing margins; camera sightlines; gap 580 > R 540')
+
+    def replay(self, name, plan, ticks, bounds):
+        from grapple_over_verify import metadata, execute, check_trace, hashes
+        page=self.open();level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)');page.close()
+        m=dict(metadata=metadata('isolated'),initial_setup=dict(level=level,
+            player=dict(x=4430,y=-3190.8,speedX=0,speedY=0)),inputs=[],ticks=ticks,
+            expected_exit=bounds,required_events=['acquisition','release'])
+        m['metadata']['compact_contacts']=True
+        for tick,event,x,y in plan:
+            m['inputs'].append(dict(tick=tick,event=event,world=dict(x=x,y=y)))
+        prefix='encounters/'+name
+        self.evidence.write(prefix+'/input.json',m)
+        trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=True)
+        check_trace(m,trace)
+        replay=execute(m,self.browser,self.url,str(self.evidence.path(prefix+'/replay')))
+        check_trace(m,replay)
+        self.assertEqual(trace,replay)
+        self.assertEqual(len(trace['metadata']['setupOnlySpawns']),1)
+        self.evidence.write(prefix+'/result.json',dict(passed=True,matching_traces=True,
+            trusted_inputs=True,no_traversal_mutation=True,source_hashes=hashes(),
+            scope='One labeled initial placement on S02-exit; production input/physics thereafter'))
+        return [r['state']['simulation']['player'] for r in trace['snapshots']]
+
+    @staticmethod
+    def launch(hold):
+        return [(30,'mousedown',4740,-3480),(30+hold,'mouseup',4740,-3480)]
+
+    def test_02_nominal_and_shortcut(self):
+        landings={}
+        for name,hold in [('nominal',65),('shortcut',55)]:
+            players=self.replay(name,self.launch(hold),260,
+                dict(x=[5191,5530],y=[-3291,-3290],speedX=[-.001,.001],speedY=[-.001,.001]))
+            self.assertGreater(players[30+hold]['speedX'],.6)
+            self.assertGreater(players[30+hold]['x'],4600)
+            landing=next(i for i,p in enumerate(players) if 5190.8<p['x']<5530 and abs(p['y']+3290.8)<.01 and p['speedY']==0)
+            landings[name]=landing
+            self.assertGreater(players[-1]['x']-5180-10.8,0)
+        self.assertLess(landings['shortcut'],landings['nominal'])
+        self.evidence.write('encounters/nominal-observations.json',dict(passed=True,
+            encounters=['S03-01','S03-02'],landing_ticks=landings,
+            gap_beyond_direct_range=True,accelerated_under_departure_beam=True,
+            safe_temporary_exit=True,optional_shortcut_faster=True))
+        print('PASS S03-01/02 nominal: speed build; release across gap beyond R; safe exit; faster optional shortcut; matching trusted-input replays')
+
+    def test_03_failure_recovery(self):
+        first=self.replay('departure-failure',self.launch(15),180,
+            dict(x=[4589,4590],y=[-3191,-3190],speedY=[-.001,.001]))
+        self.assertLess(max(p['x'] for p in first),4600)
+        lower=self.replay('gap-failure-recovery',self.launch(25)+[
+            (130,'mousedown',4500,-3180),(165,'mouseup',4500,-3180)],255,
+            dict(x=[4300,4500],y=[-3191,-3190],speedY=[-.001,.001]))
+        self.assertTrue(any(4640<p['x']<4930 and abs(p['y']+3255.8)<.01 and p['speedY']==0 for p in lower))
+        self.assertLess(max(p['x'] for p in lower),5180)
+        self.evidence.write('encounters/recovery-observations.json',dict(passed=True,
+            departure_failure_returns_to_S02=True,missed_far_deck=True,
+            lower_broken_bridge_physical_catch=True,physical_rejoin_Switchback_Shaft=True,
+            matching_traces=True,no_traversal_mutation=True))
+        print('PASS failure/recovery: short departure returns to S02; lower broken bridge catches missed gap; physical rejoin Switchback Shaft; no relocation')
