@@ -27,6 +27,7 @@ const PROGRESS = (function()
                 pressHeld = false
                 stalePress = false
                 gameplayPressOwned = false
+                if (floors[0].climbStats.completed) runInProgress = false
                 draw()
                 menu.startPause()
             }
@@ -156,6 +157,13 @@ const PROGRESS = (function()
             if (!loaded) return
             clearTimeout(saveTimer)
             write()
+        },
+        resetClimb()
+        {
+            climbJson = null
+            climbChanged = true
+            startGrappleOverVersion()
+            this.flushClimb()
         },
         enterClimb()
         {

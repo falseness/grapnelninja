@@ -6,6 +6,19 @@ const I18N = (function()
     {
         en:
         {
+            'climb.seconds': '{value} s',
+            'climb.height': 'Height: {value}',
+            'climb.max': 'Best: {value}',
+            'climb.time': 'Time: {value}',
+            'climb.section': 'Section: {value}',
+            'climb.section.climb': 'Foothills',
+            'climb.restart': 'Restart climb',
+            'climb.confirm': 'Erase this climb?',
+            'climb.yes': 'Restart',
+            'climb.cancel': 'Cancel',
+            'climb.complete': 'Summit reached!',
+            'climb.replay': 'Climb again',
+
             'mode.grapple_over': 'Grapple Over',
             'mode.bad': 'main version',
             'mode.classic': 'chill version',
@@ -37,6 +50,19 @@ const I18N = (function()
         },
         ru:
         {
+            'climb.seconds': '{value} с',
+            'climb.height': 'Высота: {value}',
+            'climb.max': 'Максимум: {value}',
+            'climb.time': 'Время: {value}',
+            'climb.section': 'Участок: {value}',
+            'climb.section.climb': 'Подножие',
+            'climb.restart': 'Начать заново',
+            'climb.confirm': 'Сбросить восхождение?',
+            'climb.yes': 'Сбросить',
+            'climb.cancel': 'Отмена',
+            'climb.complete': 'Вершина достигнута!',
+            'climb.replay': 'Пройти снова',
+
             'mode.grapple_over': 'Восхождение',
             'mode.bad': 'основной режим',
             'mode.classic': 'спокойный режим',

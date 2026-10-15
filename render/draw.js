@@ -180,7 +180,7 @@ function draw()
     drawPlayerGlowLayer(gameState)
     drawColorGradeLayer()
     drawPlayerLayer()
-    if (TUTORIAL_HINT.visible)
+    if (TUTORIAL_HINT.visible && !(version === 'grapple_over' && menu.gamePaused))
         drawTutorialHintLayer()
     drawUILayer(gameState)
     drawFpsCounterLayer(gameState)
@@ -188,5 +188,6 @@ function draw()
     visualEffects.screenEffects.end(gameState)
 
     ctx.scale(1 / scale[version], 1 / scale[version])
+    if (version === 'grapple_over' && floors[0].climbStats.completed) CLIMB_UI.drawMenu()
 
 }

@@ -713,6 +713,7 @@ class Menu
     }
     click(coord)
     {
+        if (version === 'grapple_over') return CLIMB_UI.buttons.some(b => b.isClickOnButton(coord))
         return  this.resume.isClickOnButton(coord)                  ||
                 this.pauseFpsCounterCheckbox.isClickOnButton(coord) ||
                 this.modeButtons.some(button => button.isClickOnButton(coord))
@@ -781,6 +782,7 @@ class Menu
     // light tint and a see-through panel
     drawPauseScreen()
     {
+        if (version === 'grapple_over') { CLIMB_UI.drawMenu(); return }
         const panel = this.getPausePanel()
         this.layoutPauseControls(panel)
 
@@ -815,6 +817,7 @@ class Menu
     }
     unPause()
     {
+        if (version === 'grapple_over' && floors[0].climbStats.completed) return
         if (version === 'grapple_over' &&
             (hostPaused || isViewRotated() || document.visibilityState === 'hidden')) return
         menu.changeGamePause(false)
@@ -944,5 +947,75 @@ class ContinueOffer
         this.fpsCounterCheckbox.draw()
         LANGUAGE_BUTTON.draw()
         ctx.restore()
+    }
+}
+
+// Climb statistics describe the current simulation; they never move the player.
+const CLIMB_UI = {
+    confirming: false,
+    buttons: [],
+    time(ms) { return I18N.t('climb.seconds', {value:(ms / 1000).toFixed(1)}) },
+    text(text, x, y, size, alignX = 'center') {
+        new Text({text, x, y, fontSize:size, alignX, fill:STYLE.colors.ui.hudText}).draw()
+    },
+    drawHud() {
+        const stats = floors[0].climbStats, h = height / scale[version]
+        const size = Math.max(h * 0.025, 12 * h / getCanvasCssRect().height)
+        const section = floors[0].level.sections.find(s => s.encounters.some(id =>
+            floors[0].level.encounters.find(e => e.id === id)?.elements.some(id => {
+                const e = floors[0].byId.get(id)
+                return e && Math.abs(e.y - ninja.y) < 300
+            }))) || floors[0].level.sections[0]
+        const rows = [I18N.t('climb.height', {value:Math.floor(stats.currentHeight)}),
+            I18N.t('climb.max', {value:Math.floor(stats.maxHeight)}),
+            I18N.t('climb.section', {value:I18N.t('climb.section.' + section.id)}),
+            I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)})]
+        rows.forEach((text, i) => this.text(text, size, size * (1.5 + i * 1.6), size, 'left'))
+    },
+    complete() {
+        const stats = floors[0].climbStats
+        if (stats.completed) return
+        stats.completed = true
+        runInProgress = false
+        gameplayPressOwned = false
+        stalePress = pressHeld
+        pauseTimeInGame()
+        PLATFORM.sendLifecycle('level_completed', {world:version, elapsedActiveMs:stats.elapsedActiveMs})
+        PROGRESS.flushClimb()
+        menu.changeGamePause(true)
+    },
+    restart() {
+        this.confirming = false
+        PROGRESS.resetClimb()
+        pressHeld = stalePress = gameplayPressOwned = false
+        runOver = false
+        runInProgress = true
+        resetPhysicsTiming()
+        PLATFORM.sendLifecycle('level_started', {world:version})
+        menu.unPause()
+        draw()
+    },
+    drawMenu() {
+        const w = menu.width, h = menu.height, stats = floors[0].climbStats
+        ctx.fillStyle = STYLE.colors.ui.pauseOverlay
+        ctx.fillRect(0, 0, w, h)
+        const title = this.confirming ? 'climb.confirm' : stats.completed ? 'climb.complete' : 'mode.grapple_over'
+        this.text(I18N.t(title), w/2, h*0.16, h*0.055)
+        this.text(I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)}), w/2, h*0.26, h*0.035)
+        const actions = this.confirming ? [
+            ['climb.yes', () => this.restart()],
+            ['climb.cancel', () => {this.confirming=false; redrawOverlays()}]
+        ] : [
+            [stats.completed ? 'climb.replay' : 'pause.resume', () => stats.completed ? this.restart() : menu.unPause()],
+            ['climb.restart', () => {this.confirming=true; redrawOverlays()}],
+            ['mode.bad', () => menu.selectMode('bad')],
+            ['mode.classic', () => menu.selectMode('classic')]
+        ]
+        const bh = Math.max(h*0.105, minTouchSize()), bw = Math.min(w*0.7, h*1.05)
+        this.buttons = actions.map(([key, action], i) => new Button(
+            {x:w/2, y:h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true},
+            {text:I18N.t(key), fill:STYLE.colors.ui.buttonText}, action))
+        this.buttons.forEach(b => b.draw())
+        LANGUAGE_BUTTON.draw()
     }
 }

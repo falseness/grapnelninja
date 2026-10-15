@@ -2,6 +2,7 @@ const GRAVITY = screenHeightPercent(GAMEPLAY.gravityHeightPercent) / Math.pow(cy
 
 function physics()
 {
+    if (version === 'grapple_over' && (menu.gamePaused || floors[0].climbStats.completed || hostPaused)) return
     firstCycleInThisTick = true
     for (cycle = 0; cycle < cyclesPerTick - 1; ++cycle)
     {
@@ -16,6 +17,7 @@ function physics()
 }
 function calcPhysics()
 {
+    if (version === 'grapple_over' && floors[0].climbStats.completed) return
     // A continue offer freezes the run until the player answers it
     if (continueOffer.visible)
         return
@@ -58,7 +60,7 @@ function calcPhysics()
         stats.maxHeight = Math.max(stats.maxHeight, stats.currentHeight)
         const finish = world.level.finish
         if (finish && ninja.x >= finish.left && ninja.x <= finish.right &&
-            ninja.y >= finish.top && ninja.y <= finish.bottom) stats.completed = true
+            ninja.y >= finish.top && ninja.y <= finish.bottom) CLIMB_UI.complete()
     }
 
     for (let i = 0; i < floors.length; ++i)

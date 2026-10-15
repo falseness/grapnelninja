@@ -256,3 +256,129 @@ class Task459Tests(unittest.TestCase):
         self.proof['shared_harness'] = {'requested_modes':['bad','classic'],
             'lifecycle':page.evaluate('lifecycle459'), 'explicit_selection_pass':True}
         print('PASS shared boot wait and mode selector explicitly select bad/classic from Grapple Over')
+
+
+class Task460Tests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-460')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        hashes = source_hashes()
+        for name in ('tools/test_grapple_over_modes.py', 'tools/game_harness.py', 'tools/game_test_support.py'):
+            hashes[name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.proof = {'revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT, text=True).strip(),
+                     'source_hashes':hashes, 'browser':cls.browser.version,
+                     'viewports':[[800,450],[667,375]], 'device_scale_factor':1, 'has_touch':True, 'runs':[]}
+        cls.evidence.log('CONFIG '+json.dumps(cls.proof, sort_keys=True))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.evidence.write('flow.json', cls.proof)
+
+    def test_climb_flow_and_localized_layout(self):
+        for viewport, lang in (([800,450],'en'),([667,375],'ru')):
+            context = self.browser.new_context(viewport=dict(zip(('width','height'),viewport)), has_touch=True)
+            self.addCleanup(context.close)
+            page = context.new_page()
+            errors=[]
+            page.on('pageerror', lambda e: errors.append(str(e)))
+            def instrument(route):
+                response=route.fetch()
+                body=response.text().replace('            boot()\n', '''
+            window.events460=[]
+            PLATFORM.sendLifecycle=(name,data)=>{events460.push({name,data});return Promise.resolve()}
+            GRAPPLE_OVER_LEVEL.finish={left:1500,right:1600,top:0,bottom:100}
+            GRAPPLE_OVER_LEVEL.movers=[{id:'test-mover',element:'right-step',axis:'x',min:600,max:800,periodMs:2000,phase:0}]
+            boot()
+''',1)
+                route.fulfill(response=response,body=body)
+            page.route(self.url,instrument)
+            page.goto(self.url)
+            wait_for_boot(page)
+            page.evaluate('cancelAnimationFrame(game); window.requestAnimationFrame=()=>0')
+            page.evaluate('lang=>setLanguage(lang)',lang)
+            page.evaluate('CLIMB_UI.restart(); cancelAnimationFrame(game)')
+            base=page.evaluate('captureClimbState()')
+            page.evaluate('ninja.y=500; physics()')
+            high=page.evaluate('captureClimbState()')
+            page.evaluate('ninja.y=900; physics(); draw()')
+            low=page.evaluate('captureClimbState()')
+            self.assertLess(low['stats']['currentHeight'],high['stats']['currentHeight'])
+            self.assertEqual(low['stats']['maxHeight'],high['stats']['maxHeight'])
+            self.assertGreater(low['player']['y'],high['player']['y'])
+            hud_boxes=page.evaluate('''() => {LAYOUT_PROBE.boxes=[];draw();const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;return b}''')
+            hud_text=[b for b in hud_boxes if b['kind']=='text']
+            self.assertGreaterEqual(len(hud_text),4)
+            for b in hud_text:
+                self.assertGreaterEqual(b['fontPx'],12-1e-6)
+                self.assertGreaterEqual(b['x'],0)
+                self.assertLessEqual(b['x']+b['width'],viewport[0])
+            page.screenshot(path=str(self.evidence.path('hud.png' if lang=='en' else 'hud-ru.png')))
+            page.evaluate('menu.startPause()')
+            paused=page.evaluate('captureClimbState()')
+            page.wait_for_timeout(150)
+            page.evaluate('for(let i=0;i<20;i++) physics()')
+            self.assertEqual(page.evaluate('captureClimbState()'),paused)
+            def tap(key):
+                boxes=page.evaluate('''() => {LAYOUT_PROBE.boxes=[]; menu.drawPauseScreen();
+                    const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;return b}''')
+                label=page.evaluate('k=>I18N.t(k)',key)
+                box=next(b for b in boxes if b['kind']=='button' and b['name']==label)
+                rect=page.locator('#canvas').bounding_box()
+                page.touchscreen.tap(rect['x']+box['x']+box['width']/2,rect['y']+box['y']+box['height']/2)
+                page.evaluate('cancelAnimationFrame(game); window.requestAnimationFrame=()=>0')
+            tap('climb.restart'); tap('climb.cancel')
+            self.assertEqual(page.evaluate('captureClimbState()'),paused)
+            tap('climb.restart'); tap('climb.yes')
+            reset=page.evaluate('captureClimbState()')
+            self.assertEqual(reset,base)
+            page.wait_for_function("JSON.parse(localStorage.getItem('grapnelninja.grappleOver')).simulationTick===0")
+            page.evaluate('for(let i=0;i<120;i++) physics(); ninja.x=1550; ninja.y=50; ninja.speedY=0; physics()')
+            completed=page.evaluate('captureClimbState()')
+            self.assertTrue(completed['stats']['completed'])
+            self.assertEqual(page.evaluate('events460.find(e=>e.name==="level_completed").data.elapsedActiveMs'), completed['stats']['elapsedActiveMs'])
+            page.evaluate('for(let i=0;i<20;i++) physics(); menu.unPause()')
+            self.assertEqual(page.evaluate('captureClimbState()'),completed)
+            events=page.evaluate('events460')
+            self.assertEqual(sum(e['name']=='level_completed' for e in events),1)
+            self.assertFalse(any(e['name']=='level_failed' for e in events))
+            self.assertTrue(page.evaluate('menu.gamePaused'))
+            page.wait_for_function("JSON.parse(localStorage.getItem('grapnelninja.grappleOver')).stats.completed")
+            page.reload(); wait_for_boot(page)
+            page.evaluate('cancelAnimationFrame(game); window.requestAnimationFrame=()=>0')
+            self.assertEqual(page.evaluate('captureClimbState()'),completed)
+            self.assertEqual(page.evaluate('events460.filter(e=>e.name==="level_completed").length'),0)
+            page.evaluate('lang=>setLanguage(lang)',lang)
+            boxes=page.evaluate('''() => {LAYOUT_PROBE.boxes=[];draw();
+                const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;return b}''')
+            buttons=[b for b in boxes if b['kind']=='button']
+            # Ignore the background HUD menu icon under the opaque ending choices.
+            buttons=[b for b in buttons if b['name']!='icon']
+            for i,b in enumerate(buttons):
+                self.assertGreaterEqual(b['height']+1e-6,44)
+                self.assertGreaterEqual(b['x'],0); self.assertGreaterEqual(b['y'],0)
+                self.assertLessEqual(b['x']+b['width'],viewport[0]+1)
+                self.assertLessEqual(b['y']+b['height'],viewport[1]+1)
+                for o in buttons[i+1:]:
+                    self.assertFalse(b['x']<o['x']+o['width'] and o['x']<b['x']+b['width'] and
+                                     b['y']<o['y']+o['height'] and o['y']<b['y']+b['height'])
+                for t in [t for t in boxes if t['kind']=='text' and t['name']==b['name']]:
+                    self.assertGreaterEqual(t['x'],b['x'])
+                    self.assertLessEqual(t['x']+t['width'],b['x']+b['width'])
+            page.screenshot(path=str(self.evidence.path('ending.png' if lang=='en' else 'ending-ru.png')))
+            tap('mode.bad')
+            self.assertEqual(page.evaluate('version'),'bad')
+            self.assertFalse(page.evaluate('events460.some(e=>e.name==="level_failed")'))
+            page.evaluate("menu.selectMode('grapple_over');cancelAnimationFrame(game)")
+            self.assertTrue(page.evaluate('floors[0].climbStats.completed'))
+            tap('climb.replay')
+            self.assertFalse(page.evaluate('floors[0].climbStats.completed'))
+            self.assertFalse(page.evaluate('menu.gamePaused'))
+            self.assertEqual(errors,[])
+            self.proof['runs'].append(dict(language=lang,viewport=viewport,base=base,high=high,low=low,
+                paused=paused,reset=reset,completed=completed,events=events,ending_boxes=boxes,hud_boxes=hud_boxes,
+                falls_pass=True,max_informational_pass=True,paused_time_excluded_pass=True,
+                restart_cancel_preserves_pass=True,restart_confirm_resets_movers_save_pass=True,
+                completion_once_frozen_pass=True,reload_completion_pass=True,replay_pass=True,
+                mode_switch_no_failed_completion_pass=True,localized_layout_pass=True,browser_errors=errors))
+            print(f'PASS {lang} {viewport}: falls; informational max; pause; cancel; restart movers/save; completion once/frozen; reload; replay; mode switch; localized layout')
