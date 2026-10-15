@@ -21,7 +21,15 @@ const PROGRESS = (function()
     {
         if (climbJson !== null && climbJson !== undefined)
         {
-            try { restoreClimbState(JSON.parse(climbJson)) }
+            try {
+                restoreClimbState(JSON.parse(climbJson))
+                // Saved physical state survives; a previous session owns no input.
+                pressHeld = false
+                stalePress = false
+                gameplayPressOwned = false
+                draw()
+                menu.startPause()
+            }
             catch (_)
             {
                 climbJson = null

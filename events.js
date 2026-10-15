@@ -80,6 +80,7 @@ function createEvents()
     function click(event)
     {
         pressHeld = true
+        if (version === 'grapple_over') gameplayPressOwned = false
         if (adOpen || interstitialPending || isViewRotated())
             return
         if (!unTouch && startEvent(event))
@@ -93,25 +94,30 @@ function createEvents()
             return
         }
         if (!menu.opened() && !continueOffer.visible && !stalePress)
+        {
             throwGrapnel(event)
+            if (version === 'grapple_over') gameplayPressOwned = true
+        }
     }
     // preventDefault stops the emulated mousedown/mouseup after a tap
     function touch(event)
     {
         event.preventDefault()
         // No grapnel before the first run: a menu tap must still reach click()
-        if (!grapnel || !grapnel.throwed)
+        if (version === 'grapple_over' || !grapnel || !grapnel.throwed)
         {
             click(event)
         }
     }
     function offclick()
     {
+        const releaseOwned = gameplayPressOwned && !stalePress && !menu.opened()
+        gameplayPressOwned = false
         pressHeld = false
         stalePress = false
         if (adOpen || interstitialPending)
             return
-        pickUpGrapnel()
+        if (version !== 'grapple_over' || releaseOwned) pickUpGrapnel()
     }
     function offtouch(event)
     {

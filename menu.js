@@ -758,6 +758,11 @@ class Menu
     }
     startPause()
     {
+        if (version === 'grapple_over')
+        {
+            gameplayPressOwned = false
+            stalePress = pressHeld
+        }
         PROGRESS.flushClimb()
         this.relabelPauseSwitch()
         pauseTimeInGame()
@@ -815,6 +820,8 @@ class Menu
     }
     unPause()
     {
+        if (version === 'grapple_over' &&
+            (hostPaused || isViewRotated() || document.visibilityState === 'hidden')) return
         menu.changeGamePause(false)
         // Over the death screen the run is over: its clock stays stopped and
         // there is no level to resume

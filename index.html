@@ -166,6 +166,7 @@
             // A mouse button / finger is down; a press held across a fast
             // restart is stale and throws no grapnel until it is released
             let pressHeld = false, stalePress = false
+            let gameplayPressOwned = false
             const physicsTiming = {lastFrameTime: 0, accumulatorMs: 0}
             
             let game
@@ -666,7 +667,7 @@
             function pauseRun()
             {
                 if (!bootComplete) return
-                if (grapnel) {
+                if (grapnel && version !== 'grapple_over') {
                     grapnel.setGrappled(false)
                     grapnel.throwed = false
                 }

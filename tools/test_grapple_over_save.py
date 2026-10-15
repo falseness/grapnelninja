@@ -34,6 +34,7 @@ FIXTURE = '''kind => {
         pressHeld=true;ninja.collision();
     }
     if(kind==='completed') floors[0].climbStats.completed=true;
+    gameplayPressOwned=pressHeld && !stalePress;
     return captureClimbState();
 }'''
 
@@ -236,7 +237,10 @@ class Task457Tests(unittest.TestCase):
         restored=page.evaluate("() => {startGame('grapple_over');cancelAnimationFrame(game);return captureClimbState()}")
         self.assertEqual(restored,hidden)
         intact=page.evaluate('keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]))',list(legacy))
-        self.assertEqual(intact,legacy)
+        # Pausing a restored run now flushes legitimate active play time.
+        self.assertGreaterEqual(int(intact['grapnelninja.time']),int(legacy['grapnelninja.time']))
+        self.assertEqual({k:v for k,v in intact.items() if k!='grapnelninja.time'},
+                         {k:v for k,v in legacy.items() if k!='grapnelninja.time'})
         type(self).observations.append(dict(name='reload',restored=restored,legacy=intact,reload_pass=True))
         print('PASS falling current-state saves; periodic throttle; pause; mode exit; pagehide; exact reload; legacy intact')
 
@@ -284,3 +288,151 @@ class Task457Tests(unittest.TestCase):
         self.assertGreater(page.evaluate('floors[0].elapsedSteps'),saved['simulationTick'])
         self.observe(page,'unavailable',saved=saved,memory_fallback_pass=True)
         print('PASS corrupt/incompatible saves: localized notice and usable base; unavailable storage keeps play and in-memory save')
+
+
+class Task458Tests(unittest.TestCase):
+    task_id = 'TASK-458'
+    setUpClass = classmethod(Task456Tests.setUpClass.__func__)
+
+    def test_restore_resume_and_fresh_input(self):
+        from browser_test_support import wait_for_boot
+        context = self.browser.new_context(viewport={'width':1280,'height':720},
+            device_scale_factor=1, has_touch=True, record_video_dir=str(self.evidence.path('video')),
+            record_video_size={'width':1280,'height':720})
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors=[]
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        # A real moving level fixture, retained across page reloads.
+        source=(ROOT/'fixedlevel.js').read_text()+'''\n
+GRAPPLE_OVER_LEVEL.movers=[{id:'step-motion',element:'right-step',axis:'x',min:550,max:650,periodMs:1700,phase:.25}];
+'''
+        page.route('**/fixedlevel.js',lambda r:r.fulfill(body=source,content_type='application/javascript'))
+        page.goto(self.url)
+        wait_for_boot(page)
+        self.proof['has_touch']=True
+        self.evidence.log('CONFIG '+json.dumps(self.proof,sort_keys=True))
+        rows=[]
+        def state():
+            return page.evaluate('captureClimbState()')
+        def button(kind):
+            page.wait_for_function('!unTouch')
+            coords=page.evaluate('canvasCoordsToViewportCoords({x:menu.resume.text.x,y:menu.resume.text.y})')
+            page.evaluate('''({coords,kind})=>{
+                if(kind==='mouse') {
+                    document.dispatchEvent(new MouseEvent('mousedown',{clientX:coords.x,clientY:coords.y,bubbles:true}));
+                    document.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+                } else {
+                    const e=new Event('touchstart',{bubbles:true,cancelable:true});
+                    e.changedTouches=[{clientX:coords.x,clientY:coords.y}];document.dispatchEvent(e);
+                    document.dispatchEvent(new Event('touchend',{bubbles:true,cancelable:true}));
+                }
+            }''',dict(coords=coords,kind=kind))
+        for kind in ('moving-attachment','free-fall'):
+            page.evaluate('''kind=>{
+                startGame('grapple_over');cancelAnimationFrame(game);
+                ninja.x=1050;ninja.y=600;ninja.speedX=.3;ninja.speedY=1;
+                for(let i=0;i<7;i++)physics();
+                if(kind==='moving-attachment') {
+                    const e=floors[0].byId.get('right-step');
+                    ninja.x=e.x+340;ninja.y=e.y+150;
+                    grapnel.throwed=grapnel.grappled=true;pressHeld=true;
+                    grapnel.pos=[[e.x+150,e.y,e]];
+                } else grapnel.endShot();
+                PROGRESS.flushClimb();
+            }''',kind)
+            saved=state()
+            page.reload();wait_for_boot(page)
+            page.evaluate("startGame('grapple_over');TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500);redrawOverlays()")
+            restored=state()
+            self.assertTrue(page.evaluate('menu.gamePaused'))
+            for key in ('player','elements','grapple','simulationTick','stats'):
+                self.assertEqual(saved[key],restored[key],key)
+            page.wait_for_timeout(1000)
+            frozen=state();self.assertEqual(frozen,restored)
+            framing=page.evaluate('''()=>({x:(ninja.x+screen.x)*scale[version],
+                y:(ninja.y+screen.y)*scale[version],r:ninja.radius*scale[version],width,height})''')
+            self.assertTrue(framing['r']<=framing['x']<=framing['width']-framing['r'])
+            self.assertTrue(framing['r']<=framing['y']<=framing['height']-framing['r'])
+            # Stop rAF only after observing a live paused loop. UI dispatch is
+            # synchronous so exact momentum/rope comparisons precede physics.
+            page.evaluate('cancelAnimationFrame(game)')
+            ui=[]
+            for input_kind in ('mouse','touch'):
+                before=state();button(input_kind);after=state()
+                self.assertFalse(page.evaluate('menu.gamePaused'))
+                self.assertEqual(before,after)
+                ui.append(dict(kind=input_kind,before=before,after=after))
+                page.evaluate('draw();menu.startPause()')
+            button('mouse')
+            page.evaluate('game=requestAnimationFrame(gameLoop)')
+            page.wait_for_timeout(1000)
+            advanced=state();self.assertGreater(advanced['simulationTick'],frozen['simulationTick'])
+            page.evaluate('cancelAnimationFrame(game)')
+            page.wait_for_function('!unTouch')
+            inputs=[]
+            for input_kind in ('mouse','touch'):
+                page.evaluate('s=>{restoreClimbState(s);pressHeld=false;stalePress=false;gameplayPressOwned=false}',restored)
+                result=page.evaluate('''kind=>{
+                    const before=captureClimbState();
+                    const coords=canvasCoordsToViewportCoords({x:width*.7,y:height*.25});
+                    const send=type=>{
+                        const e=kind==='mouse'?new MouseEvent(type,{clientX:coords.x,clientY:coords.y,bubbles:true}):new Event(type,{bubbles:true,cancelable:true});
+                        if(kind==='touch')e.changedTouches=[{clientX:coords.x,clientY:coords.y}];
+                        document.dispatchEvent(e);
+                    };
+                    send(kind==='mouse'?'mousedown':'touchstart');const pressed=captureClimbState();
+                    send(kind==='mouse'?'mouseup':'touchend');return {before,pressed,released:captureClimbState()};
+                }''',input_kind)
+                self.assertEqual(result['before']['grapple'],restored['grapple'])
+                self.assertTrue(result['pressed']['grapple']['throwed'])
+                self.assertFalse(result['pressed']['grapple']['grappled'])
+                self.assertFalse(result['released']['grapple']['throwed'])
+                inputs.append(dict(kind=input_kind,**result))
+            rows.append(dict(kind=kind,saved=saved,restored=restored,frozen=frozen,framing=framing,
+                ui=ui,advanced=advanced,inputs=inputs,no_physics_before_resume_pass=True,
+                saved_movers_rope_unchanged_pass=True,ui_ownership_pass=True,new_gameplay_input_pass=True))
+        # Visibility/rotation while a gameplay press is held requires a fresh
+        # release/press, and must never auto-resume on returning to landscape.
+        guards=[]
+        for reason in ('hidden','portrait'):
+            page.mouse.move(900,200);page.mouse.down()
+            before=state()
+            if reason=='hidden':
+                page.evaluate("Object.defineProperty(document,'visibilityState',{configurable:true,get:()=> 'hidden'});document.dispatchEvent(new Event('visibilitychange'))")
+            else:
+                page.set_viewport_size({'width':720,'height':1280})
+                page.wait_for_timeout(180)
+            page.evaluate('menu.unPause();game=requestAnimationFrame(gameLoop)')
+            page.wait_for_timeout(180)
+            blocked=state();self.assertTrue(page.evaluate('menu.gamePaused'),reason)
+            self.assertEqual(before['simulationTick'],blocked['simulationTick'])
+            self.assertEqual(before['grapple'],blocked['grapple'])
+            if reason=='hidden':
+                page.evaluate("delete document.visibilityState;document.dispatchEvent(new Event('visibilitychange'))")
+            else:
+                page.set_viewport_size({'width':1280,'height':720});page.wait_for_timeout(180)
+            self.assertTrue(page.evaluate('menu.gamePaused'))
+            page.evaluate('cancelAnimationFrame(game);menu.unPause()')
+            page.mouse.down()
+            stale=state();self.assertEqual(stale['grapple'],blocked['grapple'])
+            page.mouse.up();page.mouse.down()
+            fresh=state();self.assertTrue(fresh['grapple']['throwed'])
+            self.assertFalse(fresh['input']['stalePress'])
+            page.mouse.up()
+            guards.append(dict(reason=reason,before=before,blocked=blocked,stale=stale,fresh=fresh,paused_pass=True,fresh_input_pass=True))
+        # Real hazard collision sets the guard; held input cannot refire.
+        page.evaluate(FIXTURE,'knockback')
+        knocked=state();self.assertTrue(knocked['input']['stalePress'])
+        page.mouse.down();held=state();self.assertFalse(held['grapple']['throwed'])
+        page.mouse.up();page.mouse.down();fresh=state();self.assertTrue(fresh['grapple']['throwed'])
+        page.mouse.up()
+        self.assertEqual(errors,[])
+        video=page.video
+        context.close()
+        video.save_as(str(self.evidence.path('resume.webm')))
+        video.delete()
+        self.evidence.write('resume.json',dict(self.proof,scenarios=rows,guards=guards,
+            hazard=dict(knocked=knocked,held=held,fresh=fresh,fresh_input_pass=True),errors=errors))
+        print('PASS moving-attachment and free-fall: frozen restore, movers/rope/momentum, mouse/touch Resume ownership, fresh gameplay, camera framing')
+        print('PASS hidden/portrait remain paused; fresh input after pause and hazard knockback; resume.webm recorded')
