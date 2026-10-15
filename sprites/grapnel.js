@@ -158,32 +158,41 @@ class Grapnel
             const reach = segmentBounds(grapnelLine.x1, grapnelLine.y1, grapnelLine.x2, grapnelLine.y2,
                                         defaultEqualityTolerance)
             const collisionGroups = screen.leftWall ? [...floors, {elements: [screen.leftWall]}] : floors
+            // Initial acquisition (and its range/occlusion checks) returns above.
+            // Attached segments only add wrapping contacts, even beyond range.
             if (version === 'grapple_over')
             {
-                // Resolve the first surface along the shot before considering
-                // attachment: a nongrapplable boundary occludes terrain behind it.
+                // Process one contact at a time from the anchor toward the player.
+                // Inserting a corner changes the segment: recheck that new geometry
+                // instead of inserting more hits from the obsolete straight rope.
                 let nearest = null
+                const origin = this.pos[q - 1]
                 for (const group of collisionGroups)
                     for (const element of group.elements)
+                    {
+                        if (element.grapplable === false ||
+                            !boundsOverlap(reach, elementBounds(element, grapnelElementBounds))) continue
                         for (const line of element.getLines())
                         {
                             const hit = linesCollision(grapnelLine, line)
                             if (!hit) continue
-                            const distance = Math.hypot(hit.x - grapnelLine.x1, hit.y - grapnelLine.y1)
+                            const corner = this.correctToCornerOfElement(hit.x, hit.y, element.getPoints(),
+                                screenHeightPercent(GAMEPLAY.cornerToleranceHeightPercent))
+                            if (this.pos.some(p => p[2] === element &&
+                                Math.hypot(p[0] - corner.x, p[1] - corner.y) < 1e-7)) continue
+                            const distance = Math.hypot(hit.x - origin[0], hit.y - origin[1])
                             if (!nearest || distance < nearest.distance)
-                                nearest = {hit, element, distance}
+                                nearest = {corner, element, distance}
                         }
-                if (nearest?.element.grapplable === false)
+                    }
+                if (nearest)
                 {
-                    this.throwed = this.grappled = false
-                    this.pos = []
-                    return
+                    const previous = this.pos.slice()
+                    this.grapple(nearest.corner, nearest.element, q)
+                    if (this.pos.length !== previous.length || this.pos.some((p, i) => p !== previous[i]))
+                        q = 0
                 }
-                if (!this.grappled && nearest)
-                {
-                    this.grapple(nearest.hit, nearest.element, q)
-                    return
-                }
+                continue
             }
             for (let k = 0; k < collisionGroups.length; ++k)
             {
@@ -205,6 +214,14 @@ class Grapnel
     }
     correctToCornerOfElement(x, y, points, eps)
     {
+        if (version === 'grapple_over')
+        {
+            // Elements expose vertices as {x, y}, not a flat coordinate array.
+            for (const point of points)
+                if (isPointsEqually([x, y], [point.x, point.y], eps))
+                    return {x: point.x, y: point.y}
+            return {x, y}
+        }
         for (let i = 0; i < points.length; i += 2)
         {
             if (isPointsEqually([x, y], [points[i], points[i + 1]], eps))
@@ -225,6 +242,11 @@ class Grapnel
             const firstPointEps = screenHeightPercent(GAMEPLAY.firstPointToleranceHeightPercent)
             coords = this.correctToCornerOfElement(coords.x, coords.y, element.getPoints(), correctCornerEps)
             
+            // A snapped corner may be reported by both adjoining edges. Do not
+            // grow the rope with duplicate contacts while iterating its segments.
+            if (version === 'grapple_over' && this.pos.some(point =>
+                point[2] === element && Math.hypot(point[0] - coords.x, point[1] - coords.y) < 1e-7))
+                return
             this.grappled = true
             if  (
                     index == 1                                                          && 

@@ -182,3 +182,169 @@ class Task451Tests(unittest.TestCase):
             rows.append(row)
         self.evidence.write('legacy-range.json',dict(self.proof,observations=rows))
         print('PASS legacy: classic and bad attach beyond 540 world units')
+
+
+class Task452Tests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-452')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        hashes = source_hashes()
+        name = 'tools/test_grapple_over_grapple.py'
+        hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.proof = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            source_hashes=hashes, browser=cls.browser.version, viewport=VIEWPORT)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.proof, sort_keys=True))
+        cls.rows = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.evidence.write('attachment.json', dict(cls.proof, observations=cls.rows))
+
+    def open(self, video=False):
+        options = dict(viewport=VIEWPORT, device_scale_factor=1)
+        if video:
+            options.update(record_video_dir=str(self.evidence.path('video')),
+                           record_video_size=VIEWPORT)
+        context = self.browser.new_context(**options)
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(self.url)
+        wait_for_boot(page)
+        page.evaluate("startGame('grapple_over');cancelAnimationFrame(game)")
+        page.wait_for_function('!unTouch')
+        page.evaluate('''() => {
+            for(const f of floors) f.elements=[];
+            screen.leftWall=null;screen.x=-450;screen.y=-300;
+            ninja.x=800;ninja.y=700;ninja.speedX=ninja.speedY=0;
+            window.rect=(id,x,y,w,h)=>{
+                const e=new Rect({x,y,width:w,height:h});e.id=id;e.surfaceRole='solid';
+                floors[0].elements.push(e);return e;
+            };
+            window.snapshot=()=>({player:[ninja.x,ninja.y],velocity:[ninja.speedX,ninja.speedY],
+                attached:grapnel.grappled,active:grapnel.throwed,
+                rope:grapnel.pos.map(p=>({point:p.slice(0,2),id:p[2].id,
+                    local:[p[0]-p[2].x,p[1]-p[2].y],element:[p[2].x,p[2].y]})),
+                distance:grapnel.pos.length?Math.hypot(grapnel.pos[0][0]-ninja.x,grapnel.pos[0][1]-ninja.y):0});
+            window.pullStep=()=>{
+                const before=snapshot();calcPhysics();const after=snapshot();
+                return {before,after,gravity:GRAVITY,pull:grappleSpeed};
+            };
+        }''')
+        return page
+
+    def press(self, page, x, y):
+        point = page.evaluate('''([x,y])=>canvasCoordsToViewportCoords({
+            x:(x+screen.x)*scale[version],y:(y+screen.y)*scale[version]})''',[x,y])
+        page.mouse.move(point['x'],point['y'])
+        page.mouse.down()
+
+    def acquire(self, page, x=1100, y=700):
+        self.press(page,x,y)
+        page.evaluate('''()=>{for(let i=0;i<100 && !grapnel.grappled && grapnel.throwed;i++){
+            grapnel.move();grapnel.collision();}}''')
+        self.assertTrue(page.evaluate('grapnel.grappled'))
+
+    def assert_pull(self, row):
+        before, after = row['before'], row['after']
+        anchor = after['rope'][-1]['point']
+        dx,dy = [anchor[i]-after['player'][i] for i in range(2)]
+        length = math.hypot(dx,dy)
+        expected = [row['pull']*dx/length if length else 0,
+                    row['gravity']+(row['pull']*dy/length if length else 0)]
+        for i in range(2):
+            self.assertAlmostEqual(after['velocity'][i]-before['velocity'][i],expected[i],places=9)
+        self.assertTrue(after['attached'])
+        return expected
+
+    def test_long_moving_and_coincident(self):
+        page = self.open()
+        page.evaluate("""window.target=rect('moving-anchor',1100,680,30,40);
+            floors[0].byId.set(target.id,target);
+            floors[0].level.movers=[{id:'motion',element:target.id,axis:'y',
+                min:680,max:780,periodMs:1000,phase:0}];""")
+        self.acquire(page)
+        initial=page.evaluate('snapshot()')
+        page.evaluate('ninja.x=200;ninja.y=700')
+        trace=[]
+        for _ in range(12):
+            row=page.evaluate('pullStep()')
+            row['expected_acceleration']=self.assert_pull(row)
+            self.assertGreater(row['after']['distance'],540)
+            self.assertEqual(row['after']['rope'][0]['id'],'moving-anchor')
+            for i in range(2):
+                self.assertAlmostEqual(row['after']['rope'][0]['local'][i],initial['rope'][0]['local'][i],places=9)
+            trace.append(row)
+        self.assertNotEqual(trace[0]['after']['rope'][0]['point'],trace[-1]['after']['rope'][0]['point'])
+        # An exact coincident direction must be finite and contribute no pull.
+        coincident=page.evaluate('''()=>{
+            ninja.x=grapnel.pos.at(-1)[0];ninja.y=grapnel.pos.at(-1)[1];
+            return {state:snapshot(),direction:grapnel.calcSpeed({x:ninja.x,y:ninja.y})};}''')
+        self.assertEqual(coincident['direction'],dict(sin=0,cos=0))
+        before=page.evaluate('snapshot()');page.mouse.up();after=page.evaluate('snapshot()')
+        self.assertEqual(before['velocity'],after['velocity'])
+        self.assertFalse(after['attached'])
+        self.rows['long_moving']=dict(initial=initial,trace=trace,coincident=coincident,release=dict(before=before,after=after))
+        print('PASS long/moving: 12 attached steps beyond R; stable local anchor; acceleration and release velocity; coincident direction finite')
+
+    def test_input_wrap_release(self):
+        page=self.open(video=True)
+        page.evaluate("rect('anchor',1100,680,30,40);rect('corner',900,800,80,50);draw()")
+        page.wait_for_timeout(200)
+        self.acquire(page)
+        page.evaluate('ninja.speedY=3;draw()')
+        trace=[]
+        for i in range(200):
+            row=page.evaluate('''()=>{const row=pullStep();draw();return row}''')
+            trace.append(row)
+            page.wait_for_timeout(16)
+            if len(row['after']['rope'])>=2:
+                break
+        self.rows['wrap']=dict(trace=trace)
+        self.assertGreaterEqual(len(trace[-1]['after']['rope']),2)
+        anchor=trace[-1]['after']['rope'][-1]
+        self.assertEqual(anchor['id'],'corner')
+        self.assertIn(anchor['point'],[[900,800],[980,800],[980,850],[900,850]])
+        row=page.evaluate('pullStep()');self.assert_pull(row)
+        self.rows['wrap']['pull']=row
+        page.evaluate('draw()');page.wait_for_timeout(400)
+        before=page.evaluate('snapshot()');page.mouse.up();after=page.evaluate('snapshot()')
+        self.assertEqual(before['velocity'],after['velocity'])
+        self.assertFalse(after['attached']);self.assertFalse(after['active'])
+        self.rows['wrap']['release']=dict(before=before,after=after,tolerance=1e-9)
+        for _ in range(25):
+            page.evaluate('calcPhysics();draw()');page.wait_for_timeout(16)
+        page.context.close()
+        page.video.save_as(str(self.evidence.path('wrapping.webm')))
+        print('PASS input wrap/release: mouse press, physical motion, convex corner, last-corner acceleration, unchanged release velocity; wrapping.webm')
+
+    def test_multiple_segments_beyond_range(self):
+        page=self.open()
+        page.evaluate("rect('anchor',1100,680,30,40)")
+        self.acquire(page)
+        initial=page.evaluate('snapshot()')
+        page.evaluate("""rect('far-corner',900,800,80,50);
+            rect('near-corner',600,952,40,80);
+            rect('boundary',400,1000,20,100).grapplable=false;
+            ninja.x=200;ninja.y=1160;grapnel.collision();""")
+        wrapped=page.evaluate('snapshot()')
+        self.rows['multi_segment']=dict(initial=initial,wrapped=wrapped)
+        self.assertTrue(wrapped['attached'])
+        self.assertGreater(wrapped['distance'],540)
+        self.assertEqual([p['id'] for p in wrapped['rope']],['anchor','far-corner','near-corner'])
+        self.assertEqual(wrapped['rope'][0],initial['rope'][0])
+        self.assertEqual(wrapped['rope'][1]['point'],[900,800])
+        self.assertEqual(wrapped['rope'][2]['point'],[600,952])
+        trace=[]
+        for _ in range(8):
+            row=page.evaluate('pullStep()')
+            self.assert_pull(row)
+            self.assertEqual(len(row['after']['rope']),3)
+            trace.append(row)
+        self.rows['multi_segment']['trace']=trace
+        print('PASS multi-segment: original anchor preserved; wrapping contact beyond R; three stable anchors; boundary does not reacquire/detach; last-corner pull')
