@@ -171,7 +171,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(recoveries[0], {status:'built',
         elements:['S01-recovery-balcony','S01-lower-anchor','S01-rest-dock'],
         localRejoin:'S01-04'});
-    // Switchback Shaft opening: cantilevered decks with integral wall returns
+    // Switchback Shaft: cantilevered decks with integral wall returns
     // and tapered undersides. The silhouette is the solid collider, not decoration.
     const shaft = [
         {id:'S02-left-balcony',x:3700,y:-1960,role:'solid',grapplable:true,
@@ -182,10 +182,18 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
                 {x:265,y:80},{x:170,y:80},{x:0,y:30}]},
         {id:'S02-brake-girder',x:3800,y:-2500,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:170,y:0},{x:170,y:25},{x:120,y:45},{x:0,y:45}]},
-        rectangle('S02-test-exit',3700,-2050,350,35,true),
-        rest('S02-catch-balcony',4260,-1840,600)
+        rest('S02-rest-ledge',3700,-2050,350),
+        rest('S02-catch-balcony',4260,-1840,600),
+        {id:'S02-reversal-balcony',x:4140,y:-2780,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:240,y:0},{x:240,y:-120},{x:275,y:-120},
+                {x:275,y:75},{x:180,y:75},{x:0,y:30}]},
+        {id:'S02-upper-return',x:3760,y:-3060,role:'solid',grapplable:true,
+            points:[{x:0,y:-120},{x:35,y:-120},{x:35,y:0},{x:200,y:0},
+                {x:200,y:30},{x:90,y:65},{x:0,y:65}]},
+        rectangle('S02-exit-anchor',4080,-3240,180,35,true),
+        rest('S02-exit',4280,-3180,360)
     ];
-    Object.assign(sections[1], {status:'partial',landmark:{id:'S02-landmark',
+    Object.assign(sections[1], {status:'built',landmark:{id:'S02-landmark',
         name:'alternating industrial balconies',x:4030,y:-2100}});
     Object.assign(encounters[4], {status:'built',x:4100,y:-1631,
         elements:['S01-exit','S02-left-balcony','S02-right-balcony','S02-catch-balcony'],
@@ -193,14 +201,31 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:4100,right:4170,top:-2020,bottom:-1970},
         action:'Pull left from Foundations, release and pull the opposing right balcony'});
     Object.assign(encounters[5], {status:'built',x:4160,y:-2250,
-        elements:['S02-right-balcony','S02-brake-girder','S02-test-exit'],
+        elements:['S02-right-balcony','S02-brake-girder','S02-rest-ledge'],
         start:{from:'S02-01'},target:{x:3890,y:-2480},
         exit:{left:3720,right:4030,top:-2062,bottom:-2050},
-        action:'Brake rightward momentum with the opposing left girder; release onto the temporary rest exit'});
+        action:'Brake rightward momentum with the opposing left girder; release onto the ordinary rest ledge'});
     Object.assign(connectors[4], {status:'built',intent:'Physical ascent from Foundations exit to left balcony'});
     connectors[5].status='built';
     Object.assign(recoveries[1], {openingElements:['S02-catch-balcony','S01-exit','S01-rest-ledge'],
         openingRejoin:'S02-01',sideRoute:'Open left side drops visibly to Foundations exit and rest ledge'});
+    Object.assign(encounters[6], {status:'built',x:4130,y:-2580,
+        elements:['S02-brake-girder','S02-reversal-balcony','S02-upper-return'],
+        start:{from:'S02-02'},target:{x:3850,y:-3040},
+        exit:{left:3800,right:4180,top:-3000,bottom:-2700},
+        action:'Control an overshoot through a lateral reversal from the right balcony to the upper left return'});
+    Object.assign(encounters[7], {status:'built',x:4170,y:-3160,
+        elements:['S02-upper-return','S02-exit-anchor','S02-exit'],
+        start:{from:'S02-03'},target:{x:4170,y:-3220},
+        exit:{left:4280,right:4600,top:-3200,bottom:-3180},
+        action:'Climb out through the recessed exit, release into its sheltered landing'});
+    connectors[6].status='built';connectors[7].status='built';
+    Object.assign(connectors[8], {authoredFrom:'S02',
+        departure:{left:4280,right:4600,top:-3200,bottom:-3180},
+        intent:'Built shaft exit at the next band; destination S03 remains planned'});
+    Object.assign(recoveries[1], {status:'built',
+        elements:['S02-rest-ledge','S02-left-balcony','S02-catch-balcony','S01-exit'],
+        localRejoin:'S02-01'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},

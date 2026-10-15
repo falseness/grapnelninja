@@ -549,3 +549,114 @@ class Task468Tests(unittest.TestCase):
             S02_02='early brake release misses upper rest; lower balcony catches fall; visible side route returns to S01-exit',
             matching_traces=True,no_traversal_mutation=True))
         print('PASS S02-01/02 recovery: missed targets/exits; physical catches; rejoin Foundations; matching replay; no relocation')
+
+
+class Task469Tests(unittest.TestCase):
+    """Completed shaft, measured with trusted mouse/touch and deterministic replay."""
+    task_id = 'TASK-469'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+    opening = Task468Tests.opening
+    route = opening + [(3890,-2480,30,180),(3890,-2480,55,0),
+        (4220,-2760,55,0),(4220,-2760,45,0),(3850,-3040,55,0),
+        (4170,-3220,55,0),(4430,-3180,30,180)]
+
+    def test_01_geometry(self):
+        page=self.open()
+        r=page.evaluate('''() => {const m=GRAPPLE_OVER_MOUNTAIN;
+            validateMountainManifest(m);return {manifest:m,runtime:floors[0].level,
+            colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))};}''')
+        m=r['manifest']
+        self.assertEqual(r['runtime']['elements'],m['geometry']['elements'])
+        for actual,model in zip(r['colliders'],m['geometry']['elements']):
+            self.assertEqual(actual,{k:model[k] for k in ('id','x','y','points','role')})
+        self.assertEqual(m['sections'][1]['status'],'built')
+        self.assertEqual([e['status'] for e in m['encounters'][4:8]],['built']*4)
+        self.assertEqual(len({e['action'] for e in m['encounters'][4:8]}),4)
+        self.assertEqual([c['status'] for c in m['connectors'][4:8]],['built']*4)
+        self.assertEqual(m['connectors'][8]['authoredFrom'],'S02')
+        self.assertEqual(m['recoveries'][1]['status'],'built')
+        self.assertFalse(any(s['from'].startswith('S02') for s in m['shortcuts']))
+        self.assertFalse(any('test-exit' in e['id'] for e in m['geometry']['elements']))
+        self.assertIsNone(r['runtime']['finish'])
+        shaft=[e for e in m['geometry']['elements'] if e['id'].startswith('S02')]
+        self.assertEqual(len(shaft),9)
+        self.assertTrue(all(e['role']=='solid' for e in shaft))
+        r.update(self.proof,structural_validations_pass=True,encounters_built=[e['id'] for e in m['encounters'][4:8]],
+            rest_ledge='S02-rest-ledge',exit='S02-exit',recovery_route='S02-catch-balcony -> open side -> S01-exit',
+            surface_roles={'solid':'gray; rendered polygon equals collider','hazard':'absent','bounce':'absent'},
+            shortcut='none assigned to S02',next_section_required=False)
+        self.evidence.write('geometry.json',r)
+        svg=['<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="#111827"/>',
+             '<text x="24" y="28" fill="white" font-size="20">S02 Switchback Shaft | gray: solid | hazard / bounce / shortcut: none</text>']
+        def xy(x,y): return (300+(x-3700)*.55,650+(y+1620)*.34)
+        for e in shaft+[next(e for e in m['geometry']['elements'] if e['id']=='S01-exit')]:
+            points=' '.join('%g,%g'%xy(e['x']+p['x'],e['y']+p['y']) for p in e['points'])
+            x,y=xy(e['x'],e['y'])
+            svg.append(f'<polygon points="{points}" fill="#aaa" stroke="white"/><text x="{x}" y="{y+29}" fill="white" font-size="13">{e["id"]}</text>')
+        for label,x,y in [('01 alternate walls',3480,-1800),('02 brake / rest',3480,-2180),
+                          ('03 lateral reversal',3480,-2690),('04 recessed exit to next band',3900,-3300),
+                          ('recovery: open side to Foundations',4480,-2070)]:
+            x,y=xy(x,y);svg.append(f'<text x="{x}" y="{y}" fill="#67e8f9" font-size="15">{label}</text>')
+        svg.append('</svg>')
+        page.set_content('<style>body{margin:0}</style>'+''.join(svg))
+        page.screenshot(path=str(self.evidence.path('overview.png')))
+        self.evidence.write('overview.json',dict(passed=True,sha256=hashlib.sha256(self.evidence.path('overview.png').read_bytes()).hexdigest(),
+            assertion='runtime polygons: four encounters, rest, recessed exit, recovery; all solid; no assigned shortcut'))
+        print('PASS geometry: S02-01/02/03/04 built; matching colliders; rest ledge; recessed exit; physical recovery; no temporary exit; no assigned shortcut')
+
+    def replay(self,name,plan,exit_bounds,touch=False):
+        from grapple_over_verify import metadata,execute,check_trace,hashes
+        page=self.open();level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)');page.close()
+        m=dict(metadata=metadata('isolated'),initial_setup=dict(level=level,
+            player=dict(x=4100,y=-1630.8,speedX=0,speedY=0)),inputs=[],
+            expected_exit=exit_bounds,required_events=['acquisition','release'])
+        m['metadata']['compact_contacts']=True
+        tick=30;ends=[]
+        for x,y,hold,free in plan:
+            m['inputs'].append(dict(tick=tick,event='touchstart' if touch else 'mousedown',world=dict(x=x,y=y)))
+            tick+=hold
+            m['inputs'].append(dict(tick=tick,event='touchend' if touch else 'mouseup',world=dict(x=x,y=y)))
+            ends.append(tick);tick+=free
+        m['ticks']=tick+1
+        prefix='encounters/'+name
+        self.evidence.write(prefix+'/input.json',m)
+        trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=True)
+        check_trace(m,trace)
+        replay=execute(m,self.browser,self.url,str(self.evidence.path(prefix+'/replay')))
+        check_trace(m,replay);self.assertEqual(trace,replay)
+        self.assertEqual(len(trace['metadata']['setupOnlySpawns']),1)
+        self.evidence.write(prefix+'/result.json',dict(passed=True,matching_traces=True,
+            source_hashes=hashes(),trusted_inputs=True,no_traversal_mutation=True,
+            scope='Single initial placement at Foundations exit; production input/physics thereafter',
+            final=trace['snapshots'][-1]['state']['simulation']['player']))
+        return trace,ends
+
+    def test_02_encounters_mouse_touch(self):
+        for device in ('mouse','touch'):
+            trace,ends=self.replay(device+'-S02-03-04-exit',self.route,
+                dict(x=[4290,4600],y=[-3191,-3190],speedX=[-.001,.001],speedY=[-.001,.001]),touch=device=='touch')
+            players=[s['state']['simulation']['player'] for s in trace['snapshots']]
+            acquired=[e['after']['rope'][0]['id'] for e in trace['events'] if e['type']=='acquisition']
+            for target in ('S02-reversal-balcony','S02-upper-return','S02-exit-anchor','S02-exit'):
+                self.assertIn(target,acquired)
+            before=players[ends[6]]
+            reversed_player=min(players[ends[6]:ends[7]+1],key=lambda p:p['speedX'])
+            self.assertGreater(before['speedX'],0)
+            self.assertLess(reversed_player['speedX'],0)
+            self.assertLess(reversed_player['x'],max(p['x'] for p in players[ends[6]:ends[7]+1]))
+            self.evidence.write('encounters/'+device+'-observations.json',dict(passed=True,
+                encounters=['S02-03','S02-04'],before=before,reversed=reversed_player,
+                acquisitions=acquired,exit=players[-1],assertion='lateral reversal and recessed section exit traversed'))
+            print('PASS '+device+': S02-03 lateral reversal; S02-04 recessed exit traversed; trusted inputs; matching replay; no traversal mutation')
+
+    def test_03_local_miss_recovery(self):
+        trace,_=self.replay('local-miss-recovery',self.opening+[(3890,-2480,10,180),(4220,-2240,30,190)],
+            dict(x=[3940,4260],y=[-1631,-1630],speedY=[-.001,.001]))
+        players=[s['state']['simulation']['player'] for s in trace['snapshots']]
+        catches=[p for p in players if 4260<p['x']<4820 and abs(p['y']+1850.8)<.01 and p['speedY']==0]
+        self.assertTrue(catches)
+        self.evidence.write('encounters/recovery-observations.json',dict(passed=True,catch=catches[0],exit=players[-1],
+            assertion='local miss physically caught on wide lower balcony; subsequent input returns through visible side to Foundations'))
+        print('PASS recovery: local miss; wide lower balcony catch; input-driven side route to Foundations; matching replay')
