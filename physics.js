@@ -10,6 +10,7 @@ function physics()
     }
     firstCycleInThisTick = true
     calcPhysics()
+    if (version === 'grapple_over' && !continueOffer.visible) screen.trackGrappleOver()
     ninja.tickInvulnerability(physicsStepMs)
 }
 function calcPhysics()
@@ -20,7 +21,7 @@ function calcPhysics()
 
     ninja.speedY += GRAVITY
 
-    if (screen.shouldStartMove())
+    if (version !== 'grapple_over' && screen.shouldStartMove())
         screen.move()
 
     for (let i = 0; i < floors.length; ++i)

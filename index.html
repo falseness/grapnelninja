@@ -516,13 +516,12 @@
             function startGrappleOverVersion()
             {
                 screen = new Screen(true, 0)
-                screen.min = -2000
-                screen.max = 2000
                 const world = loadFixedLevel()
                 floors = [world]
                 ninja = new Ninja({...world.level.spawn, radius: 0.01 * height,
                     fill: STYLE.colors.player.fill, stroke: STYLE.colors.player.stroke})
                 grapnel = new Grapnel({points: [0, 0, 0, 0], stroke: STYLE.colors.player.cyan})
+                screen.trackGrappleOver(true)
             }
             function start()
             {
