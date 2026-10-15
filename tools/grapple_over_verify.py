@@ -24,7 +24,8 @@ from perf_mobile import SEED_SCRIPT
 def hashes():
     result = source_hashes()
     for name in ('grapple_over_verify.py', 'grapple_over_support.py',
-                 'grapple_over_injector.js', 'test_grapple_over_tools.py'):
+                 'grapple_over_injector.js', 'test_grapple_over_tools.py',
+                 'test_grapple_over_sections.py'):
         path = 'tools/' + name
         result[path] = hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
     return result
@@ -43,7 +44,7 @@ def require(condition, message):
 def validate(manifest):
     m = manifest['metadata']
     require(m['schema'] == 1 and m['hz'] == 60 and m['seed'] == 1
-            and m['viewport'] == VIEWPORT, 'metadata mismatch')
+            and m['viewport'] in (VIEWPORT, {'width':844, 'height':390}), 'metadata mismatch')
     require(m['source_hashes'] == hashes(), 'runtime hash mismatch')
     require(m['level_sha256'] == hashes()['fixedlevel.js'], 'level hash mismatch')
     require(m['kind'] in ('base-start', 'isolated'), 'unknown proof kind')
@@ -92,13 +93,14 @@ def output_writer(out):
     return evidence, path.relative_to(evidence.root).as_posix()
 
 
-def execute(manifest, browser, url, out, clip=False):
+def execute(manifest, browser, url, out, clip=False, filmstrip=False):
     validate(manifest)
     evidence, prefix = output_writer(out)
-    options = dict(viewport=VIEWPORT, device_scale_factor=1, has_touch=True)
+    viewport = manifest['metadata']['viewport']
+    options = dict(viewport=viewport, device_scale_factor=1, has_touch=any(e['event'].startswith('touch') for e in manifest['inputs']))
     if clip:
         options['record_video_dir'] = str(evidence.path(prefix + '/video/.keep').parent)
-        options['record_video_size'] = VIEWPORT
+        options['record_video_size'] = viewport
     context = browser.new_context(**options)
     try:
         page = context.new_page()
@@ -119,9 +121,21 @@ def execute(manifest, browser, url, out, clip=False):
         page.evaluate('''() => { const a=GRAPPLE_OVER_TEST.attempts[0];
             a.snapshots=[{tick:0,state:GRAPPLE_OVER_TEST.snapshot()}]; }''')
         cdp = context.new_cdp_session(page)
-        for tick in range(manifest['ticks']):
+        boundaries = {0, manifest['ticks']}
+        boundaries.update(e['tick'] for e in manifest['inputs'])
+        if clip:
+            boundaries.update(range(manifest['ticks']))
+        elif filmstrip:
+            frames = set(range(0, manifest['ticks'], 60)) | {manifest['ticks']-1}
+            frames.update(e['tick'] for e in manifest['inputs'])
+            boundaries.update(frames)
+            boundaries.update(t+1 for t in frames)
+        boundaries = sorted(boundaries)
+        for tick, next_tick in zip(boundaries, boundaries[1:]):
             for event in (e for e in manifest['inputs'] if e['tick'] == tick):
                 point = page.evaluate('p=>GRAPPLE_OVER_TEST.client(p)', event['world'])
+                if manifest['metadata'].get('compact_contacts') and event['event'].endswith(('down', 'start')):
+                    require(0 < point['x'] < viewport['width'] and 0 < point['y'] < viewport['height'], 'mandatory target outside viewport')
                 if event['event'].startswith('mouse'):
                     page.mouse.move(point['x'], point['y'])
                     (page.mouse.down if event['event'] == 'mousedown' else page.mouse.up)()
@@ -130,15 +144,29 @@ def execute(manifest, browser, url, out, clip=False):
                         type='touchStart' if event['event'] == 'touchstart' else 'touchEnd',
                         touchPoints=[dict(x=point['x'], y=point['y'], id=1)]
                         if event['event'] == 'touchstart' else []))
-            page.evaluate('GRAPPLE_OVER_TEST.step(1)')
+            page.evaluate('n=>{GRAPPLE_OVER_TEST.step(n); TUTORIAL_HINT.advance(n*physicsStepMs)}', next_tick-tick)
+            if filmstrip and (tick % 60 == 0 or tick == manifest['ticks']-1 or any(e['tick'] == tick for e in manifest['inputs'])):
+                page.evaluate('draw()')
+                page.screenshot(path=str(evidence.path(prefix + f'/frame-{tick:04d}.png')))
             if clip:
                 page.evaluate('draw()')
                 page.wait_for_timeout(1000 / 60)
         page.evaluate("GRAPPLE_OVER_TEST.finish('passed')")
+        if manifest['metadata'].get('compact_contacts'):
+            page.evaluate('''() => {
+                const a=GRAPPLE_OVER_TEST.attempts[0], seen=new Set();
+                a.events=a.events.filter(e=>{
+                    if(e.type!=='contact')return true;
+                    const key=JSON.stringify(e.contact);
+                    if(seen.has(key))return false;seen.add(key);return true;
+                });
+                a.events.forEach((e,i)=>e.sequence=i);
+                a.metadata.contactPolicy='first occurrence per identical contact; all physics snapshots retained';
+            }''')
         trace = export_recording(page)[0]
         require(not errors, 'browser errors: ' + repr(errors))
         evidence.write(prefix + '/trace.json', trace)
-        evidence.write(prefix + '/browser.json', dict(browser=browser.version, viewport=VIEWPORT,
+        evidence.write(prefix + '/browser.json', dict(browser=browser.version, viewport=viewport,
             revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
             source_hashes=hashes()))
         video = page.video if clip else None
@@ -165,8 +193,10 @@ def check_trace(manifest, trace):
         require(actual['tick'] == expected['tick'] and actual['event'] == expected['event']
                 and actual['trusted'], 'input mismatch')
         # Chromium mouse coordinates are integer CSS pixels (2 world units here).
-        require(all(abs(actual['world'][k] - expected['world'][k]) <= 2.000001 for k in ('x', 'y')),
-                'aim mismatch')
+        if expected['event'] != 'touchend':
+            tolerance = 2.000001 * 720 / manifest['metadata']['viewport']['height']
+            require(all(abs(actual['world'][k] - expected['world'][k]) <= tolerance for k in ('x', 'y')),
+                    'aim mismatch')
     player = rows[-1]['state']['simulation']['player']
     for field, bounds in manifest['expected_exit'].items():
         require(field in player and len(bounds) == 2 and bounds[0] <= player[field] <= bounds[1],
@@ -188,6 +218,44 @@ def verify(manifest, browser, url, out, clip=False):
     return result
 
 
+def audit_suite(manifest, browser, url, out):
+    """Replay every reported attempt, including failures, without trusting summary flags."""
+    evidence, _ = output_writer(out)
+    require(manifest['source_hashes'] == hashes(), 'suite source hash mismatch')
+    require(set(manifest['encounters']) == {'S01-01','S01-02','S01-03','S01-04'}, 'encounter coverage')
+    count = 0
+    for encounter, attempts in manifest['encounters'].items():
+        for device in ('desktop', 'touch'):
+            group = [a for a in attempts if a['device'] == device]
+            require({a['variant'] for a in group} == {'nominal','early','late','aim-left','aim-right'}, 'variant coverage')
+            require(next(a for a in group if a['variant']=='nominal')['success'], 'nominal failed')
+            require(sum(a['success'] for a in group if a['variant']!='nominal') >= 2, 'tolerance failed')
+        for a in attempts:
+            recorded = json.loads(evidence.path(a['input']).read_text())
+            replayed = execute(recorded, browser, url, str(Path(out)/a['name']))
+            require(recorded['trace'] == replayed, 'suite replay mismatch: '+a['name'])
+            try:
+                check_trace(recorded, replayed)
+                success = True
+            except ValueError:
+                success = False
+            require(success == a['success'], 'outcome mismatch')
+            count += 1
+    negative = json.loads(evidence.path(manifest['negative_control']).read_text())
+    recorded = json.loads(evidence.path(negative['input']).read_text())
+    replayed = execute(recorded, browser, url, str(Path(out)/'negative'))
+    require(recorded['trace'] == replayed, 'negative replay mismatch')
+    try:
+        check_trace(recorded, replayed)
+    except ValueError as error:
+        require('expected exit mismatch' in str(error), 'negative failed for wrong reason')
+    else:
+        raise ValueError('negative unexpectedly succeeded')
+    result = dict(matching_traces=True, attempts=count, negative_control_failed_exit=True)
+    evidence.write(output_writer(out)[1]+'/audit.json', result)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -201,7 +269,7 @@ def main():
         manifest = json.loads(Path(args.input).read_text())
         with ExitStack() as stack:
             url, browser = start_browser_test(ROOT, stack.callback)
-            result = verify(manifest, browser, url, args.out, args.clip)
+            result = audit_suite(manifest, browser, url, args.out) if 'encounters' in manifest else verify(manifest, browser, url, args.out, args.clip)
         print('PASS ' + args.command + ': ' + json.dumps(result, sort_keys=True))
         return 0
     except (ValueError, KeyError, TypeError) as error:

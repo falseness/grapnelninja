@@ -21,7 +21,7 @@ def state_hash(state):
 
 
 def export_recording(page):
-    attempts = page.evaluate('GRAPPLE_OVER_TEST.attempts')
+    attempts = json.loads(page.evaluate('JSON.stringify(GRAPPLE_OVER_TEST.attempts)'))
     for attempt in attempts:
         for row in attempt['snapshots']:
             row['sha256'] = state_hash(row['state'])

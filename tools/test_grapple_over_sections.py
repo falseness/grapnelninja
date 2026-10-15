@@ -311,3 +311,113 @@ class Task466Tests(unittest.TestCase):
         self.evidence.write('encounters/touch-recovery.json',r)
         page.evaluate('draw()');page.screenshot(path=str(self.evidence.path('encounters/touch-recovery.png')))
         print('PASS touch: trusted lower-anchor acquisition; physical lift from recovery balcony; release')
+
+
+class Task467Tests(unittest.TestCase):
+    """Measured S01 tolerance, with only initial isolated placement allowed."""
+    @classmethod
+    def setUpClass(cls):
+        from grapple_over_verify import hashes
+        cls.evidence = EvidenceWriter('TASK-467')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.evidence.log('CONFIG '+json.dumps(dict(browser=cls.browser.version,
+            viewports=[VIEWPORT,dict(width=844,height=390)], devices=['mouse','touch'],
+            revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            source_hashes=hashes()),sort_keys=True))
+
+    def test_01_tolerance_matrix(self):
+        from grapple_over_verify import metadata, hashes, execute, check_trace
+        page=self.browser.new_page(viewport=VIEWPORT)
+        page.goto(self.url); wait_for_boot(page)
+        level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)')
+        shortcuts=page.evaluate("GRAPPLE_OVER_MOUNTAIN.shortcuts.filter(s=>s.from.startsWith('S01'))")
+        page.close()
+        self.assertEqual(shortcuts, [])
+        plan=[(2390,-310,30,300),(2970,-425,30,0),(3180,-730,55,0),
+              (2890,-1040,45,0),(3290,-1070,80,180),(3290,-1070,20,0),
+              (3630,-1280,55,0),(3840,-1680,45,0),(3840,-1680,45,0),
+              (3840,-1680,50,0),(4070,-1620,30,180)]
+        suite=dict(source_hashes=hashes(),level_sha256=hashes()['mountain.js'],
+            proof_kind='isolated: entrance placement, or touch S01-04 physical drop above recovery balcony; not base-start completion',
+            encounters={},negative_control='negative-control.json',shortcuts='none assigned or observed',
+            recovery='clips/S01-04-desktop-nominal/trace.json')
+        failures=[]
+        for encounter,limit,critical,exit_bounds in [
+            ('S01-01',1,0,dict(x=[2480,3020],y=[-131,-130])),
+            ('S01-02',1,0,dict(x=[2480,3020],y=[-131,-130],speedY=[-0.001,0.001])),
+            ('S01-03',4,2,dict(x=[2800,3100],y=[-1025,-900])),
+            ('S01-04',11,5,dict(x=[3940,4260],y=[-1631,-1630],speedY=[-0.001,0.001]))]:
+            attempts=[];suite['encounters'][encounter]=attempts
+            for device in ('desktop','touch'):
+                for variant,delta,offset in [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]:
+                    name=f'{encounter}-{device}-{variant}'
+                    m=dict(metadata=metadata('isolated'),initial_setup=dict(level=level,
+                        player=dict(x=2160,y=0,speedX=0,speedY=0)),inputs=[],
+                        expected_exit=exit_bounds,required_events=['acquisition','release'])
+                    m['metadata']['compact_contacts']=True
+                    if device=='touch': m['metadata']['viewport']=dict(width=844,height=390)
+                    tick=30
+                    selected=list(enumerate(plan[:limit]))
+                    recovery_tick=750
+                    if encounter=='S01-04' and device=='touch':
+                        # Isolated physical fall: no checkpoint or mid-run placement.
+                        m['initial_setup']['player']=dict(x=3599.1999999,y=-890.8000001,speedX=0,speedY=0)
+                        tick=90;recovery_tick=90
+                        selected=selected[5:]
+                    for i,(x,y,hold,free) in selected:
+                        if encounter=='S01-03' and i==2: x=3169.2
+                        if i==critical: x+=offset;hold+=delta
+                        m['inputs'].append(dict(tick=tick,event='touchstart' if device=='touch' else 'mousedown',world=dict(x=x,y=y)))
+                        tick+=hold
+                        m['inputs'].append(dict(tick=tick,event='touchend' if device=='touch' else 'mouseup',world=dict(x=x,y=y)))
+                        tick+=free
+                    m['ticks']=tick+1
+                    prefix=('clips/' if variant=='nominal' else 'attempts/')+name
+                    self.evidence.write(prefix+'/input.json',m)
+                    trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=variant=='nominal')
+                    m['trace']=trace
+                    success=True;reason='expected exit and mechanic events satisfied'
+                    try: check_trace(m,trace)
+                    except ValueError as error: success=False;reason=str(error)
+                    acquisitions=[dict(tick=e['tick'],target=e['after']['rope'][0]['id']) for e in trace['events'] if e['type']=='acquisition']
+                    transfers=[dict(from_target=a['target'],to_target=b['target'],tick=b['tick'])
+                        for a,b in zip(acquisitions,acquisitions[1:]) if a['target']!=b['target']]
+                    if encounter=='S01-03' and success:
+                        self.assertTrue(any(t['to_target']=='S01-transfer-beam' for t in transfers))
+                        self.assertTrue(any(t['to_target']=='S01-upper-beam' for t in transfers))
+                    if encounter=='S01-04' and variant=='nominal':
+                        players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+                        self.assertTrue(any(3230<p['x']<3650 and abs(p['y']+790.8)<0.01 and p['speedY']==0 for p in players))
+                        self.assertTrue(any(a['target']=='S01-lower-anchor' and a['tick']>=recovery_tick for a in acquisitions))
+                    self.evidence.write(prefix+'/input.json',m)
+                    a=dict(name=name,device=device,variant=variant,critical_input_index=critical,
+                        hold_delta=delta,tangent_aim_delta=offset,input=prefix+'/input.json',trace=prefix+'/trace.json',
+                        success=success,reason=reason,acquisitions=acquisitions,transfers=transfers,
+                        events=sorted({e['type'] for e in trace['events']}),final=trace['snapshots'][-1]['state']['simulation']['player'])
+                    attempts.append(a)
+                    self.evidence.write('manifest.json',suite)
+                    print('ATTEMPT',name,'PASS' if success else 'FAIL',a['final'],reason,flush=True)
+                group=[a for a in attempts if a['device']==device]
+                if not group[0]['success'] or sum(a['success'] for a in group[1:])<2:
+                    failures.append(encounter+' '+device)
+        # Same physical start and exit, aim deliberately beyond the 540-unit range.
+        nominal=suite['encounters']['S01-02'][0]
+        m=json.loads(self.evidence.path(nominal['input']).read_text());m.pop('trace')
+        for event in m['inputs']: event['world']['y']=-650
+        m['trace']=execute(m,self.browser,self.url,str(self.evidence.path('clips/negative')),filmstrip=True)
+        self.evidence.write('clips/negative/input.json',m)
+        with self.assertRaisesRegex(ValueError,'expected exit mismatch'):
+            check_trace(m,m['trace'])
+        self.evidence.write('negative-control.json',dict(name='range/pull/release: aim outside R',
+            input='clips/negative/input.json',trace='clips/negative/trace.json',failed_intended_exit=True,
+            unchanged_physics=True,source_hashes=hashes(),
+            final=m['trace']['snapshots'][-1]['state']['simulation']['player'],
+            scope='This omission fails this exit; alternative solutions are not ruled out.'))
+        self.assertEqual(failures,[])
+        print('PASS four encounters: each viewport nominal + >=2/4 variants; all attempts retained; actual fall/recovery; negative outside R fails exit; no shortcuts')
+
+    def test_02_source_hashes(self):
+        from grapple_over_verify import hashes
+        m=json.loads(self.evidence.path('manifest.json').read_text())
+        self.assertEqual(m['source_hashes'],hashes())
+        print('PASS source hashes: tested runtime, level and test harness match worktree')
