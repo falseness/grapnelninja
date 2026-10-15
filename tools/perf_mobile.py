@@ -6,7 +6,9 @@ seeded touch script as real TouchEvents (the touchstart/touchend events
 events.js listens to), scheduled in the page against performance.now() so the
 input timing does not depend on how fast the revision renders. The window is
 exactly --seconds from startGame(); frames, touches and timings are recorded
-only inside it. physics(), draw() and gameLoop() are wrapped in the page for
+only inside it. frame_interval_ms_after_warmup excludes intervals starting before
+--warmup; frame_intervals_ms_after_warmup retains those raw intervals for audit.
+physics(), draw() and gameLoop() are wrapped in the page for
 measurement only; game files are served unchanged.
 
 Unless --no-trace is given, the window is also covered by a CDP trace (GC
@@ -419,6 +421,8 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
         provenance['host_load_after'] = os.getloadavg()
     frames = perf['frames']
     intervals = [b - a for a, b in zip(frames, frames[1:])]
+    warmed_intervals = [b - a for a, b in zip(frames, frames[1:])
+                        if a - perf['t0'] >= warmup * 1000]
     histogram = {}
     for n in perf['steps']:
         histogram[str(n)] = histogram.get(str(n), 0) + 1
@@ -439,6 +443,9 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
         'touchstarts_received': perf['touches'], 'grapnel_throws': perf['throws'],
         'frames': len(frames),
         'frame_interval_ms': percentiles(intervals),
+        'frame_interval_ms_after_warmup': percentiles(warmed_intervals),
+        'frame_intervals_ms_after_warmup': warmed_intervals,
+        'frame_intervals_after_warmup': len(warmed_intervals),
         'physics_ms': percentiles(perf['physicsMs']),
         'draw_ms': percentiles(perf['drawMs']),
         'physics_steps_per_frame': dict(sorted(histogram.items(), key=lambda kv: int(kv[0]))),
