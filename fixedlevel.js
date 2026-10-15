@@ -12,7 +12,7 @@ const GRAPPLE_OVER_LEVEL = {
         ['right-step', 600, 800, 300, 40],
         ['left-step', 240, 500, 280, 40],
         ['top-step', 650, 200, 300, 40]
-    ].map(([id, x, y, w, h]) => ({id, x, y, role: 'bounce',
+    ].map(([id, x, y, w, h]) => ({id, x, y, role: 'solid',
         points: [{x: 0, y: 0}, {x: w, y: 0}, {x: w, y: h}, {x: 0, y: h}]})),
     // Optional movers: {id, element, axis: 'x'|'y', min, max, periodMs,
     // phase}. Bounds are absolute world coordinates; phase is in [0, 1).
@@ -51,7 +51,7 @@ function validateFixedLevel(data)
     for (const e of data.elements)
     {
         point(e, e.id)
-        if (e.role !== 'bounce') fail('InvalidSurfaceRole', e.id + '.role')
+        if (!['bounce', 'solid'].includes(e.role)) fail('InvalidSurfaceRole', e.id + '.role')
         const p = e.points
         if (!Array.isArray(p) || p.length < 3) fail('MalformedPolygon', e.id)
         p.forEach((v, i) => point(v, e.id + '.points[' + i + ']'))
@@ -116,6 +116,11 @@ class PersistentWorld extends Floor
         this.elapsedSteps = 0
         this.elements = this.level.elements.map(model => {
             const element = new Trampoline(model)
+            if (model.role === 'solid')
+            {
+                element.fill = '#182028'
+                element.stroke = '#a3adb8'
+            }
             element.id = model.id
             element.surfaceRole = model.role
             return element

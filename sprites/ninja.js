@@ -42,6 +42,20 @@ class Ninja
                 if (boundsOverlap(reach, elementBounds(element, ninjaElementBounds)))
                 {
                     let lines = element.getLines()
+                    if (version === 'grapple_over' && element.surfaceRole === 'solid')
+                    {
+                        // Nearest boundary works for either winding and includes
+                        // vertex contacts and centres already inside the polygon.
+                        const line = nearestLine(lines, this.x, this.y)
+                        const contact = this.contactWith(line, element.getPoints())
+                        if (contact.depth >= 0)
+                        {
+                            this.applySolidContact(contact)
+                            Object.assign(reach, circleBounds(this.x, this.y, this.radius, defaultEqualityTolerance))
+                            collision = line
+                        }
+                        continue
+                    }
                     let hit = false
                     let contact = null
                     for (let j = 0; j < lines.length; ++j)
@@ -131,6 +145,18 @@ class Ninja
         if (a.approaching != b.approaching)
             return a.approaching
         return a.depth > b.depth
+    }
+    applySolidContact(contact)
+    {
+        const inward = this.speedX * contact.nx + this.speedY * contact.ny
+        if (inward < 0)
+        {
+            this.speedX -= inward * contact.nx
+            this.speedY -= inward * contact.ny
+        }
+        const out = this.radius + GAMEPLAY.cubeContactEpsilon
+        this.x = contact.x + contact.nx * out
+        this.y = contact.y + contact.ny * out
     }
     applyBounce(contact)
     {
