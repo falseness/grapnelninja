@@ -171,6 +171,36 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(recoveries[0], {status:'built',
         elements:['S01-recovery-balcony','S01-lower-anchor','S01-rest-dock'],
         localRejoin:'S01-04'});
+    // Switchback Shaft opening: cantilevered decks with integral wall returns
+    // and tapered undersides. The silhouette is the solid collider, not decoration.
+    const shaft = [
+        {id:'S02-left-balcony',x:3700,y:-1960,role:'solid',grapplable:true,
+            points:[{x:0,y:-140},{x:35,y:-140},{x:35,y:0},{x:260,y:0},
+                {x:260,y:30},{x:100,y:70},{x:0,y:70}]},
+        {id:'S02-right-balcony',x:4140,y:-2260,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:230,y:0},{x:230,y:-150},{x:265,y:-150},
+                {x:265,y:80},{x:170,y:80},{x:0,y:30}]},
+        {id:'S02-brake-girder',x:3800,y:-2500,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:170,y:0},{x:170,y:25},{x:120,y:45},{x:0,y:45}]},
+        rectangle('S02-test-exit',3700,-2050,350,35,true),
+        rest('S02-catch-balcony',4260,-1840,600)
+    ];
+    Object.assign(sections[1], {status:'partial',landmark:{id:'S02-landmark',
+        name:'alternating industrial balconies',x:4030,y:-2100}});
+    Object.assign(encounters[4], {status:'built',x:4100,y:-1631,
+        elements:['S01-exit','S02-left-balcony','S02-right-balcony','S02-catch-balcony'],
+        start:{x:4100,y:-1630.8,from:'S01-04'},target:{x:4220,y:-2240},
+        exit:{left:4100,right:4170,top:-2020,bottom:-1970},
+        action:'Pull left from Foundations, release and pull the opposing right balcony'});
+    Object.assign(encounters[5], {status:'built',x:4160,y:-2250,
+        elements:['S02-right-balcony','S02-brake-girder','S02-test-exit'],
+        start:{from:'S02-01'},target:{x:3890,y:-2480},
+        exit:{left:3720,right:4030,top:-2062,bottom:-2050},
+        action:'Brake rightward momentum with the opposing left girder; release onto the temporary rest exit'});
+    Object.assign(connectors[4], {status:'built',intent:'Physical ascent from Foundations exit to left balcony'});
+    connectors[5].status='built';
+    Object.assign(recoveries[1], {openingElements:['S02-catch-balcony','S01-exit','S01-rest-ledge'],
+        openingRejoin:'S02-01',sideRoute:'Open left side drops visibly to Foundations exit and rest ledge'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
@@ -178,7 +208,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard], movers:[]},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft], movers:[]},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         completion:'planned; no summit trigger until authored',

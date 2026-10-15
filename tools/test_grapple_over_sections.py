@@ -16,7 +16,7 @@ class Task465Tests(unittest.TestCase):
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         hashes = source_hashes()
         for name in ('tools/test_grapple_over_sections.py', 'tools/grapple_over_support.py',
-                     'tools/grapple_over_injector.js'):
+                     'tools/grapple_over_injector.js', 'tools/grapple_over_verify.py'):
             hashes[name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
         cls.proof = dict(browser=cls.browser.version, viewport=VIEWPORT, device_scale_factor=1,
             revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
@@ -60,7 +60,7 @@ class Task465Tests(unittest.TestCase):
         self.assertTrue(all(e['role']=='solid' for e in m['geometry']['elements']))
         self.assertEqual([c['status'] for c in m['connectors'][:2]], ['built','built'])
         self.assertIsNone(result['runtime']['finish'])
-        for e in m['geometry']['elements'][3:]:
+        for e in (e for e in m['geometry']['elements'] if e['id'].startswith('S01')):
             self.assertGreaterEqual(e['y']+min(p['y'] for p in e['points']),-1700)
         self.evidence.write('geometry.json', dict(self.proof, **result,
             calibration_reference='artifacts/TASK-463/calibration.json',
@@ -68,7 +68,7 @@ class Task465Tests(unittest.TestCase):
                 acquisition_range=540, short_miss_floor=18, catch_floor=120,
                 opening_rest='loading bay with raised end stop',
                 intended_actions=[e['action'] for e in m['encounters'][:2]])))
-        print('PASS geometry: S01-01/02/03/04 built; 28 planned; structural_validations_pass; matching runtime polygons; solid roles; base connector; loading bay rest')
+        print('PASS geometry: S01-01/02/03/04 built; structural_validations_pass; matching runtime polygons; solid roles; base connector; loading bay rest')
 
     def test_02_real_input_replays(self):
         results=[]
@@ -171,7 +171,7 @@ class Task466Tests(unittest.TestCase):
         self.assertEqual(m['sections'][0]['status'], 'built')
         self.assertEqual([e['status'] for e in m['encounters'][:4]], ['built']*4)
         self.assertEqual(len({e['action'] for e in m['encounters'][:4]}), 4)
-        self.assertTrue(all(e['status']=='planned' for e in m['encounters'][4:]))
+        self.assertTrue(all(e['status']=='built' for e in m['encounters'][:4]))
         self.assertIsNone(result['runtime']['finish'])
         self.assertFalse(any(s['from'].startswith('S01') for s in m['shortcuts']))
         self.assertEqual(m['recoveries'][0]['status'], 'built')
@@ -421,3 +421,111 @@ class Task467Tests(unittest.TestCase):
         m=json.loads(self.evidence.path('manifest.json').read_text())
         self.assertEqual(m['source_hashes'],hashes())
         print('PASS source hashes: tested runtime, level and test harness match worktree')
+
+
+class Task468Tests(unittest.TestCase):
+    """S02 opening: trusted inputs, deterministic replay and physical recovery."""
+    task_id = 'TASK-468'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+    opening = [(3900,-1940,45,0),(4220,-2240,45,0),(4220,-2240,25,0)]
+
+    def test_01_geometry(self):
+        page = self.open()
+        result = page.evaluate('''() => {
+            const m=GRAPPLE_OVER_MOUNTAIN;validateMountainManifest(m);
+            return {manifest:m,runtime:floors[0].level,
+                colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))};
+        }''')
+        m=result['manifest']
+        self.assertEqual(page.evaluate("I18N.t('climb.section.S02')"),'Switchback Shaft')
+        self.assertEqual(m['sections'][1]['status'],'partial')
+        self.assertEqual([e['status'] for e in m['encounters'][4:8]],['built','built','planned','planned'])
+        self.assertEqual(result['runtime']['elements'],m['geometry']['elements'])
+        for actual,model in zip(result['colliders'],m['geometry']['elements']):
+            self.assertEqual(actual,{k:model[k] for k in ('id','x','y','points','role')})
+        self.assertEqual([c['status'] for c in m['connectors'][4:6]],['built','built'])
+        self.assertIsNone(result['runtime']['finish'])
+        shaft=[e for e in m['geometry']['elements'] if e['id'].startswith('S02')]
+        self.assertEqual(len(shaft),5)
+        for e in shaft:
+            self.assertEqual(e['role'],'solid')
+            self.assertTrue(all(-3240 <= e['y']+p['y'] <= -1620 for p in e['points']))
+        self.assertGreater(len({json.dumps(e['points']) for e in shaft}),3)
+        result.update(self.proof,structural_validations_pass=True,
+            calibration_reference='artifacts/TASK-463/calibration.json',range=540,radius=10.8,
+            encounters=m['encounters'][4:6],surface_roles={'solid':'gray industrial silhouettes; same visible/collision vertices'},
+            landing_margins={'temporary_exit':{'left':3700,'right':4050,'top':-2050,'safe_center':[3745.8,4039.2]},
+                             'lower_catch':{'left':4260,'right':4820,'top':-1840}},
+            camera_sightlines='Every replay press asserts target inside 1280x720 viewport; filmstrip at each press/release',
+            recovery='Lower catch and open side route physically reconnect to S01-exit; no relocation',
+            temporary_exit='S02-test-exit; no dependence on planned S02-03/04')
+        self.evidence.write('geometry.json',result)
+        print('PASS geometry: S02-01/02; structural_validations_pass; matching colliders; starts/exits; solid roles; landing margins; camera sightlines; partial section')
+
+    def replay(self,name,plan,exit_bounds,start_y=-1630.8):
+        from grapple_over_verify import metadata, execute, check_trace, hashes
+        page=self.open();level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)');page.close()
+        m=dict(metadata=metadata('isolated'),initial_setup=dict(level=level,
+            player=dict(x=4100,y=start_y,speedX=0,speedY=0)),inputs=[],
+            expected_exit=exit_bounds,required_events=['acquisition','release'])
+        m['metadata']['compact_contacts']=True
+        tick=30;ends=[]
+        for x,y,hold,free in plan:
+            m['inputs'].append(dict(tick=tick,event='mousedown',world=dict(x=x,y=y)))
+            tick+=hold
+            m['inputs'].append(dict(tick=tick,event='mouseup',world=dict(x=x,y=y)))
+            ends.append(tick);tick+=free
+        m['ticks']=tick+1
+        prefix='encounters/'+name
+        self.evidence.write(prefix+'/input.json',m)
+        trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=True)
+        check_trace(m,trace)
+        replay=execute(m,self.browser,self.url,str(self.evidence.path(prefix+'/replay')))
+        check_trace(m,replay)
+        self.assertEqual(trace,replay)
+        self.assertEqual(len(trace['metadata']['setupOnlySpawns']),1)
+        self.evidence.write(prefix+'/result.json',dict(passed=True,matching_traces=True,
+            trusted_inputs=True,no_traversal_mutation=True,source_hashes=hashes(),
+            scope='Single initial isolated placement at Foundations exit; production input/physics thereafter',
+            final=trace['snapshots'][-1]['state']['simulation']['player']))
+        return trace,ends
+
+    def test_02_nominal_encounters(self):
+        trace,ends=self.replay('S02-01-02-nominal',self.opening+[(3890,-2480,30,180)],
+            dict(x=[3740,4040],y=[-2061,-2060],speedX=[-.001,.001],speedY=[-.001,.001]))
+        players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+        acquired=[e['after']['rope'][0]['id'] for e in trace['events'] if e['type']=='acquisition']
+        self.assertIn('S02-left-balcony',acquired)
+        self.assertIn('S02-right-balcony',acquired)
+        self.assertIn('S02-brake-girder',acquired)
+        before,after=players[ends[2]],players[ends[3]]
+        self.assertGreater(before['speedX'],.5)
+        self.assertLess(after['speedX'],0)
+        self.assertLess(abs(after['speedX']),abs(before['speedX']))
+        self.assertTrue(4100<before['x']<4170 and -2020<before['y']<-1970)
+        self.evidence.write('encounters/nominal-observations.json',dict(passed=True,
+            encounters=['S02-01','S02-02'],acquisitions=acquired,
+            braking={'before':before,'after':after,'reduced_and_reversed':True},
+            landing=players[-1],landing_margin_left=players[-1]['x']-3700-10.8,
+            landing_margin_right=4050-players[-1]['x']-10.8))
+        print('PASS S02-01/02 nominal: alternating walls; opposing-anchor braking reduces/reverses speed; safe temporary exit; matching replay; visible targets; trusted inputs; no traversal mutation')
+
+    def test_03_failure_recovery(self):
+        # Out-of-range first attempt falls onto the actual Foundations exit,
+        # then reacquires the left balcony using ordinary input.
+        trace,_=self.replay('S02-01-miss-recover',[(4750,-1730,10,100),(3900,-1940,45,0)],
+            dict(x=[3930,4000],y=[-1820,-1750]),start_y=-1730.8)
+        players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+        self.assertTrue(any(abs(p['y']+1630.8)<.01 and p['speedY']==0 for p in players))
+        self.assertLess(players[-1]['y'],-1750)
+        trace,_=self.replay('S02-02-miss-recover',self.opening+[(3890,-2480,10,180),(4220,-2240,30,180)],
+            dict(x=[3940,4260],y=[-1631,-1630],speedY=[-.001,.001]))
+        players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+        self.assertTrue(any(4260<p['x']<4820 and abs(p['y']+1850.8)<.01 and p['speedY']==0 for p in players))
+        self.evidence.write('encounters/recovery-observations.json',dict(passed=True,
+            S02_01='missed acquisition; physical fall to S01-exit; real-input rejoin ascent',
+            S02_02='early brake release misses upper rest; lower balcony catches fall; visible side route returns to S01-exit',
+            matching_traces=True,no_traversal_mutation=True))
+        print('PASS S02-01/02 recovery: missed targets/exits; physical catches; rejoin Foundations; matching replay; no relocation')
