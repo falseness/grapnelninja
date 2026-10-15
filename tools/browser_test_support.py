@@ -65,15 +65,15 @@ def wait_for_boot(page):
     """Wait until index.html's async boot() has run start() and its boot run.
 
     Older trees (verification baselines) boot synchronously, without #loading
-    or bootComplete; current trees boot straight into a 'bad' run.
+    or bootComplete; current trees boot straight into Grapple Over.
     """
     page.wait_for_function(
         "() => { const el = document.getElementById('loading'); return !el || el.hidden"
         " && (typeof bootComplete === 'undefined' || bootComplete) }")
 
 
-def wait_for_boot_run(page):
-    """Wait for the menu-less boot: bootComplete and its live 'bad' run.
+def wait_for_boot_run(page, mode=None):
+    """Wait for the menu-less boot: bootComplete and its run, optionally selecting an explicit mode.
 
     Older trees (verification baselines) have no bootComplete and boot to the
     title menu instead, so there the visible menu is the ready state.
@@ -83,6 +83,18 @@ def wait_for_boot_run(page):
         " ? typeof menu != 'undefined' && menu.visible"
         " : bootComplete && runInProgress")
     wait_for_boot(page)
+    if mode is not None:
+        select_mode(page, mode)
+
+
+def select_mode(page, mode):
+    """Select a requested fixture mode without depending on the startup mode."""
+    page.evaluate("""mode => {
+        if (version !== mode) {
+            if (!menu.gamePaused) menu.startPause();
+            menu.selectMode(mode);
+        }
+    }""", mode)
 
 
 def shared_memory_launch_options():

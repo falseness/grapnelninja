@@ -44,15 +44,13 @@ PROBE = r'''async ({mode, inputs, seed}) => {
             t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
             return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     }
-    // The page boots straight into a 'bad' run (TASK-360/364). 'bad' is that
-    // run: its accepted input is the first press that throws the grapnel.
-    // 'classic' is reached through the HUD button and the pause mode switch.
+    // Explicitly select the requested benchmark mode from the pause selector.
     await until(() => bootComplete && runInProgress && !unTouch);
     if (version !== mode) {
         if (!menu.gamePaused) button(menu.button.background, scale[version]);
         await until(() => menu.gamePaused && !unTouch);
         seedRandom();
-        button(menu.backToMenu.background);
+        button(menu.modeButtons[['grapple_over','bad','classic'].indexOf(mode)].background);
         // The switch leaves the paused run first (leaveFinishedRun)
         await until(() => version === mode && runInProgress && !menu.gamePaused);
         p.accepted_input_ms = performance.now();

@@ -217,12 +217,12 @@
                 document.getElementById('loading').hidden = true
                 createEvents()
                 bootComplete = true
-                // Every launch skips the title menu and starts a main-version
-                // run. Its level_started waits in PLATFORM's lifecycle queue
+                // Every launch skips the title menu and opens the saved climb
+                // (or starts at the base). Its level_started waits in PLATFORM's lifecycle queue
                 // until game_ready has been delivered.
                 const shouldPause = hostPaused || isViewRotated() || document.visibilityState === 'hidden'
-                startGame('bad')
-                if (shouldPause)
+                startGame('grapple_over')
+                if (shouldPause && !menu.gamePaused)
                 {
                     draw()
                     menu.startPause()

@@ -156,21 +156,17 @@ def click_canvas(page, x, y):
 
 
 # The game booted: platform ready, loading overlay hidden, and the boot-time
-# main-version ('bad') run started (there is no title menu)
+# Grapple Over run started (there is no title menu)
 READY = ('PLATFORM.environment !== "pending" && bootComplete && runInProgress'
          ' && document.getElementById("loading").hidden')
 
 
 def switch_mode(page, mode):
-    """Make mode ('classic'/'bad') the running mode via the pause-screen switch.
-
-    The title menu is gone: the other mode is entered by pausing and clicking
-    menu.backToMenu (the mode switch). No-op when mode is already running.
-    """
+    """Select the requested mode explicitly through the pause selector."""
     page.evaluate('''mode => {
         if (version === mode && runInProgress) return
         if (!menu.gamePaused) menu.startPause()
-        menu.backToMenu.click()
+        menu.selectMode(mode)
     }''', mode)
     # A rotated (portrait touch) view starts the new run paused (TASK-403);
     # resume it as the switch did before, so callers get a live run

@@ -584,32 +584,12 @@ class Menu
         {
             menu.unPause()
         })
-        this.backToMenu = new Button(
-        {
-            x: this.center.x        ,
-            y: 0.52 * this.height   ,
-            width: 0.4 * this.width ,
-            clickable: false        ,
-            height: 0.1 * this.height,
-            stroke: STYLE.colors.ui.buttonDangerStroke,
-            neon: true
-        },
-        {
-            text: '',
-            fill: STYLE.colors.ui.buttonText
-        },
-        // The pause switch: abandons the live run (level_failed, no
-        // interstitial) and starts one in the other mode
-        function()
-        {
-            const other = version === 'bad' ? 'classic' : 'bad'
-            PROGRESS.save()
-            leaveFinishedRun(function()
-            {
-                menu.changeGamePause(false)
-                startRunPausedIfPending(() => startGame(other))
-            })
-        })
+        this.modeButtons = ['grapple_over', 'bad', 'classic'].map(mode =>
+            new Button(
+                {x: 0, y: 0, width: 1, height: 1, clickable: false,
+                 stroke: STYLE.colors.ui.buttonDangerStroke, neon: true},
+                {text: '', fill: STYLE.colors.ui.buttonText},
+                () => this.selectMode(mode)))
         this.relabelPauseSwitch()
     }
     getPausePanel()
@@ -678,17 +658,14 @@ class Menu
             buttonWidth,
             buttonHeight
         )
-        this.layoutPauseButton(
-            this.backToMenu,
-            centerX,
-            panel.y + panel.height * 0.52,
-            buttonWidth,
-            buttonHeight
-        )
+        const modeWidth = panel.width * 0.29
+        this.modeButtons.forEach((button, i) => this.layoutPauseButton(button,
+            centerX + (i - 1) * panel.width * 0.32,
+            panel.y + panel.height * 0.52, modeWidth, buttonHeight))
 
         const rowY = panel.y + panel.height * 0.72
-        const backToMenuFontSize = parseFloat(this.backToMenu.text.fontSize)
-        const fpsFontSize = Math.min(backToMenuFontSize, panel.width * 0.09)
+        const resumeFontSize = parseFloat(this.resume.text.fontSize)
+        const fpsFontSize = Math.min(resumeFontSize, panel.width * 0.09)
         const boxSize = fpsFontSize
 
         ctx.save()
@@ -716,7 +693,8 @@ class Menu
             buttonHeight, buttonHeight, this.pauseFpsCounterCheckbox.hitRect().height, timeFontSize])
         this.pauseTitleY = rows[0]
         this.layoutPauseButton(this.resume, centerX, rows[1], buttonWidth, buttonHeight)
-        this.layoutPauseButton(this.backToMenu, centerX, rows[2], buttonWidth, buttonHeight)
+        this.modeButtons.forEach((button, i) => this.layoutPauseButton(button,
+            centerX + (i - 1) * panel.width * 0.32, rows[2], modeWidth, buttonHeight))
         this.pauseFpsCounterCheckbox.y = rows[3]
         this.timeInGame.y = rows[4]
     }
@@ -737,7 +715,7 @@ class Menu
     {
         return  this.resume.isClickOnButton(coord)                  ||
                 this.pauseFpsCounterCheckbox.isClickOnButton(coord) ||
-                this.backToMenu.isClickOnButton(coord)
+                this.modeButtons.some(button => button.isClickOnButton(coord))
     }
     clickToPause(coord)
     {
@@ -749,12 +727,29 @@ class Menu
         
         this.pauseFpsCounterCheckbox.clickable = isPaused
         this.resume.clickable                   = isPaused
-        this.backToMenu.clickable               = isPaused
+        this.modeButtons.forEach(button => { button.clickable = isPaused })
     }
-    // Labelled with the mode it switches to
+    selectMode(mode)
+    {
+        // Selecting the current mode keeps the paused run intact.
+        if (mode === version) return
+        PROGRESS.flushClimb(true)
+        PROGRESS.save()
+        leaveFinishedRun(() =>
+        {
+            this.changeGamePause(false)
+            startRunPausedIfPending(() => startGame(mode))
+        })
+    }
     relabelPauseSwitch()
     {
-        this.backToMenu.text.text = I18N.t(version === 'bad' ? 'menu.chillVersion' : 'menu.mainVersion')
+        const modes = ['grapple_over', 'bad', 'classic']
+        this.modeButtons.forEach((button, i) =>
+        {
+            button.text.text = I18N.t('mode.' + modes[i])
+            button.background.stroke = modes[i] === version ?
+                STYLE.colors.ui.primary : STYLE.colors.ui.buttonDangerStroke
+        })
     }
     startPause()
     {
@@ -804,7 +799,7 @@ class Menu
         {
             title.drawGlow()
             this.resume.drawGlow()
-            this.backToMenu.drawGlow()
+            this.modeButtons.forEach(button => button.drawGlow())
             this.pauseFpsCounterCheckbox.drawGlow()
             LANGUAGE_BUTTON.drawGlow()
         })
@@ -815,7 +810,7 @@ class Menu
         this.timeInGame.draw()
         
         this.resume.draw()
-        this.backToMenu.draw()
+        this.modeButtons.forEach(button => button.draw())
         LANGUAGE_BUTTON.draw()
     }
     unPause()

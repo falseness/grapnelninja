@@ -6,6 +6,9 @@ const I18N = (function()
     {
         en:
         {
+            'mode.grapple_over': 'Grapple Over',
+            'mode.bad': 'main version',
+            'mode.classic': 'chill version',
             'climb.saveInvalid'     : 'Climb save unavailable. Starting at the base.',
             'orientation.rotate'    : 'Rotate your phone to landscape to play. Your game is paused.',
             'tutorial.hold.desktop' : 'HOLD',
@@ -34,6 +37,9 @@ const I18N = (function()
         },
         ru:
         {
+            'mode.grapple_over': 'Восхождение',
+            'mode.bad': 'основной режим',
+            'mode.classic': 'спокойный режим',
             'climb.saveInvalid'     : 'Сохранение недоступно. Начинаем у подножия.',
             'orientation.rotate'    : 'Поверните телефон горизонтально, чтобы играть. Игра на паузе.',
             'tutorial.hold.desktop' : 'ДЕРЖИ',
