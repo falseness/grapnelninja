@@ -29,8 +29,10 @@ function createEvents()
     }
     function throwGrapnel(event)
     {
+        // Resolve the press once, before either camera axis or viewport changes.
+        const target = getRealCoords(event)
         grapnel.pos = [[ninja.x, ninja.y, new Empty()]]
-        let ratio = grapnel.calcSpeed(getRealCoords(event))
+        let ratio = grapnel.calcSpeed(target)
         grapnel.speedY = ratio.sin * grapnelSpeed// + ninja.speedY
         grapnel.speedX = ratio.cos * grapnelSpeed// + ninja.speedX    
         
