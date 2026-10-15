@@ -181,7 +181,7 @@ class DangerRectsTest(unittest.TestCase):
 
     def test_hatch_clipping_and_interior(self):
         from danger_hatch_probe import collect
-        report = collect(OUT)
+        report = collect(OUT / 'hatch-probe')
         for variant, data in report.items():
             for scene, samples in data['samples'].items():
                 for sample in samples:

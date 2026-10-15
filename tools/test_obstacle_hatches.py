@@ -1,4 +1,4 @@
-"""Rendered obstacle hatches: native scenes, exact controls, motion and cache."""
+"""Rendered obstacle hatches: native scenes, exact controls, motion and vector state."""
 from contextlib import ExitStack
 import base64
 import hashlib
@@ -55,6 +55,11 @@ SCENE = r'''mode => {
         clock:performance.now(),cube:[cube.x,cube.y,cube.width,cube.height],
         canvasBounds:canvas.getBoundingClientRect().toJSON()};
 }'''
+# Normalize only non-target hatches for historical no-hatch comparisons.
+# Keep the shared SCENE/TRI_SCENE intact for vector-vs-bitmap suites.
+CUBE_REGRESSION_SCENE = SCENE.replace('const green=new Rect',
+    'orange.drawDangerHatch=()=>{};const green=new Rect')
+
 MOTION = r'''i => {
     const {cube,u}=hatchFixture;
     cube.move();
@@ -73,22 +78,54 @@ ISOLATE = r'''() => {
         return scratch.toDataURL();
     }finally{ctx=original}
 }'''
-CACHE = r'''() => {
-    const contexts=[document.createElement('canvas').getContext('2d'),document.createElement('canvas').getContext('2d')];
-    const variants=['bold','thin','cross','chevron'];const colours=['#1c5099','#99501c','#8fdcff'];
-    const entries=[];
-    for(const c of contexts)for(const v of variants)for(const colour of colours)
-        entries.push(dangerHatchPattern(c,v,colour));
-    const distinct=new Set(entries).size;
-    let patterns=0,tiles=0;
-    const cp=CanvasRenderingContext2D.prototype.createPattern,ce=document.createElement;
+VECTOR = r'''() => {
+    const c=document.createElement('canvas');c.width=512;c.height=384;
+    const context=c.getContext('2d'), variants=['bold','thin','cross','chevron'];
+    let patterns=0,tiles=0,lines=0;
+    const cp=CanvasRenderingContext2D.prototype.createPattern,ce=document.createElement,lt=Path2D.prototype.lineTo;
     CanvasRenderingContext2D.prototype.createPattern=function(...a){patterns++;return cp.apply(this,a)};
     document.createElement=function(...a){if(a[0]==='canvas')tiles++;return ce.apply(this,a)};
-    try {for(let i=0;i<60;i++){
-        draw();for(const c of contexts)for(const v of variants)for(const colour of colours)dangerHatchPattern(c,v,colour);
-    }}finally{CanvasRenderingContext2D.prototype.createPattern=cp;document.createElement=ce}
-    return {frames:60,patterns,tiles,distinct,expectedEntries:contexts.length*variants.length*colours.length};
+    Path2D.prototype.lineTo=function(...a){lines++;return lt.apply(this,a)};
+    const bounds={};
+    try {
+        for(let i=0;i<60;i++)draw();
+        for(const v of variants){
+            bounds[v]=[1000,1e9].map(size=>{lines=0;
+                drawDangerHatchLines(context,v,'#99501c',-size,-size,size,size);return lines});
+        }
+    }finally{CanvasRenderingContext2D.prototype.createPattern=cp;document.createElement=ce;Path2D.prototype.lineTo=lt}
+    context.clearRect(0,0,c.width,c.height);
+    context.setTransform(1.25,0,0,1.5,.125,.375);context.globalAlpha=.37;
+    context.strokeStyle='#123456';context.lineWidth=7;context.setLineDash([2,5]);
+    const clip=new Path2D();clip.rect(10,10,80,80);context.clip(clip);
+    context.beginPath();context.rect(20,20,20,20);
+    const state=()=>JSON.stringify([Array.from(context.getTransform().toFloat64Array()),context.globalAlpha,
+        context.strokeStyle,context.lineWidth,context.getLineDash(),context.isPointInPath(30,40)]);
+    const before=state();
+    for(const v of [...variants,'off'])drawDangerHatchLines(context,v,'#99501c',0,0,512,384);
+    const statePreserved=before===state();
+    context.setTransform(1,0,0,1,0,0);context.clearRect(0,0,512,384);
+    context.fillRect(0,0,512,384);
+    return {frames:60,patterns,tiles,bounds,statePreserved,clipOutsideAlpha:context.getImageData(300,300,1,1).data[3]};
 }'''
+
+
+def assert_vector(test, result):
+    print("VECTOR " + json.dumps(result, sort_keys=True), flush=True)
+    test.assertEqual(result['patterns'], 0)
+    test.assertEqual(result['tiles'], 0)
+    test.assertTrue(result['statePreserved'])
+    test.assertEqual(result['clipOutsideAlpha'], 0)
+    for variant, (small, huge) in result['bounds'].items():
+        test.assertGreater(small, 0, variant)
+        test.assertEqual(small, huge, variant)
+        test.assertLess(huge, 1000, variant)
+    print('PASS vector: 60 draws patterns=0 tiles=0; four variants bounded lines <1000; statePreserved=true clipOutsideAlpha=0', flush=True)
+
+
+def resolve_baseline(revision):
+    return subprocess.check_output(['git', 'rev-parse', revision + '^{commit}'], cwd=ROOT, text=True).strip()
+
 
 
 def decoded(data):
@@ -96,11 +133,11 @@ def decoded(data):
 
 
 class ObstacleHatchTests(unittest.TestCase):
-    def test_rendered_hatches_controls_motion_and_cache(self):
+    def test_rendered_hatches_controls_motion_and_vector_state(self):
         out=ROOT/os.environ.get('HATCH_EVIDENCE_DIR','artifacts/TASK-229')/'cube-regression'
         out.mkdir(parents=True,exist_ok=True)
         # Retain TASK-228's pre-cube baseline and every original cube assertion.
-        base='2b7ba0d8017236ee0ec3b905f1b4cfa2b9283f04'
+        base=resolve_baseline('2b7ba0d8017236ee0ec3b905f1b4cfa2b9283f04')
         measurements={};settings={};pictures={};native={}
         for phase,rev in [('baseline',base),('final','worktree')]:
             with ExitStack() as stack:
@@ -113,7 +150,7 @@ class ObstacleHatchTests(unittest.TestCase):
                         try:
                             context.add_init_script(SEED_SCRIPT%1);context.add_init_script(CLOCK_SCRIPT)
                             page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-                            page.goto(url);boot_frozen(page);meta=page.evaluate(SCENE,mode);settings[key]=meta
+                            page.goto(url);boot_frozen(page);meta=page.evaluate(CUBE_REGRESSION_SCENE,mode);settings[key]=meta
                             if phase=='final':self.assertEqual(meta,settings['baseline-'+name])
                             native[key]=Image.open(io.BytesIO(page.screenshot(path=str(out/f'{key}.png')))).convert('RGB')
                             full=decoded(page.evaluate('canvas.toDataURL()'));full.save(out/f'{key}-backing.png');pictures[key]=np.array(full).astype(int)
@@ -124,9 +161,8 @@ class ObstacleHatchTests(unittest.TestCase):
                             page.evaluate('floors[1].elements=hatchFixture.saved;draw()')
                             if phase=='final':
                                 r=measurements[name]={}
-                                r['cache']=page.evaluate(CACHE)
-                                self.assertEqual(r['cache']['patterns'],0);self.assertEqual(r['cache']['tiles'],0)
-                                self.assertEqual(r['cache']['distinct'],24)
+                                r['vector']=page.evaluate(VECTOR)
+                                assert_vector(self, r['vector'])
                                 isolated=decoded(page.evaluate(ISOLATE));isolated.save(out/f'{key}-stripes.png')
                                 a=np.array(isolated);u=meta['u'];x,y,cw,ch=meta['cube'];inset=max(2,min(cw,ch)*.2)
                                 sx=meta['backing'][0]/meta['width'];sy=meta['backing'][1]/meta['height']
@@ -174,7 +210,7 @@ class ObstacleHatchTests(unittest.TestCase):
                                     r['variants'][variant]={'alphaDifferences':int((blue[:,:,3]!=orange[:,:,3]).sum()),'coveredPixels':int((blue[:,:,3]>0).sum())}
                                     self.assertEqual(r['variants'][variant]['alphaDifferences'],0);self.assertGreater(r['variants'][variant]['coveredPixels'],0)
                                     page.evaluate("hatchFixture.cube.isDangerRect=false;hatchFixture.cube.hatchColour='#1c5099'")
-                                print(f'PASS {name}: rendered RGB [28, 80, 153]; coverage={r["stripePixels"]}; outside inset=0; controls=0; off=0; 3 registered motion frames; 60 warm draws patterns=0 tiles=0; 24 distinct context/variant/colour entries',flush=True)
+                                print(f'PASS {name}: rendered RGB [28, 80, 153]; coverage={r["stripePixels"]}; outside inset=0; controls=0; off=0; 3 registered motion frames; 60 warm draws patterns=0 tiles=0; bounded lines and state preserved',flush=True)
                             self.assertFalse(errors,errors)
                         finally:context.close()
         rows=[]
@@ -215,12 +251,15 @@ TRI_SCENE = SCENE.replace('window.hatchFixture={cube,orange,green,tri,u};', '''
         'canvasBounds:canvas', '''triangles:[pink,red].map(t=>({x:t.x,y:t.y,side:t.side,height:t.height,
         stroke:t.stroke,innerScale:STYLE.badVersionEffects.obstacles.hazardInnerScale})),
         canvasBounds:canvas''')
+TRI_REGRESSION_SCENE = TRI_SCENE.replace('cube.y=height*.7/u;',
+    'orange.drawDangerHatch=()=>{};cube.drawDangerHatch=()=>{};cube.y=height*.7/u;')
+
 TRI_ISOLATE = r'''kind => {
     const original=ctx,lightOriginal=visualEffects.lightmap.ctx,scratch=document.createElement('canvas');
     scratch.width=canvas.width;scratch.height=canvas.height;
     try {ctx=scratch.getContext('2d');ctx.setTransform(original.getTransform());ctx.scale(scale[version],scale[version]);
         if(kind==='stripes') {
-            ctx.stroke=()=>{};
+            const stroke=ctx.stroke.bind(ctx);ctx.stroke=path=>{if(path instanceof Path2D)stroke(path)};
             if(version==='bad')for(const t of [hatchFixture.pink,hatchFixture.red])t.drawBadVersionInnerTreatment();
         } else if(kind==='trail') {
             for(const t of [hatchFixture.pink,hatchFixture.red])t.track.draw();
@@ -258,11 +297,11 @@ TASK_229_PARENT='0b5a6f55ef710ca2cf5f5fba8f83ce4ed0dfc062'
 
 
 class TriangleHatchTests(unittest.TestCase):
-    def test_triangles_rendered_controls_motion_cache(self):
+    def test_triangles_rendered_controls_motion_vector_state(self):
         out=ROOT/os.environ.get('HATCH_EVIDENCE_DIR','artifacts/TASK-229');out.mkdir(parents=True,exist_ok=True)
         # Default to TASK-229's own parent (a810250^): pre-triangle-hatch tree,
         # so no uncommitted artifacts/TASK-229/BASE_REV is needed.
-        base=os.environ.get('HATCH_BASE_REV') or TASK_229_PARENT
+        base=resolve_baseline(os.environ.get('HATCH_BASE_REV') or TASK_229_PARENT)
         measurements={};settings={};pictures={};native={};rows=[]
         for phase,rev in [('baseline',base),('final','worktree')]:
             with ExitStack() as stack:
@@ -274,7 +313,7 @@ class TriangleHatchTests(unittest.TestCase):
                         try:
                             context.add_init_script(SEED_SCRIPT%1);context.add_init_script(CLOCK_SCRIPT)
                             page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-                            page.goto(url);boot_frozen(page);meta=page.evaluate(TRI_SCENE,mode);settings[key]=meta
+                            page.goto(url);boot_frozen(page);meta=page.evaluate(TRI_REGRESSION_SCENE,mode);settings[key]=meta
                             if phase=='final':self.assertEqual(meta,settings['baseline-'+name])
                             native[key]=Image.open(io.BytesIO(page.screenshot(path=str(out/f'{key}.png')))).convert('RGB')
                             full=decoded(page.evaluate('canvas.toDataURL()'));full.save(out/f'{key}-backing.png');pictures[key]=np.array(full).astype(int)
@@ -290,8 +329,8 @@ class TriangleHatchTests(unittest.TestCase):
                                 self.assertTrue(all(v==0 for v in r['controls'].values()),r)
                                 r['controlCoverage']={k:int((v[:,:,3]>0).sum()) for k,v in controls.items()}
                                 self.assertTrue(all(v>0 for v in r['controlCoverage'].values()),r)
-                                r['cache']=page.evaluate(CACHE.replace("'#8fdcff'","'#8fdcff','#991b59','#992544'"))
-                                self.assertEqual(r['cache'],dict(frames=60,patterns=0,tiles=0,distinct=40,expectedEntries=40))
+                                r['vector']=page.evaluate(VECTOR)
+                                assert_vector(self, r['vector'])
                                 im=decoded(page.evaluate(TRI_ISOLATE,'stripes'));im.save(out/f'{key}-stripes.png');a=np.array(im)
                                 clip=triangle_clip(meta,a.shape[:2]);r['stripePixels']=int((a[:,:,3]>0).sum());r['leakedPixels']=int(((a[:,:,3]>0)&~clip).sum())
                                 r['opaqueRGB']=np.unique(a[:,:,:3][a[:,:,3]==255],axis=0).tolist()
@@ -324,7 +363,7 @@ class TriangleHatchTests(unittest.TestCase):
                                         r['variants'][variant]={'alphaDifferences':int((coloured[:,:,3]!=orange[:,:,3]).sum()),'coverage':int((coloured[:,:,3]>0).sum())}
                                         self.assertEqual(r['variants'][variant]['alphaDifferences'],0)
                                         self.assertGreater(r['variants'][variant]['coverage'],0)
-                                print(f'PASS triangles {name}: coverage={r["stripePixels"]}; RGB={r["opaqueRGB"]}; outsideClip=0; objects/trail/glow/light=0; off=0; motion=3; warm draws=60 patterns=0 tiles=0 distinct=40',flush=True)
+                                print(f'PASS triangles {name}: coverage={r["stripePixels"]}; RGB={r["opaqueRGB"]}; outsideClip=0; objects/trail/glow/light=0; off=0; motion=3; warm draws=60 patterns=0 tiles=0; bounded lines and state preserved',flush=True)
                             self.assertFalse(errors,errors)
                         finally:context.close()
         for name in measurements:

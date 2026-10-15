@@ -1,4 +1,4 @@
-"""Baseline-controlled production Chill strips, collisions, phase and cache probes.
+"""Baseline-controlled production Chill strips, collisions, phase and vector state probes.
 
 Without CHILL_BOUNDARY_BASE_REV the test is skipped. Run from the repo root:
   CHILL_BOUNDARY_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_chill_boundary_hatches.py -v
@@ -17,11 +17,27 @@ from PIL import Image, ImageDraw
 from browser_test_support import start_browser_test
 from perf_mobile import SEED_SCRIPT, export_rev
 from render_snapshot import CLOCK_SCRIPT, boot_frozen
-from test_obstacle_hatches import decoded, CACHE
+from test_obstacle_hatches import decoded, VECTOR, assert_vector, resolve_baseline, SCENE
 
 ROOT = Path(__file__).resolve().parents[1]
-SETUP = r'''mode => {
-    startGame(mode); screen.x=screen.y=0;screen.leftWall.update(screen);
+# Reuse the historical scene's background/glow/boot normalization. Object
+# hatches have separate suites; their bitmap-to-vector AA is not a boundary delta.
+SETUP = SCENE.split('    startGame(mode);')[0] + r'''
+    Rect.prototype.drawDangerHatch=()=>{};
+    Triangle.prototype.drawDangerHatch=()=>{};
+    startGame(mode);
+    if (typeof TUTORIAL_HINT!='undefined') TUTORIAL_HINT.visible=false; screen.x=screen.y=0;screen.leftWall.update(screen);
+    // Procedural object selection changed after this historical baseline.
+    // Hold the non-boundary controls fixed; retain real generated floor/ceiling.
+    const u=scale[version];
+    floors[1].elements=[
+        new Rect({x:width*.25/u,y:height*.45/u,width:100,height:100,stroke:STYLE.colors.cube.greenStroke}),
+        new JumpingCube({x:width*.45/u,y:height*.45/u,width:100,height:100,stroke:STYLE.colors.cube.blueStroke,speedX:2,speedY:1}),
+        new Triangle({x:width*.7/u,y:height*.45/u,radius:65,stroke:STYLE.colors.hazard.classicTriangleStroke,yMin:0,yMax:height/u})];
+    const cube=floors[1].elements[1];
+    cube.x=width*.45/u;cube.y=height*.45/u;cube.track.pos=[];
+    cube.track.addPos(cube.x+50-30,cube.y+50-20,true);
+    cube.track.addPos(cube.x+50,cube.y+50);
     window.strips=[floors[0],floors[floors.length-1]];
     draw();draw();
     return {mode,width,height,u:scale[version],backing:[canvas.width,canvas.height],
@@ -39,6 +55,13 @@ ISOLATE = r'''kind => {
             else if(kind==='split') {
                 const b=f.getContinuousSurfaceBounds();
                 for(const e of f.elements)f.drawClassicBoundaryHatch({...b,left:e.getLeftPointX(),right:e.getRightPointX()});
+            } else if(kind==='continuous') {
+                const b=f.getContinuousSurfaceBounds(),saved=f.elements;
+                try {
+                    f.elements=[{getLeftPointX:()=>b.left,getRightPointX:()=>b.right,
+                        getPoints:()=>[{x:b.left,y:b.top},{x:b.right,y:b.bottom}]}];
+                    f.drawClassicBoundaryHatch(f.getContinuousSurfaceBounds());
+                }finally{f.elements=saved}
             } else {
                 const b=f.getContinuousSurfaceBounds();
                 f.drawClassicBoundaryHatch(kind==='reference'?{...b,left:b.left-100,right:b.right+100}:b);
@@ -70,8 +93,8 @@ def pixels(page, kind):
 
 @unittest.skipUnless(os.environ.get('CHILL_BOUNDARY_BASE_REV'), 'requires CHILL_BOUNDARY_BASE_REV (baseline commit hash); run: CHILL_BOUNDARY_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_chill_boundary_hatches.py -v')
 class ChillBoundaryTests(unittest.TestCase):
-    def test_boundaries_baseline_controls_motion_collision_and_cache(self):
-        base=os.environ['CHILL_BOUNDARY_BASE_REV']
+    def test_boundaries_baseline_controls_motion_collision_and_vector_state(self):
+        base=resolve_baseline(os.environ['CHILL_BOUNDARY_BASE_REV'])
         out=ROOT/os.environ.get('CHILL_BOUNDARY_EVIDENCE_DIR','artifacts/TASK-233')
         out.mkdir(parents=True,exist_ok=True)
         settings={};results={};images={};controls={};bodies={};contacts={};native={}
@@ -103,8 +126,8 @@ class ChillBoundaryTests(unittest.TestCase):
                                 self.assertEqual(meta,settings[prior]);r['geometryAndHudClearanceMatch']=True
                                 r['controlDifferentPixels']=int(np.any(controls[key]!=controls[prior],axis=2).sum())
                                 self.assertEqual(r['controlDifferentPixels'],0)
-                                r['cache']=page.evaluate(CACHE)
-                                self.assertEqual(r['cache']['patterns'],0);self.assertEqual(r['cache']['tiles'],0)
+                                r['vector']=page.evaluate(VECTOR)
+                                assert_vector(self, r['vector'])
                                 if mode=='bad':
                                     r['mainSceneDifferentPixels']=int(np.any(images[key]!=images[prior],axis=2).sum())
                                     r['mainBoundaryDifferentPixels']=int(np.any(bodies[key]!=bodies[prior],axis=2).sum())
@@ -158,23 +181,18 @@ class ChillBoundaryTests(unittest.TestCase):
                                         camera=origin+i*7/sx
                                         page.evaluate('x=>{screen.x=x;screen.leftWall.update(screen);draw()}',camera)
                                         page.screenshot(path=str(out/f'{key}-motion-seam-{i}.png'))
-                                        actual=pixels(page,'hatch');split=pixels(page,'split')
+                                        actual=pixels(page,'hatch');continuous=pixels(page,'continuous')
                                         Image.fromarray(actual).save(out/f'{key}-motion-seam-{i}-hatches.png')
-                                        # Independently clipping adjoining pieces introduces AA at the
-                                        # split column; production draws one uninterrupted strip.
-                                        # Compare segment interiors, then compare the actual join to
-                                        # an extended, unsegmented world-pattern reference exactly.
+                                        # Production unions generated elements before drawing.
+                                        # Compare that path to one equivalent continuous element,
+                                        # including every join pixel, without an AA allowance.
                                         join=int((seam+camera)*sx)
-                                        interior=np.ones(actual.shape[1],bool)
-                                        for worldX in page.evaluate('strips.flatMap(f=>f.elements.map(e=>e.getLeftPointX()))'):
-                                            column=int((worldX+camera)*sx)
-                                            if 0<=column<actual.shape[1]:interior[max(0,column-2):column+3]=False
                                         # Premultiply before comparing antialiased transparent pixels.
                                         def premult(im):
                                             im=im.astype(int).copy();im[:,:,:3]=(im[:,:,:3]*im[:,:,3:4]+127)//255
                                             return im
-                                        seam_delta=int(abs(premult(actual)[:,interior]-premult(split)[:,interior]).max())
-                                        self.assertLessEqual(seam_delta,16)
+                                        seam_delta=int(abs(premult(actual)-premult(continuous)).max())
+                                        self.assertEqual(seam_delta,0)
                                         reference=pixels(page,'reference')
                                         join_delta=int(abs(actual[:,join-2:join+3].astype(int)-reference[:,join-2:join+3].astype(int)).max())
                                         self.assertEqual(join_delta,0)
@@ -210,6 +228,6 @@ class ChillBoundaryTests(unittest.TestCase):
         files=subprocess.check_output(['git','ls-files'],cwd=ROOT,text=True).splitlines()
         files=[f for f in files if f.endswith(('.js','.html'))]+['tools/test_chill_boundary_hatches.py']
         manifest={'baseline':base,'final':'worktree source hashes','sha256':{f:hashlib.sha256((ROOT/f).read_bytes()).hexdigest() for f in files},
-            'settings':settings,'cameraMotion':{k:v.get('motionAndSeams',[]) for k,v in results.items()},'seed':1,'dpr':1,'evidence':[str(p.relative_to(ROOT)) for p in sorted(out.glob('*.png'))]+['artifacts/TASK-233/measurements.json','artifacts/TASK-233/tests.log']}
+            'settings':settings,'cameraMotion':{k:v.get('motionAndSeams',[]) for k,v in results.items()},'seed':1,'dpr':1,'evidence':[str(p.relative_to(ROOT)) for p in sorted(out.glob('*.png'))]+[str((out/'measurements.json').relative_to(ROOT))]}
         (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
         print('PASS all four mode/viewport probes; no skipped visual or behavioral probes',flush=True)
