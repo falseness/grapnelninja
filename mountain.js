@@ -118,6 +118,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     connectors.push({id:'summit-approach', from:'S08-04', to:'summit', status:'planned', intent:'Controlled final landing'})
     const rectangle = (id,x,y,w,h,grapplable) => ({id,x,y,role:'solid',grapplable,
         points:[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})
+    const rest = (id,x,y,w) => ({id,x,y,role:'solid',grapplable:true,
+        points:[{x:0,y:0},{x:w-40,y:0},{x:w-40,y:-60},{x:w,y:-60},{x:w,y:55},{x:0,y:55}]});
     // Broken loading yard: a low dock, torn crane beam, and raised loading bay.
     // These polygons are both the rendered silhouettes and the collision shapes.
     const yard = [
@@ -129,9 +131,17 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
                 {x:520,y:55},{x:80,y:55},{x:80,y:210},{x:0,y:210}]},
         {id:'S01-broken-mast',x:1980,y:-480,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:35,y:15},{x:35,y:430},{x:0,y:430}]},
-        rectangle('S01-next-beam',2740,-440,240,35,true)
+        rectangle('S01-next-beam',2740,-440,240,35,true),
+        rectangle('S01-transfer-beam',3100,-750,180,35,true),
+        rectangle('S01-upper-beam',2800,-1060,180,35,true),
+        rest('S01-recovery-balcony',3230,-780,420),
+        rectangle('S01-lower-anchor',3210,-1090,160,35,true),
+        rectangle('S01-exit-crane',3470,-1300,180,35,true),
+        rest('S01-rest-ledge',3610,-1150,420),
+        rectangle('S01-connector-anchor',3750,-1700,180,35,true),
+        rest('S01-exit',3940,-1620,320)
     ];
-    Object.assign(sections[0], {status:'partial', landmark:{id:'S01-landmark',
+    Object.assign(sections[0], {status:'built', landmark:{id:'S01-landmark',
         name:'broken loading yard',x:2460,y:-240}});
     Object.assign(encounters[0], {status:'built',x:2160,y:0,
         elements:['S01-rest-dock','S01-crane-beam','S01-broken-mast'],
@@ -142,9 +152,25 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         elements:['S01-crane-beam','S01-loading-bay','S01-next-beam'],
         start:{from:'S01-01'},target:{x:2860,y:-425},
         exit:{left:2480,right:3040,top:-140,bottom:-120},
-        action:'Release the crane pull onto the wide loading bay',
-        temporaryExit:'Rest on the loading bay; no unfinished encounter or finish trigger required'});
-    connectors[0].status='built';connectors[1].status='built';
+        action:'Release the crane pull onto the wide loading bay'});
+    Object.assign(encounters[2], {status:'built',x:2860,y:-425,
+        elements:['S01-next-beam','S01-transfer-beam','S01-upper-beam'],
+        start:{from:'S01-02'}, target:{x:2890,y:-1040},
+        exit:{left:2800,right:3030,top:-1080,bottom:-900},
+        action:'Release and reacquire the staggered beams during ascent'});
+    Object.assign(encounters[3], {status:'built',x:3220,y:-780,
+        elements:['S01-recovery-balcony','S01-lower-anchor','S01-exit-crane',
+            'S01-rest-ledge','S01-connector-anchor','S01-exit'],
+        start:{from:'S01-03'}, target:{x:3290,y:-1070},
+        exit:{left:3940,right:4260,top:-1650,bottom:-1620},
+        action:'Catch a small fall on the balcony; pull the lower anchor, rest, then climb the exit connector'});
+    for (let i=0;i<4;i++) connectors[i].status='built';
+    Object.assign(connectors[4], {authoredFrom:'S01',
+        departure:{left:3940,right:4260,top:-1650,bottom:-1620},
+        intent:'Built S01 departure ledge at the next band; S02 destination remains planned'});
+    Object.assign(recoveries[0], {status:'built',
+        elements:['S01-recovery-balcony','S01-lower-anchor','S01-rest-dock'],
+        localRejoin:'S01-04'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},

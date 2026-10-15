@@ -14,7 +14,7 @@ versioned separately from the manifest schema; stable S01-01 through S08-04 IDs
 are independent of coordinates. Section mechanics and landmarks follow the
 approved section descriptions in the task queue.
 
-S01-01 and S01-02 are built; the remaining 30 encounters and both optional
+All four S01 encounters are built; the remaining 28 encounters and both optional
 shortcuts are planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and
@@ -41,8 +41,7 @@ automated structure checks cannot establish human difficulty or completion time.
 The base connects directly to a 600-unit entrance dock. A broken mast and torn
 crane beam identify the loading yard; the beam is within the calibrated R=540
 acquisition range. Pull toward it and release onto the raised loading bay. The
-bay has visible supporting legs and a raised end stop, providing a safe temporary
-exit while S01-03/04 remain planned. All silhouettes use the actual solid collision
+bay has visible supporting legs and a raised end stop, providing an ordinary rest before the staggered transfer. All silhouettes use the actual solid collision
 polygons and existing gray solid semantics; there are no hazards or finish trigger.
 Short releases return physically to the dock, with the broad mountain catch floor
 below. The next overhead beam is visible from both the entrance and exit.
@@ -52,3 +51,20 @@ physics tick for the connected S01-01/02 route. It measures the nominal release,
 +/-3 tick releases, +/-0.02R aim offsets, and two miss/recovery cases against the
 unchanged authored world. Evidence, including screenshots and source hashes, is
 written beneath `GRAPPLE_OVER_EVIDENCE_DIR` (default `artifacts/TASK-465`).
+
+
+## Foundations completion (TASK-466)
+
+The staggered beams lead up and back across the broken yard. A side balcony
+catches a short fall; its lower anchor reconnects to the exit crane and a broad
+rest ledge. The final anchor leads to an ordinary solid departure ledge at
+Y=-1620. This is the authored connector to the next band; S02 remains planned,
+and reaching this ledge does not complete the mountain or trigger a checkpoint.
+The loading bay end stop remains a useful brake, but its temporary-exit metadata
+has been removed. No placeholder geometry or shortcut is added in Foundations.
+All new terrain uses the existing solid gray surface and deterministic polygons.
+
+`Task466Tests` records a continuous entrance-to-exit mouse route, including
+staggered acquisition and a deliberate local miss followed by lower-anchor
+recovery, plus trusted touch acquisition and lift from the recovery balcony. The overview is an annotated map of the actual runtime collision
+vertices. All evidence honors `GRAPPLE_OVER_EVIDENCE_DIR`.
