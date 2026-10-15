@@ -17,6 +17,7 @@ function drawLightsLayer(gameState)
 
 function drawWorldLayer()
 {
+    drawAcquisitionCircle()
     grapnel.draw()
 
     // All back faces first, so no extrusion covers a neighbour's front face
@@ -36,6 +37,27 @@ function drawWorldLayer()
     if (screen.leftWall) screen.leftWall.draw()
     screen.draw()
     grapnel.drawHook()
+}
+
+// Distance guide only: obstacles still determine whether a hook can attach.
+function drawAcquisitionCircle()
+{
+    if (version !== 'grapple_over' || !runInProgress)
+        return
+
+    ctx.save()
+    ctx.globalAlpha = 0.20
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.strokeStyle = '#00ffff'
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetX = ctx.shadowOffsetY = 0
+    ctx.setLineDash([])
+    ctx.lineWidth = width / getCanvasCssRect().width / scale[version]
+    ctx.beginPath()
+    ctx.arc(ninja.x + screen.x, ninja.y + screen.y,
+        MODE_DEFINITIONS.grapple_over.acquisitionRadius, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
 }
 
 function drawPlayerTrailLayer(gameState)
