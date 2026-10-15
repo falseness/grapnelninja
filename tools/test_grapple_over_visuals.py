@@ -25,6 +25,9 @@ class Task453Tests(unittest.TestCase):
     def open(self, viewport, dpr, mode='grapple_over'):
         context = self.browser.new_context(viewport=viewport, device_scale_factor=dpr)
         self.addCleanup(context.close)
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
+            test=self.id(), browser=self.browser.version,
+            viewport=viewport, dpr=dpr, mode=mode), sort_keys=True))
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
