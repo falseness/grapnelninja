@@ -140,3 +140,89 @@ class Task461Tests(unittest.TestCase):
             tested_keys=['t','F2','F8','Control+Shift+t'],debug_api_absent=True,
             index_does_not_load_injector_pass=True,normal_users_no_teleport_pass=True))
         print('PASS production: index does not load injector; debug API absent; teleport keys cannot change simulation')
+
+
+class Task462Tests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from grapple_over_verify import hashes
+        cls.evidence = EvidenceWriter('TASK-462')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.evidence.log('CONFIG ' + json.dumps(dict(browser=cls.browser.version,
+            viewport=VIEWPORT, device_scale_factor=1, has_touch=True, hz=60, seed=1,
+            revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+            source_hashes=hashes()), sort_keys=True))
+
+    def fixture(self, kind='base-start'):
+        from grapple_over_verify import metadata
+        return dict(metadata=metadata(kind), ticks=45, inputs=[
+            dict(tick=0,event='mousedown',world=dict(x=700,y=800)),
+            dict(tick=30,event='mouseup',world=dict(x=700,y=800))],
+            expected_exit={'x':[-2000,3000],'y':[-2000,3000]},
+            required_events=['input','release'])
+
+    def test_input_only_replay_clip_and_corruption_rejection(self):
+        import copy
+        from grapple_over_verify import execute, verify
+        m = self.fixture()
+        out = self.evidence.path('fixture-run')
+        m['trace'] = execute(m,self.browser,self.url,out,clip=True)
+        final = m['trace']['snapshots'][-1]['state']['simulation']['player']
+        m['expected_exit'] = {k:[final[k]-0.001,final[k]+0.001] for k in ('x','y')}
+        self.evidence.write('fixture-run/inputs.json',m)
+        result = verify(m,self.browser,self.url,self.evidence.path('test-replayed'))
+        self.assertGreater(self.evidence.path('fixture-run/clip.webm').stat().st_size,1000)
+        cases = {}
+        for name in ('inputs','hash','level_hash','exit','injection','trace_mutation','tick_gap','mechanic'):
+            bad = copy.deepcopy(m)
+            if name == 'inputs': bad['inputs'][0]['world']['x'] += 100
+            elif name == 'hash': bad['metadata']['source_hashes']['fixedlevel.js'] = 'corrupt'
+            elif name == 'level_hash': bad['metadata']['level_sha256'] = 'corrupt'
+            elif name == 'exit': bad['expected_exit']['x'] = [99999,100000]
+            elif name == 'injection': bad['inputs'][1]['state'] = {'x':99999}
+            elif name == 'trace_mutation':
+                row=bad['trace']['snapshots'][10]
+                row['state']['simulation']['player']['x'] += 1
+                row['sha256']=state_hash(row['state'])
+            elif name == 'tick_gap': bad['trace']['snapshots'][10]['tick'] = 11
+            elif name == 'mechanic': bad['required_events'].append('nonexistent')
+            with self.assertRaises(ValueError) as caught:
+                verify(bad,self.browser,self.url,self.evidence.path('rejected/'+name))
+            cases[name] = dict(rejected=True,reason=str(caught.exception))
+        self.evidence.write('replay.json',dict(result,corruptions=cases,
+            recorded_trace='fixture-run/trace.json',replayed_trace='test-replayed/trace.json',
+            clip='fixture-run/clip.webm'))
+        print('PASS base-start: matching recorded/replayed state traces; input-only route; rendered clip')
+        print('PASS corruption: inputs/hash/level_hash/exit/injection/trace_mutation/tick_gap/mechanic rejected')
+
+    def test_isolated_snapshot_cannot_claim_base_start(self):
+        import copy
+        from grapple_over_verify import execute, verify
+        m=self.fixture('isolated')
+        m['initial_setup']={'player':{'x':420,'y':980,'speedX':0,'speedY':0},'camera':{'x':0,'y':0}}
+        m['trace']=execute(m,self.browser,self.url,self.evidence.path('isolated'))
+        result=verify(m,self.browser,self.url,self.evidence.path('isolated-replayed'))
+        bad=copy.deepcopy(m)
+        bad['metadata']['kind']='base-start'
+        with self.assertRaisesRegex(ValueError,'base-start state injection'):
+            verify(bad,self.browser,self.url,self.evidence.path('invalid-base'))
+        snapshot=self.fixture('isolated')
+        snapshot['initial_snapshot']=m['trace']['snapshots'][0]['state']['simulation']
+        snapshot['trace']=execute(snapshot,self.browser,self.url,self.evidence.path('snapshot'))
+        snap_result=verify(snapshot,self.browser,self.url,self.evidence.path('snapshot-replayed'))
+        self.evidence.write('isolated.json',dict(result,snapshot=snap_result,base_claim_rejected=True))
+        print('PASS isolated: setup and initial snapshot replay; base-start injection rejected')
+
+    def test_bounded_timing_and_aim_variations(self):
+        from grapple_over_verify import execute, verify, variations
+        m=self.fixture()
+        m['inputs']=variations(m['inputs'],tick_offset=2,aim_offset=(4,-3))
+        self.assertEqual(m['inputs'][0],dict(tick=2,event='mousedown',world=dict(x=704,y=797)))
+        m['trace']=execute(m,self.browser,self.url,self.evidence.path('variation'))
+        result=verify(m,self.browser,self.url,self.evidence.path('variation-replayed'))
+        with self.assertRaisesRegex(ValueError,'bounds'):
+            variations(m['inputs'],tick_offset=4)
+        with self.assertRaisesRegex(ValueError,'bounds'):
+            variations(m['inputs'],aim_offset=(13,0))
+        self.evidence.write('variation.json',dict(result,bounds_rejected=True,inputs=m['inputs']))
+        print('PASS variation: bounded timing/aim replay through production handlers; excess rejected')
