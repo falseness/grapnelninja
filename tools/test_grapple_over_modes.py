@@ -320,6 +320,9 @@ class Task460Tests(unittest.TestCase):
             page.evaluate('for(let i=0;i<20;i++) physics()')
             self.assertEqual(page.evaluate('captureClimbState()'),paused)
             def tap(key):
+                # Menu taps start the real input debounce in events.js. Wait for
+                # it to expire before sending another touch, even with RAF frozen.
+                page.wait_for_function('!unTouch')
                 boxes=page.evaluate('''() => {LAYOUT_PROBE.boxes=[]; menu.drawPauseScreen();
                     const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;return b}''')
                 label=page.evaluate('k=>I18N.t(k)',key)
@@ -327,9 +330,15 @@ class Task460Tests(unittest.TestCase):
                 rect=page.locator('#canvas').bounding_box()
                 page.touchscreen.tap(rect['x']+box['x']+box['width']/2,rect['y']+box['y']+box['height']/2)
                 page.evaluate('cancelAnimationFrame(game); window.requestAnimationFrame=()=>0')
-            tap('climb.restart'); tap('climb.cancel')
+            tap('climb.restart')
+            self.assertTrue(page.evaluate('CLIMB_UI.confirming'))
+            tap('climb.cancel')
+            self.assertFalse(page.evaluate('CLIMB_UI.confirming'))
             self.assertEqual(page.evaluate('captureClimbState()'),paused)
-            tap('climb.restart'); tap('climb.yes')
+            tap('climb.restart')
+            self.assertTrue(page.evaluate('CLIMB_UI.confirming'))
+            tap('climb.yes')
+            self.assertFalse(page.evaluate('CLIMB_UI.confirming'))
             reset=page.evaluate('captureClimbState()')
             self.assertEqual(reset,base)
             page.wait_for_function("JSON.parse(localStorage.getItem('grapnelninja.grappleOver')).simulationTick===0")
