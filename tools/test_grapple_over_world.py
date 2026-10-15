@@ -290,3 +290,155 @@ class Task448Tests(unittest.TestCase):
         self.evidence.write('old-wall.json', dict(self.proof, modes=rows,
             classic_bad_camera_wall_pass=True, classic_bad_deletion_death_pass=True))
         print('PASS legacy: classic/bad camera wall contacts, anchor tracking, rendering and deletion-border restart')
+
+
+MOVER_FIXTURE = '''() => {
+    const d=structuredClone(GRAPPLE_OVER_LEVEL);
+    d.elements.push(
+        {id:'triangle',x:500,y:700,role:'solid',points:[{x:0,y:0},{x:120,y:0},{x:60,y:80}]},
+        {id:'counterweight',x:950,y:600,role:'solid',points:[{x:0,y:0},{x:60,y:0},{x:60,y:60},{x:0,y:60}]},
+        {id:'red',x:1400,y:500,role:'hazard',grapplable:false,points:[{x:0,y:0},{x:80,y:0},{x:80,y:80},{x:0,y:80}]});
+    d.movers=[
+        {id:'triangle-motion',element:'triangle',axis:'x',min:500,max:700,periodMs:4000,phase:0,velocity:100},
+        {id:'counterweight-motion',element:'counterweight',axis:'y',min:500,max:700,periodMs:2000,phase:.75,velocity:-200},
+        {id:'red-motion',element:'red',axis:'y',min:500,max:800,periodMs:3000,phase:0,velocity:200}];
+    return d;
+}'''
+
+
+class Task455Tests(unittest.TestCase):
+    TASK = 'TASK-455'
+    setUpClass = classmethod(Task446Tests.setUpClass.__func__)
+    open = Task446Tests.open
+
+    def test_3600_tick_trajectories_and_caches(self):
+        page = self.open()
+        page.evaluate('window.moverFixture=' + MOVER_FIXTURE)
+        runs = []
+        for offscreen in (False, False, True):
+            runs.append(page.evaluate('''offscreen => {
+                const oldRandom=Math.random; Math.random=()=>{throw Error('random authored mover')};
+                let w; try {w=loadFixedLevel(moverFixture())} finally {Math.random=oldRandom}
+                floors=[w]; screen.x=offscreen ? -10000 : 0; screen.y=0;
+                const movers=w.level.movers.map(m=>w.byId.get(m.element));
+                grapnel.throwed=grapnel.grappled=true;
+                grapnel.pos=movers.map(e=>[e.x+20,e.y,e]);
+                const initial=movers.map(e=>({id:e.id,x:e.x,y:e.y,dx:e.dx,dy:e.dy,
+                    role:e.surfaceRole,grapplable:e.grapplable,stroke:e.stroke}));
+                const rows=[],reversals=[]; let last=movers.map(e=>Math.sign(e.speedX||e.speedY));
+                let cacheError=0,anchorError=0,visible=0;
+                for(let tick=1;tick<=3600;tick++) {
+                    for(let sub=0;sub<cyclesPerTick;sub++) {
+                        w.moveElements(); grapnel.move();
+                        movers.forEach((e,i)=>{
+                            const sign=Math.sign(e.speedX||e.speedY);
+                            if(sign!==last[i])reversals.push({tick,sub,id:e.id,x:e.x,y:e.y});
+                            last[i]=sign;
+                            const p=e.getPoints(),b={},c=e.getCircumscribedCircle(),lines=e.getLines();e.writeBounds(b);
+                            if(lines.length!==e.points.length || e.linesX!==e.x || e.linesY!==e.y)throw Error('stale lines');
+                            cacheError=Math.max(cacheError,Math.abs(p[0].x-e.x),Math.abs(p[0].y-e.y),
+                                Math.abs(b.left-e.x),Math.abs(c.x-e.x-e.circle.x));
+                            anchorError=Math.max(anchorError,Math.abs(grapnel.pos[i][0]-e.x-20),
+                                Math.abs(grapnel.pos[i][1]-e.y));
+                        });
+                    }
+                    visible+=movers.filter(e=>isCullBoxVisible(getElementCullBox(e),getCullRect())).length;
+                    if(tick%60===0)draw();
+                    rows.push(movers.map((e,i)=>[e.x,e.y,e.dx,e.dy,...grapnel.pos[i].slice(0,2)]));
+                }
+                return {offscreen,initial,rows,reversals,cacheError,anchorError,visible};
+            }''', offscreen))
+        for run in runs:
+            self.assertEqual(len(run['rows']), 3600)
+            self.assertGreater(len(run['reversals']), 50)
+            self.assertLessEqual(run['cacheError'], 1e-6)
+            self.assertLessEqual(run['anchorError'], 1e-6)
+            self.assertEqual(run['rows'], runs[0]['rows'])
+            self.assertEqual(run['reversals'], runs[0]['reversals'])
+            for e in run['initial']:
+                self.assertEqual([e['dx'], e['dy']], [0, 0])
+                self.assertEqual(e['role'], 'hazard' if e['id']=='red' else 'solid')
+        self.assertGreater(runs[0]['visible'], 0)
+        self.assertEqual(runs[2]['visible'], 0)
+        invalid = page.evaluate('''() => ['velocity','position','phase'].map(key=>{
+            const d=moverFixture();
+            if(key==='velocity')d.movers[0].velocity=-100;
+            if(key==='position')d.elements.find(e=>e.id==='triangle').x=550;
+            if(key==='phase')d.movers[0].phase=.25;
+            try {loadFixedLevel(d);return 'accepted'}catch(e){return e.message}
+        })''')
+        self.assertTrue(all(s.startswith('InvalidMoverInitialState:') for s in invalid))
+        self.evidence.write('movers.json', dict(self.proof, runs=runs, invalid=invalid,
+            ticks=3600, tolerance=1e-6, identical_runs=True, culling_independent=True))
+        print('PASS 3600 ticks x3: identical trajectories/reversals/anchors; offscreen visible=0; cache/anchor error <=1e-6')
+
+    def test_input_attachment_reversal_release_video(self):
+        context=self.browser.new_context(viewport={'width':1280,'height':720},
+            record_video_dir=str(self.evidence.path('video')),record_video_size={'width':1280,'height':720})
+        self.addCleanup(context.close)
+        page=context.new_page(); page.goto(self.url); wait_for_boot(page)
+        page.evaluate("() => {startGame('grapple_over');cancelAnimationFrame(game)}")
+        page.wait_for_function('!unTouch')
+        page.evaluate('window.moverFixture=' + MOVER_FIXTURE)
+        point=page.evaluate('''() => {
+            floors=[loadFixedLevel(moverFixture())];
+            TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500);
+            ninja.x=550;ninja.y=600;ninja.speedX=ninja.speedY=0;
+            screen.x=300;screen.y=-200;draw();
+            return canvasCoordsToViewportCoords({x:(550+screen.x)*scale[version],y:(720+screen.y)*scale[version]});
+        }''')
+        page.mouse.move(point['x'],point['y']);page.mouse.down()
+        attached=page.evaluate('''() => {
+            for(let i=0;i<15 && !grapnel.isGrappled();i++)physics();
+            return {attached:grapnel.isGrappled(),id:grapnel.pos.at(-1)?.[2].id};
+        }''')
+        self.assertEqual(attached,dict(attached=True,id='triangle'))
+        rows=page.evaluate('''async () => {
+            const rows=[],e=floors[0].byId.get('triangle');
+            const offset=[grapnel.pos.at(-1)[0]-e.x,grapnel.pos.at(-1)[1]-e.y];
+            for(let i=0;i<180;i++) {
+                physics();draw();
+                const p=grapnel.pos.find(p=>p[2]===e);
+                rows.push({tick:i,x:e.x,vx:e.speedX,attached:grapnel.isGrappled(),
+                    error:p ? Math.hypot(p[0]-e.x-offset[0],p[1]-e.y-offset[1]) : null});
+                await new Promise(r=>setTimeout(r,17));
+            }
+            return rows;
+        }''')
+        self.assertTrue(any(r['vx']<0 for r in rows))
+        self.assertTrue(all(r['attached'] and r['error'] is not None and r['error']<=1e-6 for r in rows))
+        page.mouse.up()
+        released=page.evaluate('''() => {physics();draw();return !grapnel.throwed&&!grapnel.isGrappled()}''')
+        self.assertTrue(released);page.wait_for_timeout(300)
+        video=page.video;context.close();video.save_as(str(self.evidence.path('movers.webm')));video.delete()
+        self.evidence.write('attachment.json',dict(attached=attached,rows=rows,released=released))
+        print('PASS movers.webm: mouse press attaches triangle; physics reversal; anchor drift <=1e-6; mouse release detaches')
+
+    def test_mover_player_contacts(self):
+        page=self.open()
+        page.evaluate('window.moverFixture=' + MOVER_FIXTURE)
+        rows=page.evaluate('''() => {
+            floors=[loadFixedLevel(moverFixture())];const w=floors[0],player=ninja;
+            return ['triangle','counterweight','red'].map(id=>{
+                w.moveElements();const e=w.byId.get(id);
+                ninja.x=e.x+30;ninja.y=e.y-ninja.radius+2;
+                ninja.speedX=0;ninja.speedY=.2;ninja.hazardCooldownMs=0;
+                ninja.collision();
+                return {id,vy:ninja.speedY,cooldown:ninja.hazardCooldownMs,
+                    penetration:ninja.y+ninja.radius-e.y,samePlayer:ninja===player,
+                    grapplable:e.grapplable,stroke:e.stroke};
+            });
+        }''')
+        for row in rows:
+            self.assertTrue(row['samePlayer'])
+            self.assertLessEqual(row['penetration'],1e-6)
+            if row['id']=='red':
+                self.assertLessEqual(row['vy'],-420/480)
+                self.assertEqual(row['cooldown'],350)
+            else:
+                self.assertEqual(row['vy'],0)
+                self.assertEqual(row['cooldown'],0)
+                self.assertTrue(row['grapplable'])
+                self.assertEqual(row['stroke'],'#2f86ff')
+        self.evidence.write('contacts.json',rows)
+        print('PASS blue triangle/counterweight: solid and grappleable; red mover: nonlethal knockback')

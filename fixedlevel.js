@@ -18,7 +18,9 @@ const GRAPPLE_OVER_LEVEL = {
     ].map(([id, x, y, w, h, grapplable = true]) => ({id, x, y, grapplable, role: 'solid',
         points: [{x: 0, y: 0}, {x: w, y: 0}, {x: w, y: h}, {x: 0, y: h}]})),
     // Optional movers: {id, element, axis: 'x'|'y', min, max, periodMs,
-    // phase}. Bounds are absolute world coordinates; phase is in [0, 1).
+    // phase, velocity?}. Bounds are absolute world coordinates; phase is in [0, 1).
+    // Explicit velocity is world units/second at phase; it must agree with
+    // period/phase and the element initial position. Legacy descriptors omit it.
     movers: []
 }
 
@@ -99,6 +101,14 @@ function validateFixedLevel(data)
             m.min >= m.max || m.periodMs <= 0 || m.phase < 0 || m.phase >= 1 ||
             element[m.axis] < m.min || element[m.axis] > m.max)
             fail('InvalidMoverBounds', m.id)
+        if (m.velocity !== undefined)
+        {
+            const initial = m.min + (m.max - m.min) * (1 - Math.abs(2 * m.phase - 1))
+            const velocity = 2000 * (m.max - m.min) / m.periodMs * (m.phase < .5 ? 1 : -1)
+            if (!Number.isFinite(m.velocity) || Math.abs(m.velocity - velocity) > 1e-6 ||
+                Math.abs(element[m.axis] - initial) > 1e-6)
+                fail('InvalidMoverInitialState', m.id)
+        }
         const low = m.axis === 'x' ? data.bounds.left : data.bounds.top
         const high = m.axis === 'x' ? data.bounds.right : data.bounds.bottom
         const offsets = element.points.map(p => p[m.axis])
@@ -129,6 +139,17 @@ class PersistentWorld extends Floor
                 element.fill = '#182028'
                 element.stroke = '#a3adb8'
             }
+            // Authored movers never invoke procedural/random constructors or warm-up.
+            if (this.level.movers.some(m => m.element === model.id) && model.role !== 'hazard')
+            {
+                element.fill = STYLE.colors.cube.blueFill
+                element.stroke = STYLE.colors.cube.blueStroke
+                model.role = 'solid'
+            }
+            // Trampoline's legacy extrema sample alternate vertices; authored
+            // triangles need all vertices for deletion/collision consumers.
+            element.leftPointX = Math.min(...model.points.map(p => p.x))
+            element.rightPointX = Math.max(...model.points.map(p => p.x))
             element.id = model.id
             element.surfaceRole = model.role
             element.grapplable = model.grapplable !== false
@@ -136,6 +157,7 @@ class PersistentWorld extends Floor
         })
         this.byId = new Map(this.elements.map(e => [e.id, e]))
         this.applyMovers(0)
+        for (const e of this.elements) e.dx = e.dy = 0
     }
     generatePrimaryElements() {}
     generateElements() {return 0}
@@ -152,6 +174,9 @@ class PersistentWorld extends Floor
             element.dx = mover.axis === 'x' ? next - element.x : 0
             element.dy = mover.axis === 'y' ? next - element.y : 0
             element[mover.axis] = next
+            const velocity = 2000 * (mover.max - mover.min) / mover.periodMs * (phase < .5 ? 1 : -1)
+            element.speedX = mover.axis === 'x' ? velocity * physicsStepMs / cyclesPerTick / 1000 : 0
+            element.speedY = mover.axis === 'y' ? velocity * physicsStepMs / cyclesPerTick / 1000 : 0
         }
     }
     moveElements()
