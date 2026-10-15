@@ -61,7 +61,34 @@ class Grapnel
             // A hit lies on both segments, so inside both boxes.
             const reach = segmentBounds(grapnelLine.x1, grapnelLine.y1, grapnelLine.x2, grapnelLine.y2,
                                         defaultEqualityTolerance)
-            const collisionGroups = [...floors, {elements: [screen.leftWall]}]
+            const collisionGroups = screen.leftWall ? [...floors, {elements: [screen.leftWall]}] : floors
+            if (version === 'grapple_over')
+            {
+                // Resolve the first surface along the shot before considering
+                // attachment: a nongrapplable boundary occludes terrain behind it.
+                let nearest = null
+                for (const group of collisionGroups)
+                    for (const element of group.elements)
+                        for (const line of element.getLines())
+                        {
+                            const hit = linesCollision(grapnelLine, line)
+                            if (!hit) continue
+                            const distance = Math.hypot(hit.x - grapnelLine.x1, hit.y - grapnelLine.y1)
+                            if (!nearest || distance < nearest.distance)
+                                nearest = {hit, element, distance}
+                        }
+                if (nearest?.element.grapplable === false)
+                {
+                    this.throwed = this.grappled = false
+                    this.pos = []
+                    return
+                }
+                if (!this.grappled && nearest)
+                {
+                    this.grapple(nearest.hit, nearest.element, q)
+                    return
+                }
+            }
             for (let k = 0; k < collisionGroups.length; ++k)
             {
                 for (let i = 0; i < collisionGroups[k].elements.length; ++i)
@@ -96,7 +123,7 @@ class Grapnel
     }
     grapple(coords, element, index)
     {
-        if (coords)
+        if (coords && element.grapplable !== false)
         {
             const correctCornerEps = screenHeightPercent(GAMEPLAY.cornerToleranceHeightPercent)
             const firstPointEps = screenHeightPercent(GAMEPLAY.firstPointToleranceHeightPercent)

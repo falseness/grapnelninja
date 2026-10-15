@@ -28,7 +28,7 @@ function calcPhysics()
         floors[i].moveElements()
     }
 
-    screen.leftWall.update(screen)
+    if (screen.leftWall) screen.leftWall.update(screen)
     ninja.move()
     if (continueOffer.visible)
         return

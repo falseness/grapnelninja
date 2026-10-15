@@ -15,14 +15,15 @@ GEOMETRY = '''world => world.elements.map(e => ({id:e.id, role:e.surfaceRole,
 class Task446Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.evidence = EvidenceWriter('TASK-446')
+        cls.evidence = EvidenceWriter(getattr(cls, 'TASK', 'TASK-446'))
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         hashes = source_hashes()
-        for name in ('fixedlevel.js', 'tools/test_grapple_over_world.py'):
+        for name in ('fixedlevel.js', 'tools/test_grapple_over_world.py', 'tools/test_left_wall.py'):
             hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
         cls.proof = {'revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'],
             cwd=ROOT, text=True).strip(), 'source_hashes': hashes,
-            'browser': cls.browser.version, 'viewports': [[1280, 720], [960, 720]],
+            'browser': cls.browser.version,
+            'viewports': [[1280, 720]] if getattr(cls, 'TASK', None) == 'TASK-448' else [[1280, 720], [960, 720]],
             'device_scale_factor': 1, 'seed': 1}
         cls.evidence.log('CONFIG ' + json.dumps(cls.proof, sort_keys=True))
 
@@ -50,7 +51,8 @@ class Task446Tests(unittest.TestCase):
             for repeat in range(2):
                 rows = page.evaluate('() => (' + GEOMETRY + ')(loadFixedLevel())')
                 observations.append(dict(viewport=[width, 720], repeat=repeat, geometry=rows))
-        self.assertEqual([e['id'] for e in rows], ['base', 'right-step', 'left-step', 'top-step'])
+        self.assertEqual([e['id'] for e in rows], ['base', 'right-step', 'left-step', 'top-step',
+                                                     'left-bound', 'right-bound', 'catch-floor'])
         for observation in observations:
             self.assertEqual(observation['geometry'], observations[0]['geometry'])
         errors = page.evaluate('''() => {
@@ -137,12 +139,12 @@ class Task446Tests(unittest.TestCase):
         }''')
         self.assertEqual(trace['proceduralCalls'], 0)
         for row in trace['rows']:
-            self.assertEqual(row['count'], 4)
+            self.assertEqual(row['count'], 7)
             self.assertTrue(row['sameGroup'] and row['sameArray'] and row['sameObjects'])
             self.assertEqual(row['geometry'], trace['before'])
         self.evidence.write('world-trace.json', dict(self.proof, **trace,
             constant_terrain_identity_count=True, no_procedural_spawning=True))
-        print('PASS travel: forward/backward/up/down/return; count=4; same objects and geometry; proceduralCalls=0')
+        print('PASS travel: forward/backward/up/down/return; count=7; same objects and geometry; proceduralCalls=0')
 
     def test_classic_bad_baseline(self):
         baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())
@@ -151,3 +153,140 @@ class Task446Tests(unittest.TestCase):
             self.assertEqual(page.evaluate(STATE), baseline['modes'][mode]['initial'])
             self.assertEqual(step(page, 12), baseline['modes'][mode]['movement_trace'])
         print('PASS classic/bad: initial state and 12-step traces equal TASK-444 baseline')
+
+
+class Task448Tests(unittest.TestCase):
+    TASK = 'TASK-448'
+    setUpClass = classmethod(Task446Tests.setUpClass.__func__)
+    open = Task446Tests.open
+
+    def test_fixed_boundaries_camera_backtracking_and_landings(self):
+        page = self.open()
+        observed = page.evaluate('''() => {
+            const world = floors[0], player = ninja, refs = world.elements.slice();
+            const geometry = () => world.elements.map(e => ({id:e.id,x:e.x,y:e.y}));
+            const initial = geometry(), camera = [], sides = [], landings = [];
+            // A real hook into the base; moving only the camera must not move it.
+            ninja.x=360; ninja.y=1000; ninja.speedX=ninja.speedY=0;
+            grapnel.throwed=true; grapnel.pos=[[360,1110,new Empty()]];
+            grapnel.collision();
+            const anchorBefore=grapnel.pos.map(p=>[p[0],p[1],p[2].id]);
+            for (let i=0;i<12;i++) {
+                screen.speedX=i%2 ? 20000 : -20000;
+                screen.speedY=i%2 ? -8000 : 8000;
+                screen.move(); grapnel.move(); grapnel.collision(); draw();
+                world.deleteElements(); world.replenishElements();
+                camera.push({camera:[screen.x,screen.y],wall:screen.leftWall,
+                    anchor:grapnel.pos.map(p=>[p[0],p[1],p[2].id]), geometry:geometry(),
+                    sameObjects:refs.every((e,j)=>e===world.elements[j])});
+            }
+            grapnel.throwed=grapnel.grappled=false; grapnel.pos=[];
+            // Camera deletion border now lies far ahead of the player.
+            screen.x=-20000;
+            for (const [id,x,vx] of [['left-bound',-950,-500],['right-bound',1950,500]]) {
+                ninja.x=x; ninja.y=0; ninja.speedX=vx; ninja.speedY=0;
+                ninja.move();
+                sides.push({id,x:ninja.x,y:ninja.y,radius:ninja.radius,vx:ninja.speedX,
+                    samePlayer:ninja===player, frozen:isRunFrozen()});
+            }
+            for (const x of [-800,0,1500,1900]) {
+                ninja.x=x; ninja.y=1500; ninja.speedX=0; ninja.speedY=30;
+                for(let i=0;i<240;i++) physics();
+                landings.push({startX:x,x:ninja.x,y:ninja.y,radius:ninja.radius,vy:ninja.speedY,
+                    samePlayer:ninja===player,sameWorld:floors[0]===world,frozen:isRunFrozen(),
+                    sameObjects:refs.every((e,j)=>e===world.elements[j])});
+            }
+            // No wall appears, even after production physics and drawing.
+            draw();
+            return {initial,anchorBefore,camera,sides,landings,wall:screen.leftWall,
+                finalGeometry:geometry()};
+        }''')
+        self.assertEqual(observed['anchorBefore'], [[360, 1100, 'base']])
+        self.assertIsNone(observed['wall'])
+        for row in observed['camera']:
+            self.assertIsNone(row['wall'])
+            self.assertEqual(row['anchor'], observed['anchorBefore'])
+            self.assertEqual(row['geometry'], observed['initial'])
+            self.assertTrue(row['sameObjects'])
+        for row in observed['sides']:
+            self.assertTrue(row['samePlayer'])
+            self.assertFalse(row['frozen'])
+            self.assertGreaterEqual(row['x']-row['radius'], -1000-1e-6)
+            self.assertLessEqual(row['x']+row['radius'], 2000+1e-6)
+            self.assertEqual(row['vx'], 0)
+        for row in observed['landings']:
+            self.assertTrue(row['samePlayer'] and row['sameWorld'] and row['sameObjects'])
+            self.assertFalse(row['frozen'])
+            self.assertAlmostEqual(row['y']+row['radius'], 2000, places=5)
+            self.assertEqual(row['vy'], 0)
+        self.assertEqual(observed['finalGeometry'], observed['initial'])
+        shots = page.evaluate('''() => {
+            const world=floors[0], rows=[];
+            for(const [id,x,y,tx,ty] of [
+                ['left-bound',-900,0,-1200,0],['right-bound',1900,0,2200,0],
+                ['catch-floor',1500,1900,1500,2200]]) {
+                ninja.x=x; ninja.y=y;
+                grapnel.throwed=true; grapnel.grappled=false;
+                grapnel.pos=[[tx,ty,new Empty()]];
+                grapnel.collision();
+                rows.push({id,throwed:grapnel.throwed,attached:grapnel.isGrappled(),count:grapnel.pos.length});
+            }
+            // Place a legitimate target behind a blocker, first in iteration order.
+            const target=new Trampoline({x:-1250,y:-50,points:[{x:0,y:0},{x:40,y:0},{x:40,y:100},{x:0,y:100}]});
+            target.id='occluded-target'; world.elements.unshift(target);
+            ninja.x=-900; ninja.y=0; grapnel.throwed=true; grapnel.grappled=false;
+            grapnel.pos=[[-1300,0,new Empty()]]; grapnel.collision();
+            rows.push({id:'occluded-target',throwed:grapnel.throwed,attached:grapnel.isGrappled(),count:grapnel.pos.length});
+            world.elements.shift();
+            return rows;
+        }''')
+        for shot in shots:
+            self.assertFalse(shot['throwed'] or shot['attached'])
+            self.assertEqual(shot['count'], 0)
+        self.evidence.write('boundaries.json', dict(self.proof, observations=observed, shots=shots,
+            camera_cannot_create_or_move_anchor=True, side_bounds_contain_without_attachment=True,
+            bottom_landings_without_restart=True, backtracking_retains_terrain_ids=True,
+            nongrapplable_blocks_shot=True))
+        print('PASS boundaries: 12 camera/backtracking moves; 2 side impacts; 4 bottom landings; 4 blocked shots; no restart')
+
+    def test_legacy_wall_and_deletion_death(self):
+        from test_left_wall import PROBE
+        rows = []
+        for mode in ('classic', 'bad'):
+            page = self.open(mode=mode)
+            row = page.evaluate(PROBE)
+            for contact in row['contacts']:
+                for key in ('alive', 'nonpenetration', 'rightward', 'noRepeatedReflection'):
+                    self.assertTrue(contact[key], contact)
+            self.assertTrue(row['attached'])
+            for anchor in row['anchors']:
+                self.assertTrue(anchor['attached'])
+                self.assertAlmostEqual(anchor['errorX'], 0)
+                self.assertAlmostEqual(anchor['errorY'], 0)
+            for transform in row['transforms']:
+                self.assertLess(abs(transform['error']), .001)
+            # The wall normally prevents reaching the old deletion border.
+            # Isolate that death path by removing obstacles and bypassing wall
+            # resolution only; run the real Ninja.move and onLethalDeath.
+            row['deletion'] = page.evaluate('''() => {
+                const player=ninja, wall=screen.leftWall;
+                const due=PLATFORM.isInterstitialDue;
+                const resolve=wall.resolve;
+                for(const f of floors) f.elements=[];
+                wall.resolve=()=>false; PLATFORM.isInterstitialDue=()=>false;
+                ninja.invulnerableMs=0;
+                ninja.x=screen.getDeletionBorder()-screen.x-100;
+                ninja.speedX=ninja.speedY=0;
+                const before={x:ninja.x,cameraX:screen.x,border:screen.getDeletionBorder()};
+                try {ninja.move()} finally {wall.resolve=resolve; PLATFORM.isInterstitialDue=due}
+                cancelAnimationFrame(game);
+                return {before,restarted:ninja!==player,newWall:screen.leftWall!==wall,
+                    frozen:isRunFrozen(),ropeCleared:grapnel.pos.length===0};
+            }''')
+            self.assertTrue(row['deletion']['restarted'] and row['deletion']['newWall'])
+            self.assertTrue(row['deletion']['ropeCleared'])
+            self.assertFalse(row['deletion']['frozen'])
+            rows.append(row)
+        self.evidence.write('old-wall.json', dict(self.proof, modes=rows,
+            classic_bad_camera_wall_pass=True, classic_bad_deletion_death_pass=True))
+        print('PASS legacy: classic/bad camera wall contacts, anchor tracking, rendering and deletion-border restart')

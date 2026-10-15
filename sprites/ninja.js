@@ -81,7 +81,7 @@ class Ninja
         if (this.bounce)
             this.applyBounce(this.bounce)
         // Resolve last so another obstacle cannot push the player behind it.
-        collision = screen.leftWall.resolve(this) || collision
+        if (screen.leftWall) collision = screen.leftWall.resolve(this) || collision
         return collision
     }
     // Deadly hits act at once; a bouncy element keeps its nearest hit edge,
@@ -201,7 +201,7 @@ class Ninja
                 return
         }
         
-        if (this.x + screen.x < screen.getDeletionBorder())
+        if (version !== 'grapple_over' && this.x + screen.x < screen.getDeletionBorder())
             onLethalDeath()
     }
     isInvulnerable()

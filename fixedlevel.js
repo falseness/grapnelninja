@@ -11,8 +11,11 @@ const GRAPPLE_OVER_LEVEL = {
         ['base', 120, 1100, 1000, 60],
         ['right-step', 600, 800, 300, 40],
         ['left-step', 240, 500, 280, 40],
-        ['top-step', 650, 200, 300, 40]
-    ].map(([id, x, y, w, h]) => ({id, x, y, role: 'solid',
+        ['top-step', 650, 200, 300, 40],
+        ['left-bound', -1060, -1000, 60, 3060, false],
+        ['right-bound', 2000, -1000, 60, 3060, false],
+        ['catch-floor', -1060, 2000, 3120, 60, false]
+    ].map(([id, x, y, w, h, grapplable = true]) => ({id, x, y, grapplable, role: 'solid',
         points: [{x: 0, y: 0}, {x: w, y: 0}, {x: w, y: h}, {x: 0, y: h}]})),
     // Optional movers: {id, element, axis: 'x'|'y', min, max, periodMs,
     // phase}. Bounds are absolute world coordinates; phase is in [0, 1).
@@ -123,6 +126,7 @@ class PersistentWorld extends Floor
             }
             element.id = model.id
             element.surfaceRole = model.role
+            element.grapplable = model.grapplable !== false
             return element
         })
         this.byId = new Map(this.elements.map(e => [e.id, e]))
