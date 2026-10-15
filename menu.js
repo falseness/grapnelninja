@@ -758,6 +758,7 @@ class Menu
     }
     startPause()
     {
+        PROGRESS.flushClimb()
         this.relabelPauseSwitch()
         pauseTimeInGame()
         PROGRESS.save()

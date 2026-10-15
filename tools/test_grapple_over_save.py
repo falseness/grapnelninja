@@ -150,3 +150,137 @@ class Task456Tests(unittest.TestCase):
             self.assertTrue(row['rejected'] and row['unchanged'] and row['sameObjects'],row)
         self.evidence.write('invalid.json',dict(self.proof,cases=rows,atomic_rejection_pass=True))
         print('PASS invalid: 15 bad versions/references/numbers/malformed states rejected; no partial application')
+
+
+class Task457Tests(unittest.TestCase):
+    task_id = 'TASK-457'
+    setUpClass = classmethod(Task456Tests.setUpClass.__func__)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.evidence.write('storage.json', dict(cls.proof, scenarios=cls.observations))
+
+    def open_storage(self, seed=None, delayed=False, unavailable=False):
+        from browser_test_support import wait_for_boot
+        if not hasattr(type(self), 'observations'):
+            type(self).observations = []
+        context = self.browser.new_context(viewport={'width':1280,'height':720})
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script('''(() => {
+            window.storageCalls=[];
+            const set=Storage.prototype.setItem;
+            Storage.prototype.setItem=function(key,value) {
+                storageCalls.push({key,value,at:performance.now()});
+                return set.call(this,key,value);
+            };
+        })()''')
+        if seed:
+            page.add_init_script('for(const [k,v] of Object.entries('+json.dumps(seed)+')) localStorage.setItem(k,v)')
+        if unavailable:
+            page.add_init_script("Object.defineProperty(window,'localStorage',{get(){throw Error('blocked storage')}})")
+        if delayed:
+            source=(ROOT/'platform.js').read_text().replace('get remoteKnown() { return true }','get remoteKnown() { return false }').replace('onRecovery() {},','onRecovery(fn) { window.recoverStorage = fn },')
+            page.route('**/platform.js', lambda r:r.fulfill(body=source,content_type='application/javascript'))
+        page.goto(self.url)
+        wait_for_boot(page)
+        page.evaluate('''() => {
+            window.adapterCalls=[];
+            const set=PLATFORM.storage.setMany;
+            PLATFORM.storage.setMany=async values => {
+                adapterCalls.push({values,at:performance.now(),failure:window.failWrites||false});
+                if(window.failWrites==='throw') throw Error('write failed');
+                if(window.failWrites) return false;
+                return set(values);
+            };
+            startGame('grapple_over');cancelAnimationFrame(game);
+        }''')
+        return page
+
+    def observe(self, page, name, **data):
+        type(self).observations.append(dict(name=name, **data, calls=page.evaluate('adapterCalls'),
+            local_calls=page.evaluate('storageCalls')))
+
+    def test_falling_throttle_pause_exit_pagehide_reload(self):
+        legacy={'grapnelninja.records':'{"classic":123,"bad":456}',
+                'grapnelninja.lang':'ru','grapnelninja.time':'90','grapnelninja.tutorialDone':'true'}
+        page=self.open_storage(legacy)
+        page.evaluate('ninja.x=1100;ninja.y=300;ninja.speedY=2;floors[0].climbStats.maxHeight=9000;physics()')
+        page.wait_for_timeout(100)
+        first=page.evaluate('captureClimbState()')
+        for _ in range(5):
+            page.evaluate('physics()')
+            page.wait_for_timeout(230)
+        current=page.evaluate('captureClimbState()')
+        self.assertGreater(current['player']['y'],first['player']['y'])
+        calls=page.evaluate("adapterCalls.filter(c=>c.values['grapnelninja.grappleOver'])")
+        self.assertGreaterEqual(len(calls),2)
+        self.assertTrue(all(b['at']-a['at']>=990 for a,b in zip(calls,calls[1:])))
+        page.evaluate('menu.startPause()')
+        saved=page.evaluate("JSON.parse(localStorage.getItem('grapnelninja.grappleOver'))")
+        self.assertEqual(saved,current)
+        page.evaluate("ninja.y+=17;startGame('bad');cancelAnimationFrame(game)")
+        exit_save=page.evaluate("JSON.parse(localStorage.getItem('grapnelninja.grappleOver'))")
+        self.assertEqual(exit_save['player']['y'], current['player']['y']+17)
+        page.evaluate("startGame('grapple_over');cancelAnimationFrame(game);ninja.y+=21;window.dispatchEvent(new Event('pagehide'))")
+        hidden=page.evaluate("JSON.parse(localStorage.getItem('grapnelninja.grappleOver'))")
+        self.assertEqual(hidden['player']['y'],exit_save['player']['y']+21)
+        self.observe(page,'falling/lifecycle',falling_positions=[first['player'],current['player']],
+                     periodic_intervals=[b['at']-a['at'] for a,b in zip(calls,calls[1:])],pause=saved,mode_exit=exit_save,pagehide=hidden)
+        page.reload()
+        from browser_test_support import wait_for_boot
+        wait_for_boot(page)
+        restored=page.evaluate("() => {startGame('grapple_over');cancelAnimationFrame(game);return captureClimbState()}")
+        self.assertEqual(restored,hidden)
+        intact=page.evaluate('keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]))',list(legacy))
+        self.assertEqual(intact,legacy)
+        type(self).observations.append(dict(name='reload',restored=restored,legacy=intact,reload_pass=True))
+        print('PASS falling current-state saves; periodic throttle; pause; mode exit; pagehide; exact reload; legacy intact')
+
+    def test_delayed_read_and_failed_writes(self):
+        page=self.open_storage(delayed=True)
+        old=page.evaluate('captureClimbState()')
+        old['player']['y']-=200
+        page.evaluate("s=>recoverStorage({'grapnelninja.grappleOver':JSON.stringify(s)})",old)
+        self.assertEqual(page.evaluate('ninja.y'),old['player']['y'])
+        page.evaluate("failWrites='throw';ninja.x=1100;physics()")
+        page.wait_for_timeout(100)
+        changed=page.evaluate('captureClimbState()')
+        page.evaluate("s=>recoverStorage({'grapnelninja.grappleOver':JSON.stringify(s)})",old)
+        self.assertEqual(page.evaluate('captureClimbState()'),changed)
+        page.evaluate('failWrites=true;PROGRESS.flushClimb();physics()')
+        page.wait_for_timeout(30)
+        page.evaluate('failWrites=false;window.dispatchEvent(new Event("pagehide"))')
+        page.wait_for_timeout(30)
+        latest=page.evaluate('captureClimbState()')
+        self.assertEqual(page.evaluate("JSON.parse(localStorage.getItem('grapnelninja.grappleOver'))"),latest)
+        self.observe(page,'delayed-read/write-failure',old=old,modified=changed,latest=latest,delayed_read_pass=True,write_retry_pass=True)
+        self.assertTrue(any(c['failure']=='throw' for c in page.evaluate('adapterCalls')))
+        self.assertTrue(any(c['failure'] is True for c in page.evaluate('adapterCalls')))
+        print('PASS delayed read restores untouched climb and cannot overwrite modified climb; thrown/false writes recover')
+
+    def test_invalid_and_unavailable(self):
+        for raw in ('{broken', '{"version":999}'):
+            page=self.open_storage({'grapnelninja.grappleOver':raw,'grapnelninja.lang':'ru','grapnelninja.tutorialDone':'true'})
+            notice=page.locator('#climb-save-notice')
+            self.assertEqual(notice.inner_text(),'Сохранение недоступно. Начинаем у подножия.')
+            base=page.evaluate('({x:ninja.x,y:ninja.y,spawn:GRAPPLE_OVER_LEVEL.spawn})')
+            self.assertEqual(base['x'],base['spawn']['x'])
+            self.assertEqual(base['y'],base['spawn']['y'])
+            page.evaluate("TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500);draw()")
+            page.screenshot(path=str(self.evidence.path('invalid-save.png')))
+            page.evaluate('physics()')
+            self.assertGreater(page.evaluate('floors[0].elapsedSteps'),0)
+            self.observe(page,'invalid',raw=raw,base=base,notice=notice.inner_text(),base_usable_pass=True)
+        page=self.open_storage(unavailable=True)
+        page.evaluate('ninja.x=1100;physics();PROGRESS.flushClimb()')
+        page.wait_for_timeout(30)
+        saved=page.evaluate("async()=>JSON.parse((await PLATFORM.storage.getMany(PROGRESS.keys))['grapnelninja.grappleOver'])")
+        self.assertEqual(saved,page.evaluate('captureClimbState()'))
+        page.evaluate('physics()')
+        self.assertGreater(page.evaluate('floors[0].elapsedSteps'),saved['simulationTick'])
+        self.observe(page,'unavailable',saved=saved,memory_fallback_pass=True)
+        print('PASS corrupt/incompatible saves: localized notice and usable base; unavailable storage keeps play and in-memory save')

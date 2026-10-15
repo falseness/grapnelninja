@@ -6,6 +6,7 @@ const I18N = (function()
     {
         en:
         {
+            'climb.saveInvalid'     : 'Climb save unavailable. Starting at the base.',
             'orientation.rotate'    : 'Rotate your phone to landscape to play. Your game is paused.',
             'tutorial.hold.desktop' : 'HOLD',
             'tutorial.hold.touch'   : 'TOUCH & HOLD',
@@ -33,6 +34,7 @@ const I18N = (function()
         },
         ru:
         {
+            'climb.saveInvalid'     : 'Сохранение недоступно. Начинаем у подножия.',
             'orientation.rotate'    : 'Поверните телефон горизонтально, чтобы играть. Игра на паузе.',
             'tutorial.hold.desktop' : 'ДЕРЖИ',
             'tutorial.hold.touch'   : 'КОСНИСЬ И ДЕРЖИ',

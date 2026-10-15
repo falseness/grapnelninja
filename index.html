@@ -248,6 +248,8 @@
             {
                 if (!Object.hasOwn(MODE_DEFINITIONS, _v))
                     throw new Error('Unknown game mode: ' + _v)
+                PROGRESS.flushClimb(true)
+                document.getElementById('climb-save-notice')?.remove()
                 reuseTimeInGame()
                 resetPhysicsTiming()
                 trackEnabled = true
@@ -257,6 +259,7 @@
                 visualEffects.screenEffects.landings.length = 0
 
                 chooseVersion()
+                if (version === 'grapple_over') PROGRESS.enterClimb()
                 PLATFORM.startup('run_initialized', version)
                 warmGlowSprites()
                 
