@@ -123,6 +123,7 @@
 
         <script src = "sprites/triangle.js"></script>
         <script src = "sprites/trampoline.js"></script>
+        <script src = "fixedlevel.js"></script>
         <script src = "sprites/side.js"></script>
         <script src = "sprites/leftwall.js"></script>
         
@@ -517,17 +518,9 @@
                 screen = new Screen(true, 0)
                 screen.min = -2000
                 screen.max = 2000
-                elementsFactory = new ElementsFactory
-                const floor = new Floor(-1000, 1200, {min: 0, max: 0}, [])
-                floor.elements = [
-                    [120, 1100, 1000, 60],
-                    [600, 800, 300, 40],
-                    [240, 500, 280, 40],
-                    [650, 200, 300, 40]
-                ].map(([x, y, w, h]) => new Trampoline({x, y, points: [
-                    {x: 0, y: 0}, {x: w, y: 0}, {x: w, y: h}, {x: 0, y: h}]}))
-                floors = [floor]
-                ninja = new Ninja({x: 360, y: 980, radius: 0.01 * height,
+                const world = loadFixedLevel()
+                floors = [world]
+                ninja = new Ninja({...world.level.spawn, radius: 0.01 * height,
                     fill: STYLE.colors.player.fill, stroke: STYLE.colors.player.stroke})
                 grapnel = new Grapnel({points: [0, 0, 0, 0], stroke: STYLE.colors.player.cyan})
             }
