@@ -127,6 +127,7 @@ class PersistentWorld extends Floor
         super(source.bounds.top, source.bounds.bottom, {min: 0, max: 0}, [])
         this.level = structuredClone(source)
         this.elapsedSteps = 0
+        this.climbStats = {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false}
         this.elements = this.level.elements.map(model => {
             const element = new Trampoline(model)
             if (model.role === 'hazard')
@@ -188,4 +189,94 @@ class PersistentWorld extends Floor
 function loadFixedLevel(data = GRAPPLE_OVER_LEVEL)
 {
     return new PersistentWorld(data)
+}
+
+// Save only explicit simulation fields, never graphics caches or object references.
+const CLIMB_PLAYER_FIELDS = ['x', 'y', 'speedX', 'speedY', 'radius', 'hazardCooldownMs', 'invulnerableMs']
+const CLIMB_ELEMENT_FIELDS = ['x', 'y', 'dx', 'dy', 'speedX', 'speedY']
+const climbFields = (object, keys) => Object.fromEntries(keys.map(k => [k, object[k] ?? 0]))
+
+function captureClimbState()
+{
+    if (version !== 'grapple_over') throw new Error('ClimbModeRequired')
+    const world = floors[0]
+    return {
+        version: 1, levelVersion: world.level.version,
+        simulationTick: world.elapsedSteps,
+        stats: {...world.climbStats},
+        player: climbFields(ninja, CLIMB_PLAYER_FIELDS),
+        input: {pressHeld, stalePress},
+        elements: world.elements.map(e => ({id: e.id, ...climbFields(e, CLIMB_ELEMENT_FIELDS)})),
+        grapple: {
+            throwed: grapnel.throwed, grappled: grapnel.grappled,
+            speedX: grapnel.speedX ?? 0, speedY: grapnel.speedY ?? 0,
+            traveled: grapnel.traveled, shotStep: grapnel.shotStep && {...grapnel.shotStep},
+            segments: grapnel.pos.map(([x, y, e]) => ({id: e.isEmpty() ? null : e.id,
+                x: e.isEmpty() ? x : x - e.x, y: e.isEmpty() ? y : y - e.y}))
+        }
+    }
+}
+
+function restoreClimbState(save)
+{
+    if (version !== 'grapple_over') throw new Error('ClimbModeRequired')
+    const fail = () => {throw new Error('InvalidClimbState')}
+    // Validate the entire payload before changing any live simulation objects.
+    const shape = (value, model) => {
+        if (typeof model === 'number') {if (!Number.isFinite(value)) fail()}
+        else if (typeof model === 'boolean' || typeof model === 'string') {
+            if (typeof value !== typeof model) fail()
+        } else {
+            if (!value || typeof value !== 'object' || Array.isArray(value) ||
+                Object.keys(value).sort().join() !== Object.keys(model).sort().join()) fail()
+            for (const key of Object.keys(model)) shape(value[key], model[key])
+        }
+    }
+    if (!save || save.version !== 1 || save.levelVersion !== floors[0].level.version) fail()
+    const s = structuredClone(save), world = floors[0]
+    if (!Number.isSafeInteger(s.simulationTick) || s.simulationTick < 0) fail()
+    shape(s.player, climbFields(ninja, CLIMB_PLAYER_FIELDS))
+    shape(s.stats, {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false})
+    shape(s.input, {pressHeld: false, stalePress: false})
+    if (s.player.radius <= 0 || s.player.hazardCooldownMs < 0 || s.player.invulnerableMs < 0 ||
+        s.stats.elapsedActiveMs < 0 || s.stats.maxHeight < Math.max(0, s.stats.currentHeight)) fail()
+    if (!Array.isArray(s.elements) || s.elements.length !== world.elements.length) fail()
+    s.elements.forEach((e, i) => {
+        shape(e, {id: '', ...climbFields(world.elements[i], CLIMB_ELEMENT_FIELDS)})
+        if (e.id !== world.elements[i].id) fail()
+    })
+    const g = s.grapple
+    if (!g || !Array.isArray(g.segments)) fail()
+    shape({throwed:g.throwed, grappled:g.grappled, speedX:g.speedX, speedY:g.speedY, traveled:g.traveled},
+        {throwed:false, grappled:false, speedX:0, speedY:0, traveled:0})
+    if (g.traveled < 0 || (!g.throwed && (g.grappled || g.segments.length)) ||
+        (g.throwed && !g.segments.length) || (!g.grappled && g.throwed && g.segments.length !== 1)) fail()
+    if (g.shotStep !== null) {
+        shape(g.shotStep, {x:0, y:0, length:0})
+        if (g.shotStep.length < 0 || !g.throwed || g.grappled) fail()
+    }
+    const positions = g.segments.map(p => {
+        if (!p) fail()
+        shape({x:p.x, y:p.y}, {x:0, y:0})
+        if (!g.grappled) {if (p.id !== null) fail(); return [p.x, p.y, new Empty()]}
+        const e = world.byId.get(p.id), saved = s.elements.find(e => e.id === p.id)
+        if (!e || e.grapplable === false) fail()
+        if (!Number.isFinite(saved.x + p.x) || !Number.isFinite(saved.y + p.y)) fail()
+        return [saved.x + p.x, saved.y + p.y, e]
+    })
+    // Constructors rebuild derived caches; publish only after validation succeeds.
+    const nextWorld = loadFixedLevel(world.level)
+    nextWorld.elapsedSteps = s.simulationTick
+    nextWorld.climbStats = s.stats
+    s.elements.forEach(e => Object.assign(nextWorld.byId.get(e.id), e))
+    const nextNinja = new Ninja({...s.player, fill:ninja.fill, stroke:ninja.stroke})
+    Object.assign(nextNinja, s.player)
+    const nextGrapnel = new Grapnel({stroke:grapnel.stroke})
+    Object.assign(nextGrapnel, {throwed:g.throwed, grappled:g.grappled,
+        speedX:g.speedX, speedY:g.speedY, traveled:g.traveled, shotStep:g.shotStep,
+        pos:positions.map(([x,y,e]) => [x,y,e.isEmpty() ? e : nextWorld.byId.get(e.id)])})
+    floors = [nextWorld]; ninja = nextNinja; grapnel = nextGrapnel
+    pressHeld = s.input.pressHeld; stalePress = s.input.stalePress
+    resetPhysicsTiming()
+    screen.trackGrappleOver(true)
 }

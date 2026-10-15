@@ -49,6 +49,17 @@ function calcPhysics()
         grapnel.collision()
     }
 
+    if (version === 'grapple_over')
+    {
+        const world = floors[0], stats = world.climbStats
+        stats.elapsedActiveMs += physicsStepMs / cyclesPerTick
+        stats.currentHeight = world.level.spawn.y - ninja.y
+        stats.maxHeight = Math.max(stats.maxHeight, stats.currentHeight)
+        const finish = world.level.finish
+        if (finish && ninja.x >= finish.left && ninja.x <= finish.right &&
+            ninja.y >= finish.top && ninja.y <= finish.bottom) stats.completed = true
+    }
+
     for (let i = 0; i < floors.length; ++i)
     {
         floors[i].replenishElements()
