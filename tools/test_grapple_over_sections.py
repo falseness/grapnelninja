@@ -431,6 +431,26 @@ class Task468Tests(unittest.TestCase):
     test_04_source_hashes = Task465Tests.test_03_source_hashes
     opening = [(3900,-1940,45,0),(4220,-2240,45,0),(4220,-2240,25,0)]
 
+    def test_05_screenshot_inventory(self):
+        """Bind the visual-review candidates to this run's replay evidence."""
+        screenshots = {}
+        for name, tick in [('S02-01-02-nominal', 145),
+                           ('S02-01-02-nominal', 355),
+                           ('S02-02-miss-recover', 335)]:
+            prefix = 'encounters/' + name
+            manifest = json.loads(self.evidence.path(prefix+'/input.json').read_text())
+            self.assertIn(tick, [event['tick'] for event in manifest['inputs']]
+                          + [manifest['ticks'] - 1])
+            relative = f'{prefix}/frame-{tick:04d}.png'
+            data = self.evidence.path(relative).read_bytes()
+            self.assertTrue(data.startswith(b'\x89PNG\r\n\x1a\n'))
+            self.assertGreater(len(data), 10000)
+            screenshots[relative] = hashlib.sha256(data).hexdigest()
+        self.evidence.write('screenshot-inventory.json', dict(
+            self.proof, screenshots=screenshots,
+            review_required=True))
+        print('PASS screenshot inventory: 3 replay frames hashed from this run; visual review required')
+
     def test_01_geometry(self):
         page = self.open()
         result = page.evaluate('''() => {
