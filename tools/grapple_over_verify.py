@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -222,7 +223,9 @@ def audit_suite(manifest, browser, url, out):
     """Replay every reported attempt, including failures, without trusting summary flags."""
     evidence, _ = output_writer(out)
     require(manifest['source_hashes'] == hashes(), 'suite source hash mismatch')
-    require(set(manifest['encounters']) == {'S01-01','S01-02','S01-03','S01-04'}, 'encounter coverage')
+    section = manifest.get('section', 'S01')
+    require(section in ('S01', 'S02'), 'unsupported section')
+    require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
     count = 0
     for encounter, attempts in manifest['encounters'].items():
         for device in ('desktop', 'touch'):
@@ -267,6 +270,8 @@ def main():
     args = parser.parse_args()
     try:
         manifest = json.loads(Path(args.input).read_text())
+        if 'encounters' in manifest:
+            os.environ.setdefault('GRAPPLE_OVER_EVIDENCE_DIR', str(Path(args.input).resolve().parent))
         with ExitStack() as stack:
             url, browser = start_browser_test(ROOT, stack.callback)
             result = audit_suite(manifest, browser, url, args.out) if 'encounters' in manifest else verify(manifest, browser, url, args.out, args.clip)

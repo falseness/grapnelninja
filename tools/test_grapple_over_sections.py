@@ -318,7 +318,7 @@ class Task467Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from grapple_over_verify import hashes
-        cls.evidence = EvidenceWriter('TASK-467')
+        cls.evidence = EvidenceWriter(getattr(cls, 'task_id', 'TASK-467'))
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         cls.evidence.log('CONFIG '+json.dumps(dict(browser=cls.browser.version,
             viewports=[VIEWPORT,dict(width=844,height=390)], devices=['mouse','touch'],
@@ -660,3 +660,112 @@ class Task469Tests(unittest.TestCase):
         self.evidence.write('encounters/recovery-observations.json',dict(passed=True,catch=catches[0],exit=players[-1],
             assertion='local miss physically caught on wide lower balcony; subsequent input returns through visible side to Foundations'))
         print('PASS recovery: local miss; wide lower balcony catch; input-driven side route to Foundations; matching replay')
+
+
+class Task470Tests(unittest.TestCase):
+    task_id = 'TASK-470'
+    """S02 real-input tolerance; isolated entrance starts, never completion proof."""
+    setUpClass = classmethod(Task467Tests.setUpClass.__func__)
+    test_03_source_hashes = Task467Tests.test_02_source_hashes
+
+    def test_01_tolerance_matrix(self):
+        from grapple_over_verify import metadata, hashes, execute, check_trace
+        page=self.browser.new_page(viewport=VIEWPORT)
+        page.goto(self.url); wait_for_boot(page)
+        level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)')
+        self.assertEqual(page.evaluate("GRAPPLE_OVER_MOUNTAIN.shortcuts.filter(s=>s.from.startsWith('S02'))"),[])
+        page.close()
+        self.level=level
+        suite=dict(section='S02',source_hashes=hashes(),level_sha256=hashes()['mountain.js'],
+            proof_kind='isolated entrance placement; production physics and trusted inputs thereafter',
+            encounters={},negative_control='negative-control.json',shortcuts='none assigned or observed',
+            recovery='clips/recovery/input.json',
+            earlier_attempts='exploratory/manifest.json',
+            landing_release_probes='exploratory/probe',
+            tolerance_scope='S02-04 varies final exit release/aim; preceding transfer sensitivity retained in earlier_attempts')
+        failures=[]
+        # Aim offsets follow the actual struck polygon edge, normalized to 10.8 units.
+        for encounter,limit,critical,tangent,bounds in [
+            ('S02-01',3,1,(170/177.2004514667,50/177.2004514667),dict(x=[4100,4170],y=[-2020,-1970])),
+            ('S02-02',4,3,(1,0),dict(x=[3720,4030],y=[-2062,-2050])),
+            ('S02-03',8,7,(110/115.433963806, -35/115.433963806),dict(x=[3800,4180],y=[-3000,-2700])),
+            ('S02-04',10,9,(1,0),dict(x=[4280,4600],y=[-3200,-3180]))]:
+            attempts=[];suite['encounters'][encounter]=attempts
+            for device in ('desktop','touch'):
+                for variant,delta,offset in [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]:
+                    name=f'{encounter}-{device}-{variant}'
+                    m=dict(metadata=metadata('isolated'),initial_setup=dict(level=level,
+                        player=dict(x=4100,y=-1630.8,speedX=0,speedY=0)),inputs=[],
+                        expected_exit=bounds,required_events=['acquisition','release'])
+                    m['metadata']['compact_contacts']=True
+                    if device=='touch': m['metadata']['viewport']=dict(width=844,height=390)
+                    tick=30;ends=[]
+                    for i,(x,y,hold,free) in enumerate(Task469Tests.route[:limit]):
+                        if i==critical: x+=offset*tangent[0];y+=offset*tangent[1];hold+=delta
+                        m['inputs'].append(dict(tick=tick,event='touchstart' if device=='touch' else 'mousedown',world=dict(x=x,y=y)))
+                        tick+=hold
+                        m['inputs'].append(dict(tick=tick,event='touchend' if device=='touch' else 'mouseup',world=dict(x=x,y=y)))
+                        ends.append(tick);tick+=free
+                    m['ticks']=tick+1
+                    prefix=('clips/' if variant=='nominal' else 'attempts/')+name
+                    trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=variant=='nominal')
+                    m['trace']=trace;self.evidence.write(prefix+'/input.json',m)
+                    success=True;reason='expected exit and mechanic events satisfied'
+                    try: check_trace(m,trace)
+                    except ValueError as error: success=False;reason=str(error)
+                    acquired=[dict(tick=e['tick'],target=e['after']['rope'][0]['id']) for e in trace['events'] if e['type']=='acquisition']
+                    players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+                    mechanics=dict(acquisitions=acquired,release_ticks=[e['tick'] for e in trace['events'] if e['type']=='release'],
+                        negative_speed_seen=any(p['speedX']<-.05 for p in players),positive_speed_seen=any(p['speedX']>.05 for p in players))
+                    if success:
+                        self.assertGreaterEqual(len(acquired),2)
+                        self.assertTrue(mechanics['negative_speed_seen'] and mechanics['positive_speed_seen'])
+                        if encounter=='S02-02':
+                            self.assertGreater(players[ends[2]]['speedX'],0)
+                            self.assertLess(players[ends[3]]['speedX'],0)
+                        if encounter=='S02-03':
+                            self.assertIn('S02-upper-return',[a['target'] for a in acquired])
+                            self.assertLess(min(p['speedX'] for p in players[ends[6]:ends[7]+1]),0)
+                    attempts.append(dict(name=name,device=device,variant=variant,critical_input_index=critical,
+                        hold_delta=delta,tangent_aim_delta=offset,tangent=tangent,input=prefix+'/input.json',trace=prefix+'/trace.json',
+                        success=success,reason=reason,mechanic_events=mechanics,final=players[-1]))
+                    self.evidence.write('manifest.json',suite)
+                    print('ATTEMPT',name,'PASS' if success else 'FAIL',reason,flush=True)
+                group=[a for a in attempts if a['device']==device]
+                if not group[0]['success'] or sum(a['success'] for a in group[1:])<2: failures.append(encounter+' '+device)
+        nominal=suite['encounters']['S02-02'][0]
+        m=json.loads(self.evidence.path(nominal['input']).read_text());m.pop('trace')
+        m['inputs']=m['inputs'][:-2]  # Omit only the opposing girder press/release; same duration/start/physics.
+        m['trace']=execute(m,self.browser,self.url,str(self.evidence.path('clips/negative')),filmstrip=True)
+        self.evidence.write('clips/negative/input.json',m)
+        with self.assertRaisesRegex(ValueError,'expected exit mismatch'): check_trace(m,m['trace'])
+        players=[r['state']['simulation']['player'] for r in m['trace']['snapshots']]
+        self.assertGreater(max(p['x'] for p in players[145:]),4170)
+        self.evidence.write('negative-control.json',dict(name='braking: omit opposing-anchor input',
+            input='clips/negative/input.json',trace='clips/negative/trace.json',failed_intended_exit=True,
+            unchanged_physics=True,source_hashes=hashes(),overshoot_max_x=max(p['x'] for p in players[145:]),
+            final=players[-1],scope='Only this omission fails this exit; alternative solutions are not ruled out.'))
+        self.assertEqual(failures,[])
+        print('PASS four encounters: both viewports nominal + >=2/4 variants; all attempts retained; opposing acceleration/release/reacquisition; omitted brake overshoots; no shortcuts')
+
+    def test_02_recovery(self):
+        from grapple_over_verify import metadata, execute, check_trace
+        page=self.browser.new_page(viewport=VIEWPORT);page.goto(self.url);wait_for_boot(page)
+        level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)');page.close()
+        m=dict(metadata=metadata('isolated'),initial_setup=dict(level=level,player=dict(x=4100,y=-1630.8,speedX=0,speedY=0)),
+            inputs=[],expected_exit=dict(x=[3940,4260],y=[-1631,-1630]),required_events=['acquisition','release'])
+        m['metadata']['compact_contacts']=True
+        tick=30
+        for x,y,hold,free in Task469Tests.opening+[(3890,-2480,10,180),(4220,-2240,30,190)]:
+            m['inputs'].append(dict(tick=tick,event='mousedown',world=dict(x=x,y=y)));tick+=hold
+            m['inputs'].append(dict(tick=tick,event='mouseup',world=dict(x=x,y=y)));tick+=free
+        m['ticks']=tick+1
+        m['trace']=execute(m,self.browser,self.url,str(self.evidence.path('clips/recovery')),filmstrip=True)
+        check_trace(m,m['trace'])
+        replay=execute(m,self.browser,self.url,str(self.evidence.path('clips/recovery/replay')))
+        self.assertEqual(m['trace'],replay)
+        players=[r['state']['simulation']['player'] for r in replay['snapshots']]
+        self.assertTrue(any(4260<p['x']<4820 and abs(p['y']+1850.8)<.01 and p['speedY']==0 for p in players))
+        self.evidence.write('clips/recovery/input.json',m)
+        self.evidence.write('clips/recovery/result.json',dict(passed=True,matching_traces=True,physical_catch=True,returned_to_Foundations=True))
+        print('PASS recovery: local miss, physical catch, input-driven return to Foundations; matching replay')
