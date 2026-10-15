@@ -226,3 +226,203 @@ class Task462Tests(unittest.TestCase):
             variations(m['inputs'],aim_offset=(13,0))
         self.evidence.write('variation.json',dict(result,bounds_rejected=True,inputs=m['inputs']))
         print('PASS variation: bounded timing/aim replay through production handlers; excess rejected')
+
+
+class Task463Tests(unittest.TestCase):
+    """Measure isolated mechanics with production physics and trusted mouse input."""
+    open = Task461Tests.open
+
+    @classmethod
+    def setUpClass(cls):
+        from grapple_over_verify import hashes
+        cls.evidence = EvidenceWriter('TASK-463')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.hashes = hashes()
+        cls.hashes['tools/grapple_over_calibration.js'] = hashlib.sha256(
+            (ROOT/'tools/grapple_over_calibration.js').read_bytes()).hexdigest()
+        cls.evidence.log('CONFIG ' + json.dumps(dict(browser=cls.browser.version,
+            viewport=VIEWPORT,device_scale_factor=1,has_touch=True,hz=60,substeps=8,seed=1,
+            revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+            source_hashes=cls.hashes),sort_keys=True))
+
+    def attempt(self,page,family,dt=0,aim=0,negative=False):
+        page.mouse.up()
+        page.evaluate('GRAPPLE_OVER_TEST.attempts.length=0')
+        page.evaluate('n=>GRAPPLE_OVER_TEST.begin(n)',family)
+        page.evaluate('calibrationSetup',dict(family=family,negative=negative))
+        if family=='angled_bounce':
+            actions=[(0,'mousedown',700+aim,440),(3+dt,'mouseup',700,440)]
+        elif family=='corner_wrap':
+            actions=[(3+dt,'mousedown',1100,700+aim),(85,'mouseup',1100,700)]
+        elif family=='braking':
+            actions=[] if negative else [(3+dt,'mousedown',580,700+aim),(50,'mouseup',580,700)]
+        else:
+            actions=[] if negative else [(0,'mousedown',930+aim,660),
+                (30+dt,'mouseup',930,660)]
+            if family=='launch' and not negative:
+                actions=[(3+dt,'mousedown',930+aim,660),(60,'mouseup',930,660)]
+            if family=='moving_transfer' and not negative:
+                actions += [(33+dt,'mousedown',680+aim,510),(85,'mouseup',680,510)]
+        tick=0
+        for at,event,x,y in actions:
+            page.evaluate('n=>GRAPPLE_OVER_TEST.step(n)',at-tick);tick=at
+            p=page.evaluate('GRAPPLE_OVER_TEST.client',dict(x=x,y=y))
+            page.mouse.move(p['x'],p['y'])
+            if event=='mousedown': page.mouse.down()
+            else: page.mouse.up()
+        page.evaluate('n=>GRAPPLE_OVER_TEST.step(n)',100-tick)
+        page.evaluate('''() => {
+            for(let i=100;i<600;i++) {
+                const landing=floors[0].level.elements.find(e=>e.id==='landing');
+                if(Math.abs(ninja.y-(landing.y-ninja.radius))<1e-5 && Math.abs(ninja.speedY)<1e-8) break;
+                GRAPPLE_OVER_TEST.step(1);
+            }
+        }''')
+        page.evaluate("GRAPPLE_OVER_TEST.finish('measured')")
+        result=page.evaluate('calibrationResult()')
+        result.update(dt=dt,aim=aim,negative=negative)
+        return result
+
+    def test_01_six_movement_families(self):
+        page=self.open()
+        install_recorder(page)
+        page.add_script_tag(path=str(ROOT/'tools/grapple_over_calibration.js'))
+        constants=page.evaluate('''() => ({gravity:GRAVITY,pull:grappleSpeed,
+            throwSpeed:grapnelSpeed,cyclesPerTick,physicsStepMs,radius:ninja.radius,
+            range:MODE_DEFINITIONS.grapple_over.acquisitionRadius,scale:scale.grapple_over})''')
+        baseline=json.loads((ROOT/'artifacts/TASK-444/baseline.json').read_text())['modes']['classic']
+        for key in ('gravity','pull','throwSpeed','cyclesPerTick','physicsStepMs'):
+            self.assertEqual(constants[key],baseline['constants'][key])
+        self.assertEqual(constants['radius'],baseline['initial']['radius'])
+        self.assertEqual((constants['range'],constants['scale']),(540,0.75))
+        families={}
+        for family in ('launch','release','braking','angled_bounce','corner_wrap','moving_transfer'):
+            families[family]=[self.attempt(page,family,dt,aim) for dt,aim in
+                ((0,0),(-3,0),(3,0),(0,-10.8),(0,10.8))]
+            families[family].append(self.attempt(page,family,negative=True))
+            for r in families[family]:
+                print('MEASURE',family,r['dt'],r['aim'],r['negative'],
+                    {k:round(r['rows'][100][k],3) for k in ('x','y','speedX','speedY')},
+                    sorted(set(e['type'] for e in r['events'])),len(r['bounces']))
+        self.evidence.write('calibration.json',dict(constants=constants,source_hashes=self.hashes,families=families))
+        # Freeze exit boxes independently of individual variant outcomes. These
+        # are calibration fixture targets at tick 100, not mountain completion.
+        boxes = {
+            'launch': {'x':[1190,1270],'y':[680,730]},
+            'release': {'x':[1040,1140],'y':[715,840]},
+            'braking': {'x':[1390,1600],'y':[970,1035],'speedX':[0,0.6]},
+            'angled_bounce': {'x':[-650,-400],'y':[0,250]},
+            'corner_wrap': {'x':[970,1090],'y':[2250,2380]},
+            'moving_transfer': {'x':[780,840],'y':[645,690]}}
+        metrics=dict(hz=60,substeps=8,range=540,scale=0.75,exit_tick=100,
+            position_epsilon=1e-5,velocity_epsilon=1e-8,
+            proof_convention={'critical_action_ticks':[-3,0,3],
+                'aim_tangent_offsets':[-10.8,0,10.8],
+                'minimum_successes':'nominal plus at least two distinct variants',
+                'aim_tangents':{'braking':[0,1],'corner_wrap':[0,1],
+                    'launch':[1,0],'release':[1,0],'angled_bounce':[1,0],'moving_transfer':[1,0]},
+                'critical_actions':{'launch':'press at tick 3','release':'release at tick 30',
+                    'braking':'press at tick 3','angled_bounce':'release at tick 3',
+                    'corner_wrap':'press at tick 3','moving_transfer':'release/second press at ticks 30/33'}},
+            success_exit_regions=boxes,
+            failure_exit_regions='complement of success box at tick 100 OR missing mechanic event',
+            negative_controls={'launch':'omit grapple','release':'omit grapple',
+                'braking':'omit opposing grapple','angled_bounce':'replace bounce slope with solid',
+                'corner_wrap':'remove named corner','moving_transfer':'omit transfer inputs'},
+            landing='first post-exit contact with landing top; sliding is allowed, not claimed stationary')
+        self.evidence.write('metrics.json',metrics)
+        envelopes={}
+        for family,runs in families.items():
+            for r in runs:
+                row=r['rows'][100]
+                events=r['events']
+                ids=[p['id'] for e in events if e['type']=='acquisition' for p in e['rope']]
+                if family=='angled_bounce':
+                    mechanic=bool(r['bounces']) and r['bounces'][0]['after']['speedX'] < -1
+                elif family=='corner_wrap':
+                    mechanic=any(e['type']=='wrap' and any(p['id']=='corner' for p in e['rope']) for e in events)
+                elif family=='moving_transfer':
+                    mechanic=ids[:2]==['anchor','moving-target']
+                    moving=[e for e in r['rows'][0]['elements'] if e['id']=='moving-target']
+                    self.assertTrue(moving)
+                    self.assertNotEqual(r['rows'][0]['elements'],r['rows'][100]['elements'])
+                else:
+                    mechanic='anchor' in ids and any(e['type']=='release' for e in events)
+                r['success']=mechanic and all(lo<=row[k]<=hi for k,(lo,hi) in boxes[family].items())
+                self.assertEqual(r['success'],not r['negative'],(family,r['dt'],r['aim'],row))
+                self.assertTrue(all(i['trusted'] for i in r['inputs']))
+                landing=next(e for e in r['setup']['level']['elements'] if e['id']=='landing')
+                hits=[e for e in events if e['type']=='contact' and e.get('contact',{}).get('ny')==-1
+                    and abs(e['contact']['y']-landing['y'])<1e-5]
+                self.assertTrue(hits,(family,'landing absent'))
+                r['landing_contact']=hits[0]
+            successes=[r for r in runs if r['success']]
+            self.assertGreaterEqual(len(successes),3)
+            self.assertTrue(successes[0]['dt']==successes[0]['aim']==0)
+            # Measured samples only: endpoints are not a continuous guarantee.
+            window=sorted(set(3+r['dt'] if family in ('launch','braking','corner_wrap','angled_bounce')
+                else 30+r['dt'] for r in successes))
+            for r in runs: r['successful_action_tick_samples']=window
+            envelopes[family]={
+                'launch':{k:[min(r['rows'][0][k] for r in successes),
+                    max(r['rows'][0][k] for r in successes)] for k in ('x','y','speedX','speedY')},
+                'exit':{k:[min(r['rows'][100][k] for r in successes),
+                    max(r['rows'][100][k] for r in successes)] for k in ('x','y','speedX','speedY')},
+                'landing':{k:[min(r['landing_contact']['player'][k] for r in successes),
+                    max(r['landing_contact']['player'][k] for r in successes)] for k in ('x','y','speedX','speedY')},
+                'landing_ticks':[min(r['landing_contact']['tick'] for r in successes),
+                    max(r['landing_contact']['tick'] for r in successes)],
+                'successful_action_tick_samples':window}
+
+            print('PASS',family,': nominal + 4 variants; negative rejected; measured landing contacts; action ticks',window)
+        self.evidence.write('calibration.json',dict(constants=constants,source_hashes=self.hashes,
+            families=families,measured_envelopes=envelopes,all_six_families_pass=True))
+        self.evidence.path('notes.md').write_text('''Measured facts: calibration.json records production 60 Hz / 8-substep player positions,
+velocities (world units/substep; multiply by 480 for units/second), contacts,
+trusted input traces, moving elements and successful sampled action windows.
+Each isolated setup records its launch position and velocity. Tick-100 exit boxes
+are frozen in metrics.json. Landing contacts record the actual landing envelope;
+sliding contact is not a stable rest. Corner wrap's exit is a fall, not ascent.
+Timing endpoints are sampled, not a proof that every intermediate tick succeeds.
+These six fixtures are calibration, not base-start or full mountain route proof.
+Gravity, pull, throw speed, radius and timestep match artifacts/TASK-444/baseline.json;
+range is 540 and scale 0.75. No runtime, classic/bad, neon, saves or checkpoint changes.
+
+Design targets: encounter proof must include nominal plus at least two distinct
+successful variants, testing critical action +/-3 ticks and aim +/-0.02R along
+local surface tangent, with mechanic-specific negative controls. Require exit
+region AND mechanic evidence, not mere reach. Use these fixture measurements to
+choose launch/landing space; later encounters must supply their own input proofs.
+
+Research inferences (motivation only, never gameplay evidence):
+Foddy's interview describes crisis situations and the possibility of losing progress;
+this motivates physical falls and testing release windows.
+https://www.gamedeveloper.com/business/road-to-the-igf-bennett-foddy-s-i-getting-over-it-i-
+Generating Levels That Teach Mechanics studies mechanic-focused level generation;
+this motivates mechanic-specific negative controls rather than reach-only tests.
+https://arxiv.org/html/1807.06734
+Neither source validates Grapple Over parameters, tolerances or playability.
+''')
+
+    def test_02_independent_evidence_audit(self):
+        from grapple_over_verify import hashes
+        data=json.loads(self.evidence.path('calibration.json').read_text())
+        metrics=json.loads(self.evidence.path('metrics.json').read_text())
+        current=hashes()
+        current['tools/grapple_over_calibration.js']=hashlib.sha256(
+            (ROOT/'tools/grapple_over_calibration.js').read_bytes()).hexdigest()
+        self.assertEqual(data['source_hashes'],current)
+        self.assertTrue(data['all_six_families_pass'])
+        for name,runs in data['families'].items():
+            self.assertEqual(len(runs),6)
+            for r in runs:
+                row=next(p for p in r['rows'] if p['tick']==metrics['exit_tick'])
+                in_box=all(a<=row[k]<=b for k,(a,b) in metrics['success_exit_regions'][name].items())
+                if not r['negative']:
+                    self.assertTrue(in_box)
+                    self.assertTrue(r['inputs'])
+                    self.assertEqual(r['landing_contact']['contact']['ny'],-1)
+                else:
+                    self.assertFalse(r['success'])
+                self.assertEqual([p['tick'] for p in r['rows']],list(range(len(r['rows']))))
+        print('PASS independent audit: 6 families, 30 successful traces, 6 negative controls, source hashes match')
