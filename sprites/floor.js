@@ -470,8 +470,8 @@ class SideFloor extends Floor
         ctx.beginPath()
         ctx.rect(bounds.left, bounds.top + inset, bounds.right - bounds.left, innerHeight)
         ctx.clip()
-        ctx.fillStyle = dangerHatchPattern(ctx, STYLE.dangerHatch.variant)
-        ctx.fillRect(bounds.left, bounds.top + inset, bounds.right - bounds.left, innerHeight)
+        drawDangerHatchLines(ctx, STYLE.dangerHatch.variant, undefined,
+            bounds.left, bounds.top + inset, bounds.right, bounds.bottom - inset)
         ctx.restore()
     }
     drawClassicSurfaceShell(bounds)

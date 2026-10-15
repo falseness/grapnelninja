@@ -1,30 +1,4 @@
-// One repeating tile per context, variant and colour, shared by obstacles.
-const dangerHatchPatterns = new WeakMap()
-function dangerHatchPattern(context, variant, colour = variant == 'bold' ? '#99501c' : '#b56020')
-{
-    let cache = dangerHatchPatterns.get(context)
-    if (!cache) { cache = Object.create(null); dangerHatchPatterns.set(context, cache) }
-    const key = JSON.stringify([variant, colour])
-    if (cache[key]) return cache[key]
-    const tile = document.createElement('canvas')
-    tile.width = tile.height = 32
-    const c = tile.getContext('2d')
-    c.strokeStyle = colour
-    c.lineWidth = variant == 'bold' ? 9 : variant == 'thin' ? 2 : 3
-    c.beginPath()
-    for (let i = -32; i <= 64; i += 32) {
-        if (variant == 'chevron') {
-            c.moveTo(i, 0); c.lineTo(i + 16, 16); c.lineTo(i, 32)
-        } else {
-            c.moveTo(i - 32, -32); c.lineTo(i + 64, 64)
-            if (variant == 'cross') { c.moveTo(i + 64, -32); c.lineTo(i - 32, 64) }
-        }
-    }
-    c.stroke()
-    return cache[key] = context.createPattern(tile, 'repeat')
-}
-
-// Bounds and coordinates are object-local. Inverse-transform the backing
+// Bounds and coordinates use the caller's local or shared world origin. Inverse-transform the backing
 // viewport so even enormous mostly-offscreen objects enumerate visible lines only.
 // Path2D deliberately leaves the caller's current path (triangle border) intact.
 function drawDangerHatchLines(context, variant, colour = variant == 'bold' ? '#99501c' : '#b56020', left, top, right, bottom)
