@@ -310,12 +310,33 @@ def check_s06_mechanics(encounter, trace, required=True):
     return observations
 
 
+def check_s07_mechanics(encounter, trace, required=True):
+    events=trace['events'];rows=trace['snapshots']
+    grabs=[e for e in events if e['type']=='acquisition']
+    ids=[e['after']['rope'][0]['id'] for e in grabs]
+    hits=[e for e in events if e['type']=='knockback']
+    detached=bool(hits and not hits[0]['after']['rope'])
+    caught=bool(hits and grabs and grabs[-1]['tick']>hits[0]['tick'] and
+                ids[-1]=='S07-shortcut-jib' and
+                all(r['state']['simulation']['grapple']['grappled'] for r in rows[195:]))
+    landed=any(abs(r['state']['simulation']['player']['y']+10190.8)<.001 and
+               abs(r['state']['simulation']['player']['speedY'])<.001 for r in rows)
+    observations=dict(acquisitions=ids,knockback_ticks=[e['tick'] for e in hits],
+        hazard_detach=detached,airborne_catch=caught,lower_balcony_landing=landed)
+    if required:
+        if encounter=='S07-01': require(not hits and 'S07-service-gantry' in ids,'S07 safe hazard passage missing')
+        if encounter=='S07-02': require(detached and caught,'S07 knockback detach/catch missing')
+        if encounter=='S07-03': require(ids==['S07-launch-head','S07-roof-boom','S07-upper-motor','S07-exit'],'S07 exposed crossing missing')
+        if encounter=='S07-04': require(landed and 'S07-side-hoist' in ids and ids[-1]=='S07-exit','S07 recovery missing')
+    return observations
+
+
 def audit_suite(manifest, browser, url, out):
     """Replay every reported attempt, including failures, without trusting summary flags."""
     evidence, _ = output_writer(out)
     require(manifest['source_hashes'] == hashes(), 'suite source hash mismatch')
     section = manifest.get('section', 'S01')
-    require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06'), 'unsupported section')
+    require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
     count = 0
     for encounter, attempts in manifest['encounters'].items():
@@ -332,6 +353,7 @@ def audit_suite(manifest, browser, url, out):
                 check_trace(recorded, replayed)
                 if section == 'S05': check_s05_mechanics(encounter, replayed)
                 if section == 'S06': check_s06_mechanics(encounter, replayed)
+                if section == 'S07': check_s07_mechanics(encounter, replayed)
                 success = True
             except ValueError:
                 success = False
@@ -342,6 +364,8 @@ def audit_suite(manifest, browser, url, out):
                 require(check_s05_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S05 mechanics mismatch')
             if section == 'S06':
                 require(check_s06_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S06 mechanics mismatch')
+            if section == 'S07':
+                require(check_s07_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S07 mechanics mismatch')
             count += 1
     negative = json.loads(evidence.path(manifest['negative_control']).read_text())
     recorded = json.loads(evidence.path(negative['input']).read_text())

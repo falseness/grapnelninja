@@ -2265,3 +2265,113 @@ class Task484Tests(unittest.TestCase):
         self.exit_assertions(trace,'touch')
         self.assertTrue(all(e['trusted'] for e in trace['events'] if e['type']=='input'))
         print('PASS touch: exposed launch and section exit; trusted touch inputs; matching replay')
+
+
+class Task485Tests(unittest.TestCase):
+    """Crown tolerance from labeled isolated starts, with real input."""
+    task_id = 'TASK-485'
+    setUpClass = classmethod(Task467Tests.setUpClass.__func__)
+    load_level = Task476Tests.load_level
+    run_attempt = Task473Tests.run_attempt
+    make_input = Task476Tests.make_input
+    test_03_source_hashes = Task467Tests.test_02_source_hashes
+
+    @staticmethod
+    def routes():
+        recovery=Task484Tests.upper()[:4]
+        recovery[-1]=(145,'mouseup',5235,-10380)
+        recovery += [(380,'mousedown',5695,-10480),(430,'mouseup',5695,-10480),
+                     (435,'mousedown',5500,-10780),(485,'mouseup',5500,-10780),
+                     (530,'mousedown',5330,-11330),(685,'mouseup',5330,-11330)]
+        exit_bounds=dict(x=[5270,5340],y=[-11351,-11350])
+        return [
+            ('S07-01',(5650,-9690.8),[(60,'mousedown',5430,-10000),(85,'mouseup',5430,-10000)],500,
+             dict(x=[5100,5370],y=[-9751,-9750]),0,(1,0),[]),
+            ('S07-02',(5650,-9690.8),[(120,'mousedown',5430,-10000),(145,'mouseup',5430,-10000),
+             (179,'mouseup',5200,-9970),(180,'mousedown',5200,-9970)],210,
+             dict(x=[5100,5500],y=[-10000,-9400]),3,(0,1),[]),
+            ('S07-03',(5100.8000001,-9750.8),Task484Tests.upper(),650,exit_bounds,5,(1,0),[]),
+            ('S07-04',(5100.8000001,-9750.8),recovery,950,exit_bounds,4,(0,1),[])]
+
+    def input_for(self, route, device='desktop', delta=0, offset=0):
+        m=self.make_input(route,device,delta,0 if route[0]=='S07-03' else offset)
+        if route[0]=='S07-03': m['inputs'][4]['world']['x']+=offset
+        # The hazard re-arms the throw: release after the hit, before catching.
+        if route[0]=='S07-02':
+            catch_tick=m['inputs'][3]['tick']
+            m['inputs'][2]['tick']=catch_tick-1
+            if device=='touch':
+                m['inputs'].insert(2,dict(tick=catch_tick-2,event='touchstart',
+                    world=dict(x=5200,y=-9970)))
+        m['required_events']=['acquisition','release']
+        m['metadata']['snapshot_contacts']=True
+        return m
+
+    def test_01_tolerance_matrix(self):
+        from grapple_over_verify import hashes, check_s07_mechanics
+        self.load_level()
+        suite=dict(section='S07',source_hashes=hashes(),level_sha256=hashes()['mountain.js'],
+            proof_kind='isolated encounter placement only; not continuous completion',encounters={},
+            negative_control='negative-control.json',recovery='clips/recovery/input.json',
+            shortcuts='clips/shortcut/input.json',
+            earlier_attempts=['exploratory/manifest.json','exploratory-camera/manifest.json',
+                              'probe.log','probe-upper.log','probe-release.log'])
+        failures=[]
+        for route in self.routes():
+            encounter=route[0];attempts=[];suite['encounters'][encounter]=attempts
+            for device in ('desktop','touch'):
+                for variant,delta,offset in [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]:
+                    name=f'{encounter}-{device}-{variant}'
+                    prefix=('clips/' if variant=='nominal' else 'attempts/')+name
+                    m=self.input_for(route,device,delta,offset)
+                    trace,success,reason=self.run_attempt(m,prefix,variant=='nominal')
+                    mechanics=check_s07_mechanics(encounter,trace,required=False)
+                    if success:
+                        try: check_s07_mechanics(encounter,trace)
+                        except ValueError as error: success=False;reason=str(error)
+                    attempts.append(dict(name=name,device=device,variant=variant,critical_input_index=4 if encounter=='S07-02' and device=='touch' else route[5],
+                        aim_input_index=4 if encounter=='S07-03' or (encounter=='S07-02' and device=='touch') else route[5],
+                        timing_delta=delta,tangent_aim_delta=offset,surface_tangent=route[6],
+                        input=prefix+'/input.json',trace=prefix+'/trace.json',success=success,reason=reason,
+                        mechanic_events=mechanics,final=trace['snapshots'][-1]['state']['simulation']['player']))
+                    self.evidence.write('manifest.json',suite)
+                    print('ATTEMPT',name,'PASS' if success else 'FAIL',reason,flush=True)
+                group=[a for a in attempts if a['device']==device]
+                if not group[0]['success'] or sum(a['success'] for a in group[1:])<2:
+                    failures.append(encounter+' '+device)
+        m=self.input_for(self.routes()[0])
+        # Long enough for the knocked-back fall to come to rest physically.
+        m['inputs'][0]['tick']=120;m['inputs'][1]['tick']=145;m['ticks']=2000
+        trace,success,reason=self.run_attempt(m,'clips/negative',True)
+        hits=[e for e in trace['events'] if e['type']=='knockback']
+        players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+        final=players[-1];step=max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a,b in zip(players,players[1:]))
+        self.evidence.write('negative-control.json',dict(name='hazard timing: passage delayed 60 ticks',
+            input='clips/negative/input.json',trace='clips/negative/trace.json',failed_intended_exit=not success,
+            unchanged_physics=True,source_hashes=hashes(),reason=reason,
+            knockback_ticks=[e['tick'] for e in hits],hazard_detach=bool(hits and not hits[0]['after']['rope']),
+            event_types=sorted({e['type'] for e in trace['events']}),max_tick_displacement=step,
+            final_player=final,recoverable_fall=True,
+            scope='Same physics and start; mistimed passage fails rest exit, the player falls physically and rests '
+                  'alive on the mountain base with no relocation. Alternative routes are not ruled out.'))
+        self.assertFalse(success);self.assertTrue(hits)
+        self.assertIn('expected exit mismatch',reason)
+        self.assertLess(step,60)
+        self.assertAlmostEqual(final['y'],109.2,places=3)
+        self.assertEqual((final['speedX'],final['speedY']),(0,0))
+        self.assertEqual(failures,[])
+        print('PASS S07 four encounters: both viewports nominal + >=2/4 variants; hazard passage; knockback; detach; airborne catch; recovery')
+
+    def test_02_recovery_and_shortcut(self):
+        from grapple_over_verify import execute
+        self.load_level()
+        for name,route in [('recovery',self.routes()[3]),('shortcut',(
+            'shortcut',(5650,-9690.8),[(30,'mousedown',5200,-9970),(60,'mouseup',5200,-9970)]+Task484Tests.upper(400),
+            1050,dict(x=[5270,5340],y=[-11351,-11350]),0,(1,0),[]))]:
+            m=self.input_for(route)
+            trace,success,reason=self.run_attempt(m,'clips/'+name,True)
+            self.assertTrue(success,reason)
+            replay=execute(m,self.browser,self.url,str(self.evidence.path('clips/'+name+'/replay')))
+            self.assertEqual(trace,replay)
+            self.evidence.write('clips/'+name+'/result.json',dict(passed=True,matching_traces=True,no_relocation=True))
+            print('PASS '+name+': section exit; matching replay; no relocation')
