@@ -2605,3 +2605,209 @@ class Task486Tests(unittest.TestCase):
             no_relocation=True,no_hazards=True,routes=out,
             explicit_route='Spill deck -> recovery hook -> S07-recovery-balcony (S07-04 side route: hoist -> motor -> S07-exit -> S08-01); over-brake falls back onto S07-launch-head and the S07-03 crossing'))
         print('PASS failure/recovery: missed brake and short ramp pull collect on spill deck; recovery hook returns to Crown recovery balcony; over-brake falls back onto the Crown launch head; physical, nonlethal, matching replays')
+
+
+class Task487Tests(unittest.TestCase):
+    """Summit Array finish: moving-target overhang, final landing and summit exit."""
+    task_id = 'TASK-487'
+    snapshot_contacts = True
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    replay = Task486Tests.replay
+    test_07_source_hashes = Task465Tests.test_03_source_hashes
+    s07_exit = Task486Tests.s07_exit
+    ledge = (3070.8000001, -12090.8000001)
+    deck = (4189.2000001, -12710.8000001)
+    landmark = (3400, -12940)
+    finish = dict(left=3420, right=3700, top=-12772, bottom=-12760)
+    # Carriage phase comes from the spawn time: tick 110 (mod 240) is its low, rising turn.
+    overhang = [(110,'mousedown',3490,-12338),(216,'mouseup',3490,-12338)]
+    landing = [(20,'mousedown',3760,-12890),(70,'mouseup',3760,-12890)]
+    ledge_bounds = dict(x=[3070,3071],y=[-12091,-12090],speedX=[-.001,.001],speedY=[-.001,.001])
+    deck_bounds = dict(x=[4189,4190],y=[-12711,-12710],speedX=[-.001,.001],speedY=[-.001,.001])
+    finish_bounds = dict(x=[3420,3700],y=[-12772,-12760])
+
+    def test_01_geometry(self):
+        page=self.open()
+        page.evaluate('floors=[loadFixedLevel(validateMountainManifest(GRAPPLE_OVER_MOUNTAIN))]')
+        r=page.evaluate('''() => ({manifest:GRAPPLE_OVER_MOUNTAIN,runtime:floors[0].level,
+            colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))})''')
+        m=r['manifest'];elements=m['geometry']['elements'];section=m['sections'][7]
+        self.assertEqual(section['status'],'built')
+        self.assertEqual(section['landmark']['name'],'distinct final beacon silhouette')
+        self.assertEqual([e['status'] for e in m['encounters'][28:32]],['built']*4)
+        self.assertEqual([(c['id'],c['status']) for c in m['connectors'][28:33]],
+            [('S08-entrance','built'),('S08-route-1','built'),('S08-route-2','built'),('S08-route-3','built'),('summit-approach','built')])
+        self.assertEqual(m['recoveries'][7]['status'],'built')
+        self.assertEqual(r['runtime']['finish'],self.finish)
+        self.assertEqual(m['encounters'][31]['finishRegion'],self.finish)
+        self.assertEqual(r['runtime']['elements'],elements)
+        for a,e in zip(r['colliders'],elements):
+            self.assertEqual(a,{k:e[k] for k in ('id','x','y','points','role')})
+        summit=[e for e in elements if e['id'].startswith('S08')]
+        ids=[e['id'] for e in summit]
+        self.assertFalse(any('test' in i or 'temporary' in i for i in ids))
+        self.assertNotIn('temporaryExit',json.dumps(m['encounters'][28:32]))
+        self.assertEqual(len(summit),15)
+        self.assertEqual(len({json.dumps(e['points']) for e in summit}),15)
+        roles={e['id']:e['role'] for e in summit}
+        self.assertEqual([k for k,v in roles.items() if v!='solid'],['S08-deflector-ramp'])
+        self.assertFalse(any(e['role']=='hazard' for e in summit))
+        movers=[v for v in m['geometry']['movers'] if v['element'].startswith('S08')]
+        self.assertEqual([v['element'] for v in movers],['S08-overhang-carriage'])
+        top,bottom=section['band']['top'],section['band']['bottom']
+        for e in summit:
+            ys=[e['y']+p['y'] for p in e['points']]
+            if e['id']=='S08-spill-deck': self.assertTrue(-11340<min(ys) and max(ys)<-9720)
+            else: self.assertTrue(top<=min(ys) and max(ys)<=bottom,e['id'])
+        # The finish band is the pad surface between its west beacon tower and east lip.
+        pad=next(e for e in summit if e['id']=='S08-summit-pad')
+        surface=[(pad['x']+p['x'],pad['y']+p['y']) for p in pad['points'] if pad['y']+p['y']==-12760]
+        self.assertEqual(sorted(x for x,_ in surface),[3420,3700])
+        # Earlier geometry and calibrated physics are unchanged; only the temporary exit was renamed.
+        prior=json.loads((ROOT/'artifacts/TASK-486/geometry.json').read_text())['manifest']['geometry']
+        renamed={**next(e for e in prior['elements'] if e['id']=='S08-test-exit'),'id':'S08-rest-ledge'}
+        self.assertEqual([e for e in elements if e['id'] in {p['id'] for p in prior['elements']}|{'S08-rest-ledge'}],
+            [renamed if e['id']=='S08-test-exit' else e for e in prior['elements']])
+        self.assertEqual(m['geometry']['movers'][:len(prior['movers'])],prior['movers'])
+        calibration=json.loads((ROOT/'artifacts/TASK-463/calibration.json').read_text())
+        for path in ('sprites/ninja.js','sprites/grapnel.js','sprites/trampoline.js','physics.js'):
+            self.assertEqual(self.proof['source_hashes'][path],calibration['source_hashes'][path])
+        self.assertEqual([s['id'] for s in m['shortcuts']],['S03-shortcut','S07-shortcut'])
+        functions={'S08-01 brake (TASK-486)':['S08-launch-arm','S08-brake-davit'],
+                   'rest between combinations':['S08-footing-rest','S08-rest-ledge','S08-array-deck'],
+                   'S08-02 bounce transfer (TASK-486)':['S08-lamp-hook','S08-deflector-ramp','S08-mast-yard'],
+                   'S08-03 overhang':['S08-beacon-deck'],'S08-03 moving target (blue mover)':['S08-overhang-carriage'],
+                   'S08-04 final pull':['S08-summit-gantry'],'section exit: summit pad + final beacon':['S08-summit-pad'],
+                   'waypoint lamp mast':['S08-beacon-mast'],'recovery (miss collector / Crown return)':['S08-spill-deck','S08-recovery-hook']}
+        self.assertEqual(sorted(sum(functions.values(),[])),sorted(ids))
+        self.evidence.write('geometry.json',dict(self.proof,**r,structural_validations_pass=True,
+            encounters=m['encounters'][28:32],connectors=m['connectors'][28:33],recovery=m['recoveries'][7],
+            surface_roles=roles,functions=functions,movers_S08=movers,finish_region=self.finish,
+            colliders_S08=[{k:e[k] for k in ('id','x','y','role','grapplable','points')} for e in summit],
+            starts={'S08-03':dict(x=self.ledge[0],y=self.ledge[1],source='S08-02 rest pose against the mast stop'),
+                    'S08-04':dict(x=self.deck[0],y=self.deck[1],source='S08-03 measured rest against the array deck east stop')},
+            landing_margins={'S08-array-deck':dict(floor=[3900,4240],top=-12700,safe_center=[3930.8,4189.2],west_lip=20,east_stop=120),
+                             'S08-summit-pad':dict(floor=[3380,3720],top=-12760,finish=[3420,3700],west_beacon_tower=200,east_lip=20)},
+            placeholder_encounters_remaining=[],temporary_geometry_removed=['S08-test-exit renamed to ordinary S08-rest-ledge'],
+            shortcut='None assigned: section 8 is neither section 3 nor 7 (S03/S07 shortcuts unchanged)',
+            calibrated_physics_unchanged=True,previous_geometry_unchanged=True))
+        parts=['<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="1100" viewBox="2850 -13050 2700 2300" style="background:#182028">']
+        colors=['#b6c5d2','#f0dfbb','#66e08a','#d0a070','#5aa0ff','#f7d978','#ffffff','#ff9de0','#9cdaa4']
+        for (role,members),color in zip(functions.items(),colors):
+            for e in summit:
+                if e['id'] not in members:continue
+                pts=' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+                parts.append(f'<polygon points="{pts}" fill="{color}"/><text x="{e["x"]}" y="{e["y"]-14}" fill="white" font-size="18">{e["id"]} ({e["role"]})</text>')
+        for v in movers:
+            parts.append(f'<line x1="3490" y1="{v["min"]}" x2="3490" y2="{v["max"]+40}" stroke="#5aa0ff" stroke-dasharray="8 6" stroke-width="4"/>')
+        f=self.finish
+        parts.append(f'<rect x="{f["left"]}" y="{f["top"]-20}" width="{f["right"]-f["left"]}" height="{f["bottom"]-f["top"]+20}" fill="none" stroke="#ff5050" stroke-width="4"/>'
+                     f'<text x="{f["left"]}" y="{f["top"]-28}" fill="#ff8080" font-size="20">summit finish region (section exit)</text>')
+        for e in elements:
+            if e['id'].startswith('S07'):
+                pts=' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+                parts.append(f'<polygon points="{pts}" fill="#556070"/><text x="{e["x"]}" y="{e["y"]-8}" fill="#99a" font-size="16">{e["id"]}</text>')
+        for i,role in enumerate(functions):
+            parts.append(f'<text x="4500" y="{-12950+i*30}" fill="{colors[i]}" font-size="22">{role}</text>')
+        parts.append('<text x="4500" y="-12650" fill="#ccc" font-size="20">Recovery: misses fall to rest ledge / array deck lip,</text>'
+                     '<text x="4500" y="-12620" fill="#ccc" font-size="20">or via green ramp to spill deck -> hook -> S07 Crown</text>')
+        parts.append('</svg>');page.set_content(''.join(parts));page.set_viewport_size(dict(width=1300,height=1100))
+        page.screenshot(path=str(self.evidence.path('overview.png')))
+        print('PASS geometry: S08 built (4/4 encounters, connectors incl. summit-approach, recovery); finish region on summit pad; 15 distinct S08 silhouettes; no temporary exit; one blue mover; no hazards; earlier geometry/physics unchanged; no S08 shortcut assigned; overview.png')
+
+    def carriage(self, row):
+        return next(e for e in row['state']['simulation']['elements'] if e['id']=='S08-overhang-carriage')
+
+    def overhang_checks(self, trace, offset=0):
+        acq=next(e for e in trace['events'] if e['type']=='acquisition' and e['tick']>=offset)
+        self.assertEqual(acq['after']['rope'][0]['id'],'S08-overhang-carriage')
+        rel=next(e for e in trace['events'] if e['type']=='release' and e['tick']>acq['tick'])
+        rows=trace['snapshots'][acq['tick']:rel['tick']+1]
+        # Stays attached to the carriage (rope ends on it) while the carriage itself travels.
+        self.assertTrue(all(r['state']['simulation']['grapple']['grappled'] and
+            r['state']['simulation']['grapple']['segments'][-1]['id']=='S08-overhang-carriage' for r in rows))
+        carriage=[self.carriage(r)['y'] for r in rows]
+        self.assertGreater(max(carriage)-min(carriage),100)
+        self.assertLess(carriage[-1],carriage[0])
+        players=[r['state']['simulation']['player'] for r in rows]
+        # Below the overhang underside at acquisition, above its deck east of the lip at release.
+        self.assertGreater(players[0]['y'],-12390)
+        self.assertLess(players[-1]['y'],-12420);self.assertGreater(players[-1]['x'],3420)
+        return dict(acquisition_tick=acq['tick'],release_tick=rel['tick'],attached_ticks=len(rows)-1,
+            carriage_y_at_acquisition=carriage[0],carriage_y_at_release=carriage[-1],carriage_travel_while_attached=max(carriage)-min(carriage),
+            player_at_acquisition=players[0],player_at_release=players[-1],overhang_underside_y=-12390,overhang_lip_x=3420)
+
+    def finish_checks(self, trace):
+        rows=trace['snapshots']
+        done=next(i for i,r in enumerate(rows) if r['state']['simulation']['stats']['completed'])
+        p=rows[done]['state']['simulation']['player'];f=self.finish
+        self.assertTrue(f['left']<=p['x']<=f['right'] and f['top']<=p['y']<=f['bottom'],p)
+        before=rows[done-1]['state']['simulation']['player']
+        self.assertFalse(rows[done-1]['state']['simulation']['stats']['completed'])
+        self.assertFalse(rows[done]['state']['simulation']['grapple']['grappled'])
+        # Completion freezes the climb: no later movement.
+        self.assertTrue(all(r['state']['simulation']['player']==p for r in rows[done:]))
+        return dict(completion_tick=done,player_at_completion=p,player_before=before,finish_region=f,
+            landing_speed=dict(x=p['speedX'],y=p['speedY']))
+
+    def test_02_moving_overhang(self):
+        trace,result=self.replay('S08-03-moving-overhang',self.overhang,520,self.deck_bounds,self.ledge,
+            targets=[('carriage',(3490,-12338)),('overhang',(3240,-12405)),('array_deck',(4050,-12700))])
+        checks=self.overhang_checks(trace)
+        self.assertFalse(trace['snapshots'][-1]['state']['simulation']['stats']['completed'])
+        self.assertTrue(all(r['carriage']['visible'] and r['overhang']['visible'] for r in result['camera_sightlines'] if 20<=r['tick']<=110))
+        self.evidence.write('encounters/S08-03.json',dict(passed=True,moving_target_overhang=checks,
+            rest_after='S08-array-deck (stationary against east stop)',final=result['final']))
+        print('PASS S08-03: blue carriage acquired below the overhang, held while it rises, released above the lip; settles on array deck; matching replay')
+
+    def test_03_final_landing(self):
+        trace,result=self.replay('S08-04-final-landing',self.landing,300,self.finish_bounds,self.deck,
+            targets=[('gantry',(3760,-12890)),('summit_pad',(3560,-12760))])
+        acq=[a[1] for a in result['acquisitions']]
+        self.assertEqual(acq,['S08-summit-gantry'])
+        checks=self.finish_checks(trace)
+        self.assertTrue(all(r['landmark']['visible'] and r['summit_pad']['visible'] for r in result['camera_sightlines'] if r['tick']>=20))
+        self.evidence.write('encounters/S08-04.json',dict(passed=True,controlled_final_landing=checks,
+            section_exit='summit finish region (climb completed; no next section)',final=result['final']))
+        print('PASS S08-04: gantry pull and release; lands on summit pad inside the finish region; climb completes; matching replay')
+
+    def test_04_section_exit_traversed(self):
+        # Full Summit Array from the measured S07 exit pose: S08-01..04 to the summit finish.
+        plan=(Task486Tests.brake+[(t+450,e,x,y) for t,e,x,y in Task486Tests.transfer]+
+              [(t+960,e,x,y) for t,e,x,y in self.overhang]+[(t+1500,e,x,y) for t,e,x,y in self.landing])
+        trace,result=self.replay('S08-section-exit',plan,1800,self.finish_bounds,self.s07_exit,
+            bounces=['S08-deflector-ramp'])
+        snap=lambda t:trace['snapshots'][t]['state']['simulation']['player']
+        for tick,pose in ((450,Task486Tests.footing),(1070,self.ledge),(1500,self.deck)):
+            p=snap(tick)
+            self.assertAlmostEqual(p['x'],pose[0],places=4);self.assertAlmostEqual(p['y'],pose[1],places=4)
+            self.assertEqual((p['speedX'],p['speedY']),(0,0))
+        acq=[a[1] for a in result['acquisitions']]
+        self.assertEqual(acq,['S08-launch-arm','S08-brake-davit','S08-lamp-hook','S08-mast-yard','S08-overhang-carriage','S08-summit-gantry'])
+        overhang=self.overhang_checks(trace,1000)
+        checks=self.finish_checks(trace)
+        self.evidence.write('encounters/section-exit.json',dict(passed=True,from_='S07-exit rest pose (TASK-484 normal route end)',
+            rests={'S08-footing-rest':snap(450),'S08-rest-ledge':snap(1070),'S08-array-deck':snap(1500)},
+            acquisitions=acq,overhang=overhang,finish=checks,section_exit_traversed=True,
+            next_unbuilt_section_not_required=True,note='S08 is the final section; its exit is the summit finish region'))
+        print('PASS section exit: S07 exit -> S08-01 brake -> footing rest -> S08-02 bounce transfer -> rest ledge -> S08-03 carriage overhang -> array deck -> S08-04 summit finish; matching replay')
+
+    def test_05_local_miss_recovery(self):
+        short=[(20,'mousedown',3760,-12890),(35,'mouseup',3760,-12890)]
+        retry=[(200,'mousedown',3760,-12890),(235,'mouseup',3760,-12890)]
+        trace,result=self.replay('S08-04-short-pull-recovery',short+retry,450,self.finish_bounds,self.deck,
+            targets=[('gantry',(3760,-12890))])
+        rest=trace['snapshots'][199]['state']['simulation']
+        self.assertAlmostEqual(rest['player']['x'],3930.8,delta=.01);self.assertAlmostEqual(rest['player']['y'],-12710.8,delta=.01)
+        self.assertEqual((rest['player']['speedX'],rest['player']['speedY']),(0,0))
+        self.assertFalse(rest['stats']['completed'])
+        players=[r['state']['simulation']['player'] for r in trace['snapshots'][:200]]
+        self.assertTrue(all(3900<=p['x']<=4240 and p['y']>-12960 for p in players))
+        checks=self.finish_checks(trace)
+        self.assertGreater(checks['completion_tick'],235)
+        self.evidence.write('encounters/recovery.json',dict(passed=True,physical=True,nonlethal=True,no_relocation=True,
+            local_miss=dict(input='15-tick gantry pull (too short)',outcome='falls back and slides to the array deck west lip',rest=rest['player']),
+            retry=dict(input='35-tick gantry pull from the west lip',finish=checks),
+            explicit_routes='Short S08-04 pulls return to the array deck; longer S08-03/S08-04 misses fall via the green ramp onto the spill deck, whose hook returns to the Crown (TASK-486 recovery traces)'))
+        print('PASS local miss recovery: short gantry pull falls back onto the array deck (stationary, not completed); retry from the west lip lands in the finish region; matching replay')

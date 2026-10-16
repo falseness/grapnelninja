@@ -513,7 +513,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             points:[{x:0,y:0},{x:360,y:180},{x:345,y:210},{x:-15,y:30}]},
         {id:'S08-mast-yard',x:3400,y:-12200,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:100,y:0},{x:100,y:18},{x:80,y:30},{x:20,y:30},{x:0,y:18}]},
-        {id:'S08-test-exit',x:3020,y:-12080,role:'solid',grapplable:true,
+        {id:'S08-rest-ledge',x:3020,y:-12080,role:'solid',grapplable:true,
             points:[{x:0,y:-60},{x:40,y:-60},{x:40,y:0},{x:400,y:0},{x:400,y:-20},{x:420,y:-20},{x:420,y:55},{x:0,y:55}]},
         {id:'S08-beacon-mast',x:3020,y:-12140,role:'solid',grapplable:true,
             points:[{x:8,y:0},{x:32,y:0},{x:32,y:-460},{x:64,y:-460},{x:64,y:-540},{x:-24,y:-540},{x:-24,y:-460},{x:8,y:-460}]},
@@ -532,15 +532,53 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:4290.8,right:4449.2,top:-11612,bottom:-11600},
         action:'Pull up the launch arm and release west; brake on the opposing davit, then release onto the footing rest'});
     Object.assign(encounters[29],{status:'built',x:4291,y:-11611,
-        elements:['S08-footing-rest','S08-lamp-hook','S08-deflector-ramp','S08-mast-yard','S08-test-exit'],
+        elements:['S08-footing-rest','S08-lamp-hook','S08-deflector-ramp','S08-mast-yard','S08-rest-ledge'],
         start:{from:'S08-01',x:4290.8,y:-11610.8},target:{x:4070,y:-11945},transferTarget:{x:3450,y:-12185},
         exit:{left:3070.8,right:3409.2,top:-12092,bottom:-12080},
-        temporaryExit:'S08-test-exit',
-        action:'Pull the lamp hook, fall onto the angled green ramp, grab the mast yard in flight and release onto the temporary exit'});
+        rest:'S08-rest-ledge',
+        action:'Pull the lamp hook, fall onto the angled green ramp, grab the mast yard in flight and release onto the beacon rest ledge'});
     Object.assign(connectors[28],{status:'built',intent:'S07-exit launches directly to the beacon arm; the davit and footing rest are visible before commitment'});
-    Object.assign(connectors[29],{status:'built',intent:'Footing rest separates the brake from the bounce transfer; temporary exit after S08-02'});
+    Object.assign(connectors[29],{status:'built',intent:'Footing rest separates the brake from the bounce transfer; S08-02 ends on the beacon rest ledge'});
     Object.assign(recoveries[7],{openingElements:['S08-spill-deck','S08-recovery-hook','S07-roof-boom','S07-recovery-balcony'],
         openingRejoin:'S07-03',sideRoute:'Western misses collect on the spill deck; the recovery hook throws players back onto the Crown boom or balcony. Eastern misses fall through the Crown into Liftworks. No hazards.'});
+    // Summit Array finish: the rest ledge sits under the beacon-deck overhang. A blue
+    // carriage rises beyond its lip and swings players up onto the array deck; the
+    // summit gantry then sets them down on the final beacon pad. No new hazards.
+    summit.push(
+        {id:'S08-beacon-deck',x:3052,y:-12390,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:368,y:0},{x:368,y:-50},{x:348,y:-50},{x:348,y:-30},{x:0,y:-30}]},
+        {id:'S08-overhang-carriage',x:3440,y:-12620,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:100,y:0},{x:100,y:28},{x:70,y:40},{x:30,y:40},{x:0,y:28}]},
+        {id:'S08-array-deck',x:3900,y:-12700,role:'solid',grapplable:true,
+            points:[{x:0,y:-20},{x:20,y:-20},{x:20,y:0},{x:300,y:0},{x:300,y:-120},{x:340,y:-120},{x:340,y:55},{x:0,y:55}]},
+        {id:'S08-summit-gantry',x:3700,y:-12930,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:120,y:0},{x:120,y:30},{x:80,y:45},{x:40,y:45},{x:0,y:30}]},
+        {id:'S08-summit-pad',x:3380,y:-12760,role:'solid',grapplable:true,
+            points:[{x:0,y:55},{x:0,y:-160},{x:-40,y:-180},{x:20,y:-200},{x:80,y:-180},{x:40,y:-160},
+                {x:40,y:0},{x:320,y:0},{x:320,y:-20},{x:340,y:-20},{x:340,y:55}]}
+    )
+    liftMovers.push({id:'S08-carriage-lift',element:'S08-overhang-carriage',axis:'y',
+        min:-12620,max:-12340,periodMs:4000,phase:0,velocity:140});
+    const finish = {left:3420,right:3700,top:-12772,bottom:-12760}
+    // The diamond lamp on the summit pad is the final beacon; the lower mast is a waypoint.
+    Object.assign(sections[7],{status:'built',landmark:{id:'S08-landmark',
+        name:'distinct final beacon silhouette',x:3400,y:-12940}});
+    Object.assign(encounters[30],{status:'built',x:3071,y:-12091,
+        elements:['S08-rest-ledge','S08-beacon-deck','S08-overhang-carriage','S08-array-deck'],
+        start:{from:'S08-02',x:3070.8,y:-12090.8},target:{x:3490,y:-12338},
+        exit:{left:3930.8,right:4189.2,top:-12712,bottom:-12700},
+        action:'Catch the blue carriage beyond the overhang lip on its low turn, ride it up and release onto the array deck'});
+    Object.assign(encounters[31],{status:'built',x:4189,y:-12711,
+        elements:['S08-array-deck','S08-summit-gantry','S08-summit-pad'],
+        start:{from:'S08-03',x:4189.2,y:-12710.8},target:{x:3760,y:-12890},
+        exit:finish,finishRegion:finish,
+        action:'Pull the summit gantry and release to settle on the final beacon pad inside the finish region'});
+    Object.assign(connectors[30],{status:'built',intent:'Rest ledge under the overhang shows the carriage and array deck before commitment'});
+    Object.assign(connectors[31],{status:'built',intent:'Array deck rest separates the overhang from the final landing; gantry and pad are visible'});
+    Object.assign(connectors[32],{status:'built',finishRegion:finish,
+        intent:'Controlled final landing: the finish region is the beacon pad surface between its lips'});
+    Object.assign(recoveries[7],{status:'built',elements:['S08-array-deck','S08-rest-ledge','S08-deflector-ramp','S08-spill-deck','S08-recovery-hook'],
+        rejoin:'S08-03',sideRoute:'Short gantry pulls drop back onto the array deck west lip; longer overhang/gantry misses fall via the green ramp onto the spill deck, whose hook returns to the Crown. No hazards at the ending.'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
@@ -551,7 +589,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
-        completion:'planned; no summit trigger until authored',
+        finish, completion:'Summit finish region on the S08-04 beacon pad; reaching it completes the climb',
         recoveryPolicy:'Physical falls, nonlethal hazards, current-state saves; no automatic relocation'}
 })()
 
@@ -620,7 +658,9 @@ function validateMountainManifest(m)
         if (r.transport !== 'physical-fall' || nodes.get(r.to).y <= nodes.get(r.from).y)
             fail('InvalidRecovery',r.id)
     }
-    const level = {version:m.geometry.version,bounds:m.bounds,spawn:m.spawn,finish:null,
+    // The finish trigger exists only once the summit approach is authored.
+    const summitBuilt = m.sections[7].status === 'built' && m.connectors.at(-1).status === 'built'
+    const level = {version:m.geometry.version,bounds:m.bounds,spawn:m.spawn,finish:summitBuilt ? m.finish : null,
         sections:m.sections,encounters:m.encounters,elements:m.geometry.elements,movers:m.geometry.movers}
     validateFixedLevel(level)
     // Structural boundary guard, not a reachability proof: continuous catch floor
