@@ -245,6 +245,319 @@ class Task489Tests(unittest.TestCase):
             self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, path)
         print('PASS source hashes: runtime, level and harness match the tested worktree', flush=True)
 
+class LifecycleBrowser:
+    """Pass-through browser whose pages log PLATFORM lifecycle calls to the console.
+
+    The wrapper only observes: it calls the original sendLifecycle unchanged.
+    """
+    SCRIPT = '''addEventListener('DOMContentLoaded', () => { const p = PLATFORM, send = p.sendLifecycle;
+        p.sendLifecycle = function(name, data) {
+            console.log('GRAPPLE_LIFECYCLE ' + JSON.stringify({name, data, x: ninja.x, y: ninja.y}));
+            return send.apply(this, arguments) } })'''
+
+    def __init__(self, browser):
+        self._browser, self.calls = browser, []
+
+    def __getattr__(self, name):
+        return getattr(self._browser, name)
+
+    def new_context(self, **kwargs):
+        context = self._browser.new_context(**kwargs)
+        context.add_init_script(self.SCRIPT)
+        context.on('console', lambda m: m.text.startswith('GRAPPLE_LIFECYCLE ')
+                   and self.calls.append(json.loads(m.text.split(' ', 1)[1])))
+        return context
+
+
+def exit_box(exit):
+    # S05-01..03 author their exits as a rest point plus a width; the player stops at x.
+    if 'left' in exit:
+        return exit
+    return dict(left=exit['x']-.01, right=exit['x']+exit['width'], top=exit['y']-1.2, bottom=exit['y']+10.8)
+
+
+class Task490Tests(unittest.TestCase):
+    """Upper four sections joined: section-4-exit fixture -> Cable Galleries -> Liftworks
+    -> Exposed Crown -> Summit Array finish, in one recording with trusted mouse input."""
+    task_id = 'TASK-490'
+    # One labeled fixture placement: the actual TASK-489 continuous-run final rest on S04-exit
+    # (artifacts/TASK-489/trace.json final 4510.8,-6490.8 at rest). Not a full-game completion.
+    FIXTURE = dict(x=4510.8, y=-6490.8, speedX=0, speedY=0)
+    # (label, [(tick, event, x, y)] relative to the segment start, length). Segment lengths
+    # include waits at rest so the mover-timed encounters (S06 counterweight/upper weight,
+    # S08 carriage; period 240 ticks) begin on the phase their isolated proofs used.
+    SEGS = [
+        ('S05-01',[(30,'mousedown',4655,-6780),(120,'mouseup',4655,-6780)],500),
+        ('S05-02',[(30,'mousedown',5005,-7080),(120,'mouseup',5005,-7080)],500),
+        ('S05-03',[(30,'mousedown',5425,-7380),(116,'mouseup',5425,-7380),
+                   (117,'mousedown',5500,-7400),(145,'mouseup',5500,-7400)],500),
+        # The exit slide ends against the S05-exit east stop (6389.2); wait for counterweight phase 0.
+        ('S05-04',[(30,'mousedown',5805,-7700),(130,'mouseup',5805,-7700),
+                   (680,'mousedown',6205,-8050),(775,'mouseup',6205,-8050)],1380),
+        # Re-aimed from the real 6389.2 rest (isolated proof: 6300, press 6110 held 180).
+        ('S06-01/02/03',[(30,'mousedown',6080,-8370),(240,'mouseup',6080,-8370)],480),
+        ('S06-04',[(30,'mousedown',5715,-8590),(80,'mouseup',5715,-8590),(85,'mousedown',5825,-8900),
+                   (220,'mouseup',5825,-8900),(250,'mousedown',6105,-9280),(350,'mouseup',6105,-9280),
+                   (370,'mousedown',5775,-9660),(470,'mouseup',5775,-9660)],780),
+        # Starts while still sliding on S06-exit (speedX ~0.07): velocity carried, not reset.
+        ('S07-01',[(60,'mousedown',5430,-10000),(85,'mouseup',5430,-10000)],500),
+        # Catch the shortcut jib from the rest ledge and drop back onto the ledge.
+        ('S07-02',[(30,'mousedown',5160,-9970),(90,'mouseup',5160,-9970)],180),
+        ('S07-03/04',[(30,'mousedown',4995,-10060),(80,'mouseup',4995,-10060),(85,'mousedown',5235,-10380),
+                      (125,'mouseup',5235,-10380),(150,'mousedown',5500,-10780),(250,'mouseup',5500,-10780),
+                      (255,'mousedown',5330,-11330),(430,'mouseup',5330,-11330)],650),
+        # Connector: the crossing settles on the S07-exit west lip (5270.8); a short pull on the
+        # exit's east wall steps to the S08 departure rest (5339.2).
+        ('S07-exit step',[(20,'mousedown',5360,-11400),(40,'mouseup',5360,-11400)],120),
+        ('S08-01',[(20,'mousedown',5000,-11740),(65,'mouseup',5000,-11740),
+                   (125,'mousedown',4930,-11865),(150,'mouseup',4930,-11865)],650),
+        # The bounce arc passes the carriage, so S08-02 also starts on carriage phase 0.
+        ('S08-02',[(20,'mousedown',4070,-11945),(55,'mouseup',4070,-11945),
+                   (215,'mousedown',3450,-12185),(241,'mouseup',3450,-12185)],720),
+        ('S08-03',[(110,'mousedown',3490,-12338),(216,'mouseup',3490,-12338)],520),
+        ('S08-04',[(20,'mousedown',3760,-12890),(70,'mouseup',3760,-12890)],300)]
+    # Actual rest at the end of each segment (speed 0), except S06-04 which is still sliding.
+    RESTS = {'S05-01':(4839.2,-6810.8),'S05-02':(5239.2,-7110.8),'S05-03':(5639.2,-7410.8),
+             'S05-04':(6389.2,-8080.8),'S06-01/02/03':(5830.8,-8280.8),'S07-01':(5100.8,-9750.8),
+             'S07-02':(5100.8,-9750.8),'S07-03/04':(5270.8,-11350.8),'S07-exit step':(5339.2,-11350.8),
+             'S08-01':(4290.8,-11610.8),'S08-02':(3070.8,-12090.8),'S08-03':(4189.2,-12710.8)}
+    PHASED = {'S06-01/02/03':['S06-counterweight-travel'],'S06-04':['S06-upper-weight-travel'],
+              'S08-02':['S08-carriage-lift'],'S08-03':['S08-carriage-lift']}
+    MOVING = ('S06-counterweight','S06-upper-weight','S07-sweeper','S08-overhang-carriage')
+
+    @classmethod
+    def setUpClass(cls):
+        from grapple_over_verify import hashes
+        cls.evidence = EvidenceWriter(cls.task_id)
+        cls.url, browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.browser = LifecycleBrowser(browser)
+        page = browser.new_page(viewport=VIEWPORT); page.goto(cls.url); wait_for_boot(page)
+        cls.level = page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)')
+        cls.mountain = page.evaluate('''() => ({sections:GRAPPLE_OVER_MOUNTAIN.sections.slice(4,8),
+            encounters:GRAPPLE_OVER_MOUNTAIN.encounters.slice(16,32),
+            finish:GRAPPLE_OVER_MOUNTAIN.connectors.find(c => c.id === 'summit-approach').finishRegion})''')
+        page.close()
+        cls.hashes = hashes()
+        cls.hashes['tools/test_grapple_over_integration.py'] = hashlib.sha256(
+            (ROOT/'tools/test_grapple_over_integration.py').read_bytes()).hexdigest()
+        cls.proof = dict(browser=browser.version, viewport=VIEWPORT, device_scale_factor=1,
+            hz=60, seed=1, revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+            dirty_paths=subprocess.check_output(['git','status','--porcelain','--','.',':!artifacts'],cwd=ROOT,text=True).splitlines(),
+            source_hashes=cls.hashes)
+        cls.evidence.log('CONFIG '+json.dumps(cls.proof, sort_keys=True))
+
+    def manifest(self):
+        from grapple_over_verify import metadata
+        inputs, marks, tick = [], [], 0
+        for label, plan, length in self.SEGS:
+            inputs += [dict(tick=tick+t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan]
+            marks.append(dict(label=label,start=tick,end=tick+length)); tick += length
+        m = dict(metadata=metadata('isolated'),initial_setup=dict(level=self.level,player=dict(self.FIXTURE)),
+                 ticks=tick+1,inputs=inputs,expected_exit=dict(x=[3420,3700],y=[-12772,-12760]),
+                 required_events=['acquisition','release','bounce'])
+        m['metadata']['snapshot_contacts'] = True
+        return m, marks
+
+    def continuity(self, m, trace):
+        rows = trace['snapshots']; sim = [r['state']['simulation'] for r in rows]
+        spawns = trace['metadata']['setupOnlySpawns']
+        # Exactly one placement, before tick 0, at the labeled S04-exit fixture; never mid-run.
+        self.assertEqual(len(spawns), 1)
+        self.assertEqual(spawns[0]['fixture']['player'], self.FIXTURE)
+        self.assertIsNone(spawns[0]['fixture'].get('camera'))
+        self.assertEqual(trace['metadata']['testOnly'], True)
+        p0 = sim[0]['player']
+        self.assertEqual((p0['x'],p0['y'],p0['speedX'],p0['speedY']), (4510.8,-6490.8,0,0))
+        ticks = [s['simulationTick'] for s in sim]
+        # The clock never rewinds; it advances every frame until the ending pauses physics.
+        done = next(i for i, s in enumerate(sim) if s['stats']['completed'])
+        self.assertTrue(all(b > a for a,b in zip(ticks[:done+1],ticks[1:done+1])))
+        self.assertEqual(set(ticks[done:]), {ticks[done]})
+        jumps = [max(abs(b['player']['x']-a['player']['x']),abs(b['player']['y']-a['player']['y']))
+                 for a,b in zip(sim,sim[1:])]
+        self.assertLess(max(jumps), 20)
+        geometry = {e['id']:(e['x'],e['y']) for e in sim[0]['elements']}
+        self.assertTrue(all([e['id'] for e in s['elements']] == list(geometry) for s in sim))
+        moved = sorted({e['id'] for s in sim for e in s['elements'] if (e['x'],e['y']) != geometry[e['id']]})
+        self.assertEqual(moved, sorted(self.MOVING))
+        mover_steps = max(abs(b['x']-a['x'])+abs(b['y']-a['y']) for s0,s1 in zip(sim,sim[1:])
+                          for a,b in zip(s0['elements'],s1['elements']))
+        self.assertLess(mover_steps, 10)
+        heights = [s['stats']['maxHeight'] for s in sim]
+        self.assertTrue(all(b >= a for a,b in zip(heights,heights[1:])))
+        inputs = [e for e in trace['events'] if e['type'] == 'input']
+        self.assertEqual(len(inputs), len(m['inputs']))
+        self.assertTrue(all(e['trusted'] for e in inputs))
+        presses = [e for e in inputs if e['event'] == 'mousedown']
+        offscreen = [e['tick'] for e in presses if not (0 < e['client']['x'] < VIEWPORT['width']
+                     and 0 < e['client']['y'] < VIEWPORT['height'])]
+        self.assertEqual(offscreen, [])
+        return dict(single_fixture_placement=spawns[0]['fixture']['player'], mid_run_injection=False,
+            setup_only_spawns=len(spawns), initial_player=p0, simulation_ticks=[ticks[0],ticks[-1]],
+            clock_frozen_from_tick=done,
+            max_player_step=max(jumps), moved_elements=moved, max_mover_step=mover_steps,
+            max_height_monotonic=True, trusted_inputs=len(inputs), offscreen_presses=offscreen,
+            press_clients=[dict(tick=e['tick'],world=e['world'],client=e['client']) for e in presses])
+
+    def attached(self, trace):
+        """Snapshot tick -> rope anchor id, from acquisition/release events."""
+        out, anchor = {}, None
+        events = [e for e in trace['events'] if e['type'] in ('acquisition','release')]
+        for t in range(len(trace['snapshots'])):
+            while events and events[0]['tick'] < t:
+                e = events.pop(0)
+                anchor = e['after']['rope'][0]['id'] if e['type'] == 'acquisition' else None
+            out[t] = anchor
+        return out
+
+    def accounting(self, trace):
+        rows = trace['snapshots']; events = trace['events']; anchors = self.attached(trace); result = []
+        for e in self.mountain['encounters']:
+            box = exit_box(e['exit'])
+            inside = [r['tick'] for r in rows if box['left'] <= r['state']['simulation']['player']['x'] <= box['right']
+                      and box['top'] <= r['state']['simulation']['player']['y'] <= box['bottom']
+                      and ('attachedTo' not in box or anchors[r['tick']] == box['attachedTo'])]
+            touched = [dict(tick=ev['tick'],type=ev['type'],element=ev['after']['rope'][0]['id']
+                            if ev['type'] == 'acquisition' else ev['contact']['elementId'])
+                       for ev in events if (ev['type'] == 'acquisition' and ev['after']['rope'][0]['id'] in e['elements'])
+                       or (ev['type'] == 'bounce' and ev['contact']['elementId'] in e['elements'])]
+            result.append(dict(id=e['id'],section=e['section'],exit=box,first_exit_tick=inside[0] if inside else None,
+                exit_ticks=len(inside),first_interaction=touched[0] if touched else None,interactions=len(touched)))
+        for r in result:
+            self.assertIsNotNone(r['first_exit_tick'], r['id'])
+            self.assertIsNotNone(r['first_interaction'], r['id'])
+        firsts = [r['first_exit_tick'] for r in result]
+        self.assertEqual(firsts, sorted(firsts))
+        return result
+
+    def handoffs(self, trace, marks):
+        rows = trace['snapshots']; out = []
+        for mark in marks:
+            p = rows[mark['end']]['state']['simulation']['player']
+            out.append(dict(segment=mark['label'],start_tick=mark['start'],tick=mark['end'],player=p,
+                start_player=rows[mark['start']]['state']['simulation']['player'],
+                camera=rows[mark['end']]['state']['camera']))
+        for h in out:
+            if h['segment'] in self.RESTS:
+                x, y = self.RESTS[h['segment']]
+                self.assertAlmostEqual(h['player']['x'], x, delta=1e-5, msg=h['segment'])
+                self.assertAlmostEqual(h['player']['y'], y, delta=1e-5, msg=h['segment'])
+                self.assertEqual((h['player']['speedX'], h['player']['speedY']), (0, 0), h['segment'])
+        # The Liftworks transfer hands over a moving player: S07-01 begins with carried velocity.
+        s07 = next(h for h in out if h['segment'] == 'S07-01')['start_player']
+        self.assertGreater(abs(s07['speedX']), .01)
+        return out
+
+    def phases(self, trace, marks):
+        rows = trace['snapshots']; movers = {m['id']:m for m in self.level['movers']}
+        period = {k: round(m['periodMs']*60/1000) for k, m in movers.items()}
+        starts = []
+        for mark in marks:
+            for mover in self.PHASED.get(mark['label'], []):
+                # Mover time is the simulation clock since the fixture load (no reset at segment starts).
+                starts.append(dict(segment=mark['label'],mover=mover,tick=mark['start'],
+                    phase=(mark['start'] % period[mover])/period[mover]))
+                self.assertEqual(mark['start'] % period[mover], 0, mark['label'])
+        by_element = {m['element']:k for k, m in movers.items()}
+        grabs = []
+        for e in trace['events']:
+            if e['type'] == 'acquisition' and e['after']['rope'][0]['id'] in by_element:
+                el = next(x for x in rows[e['tick']]['state']['simulation']['elements'] if x['id'] == e['after']['rope'][0]['id'])
+                mover = by_element[el['id']]
+                grabs.append(dict(tick=e['tick'],element=el['id'],mover=mover,x=el['x'],y=el['y'],
+                    phase=(e['tick'] % period[mover])/period[mover]))
+        self.assertEqual(sorted({g['element'] for g in grabs}),
+                         ['S06-counterweight','S06-upper-weight','S08-overhang-carriage'])
+        travel = {}
+        for el in self.MOVING:
+            vals = [next(x for x in r['state']['simulation']['elements'] if x['id'] == el) for r in rows[::4]]
+            key = 'x' if el == 'S07-sweeper' else 'y'
+            travel[el] = [min(v[key] for v in vals), max(v[key] for v in vals)]
+            self.assertGreater(travel[el][1]-travel[el][0], 100, el)
+        return dict(periods_ticks=period, segment_start_phases=starts, moving_target_acquisitions=grabs,
+                    mover_travel=travel)
+
+    def finish(self, trace, marks):
+        rows = trace['snapshots']; done = [r['state']['simulation']['stats']['completed'] for r in rows]
+        self.assertFalse(done[0])
+        flips = [t for t in range(1, len(done)) if done[t] and not done[t-1]]
+        self.assertEqual(len(flips), 1)
+        tick = flips[0]
+        self.assertTrue(all(done[tick:]))
+        s084 = next(k for k in marks if k['label'] == 'S08-04')
+        self.assertGreaterEqual(tick, s084['start'])
+        p = rows[tick]['state']['simulation']['player']; f = self.mountain['finish']
+        self.assertTrue(f['left'] <= p['x'] <= f['right'] and f['top'] <= p['y'] <= f['bottom'], p)
+        # The ending freezes play: the player never moves after the finish event.
+        frozen = all(r['state']['simulation']['player'] == p for r in rows[tick:])
+        self.assertTrue(frozen)
+        return dict(completion_tick=tick, completed_transitions=len(flips), player=p, finish_region=f,
+                    frozen_after=frozen, ticks_after=len(rows)-1-tick)
+
+    def test_01_continuous_upper(self):
+        from grapple_over_verify import execute, check_trace, validate
+        m, marks = self.manifest()
+        validate(m)
+        self.assertNotIn('initial_snapshot', m)
+        self.evidence.write('inputs.json', dict(m, segments=marks,
+            scope='One labeled section-4-exit fixture placement (TASK-489 final rest), then trusted mouse '
+                  'events only; not a full-game completion claim'))
+        self.browser.calls.clear()
+        trace = execute(m, self.browser, self.url, str(self.evidence.path('runs/upper')), clip=True)
+        lifecycle = list(self.browser.calls)
+        check_trace(m, trace)
+        self.evidence.path('runs/upper/trace.json').unlink()
+        shutil.move(str(self.evidence.path('runs/upper/clip.webm')), str(self.evidence.path('upper.webm')))
+        self.browser.calls.clear()
+        replay = execute(m, self.browser, self.url, str(self.evidence.path('runs/upper-replay')), filmstrip=True)
+        replay_lifecycle = list(self.browser.calls)
+        check_trace(m, replay)
+        self.assertEqual(trace, replay)
+        frames = sorted(self.evidence.path('runs/upper-replay').glob('frame-*.png'))
+        continuity = self.continuity(m, trace)
+        accounting = self.accounting(trace)
+        handoffs = self.handoffs(trace, marks)
+        phases = self.phases(trace, marks)
+        finish = self.finish(trace, marks)
+        completed = [c for c in lifecycle if c['name'] == 'level_completed']
+        self.assertEqual(len(completed), 1)
+        self.assertEqual([c['name'] for c in replay_lifecycle if c['name'] == 'level_completed'], ['level_completed'])
+        self.assertEqual((completed[0]['x'], completed[0]['y']), (finish['player']['x'], finish['player']['y']))
+        # Review stills: the filmstrip frame nearest each upper landmark, plus the finish.
+        rows = trace['snapshots']; ticks = [int(f.stem.split('-')[1]) for f in frames]; stills = []
+        for section in self.mountain['sections']:
+            lm = section['landmark']
+            t = min(ticks, key=lambda t: (rows[t]['state']['simulation']['player']['x']-lm['x'])**2
+                    + (rows[t]['state']['simulation']['player']['y']-lm['y'])**2)
+            stills.append(dict(section=section['id'],landmark=lm,tick=t,file='review/%s-tick-%04d.png' % (section['id'], t)))
+        t = min(t for t in ticks if t > finish['completion_tick'])
+        stills.append(dict(section='S08',landmark='finish',tick=t,file='review/finish-tick-%04d.png' % t))
+        for s in stills:
+            shutil.copy(self.evidence.path('runs/upper-replay/frame-%04d.png' % s['tick']), self.evidence.path(s['file']))
+        shutil.rmtree(self.evidence.path('runs'))
+        bounces = [e['contact']['elementId'] for e in trace['events'] if e['type'] == 'bounce']
+        self.assertIn('S08-deflector-ramp', bounces)
+        hazards = [e['tick'] for e in trace['events'] if e['type'] == 'knockback']
+        result = dict(name='section-4-exit fixture to summit finish', passed=True, matching_replay=True,
+            full_game_completion=False, recorded_sha256=state_hash(trace), replayed_sha256=state_hash(replay),
+            final=rows[-1]['state']['simulation']['player'], finish=finish,
+            lifecycle=dict(recorded=lifecycle, replayed=replay_lifecycle, level_completed_calls=len(completed)),
+            continuity=continuity, encounters=accounting, handoffs=handoffs, mover_phases=phases,
+            bounces=bounces, knockback_ticks=hazards, stills=stills, proof=self.proof, video='upper.webm',
+            inputs='inputs.json', trace=trace)
+        # Compact JSON: the embedded trace is the only retained copy of the recording.
+        self.evidence.path('trace.json').write_text(json.dumps(result, separators=(',', ':')) + '\n')
+        print('PASS continuous upper: 1 labeled S04-exit fixture, %d trusted inputs, %d ticks, 16/16 upper encounter '
+              'exits in order, %d moving-target acquisitions on phase, finish at tick %d (%.1f,%.1f) with exactly one '
+              'level_completed; replay identical' % (continuity['trusted_inputs'], m['ticks'],
+              len(phases['moving_target_acquisitions']), finish['completion_tick'], finish['player']['x'],
+              finish['player']['y']), flush=True)
+
+    def test_02_source_hashes(self):
+        for path, digest in self.proof['source_hashes'].items():
+            self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, path)
+        print('PASS source hashes: runtime, level and harness match the tested worktree', flush=True)
+
 
 if __name__ == '__main__':
     unittest.main()
