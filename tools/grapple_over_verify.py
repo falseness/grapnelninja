@@ -224,7 +224,7 @@ def audit_suite(manifest, browser, url, out):
     evidence, _ = output_writer(out)
     require(manifest['source_hashes'] == hashes(), 'suite source hash mismatch')
     section = manifest.get('section', 'S01')
-    require(section in ('S01', 'S02'), 'unsupported section')
+    require(section in ('S01', 'S02', 'S03'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
     count = 0
     for encounter, attempts in manifest['encounters'].items():

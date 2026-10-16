@@ -961,3 +961,136 @@ class Task472Tests(unittest.TestCase):
         self.evidence.write('encounters/routes.json',dict(passed=True,landing_ticks=landings,
             shortcut_faster=True,mouse_and_touch=True,encounters=['S03-03','S03-04']))
         print('PASS S03-03/04: airborne acquisition; opposing brake; traversed section exit; normal + faster shortcut + touch; matching trusted-input replays')
+
+
+class Task473Tests(unittest.TestCase):
+    """S03 tolerance from labeled isolated entrance; no completion claim."""
+    task_id = 'TASK-473'
+    setUpClass = classmethod(Task467Tests.setUpClass.__func__)
+    test_03_source_hashes = Task467Tests.test_02_source_hashes
+
+    @staticmethod
+    def route(touch=False):
+        return [(4740,-3480,65,165),(5250,-3670,70,12),
+                (4910,-3990,110,5),(5270,-4310,135,1),
+                (5190,-4630,90,33 if touch else 30),
+                (5270,-4880,60,360 if touch else 300)]
+
+    def make_input(self, device, limit, critical, delta, offset, bounds, departure_free=None):
+        from grapple_over_verify import metadata
+        m=dict(metadata=metadata('isolated'),initial_setup=dict(level=self.level,
+            player=dict(x=4430,y=-3190.8,speedX=0,speedY=0)),inputs=[],
+            expected_exit=bounds,required_events=['acquisition','release'])
+        m['metadata']['compact_contacts']=True
+        touch=device=='touch'
+        if touch: m['metadata']['viewport']=dict(width=844,height=390)
+        tick=30
+        for i,(x,y,hold,free) in enumerate(self.route(touch)[:limit]):
+            if i==0 and departure_free is not None: free=departure_free
+            if i==critical:
+                # Departure underside has tangent (190,20); rectangular beams are horizontal.
+                tx,ty=(190/(190**2+20**2)**.5,20/(190**2+20**2)**.5) if i==0 else (1,0)
+                x+=offset*tx;y+=offset*ty
+                if i==2: tick+=delta  # airborne acquisition timing
+                else: hold+=delta  # departure/final braking release timing
+            m['inputs'].append(dict(tick=tick,event='touchstart' if touch else 'mousedown',world=dict(x=x,y=y)))
+            tick+=hold
+            m['inputs'].append(dict(tick=tick,event='touchend' if touch else 'mouseup',world=dict(x=x,y=y)))
+            tick+=free
+        m['ticks']=tick+1
+        return m
+
+    def run_attempt(self,m,prefix,filmstrip=False):
+        from grapple_over_verify import execute, check_trace
+        trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=filmstrip)
+        m['trace']=trace;self.evidence.write(prefix+'/input.json',m)
+        success=True;reason='expected exit and mechanic events satisfied'
+        try: check_trace(m,trace)
+        except ValueError as error: success=False;reason=str(error)
+        return trace,success,reason
+
+    def test_01_tolerance_matrix(self):
+        from grapple_over_verify import hashes
+        page=self.browser.new_page(viewport=VIEWPORT);page.goto(self.url);wait_for_boot(page)
+        self.level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)');page.close()
+        suite=dict(section='S03',source_hashes=hashes(),level_sha256=hashes()['mountain.js'],
+            proof_kind='isolated S02 exit placement; production physics and trusted inputs thereafter',
+            encounters={},negative_control='negative-control.json',recovery='clips/recovery/input.json',
+            shortcuts='clips/shortcut/input.json')
+        failures=[]
+        for encounter,limit,critical,bounds,free in [
+            ('S03-01',1,0,dict(x=[4750,4840],y=[-3480,-3390],speedX=[.6,1.2]),0),
+            ('S03-02',1,0,dict(x=[5190.8,5530],y=[-3291,-3290],speedY=[-.001,.001]),None),
+            ('S03-03',3,2,dict(x=[4720,4940],y=[-4240,-4020],speedX=[.3,1.2]),None),
+            ('S03-04',6,5,dict(x=[5050,5230],y=[-4831,-4830],speedY=[-.001,.001]),None)]:
+            attempts=[];suite['encounters'][encounter]=attempts
+            for device in ('desktop','touch'):
+                for variant,delta,offset in [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]:
+                    name=f'{encounter}-{device}-{variant}'
+                    prefix=('clips/' if variant=='nominal' else 'attempts/')+name
+                    m=self.make_input(device,limit,critical,delta,offset,bounds,free)
+                    trace,success,reason=self.run_attempt(m,prefix,variant=='nominal')
+                    players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+                    acquired=[e for e in trace['events'] if e['type']=='acquisition']
+                    mechanics=dict(acquisitions=[dict(tick=e['tick'],target=e['after']['rope'][0]['id']) for e in acquired],
+                        release_ticks=[e['tick'] for e in trace['events'] if e['type']=='release'])
+                    if success:
+                        if encounter=='S03-03':
+                            e=next(e for e in acquired if e['after']['rope'][0]['id']=='S03-return-beam')
+                            mechanics['airborne_acquisition']=abs(players[e['tick']]['speedY'])>.01
+                            self.assertTrue(mechanics['airborne_acquisition'])
+                        if encounter=='S03-04':
+                            mechanics['opposing_brake']=players[m['inputs'][-2]['tick']]['speedX']>.5 and players[m['inputs'][-1]['tick']]['speedX']<0
+                            self.assertTrue(mechanics['opposing_brake'])
+                        if encounter=='S03-02':
+                            release=m['inputs'][1]['tick']
+                            mechanics['free_flight']=players[release+20]['x']>players[release]['x']+100 and not trace['snapshots'][release+20]['state']['simulation']['grapple']['grappled']
+                            self.assertTrue(mechanics['free_flight'])
+                    attempts.append(dict(name=name,device=device,variant=variant,critical_input_index=critical,
+                        timing_delta=delta,tangent_aim_delta=offset,input=prefix+'/input.json',trace=prefix+'/trace.json',
+                        success=success,reason=reason,mechanic_events=mechanics,final=players[-1]))
+                    self.evidence.write('manifest.json',suite)
+                    print('ATTEMPT',name,'PASS' if success else 'FAIL',reason,flush=True)
+                group=[a for a in attempts if a['device']==device]
+                if not group[0]['success'] or sum(a['success'] for a in group[1:])<2: failures.append(encounter+' '+device)
+        m=self.make_input('desktop',1,0,0,0,dict(x=[5190.8,5530],y=[-3291,-3290]))
+        m['inputs']=m['inputs'][:1]  # Hold departure anchor throughout the same trial duration.
+        trace,success,reason=self.run_attempt(m,'clips/negative',True)
+        self.assertFalse(success);self.assertIn('expected exit mismatch',reason)
+        self.evidence.write('negative-control.json',dict(name='release timing: hold departure anchor',
+            input='clips/negative/input.json',trace='clips/negative/trace.json',failed_intended_exit=True,
+            unchanged_physics=True,source_hashes=hashes(),reason=reason,
+            final=trace['snapshots'][-1]['state']['simulation']['player'],
+            scope='Only this held-anchor omission fails the intended far landing; alternatives are not ruled out.'))
+        self.assertEqual(failures,[])
+        print('PASS four encounters: both viewports nominal + >=2/4 variants; release/free-flight/airborne acquisition/braking; held departure fails far landing')
+
+    def test_02_recovery_and_shortcut(self):
+        from grapple_over_verify import execute
+        page=self.browser.new_page(viewport=VIEWPORT);page.goto(self.url);wait_for_boot(page)
+        self.level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)');page.close()
+        for name in ('recovery','shortcut'):
+            if name=='recovery':
+                m=self.make_input('desktop',1,0,-40,0,dict(x=[4300,4500],y=[-3191,-3190]))
+                m['inputs'] += [dict(tick=130,event='mousedown',world=dict(x=4500,y=-3180)),
+                                dict(tick=165,event='mouseup',world=dict(x=4500,y=-3180))]
+                m['ticks']=255
+            else:
+                m=self.make_input('desktop',6,0,-10,0,dict(x=[5050,5230],y=[-4831,-4830]))
+            trace,success,reason=self.run_attempt(m,'clips/'+name,True)
+            self.assertTrue(success,reason)
+            replay=execute(m,self.browser,self.url,str(self.evidence.path('clips/'+name+'/replay')))
+            self.assertEqual(trace,replay)
+            players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+            result=dict(passed=True,matching_traces=True)
+            if name=='recovery':
+                result['physical_catch']=any(4640<p['x']<4930 and abs(p['y']+3255.8)<.01 and p['speedY']==0 for p in players)
+                self.assertTrue(result['physical_catch']);result['physical_rejoin_S02']=True
+            else:
+                nominal=json.loads(self.evidence.path('clips/S03-04-desktop-nominal/trace.json').read_text())
+                def landing(rows):
+                    return next(r['tick'] for r in rows if 5050<r['state']['simulation']['player']['x']<5230 and abs(r['state']['simulation']['player']['y']+4830.8)<.01)
+                result.update(landing_tick=landing(trace['snapshots']),normal_landing_tick=landing(nominal['snapshots']))
+                self.assertLess(result['landing_tick'],result['normal_landing_tick']);result['shortcut_faster']=True
+            self.evidence.write('clips/'+name+'/result.json',result)
+            print('PASS',name,json.dumps(result),flush=True)
