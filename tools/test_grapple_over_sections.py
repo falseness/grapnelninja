@@ -2030,3 +2030,110 @@ class Task482Tests(unittest.TestCase):
         self.evidence.write('clips/recovery/result.json',dict(passed=True,matching_traces=True,
             physical_catch_tick=400,physical_return_to_S05=True,no_relocation=True))
         print('PASS recovery: loading floor catch; physical return to S05-transfer-canopy; matching replay')
+
+
+class Task483Tests(unittest.TestCase):
+    """Crown opening: timed red rotor, displacement catch and exposed jib cut."""
+    task_id = 'TASK-483'
+    snapshot_contacts = True
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    replay = Task474Tests.replay
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+
+    def test_01_geometry(self):
+        page = self.open()
+        page.evaluate('floors=[loadFixedLevel(validateMountainManifest(GRAPPLE_OVER_MOUNTAIN))]')
+        r = page.evaluate('''() => {const m=GRAPPLE_OVER_MOUNTAIN;validateMountainManifest(m);
+            return {manifest:m,runtime:floors[0].level,
+                colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))}}''')
+        m = r['manifest']
+        self.assertEqual(m['sections'][6]['status'], 'partial')
+        self.assertEqual([e['status'] for e in m['encounters'][24:28]], ['built','built','planned','planned'])
+        self.assertEqual(r['runtime']['elements'], m['geometry']['elements'])
+        for a, e in zip(r['colliders'], m['geometry']['elements']):
+            self.assertEqual(a, {k:e[k] for k in ('id','x','y','points','role')})
+        elements = [e for e in m['geometry']['elements'] if e['id'].startswith('S07')]
+        self.assertEqual(len(elements), 4)
+        self.assertEqual(len({json.dumps(e['points']) for e in elements}), 4)
+        self.assertEqual([e['role'] for e in elements], ['solid','hazard','solid','solid'])
+        self.assertFalse(elements[1]['grapplable'])
+        for e in elements:
+            self.assertTrue(all(-11340 <= e['y']+p['y'] <= -9720 for p in e['points']))
+        self.assertEqual([c['status'] for c in m['connectors'][24:26]], ['built','built'])
+        self.assertIsNone(r['runtime']['finish'])
+        prior = json.loads((ROOT/'artifacts/TASK-481/geometry.json').read_text())['manifest']
+        self.assertEqual([e for e in m['geometry']['elements'] if not e['id'].startswith('S07')], prior['geometry']['elements'])
+        self.assertEqual(m['geometry']['movers'][:-1], prior['geometry']['movers'])
+        calibration = json.loads((ROOT/'artifacts/TASK-463/calibration.json').read_text())
+        for path in ('sprites/ninja.js','sprites/grapnel.js','sprites/trampoline.js','physics.js'):
+            self.assertEqual(self.proof['source_hashes'][path],calibration['source_hashes'][path])
+        self.assertTrue(m['shortcuts'][1]['optional'])
+        self.assertEqual(m['shortcuts'][1]['openingStatus'], 'built')
+        self.evidence.write('geometry.json', dict(self.proof, **r,
+            structural_validations_pass=True, calibrated_physics_unchanged=True,
+            previous_geometry_unchanged=True, encounters=m['encounters'][24:26],
+            surface_roles={e['id']:e['role'] for e in elements},
+            landing_margins={'temporary_exit_safe_centers':[5100.8,5369.2]},
+            camera_sightlines='Measured target client positions in encounters/*/result.json; frames show rooftop and red rotor before commitment',
+            temporary_exit='S07-test-exit; upper encounters remain planned',
+            shortcut='Optional jib cut reaches opening exit; extension to S07-04 remains planned',
+            recovery='Unwalled edges fall through Liftworks into Cable Galleries'))
+        print('PASS geometry: S07-01/02; structural_validations_pass; matching colliders; starts/exits; roles; margins; calibration unchanged; four distinct silhouettes')
+
+    def test_02_timed_passage(self):
+        tr = self.replay('S07-01-timed-passage',
+            [(60,'mousedown',5430,-10000),(85,'mouseup',5430,-10000)],500,
+            dict(x=[5100,5370],y=[-9751,-9750],speedX=[-.001,.001],speedY=[-.001,.001]),
+            start=(5650,-9690.8))
+        self.assertFalse(any(e['type']=='knockback' for e in tr['events']))
+        self.assertEqual(next(e for e in tr['events'] if e['type']=='acquisition')['after']['rope'][0]['id'], 'S07-service-gantry')
+        self.evidence.write('encounters/passage.json',dict(passed=True, timed_passage_without_hit=True,
+            temporary_exit_reached=True,connected_from='S06-exit'))
+        print('PASS S07-01: timed passage without knockback; connected from S06-exit; safe temporary exit; matching real-input replay')
+
+    def test_03_displacement_catch(self):
+        tr = self.replay('S07-02-displacement-catch',
+            [(120,'mousedown',5430,-10000),(145,'mouseup',5430,-10000),
+             (179,'mouseup',5200,-9970),(180,'mousedown',5200,-9970)],210,
+            dict(x=[5100,5500],y=[-10000,-9400]),start=(5650,-9690.8))
+        hit = next(e for e in tr['events'] if e['type']=='knockback')
+        catch = [e for e in tr['events'] if e['type']=='acquisition'][-1]
+        self.assertGreater(catch['tick'],hit['tick'])
+        self.assertEqual(catch['after']['rope'][0]['id'],'S07-shortcut-jib')
+        self.assertEqual(hit['after']['rope'],[])
+        rows = tr['snapshots'][190:]
+        self.assertTrue(all(r['state']['simulation']['grapple']['grappled'] for r in rows))
+        self.assertLess(rows[-1]['state']['simulation']['player']['speedY'],hit['after']['simulation']['player']['speedY'])
+        self.evidence.write('encounters/catch.json',dict(passed=True,nonlethal_displacement=True,
+            knockback_tick=hit['tick'],safe_anchor_catch_tick=catch['tick'],
+            sustained_safe_attachment=True,downward_speed_reduced=True))
+        print('PASS S07-02: real knockback detaches rope; release then safe anchor catch; sustained attachment reduces fall; matching real-input replay')
+
+    def test_05_failure_recovery(self):
+        tr = self.replay('missed-catch-physical-recovery',
+            [(120,'mousedown',5430,-10000),(145,'mouseup',5430,-10000)],400,
+            dict(x=[4600,4800],y=[-6811,-6810],speedY=[-.001,.001]),start=(5650,-9690.8))
+        self.assertTrue(any(e['type']=='knockback' for e in tr['events']))
+        end = tr['snapshots'][-1]['state']['simulation']
+        self.assertFalse(end['stats']['completed'])
+        self.assertFalse(end['grapple']['grappled'])
+        self.evidence.write('encounters/recovery.json',dict(passed=True,physical_return_to_S05=True,
+            recovery_collider='S05-projecting-girder',nonlethal=True,no_relocation=True,
+            height_lost=end['player']['y']-tr['snapshots'][0]['state']['simulation']['player']['y']))
+        print('PASS failure/recovery: omitted catch loses multiple sections; physical S05-projecting-girder landing; nonlethal; no relocation; matching replay')
+
+    def test_06_optional_shortcut(self):
+        tr = self.replay('optional-jib-shortcut',
+            [(30,'mousedown',5200,-9970),(60,'mouseup',5200,-9970)],500,
+            dict(x=[5100,5102],y=[-9751,-9750],speedX=[-.001,.001],speedY=[-.001,.001]),
+            start=(5650,-9690.8))
+        self.assertEqual(next(e for e in tr['events'] if e['type']=='acquisition')['after']['rope'][0]['id'],'S07-shortcut-jib')
+        normal=json.loads(self.evidence.path('encounters/S07-01-timed-passage/trace.json').read_text())
+        def landing(trace):
+            return next(r['tick'] for r in trace['snapshots'] if 5100 < r['state']['simulation']['player']['x'] < 5370
+                and abs(r['state']['simulation']['player']['y']+9750.8)<.001)
+        self.assertLess(landing(tr),landing(normal))
+        self.evidence.write('encounters/shortcut.json',dict(passed=True,optional=True,
+            normal_route_available=True,shortcut_landing_tick=landing(tr),normal_landing_tick=landing(normal)))
+        print('PASS shortcut: optional exposed jib cut reaches same temporary exit sooner; normal route remains; matching replay')

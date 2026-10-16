@@ -430,11 +430,45 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         action:'Transfer from fixed head to travelling weight, then fixed upper head and exposed departure',
         exit:{left:5570.8,right:5729.2,top:-9692,bottom:-9680}});
     Object.assign(connectors[22], {status:'built',intent:'Rising-phase release onto ordinary fixed rest'});
-    Object.assign(connectors[23], {status:'built',intent:'Alternating moving/fixed targets reach S06-exit at the Crown band; S07 remains planned'});
+    Object.assign(connectors[23], {status:'built',intent:'Alternating moving/fixed targets reach S06-exit at the Crown band; connects to the exposed rooftop entrance'});
     Object.assign(recoveries[5], {status:'built',
         elements:['S06-phase-rest','S06-loading-floor','S05-transfer-canopy','S05-recessed-ceiling'],
         openingElements:['S06-loading-floor','S05-exit','S05-recessed-ceiling'],
         openingRejoin:'S05-04',sideRoute:'Open western loading-floor edge returns to the static Galleries ceiling and rests'});
+    // Open rooftop: a swept red rotor, torn service gantry and vent plinth.
+    // All silhouettes are the actual collision polygons; no invisible helper floors.
+    const crown = [
+        {id:'S07-service-gantry',x:5310,y:-10030,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:240,y:0},{x:240,y:25},{x:200,y:45},{x:30,y:45},{x:0,y:25}]},
+        {id:'S07-sweeper',x:5420,y:-9860,role:'hazard',grapplable:false,
+            points:[{x:0,y:0},{x:90,y:0},{x:110,y:20},{x:90,y:40},{x:0,y:40},{x:-20,y:20}]},
+        {id:'S07-test-exit',x:5060,y:-9740,role:'solid',grapplable:true,
+            points:[{x:0,y:-30},{x:30,y:-30},{x:30,y:0},{x:320,y:0},{x:320,y:8},{x:280,y:8},{x:280,y:20},{x:40,y:20},{x:40,y:8},{x:0,y:8}]},
+        {id:'S07-shortcut-jib',x:5130,y:-10040,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:140,y:0},{x:140,y:35},{x:90,y:35},{x:90,y:90},{x:55,y:90},{x:55,y:35},{x:0,y:35}]}
+    ];
+    liftMovers.push({id:'S07-rotor-sweep',element:'S07-sweeper',axis:'x',
+        min:5420,max:5700,periodMs:3000,phase:0,velocity:186.66666666666666});
+    Object.assign(sections[6],{status:'partial',landmark:{id:'S07-landmark',
+        name:'open rooftop machinery',x:5420,y:-9930}});
+    Object.assign(encounters[24],{status:'built',x:5650,y:-9720,
+        elements:['S06-exit','S07-service-gantry','S07-sweeper'],
+        start:{x:5650,y:-9690.8,from:'S06-04'},target:{x:5430,y:-10000},
+        exit:{left:5100.8,right:5369.2,top:-9762,bottom:-9740},
+        action:'Watch the red rotor sweep from the Liftworks ledge; time a pull to the gray service gantry'});
+    Object.assign(encounters[25],{status:'built',x:5270,y:-9740,
+        elements:['S07-service-gantry','S07-test-exit','S07-shortcut-jib'],
+        start:{from:'S07-01'},target:{x:5200,y:-9970},
+        exit:{left:5100,right:5500,top:-10000,bottom:-9400,attachedTo:'S07-shortcut-jib'},
+        temporaryExit:'S07-test-exit',
+        action:'After rotor displacement, release and press again to catch the safe jib and brake the fall; the normal rooftop route has a broad temporary exit'});
+    Object.assign(connectors[24],{status:'built',intent:'S06-exit exposes the rotor and safe gantry before commitment'});
+    Object.assign(connectors[25],{status:'built',intent:'Normal gantry route reaches the temporary vent-plinth exit; displaced players can catch the safe jib'});
+    Object.assign(shortcuts[1],{openingStatus:'built',openingExit:'S07-02',
+        elements:['S07-shortcut-jib','S07-test-exit'],
+        intent:'Optional exposed jib cut to the temporary exit; normal service-gantry route remains. Extension to S07-04 is planned.'});
+    Object.assign(recoveries[6],{openingElements:['S06-exit','S06-phase-rest','S05-projecting-girder'],
+        openingRejoin:'S05-04',sideRoute:'Unwalled rooftop edges permit physical falls through Liftworks into Cable Galleries'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
@@ -442,7 +476,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks], movers:liftMovers},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         completion:'planned; no summit trigger until authored',
