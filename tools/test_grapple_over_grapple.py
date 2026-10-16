@@ -2,6 +2,7 @@
 import hashlib
 import json
 import math
+from pathlib import Path
 import subprocess
 import unittest
 
@@ -34,7 +35,8 @@ class Task451Tests(unittest.TestCase):
         page.add_init_script(SEED_SCRIPT % 1)
         page.goto(self.url)
         wait_for_boot(page)
-        page.evaluate("mode => {startGame(mode);cancelAnimationFrame(game)}", mode)
+        # A run now opens paused; the first press would only resume it.
+        page.evaluate("mode => {startGame(mode);menu.unPause();cancelAnimationFrame(game)}", mode)
         page.wait_for_function('!unTouch')
         page.evaluate('''() => {
             window.pressWorld=(x,y)=>{
@@ -69,7 +71,8 @@ class Task451Tests(unittest.TestCase):
         initial = page.evaluate('prepare', config)
         row = page.evaluate('''c=>{
             const trace=[];
-            for(let i=0;i<1000 && grapnel.throwed && !grapnel.grappled;i++){
+            // A held miss parks at the range edge instead of ending (TASK-534).
+            for(let i=0;i<1000 && grapnel.throwed && !grapnel.grappled && !grapnel.isParked();i++){
                 if(i===1){
                     ninja.x+=c.playerShift||0;
                     for(const t of fixtureTargets) t.x+=c.targetShift||0;
@@ -88,7 +91,10 @@ class Task451Tests(unittest.TestCase):
             const fraction=length?(grapnel.traveled-prior)/length:0;
             const contact=grapnel.grappled ? grapnel.pos[0].slice(0,2) : [last.before[0]+(last.end[0]-last.before[0])*fraction,
                 last.before[1]+(last.end[1]-last.before[1])*fraction];
-            return {attached:grapnel.grappled,active:grapnel.throwed,
+            const tip=grapnel.throwed?grapnel.pos[0].slice(0,2):null;
+            return {attached:grapnel.grappled,active:grapnel.throwed,parked:grapnel.isParked(),
+                clip:grapnel.clip&&[grapnel.clip.x,grapnel.clip.y],
+                tip_distance:tip&&Math.hypot(tip[0]-ninja.x,tip[1]-ninja.y),
                 target:grapnel.grappled?grapnel.pos[0][2].id:null,
                 anchor:grapnel.grappled?grapnel.pos[0].slice(0,2):null,
                 player:[ninja.x,ninja.y],contact,contact_distance:Math.hypot(contact[0]-ninja.x,contact[1]-ninja.y),
@@ -105,8 +111,22 @@ class Task451Tests(unittest.TestCase):
                 self.assertLessEqual(row['contact_distance'], 540+1e-8, name)
                 self.assertEqual(row['target'], config.get('expected_target','target'))
             else:
-                self.assertFalse(row['active'], name)
-                self.assertTrue(row['stale'], name)
+                # Held through a miss: the same shot stays out, parked on the
+                # range circle and not stale, until its press is released.
+                self.assertTrue(row['active'], name)
+                self.assertTrue(row['parked'], name)
+                self.assertFalse(row['stale'], name)
+                self.assertAlmostEqual(row['traveled_distance'], 540, places=8, msg=name)
+                self.assertAlmostEqual(row['tip_distance'], 540, places=8, msg=name)
+                blockers = [t for t in config.get('targets', []) if t.get('grapplable') is False]
+                if blockers:
+                    # A blocker clips the held line where it crosses, never hooks.
+                    self.assertIsNotNone(row['clip'], name)
+                    self.assertAlmostEqual(row['clip'][0]-row['player'][0], blockers[0]['distance'],
+                                           places=6, msg=name)
+                row['released'] = page.evaluate('''()=>{release();
+                    return {active:grapnel.throwed,stale:stalePress,attached:grapnel.grappled}}''')
+                self.assertEqual(row['released'], dict(active=False, stale=False, attached=False), name)
         return row
 
     def test_range_occlusion_motion(self):
@@ -148,7 +168,17 @@ class Task451Tests(unittest.TestCase):
                 page.evaluate('release();pressWorld(ninja.x,ninja.y)')
                 state=page.evaluate('({active:grapnel.throwed,stale:stalePress,contact_distance:0,contact:[ninja.x,ninja.y],finite:Number.isFinite(grapnel.speedX)&&Number.isFinite(grapnel.speedY),traveled_distance:grapnel.traveled})')
             else:
+                # Expired and blocked shots stay parked while held and end on
+                # release (run_case); a fresh press after that starts a new shot.
                 state=self.run_case(page,name,False,**config)
+                self.assertTrue(state['finite'])
+                self.assertEqual(state['released'],dict(active=False,stale=False,attached=False))
+                retry=page.evaluate('''()=>{pressWorld(ninja.x+100,ninja.y);
+                    return {after_release:grapnel.throwed,reset_travel:grapnel.traveled}}''')
+                self.assertTrue(retry['after_release'])
+                self.assertEqual(retry['reset_travel'],0)
+                rows.append(dict(name=name,state=state,retry=retry))
+                continue
             self.assertFalse(state['active'])
             self.assertTrue(state['stale'])
             self.assertTrue(state['finite'])
@@ -167,7 +197,7 @@ class Task451Tests(unittest.TestCase):
         proof=json.loads(path.read_text()) if path.exists() else dict(self.proof)
         proof['input_observations']=rows
         self.evidence.write('range.json',proof)
-        print('PASS zero-distance aim: finite and rejected; expired/blocked/zero shots require release and fresh press')
+        print('PASS zero-distance aim: finite and rejected, needs release and fresh press; expired/blocked shots stay parked while held, end on release, fresh press restarts')
 
     def test_legacy_range(self):
         rows=[]
@@ -216,7 +246,8 @@ class Task452Tests(unittest.TestCase):
         page.add_init_script(SEED_SCRIPT % 1)
         page.goto(self.url)
         wait_for_boot(page)
-        page.evaluate("startGame('grapple_over');cancelAnimationFrame(game)")
+        # A run now opens paused; the first press would only resume it.
+        page.evaluate("startGame('grapple_over');menu.unPause();cancelAnimationFrame(game)")
         page.wait_for_function('!unTouch')
         page.evaluate('''() => {
             for(const f of floors) f.elements=[];
@@ -877,3 +908,243 @@ class Task535Tests(unittest.TestCase):
             traces_equal=True, new=trace, pre_change=old_trace))
         print(f"PASS pull/wrap: {len(trace)} post-attachment ticks equal pre-change; wrap onto corner "
               f"{wrapped[0]['since_press']} physics steps after the press ({len(wrapped)} wrapped ticks)")
+
+
+# Last revision before the held grapnel (TASK-534/535).
+TASK536_PRE_HELD = '15b55b5a08cc9070c675379febc5ae19355cdb51'
+TASK536_FAMILIES = ('launch', 'release', 'braking', 'angled_bounce', 'corner_wrap', 'moving_transfer')
+
+
+def task536_scan(unit):
+    """Presses in one recorded proof that stay held after their shot ended.
+
+    The pre-held runtime ended a shot that missed (range or blocker) and marked
+    the still-held press stale; a held grapnel now stays out and can acquire.
+    """
+    import math
+    import os
+    task, label, files = unit
+    inputs, acquisitions, stale = None, set(), set()
+    has_events = False
+
+    def walk(value, tick):
+        nonlocal inputs, has_events
+        if isinstance(value, dict):
+            if isinstance(value.get('events'), list) and any(
+                    isinstance(e, dict) and 'type' in e for e in value['events']):
+                has_events = True
+            if isinstance(value.get('tick'), int):
+                tick = value['tick']
+            if value.get('type') == 'acquisition' and tick is not None:
+                acquisitions.add(tick)
+            state = value.get('input')
+            if isinstance(state, dict) and state.get('pressHeld') and state.get('stalePress') and tick is not None:
+                stale.add(tick)
+            found = value.get('inputs')
+            if inputs is None and isinstance(found, list) and found and isinstance(found[0], dict) \
+                    and 'tick' in found[0] and 'event' in found[0]:
+                inputs = found
+            for item in value.values():
+                walk(item, tick)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item, tick)
+
+    files = list(files)
+    for name in files:
+        with open(name) as stream:
+            data = json.load(stream)
+        # A summary may name its full trace file instead of embedding it.
+        linked = data.get('trace') if isinstance(data, dict) else None
+        if isinstance(linked, str) and linked.endswith('.json'):
+            path = os.path.join(os.path.dirname(name), linked)
+            if os.path.exists(path) and path not in files:
+                files.append(path)
+        walk(data, None)
+    rows = []
+    if not inputs:
+        return dict(task=task, proof=label, files=files, inputs=0, presses=0, has_events=has_events, held_misses=rows)
+    if not has_events:
+        # Without a recorded event log a missing acquisition proves nothing.
+        return dict(task=task, proof=label, files=files, inputs=len(inputs), presses=None,
+                    has_events=False, held_misses=rows)
+    flight = math.ceil(540 / 216)  # ticks for a full-range throw: 27 units x 8 substeps
+    last = max([i['tick'] for i in inputs] + list(stale) + list(acquisitions) + [0])
+    presses = 0
+    for index, item in enumerate(inputs):
+        if item['event'] not in ('mousedown', 'touchstart'):
+            continue
+        presses += 1
+        up = next((i['tick'] for i in inputs[index + 1:] if i['event'] in ('mouseup', 'touchend', 'touchcancel')), last)
+        acquired = sorted(t for t in acquisitions if item['tick'] <= t <= up)
+        stale_ticks = sorted(t for t in stale if item['tick'] < t <= up)
+        if stale_ticks or (not acquired and up - item['tick'] >= flight):
+            rows.append(dict(input_index=index, event=item['event'], press_tick=item['tick'], release_tick=up,
+                             held_ticks=up - item['tick'], acquired_ticks=acquired,
+                             stale_held_ticks=len(stale_ticks), first_stale_tick=stale_ticks[0] if stale_ticks else None,
+                             world=item.get('world')))
+    return dict(task=task, proof=label, files=files, inputs=len(inputs), presses=presses,
+                has_events=True, held_misses=rows)
+
+
+class Task536Tests(unittest.TestCase):
+    """Calibration families and v1 encounter proofs under the held grapnel."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-536')
+        hashes = source_hashes()
+        for name in ('tools/test_grapple_over_grapple.py', 'tools/test_grapple_over_visuals.py',
+                     'tools/test_grapple_over_tools.py', 'tools/grapple_over_calibration.js'):
+            hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.proof = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            pre_held_revision=TASK536_PRE_HELD, source_hashes=hashes, viewport=VIEWPORT,
+            device_scale_factor=1, seed=1, range=540)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.proof, sort_keys=True))
+
+    def calibrate(self, root, out):
+        """Run the TASK-463 calibration suite against the tree at root."""
+        import os
+        import sys
+        command = [sys.executable, '-m', 'unittest', 'discover', '-s', 'tools',
+                   '-p', 'test_grapple_over_tools.py', '-k', 'Task463Tests', '-v']
+        run = subprocess.run(command, cwd=root, env=dict(os.environ, GRAPPLE_OVER_EVIDENCE_DIR=str(out)),
+                             capture_output=True, text=True)
+        return run, ' '.join(command)
+
+    def test_01_calibration_families(self):
+        import shutil
+        import tempfile
+        current_dir = self.evidence.path('calibration-run/current')
+        run, command = self.calibrate(ROOT, current_dir)
+        self.evidence.path('calibration-run/current.log').write_text(run.stdout + run.stderr)
+        self.evidence.log(f'COMMAND (cwd=worktree) GRAPPLE_OVER_EVIDENCE_DIR={current_dir} {command}\nEXIT {run.returncode}')
+        self.assertEqual(run.returncode, 0, run.stderr[-3000:])
+        self.assertIn('Ran 2 tests', run.stderr)
+        # The same suite on the last tree before the held grapnel attributes any change.
+        with tempfile.TemporaryDirectory(prefix='task536-pre-') as parent:
+            # A detached worktree: the suite hashes `git ls-files` and records HEAD.
+            old = Path(parent) / 'tree'
+            subprocess.run(['git', 'worktree', 'add', '--detach', str(old), TASK536_PRE_HELD],
+                           cwd=ROOT, check=True, capture_output=True)
+            self.addCleanup(subprocess.run, ['git', 'worktree', 'prune'], cwd=ROOT, capture_output=True)
+            baseline = Path(old) / 'artifacts/TASK-444/baseline.json'
+            baseline.parent.mkdir(parents=True)
+            shutil.copy(ROOT / 'artifacts/TASK-444/baseline.json', baseline)
+            pre_out = Path(old) / 'artifacts/TASK-536-pre'
+            pre, _ = self.calibrate(old, pre_out)
+            pre_calibration = self.evidence.path('calibration-run/pre-held/calibration.json')
+            if (pre_out / 'calibration.json').exists():
+                shutil.copy(pre_out / 'calibration.json', pre_calibration)
+        self.evidence.path('calibration-run/pre-held.log').write_text(pre.stdout + pre.stderr)
+        self.evidence.log(f'COMMAND (cwd=git worktree {TASK536_PRE_HELD}) {command}\nEXIT {pre.returncode}')
+        self.assertEqual(pre.returncode, 0, pre.stderr[-3000:])
+        current = json.loads((current_dir / 'calibration.json').read_text())
+        previous = json.loads((ROOT / 'artifacts/TASK-463/calibration.json').read_text())
+        held_before = json.loads(pre_calibration.read_text())
+        self.assertTrue(current['all_six_families_pass'])
+        self.assertEqual(current['constants']['range'], 540)
+
+        def outline(run):
+            return dict(dt=run['dt'], aim=run['aim'], negative=run['negative'], success=run['success'],
+                        exit=run['rows'][100], landing_tick=run.get('landing_contact', {}).get('tick'),
+                        # Grapnel events only: the recorder has since added bounce events.
+                        grapnel_events=[(e['type'], e['tick']) for e in run['events']
+                                        if e['type'] in ('acquisition', 'release', 'wrap')])
+
+        families = {}
+        for family in TASK536_FAMILIES:
+            now, then, pre_runs = (d['families'][family] for d in (current, previous, held_before))
+            self.assertEqual(len(now), 6)
+            envelope, before = current['measured_envelopes'][family], previous['measured_envelopes'][family]
+            variants = []
+            for a, b, c in zip(now, then, pre_runs):
+                x, y, z = outline(a), outline(b), outline(c)
+                if x != y:
+                    variants.append(dict(dt=x['dt'], aim=x['aim'], negative=x['negative'],
+                                         current=x, task463=y, pre_held=z, same_as_pre_held=x == z))
+            unchanged = envelope == before
+            self.assertEqual(unchanged, not variants, family)
+            families[family] = dict(
+                status='unchanged' if unchanged else 'changed',
+                envelopes=dict(current=envelope, task463=before,
+                               pre_held=held_before['measured_envelopes'][family]),
+                landing_ticks=dict(current=envelope['landing_ticks'], task463=before['landing_ticks']),
+                changed_variants=variants,
+                # A difference that is absent from the pre-held tree comes from the held grapnel.
+                caused_by_held_grapnel=any(not v['same_as_pre_held'] for v in variants),
+                successes=sum(r['success'] for r in now), negative_rejected=not now[-1]['success'])
+            print('CALIBRATION', family, families[family]['status'], 'landing_ticks',
+                  envelope['landing_ticks'], 'task463', before['landing_ticks'],
+                  'changed_variants', [(v['dt'], v['aim'], v['negative']) for v in variants])
+        self.evidence.write('calibration.json', dict(
+            self.proof, baseline='artifacts/TASK-463/calibration.json',
+            calibration_source_hashes=current['source_hashes'],
+            task463_source_hashes=previous['source_hashes'],
+            pre_held_source_hashes=held_before['source_hashes'],
+            families=families, all_six_families_pass=current['all_six_families_pass']))
+        print('PASS calibration: six families rerun; ' + ', '.join(
+            f"{k} {v['status']}" for k, v in families.items()))
+
+    def test_02_v1_encounter_proofs(self):
+        from concurrent.futures import ProcessPoolExecutor
+        artifacts = ROOT / 'artifacts'
+        units = []
+        for number in range(465, 491):
+            task = artifacts / f'TASK-{number}'
+            # A recorded attempt directory keeps its inputs and its trace apart;
+            # its replay/ and result files repeat the same run.
+            runs = sorted({p.parent for d in ('encounters', 'attempts') for p in (task / d).rglob('input.json')})
+            for run in runs:
+                files = [str(run / n) for n in ('input.json', 'trace.json') if (run / n).exists()]
+                units.append((task.name, str(run.relative_to(ROOT)) + '/', files))
+            for name in sorted((task / 'encounters').rglob('*.json')):
+                if not any(name.is_relative_to(run) for run in runs):
+                    units.append((task.name, str(name.relative_to(ROOT)), [str(name)]))
+            for proof, extra in (('trace.json', 'inputs.json'), ('recovery.json', 'recovery-inputs.json')):
+                if (task / proof).exists():
+                    files = [str(task / proof)] + ([str(task / extra)] if (task / extra).exists() else [])
+                    units.append((task.name, str((task / proof).relative_to(ROOT)), files))
+        with ProcessPoolExecutor(8) as pool:
+            scanned = list(pool.map(task536_scan, units))
+        with_inputs = [s for s in scanned if s['inputs'] and s['has_events']]
+        no_log = [s['proof'] for s in scanned if s['inputs'] and not s['has_events']]
+        affected = [s for s in scanned if s['held_misses']]
+        tasks = sorted({s['task'] for s in scanned})
+        self.assertEqual(len(tasks), 26, tasks)
+        self.assertGreater(len(with_inputs), 100)
+        self.assertEqual(no_log, [])
+        self.evidence.write('held-misses.json', dict(
+            self.proof, criterion='press with no acquisition while held for >= 3 ticks (full-range flight), '
+            'or a recorded snapshot with pressHeld && stalePress during the press',
+            proofs_scanned=len(scanned), proofs_with_inputs=len(with_inputs), affected=affected,
+            unaffected=[s['proof'] for s in with_inputs if not s['held_misses']],
+            inputs_without_event_log=no_log,
+            no_inputs=[s['proof'] for s in scanned if not s['inputs']]))
+        lines = ['# TASK-536: v1 encounter proofs that hold through a miss', '',
+                 f'Revision {self.proof["revision"]}. Scanned {len(scanned)} recorded proofs from '
+                 f'TASK-465..TASK-490 ({len(with_inputs)} with input lists): every recorded run directory '
+                 '(`input.json` + `trace.json` under `encounters/` or `attempts/`), every other `encounters/**/*.json`, '
+                 'and the TASK-489/490 `trace.json`/`recovery.json` runs.', '',
+                 'A press counts as held through a miss when it stays held for at least 3 ticks (a full 540-unit '
+                 'flight) without an acquisition, or when a recorded snapshot shows `pressHeld && stalePress` during it. '
+                 'The pre-held runtime ended such a shot. The held grapnel now keeps it parked and able to acquire '
+                 '(TASK-534/535), so these recorded inputs depend on the old behaviour. This is a report and handoff '
+                 'to the layout-v2 rebuild and legacy re-spec tickets; those proofs are not re-run here.', '',
+                 f'Affected proofs: {len(affected)} across {len({s["task"] for s in affected})} tasks. '
+                 f'Proofs with inputs but no event log (not judged): {no_log or "none"}.', '',
+                 '| Task | Proof | Input index | Event | Press tick | Release tick | Held ticks | Acquired while held | Stale held snapshots |',
+                 '|---|---|---|---|---|---|---|---|---|']
+        for s in affected:
+            for r in s['held_misses']:
+                lines.append(f"| {s['task']} | `{s['proof']}` | {r['input_index']} | {r['event']} | {r['press_tick']} | "
+                             f"{r['release_tick']} | {r['held_ticks']} | {r['acquired_ticks'] or 'none'} | {r['stale_held_ticks']} |")
+        lines += ['', '## Per task', '']
+        for task in tasks:
+            mine = [s for s in scanned if s['task'] == task]
+            hit = [s for s in mine if s['held_misses']]
+            lines.append(f"- {task}: {len(hit)} of {len([s for s in mine if s['inputs']])} proofs with inputs affected")
+        self.evidence.path('changed-behaviour.md').write_text('\n'.join(lines) + '\n')
+        print(f'PASS encounter audit: {len(scanned)} proofs scanned, {len(with_inputs)} with inputs, '
+              f'{len(affected)} hold through a miss across {len({s["task"] for s in affected})} tasks')
