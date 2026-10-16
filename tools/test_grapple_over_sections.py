@@ -1116,6 +1116,8 @@ class Task474Tests(unittest.TestCase):
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
             ticks=ticks,expected_exit=bounds,required_events=['acquisition','release'])
         m['metadata']['compact_contacts']=True
+        if getattr(self, 'snapshot_contacts', False):
+            m['metadata']['snapshot_contacts']=True
         prefix='encounters/'+name
         self.evidence.write(prefix+'/input.json',m)
         trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=True)
@@ -1220,6 +1222,8 @@ class Task475Tests(unittest.TestCase):
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
             ticks=ticks,expected_exit=bounds,required_events=['acquisition','release'])
         m['metadata']['compact_contacts']=True
+        if getattr(self, 'snapshot_contacts', False):
+            m['metadata']['snapshot_contacts']=True
         prefix='encounters/'+name
         self.evidence.write(prefix+'/input.json',m)
         trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=name in ('S04-04','section-exit'))
@@ -1738,3 +1742,88 @@ class Task479Tests(unittest.TestCase):
         self.evidence.write('clips/recovery/result.json',dict(passed=True,matching_traces=True,
             physical_catch_tick=500,physical_rejoin_S04=True,no_relocation=True))
         print('PASS recovery: shaft fall onto S04-upper-step; physical rejoin S04-exit; matching replay')
+
+
+class Task480Tests(unittest.TestCase):
+    """Liftworks acquisition and sustained moving attachment, with physical recovery."""
+    task_id = 'TASK-480'
+    snapshot_contacts = True
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    replay = Task474Tests.replay
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+
+    def test_01_geometry(self):
+        page = self.open()
+        page.evaluate('floors=[loadFixedLevel(validateMountainManifest(GRAPPLE_OVER_MOUNTAIN))]')
+        r = page.evaluate('''() => {const m=GRAPPLE_OVER_MOUNTAIN;validateMountainManifest(m);
+            return {manifest:m,runtime:floors[0].level,
+                colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))}}''')
+        m = r['manifest']
+        self.assertEqual(m['sections'][5]['status'], 'partial')
+        self.assertEqual([e['status'] for e in m['encounters'][20:24]], ['built','built','planned','planned'])
+        self.assertEqual(r['runtime']['elements'], m['geometry']['elements'])
+        for a, e in zip(r['colliders'], m['geometry']['elements']):
+            self.assertEqual(a, {k:e[k] for k in ('id','x','y','points','role')})
+        elements = [e for e in m['geometry']['elements'] if e['id'].startswith('S06')]
+        self.assertEqual(len(elements), 3)
+        self.assertEqual(len({json.dumps(e['points']) for e in elements}), 3)
+        for e in elements:
+            self.assertEqual(e['role'], 'solid')
+            self.assertTrue(e['grapplable'])
+            self.assertTrue(all(-9720 <= e['y']+p['y'] <= -8100 for p in e['points']))
+        self.assertEqual([c['status'] for c in m['connectors'][20:22]], ['built','built'])
+        self.assertIsNone(r['runtime']['finish'])
+        prior = json.loads((ROOT/'artifacts/TASK-478/geometry.json').read_text())['manifest']
+        self.assertEqual([e for e in m['geometry']['elements'] if not e['id'].startswith('S06')], prior['geometry']['elements'])
+        calibration = json.loads((ROOT/'artifacts/TASK-463/calibration.json').read_text())
+        for path in ('sprites/ninja.js','sprites/grapnel.js','sprites/trampoline.js','physics.js'):
+            self.assertEqual(self.proof['source_hashes'][path],calibration['source_hashes'][path])
+        self.evidence.write('geometry.json', dict(self.proof, **r,
+            structural_validations_pass=True, calibrated_physics_unchanged=True,
+            previous_geometry_unchanged=True, encounters=m['encounters'][20:22],
+            surface_roles={e['id']:e['role'] for e in elements},
+            landing_margins={'loading_floor_safe_centers':[5790.8,6169.2],
+                             'temporary_exit_safe_centers':[5830.8,5989.2]},
+            camera_sightlines='Measured target client positions in encounters/*/result.json and filmstrip',
+            temporary_exit='S06-test-exit; upper encounters remain planned',
+            recovery='Broad loading floor; western edge falls to static S05-recessed-ceiling'))
+        print('PASS geometry: S06-01/02; structural_validations_pass; matching colliders; starts/exits; roles; margins; calibration unchanged')
+
+    def test_02_connected_acquisition_reversal_exit(self):
+        trace = self.replay('S06-01-02-connected',
+            [(30,'mousedown',6110,-8370),(210,'mouseup',6110,-8370)],500,
+            dict(x=[5830,5832],y=[-8281,-8280],speedX=[-.001,.001],speedY=[-.001,.001]),
+            start=(6300,-8080.8))
+        acquired = next(e for e in trace['events'] if e['type']=='acquisition')
+        self.assertEqual(acquired['after']['rope'][0]['id'], 'S06-counterweight')
+        rows = trace['snapshots'][40:210]
+        self.assertTrue(all(r['state']['simulation']['grapple']['grappled'] for r in rows))
+        self.assertTrue(all(r['state']['rope'][0]['id']=='S06-counterweight' for r in rows))
+        ys = [r['state']['rope'][0]['y'] for r in rows]
+        self.assertGreater(max(ys)-min(ys), 100)
+        self.assertGreater(ys[60]-ys[0], 0)
+        self.assertLess(ys[-1]-ys[90], 0)
+        self.evidence.write('encounters/mechanics.json',dict(passed=True,
+            S06_01_moving_blue_acquired=True,S06_02_attached_through_reversal=True,
+            anchor_vertical_travel=max(ys)-min(ys),acquisition_tick=acquired['tick'],
+            connected_from='S05-exit',temporary_exit_reached=True,
+            landing_left_margin=trace['snapshots'][-1]['state']['simulation']['player']['x']-5780-10.8,
+            no_traversal_mutation=True))
+        print('PASS S06-01/02: moving blue acquisition; sustained attachment through reversal; connected from S05; static temporary exit; trusted matching replays')
+
+
+    def test_03_failure_physical_recovery(self):
+        trace = self.replay('missed-exit-floor-and-galleries-recovery',
+            [(30,'mousedown',6110,-8370),(300,'mouseup',6110,-8370)],700,
+            dict(x=[5444,5445],y=[-7411,-7410]),start=(6300,-8080.8))
+        floor = trace['snapshots'][400]['state']['simulation']['player']
+        recovered = trace['snapshots'][-1]['state']['simulation']['player']
+        self.assertAlmostEqual(floor['y']+floor['radius'], -8130, places=5)
+        self.assertAlmostEqual(recovered['y']+recovered['radius'], -7400, places=5)
+        self.assertFalse(trace['snapshots'][-1]['state']['simulation']['grapple']['grappled'])
+        self.evidence.write('encounters/recovery.json',dict(passed=True,
+            missed_temporary_exit=True,broad_floor_catch=True,physical_return_to_S05=True,
+            recovery_collider='S05-transfer-canopy',floor_observation=floor,
+            galleries_observation=recovered,no_relocation=True,no_traversal_mutation=True))
+        print('PASS failure/recovery: missed exit; broad floor catch; physical fall onto static S05-transfer-canopy; no relocation; matching trusted-input replays')

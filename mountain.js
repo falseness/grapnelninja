@@ -378,11 +378,37 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         action:'Traverse the recessed ceiling around its lip; release and climb to the next band',
         exit:{left:6210.8,right:6389.2,top:-8082,bottom:-8070}});
     connectors[18].status='built';
-    Object.assign(connectors[19], {status:'built',intent:'Exposed departure ledge to the next band; S06 remains planned'});
+    Object.assign(connectors[19], {status:'built',intent:'Exposed departure ledge to the next band; S06 counterweight entrance'});
     Object.assign(connectors[16], {status:'built',intent:'Pull from the Works exit around the projecting girder'});
     connectors[17].status='built';
     Object.assign(recoveries[4], {openingElements:['S05-rest','S04-exit','S04-upper-step'],
         openingRejoin:'S04-04',sideRoute:'Visible open shaft west of the girders; reachable Works mast and upper step'});
+    // Liftworks opening: a travelling counterweight over a wide loading floor.
+    // The open western edge drops onto the existing Galleries ceiling/recovery rests.
+    const liftworks = [
+        {...rest('S06-loading-floor',5780,-8130,400), points:[{x:0,y:0},{x:400,y:0},{x:400,y:15},{x:300,y:15},{x:300,y:30},{x:70,y:30},{x:70,y:15},{x:0,y:15}]},
+        {id:'S06-counterweight',x:6060,y:-8480,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:100,y:0},{x:100,y:35},{x:125,y:35},{x:125,y:110},{x:-25,y:110},{x:-25,y:35},{x:0,y:35}]},
+        {...rest('S06-test-exit',5780,-8270,220), points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:50},{x:70,y:50},{x:70,y:110},{x:0,y:110}]}
+    ];
+    const liftMovers = [{id:'S06-counterweight-travel',element:'S06-counterweight',
+        axis:'y',min:-8480,max:-8320,periodMs:4000,phase:0,velocity:80}];
+    Object.assign(sections[5], {status:'partial',landmark:{id:'S06-landmark',
+        name:'moving counterweights',x:6110,y:-8400}});
+    Object.assign(encounters[20], {status:'built',x:6300,y:-8130,
+        elements:['S05-exit','S06-loading-floor','S06-counterweight'],
+        start:{from:'S05-04',x:6300,y:-8080.8},target:{x:6110,y:-8370},
+        action:'Acquire the moving blue counterweight above the broad loading floor',
+        exit:{left:6030,right:6200,top:-8500,bottom:-8300}});
+    Object.assign(encounters[21], {status:'built',x:6110,y:-8400,
+        elements:['S06-counterweight','S06-loading-floor','S06-test-exit'],
+        start:{from:'S06-01',attachedTo:'S06-counterweight'},target:{x:5900,y:-8270},
+        action:'Remain attached through counterweight travel and reversal; release onto the static test exit',
+        exit:{left:5830.8,right:5989.2,top:-8282,bottom:-8270}});
+    Object.assign(connectors[20], {status:'built',intent:'Acquire counterweight from the Galleries departure ledge'});
+    Object.assign(connectors[21], {status:'built',intent:'Keep attachment through reversal before reaching the static test exit'});
+    Object.assign(recoveries[5], {openingElements:['S06-loading-floor','S05-exit','S05-recessed-ceiling'],
+        openingRejoin:'S05-04',sideRoute:'Open western loading-floor edge returns to the static Galleries ceiling and rests'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
@@ -390,7 +416,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries], movers:[]},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         completion:'planned; no summit trigger until authored',
