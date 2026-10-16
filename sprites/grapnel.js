@@ -16,6 +16,8 @@ class Grapnel
         this.shotStep = null
         // Unit aim of the owning press; a held miss parks along it at the range edge.
         this.aim = null
+        // Where a blocking surface cuts the held line this tick, if anywhere.
+        this.clip = null
         
         this.stroke = object.stroke
     }
@@ -29,7 +31,7 @@ class Grapnel
                 const radius = MODE_DEFINITIONS.grapple_over.acquisitionRadius
                 if (this.isParked())
                 {
-                    // Not acquiring here: the parked line only follows the aim.
+                    // acquireShot() tests the whole held line; the tip only follows the aim.
                     tip[0] = ninja.x + this.aim.x * radius
                     tip[1] = ninja.y + this.aim.y * radius
                     this.shotStep = null
@@ -98,6 +100,7 @@ class Grapnel
         this.pos = []
         this.shotStep = null
         this.aim = null
+        this.clip = null
         stalePress = true
     }
     // Inclusive segment intersection: the last clipped endpoint is in range.
@@ -128,46 +131,83 @@ class Grapnel
         t = Math.max(0, Math.min(1, t))
         return {x: start.x + t * rx, y: start.y + t * ry, t}
     }
-    acquireShot()
+    // Hazards and nonattachable surfaces stop the line without hooking it.
+    blocksShot(element)
     {
-        if (!this.throwed || !this.shotStep) return
-        const start = this.shotStep, tip = this.pos[0]
-        const radius = MODE_DEFINITIONS.grapple_over.acquisitionRadius
+        return element.grapplable === false || element.surfaceRole === 'hazard'
+    }
+    // Nearest crossing of start->end with any surface at its current position.
+    nearestCrossing(start, end)
+    {
+        const reach = segmentBounds(start.x, start.y, end[0], end[1], defaultEqualityTolerance)
         let nearest = null
         const groups = screen.leftWall ? [...floors, {elements: [screen.leftWall]}] : floors
         for (const group of groups)
             for (const element of group.elements)
+            {
+                if (!boundsOverlap(reach, elementBounds(element, grapnelElementBounds))) continue
                 for (const line of element.getLines())
                 {
-                    const hit = this.shotIntersection(start, tip, line)
+                    const hit = this.shotIntersection(start, end, line)
                     if (!hit) continue
                     // Stable geometry order breaks equal-distance ties, with
                     // nonattachable surfaces taking precedence at a shared edge.
                     if (!nearest || hit.t < nearest.hit.t ||
-                        (hit.t === nearest.hit.t && element.grapplable === false))
+                        (hit.t === nearest.hit.t && this.blocksShot(element)))
                         nearest = {hit, element}
                 }
+            }
+        return nearest
+    }
+    attachAt(hit, element)
+    {
+        // Keep the actual surface contact; corner snapping could move
+        // an otherwise valid contact outside the acquisition radius.
+        this.pos = [[hit.x, hit.y, element]]
+        this.grappled = true
+        this.clip = null
+    }
+    acquireShot()
+    {
+        if (!this.throwed) return
+        const step = this.shotStep, tip = this.pos[0]
+        const radius = MODE_DEFINITIONS.grapple_over.acquisitionRadius
         this.shotStep = null
-        if (nearest)
+        this.clip = null
+        if (!step && !this.isParked()) return
+        // The whole held line, from the ninja to the tip before this step
+        // (or the parked tip), limited to the acquisition radius.
+        const ninjaPoint = {x: ninja.x, y: ninja.y}
+        const lineEnd = step ? [step.x, step.y] : tip
+        const reach = Math.hypot(lineEnd[0] - ninja.x, lineEnd[1] - ninja.y)
+        const end = reach > radius ? [ninja.x + (lineEnd[0] - ninja.x) * radius / reach,
+                                      ninja.y + (lineEnd[1] - ninja.y) * radius / reach] : lineEnd
+        const held = reach > 0 ? this.nearestCrossing(ninjaPoint, end) : null
+        if (held && !this.blocksShot(held.element))
         {
-            this.traveled -= start.length * (1 - nearest.hit.t)
-            if (nearest.element.grapplable === false ||
-                Math.hypot(nearest.hit.x - ninja.x, nearest.hit.y - ninja.y) > radius + 1e-9)
-                this.endShot()
-            else
+            this.attachAt(held.hit, held.element)
+            return
+        }
+        if (held) this.clip = {x: held.hit.x, y: held.hit.y}
+        if (step && !held)
+        {
+            // The tip's own swept step, beyond the already deployed line.
+            const nearest = this.nearestCrossing(step, tip)
+            if (nearest && this.blocksShot(nearest.element))
+                this.clip = {x: nearest.hit.x, y: nearest.hit.y}
+            else if (nearest && Math.hypot(nearest.hit.x - ninja.x, nearest.hit.y - ninja.y) <= radius + 1e-9)
             {
-                // Keep the actual surface contact; corner snapping could move
-                // an otherwise valid contact outside the acquisition radius.
-                this.pos = [[nearest.hit.x, nearest.hit.y, nearest.element]]
-                this.grappled = true
+                this.traveled -= step.length * (1 - nearest.hit.t)
+                this.attachAt(nearest.hit, nearest.element)
+                return
             }
         }
-        else if (this.traveled >= radius && this.isParked())
+        if (this.traveled >= radius && this.isParked())
         {
-            this.pos[0][0] = ninja.x + this.aim.x * radius
-            this.pos[0][1] = ninja.y + this.aim.y * radius
+            tip[0] = ninja.x + this.aim.x * radius
+            tip[1] = ninja.y + this.aim.y * radius
         }
-        else if (this.traveled >= radius || start.length === 0)
+        else if (this.traveled >= radius || (step && step.length === 0))
             this.endShot()
     }
     collision()
@@ -332,10 +372,16 @@ class Grapnel
         return Math.max(Math.round(screenHeightPercent(STYLE.strokes.grapnelWidthHeightPercent)),
                         STYLE.grapnelVisuals.minScreenWidth / scale[version])
     }
+    // The visible end of the line: a blocking surface clips it.
+    visibleTip()
+    {
+        return this.clip ? [this.clip.x, this.clip.y] : this.pos[0]
+    }
     tracePath()
     {
         ctx.beginPath()
-        ctx.moveTo(this.pos[0][0] + screen.x, this.pos[0][1] + screen.y)
+        const tip = this.visibleTip()
+        ctx.moveTo(tip[0] + screen.x, tip[1] + screen.y)
         for (let i = 1; i < this.pos.length; ++i)
         {
             ctx.lineTo(this.pos[i][0] + screen.x, this.pos[i][1] + screen.y)
@@ -375,8 +421,9 @@ class Grapnel
         const width = this.getWidth()
 
         ctx.save()
-        const hookX = this.pos[0][0] + screen.x
-        const hookY = this.pos[0][1] + screen.y
+        const tip = this.visibleTip()
+        const hookX = tip[0] + screen.x
+        const hookY = tip[1] + screen.y
         ctx.beginPath()
         if (this.grappled)
         {

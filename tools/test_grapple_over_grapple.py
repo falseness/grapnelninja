@@ -403,9 +403,15 @@ class Task534Tests(unittest.TestCase):
                     zero:w.x===ninja.x&&w.y===ninja.y});
             },true);
             window.radius=MODE_DEFINITIONS.grapple_over.acquisitionRadius;
+            // Distance from a point to the nearest edge of an element, this tick.
+            window.edgeDistance=(p,e)=>Math.min(...e.getLines().map(l=>{
+                const dx=l.x2-l.x1,dy=l.y2-l.y1;
+                const t=Math.max(0,Math.min(1,((p[0]-l.x1)*dx+(p[1]-l.y1)*dy)/(dx*dx+dy*dy)));
+                return Math.hypot(p[0]-l.x1-t*dx,p[1]-l.y1-t*dy)}));
             window.tickRow=()=>{
                 physics();
                 const tip=grapnel.throwed?grapnel.pos[0].slice(0,2):null;
+                const hook=grapnel.grappled?grapnel.pos[0]:null;
                 return {tick:floors[0].elapsedSteps,ninja:[ninja.x,ninja.y],throwed:grapnel.throwed,
                     grappled:grapnel.grappled,parked:grapnel.isParked(),traveled:grapnel.traveled,tip,
                     distance:tip?Math.hypot(tip[0]-ninja.x,tip[1]-ninja.y):null,
@@ -542,3 +548,332 @@ class Task534Tests(unittest.TestCase):
         self.evidence.write('baseline.json', dict(self.proof, baseline_path='artifacts/TASK-444/baseline.json',
                                                   modes=modes))
         print('PASS classic/bad: initial state and 12-step seeded traces equal TASK-444 baseline')
+
+
+# Revision before TASK-535: the pre-change reference for ordinary shots and pulls.
+TASK535_PRE_CHANGE = '40a8f2be021a3dd86cca89c7a13ee888b2ed5084'
+
+
+class Task535Tests(unittest.TestCase):
+    """Any part of the held line acquires; blockers clip it; ordinary shots are unchanged."""
+
+    @classmethod
+    def setUpClass(cls):
+        from functools import partial
+        from http.server import ThreadingHTTPServer
+        import io
+        import tarfile
+        import tempfile
+        from threading import Thread
+        from browser_test_support import QuietHandler
+        cls.evidence = EvidenceWriter('TASK-535')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        # A temporary checkout of the pre-change tree, served the same way.
+        old = tempfile.TemporaryDirectory(prefix='task535-pre-')
+        cls.addClassCleanup(old.cleanup)
+        archive = subprocess.run(['git', 'archive', TASK535_PRE_CHANGE], cwd=ROOT,
+                                 check=True, capture_output=True).stdout
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+            tar.extractall(old.name, filter='data')
+        server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=old.name))
+        cls.addClassCleanup(server.server_close)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cls.addClassCleanup(thread.join)
+        cls.addClassCleanup(server.shutdown)
+        cls.old_url = f'http://127.0.0.1:{server.server_port}/'
+        hashes = source_hashes()
+        name = 'tools/test_grapple_over_grapple.py'
+        hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.proof = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            pre_change_revision=TASK535_PRE_CHANGE,
+            source_hashes=hashes, browser=cls.browser.version, viewport=VIEWPORT,
+            device_scale_factor=1, seed=1, input='trusted page.mouse')
+        cls.evidence.log('CONFIG ' + json.dumps(cls.proof, sort_keys=True))
+        cls.sweep = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.sweep:
+            cls.evidence.write('sweep.json', dict(cls.proof, scenarios=cls.sweep))
+
+    def open(self, url):
+        context = self.browser.new_context(viewport=VIEWPORT, device_scale_factor=1)
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(url)
+        wait_for_boot(page)
+        page.evaluate("startGame('grapple_over');menu.unPause();cancelAnimationFrame(game);"
+                      "window.requestAnimationFrame=()=>0;TUTORIAL_HINT.visible=false")
+        page.wait_for_function('!unTouch')
+        page.evaluate('''() => {
+            for(const f of floors) f.elements=[];
+            floors[0].level.movers=[];floors[0].byId=new Map();
+            screen.leftWall=null;
+            window.radius=MODE_DEFINITIONS.grapple_over.acquisitionRadius;
+            window.place=(x,y)=>{ninja.x=x;ninja.y=y;ninja.speedX=ninja.speedY=0;screen.trackGrappleOver(true)};
+            window.rect=(id,x,y,w,h,extra)=>{
+                const e=new Rect({x,y,width:w,height:h});e.id=id;e.surfaceRole='solid';e.dx=e.dy=0;
+                Object.assign(e,extra||{});floors[0].elements.push(e);floors[0].byId.set(id,e);return e;
+            };
+            window.client=(x,y)=>{const p=canvasCoordsToViewportCoords({x:(x+screen.x)*scale[version],
+                y:(y+screen.y)*scale[version]});return [p.x,p.y]};
+            window.clientAt=(a,r)=>client(ninja.x+Math.cos(a)*r,ninja.y+Math.sin(a)*r);
+            window.events=[];
+            for(const type of ['mousedown','mousemove']) document.addEventListener(type,
+                e=>events.push({type,trusted:e.isTrusted}),true);
+            // Distance from a point to the nearest edge of an element, this tick.
+            window.edgeDistance=(p,e)=>Math.min(...e.getLines().map(l=>{
+                const dx=l.x2-l.x1,dy=l.y2-l.y1;
+                const t=Math.max(0,Math.min(1,((p[0]-l.x1)*dx+(p[1]-l.y1)*dy)/(dx*dx+dy*dy)));
+                return Math.hypot(p[0]-l.x1-t*dx,p[1]-l.y1-t*dy)}));
+            window.tickRow=()=>{
+                physics();
+                const tip=grapnel.throwed?grapnel.pos[0].slice(0,2):null;
+                const hook=grapnel.grappled?grapnel.pos[0]:null;
+                return {tick:floors[0].elapsedSteps,ninja:[ninja.x,ninja.y],velocity:[ninja.speedX,ninja.speedY],
+                    throwed:grapnel.throwed,grappled:grapnel.grappled,
+                    parked:typeof grapnel.isParked==='function'?grapnel.isParked():null,
+                    tip,clip:grapnel.clip?[grapnel.clip.x,grapnel.clip.y]:null,
+                    rope:grapnel.throwed?grapnel.pos.map(p=>({point:p.slice(0,2),id:p[2].id||null,
+                        local:p[2].id?[p[0]-p[2].x,p[1]-p[2].y]:null})):[],
+                    tip_distance:tip?Math.hypot(tip[0]-ninja.x,tip[1]-ninja.y):null,
+                    anchor_edge_distance:hook?edgeDistance(hook,hook[2]):null};
+            };
+        }''')
+        return page
+
+    def press(self, page, point):
+        page.mouse.move(*point)
+        page.mouse.down()
+
+    def park(self, page, angle):
+        """Throw into an empty world along angle and tick until the held miss parks."""
+        page.evaluate('place(1000,-2000)')
+        self.press(page, page.evaluate('a=>clientAt(a,300)', angle))
+        flight = []
+        for _ in range(300):
+            row = page.evaluate('tickRow()')
+            flight.append(row)
+            if row['parked']:
+                break
+        self.assertTrue(flight[-1]['parked'], 'never parked')
+        self.assertTrue(all(r['throwed'] and not r['grappled'] for r in flight))
+        return flight
+
+    def ticks(self, page, count, until_attached=True, since=None):
+        rows = []
+        for _ in range(count):
+            rows.append(page.evaluate('tickRow()'))
+            if since is not None:
+                rows[-1]['since_press'] = rows[-1]['tick'] - since
+            if until_attached and rows[-1]['grappled']:
+                break
+        return rows
+
+    def assert_attached(self, page, rows, element_id):
+        last = rows[-1]
+        self.assertTrue(last['grappled'], f'{element_id}: never attached')
+        self.assertEqual(last['rope'][0]['id'], element_id)
+        anchor = last['rope'][0]['point']
+        self.assertLessEqual(last['anchor_edge_distance'], 1e-9)
+        # The contact lies on the held line from the ninja and inside the radius.
+        self.assertLessEqual(math.dist(anchor, last['ninja']), 540 + 1e-9)
+        return anchor
+
+    def trusted(self, page):
+        events = page.evaluate('events')
+        self.assertTrue(events and all(e['trusted'] for e in events), events)
+        return dict(count=len(events), types=sorted({e['type'] for e in events}), all_trusted=True)
+
+    def scenario_fall(self, url):
+        page = self.open(url)
+        flight = self.park(page, 0)
+        # A grapplable ledge just below the parked line; the ninja falls past it.
+        ledge = page.evaluate('''()=>{const e=rect('ledge',ninja.x+200,ninja.y+60,100,40);
+            return {x:e.x,y:e.y,width:e.width,height:e.height}}''')
+        rows = self.ticks(page, 200)
+        return page, dict(ledge=ledge, flight_ticks=len(flight), parked=flight[-1], trace=rows,
+                          input=self.trusted(page))
+
+    def scenario_mover(self, url):
+        page = self.open(url)
+        flight = self.park(page, 0)
+        # A tall blue bar, beyond the tip, moving left into the parked line.
+        mover = page.evaluate('''()=>{
+            const e=rect('mover',0,ninja.y-400,30,1600,{fill:STYLE.colors.cube.blueFill,
+                stroke:STYLE.colors.cube.blueStroke});
+            const min=ninja.x+150,max=ninja.x+radius+150,periodMs=4000;
+            const now=floors[0].elapsedSteps*physicsStepMs/cyclesPerTick;
+            // Start at max (phase .5) and move toward min.
+            const phase=((0.5-now/periodMs)%1+1)%1;
+            floors[0].level.movers=[{id:'motion',element:'mover',axis:'x',min,max,periodMs,phase}];
+            floors[0].applyMovers(now);e.dx=e.dy=0;
+            return {min,max,periodMs,start_x:e.x}}''')
+        rows = self.ticks(page, 400)
+        after = self.ticks(page, 20, until_attached=False) if rows[-1]['grappled'] else []
+        return page, dict(mover=mover, flight_ticks=len(flight), trace=rows, after_attach=after,
+                          input=self.trusted(page))
+
+    def scenario_sweep(self, url):
+        page = self.open(url)
+        flight = self.park(page, 0.6)
+        anchor = page.evaluate('''()=>{const a=-0.6,r=350;
+            const e=rect('anchor',ninja.x+Math.cos(a)*r-20,ninja.y+Math.sin(a)*r-20,40,40);
+            return {x:e.x,y:e.y,width:40,height:40}}''')
+        rows = []
+        for i in range(1, 41):
+            angle = 0.6 - 0.05 * i
+            page.mouse.move(*page.evaluate('a=>clientAt(a,300)', angle))
+            row = page.evaluate('tickRow()')
+            row['aim_angle'] = angle
+            rows.append(row)
+            if row['grappled']:
+                break
+        return page, dict(anchor=anchor, flight_ticks=len(flight), trace=rows, input=self.trusted(page))
+
+    def scenario_blocked(self, url):
+        page = self.open(url)
+        flight = self.park(page, 0)
+        setup = page.evaluate('''()=>{
+            const wall=rect('wall',ninja.x+200,ninja.y-800,20,1600,{grapplable:false});
+            const hazard=rect('hazard',ninja.x+300,ninja.y-800,20,1600,{surfaceRole:'hazard',
+                fill:STYLE.colors.hazard.fill,stroke:STYLE.colors.hazard.stroke});
+            const anchor=rect('anchor',ninja.x+420,ninja.y-800,30,1600);
+            return {wall_x:wall.x,hazard_x:hazard.x,anchor_x:anchor.x}}''')
+        rows = self.ticks(page, 30)
+        # Remove the wall: the hazard alone still clips and never attaches.
+        page.evaluate("floors[0].elements=floors[0].elements.filter(e=>e.id!=='wall')")
+        hazard_rows = self.ticks(page, 30)
+        # Restore a wall for the proof image: the line ends at the wall, short of the anchor.
+        page.evaluate("rect('wall2',ninja.x+200,ninja.y-800,20,1600,{grapplable:false})")
+        clipped_png = None
+        if url == self.url:
+            page.evaluate('tickRow();draw()')
+            clipped_png = str(self.evidence.path('clipped.png').relative_to(ROOT))
+            page.screenshot(path=clipped_png)
+        return page, dict(setup=setup, flight_ticks=len(flight), trace=rows, hazard_trace=hazard_rows,
+                          screenshot=clipped_png, input=self.trusted(page))
+
+    def scenario_ordinary(self, url):
+        page = self.open(url)
+        page.evaluate("place(600,700);rect('target',1100,500,30,400)")
+        # Boot timing varies the absolute step count between page loads.
+        since = page.evaluate('floors[0].elapsedSteps')
+        self.press(page, page.evaluate('client(1100,700)'))
+        rows = self.ticks(page, 200, since=since)
+        return page, dict(trace=rows, input=self.trusted(page))
+
+    def both(self, scenario):
+        page, new = scenario(self.url)
+        old_page, old = scenario(self.old_url)
+        return page, new, old
+
+    def test_01_fall_past_ledge(self):
+        page, new, old = self.both(self.scenario_fall)
+        anchor = self.assert_attached(page, new['trace'], 'ledge')
+        self.assertTrue(new['trace'][0]['parked'] and not new['trace'][0]['grappled'])
+        self.assertFalse(old['trace'][-1]['grappled'])
+        self.sweep['a_fall_past_ledge'] = dict(expected='attached to ledge', anchor=anchor,
+                                              attach_tick=new['trace'][-1]['tick'], new=new,
+                                              pre_change=dict(attached=False, trace=old['trace'][-5:]))
+        print(f"PASS (a) fall past ledge: parked line attached to ledge at {anchor} after "
+              f"{len(new['trace'])} ticks; pre-change never attached in {len(old['trace'])} ticks")
+
+    def test_02_mover_into_parked_line(self):
+        page, new, old = self.both(self.scenario_mover)
+        anchor = self.assert_attached(page, new['trace'], 'mover')
+        self.assertTrue(all(not r['grappled'] for r in new['trace'][:-1]))
+        local = new['trace'][-1]['rope'][0]['local']
+        after = new['after_attach']
+        self.assertTrue(all(r['grappled'] and r['rope'][0]['id'] == 'mover' for r in after))
+        for r in after:
+            for i in range(2):
+                self.assertAlmostEqual(r['rope'][0]['local'][i], local[i], places=9)
+        moved = abs(after[-1]['rope'][0]['point'][0] - anchor[0])
+        self.assertGreater(moved, 1)
+        self.assertFalse(old['trace'][-1]['grappled'])
+        self.sweep['b_mover_into_parked_line'] = dict(expected='attached to mover; anchor tracks it',
+            anchor=anchor, anchor_local=local, anchor_moved_x=moved, new=new,
+            pre_change=dict(attached=False, trace=old['trace'][-5:]))
+        print(f"PASS (b) blue mover: attached at {anchor}; anchor tracked mover {moved:.1f} over "
+              f"{len(after)} ticks with constant local offset; pre-change never attached")
+
+    def test_03_aim_sweep_across_anchor(self):
+        page, new, old = self.both(self.scenario_sweep)
+        anchor = self.assert_attached(page, new['trace'], 'anchor')
+        self.assertGreater(len(new['trace']), 1)
+        self.assertFalse(old['trace'][-1]['grappled'])
+        self.sweep['c_aim_sweep_across_anchor'] = dict(expected='attached at crossing', anchor=anchor,
+            attach_aim_angle=new['trace'][-1]['aim_angle'], new=new,
+            pre_change=dict(attached=False, trace=old['trace'][-5:]))
+        print(f"PASS (c) aim sweep: attached to anchor at {anchor} on sweep step {len(new['trace'])} "
+              f"(aim {new['trace'][-1]['aim_angle']:.2f} rad); pre-change never attached")
+
+    def test_04_blocker_clips_line(self):
+        page, new, old = self.both(self.scenario_blocked)
+        setup = new['setup']
+        for rows, x in ((new['trace'], setup['wall_x']), (new['hazard_trace'], setup['hazard_x'])):
+            self.assertEqual(len(rows), 30)
+            for r in rows:
+                self.assertTrue(r['throwed'] and r['parked'] and not r['grappled'], r)
+                self.assertIsNotNone(r['clip'], r)
+                self.assertAlmostEqual(r['clip'][0], x, places=6)
+                self.assertAlmostEqual(r['clip'][1], r['ninja'][1], places=6)
+        self.assertTrue((ROOT / new['screenshot']).exists())
+        self.sweep['d_blocker_clips_line'] = dict(expected='clipped at blocker, never attached',
+            never_attached=True, ticks=60, new=new,
+            pre_change=dict(attached=old['trace'][-1]['grappled'], trace=old['trace'][-5:]))
+        print(f"PASS (d) blocker: 30 ticks clipped at nongrapplable wall x={setup['wall_x']:.1f} and 30 at "
+              f"hazard x={setup['hazard_x']:.1f}; never attached to anchor; clipped.png")
+
+    def test_05_ordinary_shot_unchanged(self):
+        page, new, old = self.both(self.scenario_ordinary)
+        anchor = self.assert_attached(page, new['trace'], 'target')
+        self.assertTrue(old['trace'][-1]['grappled'])
+        self.assertEqual(new['trace'][-1]['since_press'], old['trace'][-1]['since_press'])
+        self.assertEqual(len(new['trace']), len(old['trace']))
+        self.assertEqual(new['trace'][-1]['rope'], old['trace'][-1]['rope'])
+        strip = lambda rows: [{k: v for k, v in r.items() if k not in ('parked', 'clip', 'tick')} for r in rows]
+        self.assertEqual(strip(new['trace']), strip(old['trace']))
+        self.sweep['e_ordinary_shot_unchanged'] = dict(expected='same tick and contact as pre-change',
+            attach_ticks_since_press=new['trace'][-1]['since_press'],
+            pre_change_attach_ticks_since_press=old['trace'][-1]['since_press'], contact=anchor, old_contact=old['trace'][-1]['rope'][0]['point'],
+            same_tick=True, same_contact=True, traces_equal=True, new=new, pre_change=old)
+        print(f"PASS (e) ordinary shot: attached {new['trace'][-1]['since_press']} physics steps after the press at {anchor}, "
+              f"identical to pre-change {TASK535_PRE_CHANGE[:7]} (tick and contact; {len(new['trace'])}-tick traces equal)")
+
+    def pull_trace(self, url):
+        page = self.open(url)
+        page.evaluate("place(800,700);rect('anchor',1100,680,30,40);rect('corner',900,800,80,50)")
+        since = page.evaluate('floors[0].elapsedSteps')
+        self.press(page, page.evaluate('client(1100,700)'))
+        acquire = self.ticks(page, 100, since=since)
+        self.assertTrue(acquire[-1]['grappled'])
+        page.evaluate('ninja.speedY=3')
+        trace = self.ticks(page, 150, until_attached=False, since=since)
+        return acquire, trace
+
+    def test_06_pull_and_wrap_unchanged(self):
+        acquire, trace = self.pull_trace(self.url)
+        old_acquire, old_trace = self.pull_trace(self.old_url)
+        self.assertEqual(acquire[-1]['rope'], old_acquire[-1]['rope'])
+        self.assertEqual(acquire[-1]['since_press'], old_acquire[-1]['since_press'])
+        strip = lambda rows: [{k: v for k, v in r.items() if k not in ('parked', 'clip', 'tick')} for r in rows]
+        self.assertEqual(strip(trace), strip(old_trace))
+        wrapped = [r for r in trace if len(r['rope']) >= 2]
+        self.assertTrue(wrapped, 'no corner wrap')
+        self.assertEqual(wrapped[0]['rope'][-1]['id'], 'corner')
+        self.assertTrue(all(r['grappled'] for r in trace))
+        self.evidence.write('pull.json', dict(self.proof, anchor='anchor', corner='corner',
+            attach=dict(new=acquire[-1], pre_change=old_acquire[-1], equal=True),
+            first_wrap_ticks_since_press=wrapped[0]['since_press'],
+            comparison='rows equal except absolute tick (boot-dependent); since_press compared', wrapped_ticks=len(wrapped), ticks=len(trace),
+            traces_equal=True, new=trace, pre_change=old_trace))
+        print(f"PASS pull/wrap: {len(trace)} post-attachment ticks equal pre-change; wrap onto corner "
+              f"{wrapped[0]['since_press']} physics steps after the press ({len(wrapped)} wrapped ticks)")

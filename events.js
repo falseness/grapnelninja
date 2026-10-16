@@ -39,6 +39,7 @@ function createEvents()
         grapnel.traveled = 0
         grapnel.shotStep = null
         grapnel.aim = null
+        grapnel.clip = null
         if (version === 'grapple_over') grapnel.setAim(target)
         grapnel.pos = [[ninja.x, ninja.y, new Empty()]]
         let ratio = grapnel.calcSpeed(target)
