@@ -303,7 +303,9 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         {id:'S04-double-right',x:5160,y:-5980,role:'bounce',grapplable:true,
             points:[{x:0,y:0},{x:65,y:30},{x:65,y:350},{x:0,y:350}]},
         rectangle('S04-brake-anchor',4800,-5730,40,35,true),
-        rectangle('S04-double-landing',4990,-5780,60,35,true),
+        {id:'S04-double-landing',x:4880,y:-5780,role:'solid',grapplable:true,
+            points:[{x:0,y:-30},{x:15,y:-30},{x:15,y:0},{x:155,y:0},
+                {x:155,y:-30},{x:170,y:-30},{x:170,y:35},{x:0,y:35}]},
         rest('S04-upper-step',4700,-6050,200),
         {id:'S04-exit',x:4460,y:-6480,role:'solid',grapplable:true,points:[{x:0,y:-180},{x:40,y:-180},{x:40,y:0},{x:160,y:0},{x:160,y:-30},{x:200,y:-30},{x:200,y:55},{x:0,y:55}]}
     );

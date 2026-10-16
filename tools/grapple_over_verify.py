@@ -219,12 +219,42 @@ def verify(manifest, browser, url, out, clip=False):
     return result
 
 
+def check_s04_mechanics(encounter, trace, required=True):
+    """Measure reflection contacts and airborne reacquisition from recorded events."""
+    bounces = [e for e in trace['events'] if e['type'] == 'bounce']
+    contacts = [e['contact']['elementId'] for e in bounces]
+    expected = {'S04-01':['S04-flat-press'], 'S04-02':['S04-angled-chute'],
+                'S04-03':['S04-combination-press'],
+                'S04-04':['S04-double-right','S04-double-left']}[encounter]
+    result = dict(contacts=contacts, bounce_ticks=[e['tick'] for e in bounces])
+    if required:
+        require(contacts == expected, 'S04 reflection sequence mismatch')
+        if encounter == 'S04-01':
+            e=bounces[0];before=e['before']['simulation']['player'];after=e['after']['simulation']['player']
+            require(before['speedX'] < 0 < after['speedX'], 'flat reflection missing')
+        if encounter == 'S04-02':
+            e=bounces[0];before=e['before']['simulation']['player'];after=e['after']['simulation']['player']
+            require(before['speedY'] < 0 < after['speedY'] and before['speedX'] > 0 > after['speedX'], 'sloped reflection missing')
+        if encounter == 'S04-03':
+            grabs=[e for e in trace['events'] if e['type']=='acquisition'
+                   and e['after']['rope'][0]['id']=='S04-combination-rest']
+            require(bool(grabs) and grabs[0]['tick'] > bounces[0]['tick']
+                    and grabs[0]['after']['simulation']['player']['y'] < -5540.8, 'airborne reacquisition missing')
+            result['airborne_reacquisition_tick']=grabs[0]['tick']
+        if encounter == 'S04-04':
+            tail=[r['state']['simulation']['player'] for r in trace['snapshots'][-60:]]
+            require(all(4880 <= p['x'] <= 5050 and -5821 <= p['y'] <= -5790
+                        and abs(p['speedY']) < .001 for p in tail), 'landing not sustained')
+            result['sustained_landing_ticks']=60
+    return result
+
+
 def audit_suite(manifest, browser, url, out):
     """Replay every reported attempt, including failures, without trusting summary flags."""
     evidence, _ = output_writer(out)
     require(manifest['source_hashes'] == hashes(), 'suite source hash mismatch')
     section = manifest.get('section', 'S01')
-    require(section in ('S01', 'S02', 'S03'), 'unsupported section')
+    require(section in ('S01', 'S02', 'S03', 'S04'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
     count = 0
     for encounter, attempts in manifest['encounters'].items():
@@ -243,6 +273,8 @@ def audit_suite(manifest, browser, url, out):
             except ValueError:
                 success = False
             require(success == a['success'], 'outcome mismatch')
+            if section == 'S04':
+                require(check_s04_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S04 mechanics mismatch')
             count += 1
     negative = json.loads(evidence.path(manifest['negative_control']).read_text())
     recorded = json.loads(evidence.path(negative['input']).read_text())

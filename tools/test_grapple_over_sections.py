@@ -1327,3 +1327,119 @@ class Task475Tests(unittest.TestCase):
             dict(x=[5051,5229],y=[-4831,-4830]),bounces=['S04-flat-press'])
         self.assertAlmostEqual(trace['snapshots'][375]['state']['simulation']['player']['y'],-4810.8,places=5)
         print('PASS local miss: catch basin at tick 375; physical recovery to Viaduct by tick 560; no relocation')
+
+
+class Task476Tests(unittest.TestCase):
+    """S04 isolated encounter tolerance; trusted inputs and unchanged physics."""
+    task_id = 'TASK-476'
+    setUpClass = classmethod(Task467Tests.setUpClass.__func__)
+    test_03_source_hashes = Task467Tests.test_02_source_hashes
+    run_attempt = Task473Tests.run_attempt
+
+    @staticmethod
+    def routes():
+        return [
+            ('S04-01', (5150,-4830.8), Task474Tests.flat_plan(), 375,
+             dict(x=[5090,5390],y=[-5011,-5010]), 0, (0,1), ['S04-flat-press']),
+            ('S04-02', (5090.8000001,-5010.8000001),
+             [(30,'mousedown',5150,-5430),(85,'mouseup',5150,-5430)], 325,
+             dict(x=[4970,5070],y=[-5261,-5260]), 0, (2/5**.5,1/5**.5), ['S04-angled-chute']),
+            ('S04-03', (4970.8000001,-5260.8000001),
+             [(30,'mousedown',4610,-5630),(75,'mouseup',4610,-5630),
+              (130,'mousedown',4820,-5510),(190,'mouseup',4820,-5510)], 375,
+             dict(x=[4810,4980],y=[-5550,-5540]), 2, (0,1), ['S04-combination-press']),
+            ('S04-04', (4850.8000001,-5540.8000001),
+             [(30,'mousedown',5170,-5910),(75,'mouseup',5170,-5910),
+              (140,'mousedown',4810,-5710),(180,'mouseup',4810,-5710)], 375,
+             dict(x=[4880,5050],y=[-5821,-5790],speedX=[-.05,.05],speedY=[-.001,.001]), 0, (0,1), ['S04-double-right','S04-double-left'])]
+
+    def make_input(self, route, device='desktop', delta=0, offset=0):
+        from grapple_over_verify import metadata
+        _,start,plan,ticks,bounds,critical,tangent,_=route
+        m=dict(metadata=metadata('isolated'),initial_setup=dict(level=self.level,
+            player=dict(x=start[0],y=start[1],speedX=0,speedY=0)),inputs=[],
+            ticks=ticks,expected_exit=bounds,required_events=['acquisition','release','bounce'])
+        m['metadata']['compact_contacts']=True
+        if device=='touch': m['metadata']['viewport']=dict(width=844,height=390)
+        for i,(tick,event,x,y) in enumerate(plan):
+            if route[0]=='S04-04' and device=='touch' and i==3: tick=185
+            if i==critical:
+                tick+=delta;x+=offset*tangent[0];y+=offset*tangent[1]
+            if device=='touch': event={'mousedown':'touchstart','mouseup':'touchend'}[event]
+            m['inputs'].append(dict(tick=tick,event=event,world=dict(x=x,y=y)))
+        return m
+
+    def load_level(self):
+        page=self.browser.new_page(viewport=VIEWPORT);page.goto(self.url);wait_for_boot(page)
+        self.level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)');page.close()
+
+    def test_01_tolerance_matrix(self):
+        from grapple_over_verify import hashes, check_s04_mechanics
+        self.load_level()
+        suite=dict(section='S04',source_hashes=hashes(),level_sha256=hashes()['mountain.js'],
+            proof_kind='isolated encounter starts only; not continuous completion',encounters={},
+            negative_control='negative-control.json',recovery='clips/recovery/input.json',
+            earlier_attempts='exploratory/manifest.json',
+            shortcuts='none assigned or observed; no shortcut completion claim')
+        failures=[]
+        for route in self.routes():
+            encounter=route[0];attempts=[];suite['encounters'][encounter]=attempts
+            for device in ('desktop','touch'):
+                for variant,delta,offset in [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]:
+                    name=f'{encounter}-{device}-{variant}'
+                    prefix=('clips/' if variant=='nominal' else 'attempts/')+name
+                    m=self.make_input(route,device,delta,offset)
+                    trace,success,reason=self.run_attempt(m,prefix,variant=='nominal')
+                    mechanics=check_s04_mechanics(encounter,trace,required=success)
+                    attempts.append(dict(name=name,device=device,variant=variant,critical_input_index=route[5],
+                        timing_delta=delta,tangent_aim_delta=offset,surface_tangent=route[6],
+                        input=prefix+'/input.json',trace=prefix+'/trace.json',success=success,reason=reason,
+                        mechanic_events=mechanics,final=trace['snapshots'][-1]['state']['simulation']['player']))
+                    self.evidence.write('manifest.json',suite)
+                    print('ATTEMPT',name,'PASS' if success else 'FAIL',reason,flush=True)
+                group=[a for a in attempts if a['device']==device]
+                if not group[0]['success'] or sum(a['success'] for a in group[1:])<2: failures.append(encounter+' '+device)
+        m=self.make_input(self.routes()[1]);m['inputs']=[]
+        trace,success,reason=self.run_attempt(m,'clips/negative',True)
+        self.assertFalse(success);self.assertIn('expected exit mismatch',reason)
+        self.evidence.write('negative-control.json',dict(name='angle/bounce: omit critical chute acquisition',
+            input='clips/negative/input.json',trace='clips/negative/trace.json',failed_intended_exit=True,
+            unchanged_physics=True,source_hashes=hashes(),reason=reason,
+            scope='Same isolated launch and duration, acquisition omitted; alternative solutions are not ruled out.',
+            final=trace['snapshots'][-1]['state']['simulation']['player']))
+        self.assertEqual(failures,[])
+        print('PASS S04 four encounters: both viewports nominal + >=2/4 variants; flat/sloped bounce; airborne reacquisition; two distinct contacts; omitted acquisition fails exit')
+
+    def test_02_recovery(self):
+        from grapple_over_verify import execute
+        self.load_level()
+        route=list(self.routes()[0]);route[2]=Task474Tests.flat_plan(35)+[
+            (375,'mousedown',5100,-4980),(420,'mouseup',5100,-4980)]
+        route[3]=560;route[4]=dict(x=[5051,5229],y=[-4831,-4830])
+        m=self.make_input(route)
+        trace,success,reason=self.run_attempt(m,'clips/recovery',True)
+        self.assertTrue(success,reason)
+        self.assertAlmostEqual(trace['snapshots'][375]['state']['simulation']['player']['y'],-4810.8,places=5)
+        replay=execute(m,self.browser,self.url,str(self.evidence.path('clips/recovery/replay')))
+        self.assertEqual(trace,replay)
+        self.evidence.write('clips/recovery/result.json',dict(passed=True,matching_traces=True,
+            physical_catch_tick=375,physical_rejoin_S03=True,no_relocation=True))
+        print('PASS recovery: actual missed landing, basin catch tick 375, physical rejoin S03; matching replay')
+
+    def test_04_scoped_geometry(self):
+        page=self.browser.new_page(viewport=VIEWPORT);page.goto(self.url);wait_for_boot(page)
+        r=page.evaluate("""() => ({manifest:GRAPPLE_OVER_MOUNTAIN,
+            colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))})""")
+        page.close()
+        prior=json.loads((ROOT/'artifacts/TASK-475/geometry.json').read_text())['manifest']
+        old={e['id']:e for e in prior['geometry']['elements']}
+        changed=[]
+        for e,a in zip(r['manifest']['geometry']['elements'],r['colliders']):
+            self.assertEqual(a,{k:e[k] for k in ('id','x','y','points','role')})
+            if e!=old[e['id']]: changed.append(e['id'])
+        self.assertEqual(changed,['S04-double-landing'])
+        self.assertEqual(len(old),len(r['colliders']))
+        self.evidence.write('geometry.json',dict(only_landing_changed=True,colliders_match=True,
+            changed=changed,landing=next(e for e in r['manifest']['geometry']['elements'] if e['id']==changed[0]),
+            prior_reference='artifacts/TASK-475/geometry.json'))
+        print('PASS geometry: only S04-double-landing changed; visible polygon matches collider; other sections preserved')
