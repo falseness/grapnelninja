@@ -603,6 +603,95 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         recoveryPolicy:'Physical falls, nonlethal hazards, current-state saves; no automatic relocation'}
 })()
 
+// Layout-v2 design rules. A section opts in with designVersion:2; legacy (v1)
+// sections are reported but never fail. Gap targets are the TASK-503 frozen
+// 85-90% band of measured reach for the section's active grapnel range.
+const LAYOUT_V2_GAP_TARGETS = {540:[459,486], 810:[689,729]}
+const LAYOUT_V2_SOLID_EXCEPTIONS = ['rest-pad','lip','side-wall']
+const LAYOUT_V2_REST_PAD_MAX_WIDTH = 200
+
+function layoutV2Report(m)
+{
+    const box = e => ({left:e.x+Math.min(...e.points.map(p=>p.x)),right:e.x+Math.max(...e.points.map(p=>p.x)),
+        top:e.y+Math.min(...e.points.map(p=>p.y)),bottom:e.y+Math.max(...e.points.map(p=>p.y))})
+    const elements = new Map(m.geometry.elements.map(e=>[e.id,e]))
+    const encounters = new Map(m.encounters.map(e=>[e.id,e]))
+    const upgradeOrder = m.sections.find(s=>s.id===m.range.upgradeBand).order
+    const sections = m.sections.map(s=>{
+        const version = s.designVersion ?? 1
+        if (version === 1) return {id:s.id, designVersion:1, legacy:true, failed:false}
+        const errors = [], rules = {}
+        const rule = (name, code, measured, problems) => {
+            problems.forEach(path=>errors.push({rule:name, code, path:s.id+'.'+path}))
+            rules[name] = {passed:!problems.length, measured}
+        }
+        if (version !== 2) {
+            errors.push({rule:'designVersion', code:'InvalidDesignVersion', path:s.id+'.designVersion'})
+            return {id:s.id, designVersion:version, legacy:false, failed:true, passed:false, errors, rules}
+        }
+        const own = m.geometry.elements.filter(e=>e.id.startsWith(s.id+'-'))
+        const movers = m.geometry.movers.filter(v=>v.element.startsWith(s.id+'-'))
+        const moving = new Set(movers.map(v=>v.element))
+        const exceptions = new Map((s.solidExceptions||[]).map(x=>[x.element,x]))
+        // Grappleable platforms bounce; solid only through a reasoned exception.
+        let problems = [], platforms = [], excepted = []
+        for (const x of exceptions.values()) {
+            const e = elements.get(x.element), width = e ? box(e).right-box(e).left : null
+            excepted.push({element:x.element, kind:x.kind, reason:x.reason, width})
+            if (!e || !x.element.startsWith(s.id+'-') || !LAYOUT_V2_SOLID_EXCEPTIONS.includes(x.kind) ||
+                typeof x.reason !== 'string' || !x.reason.trim() ||
+                (x.kind === 'rest-pad' && width > LAYOUT_V2_REST_PAD_MAX_WIDTH))
+                problems.push('solidExceptions.'+x.element)
+        }
+        for (const e of own) {
+            if (e.grapplable !== true || !['solid','bounce'].includes(e.role)) continue
+            const mover = moving.has(e.id)
+            platforms.push({id:e.id, role:e.role, mover, exception:exceptions.has(e.id)})
+            if (e.role === 'solid' && !mover && !exceptions.has(e.id)) problems.push(e.id)
+        }
+        rule('bounceDefault', 'LayoutV2StraySolid', {platforms, exceptions:excepted,
+            restPadMaxWidth:LAYOUT_V2_REST_PAD_MAX_WIDTH}, problems)
+        // Blue movers are exempt from the bounce default but must carry >=2 encounters.
+        const carrying = s.encounters.filter(id=>encounters.get(id).elements.some(e=>moving.has(e)))
+        rule('moverCoverage', 'LayoutV2MoverCoverage', {movers:movers.map(v=>v.id), encounters:carrying,
+            count:carrying.length, required:2}, carrying.length >= 2 ? [] : ['movers'])
+        // Travel alternates: odd sections exit right of entry, even sections left.
+        const first = encounters.get(s.encounters[0]), last = encounters.get(s.encounters[3])
+        const entryX = first.start?.x ?? first.x, exitX = last.exit ? (last.exit.left+last.exit.right)/2 : last.x
+        const required = s.order % 2 ? 'right' : 'left'
+        const actual = exitX > entryX ? 'right' : exitX < entryX ? 'left' : 'none'
+        rule('direction', 'LayoutV2Direction', {entryX, exitX, required, actual},
+            actual === required ? [] : ['direction'])
+        // Mandatory gaps sit in the frozen band for the active range.
+        const range = s.order >= upgradeOrder ? m.range.upgraded : m.range.base
+        const target = LAYOUT_V2_GAP_TARGETS[range]
+        const gaps = (s.gaps||[]).filter(g=>g.mandatory !== false).map(g=>{
+            const distance = Math.hypot(g.to.x-g.from.x, g.to.y-g.from.y)
+            return {id:g.id, distance, fraction:distance/range,
+                inBand:distance >= target[0] && distance <= target[1]}
+        })
+        rule('gapBand', 'LayoutV2GapBand', {range, target, gaps},
+            [...(Array.isArray(s.gaps) ? [] : ['gaps']), ...gaps.filter(g=>!g.inBand).map(g=>'gaps.'+g.id)])
+        // Each fall line lands in the section below under a drag zone.
+        const below = m.sections.find(b=>b.order === s.order-1)
+        const drags = m.geometry.elements.filter(e=>e.role === 'drag')
+        const fallLines = (s.fallLines||[]).map(f=>{
+            const landing = elements.get(f.landing), lb = landing && box(landing)
+            const onBelow = !!landing && (below ? f.landing.startsWith(below.id+'-') : f.landing === 'mountain-catch')
+            const zone = lb && drags.find(d=>{const b = box(d)
+                return b.left <= f.x && b.right >= f.x && b.bottom <= lb.top})
+            return {id:f.id, x:f.x, landing:f.landing, landingSection:below ? below.id : 'base',
+                landingTop:lb ? lb.top : null, onBelow, underLanding:!!lb && lb.left <= f.x && lb.right >= f.x,
+                dragZone:zone ? zone.id : null, dragZoneBottom:zone ? box(zone).bottom : null}
+        })
+        rule('fallDrag', 'LayoutV2FallDrag', {fallLines},
+            fallLines.filter(f=>!f.onBelow || !f.underLanding || !f.dragZone).map(f=>'fallLines.'+f.id))
+        return {id:s.id, designVersion:2, legacy:false, failed:!!errors.length, passed:!errors.length, range, errors, rules}
+    })
+    return {sections, v2:sections.filter(s=>!s.legacy).map(s=>s.id),
+        legacy:sections.filter(s=>s.legacy).map(s=>s.id), failed:sections.some(s=>s.failed)}
+}
+
 function validateMountainManifest(m)
 {
     const fail = (code, path) => {throw new Error(code + ': ' + path)}
@@ -699,6 +788,8 @@ function validateMountainManifest(m)
             fail('BoundaryTrap',e.id)
     }
     for (const id of ['mountain-left','mountain-right']) if (!ids.has(id)) fail('BoundaryTrap',id)
+    const failed = layoutV2Report(m).sections.find(s=>s.failed)
+    if (failed) fail(failed.errors[0].code, failed.errors[0].path)
     return level
 }
 
