@@ -111,6 +111,12 @@ const GAMEPLAY = Object.freeze({
         lookAhead: 0.1,
         turnMs: 250,
         deletionMarginHeightRatio: 0.1
+    }),
+    // Momentum HP (elements/momentumstate.js): hp at every run start (no upper
+    // cap) and how many green touches in a row give one hp.
+    momentumHp: Object.freeze({
+        startHp: 5,
+        greenStreakForHp: 5
     })
 })
 const defaultEqualityTolerance = 1

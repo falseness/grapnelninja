@@ -108,6 +108,7 @@
         
         <script src = "elements/factory.js"></script>
         <script src = "elements/momentumcourse.js"></script>
+        <script src = "elements/momentumstate.js"></script>
         <script src = "render/culling.js"></script>
         <script src = "sprites/floor.js"></script>
         
@@ -523,6 +524,7 @@
             function startMomentumVersion()
             {
                 const borders = GAMEPLAY.momentumBorders
+                momentumState.reset()
                 momentumCourse = new MomentumCourse(-width, borders.originY)
                 screen = new MomentumScreen(momentumCourse)
 

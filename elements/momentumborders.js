@@ -106,6 +106,11 @@ class MomentumBorder extends Ground
             this.coreColor = undefined
         }
     }
+    // A bounce off a course border keeps hp and the green streak
+    onNinjaBounce()
+    {
+        momentumState.onBorderTouch()
+    }
     getShapePath()
     {
         const points = this.getPoints()

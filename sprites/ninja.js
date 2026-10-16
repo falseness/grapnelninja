@@ -137,6 +137,8 @@ class Ninja
         if (contact.approaching)
         {
             bounceSpeed(this, contact.line)
+            if (contact.element.onNinjaBounce)
+                contact.element.onNinjaBounce()
             if (visualEffects && visualEffects.particles)
                 visualEffects.particles.emitTrampolineSplash(this, contact.element)
             if (visualEffects && visualEffects.screenEffects)
