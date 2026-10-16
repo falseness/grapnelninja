@@ -126,6 +126,7 @@
         <script src = "sprites/trampoline.js"></script>
         <script src = "sprites/side.js"></script>
         <script src = "sprites/leftwall.js"></script>
+        <script src = "elements/momentumborders.js"></script>
         
         <script src = "physics.js"></script>
         <script src = "respawn.js"></script>
@@ -470,20 +471,7 @@
                 floors =
                 [
                     new SideFloor(2 * height, 2.2 * height, [{type: 'ground', chance: 100}]),
-                    new Floor(0.2 * height, 2 * height, {min: 0, max: 0}, [
-                        {type: 'frame1Elements', chance: 6},
-                        {type: 'frame3Triangle', chance: 6},
-                        {type: 'frame4Elements', chance: 6},
-                        {type: 'frame5Rects', chance: 5},
-                        {type: 'frame6Rects', chance: 5},
-                        {type: 'frame7Elements', chance: 6},
-                        {type: 'frame8Elements', chance: 5},
-                        {type: 'frame10Elements', chance: 5},
-                        {type: 'frame11Elements', chance: 5},
-                        {type: 'frame12Elements', chance: 6},
-                        {type: 'frame13Elements', chance: 6},
-                        {type: 'frame14Rects', chance: 5}
-                    ], 1),
+                    new Floor(0.2 * height, 2 * height, {min: 0, max: 0}, badFrameCreations(), 1),
                     new SideFloor(0, 0.2 * height, [{type: 'side', chance: 100}])
                 ]
                 ninja = new Ninja(
@@ -510,11 +498,63 @@
                 screen.min = -(1.9 * height - height + screenMargin)
                 screen.max = -(0 - screenMargin)
             }
-            // Momentum runs the bad-mode world until its course-driven
-            // borders and obstacles replace it.
+            // The weighted bad-mode frame factories (sprites/floor.js picks one)
+            function badFrameCreations()
+            {
+                return [
+                        {type: 'frame1Elements', chance: 6},
+                        {type: 'frame3Triangle', chance: 6},
+                        {type: 'frame4Elements', chance: 6},
+                        {type: 'frame5Rects', chance: 5},
+                        {type: 'frame6Rects', chance: 5},
+                        {type: 'frame7Elements', chance: 6},
+                        {type: 'frame8Elements', chance: 5},
+                        {type: 'frame10Elements', chance: 5},
+                        {type: 'frame11Elements', chance: 5},
+                        {type: 'frame12Elements', chance: 6},
+                        {type: 'frame13Elements', chance: 6},
+                        {type: 'frame14Rects', chance: 5}
+                ]
+            }
+            // Momentum: course-driven borders (elements/momentumborders.js)
+            // around the bad-mode obstacles until momentum obstacles replace them.
+            let momentumCourse = null
             function startMomentumVersion()
             {
-                startBadVersion()
+                screen = new Screen(false, 0)
+
+                elementsFactory = new ElementsFactory
+                const borders = GAMEPLAY.momentumBorders
+                momentumCourse = new MomentumCourse(screen.getDeletionBorder(), borders.originY)
+                const floorY = borders.originY + borders.halfWidth
+                floors =
+                [
+                    new MomentumBorderFloor(momentumCourse, ['floor', 'ceiling'], floorY, floorY + borders.thickness),
+                    new Floor(0.2 * height, 2 * height, {min: 0, max: 0}, badFrameCreations(), 1),
+                    new MomentumBorderFloor(momentumCourse, ['wall'], 0, 0)
+                ]
+                ninja = new Ninja(
+                {
+                    x: 0.2 * width,
+                    y: 1.2 * height,
+                    radius: 0.01 * height,
+                    fill: STYLE.colors.player.fill,
+                    stroke: STYLE.colors.player.stroke
+                })
+                grapnel = new Grapnel(
+                {
+                    points: [0, 0, 0, 0],
+                    stroke: STYLE.colors.player.cyan
+                })
+
+                for (let i = 0; i < floors.length; ++i)
+                {
+                    floors[i].generatePrimaryElements()
+                }
+
+                const screenMargin = 0.1 * height
+                screen.min = -(1.9 * height - height + screenMargin)
+                screen.max = -(0 - screenMargin)
             }
             function start()
             {

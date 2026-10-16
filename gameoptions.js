@@ -86,6 +86,13 @@ const GAMEPLAY = Object.freeze({
         maxLen: 5 * height,
         rightAfterRightChancePercent: 40,
         upChancePercent: 50
+    }),
+    // Momentum borders around the course centre line, in world units: the
+    // first right segment spans y 0.2..2 heights like the bad floor/ceiling.
+    momentumBorders: Object.freeze({
+        halfWidth: 0.9 * height,
+        thickness: 0.2 * height,
+        originY: 1.1 * height
     })
 })
 const defaultEqualityTolerance = 1

@@ -469,6 +469,14 @@ const STYLE = Object.freeze({
             alphaMultiplier: 1
         })
     }),
+    // Momentum course walls (up/down segments): a darker green than the
+    // '#3dff4a' floor and ceiling, so the travel direction reads at a glance
+    momentum: Object.freeze({
+        wallStroke: '#1f7a2e',
+        wallCore: '#5f9a68',
+        wallFill: '#020a06',
+        wallCapFill: '#0a1d10'
+    }),
     // The player alone keeps outer glow; obstacles retain their inward light.
     player: Object.freeze({
         outerGlow: true,
