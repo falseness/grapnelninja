@@ -24,6 +24,10 @@ const GRAPPLE_OVER_LEVEL = {
     movers: []
 }
 
+// Fraction of horizontal velocity kept per simulation tick while the player
+// circle overlaps a `drag` zone. Vertical velocity is never touched.
+const DRAG_ZONE_HORIZONTAL_DAMPING = 0.8
+
 function validateFixedLevel(data)
 {
     const fail = (name, path) => {throw new Error(name + ': ' + path)}
@@ -56,7 +60,7 @@ function validateFixedLevel(data)
     for (const e of data.elements)
     {
         point(e, e.id)
-        if (!['bounce', 'solid', 'hazard'].includes(e.role)) fail('InvalidSurfaceRole', e.id + '.role')
+        if (!['bounce', 'solid', 'hazard', 'drag'].includes(e.role)) fail('InvalidSurfaceRole', e.id + '.role')
         const p = e.points
         if (!Array.isArray(p) || p.length < 3) fail('MalformedPolygon', e.id)
         p.forEach((v, i) => point(v, e.id + '.points[' + i + ']'))
@@ -95,6 +99,7 @@ function validateFixedLevel(data)
         const element = data.elements.find(e => e.id === m.element)
         if (!element) fail('MissingReference', m.id + '.element -> ' + m.element)
         if (moving.has(m.element)) fail('InvalidMoverBounds', m.id + ': duplicate mover')
+        if (element.role === 'drag') fail('InvalidMoverBounds', m.id + ': drag zones are static')
         moving.add(m.element)
         if (!['x', 'y'].includes(m.axis) ||
             ![m.min, m.max, m.periodMs, m.phase].every(Number.isFinite) ||
@@ -128,7 +133,16 @@ class PersistentWorld extends Floor
         this.level = structuredClone(source)
         this.elapsedSteps = 0
         this.climbStats = {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false}
-        this.elements = this.level.elements.map(model => {
+        // Drag zones are neither collidable nor grappleable: keep them out of
+        // `elements`, which every collision, rope and save consumer walks.
+        this.dragZones = this.level.elements.filter(model => model.role === 'drag').map(model => {
+            const zone = new Trampoline({...model, fill: STYLE.colors.drag.fill, stroke: STYLE.colors.drag.stroke})
+            zone.id = model.id
+            zone.surfaceRole = 'drag'
+            zone.grapplable = false
+            return zone
+        })
+        this.elements = this.level.elements.filter(model => model.role !== 'drag').map(model => {
             const element = new Trampoline(model)
             if (model.role === 'hazard')
             {
@@ -159,6 +173,20 @@ class PersistentWorld extends Floor
         this.byId = new Map(this.elements.map(e => [e.id, e]))
         this.applyMovers(0)
         for (const e of this.elements) e.dx = e.dy = 0
+    }
+    applyDragZones(player)
+    {
+        const r2 = player.radius * player.radius
+        if (this.dragZones.some(zone => pointInPolygon(zone.getPoints(), player.x, player.y) ||
+            zone.getLines().some(line => segmentDistanceSquared(line, player.x, player.y) < r2)))
+            player.speedX *= DRAG_ZONE_HORIZONTAL_DAMPING
+    }
+    draw()
+    {
+        const cullRect = getCullRect()
+        for (const zone of this.dragZones)
+            if (isCullBoxVisible(getElementCullBox(zone), cullRect)) zone.draw()
+        super.draw()
     }
     generatePrimaryElements() {}
     generateElements() {return 0}

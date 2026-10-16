@@ -11,6 +11,7 @@ function physics()
     }
     firstCycleInThisTick = true
     calcPhysics()
+    if (version === 'grapple_over' && !continueOffer.visible) floors[0].applyDragZones(ninja)
     if (version === 'grapple_over' && !continueOffer.visible) screen.trackGrappleOver()
     if (version === 'grapple_over') PROGRESS.climbTick()
     ninja.tickInvulnerability(physicsStepMs)

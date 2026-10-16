@@ -5,7 +5,7 @@ import subprocess
 import unittest
 
 from browser_test_support import start_browser_test, wait_for_boot
-from grapple_over_test_support import ROOT, EvidenceWriter, STATE, source_hashes, step
+from grapple_over_test_support import ROOT, EvidenceWriter, STATE, open_fixture, source_hashes, step
 from perf_mobile import SEED_SCRIPT
 from test_ninja_bounce import REFLECTION_CHECK, OLD_FORMULA
 
@@ -284,3 +284,178 @@ class Task454Tests(unittest.TestCase):
                 rows.append(row)
         self.evidence.write('legacy-hazards.json',dict(self.proof,observations=rows,original_lethal_flow_pass=True))
         print('PASS classic/bad lethal contacts: immediate restart without ad due; continue offer and frozen run when ad due (4 cases)')
+
+
+DRAG_FIXTURE = '''
+    window.dragWorld=(withZone,extra=[])=>{
+        const d=structuredClone(GRAPPLE_OVER_LEVEL);
+        d.elements=[...extra];
+        if(withZone) d.elements.push({id:'drag',x:400,y:700,role:'drag',
+            points:[{x:0,y:0},{x:600,y:0},{x:600,y:120},{x:0,y:120}]});
+        d.encounters[0].elements=d.elements.map(e=>e.id);
+        floors=[loadFixedLevel(d)];screen.leftWall=null;
+        pressHeld=false;stalePress=false;grapnel.throwed=grapnel.grappled=false;grapnel.pos=[];
+        return floors[0];
+    };
+    window.inZone=()=>floors[0].dragZones.some(z=>pointInPolygon(z.getPoints(),ninja.x,ninja.y)||
+        z.getLines().some(l=>segmentDistanceSquared(l,ninja.x,ninja.y)<ninja.radius*ninja.radius));
+    window.contactSpy=()=>{
+        const calls={solid:0,hazard:0,bounce:0};
+        for(const [name,key] of [['applySolidContact','solid'],['applyHazardContact','hazard']]){
+            const original=ninja[name];ninja[name]=function(...a){calls[key]++;return original.apply(this,a)};
+        }
+        const bounce=Trampoline.prototype.collision;
+        Trampoline.prototype.collision=function(...a){calls.bounce++;return bounce.apply(this,a)};
+        return calls;
+    };
+'''
+
+
+class Task501Tests(unittest.TestCase):
+    task_id = 'TASK-501'
+    setUpClass = classmethod(Task447Tests.setUpClass.__func__)
+
+    def open(self, mode='grapple_over'):
+        page = Task447Tests.open(self, mode)
+        page.evaluate('menu.unPause();cancelAnimationFrame(game)')
+        page.evaluate('() => {' + DRAG_FIXTURE + '}')
+        return page
+
+    def test_01_horizontal_drag_fall(self):
+        page = self.open()
+        run = '''withZone => {
+            dragWorld(withZone);
+            const calls=contactSpy();
+            ninja.x=430;ninja.y=700-ninja.radius-40;ninja.speedX=1.0;ninja.speedY=0;
+            const rows=[];
+            for(let tick=1;tick<=400 && ninja.y-ninja.radius<=900;tick++){
+                physics();
+                rows.push({tick,x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,inZone:inZone()});
+            }
+            return {rows,calls,radius:ninja.radius,damping:DRAG_ZONE_HORIZONTAL_DAMPING,
+                collidable:floors[0].elements.map(e=>e.id),dragZones:floors[0].dragZones.map(z=>z.id),
+                cyclesPerTick,gravity:GRAVITY};
+        }'''
+        zone = page.evaluate(run, True)
+        plain = page.evaluate(run, False)
+        rows = zone['rows']
+        inside = [i for i, r in enumerate(rows) if r['inZone']]
+        self.assertTrue(inside)
+        first, last = inside[0], inside[-1]
+        self.assertEqual(inside, list(range(first, last + 1)))
+        entry = rows[first - 1]
+        exit_ = rows[last]
+        self.assertGreaterEqual(abs(entry['vx']), 0.9)
+        self.assertLessEqual(abs(exit_['vx']), 0.2)
+        for r in rows[last + 1:]:
+            self.assertEqual(r['vx'], exit_['vx'])
+        self.assertGreater(rows[-1]['y'] - zone['radius'], 820)
+        zone_vy = [r['vy'] for r in rows]
+        plain_vy = [r['vy'] for r in plain['rows']]
+        self.assertEqual(zone_vy, plain_vy)
+        self.assertEqual([r['y'] for r in rows], [r['y'] for r in plain['rows']])
+        for a, b in zip(rows[first:last + 1], rows[first - 1:last]):
+            self.assertAlmostEqual(a['vx'], b['vx'] * zone['damping'], places=12)
+        self.assertTrue(all(r['vx'] == 1.0 for r in plain['rows']))
+        self.assertEqual(zone['calls'], dict(solid=0, hazard=0, bounce=0))
+        self.assertEqual(zone['collidable'], [])
+        self.assertEqual(zone['dragZones'], ['drag'])
+        self.__class__.fall = dict(zone_height=120, zone=dict(x=400, y=700, width=600, height=120),
+            damping_constant=dict(name='DRAG_ZONE_HORIZONTAL_DAMPING', value=zone['damping'],
+                applied='once per simulation tick (physics()) while the player circle overlaps a drag zone; speedX only'),
+            cycles_per_tick=zone['cyclesPerTick'], gravity_per_cycle=zone['gravity'],
+            entry=dict(tick=entry['tick'], vx=entry['vx']), exit=dict(tick=exit_['tick'], vx=exit_['vx']),
+            ticks_overlapping=len(inside), player_radius=zone['radius'],
+            player_contacts=zone['calls'], series=rows, no_zone_series=plain['rows'],
+            vy_series_identical=True, y_series_identical=True, player_passed_through=True)
+        print('PASS drag fall: entry |vx|=%.3f exit |vx|=%.4f over %d ticks; vy series identical to no-zone run; 0 contacts'
+              % (abs(entry['vx']), abs(exit_['vx']), len(inside)))
+
+    def test_02_grapnel_passes_through(self):
+        page = self.open()
+        run = '''withFloor => {
+            const extra=withFloor ? [{id:'floor',x:400,y:900,role:'solid',
+                points:[{x:0,y:0},{x:600,y:0},{x:600,y:60},{x:0,y:60}]}] : [];
+            dragWorld(true,extra);
+            const calls=contactSpy();
+            ninja.x=700;ninja.y=600;ninja.speedX=ninja.speedY=0;
+            screen.trackGrappleOver(true);
+            const p=canvasCoordsToViewportCoords({x:(700+screen.x)*scale[version],y:(800+screen.y)*scale[version]});
+            document.dispatchEvent(new MouseEvent('mousedown',{clientX:p.x,clientY:p.y}));
+            const trace=[];
+            for(let tick=1;tick<=40;tick++){
+                physics();
+                const tip=grapnel.pos.length?grapnel.pos[0].slice(0,2):null;
+                trace.push({tick,tip,grappled:grapnel.isGrappled(),parked:grapnel.throwed&&grapnel.isParked(),
+                    target:grapnel.isGrappled()?grapnel.pos[0][2].id:null,player:[ninja.x,ninja.y]});
+                if(grapnel.isGrappled()) break;
+            }
+            document.dispatchEvent(new MouseEvent('mouseup'));
+            return {trace,calls,thrown:trace.some(t=>t.tip)};
+        }'''
+        miss = page.evaluate(run, False)
+        hit = page.evaluate(run, True)
+        self.assertTrue(miss['thrown'])
+        self.assertFalse(any(t['grappled'] for t in miss['trace']))
+        tips = [t['tip'][1] for t in miss['trace'] if t['tip']]
+        self.assertGreater(max(tips), 820)  # tip travelled through and beyond the zone
+        self.assertTrue(miss['trace'][-1]['parked'])
+        self.assertTrue(hit['trace'][-1]['grappled'])
+        self.assertEqual(hit['trace'][-1]['target'], 'floor')
+        self.assertAlmostEqual(hit['trace'][-1]['tip'][1], 900, places=6)
+        for r in (miss, hit):
+            self.assertEqual(r['calls'], dict(solid=0, hazard=0, bounce=0))
+        self.__class__.grapnel = dict(zone_only_miss=miss, zone_then_solid_hit=hit,
+            grapnel_passed_through=True, acquired_drag=False)
+        print('PASS grapnel: zone-only throw passes through to y=%.1f and parks unattached; with solid behind it attaches to "floor" at y=900'
+              % max(tips))
+
+    def test_03_render_and_write_drag_json(self):
+        page = self.open()
+        meta = page.evaluate('''() => {
+            const rect=(id,x,role,extra={})=>({id,x,y:300,role,...extra,
+                points:[{x:0,y:0},{x:160,y:0},{x:160,y:120},{x:0,y:120}]});
+            const d=structuredClone(GRAPPLE_OVER_LEVEL);
+            d.elements=[rect('solid',100,'solid'),rect('bounce',320,'bounce'),rect('hazard',540,'hazard'),
+                rect('mover',760,'solid'),rect('drag',980,'drag')];
+            d.movers=[{id:'m',element:'mover',axis:'y',min:280,max:320,periodMs:1000,phase:0.5}];
+            d.encounters[0].elements=d.elements.map(e=>e.id);
+            floors=[loadFixedLevel(d)];screen.leftWall=null;
+            ninja.x=-500;ninja.y=-500;grapnel.throwed=false;grapnel.pos=[];
+            TUTORIAL_HINT.visible=false;TUTORIAL_HINT.done=true;
+            screen.x=660;screen.y=400;
+            const base=ctx.getTransform();draw();
+            ctx.save();ctx.setTransform(base);ctx.scale(scale[version],scale[version]);
+            ctx.font='bold 34px sans-serif';ctx.fillStyle='#fff';ctx.textAlign='center';
+            for(const e of [...floors[0].elements,...floors[0].dragZones])
+                ctx.fillText(e.id,e.x+80+screen.x,e.y+175+screen.y);
+            ctx.restore();
+            return [...floors[0].elements,...floors[0].dragZones].map(e=>({id:e.id,role:e.surfaceRole,fill:e.fill,stroke:e.stroke}));
+        }''')
+        png = self.evidence.path('drag.png')
+        page.screenshot(path=png)
+        strokes = {m['id']: m['stroke'] for m in meta}
+        self.assertEqual(len(set(strokes.values())), 5, strokes)
+        self.assertEqual(strokes['drag'], '#ffc400')
+        self.evidence.write('drag.json', dict(self.proof, **getattr(self, 'fall', {}),
+            grapnel=getattr(self, 'grapnel', None), render_samples=meta, screenshot='artifacts/TASK-501/drag.png'))
+        self.assertTrue(hasattr(self, 'fall') and hasattr(self, 'grapnel'))
+        print('PASS render: drag stroke %s distinct from %s' % (strokes['drag'],
+              ', '.join('%s=%s' % (k, v) for k, v in strokes.items() if k != 'drag')))
+
+    def test_04_classic_bad_baseline(self):
+        baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())
+        out = {}
+        for mode in ('classic', 'bad'):
+            page, errors = open_fixture(self.browser, self.url, mode, self.addCleanup)
+            initial = page.evaluate(STATE)
+            trace = step(page, 12)
+            drag = page.evaluate("floors.some(f=>f.dragZones)")
+            self.assertEqual(initial, baseline['modes'][mode]['initial'])
+            self.assertEqual(trace, baseline['modes'][mode]['movement_trace'])
+            self.assertFalse(drag)
+            self.assertEqual(errors, [])
+            out[mode] = dict(initial=initial, movement_trace=trace, baseline_equal=True, drag_zones_loaded=False)
+        self.evidence.write('baseline.json', dict(self.proof, baseline_path='artifacts/TASK-444/baseline.json',
+            modes=out, classic_bad_baseline_equal=True))
+        print('PASS classic/bad: initial state and 12-tick seeded traces equal TASK-444 baseline; no drag zones loaded')

@@ -86,6 +86,12 @@ const STYLE = Object.freeze({
             trail: '#ff3d71',
             red: '#ff3d71'
         }),
+        // Grapple Over pass-through drag zones: translucent amber, unlike any
+        // collidable role (gray solid, green bounce, pink hazard, blue mover).
+        drag: Object.freeze({
+            fill: 'rgba(255, 196, 0, 0.13)',
+            stroke: '#ffc400'
+        }),
         // Classic floor/ceiling strips: same green neon edge as bad mode
         ground: Object.freeze({
             fill: '#06101c',
