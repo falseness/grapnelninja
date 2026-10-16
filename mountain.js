@@ -498,6 +498,49 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         intent:'Optional jib cut reaches the rest sooner, then shares the exposed head/boom crossing to S07-04; normal gantry route remains'});
     Object.assign(recoveries[6],{status:'built',elements:['S07-recovery-balcony','S07-side-hoist','S07-upper-motor'],
         rejoin:'S07-04',sideRoute:'Lower eastern balcony and hoist rejoin the upper motor; misses outside it fall physically into earlier sections'});
+    // Summit Array opening: beacon arms, a davit brake, a green ramp and the
+    // lamp mast. Every silhouette is its own collider; the mast is the landmark.
+    const summit = [
+        {id:'S08-launch-arm',x:4900,y:-11760,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:180,y:0},{x:180,y:30},{x:40,y:30},{x:0,y:12}]},
+        {id:'S08-brake-davit',x:4880,y:-11880,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:100,y:0},{x:100,y:30},{x:65,y:30},{x:65,y:42},{x:35,y:42},{x:35,y:30},{x:0,y:30}]},
+        {id:'S08-footing-rest',x:4260,y:-11600,role:'solid',grapplable:true,
+            points:[{x:0,y:-20},{x:20,y:-20},{x:20,y:0},{x:200,y:0},{x:200,y:-60},{x:240,y:-60},{x:240,y:55},{x:0,y:55}]},
+        {id:'S08-lamp-hook',x:4020,y:-11960,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:100,y:0},{x:100,y:30},{x:60,y:30},{x:50,y:45},{x:40,y:30},{x:0,y:30}]},
+        {id:'S08-deflector-ramp',x:3520,y:-11800,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:360,y:180},{x:345,y:210},{x:-15,y:30}]},
+        {id:'S08-mast-yard',x:3400,y:-12200,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:100,y:0},{x:100,y:18},{x:80,y:30},{x:20,y:30},{x:0,y:18}]},
+        {id:'S08-test-exit',x:3020,y:-12080,role:'solid',grapplable:true,
+            points:[{x:0,y:-60},{x:40,y:-60},{x:40,y:0},{x:400,y:0},{x:400,y:-20},{x:420,y:-20},{x:420,y:55},{x:0,y:55}]},
+        {id:'S08-beacon-mast',x:3020,y:-12140,role:'solid',grapplable:true,
+            points:[{x:8,y:0},{x:32,y:0},{x:32,y:-460},{x:64,y:-460},{x:64,y:-540},{x:-24,y:-540},{x:-24,y:-460},{x:8,y:-460}]},
+        // Misses west of the footing roll down a tilted spill deck to its east stop;
+        // the pulley block above returns them onto the Crown boom and balcony.
+        {id:'S08-spill-deck',x:3340,y:-11160,role:'solid',grapplable:true,
+            points:[{x:0,y:-40},{x:30,y:-40},{x:30,y:2.5},{x:1440,y:120},{x:1440,y:105},{x:1480,y:105},{x:1480,y:160},{x:0,y:40}]},
+        {id:'S08-recovery-hook',x:4950,y:-11450,role:'solid',grapplable:true,
+            points:[{x:0,y:10},{x:20,y:0},{x:80,y:0},{x:100,y:10},{x:100,y:30},{x:0,y:30}]}
+    ];
+    Object.assign(sections[7],{status:'partial',landmark:{id:'S08-landmark',
+        name:'distinct final beacon silhouette',x:3040,y:-12640}});
+    Object.assign(encounters[28],{status:'built',x:5339,y:-11351,
+        elements:['S07-exit','S08-launch-arm','S08-brake-davit','S08-footing-rest'],
+        start:{from:'S07-04',x:5339.2,y:-11350.8},target:{x:5000,y:-11740},brakeTarget:{x:4930,y:-11865},
+        exit:{left:4290.8,right:4449.2,top:-11612,bottom:-11600},
+        action:'Pull up the launch arm and release west; brake on the opposing davit, then release onto the footing rest'});
+    Object.assign(encounters[29],{status:'built',x:4291,y:-11611,
+        elements:['S08-footing-rest','S08-lamp-hook','S08-deflector-ramp','S08-mast-yard','S08-test-exit'],
+        start:{from:'S08-01',x:4290.8,y:-11610.8},target:{x:4070,y:-11945},transferTarget:{x:3450,y:-12185},
+        exit:{left:3070.8,right:3409.2,top:-12092,bottom:-12080},
+        temporaryExit:'S08-test-exit',
+        action:'Pull the lamp hook, fall onto the angled green ramp, grab the mast yard in flight and release onto the temporary exit'});
+    Object.assign(connectors[28],{status:'built',intent:'S07-exit launches directly to the beacon arm; the davit and footing rest are visible before commitment'});
+    Object.assign(connectors[29],{status:'built',intent:'Footing rest separates the brake from the bounce transfer; temporary exit after S08-02'});
+    Object.assign(recoveries[7],{openingElements:['S08-spill-deck','S08-recovery-hook','S07-roof-boom','S07-recovery-balcony'],
+        openingRejoin:'S07-03',sideRoute:'Western misses collect on the spill deck; the recovery hook throws players back onto the Crown boom or balcony. Eastern misses fall through the Crown into Liftworks. No hazards.'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
@@ -505,7 +548,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown], movers:liftMovers},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         completion:'planned; no summit trigger until authored',

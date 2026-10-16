@@ -2375,3 +2375,233 @@ class Task485Tests(unittest.TestCase):
             self.assertEqual(trace,replay)
             self.evidence.write('clips/'+name+'/result.json',dict(passed=True,matching_traces=True,no_relocation=True))
             print('PASS '+name+': section exit; matching replay; no relocation')
+
+
+class Task486Tests(unittest.TestCase):
+    """Summit Array opening: opposing-anchor brake and angled-bounce transfer."""
+    task_id = 'TASK-486'
+    snapshot_contacts = True
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    test_07_source_hashes = Task465Tests.test_03_source_hashes
+    # Actual S07 departure rest from the TASK-484 normal route trace.
+    s07_exit = (5339.1999999, -11350.8000001)
+    footing = (4290.8000001, -11610.8000001)
+    landmark = (3040, -12640)
+    brake = [(20,'mousedown',5000,-11740),(65,'mouseup',5000,-11740),
+             (125,'mousedown',4930,-11865),(150,'mouseup',4930,-11865)]
+    transfer = [(20,'mousedown',4070,-11945),(55,'mouseup',4070,-11945),
+                (215,'mousedown',3450,-12185),(241,'mouseup',3450,-12185)]
+    rest_bounds = dict(x=[4290,4450],y=[-11611,-11610],speedX=[-.001,.001],speedY=[-.001,.001])
+    exit_bounds = dict(x=[3070,3410],y=[-12091,-12090],speedX=[-.001,.001],speedY=[-.001,.001])
+
+    def replay(self, name, plan, ticks, bounds, start, bounces=(), targets=()):
+        from grapple_over_verify import metadata, execute, check_trace
+        page=self.open();level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)')
+        m=dict(metadata=metadata('isolated'),initial_setup=dict(level=level,
+            player=dict(x=start[0],y=start[1],speedX=0,speedY=0)),
+            inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
+            ticks=ticks,expected_exit=bounds,required_events=['acquisition','release'])
+        m['metadata'].update(compact_contacts=True,snapshot_contacts=True)
+        prefix='encounters/'+name
+        self.evidence.write(prefix+'/input.json',m)
+        trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=True)
+        check_trace(m,trace)
+        replay=execute(m,self.browser,self.url,str(self.evidence.path(prefix+'/replay')))
+        check_trace(m,replay);self.assertEqual(trace,replay)
+        self.assertEqual(len(trace['metadata']['setupOnlySpawns']),1)
+        self.assertLessEqual({e['type'] for e in trace['events']},{'input','acquisition','release','bounce','wrap'})
+        reflections=[e for e in trace['events'] if e['type']=='bounce']
+        self.assertEqual([e['contact']['elementId'] for e in reflections],list(bounces))
+        for e in reflections:
+            before=e['before']['simulation']['player'];after=e['after']['simulation']['player']
+            n=(e['contact']['nx'],e['contact']['ny'])
+            self.assertLess(before['speedX']*n[0]+before['speedY']*n[1],0)
+            self.assertGreater(after['speedX']*n[0]+after['speedY']*n[1],0)
+            self.assertAlmostEqual(abs(n[0]),1/(5**.5),places=5)
+        players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+        step=max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a,b in zip(players,players[1:]))
+        self.assertLess(step,60)
+        # Measured camera sightlines: landmark and every target at each filmstrip frame.
+        frames=sorted({t for t in range(0,ticks,60)}|{ticks-1}|{t for t,*_ in plan})
+        points=dict(landmark=self.landmark,**{k:v for k,v in targets})
+        sight=page.evaluate('''([rows,points]) => rows.map(r => {const out={tick:r.tick};
+            for (const [k,p] of Object.entries(points)) {
+                const c=canvasCoordsToViewportCoords({x:(p[0]+r.camera.x)*scale[version],y:(p[1]+r.camera.y)*scale[version]});
+                out[k]={x:c.x,y:c.y,visible:c.x>0&&c.x<1280&&c.y>0&&c.y<720};}
+            return out;})''',[[dict(tick=t,camera=trace['snapshots'][t]['state']['camera']) for t in frames],points])
+        page.close()
+        for e in trace['events']:
+            if e['type']=='input' and e['event']=='mousedown':
+                self.assertTrue(e['trusted'])
+                self.assertTrue(0<e['client']['x']<1280 and 0<e['client']['y']<720)
+        result=dict(passed=True,matching_traces=True,trusted_inputs=True,no_traversal_mutation=True,
+            max_tick_displacement=step,event_types=sorted({e['type'] for e in trace['events']}),
+            acquisitions=[(e['tick'],e['after']['rope'][0]['id']) for e in trace['events'] if e['type']=='acquisition'],
+            releases=[e['tick'] for e in trace['events'] if e['type']=='release'],
+            reflections=[dict(tick=e['tick'],element=e['contact']['elementId'],normal=[e['contact']['nx'],e['contact']['ny']],
+                before=e['before']['simulation']['player'],after=e['after']['simulation']['player']) for e in reflections],
+            final=players[-1],camera_sightlines=sight,frames=[f'frame-{t:04d}.png' for t in frames],
+            scope='One labeled setup placement; production physics and trusted mouse input thereafter')
+        self.evidence.write(prefix+'/result.json',result)
+        return trace,result
+
+    def test_01_geometry(self):
+        page=self.open()
+        page.evaluate('floors=[loadFixedLevel(validateMountainManifest(GRAPPLE_OVER_MOUNTAIN))]')
+        r=page.evaluate('''() => ({manifest:GRAPPLE_OVER_MOUNTAIN,runtime:floors[0].level,
+            colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))})''')
+        m=r['manifest'];elements=m['geometry']['elements']
+        self.assertEqual(m['sections'][7]['status'],'partial')
+        self.assertEqual(m['sections'][7]['landmark']['name'],'distinct final beacon silhouette')
+        self.assertEqual([e['status'] for e in m['encounters'][28:32]],['built','built','planned','planned'])
+        self.assertEqual([c['status'] for c in m['connectors'][28:31]],['built','built','planned'])
+        self.assertEqual(m['connectors'][28]['from'],'S07-04')
+        self.assertEqual(m['recoveries'][7]['status'],'planned')
+        self.assertEqual(r['runtime']['elements'],elements)
+        for a,e in zip(r['colliders'],elements):
+            self.assertEqual(a,{k:e[k] for k in ('id','x','y','points','role')})
+        self.assertIsNone(r['runtime']['finish'])
+        summit=[e for e in elements if e['id'].startswith('S08')]
+        self.assertEqual(len(summit),10)
+        self.assertEqual(len({json.dumps(e['points']) for e in summit}),10)
+        roles={e['id']:e['role'] for e in summit}
+        self.assertEqual([k for k,v in roles.items() if v!='solid'],['S08-deflector-ramp'])
+        self.assertEqual(roles['S08-deflector-ramp'],'bounce')
+        self.assertFalse(any(e['role']=='hazard' for e in summit))
+        self.assertTrue(all(e['grapplable'] for e in summit))
+        top,bottom=m['sections'][7]['band']['top'],m['sections'][7]['band']['bottom']
+        recovery_overlap={'S08-spill-deck'}
+        for e in summit:
+            ys=[e['y']+p['y'] for p in e['points']]
+            if e['id'] in recovery_overlap: self.assertTrue(-11340<min(ys) and max(ys)<-9720)
+            else: self.assertTrue(top<=min(ys) and max(ys)<=bottom,e['id'])
+        prior=json.loads((ROOT/'artifacts/TASK-484/geometry.json').read_text())['manifest']
+        self.assertEqual([e for e in elements if not e['id'].startswith('S08')],prior['geometry']['elements'])
+        self.assertEqual(m['geometry']['movers'],prior['geometry']['movers'])
+        calibration=json.loads((ROOT/'artifacts/TASK-463/calibration.json').read_text())
+        for path in ('sprites/ninja.js','sprites/grapnel.js','sprites/trampoline.js','physics.js'):
+            self.assertEqual(self.proof['source_hashes'][path],calibration['source_hashes'][path])
+        ramp=next(e for e in summit if e['id']=='S08-deflector-ramp')['points']
+        slope=(ramp[1]['y']-ramp[0]['y'])/(ramp[1]['x']-ramp[0]['x'])
+        self.assertAlmostEqual(slope,.5)
+        functions={'S08-01 launch':['S08-launch-arm'],'S08-01 opposing brake':['S08-brake-davit'],
+                   'rest between combinations':['S08-footing-rest'],'S08-02 launch':['S08-lamp-hook'],
+                   'S08-02 angled green bounce':['S08-deflector-ramp'],'S08-02 airborne transfer':['S08-mast-yard'],
+                   'safe temporary exit':['S08-test-exit'],'landmark beacon':['S08-beacon-mast'],
+                   'recovery (miss collector / return)':['S08-spill-deck','S08-recovery-hook']}
+        self.evidence.write('geometry.json',dict(self.proof,**r,structural_validations_pass=True,
+            encounters=m['encounters'][28:30],surface_roles=roles,functions=functions,
+            colliders_S08=[{k:e[k] for k in ('id','x','y','role','grapplable','points')} for e in summit],
+            starts={'S08-01':dict(x=self.s07_exit[0],y=self.s07_exit[1],source='S07-exit rest pose from artifacts/TASK-484 normal route'),
+                    'S08-02':dict(x=self.footing[0],y=self.footing[1],source='S08-01 measured final rest')},
+            exits={'S08-01':m['encounters'][28]['exit'],'S08-02':m['encounters'][29]['exit']},
+            intended_actions={e['id']:e['action'] for e in m['encounters'][28:30]},
+            landing_margins={'S08-footing-rest':dict(floor=[4280,4460],top=-11600,safe_center=[4290.8,4449.2],
+                                 west_lip=20,east_stop=60),
+                             'S08-test-exit':dict(floor=[3060,3420],top=-12080,safe_center=[3070.8,3409.2],
+                                 west_stop=60,east_lip=20)},
+            ramp=dict(slope=slope,normal_abs_x=1/(5**.5)),
+            landmark=m['sections'][7]['landmark'],
+            camera_sightlines='Measured per filmstrip frame in encounters/*/result.json (landmark and targets in 1280x720)',
+            calibrated_physics_unchanged=True,previous_geometry_unchanged=True,
+            temporary_exit='S08-test-exit after S08-02; S08-03/04 and summit remain planned; no finish trigger',
+            recovery='S08-spill-deck sits in the Crown band as a recovery overlap; S08-recovery-hook returns players to S07-roof-boom/S07-recovery-balcony'))
+        parts=['<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="1100" viewBox="2850 -12800 2700 2030" style="background:#182028">']
+        colors=['#b6c5d2','#f7d978','#f0dfbb','#8ec8e0','#66e08a','#c3a8f2','#ffffff','#ff9de0','#9cdaa4']
+        for (role,ids),color in zip(functions.items(),colors):
+            for e in elements:
+                if e['id'] not in ids:continue
+                pts=' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+                parts.append(f'<polygon points="{pts}" fill="{color}"/><text x="{e["x"]}" y="{e["y"]-20}" fill="white" font-size="20">{e["id"]} ({e["role"]})</text>')
+        for e in elements:
+            if e['id'].startswith('S07'):
+                pts=' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+                parts.append(f'<polygon points="{pts}" fill="#556070"/><text x="{e["x"]}" y="{e["y"]-8}" fill="#99a" font-size="16">{e["id"]}</text>')
+        for i,role in enumerate(functions):
+            parts.append(f'<text x="2870" y="{-11500+i*30}" fill="{colors[i]}" font-size="22">{role}</text>')
+        parts.append('</svg>');page.set_content(''.join(parts));page.set_viewport_size(dict(width=1300,height=1100))
+        page.screenshot(path=str(self.evidence.path('overview.png')))
+        print('PASS geometry: S08-01/02 built; structural_validations_pass; matching colliders; starts/exits; roles; landing margins; ten distinct silhouettes; calibration and earlier geometry unchanged; overview.png')
+
+    def brake_checks(self, trace):
+        acq=[e for e in trace['events'] if e['type']=='acquisition']
+        self.assertEqual([e['after']['rope'][0]['id'] for e in acq][:2],['S08-launch-arm','S08-brake-davit'])
+        rel=[e for e in trace['events'] if e['type']=='release']
+        before=acq[1]['after']['simulation']['player'];after=rel[1]['after']['simulation']['player']
+        self.assertLess(before['speedX'],-.5)
+        self.assertGreater(after['speedX'],before['speedX']/4)
+        return dict(speedX_at_brake_acquisition=before['speedX'],speedX_at_brake_release=after['speedX'],
+            brake_tick=acq[1]['tick'],release_tick=rel[1]['tick'])
+
+    def test_02_opposing_brake(self):
+        trace,result=self.replay('S08-01-brake-release',self.brake,450,self.rest_bounds,self.s07_exit,
+            targets=[('launch_arm',(4960,-11740)),('brake_davit',(4930,-11865)),('footing_rest',(4370,-11600))])
+        brake=self.brake_checks(trace)
+        # After the camera settles on the S07 exit, all three S08-01 targets stay on screen.
+        self.assertTrue(all(r['launch_arm']['visible'] and r['brake_davit']['visible'] and r['footing_rest']['visible']
+            for r in result['camera_sightlines'] if r['tick']>=60))
+        self.evidence.write('encounters/S08-01.json',dict(passed=True,connected_from='S07-exit',
+            opposing_anchor_braking=brake,release_onto_rest=True,final=result['final']))
+        print('PASS S08-01: from S07 exit; launch arm; opposing davit brake reduces westward speed; release onto footing rest; targets visible before commitment; matching real-input replay')
+
+    def bounce_checks(self, trace):
+        acq=[e for e in trace['events'] if e['type']=='acquisition']
+        self.assertEqual([e['after']['rope'][0]['id'] for e in acq],['S08-lamp-hook','S08-mast-yard'])
+        bounce=next(e for e in trace['events'] if e['type']=='bounce')
+        self.assertLess(bounce['tick'],acq[1]['tick'])
+        # Between reflection and the new grapple the player is airborne and unattached.
+        rows=trace['snapshots'][bounce['tick']+1:acq[1]['tick']]
+        self.assertTrue(rows and all(not r['state']['simulation']['grapple']['grappled'] and
+            abs(r['state']['simulation']['player']['speedY'])>.05 for r in rows))
+        return dict(bounce_tick=bounce['tick'],airborne_acquisition_tick=acq[1]['tick'],
+            airborne_ticks=len(rows))
+
+    def test_03_bounce_transfer(self):
+        trace,result=self.replay('S08-02-bounce-transfer',self.transfer,620,self.exit_bounds,self.footing,
+            bounces=['S08-deflector-ramp'],targets=[('lamp_hook',(4070,-11945)),('ramp',(3700,-11710)),('mast_yard',(3450,-12185)),('test_exit',(3240,-12080))])
+        checks=self.bounce_checks(trace)
+        rows=result['camera_sightlines']
+        self.assertTrue(all(r['landmark']['visible'] for r in rows if r['tick']>=300))
+        self.assertTrue(all(r[k]['visible'] for r in rows if r['tick']>=55 for k in ('lamp_hook','ramp','mast_yard','test_exit')))
+        self.evidence.write('encounters/S08-02.json',dict(passed=True,angled_bounce=True,airborne_transfer=checks,
+            temporary_exit_reached=True,final=result['final']))
+        print('PASS S08-02: angled green ramp reflection; airborne mast-yard grapple after bounce; temporary exit; next targets visible from tick 55; beacon landmark visible from tick 300; matching replay')
+
+    def test_04_connected(self):
+        plan=self.brake+[(t+450,e,x,y) for t,e,x,y in self.transfer]
+        trace,_=self.replay('S08-01-02-connected',plan,1070,self.exit_bounds,self.s07_exit,bounces=['S08-deflector-ramp'])
+        rest=trace['snapshots'][450]['state']['simulation']['player']
+        self.assertAlmostEqual(rest['x'],self.footing[0],places=5);self.assertAlmostEqual(rest['y'],self.footing[1],places=5)
+        self.assertEqual((rest['speedX'],rest['speedY']),(0,0))
+        self.brake_checks(trace)
+        acq=[e['after']['rope'][0]['id'] for e in trace['events'] if e['type']=='acquisition']
+        self.assertEqual(acq,['S08-launch-arm','S08-brake-davit','S08-lamp-hook','S08-mast-yard'])
+        self.evidence.write('encounters/connected.json',dict(passed=True,from_='S07-exit',rest_between=rest,
+            acquisitions=acq,final=trace['snapshots'][-1]['state']['simulation']['player']))
+        print('PASS connected: S07 exit -> S08-01 brake -> footing rest (stationary) -> S08-02 bounce transfer -> temporary exit; matching replay')
+
+    def test_05_failure_recovery(self):
+        hook=[(1500,'mousedown',5000,-11440),(1530,'mouseup',5000,-11440)]
+        boom=dict(x=[5490,5780],y=[-10191,-10190],speedX=[-.001,.001],speedY=[-.001,.001])
+        out={}
+        trace,r=self.replay('S08-01-no-brake-recovery',self.brake[:2]+hook,1900,boom,self.s07_exit)
+        corner=trace['snapshots'][1499]['state']['simulation']['player']
+        self.assertAlmostEqual(corner['y'],-11051.7,delta=.5);self.assertAlmostEqual(corner['x'],4769.2,delta=.5)
+        self.assertEqual([a[1] for a in r['acquisitions']],['S08-launch-arm','S08-recovery-hook'])
+        out['no_brake']=dict(spill_deck_corner=corner,recovery_landing='S07-recovery-balcony',final=r['final'])
+        short=[(20,'mousedown',4070,-11945),(52,'mouseup',4070,-11945)]
+        trace,r=self.replay('S08-02-short-pull-recovery',short+hook,1900,boom,self.footing,bounces=['S08-deflector-ramp'])
+        corner=trace['snapshots'][1499]['state']['simulation']['player']
+        self.assertAlmostEqual(corner['y'],-11051.7,delta=.5)
+        self.assertGreater(r['reflections'][0]['after']['speedX'],0)
+        out['short_hook']=dict(spill_deck_corner=corner,recovery_landing='S07-recovery-balcony',final=r['final'])
+        over=self.brake[:3]+[(180,'mouseup',4930,-11865)]
+        trace,r=self.replay('S08-01-over-brake-crown',over,1000,
+            dict(x=[4860,4990],y=[-10101,-10100],speedX=[-.001,.001],speedY=[-.001,.001]),self.s07_exit)
+        out['over_brake']=dict(landing='S07-launch-head (start of the S07-03 crossing back to S07-exit)',final=r['final'])
+        self.assertFalse(trace['snapshots'][-1]['state']['simulation']['stats']['completed'])
+        self.evidence.write('encounters/recovery.json',dict(passed=True,physical_falls=True,nonlethal=True,
+            no_relocation=True,no_hazards=True,routes=out,
+            explicit_route='Spill deck -> recovery hook -> S07-recovery-balcony (S07-04 side route: hoist -> motor -> S07-exit -> S08-01); over-brake falls back onto S07-launch-head and the S07-03 crossing'))
+        print('PASS failure/recovery: missed brake and short ramp pull collect on spill deck; recovery hook returns to Crown recovery balcony; over-brake falls back onto the Crown launch head; physical, nonlethal, matching replays')
