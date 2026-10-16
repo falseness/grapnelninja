@@ -258,6 +258,8 @@ def run(rev, out, log=print):
                         startGame(mode)
                         if (typeof continueOffer != 'undefined' && continueOffer.otherVersion)
                             continueOffer.otherVersion = () => version
+                        if (typeof continueOffer != 'undefined' && continueOffer.switchTarget)
+                            continueOffer.switchTarget = () => version
                     }''', mode)
                     frames = []
                     frame_states = []

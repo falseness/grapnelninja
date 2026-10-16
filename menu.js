@@ -474,6 +474,87 @@ function drawScreenGlow(drawShapes)
     if (typeof visualEffects != 'undefined' && visualEffects && visualEffects.bloom)
         visualEffects.bloom.drawScreen(drawShapes)
 }
+// Selectable modes in selector order, with their i18n labels
+const MODE_OPTIONS = [
+    {mode: 'classic',  label: 'menu.chillVersion'},
+    {mode: 'bad',      label: 'menu.mainVersion'},
+    {mode: 'momentum', label: 'menu.momentumVersion'}
+]
+// The mode the old two-way switch led to; the pause and death screen
+// aliases (menu.backToMenu, continueOffer.switchButton) are its button
+function legacySwitchTarget()
+{
+    return version === 'bad' ? 'classic' : 'bad'
+}
+// One row of buttons, one per mode; picking one calls onPick(mode). The
+// running mode is outlined in the primary colour.
+class ModeSelector
+{
+    constructor(onPick)
+    {
+        this.buttons = {}
+        for (const option of MODE_OPTIONS)
+        {
+            this.buttons[option.mode] = new Button(
+                {x: 0, y: 0, width: 1, height: 1, clickable: false, neon: true},
+                {text: I18N.t(option.label), fill: STYLE.colors.ui.buttonText},
+                () => onPick(option.mode))
+        }
+        this.relabel()
+    }
+    button(mode)
+    {
+        return this.buttons[mode]
+    }
+    list()
+    {
+        return MODE_OPTIONS.map(option => this.buttons[option.mode])
+    }
+    relabel()
+    {
+        for (const option of MODE_OPTIONS)
+        {
+            const button = this.buttons[option.mode]
+            button.text.text = I18N.t(option.label)
+            button.background.stroke = option.mode === version ?
+                STYLE.colors.ui.primary : STYLE.colors.ui.buttonDangerStroke
+        }
+    }
+    // Centred on (x, y): equal buttons with a small gap
+    layout(x, y, width, height)
+    {
+        const gap = width * 0.03
+        const buttonWidth = (width - gap * (MODE_OPTIONS.length - 1)) / MODE_OPTIONS.length
+        this.list().forEach((button, i) =>
+        {
+            const left = x - width / 2 + i * (buttonWidth + gap)
+            Menu.prototype.layoutPauseButton(button, left + buttonWidth / 2, y, buttonWidth, height)
+        })
+        // One label size for the row: the longest label's fit
+        const fontSize = Math.min(...this.list().map(button => parseFloat(button.text.fontSize)))
+        for (const button of this.list())
+            button.text.fontSize = getArcadeFont(fontSize)
+    }
+    setClickable(clickable)
+    {
+        for (const button of this.list())
+            button.clickable = clickable
+    }
+    click(coord)
+    {
+        return this.list().some(button => button.isClickOnButton(coord))
+    }
+    draw()
+    {
+        for (const button of this.list())
+            button.draw()
+    }
+    drawGlow()
+    {
+        for (const button of this.list())
+            button.drawGlow()
+    }
+}
 class Menu
 {
     constructor(w, h)
@@ -584,33 +665,23 @@ class Menu
         {
             menu.unPause()
         })
-        this.backToMenu = new Button(
+        // The pause mode selector: abandons the live run (level_failed, no
+        // interstitial) and starts one in the picked mode
+        this.modeSelector = new ModeSelector(function(mode)
         {
-            x: this.center.x        ,
-            y: 0.52 * this.height   ,
-            width: 0.4 * this.width ,
-            clickable: false        ,
-            height: 0.1 * this.height,
-            stroke: STYLE.colors.ui.buttonDangerStroke,
-            neon: true
-        },
-        {
-            text: '',
-            fill: STYLE.colors.ui.buttonText
-        },
-        // The pause switch: abandons the live run (level_failed, no
-        // interstitial) and starts one in the other mode
-        function()
-        {
-            const other = version === 'bad' ? 'classic' : 'bad'
             PROGRESS.save()
             leaveFinishedRun(function()
             {
                 menu.changeGamePause(false)
-                startRunPausedIfPending(() => startGame(other))
+                startRunPausedIfPending(() => startGame(mode))
             })
         })
         this.relabelPauseSwitch()
+    }
+    // The button the old two-way pause switch was
+    get backToMenu()
+    {
+        return this.modeSelector.button(legacySwitchTarget())
     }
     getPausePanel()
     {
@@ -678,17 +749,12 @@ class Menu
             buttonWidth,
             buttonHeight
         )
-        this.layoutPauseButton(
-            this.backToMenu,
-            centerX,
-            panel.y + panel.height * 0.52,
-            buttonWidth,
-            buttonHeight
-        )
+        const selectorWidth = panel.width * 0.9
+        this.modeSelector.layout(centerX, panel.y + panel.height * 0.52, selectorWidth, buttonHeight)
 
         const rowY = panel.y + panel.height * 0.72
-        const backToMenuFontSize = parseFloat(this.backToMenu.text.fontSize)
-        const fpsFontSize = Math.min(backToMenuFontSize, panel.width * 0.09)
+        const resumeFontSize = parseFloat(this.resume.text.fontSize)
+        const fpsFontSize = Math.min(resumeFontSize, panel.width * 0.09)
         const boxSize = fpsFontSize
 
         ctx.save()
@@ -716,7 +782,7 @@ class Menu
             buttonHeight, buttonHeight, this.pauseFpsCounterCheckbox.hitRect().height, timeFontSize])
         this.pauseTitleY = rows[0]
         this.layoutPauseButton(this.resume, centerX, rows[1], buttonWidth, buttonHeight)
-        this.layoutPauseButton(this.backToMenu, centerX, rows[2], buttonWidth, buttonHeight)
+        this.modeSelector.layout(centerX, rows[2], selectorWidth, buttonHeight)
         this.pauseFpsCounterCheckbox.y = rows[3]
         this.timeInGame.y = rows[4]
     }
@@ -737,7 +803,7 @@ class Menu
     {
         return  this.resume.isClickOnButton(coord)                  ||
                 this.pauseFpsCounterCheckbox.isClickOnButton(coord) ||
-                this.backToMenu.isClickOnButton(coord)
+                this.modeSelector.click(coord)
     }
     clickToPause(coord)
     {
@@ -749,12 +815,12 @@ class Menu
         
         this.pauseFpsCounterCheckbox.clickable = isPaused
         this.resume.clickable                   = isPaused
-        this.backToMenu.clickable               = isPaused
+        this.modeSelector.setClickable(isPaused)
     }
-    // Labelled with the mode it switches to
+    // Marks the running mode in the selector
     relabelPauseSwitch()
     {
-        this.backToMenu.text.text = I18N.t(version === 'bad' ? 'menu.chillVersion' : 'menu.mainVersion')
+        this.modeSelector.relabel()
     }
     startPause()
     {
@@ -798,7 +864,7 @@ class Menu
         {
             title.drawGlow()
             this.resume.drawGlow()
-            this.backToMenu.drawGlow()
+            this.modeSelector.drawGlow()
             this.pauseFpsCounterCheckbox.drawGlow()
             LANGUAGE_BUTTON.drawGlow()
         })
@@ -809,7 +875,7 @@ class Menu
         this.timeInGame.draw()
         
         this.resume.draw()
-        this.backToMenu.draw()
+        this.modeSelector.draw()
         LANGUAGE_BUTTON.draw()
     }
     unPause()
@@ -832,16 +898,14 @@ class Menu
     }
 }
 // Free death choices, shared by every score and ad-support outcome:
-// Restart, a switch to the other mode and the fps counter
+// Restart, the mode selector and the fps counter
 class ContinueOffer
 {
     constructor(w, h, onSwitch, onRestart)
     {
         this.visible = false
         this.adPending = false
-        this.switchButton = new Button(
-            {x: 0, y: 0, width: 1, height: 1, neon: true},
-            {text: '', fill: STYLE.colors.ui.buttonText}, onSwitch)
+        this.modeSelector = new ModeSelector(mode => onSwitch(this.switchTarget(mode)))
         this.restartButton = new Button(
             {x: 0, y: 0, width: 1, height: 1, neon: true},
             {text: '', fill: STYLE.colors.ui.buttonText}, onRestart)
@@ -863,14 +927,24 @@ class ContinueOffer
         })
         this.relabel(w, h)
     }
-    // The mode a switch leads to
+    // The button the old two-way death screen switch was
+    get switchButton()
+    {
+        return this.modeSelector.button(this.otherVersion())
+    }
+    // The mode the old switch led to
     otherVersion()
     {
-        return version === 'bad' ? 'classic' : 'bad'
+        return legacySwitchTarget()
+    }
+    // The mode a selector pick starts (the gallery pins it to the running one)
+    switchTarget(mode)
+    {
+        return mode
     }
     relabel(w, h)
     {
-        this.switchButton.text.text = I18N.t(version === 'bad' ? 'menu.chillVersion' : 'menu.mainVersion')
+        this.modeSelector.relabel()
         this.restartButton.text.text = I18N.t('continue.restart')
         this.fpsCounterCheckbox.label = I18N.t('menu.fpsCounter')
         this.layout(w, h)
@@ -883,7 +957,8 @@ class ContinueOffer
         const buttonWidth = Math.min(w * 0.8, h * 0.9)
         const check = this.fpsCounterCheckbox
         menu.layoutPauseButton(this.restartButton, w / 2, h * 0.5, buttonWidth, buttonHeight)
-        menu.layoutPauseButton(this.switchButton, w / 2, h * 0.5 + buttonHeight * 1.25, buttonWidth, buttonHeight)
+        const selectorWidth = Math.min(w * 0.9, buttonWidth * 1.6)
+        this.modeSelector.layout(w / 2, h * 0.5 + buttonHeight * 1.25, selectorWidth, buttonHeight)
 
         const fontSize = parseFloat(this.restartButton.text.fontSize)
         ctx.save()
@@ -906,7 +981,7 @@ class ContinueOffer
         this.title.y = rows[0]
         this.score.y = rows[1]
         menu.layoutPauseButton(this.restartButton, w / 2, rows[2], buttonWidth, buttonHeight)
-        menu.layoutPauseButton(this.switchButton, w / 2, rows[3], buttonWidth, buttonHeight)
+        this.modeSelector.layout(w / 2, rows[3], selectorWidth, buttonHeight)
         check.y = rows[4]
     }
     show()
@@ -919,12 +994,12 @@ class ContinueOffer
     setAdPending(pending) { this.adPending = pending; this.updateClickable() }
     updateClickable()
     {
-        this.restartButton.clickable = this.switchButton.clickable =
-            this.fpsCounterCheckbox.clickable = this.visible && !this.adPending
+        this.restartButton.clickable = this.fpsCounterCheckbox.clickable = this.visible && !this.adPending
+        this.modeSelector.setClickable(this.restartButton.clickable)
     }
     click(coord)
     {
-        return this.restartButton.isClickOnButton(coord) || this.switchButton.isClickOnButton(coord) ||
+        return this.restartButton.isClickOnButton(coord) || this.modeSelector.click(coord) ||
             this.fpsCounterCheckbox.isClickOnButton(coord)
     }
     draw()
@@ -937,7 +1012,7 @@ class ContinueOffer
         this.score.draw()
         if (this.adPending) ctx.globalAlpha = 0.4
         this.restartButton.draw()
-        this.switchButton.draw()
+        this.modeSelector.draw()
         this.fpsCounterCheckbox.draw()
         LANGUAGE_BUTTON.draw()
         ctx.restore()

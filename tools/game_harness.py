@@ -162,16 +162,26 @@ READY = ('PLATFORM.environment !== "pending" && bootComplete && runInProgress'
 
 
 def switch_mode(page, mode):
-    """Make mode ('classic'/'bad') the running mode via the pause-screen switch.
+    """Make mode ('classic'/'bad'/'momentum') the running mode via the pause
+    screen's mode selector.
 
-    The title menu is gone: the other mode is entered by pausing and clicking
-    menu.backToMenu (the mode switch). No-op when mode is already running.
+    The title menu is gone: any mode is entered by pausing and clicking its
+    button in menu.modeSelector. The click is a real mouse click at the
+    button's centre; a rotated (portrait touch) view ignores page input, so
+    there the same canvas point goes through the menu's hit test instead.
+    No-op when mode is already running.
     """
-    page.evaluate('''mode => {
-        if (version === mode && runInProgress) return
+    target = page.evaluate('''mode => {
+        if (version === mode && runInProgress) return null
         if (!menu.gamePaused) menu.startPause()
-        menu.backToMenu.click()
+        const b = menu.modeSelector.button(mode).background
+        return {x: b.x + b.width / 2, y: b.y + b.height / 2, rotated: isViewRotated()}
     }''', mode)
+    if target is not None:
+        if target['rotated']:
+            page.evaluate('p => menu.click(p)', target)
+        else:
+            click_canvas(page, target['x'], target['y'])
     # A rotated (portrait touch) view starts the new run paused (TASK-403);
     # resume it as the switch did before, so callers get a live run
     page.wait_for_function('mode => version === mode && runInProgress', arg=mode)

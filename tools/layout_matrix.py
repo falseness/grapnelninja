@@ -151,8 +151,13 @@ def die(page):
 
     The offer shows when a game over interstitial is due; the fake bridge
     has none, so it is switched on just before the kill (INSTRUMENT_RUN).
+    The local adapter has no bridge: there PLATFORM itself is made due.
     """
-    page.evaluate('() => { bridge.advertisement.isInterstitialSupported = true; window.__kill = true }')
+    page.evaluate('''() => {
+        if (typeof bridge != 'undefined') bridge.advertisement.isInterstitialSupported = true
+        else PLATFORM.isInterstitialDue = () => true
+        window.__kill = true
+    }''')
     page.wait_for_function('continueOffer.visible && !window.__kill && !menu.gamePaused')
 
 

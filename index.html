@@ -371,15 +371,14 @@
                     resetPhysicsTiming()
                 })
             }
-            // The death screen switch: the game over interstitial, then a
-            // run in the other mode
-            function switchFromOffer()
+            // The death screen mode selector: the game over interstitial,
+            // then a run in the picked mode
+            function switchFromOffer(mode)
             {
-                const other = continueOffer.otherVersion()
                 leaveFinishedRun(function()
                 {
                     continueOffer.hide()
-                    startRunPausedIfPending(() => startGame(other))
+                    startRunPausedIfPending(() => startGame(mode))
                 })
             }
             // Starts the next run and pauses it if a pause is owed: an ad
