@@ -153,7 +153,16 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False):
                 page.evaluate('draw()')
                 page.wait_for_timeout(1000 / 60)
         page.evaluate("GRAPPLE_OVER_TEST.finish('passed')")
-        if manifest['metadata'].get('compact_contacts'):
+        if manifest['metadata'].get('snapshot_contacts'):
+            # S05 assertions use every physics snapshot plus rope events. Avoid
+            # retaining thousands of duplicate contact before/after state pairs.
+            page.evaluate('''() => {
+                const a=GRAPPLE_OVER_TEST.attempts[0];
+                a.events=a.events.filter(e=>e.type!=='contact');
+                a.events.forEach((e,i)=>e.sequence=i);
+                a.metadata.contactPolicy='contacts represented by every physics snapshot; rope/input events retained';
+            }''')
+        elif manifest['metadata'].get('compact_contacts'):
             page.evaluate('''() => {
                 const a=GRAPPLE_OVER_TEST.attempts[0], seen=new Set();
                 a.events=a.events.filter(e=>{
@@ -249,12 +258,37 @@ def check_s04_mechanics(encounter, trace, required=True):
     return result
 
 
+def check_s05_mechanics(encounter, trace, required=True):
+    """Check inserted rope segments and motion around their active corner."""
+    elements={'S05-01':'S05-projecting-girder','S05-02':'S05-deep-overhang',
+              'S05-03':'S05-transfer-canopy','S05-04':'S05-recessed-ceiling'}
+    events=trace['events'];observations=[]
+    for wrap in events:
+        if wrap['type']!='wrap' or wrap['after']['rope'][-1]['id']!=elements[encounter]:
+            continue
+        rope=wrap['after']['rope']
+        release=next((e for e in events if e['type']=='release' and e['tick']>wrap['tick']),None)
+        if release is None: continue
+        before=wrap['after']['simulation']['player'];end=release['before']['simulation']['player']
+        observations.append(dict(wrap_tick=wrap['tick'],release_tick=release['tick'],
+            inserted_segment=len(rope)>=2 and rope[0]!=rope[-1],corner=rope[-1],
+            corner_directed_pull=release['tick']>wrap['tick'] and end['x']>before['x'] and end['x']>rope[-1]['x']))
+    acquisitions=[e for e in events if e['type']=='acquisition']
+    new_acquisition=any(a['tick']<r['tick']<b['tick'] and a['after']['rope'][0]!=b['after']['rope'][0]
+        for a,b in zip(acquisitions,acquisitions[1:]) for r in events if r['type']=='release')
+    if required:
+        require(any(o['inserted_segment'] and o['corner_directed_pull'] for o in observations), 'S05 corner pull missing')
+        if encounter in ('S05-03','S05-04'):
+            require(new_acquisition, 'S05 new acquisition missing')
+    return dict(wraps=observations,new_acquisition=new_acquisition)
+
+
 def audit_suite(manifest, browser, url, out):
     """Replay every reported attempt, including failures, without trusting summary flags."""
     evidence, _ = output_writer(out)
     require(manifest['source_hashes'] == hashes(), 'suite source hash mismatch')
     section = manifest.get('section', 'S01')
-    require(section in ('S01', 'S02', 'S03', 'S04'), 'unsupported section')
+    require(section in ('S01', 'S02', 'S03', 'S04', 'S05'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
     count = 0
     for encounter, attempts in manifest['encounters'].items():
@@ -269,12 +303,15 @@ def audit_suite(manifest, browser, url, out):
             require(recorded['trace'] == replayed, 'suite replay mismatch: '+a['name'])
             try:
                 check_trace(recorded, replayed)
+                if section == 'S05': check_s05_mechanics(encounter, replayed)
                 success = True
             except ValueError:
                 success = False
             require(success == a['success'], 'outcome mismatch')
             if section == 'S04':
                 require(check_s04_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S04 mechanics mismatch')
+            if section == 'S05':
+                require(check_s05_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S05 mechanics mismatch')
             count += 1
     negative = json.loads(evidence.path(manifest['negative_control']).read_text())
     recorded = json.loads(evidence.path(negative['input']).read_text())
