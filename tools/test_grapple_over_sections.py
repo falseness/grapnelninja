@@ -1940,3 +1940,93 @@ class Task481Tests(unittest.TestCase):
                 final=trace['snapshots'][-1]['state']['simulation']['player'],
                 next_unbuilt_section_not_required=True))
         print('PASS S06-04: fixed-moving-fixed transfer; section exit traversed; mouse and touch; matching replays; next unbuilt section not required')
+
+
+class Task482Tests(unittest.TestCase):
+    """Liftworks tolerance from labeled isolated starts, with real input."""
+    task_id = 'TASK-482'
+    setUpClass = classmethod(Task467Tests.setUpClass.__func__)
+    load_level = Task476Tests.load_level
+    run_attempt = Task473Tests.run_attempt
+    make_input = Task476Tests.make_input
+    test_03_source_hashes = Task467Tests.test_02_source_hashes
+
+    @staticmethod
+    def routes():
+        opening=[(30,'mousedown',6110,-8370),(210,'mouseup',6110,-8370)]
+        transfer=[(30,'mousedown',5715,-8590),(80,'mouseup',5715,-8590),
+                  (85,'mousedown',5825,-8900),(220,'mouseup',5825,-8900),
+                  (250,'mousedown',6105,-9280),(350,'mouseup',6105,-9280),
+                  (370,'mousedown',5775,-9660),(470,'mouseup',5775,-9660)]
+        return [(f'S06-{i:02d}',(6300,-8080.8),opening,500,
+                 dict(x=[5791,6009],y=[-8281,-8280]),1 if i==3 else 0,(1,0),[])
+                for i in (1,2,3)] + [
+            ('S06-04',(5830.8000001,-8280.8000001),transfer,770,
+             dict(x=[5571,5769],y=[-9691,-9690]),7,(0,1),[])]
+
+    def input_for(self, route, device='desktop', delta=0, offset=0):
+        # Timing varies opening acquisition (01/02), phase release (03), or exit release (04).
+        # Aim varies the corresponding acquisition along its surface tangent.
+        m=self.make_input(route,device,delta,0)
+        aim_index=6 if route[0]=='S06-04' else 0
+        m['inputs'][aim_index]['world']['x']+=offset*route[6][0]
+        m['inputs'][aim_index]['world']['y']+=offset*route[6][1]
+        m['required_events']=['acquisition','release']
+        m['metadata']['snapshot_contacts']=True
+        return m
+
+    def test_01_tolerance_matrix(self):
+        from grapple_over_verify import hashes, check_s06_mechanics
+        self.load_level()
+        suite=dict(section='S06',source_hashes=hashes(),level_sha256=hashes()['mountain.js'],
+            proof_kind='isolated encounter placement only; not continuous completion',encounters={},
+            negative_control='negative-control.json',recovery='clips/recovery/input.json',
+            shortcuts='none assigned or observed; no shortcut completion claim',
+            earlier_attempts=['exploratory/','exploratory-phase-check/','exploratory-transfer/','transfer-probe/','release-probe/','hold-probe/','exit-probe/'])
+        failures=[]
+        for route in self.routes():
+            encounter=route[0];attempts=[];suite['encounters'][encounter]=attempts
+            for device in ('desktop','touch'):
+                for variant,delta,offset in [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]:
+                    name=f'{encounter}-{device}-{variant}'
+                    prefix=('clips/' if variant=='nominal' else 'attempts/')+name
+                    m=self.input_for(route,device,delta,offset)
+                    trace,success,reason=self.run_attempt(m,prefix,variant=='nominal')
+                    mechanics=check_s06_mechanics(encounter,trace,required=False)
+                    if success:
+                        try: check_s06_mechanics(encounter,trace)
+                        except ValueError as error: success=False;reason=str(error)
+                    attempts.append(dict(name=name,device=device,variant=variant,critical_input_index=route[5],
+                        timing_delta=delta,tangent_aim_delta=offset,surface_tangent=route[6],
+                        input=prefix+'/input.json',trace=prefix+'/trace.json',success=success,reason=reason,
+                        mechanic_events=mechanics,final=trace['snapshots'][-1]['state']['simulation']['player']))
+                    self.evidence.write('manifest.json',suite)
+                    print('ATTEMPT',name,'PASS' if success else 'FAIL',reason,flush=True)
+                group=[a for a in attempts if a['device']==device]
+                if not group[0]['success'] or sum(a['success'] for a in group[1:])<2:
+                    failures.append(encounter+' '+device)
+        m=self.input_for(self.routes()[2]);m['inputs'][1]['tick']=300
+        trace,success,reason=self.run_attempt(m,'clips/negative',True)
+        self.evidence.write('negative-control.json',dict(name='phase timing: release after suitable rising phase',
+            input='clips/negative/input.json',trace='clips/negative/trace.json',failed_intended_exit=not success,
+            unchanged_physics=True,source_hashes=hashes(),reason=reason,
+            scope='Same launch and duration with release delayed from tick 210 to 300; alternative solutions are not ruled out.'))
+        self.assertFalse(success);self.assertIn('expected exit mismatch',reason)
+        self.assertEqual(failures,[])
+        print('PASS S06 four encounters: both viewports nominal + >=2/4 variants; moving travel; reversal; timed release; transfer; unsuitable phase fails exit')
+
+    def test_02_recovery(self):
+        from grapple_over_verify import execute
+        self.load_level()
+        route=list(self.routes()[0]);route[2]=[
+            (30,'mousedown',6110,-8370),(300,'mouseup',6110,-8370)]
+        route[3]=700;route[4]=dict(x=[5444,5445],y=[-7411,-7410])
+        m=self.input_for(route)
+        trace,success,reason=self.run_attempt(m,'clips/recovery',True)
+        self.assertTrue(success,reason)
+        self.assertAlmostEqual(trace['snapshots'][400]['state']['simulation']['player']['y'],-8140.8,places=5)
+        replay=execute(m,self.browser,self.url,str(self.evidence.path('clips/recovery/replay')))
+        self.assertEqual(trace,replay)
+        self.evidence.write('clips/recovery/result.json',dict(passed=True,matching_traces=True,
+            physical_catch_tick=400,physical_return_to_S05=True,no_relocation=True))
+        print('PASS recovery: loading floor catch; physical return to S05-transfer-canopy; matching replay')

@@ -283,12 +283,39 @@ def check_s05_mechanics(encounter, trace, required=True):
     return dict(wraps=observations,new_acquisition=new_acquisition)
 
 
+def check_s06_mechanics(encounter, trace, required=True):
+    """Measure moving attachment, reversal, release phase and actual transfers."""
+    events=trace['events']; rows=trace['snapshots']
+    grabs=[e for e in events if e['type']=='acquisition']
+    ids=[e['after']['rope'][0]['id'] for e in grabs]
+    releases=[e for e in events if e['type']=='release']
+    mover='S06-upper-weight' if encounter=='S06-04' else 'S06-counterweight'
+    attached=[r for r in rows if r['state']['simulation']['grapple']['grappled'] and r['state']['rope'] and
+              r['state']['rope'][0]['id']==mover]
+    ys=[r['state']['rope'][0]['y'] for r in attached]
+    travel=max(ys)-min(ys) if ys else 0
+    differences=[b-a for a,b in zip(ys,ys[1:])]
+    reversal=any(d>0 for d in differences) and any(d<0 for d in differences)
+    rising_release=bool(differences and differences[-1]<0)
+    transfer=ids==['S06-fixed-head','S06-upper-weight','S06-transfer-head','S06-exit']
+    observations=dict(acquisitions=ids,moving_anchor_travel=travel,
+        attached_through_reversal=reversal,rising_phase_release=rising_release,
+        fixed_moving_fixed_transfer=transfer,release_ticks=[e['tick'] for e in releases])
+    if required:
+        require(mover in ids and travel>40, 'S06 moving anchor travel missing')
+        if encounter in ('S06-02','S06-03'):
+            require(reversal and travel>100, 'S06 attached reversal missing')
+        if encounter=='S06-03': require(rising_release, 'S06 rising phase release missing')
+        if encounter=='S06-04': require(transfer, 'S06 fixed moving fixed transfer missing')
+    return observations
+
+
 def audit_suite(manifest, browser, url, out):
     """Replay every reported attempt, including failures, without trusting summary flags."""
     evidence, _ = output_writer(out)
     require(manifest['source_hashes'] == hashes(), 'suite source hash mismatch')
     section = manifest.get('section', 'S01')
-    require(section in ('S01', 'S02', 'S03', 'S04', 'S05'), 'unsupported section')
+    require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
     count = 0
     for encounter, attempts in manifest['encounters'].items():
@@ -304,6 +331,7 @@ def audit_suite(manifest, browser, url, out):
             try:
                 check_trace(recorded, replayed)
                 if section == 'S05': check_s05_mechanics(encounter, replayed)
+                if section == 'S06': check_s06_mechanics(encounter, replayed)
                 success = True
             except ValueError:
                 success = False
@@ -312,6 +340,8 @@ def audit_suite(manifest, browser, url, out):
                 require(check_s04_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S04 mechanics mismatch')
             if section == 'S05':
                 require(check_s05_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S05 mechanics mismatch')
+            if section == 'S06':
+                require(check_s06_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S06 mechanics mismatch')
             count += 1
     negative = json.loads(evidence.path(manifest['negative_control']).read_text())
     recorded = json.loads(evidence.path(negative['input']).read_text())
