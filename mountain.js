@@ -193,12 +193,16 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         rectangle('S02-exit-anchor',4080,-3240,180,35,true),
         rest('S02-exit',4280,-3180,360)
     ];
+    // A low mid-deck lip stops the landing slide at the authored S03 start,
+    // below the departure beam; it is low enough to keep that sightline clear.
+    shaft.at(-1).points=[{x:0,y:0},{x:160,y:0},{x:160,y:-20},{x:200,y:-20},{x:200,y:0},
+        {x:360,y:0},{x:360,y:55},{x:0,y:55}];
     Object.assign(sections[1], {status:'built',landmark:{id:'S02-landmark',
         name:'alternating industrial balconies',x:4030,y:-2100}});
     Object.assign(encounters[4], {status:'built',x:4100,y:-1631,
         elements:['S01-exit','S02-left-balcony','S02-right-balcony','S02-catch-balcony'],
-        start:{x:4100,y:-1630.8,from:'S01-04'},target:{x:4220,y:-2240},
-        exit:{left:4100,right:4170,top:-2020,bottom:-1970},
+        start:{x:4209.2,y:-1630.8,from:'S01-04'},target:{x:4220,y:-2240},
+        exit:{left:4080,right:4170,top:-2030,bottom:-1970},
         action:'Pull left from Foundations, release and pull the opposing right balcony'});
     Object.assign(encounters[5], {status:'built',x:4160,y:-2250,
         elements:['S02-right-balcony','S02-brake-girder','S02-rest-ledge'],
@@ -242,12 +246,13 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         rectangle('S03-upper-beam',5180,-4330,180,30,true),
         rectangle('S03-brake-beam',5100,-4650,180,30,true),
         rectangle('S03-exit-anchor',5180,-4900,180,30,true),
+        // Low west lip stops the landing slide but keeps the shot to the S04 press clear.
         {id:'S03-exit',x:5000,y:-4820,role:'solid',grapplable:true,
-            points:[{x:0,y:-60},{x:40,y:-60},{x:40,y:0},{x:240,y:0},{x:240,y:55},{x:0,y:55}]});
+            points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:240,y:0},{x:240,y:55},{x:0,y:55}]});
     Object.assign(sections[2], {status:'built',landmark:{id:'S03-landmark',
         name:'interrupted elevated bridge',x:4800,y:-3420}});
     Object.assign(encounters[8], {status:'built',x:4430,y:-3240,
-        elements:['S02-exit','S03-departure-beam'],start:{x:4430,y:-3190.8,from:'S02-04'},
+        elements:['S02-exit','S03-departure-beam'],start:{x:4429.2,y:-3190.8,from:'S02-04'},
         target:{x:4740,y:-3480},exit:{left:4600,right:4900,top:-3500,bottom:-3280},
         action:'Build rightward speed under the departure beam before release'});
     Object.assign(encounters[9], {status:'built',x:4870,y:-3400,
@@ -303,8 +308,11 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         {id:'S04-double-right',x:5160,y:-5980,role:'bounce',grapplable:true,
             points:[{x:0,y:0},{x:65,y:30},{x:65,y:350},{x:0,y:350}]},
         rectangle('S04-brake-anchor',4800,-5730,40,35,true),
+        // The landing is frictionless after the double reflection; a low mid
+        // lip stops the westward slide where the exit stairs climb begins.
         {id:'S04-double-landing',x:4880,y:-5780,role:'solid',grapplable:true,
-            points:[{x:0,y:-30},{x:15,y:-30},{x:15,y:0},{x:155,y:0},
+            points:[{x:0,y:-30},{x:15,y:-30},{x:15,y:0},{x:85.47,y:0},{x:85.47,y:-20},
+                {x:100.47,y:-20},{x:100.47,y:0},{x:155,y:0},
                 {x:155,y:-30},{x:170,y:-30},{x:170,y:35},{x:0,y:35}]},
         rest('S04-upper-step',4700,-6050,200),
         {id:'S04-exit',x:4460,y:-6480,role:'solid',grapplable:true,points:[{x:0,y:-180},{x:40,y:-180},{x:40,y:0},{x:160,y:0},{x:160,y:-30},{x:200,y:-30},{x:200,y:55},{x:0,y:55}]}
@@ -327,7 +335,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         name:'angled green machinery',x:5050,y:-5370}});
     Object.assign(encounters[12], {status:'built',x:4900,y:-5030,
         elements:['S03-exit','S04-flat-press','S04-rest','S04-catch-basin'],
-        start:{x:5150,y:-4830.8,from:'S03-04'},target:{x:4790,y:-5200},
+        start:{x:5050.8,y:-4830.8,from:'S03-04'},target:{x:4790,y:-5200},
         exit:{left:5090.8,right:5389.2,top:-5012,bottom:-5000},
         action:'Pull toward the flat green press; release, reflect right, and brake onto the rest shelf'});
     Object.assign(encounters[13], {status:'built',x:5150,y:-5400,

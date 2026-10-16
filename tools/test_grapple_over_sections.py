@@ -973,13 +973,15 @@ class Task473Tests(unittest.TestCase):
     def route(touch=False):
         return [(4740,-3480,65,165),(5250,-3670,70,12),
                 (4910,-3990,110,5),(5270,-4310,135,1),
-                (5190,-4630,90,33 if touch else 30),
+                # TASK-489: touch re-timed for the real S02-exit lip entrance (was 33).
+                (5190,-4630,90,36 if touch else 30),
                 (5270,-4880,60,360 if touch else 300)]
 
     def make_input(self, device, limit, critical, delta, offset, bounds, departure_free=None):
+        # TASK-489: the S02-exit mid lip stops the landing slide at x 4429.2, the real S03 entrance.
         from grapple_over_verify import metadata
         m=dict(metadata=metadata('isolated'),initial_setup=dict(level=self.level,
-            player=dict(x=4430,y=-3190.8,speedX=0,speedY=0)),inputs=[],
+            player=dict(x=4429.2,y=-3190.8,speedX=0,speedY=0)),inputs=[],
             expected_exit=bounds,required_events=['acquisition','release'])
         m['metadata']['compact_contacts']=True
         touch=device=='touch'
@@ -1019,7 +1021,9 @@ class Task473Tests(unittest.TestCase):
             shortcuts='clips/shortcut/input.json')
         failures=[]
         for encounter,limit,critical,bounds,free in [
-            ('S03-01',1,0,dict(x=[4750,4840],y=[-3480,-3390],speedX=[.6,1.2]),0),
+            # TASK-489: from the lip rest the swing releases earlier and faster; check the
+            # authored S03-01 exit box with rightward speed built under the beam.
+            ('S03-01',1,0,dict(x=[4600,4900],y=[-3500,-3280],speedX=[.6,1.4]),0),
             ('S03-02',1,0,dict(x=[5190.8,5530],y=[-3291,-3290],speedY=[-.001,.001]),None),
             ('S03-03',3,2,dict(x=[4720,4940],y=[-4240,-4020],speedX=[.3,1.2]),None),
             ('S03-04',6,5,dict(x=[5050,5230],y=[-4831,-4830],speedY=[-.001,.001]),None)]:
