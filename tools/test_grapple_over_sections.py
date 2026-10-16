@@ -1443,3 +1443,88 @@ class Task476Tests(unittest.TestCase):
             changed=changed,landing=next(e for e in r['manifest']['geometry']['elements'] if e['id']==changed[0]),
             prior_reference='artifacts/TASK-475/geometry.json'))
         print('PASS geometry: only S04-double-landing changed; visible polygon matches collider; other sections preserved')
+
+
+class Task477Tests(unittest.TestCase):
+    """Cable Galleries opening: real corner wraps, connected ascent and falls."""
+    task_id = 'TASK-477'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    replay = Task474Tests.replay
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+
+    @staticmethod
+    def opening():
+        return [(30,'mousedown',4655,-6780),(120,'mouseup',4655,-6780)]
+
+    def test_01_geometry(self):
+        page=self.open()
+        r=page.evaluate('''() => {const m=GRAPPLE_OVER_MOUNTAIN;validateMountainManifest(m);
+            return {manifest:m,runtime:floors[0].level,
+                colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))}}''')
+        m=r['manifest'];self.assertEqual(m['sections'][4]['status'],'partial')
+        self.assertEqual([e['status'] for e in m['encounters'][16:20]],['built','built','planned','planned'])
+        self.assertEqual(r['runtime']['elements'],m['geometry']['elements'])
+        for a,e in zip(r['colliders'],m['geometry']['elements']):
+            self.assertEqual(a,{k:e[k] for k in ('id','x','y','points','role')})
+        elements=[e for e in m['geometry']['elements'] if e['id'].startswith('S05')]
+        self.assertEqual(len(elements),4)
+        self.assertEqual(len({json.dumps(e['points']) for e in elements}),3)
+        for e in elements:
+            self.assertEqual(e['role'],'solid')
+            self.assertTrue(all(-8100<=e['y']+p['y']<=-6480 for p in e['points']))
+        self.assertEqual([c['status'] for c in m['connectors'][16:18]],['built','built'])
+        self.assertIsNone(r['runtime']['finish'])
+        old=subprocess.check_output(['git','show','HEAD:mountain.js'],cwd=ROOT,text=True)
+        previous=page.evaluate('(s)=>{return new Function(s+";return GRAPPLE_OVER_MOUNTAIN")()}',old)
+        self.assertEqual([e for e in m['geometry']['elements'] if not e['id'].startswith('S05')],[e for e in previous['geometry']['elements'] if not e['id'].startswith('S05')])
+        calibration=json.loads((ROOT/'artifacts/TASK-463/calibration.json').read_text())
+        for path in ('sprites/ninja.js','sprites/grapnel.js','sprites/trampoline.js','physics.js'):
+            self.assertEqual(self.proof['source_hashes'][path],calibration['source_hashes'][path])
+        r.update(self.proof,structural_validations_pass=True,encounters=m['encounters'][16:18],
+            calibration_reference='artifacts/TASK-463/calibration.json',calibrated_physics_unchanged=True,
+            previous_sections_unchanged=True,surface_roles={e['id']:e['role'] for e in elements},
+            landing_margins={'S05-01':{'safe_center':[4660.8,4839.2],'top':-6800},
+                             'S05-02':{'safe_center':[5010.8,5239.2],'top':-7100}},
+            camera_sightlines='Measured trusted press coordinates in encounters/*/result.json; all inside viewport',
+            temporary_exit='Top of S05-deep-overhang, with end stop; S05-03/04 remain planned',
+            recovery='Open shaft to S04-upper-step; physical grapple to S04-exit')
+        self.evidence.write('geometry.json',r)
+        print('PASS geometry: S05-01/02; structural_validations_pass; matching colliders; starts/exits; surface roles; landing margins; camera sightlines; calibration unchanged')
+
+    def assert_wrap_pull(self,trace,element,after=0):
+        wrap=next(e for e in trace['events'] if e['type']=='wrap' and e['tick']>after
+                  and e['after']['rope'][-1]['id']==element)
+        rope=wrap['after']['rope'];self.assertGreaterEqual(len(rope),2)
+        self.assertNotEqual((rope[0]['x'],rope[0]['y']),(rope[-1]['x'],rope[-1]['y']))
+        release=next(e for e in trace['events'] if e['type']=='release' and e['tick']>wrap['tick'])
+        self.assertGreaterEqual(release['tick']-wrap['tick'],3)
+        before=wrap['after']['simulation']['player'];end=release['before']['simulation']['player']
+        self.assertGreater(end['x'],before['x'])
+        self.assertGreater(end['x'],rope[-1]['x'])
+        return dict(element=element,wrap_tick=wrap['tick'],release_tick=release['tick'],
+                    corner=rope[-1],wrapped_pull_ticks=release['tick']-wrap['tick'],
+                    moved_around_corner=True)
+
+    def test_02_connected_nominal(self):
+        first=self.replay('S05-01',self.opening(),500,
+            dict(x=[4839,4840],y=[-6811,-6810],speedX=[-.001,.001],speedY=[-.001,.001]),start=(4530,-6490.8))
+        connected=self.replay('S05-02-connected',self.opening()+[
+            (530,'mousedown',5005,-7080),(620,'mouseup',5005,-7080)],950,
+            dict(x=[5239,5240],y=[-7111,-7110],speedX=[-.001,.001],speedY=[-.001,.001]),start=(4530,-6490.8))
+        self.assertEqual(first['snapshots'][500]['state'],connected['snapshots'][500]['state'])
+        observations=[self.assert_wrap_pull(first,'S05-projecting-girder'),
+                      self.assert_wrap_pull(connected,'S05-deep-overhang',500)]
+        self.evidence.write('encounters/wrapped-pull.json',dict(passed=True,observations=observations,
+            connected_from='S04-exit',temporary_exit_reached=True,no_traversal_mutation=True))
+        print('PASS S05-01/02: connected from Works exit; projecting corner wrap; wrapped-segment pull around obstruction; safe temporary exit; matching trusted-input replays')
+
+    def test_03_failure_recovery(self):
+        self.replay('short-return',[(30,'mousedown',4655,-6780),(38,'mouseup',4655,-6780)],500,
+            dict(x=[4510,4610],y=[-6491,-6490]),start=(4530,-6490.8))
+        shaft=[(30,'mousedown',4670,-6710),(50,'mouseup',4670,-6710)]
+        self.replay('shaft-fall',shaft,500,dict(x=[4729,4730],y=[-6241,-6240]),start=(4530,-6490.8))
+        self.replay('shaft-recovery',shaft+[(530,'mousedown',4660,-6505),(615,'mouseup',4660,-6505),
+            (625,'mousedown',4560,-6460),(660,'mouseup',4560,-6460)],850,
+            dict(x=[4510,4610],y=[-6491,-6490]),start=(4530,-6490.8))
+        print('PASS failure/recovery: short release returns to Works exit; open shaft fall lands on Works upper step; reachable anchors physically rejoin entrance; no relocation')

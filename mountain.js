@@ -339,6 +339,32 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     connectors[13].status='built';
     Object.assign(recoveries[3], {openingElements:['S04-catch-basin','S04-lower-stair','S03-exit'],
         openingRejoin:'S03-04',sideRoute:'Catch basin and lower stairs reconnect physically to the Viaduct'});
+    // Cable Galleries: cantilever girders and a deep service overhang. The
+    // open shaft below the projecting tips returns misses to Deflector Works.
+    const galleries = [
+        {id:'S05-projecting-girder',x:4650,y:-6800,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:200,y:0},{x:200,y:-20},{x:240,y:-20},{x:240,y:35},{x:80,y:35},{x:80,y:110},{x:0,y:110}]},
+        rest('S05-rest',4740,-6620,260),
+        {id:'S05-deep-overhang',x:5000,y:-7100,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:250,y:0},{x:250,y:-20},{x:300,y:-20},{x:300,y:150},{x:230,y:150},{x:230,y:45},{x:0,y:45}]},
+        rest('S05-lower-gallery',5100,-6810,260)
+    ];
+    Object.assign(sections[4], {status:'partial',landmark:{id:'S05-landmark',
+        name:'projecting beams and deep overhangs',x:4990,y:-6900}});
+    Object.assign(encounters[16], {status:'built',x:4530,y:-6480,
+        elements:['S04-exit','S05-projecting-girder','S05-rest'],
+        start:{from:'S04-04',x:4530,y:-6490.8},target:{x:4655,y:-6780},
+        action:'Wrap the rope around the projecting girder corner; release onto the service rest',
+        exit:{x:4839.2,y:-6810.8,width:200}});
+    Object.assign(encounters[17], {status:'built',x:4839.2,y:-6800,
+        elements:['S05-rest','S05-deep-overhang','S05-lower-gallery'],
+        start:{from:'S05-01',x:4839.2,y:-6810.8},target:{x:5005,y:-7080},
+        action:'Pull around the deep overhang using the wrapped segment; release onto the temporary exit',
+        exit:{x:5239.2,y:-7110.8,width:250,temporary:true}});
+    Object.assign(connectors[16], {status:'built',intent:'Pull from the Works exit around the projecting girder'});
+    connectors[17].status='built';
+    Object.assign(recoveries[4], {openingElements:['S05-rest','S04-exit','S04-upper-step'],
+        openingRejoin:'S04-04',sideRoute:'Visible open shaft west of the girders; reachable Works mast and upper step'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
@@ -346,7 +372,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors], movers:[]},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries], movers:[]},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         completion:'planned; no summit trigger until authored',
