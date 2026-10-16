@@ -157,6 +157,7 @@ class Ninja
             this.speedY = maxSpeed
         if (this.speedY < -maxSpeed)
             this.speedY = -maxSpeed
+        this.limitMomentumSpeed()
         // A cycle longer than the radius could jump over a thin edge:
         // move in equal sub-steps, colliding after each one.
         const steps = Math.max(1, Math.ceil(Math.hypot(this.speedX, this.speedY) / this.radius))
@@ -169,6 +170,7 @@ class Ninja
                 this.track.addPos(this.x, this.y)
             
             this.collision()
+            this.limitMomentumSpeed()
             // A deadly hit restarted the game with a new ninja or froze
             // the run (continue offer, game over interstitial).
             if (ninja !== this || isRunFrozen())
@@ -180,6 +182,20 @@ class Ninja
         // Momentum: out of view on the side the camera left behind
         else if (screen.hasLeftBehind && screen.hasLeftBehind(this))
             onLethalDeath()
+    }
+    // Momentum: hard cap on the whole velocity vector, kept after gravity,
+    // grapple pull and bounces; other modes keep only the vertical cap.
+    limitMomentumSpeed()
+    {
+        if (version != 'momentum')
+            return
+        const speed = Math.hypot(this.speedX, this.speedY)
+        if (speed > GAMEPLAY.momentumMaxSpeed)
+        {
+            const ratio = GAMEPLAY.momentumMaxSpeed / speed
+            this.speedX *= ratio
+            this.speedY *= ratio
+        }
     }
     isInvulnerable()
     {
