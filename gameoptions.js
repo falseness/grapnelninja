@@ -76,7 +76,17 @@ const GAMEPLAY = Object.freeze({
     cameraMoveRatio: 1.5,
     triangleUpwardChancePercent: 50,
     // Numerical separation, not a visible clearance: intentionally unscaled.
-    cubeContactEpsilon: 1e-7
+    cubeContactEpsilon: 1e-7,
+    // Momentum course segment lengths in world units (the momentum camera
+    // shows height / scale.momentum = 2.2 heights of world vertically).
+    // After a 'right' segment another 'right' follows with this chance,
+    // otherwise a vertical one, 'up' with upChancePercent.
+    momentumCourse: Object.freeze({
+        minLen: 2 * height,
+        maxLen: 5 * height,
+        rightAfterRightChancePercent: 40,
+        upChancePercent: 50
+    })
 })
 const defaultEqualityTolerance = 1
 
