@@ -230,20 +230,28 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     const viaduct = [
         {id:'S03-departure-beam',x:4620,y:-3510,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:240,y:0},{x:240,y:25},{x:190,y:55},{x:0,y:35}]},
-        {id:'S03-test-exit',x:5180,y:-3280,role:'solid',grapplable:true,
+        {id:'S03-rest-ledge',x:5180,y:-3280,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:360,y:0},{x:360,y:-60},{x:400,y:-60},{x:400,y:65},{x:310,y:65},
                 {x:310,y:170},{x:275,y:170},{x:275,y:65},{x:45,y:40}]},
         {id:'S03-lower-bridge',x:4630,y:-3245,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:310,y:0},{x:280,y:35},{x:80,y:60},{x:0,y:60}]}
     ];
-    Object.assign(sections[2], {status:'partial',landmark:{id:'S03-landmark',
+    viaduct.push(
+        rectangle('S03-flight-beam',5160,-3690,180,30,true),
+        rectangle('S03-return-beam',4820,-4010,180,30,true),
+        rectangle('S03-upper-beam',5180,-4330,180,30,true),
+        rectangle('S03-brake-beam',5100,-4650,180,30,true),
+        rectangle('S03-exit-anchor',5180,-4900,180,30,true),
+        {id:'S03-exit',x:5000,y:-4820,role:'solid',grapplable:true,
+            points:[{x:0,y:-60},{x:40,y:-60},{x:40,y:0},{x:240,y:0},{x:240,y:55},{x:0,y:55}]});
+    Object.assign(sections[2], {status:'built',landmark:{id:'S03-landmark',
         name:'interrupted elevated bridge',x:4800,y:-3420}});
     Object.assign(encounters[8], {status:'built',x:4430,y:-3240,
         elements:['S02-exit','S03-departure-beam'],start:{x:4430,y:-3190.8,from:'S02-04'},
         target:{x:4740,y:-3480},exit:{left:4600,right:4900,top:-3500,bottom:-3280},
         action:'Build rightward speed under the departure beam before release'});
     Object.assign(encounters[9], {status:'built',x:4870,y:-3400,
-        elements:['S03-departure-beam','S03-test-exit','S03-lower-bridge'],
+        elements:['S03-departure-beam','S03-rest-ledge','S03-lower-bridge'],
         start:{from:'S03-01'},target:{x:5230,y:-3260},
         exit:{left:5191,right:5529,top:-3292,bottom:-3280},
         action:'Release across the broken span beyond direct acquisition range, then catch the far deck'});
@@ -251,8 +259,24 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     connectors[9].status='built';
     Object.assign(recoveries[2], {openingElements:['S03-lower-bridge','S02-exit'],
         openingRejoin:'S02-04',sideRoute:'Release left from the lower broken bridge to the shaft exit'});
-    Object.assign(shortcuts[0], {openingElements:['S03-departure-beam','S03-test-exit'],
-        openingExit:'S03-02',intent:'Optional early high-speed release; faster exposed flight to the temporary exit; upper continuation planned'});
+    Object.assign(encounters[10], {status:'built',x:5200,y:-3650,
+        elements:['S03-flight-beam','S03-return-beam','S03-upper-beam'],
+        start:{from:'S03-02'},target:{x:5250,y:-3670},
+        exit:{left:4800,right:5400,top:-4340,bottom:-3950},
+        action:'Acquire the far beam during flight, then transfer up the interrupted bridge piers'});
+    Object.assign(encounters[11], {status:'built',x:5200,y:-4600,
+        elements:['S03-upper-beam','S03-brake-beam','S03-exit-anchor','S03-exit'],
+        start:{from:'S03-03'},target:{x:5190,y:-4630},
+        exit:{left:5051,right:5229,top:-4832,bottom:-4820},
+        action:'Brake against the opposing pier, then release into the narrow sheltered exit'});
+    connectors[10].status='built';connectors[11].status='built';
+    Object.assign(connectors[12], {authoredFrom:'S03',
+        departure:encounters[11].exit,
+        intent:'Built viaduct exit at the next band; Deflector Works destination remains planned'});
+    Object.assign(recoveries[2], {status:'built',elements:['S03-rest-ledge','S03-lower-bridge','S02-exit'],
+        localRejoin:'S02-04'});
+    Object.assign(shortcuts[0], {status:'built',elements:['S03-departure-beam','S03-rest-ledge'],
+        openingExit:'S03-02',intent:'Optional earlier high-speed launch skips the conservative swing; exposed faster approach rejoins the normal route to the same narrow exit'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},

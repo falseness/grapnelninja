@@ -869,3 +869,95 @@ class Task471Tests(unittest.TestCase):
             lower_broken_bridge_physical_catch=True,physical_rejoin_Switchback_Shaft=True,
             matching_traces=True,no_traversal_mutation=True))
         print('PASS failure/recovery: short departure returns to S02; lower broken bridge catches missed gap; physical rejoin Switchback Shaft; no relocation')
+
+
+class Task472Tests(unittest.TestCase):
+    """Complete viaduct: isolated S02 exit start, real physics through S03 exit."""
+    task_id = 'TASK-472'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    replay = Task471Tests.replay
+    launch = staticmethod(Task471Tests.launch)
+    test_03_failure_recovery = Task471Tests.test_03_failure_recovery
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+
+    def test_01_geometry(self):
+        page = self.open()
+        r = page.evaluate('''() => {const m=GRAPPLE_OVER_MOUNTAIN;validateMountainManifest(m);
+            return {manifest:m,runtime:floors[0].level,
+                colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))};}''')
+        m=r['manifest'];elements=m['geometry']['elements']
+        self.assertEqual(r['runtime']['elements'],elements)
+        for actual,model in zip(r['colliders'],elements):
+            self.assertEqual(actual,{k:model[k] for k in ('id','x','y','points','role')})
+        self.assertEqual(m['sections'][2]['status'],'built')
+        self.assertEqual([e['status'] for e in m['encounters'][8:12]],['built']*4)
+        self.assertEqual(len({e['action'] for e in m['encounters'][8:12]}),4)
+        self.assertEqual([c['status'] for c in m['connectors'][8:12]],['built']*4)
+        self.assertEqual(m['connectors'][12]['authoredFrom'],'S03')
+        self.assertEqual(m['connectors'][12]['status'],'planned')
+        self.assertEqual(m['recoveries'][2]['status'],'built')
+        self.assertEqual(m['shortcuts'][0]['status'],'built')
+        self.assertIsNone(r['runtime']['finish'])
+        self.assertFalse(any('test-exit' in e['id'] for e in elements))
+        roles={'departure':['S03-departure-beam'],'rest':['S03-rest-ledge'],
+            'recovery':['S03-lower-bridge','S02-exit'],
+            'airborne transfer':['S03-flight-beam','S03-return-beam','S03-upper-beam'],
+            'braking':['S03-brake-beam','S03-exit-anchor'],'exit':['S03-exit']}
+        r.update(self.proof,structural_validations_pass=True,encounters=m['encounters'][8:12],
+            surface_roles=roles,collision_role='solid for every S03 polygon; colors in overview denote functional roles',
+            normal_route_preserved=True,no_temporary_exit=True,
+            exit_width=200,rest_width=360,recovery_rejoin='S02-04',
+            connector='S03 authored departure at -4820; S04 remains planned')
+        self.evidence.write('geometry.json',r)
+        # An overview of the exact validated collision polygons, with authored route labels.
+        colors=['#d9b35b','#8ccca0','#d28b9b','#83b6e5','#b79adf','#f5f0cf']
+        parts=['<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="4200 -5050 1800 2100" style="background:#182028">']
+        for (role,ids),color in zip(roles.items(),colors):
+            for e in elements:
+                if e['id'] in ids:
+                    points=' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+                    parts.append(f'<polygon points="{points}" fill="{color}"/><text x="{e["x"]}" y="{e["y"]-18}" fill="white" font-size="23">{e["id"]}: {role} (solid)</text>')
+        for x,y,label in [(4320,-3370,'S03-01 departure'),(4780,-3350,'S03-02 gap'),(4450,-3900,'S03-03 airborne transfers'),(4450,-4550,'S03-04 brake / narrow landing'),(4380,-4960,'Exit to S04 band (destination planned)'),(4300,-3020,'Recovery: lower bridge → S02'),(4300,-2980,'Optional shortcut: earlier exposed launch; normal route retained')]:
+            parts.append(f'<text x="{x}" y="{y}" fill="white" font-size="26">{label}</text>')
+        parts.append('</svg>')
+        page.set_content(''.join(parts));page.set_viewport_size(dict(width=1000,height=1000))
+        page.screenshot(path=str(self.evidence.path('overview.png')))
+        print('PASS geometry: S03-01 S03-02 S03-03 S03-04 built; distinct functional surface roles; rest; recovery; shortcut; authored exit; no temporary geometry; overview.png')
+
+    def test_02_complete_routes(self):
+        landings={}
+        for name,hold,touch in [('normal',65,False),('shortcut',55,False),('touch',65,True)]:
+            plan=[];tick=30
+            for x,y,h,free in [(4740,-3480,hold,165),(5250,-3670,70,12),
+                    (4910,-3990,110,5),(5270,-4310,135,1),
+                    (5190,-4630,90,33 if touch else 30),(5270,-4880,60,360 if touch else 300)]:
+                plan.append((tick,'touchstart' if touch else 'mousedown',x,y));tick+=h
+                plan.append((tick,'touchend' if touch else 'mouseup',x,y));tick+=free
+            players=self.replay(name,plan,tick+1,
+                dict(x=[5050,5230],y=[-4831,-4830],speedY=[-.001,.001]))
+            trace=json.loads(self.evidence.path('encounters/'+name+'/trace.json').read_text())
+            acquisitions=[e for e in trace['events'] if e['type']=='acquisition']
+            targets=[e['after']['rope'][0]['id'] for e in acquisitions]
+            for target in ['S03-departure-beam','S03-flight-beam','S03-return-beam',
+                           'S03-upper-beam','S03-brake-beam','S03-exit-anchor']:
+                self.assertIn(target,targets)
+            airborne=next(e for e in acquisitions if e['after']['rope'][0]['id']=='S03-return-beam')
+            ap=players[airborne['tick']]
+            self.assertGreater(abs(ap['speedY']),.01)
+            self.assertLess(ap['y'],-3500)
+            final_press=plan[-2][0];final_release=plan[-1][0]
+            self.assertGreater(players[final_press]['speedX'],.5)
+            self.assertLess(players[final_release]['speedX'],0)
+            landing=next(i for i,p in enumerate(players) if 5050<p['x']<5230 and abs(p['y']+4830.8)<.01 and p['speedY']==0)
+            landings[name]=landing
+            self.evidence.write('encounters/'+name+'/observations.json',dict(passed=True,
+                S03_03_airborne_acquisition=True,airborne_tick=airborne['tick'],airborne_player=ap,
+                targets=targets,S03_04_opposing_brake=True,
+                brake_before=players[final_press],brake_after=players[final_release],
+                traversed_section_exit=True,landing_tick=landing,final=players[-1],
+                normal_rest_visited=any(abs(p['y']+3290.8)<.01 and p['speedY']==0 for p in players)))
+        self.assertLess(landings['shortcut'],landings['normal'])
+        self.evidence.write('encounters/routes.json',dict(passed=True,landing_ticks=landings,
+            shortcut_faster=True,mouse_and_touch=True,encounters=['S03-03','S03-04']))
+        print('PASS S03-03/04: airborne acquisition; opposing brake; traversed section exit; normal + faster shortcut + touch; matching trusted-input replays')
