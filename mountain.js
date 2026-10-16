@@ -442,14 +442,14 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             points:[{x:0,y:0},{x:240,y:0},{x:240,y:25},{x:200,y:45},{x:30,y:45},{x:0,y:25}]},
         {id:'S07-sweeper',x:5420,y:-9860,role:'hazard',grapplable:false,
             points:[{x:0,y:0},{x:90,y:0},{x:110,y:20},{x:90,y:40},{x:0,y:40},{x:-20,y:20}]},
-        {id:'S07-test-exit',x:5060,y:-9740,role:'solid',grapplable:true,
+        {id:'S07-rest-ledge',x:5060,y:-9740,role:'solid',grapplable:true,
             points:[{x:0,y:-30},{x:30,y:-30},{x:30,y:0},{x:320,y:0},{x:320,y:8},{x:280,y:8},{x:280,y:20},{x:40,y:20},{x:40,y:8},{x:0,y:8}]},
         {id:'S07-shortcut-jib',x:5130,y:-10040,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:140,y:0},{x:140,y:35},{x:90,y:35},{x:90,y:90},{x:55,y:90},{x:55,y:35},{x:0,y:35}]}
     ];
     liftMovers.push({id:'S07-rotor-sweep',element:'S07-sweeper',axis:'x',
         min:5420,max:5700,periodMs:3000,phase:0,velocity:186.66666666666666});
-    Object.assign(sections[6],{status:'partial',landmark:{id:'S07-landmark',
+    Object.assign(sections[6],{status:'built',landmark:{id:'S07-landmark',
         name:'open rooftop machinery',x:5420,y:-9930}});
     Object.assign(encounters[24],{status:'built',x:5650,y:-9720,
         elements:['S06-exit','S07-service-gantry','S07-sweeper'],
@@ -457,18 +457,47 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:5100.8,right:5369.2,top:-9762,bottom:-9740},
         action:'Watch the red rotor sweep from the Liftworks ledge; time a pull to the gray service gantry'});
     Object.assign(encounters[25],{status:'built',x:5270,y:-9740,
-        elements:['S07-service-gantry','S07-test-exit','S07-shortcut-jib'],
+        elements:['S07-service-gantry','S07-rest-ledge','S07-shortcut-jib'],
         start:{from:'S07-01'},target:{x:5200,y:-9970},
         exit:{left:5100,right:5500,top:-10000,bottom:-9400,attachedTo:'S07-shortcut-jib'},
-        temporaryExit:'S07-test-exit',
-        action:'After rotor displacement, release and press again to catch the safe jib and brake the fall; the normal rooftop route has a broad temporary exit'});
+        rest:'S07-rest-ledge',
+        action:'After rotor displacement, release and press again to catch the safe jib and brake the fall; the normal rooftop route has a broad rest ledge'});
     Object.assign(connectors[24],{status:'built',intent:'S06-exit exposes the rotor and safe gantry before commitment'});
-    Object.assign(connectors[25],{status:'built',intent:'Normal gantry route reaches the temporary vent-plinth exit; displaced players can catch the safe jib'});
+    Object.assign(connectors[25],{status:'built',intent:'Normal gantry route reaches the vent-plinth rest; displaced players can catch the safe jib'});
     Object.assign(shortcuts[1],{openingStatus:'built',openingExit:'S07-02',
-        elements:['S07-shortcut-jib','S07-test-exit'],
-        intent:'Optional exposed jib cut to the temporary exit; normal service-gantry route remains. Extension to S07-04 is planned.'});
+        elements:['S07-shortcut-jib','S07-rest-ledge']});
     Object.assign(recoveries[6],{openingElements:['S06-exit','S06-phase-rest','S05-projecting-girder'],
         openingRejoin:'S05-04',sideRoute:'Unwalled rooftop edges permit physical falls through Liftworks into Cable Galleries'});
+    // The upper roof is open underneath: a missed launch can lose several bands.
+    // A narrow eastern maintenance balcony offers a lower physical route back.
+    crown.push(
+        {id:'S07-launch-head',x:4850,y:-10090,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:150,y:0},{x:150,y:25},{x:105,y:45},{x:0,y:45}]},
+        {id:'S07-roof-boom',x:5150,y:-10410,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:170,y:0},{x:170,y:30},{x:60,y:30},{x:40,y:65},{x:0,y:65}]},
+        {id:'S07-upper-motor',x:5430,y:-10810,role:'solid',grapplable:true,
+            points:[{x:0,y:15},{x:35,y:0},{x:150,y:0},{x:175,y:25},{x:175,y:55},{x:0,y:55}]},
+        rest('S07-recovery-balcony',5480,-10180,340),
+        {id:'S07-side-hoist',x:5690,y:-10510,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:100,y:0},{x:100,y:55},{x:65,y:55},{x:65,y:100},{x:35,y:100},{x:35,y:55},{x:0,y:55}]},
+        {...rest('S07-exit',5240,-11340,150),points:[{x:0,y:-30},{x:20,y:-30},{x:20,y:0},{x:110,y:0},{x:110,y:-60},{x:150,y:-60},{x:150,y:55},{x:0,y:55}]}
+    );
+    Object.assign(encounters[26],{status:'built',x:5101,y:-9750,
+        elements:['S07-rest-ledge','S07-launch-head','S07-roof-boom','S07-upper-motor'],
+        start:{from:'S07-02',x:5101,y:-9750.8},target:{x:4995,y:-10060},
+        action:'Launch across the open roof above earlier terrain; transfer from torn head to boom and motor',
+        exit:{left:5400,right:5670,top:-10900,bottom:-10600}});
+    Object.assign(encounters[27],{status:'built',x:5600,y:-10180,
+        elements:['S07-recovery-balcony','S07-side-hoist','S07-upper-motor','S07-exit'],
+        start:{from:'S07-03'},target:{x:5695,y:-10480},
+        action:'Catch the lower eastern maintenance balcony after a miss; climb the side hoist and rejoin the motor before the departure ledge',
+        exit:{left:5270.8,right:5339.2,top:-11352,bottom:-11340}});
+    Object.assign(connectors[26],{status:'built',intent:'Rest at vent plinth before exposed head-to-boom launch'});
+    Object.assign(connectors[27],{status:'built',intent:'Normal motor route and lower side hoist converge on S07-exit at the next band; S08 is not required'});
+    Object.assign(shortcuts[1],{status:'built',elements:['S07-shortcut-jib','S07-rest-ledge','S07-launch-head','S07-roof-boom','S07-upper-motor','S07-exit'],
+        intent:'Optional jib cut reaches the rest sooner, then shares the exposed head/boom crossing to S07-04; normal gantry route remains'});
+    Object.assign(recoveries[6],{status:'built',elements:['S07-recovery-balcony','S07-side-hoist','S07-upper-motor'],
+        rejoin:'S07-04',sideRoute:'Lower eastern balcony and hoist rejoin the upper motor; misses outside it fall physically into earlier sections'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},

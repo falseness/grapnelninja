@@ -2137,3 +2137,131 @@ class Task483Tests(unittest.TestCase):
         self.evidence.write('encounters/shortcut.json',dict(passed=True,optional=True,
             normal_route_available=True,shortcut_landing_tick=landing(tr),normal_landing_tick=landing(normal)))
         print('PASS shortcut: optional exposed jib cut reaches same temporary exit sooner; normal route remains; matching replay')
+
+
+class Task484Tests(unittest.TestCase):
+    """Completed Crown: exposed launch, lower recovery, and optional jib route."""
+    task_id = 'TASK-484'
+    snapshot_contacts = True
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    replay = Task475Tests.replay
+    test_07_source_hashes = Task465Tests.test_03_source_hashes
+    test_06_deep_fall = Task483Tests.test_05_failure_recovery
+
+    @staticmethod
+    def upper(offset=0):
+        return [(t+offset,e,x,y) for t,e,x,y in [
+            (30,'mousedown',4995,-10060),(80,'mouseup',4995,-10060),
+            (85,'mousedown',5235,-10380),(125,'mouseup',5235,-10380),
+            (150,'mousedown',5500,-10780),(250,'mouseup',5500,-10780),
+            (255,'mousedown',5330,-11330),(430,'mouseup',5330,-11330)]]
+
+    def exit_assertions(self, trace, name):
+        final=trace['snapshots'][-1]['state']['simulation']
+        self.assertAlmostEqual(final['player']['y'], -11350.8, places=5)
+        self.assertFalse(final['stats']['completed'])
+        self.assertFalse(final['grapple']['grappled'])
+        self.assertEqual([e['after']['rope'][0]['id'] for e in trace['events'] if e['type']=='acquisition'][-1], 'S07-exit')
+        self.evidence.write('encounters/'+name+'-assertions.json',dict(passed=True,
+            section_exit_traversed=True, next_unbuilt_section_not_required=True,
+            final=final['player'], no_checkpoint_or_relocation=True))
+
+    def test_01_geometry(self):
+        page=self.open()
+        page.evaluate('floors=[loadFixedLevel(validateMountainManifest(GRAPPLE_OVER_MOUNTAIN))]')
+        r=page.evaluate('''() => ({manifest:GRAPPLE_OVER_MOUNTAIN,runtime:floors[0].level,
+            colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))})''')
+        m=r['manifest'];elements=m['geometry']['elements']
+        self.assertEqual(m['sections'][6]['status'],'built')
+        self.assertEqual([e['status'] for e in m['encounters'][24:28]],['built']*4)
+        self.assertEqual([e['status'] for e in m['connectors'][24:28]],['built']*4)
+        self.assertEqual(len({e['action'] for e in m['encounters'][24:28]}),4)
+        self.assertEqual(m['recoveries'][6]['status'],'built')
+        self.assertEqual(m['shortcuts'][1]['status'],'built')
+        self.assertTrue(m['shortcuts'][1]['optional'])
+        self.assertEqual(r['runtime']['elements'],elements)
+        for a,e in zip(r['colliders'],elements):
+            self.assertEqual(a,{k:e[k] for k in ('id','x','y','points','role')})
+        self.assertNotIn('S07-test-exit',[e['id'] for e in elements])
+        self.assertIsNone(r['runtime']['finish'])
+        prior=json.loads((ROOT/'artifacts/TASK-483/geometry.json').read_text())['manifest']
+        lower=lambda model:[e for e in model['geometry']['elements'] if not e['id'].startswith('S07')]
+        self.assertEqual(lower(m),lower(prior))
+        self.assertEqual(m['geometry']['movers'],prior['geometry']['movers'])
+        calibration=json.loads((ROOT/'artifacts/TASK-463/calibration.json').read_text())
+        for path in ('sprites/ninja.js','sprites/grapnel.js','sprites/trampoline.js','physics.js'):
+            self.assertEqual(self.proof['source_hashes'][path],calibration['source_hashes'][path])
+        roles={'S07-01 timed rotor':['S07-service-gantry','S07-sweeper'],
+               'S07-02 safe catch / optional shortcut':['S07-shortcut-jib'],
+               'ordinary rest':['S07-rest-ledge'],
+               'S07-03 exposed launch':['S07-launch-head','S07-roof-boom','S07-upper-motor'],
+               'S07-04 lower recovery / rejoin':['S07-recovery-balcony','S07-side-hoist'],
+               'exit to next band':['S07-exit']}
+        self.evidence.write('geometry.json',dict(self.proof,**r,structural_validations_pass=True,
+            encounters=m['encounters'][24:28],surface_roles=roles,previous_geometry_unchanged=True,
+            calibrated_physics_unchanged=True,no_temporary_exit=True,
+            rest_ledge='S07-rest-ledge',exit='S07-exit',recovery_route='balcony -> side hoist -> motor -> exit',
+            shortcut='jib approach shares upper crossing; normal service gantry route remains'))
+        parts=['<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1500" viewBox="4700 -11750 1500 2300" style="background:#182028">']
+        colors=['#b6c5d2','#f7d978','#f0dfbb','#8ec8e0','#9cdaa4','#c3a8f2']
+        for (role,ids),color in zip(roles.items(),colors):
+            for e in elements:
+                if e['id'] not in ids:continue
+                points=' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+                fill='#f45353' if e['role']=='hazard' else color
+                parts.append(f'<polygon points="{points}" fill="{fill}"/><text x="{e["x"]}" y="{e["y"]-35}" fill="white" font-size="18">{e["id"]} ({e["role"]})</text>')
+        for i,role in enumerate(roles):
+            parts.append(f'<text x="4740" y="{-11710+i*32}" fill="{colors[i]}" font-size="22">{role}</text>')
+        parts.append('</svg>');page.set_content(''.join(parts));page.set_viewport_size(dict(width=1100,height=1500))
+        page.screenshot(path=str(self.evidence.path('overview.png')))
+        print('PASS geometry: S07-01 S07-02 S07-03 S07-04; distinct roles; rest; exit; recovery; optional shortcut; no temporary exit; overview.png')
+
+    def test_02_normal_route(self):
+        trace=self.replay('normal-S07-03-section-exit',
+            [(60,'mousedown',5430,-10000),(85,'mouseup',5430,-10000)]+self.upper(500),1150,
+            dict(x=[5270,5340],y=[-11351,-11350],speedX=[-.001,.001],speedY=[-.001,.001]),start=(5650,-9690.8))
+        self.exit_assertions(trace,'normal')
+        self.assertEqual([e['after']['rope'][0]['id'] for e in trace['events'] if e['type']=='acquisition'],
+            ['S07-service-gantry','S07-launch-head','S07-roof-boom','S07-upper-motor','S07-exit'])
+        print('PASS normal: connected S06-exit; rest; S07-03 exposed launch; S07 exit traversed; matching real-input replay')
+
+    def test_03_shortcut(self):
+        trace=self.replay('optional-shortcut-section-exit',
+            [(30,'mousedown',5200,-9970),(60,'mouseup',5200,-9970)]+self.upper(400),1050,
+            dict(x=[5270,5340],y=[-11351,-11350],speedX=[-.001,.001],speedY=[-.001,.001]),start=(5650,-9690.8))
+        self.exit_assertions(trace,'shortcut')
+        self.assertEqual(next(e for e in trace['events'] if e['type']=='acquisition')['after']['rope'][0]['id'],'S07-shortcut-jib')
+        normal=json.loads(self.evidence.path('encounters/normal-S07-03-section-exit/trace.json').read_text())
+        def arrival(tr):
+            return next(s['tick'] for s in tr['snapshots'] if abs(s['state']['simulation']['player']['y']+11350.8)<.001)
+        self.assertLess(arrival(trace),arrival(normal))
+        self.evidence.write('encounters/shortcut.json',dict(passed=True,normal_route_available=True,
+            shortcut_exit_tick=arrival(trace),normal_exit_tick=arrival(normal)))
+        print('PASS shortcut: separate normal/shortcut success traces; same exit; optional jib route faster')
+
+    def test_04_local_miss_recovery(self):
+        plan=self.upper()[:4];plan[-1]=(145,'mouseup',5235,-10380)
+        plan += [(380,'mousedown',5695,-10480),(430,'mouseup',5695,-10480),
+                 (435,'mousedown',5500,-10780),(485,'mouseup',5500,-10780),
+                 (530,'mousedown',5330,-11330),(685,'mouseup',5330,-11330)]
+        trace=self.replay('S07-04-local-miss-rejoin',plan,950,
+            dict(x=[5270,5340],y=[-11351,-11350],speedX=[-.001,.001],speedY=[-.001,.001]),start=(5100.8000001,-9750.8))
+        self.exit_assertions(trace,'recovery')
+        self.assertTrue(all(r['state']['rope'][0]['id']=='S07-upper-motor' for r in trace['snapshots'][460:485]))
+        landed=trace['snapshots'][350]['state']['simulation']['player']
+        self.assertAlmostEqual(landed['y'],-10190.8,places=5)
+        self.assertAlmostEqual(landed['speedY'],0,places=5)
+        ids=[e['after']['rope'][0]['id'] for e in trace['events'] if e['type']=='acquisition']
+        self.assertEqual(ids,['S07-launch-head','S07-roof-boom','S07-side-hoist','S07-upper-motor','S07-exit'])
+        self.evidence.write('encounters/local-recovery.json',dict(passed=True,local_miss=True,
+            lower_balcony_landing=landed,side_hoist_rejoin=True,sustained_upper_motor_attachment=True,section_exit_traversed=True))
+        print('PASS S07-04 recovery: local miss; lower balcony landing; side hoist rejoin; sustained upper motor attachment; section exit; no relocation')
+
+    def test_05_touch(self):
+        plan=[(t,{'mousedown':'touchstart','mouseup':'touchend'}[e],x,y) for t,e,x,y in self.upper()]
+        trace=self.replay('S07-03-touch-exit',plan,650,
+            dict(x=[5270,5340],y=[-11351,-11350],speedX=[-.001,.001],speedY=[-.001,.001]),start=(5100.8000001,-9750.8))
+        self.exit_assertions(trace,'touch')
+        self.assertTrue(all(e['trusted'] for e in trace['events'] if e['type']=='input'))
+        print('PASS touch: exposed launch and section exit; trusted touch inputs; matching replay')
