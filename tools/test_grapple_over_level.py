@@ -246,12 +246,16 @@ class Task504Tests(unittest.TestCase):
         }''',V2_FIXTURE)
         cur=r['current']['sections']
         self.assertEqual([s['id'] for s in cur],[f'S{i:02}' for i in range(1,9)])
-        for s in cur: self.assertEqual((s['designVersion'],s['legacy'],s['failed']),(1,True,False),s)
-        self.assertFalse(r['current']['failed']);self.assertEqual(r['current']['v2'],[])
+        # Sections rebuilt for layout v2 (TASK-505 onward) must pass; the rest stay legacy.
+        for s in cur:
+            if s['legacy']: self.assertEqual((s['designVersion'],s['failed']),(1,False),s)
+            else: self.assertEqual((s['designVersion'],s['passed'],s['errors']),(2,True,[]),s)
+        self.assertFalse(r['current']['failed'])
+        self.assertEqual(r['current']['v2'],[s['id'] for s in cur if not s['legacy']])
         # Gap targets are TASK-503's frozen band, not new constants.
         gap=json.loads((ROOT/'artifacts/TASK-503/calibration.json').read_text())['gap_metric']['targets']
         self.assertEqual(r['targets'],gap)
-        fx=r['fixture'];self.assertEqual(fx['v2'],['S06']);self.assertFalse(fx['failed'])
+        fx=r['fixture'];self.assertIn('S06',fx['v2']);self.assertFalse(fx['failed'])
         s6=next(s for s in fx['sections'] if s['id']=='S06')
         self.assertEqual(sorted(s6['rules']),['bounceDefault','direction','fallDrag','gapBand','moverCoverage'])
         for name,rule in s6['rules'].items(): self.assertTrue(rule['passed'],name)

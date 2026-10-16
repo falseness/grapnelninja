@@ -120,57 +120,46 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         points:[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})
     const rest = (id,x,y,w) => ({id,x,y,role:'solid',grapplable:true,
         points:[{x:0,y:0},{x:w-40,y:0},{x:w-40,y:-60},{x:w,y:-60},{x:w,y:55},{x:0,y:55}]});
-    // Broken loading yard: a low dock, torn crane beam, and raised loading bay.
-    // These polygons are both the rendered silhouettes and the collision shapes.
+    // Foundations v2 (layout v2): short rest pads between blue hoists and a green
+    // deflector, travelling right from the base spawn. No long walking floors.
+    const lowRest = (id,x,y,w,lip=20,left=false) => ({id,x,y,role:'solid',grapplable:true,
+        points:left ? [{x:0,y:-lip},{x:40,y:-lip},{x:40,y:0},{x:w,y:0},{x:w,y:55},{x:0,y:55}]
+            : [{x:0,y:0},{x:w-40,y:0},{x:w-40,y:-lip},{x:w,y:-lip},{x:w,y:55},{x:0,y:55}]})
     const yard = [
-        rectangle('S01-rest-dock',1860,18,600,64,true),
-        {id:'S01-crane-beam',x:2310,y:-330,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:180,y:0},{x:180,y:20},{x:150,y:40},{x:0,y:40}]},
-        {id:'S01-loading-bay',x:2460,y:-120,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:560,y:0},{x:560,y:-60},{x:600,y:-60},{x:600,y:210},{x:520,y:210},
-                {x:520,y:55},{x:80,y:55},{x:80,y:210},{x:0,y:210}]},
-        {id:'S01-broken-mast',x:1980,y:-480,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:35,y:15},{x:35,y:430},{x:0,y:430}]},
-        rectangle('S01-next-beam',2740,-440,240,35,true),
-        rectangle('S01-transfer-beam',3100,-750,180,35,true),
-        rectangle('S01-upper-beam',2800,-1060,180,35,true),
-        rest('S01-recovery-balcony',3230,-780,420),
-        rectangle('S01-lower-anchor',3210,-1090,160,35,true),
-        rectangle('S01-exit-crane',3470,-1300,180,35,true),
-        rest('S01-rest-ledge',3610,-1150,420),
-        rectangle('S01-connector-anchor',3750,-1700,180,35,true),
-        rest('S01-exit',3940,-1620,320)
+        rectangle('S01-entry-pad',2060,18,200,40,true),
+        rectangle('S01-hoist',2440,-345,120,30,true),
+        lowRest('S01-yard-pad',2930,-120,200),
+        rectangle('S01-lift',3310,-498,120,30,true),
+        {id:'S01-deflector',x:3660,y:-630,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:30,y:0},{x:30,y:280},{x:0,y:280}]},
+        lowRest('S01-loading-pad',3460,-350,200,20,true),
+        // Legacy Switchback entrance pad; the v2 S01 exit is rebuilt with S01-03/04.
+        rest('S01-exit',4060,-1620,200)
     ];
-    Object.assign(sections[0], {status:'built', landmark:{id:'S01-landmark',
-        name:'broken loading yard',x:2460,y:-240}});
+    const yardMovers = [
+        {id:'S01-hoist-travel',element:'S01-hoist',axis:'x',min:2440,max:2560,periodMs:4000,phase:0,velocity:60},
+        {id:'S01-lift-travel',element:'S01-lift',axis:'y',min:-530,max:-450,periodMs:4000,phase:.2,velocity:40}];
+    Object.assign(sections[0], {status:'partial', designVersion:2, landmark:{id:'S01-landmark',
+        name:'broken loading yard',x:3060,y:-420},
+        solidExceptions:[
+            {element:'S01-entry-pad',kind:'rest-pad',reason:'Base spawn rest; 200 wide, no walking floor'},
+            {element:'S01-yard-pad',kind:'rest-pad',reason:'S01-01 landing / S01-02 launch rest with a low end stop'},
+            {element:'S01-loading-pad',kind:'rest-pad',reason:'S01-02 landing rest after the deflector rebound'},
+            {element:'S01-exit',kind:'rest-pad',reason:'Legacy Switchback entrance until the S01 exit is rebuilt'}],
+        // Rope-to-anchor reach from the resting launch point to the nominal acquisition point.
+        gaps:[{id:'S01-01-hoist',from:{x:2160,y:7.2},to:{x:2497,y:-315}},
+            {id:'S01-02-lift',from:{x:3079.2,y:-130.8},to:{x:3374,y:-500}}]});
     Object.assign(encounters[0], {status:'built',x:2160,y:0,
-        elements:['S01-rest-dock','S01-crane-beam','S01-broken-mast'],
-        start:{x:2160,y:0},target:{x:2390,y:-310},
-        exit:{left:2200,right:2460,top:-330,bottom:-80},
-        action:'Press the visible torn crane beam from the entrance dock'});
-    Object.assign(encounters[1], {status:'built',x:2540,y:-120,
-        elements:['S01-crane-beam','S01-loading-bay','S01-next-beam'],
-        start:{from:'S01-01'},target:{x:2860,y:-425},
-        exit:{left:2480,right:3040,top:-140,bottom:-120},
-        action:'Release the crane pull onto the wide loading bay'});
-    Object.assign(encounters[2], {status:'built',x:2860,y:-425,
-        elements:['S01-next-beam','S01-transfer-beam','S01-upper-beam'],
-        start:{from:'S01-02'}, target:{x:2890,y:-1040},
-        exit:{left:2800,right:3030,top:-1080,bottom:-900},
-        action:'Release and reacquire the staggered beams during ascent'});
-    Object.assign(encounters[3], {status:'built',x:3220,y:-780,
-        elements:['S01-recovery-balcony','S01-lower-anchor','S01-exit-crane',
-            'S01-rest-ledge','S01-connector-anchor','S01-exit'],
-        start:{from:'S01-03'}, target:{x:3290,y:-1070},
-        exit:{left:3940,right:4260,top:-1650,bottom:-1620},
-        action:'Catch a small fall on the balcony; pull the lower anchor, rest, then climb the exit connector'});
-    for (let i=0;i<4;i++) connectors[i].status='built';
-    Object.assign(connectors[4], {authoredFrom:'S01',
-        departure:{left:3940,right:4260,top:-1650,bottom:-1620},
-        intent:'Built S01 departure ledge at the next band; S02 destination remains planned'});
-    Object.assign(recoveries[0], {status:'built',
-        elements:['S01-recovery-balcony','S01-lower-anchor','S01-rest-dock'],
-        localRejoin:'S01-04'});
+        elements:['S01-entry-pad','S01-hoist','S01-yard-pad'],
+        start:{x:2160,y:0},target:{x:2500,y:-318},
+        exit:{left:2940,right:3090,top:-140,bottom:-120},
+        action:'Acquire the blue hoist from the entry pad; pull, release and land on the yard pad'});
+    Object.assign(encounters[1], {status:'built',x:3079,y:-131,
+        elements:['S01-yard-pad','S01-lift','S01-deflector','S01-loading-pad'],
+        start:{from:'S01-01',x:3079.2,y:-130.8},target:{x:3400,y:-530},
+        exit:{left:3500,right:3650,top:-370,bottom:-350},
+        action:'Pull the blue lift, release into the green deflector and rebound onto the loading pad'});
+    for (let i=0;i<2;i++) connectors[i].status='built';
     // Switchback Shaft: cantilevered decks with integral wall returns
     // and tapered undersides. The silhouette is the solid collider, not decoration.
     const shaft = [
@@ -209,10 +198,10 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S02-01'},target:{x:3890,y:-2480},
         exit:{left:3720,right:4030,top:-2062,bottom:-2050},
         action:'Brake rightward momentum with the opposing left girder; release onto the ordinary rest ledge'});
-    Object.assign(connectors[4], {status:'built',intent:'Physical ascent from Foundations exit to left balcony'});
+    Object.assign(connectors[4], {intent:'Physical ascent from Foundations exit to left balcony; planned until S01-04 is rebuilt'});
     connectors[5].status='built';
-    Object.assign(recoveries[1], {openingElements:['S02-catch-balcony','S01-exit','S01-rest-ledge'],
-        openingRejoin:'S02-01',sideRoute:'Open left side drops visibly to Foundations exit and rest ledge'});
+    Object.assign(recoveries[1], {openingElements:['S02-catch-balcony','S01-exit'],
+        openingRejoin:'S02-01',sideRoute:'Open left side drops visibly to the Foundations exit pad'});
     Object.assign(encounters[6], {status:'built',x:4130,y:-2580,
         elements:['S02-brake-girder','S02-reversal-balcony','S02-upper-return'],
         start:{from:'S02-02'},target:{x:3850,y:-3040},
@@ -409,7 +398,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             points:[{x:0,y:0},{x:220,y:0},{x:220,y:-25},{x:260,y:-25},{x:260,y:130},{x:190,y:130},{x:190,y:40},{x:0,y:40}]},
         {...rest('S06-exit',5520,-9680,260),points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:-20},{x:260,y:-20},{x:260,y:55},{x:0,y:55}]}
     );
-    const liftMovers = [{id:'S06-counterweight-travel',element:'S06-counterweight',
+    const liftMovers = [...yardMovers, {id:'S06-counterweight-travel',element:'S06-counterweight',
         axis:'y',min:-8480,max:-8320,periodMs:4000,phase:0,velocity:80},
         {id:'S06-upper-weight-travel',element:'S06-upper-weight',axis:'y',
             min:-9010,max:-8890,periodMs:4000,phase:0,velocity:60}];
