@@ -1202,3 +1202,128 @@ class Task474Tests(unittest.TestCase):
         self.replay('angle-short-return',[(30,'mousedown',5150,-5430),(45,'mouseup',5150,-5430)],300,
             dict(x=[5090,5390],y=[-5011,-5010]),start=(5090.8000001,-5010.8000001),bounces=[])
         print('PASS failure/recovery: flat short release returns to Viaduct; mistimed reflection caught by basin and physically rejoined Viaduct; angled short release returns to rest; physical falls without relocation; matching replays')
+
+
+class Task475Tests(unittest.TestCase):
+    """Completed Works: production input, measured reflections, exits and recovery."""
+    task_id = 'TASK-475'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    flat_plan = staticmethod(Task474Tests.flat_plan)
+    test_06_source_hashes = Task465Tests.test_03_source_hashes
+
+    def replay(self, name, plan, ticks, bounds, start=(5150,-4830.8), bounces=()):
+        from grapple_over_verify import metadata, execute, check_trace
+        page=self.open();level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)');page.close()
+        m=dict(metadata=metadata('isolated'),initial_setup=dict(level=level,
+            player=dict(x=start[0],y=start[1],speedX=0,speedY=0)),
+            inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
+            ticks=ticks,expected_exit=bounds,required_events=['acquisition','release'])
+        m['metadata']['compact_contacts']=True
+        prefix='encounters/'+name
+        self.evidence.write(prefix+'/input.json',m)
+        trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=name in ('S04-04','section-exit'))
+        check_trace(m,trace)
+        replay=execute(m,self.browser,self.url,str(self.evidence.path(prefix+'/replay')))
+        check_trace(m,replay);self.assertEqual(trace,replay)
+        self.assertEqual(len(trace['metadata']['setupOnlySpawns']),1)
+        reflections=[e for e in trace['events'] if e['type']=='bounce']
+        self.assertEqual([e['contact']['elementId'] for e in reflections],list(bounces))
+        sightlines=[]
+        for e in trace['events']:
+            if e['type']=='input' and e['event'] in ('mousedown','touchstart'):
+                self.assertTrue(e['trusted'])
+                self.assertTrue(0<e['client']['x']<1280 and 0<e['client']['y']<720)
+                sightlines.append(dict(tick=e['tick'],world=e['world'],client=e['client']))
+        self.evidence.write(prefix+'/result.json',dict(passed=True,matching_traces=True,
+            trusted_inputs=True,no_traversal_mutation=True,reflections=reflections,
+            final=trace['snapshots'][-1]['state']['simulation']['player'],camera_sightlines=sightlines,
+            scope='One labeled setup placement; production physics and real mouse input thereafter'))
+        return trace
+
+
+    def test_01_geometry(self):
+        page=self.open()
+        r=page.evaluate("""() => {const m=GRAPPLE_OVER_MOUNTAIN;validateMountainManifest(m);
+            return {manifest:m,runtime:floors[0].level,
+                colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))}}""")
+        m=r['manifest'];elements=m['geometry']['elements']
+        self.assertEqual(m['sections'][3]['status'],'built')
+        self.assertEqual([e['status'] for e in m['encounters'][12:16]],['built']*4)
+        self.assertEqual([c['status'] for c in m['connectors'][12:16]],['built']*4)
+        self.assertEqual(r['runtime']['elements'],elements)
+        for a,e in zip(r['colliders'],elements):
+            self.assertEqual(a,{k:e[k] for k in ('id','x','y','points','role')})
+        self.assertIsNone(r['runtime']['finish'])
+        prior=json.loads((ROOT/'artifacts/TASK-474/geometry.json').read_text())['manifest']
+        lower=lambda manifest: [e for e in manifest['geometry']['elements'] if not e['id'].startswith('S04')]
+        self.assertEqual(lower(m),lower(prior))
+        calibration=json.loads((ROOT/'artifacts/TASK-463/calibration.json').read_text())
+        for path in ('sprites/ninja.js','sprites/grapnel.js','sprites/trampoline.js','physics.js'):
+            self.assertEqual(self.proof['source_hashes'][path],calibration['source_hashes'][path])
+        self.assertNotIn('S04-test-exit',[e['id'] for e in elements])
+        self.assertFalse(any(e['id'].startswith('S04') for e in m['shortcuts']))
+        roles={'S04-01 flat reflection':['S04-flat-press'],
+            'S04-02 angled reflection':['S04-angled-chute'],
+            'S04-03 bounce + new grapple':['S04-combination-press','S04-combination-rest'],
+            'S04-04 two-bounce transfer':['S04-double-left','S04-double-right','S04-brake-anchor','S04-double-landing'],
+            'ordinary rest / transfer':['S04-rest','S04-transfer-ledge'],
+            'recovery to Viaduct':['S04-catch-basin','S04-lower-stair','S03-exit'],
+            'authored exit to S05 band':['S04-upper-step','S04-exit']}
+        for ids in roles.values():
+            self.assertTrue(set(ids)<=set(e['id'] for e in elements))
+        self.evidence.write('geometry.json',dict(self.proof,**r,structural_validations_pass=True,
+            encounters=m['encounters'][12:16],surface_roles=roles,no_temporary_exit=True,
+            shortcut='Not assigned to section 4; section 3 normal/shortcut unchanged',
+            recovery='Catch basin and lower stair physically rejoin S03-exit',
+            connector='S04-exit top -6480; S05 remains planned; no checkpoint or summit trigger'))
+        parts=['<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1400" viewBox="4100 -6800 1900 2250" style="background:#182028">']
+        colors=['#55dc89','#55dc89','#75e0a0','#8cf0b0','#d6dfdf','#84b8da','#e0c88d']
+        for (role,ids),color in zip(roles.items(),colors):
+            for e in elements:
+                if e['id'] in ids:
+                    points=' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+                    parts.append(f'<polygon points="{points}" fill="{color}" stroke="#141820" stroke-width="3"/><text x="{e["x"]-15}" y="{e["y"]+80}" fill="white" font-size="19">{e["id"]} ({e["role"]})</text>')
+        for i,role in enumerate(roles):
+            parts.append(f'<text x="5480" y="{-6670+i*65}" fill="{colors[i]}" font-size="21">{role}</text>')
+        parts.append('</svg>');page.set_content(''.join(parts));page.set_viewport_size(dict(width=1200,height=1400))
+        page.screenshot(path=str(self.evidence.path('overview.png')))
+        print('PASS geometry: S04-01 S04-02 S04-03 S04-04 built; distinct roles; rest; exit; recovery; no assigned shortcut; no temporary exit; overview.png')
+
+    def test_02_opening_preserved(self):
+        self.replay('opening',self.flat_plan()+[(405,'mousedown',5150,-5430),(460,'mouseup',5150,-5430)],700,
+            dict(x=[4970,4972],y=[-5261,-5260],speedX=[-.001,.001]),
+            bounces=['S04-flat-press','S04-angled-chute'])
+        print('PASS opening: both earlier reflections and transfer ledge preserved')
+
+    def test_03_bounce_new_grapple(self):
+        plan=[(30,'mousedown',4610,-5630),(75,'mouseup',4610,-5630),
+              (130,'mousedown',4820,-5510),(190,'mouseup',4820,-5510)]
+        for mode in ('mouse','touch'):
+            inputs=plan if mode=='mouse' else [(t,{'mousedown':'touchstart','mouseup':'touchend'}[e],x,y) for t,e,x,y in plan]
+            trace=self.replay('S04-03-'+mode,inputs,375,dict(x=[4810,4980],y=[-5550,-5540]),
+                start=(4970.8000001,-5260.8000001),bounces=['S04-combination-press'])
+            bounce=next(e for e in trace['events'] if e['type']=='bounce')
+            grab=next(e for e in trace['events'] if e['type']=='acquisition' and e['after']['rope'][0]['id']=='S04-combination-rest')
+            self.assertGreater(grab['tick'],bounce['tick'])
+            self.assertLess(grab['after']['simulation']['player']['y'],-5540.8)
+        print('PASS S04-03: reflection precedes airborne new grapple; rest reached with mouse and touch')
+
+    def test_04_double_bounce_exit(self):
+        self.replay('S04-04',[(30,'mousedown',5170,-5910),(75,'mouseup',5170,-5910),
+            (140,'mousedown',4810,-5710),(180,'mouseup',4810,-5710)],250,
+            dict(x=[4990,5050],y=[-5791,-5790]),start=(4850.8000001,-5540.8000001),
+            bounces=['S04-double-right','S04-double-left'])
+        self.replay('section-exit',[(30,'mousedown',4890,-6090),(105,'mouseup',4890,-6090),
+            (140,'mousedown',4650,-6520),(235,'mouseup',4650,-6520),
+            (240,'mousedown',4560,-6460),(275,'mouseup',4560,-6460)],450,
+            dict(x=[4510,4610],y=[-6491,-6490],speedX=[-.001,.001],speedY=[-.001,.001]),
+            start=(4991.267526379214,-5790.8000001))
+        print('PASS S04-04: two consecutive reflections and landing; traversed section exit at -6480; next unbuilt section not required')
+
+    def test_05_local_miss_recovery(self):
+        trace=self.replay('local-miss-recovery',self.flat_plan(35)+[
+            (375,'mousedown',5100,-4980),(420,'mouseup',5100,-4980)],560,
+            dict(x=[5051,5229],y=[-4831,-4830]),bounces=['S04-flat-press'])
+        self.assertAlmostEqual(trace['snapshots'][375]['state']['simulation']['player']['y'],-4810.8,places=5)
+        print('PASS local miss: catch basin at tick 375; physical recovery to Viaduct by tick 560; no relocation')

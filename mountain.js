@@ -285,14 +285,43 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         rest('S04-rest',4900,-5000,360),
         {id:'S04-angled-chute',x:5000,y:-5380,role:'bounce',grapplable:true,
             points:[{x:0,y:0},{x:280,y:-140},{x:310,y:-100},{x:30,y:40}]},
-        rest('S04-test-exit',5220,-5250,160),
+        rest('S04-transfer-ledge',5220,-5250,160),
         {id:'S04-catch-basin',x:5240,y:-4800,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:700,y:0},{x:700,y:-100},{x:740,y:-100},
                 {x:740,y:65},{x:0,y:65}]},
         rectangle('S04-lower-stair',5200,-4770,100,35,true)
     ];
     for (const e of deflectors) {e.x=10300-e.x; e.points=e.points.map(p=>({x:-p.x,y:p.y})).reverse();}
-    Object.assign(sections[3], {status:'partial',landmark:{id:'S04-landmark',
+    // Low departure lip catches the angled return while allowing the next shot.
+    deflectors.find(e=>e.id==='S04-transfer-ledge').points.forEach(p=>{if(p.y===-60)p.y=-20;});
+    deflectors.push(
+        {id:'S04-combination-press',x:4620,y:-5700,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:0,y:350},{x:-75,y:350},{x:-60,y:40}]},
+        {id:'S04-combination-rest',x:4990,y:-5530,role:'solid',grapplable:true,points:[{x:0,y:0},{x:-150,y:0},{x:-150,y:-8},{x:-190,y:-8},{x:-190,y:55},{x:0,y:55}]},
+        {id:'S04-double-left',x:4820,y:-6000,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:0,y:170},{x:-65,y:170},{x:-65,y:30}]},
+        {id:'S04-double-right',x:5160,y:-5980,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:65,y:30},{x:65,y:350},{x:0,y:350}]},
+        rectangle('S04-brake-anchor',4800,-5730,40,35,true),
+        rectangle('S04-double-landing',4990,-5780,60,35,true),
+        rest('S04-upper-step',4700,-6050,200),
+        {id:'S04-exit',x:4460,y:-6480,role:'solid',grapplable:true,points:[{x:0,y:-180},{x:40,y:-180},{x:40,y:0},{x:160,y:0},{x:160,y:-30},{x:200,y:-30},{x:200,y:55},{x:0,y:55}]}
+    );
+    deflectors.find(e=>e.id==='S04-upper-step').points.forEach(p=>{if(p.y===-60)p.y=-30;});
+    deflectors.find(e=>e.id==='S04-upper-step').points.splice(0,1,{x:0,y:-180},{x:40,y:-180},{x:40,y:0});
+    Object.assign(encounters[14], {status:'built',x:4620,y:-5630,
+        elements:['S04-transfer-ledge','S04-combination-press','S04-combination-rest'],
+        start:{from:'S04-02'},target:{x:4610,y:-5630},
+        exit:{left:4811,right:4979,top:-5550,bottom:-5530},
+        action:'Reflect off the upper press then acquire the new rest shelf while airborne'});
+    Object.assign(encounters[15], {status:'built',x:5000,y:-5850,
+        elements:['S04-combination-rest','S04-double-left','S04-double-right','S04-brake-anchor','S04-double-landing','S04-upper-step','S04-exit'],
+        start:{from:'S04-03'},target:{x:5170,y:-5910},
+        exit:{left:4510.8,right:4609.2,top:-6492,bottom:-6480},
+        action:'Release into opposing green faces for two reflections; land and climb the exposed departure stairs'});
+    connectors[14].status='built';
+    Object.assign(connectors[15], {status:'built',intent:'Authored S04 departure to the Cable Galleries band; destination remains planned'});
+    Object.assign(sections[3], {status:'built',landmark:{id:'S04-landmark',
         name:'angled green machinery',x:5050,y:-5370}});
     Object.assign(encounters[12], {status:'built',x:4900,y:-5030,
         elements:['S03-exit','S04-flat-press','S04-rest','S04-catch-basin'],
@@ -300,10 +329,10 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:5090.8,right:5389.2,top:-5012,bottom:-5000},
         action:'Pull toward the flat green press; release, reflect right, and brake onto the rest shelf'});
     Object.assign(encounters[13], {status:'built',x:5150,y:-5400,
-        elements:['S04-rest','S04-angled-chute','S04-test-exit','S04-catch-basin'],
+        elements:['S04-rest','S04-angled-chute','S04-transfer-ledge','S04-catch-basin'],
         start:{from:'S04-01'},target:{x:5150,y:-5430},
         exit:{left:4970.8,right:5069.2,top:-5262,bottom:-5250},
-        action:'Pull toward the tilted green chute; release and redirect momentum toward the temporary exit'});
+        action:'Pull toward the tilted green chute; release and redirect momentum toward the transfer ledge'});
     Object.assign(connectors[12], {status:'built',intent:'Physical pull from Viaduct exit to flat press'});
     connectors[13].status='built';
     Object.assign(recoveries[3], {openingElements:['S04-catch-basin','S04-lower-stair','S03-exit'],
