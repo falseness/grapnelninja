@@ -31,7 +31,7 @@ FONT_SLACK_PX = 1
 CENTER_RATIO = 0.02
 # Probe call and the names of its two buttons per screen
 SCREENS = {
-    'pause': ('menu.drawPauseScreen()', '[menu.resume.text.text, menu.backToMenu.text.text]'),
+    'pause': ('menu.drawPauseScreen()', '[menu.resume.text.text, menu.modeButtons[1].text.text]'),
     'death': ('continueOffer.draw()',
               '[continueOffer.restartButton.text.text, continueOffer.switchButton.text.text]'),
 }
@@ -60,6 +60,16 @@ def measure(shot, lang, button_names):
         'center_offset_ratio': abs(group_center - button_center) / shot['canvas']['width'],
         'canvas': shot['canvas'],
     }
+
+
+def die(page):
+    """A real lethal death that leaves the death screen up.
+
+    The local PLATFORM (no Bridge since c232782) never has a game over ad
+    due, so it is made due just before the kill (INSTRUMENT_RUN).
+    """
+    page.evaluate('() => { PLATFORM.isInterstitialDue = () => true; window.__kill = true }')
+    page.wait_for_function('continueOffer.visible && !window.__kill && !menu.gamePaused')
 
 
 class MenuFpsCheckboxTests(unittest.TestCase):
@@ -92,7 +102,7 @@ class MenuFpsCheckboxTests(unittest.TestCase):
                     shots['pause'] = self.probe(page, f'{size}-pause', 'pause')
                     page.evaluate('menu.resume.click()')
                     page.wait_for_function('!menu.gamePaused')
-                    lm.die(page)
+                    die(page)
                     page.wait_for_timeout(150)
                     shots['death'] = self.probe(page, f'{size}-death', 'death')
                     self.assertEqual((errors['console'], errors['page']), ([], []))

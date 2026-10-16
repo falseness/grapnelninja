@@ -391,3 +391,245 @@ class Task460Tests(unittest.TestCase):
                 completion_once_frozen_pass=True,reload_completion_pass=True,replay_pass=True,
                 mode_switch_no_failed_completion_pass=True,localized_layout_pass=True,browser_errors=errors))
             print(f'PASS {lang} {viewport}: falls; informational max; pause; cancel; restart movers/save; completion once/frozen; reload; replay; mode switch; localized layout')
+
+
+class Task537Tests(unittest.TestCase):
+    """The fps checkbox on the Grapple Over pause menu, from trusted mouse and touch input."""
+    RUNS = [dict(name='desktop', viewport=[1280, 720], touch=False, lang='en',
+                 pause_png='pause-desktop-en.png', hud_png='hud-fps.png'),
+            dict(name='touch', viewport=[844, 390], touch=True, lang='ru',
+                 pause_png='pause-touch-ru.png', hud_png='hud-fps-touch-ru.png')]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-537')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        hashes = source_hashes()
+        for name in ('tools/test_grapple_over_modes.py', 'tools/test_menu_fps_checkbox.py'):
+            hashes[name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.proof = {'revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT, text=True).strip(),
+                     'source_hashes': hashes, 'browser': cls.browser.version, 'device_scale_factor': 1,
+                     'runs': {}}
+        cls.layout = {'runs': {}}
+        cls.evidence.log('CONFIG '+json.dumps(cls.proof, sort_keys=True))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.evidence.write('toggle.json', cls.proof)
+        cls.evidence.write('layout.json', cls.layout)
+
+    def open(self, run):
+        context = self.browser.new_context(viewport=dict(zip(('width','height'), run['viewport'])),
+                                           device_scale_factor=1, has_touch=run['touch'])
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.goto(self.url)
+        wait_for_boot(page)
+        page.wait_for_function('runInProgress && !menu.gamePaused')
+        return page
+
+    def boxes(self, page, pause):
+        """CSS px LAYOUT_PROBE boxes of one frame, with the pause screen over it when paused."""
+        return page.evaluate('''pause => {LAYOUT_PROBE.boxes=[]; draw(); if (pause) menu.drawPauseScreen();
+            const b=LAYOUT_PROBE.boxes; LAYOUT_PROBE.boxes=null; return b}''', pause)
+
+    def press(self, page, run, box):
+        """One trusted mouse click or touch tap on the centre of a probed box."""
+        page.wait_for_function('!unTouch')
+        rect = page.locator('#canvas').bounding_box()
+        x, y = rect['x']+box['x']+box['width']/2, rect['y']+box['y']+box['height']/2
+        if run['touch']:
+            page.touchscreen.tap(x, y)
+        else:
+            page.mouse.click(x, y)
+        return [x, y]
+
+    def pick(self, boxes, name, kind='button'):
+        found = [b for b in boxes if b['kind'] == kind and b['name'] == name]
+        return found[0] if found else None
+
+    def label(self, page, key):
+        return page.evaluate('k => I18N.t(k)', key)
+
+    def pause(self, page, run):
+        icon = self.pick(self.boxes(page, False), 'icon')
+        self.press(page, run, icon)
+        page.wait_for_function('menu.gamePaused')
+        return icon
+
+    def ink(self, page, box):
+        """Bright pixels inside the checkbox square (the check mark when ticked)."""
+        from io import BytesIO
+        from PIL import Image
+        size = box['height']
+        image = Image.open(BytesIO(page.screenshot())).convert('L')
+        # The square sits at the left of the hit rect, padded by 0.45 of its size.
+        check = page.evaluate('[menu.pauseFpsCounterCheckbox.size, menu.pauseFpsCounterCheckbox.x, '
+                              'menu.pauseFpsCounterCheckbox.y]')
+        css = page.evaluate('getCanvasCssRect().height / height')
+        s, x0, yc = check[0]*css, check[1]*css, check[2]*css
+        crop = image.crop((int(x0+s*0.2), int(yc-s*0.3), int(x0+s*0.8), int(yc+s*0.3)))
+        return sum(1 for p in crop.getdata() if p > 160)
+
+    @staticmethod
+    def overlap(a, b):
+        return a['x'] < b['x']+b['width'] and b['x'] < a['x']+a['width'] and \
+               a['y'] < b['y']+b['height'] and b['y'] < a['y']+a['height']
+
+    def check_layout(self, page, run, boxes):
+        fps = self.pick(boxes, self.label(page, 'menu.fpsCounter'))
+        self.assertIsNotNone(fps)
+        keys = ['pause.resume', 'climb.restart', 'mode.bad', 'mode.classic']
+        buttons = [self.pick(boxes, self.label(page, k)) for k in keys]
+        self.assertTrue(all(buttons))
+        language = self.pick(boxes, 'language')
+        title = self.pick(boxes, self.label(page, 'mode.grapple_over'), 'text')
+        hud = [b for b in boxes if b['kind'] == 'text' and b['x'] < run['viewport'][0]*0.3
+               and b['y'] < run['viewport'][1]*0.3 and b is not title]
+        self.assertGreaterEqual(len(hud), 4)
+        label = self.pick(boxes, self.label(page, 'menu.fpsCounter'), 'text')
+        width, height = run['viewport']
+        for other in buttons + [language] + hud + [title]:
+            self.assertFalse(self.overlap(fps, other), other)
+        for i, b in enumerate(buttons + [language]):
+            for o in (buttons + [language])[i+1:]:
+                self.assertFalse(self.overlap(b, o), (b, o))
+            for h in hud:
+                self.assertFalse(self.overlap(b, h), (b, h))
+        self.assertTrue(0 <= fps['x'] and fps['x']+fps['width'] <= width and
+                        0 <= fps['y'] and fps['y']+fps['height'] <= height)
+        self.assertTrue(fps['x'] <= label['x'] and label['x']+label['width'] <= fps['x']+fps['width'])
+        if run['touch']:
+            self.assertGreaterEqual(fps['height']+1e-6, 44)
+            self.assertGreaterEqual(fps['width']+1e-6, 44)
+        return {'viewport': run['viewport'], 'touch': run['touch'], 'language': run['lang'],
+                'checkbox_hit': fps, 'checkbox_label': label, 'buttons': dict(zip(keys, buttons)),
+                'language_button': language, 'hud_text': hud, 'title': title,
+                'no_overlap_pass': True, 'inside_canvas_pass': True,
+                'touch_target_ge_44_pass': fps['height'] >= 44-1e-6 and fps['width'] >= 44-1e-6}
+
+    def flow(self, run):
+        page = self.open(run)
+        page.evaluate('lang => setLanguage(lang)', run['lang'])
+        record = {'viewport': run['viewport'], 'input': 'touch' if run['touch'] else 'mouse',
+                  'language': run['lang'], 'steps': []}
+        def step(name, **data):
+            data.update(name=name, mode=page.evaluate('version'), paused=page.evaluate('menu.gamePaused'),
+                        fps_enabled=page.evaluate('fpsCounter.enabled'))
+            record['steps'].append(data)
+            return data
+        self.assertEqual(page.evaluate('version'), 'grapple_over')
+        self.assertFalse(page.evaluate('fpsCounter.enabled'))
+        storage_initial = page.evaluate('Object.keys(localStorage).sort()')
+
+        icon = self.pause(page, run)
+        boxes = self.boxes(page, True)
+        layout = self.check_layout(page, run, boxes)
+        self.layout['runs'][run['name']] = layout
+        fps_name = self.label(page, 'menu.fpsCounter')
+        unchecked_ink = self.ink(page, layout['checkbox_hit'])
+        page.screenshot(path=str(self.evidence.path(run['pause_png'])))
+        step('open_pause', pause_icon=icon, checkbox=layout['checkbox_hit'], checkbox_ink=unchecked_ink)
+
+        at = self.press(page, run, layout['checkbox_hit'])
+        page.wait_for_function('fpsCounter.enabled')
+        self.assertTrue(page.evaluate('menu.gamePaused && version === "grapple_over"'))
+        redrawn = self.pick(self.boxes(page, True), fps_name)
+        checked_ink = self.ink(page, redrawn)
+        self.assertGreater(checked_ink, unchecked_ink)
+        step('click_checkbox', at=at, checkbox_ink=checked_ink, redrawn_checkbox=redrawn)
+
+        self.press(page, run, layout['buttons']['pause.resume'])
+        page.wait_for_function('!menu.gamePaused')
+        page.wait_for_function('fpsCounter.value > 0')
+        page.wait_for_timeout(300)
+        play = self.boxes(page, False)
+        fps_text = [b for b in play if b['kind'] == 'text' and b['name'].startswith('FPS')]
+        self.assertEqual(len(fps_text), 1)
+        hud = [b for b in play if b['kind'] == 'text' and b not in fps_text and b['x'] < run['viewport'][0]*0.3]
+        self.assertGreaterEqual(len(hud), 4)
+        for h in hud:
+            self.assertFalse(self.overlap(fps_text[0], h), (fps_text[0], h))
+        page.screenshot(path=str(self.evidence.path(run['hud_png'])))
+        layout['resumed_play'] = {'fps_text': fps_text[0], 'hud_text': hud, 'fps_hud_no_overlap_pass': True}
+        step('resumed_play', fps_panel_text=fps_text[0], hud_rows=len(hud), run_in_progress=page.evaluate('runInProgress'))
+
+        self.pause(page, run)
+        self.press(page, run, self.pick(self.boxes(page, True), self.label(page, 'mode.classic')))
+        page.wait_for_function('version === "classic"')
+        page.wait_for_function('!unTouch')
+        self.pause(page, run)
+        classic = self.boxes(page, True)
+        classic_box = self.pick(classic, fps_name)
+        self.assertIsNotNone(classic_box)
+        classic_checked_ink = self.ink(page, classic_box)
+        self.assertTrue(page.evaluate('fpsCounter.enabled'))
+        step('classic_pause_shows_checked', checkbox=classic_box, checkbox_ink=classic_checked_ink)
+        self.press(page, run, classic_box)
+        page.wait_for_function('!fpsCounter.enabled')
+        classic_unchecked_ink = self.ink(page, classic_box)
+        self.assertLess(classic_unchecked_ink, classic_checked_ink)
+        step('classic_uncheck', checkbox_ink=classic_unchecked_ink)
+
+        mode_box = self.pick(self.boxes(page, True), self.label(page, 'mode.grapple_over'))
+        self.press(page, run, mode_box)
+        page.wait_for_function('version === "grapple_over" && menu.gamePaused')
+        back = self.pick(self.boxes(page, True), fps_name)
+        self.assertIsNotNone(back)
+        back_ink = self.ink(page, back)
+        self.assertFalse(page.evaluate('fpsCounter.enabled'))
+        self.assertLess(back_ink, checked_ink)
+        step('return_grapple_over_unchecked', checkbox=back, checkbox_ink=back_ink)
+
+        self.press(page, run, self.pick(self.boxes(page, True), self.label(page, 'climb.restart')))
+        page.wait_for_function('CLIMB_UI.confirming')
+        confirm = self.boxes(page, True)
+        self.assertIsNone(self.pick(confirm, fps_name))
+        self.assertIsNone(self.pick(confirm, fps_name, 'text'))
+        self.assertFalse(page.evaluate('menu.pauseFpsCounterCheckbox.clickable'))
+        at = self.press(page, run, back)
+        page.wait_for_function('!unTouch')
+        self.assertFalse(page.evaluate('fpsCounter.enabled'))
+        self.assertTrue(page.evaluate('CLIMB_UI.confirming && menu.gamePaused'))
+        step('restart_confirmation', checkbox_drawn=False, clicked_old_checkbox_at=at,
+             clickable=page.evaluate('menu.pauseFpsCounterCheckbox.clickable'),
+             confirm_buttons=[b['name'] for b in confirm if b['kind'] == 'button'])
+        self.press(page, run, self.pick(confirm, self.label(page, 'climb.cancel')))
+        page.wait_for_function('!CLIMB_UI.confirming')
+        self.assertIsNotNone(self.pick(self.boxes(page, True), fps_name))
+
+        # Enabled before the reload: it must still come back off, with no new keys.
+        self.press(page, run, self.pick(self.boxes(page, True), fps_name))
+        page.wait_for_function('fpsCounter.enabled')
+        page.evaluate('PROGRESS.flushClimb(); PROGRESS.save(); PROGRESS.flush && PROGRESS.flush()')
+        page.wait_for_timeout(300)
+        storage_before = page.evaluate('Object.fromEntries(Object.entries(localStorage))')
+        page.reload()
+        wait_for_boot(page)
+        storage_after = page.evaluate('Object.fromEntries(Object.entries(localStorage))')
+        self.assertFalse(page.evaluate('fpsCounter.enabled'))
+        self.assertEqual(sorted(storage_after), sorted(storage_before))
+        self.assertTrue(set(storage_initial) <= set(storage_after))
+        for key, value in storage_after.items():
+            self.assertNotIn('fps', (key + value).lower())
+        step('reload', enabled_before_reload=True, storage_keys_initial=storage_initial,
+             storage_keys_before=sorted(storage_before), storage_keys_after=sorted(storage_after),
+             new_keys=sorted(set(storage_after) - set(storage_before)), fps_in_storage=False)
+        record.update(open_click_enabled_panel_pass=True, shared_state_across_modes_pass=True,
+                      absent_during_confirmation_pass=True, not_persisted_no_new_key_pass=True)
+        self.proof['runs'][run['name']] = record
+        return record
+
+    def test_01_desktop_mouse(self):
+        self.flow(self.RUNS[0])
+        print('PASS desktop 1280x720 mouse en: pause opens with fps checkbox; click enables fpsCounter; '
+              'FPS panel drawn in resumed play; Classic shows checked, unchecked there -> Grapple Over unchecked; '
+              'absent/unclickable in restart confirmation; reload -> disabled, no new storage key')
+
+    def test_02_touch_ru(self):
+        self.flow(self.RUNS[1])
+        print('PASS touch 844x390 ru: same flow by trusted taps; checkbox hit rect >=44 CSS px; no overlaps')

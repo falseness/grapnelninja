@@ -713,7 +713,8 @@ class Menu
     }
     click(coord)
     {
-        if (version === 'grapple_over') return CLIMB_UI.buttons.some(b => b.isClickOnButton(coord))
+        if (version === 'grapple_over') return CLIMB_UI.buttons.some(b => b.isClickOnButton(coord)) ||
+            this.pauseFpsCounterCheckbox.isClickOnButton(coord)
         return  this.resume.isClickOnButton(coord)                  ||
                 this.pauseFpsCounterCheckbox.isClickOnButton(coord) ||
                 this.modeButtons.some(button => button.isClickOnButton(coord))
@@ -726,7 +727,7 @@ class Menu
     {
         this.gamePaused = isPaused
         
-        this.pauseFpsCounterCheckbox.clickable = isPaused
+        this.pauseFpsCounterCheckbox.clickable = isPaused && (version !== 'grapple_over' || CLIMB_UI.showsFps())
         this.resume.clickable                   = isPaused
         this.modeButtons.forEach(button => { button.clickable = isPaused })
     }
@@ -1016,6 +1017,27 @@ const CLIMB_UI = {
             {x:w/2, y:h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true},
             {text:I18N.t(key), fill:STYLE.colors.ui.buttonText}, action))
         this.buttons.forEach(b => b.draw())
+        // The pause screen's fps checkbox, centred under the action buttons
+        const check = menu.pauseFpsCounterCheckbox
+        check.clickable = menu.gamePaused && this.showsFps()
+        if (check.clickable)
+        {
+            const size = bh * 0.42
+            ctx.save()
+            ctx.font = getArcadeFont(size)
+            const labelWidth = ctx.measureText(check.label).width
+            ctx.restore()
+            check.size = size
+            check.fontSize = getArcadeFont(size)
+            check.x = w/2 - (size * 1.55 + labelWidth) / 2
+            const last = this.buttons[this.buttons.length - 1].background
+            check.y = last.y + last.height + h*0.015 + check.hitRect().height / 2
+            check.draw()
+        }
         LANGUAGE_BUTTON.draw()
+    },
+    // As on the Classic/Bad pause screen: not on the restart confirmation or the ending
+    showsFps() {
+        return !this.confirming && !floors[0]?.climbStats?.completed
     }
 }
