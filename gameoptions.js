@@ -94,11 +94,17 @@ const GAMEPLAY = Object.freeze({
         thickness: 0.2 * height,
         originY: 1.1 * height
     }),
-    // Momentum camera (elements/momentumcamera.js), in view heights: how far
-    // it settles towards a right corridor centre per physics step, and how far
+    // Momentum camera (elements/momentumcamera.js), lengths in view heights:
+    // damped follow pull on the target error (1/s), acceleration limit (/s^2),
+    // limit on the change of acceleration (/s^3), target shift along the
+    // travel direction, ease time of that direction at a turn (ms); and how far
     // past the view edge left behind elements are deleted.
     momentumCamera: Object.freeze({
-        settleHeightRatio: 0.02,
+        stiffness: 4,
+        maxAccel: 8,
+        maxJerk: 80,
+        lookAhead: 0.1,
+        turnMs: 250,
         deletionMarginHeightRatio: 0.1
     })
 })
