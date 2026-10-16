@@ -389,11 +389,23 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         {...rest('S06-loading-floor',5780,-8130,400), points:[{x:0,y:0},{x:400,y:0},{x:400,y:15},{x:300,y:15},{x:300,y:30},{x:70,y:30},{x:70,y:15},{x:0,y:15}]},
         {id:'S06-counterweight',x:6060,y:-8480,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:100,y:0},{x:100,y:35},{x:125,y:35},{x:125,y:110},{x:-25,y:110},{x:-25,y:35},{x:0,y:35}]},
-        {...rest('S06-test-exit',5780,-8270,220), points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:50},{x:70,y:50},{x:70,y:110},{x:0,y:110}]}
+        {...rest('S06-phase-rest',5780,-8270,220), points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:50},{x:70,y:50},{x:70,y:110},{x:0,y:110}]}
     ];
+    // Alternating fixed heads and a second travelling weight form the upper lift.
+    liftworks.push(
+        {id:'S06-fixed-head',x:5480,y:-8610,role:'solid',grapplable:true,
+            points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:240,y:0},{x:240,y:110},{x:170,y:110},{x:170,y:35},{x:0,y:35}]},
+        {id:'S06-upper-weight',x:5780,y:-9010,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:100,y:0},{x:100,y:35},{x:125,y:35},{x:125,y:100},{x:-25,y:100},{x:-25,y:35},{x:0,y:35}]},
+        {id:'S06-transfer-head',x:6100,y:-9300,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:220,y:0},{x:220,y:-25},{x:260,y:-25},{x:260,y:130},{x:190,y:130},{x:190,y:40},{x:0,y:40}]},
+        {...rest('S06-exit',5520,-9680,260),points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:-20},{x:260,y:-20},{x:260,y:55},{x:0,y:55}]}
+    );
     const liftMovers = [{id:'S06-counterweight-travel',element:'S06-counterweight',
-        axis:'y',min:-8480,max:-8320,periodMs:4000,phase:0,velocity:80}];
-    Object.assign(sections[5], {status:'partial',landmark:{id:'S06-landmark',
+        axis:'y',min:-8480,max:-8320,periodMs:4000,phase:0,velocity:80},
+        {id:'S06-upper-weight-travel',element:'S06-upper-weight',axis:'y',
+            min:-9010,max:-8890,periodMs:4000,phase:0,velocity:60}];
+    Object.assign(sections[5], {status:'built',landmark:{id:'S06-landmark',
         name:'moving counterweights',x:6110,y:-8400}});
     Object.assign(encounters[20], {status:'built',x:6300,y:-8130,
         elements:['S05-exit','S06-loading-floor','S06-counterweight'],
@@ -401,13 +413,27 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         action:'Acquire the moving blue counterweight above the broad loading floor',
         exit:{left:6030,right:6200,top:-8500,bottom:-8300}});
     Object.assign(encounters[21], {status:'built',x:6110,y:-8400,
-        elements:['S06-counterweight','S06-loading-floor','S06-test-exit'],
+        elements:['S06-counterweight','S06-loading-floor','S06-phase-rest'],
         start:{from:'S06-01',attachedTo:'S06-counterweight'},target:{x:5900,y:-8270},
-        action:'Remain attached through counterweight travel and reversal; release onto the static test exit',
+        action:'Remain attached through counterweight travel and reversal',
         exit:{left:5830.8,right:5989.2,top:-8282,bottom:-8270}});
     Object.assign(connectors[20], {status:'built',intent:'Acquire counterweight from the Galleries departure ledge'});
-    Object.assign(connectors[21], {status:'built',intent:'Keep attachment through reversal before reaching the static test exit'});
-    Object.assign(recoveries[5], {openingElements:['S06-loading-floor','S05-exit','S05-recessed-ceiling'],
+    Object.assign(connectors[21], {status:'built',intent:'Keep attachment through reversal before the rising-phase release'});
+    Object.assign(encounters[22], {status:'built',x:5900,y:-8270,
+        elements:['S06-counterweight','S06-phase-rest'],
+        start:{from:'S06-02',attachedTo:'S06-counterweight'},target:{x:5900,y:-8270},
+        action:'Release on the rising phase to settle behind the fixed rest end stop',
+        exit:{left:5830.8,right:5989.2,top:-8282,bottom:-8270}});
+    Object.assign(encounters[23], {status:'built',x:5830,y:-8970,
+        elements:['S06-phase-rest','S06-fixed-head','S06-upper-weight','S06-transfer-head','S06-exit'],
+        start:{from:'S06-03',x:5830.8,y:-8280.8},target:{x:5715,y:-8590},
+        action:'Transfer from fixed head to travelling weight, then fixed upper head and exposed departure',
+        exit:{left:5570.8,right:5729.2,top:-9692,bottom:-9680}});
+    Object.assign(connectors[22], {status:'built',intent:'Rising-phase release onto ordinary fixed rest'});
+    Object.assign(connectors[23], {status:'built',intent:'Alternating moving/fixed targets reach S06-exit at the Crown band; S07 remains planned'});
+    Object.assign(recoveries[5], {status:'built',
+        elements:['S06-phase-rest','S06-loading-floor','S05-transfer-canopy','S05-recessed-ceiling'],
+        openingElements:['S06-loading-floor','S05-exit','S05-recessed-ceiling'],
         openingRejoin:'S05-04',sideRoute:'Open western loading-floor edge returns to the static Galleries ceiling and rests'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},

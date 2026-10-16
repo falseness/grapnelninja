@@ -1827,3 +1827,116 @@ class Task480Tests(unittest.TestCase):
             recovery_collider='S05-transfer-canopy',floor_observation=floor,
             galleries_observation=recovered,no_relocation=True,no_traversal_mutation=True))
         print('PASS failure/recovery: missed exit; broad floor catch; physical fall onto static S05-transfer-canopy; no relocation; matching trusted-input replays')
+
+
+class Task481Tests(unittest.TestCase):
+    """Completed Liftworks: phase release, alternating transfer, and physical fall."""
+    task_id = 'TASK-481'
+    snapshot_contacts = True
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    replay = Task474Tests.replay
+    test_05_source_hashes = Task465Tests.test_03_source_hashes
+
+    def test_01_geometry(self):
+        page = self.open()
+        page.evaluate('floors=[loadFixedLevel(validateMountainManifest(GRAPPLE_OVER_MOUNTAIN))]')
+        r = page.evaluate('''() => ({manifest:GRAPPLE_OVER_MOUNTAIN,runtime:floors[0].level,
+            colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))})''')
+        m = r['manifest']; elements = m['geometry']['elements']
+        self.assertEqual(m['sections'][5]['status'], 'built')
+        self.assertEqual([e['status'] for e in m['encounters'][20:24]], ['built']*4)
+        self.assertEqual([e['status'] for e in m['connectors'][20:24]], ['built']*4)
+        self.assertEqual(len({e['action'] for e in m['encounters'][20:24]}), 4)
+        self.assertEqual(m['recoveries'][5]['status'], 'built')
+        self.assertEqual(r['runtime']['elements'], elements)
+        for actual, expected in zip(r['colliders'], elements):
+            self.assertEqual(actual, {k:expected[k] for k in ('id','x','y','points','role')})
+        self.assertNotIn('S06-test-exit', [e['id'] for e in elements])
+        self.assertIsNone(r['runtime']['finish'])
+        self.assertFalse(any(s['from'].startswith('S06') for s in m['shortcuts']))
+        prior = json.loads((ROOT/'artifacts/TASK-480/geometry.json').read_text())['manifest']
+        lower = lambda manifest: [e for e in manifest['geometry']['elements'] if not e['id'].startswith('S06')]
+        self.assertEqual(lower(m), lower(prior))
+        calibration = json.loads((ROOT/'artifacts/TASK-463/calibration.json').read_text())
+        for path in ('sprites/ninja.js','sprites/grapnel.js','sprites/trampoline.js','physics.js'):
+            self.assertEqual(self.proof['source_hashes'][path], calibration['source_hashes'][path])
+        roles = {'S06-01 acquisition / S06-02 reversal':['S06-counterweight'],
+            'S06-03 phase landing / ordinary rest':['S06-phase-rest'],
+            'S06-04 fixed / moving transfer':['S06-fixed-head','S06-upper-weight','S06-transfer-head'],
+            'Crown departure':['S06-exit'],
+            'Static recovery to Cable Galleries':['S06-loading-floor','S05-recessed-ceiling','S05-transfer-canopy']}
+        self.evidence.write('geometry.json', dict(self.proof, **r,
+            structural_validations_pass=True, previous_geometry_unchanged=True,
+            calibrated_physics_unchanged=True, no_temporary_exit=True,
+            encounters=m['encounters'][20:24], surface_roles=roles,
+            shortcut='None assigned to section 6', next_unbuilt_section_not_required=True))
+        parts=['<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1500" viewBox="5250 -10020 1500 2850" style="background:#182028">']
+        colors=['#50baff','#e4d7a0','#8acaff','#ddad70','#85b398']
+        for (role, ids), color in zip(roles.items(), colors):
+            for e in elements:
+                if e['id'] not in ids: continue
+                points=' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+                parts.append(f'<polygon points="{points}" fill="{color}" stroke="#141820" stroke-width="3"/><text x="{e["x"]}" y="{e["y"]-30}" fill="white" font-size="20">{e["id"]} ({e["role"]})</text>')
+        for i, role in enumerate(roles):
+            parts.append(f'<text x="5300" y="{-9970+i*35}" fill="{colors[i]}" font-size="22">{role}</text>')
+        parts.append('</svg>'); page.set_content(''.join(parts))
+        page.set_viewport_size(dict(width=1100,height=1500))
+        page.screenshot(path=str(self.evidence.path('overview.png')))
+        print('PASS geometry: S06-01 S06-02 S06-03 S06-04 built; distinct roles; rest; exit; static recovery; no shortcut; no temporary exit; overview.png')
+
+    def test_02_phase_release(self):
+        trace = self.replay('S06-03-phase-release',
+            [(30,'mousedown',6110,-8370),(210,'mouseup',6110,-8370)],500,
+            dict(x=[5830,5832],y=[-8281,-8280],speedX=[-.001,.001],speedY=[-.001,.001]),
+            start=(6300,-8080.8))
+        rows=trace['snapshots'][40:210]
+        self.assertTrue(all(r['state']['rope'][0]['id']=='S06-counterweight' for r in rows))
+        ys=[r['state']['rope'][0]['y'] for r in rows]
+        self.assertGreater(max(ys)-min(ys),100)
+        self.assertGreater(ys[60]-ys[0],0)
+        self.assertLess(ys[-1]-ys[90],0)
+        self.evidence.write('encounters/phase.json',dict(passed=True,
+            moving_acquisition=True,attached_through_reversal=True,rising_phase_release=True,
+            fixed_rest_landing=True,anchor_travel=max(ys)-min(ys),release_tick=210))
+        print('PASS S06-03: moving acquisition; reversal; rising-phase release; fixed rest landing')
+
+    def test_04_recovery(self):
+        trace=self.replay('local-miss-recovery',
+            [(30,'mousedown',6110,-8370),(300,'mouseup',6110,-8370)],700,
+            dict(x=[5444,5445],y=[-7411,-7410]),start=(6300,-8080.8))
+        floor=trace['snapshots'][400]['state']['simulation']['player']
+        final=trace['snapshots'][-1]['state']['simulation']['player']
+        self.assertAlmostEqual(floor['y']+floor['radius'],-8130,places=5)
+        self.assertAlmostEqual(final['y']+final['radius'],-7400,places=5)
+        self.evidence.write('encounters/recovery.json',dict(passed=True,broad_floor_catch=True,
+            physical_return_to_S05=True,recovery_collider='S05-transfer-canopy',
+            floor_observation=floor,galleries_observation=final,no_relocation=True))
+        print('PASS recovery: local miss; broad floor catch; physical return to S05-transfer-canopy; no relocation')
+
+    def test_03_transfer_and_section_exit(self):
+        plan=[(30,'mousedown',5715,-8590),(80,'mouseup',5715,-8590),
+              (85,'mousedown',5825,-8900),(220,'mouseup',5825,-8900),
+              (250,'mousedown',6105,-9280),(350,'mouseup',6105,-9280),
+              (370,'mousedown',5775,-9660),(470,'mouseup',5775,-9660)]
+        for mode in ('mouse','touch'):
+            inputs=plan if mode=='mouse' else [(t,{'mousedown':'touchstart','mouseup':'touchend'}[e],x,y) for t,e,x,y in plan]
+            trace=self.replay('S06-04-section-exit-'+mode,inputs,770,
+                dict(x=[5571,5769],y=[-9691,-9690],speedY=[-.001,.001]),
+                start=(5830.8000001,-8280.8000001))
+            grabs=[e for e in trace['events'] if e['type']=='acquisition']
+            self.assertEqual([e['after']['rope'][0]['id'] for e in grabs],
+                ['S06-fixed-head','S06-upper-weight','S06-transfer-head','S06-exit'])
+            inputs=[e for e in trace['events'] if e['type']=='input']
+            self.assertTrue(all(e['trusted'] for e in inputs))
+            for e in inputs[::2]:
+                self.assertTrue(0<e['client']['x']<1280 and 0<e['client']['y']<720)
+            anchors=[s['state']['rope'][0]['y'] for s in trace['snapshots'][100:220]]
+            self.assertGreater(max(anchors)-min(anchors),40)
+            self.evidence.write('encounters/transfer-'+mode+'.json',dict(passed=True,
+                fixed_moving_fixed_acquisitions=[e['after']['rope'][0]['id'] for e in grabs],
+                upper_mover_anchor_travel=max(anchors)-min(anchors),
+                section_exit_traversed=True, trusted_inputs=True,
+                final=trace['snapshots'][-1]['state']['simulation']['player'],
+                next_unbuilt_section_not_required=True))
+        print('PASS S06-04: fixed-moving-fixed transfer; section exit traversed; mouse and touch; matching replays; next unbuilt section not required')
