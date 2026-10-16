@@ -436,3 +436,234 @@ GRAPPLE_OVER_LEVEL.movers=[{id:'step-motion',element:'right-step',axis:'x',min:5
             hazard=dict(knocked=knocked,held=held,fresh=fresh,fresh_input_pass=True),errors=errors))
         print('PASS moving-attachment and free-fall: frozen restore, movers/rope/momentum, mouse/touch Resume ownership, fresh gameplay, camera framing')
         print('PASS hidden/portrait remain paused; fresh input after pause and hazard knockback; resume.webm recorded')
+
+
+# Test-only helpers for TASK-502. placeInUpgradeBand() is a labeled test
+# placement into the S05 band, not a climb proof; shots use real mouse input.
+RANGE_HELPERS = '''() => {
+    window.bandOf=id=>floors[0].level.sections.find(s=>s.id===id).band;
+    window.activeRadius=()=>grappleOverAcquisitionRadius();
+    window.placeAt=(x,y)=>{ninja.x=x;ninja.y=y;ninja.speedX=ninja.speedY=0;
+        grapnel.endShot();pressHeld=stalePress=gameplayPressOwned=false;
+        if(ninja.track)ninja.track.pos.length=0;screen.trackGrappleOver(true)};
+    // A point with nothing within 60 units on either axis.
+    window.isFree=(x,y)=>!grapnel.nearestCrossing({x:x-60,y},[x+60,y])&&!grapnel.nearestCrossing({x,y:y-60},[x,y+60]);
+    // TEST-ONLY PLACEMENT: put the player's center just inside the S05 band,
+    // at the free point nearest the band's horizontal middle.
+    window.placeInUpgradeBand=()=>{const b=bandOf('S05'),y=b.bottom-20,mid=(b.left+b.right)/2;
+        for(let d=0;d<mid-b.left;d+=40) for(const x of [mid-d,mid+d]) if(isFree(x,y)){placeAt(x,y);return {x,y,label:'TEST-ONLY'}}
+        throw Error('no free S05 placement')};
+    // Radius argument actually passed to ctx.arc by the range circle.
+    window.drawnRadius=()=>{const radii=[],arc=ctx.arc,circle=drawAcquisitionCircle;
+        window.drawAcquisitionCircle=()=>{ctx.arc=function(x,y,radius,...rest){radii.push(radius);return arc.call(this,x,y,radius,...rest)};
+            try{circle()}finally{ctx.arc=arc}};
+        try{draw()}finally{window.drawAcquisitionCircle=circle}
+        if(radii.length!==1)throw Error('range circle arcs: '+radii.length);return radii[0]};
+    // An attachable anchor straight above a free S04 point, exactly 600 units away.
+    window.findAnchor=()=>{const b=bandOf('S04');
+        for(let y=b.bottom-100;y>b.top+100;y-=40) for(let x=b.left+200;x<b.right-200;x+=40){
+            const hit=grapnel.nearestCrossing({x,y},[x,y-1000]);
+            if(!hit||grapnel.blocksShot(hit.element)) continue;
+            const sy=hit.hit.y+600;
+            if(sy>b.bottom-60||sy<b.top+60) continue;
+            const clear=grapnel.nearestCrossing({x,y:sy},[x,hit.hit.y-1]);
+            const below=grapnel.nearestCrossing({x,y:sy},[x,sy+80]);
+            const side=grapnel.nearestCrossing({x:x-40,y:sy},[x+40,sy]);
+            if(clear&&clear.element===hit.element&&Math.abs(clear.hit.y-hit.hit.y)<1e-9&&!below&&!side)
+                return {x,y:sy,anchor:{x,y:hit.hit.y,id:hit.element.id}};
+        }
+        return null};
+}'''
+
+
+class Task502Tests(unittest.TestCase):
+    task_id = 'TASK-502'
+    setUpClass = classmethod(Task456Tests.setUpClass.__func__)
+
+    def open(self):
+        page = Task447Tests.open(self)
+        page.evaluate('menu.unPause();cancelAnimationFrame(game);window.requestAnimationFrame=()=>0')
+        page.evaluate(RANGE_HELPERS)
+        return page
+
+    def shoot(self, page, spot, ticks=40):
+        """Real mouse press toward the anchor; held while physics steps."""
+        page.evaluate('s=>placeAt(s.x,s.y)', spot)
+        page.wait_for_function('!unTouch')
+        aim = page.evaluate('''s=>{const p=canvasCoordsToViewportCoords({x:(s.x+screen.x)*scale[version],
+            y:(s.y-200+screen.y)*scale[version]});return p}''', spot)
+        page.mouse.move(aim['x'], aim['y'])
+        page.mouse.down()
+        rows = page.evaluate('''n=>{const rows=[];for(let i=0;i<n;i++){physics();rows.push({tick:floors[0].elapsedSteps,
+            x:ninja.x,y:ninja.y,throwed:grapnel.throwed,grappled:grapnel.grappled,traveled:grapnel.traveled,
+            radius:activeRadius(),tip:grapnel.pos[0]?grapnel.pos[0].slice(0,2):null,
+            anchor:grapnel.grappled?grapnel.pos[0][2].id:null})}return rows}''', ticks)
+        page.mouse.up()
+        return rows
+
+    def test_01_range_upgrade(self):
+        page = self.open()
+        spot = page.evaluate('findAnchor()')
+        self.assertIsNotNone(spot)
+        self.assertEqual(spot['y'] - spot['anchor']['y'], 600)
+        before_state = page.evaluate('s=>{placeAt(s.x,s.y);return captureClimbState()}', spot)
+        self.assertFalse(before_state['upgrades']['range'])
+        circle_before = page.evaluate('drawnRadius()')
+        self.assertEqual(circle_before, 540)
+        miss = self.shoot(page, spot)
+        self.assertTrue(all(r['radius'] == 540 and not r['grappled'] for r in miss))
+        self.assertTrue(miss[-1]['throwed'])  # held miss parked at the range edge
+        self.assertAlmostEqual(miss[-1]['traveled'], 540)
+        # Labeled test-only placement into S05, then physics decides the flip.
+        placed = page.evaluate('placeInUpgradeBand()')
+        flip = page.evaluate('''()=>{const rows=[];const band=bandOf('S05');
+            for(let i=0;i<5;i++){const pre=floors[0].rangeUpgraded;physics();
+                rows.push({tick:floors[0].elapsedSteps,before:pre,after:floors[0].rangeUpgraded,
+                    x:ninja.x,y:ninja.y,inBand:ninja.y>=band.top&&ninja.y<=band.bottom,
+                    radius:activeRadius(),noticeMs:floors[0].rangeNoticeMs})}
+            return {rows,band}}''')
+        first = flip['rows'][0]
+        self.assertFalse(first['before'])
+        self.assertTrue(first['after'] and first['inBand'] and first['radius'] == 810)
+        circle_after = page.evaluate('drawnRadius()')
+        self.assertEqual(circle_after, 810)
+        # Fall physically back below the S05 band bottom into S04.
+        fall = page.evaluate('''()=>{const b=bandOf('S05'),s4=bandOf('S04');let n=0;
+            while(ninja.y<=b.bottom+40&&n<2000){physics();n++}
+            return {ticks:n,y:ninja.y,inS04:ninja.y>s4.top&&ninja.y<=s4.bottom,upgraded:floors[0].rangeUpgraded,
+                radius:activeRadius(),circle:drawnRadius()}}''')
+        self.assertTrue(fall['inS04'])
+        self.assertEqual((fall['radius'], fall['circle']), (810, 810))
+        # Same shot from the same S04 spot, now with the earned range.
+        upgraded_state = dict(before_state, upgrades={'range': True})
+        page.evaluate('s=>restoreClimbState(s)', upgraded_state)
+        hit = self.shoot(page, spot)
+        grabbed = [r for r in hit if r['grappled']]
+        self.assertTrue(grabbed)
+        self.assertEqual(grabbed[0]['anchor'], spot['anchor']['id'])
+        self.assertTrue(all(r['radius'] == 810 for r in hit))
+        self.evidence.write('range.json', dict(self.proof, spot=spot, anchor_distance=spot['y']-spot['anchor']['y'],
+            input='playwright page.mouse move/down/up toward the anchor; physics() stepped while held',
+            before_upgrade=dict(circle_radius=circle_before, shot=miss, acquired=False),
+            test_only_placement=dict(label='TEST-ONLY placeInUpgradeBand(); not a climb proof', position=placed),
+            upgrade_flip=dict(tick=first['tick'], band=flip['band'], rows=flip['rows']),
+            after_upgrade=dict(circle_radius=circle_after),
+            fallen_to_s04=fall,
+            after_upgrade_shot=dict(shot=hit, acquired=True, first_grapple_tick=grabbed[0]['tick'],
+                anchor=grabbed[0]['anchor']),
+            range_pass=True))
+        print(f"PASS range: 600-unit shot misses at 540, flag flips at tick {first['tick']}, circle 540->810, "
+              f"S04 after fall 810, same shot acquires {grabbed[0]['anchor']}")
+
+    def test_02_persistence(self):
+        from browser_test_support import wait_for_boot
+        page = self.open()
+        page.evaluate('placeInUpgradeBand();physics()')
+        self.assertTrue(page.evaluate('floors[0].rangeUpgraded'))
+        spot = page.evaluate('findAnchor()')
+        page.evaluate('s=>{placeAt(s.x,s.y);ninja.speedX=.4;physics()}', spot)
+        start = page.evaluate('captureClimbState()')
+        self.assertTrue(start['upgrades']['range'])
+        replay = '''n=>{const t=[];for(let i=0;i<n;i++){physics();t.push(captureClimbState())}return {trace:t,radius:activeRadius()}}'''
+        uninterrupted = page.evaluate(replay, 300)
+        page.evaluate('s=>restoreClimbState(s)', start)
+        page.evaluate('PROGRESS.flushClimb()')
+        page.wait_for_function("JSON.parse(localStorage.getItem('grapnelninja.grappleOver')||'{}').upgrades?.range===true")
+        saved = page.evaluate("JSON.parse(localStorage.getItem('grapnelninja.grappleOver'))")
+        self.assertEqual(saved, start)
+        rows = []
+        def check(name):
+            state = page.evaluate('captureClimbState()')
+            self.assertEqual(state, start, name)
+            page.evaluate('menu.unPause();cancelAnimationFrame(game);window.requestAnimationFrame=()=>0;pressHeld=stalePress=gameplayPressOwned=false')
+            run = page.evaluate(replay, 300)
+            self.assertEqual(run, uninterrupted, name)
+            rows.append(dict(name=name, restored_equal=True, continuation_equal=True, ticks=300,
+                radius=run['radius'], upgraded=state['upgrades']['range']))
+        page.evaluate('s=>restoreClimbState(s)', start)
+        check('restore')
+        page.evaluate('s=>{restoreClimbState(s);PROGRESS.flushClimb()}', start)
+        page.wait_for_timeout(50)
+        page.reload(); wait_for_boot(page)
+        page.evaluate("startGame('grapple_over');cancelAnimationFrame(game)")
+        page.evaluate(RANGE_HELPERS)
+        check('reload')
+        page.evaluate("s=>{restoreClimbState(s);window.dispatchEvent(new Event('pagehide'))}", start)
+        page.wait_for_timeout(50)
+        page.reload(); wait_for_boot(page)
+        page.evaluate("startGame('grapple_over');cancelAnimationFrame(game)")
+        page.evaluate(RANGE_HELPERS)
+        check('pagehide-reload')
+        page.evaluate("s=>{restoreClimbState(s);startGame('bad');cancelAnimationFrame(game)}", start)
+        bad_mode = page.evaluate('version')
+        page.evaluate("startGame('grapple_over');cancelAnimationFrame(game)")
+        check('mode-switch-bad')
+        page.evaluate("s=>{restoreClimbState(s);startGame('classic');cancelAnimationFrame(game)}", start)
+        page.evaluate("startGame('grapple_over');cancelAnimationFrame(game)")
+        check('mode-switch-classic')
+        # Legacy save without an upgrades field restores as not upgraded.
+        legacy = {k: v for k, v in start.items() if k != 'upgrades'}
+        legacy_radius = page.evaluate('s=>{restoreClimbState(s);return activeRadius()}', legacy)
+        self.assertEqual(legacy_radius, 540)
+        # Restart through real mouse clicks on the pause menu buttons.
+        page.evaluate('s=>{restoreClimbState(s);menu.startPause()}', start)
+        def tap(key):
+            page.wait_for_function('!unTouch')
+            boxes = page.evaluate('''() => {LAYOUT_PROBE.boxes=[]; menu.drawPauseScreen();
+                const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;return b}''')
+            label = page.evaluate('k=>I18N.t(k)', key)
+            box = next(b for b in boxes if b['kind'] == 'button' and b['name'] == label)
+            rect = page.locator('#canvas').bounding_box()
+            page.mouse.click(rect['x']+box['x']+box['width']/2, rect['y']+box['y']+box['height']/2)
+            page.evaluate('cancelAnimationFrame(game)')
+        tap('climb.restart'); self.assertTrue(page.evaluate('CLIMB_UI.confirming'))
+        tap('climb.cancel'); self.assertFalse(page.evaluate('CLIMB_UI.confirming'))
+        cancelled = page.evaluate('({state:captureClimbState(),radius:activeRadius()})')
+        self.assertEqual(cancelled['state'], start)
+        self.assertEqual(cancelled['radius'], 810)
+        tap('climb.restart'); tap('climb.yes')
+        page.wait_for_function("JSON.parse(localStorage.getItem('grapnelninja.grappleOver')).simulationTick===0")
+        confirmed = page.evaluate('''()=>({state:captureClimbState(),radius:activeRadius(),circle:drawnRadius(),
+            saved:JSON.parse(localStorage.getItem('grapnelninja.grappleOver'))})''')
+        self.assertFalse(confirmed['state']['upgrades']['range'])
+        self.assertFalse(confirmed['saved']['upgrades']['range'])
+        self.assertEqual((confirmed['radius'], confirmed['circle']), (540, 540))
+        self.evidence.write('persistence.json', dict(self.proof, start=start, saved_state=saved,
+            saved_upgrade_flag=saved['upgrades']['range'], uninterrupted_final=uninterrupted['trace'][-1],
+            continuations=rows, intermediate_mode=bad_mode, legacy_save_radius=legacy_radius,
+            cancelled_restart=dict(upgraded=cancelled['state']['upgrades']['range'], radius=cancelled['radius'],
+                state_unchanged=True),
+            confirmed_restart=dict(upgraded=confirmed['state']['upgrades']['range'],
+                saved_upgraded=confirmed['saved']['upgrades']['range'], radius=confirmed['radius'],
+                circle=confirmed['circle'], tick=confirmed['state']['simulationTick']),
+            persistence_pass=True))
+        print('PASS persistence: saved upgrades.range=true; restore/reload/pagehide/mode-switch continue equal to '
+              'uninterrupted 300 ticks at 810; cancelled restart keeps 810; confirmed restart resets to 540')
+
+    def test_03_notice_once(self):
+        rows = []
+        for lang in ('en', 'ru'):
+            page = self.open()
+            page.evaluate("l=>{I18N.language=l;applyLanguage();TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500)}", lang)
+            page.evaluate('placeInUpgradeBand();physics();draw()')
+            boxes = page.evaluate('''()=>{LAYOUT_PROBE.boxes=[];draw();const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;return b}''')
+            label = page.evaluate("I18N.t('climb.rangeUpgrade')")
+            shown = [b for b in boxes if b['kind'] == 'text' and b.get('name') == label]
+            self.assertTrue(shown, boxes)
+            page.screenshot(path=str(self.evidence.path(f'notice-{lang}.png')))
+            # Let the notice expire, leave the band, then enter S05 a second time.
+            page.evaluate('''()=>{let n=0;while(floors[0].rangeNoticeMs>0&&n<5000){physics();n++}
+                const b=bandOf('S04');placeAt(b.left+600,b.bottom-300);physics()}''')
+            gone = page.evaluate("()=>{LAYOUT_PROBE.boxes=[];draw();const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;return b}")
+            page.evaluate('placeInUpgradeBand();physics()')
+            second = page.evaluate('''()=>{LAYOUT_PROBE.boxes=[];draw();const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;
+                return {boxes:b,noticeMs:floors[0].rangeNoticeMs,upgraded:floors[0].rangeUpgraded,y:ninja.y}}''')
+            again = [b for b in second['boxes'] if b['kind'] == 'text' and b.get('name') == label]
+            self.assertEqual(again, [])
+            self.assertEqual(second['noticeMs'], 0)
+            self.assertFalse([b for b in gone if b['kind'] == 'text' and b.get('name') == label])
+            page.screenshot(path=str(self.evidence.path(f'notice-{lang}-second-entry.png')))
+            rows.append(dict(lang=lang, text=label, first_entry_boxes=shown, second_entry_y=second['y'],
+                second_entry_notice_boxes=again, second_entry_noticeMs=second['noticeMs']))
+        self.evidence.write('notice.json', dict(self.proof, notices=rows, once_pass=True))
+        print('PASS notice: EN/RU one-time HUD notice on first S05 entry; none on second entry')

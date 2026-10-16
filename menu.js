@@ -972,6 +972,8 @@ const CLIMB_UI = {
             I18N.t('climb.section', {value:I18N.t('climb.section.' + section.id)}),
             I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)})]
         rows.forEach((text, i) => this.text(text, size, size * (1.5 + i * 1.6), size, 'left'))
+        if (floors[0].rangeNoticeMs > 0)
+            this.text(I18N.t('climb.rangeUpgrade'), width / scale[version] / 2, h * 0.2, size * 1.6)
     },
     complete() {
         const stats = floors[0].climbStats

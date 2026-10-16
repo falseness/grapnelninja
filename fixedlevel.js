@@ -133,6 +133,10 @@ class PersistentWorld extends Floor
         this.level = structuredClone(source)
         this.elapsedSteps = 0
         this.climbStats = {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false}
+        // Earned once on entering the upgrade section; kept until a confirmed restart.
+        this.rangeUpgraded = false
+        // HUD notice time left after the upgrade; display only, never saved.
+        this.rangeNoticeMs = 0
         // Drag zones are neither collidable nor grappleable: keep them out of
         // `elements`, which every collision, rope and save consumer walks.
         this.dragZones = this.level.elements.filter(model => model.role === 'drag').map(model => {
@@ -234,6 +238,7 @@ function captureClimbState()
         stats: {...world.climbStats},
         player: climbFields(ninja, CLIMB_PLAYER_FIELDS),
         input: {pressHeld, stalePress},
+        upgrades: {range: world.rangeUpgraded},
         elements: world.elements.map(e => ({id: e.id, ...climbFields(e, CLIMB_ELEMENT_FIELDS)})),
         grapple: {
             throwed: grapnel.throwed, grappled: grapnel.grappled,
@@ -268,6 +273,9 @@ function restoreClimbState(save)
     shape(s.player, climbFields(ninja, CLIMB_PLAYER_FIELDS))
     shape(s.stats, {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false})
     shape(s.input, {pressHeld: false, stalePress: false})
+    // Saves from before the range upgrade existed carry no upgrades.
+    if (s.upgrades === undefined) s.upgrades = {range: false}
+    shape(s.upgrades, {range: false})
     if (s.player.radius <= 0 || s.player.hazardCooldownMs < 0 || s.player.invulnerableMs < 0 ||
         s.stats.elapsedActiveMs < 0 || s.stats.maxHeight < Math.max(0, s.stats.currentHeight)) fail()
     if (!Array.isArray(s.elements) || s.elements.length !== world.elements.length) fail()
@@ -298,6 +306,7 @@ function restoreClimbState(save)
     const nextWorld = loadFixedLevel(world.level)
     nextWorld.elapsedSteps = s.simulationTick
     nextWorld.climbStats = s.stats
+    nextWorld.rangeUpgraded = s.upgrades.range
     s.elements.forEach(e => Object.assign(nextWorld.byId.get(e.id), e))
     const nextNinja = new Ninja({...s.player, fill:ninja.fill, stroke:ninja.stroke})
     Object.assign(nextNinja, s.player)

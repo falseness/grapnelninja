@@ -28,7 +28,7 @@ class Grapnel
             if (version === 'grapple_over' && !this.grappled)
             {
                 const tip = this.pos[0]
-                const radius = MODE_DEFINITIONS.grapple_over.acquisitionRadius
+                const radius = grappleOverAcquisitionRadius()
                 if (this.isParked())
                 {
                     // acquireShot() tests the whole held line; the tip only follows the aim.
@@ -84,7 +84,7 @@ class Grapnel
     isParked()
     {
         return this.throwed && !this.grappled && this.aim !== null &&
-            this.traveled >= MODE_DEFINITIONS.grapple_over.acquisitionRadius &&
+            this.traveled >= grappleOverAcquisitionRadius() &&
             pressHeld && gameplayPressOwned && !stalePress
     }
     setAim(direction)
@@ -171,7 +171,7 @@ class Grapnel
     {
         if (!this.throwed) return
         const step = this.shotStep, tip = this.pos[0]
-        const radius = MODE_DEFINITIONS.grapple_over.acquisitionRadius
+        const radius = grappleOverAcquisitionRadius()
         this.shotStep = null
         this.clip = null
         if (!step && !this.isParked()) return

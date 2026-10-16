@@ -1,3 +1,5 @@
+// How long the one-time Grapple Over range upgrade notice stays on the HUD
+const CLIMB_RANGE_NOTICE_MS = 3000
 const GRAVITY = screenHeightPercent(GAMEPLAY.gravityHeightPercent) / Math.pow(cyclesPerTick, 2)
 
 function physics()
@@ -59,6 +61,15 @@ function calcPhysics()
         stats.elapsedActiveMs += physicsStepMs / cyclesPerTick
         stats.currentHeight = world.level.spawn.y - ninja.y
         stats.maxHeight = Math.max(stats.maxHeight, stats.currentHeight)
+        world.rangeNoticeMs = Math.max(0, world.rangeNoticeMs - physicsStepMs / cyclesPerTick)
+        const upgrade = world.level.sections.find(s => s.id === MODE_DEFINITIONS.grapple_over.rangeUpgradeSection)
+        const band = upgrade?.band
+        if (!world.rangeUpgraded && band && ninja.x >= band.left && ninja.x <= band.right &&
+            ninja.y >= band.top && ninja.y <= band.bottom)
+        {
+            world.rangeUpgraded = true
+            world.rangeNoticeMs = CLIMB_RANGE_NOTICE_MS
+        }
         const finish = world.level.finish
         if (finish && ninja.x >= finish.left && ninja.x <= finish.right &&
             ninja.y >= finish.top && ninja.y <= finish.bottom) CLIMB_UI.complete()

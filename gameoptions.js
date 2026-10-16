@@ -208,9 +208,18 @@ function canvasCoordsToViewportCoords(coord)
 const MODE_DEFINITIONS = Object.freeze({
     classic: Object.freeze({cameraScale: 1, hudStyle: 'classic'}),
     bad: Object.freeze({cameraScale: 1 / 2.2, hudStyle: 'bad'}),
+    // acquisitionRadius is the starting range; entering rangeUpgradeSection
+    // grants upgradedAcquisitionRadius for the rest of the climb.
     grapple_over: Object.freeze({cameraScale: 0.75, acquisitionRadius: 540,
-        hudStyle: 'classic'})
+        upgradedAcquisitionRadius: 810, rangeUpgradeSection: 'S05', hudStyle: 'classic'})
 })
+
+// The climb's current grapnel range: shot travel, acquisition and the range circle.
+function grappleOverAcquisitionRadius()
+{
+    const definition = MODE_DEFINITIONS.grapple_over
+    return floors[0]?.rangeUpgraded ? definition.upgradedAcquisitionRadius : definition.acquisitionRadius
+}
 const scale = Object.fromEntries(Object.entries(MODE_DEFINITIONS)
     .map(([id, definition]) => [id, definition.cameraScale]))
 

@@ -55,7 +55,7 @@ function drawAcquisitionCircle()
     ctx.lineWidth = width / getCanvasCssRect().width / scale[version]
     ctx.beginPath()
     ctx.arc(ninja.x + screen.x, ninja.y + screen.y,
-        MODE_DEFINITIONS.grapple_over.acquisitionRadius, 0, Math.PI * 2)
+        grappleOverAcquisitionRadius(), 0, Math.PI * 2)
     ctx.stroke()
     ctx.restore()
 }
