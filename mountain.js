@@ -277,6 +277,37 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         localRejoin:'S02-04'});
     Object.assign(shortcuts[0], {status:'built',elements:['S03-departure-beam','S03-rest-ledge'],
         openingExit:'S03-02',intent:'Optional earlier high-speed launch skips the conservative swing; exposed faster approach rejoins the normal route to the same narrow exit'});
+    // Deflector Works: a flat press face and tilted chute, above open catch basins.
+    // Green polygons are the machinery itself, with matching reflection colliders.
+    const deflectors = [
+        {id:'S04-flat-press',x:5500,y:-5270,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:60,y:0},{x:90,y:60},{x:90,y:350},{x:0,y:350}]},
+        rest('S04-rest',4900,-5000,360),
+        {id:'S04-angled-chute',x:5000,y:-5380,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:280,y:-140},{x:310,y:-100},{x:30,y:40}]},
+        rest('S04-test-exit',5220,-5250,160),
+        {id:'S04-catch-basin',x:5240,y:-4800,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:700,y:0},{x:700,y:-100},{x:740,y:-100},
+                {x:740,y:65},{x:0,y:65}]},
+        rectangle('S04-lower-stair',5200,-4770,100,35,true)
+    ];
+    for (const e of deflectors) {e.x=10300-e.x; e.points=e.points.map(p=>({x:-p.x,y:p.y})).reverse();}
+    Object.assign(sections[3], {status:'partial',landmark:{id:'S04-landmark',
+        name:'angled green machinery',x:5050,y:-5370}});
+    Object.assign(encounters[12], {status:'built',x:4900,y:-5030,
+        elements:['S03-exit','S04-flat-press','S04-rest','S04-catch-basin'],
+        start:{x:5150,y:-4830.8,from:'S03-04'},target:{x:4790,y:-5200},
+        exit:{left:5090.8,right:5389.2,top:-5012,bottom:-5000},
+        action:'Pull toward the flat green press; release, reflect right, and brake onto the rest shelf'});
+    Object.assign(encounters[13], {status:'built',x:5150,y:-5400,
+        elements:['S04-rest','S04-angled-chute','S04-test-exit','S04-catch-basin'],
+        start:{from:'S04-01'},target:{x:5150,y:-5430},
+        exit:{left:4970.8,right:5069.2,top:-5262,bottom:-5250},
+        action:'Pull toward the tilted green chute; release and redirect momentum toward the temporary exit'});
+    Object.assign(connectors[12], {status:'built',intent:'Physical pull from Viaduct exit to flat press'});
+    connectors[13].status='built';
+    Object.assign(recoveries[3], {openingElements:['S04-catch-basin','S04-lower-stair','S03-exit'],
+        openingRejoin:'S03-04',sideRoute:'Catch basin and lower stairs reconnect physically to the Viaduct'});
     return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
@@ -284,7 +315,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct], movers:[]},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors], movers:[]},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         completion:'planned; no summit trigger until authored',

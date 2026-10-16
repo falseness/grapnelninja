@@ -34,6 +34,15 @@
             return result;
         };
     }
+    // Observe reflection without altering the production result or velocity.
+    const originalBounce=Ninja.prototype.applyBounce;
+    Ninja.prototype.applyBounce=function(contact) {
+        const before=attempt && contact.approaching ? state() : null;
+        const result=originalBounce.call(this,contact);
+        if (before) emit('bounce',{contact:{elementId:contact.element.id,
+            nx:contact.nx,ny:contact.ny,line:contact.line},before,after:state()});
+        return result;
+    };
     let input = null;
     const originalAim = Grapnel.prototype.calcSpeed;
     Grapnel.prototype.calcSpeed=function(target) {
