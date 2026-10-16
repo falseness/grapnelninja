@@ -348,3 +348,197 @@ class Task452Tests(unittest.TestCase):
             trace.append(row)
         self.rows['multi_segment']['trace']=trace
         print('PASS multi-segment: original anchor preserved; wrapping contact beyond R; three stable anchors; boundary does not reacquire/detach; last-corner pull')
+
+
+class Task534Tests(unittest.TestCase):
+    """A held miss parks at the active radius and follows trusted mouse/touch aim."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-534')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        hashes = source_hashes()
+        name = 'tools/test_grapple_over_grapple.py'
+        hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.proof = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            source_hashes=hashes, browser=cls.browser.version, viewport=VIEWPORT,
+            device_scale_factor=1, seed=1)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.proof, sort_keys=True))
+        cls.held = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.held:
+            cls.evidence.write('held.json', dict(cls.proof, **cls.held))
+
+    def open(self, touch):
+        context = self.browser.new_context(viewport=VIEWPORT, device_scale_factor=1, has_touch=touch)
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(self.url)
+        wait_for_boot(page)
+        page.evaluate("startGame('grapple_over');menu.unPause();cancelAnimationFrame(game);"
+                      "window.requestAnimationFrame=()=>0")
+        page.wait_for_function('!unTouch')
+        page.evaluate('''() => {
+            // No anchor anywhere: every shot is a miss.
+            for(const f of floors) f.elements=[];
+            floors[0].level.movers=[];
+            screen.leftWall=null;
+            ninja.x=1000;ninja.y=-2000;ninja.speedX=2;ninja.speedY=0;
+            screen.trackGrappleOver(true);
+            window.events=[];
+            // Record what the game will see for each trusted move (capture phase).
+            for(const type of ['mousemove','touchmove']) document.addEventListener(type,e=>{
+                const c=e.changedTouches?e.changedTouches[0]:e;
+                const p=viewportCoordsToCanvasCoords({x:c.clientX,y:c.clientY});
+                const w={x:p.x/scale[version]-screen.x,y:p.y/scale[version]-screen.y};
+                events.push({type,trusted:e.isTrusted,client:[c.clientX,c.clientY],world:[w.x,w.y],
+                    ninja:[ninja.x,ninja.y],angle:Math.atan2(w.y-ninja.y,w.x-ninja.x),
+                    zero:w.x===ninja.x&&w.y===ninja.y});
+            },true);
+            window.radius=MODE_DEFINITIONS.grapple_over.acquisitionRadius;
+            window.tickRow=()=>{
+                physics();
+                const tip=grapnel.throwed?grapnel.pos[0].slice(0,2):null;
+                return {tick:floors[0].elapsedSteps,ninja:[ninja.x,ninja.y],throwed:grapnel.throwed,
+                    grappled:grapnel.grappled,parked:grapnel.isParked(),traveled:grapnel.traveled,tip,
+                    distance:tip?Math.hypot(tip[0]-ninja.x,tip[1]-ninja.y):null,
+                    tip_angle:tip?Math.atan2(tip[1]-ninja.y,tip[0]-ninja.x):null,
+                    aim_angle:grapnel.aim?Math.atan2(grapnel.aim.y,grapnel.aim.x):null,
+                    stale:stalePress,held:pressHeld,owned:gameplayPressOwned};
+            };
+            window.client=(x,y)=>{const p=canvasCoordsToViewportCoords({x:(x+screen.x)*scale[version],
+                y:(y+screen.y)*scale[version]});return [Math.round(p.x),Math.round(p.y)]};
+        }''')
+        return page
+
+    def client_at(self, page, angle, reach=300):
+        return page.evaluate('a=>client(ninja.x+Math.cos(a[0])*a[1],ninja.y+Math.sin(a[0])*a[1])',
+                             [angle, reach])
+
+    def angle_error(self, a, b):
+        return abs((a - b + math.pi) % (2 * math.pi) - math.pi)
+
+    def assert_parked(self, row, radius):
+        self.assertTrue(row['throwed'])
+        self.assertFalse(row['grappled'])
+        self.assertTrue(row['parked'])
+        self.assertLessEqual(abs(row['distance'] - radius), 1e-6, row)
+
+    def run_held(self, touch):
+        page = self.open(touch)
+        radius = page.evaluate('radius')
+        self.assertEqual(radius, 540)
+        if touch:
+            cdp = page.context.new_cdp_session(page)
+            def down(p): cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart',
+                                  'touchPoints': [dict(x=p[0], y=p[1], id=1)]})
+            def move(p): cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove',
+                                  'touchPoints': [dict(x=p[0], y=p[1], id=1)]})
+            def up(): cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+        else:
+            def down(p): page.mouse.move(*p); page.mouse.down()
+            def move(p): page.mouse.move(*p)
+            def up(): page.mouse.up()
+        down(self.client_at(page, 0.3))
+        flight = []
+        for _ in range(300):
+            row = page.evaluate('tickRow()')
+            flight.append(row)
+            if row['parked']:
+                break
+        self.assertTrue(flight[-1]['parked'], 'shot never parked')
+        self.assertTrue(all(r['throwed'] and not r['grappled'] for r in flight))
+        parked_tick = flight[-1]['tick']
+        # Hold with no aim change: ninja keeps moving, tip stays at the radius.
+        held = [flight[-1]] + [page.evaluate('tickRow()') for _ in range(10)]
+        for row in held:
+            self.assert_parked(row, radius)
+            self.assertLessEqual(self.angle_error(row['tip_angle'], held[0]['aim_angle']), 1e-6)
+        self.assertGreater(math.dist(held[0]['ninja'], held[-1]['ninja']), 1)
+        sweep = []
+        for target in [0.3 + i * math.pi / 6 for i in range(1, 13)]:
+            page.evaluate('events.length=0')
+            move(self.client_at(page, target))
+            events = page.evaluate('events')
+            self.assertEqual(len(events), 1, events)
+            event = events[0]
+            self.assertTrue(event['trusted'])
+            self.assertEqual(event['type'], 'touchmove' if touch else 'mousemove')
+            row = page.evaluate('tickRow()')
+            self.assert_parked(row, radius)
+            row.update(target_angle=target, event=event,
+                       aim_error=self.angle_error(row['aim_angle'], event['angle']),
+                       tip_error=self.angle_error(row['tip_angle'], event['angle']))
+            self.assertLessEqual(row['aim_error'], 1e-6)
+            self.assertLessEqual(row['tip_error'], 1e-6)
+            self.assertLessEqual(self.angle_error(event['angle'], target), 0.01)
+            sweep.append(row)
+        self.assertGreater(math.dist(sweep[0]['ninja'], sweep[-1]['ninja']), 1)
+        # Zero-length aim: the pointer lands exactly on the ninja; keep the last direction.
+        before = page.evaluate('Math.atan2(grapnel.aim.y,grapnel.aim.x)')
+        point = self.client_at(page, -2.0)
+        page.evaluate('''p=>{const c=viewportCoordsToCanvasCoords({x:p[0],y:p[1]});
+            ninja.x=c.x/scale[version]-screen.x;ninja.y=c.y/scale[version]-screen.y}''', point)
+        page.evaluate('events.length=0')
+        move(point)
+        zero_event = page.evaluate('events')[0]
+        self.assertTrue(zero_event['zero'] and zero_event['trusted'])
+        zero_row = page.evaluate('tickRow()')
+        self.assert_parked(zero_row, radius)
+        self.assertLessEqual(self.angle_error(zero_row['aim_angle'], before), 1e-12)
+        self.assertLessEqual(self.angle_error(zero_row['tip_angle'], before), 1e-6)
+        if not touch:
+            # The first-run hint would cover the parked line in the proof image.
+            page.evaluate('TUTORIAL_HINT.visible=false;draw()')
+            page.screenshot(path=str(self.evidence.path('held.png')))
+        up()
+        released = page.evaluate('tickRow()')
+        self.assertFalse(released['throwed'])
+        self.assertIsNone(released['tip'])
+        retry = page.evaluate('({stale:stalePress,held:pressHeld,owned:gameplayPressOwned})')
+        self.assertEqual(retry, dict(stale=False, held=False, owned=False))
+        distances = [r['distance'] for r in held + sweep + [zero_row]]
+        result = dict(input='touch (CDP Input.dispatchTouchEvent)' if touch else 'mouse (page.mouse)',
+                      radius=radius, parked_tick=parked_tick, flight=flight, held=held, sweep=sweep,
+                      zero_aim=dict(previous_angle=before, event=zero_event, row=zero_row),
+                      released=released, input_after_release=retry,
+                      max_radius_error=max(abs(d - radius) for d in distances),
+                      max_angle_error=max(max(r['tip_error'], r['aim_error']) for r in sweep),
+                      ninja_travel_while_held=math.dist(held[0]['ninja'], sweep[-1]['ninja']))
+        self.held['touch' if touch else 'mouse'] = result
+        return result
+
+    def test_01_mouse_held_parks_and_follows(self):
+        r = self.run_held(False)
+        print(f"PASS mouse: parked at tick {r['parked_tick']}, {len(r['held'])+len(r['sweep'])+1} held ticks "
+              f"at R={r['radius']} (max err {r['max_radius_error']:.2e}), 12-step sweep max angle err "
+              f"{r['max_angle_error']:.2e} rad, ninja moved {r['ninja_travel_while_held']:.1f}, tip absent after release")
+
+    def test_02_touch_held_parks_and_follows(self):
+        r = self.run_held(True)
+        print(f"PASS touch: parked at tick {r['parked_tick']}, {len(r['held'])+len(r['sweep'])+1} held ticks "
+              f"at R={r['radius']} (max err {r['max_radius_error']:.2e}), 12-step sweep max angle err "
+              f"{r['max_angle_error']:.2e} rad, ninja moved {r['ninja_travel_while_held']:.1f}, tip absent after release")
+
+    def test_03_classic_bad_baseline(self):
+        from grapple_over_test_support import STATE, open_fixture, step
+        baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())
+        modes = {}
+        for mode in ('classic', 'bad'):
+            page, errors = open_fixture(self.browser, self.url, mode, self.addCleanup)
+            initial = page.evaluate(STATE)
+            trace = step(page, 12)
+            self.assertEqual(initial, baseline['modes'][mode]['initial'])
+            self.assertEqual(trace, baseline['modes'][mode]['movement_trace'])
+            self.assertEqual(errors, [])
+            modes[mode] = dict(initial=initial, movement_trace=trace, initial_equal=True, trace_equal=True)
+        self.evidence.write('baseline.json', dict(self.proof, baseline_path='artifacts/TASK-444/baseline.json',
+                                                  modes=modes))
+        print('PASS classic/bad: initial state and 12-step seeded traces equal TASK-444 baseline')

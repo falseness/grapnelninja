@@ -14,6 +14,8 @@ class Grapnel
         this.pos = []
         this.traveled = 0
         this.shotStep = null
+        // Unit aim of the owning press; a held miss parks along it at the range edge.
+        this.aim = null
         
         this.stroke = object.stroke
     }
@@ -24,8 +26,17 @@ class Grapnel
             if (version === 'grapple_over' && !this.grappled)
             {
                 const tip = this.pos[0]
+                const radius = MODE_DEFINITIONS.grapple_over.acquisitionRadius
+                if (this.isParked())
+                {
+                    // Not acquiring here: the parked line only follows the aim.
+                    tip[0] = ninja.x + this.aim.x * radius
+                    tip[1] = ninja.y + this.aim.y * radius
+                    this.shotStep = null
+                    return
+                }
                 const speed = Math.hypot(this.speedX, this.speedY)
-                const remaining = Math.max(0, MODE_DEFINITIONS.grapple_over.acquisitionRadius - this.traveled)
+                const remaining = Math.max(0, radius - this.traveled)
                 const length = Math.min(speed, remaining)
                 this.shotStep = {x: tip[0], y: tip[1], length}
                 if (speed > 0)
@@ -67,11 +78,26 @@ class Grapnel
         return {sin: sin, cos: cos}
         
     }
+    // A shot that used its full range stays out while its owning press is held.
+    isParked()
+    {
+        return this.throwed && !this.grappled && this.aim !== null &&
+            this.traveled >= MODE_DEFINITIONS.grapple_over.acquisitionRadius &&
+            pressHeld && gameplayPressOwned && !stalePress
+    }
+    setAim(direction)
+    {
+        const dx = direction.x - ninja.x, dy = direction.y - ninja.y
+        const length = Math.hypot(dx, dy)
+        if (length > 0)
+            this.aim = {x: dx / length, y: dy / length}
+    }
     endShot()
     {
         this.throwed = this.grappled = false
         this.pos = []
         this.shotStep = null
+        this.aim = null
         stalePress = true
     }
     // Inclusive segment intersection: the last clipped endpoint is in range.
@@ -135,6 +161,11 @@ class Grapnel
                 this.pos = [[nearest.hit.x, nearest.hit.y, nearest.element]]
                 this.grappled = true
             }
+        }
+        else if (this.traveled >= radius && this.isParked())
+        {
+            this.pos[0][0] = ninja.x + this.aim.x * radius
+            this.pos[0][1] = ninja.y + this.aim.y * radius
         }
         else if (this.traveled >= radius || start.length === 0)
             this.endShot()

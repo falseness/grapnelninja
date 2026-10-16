@@ -38,6 +38,8 @@ function createEvents()
         }
         grapnel.traveled = 0
         grapnel.shotStep = null
+        grapnel.aim = null
+        if (version === 'grapple_over') grapnel.setAim(target)
         grapnel.pos = [[ninja.x, ninja.y, new Empty()]]
         let ratio = grapnel.calcSpeed(target)
         grapnel.speedY = ratio.sin * grapnelSpeed// + ninja.speedY
@@ -109,6 +111,18 @@ function createEvents()
             click(event)
         }
     }
+    // The owning press steers a held shot; a zero-length aim keeps the last one.
+    function aimGrapnel(event)
+    {
+        if (version === 'grapple_over' && gameplayPressOwned && pressHeld && !stalePress &&
+            grapnel.throwed && !grapnel.grappled && !menu.opened())
+            grapnel.setAim(getRealCoords(event))
+    }
+    function aimTouch(event)
+    {
+        event.preventDefault()
+        aimGrapnel(event)
+    }
     function offclick()
     {
         const releaseOwned = gameplayPressOwned && !stalePress && !menu.opened()
@@ -126,8 +140,10 @@ function createEvents()
     }
     document.addEventListener('mousedown', click)
     document.addEventListener('mouseup', offclick)
+    document.addEventListener('mousemove', aimGrapnel)
     
     document.addEventListener('touchstart', touch, {passive: false})
+    document.addEventListener('touchmove', aimTouch, {passive: false})
     document.addEventListener('touchend', offtouch, {passive: false})
     document.addEventListener('touchcancel', offtouch, {passive: false})
     
