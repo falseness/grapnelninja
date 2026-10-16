@@ -192,6 +192,7 @@ class MomentumBorderFloor extends SideFloor
         const border = screen.getDeletionBorder()
         if (this.elements.some(element => element.getRightPointX() + screen.x < border))
             this.elements = this.elements.filter(element => element.getRightPointX() + screen.x >= border)
+        screen.deleteBehind(this, false)
     }
     draw()
     {

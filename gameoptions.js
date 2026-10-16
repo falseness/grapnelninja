@@ -93,6 +93,13 @@ const GAMEPLAY = Object.freeze({
         halfWidth: 0.9 * height,
         thickness: 0.2 * height,
         originY: 1.1 * height
+    }),
+    // Momentum camera (elements/momentumcamera.js), in view heights: how far
+    // it settles towards a right corridor centre per physics step, and how far
+    // past the view edge left behind elements are deleted.
+    momentumCamera: Object.freeze({
+        settleHeightRatio: 0.02,
+        deletionMarginHeightRatio: 0.1
     })
 })
 const defaultEqualityTolerance = 1

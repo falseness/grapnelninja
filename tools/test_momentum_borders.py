@@ -182,8 +182,10 @@ class MomentumBordersTests(unittest.TestCase):
         results = {}
         for name, args in cases.items():
             with self.subTest(name):
-                # Keep the ninja inside the camera so the left edge cannot kill it
-                self.page.evaluate('([x, y]) => { screen.x = -x + width; screen.y = 0 }', args[:2])
+                # Keep the ninja inside the camera so neither the left edge nor
+                # the momentum camera's left-behind side (TASK-005) can kill it
+                self.page.evaluate('''([x, y]) => { screen.x = -x + width
+                    screen.y = -(y - height / scale[version] / 2) }''', args[:2])
                 r = self.page.evaluate(BOUNCE, args)
                 results[name] = r
                 print(name, 'normal speed', r['before'], '->', round(r['after'], 3),

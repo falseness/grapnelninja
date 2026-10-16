@@ -132,6 +132,7 @@
         <script src = "respawn.js"></script>
         
         <script src = "moveScreen.js"></script>
+        <script src = "elements/momentumcamera.js"></script>
         
         <script src = "render/effects.js"></script>
         <script src = "render/tutorialhint.js"></script>
@@ -521,16 +522,16 @@
             let momentumCourse = null
             function startMomentumVersion()
             {
-                screen = new Screen(false, 0)
+                const borders = GAMEPLAY.momentumBorders
+                momentumCourse = new MomentumCourse(-width, borders.originY)
+                screen = new MomentumScreen(momentumCourse)
 
                 elementsFactory = new ElementsFactory
-                const borders = GAMEPLAY.momentumBorders
-                momentumCourse = new MomentumCourse(screen.getDeletionBorder(), borders.originY)
                 const floorY = borders.originY + borders.halfWidth
                 floors =
                 [
                     new MomentumBorderFloor(momentumCourse, ['floor', 'ceiling'], floorY, floorY + borders.thickness),
-                    new Floor(0.2 * height, 2 * height, {min: 0, max: 0}, badFrameCreations(), 1),
+                    new MomentumObstacleFloor(0.2 * height, 2 * height, {min: 0, max: 0}, badFrameCreations(), 1),
                     new MomentumBorderFloor(momentumCourse, ['wall'], 0, 0)
                 ]
                 ninja = new Ninja(
@@ -551,10 +552,6 @@
                 {
                     floors[i].generatePrimaryElements()
                 }
-
-                const screenMargin = 0.1 * height
-                screen.min = -(1.9 * height - height + screenMargin)
-                screen.max = -(0 - screenMargin)
             }
             function start()
             {

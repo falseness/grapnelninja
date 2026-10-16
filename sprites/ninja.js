@@ -177,6 +177,9 @@ class Ninja
         
         if (this.x + screen.x < screen.getDeletionBorder())
             onLethalDeath()
+        // Momentum: out of view on the side the camera left behind
+        else if (screen.hasLeftBehind && screen.hasLeftBehind(this))
+            onLethalDeath()
     }
     isInvulnerable()
     {
