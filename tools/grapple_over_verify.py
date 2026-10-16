@@ -331,12 +331,61 @@ def check_s07_mechanics(encounter, trace, required=True):
     return observations
 
 
+def check_s08_mechanics(encounter, trace, required=True):
+    """Braking, bounce transfer, moving overhang attachment and final landing."""
+    events=trace['events'];rows=trace['snapshots']
+    grabs=[e for e in events if e['type']=='acquisition']
+    ids=[e['after']['rope'][0]['id'] for e in grabs]
+    releases=[e['tick'] for e in events if e['type']=='release']
+    bounces=[e for e in events if e['type']=='bounce']
+    player=lambda t:rows[t]['state']['simulation']['player']
+    brake=None
+    if 'S08-brake-davit' in ids:
+        a=grabs[ids.index('S08-brake-davit')]['tick']
+        r=next((t for t in releases if t>a),None)
+        if r is not None: brake=dict(acquisition_tick=a,release_tick=r,speedX_before=player(a)['speedX'],speedX_after=player(r)['speedX'])
+    transfer=None
+    if bounces and 'S08-mast-yard' in ids:
+        a=grabs[ids.index('S08-mast-yard')]['tick'];b=bounces[0]['tick']
+        transfer=dict(bounce_tick=b,bounce_element=bounces[0]['contact']['elementId'],acquisition_tick=a,
+            airborne=b<a and all(not rows[t]['state']['simulation']['grapple']['grappled'] for t in range(b+1,a)))
+    overhang=None
+    if 'S08-overhang-carriage' in ids:
+        a=grabs[ids.index('S08-overhang-carriage')]['tick'];r=next((t for t in releases if t>a),None)
+        if r is not None:
+            ys=[next(e['y'] for e in rows[t]['state']['simulation']['elements'] if e['id']=='S08-overhang-carriage') for t in range(a,r+1)]
+            overhang=dict(acquisition_tick=a,release_tick=r,carriage_travel=max(ys)-min(ys),
+                below_underside_at_grab=player(a)['y']>-12390,
+                above_deck_past_lip_at_release=player(r)['y']<-12420 and player(r)['x']>3420)
+    done=next((r['tick'] for r in rows if r['state']['simulation']['stats']['completed']),None)
+    landing=None
+    if done is not None:
+        p=player(done);landing=dict(completion_tick=done,x=p['x'],y=p['y'],
+            in_finish=3420<=p['x']<=3700 and -12772<=p['y']<=-12760)
+    observations=dict(acquisitions=ids,release_ticks=releases,
+        bounces=[e['contact']['elementId'] for e in bounces],braking=brake,bounce_transfer=transfer,
+        moving_overhang=overhang,final_landing=landing)
+    if required:
+        require(bool(releases),'S08 release missing')
+        if encounter=='S08-01':
+            require(ids[:2]==['S08-launch-arm','S08-brake-davit'] and brake and
+                    brake['speedX_before']<0 and abs(brake['speedX_after'])<.5*abs(brake['speedX_before']),'S08 braking missing')
+        if encounter=='S08-02':
+            require(transfer and transfer['bounce_element']=='S08-deflector-ramp' and transfer['airborne'],'S08 bounce transfer missing')
+        if encounter=='S08-03':
+            require(overhang and overhang['carriage_travel']>100 and overhang['below_underside_at_grab']
+                    and overhang['above_deck_past_lip_at_release'],'S08 moving overhang missing')
+        if encounter=='S08-04':
+            require(landing and landing['in_finish'] and 'S08-summit-gantry' in ids,'S08 final landing missing')
+    return observations
+
+
 def audit_suite(manifest, browser, url, out):
     """Replay every reported attempt, including failures, without trusting summary flags."""
     evidence, _ = output_writer(out)
     require(manifest['source_hashes'] == hashes(), 'suite source hash mismatch')
     section = manifest.get('section', 'S01')
-    require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07'), 'unsupported section')
+    require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
     count = 0
     for encounter, attempts in manifest['encounters'].items():
@@ -354,6 +403,7 @@ def audit_suite(manifest, browser, url, out):
                 if section == 'S05': check_s05_mechanics(encounter, replayed)
                 if section == 'S06': check_s06_mechanics(encounter, replayed)
                 if section == 'S07': check_s07_mechanics(encounter, replayed)
+                if section == 'S08': check_s08_mechanics(encounter, replayed)
                 success = True
             except ValueError:
                 success = False
@@ -366,6 +416,8 @@ def audit_suite(manifest, browser, url, out):
                 require(check_s06_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S06 mechanics mismatch')
             if section == 'S07':
                 require(check_s07_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S07 mechanics mismatch')
+            if section == 'S08':
+                require(check_s08_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S08 mechanics mismatch')
             count += 1
     negative = json.loads(evidence.path(manifest['negative_control']).read_text())
     recorded = json.loads(evidence.path(negative['input']).read_text())

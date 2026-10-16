@@ -2811,3 +2811,120 @@ class Task487Tests(unittest.TestCase):
             retry=dict(input='35-tick gantry pull from the west lip',finish=checks),
             explicit_routes='Short S08-04 pulls return to the array deck; longer S08-03/S08-04 misses fall via the green ramp onto the spill deck, whose hook returns to the Crown (TASK-486 recovery traces)'))
         print('PASS local miss recovery: short gantry pull falls back onto the array deck (stationary, not completed); retry from the west lip lands in the finish region; matching replay')
+
+
+class Task488Tests(unittest.TestCase):
+    """Summit Array tolerance from labeled isolated starts, with real input."""
+    task_id = 'TASK-488'
+    setUpClass = classmethod(Task467Tests.setUpClass.__func__)
+    load_level = Task476Tests.load_level
+    run_attempt = Task473Tests.run_attempt
+    test_03_source_hashes = Task467Tests.test_02_source_hashes
+    still = dict(speedX=[-.001,.001],speedY=[-.001,.001])
+
+    @classmethod
+    def routes(cls):
+        # (encounter, start, plan, ticks, exit, critical timing index, aim index, tangent, mechanic)
+        # Every aimed surface is a horizontal underside, so its tangent is (1,0).
+        return [
+            ('S08-01',Task486Tests.s07_exit,Task486Tests.brake,450,
+             dict(x=[4290,4450],y=[-11611,-11610],**cls.still),2,2,(1,0),'opposing-anchor braking and release onto the footing rest'),
+            ('S08-02',Task486Tests.footing,Task486Tests.transfer,700,
+             dict(x=[3070,3410],y=[-12091,-12090],**cls.still),2,2,(1,0),'angled bounce then airborne mast-yard grapple'),
+            ('S08-03',Task487Tests.ledge,Task487Tests.overhang,520,
+             dict(x=[3900,4240],y=[-12711,-12710],**cls.still),1,0,(1,0),'moving carriage attachment over the overhang'),
+            ('S08-04',Task487Tests.deck,Task487Tests.landing,300,
+             Task487Tests.finish_bounds,1,0,(1,0),'final gantry pull and summit landing')]
+
+    def make_input(self, route, device='desktop', delta=0, offset=0, plan=None, ticks=None, bounds=None):
+        from grapple_over_verify import metadata
+        name,start,nominal,length,exit_bounds,critical,aim,tangent,_=route
+        m=dict(metadata=metadata('isolated'),initial_setup=dict(level=self.level,
+            player=dict(x=start[0],y=start[1],speedX=0,speedY=0)),inputs=[],
+            ticks=ticks or length,expected_exit=bounds or exit_bounds,required_events=['acquisition','release'])
+        m['metadata'].update(compact_contacts=True,snapshot_contacts=True)
+        if device=='touch': m['metadata']['viewport']=dict(width=844,height=390)
+        # A rope only follows its press, so the aim shift also moves the paired release.
+        for i,(tick,event,x,y) in enumerate(plan or nominal):
+            if plan is None and i==critical: tick+=delta
+            if plan is None and i in (aim,aim+1): x+=offset*tangent[0];y+=offset*tangent[1]
+            if device=='touch': event={'mousedown':'touchstart','mouseup':'touchend'}[event]
+            m['inputs'].append(dict(tick=tick,event=event,world=dict(x=x,y=y)))
+        return m
+
+    def test_01_tolerance_matrix(self):
+        from grapple_over_verify import hashes, check_s08_mechanics
+        self.load_level()
+        suite=dict(section='S08',source_hashes=hashes(),level_sha256=hashes()['mountain.js'],
+            proof_kind='isolated encounter placement only; not continuous completion',encounters={},
+            negative_control='negative-control.json',recovery=['clips/recovery-desktop/input.json','clips/recovery-touch/input.json',
+            'clips/recovery-spill-desktop/input.json'],shortcuts=None,
+            shortcut_note='No S08 shortcut exists (manifest shortcuts are S03/S07 only), so none is archived.',
+            starts={r[0]:dict(x=r[1][0],y=r[1][1]) for r in self.routes()},
+            critical_inputs={r[0]:dict(timing_index=r[5],aim_index=r[6],tangent=r[7],mechanic=r[8]) for r in self.routes()})
+        failures=[]
+        for route in self.routes():
+            encounter=route[0];attempts=[];suite['encounters'][encounter]=attempts
+            for device in ('desktop','touch'):
+                for variant,delta,offset in [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]:
+                    name=f'{encounter}-{device}-{variant}'
+                    prefix=('clips/' if variant=='nominal' else 'attempts/')+name
+                    m=self.make_input(route,device,delta,offset)
+                    trace,success,reason=self.run_attempt(m,prefix,variant=='nominal')
+                    mechanics=check_s08_mechanics(encounter,trace,required=False)
+                    if success:
+                        try: check_s08_mechanics(encounter,trace)
+                        except ValueError as error: success=False;reason=str(error)
+                    attempts.append(dict(name=name,device=device,variant=variant,critical_input_index=route[5],
+                        aim_input_index=route[6],timing_delta=delta,tangent_aim_delta=offset,surface_tangent=route[7],
+                        input=prefix+'/input.json',trace=prefix+'/trace.json',success=success,reason=reason,
+                        mechanic_events=mechanics,final=trace['snapshots'][-1]['state']['simulation']['player']))
+                    self.evidence.write('manifest.json',suite)
+                    print('ATTEMPT',name,'PASS' if success else 'FAIL',reason,flush=True)
+                group=[a for a in attempts if a['device']==device]
+                if not group[0]['success'] or sum(a['success'] for a in group[1:])<2:
+                    failures.append(encounter+' '+device)
+        # Combined-control omission: launch-arm throw only, with the opposing-davit brake left out.
+        route=self.routes()[0]
+        m=self.make_input(route,plan=route[2][:2],ticks=1500)
+        trace,success,reason=self.run_attempt(m,'clips/negative',True)
+        players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+        final=players[-1];step=max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a,b in zip(players,players[1:]))
+        mechanics=check_s08_mechanics('S08-01',trace,required=False)
+        self.evidence.write('negative-control.json',dict(name='omitted brake: S08-brake-davit press/release left out',
+            input='clips/negative/input.json',trace='clips/negative/trace.json',failed_intended_exit=not success,
+            unchanged_physics=True,source_hashes=hashes(),reason=reason,intended_exit=route[4],
+            event_types=sorted({e['type'] for e in trace['events']}),mechanic_events=mechanics,
+            max_tick_displacement=step,final_player=final,
+            scope='Same start, physics and launch input; without the brake the player overshoots the footing rest, '
+                  'falls physically and rests on the S08 spill deck. Alternative routes are not ruled out.'))
+        self.assertFalse(success);self.assertIn('expected exit mismatch',reason)
+        self.assertNotIn('S08-brake-davit',mechanics['acquisitions'])
+        self.assertLess(step,60)
+        self.assertAlmostEqual(final['y'],-11051.7,delta=.5)
+        self.assertEqual(failures,[])
+        print('PASS S08 four encounters: both viewports nominal + >=2/4 variants; braking; bounce transfer; moving overhang; final landing; omitted-brake negative control')
+
+    def test_02_recovery(self):
+        from grapple_over_verify import execute, check_s08_mechanics
+        self.load_level()
+        deck=self.routes()[3]
+        retry=[(20,'mousedown',3760,-12890),(35,'mouseup',3760,-12890),(200,'mousedown',3760,-12890),(235,'mouseup',3760,-12890)]
+        spill=Task486Tests.brake[:2]+[(1500,'mousedown',5000,-11440),(1530,'mouseup',5000,-11440)]
+        cases=[('recovery-desktop','desktop',deck,retry,450,deck[4]),('recovery-touch','touch',deck,retry,450,deck[4]),
+               ('recovery-spill-desktop','desktop',self.routes()[0],spill,1900,
+                dict(x=[5490,5780],y=[-10191,-10190],**self.still))]
+        for name,device,route,plan,ticks,bounds in cases:
+            m=self.make_input(route,device,plan=plan,ticks=ticks,bounds=bounds)
+            trace,success,reason=self.run_attempt(m,'clips/'+name,True)
+            self.assertTrue(success,reason)
+            replay=execute(m,self.browser,self.url,str(self.evidence.path('clips/'+name+'/replay')))
+            self.assertEqual(trace,replay)
+            players=[r['state']['simulation']['player'] for r in trace['snapshots']]
+            step=max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a,b in zip(players,players[1:]))
+            self.assertLess(step,60)
+            miss=players[199] if name.startswith('recovery-d') or name.startswith('recovery-t') else players[1499]
+            self.evidence.write('clips/'+name+'/result.json',dict(passed=True,matching_traces=True,no_relocation=True,
+                max_tick_displacement=step,rest_after_miss=miss,mechanic_events=check_s08_mechanics(route[0],trace,required=False),
+                final=players[-1],event_types=sorted({e['type'] for e in trace['events']})))
+            print('PASS '+name+': physical miss, real-input retry reaches the intended rest; matching replay; no relocation')
