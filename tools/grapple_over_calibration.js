@@ -1,5 +1,5 @@
 /* Isolated calibration fixtures; test-only, never loaded by index.html. */
-window.calibrationSetup = ({family, negative}) => {
+window.calibrationSetup = ({family, negative, upgraded=false}) => {
     const rect=(id,x,y,w,h,role='solid')=>({id,x,y,role,
         points:[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]});
     const level=structuredClone(GRAPPLE_OVER_LEVEL);
@@ -25,10 +25,14 @@ window.calibrationSetup = ({family, negative}) => {
         level.elements.push(rect('moving-target',550,470,220,40));
         level.movers=[{id:'moving',element:'moving-target',axis:'x',min:550,max:650,periodMs:2000,phase:0}];
     }
+    // Release flight through a thin pass-through drag band; the negative control omits it.
+    if(family==='drag_zone' && !negative) level.elements.push(rect('drag',1150,900,600,10,'drag'));
     level.encounters[0].elements=level.elements.map(e=>e.id);
     GRAPPLE_OVER_TEST.spawn({level,player,camera:{x:-300,y:-300}});
+    // Range calibration: 810 is the persistent upgrade granted on entering S05.
+    floors[0].rangeUpgraded=upgraded;
     window.calibrationBounces=[];
-    return {level,player};
+    return {level,player,range:grappleOverAcquisitionRadius()};
 };
 const calibrationOriginalBounce=Ninja.prototype.applyBounce;
 Ninja.prototype.applyBounce=function(contact) {
@@ -48,5 +52,9 @@ window.calibrationResult = () => {
             trusted:e.trusted,world:e.world})),
         events:a.events.filter(e=>e.type!=='input').map(e=>({type:e.type,tick:e.tick,
             player:e.after.simulation.player,rope:e.after.rope,contact:e.contact})),
-        bounces:calibrationBounces};
+        bounces:calibrationBounces,range:grappleOverAcquisitionRadius(),
+        dragZones:floors[0].dragZones.map(z=>z.id),
+        inDrag:a.snapshots.map(r=>{const p=r.state.simulation.player,r2=ninja.radius*ninja.radius;
+            return floors[0].dragZones.some(z=>pointInPolygon(z.getPoints(),p.x,p.y)||
+                z.getLines().some(l=>segmentDistanceSquared(l,p.x,p.y)<r2));})};
 };

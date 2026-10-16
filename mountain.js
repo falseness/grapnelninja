@@ -587,7 +587,9 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         intent:'Controlled final landing: the finish region is the beacon pad surface between its lips'});
     Object.assign(recoveries[7],{status:'built',elements:['S08-array-deck','S08-rest-ledge','S08-deflector-ramp','S08-spill-deck','S08-recovery-hook'],
         rejoin:'S08-03',sideRoute:'Short gantry pulls drop back onto the array deck west lip; longer overhang/gantry misses fall via the green ramp onto the spill deck, whose hook returns to the Crown. No hazards at the ending.'});
-    return {schemaVersion:1, geometryVersion:1, range:R, ascent:24*R, horizontalEnvelope:12*R,
+    return {schemaVersion:1, geometryVersion:1,
+        // Grapnel range: base until the player enters upgradeBand, upgraded after.
+        range:{base:R, upgraded:810, upgradeBand:'S05'}, ascent:24*R, horizontalEnvelope:12*R,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*R},
         bounds:{left:0,right:6480,top:-24*R-540,bottom:120},
@@ -614,7 +616,11 @@ function validateMountainManifest(m)
     }
     walk(m)
     if (m.schemaVersion !== 1 || m.geometryVersion !== m.geometry.version) fail('UnsupportedVersion','mountain')
-    if (m.range !== 540 || m.ascent !== 12960 || m.horizontalEnvelope !== 6480 ||
+    const range = m.range
+    if (!range || typeof range !== 'object' || Object.keys(range).sort().join() !== 'base,upgradeBand,upgraded' ||
+        range.base !== 540 || range.upgraded !== 810 || range.upgradeBand !== 'S05')
+        fail('InvalidRange','mountain.range')
+    if (m.ascent !== 12960 || m.horizontalEnvelope !== 6480 ||
         m.bounds.right-m.bounds.left !== 6480 || m.base.y-m.summit.y !== 12960 ||
         m.startSection !== 'S01' || m.spawn.x !== m.base.x || m.spawn.y !== m.base.y)
         fail('InvalidMountainExtent','mountain')
