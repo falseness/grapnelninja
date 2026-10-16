@@ -38,7 +38,7 @@ class Ground extends Trampoline
     }
     drawGroundBody()
     {
-        if (version != 'bad')
+        if (!isBadLikeVersion(version))
         {
             super.draw()
             return
@@ -65,7 +65,7 @@ class Ground extends Trampoline
         ctx.save()
         ctx.beginPath()
 
-        const groundStroke = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundStroke : STYLE.colors.ground.stroke
+        const groundStroke = isBadLikeVersion(version) ? STYLE.badVersionEffects.obstacles.groundStroke : STYLE.colors.ground.stroke
 
         ctx.moveTo(this.x + screen.x, boundaryY + screen.y)
         ctx.lineTo(this.x + this.points[2].x + screen.x, boundaryY + screen.y)
@@ -102,7 +102,7 @@ class Side extends Rect
     }
     isBadVersionCeilingBoundary(line)
     {
-        if (version != 'bad' || line.type != 'line' || this.y >= height / 2)
+        if (!isBadLikeVersion(version) || line.type != 'line' || this.y >= height / 2)
             return false
 
         const ceilingBoundaryY = this.y + this.height
@@ -118,14 +118,14 @@ class Side extends Rect
     }
     drawGlow()
     {
-        if (version == 'bad' && this.isInHudClearZone())
+        if (isBadLikeVersion(version) && this.isInHudClearZone())
             return
 
         this.drawNeonBoundary()
     }
     draw()
     {
-        if (version == 'bad' && this.isInHudClearZone())
+        if (isBadLikeVersion(version) && this.isInHudClearZone())
             return
 
         this.drawSideBody()
@@ -149,7 +149,7 @@ class Side extends Rect
     }
     drawSideBody()
     {
-        if (version != 'bad')
+        if (!isBadLikeVersion(version))
         {
             super.draw()
             return
@@ -181,7 +181,7 @@ class Side extends Rect
         ctx.save()
         ctx.beginPath()
 
-        const groundStroke = version == 'bad' ? STYLE.badVersionEffects.obstacles.groundStroke : STYLE.colors.ground.stroke
+        const groundStroke = isBadLikeVersion(version) ? STYLE.badVersionEffects.obstacles.groundStroke : STYLE.colors.ground.stroke
 
         ctx.moveTo(this.x + screen.x, screenBoundaryY)
         ctx.lineTo(this.x + this.width + screen.x, screenBoundaryY)

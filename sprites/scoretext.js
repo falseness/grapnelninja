@@ -4,6 +4,7 @@ let scoreText =
     count: 
     {
         bad     : 0                     ,
+        momentum: 0                     ,
         classic : 0
     }                                   ,                
     get rtext() { return I18N.t('hud.record') },
@@ -12,6 +13,7 @@ let scoreText =
     record: 
     {
         bad     : 0,
+        momentum: 0,
         classic : 0
     }                                   ,
     x: Math.floor(0.1 * width)       ,
@@ -51,7 +53,7 @@ let scoreText =
     },
     getRecordX: function(viewWidth)
     {
-        const x = viewWidth * (version == 'bad' ? STYLE.ui.hudBadRecordXRatio : STYLE.ui.hudRecordXRatio)
+        const x = viewWidth * (isBadLikeVersion(version) ? STYLE.ui.hudBadRecordXRatio : STYLE.ui.hudRecordXRatio)
         // Left of a HUD menu button grown to the touch floor
         if (!menu.button)
             return x
@@ -59,7 +61,7 @@ let scoreText =
     },
     getRecordFontSize: function(recordText, scoreTextValue, scoreX, recordX, fontSize, viewWidth)
     {
-        if (version != 'bad')
+        if (!isBadLikeVersion(version))
             return fontSize
 
         const scoreWidth = measureGlowText(scoreTextValue).width
@@ -73,7 +75,7 @@ let scoreText =
     },
     getRecordCenterY: function(text, topY)
     {
-        if (version != 'bad')
+        if (!isBadLikeVersion(version))
             return topY
 
         const metrics = measureGlowText(text)

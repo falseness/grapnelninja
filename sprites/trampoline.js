@@ -150,7 +150,7 @@ class Trampoline extends Element
     }
     draw()
     {
-        if (version == 'bad')
+        if (isBadLikeVersion(version))
         {
             const obstacleStyle = STYLE.badVersionEffects.obstacles
             const isGreenSafe = this.stroke == STYLE.colors.cube.greenStroke || this.stroke == STYLE.colors.hazard.harmlessStroke

@@ -132,7 +132,7 @@ class Rect extends Element
         const x = this.x + screen.x
         const y = this.y + screen.y
 
-        if (version == 'bad')
+        if (isBadLikeVersion(version))
         {
             this.drawBadVersionRect(x, y)
             return

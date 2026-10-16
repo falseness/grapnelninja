@@ -208,6 +208,14 @@ let scale =
 {
     classic : 1         ,
     bad     : 1 / 2.2   ,
+    momentum: 1 / 2.2   ,
+}
+
+// Momentum is built on the bad-mode world for now: it takes every bad-mode
+// branch (HUD, borders, obstacle styling).
+function isBadLikeVersion(selectedVersion)
+{
+    return selectedVersion == 'bad' || selectedVersion == 'momentum'
 }
 
 const cyclesPerTick = 8

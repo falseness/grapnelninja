@@ -57,7 +57,7 @@ class LeftWall extends Trampoline
         ctx.rect(screen.x + this.x + this.points[0].x, screen.y + this.y + this.points[0].y,
                  -this.points[0].x, this.points[2].y - this.points[0].y)
         ctx.clip()
-        this.drawBadVersionPolygon(version == 'bad' ? this.wallFill : this.fill,
+        this.drawBadVersionPolygon(isBadLikeVersion(version) ? this.wallFill : this.fill,
                                    this.stroke, {baseFillStyle: this.fill, coreColor: this.wallCore})
         ctx.restore()
     }

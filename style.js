@@ -632,7 +632,7 @@ const STYLE = Object.freeze({
 
 function getHudCenterY(viewHeight, selectedVersion)
 {
-    if (selectedVersion == 'bad')
+    if (isBadLikeVersion(selectedVersion))
         return getBadHudCeilingBoundaryY(viewHeight, selectedVersion) / 2
 
     return viewHeight * STYLE.ui.hudTopRatio
@@ -650,7 +650,7 @@ function getBadHudCeilingBoundaryY(viewHeight, selectedVersion)
 function getHudFontSize(viewWidth, viewHeight, selectedVersion)
 {
     const heightSize = viewHeight * STYLE.ui.hudFontRatio
-    const size = selectedVersion == 'bad'
+    const size = isBadLikeVersion(selectedVersion)
         ? Math.min(heightSize, viewWidth * STYLE.ui.hudBadMaxFontWidthRatio)
         : heightSize
     // Never below the CSS px floor in a small canvas (phones)
@@ -660,7 +660,7 @@ function getHudFontSize(viewWidth, viewHeight, selectedVersion)
 
 function getHudMenuButtonLayout(viewWidth, viewHeight, selectedVersion, fallbackButton)
 {
-    if (selectedVersion != 'bad')
+    if (!isBadLikeVersion(selectedVersion))
     {
         return {
             x: fallbackButton.x,

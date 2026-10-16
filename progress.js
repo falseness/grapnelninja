@@ -17,7 +17,8 @@ const PROGRESS = (function()
     function snapshot()
     {
         return {
-            [recordsKey]: JSON.stringify({classic: scoreText.record.classic, bad: scoreText.record.bad}),
+            [recordsKey]: JSON.stringify({classic: scoreText.record.classic, bad: scoreText.record.bad,
+                momentum: scoreText.record.momentum}),
             [tutorialKey]: String(state.tutorialDone),
             [timeKey]: String(state.time), [langKey]: state.lang || ''
         }
@@ -35,6 +36,7 @@ const PROGRESS = (function()
         const delta = Math.max(0, state.time - baseTime)
         scoreText.record.classic = Math.max(scoreText.record.classic, number(records.classic))
         scoreText.record.bad = Math.max(scoreText.record.bad, number(records.bad))
+        scoreText.record.momentum = Math.max(scoreText.record.momentum, number(records.momentum))
         baseTime = Math.max(baseTime, number(values[timeKey]))
         state.time = baseTime + delta
         if (!langChanged) state.lang = values[langKey] || null
@@ -74,7 +76,7 @@ const PROGRESS = (function()
             state.time = baseTime
             state.lang = values[langKey] || null
             langChanged = false
-            for (const mode of ['classic', 'bad'])
+            for (const mode of ['classic', 'bad', 'momentum'])
                 scoreText.record[mode] = number(records[mode])
             savedJson = known ? JSON.stringify(snapshot()) : null
             loaded = true

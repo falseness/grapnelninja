@@ -19,7 +19,7 @@ class Floor
     }
     generatePrimaryElements()
     {
-        if (version == 'bad' && this.primaryElementsQuantity == 1)
+        if (isBadLikeVersion(version) && this.primaryElementsQuantity == 1)
         {
             this.elements = []
             this.nextGenerationGroupId = 0
@@ -45,7 +45,7 @@ class Floor
     }
     replenishElements()
     {
-        if (version != 'bad' || this.primaryElementsQuantity != 1)
+        if (!isBadLikeVersion(version) || this.primaryElementsQuantity != 1)
             return
 
         const viewportWidth = width / scale.bad
@@ -64,7 +64,7 @@ class Floor
         // Bad mode draws an integer ticket below the total integer weight and
         // compares against exclusive bounds, so equal weights are exactly equal.
         // Math.random() * total can round up to total, hence the clamp.
-        const exclusiveBounds = version == 'bad' && this.primaryElementsQuantity == 1
+        const exclusiveBounds = isBadLikeVersion(version) && this.primaryElementsQuantity == 1
         const totalChance = this.creations.reduce((sum, creation) => sum + creation.chance, 0)
         let num = exclusiveBounds ? Math.min(random(0, totalChance), totalChance - 1) : random()
 
@@ -97,7 +97,7 @@ class Floor
     }
     alignBadVersionGeneratedElements(generatedElements, nextElementX)
     {
-        if (version != 'bad' || this.primaryElementsQuantity != 1)
+        if (!isBadLikeVersion(version) || this.primaryElementsQuantity != 1)
             return
 
         const firstPrimaryElementX = 0.2 * width
@@ -206,7 +206,7 @@ class Floor
                 for (const element of this.elements)
                     nextElementX = Math.max(nextElementX, element.getRightPointX())
 
-                if (version != 'bad' || this.primaryElementsQuantity != 1)
+                if (!isBadLikeVersion(version) || this.primaryElementsQuantity != 1)
                     newElements += this.generateElements(nextElementX)
 
                 --i
@@ -344,7 +344,7 @@ class SideFloor extends Floor
         if (!this.elements.length)
             return
 
-        if (version == 'bad' && this.elements[0].isInHudClearZone && this.elements[0].isInHudClearZone())
+        if (isBadLikeVersion(version) && this.elements[0].isInHudClearZone && this.elements[0].isInHudClearZone())
         {
             this.drawHudZoneCeilingBoundary()
             return
@@ -359,7 +359,7 @@ class SideFloor extends Floor
             return
 
         const bounds = this.getContinuousSurfaceBounds()
-        if (version == 'bad')
+        if (isBadLikeVersion(version))
             this.drawContinuousNeonBoundary(bounds)
         else
             this.drawClassicContinuousBoundary(bounds)
@@ -395,7 +395,7 @@ class SideFloor extends Floor
     }
     drawContinuousSurface()
     {
-        if (version != 'bad')
+        if (!isBadLikeVersion(version))
         {
             this.drawClassicContinuousSurface()
             return

@@ -1021,7 +1021,7 @@ class ParticleSystem
     }
     getTrampolineSplashColor(trampoline)
     {
-        if (version == 'bad' && (trampoline instanceof Ground || trampoline instanceof Side))
+        if ((version == 'bad' || version == 'momentum') && (trampoline instanceof Ground || trampoline instanceof Side))
             return STYLE.colors.cube.greenStroke
 
         return trampoline.stroke || STYLE.colors.cube.greenStroke
@@ -1097,7 +1097,7 @@ class ParticleSystem
             return
 
         const config = STYLE.particles.embers
-        const interval = version == 'bad'
+        const interval = (version == 'bad' || version == 'momentum')
             ? (hazard ? config.badHazardIntervalMs : config.badCubeIntervalMs)
             : (hazard ? config.hazardIntervalMs : config.cubeIntervalMs)
         // Cache the phase before moving obstacles change position. No shared RNG:
@@ -1419,7 +1419,7 @@ class ParticleSystem
     }
     getBadVersionParticles()
     {
-        if (typeof version != 'undefined' && version == 'bad')
+        if (typeof version != 'undefined' && (version == 'bad' || version == 'momentum'))
             return STYLE.badVersionEffects.particles
 
         return {
@@ -1662,7 +1662,7 @@ class PlayerTrailRenderer
     }
     getBadVersionTrails()
     {
-        if (typeof version != 'undefined' && version == 'bad')
+        if (typeof version != 'undefined' && (version == 'bad' || version == 'momentum'))
             return STYLE.badVersionEffects.trails
 
         return {
@@ -1813,7 +1813,7 @@ class BloomRenderer
         // Obstacle light is clipped inside each full-resolution shape.
         // Hazard trail envelopes and shockwave rings: no shadowBlur, their
         // glow comes from here
-        if (version == 'bad' && visualEffects.playerTrail.shouldDraw())
+        if ((version == 'bad' || version == 'momentum') && visualEffects.playerTrail.shouldDraw())
             for (let i = 0; i < floors.length; ++i)
                 floors[i].drawTracks()
         visualEffects.screenEffects.drawShockwaveGlow()

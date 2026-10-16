@@ -153,7 +153,7 @@ function clearRespawnZone(point)
 
         // Delete-driven floors (classic) keep a fixed group count: append one
         // group per fully removed group, with the usual spacing.
-        if (version == 'bad' && floor.primaryElementsQuantity == 1)
+        if (isBadLikeVersion(version) && floor.primaryElementsQuantity == 1)
             continue
         const remaining = new Set(floor.elements.map(element => element.generationGroupId))
         for (const id of groupIds)

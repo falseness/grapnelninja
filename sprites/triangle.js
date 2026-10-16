@@ -99,17 +99,17 @@ class Triangle extends Element
     // does not depend on whether the triangle was on screen.
     syncTrackStyle()
     {
-        if (version != 'bad')
+        if (!isBadLikeVersion(version))
             this.track.stroke = STYLE.colors.hazard.classicTriangleStroke
     }
     getGlowStroke()
     {
-        return version != 'bad' ? STYLE.colors.hazard.classicTriangleStroke : this.stroke
+        return !isBadLikeVersion(version) ? STYLE.colors.hazard.classicTriangleStroke : this.stroke
     }
     draw()
     {
         this.syncTrackStyle()
-        if (version != 'bad')
+        if (!isBadLikeVersion(version))
         {
             this.drawClassicGameplayTriangle()
             return
@@ -179,7 +179,7 @@ class Triangle extends Element
     // the drawing state; the helper uses a separate Path2D to preserve the border.
     drawDangerHatch(x, y)
     {
-        if (version != 'bad' || bloomPassActive || !this.hatchColour || STYLE.dangerHatch.variant == 'off') return
+        if (!isBadLikeVersion(version) || bloomPassActive || !this.hatchColour || STYLE.dangerHatch.variant == 'off') return
         ctx.save()
         ctx.clip()
         ctx.translate(x, y)
@@ -217,7 +217,7 @@ class MultipointTrackLine extends TrackLine
     {
         if (trackEnabled && QUALITY.playerTrail)
         {
-            if (version == 'bad')
+            if (isBadLikeVersion(version))
             {
                 this.drawBadVersionTrail()
                 return
