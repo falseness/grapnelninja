@@ -1528,3 +1528,125 @@ class Task477Tests(unittest.TestCase):
             (625,'mousedown',4560,-6460),(660,'mouseup',4560,-6460)],850,
             dict(x=[4510,4610],y=[-6491,-6490]),start=(4530,-6490.8))
         print('PASS failure/recovery: short release returns to Works exit; open shaft fall lands on Works upper step; reachable anchors physically rejoin entrance; no relocation')
+
+
+class Task478Tests(unittest.TestCase):
+    """Completed Galleries: physical transfers, recessed ceiling and departure."""
+    task_id = 'TASK-478'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    replay = Task474Tests.replay
+    test_05_source_hashes = Task465Tests.test_03_source_hashes
+    test_04_failure_recovery = Task477Tests.test_03_failure_recovery
+
+    def test_01_geometry(self):
+        page=self.open()
+        r=page.evaluate('''() => {const m=GRAPPLE_OVER_MOUNTAIN;validateMountainManifest(m);
+            return {manifest:m,runtime:floors[0].level,
+                colliders:floors[0].elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole}))}}''')
+        m=r['manifest']
+        self.assertEqual(m['sections'][4]['status'],'built')
+        self.assertEqual([e['status'] for e in m['encounters'][16:20]],['built']*4)
+        self.assertEqual([e['status'] for e in m['connectors'][16:20]],['built']*4)
+        self.assertEqual(r['runtime']['elements'],m['geometry']['elements'])
+        for a,e in zip(r['colliders'],m['geometry']['elements']):
+            self.assertEqual(a,{k:e[k] for k in ('id','x','y','points','role')})
+        prior=json.loads((ROOT/'artifacts/TASK-477/geometry.json').read_text())['manifest']
+        lower=lambda model:[e for e in model['geometry']['elements'] if not e['id'].startswith('S05')]
+        self.assertEqual(lower(m),lower(prior))
+        self.assertEqual(m['shortcuts'],prior['shortcuts'])
+        self.assertIsNone(r['runtime']['finish'])
+        self.assertFalse(any(e['exit'].get('temporary') for e in m['encounters'][16:20]))
+        elements=[e for e in m['geometry']['elements'] if e['id'].startswith(('S05','S04-exit','S04-upper-step'))]
+        roles={'S05-01 projecting corner':['S05-projecting-girder'],
+            'S05-02 deep overhang':['S05-deep-overhang'],
+            'S05-03 release / reacquire':['S05-transfer-canopy'],
+            'S05-04 recessed ceiling':['S05-recessed-ceiling'],
+            'ordinary rests':['S05-rest','S05-lower-gallery','S05-upper-rest'],
+            'exit to next band':['S05-exit'],
+            'lower shaft recovery':['S04-exit','S04-upper-step']}
+        self.assertEqual(set(sum(roles.values(),[])),{e['id'] for e in elements})
+        silhouettes=[next(e['points'] for e in elements if e['id']==ids[0]) for ids in list(roles.values())[:4]]
+        self.assertEqual(len({json.dumps(p) for p in silhouettes}),4)
+        calibration=json.loads((ROOT/'artifacts/TASK-463/calibration.json').read_text())
+        for path in ('sprites/ninja.js','sprites/grapnel.js','sprites/trampoline.js','physics.js'):
+            self.assertEqual(self.proof['source_hashes'][path],calibration['source_hashes'][path])
+        self.evidence.write('geometry.json',dict(self.proof,**r,structural_validations_pass=True,
+            encounters=m['encounters'][16:20],surface_roles=roles,no_temporary_exit=True,
+            previous_sections_unchanged=True,calibrated_physics_unchanged=True,
+            shortcut='None assigned to section 5; section 3 preserved',
+            recovery='Visible lower shaft to S04-upper-step; grapple back to S04-exit',
+            connector='S05-exit top -8070; next band remains planned'))
+        parts=['<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="1500" viewBox="4300 -8300 2400 2400" style="background:#182028">']
+        colors=['#69cfee','#7b9bef','#b799ee','#edba7c','#d6dfdf','#e4df7a','#80cba0']
+        for (role,ids),color in zip(roles.items(),colors):
+            for e in elements:
+                if e['id'] in ids:
+                    points=' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+                    parts.append(f'<polygon points="{points}" fill="{color}" stroke="#141820" stroke-width="3"/><text x="{e["x"]-20}" y="{e["y"]-35}" fill="white" font-size="22">{e["id"]} ({e["role"]})</text>')
+        for i,role in enumerate(roles):
+            parts.append(f'<text x="4350" y="{-8180+i*55}" fill="{colors[i]}" font-size="26">{role}</text>')
+        parts.append('<path d="M 4930 -6660 L 4780 -6350" fill="none" stroke="#80cba0" stroke-width="7"/><text x="4850" y="-6400" fill="#80cba0" font-size="24">open recovery shaft</text></svg>')
+        page.set_content(''.join(parts));page.set_viewport_size(dict(width=1300,height=1500))
+        page.screenshot(path=str(self.evidence.path('overview.png')))
+        print('PASS geometry: S05-01 S05-02 S05-03 S05-04 built; distinct surface roles; rest; exit; recovery; no assigned shortcut; no temporary exit; overview.png')
+
+    @staticmethod
+    def transfer_plan():
+        return [(30,'mousedown',5425,-7380),(116,'mouseup',5425,-7380),
+                (117,'mousedown',5500,-7400),(145,'mouseup',5500,-7400)]
+
+    def transfer_observation(self,trace):
+        acquisitions=[e for e in trace['events'] if e['type']=='acquisition']
+        self.assertEqual(len(acquisitions),2)
+        release=next(e for e in trace['events'] if e['type']=='release')
+        reacquire=acquisitions[1];p=reacquire['before']['simulation']['player']
+        self.assertLess(release['tick'],reacquire['tick'])
+        self.assertGreater(p['x'],5420)
+        self.assertLess(p['y']+p['radius'],-7400)
+        self.assertTrue(all(e['after']['rope'][0]['id']=='S05-transfer-canopy' for e in acquisitions))
+        self.assertNotEqual(acquisitions[0]['after']['rope'][0],acquisitions[1]['after']['rope'][0])
+        return dict(passed=True,release_tick=release['tick'],reacquire_tick=reacquire['tick'],
+            beyond_overhang_airborne=True,distinct_anchor_points=True,player=p)
+
+    def test_02_release_reacquire(self):
+        trace=self.replay('S05-03',self.transfer_plan(),500,
+            dict(x=[5639,5640],y=[-7411,-7410]),start=(5239.2,-7110.8))
+        self.evidence.write('encounters/S05-03/mechanics.json',self.transfer_observation(trace))
+        print('PASS S05-03: release then distinct-anchor reacquisition beyond overhang while airborne; safe landing; matching trusted-input replay')
+
+    def test_03_ceiling_and_exit(self):
+        plan=[(30,'mousedown',5805,-7700),(130,'mouseup',5805,-7700),
+              (680,'mousedown',6205,-8050),(775,'mouseup',6205,-8050)]
+        trace=self.replay('S05-04-exit',plan,1100,
+            dict(x=[6210,6390],y=[-8081,-8080],speedY=[-.001,.001]),start=(5639.2,-7410.8))
+        p=trace['snapshots'][650]['state']['simulation']['player']
+        self.assertAlmostEqual(p['y'],-7730.8,places=5)
+        self.assertGreater(p['x'],6000)
+        wrap=next(e for e in trace['events'] if e['type']=='wrap' and e['after']['rope'][-1]['id']=='S05-recessed-ceiling')
+        self.assertGreaterEqual(len(wrap['after']['rope']),2)
+        self.assertTrue(any(e['type']=='acquisition' and e['after']['rope'][0]['id']=='S05-exit' for e in trace['events']))
+        self.evidence.write('encounters/S05-04-exit/mechanics.json',dict(passed=True,
+            ceiling_corner_wrap_tick=wrap['tick'],ceiling_traversed=p,section_exit_traversed=True,
+            next_unbuilt_section_not_required=True))
+        print('PASS S05-04: recessed ceiling corner wrap and traversal; section exit traversed; matching trusted-input replay; next unbuilt section not required')
+
+    def test_06_touch(self):
+        from grapple_over_verify import metadata,execute,check_trace
+        page=self.open();level=page.evaluate('validateMountainManifest(GRAPPLE_OVER_MOUNTAIN)');page.close()
+        for name,start,plan,ticks,bounds in [
+            ('S05-03-touch',(5239.2,-7110.8),self.transfer_plan(),500,dict(x=[5639,5640],y=[-7411,-7410])),
+            ('S05-04-touch',(5639.2,-7410.8),[(30,'mousedown',5805,-7700),(130,'mouseup',5805,-7700)],650,dict(x=[6019,6020],y=[-7731,-7730]))]:
+            m=dict(metadata=metadata('isolated'),initial_setup=dict(level=level,
+                player=dict(x=start[0],y=start[1],speedX=0,speedY=0)),
+                inputs=[dict(tick=t,event={'mousedown':'touchstart','mouseup':'touchend'}[e],world=dict(x=x,y=y)) for t,e,x,y in plan],
+                ticks=ticks,expected_exit=bounds,required_events=['acquisition','release'])
+            m['metadata'].update(compact_contacts=True,viewport=dict(width=844,height=390))
+            prefix='encounters/'+name
+            self.evidence.write(prefix+'/input.json',m)
+            trace=execute(m,self.browser,self.url,str(self.evidence.path(prefix)),filmstrip=True)
+            check_trace(m,trace)
+            if name=='S05-03-touch': self.transfer_observation(trace)
+            self.evidence.write(prefix+'/result.json',dict(passed=True,trusted_inputs=True,
+                viewport=m['metadata']['viewport'],final=trace['snapshots'][-1]['state']['simulation']['player']))
+        print('PASS touch: S05-03 airborne reacquisition and S05-04 ceiling traversal; trusted touch input; 844x390')

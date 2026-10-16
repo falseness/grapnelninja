@@ -347,9 +347,15 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         rest('S05-rest',4740,-6620,260),
         {id:'S05-deep-overhang',x:5000,y:-7100,role:'solid',grapplable:true,
             points:[{x:0,y:0},{x:250,y:0},{x:250,y:-20},{x:300,y:-20},{x:300,y:150},{x:230,y:150},{x:230,y:45},{x:0,y:45}]},
-        rest('S05-lower-gallery',5100,-6810,260)
+        rest('S05-lower-gallery',5100,-6810,260),
+        {id:'S05-transfer-canopy',x:5420,y:-7400,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:230,y:0},{x:230,y:-25},{x:270,y:-25},{x:270,y:160},{x:180,y:160},{x:180,y:45},{x:0,y:45}]},
+        rest('S05-upper-rest',5500,-7190,230),
+        {id:'S05-recessed-ceiling',x:5800,y:-7720,role:'solid',grapplable:true,
+            points:[{x:0,y:0},{x:230,y:0},{x:230,y:-25},{x:270,y:-25},{x:270,y:190},{x:210,y:190},{x:210,y:55},{x:65,y:55},{x:65,y:120},{x:0,y:120}]},
+        {...rest('S05-exit',6200,-8070,240), points:[{x:0,y:0},{x:200,y:0},{x:200,y:-20},{x:240,y:-20},{x:240,y:55},{x:0,y:55}]}
     ];
-    Object.assign(sections[4], {status:'partial',landmark:{id:'S05-landmark',
+    Object.assign(sections[4], {status:'built',landmark:{id:'S05-landmark',
         name:'projecting beams and deep overhangs',x:4990,y:-6900}});
     Object.assign(encounters[16], {status:'built',x:4530,y:-6480,
         elements:['S04-exit','S05-projecting-girder','S05-rest'],
@@ -359,8 +365,20 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(encounters[17], {status:'built',x:4839.2,y:-6800,
         elements:['S05-rest','S05-deep-overhang','S05-lower-gallery'],
         start:{from:'S05-01',x:4839.2,y:-6810.8},target:{x:5005,y:-7080},
-        action:'Pull around the deep overhang using the wrapped segment; release onto the temporary exit',
-        exit:{x:5239.2,y:-7110.8,width:250,temporary:true}});
+        action:'Pull around the deep overhang using the wrapped segment; release onto its departure shelf',
+        exit:{x:5239.2,y:-7110.8,width:250}});
+    Object.assign(encounters[18], {status:'built',x:5420,y:-7400,
+        elements:['S05-deep-overhang','S05-transfer-canopy','S05-upper-rest'],
+        start:{from:'S05-02',x:5239.2,y:-7110.8},target:{x:5425,y:-7380},
+        action:'Release beyond the overhang and reacquire the projecting canopy while airborne',
+        exit:{x:5639.2,y:-7410.8,width:230}});
+    Object.assign(encounters[19], {status:'built',x:5800,y:-7720,
+        elements:['S05-upper-rest','S05-recessed-ceiling','S05-exit'],
+        start:{from:'S05-03',x:5639.2,y:-7410.8},target:{x:5805,y:-7700},
+        action:'Traverse the recessed ceiling around its lip; release and climb to the next band',
+        exit:{left:6210.8,right:6389.2,top:-8082,bottom:-8070}});
+    connectors[18].status='built';
+    Object.assign(connectors[19], {status:'built',intent:'Exposed departure ledge to the next band; S06 remains planned'});
     Object.assign(connectors[16], {status:'built',intent:'Pull from the Works exit around the projecting girder'});
     connectors[17].status='built';
     Object.assign(recoveries[4], {openingElements:['S05-rest','S04-exit','S04-upper-step'],
