@@ -1,5 +1,6 @@
 // Momentum borders: the course (elements/momentumcourse.js) is the centre
-// line of a corridor halfWidth wide on each side. A 'right' segment gets a
+// line of a corridor halfWidth wide on each side (vertical segments: their
+// own, wider half width, momentumSegmentHalfWidth). A 'right' segment gets a
 // floor and a ceiling, an 'up'/'down' segment a wall on each side. Each side
 // of the corridor is one continuous offset polyline: the end of a border is
 // the start of the next one on the same side, so corners have no gap.
@@ -21,18 +22,40 @@ function momentumDirection(dir)
         return {x: 1, y: 0}
     return {x: 0, y: dir == 'up' ? -1 : 1}
 }
+// Half width of a vertical segment built now: wide enough that a view
+// centred on it shows only the corridor and its walls (their outer edges
+// shaftMargin past the view edges), never under halfWidth
+function momentumShaftHalfWidth()
+{
+    const options = GAMEPLAY.momentumBorders
+    return Math.max(options.halfWidth,
+                    width / scale.momentum / 2 - options.thickness + options.shaftMargin)
+}
+// Half width of a course segment's corridor. A vertical segment keeps the
+// one of the viewport it was first measured in (stored on the segment).
+function momentumSegmentHalfWidth(segment)
+{
+    if (segment.dir == 'right')
+        return GAMEPLAY.momentumBorders.halfWidth
+    if (segment.halfWidth === undefined)
+        segment.halfWidth = momentumShaftHalfWidth()
+    return segment.halfWidth
+}
 // Where side meets the next segment: on a straight join the shared end
-// point, on a turn the meeting point of the two offset lines.
-function momentumBorderCorner(segment, next, side, halfWidth)
+// point, on a turn the meeting point of the two offset lines (each at its
+// own segment's half width).
+function momentumBorderCorner(segment, next, side)
 {
     const n = momentumSideNormal(segment.dir, side)
+    const halfWidth = momentumSegmentHalfWidth(segment)
     let x = segment.x1 + halfWidth * n.x
     let y = segment.y1 + halfWidth * n.y
     if (next.dir != segment.dir)
     {
         const m = momentumSideNormal(next.dir, side)
-        x += halfWidth * m.x
-        y += halfWidth * m.y
+        const nextHalfWidth = momentumSegmentHalfWidth(next)
+        x += nextHalfWidth * m.x
+        y += nextHalfWidth * m.y
     }
     return {x: x, y: y}
 }
@@ -44,18 +67,19 @@ function momentumBorderKind(dir, side)
 }
 // The two border lines of course segment index, start to end in the travel
 // direction. outerEnd is set where the line ends on the outside of a turn.
-function momentumSegmentBorderLines(course, index, halfWidth)
+function momentumSegmentBorderLines(course, index)
 {
     const segment = course.segment(index)
     const next = course.segment(index + 1)
     const previous = index > 0 ? course.segment(index - 1) : null
+    const halfWidth = momentumSegmentHalfWidth(segment)
     const lines = []
     for (const side of [1, -1])
     {
         const n = momentumSideNormal(segment.dir, side)
-        const start = previous ? momentumBorderCorner(previous, segment, side, halfWidth)
+        const start = previous ? momentumBorderCorner(previous, segment, side)
                                : {x: segment.x0 + halfWidth * n.x, y: segment.y0 + halfWidth * n.y}
-        const end = momentumBorderCorner(segment, next, side, halfWidth)
+        const end = momentumBorderCorner(segment, next, side)
         const d = momentumDirection(segment.dir)
         const m = momentumSideNormal(next.dir, side)
         lines.push({
@@ -185,10 +209,10 @@ class MomentumBorderFloor extends SideFloor
         const targetRight = -screen.x + 3 * width / scale[version]
         while (this.course.segment(this.nextSegment).x0 < targetRight)
         {
-            const lines = momentumSegmentBorderLines(this.course, this.nextSegment, options.halfWidth)
+            const lines = momentumSegmentBorderLines(this.course, this.nextSegment)
             for (const line of lines)
                 if (this.kinds.includes(line.kind))
-                    this.elements.push(new MomentumBorder(line, options.thickness))
+                    this.elements.push(new MomentumBorder(line, options.thickness + options.backing))
             ++this.nextSegment
         }
     }
@@ -197,7 +221,12 @@ class MomentumBorderFloor extends SideFloor
         const border = screen.getDeletionBorder()
         if (this.elements.some(element => element.getRightPointX() + screen.x < border))
             this.elements = this.elements.filter(element => element.getRightPointX() + screen.x >= border)
+        // Behind vertically: only borders of segments already passed. Ones
+        // ahead can lie there too (a course that went up comes back down)
+        const ahead = this.elements.filter(element => element.line.segment >= screen.segmentIndex)
+        this.elements = this.elements.filter(element => element.line.segment < screen.segmentIndex)
         screen.deleteBehind(this, false)
+        this.elements = this.elements.concat(ahead)
     }
     draw()
     {

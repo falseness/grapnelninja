@@ -533,9 +533,15 @@
                 // camera's shaft margin right of the start view and the ninja:
                 // the camera can't scroll back to show it later
                 const ninjaStartX = 0.2 * width
-                const firstMinLen = width + ninjaStartX + borders.halfWidth + borders.thickness +
+                const shaftHalfWidth = momentumShaftHalfWidth()
+                const firstMinLen = width + ninjaStartX + shaftHalfWidth + borders.thickness +
                     GAMEPLAY.momentumCamera.shaftMarginHeightRatio * height / scale.momentum
-                momentumCourse = new MomentumCourse(-width, borders.originY, GAMEPLAY.momentumCourse, firstMinLen)
+                // Shafts up and down side by side: neither one's border body
+                // reaches into the other
+                const oppositeShaftGap = () =>
+                    2 * momentumShaftHalfWidth() + borders.thickness + borders.backing
+                momentumCourse = new MomentumCourse(-width, borders.originY, GAMEPLAY.momentumCourse,
+                                                    firstMinLen, oppositeShaftGap)
                 screen = new MomentumScreen(momentumCourse)
 
                 elementsFactory = new ElementsFactory

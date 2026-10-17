@@ -15,7 +15,8 @@ sub-step of Ninja.move (the speed at each collision() call, i.e. the speed
 the ninja just moved with) and after physics() (after the grapple pull).
 
 - momentum: max |v| <= momentumMaxSpeed + 1e-6 on all 600 frames; the cap is
-  reached; >= 5 approaching bounces; same ninja (no death/restart);
+  reached; >= 4 approaching bounces (the bound was 5 before TASK-030 widened the shafts:
+  the forcing reaches their walls less often); same ninja (no death/restart);
 - bad: the same forcing reaches |speedX| > momentumMaxSpeed (bad keeps only
   its vertical cap) and |speedY| stays within that vertical cap;
 - GAMEPLAY.momentumMaxSpeed is 0.75 * 0.006867 * height (TASK-029 halved the
@@ -145,7 +146,7 @@ class MomentumSpeedTests(unittest.TestCase):
         bounces = run['rows'][-1][2]
         print(f'momentum: approaching bounces {bounces}, deaths {run["deaths"]}, '
               f'course segment reached {run["segment"]}', file=sys.stderr)
-        self.assertGreaterEqual(bounces, 5)
+        self.assertGreaterEqual(bounces, 4)
         self.assertTrue(run['sameNinja'])
         self.assertEqual(run['deaths'], 0)
         self.assertEqual(self.errors, [])

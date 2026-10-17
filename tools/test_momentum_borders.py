@@ -4,8 +4,9 @@ Starts momentum on a fixed course: MomentumCourse.generate draws from a
 scripted Math.random stub (then a seeded LCG), so the course is
 R U R R D R D R U R ... and every join type appears. Asserts on the live
 window.momentumBorders() list: one floor and one ceiling per right
-segment, two walls per vertical segment, each face halfWidth from the
-centre line, corners closed (end of a border == start of the next on the
+segment, two walls per vertical segment, each face halfWidth (a vertical
+segment: its own segment.halfWidth, TASK-030) from the centre line, corners
+closed (end of a border == start of the next on the
 same side, gap 0), and a ninja moving into a floor, a ceiling and both
 walls bounces (normal speed flips sign) and stays alive. Walls are drawn
 in STYLE.momentum.wallStroke, darker than the '#3dff4a' floor; the
@@ -26,7 +27,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DIRS = ['right', 'up', 'right', 'right', 'down', 'right', 'down', 'right', 'up', 'right']
 # Draws of MomentumCourse.generate for DIRS: after a right segment one draw
 # >= 0.4 picks vertical and a second picks up (< 0.5) or down, then the
-# length draw. Short rights keep the scripted part inside the 3-viewport window.
+# length draw. Rights after a vertical are lengthened to keep wide shafts apart
+# (TASK-030), so the borders are built 3 more viewports ahead (BUILD_AHEAD).
 SCRIPT = [0.1,
           0.9, 0.1, 0.5,
           0.1,
@@ -34,7 +36,9 @@ SCRIPT = [0.1,
           0.9, 0.9, 0.5,
           0.1,
           0.9, 0.9, 0.5,
-          0.1,
+          # Long enough that the up shaft after it stays clear of the down
+          # shaft before it (MomentumCourse oppositeShaftGap, TASK-030)
+          0.9,
           0.9, 0.1, 0.5,
           0.1]
 SEED_COURSE = '''(script) => {
@@ -47,6 +51,15 @@ SEED_COURSE = '''(script) => {
         Math.random = next
         try { return generate.call(this) } finally { Math.random = random }
     }
+}'''
+# Builds the border floors 3 more viewports ahead, the camera unchanged
+BUILD_AHEAD = '''() => {
+    const x = screen.x
+    screen.x -= 3 * width / scale[version]
+    for (const f of floors)
+        if (f instanceof MomentumBorderFloor)
+            f.replenishElements()
+    screen.x = x
 }'''
 # Puts the ninja next to a border, moving into it, and runs real physics
 # steps until it bounces. Synchronous, so the rAF loop cannot interleave.
@@ -86,6 +99,7 @@ class MomentumBordersTests(unittest.TestCase):
         cls.page.evaluate("startGame('momentum')")
         # Freeze the loop: the bounce cases step physics themselves
         cls.page.evaluate('cancelAnimationFrame(game)')
+        cls.page.evaluate(BUILD_AHEAD)
         cls.options = cls.page.evaluate('({...GAMEPLAY.momentumBorders})')
         cls.segments = cls.page.evaluate('momentumCourse.segments')
         cls.borders = cls.page.evaluate('momentumBorders()')
@@ -132,14 +146,16 @@ class MomentumBordersTests(unittest.TestCase):
               'vertical segments with 2 walls:', counts['vertical'])
 
     def test_faces_on_offset_lines(self):
-        hw = self.options['halfWidth']
         for b in self.borders:
             s = self.segments[b['segment']]
+            hw = s.get('halfWidth', self.options['halfWidth'])
             if s['dir'] == 'right':
                 y = s['y0'] + (hw if b['kind'] == 'floor' else -hw)
                 self.assertEqual((b['y0'], b['y1']), (y, y), b)
                 self.assertLess(b['x0'], b['x1'])
             else:
+                # Shafts are wider than halfWidth at 1280x720
+                self.assertGreater(hw, self.options['halfWidth'], b)
                 normal = b['side'] if s['dir'] == 'up' else -b['side']
                 x = s['x0'] + normal * hw
                 self.assertEqual((b['x0'], b['x1']), (x, x), b)

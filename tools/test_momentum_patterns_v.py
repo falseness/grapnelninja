@@ -12,7 +12,8 @@ that direction; per type and direction the element count, green count and
 blue count equal the catalog piece list, piece by piece (class and box at the
 catalog fractions of the shaft and footprint); no element is lethal (only
 MomentumGreen/MomentumBlue); every element lies between the two dark-green
-walls of its segment (momentumBorders()) and inside the footprint, which
+walls of its segment (momentumBorders(), at the segment's own half width
+since TASK-030) and inside the footprint, which
 stays clear of both turns. A direction the type is not built for (and
 'right') places nothing (null).
 
@@ -46,7 +47,9 @@ CATALOG = Path(os.environ.get('MOMENTUM_CATALOG_V', ROOT / 'artifacts/TASK-013/c
 SVG_DIR = CATALOG.parent / 'diagrams'
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_PATTERNS_V_EVIDENCE_DIR', ROOT / 'artifacts/TASK-016'))
 # Segments: right (short), up (~5 heights), right (short), down (~5 heights)
-SCRIPT = [0.1, 0.99, 0.1, 0.99, 0.1, 0.99, 0.9, 0.99]
+# Segment 2 long (0.9) so the down shaft stays clear of the up one
+# (MomentumCourse oppositeShaftGap, TASK-030)
+SCRIPT = [0.1, 0.99, 0.1, 0.99, 0.9, 0.99, 0.9, 0.99]
 SEGMENT = {'up': 1, 'down': 3}
 EPS = 1e-6
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
@@ -229,8 +232,12 @@ class MomentumPatternsVTests(unittest.TestCase):
         self.assertTrue(set(classes) <= set(CLASSES.values()))
         wall_lo = min(w['x0'] for w in f['walls'])
         wall_hi = max(w['x0'] for w in f['walls'])
-        self.assertAlmostEqual(wall_lo, x - half, delta=EPS)
-        self.assertAlmostEqual(wall_hi, x + half, delta=EPS)
+        # Walls at the shaft's own (wider, TASK-030) half width; patterns
+        # still span the base band around the centre line
+        shaft_half = f['segment'].get('halfWidth', half)
+        self.assertGreaterEqual(shaft_half, half)
+        self.assertAlmostEqual(wall_lo, x - shaft_half, delta=EPS)
+        self.assertAlmostEqual(wall_hi, x + shaft_half, delta=EPS)
         for p, e in zip(t['pieces'], els):
             self.assertEqual(e['className'], CLASSES[p['kind']])
             want = [left + p['x'] * band, top + p['y'] * length,

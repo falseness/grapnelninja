@@ -4,14 +4,19 @@
 // Segments are generated lazily; Math.random is only drawn in generate().
 // firstMinLen lengthens a shorter first segment (same draws, so a seeded
 // course only changes there) to keep the first join clear of the start view.
+// A vertical segment the other way from the previous vertical one, less than
+// oppositeShaftGap() (world units, read when it is generated) right of it,
+// goes the same way instead (same draws): the two shafts would overlap.
 class MomentumCourse
 {
-    constructor(x0 = 0, y0 = 0, options = GAMEPLAY.momentumCourse, firstMinLen = 0)
+    constructor(x0 = 0, y0 = 0, options = GAMEPLAY.momentumCourse, firstMinLen = 0,
+                oppositeShaftGap = () => 0)
     {
         this.options = options
         this.x0 = x0
         this.y0 = y0
         this.firstMinLen = firstMinLen
+        this.oppositeShaftGap = oppositeShaftGap
         this.segments = []
     }
 
@@ -39,6 +44,15 @@ class MomentumCourse
         if (last !== undefined && last.dir == 'right' &&
             Math.random() * 100 >= options.rightAfterRightChancePercent)
             dir = Math.random() * 100 < options.upChancePercent ? 'up' : 'down'
+        if (dir != 'right')
+        {
+            let i = this.segments.length - 1
+            while (i >= 0 && this.segments[i].dir == 'right')
+                --i
+            const shaft = this.segments[i]
+            if (shaft !== undefined && shaft.dir != dir && last.x1 - shaft.x0 < this.oppositeShaftGap())
+                dir = shaft.dir
+        }
         let length = options.minLen + Math.random() * (options.maxLen - options.minLen)
         if (last === undefined)
             length = Math.max(length, this.firstMinLen)

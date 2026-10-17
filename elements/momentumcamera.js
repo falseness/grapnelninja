@@ -186,9 +186,10 @@ class MomentumScreen extends Screen
         this.speedX = -vx * dt
         this.speedY = -vy * dt
     }
-    // Largest camera x (-screen.x) that keeps the left wall of the current
-    // vertical segment, or of the next one from a right segment, in view
-    // with its thickness and a margin; Infinity when there is none
+    // Largest camera x (-screen.x): the view centred on the current vertical
+    // segment, or on the next one from a right segment, where it shows only
+    // the shaft and its walls (momentumShaftHalfWidth); Infinity when there
+    // is none
     getShaftCapX()
     {
         let shaft = this.getSegment()
@@ -196,9 +197,7 @@ class MomentumScreen extends Screen
             shaft = this.course.segment(this.segmentIndex + 1)
         if (shaft.dir == 'right')
             return Infinity
-        const borders = GAMEPLAY.momentumBorders
-        return shaft.x0 - borders.halfWidth - borders.thickness -
-               GAMEPLAY.momentumCamera.shaftMarginHeightRatio * this.getViewHeight()
+        return shaft.x0 - width / scale[version] / 2
     }
     // A box (world coordinates) fully out of view on the vertical side left behind
     isBoxBehind(top, bottom, margin)
