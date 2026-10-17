@@ -131,7 +131,9 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // movers at the doubled 1080-range distances, travelling right from the base spawn.
     // S01-01: from the green entry pad, pull the blue hoist and release onto the green
     // yard bouncer. S01-02: off the yard rebound, pull the blue lift and release into
-    // the green deflector wall. S01-03/04 are planned (TASK-548).
+    // the green deflector wall. S01-03 (TASK-548): catch the green gantry hook on the
+    // up-left rebound and swing right. S01-04: catch the green crown hook in flight and
+    // release down-right into the exit drag zone, settling on the green exit pad.
     const bouncer = (id,x,y,w,h) => ({...rectangle(id,x,y,w,h,true),role:'bounce'})
     const yard = [
         bouncer('S01-entry-pad',2060,18,200,40),
@@ -139,30 +141,44 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         bouncer('S01-yard-pad',3900,-880,300,40),
         rectangle('S01-lift',4440,-1760,120,30,true),
         bouncer('S01-deflector',4900,-2100,30,750),
+        bouncer('S01-gantry-hook',5190,-3010,120,30),
+        bouncer('S01-crown-hook',5890,-3150,120,30),
+        bouncer('S01-exit-pad',6040,-2700,400,40),
+        // Green floor bouncers on the base catch every declared S01 fall line.
+        bouncer('S01-floor',2520,80,3960,40),
         // Kept (converted to green) only as the v2 Switchback S02-01 start reference.
         bouncer('S01-exit',4060,-1620,200,55)
     ];
-    // Misses fall to the base floor through this pass-through drag zone, which damps
-    // horizontal and vertical speed; it spans only the declared S01-01/02 fall points.
-    // Drag zones are not colliders, so it goes last and the collider order still
-    // matches the manifest.
-    const yardDrag = {id:'S01-yard-drag',x:2280,y:40,role:'drag',grapplable:false,
-        points:[{x:0,y:0},{x:3020,y:0},{x:3020,y:80},{x:0,y:80}]};
+    // Misses fall to the green floor bouncers through this pass-through drag zone, which
+    // damps horizontal and vertical speed (420 tall so the first rebound stays well under
+    // half the drop); it spans only the declared S01 fall points and starts right of the
+    // S01-01 hoist pull. The exit drag zone holds the S01 exit pad; the S01-04 short
+    // line (off the crown hook along the right wall) falls through it. Drag zones are not
+    // colliders, so they go last and the collider order still matches the manifest.
+    const yardDrag = {id:'S01-yard-drag',x:2520,y:-300,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:3960,y:0},{x:3960,y:420},{x:0,y:420}]};
+    const exitDrag = {id:'S01-exit-drag',x:5960,y:-3100,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:520,y:0},{x:520,y:440},{x:0,y:440}]};
     const yardMovers = [
         {id:'S01-hoist-travel',element:'S01-hoist',axis:'x',min:2640,max:2760,periodMs:4000,phase:0,velocity:60},
         {id:'S01-lift-travel',element:'S01-lift',axis:'y',min:-1760,max:-1680,periodMs:4000,phase:0,velocity:40}];
-    Object.assign(sections[0], {status:'partial', designVersion:3, landmark:{id:'S01-landmark',
+    Object.assign(sections[0], {status:'built', designVersion:3, landmark:{id:'S01-landmark',
         name:'broken loading yard',x:3460,y:-1100},
         band:{...sections[0].band, top:-3240},
         // Rope-to-anchor reach from the launch point at the press to the acquisition point.
         gaps:[{id:'S01-01-hoist',from:{x:2160,y:3.4},to:{x:2698.6,y:-790}},
             // Caught off the yard rebound: from the player at the press to the lift.
-            {id:'S01-02-lift',from:{x:4010.8,y:-893},to:{x:4490.7,y:-1717}}],
+            {id:'S01-02-lift',from:{x:4010.8,y:-893},to:{x:4490.7,y:-1717}},
+            // Caught on the up-left deflector rebound, then in flight off the gantry swing.
+            {id:'S01-03-gantry',from:{x:4466.4,y:-2446.4},to:{x:5231.2,y:-2980}},
+            {id:'S01-04-crown',from:{x:5035.9,y:-3556},to:{x:5911.4,y:-3150}}],
         // Declared miss points: a short or mistimed release falls straight down
-        // through the yard drag zone onto the base floor.
-        fallPoints:[{id:'S01-01-short',encounter:'S01-01',x:2900,y:-700},
+        // through the yard drag zone onto the green floor bouncers.
+        fallPoints:[{id:'S01-01-short',encounter:'S01-01',x:3520,y:-545},
             {id:'S01-02-short',encounter:'S01-02',x:4300,y:-900},
-            {id:'S01-02-overshoot',encounter:'S01-02',x:5200,y:-1600}]});
+            {id:'S01-02-overshoot',encounter:'S01-02',x:5200,y:-1600},
+            {id:'S01-03-early',encounter:'S01-03',x:5000,y:-2700},
+            {id:'S01-04-short',encounter:'S01-04',x:6460,y:-3300}]});
     Object.assign(encounters[0], {status:'built',x:2160,y:0,
         elements:['S01-entry-pad','S01-hoist','S01-yard-pad'],
         start:{x:2160,y:0},target:{x:2700,y:-790},
@@ -173,7 +189,20 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S01-01',x:4010.8,y:-893},target:{x:4500,y:-1730},
         exit:{left:4600,right:4800,top:-2200,bottom:-1950},
         action:'Off the yard rebound, pull the blue lift, release into the green deflector wall and rebound'});
-    for (let i=0;i<2;i++) connectors[i].status='built';
+    Object.assign(encounters[2], {status:'built',x:4466,y:-2446,
+        elements:['S01-deflector','S01-gantry-hook'],
+        start:{from:'S01-02',x:4466.4,y:-2446.4},target:{x:5250,y:-2990},
+        exit:{left:4900,right:5000,top:-3540,bottom:-3480},
+        action:'On the up-left deflector rebound, catch the green gantry hook, swing right over it and release'});
+    // The node is the crown hook; the flight apex (~-3640) overlaps the band above.
+    Object.assign(encounters[3], {status:'built',x:5950,y:-3150,
+        elements:['S01-crown-hook','S01-exit-pad','S01-exit-drag'],
+        start:{from:'S01-03',x:5035.9,y:-3556},target:{x:5950,y:-3130},
+        exit:{left:6040,right:6440,top:-2730,bottom:-2700},
+        action:'Catch the green crown hook in flight, swing down-right and release into the exit drag zone to settle on the green exit pad'});
+    for (let i=0;i<4;i++) connectors[i].status='built';
+    Object.assign(recoveries[0], {status:'built',elements:['S01-yard-drag','S01-exit-drag','S01-floor'],
+        rejoin:'S01-02',sideRoute:'Every declared S01 miss falls through a drag zone onto the green floor bouncers and settles; a green yard-pad pull and a blue lift pull rejoin the route through the deflector'});
     // Switchback Shaft v2 (layout v2): travelling left back over Foundations, so
     // misses drop onto S01 pads and hooks. S02-01: blue shuttle from the S01 exit
     // pad onto the balcony pad. S02-02: blue lift, green bulkhead rebound onto the
@@ -248,7 +277,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S02-03',x:2483.7,y:-2490.8},target:{x:2260,y:-2900},
         exit:{left:2040,right:2200,top:-2700,bottom:-2680},
         action:'Catch the blue trolley from the ledge, pull up-left and release onto the exit pad against its tall left lip'});
-    Object.assign(connectors[4], {status:'planned',intent:'Physical ascent from the Foundations exit (planned S01-04, TASK-548) to the blue shuttle'});
+    Object.assign(connectors[4], {status:'planned',intent:'Physical ascent from the v3 Foundations exit pad (S01-04) to Switchback; replanned with the S02 v3 rebuild'});
     for (let i=5;i<8;i++) connectors[i].status='built';
     Object.assign(recoveries[1], {status:'built',elements:['S02-fall-drag','S01-entry-pad','S01-hoist','S01-yard-pad'],
         rejoin:'S01-01',sideRoute:'S02 misses drop through the fall column onto the S01 entry pad and stop; a blue hoist pull rejoins the S01 route on the loading pad'});
@@ -631,7 +660,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,balconyBrake,ledgeBrake,entryDrag,viaductBrake,exitBrake,viaductDrag], movers:liftMovers},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,balconyBrake,ledgeBrake,entryDrag,viaductBrake,exitBrake,viaductDrag], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         finish, completion:'Summit finish region on the S08-04 beacon pad; reaching it completes the climb',
