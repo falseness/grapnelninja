@@ -49,7 +49,75 @@ let scoreText =
 
         this.drawHudText(recordText, recordX, recordY, 'end')
 
+        if (version == 'momentum')
+            this.drawMomentumHud(viewWidth, topY, fontSize)
+
         ctx.restore()
+    },
+    // Momentum hp and green streak, read from momentumState
+    getMomentumHudState: function()
+    {
+        const hp = momentumState.hp
+        const asHearts = hp <= STYLE.momentum.hudMaxHearts
+        return {
+            hp: hp,
+            hearts: asHearts ? hp : 1,
+            hpText: asHearts ? '' : '\u00d7' + hp,
+            streakText: momentumState.greenStreak + '/' + GAMEPLAY.momentumHp.greenStreakForHp
+        }
+    },
+    // Centred in the HUD band between the score and the record
+    drawMomentumHud: function(viewWidth, topY, fontSize)
+    {
+        const state = this.getMomentumHudState()
+        const size = fontSize * 0.8
+        const step = size * 1.2
+        const gap = fontSize * 0.6
+        ctx.font = fontSize + 'px ' + this.fontFamily
+        const heartsWidth = state.hearts > 0 ? (state.hearts - 1) * step + size : 0
+        const hpWidth = state.hpText ? gap / 2 + measureGlowText(state.hpText).width : 0
+        const streakWidth = measureGlowText(state.streakText).width
+        let x = viewWidth / 2 - (heartsWidth + hpWidth + gap + streakWidth) / 2
+
+        LAYOUT_PROBE.rect('momentum-hearts', 'hp:' + state.hp, x, topY - size / 2, heartsWidth, size)
+        for (let i = 0; i < state.hearts; ++i)
+            this.drawHeart(x + i * step, topY - size / 2, size)
+        x += heartsWidth
+
+        ctx.fillStyle = this.fill
+        if (state.hpText)
+        {
+            x += gap / 2
+            this.drawHudText(state.hpText, x, topY, 'start')
+            x += hpWidth - gap / 2
+        }
+
+        ctx.fillStyle = STYLE.momentum.streakText
+        this.drawHudText(state.streakText, x + gap, topY, 'start')
+    },
+    drawHeart: function(x, y, size)
+    {
+        const lineWidth = Math.max(1, size * 0.1)
+        drawGlowSprite('momentum-heart|' + size, x, y, size, size, lineWidth,
+            STYLE.ui.textShadowBlur, () =>
+        {
+            ctx.translate(x, y)
+            ctx.scale(size, size)
+            ctx.beginPath()
+            ctx.moveTo(0.5, 0.3)
+            ctx.bezierCurveTo(0.5, 0.05, 0.05, 0, 0.05, 0.35)
+            ctx.bezierCurveTo(0.05, 0.6, 0.35, 0.75, 0.5, 0.95)
+            ctx.bezierCurveTo(0.65, 0.75, 0.95, 0.6, 0.95, 0.35)
+            ctx.bezierCurveTo(0.95, 0, 0.5, 0.05, 0.5, 0.3)
+            ctx.closePath()
+            ctx.fillStyle = STYLE.momentum.heartFill
+            ctx.strokeStyle = STYLE.momentum.heartStroke
+            ctx.shadowColor = STYLE.momentum.heartStroke
+            ctx.shadowBlur = STYLE.ui.textShadowBlur
+            ctx.lineWidth = lineWidth / size
+            ctx.fill()
+            ctx.stroke()
+        })
     },
     getRecordX: function(viewWidth)
     {

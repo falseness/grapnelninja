@@ -479,7 +479,13 @@ const STYLE = Object.freeze({
         // Blue one-time objects: the blue cube colours
         blueStroke: '#2f86ff',
         blueFill: '#061234',
-        blueBadVersionFill: 'rgba(10, 36, 96, 0.8)'
+        blueBadVersionFill: 'rgba(10, 36, 96, 0.8)',
+        // HUD: one heart per hp up to hudMaxHearts, else a heart and the
+        // number; the green streak as 'n/5' in the green object colour
+        hudMaxHearts: 10,
+        heartStroke: '#ff4f8b',
+        heartFill: '#4a0b24',
+        streakText: '#3dff4a'
     }),
     // The player alone keeps outer glow; obstacles retain their inward light.
     player: Object.freeze({
