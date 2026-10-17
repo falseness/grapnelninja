@@ -138,10 +138,10 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // S01-03: an up-left crane hook, then a staggered jib hook caught in flight.
         hook('S01-crane-hook',3290,-832),
         hook('S01-jib-hook',3547,-1024),
-        lowRest('S01-gantry-pad',3700,-1280,200),
+        lowRest('S01-gantry-pad',3700,-1260,200),
         // S01-04: the boom hook lifts onto the exit pad, which is also the Switchback entrance.
         // It stays clear of the S02-01 shot and swing from that pad to the left balcony.
-        hook('S01-boom-hook',3805,-1790),
+        hook('S01-boom-hook',3805,-1770),
         rest('S01-exit',4060,-1620,200)
     ];
     // Misses fall to the broad base through a pass-through drag zone that cuts
@@ -167,7 +167,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             {id:'S01-03-crane',from:{x:3510.8,y:-360.8},to:{x:3350,y:-802}},
             // Caught in flight: from the player at the press to the jib hook.
             {id:'S01-03-jib',from:{x:3446.6,y:-552.7},to:{x:3608,y:-994}},
-            {id:'S01-04-boom',from:{x:3849.2,y:-1290.8},to:{x:3919,y:-1760}}],
+            {id:'S01-04-boom',from:{x:3849.2,y:-1270.8},to:{x:3919,y:-1740}}],
         fallLines:[{id:'S01-01-short',x:2650,landing:'mountain-catch'},
             {id:'S01-02-short',x:3250,landing:'mountain-catch'},
             {id:'S01-03-short',x:3600,landing:'mountain-catch'},
@@ -186,11 +186,11 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(encounters[2], {status:'built',x:3511,y:-361,
         elements:['S01-loading-pad','S01-crane-hook','S01-jib-hook','S01-gantry-pad'],
         start:{from:'S01-02',x:3510.8,y:-360.8},target:{x:3350,y:-803},
-        exit:{left:3700,right:3860,top:-1300,bottom:-1280},
+        exit:{left:3700,right:3860,top:-1280,bottom:-1260},
         action:'Pull the up-left crane hook, catch the staggered jib hook in flight and drop onto the gantry pad'});
     Object.assign(encounters[3], {status:'built',x:3849,y:-1291,
         elements:['S01-gantry-pad','S01-boom-hook','S01-exit'],
-        start:{from:'S01-03',x:3849.2,y:-1290.8},target:{x:3920,y:-1760},
+        start:{from:'S01-03',x:3849.2,y:-1270.8},target:{x:3920,y:-1740},
         exit:{left:4060,right:4220,top:-1640,bottom:-1620},
         action:'Pull the boom hook from the gantry pad and release onto the exit pad; a short release drops back onto the gantry pad'});
     for (let i=0;i<4;i++) connectors[i].status='built';

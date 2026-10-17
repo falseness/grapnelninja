@@ -8,6 +8,7 @@ save); base-start runs may supply neither. Audit always replays, not just hashes
 import argparse
 from contextlib import ExitStack
 import copy
+import gzip
 import hashlib
 import json
 import math
@@ -228,6 +229,45 @@ def verify(manifest, browser, url, out, clip=False):
     return result
 
 
+def load_evidence(evidence, name):
+    """Suite inputs may be gzip-compressed (*.gz) to keep full recorded traces small."""
+    path = evidence.path(name)
+    return json.loads(gzip.decompress(path.read_bytes()) if name.endswith('.gz') else path.read_text())
+
+
+def compress_replay(evidence, prefix):
+    """Keep the full replayed trace, gzip-compressed, once it has been compared."""
+    path = evidence.path(prefix + '/trace.json')
+    evidence.path(prefix + '/trace.json.gz').write_bytes(gzip.compress(path.read_bytes(), 6, mtime=0))
+    path.unlink()
+
+
+def check_s01_mechanics(encounter, trace, required=True):
+    """Layout-v2 Foundations: blue hoist, lift + green deflector, in-flight jib, boom."""
+    events=trace['events'];rows=trace['snapshots']
+    grabs=[e for e in events if e['type']=='acquisition']
+    ids=[e['after']['rope'][0]['id'] for e in grabs]
+    bounces=[]
+    for e in events:
+        if e['type']=='bounce' and (not bounces or bounces[-1]['element']!=e['contact']['elementId']):
+            bounces.append(dict(element=e['contact']['elementId'],tick=e['tick']))
+    # Moving vertically on the tick before the catch, i.e. not launched from a rest.
+    airborne=[g['after']['rope'][0]['id'] for g in grabs
+              if abs(rows[g['tick']-1]['state']['simulation']['player']['speedY'])>.01]
+    observations=dict(acquisitions=ids,acquisition_ticks=[e['tick'] for e in grabs],
+        release_ticks=[e['tick'] for e in events if e['type']=='release'],bounces=bounces,
+        airborne_acquisitions=airborne)
+    if required:
+        need={'S01-01':['S01-hoist'],'S01-02':['S01-lift'],'S01-03':['S01-crane-hook','S01-jib-hook'],
+              'S01-04':['S01-boom-hook']}[encounter]
+        require(ids[:len(need)]==need,'S01 acquisition sequence mismatch')
+        if encounter=='S01-02':
+            require('S01-deflector' in [b['element'] for b in bounces],'S01 deflector bounce missing')
+        if encounter=='S01-03':
+            require('S01-jib-hook' in airborne,'S01 in-flight jib acquisition missing')
+    return observations
+
+
 def check_s04_mechanics(encounter, trace, required=True):
     """Measure reflection contacts and airborne reacquisition from recorded events."""
     bounces = [e for e in trace['events'] if e['type'] == 'bounce']
@@ -395,11 +435,14 @@ def audit_suite(manifest, browser, url, out):
             require(next(a for a in group if a['variant']=='nominal')['success'], 'nominal failed')
             require(sum(a['success'] for a in group if a['variant']!='nominal') >= 2, 'tolerance failed')
         for a in attempts:
-            recorded = json.loads(evidence.path(a['input']).read_text())
+            recorded = load_evidence(evidence, a['input'])
             replayed = execute(recorded, browser, url, str(Path(out)/a['name']))
             require(recorded['trace'] == replayed, 'suite replay mismatch: '+a['name'])
+            if a['input'].endswith('.gz'):
+                compress_replay(evidence, output_writer(str(Path(out)/a['name']))[1])
             try:
                 check_trace(recorded, replayed)
+                if section == 'S01' and 'mechanic_events' in a: check_s01_mechanics(encounter, replayed)
                 if section == 'S05': check_s05_mechanics(encounter, replayed)
                 if section == 'S06': check_s06_mechanics(encounter, replayed)
                 if section == 'S07': check_s07_mechanics(encounter, replayed)
@@ -408,6 +451,8 @@ def audit_suite(manifest, browser, url, out):
             except ValueError:
                 success = False
             require(success == a['success'], 'outcome mismatch')
+            if section == 'S01' and 'mechanic_events' in a:
+                require(check_s01_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S01 mechanics mismatch')
             if section == 'S04':
                 require(check_s04_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S04 mechanics mismatch')
             if section == 'S05':
@@ -420,9 +465,11 @@ def audit_suite(manifest, browser, url, out):
                 require(check_s08_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S08 mechanics mismatch')
             count += 1
     negative = json.loads(evidence.path(manifest['negative_control']).read_text())
-    recorded = json.loads(evidence.path(negative['input']).read_text())
+    recorded = load_evidence(evidence, negative['input'])
     replayed = execute(recorded, browser, url, str(Path(out)/'negative'))
     require(recorded['trace'] == replayed, 'negative replay mismatch')
+    if negative['input'].endswith('.gz'):
+        compress_replay(evidence, output_writer(str(Path(out)/'negative'))[1])
     try:
         check_trace(recorded, replayed)
     except ValueError as error:
