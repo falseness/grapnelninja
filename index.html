@@ -529,7 +529,13 @@
             {
                 const borders = GAMEPLAY.momentumBorders
                 momentumState.reset()
-                momentumCourse = new MomentumCourse(-width, borders.originY)
+                // The first join (a shaft's left wall) at least a wall plus the
+                // camera's shaft margin right of the start view and the ninja:
+                // the camera can't scroll back to show it later
+                const ninjaStartX = 0.2 * width
+                const firstMinLen = width + ninjaStartX + borders.halfWidth + borders.thickness +
+                    GAMEPLAY.momentumCamera.shaftMarginHeightRatio * height / scale.momentum
+                momentumCourse = new MomentumCourse(-width, borders.originY, GAMEPLAY.momentumCourse, firstMinLen)
                 screen = new MomentumScreen(momentumCourse)
 
                 elementsFactory = new ElementsFactory
@@ -543,7 +549,7 @@
                 ]
                 ninja = new Ninja(
                 {
-                    x: 0.2 * width,
+                    x: ninjaStartX,
                     y: 1.2 * height,
                     radius: 0.01 * height,
                     fill: STYLE.colors.player.fill,

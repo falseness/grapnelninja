@@ -2,13 +2,16 @@
 // starts where the previous one ends. The first one runs right and every
 // vertical segment is followed by a right one, so up and down never touch.
 // Segments are generated lazily; Math.random is only drawn in generate().
+// firstMinLen lengthens a shorter first segment (same draws, so a seeded
+// course only changes there) to keep the first join clear of the start view.
 class MomentumCourse
 {
-    constructor(x0 = 0, y0 = 0, options = GAMEPLAY.momentumCourse)
+    constructor(x0 = 0, y0 = 0, options = GAMEPLAY.momentumCourse, firstMinLen = 0)
     {
         this.options = options
         this.x0 = x0
         this.y0 = y0
+        this.firstMinLen = firstMinLen
         this.segments = []
     }
 
@@ -36,7 +39,9 @@ class MomentumCourse
         if (last !== undefined && last.dir == 'right' &&
             Math.random() * 100 >= options.rightAfterRightChancePercent)
             dir = Math.random() * 100 < options.upChancePercent ? 'up' : 'down'
-        const length = options.minLen + Math.random() * (options.maxLen - options.minLen)
+        let length = options.minLen + Math.random() * (options.maxLen - options.minLen)
+        if (last === undefined)
+            length = Math.max(length, this.firstMinLen)
 
         const x0 = last === undefined ? this.x0 : last.x1
         const y0 = last === undefined ? this.y0 : last.y1
