@@ -216,11 +216,6 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         lowRest('S02-ledge',2310,-2480,200,20,true),
         rectangle('S02-trolley',2190,-2930,120,30,true),
         lowRest('S02-exit-pad',2000,-2680,200,60,true),
-        // Legacy v1 S03 entrance deck until S03 is rebuilt: the v1 deck cropped to 200
-        // around its mid lip, so the authored v1 S03 start (4429.2,-3190.8) is unchanged.
-        {id:'S02-exit',x:4280,y:-3180,role:'solid',grapplable:true,
-            points:[{x:100,y:0},{x:160,y:0},{x:160,y:-20},{x:200,y:-20},{x:200,y:0},
-                {x:300,y:0},{x:300,y:55},{x:100,y:55}]}
     ];
     // Pass-through brake over the balcony deck: landings shed horizontal speed and settle on
     // the deck. A tall end stop would block the S02-02 shot to the lift, so the lip stays low.
@@ -246,8 +241,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             {element:'S02-balcony',kind:'rest-pad',reason:'S02-01 landing / S02-02 launch rest with a low left end stop'},
             {element:'S02-landing',kind:'rest-pad',reason:'S02-02 landing rest after the bulkhead rebound'},
             {element:'S02-ledge',kind:'rest-pad',reason:'S02-03 landing / S02-04 launch rest under the ledge brake, low left end stop'},
-            {element:'S02-exit-pad',kind:'rest-pad',reason:'S02 exit rest; tall left lip stops the trolley landing'},
-            {element:'S02-exit',kind:'rest-pad',reason:'Legacy v1 S03 entrance deck until S03 is rebuilt for layout v2'}],
+            {element:'S02-exit-pad',kind:'rest-pad',reason:'S02 exit rest; tall left lip stops the trolley landing'}],
         // Rope-to-anchor reach from the resting launch point to the nominal acquisition point.
         gaps:[{id:'S02-01-shuttle',from:{x:4209.2,y:-1630.8},to:{x:3885.5,y:-1980}},
             {id:'S02-02-lift',from:{x:3597.5,y:-1890.8},to:{x:3261.9,y:-2225.2}},
@@ -281,58 +275,51 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     for (let i=5;i<8;i++) connectors[i].status='built';
     Object.assign(recoveries[1], {status:'built',elements:['S02-fall-drag','S01-entry-pad','S01-hoist','S01-yard-pad'],
         rejoin:'S01-01',sideRoute:'S02 misses drop through the fall column onto the S01 entry pad and stop; a blue hoist pull rejoins the S01 route on the loading pad'});
-    // Interrupted viaduct: tapered departure girder, torn deck and lower bridge.
+    // Broken Viaduct v2 (layout v2): travelling right from the Switchback exit pad.
+    // S03-01: blue departure carriage pulled up-right; the swing skims its underside and
+    // carries rightward speed onto the pier pad. S03-02: blue span lift pulled from the
+    // pier; release across the broken span (landing far beyond the 540 range) into the
+    // green buffer, whose rebound settles on the far deck against its tall left lip.
     const viaduct = [
-        {id:'S03-departure-beam',x:4620,y:-3510,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:240,y:0},{x:240,y:25},{x:190,y:55},{x:0,y:35}]},
-        {id:'S03-rest-ledge',x:5180,y:-3280,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:360,y:0},{x:360,y:-60},{x:400,y:-60},{x:400,y:65},{x:310,y:65},
-                {x:310,y:170},{x:275,y:170},{x:275,y:65},{x:45,y:40}]},
-        {id:'S03-lower-bridge',x:4630,y:-3245,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:310,y:0},{x:280,y:35},{x:80,y:60},{x:0,y:60}]}
-    ];
-    viaduct.push(
-        rectangle('S03-flight-beam',5160,-3690,180,30,true),
-        rectangle('S03-return-beam',4820,-4010,180,30,true),
-        rectangle('S03-upper-beam',5180,-4330,180,30,true),
-        rectangle('S03-brake-beam',5100,-4650,180,30,true),
-        rectangle('S03-exit-anchor',5180,-4900,180,30,true),
-        // Low west lip stops the landing slide but keeps the shot to the S04 press clear.
+        rectangle('S03-carriage',2190,-3150,120,30,true),
+        lowRest('S03-pier',2420,-3000,200),
+        rectangle('S03-lift',2858,-3436,120,30,true),
+        lowRest('S03-far-deck',3330,-3250,200,60,true),
+        {id:'S03-span-buffer',x:3500,y:-3520,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:30,y:0},{x:30,y:270},{x:0,y:270}]},
+        // Legacy v1 Deflector Works entrance deck until S03-03/04 are rebuilt: the v1 S03
+        // exit cropped 240 -> 200 from the right, so the v1 S04-01 start (5050.8,-4830.8) is unchanged.
         {id:'S03-exit',x:5000,y:-4820,role:'solid',grapplable:true,
-            points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:240,y:0},{x:240,y:55},{x:0,y:55}]});
-    Object.assign(sections[2], {status:'built',landmark:{id:'S03-landmark',
-        name:'interrupted elevated bridge',x:4800,y:-3420}});
-    Object.assign(encounters[8], {status:'built',x:4430,y:-3240,
-        elements:['S02-exit','S03-departure-beam'],start:{x:4429.2,y:-3190.8,from:'S02-04'},
-        target:{x:4740,y:-3480},exit:{left:4600,right:4900,top:-3500,bottom:-3280},
-        action:'Build rightward speed under the departure beam before release'});
-    Object.assign(encounters[9], {status:'built',x:4870,y:-3400,
-        elements:['S03-departure-beam','S03-rest-ledge','S03-lower-bridge'],
-        start:{from:'S03-01'},target:{x:5230,y:-3260},
-        exit:{left:5191,right:5529,top:-3292,bottom:-3280},
-        action:'Release across the broken span beyond direct acquisition range, then catch the far deck'});
-    Object.assign(connectors[8], {intent:'Planned until S03 is rebuilt for layout v2 from the S02 exit pad (2050.8,-2690.8); v1 S03 still starts on the legacy S02-exit deck'});
+            points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:200,y:0},{x:200,y:55},{x:0,y:55}]}
+    ];
+    const viaductMovers = [
+        {id:'S03-carriage-travel',element:'S03-carriage',axis:'x',min:2190,max:2310,periodMs:4000,phase:0,velocity:60},
+        {id:'S03-lift-travel',element:'S03-lift',axis:'y',min:-3436,max:-3356,periodMs:4000,phase:0,velocity:40}];
+    Object.assign(sections[2], {status:'partial', designVersion:2, landmark:{id:'S03-landmark',
+        name:'interrupted elevated bridge',x:2900,y:-3300},
+        solidExceptions:[
+            {element:'S03-pier',kind:'rest-pad',reason:'S03-01 landing / S03-02 launch rest; low right end stop catches the carriage swing'},
+            {element:'S03-far-deck',kind:'rest-pad',reason:'S03-02 landing rest across the broken span; tall left lip stops the buffer rebound'},
+            {element:'S03-exit',kind:'rest-pad',reason:'Legacy v1 Deflector Works entrance deck until S03-03/04 are rebuilt for layout v2'}],
+        // Rope-to-anchor reach from the resting launch point to the nominal acquisition point.
+        gaps:[{id:'S03-01-carriage',from:{x:2050.8,y:-2690.8},to:{x:2239.1,y:-3120}},
+            {id:'S03-02-lift',from:{x:2569.2,y:-3010.8},to:{x:2886.6,y:-3354.7}}]});
+    // Encounter nodes sit on the band edge (y -3240) as the v1 S03 nodes did; the
+    // starts below the band are the real rest poses.
+    Object.assign(encounters[8], {status:'built',x:2051,y:-3240,
+        elements:['S02-exit-pad','S03-carriage','S03-pier'],
+        start:{x:2050.8,y:-2690.8,from:'S02-04'},target:{x:2240,y:-3125},
+        exit:{left:2420,right:2580,top:-3020,bottom:-3000},
+        action:'Pull the blue departure carriage up-right from the Switchback exit pad, skim its underside and carry the speed onto the pier pad'});
+    Object.assign(encounters[9], {status:'built',x:2569,y:-3240,
+        elements:['S03-pier','S03-lift','S03-span-buffer','S03-far-deck'],
+        start:{from:'S03-01',x:2569.2,y:-3010.8},target:{x:2903,y:-3370},
+        exit:{left:3370,right:3500,top:-3270,bottom:-3250},
+        action:'Pull the blue span lift, release across the broken span beyond grapnel range into the green buffer and rebound onto the far deck'});
+    Object.assign(connectors[8], {status:'built',intent:'Physical ascent from the Switchback exit pad to the blue departure carriage'});
     connectors[9].status='built';
-    Object.assign(recoveries[2], {openingElements:['S03-lower-bridge','S02-exit'],
-        openingRejoin:'S02-04',sideRoute:'Release left from the lower broken bridge to the shaft exit'});
-    Object.assign(encounters[10], {status:'built',x:5200,y:-3650,
-        elements:['S03-flight-beam','S03-return-beam','S03-upper-beam'],
-        start:{from:'S03-02'},target:{x:5250,y:-3670},
-        exit:{left:4800,right:5400,top:-4340,bottom:-3950},
-        action:'Acquire the far beam during flight, then transfer up the interrupted bridge piers'});
-    Object.assign(encounters[11], {status:'built',x:5200,y:-4600,
-        elements:['S03-upper-beam','S03-brake-beam','S03-exit-anchor','S03-exit'],
-        start:{from:'S03-03'},target:{x:5190,y:-4630},
-        exit:{left:5051,right:5229,top:-4832,bottom:-4820},
-        action:'Brake against the opposing pier, then release into the narrow sheltered exit'});
-    connectors[10].status='built';connectors[11].status='built';
-    Object.assign(connectors[12], {authoredFrom:'S03',
-        departure:encounters[11].exit,
-        intent:'Built viaduct exit at the next band; Deflector Works destination remains planned'});
-    Object.assign(recoveries[2], {status:'built',elements:['S03-rest-ledge','S03-lower-bridge','S02-exit'],
-        localRejoin:'S02-04'});
-    Object.assign(shortcuts[0], {status:'built',elements:['S03-departure-beam','S03-rest-ledge'],
-        openingExit:'S03-02',intent:'Optional earlier high-speed launch skips the conservative swing; exposed faster approach rejoins the normal route to the same narrow exit'});
+    Object.assign(recoveries[2], {intent:'Planned until S03-03/04 are rebuilt: a lower broken bridge catches recoverable misses and reconnects to Switchback Shaft'});
+    Object.assign(shortcuts[0], {intent:'Optional faster high-risk launch from S03-01 to S03-04; planned until S03-04 is rebuilt for layout v2'});
     // Deflector Works: a flat press face and tilted chute, above open catch basins.
     // Green polygons are the machinery itself, with matching reflection colliders.
     const deflectors = [
@@ -394,7 +381,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S04-01'},target:{x:5150,y:-5430},
         exit:{left:4970.8,right:5069.2,top:-5262,bottom:-5250},
         action:'Pull toward the tilted green chute; release and redirect momentum toward the transfer ledge'});
-    Object.assign(connectors[12], {status:'built',intent:'Physical pull from Viaduct exit to flat press'});
+    // Planned until S03-04 is rebuilt for layout v2; v1 S04-01 still starts on the legacy S03-exit deck.
+    Object.assign(connectors[12], {intent:'Physical pull from Viaduct exit to flat press; planned until S03-04 is rebuilt'});
     connectors[13].status='built';
     Object.assign(recoveries[3], {openingElements:['S04-catch-basin','S04-lower-stair','S03-exit'],
         openingRejoin:'S03-04',sideRoute:'Catch basin and lower stairs reconnect physically to the Viaduct'});
@@ -460,7 +448,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             points:[{x:0,y:0},{x:220,y:0},{x:220,y:-25},{x:260,y:-25},{x:260,y:130},{x:190,y:130},{x:190,y:40},{x:0,y:40}]},
         {...rest('S06-exit',5520,-9680,260),points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:-20},{x:260,y:-20},{x:260,y:55},{x:0,y:55}]}
     );
-    const liftMovers = [...yardMovers, ...shaftMovers, {id:'S06-counterweight-travel',element:'S06-counterweight',
+    const liftMovers = [...yardMovers, ...shaftMovers, ...viaductMovers, {id:'S06-counterweight-travel',element:'S06-counterweight',
         axis:'y',min:-8480,max:-8320,periodMs:4000,phase:0,velocity:80},
         {id:'S06-upper-weight-travel',element:'S06-upper-weight',axis:'y',
             min:-9010,max:-8890,periodMs:4000,phase:0,velocity:60}];
