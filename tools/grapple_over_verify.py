@@ -139,11 +139,22 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False):
             boundaries.update(frames)
             boundaries.update(t+1 for t in frames)
         boundaries = sorted(boundaries)
+        # blind_targets='skip' (tolerance suites): a press whose target is off-screen is a blind
+        # target a player cannot aim at, so it and its release are not dispatched; the run then
+        # fails check_trace (input count mismatch) and replays identically.
+        blind = None
         for tick, next_tick in zip(boundaries, boundaries[1:]):
             for event in (e for e in manifest['inputs'] if e['tick'] == tick):
+                if blind and event['event'].endswith(('up', 'end')):
+                    blind = None
+                    continue
                 point = page.evaluate('p=>GRAPPLE_OVER_TEST.client(p)', event['world'])
                 if manifest['metadata'].get('compact_contacts') and event['event'].endswith(('down', 'start')):
-                    require(0 < point['x'] < viewport['width'] and 0 < point['y'] < viewport['height'], 'mandatory target outside viewport')
+                    inside = 0 < point['x'] < viewport['width'] and 0 < point['y'] < viewport['height']
+                    if not inside and manifest['metadata'].get('blind_targets') == 'skip':
+                        blind = event
+                        continue
+                    require(inside, 'mandatory target outside viewport')
                 if event['event'].startswith('mouse'):
                     page.mouse.move(point['x'], point['y'])
                     (page.mouse.down if event['event'] == 'mousedown' else page.mouse.up)()
@@ -272,6 +283,44 @@ def check_s01_mechanics(encounter, trace, required=True):
             require('S01-deflector' in [b['element'] for b in bounces],'S01 deflector bounce missing')
         if encounter=='S01-03':
             require('S01-jib-hook' in airborne,'S01 in-flight jib acquisition missing')
+    return observations
+
+
+S01_V3_ENCOUNTERS = {'S01-01':('S01-hoist','S01-yard-pad'), 'S01-02':('S01-lift','S01-deflector'),
+                     'S01-03':('S01-gantry-hook',None), 'S01-04':('S01-crown-hook','S01-exit-pad')}
+
+
+def check_s01_v3_mechanics(encounter, trace, required=True):
+    """Layout-v3 Foundations (TASK-547/548): every attempt runs from the base spawn through the
+    whole S01 route. The encounter's own mechanic must happen in order (anchor acquired, released,
+    then its green bounce; S01-03 swings left-to-right on the gantry hook), every S01 anchor is
+    acquired in route order, and the run never touches the S01-floor fall bouncers."""
+    observations=check_s01_mechanics('S01-01', trace, required=False)
+    events=trace['events']; rows=trace['snapshots']
+    releases=[(e['tick'],e['before']['rope'][0]['id'],e['before']['simulation']['player']) for e in events
+              if e['type']=='release' and e['before']['rope']]
+    observations['releases']=[dict(tick=t,element=el) for t,el,_ in releases]
+    observations['floor_bounce']='S01-floor' in [b['element'] for b in observations['bounces']]
+    anchor, bouncer = S01_V3_ENCOUNTERS[encounter]
+    grab=next((t for el,t in zip(observations['acquisitions'],observations['acquisition_ticks']) if el==anchor),None)
+    release=next(((t,p) for t,el,p in releases if el==anchor and grab is not None and t>=grab),None)
+    after=[b for b in observations['bounces'] if release and b['tick']>=release[0]]
+    observations['encounter']=dict(anchor=anchor,acquisition_tick=grab,release_tick=release and release[0],
+        bouncer=bouncer,bounce_tick=next((b['tick'] for b in after if b['element']==bouncer),None),
+        release_speedX=release and release[1]['speedX'],
+        press_speedX=rows[grab-1]['state']['simulation']['player']['speedX'] if grab else None)
+    if required:
+        route=[a for a,_ in S01_V3_ENCOUNTERS.values()]
+        require(observations['acquisitions'][:4]==route,'S01 v3 acquisition sequence mismatch')
+        require(release is not None,'S01 v3 '+anchor+' release missing')
+        if bouncer:
+            require(observations['encounter']['bounce_tick'] is not None,'S01 v3 '+bouncer+' bounce missing')
+        else:
+            enc=observations['encounter']
+            require(enc['press_speedX']<0<enc['release_speedX'],'S01 v3 gantry swing reversal missing')
+        if encounter in ('S01-03','S01-04'):
+            require(anchor in observations['airborne_acquisitions'],'S01 v3 in-flight acquisition missing')
+        require(not observations['floor_bounce'],'S01 v3 route fell onto S01-floor')
     return observations
 
 
@@ -465,6 +514,8 @@ def audit_suite(manifest, browser, url, out):
     section = manifest.get('section', 'S01')
     require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
+    v3 = section == 'S01' and manifest.get('designVersion') == 3
+    s01 = check_s01_v3_mechanics if v3 else check_s01_mechanics
     count = 0
     for encounter, attempts in manifest['encounters'].items():
         for device in ('desktop', 'touch'):
@@ -480,7 +531,7 @@ def audit_suite(manifest, browser, url, out):
                 compress_replay(evidence, output_writer(str(Path(out)/a['name']))[1])
             try:
                 check_trace(recorded, replayed)
-                if section == 'S01' and 'mechanic_events' in a: check_s01_mechanics(encounter, replayed)
+                if section == 'S01' and 'mechanic_events' in a: s01(encounter, replayed)
                 if section == 'S02' and 'mechanic_events' in a: check_s02_mechanics(encounter, replayed)
                 if section == 'S03' and 'mechanic_events' in a: check_s03_mechanics(encounter, replayed)
                 if section == 'S05': check_s05_mechanics(encounter, replayed)
@@ -492,7 +543,7 @@ def audit_suite(manifest, browser, url, out):
                 success = False
             require(success == a['success'], 'outcome mismatch')
             if section == 'S01' and 'mechanic_events' in a:
-                require(check_s01_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S01 mechanics mismatch')
+                require(s01(encounter, replayed, success) == a['mechanic_events'], 'S01 mechanics mismatch')
             if section == 'S02' and 'mechanic_events' in a:
                 require(check_s02_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S02 mechanics mismatch')
             if section == 'S03' and 'mechanic_events' in a:
@@ -521,6 +572,8 @@ def audit_suite(manifest, browser, url, out):
     else:
         raise ValueError('negative unexpectedly succeeded')
     result = dict(matching_traces=True, attempts=count, negative_control_failed_exit=True)
+    if v3:
+        result['mechanics_check'] = 'check_s01_v3_mechanics'
     evidence.write(output_writer(out)[1]+'/audit.json', result)
     return result
 

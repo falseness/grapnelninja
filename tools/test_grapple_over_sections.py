@@ -3654,37 +3654,33 @@ class Task506Tests(FoundationsV3CompleteChecks, unittest.TestCase):
         return [(e['element'], e['tick']) for e in mechanics if e['type']=='acquisition']
 
 
-class Task507Tests(unittest.TestCase):
-    """Layout-v2 Foundations (S01) tolerance on desktop and touch: recorded real input, replayable suite."""
-    task_id = 'TASK-507'
-    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
-    compact = Task506Tests.compact
-    test_04_source_hashes = Task465Tests.test_03_source_hashes
-    CRANE, JIB, BOOM = Task506Tests.CRANE, Task506Tests.JIB, Task506Tests.BOOM
-    # TASK-507 tuning: the gantry pad and boom hook sit 20 lower, so a low jib arc clears the
-    # pad's left corner, and the jib is pressed 6 ticks later than TASK-506 so its arc lands
-    # on the gantry pad within 180 ticks of the catch (density limit).
-    S01_03 = [(400,'mousedown',*CRANE),(432,'mouseup',*CRANE),(461,'mousedown',*JIB),(493,'mouseup',*JIB)]
-    # A 48-tick boom hold (TASK-506: 42) swings past the green hook, bouncing off it, onto the exit pad.
-    S01_04 = [(760,'mousedown',*BOOM),(808,'mouseup',*BOOM)]
-    ROUTE = Task505Tests.S01_01+Task505Tests.S01_02+S01_03
-    FALL = Task506Tests.FALL
-    FALL_ZONE = dict(id='S01-yard-drag', left=2280, right=4680, top=40, bottom=120)
-    LANDED = dict(speedY=[-.001,.001])
-    REST = Task506Tests.REST
-    BOXES = {'S01-01':dict(x=[2940,3090],y=[-131,-130],**REST), 'S01-02':dict(x=[3500,3650],y=[-361,-360],**REST),
-             'S01-03':dict(x=[3700,3900],y=[-1271,-1270],**LANDED), 'S01-04':dict(x=[4060,4220],y=[-1631,-1630],**LANDED)}
-    HUD = (0.3, 0.18)  # top-left HUD block (4 text rows) as fractions of the viewport
-    VARIANTS = [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]
+class FoundationsV3ToleranceChecks:
+    """Layout-v3 Foundations (S01) tolerance on desktop 1280x720 and touch 844x390 (TASK-549).
 
-    @classmethod
-    def encounters(cls):
-        # (id, start tick in the base-start nominal run or None for base start, global plan, ticks,
-        #  critical timing index, aim index, mechanic). Every aimed surface is a horizontal underside.
-        return [('S01-01',None,Task505Tests.S01_01,240,1,0,'blue hoist swing onto the yard pad'),
-                ('S01-02',180,Task505Tests.S01_02,260,1,0,'blue lift swing, green deflector rebound onto the loading pad'),
-                ('S01-03',390,cls.S01_03,320,3,2,'crane hook then jib hook caught in flight onto the gantry pad'),
-                ('S01-04',750,cls.S01_04,280,1,0,'boom hook swing past the hook onto the S01 exit pad')]
+    Every attempt is a base-start run (production restart at the base spawn, no placement or
+    snapshot) with recorded trusted mouse/touch input: the encounter's inputs carry the variant,
+    the other encounters keep their TASK-547/548 nominal inputs. The intended exit is the S01
+    section exit (landed on the green exit pad inside S01-exit-drag at tick 1200), and
+    check_s01_v3_mechanics requires the encounter's own mechanic, the four S01 anchors in route
+    order and no S01-floor fall. Shared by Task549Tests and by the re-specced Task507Tests.
+    """
+    V3 = FoundationsV3CompleteChecks
+    SEGMENTS = [V3.S01_01_V3, V3.S01_02_V3, V3.S01_03_V3, V3.S01_04_V3]
+    V3_TICKS = 1200
+    V3_EXIT = V3.LAND
+    # (id, mechanic, start tick, manifest exit tick) in the nominal route; S01-04 ends at the
+    # exit pad landing. Every anchor underside is horizontal, so aim variants move along x.
+    V3_ENCOUNTERS = [('S01-01','blue hoist pull from the green entry pad, release onto the green yard bouncer',0,255),
+                     ('S01-02','blue lift pull off the yard rebound, release into the green deflector rebound',255,370),
+                     ('S01-03','green gantry hook caught in flight on the up-left rebound, swing reversed to the right',370,520),
+                     ('S01-04','green crown hook caught in flight, release onto the green exit pad in S01-exit-drag',520,None)]
+    V3_VARIANTS = [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]
+    # Mistimed releases, one per encounter, that fall through a drag zone onto S01-floor:
+    # (encounter, release tick replacing the nominal one, nominal release tick, ticks).
+    MISTIMED = [('S01-01',55,70,700), ('S01-02',280,334,1100), ('S01-03',445,465,1300), ('S01-04',580,615,1250)]
+    DENSITY_CAP = 254
+    HUD = (0.3, 0.18)  # top-left HUD block (4 text rows) as fractions of the viewport
+    V3_MOVERS = ('S01-hoist','S01-lift')
 
     def make_input(self, plan, ticks, bounds, device='desktop', snapshot=None):
         from grapple_over_verify import metadata
@@ -3737,6 +3733,234 @@ class Task507Tests(unittest.TestCase):
                 rows.append(dict(tick=e['tick'], world=e['world'], client=c, in_viewport=inside, under_hud=hud))
         return rows
 
+    def variant_plan(self, index, delta=0, shift=0):
+        """Nominal S01 route with the variant on encounter `index` (release timing, aim along x)."""
+        plan = []
+        for k, segment in enumerate(self.SEGMENTS):
+            for i, (t, e, x, y) in enumerate(segment):
+                if k == index:
+                    t += delta if i == 1 else 0
+                    x += shift
+                plan.append((t, e, x, y))
+        return plan
+
+    def density_v3(self, trace, name, start, end):
+        """Longest stretch inside [start, end] without an acquisition, bounce or mover contact."""
+        marks = []
+        for e in trace['events']:
+            element = (e.get('contact') or {}).get('elementId')
+            if e['type'] == 'acquisition': element = e['after']['rope'][0]['id']
+            if e['type'] in ('acquisition','bounce') or (e['type']=='contact' and element in self.V3_MOVERS):
+                if start <= e['tick'] <= end and (not marks or marks[-1]['tick'] != e['tick']):
+                    marks.append(dict(tick=e['tick'], type=e['type'], element=element))
+        points = [start]+[m['tick'] for m in marks]+[end]
+        gaps = [b-a for a, b in zip(points, points[1:])]
+        i = gaps.index(max(gaps))
+        return dict(trace=name, window=[start, end], interactions=marks, max_gap=max(gaps),
+                    longest_gap=[points[i], points[i+1]], cap=self.DENSITY_CAP)
+
+    def test_01_tolerance_matrix(self):
+        from grapple_over_verify import hashes, check_s01_v3_mechanics
+        source = hashes()
+        suite = dict(section='S01', designVersion=3, source_hashes=source, level_sha256={k: source[k] for k in ('mountain.js','fixedlevel.js')},
+            proof_kind='base-start for every attempt: production restart at the base spawn (2160,0), no placement, no snapshot; '
+                       'variant inputs on the named encounter, TASK-547/548 nominal inputs elsewhere',
+            browser=self.browser.version, revision=self.proof['revision'],
+            viewports=dict(desktop=VIEWPORT, touch=dict(width=844, height=390)),
+            intended_exit=dict(box=self.V3_EXIT, tick=self.V3_TICKS, meaning='landed on S01-exit-pad inside S01-exit-drag (S01 section exit)'),
+            mechanics_check='tools/grapple_over_verify.py check_s01_v3_mechanics',
+            encounters={}, negative_control='negative-control.json', density='density.json', no_bounce_back='no-bounce-back.json',
+            critical_inputs={r[0]: dict(timing_index=1, aim_indices=[0,1], tangent=(1,0), mechanic=r[1],
+                                        inputs=self.SEGMENTS[k]) for k, r in enumerate(self.V3_ENCOUNTERS)})
+        failures, nominal = [], {}
+        for k, (name, mechanic, start, exit_tick) in enumerate(self.V3_ENCOUNTERS):
+            attempts = []; suite['encounters'][name] = attempts
+            for device in ('desktop','touch'):
+                for variant, delta, shift in self.V3_VARIANTS:
+                    label = f'{name}-{device}-{variant}'
+                    prefix = ('clips/' if variant=='nominal' else 'attempts/')+label
+                    m = self.make_input(self.variant_plan(k, delta, shift), self.V3_TICKS, self.V3_EXIT, device)
+                    m['metadata']['blind_targets'] = 'skip'
+                    trace, success, reason = self.run_attempt(m, prefix, variant=='nominal')
+                    dispatched = [(e['tick'], e['event']) for e in trace['events'] if e['type']=='input']
+                    blind = [i for i in m['inputs'] if (i['tick'], i['event']) not in dispatched]
+                    if blind: reason = 'blind target: off-screen press not dispatched '+json.dumps(blind[0])+' ('+reason+')'
+                    self.assertEqual(trace['metadata']['setupOnlySpawns'], [])
+                    mechanics = check_s01_v3_mechanics(name, trace, required=False)
+                    if success:
+                        try: check_s01_v3_mechanics(name, trace)
+                        except ValueError as error: success, reason = False, str(error)
+                    targets = self.targets(trace, m['metadata']['viewport'])
+                    players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+                    if variant == 'nominal':
+                        self.assertTrue(success, (label, reason))
+                        self.assertTrue(all(t['in_viewport'] and not t['under_hud'] for t in targets), (label, targets))
+                        land = next(b['tick'] for b in mechanics['bounces'] if b['element']=='S01-exit-pad')
+                        nominal[label] = self.density_v3(trace, prefix+'/trace.json', start, exit_tick or land)
+                        if exit_tick:
+                            box = {'S01-01':self.V3.S01_01_EXIT,'S01-02':self.V3.S01_02_EXIT,'S01-03':self.V3.S01_03_EXIT}[name]
+                            self.assertTrue(self.V3.inside(players[exit_tick], box), (label, players[exit_tick]))
+                    final = players[-1]
+                    attempts.append(dict(name=label, device=device, variant=variant, critical_input_index=1,
+                        aim_input_indices=[0,1], timing_delta=delta, tangent_aim_delta=shift, surface_tangent=(1,0),
+                        input=prefix+'/input.json.gz', trace=prefix+'/trace.json', success=success, reason=reason,
+                        outcome='S01 exit reached through the encounter mechanic' if success else 'intended exit missed',
+                        mechanic=mechanic, mechanic_events=mechanics, press_targets=targets, blind_inputs_not_dispatched=blind,
+                        source_hashes_sha256=state_hash(source), level_sha256=source['mountain.js'],
+                        trace_sha256=state_hash(trace), final=final))
+                    self.evidence.write('manifest.json', suite)
+                    print('ATTEMPT', label, 'PASS' if success else 'FAIL', reason, mechanics['acquisitions'],
+                          (round(final['x'],1), round(final['y'],1)), flush=True)
+                group = [a for a in attempts if a['device']==device]
+                if not group[0]['success'] or sum(a['success'] for a in group[1:]) < 2:
+                    failures.append(name+' '+device)
+        worst = max(d['max_gap'] for d in nominal.values())
+        self.evidence.write('density.json', dict(rule='no nominal-trace gap longer than the TASK-544 v3 density cap '
+            '(LAYOUT_V3_DENSITY_CAP_TICKS = 254) without an acquisition, bounce or mover contact',
+            counted=['acquisition','bounce','contact with S01-hoist/S01-lift'], cap=self.DENSITY_CAP,
+            window='each encounter from its start tick in the nominal route (0/255/370/520) to its manifest exit tick '
+                   '(255/370/520) or, for S01-04, the exit-pad landing; the settle on the exit pad is not a stretch of play',
+            traces=nominal, max_gap=worst, passed=worst <= self.DENSITY_CAP))
+        self.assertEqual(len(nominal), 8)
+        self.assertLessEqual(worst, self.DENSITY_CAP, {k: v['max_gap'] for k, v in nominal.items()})
+        self.negative_control()
+        self.assertEqual(failures, [])
+        print('PASS S01 v3 four encounters: both viewports nominal + >=2/4 variants;',
+              {n: {d: sum(a['success'] for a in suite['encounters'][n] if a['device']==d and a['variant']!='nominal') for d in ('desktop','touch')}
+               for n in suite['encounters']}, '; density max gap', worst, '<=', self.DENSITY_CAP, '; omitted-crown negative control fails the exit')
+
+    def negative_control(self):
+        from grapple_over_verify import hashes, check_s01_v3_mechanics
+        # Named omission: the S01-04 crown-hook press/release left out; same base start, physics
+        # and S01-01..03 inputs as every nominal attempt.
+        plan = self.variant_plan(-1)[:6]
+        m = self.make_input(plan, self.V3_TICKS, self.V3_EXIT)
+        trace, success, reason = self.run_attempt(m, 'clips/negative', True)
+        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+        step = max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a, b in zip(players, players[1:]))
+        mechanics = check_s01_v3_mechanics('S01-04', trace, required=False)
+        floor = next(b['tick'] for b in mechanics['bounces'] if b['element']=='S01-floor')
+        self.evidence.write('negative-control.json', dict(name='omitted crown hook: S01-04 S01-crown-hook press/release left out',
+            input='clips/negative/input.json.gz', trace='clips/negative/trace.json', failed_intended_exit=not success,
+            reason=reason, intended_exit=self.V3_EXIT, unchanged_physics=True, source_hashes=hashes(),
+            proof_kind='base-start, real mouse input, same S01-01..03 inputs as the nominal attempts', inputs=plan,
+            mechanic_events=mechanics, max_tick_displacement=step, exit_pad_contact='S01-exit-pad' in [b['element'] for b in mechanics['bounces']],
+            floor_bounce_tick=floor, final_player=players[-1],
+            scope='Without the crown catch the gantry flight drops past the exit pad through S01-exit-drag and S01-yard-drag onto S01-floor.'))
+        self.assertFalse(success); self.assertIn('expected exit mismatch', reason)
+        self.assertNotIn('S01-crown-hook', mechanics['acquisitions'])
+        self.assertNotIn('S01-exit-pad', [b['element'] for b in mechanics['bounces']])
+        self.assertLess(step, 60)
+
+    def test_02_mistimed_release_no_bounce_back(self):
+        from grapple_over_verify import check_s01_v3_mechanics
+        V3 = self.V3
+        zones = dict(yard=V3.YARD_DRAG, exit=V3.EXIT_DRAG)
+        rows = {}
+        for k, (name, release, nominal, ticks) in enumerate(self.MISTIMED):
+            segment = self.SEGMENTS[k]
+            self.assertEqual(segment[1][0], nominal)
+            plan = [p for seg in self.SEGMENTS[:k] for p in seg]+[segment[0], (release,)+segment[1][1:]]
+            for device in ('desktop','touch'):
+                m = self.make_input(plan, ticks, dict(y=[-1e9, 1e9]), device)
+                prefix = f'clips/fall-{name}-{device}'
+                trace, success, reason = self.run_attempt(m, prefix, True)
+                self.assertTrue(success, reason)
+                self.assertEqual(trace['metadata']['setupOnlySpawns'], [])
+                players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+                mech = check_s01_v3_mechanics(name, trace, required=False)
+                anchor = mech['encounter']['anchor']
+                rel = next(r for r in mech['releases'] if r['element']==anchor)
+                self.assertEqual(rel['tick'], release)
+                r_player = players[release]
+                after = [b for b in mech['bounces'] if b['tick'] > release]
+                floor = [e['tick'] for e in trace['events'] if e['type']=='bounce' and e['contact']['elementId']=='S01-floor']
+                self.assertTrue(floor, name)
+                # The first surface reached after the mistimed release is the floor bouncer.
+                self.assertEqual(after[0]['element'], 'S01-floor', (name, after[:3]))
+                land = floor[0]
+                crossed = {z: [t for t in range(release, land+1) if V3.in_box(players[t], b)] for z, b in zones.items()}
+                self.assertTrue(crossed['yard'], name)
+                contact = next(e for e in trace['events'] if e['type']=='bounce' and e['tick']==land)
+                rest_y = contact['after']['simulation']['player']['y']
+                apex_tick = min(range(release, land), key=lambda t: players[t]['y'])
+                second = next((t for t in floor if t > land+1), ticks)
+                peak_tick = min(range(land+1, second), key=lambda t: players[t]['y'])
+                release_height = rest_y - r_player['y']
+                peak_height = rest_y - players[peak_tick]['y']
+                fall_height = rest_y - players[apex_tick]['y']
+                self.assertLessEqual(peak_height, .5*release_height, name)
+                self.assertLessEqual(peak_height, .5*fall_height, name)
+                targets = self.targets(trace, m['metadata']['viewport'])
+                self.assertTrue(all(t['in_viewport'] and not t['under_hud'] for t in targets), targets)
+                step = max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a, b in zip(players, players[1:]))
+                self.assertLess(step, 60)
+                row = dict(encounter=name, device=device, viewport=m['metadata']['viewport'], anchor=anchor,
+                    mistiming=f'{anchor} released at tick {release} instead of {nominal}',
+                    input=prefix+'/input.json.gz', trace=prefix+'/trace.json', filmstrip=prefix+'/filmstrip.jpg',
+                    release=dict(tick=release, player=r_player), floor_rest_y=rest_y,
+                    release_height=release_height, release_height_definition='S01-floor bounce y minus player y at the release tick',
+                    apex=dict(tick=apex_tick, y=players[apex_tick]['y']), fall_height_from_apex=fall_height,
+                    drag_zones_crossed=[dict(id={'yard':'S01-yard-drag','exit':'S01-exit-drag'}[z], box=zones[z],
+                        ticks=[ts[0], ts[-1]], entry_player=players[ts[0]]) for z, ts in crossed.items() if ts],
+                    first_bounce=dict(element='S01-floor', tick=land, before=contact['before']['simulation']['player'],
+                        after=contact['after']['simulation']['player']),
+                    first_bounce_peak=dict(tick=peak_tick, y=players[peak_tick]['y'], height=peak_height,
+                        fraction_of_release_height=peak_height/release_height, fraction_of_apex_fall=peak_height/fall_height),
+                    at_most_half_of_release_height=True, bounces_after_release=after[:6],
+                    max_tick_displacement=step, press_targets=targets, relocation=False)
+                rows.setdefault(name, {})[device] = row
+                print('PASS fall', name, device, ': release tick', release, 'y', round(r_player['y'],1), '; drag zones',
+                      [d['id'] for d in row['drag_zones_crossed']], '; floor bounce tick', land, '; first peak',
+                      round(peak_height,1), '=', round(peak_height/release_height,3), 'of release height', round(release_height,1))
+        self.evidence.write('no-bounce-back.json', dict(self.proof, rule='a mistimed release passes through the drag zone below '
+            'it and its first bounce peaks at most 50% of the release height (i.e. at least 50% lower)',
+            proof_kind='base-start, real mouse (desktop 1280x720) and touch (844x390) input; physical fall, no relocation',
+            encounters=rows, passed=True))
+
+
+class Task507Tests(FoundationsV3ToleranceChecks, unittest.TestCase):
+    """Foundations (S01) tolerance, re-specced by TASK-549 from layout v2 to layout v3.
+
+    Mapping (v2 case -> v3 case, shared with Task549Tests via FoundationsV3ToleranceChecks):
+    test_01_tolerance_matrix: v2 S01-01..04 from restored rest states, 180-tick density, omitted-jib
+    negative control -> v3 S01-01..04 base-start variants judged at the S01 exit-pad landing, 254-tick
+    density cap, omitted-crown negative control. test_02_full_route: the v3 full route is the nominal
+    S01-04 attempt of test_01 (and Task548 test_04). test_03_drag_zone_fall_clips -> test_02_mistimed_release_no_bounce_back
+    (one mistimed release per encounter through a drag zone onto S01-floor, desktop and touch).
+    test_04_source_hashes is unchanged. The v2 constants and helpers stay for the later v2 suites
+    (Task508/510/513 reuse make_input, run_attempt, filmstrip, targets, ROUTE and S01_04).
+    """
+    task_id = 'TASK-507'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    compact = Task506Tests.compact
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+    CRANE, JIB, BOOM = Task506Tests.CRANE, Task506Tests.JIB, Task506Tests.BOOM
+    # TASK-507 tuning: the gantry pad and boom hook sit 20 lower, so a low jib arc clears the
+    # pad's left corner, and the jib is pressed 6 ticks later than TASK-506 so its arc lands
+    # on the gantry pad within 180 ticks of the catch (density limit).
+    S01_03 = [(400,'mousedown',*CRANE),(432,'mouseup',*CRANE),(461,'mousedown',*JIB),(493,'mouseup',*JIB)]
+    # A 48-tick boom hold (TASK-506: 42) swings past the green hook, bouncing off it, onto the exit pad.
+    S01_04 = [(760,'mousedown',*BOOM),(808,'mouseup',*BOOM)]
+    ROUTE = Task505Tests.S01_01+Task505Tests.S01_02+S01_03
+    FALL = Task506Tests.FALL
+    FALL_ZONE = dict(id='S01-yard-drag', left=2280, right=4680, top=40, bottom=120)
+    LANDED = dict(speedY=[-.001,.001])
+    REST = Task506Tests.REST
+    BOXES = {'S01-01':dict(x=[2940,3090],y=[-131,-130],**REST), 'S01-02':dict(x=[3500,3650],y=[-361,-360],**REST),
+             'S01-03':dict(x=[3700,3900],y=[-1271,-1270],**LANDED), 'S01-04':dict(x=[4060,4220],y=[-1631,-1630],**LANDED)}
+    HUD = (0.3, 0.18)  # top-left HUD block (4 text rows) as fractions of the viewport
+    VARIANTS = [('nominal',0,0),('early',-3,0),('late',3,0),('aim-left',0,-10.8),('aim-right',0,10.8)]
+
+    @classmethod
+    def encounters(cls):
+        # (id, start tick in the base-start nominal run or None for base start, global plan, ticks,
+        #  critical timing index, aim index, mechanic). Every aimed surface is a horizontal underside.
+        return [('S01-01',None,Task505Tests.S01_01,240,1,0,'blue hoist swing onto the yard pad'),
+                ('S01-02',180,Task505Tests.S01_02,260,1,0,'blue lift swing, green deflector rebound onto the loading pad'),
+                ('S01-03',390,cls.S01_03,320,3,2,'crane hook then jib hook caught in flight onto the gantry pad'),
+                ('S01-04',750,cls.S01_04,280,1,0,'boom hook swing past the hook onto the S01 exit pad')]
+
     def density(self, trace, bounds, name):
         """Gaps between acquisitions, bounces and mover contacts, from tick 0 to the first exit tick."""
         movers = ('S01-hoist','S01-lift')
@@ -3753,142 +3977,6 @@ class Task507Tests(unittest.TestCase):
         return dict(trace=name, exit_tick=exit_tick, interactions=[dict(tick=t, type=k, element=el) for t, k, el in ticks if t <= exit_tick],
                     max_gap=max(gaps), longest_gap=[points[gaps.index(max(gaps))], points[gaps.index(max(gaps))+1]], limit=180)
 
-    def test_01_tolerance_matrix(self):
-        from grapple_over_verify import hashes, execute, check_trace, check_s01_mechanics
-        # Encounter starts are states from one base-start real-input nominal run (no spawns).
-        setup = self.make_input(self.ROUTE, 751, dict(x=[3700,3900],y=[-1271,-1270],**self.REST))
-        start_trace = execute(setup, self.browser, self.url, str(self.evidence.path('starts')))
-        check_trace(setup, start_trace)
-        self.assertEqual(start_trace['metadata']['setupOnlySpawns'], [])
-        self.evidence.write('starts/trace.json', self.compact(start_trace))
-        snapshots = {t: start_trace['snapshots'][t]['state']['simulation'] for t in (180, 390, 750)}
-        self.evidence.write('starts/snapshots.json', dict(source='starts/trace.json (base-start nominal, real mouse input)',
-            ticks={t: dict(sha256=start_trace['snapshots'][t]['sha256'], player=s['player']) for t, s in snapshots.items()}))
-        suite = dict(section='S01', designVersion=2, source_hashes=hashes(), level_sha256=dict(
-            **{'mountain.js': hashes()['mountain.js'], 'fixedlevel.js': hashes()['fixedlevel.js']}),
-            proof_kind='S01-01 base start; S01-02..04 restored from starts/trace.json states (initial_snapshot)',
-            browser=self.browser.version, revision=self.proof['revision'],
-            viewports=dict(desktop=VIEWPORT, touch=dict(width=844, height=390)),
-            encounters={}, negative_control='negative-control.json', density='density.json',
-            starts={r[0]: r[1] for r in self.encounters()},
-            critical_inputs={r[0]: dict(timing_index=r[4], aim_index=r[5], tangent=(1,0), mechanic=r[6]) for r in self.encounters()})
-        failures, nominal = [], {}
-        for name, start, plan, ticks, critical, aim, mechanic in self.encounters():
-            attempts = []; suite['encounters'][name] = attempts
-            offset = start or 0
-            for device in ('desktop','touch'):
-                for variant, delta, shift in self.VARIANTS:
-                    local = [(t-offset+(delta if i==critical else 0), e, x+(shift if i in (aim, aim+1) else 0), y)
-                             for i, (t, e, x, y) in enumerate(plan)]
-                    label = f'{name}-{device}-{variant}'
-                    prefix = ('clips/' if variant=='nominal' else 'attempts/')+label
-                    m = self.make_input(local, ticks, self.BOXES[name], device, snapshots.get(start))
-                    trace, success, reason = self.run_attempt(m, prefix, variant=='nominal')
-                    mechanics = check_s01_mechanics(name, trace, required=False)
-                    if success:
-                        try: check_s01_mechanics(name, trace)
-                        except ValueError as error: success, reason = False, str(error)
-                    targets = self.targets(trace, m['metadata']['viewport'])
-                    if variant == 'nominal':
-                        self.assertTrue(all(t['in_viewport'] and not t['under_hud'] for t in targets), (label, targets))
-                        nominal[label] = self.density(trace, self.BOXES[name], prefix+'/trace.json')
-                    attempts.append(dict(name=label, device=device, variant=variant, critical_input_index=critical,
-                        aim_input_index=aim, timing_delta=delta, tangent_aim_delta=shift, surface_tangent=(1,0),
-                        input=prefix+'/input.json.gz', trace=prefix+'/trace.json', success=success, reason=reason,
-                        outcome='exit reached' if success else 'intended exit missed', mechanic_events=mechanics,
-                        press_targets=targets, source_hashes_sha256=state_hash(hashes()), level_sha256=hashes()['mountain.js'],
-                        final=trace['snapshots'][-1]['state']['simulation']['player']))
-                    self.evidence.write('manifest.json', suite)
-                    print('ATTEMPT', label, 'PASS' if success else 'FAIL', reason, flush=True)
-                group = [a for a in attempts if a['device']==device]
-                if not group[0]['success'] or sum(a['success'] for a in group[1:]) < 2:
-                    failures.append(name+' '+device)
-        worst = max(d['max_gap'] for d in nominal.values())
-        self.evidence.write('density.json', dict(rule='no nominal-trace gap > 180 ticks without an acquisition, bounce or mover contact',
-            counted=['acquisition','bounce','contact with S01-hoist/S01-lift'],
-            window='each nominal encounter trace from tick 0 to the first tick inside its expected exit',
-            traces=nominal, max_gap=worst, passed=worst <= 180,
-            full_route='test_02 writes the base-start S01-01..04 route segmented per encounter into density.json'))
-        self.assertLessEqual(worst, 180, {k: v['max_gap'] for k, v in nominal.items()})
-        # Named omission: S01-03 without the jib-hook press/release, same start and physics.
-        name, start, plan, ticks, *_ = self.encounters()[2]
-        m = self.make_input([(t-start, e, x, y) for t, e, x, y in plan[:2]], 600, self.BOXES[name], snapshot=snapshots[start])
-        trace, success, reason = self.run_attempt(m, 'clips/negative', True)
-        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
-        step = max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a, b in zip(players, players[1:]))
-        mechanics = check_s01_mechanics(name, trace, required=False)
-        rest = next(t for t, p in enumerate(players) if abs(p['y']-(120-p['radius'])) < 1e-3
-                    and abs(p['speedX']) < 1e-6 and abs(p['speedY']) < 1e-6)
-        self.evidence.write('negative-control.json', dict(name='omitted jib: S01-03 S01-jib-hook press/release left out',
-            input='clips/negative/input.json.gz', trace='clips/negative/trace.json', failed_intended_exit=not success,
-            reason=reason, intended_exit=self.BOXES[name], unchanged_physics=True, source_hashes=hashes(),
-            start='starts/trace.json tick 390 (same as the S01-03 attempts)', mechanic_events=mechanics,
-            max_tick_displacement=step, final_player=players[-1], base_rest=dict(tick=rest, player=players[rest]),
-            scope='Same start, physics and crane input; without the jib catch the player falls physically through the yard drag zone and rests on the base.'))
-        self.assertTrue(all(abs(p['x']-players[rest]['x']) < 1e-3 for p in players[rest:]))
-        self.assertFalse(success); self.assertIn('expected exit mismatch', reason)
-        self.assertNotIn('S01-jib-hook', mechanics['acquisitions'])
-        self.assertLess(step, 60)
-        self.assertEqual(failures, [])
-        print('PASS S01 v2 four encounters: both viewports nominal + >=2/4 variants; density max gap', worst,
-              '; omitted-jib negative control fails the exit')
-
-    def test_02_full_route(self):
-        from grapple_over_verify import check_s01_mechanics
-        m = self.make_input(self.ROUTE+self.S01_04, 1120, self.BOXES['S01-04'])
-        trace, success, reason = self.run_attempt(m, 'clips/S01-full-desktop', True)
-        self.assertTrue(success, reason)
-        self.assertEqual(trace['metadata']['setupOnlySpawns'], [])
-        mechanics = check_s01_mechanics('S01-01', trace, required=False)
-        self.assertEqual(mechanics['acquisitions'], ['S01-hoist','S01-lift','S01-crane-hook','S01-jib-hook','S01-boom-hook'])
-        self.assertIn('S01-deflector', [b['element'] for b in mechanics['bounces']])
-        self.assertIn('S01-jib-hook', mechanics['airborne_acquisitions'])
-        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
-        self.assertTrue(all(p['y'] < 100 for p in players))
-        # Per encounter: from its first press (tick 0 for S01-01) to the first tick in its exit.
-        # The rest between an exit and the next press is player-chosen idle time on a pad.
-        segments, starts = {}, {'S01-01':0,'S01-02':190,'S01-03':400,'S01-04':760}
-        for name, start in starts.items():
-            window = dict(trace, snapshots=trace['snapshots'][start:], events=[dict(e, tick=e['tick']-start)
-                          for e in trace['events'] if e['tick'] >= start])
-            d = self.density(dict(window, snapshots=[dict(r, tick=r['tick']-start) for r in window['snapshots']]),
-                             self.BOXES[name], 'clips/S01-full-desktop/trace.json')
-            d.update(start_tick=start, exit_tick_absolute=start+d['exit_tick'])
-            segments[name] = d
-        idle = [dict(after=a, rest_from=segments[a]['exit_tick_absolute'], next_press=starts[b],
-                     player=players[starts[b]]) for a, b in zip(list(starts)[:-1], list(starts)[1:])]
-        for row in idle:
-            p = row['player']
-            self.assertTrue(abs(p['speedX']) < .001 and abs(p['speedY']) < .001, row)
-        density = json.loads(self.evidence.path('density.json').read_text()) if self.evidence.path('density.json').exists() else {}
-        density['full_route'] = dict(trace='clips/S01-full-desktop/trace.json', input='clips/S01-full-desktop/input.json.gz',
-            proof_kind='base-start: production restart at the base spawn; real mouse input', segments=segments,
-            idle_rests=idle, max_gap=max(d['max_gap'] for d in segments.values()))
-        self.evidence.write('density.json', density)
-        self.assertLessEqual(density['full_route']['max_gap'], 180, {k: v['max_gap'] for k, v in segments.items()})
-        print('PASS full S01 route: base spawn to S01-exit; acquisitions', mechanics['acquisitions'],
-              '; per-encounter max gaps', {k: v['max_gap'] for k, v in segments.items()})
-
-    def test_03_drag_zone_fall_clips(self):
-        from grapple_over_verify import check_s01_mechanics
-        for device in ('desktop','touch'):
-            m = self.make_input(self.FALL, 600, self.BOXES['S01-01'], device)
-            prefix = 'clips/fall-'+device
-            trace, success, reason = self.run_attempt(m, prefix, True)
-            self.assertTrue(success, reason)
-            players = [r['state']['simulation']['player'] for r in trace['snapshots']]
-            step = max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a, b in zip(players, players[1:]))
-            in_zone = [t for t, p in enumerate(players) if 2280 <= p['x'] <= 4680 and 40-p['radius'] <= p['y'] <= 120]
-            base = next(t for t, p in enumerate(players) if abs(p['y']-(120-p['radius'])) < 1e-3)
-            rest = next(t for t in range(base, 300) if abs(players[t]['speedX']) < 1e-6 and abs(players[t]['speedY']) < 1e-6)
-            targets = self.targets(trace, m['metadata']['viewport'])
-            self.assertTrue(in_zone and all(t['in_viewport'] and not t['under_hud'] for t in targets))
-            self.assertLess(step, 60)
-            self.evidence.write(prefix+'/result.json', dict(passed=True, drag_zone_ticks=[in_zone[0], in_zone[-1]],
-                base_contact_tick=base, base_rest=dict(tick=rest, player=players[rest]), drag_zone=self.FALL_ZONE, max_tick_displacement=step, press_targets=targets,
-                mechanic_events=check_s01_mechanics('S01-01', trace, required=False), final=players[-1]))
-            print('PASS fall '+device+': drag zone ticks', in_zone[0], '-', in_zone[-1], '; base contact tick', base, '; base rest tick', rest,
-                  '; hoist rejoin to the yard pad; no relocation')
 
 
 class Task508Tests(unittest.TestCase):
@@ -6263,3 +6351,11 @@ class Task548Tests(FoundationsV3CompleteChecks, unittest.TestCase):
     setUpClass = classmethod(Task465Tests.setUpClass.__func__)
     open = Task465Tests.open
     test_06_source_hashes = Task465Tests.test_03_source_hashes
+
+
+class Task549Tests(FoundationsV3ToleranceChecks, unittest.TestCase):
+    """Layout-v3 Foundations (S01) mechanics and tolerance: 40 real-input attempts, drag-zone falls."""
+    task_id = 'TASK-549'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    compact = Task506Tests.compact
+    test_03_source_hashes = Task465Tests.test_03_source_hashes
