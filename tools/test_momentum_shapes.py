@@ -40,8 +40,10 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_SHAPES_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-035'))
-SPEED = 5
-MAX_MOVES = 120
+# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (2.78 at
+# h 1080 since TASK-047; 5 was clamped to it); move budget doubled with it
+SPEED = 2.5
+MAX_MOVES = 240
 SHAPES = ['triangle', 'tall', 'wide', 'moving']
 
 SETUP = '''() => {

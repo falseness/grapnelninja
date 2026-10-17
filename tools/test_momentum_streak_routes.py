@@ -32,9 +32,10 @@ from test_momentum_patterns_h import SCRIPT
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_STREAK_EVIDENCE_DIR', ROOT / 'artifacts/TASK-038'))
-# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (5.56 at h 1080)
-DRIVE_SPEED = 5
-MAX_MOVES = 4000
+# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (2.78 at h 1080
+# since TASK-047; was 5 under the 5.56 cap); move budget doubled with it
+DRIVE_SPEED = 2.5
+MAX_MOVES = 8000
 ROUTE_FRAMES = ['bad-frame5', 'bad-frame14']
 # World units between the two footprints (a spawn gap is >= 0.6 view widths)
 GAP = 600

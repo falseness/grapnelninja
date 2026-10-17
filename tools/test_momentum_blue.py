@@ -10,7 +10,7 @@ hp goes 5 -> 4 and the green streak 3 -> 0. A second pass from the same spot
 during the fade changes nothing. The floor then drops the faded element.
 
 Writes to MOMENTUM_BLUE_EVIDENCE_DIR (default artifacts/TASK-010):
-blue-trace.json (compact [frame, vx, vy, hp], 5 moves before to 5 after the
+blue-trace.json (compact [frame, vx, vy, hp], AFTER moves before to AFTER after the
 contact move, frame 0 = contact) and blue-fade.json ({fadeMs, removedMs}).
 
 Requires Playwright Chromium. No remote requests.
@@ -25,9 +25,14 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_BLUE_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-010'))
-SPEED = (3, 4)
-MAX_MOVES = 120
-AFTER = 5
+# Diagonal flight in world units per physics cycle, |v| 2.5 under
+# GAMEPLAY.momentumMaxSpeed (2.78 at h 1080 since TASK-047; (3, 4) = 5 was
+# above it and Ninja.move clamped it)
+SPEED = (1.5, 2)
+MAX_MOVES = 240
+# moves recorded after the contact (5 at |v| 5; doubled with the halved speed
+# so the slowed ninja still gets past the box top)
+AFTER = 10
 
 SETUP = '''() => {
     startGame('momentum')
@@ -133,7 +138,7 @@ class MomentumBlueTests(unittest.TestCase):
         print('first pass: contact at move', contact, 'hp', first['hp'], 'streak', first['streak'],
               'alpha', round(first['alpha'], 4))
         self.assertIsNotNone(contact)
-        self.assertGreater(contact, AFTER, 'need 5 moves before the contact')
+        self.assertGreater(contact, AFTER, 'need AFTER moves before the contact')
         rows = first['rows']
         trace = [[r[0] - contact, r[1], r[2], r[3]] for r in rows if contact - AFTER <= r[0] <= contact + AFTER]
         self.assertEqual(len(trace), 2 * AFTER + 1)

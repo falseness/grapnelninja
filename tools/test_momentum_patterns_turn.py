@@ -61,9 +61,10 @@ EPS = 1e-6
 # Port catalog rounding: wall-flush bad pieces end up to ~0.05 past the band
 TOL = 0.1
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
-# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed
-DRIVE_SPEED = 5
-MAX_MOVES = 6000
+# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (2.78 at h 1080
+# since TASK-047; was 5 under the 5.56 cap); move budget doubled with it
+DRIVE_SPEED = 2.5
+MAX_MOVES = 12000
 # Route: how far it starts before / ends past the frame, and runs along the shaft
 LEAD = 600
 SHAFT_RUN = 2500

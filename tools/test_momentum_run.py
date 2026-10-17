@@ -65,8 +65,10 @@ EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_RUN_EVIDENCE_DIR', ROOT / 'artifact
 SEED = int(os.environ.get('MOMENTUM_RUN_SEED', 5))
 SECONDS = 60
 FPS = 60
-# Course distance per frame in heights (65 world units at h 1080, under
-# GAMEPLAY.momentumMaxSpeed * cyclesPerTick = 89)
+# Course distance per frame in heights (65 world units at h 1080). The ninja
+# is teleported along the centre line, so the speed cap does not apply; this
+# is above GAMEPLAY.momentumMaxSpeed * cyclesPerTick (22 at h 1080 since
+# TASK-047, 89 originally) and kept for the seed-tuned spawn coverage (TASK-027)
 DRIVE_SPEED = 0.06
 LIVE_BOUND = 150
 
