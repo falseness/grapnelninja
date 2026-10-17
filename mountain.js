@@ -92,7 +92,8 @@ const MOUNTAIN_BRIEF = [
 ]
 
 const GRAPPLE_OVER_MOUNTAIN = (() => {
-    const R = 540, bandHeight = 3 * R
+    // U is the frozen v1/v2 layout unit (the old 540 range); R is the grapnel range.
+    const U = 540, R = 1080, bandHeight = 3 * U
     const sections = [], encounters = [], connectors = [], recoveries = [], shortcuts = []
     for (let i = 0; i < 8; i++) {
         const id = 'S' + String(i + 1).padStart(2, '0'), brief = MOUNTAIN_BRIEF[i]
@@ -647,10 +648,10 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         rejoin:'S08-03',sideRoute:'Short gantry pulls drop back onto the array deck west lip; longer overhang/gantry misses fall via the green ramp onto the spill deck, whose hook returns to the Crown. No hazards at the ending.'});
     return {schemaVersion:1, geometryVersion:1,
         // Grapnel range: base until the player enters upgradeBand, upgraded after.
-        range:{base:R, upgraded:810, upgradeBand:'S05'}, ascent:24*R, horizontalEnvelope:12*R,
+        range:{base:R, upgraded:1620, upgradeBand:'S05'}, ascent:24*U, horizontalEnvelope:12*U,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
-        summit:{id:'summit',x:3780,y:-24*R},
-        bounds:{left:0,right:6480,top:-24*R-540,bottom:120},
+        summit:{id:'summit',x:3780,y:-24*U},
+        bounds:{left:0,right:6480,top:-24*U-540,bottom:120},
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
@@ -664,7 +665,10 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
 // Layout-v2 design rules. A section opts in with designVersion:2; legacy (v1)
 // sections are reported but never fail. Gap targets are the TASK-503 frozen
 // 85-90% band of measured reach for the section's active grapnel range.
+// v2 sections were laid out for the 540/810 range, so their gaps keep that
+// design range after the TASK-543 range doubling.
 const LAYOUT_V2_GAP_TARGETS = {540:[459,486], 810:[689,729]}
+const LAYOUT_V2_RANGE = {base:540, upgraded:810}
 const LAYOUT_V2_SOLID_EXCEPTIONS = ['rest-pad','lip','side-wall']
 const LAYOUT_V2_REST_PAD_MAX_WIDTH = 200
 
@@ -721,7 +725,7 @@ function layoutV2Report(m)
         rule('direction', 'LayoutV2Direction', {entryX, exitX, required, actual},
             actual === required ? [] : ['direction'])
         // Mandatory gaps sit in the frozen band for the active range.
-        const range = s.order >= upgradeOrder ? m.range.upgraded : m.range.base
+        const range = s.order >= upgradeOrder ? LAYOUT_V2_RANGE.upgraded : LAYOUT_V2_RANGE.base
         const target = LAYOUT_V2_GAP_TARGETS[range]
         const gaps = (s.gaps||[]).filter(g=>g.mandatory !== false).map(g=>{
             const distance = Math.hypot(g.to.x-g.from.x, g.to.y-g.from.y)
@@ -765,7 +769,7 @@ function validateMountainManifest(m)
     if (m.schemaVersion !== 1 || m.geometryVersion !== m.geometry.version) fail('UnsupportedVersion','mountain')
     const range = m.range
     if (!range || typeof range !== 'object' || Object.keys(range).sort().join() !== 'base,upgradeBand,upgraded' ||
-        range.base !== 540 || range.upgraded !== 810 || range.upgradeBand !== 'S05')
+        range.base !== 1080 || range.upgraded !== 1620 || range.upgradeBand !== 'S05')
         fail('InvalidRange','mountain.range')
     if (m.ascent !== 12960 || m.horizontalEnvelope !== 6480 ||
         m.bounds.right-m.bounds.left !== 6480 || m.base.y-m.summit.y !== 12960 ||

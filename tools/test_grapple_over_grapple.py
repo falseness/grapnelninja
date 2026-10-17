@@ -1148,3 +1148,195 @@ class Task536Tests(unittest.TestCase):
         self.evidence.path('changed-behaviour.md').write_text('\n'.join(lines) + '\n')
         print(f'PASS encounter audit: {len(scanned)} proofs scanned, {len(with_inputs)} with inputs, '
               f'{len(affected)} hold through a miss across {len({s["task"] for s in affected})} tasks')
+
+
+# TASK-543 browser helpers. placeInS04Column() is a labeled test placement in
+# S04; the S05 entry itself is physical (physics() carries the ninja upward).
+TASK543_HELPERS = '''() => {
+    window.bandOf=id=>floors[0].level.sections.find(s=>s.id===id).band;
+    window.placeAt=(x,y)=>{ninja.x=x;ninja.y=y;ninja.speedX=ninja.speedY=0;
+        grapnel.endShot();pressHeld=stalePress=gameplayPressOwned=false;
+        if(ninja.track)ninja.track.pos.length=0;screen.trackGrappleOver(true)};
+    // Radius argument actually passed to ctx.arc by the range circle.
+    window.drawnRadius=()=>{const radii=[],arc=ctx.arc,circle=drawAcquisitionCircle;
+        window.drawAcquisitionCircle=()=>{ctx.arc=function(x,y,radius,...rest){radii.push(radius);return arc.call(this,x,y,radius,...rest)};
+            try{circle()}finally{ctx.arc=arc}};
+        try{draw()}finally{window.drawAcquisitionCircle=circle}
+        if(radii.length!==1)throw Error('range circle arcs: '+radii.length);return radii[0]};
+    // TEST-ONLY PLACEMENT: a point 200 below the S05 band bottom whose column up
+    // to 200 inside S05 is clear, so an upward launch enters S05 physically.
+    window.placeInS04Column=()=>{const b=bandOf('S05'),y=b.bottom+200,mid=(b.left+b.right)/2;
+        for(let d=0;d<mid-b.left-100;d+=40) for(const x of [mid-d,mid+d])
+            if(![-60,0,60].some(dx=>grapnel.nearestCrossing({x:x+dx,y:y+60},[x+dx,b.bottom-200])))
+                {placeAt(x,y);return {x,y,label:'TEST-ONLY placement in S04'}}
+        throw Error('no clear S04 column')};
+    // Screen box (CSS px) of the drawn range circle, from the same transform draw() uses.
+    window.circleBox=()=>{const r=grappleOverAcquisitionRadius(),k=scale[version];
+        const pts=[[r,0],[-r,0],[0,r],[0,-r]].map(([dx,dy])=>canvasCoordsToViewportCoords(
+            {x:(ninja.x+dx+screen.x)*k,y:(ninja.y+dy+screen.y)*k}));
+        const c=getCanvasCssRect(),box={left:Math.min(...pts.map(p=>p.x)),right:Math.max(...pts.map(p=>p.x)),
+            top:Math.min(...pts.map(p=>p.y)),bottom:Math.max(...pts.map(p=>p.y))};
+        const view={left:0,top:0,right:innerWidth,bottom:innerHeight};
+        const canvas={left:c.left,top:c.top,right:c.left+c.width,bottom:c.top+c.height};
+        const inside=o=>box.left>=o.left&&box.top>=o.top&&box.right<=o.right&&box.bottom<=o.bottom;
+        return {radius:r,cameraScale:k,box,viewport:view,canvas,insideViewport:inside(view),insideCanvas:inside(canvas),
+            margins:{left:box.left-canvas.left,top:box.top-canvas.top,right:canvas.right-box.right,bottom:canvas.bottom-box.bottom}}};
+}'''
+
+
+class Task543Tests(unittest.TestCase):
+    """Doubled grapnel range (1080/1620) and the 0.375 Grapple Over camera that fits it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-543')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        hashes = source_hashes()
+        name = 'tools/test_grapple_over_grapple.py'
+        hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.proof = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            source_hashes=hashes, browser=cls.browser.version, device_scale_factor=1)
+        cls.evidence.log('CONFIG ' + json.dumps(dict(cls.proof, viewports=dict(
+            desktop=dict(width=1280, height=720, touch=False, lang='en'),
+            touch=dict(width=844, height=390, touch=True, lang='ru'))), sort_keys=True))
+        cls.fit = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.fit:
+            cls.evidence.write('fit.json', dict(cls.proof, **cls.fit))
+
+    def open(self, width, height, touch, lang='en'):
+        context = self.browser.new_context(viewport=dict(width=width, height=height),
+                                           device_scale_factor=1, has_touch=touch)
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(self.url)
+        wait_for_boot(page)
+        page.wait_for_function('runInProgress && !menu.gamePaused')
+        page.evaluate("lang=>{setLanguage(lang);cancelAnimationFrame(game);window.requestAnimationFrame=()=>0}", lang)
+        self.assertEqual(page.evaluate('version'), 'grapple_over')
+        page.evaluate(TASK543_HELPERS)
+        return page
+
+    def test_01_range_and_camera_scales(self):
+        page = self.open(1280, 720, False)
+        modes = page.evaluate('''()=>({definitions:JSON.parse(JSON.stringify(MODE_DEFINITIONS)),
+            scale:{...scale},manifestRange:GRAPPLE_OVER_MOUNTAIN.range,levelUpgradeBand:MODE_DEFINITIONS.grapple_over.rangeUpgradeSection})''')
+        go = modes['definitions']['grapple_over']
+        self.assertEqual((go['acquisitionRadius'], go['upgradedAcquisitionRadius'], go['rangeUpgradeSection']),
+                         (1080, 1620, 'S05'))
+        self.assertEqual(modes['manifestRange'], dict(base=1080, upgraded=1620, upgradeBand='S05'))
+        self.assertEqual(modes['scale'], dict(classic=1, bad=1 / 2.2, grapple_over=0.375))
+        self.assertEqual(modes['definitions']['classic'], dict(cameraScale=1, hudStyle='classic'))
+        self.assertEqual(modes['definitions']['bad'], dict(cameraScale=1 / 2.2, hudStyle='bad'))
+        before = page.evaluate('''()=>{const s=placeInS04Column();return {placement:s,upgraded:floors[0].rangeUpgraded,
+            radius:grappleOverAcquisitionRadius(),drawn:drawnRadius(),inS05:ninja.y<=bandOf('S05').bottom}}''')
+        self.assertFalse(before['upgraded'] or before['inS05'])
+        self.assertEqual((before['radius'], before['drawn']), (1080, 1080))
+        # Physical entry: an upward launch from S04; physics() decides the flip.
+        entry = page.evaluate('''()=>{const b=bandOf('S05');ninja.speedY=-4;const rows=[];
+            for(let n=0;n<600&&!floors[0].rangeUpgraded;n++){const y0=ninja.y;physics();
+                if(n%10===0||floors[0].rangeUpgraded)rows.push({tick:floors[0].elapsedSteps,y_before:y0,y:ninja.y,
+                    vy:ninja.speedY,upgraded:floors[0].rangeUpgraded,radius:grappleOverAcquisitionRadius()})}
+            return {bandBottom:b.bottom,samples:rows,last:rows[rows.length-1],drawn:drawnRadius(),
+                noticeMs:floors[0].rangeNoticeMs,saved:captureClimbState().upgrades}}''')
+        last = entry['last']
+        self.assertTrue(last['upgraded'], entry)
+        self.assertGreater(last['y_before'], entry['bandBottom'])
+        self.assertLessEqual(last['y'], entry['bandBottom'])
+        self.assertEqual((last['radius'], entry['drawn']), (1620, 1620))
+        self.assertEqual(entry['saved'], dict(range=True))
+        # Classic/bad: unchanged initial state and seeded movement vs the TASK-444 baseline.
+        from grapple_over_test_support import STATE, open_fixture, step
+        baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())
+        legacy = {}
+        for mode in ('classic', 'bad'):
+            fixture, errors = open_fixture(self.browser, self.url, mode, self.addCleanup)
+            initial = fixture.evaluate(STATE)
+            trace = step(fixture, 12)
+            self.assertEqual(initial, baseline['modes'][mode]['initial'])
+            self.assertEqual(trace, baseline['modes'][mode]['movement_trace'])
+            self.assertEqual(errors, [])
+            legacy[mode] = dict(cameraScale=modes['scale'][mode], definition=modes['definitions'][mode],
+                                range=None, baseline_initial_equal=True, baseline_trace_equal=True)
+        self.evidence.write('range.json', dict(self.proof, viewport=dict(width=1280, height=720),
+            grapple_over=dict(cameraScale=modes['scale']['grapple_over'], definition=go,
+                              manifest_range=modes['manifestRange']),
+            before_s05=before, s05_entry=dict(kind='physical upward launch from a TEST-ONLY S04 placement',
+                                              band_bottom=entry['bandBottom'], flip=last, samples=entry['samples'],
+                                              drawn_radius=entry['drawn'], notice_ms=entry['noticeMs'],
+                                              saved_upgrades=entry['saved']),
+            classic_bad=dict(legacy, baseline_path='artifacts/TASK-444/baseline.json'),
+            pass_=True))
+        print(f"PASS range: 1080 before S05 (drawn {before['drawn']}), physical S05 entry at tick {last['tick']} "
+              f"-> 1620 (drawn {entry['drawn']}); scales {modes['scale']}; classic/bad equal TASK-444 baseline")
+
+    def fit_case(self, key, width, height, touch, lang, png):
+        page = self.open(width, height, touch, lang)
+        # A mid-climb spot (S03 band centre) away from the world-edge camera clamps.
+        spot = page.evaluate('''()=>{const b=bandOf('S03');TUTORIAL_HINT.visible=false;
+            placeAt((b.left+b.right)/2,(b.top+b.bottom)/2);
+            physics();screen.trackGrappleOver(true);draw();return {x:ninja.x,y:ninja.y,height:floors[0].climbStats.currentHeight}}''')
+        fit = page.evaluate('circleBox()')
+        self.assertEqual(fit['radius'], 1080)
+        self.assertEqual(fit['cameraScale'], 0.375)
+        self.assertTrue(fit['insideViewport'] and fit['insideCanvas'], fit)
+        # Worst ordinary-tracking case: the ninja at the 0.4/0.6 vertical and 0.35/0.65
+        # horizontal camera edges (world units of the visible area).
+        worst = page.evaluate('''()=>{const k=scale[version],w=width/k,h=height/k,r=grappleOverAcquisitionRadius();
+            return {view_world:[w,h],top:0.4*h-r,bottom:h-0.6*h-r,left:0.35*w-r,right:w-0.65*w-r}}''')
+        self.assertTrue(all(worst[s] >= 0 for s in ('top', 'bottom', 'left', 'right')), worst)
+        hud = page.evaluate('''()=>{LAYOUT_PROBE.boxes=[];draw();const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;
+            return b.filter(x=>x.kind==='text').map(x=>({text:x.name,x:x.x,y:x.y,width:x.width,fontPx:x.fontPx}))}''')
+        self.assertGreaterEqual(len(hud), 4)
+        for b in hud:
+            self.assertGreaterEqual(b['fontPx'], 12 - 1e-6)
+            self.assertGreaterEqual(b['x'], 0)
+            self.assertLessEqual(b['x'] + b['width'], width)
+        if lang == 'ru':
+            self.assertTrue(any(any('Ѐ' <= ch <= 'ӿ' for ch in b['text']) for b in hud), hud)
+        # The upgraded circle at the same spot, recorded for the TASK-544 handoff.
+        upgraded = page.evaluate('()=>{floors[0].rangeUpgraded=true;const f=circleBox();floors[0].rangeUpgraded=false;draw();return f}')
+        page.screenshot(path=str(self.evidence.path(png)))
+        self.fit[key] = dict(viewport=dict(width=width, height=height), touch=touch, lang=lang, spot=spot,
+                             screenshot=png, base_circle=fit, tracking_worst_case_world_margins=worst,
+                             hud_text=hud, upgraded_circle_1620_info=upgraded)
+        return fit
+
+    def test_02_fit_desktop(self):
+        f = self.fit_case('desktop', 1280, 720, False, 'en', 'range-desktop.png')
+        print(f"PASS desktop 1280x720: R=1080 circle box {f['box']} inside canvas (margins {f['margins']})")
+
+    def test_03_fit_touch_ru(self):
+        f = self.fit_case('touch', 844, 390, True, 'ru', 'range-touch-ru.png')
+        print(f"PASS touch 844x390 ru: R=1080 circle box {f['box']} inside canvas (margins {f['margins']})")
+
+    def test_04_manifest_check(self):
+        page = self.open(1280, 720, False)
+        rows = page.evaluate('''()=>{const run=range=>{const m=structuredClone(GRAPPLE_OVER_MOUNTAIN);m.range=range;
+                try{validateMountainManifest(m);return {range,accepted:true}}catch(e){return {range,accepted:false,error:e.message}}};
+            const v2=layoutV2Report(GRAPPLE_OVER_MOUNTAIN).sections?.filter?.(s=>!s.legacy)
+                ?? layoutV2Report(GRAPPLE_OVER_MOUNTAIN);
+            return {live:GRAPPLE_OVER_MOUNTAIN.range,
+                cases:[run({base:1080,upgraded:1620,upgradeBand:'S05'}),run({base:540,upgraded:810,upgradeBand:'S05'})],
+                v2:Array.isArray(v2)?v2.map(s=>({id:s.id,passed:s.passed,gap:s.rules?.gapBand?.measured?.target})):v2}}''')
+        new, old = rows['cases']
+        self.assertTrue(new['accepted'], new)
+        self.assertFalse(old['accepted'])
+        self.assertTrue(old['error'].startswith('InvalidRange: '), old)
+        self.assertTrue(all(s['passed'] for s in rows['v2']), rows['v2'])
+        lines = [f"revision {self.proof['revision']}",
+                 f"live GRAPPLE_OVER_MOUNTAIN.range {json.dumps(rows['live'], sort_keys=True)}",
+                 f"validateMountainManifest range={json.dumps(new['range'], sort_keys=True)} -> ACCEPTED",
+                 f"validateMountainManifest range={json.dumps(old['range'], sort_keys=True)} -> REJECTED {old['error']}",
+                 'layoutV2Report v2 sections (gap bands stay at the 540/810 design range): ' +
+                 json.dumps(rows['v2'], separators=(',', ':')),
+                 'PASS manifest-check']
+        self.evidence.path('manifest-check.log').write_text('\n'.join(lines) + '\n')
+        print(f"PASS manifest: {{1080,1620,'S05'}} accepted; {{540,810,'S05'}} -> {old['error']}")
