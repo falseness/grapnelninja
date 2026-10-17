@@ -29,6 +29,8 @@ function calcPhysics()
     }
 
     screen.leftWall.update(screen)
+    if (screen.backWall)
+        screen.backWall.update(screen)
     ninja.move()
     if (continueOffer.visible)
         return

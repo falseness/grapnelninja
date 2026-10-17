@@ -61,7 +61,10 @@ class Grapnel
             // A hit lies on both segments, so inside both boxes.
             const reach = segmentBounds(grapnelLine.x1, grapnelLine.y1, grapnelLine.x2, grapnelLine.y2,
                                         defaultEqualityTolerance)
-            const collisionGroups = [...floors, {elements: [screen.leftWall]}]
+            const boundaries = [screen.leftWall]
+            if (screen.backWall && screen.backWall.isActive())
+                boundaries.push(screen.backWall)
+            const collisionGroups = [...floors, {elements: boundaries}]
             for (let k = 0; k < collisionGroups.length; ++k)
             {
                 for (let i = 0; i < collisionGroups[k].elements.length; ++i)

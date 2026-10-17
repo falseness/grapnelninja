@@ -69,6 +69,8 @@ class Ninja
             this.applyBounce(this.bounce)
         // Resolve last so another obstacle cannot push the player behind it.
         collision = screen.leftWall.resolve(this) || collision
+        if (screen.backWall)
+            collision = screen.backWall.resolve(this) || collision
         return collision
     }
     // Deadly hits act at once; a bouncy element keeps its nearest hit edge,

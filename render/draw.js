@@ -34,6 +34,8 @@ function drawWorldLayer()
     floors[floors.length - 1].draw()
 
     screen.leftWall.draw()
+    if (screen.backWall)
+        screen.backWall.draw()
     screen.draw()
     grapnel.drawHook()
 }

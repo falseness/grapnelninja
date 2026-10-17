@@ -12,8 +12,9 @@ Asserts, with the camera's own segment (screen.getSegment()):
 - borders and obstacles left behind below/above the view are deleted
   (screen.deletedBehind > 0);
 - a ninja pushed out of view behind the travel direction (below the view in
-  the up segment, above it in the down segment) is a lethal death, while
-  out of view ahead of it is not.
+  the up segment, above it in the down segment) is caught by the camera's
+  BackWall (TASK-032): no death, back inside the view on the boundary face;
+  out of view ahead of it is no death either.
 BadCameraTests: in bad mode screen.y stays 0 for 600 frames of real play.
 
 MOMENTUM_CAMERA_EVIDENCE_DIR (default: artifacts/TASK-005) receives
@@ -220,13 +221,16 @@ class MomentumCameraTests(unittest.TestCase):
             ninja.y = side == 'behind' ? behind : (dir == 'up' ? above : below)
             ninja.speedX = 0; ninja.speedY = 0
             calcPhysics()
+            const top = -screen.y, bottom = top + view
             return {segment: before.segment, cameraY: before.camera,
                     deaths: lethalDeaths - before.deaths,
+                    inView: ninja.y - r >= top - 1e-6 && ninja.y + r <= bottom + 1e-6,
+                    faceGap: Math.abs(ninja.y - screen.backWall.y) - r,
                     restarted: ninja !== before.ninja && screen !== before.screen,
                     newScreenY: screen.y, version, runInProgress}
         }''', [segment_dir, side])
 
-    def test_out_of_view_behind_is_game_over(self):
+    def test_out_of_view_behind_is_caught_by_back_wall(self):
         results = {}
         for dir_name in ('up', 'down'):
             for side in ('behind', 'ahead'):
@@ -235,13 +239,11 @@ class MomentumCameraTests(unittest.TestCase):
                     results[f'{dir_name}-{side}'] = r
                     print(f'{dir_name} segment, ninja out of view {side}:', r)
                     self.assertEqual(r['segment'], dir_name)
+                    self.assertEqual(r['deaths'], 0, r)
+                    self.assertFalse(r['restarted'], r)
                     if side == 'behind':
-                        self.assertEqual(r['deaths'], 1, r)
-                        self.assertTrue(r['restarted'], r)
-                        self.assertEqual(r['newScreenY'], 0, r)
-                    else:
-                        self.assertEqual(r['deaths'], 0, r)
-                        self.assertFalse(r['restarted'], r)
+                        self.assertTrue(r['inView'], r)
+                        self.assertLess(r['faceGap'], 1, r)
                     self.assertEqual(r['version'], 'momentum')
                     self.assertTrue(r['runInProgress'], r)
 

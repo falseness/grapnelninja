@@ -130,6 +130,7 @@
         <script src = "sprites/momentumblue.js"></script>
         <script src = "sprites/side.js"></script>
         <script src = "sprites/leftwall.js"></script>
+        <script src = "sprites/backwall.js"></script>
         <script src = "elements/momentumborders.js"></script>
         
         <script src = "physics.js"></script>
@@ -646,6 +647,8 @@
                 {
                     screen.updateWidthLayout()
                     screen.leftWall.update(screen)
+                    if (screen.backWall)
+                        screen.backWall.update(screen)
                     layoutHud()
                     // Factories capture width-derived sizes; they hold no run state.
                     elementsFactory = new ElementsFactory

@@ -3,7 +3,8 @@
 // bad mode; up/down segments keep the ninja vertically centred, moving only in
 // the segment direction and stopping where the next right corridor is
 // centred. The camera never goes back: what leaves the view behind the
-// travel direction is deleted, and a ninja that leaves it there dies.
+// travel direction is deleted; a camera-owned BackWall (sprites/backwall.js)
+// bounces a ninja falling back on that side.
 function segmentDirection(dir)
 {
     return dir == 'right' ? {x: 1, y: 0} : dir == 'up' ? {x: 0, y: -1} : {x: 0, y: 1}
@@ -19,6 +20,8 @@ class MomentumScreen extends Screen
         // Direction of the last vertical segment entered: its far side of the
         // view stays behind through the following right segments
         this.verticalTravel = 0
+        // Bouncy boundary on that side (sprites/backwall.js)
+        this.backWall = new BackWall(this)
         this.deletedBehind = 0
         // Damped follow state, world units per second (camera top-left)
         this.velocityX = this.velocityY = 0
