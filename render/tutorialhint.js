@@ -17,6 +17,8 @@ const TUTORIAL_HINT = {
     // Strings baked into the current sprite, and how many sprites were built
     lines: null,
     buildCount: 0,
+    // Momentum legend row boxes [x, y, w, h] in canvas backing px (at t 0)
+    legendBoxes: null,
 
     // Every run start until the first press shows the hint at full strength
     runStarted()
@@ -60,7 +62,7 @@ const TUTORIAL_HINT = {
         const cssWidth = parseFloat(canvas.style.width) || canvas.width
         const dpr = Math.round(canvas.width / cssWidth * 1000) / 1000
         return [I18N.language, isTouchFirstDevice() ? 'touch' : 'mouse',
-                canvas.width + 'x' + canvas.height, dpr].join('|')
+                canvas.width + 'x' + canvas.height, dpr, version].join('|')
     },
 
     invalidate()
@@ -68,8 +70,9 @@ const TUTORIAL_HINT = {
         this.spriteKey = ''
     },
 
-    // Builds the sprite for the canvas's current size, language and input
-    build(canvas, key)
+    // Builds the sprite for the canvas's current size, language, input and
+    // mode; worldScale is backing px per world unit of the game transform
+    build(canvas, key, worldScale)
     {
         if (!this.sprite)
             this.sprite = document.createElement('canvas')
@@ -109,7 +112,7 @@ const TUTORIAL_HINT = {
             c.font = weight + ' ' + size + 'px ' + font
             c.letterSpacing = size * spacingRatio + 'px'
         }
-        const neonText = (text, y, size, color, core, glow) =>
+        const neonText = (text, y, size, color, core, glow, x = cx) =>
         {
             for (const [blur, alpha] of [[0.9, 0.35], [0.35, 0.7], [0.12, 1]])
             {
@@ -117,12 +120,12 @@ const TUTORIAL_HINT = {
                 c.shadowBlur = size * blur * glow
                 c.globalAlpha = alpha
                 c.fillStyle = color
-                c.fillText(text, cx, y)
+                c.fillText(text, x, y)
             }
             c.shadowBlur = 0
             c.globalAlpha = 1
             c.fillStyle = core
-            c.fillText(text, cx, y)
+            c.fillText(text, x, y)
         }
 
         // Main word: three stroke passes of an outlined neon tube
@@ -151,7 +154,96 @@ const TUTORIAL_HINT = {
 
         this.spriteKey = key
         this.lines = [hold, grapple, right]
+        this.legendBoxes = null
+        if (version == 'momentum')
+        {
+            const rows = this.drawMomentumLegend(c, cy + 21 * u, 6.4 * u, 4 * u, W * 0.7, worldScale || 1, neonText)
+            this.lines.push(...rows)
+        }
         ++this.buildCount
+    },
+
+    // Two rows under the score line: 'green ×5 = +heart' and
+    // 'blue = −heart', a table centred on the view (icon, count, '=' and
+    // result columns line up). The icons are a real MomentumGreen /
+    // MomentumBlue box and scoreText.drawHeart, drawn with the global ctx
+    // pointed at the sprite in the game's world scale. Returns the row strings.
+    drawMomentumLegend(c, y, rowStep, size, maxWidth, worldScale, neonText)
+    {
+        const colors = STYLE.colors.tutorial
+        const spacing = 0.12
+        const rows = [{piece: MomentumGreen, count: '\u00d75', sign: '+'},
+                      {piece: MomentumBlue, count: '', sign: '\u2212'}]
+        const measure = text =>
+        {
+            c.font = 'bold ' + size + 'px ' + STYLE.ui.fontFamily
+            c.letterSpacing = size * spacing + 'px'
+            return text ? c.measureText(text).width : 0
+        }
+        // Column widths in units of size, shrunk to fit maxWidth
+        const layout = () =>
+        {
+            const gap = size * 0.45
+            const icon = {w: size * 1.9, h: size * 0.8}
+            const count = Math.max(...rows.map(row => measure(row.count)))
+            const equals = measure('=')
+            const sign = Math.max(...rows.map(row => measure(row.sign)))
+            const heart = size * 1.05
+            const width = icon.w + gap + count + gap + equals + gap + sign + size * 0.15 + heart
+            return {gap, icon, count, equals, sign, heart, width}
+        }
+        let L = layout()
+        if (L.width > maxWidth)
+        {
+            size *= maxWidth / L.width
+            L = layout()
+        }
+        const left = c.canvas.width / 2 - L.width / 2
+        const columns = {
+            icon: left,
+            count: left + L.icon.w + L.gap,
+            equals: left + L.icon.w + L.gap + L.count + L.gap,
+            sign: left + L.icon.w + L.gap + L.count + L.gap + L.equals + L.gap
+        }
+        columns.heart = columns.sign + L.sign + size * 0.15
+
+        const mainCtx = ctx
+        const strings = []
+        this.legendBoxes = []
+        c.textAlign = 'left'
+        try
+        {
+            ctx = c
+            rows.forEach((row, i) =>
+            {
+                const rowY = y + i * rowStep
+                // Game pieces in world units: (screen.x, screen.y) is added back
+                c.setTransform(worldScale, 0, 0, worldScale, 0, 0)
+                const piece = row.piece.box(columns.icon / worldScale - screen.x,
+                    (rowY - L.icon.h / 2) / worldScale - screen.y, L.icon.w / worldScale, L.icon.h / worldScale)
+                piece.draw()
+                scoreText.drawHeart(columns.heart / worldScale, (rowY - L.heart / 2) / worldScale, L.heart / worldScale)
+                c.setTransform(1, 0, 0, 1, 0, 0)
+
+                measure('')
+                if (row.count)
+                    neonText(row.count, rowY, size, colors.glow, colors.core, 0.6, columns.count)
+                neonText('=', rowY, size, colors.glow, colors.core, 0.6, columns.equals)
+                neonText(row.sign, rowY, size, STYLE.momentum.heartStroke, colors.core, 0.6,
+                    columns.sign + (L.sign - measure(row.sign)) / 2)
+                strings.push([row.count, '=', row.sign].filter(Boolean).join(' '))
+                const top = rowY - Math.max(L.heart, size) / 2
+                this.legendBoxes.push([left, top, L.width, Math.max(L.heart, size)])
+            })
+        }
+        finally
+        {
+            ctx = mainCtx
+            c.setTransform(1, 0, 0, 1, 0, 0)
+            c.textAlign = 'center'
+            c.letterSpacing = '0px'
+        }
+        return strings
     },
 
     // Blits the sprite over the whole canvas, drifting up 1.2% of the view
@@ -161,7 +253,7 @@ const TUTORIAL_HINT = {
         const canvas = context.canvas
         const key = this.cacheKey(canvas)
         if (key !== this.spriteKey)
-            this.build(canvas, key)
+            this.build(canvas, key, context.getTransform().a)
 
         context.save()
         context.setTransform(1, 0, 0, 1, 0, 0)

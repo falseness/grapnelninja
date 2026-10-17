@@ -18,6 +18,13 @@ TUTORIAL_LIFECYCLE_EVIDENCE_DIR (default: artifacts/TASK-367) receives
 fade-0s.png, fade-1s.png, fade-1.25s.png, fade-2s.png and fade-2.5s.png;
 TUTORIAL_FADE_EVIDENCE_DIR (default: artifacts/TASK-411) receives
 hint-1.25s.png and hint-2.5s.png.
+
+MomentumLegendTests (TASK-048): the momentum guide's two legend rows
+(green x5 = +heart, blue = -heart) under the score line. TUTORIAL_LEGEND_EVIDENCE_DIR
+(default: artifacts/TASK-048) receives layout.json, icon-pixels.json,
+sprite-hashes.json and shots/*.png. TUTORIAL_LEGEND_REFERENCE_HASHES names a
+sprite-hashes.json from the parent tree (sprite_hashes() run there); classic
+and bad hashes must equal it.
 """
 import json
 import os
@@ -376,6 +383,188 @@ class TutorialHintTests(unittest.TestCase):
             y += row.height + 20
         sheet.save(self.out / 'compare.png')
         print('PASS compare.png', sheet.size, 'left: game, right: concept B', flush=True)
+
+
+# Rebuilds the hint sprite for the current mode (t 0) and returns its
+# backing-px row boxes, the HUD rects (LAYOUT_PROBE, CSS px) and the canvas
+LEGEND_STATE = '''() => {
+    TUTORIAL_HINT.visible = true
+    TUTORIAL_HINT.invalidate()
+    draw()
+    const css = getCanvasCssRect()
+    const rx = canvas.width / css.width, ry = canvas.height / css.height
+    ctx.save()
+    ctx.scale(scale[version], scale[version])
+    LAYOUT_PROBE.boxes = []
+    try { scoreText.draw(); menu.button.draw() }
+    finally { ctx.restore() }
+    const hud = LAYOUT_PROBE.boxes.map(b => [b.x, b.y, b.width, b.height])
+    LAYOUT_PROBE.boxes = null
+    const rows = (TUTORIAL_HINT.legendBoxes || []).map(([x, y, w, h]) => [x / rx, y / ry, w / rx, h / ry])
+    return {version, key: TUTORIAL_HINT.spriteKey, lines: TUTORIAL_HINT.lines, rows, hud,
+            backing: TUTORIAL_HINT.legendBoxes, view: [css.width, css.height]}
+}'''
+# Green / blue / heart-coloured opaque sprite pixels inside each backing box
+ICON_PIXELS = '''boxes => {
+    const c = TUTORIAL_HINT.sprite.getContext('2d')
+    return boxes.map(([x, y, w, h]) => {
+        const d = c.getImageData(Math.floor(x), Math.floor(y), Math.ceil(w), Math.ceil(h)).data
+        const n = {green: 0, blue: 0, heart: 0}
+        for (let i = 0; i < d.length; i += 4) {
+            const r = d[i], g = d[i + 1], b = d[i + 2]
+            if (d[i + 3] < 160) continue
+            if (g > 180 && r < 140 && b < 140) ++n.green
+            else if (b > 200 && r < 110 && g > 90 && g < 190) ++n.blue
+            else if (r > 200 && g < 130 && b > 90 && b < 190) ++n.heart
+        }
+        return n
+    })
+}'''
+# SHA-256 of the sprite pixels after a rebuild in the current mode
+SPRITE_HASH = '''async () => {
+    TUTORIAL_HINT.visible = true
+    TUTORIAL_HINT.invalidate()
+    draw()
+    const s = TUTORIAL_HINT.sprite
+    const data = s.getContext('2d').getImageData(0, 0, s.width, s.height).data
+    const digest = await crypto.subtle.digest('SHA-256', data)
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
+}'''
+LEGEND_VIEWPORTS = [(390, 844), (1280, 720), (1024, 768), (844, 390)]
+HASH_VIEWPORTS = [(1280, 720), (390, 844)]
+
+
+def open_game(browser, url, viewport, touch=False, locale='en-US', cleanup=None):
+    """A booted page (momentum boot run, hint shown) and its page errors."""
+    context = browser.new_context(
+        viewport={'width': viewport[0], 'height': viewport[1]}, device_scale_factor=1,
+        is_mobile=touch, has_touch=touch, locale=locale)
+    if cleanup:
+        cleanup(context.close)
+    page = context.new_page()
+    page.set_default_timeout(20000)
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.goto(url + 'index.html')
+    page.wait_for_function(BOOT_DONE)
+    page.evaluate(FREEZE)
+    return page, errors
+
+
+def sprite_hashes(browser, url, cleanup=None):
+    """{mode: {WxH: sha256}} of the classic and bad guide sprites (mouse, en)."""
+    result = {}
+    for mode in ('classic', 'bad'):
+        result[mode] = {}
+        for viewport in HASH_VIEWPORTS:
+            page, errors = open_game(browser, url, viewport, cleanup=cleanup)
+            switch_mode(page, mode)
+            page.evaluate('menu.gamePaused && menu.unPause()')
+            result[mode]['%dx%d' % viewport] = page.evaluate(SPRITE_HASH)
+            assert errors == [], errors
+            if not cleanup:
+                page.context.close()
+    return result
+
+
+def overlaps(a, b):
+    return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
+
+
+class MomentumLegendTests(unittest.TestCase):
+    ROWS = ['\u00d75 = +', '= \u2212']
+
+    @classmethod
+    def setUpClass(cls):
+        cls.out = Path(os.environ.get('TUTORIAL_LEGEND_EVIDENCE_DIR', ROOT / 'artifacts/TASK-048'))
+        (cls.out / 'shots').mkdir(parents=True, exist_ok=True)
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+
+    def game(self, viewport, touch=False, locale='en-US'):
+        page, errors = open_game(self.browser, self.url, viewport, touch, locale, self.addCleanup)
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        self.assertEqual(page.evaluate('version'), 'momentum')
+        return page
+
+    def test_legend_rows_layout_and_icons(self):
+        layout, pixels = {}, {}
+        for viewport in LEGEND_VIEWPORTS:
+            name = '%dx%d' % viewport
+            page = self.game(viewport, touch=viewport[0] < viewport[1] or viewport == (844, 390))
+            state = page.evaluate(LEGEND_STATE)
+            self.assertEqual(state['lines'][3:], self.ROWS, state)
+            self.assertTrue(state['key'].endswith('|momentum'), state['key'])
+            self.assertEqual(len(state['rows']), 2, state)
+            self.assertTrue(state['hud'], state)
+            w, h = state['view']
+            inside = all(r[0] >= 0 and r[1] >= 0 and r[0] + r[2] <= w and r[1] + r[3] <= h for r in state['rows'])
+            overlap = any(overlaps(r, b) for r in state['rows'] for b in state['hud'])
+            layout[name] = {'rows': [[round(v, 1) for v in r] for r in state['rows']],
+                            'hudRects': [[round(v, 1) for v in b] for b in state['hud']],
+                            'overlap': overlap, 'insideView': inside}
+            self.assertTrue(inside, layout[name])
+            self.assertFalse(overlap, layout[name])
+            counts = page.evaluate(ICON_PIXELS, state['backing'])
+            pixels[name] = {'greenRow': counts[0], 'blueRow': counts[1]}
+            self.assertGreater(counts[0]['green'], 0, counts)
+            self.assertGreater(counts[0]['heart'], 0, counts)
+            self.assertGreater(counts[1]['blue'], 0, counts)
+            self.assertGreater(counts[1]['heart'], 0, counts)
+            print('PASS legend', name, json.dumps(layout[name]), json.dumps(pixels[name]), flush=True)
+        (self.out / 'layout.json').write_text(json.dumps(layout, separators=(',', ':')))
+        (self.out / 'icon-pixels.json').write_text(json.dumps(pixels, separators=(',', ':')))
+
+    def test_legend_language_neutral(self):
+        page = self.game((1280, 720))
+        en = page.evaluate(LEGEND_STATE)
+        page.evaluate("setLanguage('ru')")
+        ru = page.evaluate(LEGEND_STATE)
+        self.assertEqual(ru['lines'][0], 'ДЕРЖИ')
+        self.assertEqual(ru['lines'][3:], en['lines'][3:])
+        self.assertEqual(ru['backing'], en['backing'])
+        crop = '''boxes => boxes.map(([x, y, w, h]) => Array.from(TUTORIAL_HINT.sprite.getContext('2d')
+            .getImageData(Math.floor(x), Math.floor(y), Math.ceil(w), Math.ceil(h)).data).join(',')).join(',')'''
+        ru_pixels = [int(v) for v in page.evaluate(crop, ru['backing']).split(',')]
+        page.evaluate("setLanguage('en')")
+        page.evaluate(LEGEND_STATE)
+        en_pixels = [int(v) for v in page.evaluate(crop, en['backing']).split(',')]
+        # Only the faint glow of the language-dependent score line above may differ
+        worst = max(abs(a - b) for a, b in zip(en_pixels, ru_pixels))
+        self.assertEqual(len(en_pixels), len(ru_pixels))
+        self.assertLessEqual(worst, 4)
+        print('PASS legend en == ru rows', json.dumps(en['lines'][3:], ensure_ascii=False),
+              'boxes equal, max channel diff', worst, flush=True)
+
+    def test_classic_bad_sprites_match_parent(self):
+        hashes = sprite_hashes(self.browser, self.url, self.addCleanup)
+        (self.out / 'sprite-hashes.json').write_text(json.dumps(hashes, separators=(',', ':')))
+        reference = os.environ.get('TUTORIAL_LEGEND_REFERENCE_HASHES')
+        if not reference:
+            self.skipTest('TUTORIAL_LEGEND_REFERENCE_HASHES not set')
+        self.assertEqual(hashes, json.loads(Path(reference).read_text()))
+        print('PASS classic/bad sprite hashes equal the reference', json.dumps(hashes), flush=True)
+
+    def test_shots(self):
+        shots = [('momentum-1280x720-mouse-en.png', (1280, 720), False, 'en-US', 'momentum'),
+                 ('momentum-1280x720-touch-en.png', (1280, 720), True, 'en-US', 'momentum'),
+                 ('momentum-390x844-mouse-en.png', (390, 844), False, 'en-US', 'momentum'),
+                 ('momentum-844x390-touch-en.png', (844, 390), True, 'en-US', 'momentum'),
+                 ('momentum-844x390-mouse-en.png', (844, 390), False, 'en-US', 'momentum'),
+                 ('momentum-1280x720-mouse-ru.png', (1280, 720), False, 'ru-RU', 'momentum'),
+                 ('classic-1280x720-mouse-en.png', (1280, 720), False, 'en-US', 'classic')]
+        for name, viewport, touch, locale, mode in shots:
+            page, errors = open_game(self.browser, self.url, viewport, touch, locale, self.addCleanup)
+            if mode != 'momentum':
+                switch_mode(page, mode)
+                page.evaluate('menu.gamePaused && menu.unPause()')
+            if locale.startswith('ru'):
+                page.evaluate("setLanguage('ru')")
+            state = page.evaluate(LEGEND_STATE)
+            self.assertEqual(state['version'], mode)
+            self.assertEqual(state['lines'][3:], self.ROWS if mode == 'momentum' else [])
+            page.screenshot(path=str(self.out / 'shots' / name))
+            self.assertEqual(errors, [])
+            print('PASS shot', name, json.dumps(state['lines'], ensure_ascii=False), flush=True)
 
 
 if __name__ == '__main__':
