@@ -200,7 +200,7 @@ class MomentumRunTests(unittest.TestCase):
             course: momentumCourse.segments.slice(0, screen.segmentIndex + 1).map(s => s.dir[0] + Math.round(s.length)),
             passed: floors.find(f => f instanceof MomentumObstacleFloor).nextGenerationGroupId -
                     floors.find(f => f instanceof MomentumObstacleFloor).groups.filter(g => !g.scored).length,
-            catalog: {h: MOMENTUM_PATTERNS_H.map(p => [p.id, p.difficulty]),
+            catalog: {h: MOMENTUM_PATTERNS_PORT_H.map(p => [p.id, p.difficulty]),
                       v: MOMENTUM_PATTERNS_V.map(p => [p.id, p.difficulty]),
                       turn: MOMENTUM_PATTERNS_TURN.map(p => [p.id, p.difficulty])}})''')
         by_second = {}
