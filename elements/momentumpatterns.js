@@ -11,7 +11,9 @@
 // footprint length in world units; a piece is a MomentumGreen/MomentumBlue
 // .shape spec centred on (x, y): x along from the footprint start, y across
 // from the corridor centre line (+ = floor side), motion yMin/yMax across
-// as well. Right segments only: the motion is vertical.
+// as well. Right segments only: the motion is vertical. The wall-flush rects
+// of bad-frame6/10/14 sit 0.05 off the catalog centre so they end at the
+// band edge (972) instead of 0.05 inside the wall (TASK-043).
 const MOMENTUM_PATTERNS_PORT_H = Object.freeze([
     {id: 'bad-frame1', difficulty: 3, span: 2813.5, pieces: [
         {kind: 'green', x: 98.1, y: 38.2, shape: 'rect', w: 196.1, h: 1415.1},
@@ -32,7 +34,7 @@ const MOMENTUM_PATTERNS_PORT_H = Object.freeze([
         {kind: 'green', x: 437.5, y: -396, shape: 'rect', w: 482.7, h: 162.2}
     ]},
     {id: 'bad-frame6', difficulty: 2, span: 196.1, pieces: [
-        {kind: 'blue', x: 98, y: -735.9, shape: 'rect', w: 196.1, h: 472.3},
+        {kind: 'blue', x: 98, y: -735.85, shape: 'rect', w: 196.1, h: 472.3},
         {kind: 'blue', x: 98, y: 611.4, shape: 'rect', w: 196.1, h: 721.2}
     ]},
     {id: 'bad-frame7', difficulty: 2, span: 777, pieces: [
@@ -47,7 +49,7 @@ const MOMENTUM_PATTERNS_PORT_H = Object.freeze([
     ]},
     {id: 'bad-frame10', difficulty: 3, span: 1497.2, pieces: [
         {kind: 'green', x: 748.6, y: -1.8, shape: 'rect', w: 1497.2, h: 196.1},
-        {kind: 'blue', x: 748.6, y: 698.2, shape: 'rect', w: 196.1, h: 547.7},
+        {kind: 'blue', x: 748.6, y: 698.15, shape: 'rect', w: 196.1, h: 547.7},
         {kind: 'blue', x: 748.6, y: -341.3, shape: 'rect', w: 196.1, h: 475.2}
     ]},
     {id: 'bad-frame11', difficulty: 3, span: 1497.2, pieces: [
@@ -70,7 +72,7 @@ const MOMENTUM_PATTERNS_PORT_H = Object.freeze([
         {kind: 'blue', x: 2491.1, y: -120.7, shape: 'rect', w: 192.3, h: 196.1, motion: {speedY: -0.693, yMin: -972, yMax: 354.1, gravity: true}}
     ]},
     {id: 'bad-frame14', difficulty: 2, span: 1972.4, pieces: [
-        {kind: 'green', x: 1874.3, y: 434.2, shape: 'rect', w: 196.1, h: 1075.7},
+        {kind: 'green', x: 1874.3, y: 434.15, shape: 'rect', w: 196.1, h: 1075.7},
         {kind: 'green', x: 98, y: -290.4, shape: 'rect', w: 196.1, h: 1218.2},
         {kind: 'green', x: 548.7, y: 237.6, shape: 'rect', w: 705.2, h: 162.2}
     ]}
