@@ -14,6 +14,15 @@ class MomentumBlue extends MomentumOneTime
     {
         return new MomentumBlue(MomentumOneTime.boxObject(x, y, w, h))
     }
+    // MomentumOneTime.shapeObject spec (rect, triangle, polygon; motion)
+    static shape(spec)
+    {
+        return new MomentumBlue(MomentumOneTime.shapeObject(spec))
+    }
+    hasInnerShell()
+    {
+        return true
+    }
     onNinjaPass(who)
     {
         if (!this.use())

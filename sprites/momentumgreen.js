@@ -12,6 +12,11 @@ class MomentumGreen extends MomentumOneTime
     {
         return new MomentumGreen(MomentumOneTime.boxObject(x, y, w, h))
     }
+    // MomentumOneTime.shapeObject spec (rect, triangle, polygon; motion)
+    static shape(spec)
+    {
+        return new MomentumGreen(MomentumOneTime.shapeObject(spec))
+    }
     onNinjaBounce()
     {
         if (this.use())

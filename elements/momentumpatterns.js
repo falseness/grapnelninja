@@ -665,3 +665,16 @@ function momentumPlaceTurn(id, segmentIndex)
     })}
 }
 window.momentumPlaceTurn = momentumPlaceTurn
+
+// Places one green or blue piece (kind 'green' | 'blue') built from a
+// MomentumOneTime.shapeObject spec on the momentum pattern floor, for tests
+// and screenshots. Returns {group, element}, or null outside momentum.
+function momentumPlacePiece(kind, spec)
+{
+    const floor = version == 'momentum' && floors ? floors.find(f => f instanceof MomentumPatternFloor) : null
+    if (!floor)
+        return null
+    const element = (kind == 'blue' ? MomentumBlue : MomentumGreen).shape(spec)
+    return {group: floor.place([element]), element: element}
+}
+window.momentumPlacePiece = momentumPlacePiece
