@@ -324,6 +324,48 @@ def check_s01_v3_mechanics(encounter, trace, required=True):
     return observations
 
 
+S02_V3_ENCOUNTERS = {'S02-01':('S02-hoist','S02-canopy'), 'S02-02':('S02-lift','S02-bulkhead'),
+                     'S02-03':('S02-gallery-hook','S02-east-wall'), 'S02-04':('S02-crown-hook','S02-exit-ledge')}
+
+
+def check_s02_v3_mechanics(encounter, trace, required=True):
+    """Layout-v3 Switchback (TASK-550/551/552): every attempt runs the S02 route from the real
+    S01 v3 exit settled pose up to the encounter's exit. The encounter's anchor is acquired and
+    released and its green surface is bounced after the acquisition (S02-01 canopy, S02-02 bulkhead
+    rebound to the right, S02-03 east-wall reversal to the left while on the gallery hook, S02-04
+    exit-ledge landing); the S02 anchors up to the encounter are acquired in route order, S02-02..04
+    in flight, and after the hoist release the run never bounces on an S01 element (no fall back
+    to the S01 drag zones)."""
+    observations=check_s01_mechanics('S01-01', trace, required=False)
+    events=trace['events']
+    releases=[(e['tick'],e['before']['rope'][0]['id']) for e in events if e['type']=='release' and e['before']['rope']]
+    observations['releases']=[dict(tick=t,element=el) for t,el in releases]
+    anchor, bouncer = S02_V3_ENCOUNTERS[encounter]
+    grab=next((t for el,t in zip(observations['acquisitions'],observations['acquisition_ticks']) if el==anchor),None)
+    release=next((t for t,el in releases if el==anchor and grab is not None and t>=grab),None)
+    bounce=next((e for e in events if e['type']=='bounce' and grab is not None and e['tick']>=grab
+                 and e['contact']['elementId']==bouncer),None)
+    hoist=next((t for t,el in releases if el=='S02-hoist'),None)
+    s01=[b for b in observations['bounces'] if b['element'].startswith('S01-') and hoist is not None and b['tick']>hoist]
+    observations['s01_bounces_after_hoist_release']=s01
+    observations['encounter']=dict(anchor=anchor,acquisition_tick=grab,release_tick=release,bouncer=bouncer,
+        bounce_tick=bounce and bounce['tick'],
+        bounce_speedX=bounce and [bounce['before']['simulation']['player']['speedX'],bounce['after']['simulation']['player']['speedX']])
+    if required:
+        route=[a for a,_ in S02_V3_ENCOUNTERS.values()]
+        route=route[:route.index(anchor)+1]
+        require(observations['acquisitions'][:len(route)]==route,'S02 v3 acquisition sequence mismatch')
+        require(release is not None,'S02 v3 '+anchor+' release missing')
+        require(bounce is not None,'S02 v3 '+bouncer+' bounce missing')
+        vx=observations['encounter']['bounce_speedX']
+        if encounter=='S02-02': require(vx[0]<0<vx[1],'S02 v3 bulkhead rebound reversal missing')
+        if encounter=='S02-03': require(vx[0]>0>vx[1],'S02 v3 east-wall lateral reversal missing')
+        if encounter!='S02-01':
+            require(anchor in observations['airborne_acquisitions'],'S02 v3 in-flight acquisition missing')
+        require(not s01,'S02 v3 route fell back onto an S01 bouncer')
+    return observations
+
+
 def check_s02_mechanics(encounter, trace, required=True):
     """Layout-v2 Switchback: blue shuttle, blue lift + green bulkhead, green crest hook, blue trolley."""
     observations=check_s01_mechanics('S01-01', trace, required=False)
@@ -514,8 +556,9 @@ def audit_suite(manifest, browser, url, out):
     section = manifest.get('section', 'S01')
     require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
-    v3 = section == 'S01' and manifest.get('designVersion') == 3
+    v3 = section in ('S01', 'S02') and manifest.get('designVersion') == 3
     s01 = check_s01_v3_mechanics if v3 else check_s01_mechanics
+    s02 = check_s02_v3_mechanics if v3 else check_s02_mechanics
     count = 0
     for encounter, attempts in manifest['encounters'].items():
         for device in ('desktop', 'touch'):
@@ -532,7 +575,7 @@ def audit_suite(manifest, browser, url, out):
             try:
                 check_trace(recorded, replayed)
                 if section == 'S01' and 'mechanic_events' in a: s01(encounter, replayed)
-                if section == 'S02' and 'mechanic_events' in a: check_s02_mechanics(encounter, replayed)
+                if section == 'S02' and 'mechanic_events' in a: s02(encounter, replayed)
                 if section == 'S03' and 'mechanic_events' in a: check_s03_mechanics(encounter, replayed)
                 if section == 'S05': check_s05_mechanics(encounter, replayed)
                 if section == 'S06': check_s06_mechanics(encounter, replayed)
@@ -545,7 +588,7 @@ def audit_suite(manifest, browser, url, out):
             if section == 'S01' and 'mechanic_events' in a:
                 require(s01(encounter, replayed, success) == a['mechanic_events'], 'S01 mechanics mismatch')
             if section == 'S02' and 'mechanic_events' in a:
-                require(check_s02_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S02 mechanics mismatch')
+                require(s02(encounter, replayed, success) == a['mechanic_events'], 'S02 mechanics mismatch')
             if section == 'S03' and 'mechanic_events' in a:
                 require(check_s03_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S03 mechanics mismatch')
             if section == 'S04':
@@ -573,7 +616,7 @@ def audit_suite(manifest, browser, url, out):
         raise ValueError('negative unexpectedly succeeded')
     result = dict(matching_traces=True, attempts=count, negative_control_failed_exit=True)
     if v3:
-        result['mechanics_check'] = 'check_s01_v3_mechanics'
+        result['mechanics_check'] = 'check_s01_v3_mechanics' if section == 'S01' else 'check_s02_v3_mechanics'
     evidence.write(output_writer(out)[1]+'/audit.json', result)
     return result
 
