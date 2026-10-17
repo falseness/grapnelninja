@@ -15,11 +15,12 @@ between a segment's two border lines, momentumSegmentBorderLines) and overlap
 no border body (MomentumBorder points: wall + backing). Frames with at
 least half the view height in a shaft's straight part (between the two
 right corridors it joins) record the camera x centre vs the shaft centre, how far the wall
-bodies' outer edges are past the view edges (>= 0: nothing outside shows)
-and how far inside the view the walls' inner faces are (>= 0: the corridor is
-no wider than the view, the walls show at its edges). Asserts per viewport:
->= 1 vertical pattern and >= 1 up and >= 1 down shaft, 0 pieces outside or
-in a wall, those two distances >= 0 on every such frame, 0 page errors.
+bodies' outer edges are past the view edges (recorded only: negative since
+TASK-043 halved the shafts) and how far inside the view the walls' inner
+faces are (>= 0: the corridor is no wider than the view, the walls show at
+its edges). Asserts per viewport: >= 1 vertical pattern and >= 1 up and >= 1
+down shaft, 0 pieces outside or in a wall, the inner-face distance >= 0 on
+every such frame, 0 page errors.
 
 MOMENTUM_PIECES_INSIDE_EVIDENCE_DIR (default artifacts/TASK-031) receives
 pieces-inside.json (compact {viewport: {pieces, verticalPieces, turnPieces,
@@ -202,8 +203,10 @@ class MomentumPiecesInsideTests(unittest.TestCase):
         self.assertGreaterEqual(self.pieces[key]['verticalPieces'], 1)
         self.assertEqual(len(bad), 0, bad[:5])
         self.assertTrue({'up', 'down'} <= {s['dir'] for s in shafts}, shafts)
+        # wallOuterPastEdge is only recorded: since TASK-043 a shaft is half
+        # the view-wide width, so its walls' outer edges are inside the view
+        # (what shows past them is TASK-044's, test_momentum_no_outside)
         for s in shafts:
-            self.assertGreaterEqual(min(s['wallOuterPastEdge']), 0, s)
             self.assertGreaterEqual(min(s['wallInnerInside']), 0, s)
         self.assertEqual(sorted(shots), ['down', 'up'])
 

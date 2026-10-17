@@ -4,7 +4,9 @@ Course scripts right(5368) -> up and right(5368) -> down. With the rAF loop
 stopped and the obstacle floor emptied, the ninja is driven (one
 calcPhysics() per point, 8 world units apart) along the right corridor to the
 shaft's x, then along the shaft to one half width before its end, at
-x = shaft centre and x = centre + 0.8 halfWidth, at 1280x720 and 1024x768.
+x = shaft centre and x = centre + 0.8 halfWidth, at 1280x720 and 1024x768
+(halfWidth: the shaft's own, momentumSegmentHalfWidth; since TASK-043 it can
+be under the right corridors' GAMEPLAY.momentumBorders.halfWidth).
 
 Per shaft cycle (screen.getSegment().dir is the shaft direction):
 - shaftLeftFace + screen.x >= 0 (left wall face on screen);
@@ -36,8 +38,8 @@ SHAFT_DRIVE = '''([dir, xFrac]) => {
     startGame('momentum')
     cancelAnimationFrame(game)
     floors.find(f => f instanceof MomentumObstacleFloor).elements = []
-    const hw = GAMEPLAY.momentumBorders.halfWidth
     const s0 = momentumCourse.segment(0), s1 = momentumCourse.segment(1)
+    const hw = momentumSegmentHalfWidth(s1)
     const shaftX = s1.x0 + xFrac * hw
     const leftFace = s1.x0 - hw, rightFace = s1.x0 + hw
     const viewWidth = width / scale[version]

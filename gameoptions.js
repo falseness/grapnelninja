@@ -96,8 +96,8 @@ const GAMEPLAY = Object.freeze({
     // Momentum borders around the course centre line, in world units: the
     // first right segment spans y 0.2..2 heights like the bad floor/ceiling.
     // A vertical segment is wider when the view is (momentumShaftHalfWidth):
-    // its walls' outer edges shaftMargin past the edges of a view centred on
-    // it, so nothing outside the walls shows. Every border body runs on
+    // shaftWidthScale of the width that puts its walls' outer edges
+    // shaftMargin past the edges of a view centred on it. Every border body runs on
     // backing past thickness: the camera short of a shaft's centre or of a
     // corridor's centre line still sees border there, not what is outside.
     momentumBorders: Object.freeze({
@@ -105,7 +105,10 @@ const GAMEPLAY = Object.freeze({
         thickness: 0.2 * height,
         backing: 0.2 * height,
         originY: 1.1 * height,
-        shaftMargin: 0.05 * height
+        shaftMargin: 0.05 * height,
+        // Share of that view-wide half width a shaft really gets: view-wide
+        // shafts read as too wide (TASK-043), so they are half as wide
+        shaftWidthScale: 0.5
     }),
     // Momentum camera (elements/momentumcamera.js), lengths in view heights:
     // damped follow pull on the target error (1/s), acceleration limit (/s^2),
