@@ -283,17 +283,21 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // S03-03: steep green crest-hook pull that clears the buffer top, then the ledge is
     // acquired in flight past the apex and pulls the arc down into the ledge brake.
     // S03-04: blue trolley pulled up-right; the arc brakes into the narrower exit pad.
+    // TASK-513 tolerance: the buffer top is lowered to -3490 (short S03-02 arcs still
+    // strike its face below -3420; S03-03 arcs cross it above -3531) and the crest hook
+    // is 90 wide, so steep S03-03 arcs clear the buffer top and the hook's right end; the exit pad's right lip rises 140 so long trolley
+    // arcs drop onto the pad instead of resting on the lip or flying past it.
     const viaduct = [
         rectangle('S03-carriage',2190,-3150,120,30,true),
         lowRest('S03-pier',2420,-3000,200),
         rectangle('S03-lift',2858,-3436,120,30,true),
         lowRest('S03-far-deck',3330,-3250,200,60,true),
-        {id:'S03-span-buffer',x:3500,y:-3520,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:30,y:0},{x:30,y:270},{x:0,y:270}]},
-        hook('S03-crest-hook',3443,-3745),
+        {id:'S03-span-buffer',x:3500,y:-3490,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:30,y:0},{x:30,y:240},{x:0,y:240}]},
+        {...rectangle('S03-crest-hook',3443,-3745,90,30,true),role:'bounce'},
         lowRest('S03-ledge',4007,-3630,200),
         rectangle('S03-trolley',4303,-4085,120,30,true),
-        lowRest('S03-exit-pad',4600,-3830,150,60),
+        lowRest('S03-exit-pad',4600,-3830,150,140),
         // Legacy v1 Deflector Works entrance deck until S04 is rebuilt: the v1 S03 exit
         // cropped 240 -> 200 from the right, so the v1 S04-01 start (5050.8,-4830.8) is unchanged.
         {id:'S03-exit',x:5000,y:-4820,role:'solid',grapplable:true,
@@ -325,8 +329,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // Rope-to-anchor reach from the resting launch point to the nominal acquisition point.
         gaps:[{id:'S03-01-carriage',from:{x:2050.8,y:-2690.8},to:{x:2239.1,y:-3120}},
             {id:'S03-02-lift',from:{x:2569.2,y:-3010.8},to:{x:2886.6,y:-3354.7}},
-            {id:'S03-03-crest',from:{x:3380.8,y:-3260.8},to:{x:3518,y:-3715}},
-            {id:'S03-04-trolley',from:{x:4128.5,y:-3640.8},to:{x:4349.9,y:-4055}}],
+            {id:'S03-03-crest',from:{x:3380.8,y:-3260.8},to:{x:3508,y:-3715}},
+            {id:'S03-04-trolley',from:{x:4104.7,y:-3640.8},to:{x:4349.9,y:-4055}}],
         // Short S03-02 releases rebound off the buffer and drop onto the S02 landing deck.
         fallLines:[{id:'S03-02-short',x:3085,landing:'S02-landing'}]});
     // Encounter nodes sit on the band edge (y -3240) as the v1 S03 nodes did; the
@@ -343,14 +347,14 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         action:'Pull the blue span lift, release across the broken span beyond grapnel range into the green buffer and rebound onto the far deck'});
     Object.assign(encounters[10], {status:'built',x:3381,y:-3261,
         elements:['S03-far-deck','S03-span-buffer','S03-crest-hook','S03-ledge','S03-ledge-brake'],
-        start:{from:'S03-02',x:3380.8,y:-3260.8},target:{x:3520,y:-3715},
+        start:{from:'S03-02',x:3380.8,y:-3260.8},target:{x:3508,y:-3715},
         exit:{left:4007,right:4167,top:-3650,bottom:-3630},
         action:'Pull the green crest hook steeply over the span buffer, release, acquire the ledge in flight past the apex and brake onto it'});
-    Object.assign(encounters[11], {status:'built',x:4129,y:-3641,
+    Object.assign(encounters[11], {status:'built',x:4105,y:-3641,
         elements:['S03-ledge','S03-trolley','S03-exit-pad','S03-exit-brake'],
-        start:{from:'S03-03',x:4128.5,y:-3640.8},target:{x:4353,y:-4055},
+        start:{from:'S03-03',x:4104.7,y:-3640.8},target:{x:4353,y:-4055},
         exit:{left:4600,right:4710,top:-3850,bottom:-3830},
-        action:'Catch the blue trolley from the ledge, pull up-right and brake into the narrower exit pad against its tall right lip'});
+        action:'Catch the blue trolley from the ledge, pull up-right, re-catch the trolley top in flight and brake into the narrower exit pad against its tall right lip'});
     Object.assign(connectors[8], {status:'built',intent:'Physical ascent from the Switchback exit pad to the blue departure carriage'});
     for (let i=9;i<12;i++) connectors[i].status='built';
     Object.assign(recoveries[2], {status:'built',elements:['S03-fall-drag','S02-landing','S02-crest-hook','S02-ledge'],

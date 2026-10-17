@@ -2361,7 +2361,11 @@ class Task485Tests(unittest.TestCase):
         self.assertFalse(success);self.assertTrue(hits)
         self.assertIn('expected exit mismatch',reason)
         self.assertLess(step,60)
-        self.assertAlmostEqual(final['y'],109.2,places=3)
+        # TASK-513 narrows the v2 S03 crest hook and lowers the span buffer top: this long
+        # fall no longer deflects off them and stops physically on the S03 far deck
+        # (the S03-03 start pad) instead of the mountain base.
+        if abs(final['y']+3260.8) < 1e-3: self.assertTrue(3330 <= final['x'] <= 3530, final)
+        else: self.assertAlmostEqual(final['y'],109.2,places=3)
         # Since TASK-506 the fall stops in the S01 base drag zone, which damps vx
         # geometrically instead of leaving it at exactly 0 against the left wall.
         self.assertEqual(final['speedY'],0);self.assertLess(abs(final['speedX']),1e-9)
@@ -4850,7 +4854,10 @@ class Task512Tests(unittest.TestCase):
         self.assertEqual(width('S03-exit-pad'), 150)
         self.assertTrue(all(width(i) > 150 for i in ('S03-pier','S03-far-deck','S03-ledge')))
         self.assertEqual(enc[2]['start'], {'from':'S03-02','x':3380.8,'y':-3260.8})
-        self.assertEqual(enc[3]['start'], {'from':'S03-03','x':4128.5,'y':-3640.8})
+        # TASK-513 retunes the S03-03 nominal (crest aim 3508), moving the ledge rest from
+        # 4128.5 to 4104.7; either way S03-04 starts on the ledge deck.
+        self.assertEqual((enc[3]['start']['from'], enc[3]['start']['y']), ('S03-03', -3640.8))
+        self.assertIn(enc[3]['start']['x'], (4128.5, 4104.7))
         self.assertIn('S03-crest-hook', enc[2]['elements']); self.assertIn('S03-ledge', enc[2]['elements'])
         self.assertIn('S03-trolley', enc[3]['elements']); self.assertIn('S03-exit-pad', enc[3]['elements'])
         v2 = next(s for s in r['report']['sections'] if s['id'] == 'S03')
@@ -5152,3 +5159,252 @@ class Task512Tests(unittest.TestCase):
         print('PASS fall: mistimed S03-02 release tick 250; buffer rebound tick', bounce['tick'], '; drag column entry tick', entry,
               'vx', round(before['speedX'],3), '->', left['speedX'], '; rest on S02 landing tick', rest, 'x', round(after['x'],1),
               '; input-only S02-03 rejoin to the S02 ledge tick', rejoined)
+
+
+class Task513Tests(unittest.TestCase):
+    """Layout-v2 Broken Viaduct (S03) tolerance on desktop and touch: recorded real input, replayable suite."""
+    task_id = 'TASK-513'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    compact = Task506Tests.compact
+    make_input = Task507Tests.make_input
+    run_attempt = Task507Tests.run_attempt
+    filmstrip = Task507Tests.filmstrip
+    targets = Task507Tests.targets
+    HUD = Task507Tests.HUD
+    VARIANTS = Task507Tests.VARIANTS
+    s02_exit = Task511Tests.s02_exit
+    at_rest = Task511Tests.at_rest
+    brake_ticks = Task509Tests.brake_ticks
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+    BASE_ROUTE = Task511Tests.BASE_ROUTE
+    BOXES, DRAG, BUFFER = Task512Tests.BOXES, Task512Tests.DRAG, Task512Tests.BUFFER
+    FALL, MOVERS = Task512Tests.FALL, Task512Tests.MOVERS
+    # TASK-513 tuning (with the shorter span buffer, narrower crest hook and taller exit-pad lip):
+    # S03-03 pulls the crest hook 10 units further left (3508, held 45) so the arc clears both the
+    # buffer top and the hook's right end; S03-04 holds the trolley 46 ticks and the in-flight
+    # re-catch aims straight at the trolley top (4380,-4086), not past it at the exit pad.
+    CREST, TROLLEY, TOP = (3508,-3715), Task512Tests.TROLLEY, (4380,-4086)
+    S03_03 = [(455,'mousedown',*CREST),(500,'mouseup',*CREST)]+Task512Tests.S03_03[2:]
+    S03_04 = [(755,'mousedown',*TROLLEY),(801,'mouseup',*TROLLEY),(885,'mousedown',*TOP),(900,'mouseup',*TOP)]
+    NOMINAL = Task512Tests.S03_01+Task512Tests.S03_02+S03_03+S03_04
+    # Encounter starts are ticks of one S03 nominal run from the real S02 exit rest, a few ticks
+    # before the encounter's first press while the player rests on the previous pad.
+    STARTS = {'S03-01':0, 'S03-02':195, 'S03-03':450, 'S03-04':750}
+    PRESSES = {'S03-01':5, 'S03-02':200, 'S03-03':455, 'S03-04':755}
+
+    @classmethod
+    def encounters(cls):
+        # (id, global plan, ticks, critical timing index, aim index, mechanic). Every aimed
+        # surface is a horizontal face, so the aim variants move along x.
+        return [('S03-01',Task512Tests.S03_01,240,1,0,'blue carriage pull up-right from the S02 exit pad; underside skim onto the pier pad'),
+                ('S03-02',Task512Tests.S03_02,300,1,0,'blue span lift released across the broken span; green buffer rebound onto the far deck'),
+                ('S03-03',cls.S03_03,320,1,0,'green crest hook pulled over the span buffer; ledge caught in flight, ledge brake onto the ledge'),
+                ('S03-04',cls.S03_04,400,1,0,'blue trolley pull, in-flight trolley top re-catch, exit brake onto the narrow exit pad (section exit)')]
+
+    def interactions(self, trace):
+        """Acquisitions, bounces and mover contacts. Contacts carry no element id, so the carriage
+        underside (y -3120, ny 1) identifies the carriage contact (as TASK-512)."""
+        ticks = []
+        for e in trace['events']:
+            c = e.get('contact') or {}
+            if e['type'] == 'acquisition': el = e['after']['rope'][0]['id']
+            elif e['type'] == 'bounce': el = c.get('elementId')
+            elif e['type'] == 'contact' and c.get('elementId') in self.MOVERS: el = c['elementId']
+            elif e['type'] == 'contact' and c.get('y') == -3120 and c.get('ny') == 1: el = 'S03-carriage'
+            else: continue
+            if not ticks or ticks[-1][0] != e['tick']: ticks.append((e['tick'], e['type'], el))
+        return ticks
+
+    def density(self, trace, bounds, name):
+        ticks = self.interactions(trace)
+        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+        exit_tick = next(t for t, p in enumerate(players) if all(b[0] <= p[k] <= b[1] for k, b in bounds.items()))
+        points = [0]+[t for t, _, _ in ticks if t <= exit_tick]+[exit_tick]
+        gaps = [b-a for a, b in zip(points, points[1:])]
+        i = gaps.index(max(gaps))
+        return dict(trace=name, exit_tick=exit_tick, interactions=[dict(tick=t, type=k, element=el) for t, k, el in ticks if t <= exit_tick],
+                    max_gap=max(gaps), longest_gap=[points[i], points[i+1]], limit=180)
+
+    def landed(self, name):
+        """Density window end: first tick landed (|speedY| < .001) inside the exit box (as TASK-510)."""
+        return {k: v for k, v in self.BOXES[name].items() if k != 'speedX'}
+
+    def starts(self):
+        """One S03 nominal run from the real S02 exit rest; its states start S03-02..04."""
+        if hasattr(type(self), 'start_states'): return type(self).start_states
+        from grapple_over_verify import execute, check_trace
+        start = self.s02_exit()
+        setup = self.make_input(self.NOMINAL, 1150, self.BOXES['S03-04'], snapshot=start)
+        trace = execute(setup, self.browser, self.url, str(self.evidence.path('starts')))
+        check_trace(setup, trace)
+        self.evidence.write('starts/trace.json', self.compact(trace))
+        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+        previous = {'S03-02':'S03-01','S03-03':'S03-02','S03-04':'S03-03'}
+        states, rests = {'S03-01': start}, {}
+        for name, t in self.STARTS.items():
+            if not t: continue
+            states[name] = trace['snapshots'][t]['state']['simulation']
+            # At rest on the previous pad from before the start tick until the encounter's press.
+            rests[name] = min(u for u in range(t+1) if all(self.at_rest(players[v], previous[name]) for v in range(u, self.PRESSES[name])))
+            self.assertLess(rests[name], t, name)
+        self.evidence.write('starts/snapshots.json', dict(
+            s02_exit=dict(source='encounters/S02-exit-start/trace.json (base-start S01+S02 v2 routes, real mouse input)', **type(self).start_proof),
+            s03_run='starts/trace.json (TASK-512 S03 nominal inputs from the S02 exit rest, real mouse input)',
+            ticks={name: dict(tick=t, sha256=trace['snapshots'][t]['sha256'], player=states[name]['player'],
+                              previous_pad_rest_from_tick=rests[name], first_press_tick=self.PRESSES[name])
+                   for name, t in self.STARTS.items() if t}))
+        type(self).start_states, type(self).start_trace = states, trace
+        return states
+
+    def test_01_tolerance_matrix(self):
+        from grapple_over_verify import hashes, check_s03_mechanics
+        states = self.starts()
+        suite = dict(section='S03', designVersion=2, source_hashes=hashes(), level_sha256=dict(
+            **{'mountain.js': hashes()['mountain.js'], 'fixedlevel.js': hashes()['fixedlevel.js']}),
+            proof_kind='S03-01 from the real S02 exit rest (base-start S01+S02 routes); S03-02..04 restored from starts/trace.json states (initial_snapshot)',
+            browser=self.browser.version, revision=self.proof['revision'],
+            viewports=dict(desktop=VIEWPORT, touch=dict(width=844, height=390)),
+            encounters={}, negative_control='negative-control.json', density='density.json',
+            starts=dict(self.STARTS), start_snapshots='starts/snapshots.json',
+            critical_inputs={r[0]: dict(timing_index=r[3], aim_index=r[4], tangent=(1,0), mechanic=r[5]) for r in self.encounters()})
+        failures, nominal = [], {}
+        for name, plan, ticks, critical, aim, mechanic in self.encounters():
+            attempts = []; suite['encounters'][name] = attempts
+            offset = self.STARTS[name]
+            for device in ('desktop','touch'):
+                for variant, delta, shift in self.VARIANTS:
+                    local = [(t-offset+(delta if i==critical else 0), e, x+(shift if i in (aim, aim+1) else 0), y)
+                             for i, (t, e, x, y) in enumerate(plan)]
+                    label = f'{name}-{device}-{variant}'
+                    prefix = ('clips/' if variant=='nominal' else 'attempts/')+label
+                    m = self.make_input(local, ticks, self.BOXES[name], device, states[name])
+                    trace, success, reason = self.run_attempt(m, prefix, variant=='nominal')
+                    mechanics = check_s03_mechanics(name, trace, required=False)
+                    if success:
+                        try: check_s03_mechanics(name, trace)
+                        except ValueError as error: success, reason = False, str(error)
+                    targets = self.targets(trace, m['metadata']['viewport'])
+                    if variant == 'nominal':
+                        self.assertTrue(all(t['in_viewport'] and not t['under_hud'] for t in targets), (label, targets))
+                        if success: nominal[label] = self.density(trace, self.landed(name), prefix+'/trace.json')
+                    final = trace['snapshots'][-1]['state']['simulation']['player']
+                    attempts.append(dict(name=label, device=device, variant=variant, critical_input_index=critical,
+                        aim_input_index=aim, timing_delta=delta, tangent_aim_delta=shift, surface_tangent=(1,0),
+                        input=prefix+'/input.json.gz', trace=prefix+'/trace.json', success=success, reason=reason,
+                        outcome='exit reached' if success else 'intended exit missed', mechanic=mechanic, mechanic_events=mechanics,
+                        press_targets=targets, source_hashes_sha256=state_hash(hashes()), level_sha256=hashes()['mountain.js'],
+                        final=final))
+                    self.evidence.write('manifest.json', suite)
+                    print('ATTEMPT', label, 'PASS' if success else 'FAIL', reason, mechanics['acquisitions'],
+                          (round(final['x'],1), round(final['y'],1)), flush=True)
+                group = [a for a in attempts if a['device']==device]
+                if not group[0]['success'] or sum(a['success'] for a in group[1:]) < 2:
+                    failures.append(name+' '+device)
+        worst = max([d['max_gap'] for d in nominal.values()] or [0])
+        self.evidence.write('density.json', dict(rule='no nominal-trace gap > 180 ticks without an acquisition, bounce or mover contact',
+            counted=['acquisition','bounce','contact with '+'/'.join(self.MOVERS)+' (carriage by its underside y -3120, ny 1)'],
+            window='each nominal encounter trace from tick 0 to the first tick landed (|speedY|<.001) inside its expected exit box',
+            traces=nominal, max_gap=worst, passed=worst <= 180,
+            full_route='test_02 adds the S03 traversal from the real S02 exit rest segmented per encounter'))
+        self.assertEqual(failures, [])
+        self.assertEqual(len(nominal), 8)
+        self.assertLessEqual(worst, 180, {k: v['max_gap'] for k, v in nominal.items()})
+        self.negative_control(states)
+        print('PASS S03 v2 four encounters: both viewports nominal + >=2/4 variants; density max gap', worst,
+              '; mistimed-lift negative control fails the exit')
+
+    def negative_control(self, states):
+        from grapple_over_verify import hashes, check_s03_mechanics
+        # Named mistiming: S03-02 span lift released after 50 ticks instead of 65, same start and physics.
+        name, offset = 'S03-02', self.STARTS['S03-02']
+        m = self.make_input([(t-offset, e, x, y) for t, e, x, y in self.FALL[2:4]], 400, self.BOXES[name], snapshot=states[name])
+        trace, success, reason = self.run_attempt(m, 'clips/negative', True)
+        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+        step = max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a, b in zip(players, players[1:]))
+        mechanics = check_s03_mechanics(name, trace, required=False)
+        rest = next(t for t, p in enumerate(players) if self.at_rest(p, 'S02-landing'))
+        self.assertTrue(all(self.at_rest(p, 'S02-landing') for p in players[rest:]))
+        self.evidence.write('negative-control.json', dict(name='mistimed S03-02: S03-lift released at hold 50 instead of 65',
+            input='clips/negative/input.json.gz', trace='clips/negative/trace.json', failed_intended_exit=not success,
+            reason=reason, intended_exit=self.BOXES[name], unchanged_physics=True, source_hashes=hashes(),
+            start=f'starts/trace.json tick {offset} (same as the S03-02 attempts)', mechanic_events=mechanics,
+            max_tick_displacement=step, final_player=players[-1], s02_landing_rest=dict(tick=rest, player=players[rest]),
+            scope='Same start, physics and lift aim; the early release rebounds off the span buffer back over the span and falls '
+                  'physically through S03-fall-drag onto the S02 landing deck, never reaching the S03 far deck.'))
+        self.assertFalse(success); self.assertIn('expected exit mismatch', reason)
+        self.assertEqual(mechanics['acquisitions'], ['S03-lift'])
+        self.assertIn(self.BUFFER, [b['element'] for b in mechanics['bounces']])
+        self.assertLess(step, 60)
+
+    def test_02_full_traversal(self):
+        """The S03 nominal run from the real S02 exit rest (starts/trace.json), segmented per encounter."""
+        from grapple_over_verify import check_s03_mechanics
+        self.starts()
+        trace = type(self).start_trace
+        mechanics = check_s03_mechanics('S03-01', trace)
+        self.assertEqual(mechanics['acquisitions'], ['S03-carriage','S03-lift','S03-crest-hook','S03-ledge','S03-trolley','S03-trolley'])
+        self.assertIn(self.BUFFER, [b['element'] for b in mechanics['bounces']])
+        self.assertIn('S03-ledge', mechanics['airborne_acquisitions'])
+        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+        self.assertTrue(self.at_rest(players[-1], 'S03-04'), players[-1])
+        segments = {}
+        for name, start_tick in self.PRESSES.items():
+            window = dict(trace, events=[dict(e, tick=e['tick']-start_tick) for e in trace['events'] if e['tick'] >= start_tick],
+                          snapshots=[dict(r, tick=r['tick']-start_tick) for r in trace['snapshots'][start_tick:]])
+            d = self.density(window, self.landed(name), 'starts/trace.json')
+            d.update(start_tick=start_tick, exit_tick_absolute=start_tick+d['exit_tick'])
+            segments[name] = d
+        presses = self.PRESSES
+        idle = [dict(after=a, rest_from=segments[a]['exit_tick_absolute'], next_press=presses[b], player=players[presses[b]])
+                for a, b in zip(list(presses)[:-1], list(presses)[1:])]
+        for row in idle:
+            self.assertTrue(abs(row['player']['speedX']) < .001 and abs(row['player']['speedY']) < .001, row)
+        density = json.loads(self.evidence.path('density.json').read_text()) if self.evidence.path('density.json').exists() else {}
+        density['full_route'] = dict(trace='starts/trace.json', proof_kind='isolated: one labeled placement at the real S02 exit rest; '
+            'real mouse input (TASK-512 S03 nominal inputs)', segments=segments, idle_rests=idle,
+            max_gap=max(d['max_gap'] for d in segments.values()))
+        self.evidence.write('density.json', density)
+        self.assertLessEqual(density['full_route']['max_gap'], 180, {k: v['max_gap'] for k, v in segments.items()})
+        print('PASS full S03: S02 exit rest to the S03 exit pad; acquisitions', mechanics['acquisitions'],
+              '; per-encounter max gaps', {k: v['max_gap'] for k, v in segments.items()})
+
+    def test_03_drag_zone_fall_clips(self):
+        from grapple_over_verify import check_s03_mechanics
+        states = self.starts()
+        offset = self.STARTS['S03-02']
+        plan = [(t-offset, e, x, y) for t, e, x, y in self.FALL[2:]]
+        for device in ('desktop','touch'):
+            m = self.make_input(plan, plan[2][0]+400, self.BOXES['S02-ledge'], device, states['S03-02'])
+            prefix = 'clips/fall-'+device
+            trace, success, reason = self.run_attempt(m, prefix, True)
+            self.assertTrue(success, reason)
+            players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+            step = max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a, b in zip(players, players[1:]))
+            press = plan[2][0]
+            zone = [t for t in self.brake_ticks(players, self.DRAG) if t < press]
+            deck = [e['tick'] for e in trace['events'] if e['type']=='contact' and (e.get('contact') or {}).get('y') == -2100
+                    and (e.get('contact') or {}).get('ny') == -1 and e['tick'] < press]
+            land = deck[0]
+            rest = next(t for t in range(land, press) if self.at_rest(players[t], 'S02-landing'))
+            self.assertTrue(all(self.at_rest(players[t], 'S02-landing') for t in range(rest, press)))
+            base = [e['tick'] for e in trace['events'] if e['type']=='contact' and (e.get('contact') or {}).get('y') == 120]
+            mechanics = check_s03_mechanics('S03-02', trace, required=False)
+            targets = self.targets(trace, m['metadata']['viewport'])
+            self.assertTrue(zone and all(t['in_viewport'] and not t['under_hud'] for t in targets), targets)
+            self.assertEqual(base, [])
+            self.assertEqual(mechanics['acquisitions'], ['S03-lift','S02-crest-hook','S02-ledge'])
+            self.assertIn(self.BUFFER, [b['element'] for b in mechanics['bounces']])
+            self.assertLess(step, 60)
+            ratios = [players[t+1]['speedX']/players[t]['speedX'] for t in zone[:-1] if players[t]['speedX']]
+            rejoined = next(t for t in range(press, len(players)) if self.at_rest(players[t], 'S02-ledge'))
+            self.evidence.write(prefix+'/result.json', dict(passed=True, device=device, viewport=m['metadata']['viewport'],
+                scenario='mistimed S03-02 lift release (hold 50, nominal 65) from the S03-02 start state; buffer rebound; physical fall '
+                         'through S03-fall-drag onto the S02 landing deck; input-only S02-03 rejoin onto the S02 ledge',
+                drag_zone=self.DRAG, drag_zone_ticks=[zone[0], zone[-1]], vx_entering=players[zone[0]-1]['speedX'],
+                vx_leaving=players[zone[-1]+1]['speedX'], per_tick_vx_ratio_count=len(ratios),
+                per_tick_vx_ratio_min_max=[min(ratios), max(ratios)] if ratios else None,
+                s02_landing_first_contact_tick=land, s02_landing_rest=dict(tick=rest, player=players[rest]), base_contact=False,
+                rejoin=dict(press_tick=press, acquisitions=mechanics['acquisitions'][1:], ledge_rest_tick=rejoined, player=players[rejoined]),
+                max_tick_displacement=step, press_targets=targets, mechanic_events=mechanics, final=players[-1]))
+            print('PASS fall '+device+': drag column ticks', zone[0], '-', zone[-1], '; S02 landing rest tick', rest,
+                  '; S02-03 rejoin to the S02 ledge tick', rejoined, '; no relocation')

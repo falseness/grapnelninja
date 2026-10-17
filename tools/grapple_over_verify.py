@@ -281,6 +281,24 @@ def check_s02_mechanics(encounter, trace, required=True):
     return observations
 
 
+def check_s03_mechanics(encounter, trace, required=True):
+    """Layout-v2 Broken Viaduct: blue carriage, blue lift + green buffer, green crest hook + in-flight ledge, blue trolley."""
+    observations=check_s01_mechanics('S01-01', trace, required=False)
+    # The S03 ledge is caught at the apex (vy ~ 0), so airborne = moving at all on the tick before
+    # the catch (a launch from a rest pad has vx = vy = 0).
+    rows=trace['snapshots']
+    observations['airborne_acquisitions']=[e['after']['rope'][0]['id'] for e in trace['events'] if e['type']=='acquisition'
+        and abs(rows[e['tick']-1]['state']['simulation']['player']['speedX'])+abs(rows[e['tick']-1]['state']['simulation']['player']['speedY'])>.01]
+    if required:
+        need={'S03-01':'S03-carriage','S03-02':'S03-lift','S03-03':'S03-crest-hook','S03-04':'S03-trolley'}[encounter]
+        require(observations['acquisitions'][:1]==[need],'S03 acquisition sequence mismatch')
+        if encounter=='S03-02':
+            require('S03-span-buffer' in [b['element'] for b in observations['bounces']],'S03 span buffer bounce missing')
+        if encounter=='S03-03':
+            require('S03-ledge' in observations['airborne_acquisitions'],'S03 in-flight ledge catch missing')
+    return observations
+
+
 def check_s04_mechanics(encounter, trace, required=True):
     """Measure reflection contacts and airborne reacquisition from recorded events."""
     bounces = [e for e in trace['events'] if e['type'] == 'bounce']
@@ -457,6 +475,7 @@ def audit_suite(manifest, browser, url, out):
                 check_trace(recorded, replayed)
                 if section == 'S01' and 'mechanic_events' in a: check_s01_mechanics(encounter, replayed)
                 if section == 'S02' and 'mechanic_events' in a: check_s02_mechanics(encounter, replayed)
+                if section == 'S03' and 'mechanic_events' in a: check_s03_mechanics(encounter, replayed)
                 if section == 'S05': check_s05_mechanics(encounter, replayed)
                 if section == 'S06': check_s06_mechanics(encounter, replayed)
                 if section == 'S07': check_s07_mechanics(encounter, replayed)
@@ -469,6 +488,8 @@ def audit_suite(manifest, browser, url, out):
                 require(check_s01_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S01 mechanics mismatch')
             if section == 'S02' and 'mechanic_events' in a:
                 require(check_s02_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S02 mechanics mismatch')
+            if section == 'S03' and 'mechanic_events' in a:
+                require(check_s03_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S03 mechanics mismatch')
             if section == 'S04':
                 require(check_s04_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S04 mechanics mismatch')
             if section == 'S05':
