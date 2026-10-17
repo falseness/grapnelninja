@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -21,6 +22,11 @@ from browser_test_support import start_browser_test, wait_for_boot
 from grapple_over_test_support import ROOT, VIEWPORT, EvidenceWriter, source_hashes
 from grapple_over_support import install_recorder, export_recording, state_hash
 from perf_mobile import SEED_SCRIPT
+
+
+# Grapple Over camera scale (gameoptions.js), which sets the world size of one CSS pixel.
+CAMERA_SCALE = float(re.search(r"grapple_over: Object\.freeze\(\{cameraScale: ([0-9.]+)",
+                               (ROOT / 'gameoptions.js').read_text()).group(1))
 
 
 def hashes():
@@ -203,9 +209,10 @@ def check_trace(manifest, trace):
     for actual, expected in zip(inputs, manifest['inputs']):
         require(actual['tick'] == expected['tick'] and actual['event'] == expected['event']
                 and actual['trusted'], 'input mismatch')
-        # Chromium mouse coordinates are integer CSS pixels (2 world units here).
+        # Chromium mouse coordinates are integer CSS pixels: 1080/height logical
+        # pixels, i.e. 1080/height/cameraScale world units (4 at 720 and 0.375).
         if expected['event'] != 'touchend':
-            tolerance = 2.000001 * 720 / manifest['metadata']['viewport']['height']
+            tolerance = 1.000001 * 1080 / manifest['metadata']['viewport']['height'] / CAMERA_SCALE
             require(all(abs(actual['world'][k] - expected['world'][k]) <= tolerance for k in ('x', 'y')),
                     'aim mismatch')
     player = rows[-1]['state']['simulation']['player']

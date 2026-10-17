@@ -121,83 +121,59 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         points:[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})
     const rest = (id,x,y,w) => ({id,x,y,role:'solid',grapplable:true,
         points:[{x:0,y:0},{x:w-40,y:0},{x:w-40,y:-60},{x:w,y:-60},{x:w,y:55},{x:0,y:55}]});
-    // Foundations v2 (layout v2): short rest pads between blue hoists and a green
-    // deflector, travelling right from the base spawn. No long walking floors.
+    // Rest pads with low end stops (layout v2 sections).
     const lowRest = (id,x,y,w,lip=20,left=false) => ({id,x,y,role:'solid',grapplable:true,
         points:left ? [{x:0,y:-lip},{x:40,y:-lip},{x:40,y:0},{x:w,y:0},{x:w,y:55},{x:0,y:55}]
             : [{x:0,y:0},{x:w-40,y:0},{x:w-40,y:-lip},{x:w,y:-lip},{x:w,y:55},{x:0,y:55}]})
     // Green bounce hook bar; the rope catches its underside.
     const hook = (id,x,y) => ({...rectangle(id,x,y,120,30,true),role:'bounce'})
+    // Foundations v3 (layout v3, TASK-547): no gray pads. Green bouncers and blue
+    // movers at the doubled 1080-range distances, travelling right from the base spawn.
+    // S01-01: from the green entry pad, pull the blue hoist and release onto the green
+    // yard bouncer. S01-02: off the yard rebound, pull the blue lift and release into
+    // the green deflector wall. S01-03/04 are planned (TASK-548).
+    const bouncer = (id,x,y,w,h) => ({...rectangle(id,x,y,w,h,true),role:'bounce'})
     const yard = [
-        rectangle('S01-entry-pad',2060,18,200,40,true),
-        rectangle('S01-hoist',2440,-345,120,30,true),
-        lowRest('S01-yard-pad',2930,-120,200),
-        rectangle('S01-lift',3310,-498,120,30,true),
-        {id:'S01-deflector',x:3660,y:-630,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:30,y:0},{x:30,y:280},{x:0,y:280}]},
-        lowRest('S01-loading-pad',3460,-350,200,20,true),
-        // S01-03: an up-left crane hook, then a staggered jib hook caught in flight.
-        hook('S01-crane-hook',3290,-832),
-        hook('S01-jib-hook',3547,-1024),
-        lowRest('S01-gantry-pad',3700,-1260,200),
-        // S01-04: the boom hook lifts onto the exit pad, which is also the Switchback entrance.
-        // It stays clear of the S02-01 shot and swing from that pad to the left balcony.
-        hook('S01-boom-hook',3805,-1770),
-        rest('S01-exit',4060,-1620,200)
+        bouncer('S01-entry-pad',2060,18,200,40),
+        rectangle('S01-hoist',2640,-820,120,30,true),
+        bouncer('S01-yard-pad',3900,-880,300,40),
+        rectangle('S01-lift',4440,-1760,120,30,true),
+        bouncer('S01-deflector',4900,-2100,30,750),
+        // Kept (converted to green) only as the v2 Switchback S02-01 start reference.
+        bouncer('S01-exit',4060,-1620,200,55)
     ];
-    // Misses fall to the broad base through a pass-through drag zone that cuts
-    // horizontal speed; it spans the S01 fall lines from right of the entry pad and
-    // ends short of where S07 falls land. Drag zones are not colliders, so it goes
-    // last and the collider order still matches the manifest.
+    // Misses fall to the base floor through this pass-through drag zone, which damps
+    // horizontal and vertical speed; it spans only the declared S01-01/02 fall points.
+    // Drag zones are not colliders, so it goes last and the collider order still
+    // matches the manifest.
     const yardDrag = {id:'S01-yard-drag',x:2280,y:40,role:'drag',grapplable:false,
-        points:[{x:0,y:0},{x:2400,y:0},{x:2400,y:80},{x:0,y:80}]};
+        points:[{x:0,y:0},{x:3020,y:0},{x:3020,y:80},{x:0,y:80}]};
     const yardMovers = [
-        {id:'S01-hoist-travel',element:'S01-hoist',axis:'x',min:2440,max:2560,periodMs:4000,phase:0,velocity:60},
-        {id:'S01-lift-travel',element:'S01-lift',axis:'y',min:-530,max:-450,periodMs:4000,phase:.2,velocity:40}];
-    Object.assign(sections[0], {status:'built', designVersion:2, landmark:{id:'S01-landmark',
-        name:'broken loading yard',x:3060,y:-420},
-        solidExceptions:[
-            {element:'S01-entry-pad',kind:'rest-pad',reason:'Base spawn rest; 200 wide, no walking floor'},
-            {element:'S01-yard-pad',kind:'rest-pad',reason:'S01-01 landing / S01-02 launch rest with a low end stop'},
-            {element:'S01-loading-pad',kind:'rest-pad',reason:'S01-02 landing rest after the deflector rebound'},
-            {element:'S01-gantry-pad',kind:'rest-pad',reason:'S01-03 landing / S01-04 launch rest with a low end stop'},
-            {element:'S01-exit',kind:'rest-pad',reason:'S01 exit rest; also the Switchback S02-01 start'}],
-        // Rope-to-anchor reach from the resting launch point to the nominal acquisition point.
-        gaps:[{id:'S01-01-hoist',from:{x:2160,y:7.2},to:{x:2497,y:-315}},
-            {id:'S01-02-lift',from:{x:3079.2,y:-130.8},to:{x:3374,y:-500}},
-            {id:'S01-03-crane',from:{x:3510.8,y:-360.8},to:{x:3350,y:-802}},
-            // Caught in flight: from the player at the press to the jib hook.
-            {id:'S01-03-jib',from:{x:3446.6,y:-552.7},to:{x:3608,y:-994}},
-            {id:'S01-04-boom',from:{x:3849.2,y:-1270.8},to:{x:3919,y:-1740}}],
-        fallLines:[{id:'S01-01-short',x:2650,landing:'mountain-catch'},
-            {id:'S01-02-short',x:3250,landing:'mountain-catch'},
-            {id:'S01-03-short',x:3600,landing:'mountain-catch'},
-            {id:'S01-04-short',x:3900,landing:'mountain-catch'},
-            {id:'S01-04-overshoot',x:4500,landing:'mountain-catch'}]});
+        {id:'S01-hoist-travel',element:'S01-hoist',axis:'x',min:2640,max:2760,periodMs:4000,phase:0,velocity:60},
+        {id:'S01-lift-travel',element:'S01-lift',axis:'y',min:-1760,max:-1680,periodMs:4000,phase:0,velocity:40}];
+    Object.assign(sections[0], {status:'partial', designVersion:3, landmark:{id:'S01-landmark',
+        name:'broken loading yard',x:3460,y:-1100},
+        band:{...sections[0].band, top:-3240},
+        // Rope-to-anchor reach from the launch point at the press to the acquisition point.
+        gaps:[{id:'S01-01-hoist',from:{x:2160,y:3.4},to:{x:2698.6,y:-790}},
+            // Caught off the yard rebound: from the player at the press to the lift.
+            {id:'S01-02-lift',from:{x:4010.8,y:-893},to:{x:4490.7,y:-1717}}],
+        // Declared miss points: a short or mistimed release falls straight down
+        // through the yard drag zone onto the base floor.
+        fallPoints:[{id:'S01-01-short',encounter:'S01-01',x:2900,y:-700},
+            {id:'S01-02-short',encounter:'S01-02',x:4300,y:-900},
+            {id:'S01-02-overshoot',encounter:'S01-02',x:5200,y:-1600}]});
     Object.assign(encounters[0], {status:'built',x:2160,y:0,
         elements:['S01-entry-pad','S01-hoist','S01-yard-pad'],
-        start:{x:2160,y:0},target:{x:2500,y:-318},
-        exit:{left:2940,right:3090,top:-140,bottom:-120},
-        action:'Acquire the blue hoist from the entry pad; pull, release and land on the yard pad'});
-    Object.assign(encounters[1], {status:'built',x:3079,y:-131,
-        elements:['S01-yard-pad','S01-lift','S01-deflector','S01-loading-pad'],
-        start:{from:'S01-01',x:3079.2,y:-130.8},target:{x:3400,y:-530},
-        exit:{left:3500,right:3650,top:-370,bottom:-350},
-        action:'Pull the blue lift, release into the green deflector and rebound onto the loading pad'});
-    Object.assign(encounters[2], {status:'built',x:3511,y:-361,
-        elements:['S01-loading-pad','S01-crane-hook','S01-jib-hook','S01-gantry-pad'],
-        start:{from:'S01-02',x:3510.8,y:-360.8},target:{x:3350,y:-803},
-        exit:{left:3700,right:3860,top:-1280,bottom:-1260},
-        action:'Pull the up-left crane hook, catch the staggered jib hook in flight and drop onto the gantry pad'});
-    Object.assign(encounters[3], {status:'built',x:3849,y:-1291,
-        elements:['S01-gantry-pad','S01-boom-hook','S01-exit'],
-        start:{from:'S01-03',x:3849.2,y:-1270.8},target:{x:3920,y:-1740},
-        exit:{left:4060,right:4220,top:-1640,bottom:-1620},
-        action:'Pull the boom hook from the gantry pad and release onto the exit pad; a short release drops back onto the gantry pad'});
-    for (let i=0;i<4;i++) connectors[i].status='built';
-    Object.assign(recoveries[0], {status:'built',
-        elements:['S01-yard-drag','mountain-catch','S01-entry-pad','S01-hoist','S01-yard-pad'],
-        rejoin:'S01-01',sideRoute:'Misses fall through the yard drag zone onto the broad base and stop; the blue hoist lifts back to the yard pad'});
+        start:{x:2160,y:0},target:{x:2700,y:-790},
+        exit:{left:3990,right:4060,top:-910,bottom:-880},
+        action:'Pull the blue hoist from the green entry pad, release and bounce off the green yard pad'});
+    Object.assign(encounters[1], {status:'built',x:4011,y:-893,
+        elements:['S01-yard-pad','S01-lift','S01-deflector'],
+        start:{from:'S01-01',x:4010.8,y:-893},target:{x:4500,y:-1730},
+        exit:{left:4600,right:4800,top:-2200,bottom:-1950},
+        action:'Off the yard rebound, pull the blue lift, release into the green deflector wall and rebound'});
+    for (let i=0;i<2;i++) connectors[i].status='built';
     // Switchback Shaft v2 (layout v2): travelling left back over Foundations, so
     // misses drop onto S01 pads and hooks. S02-01: blue shuttle from the S01 exit
     // pad onto the balcony pad. S02-02: blue lift, green bulkhead rebound onto the
@@ -272,7 +248,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S02-03',x:2483.7,y:-2490.8},target:{x:2260,y:-2900},
         exit:{left:2040,right:2200,top:-2700,bottom:-2680},
         action:'Catch the blue trolley from the ledge, pull up-left and release onto the exit pad against its tall left lip'});
-    Object.assign(connectors[4], {status:'built',intent:'Physical ascent from the Foundations exit pad to the blue shuttle'});
+    Object.assign(connectors[4], {status:'planned',intent:'Physical ascent from the Foundations exit (planned S01-04, TASK-548) to the blue shuttle'});
     for (let i=5;i<8;i++) connectors[i].status='built';
     Object.assign(recoveries[1], {status:'built',elements:['S02-fall-drag','S01-entry-pad','S01-hoist','S01-yard-pad'],
         rejoin:'S01-01',sideRoute:'S02 misses drop through the fall column onto the S01 entry pad and stop; a blue hoist pull rejoins the S01 route on the loading pad'});

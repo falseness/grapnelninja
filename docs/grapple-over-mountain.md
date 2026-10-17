@@ -14,7 +14,9 @@ versioned separately from the manifest schema; stable S01-01 through S08-04 IDs
 are independent of coordinates. Section mechanics and landmarks follow the
 approved section descriptions in the task queue.
 
-All four S01 encounters are built; the remaining 28 encounters and both optional
+S01 is layout v3 (TASK-547): S01-01/02 are built from green bouncers and blue
+movers at the 1080 range, with no gray pads; S01-03/04 are planned again until
+TASK-548. Other sections keep their own build status; both optional
 shortcuts are planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and
