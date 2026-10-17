@@ -14,14 +14,23 @@ every frame, i.e. every cyclesPerTick (8) physics cycles, finer than every
 of the view that is neither a corridor interior (the box between a
 segment's two border lines, momentumSegmentBorderLines) nor a live border
 body (MomentumBorder points): the union of those boxes is subtracted from
-the view (coordinates snapped to 1e-6 world units). Asserts per viewport:
+the view (coordinates snapped to 1e-6 world units). Since TASK-043 halved
+the shafts, the view outside the walls is covered by the wall mass instead
+(TASK-044, momentumOutsideCells in elements/momentumborders.js): the area
+counted is the view outside every corridor interior and every wall mass
+cell. Asserts per viewport:
 - that area is 0 at every sample;
+- pixels (PIXELS, every PIXEL_EVERY frames and at the shot frames, HUD and
+  hint not drawn): every sampled canvas pixel outside the current corridor's
+  interior (past its border cap/glow band) is the wall mass colour
+  STYLE.momentum.wallFill, so no piece, other corridor or background shows;
 - >= 1 shaft (vertical segment) was driven through;
 - no live border body overlaps a corridor interior (wide shafts never
   reach into each other: right segments after a shaft are long enough).
 
-MOMENTUM_NO_OUTSIDE_EVIDENCE_DIR (default artifacts/TASK-030) receives
-outside-area.json (compact {viewport: {samples, maxOutsideArea, shafts,
+MOMENTUM_NO_OUTSIDE_EVIDENCE_DIR (default artifacts/TASK-044) receives
+outside-pixels.json (compact {viewport: {frames, samples, nonWallPixels,
+bad}}), outside-area.json (compact {viewport: {samples, maxOutsideArea, shafts,
 maxWallInCorridorArea, worst}}, areas in screen px^2) and shots/: per viewport
 <w>x<h>-mid-shaft.png (the ninja half way up/down the first shaft) and
 <w>x<h>-corner.png (the frame the ninja turns out of the first shaft into the
@@ -37,7 +46,7 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 from test_momentum_run import DRAW, FPS, SECONDS, SEED, SETUP
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_NO_OUTSIDE_EVIDENCE_DIR', ROOT / 'artifacts/TASK-030'))
+EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_NO_OUTSIDE_EVIDENCE_DIR', ROOT / 'artifacts/TASK-044'))
 VIEWPORTS = [(390, 844), (1280, 720), (1024, 768), (844, 390)]
 
 # Area of the view outside every corridor interior and border body, and the
@@ -60,9 +69,12 @@ MEASURE = '''() => {
     for (const f of floors)
         if (f instanceof MomentumBorderFloor)
             for (const e of f.elements) bodies.push(box(e.getPoints()))
+    // The wall mass painted over the view (none before TASK-044)
+    const mass = typeof momentumOutsideCells == 'function'
+        ? momentumOutsideCells().cells.map(c => ({l: snap(c.l), r: snap(c.r), t: snap(c.t), b: snap(c.b)})) : []
     const clip = r => ({l: Math.max(r.l, view.l), r: Math.min(r.r, view.r),
                         t: Math.max(r.t, view.t), b: Math.min(r.b, view.b)})
-    const rects = corridors.concat(bodies).map(clip).filter(r => r.l < r.r && r.t < r.b)
+    const rects = corridors.concat(mass).map(clip).filter(r => r.l < r.r && r.t < r.b)
     const xs = [...new Set([view.l, view.r, ...rects.flatMap(r => [r.l, r.r])])].sort((a, b) => a - b)
     const ys = [...new Set([view.t, view.b, ...rects.flatMap(r => [r.t, r.b])])].sort((a, b) => a - b)
     let outside = 0
@@ -80,6 +92,62 @@ MEASURE = '''() => {
         }
     return {outside, overlap}
 }'''
+
+# Draws the frame without the HUD and the first-run hint (drawn over the wall
+# mass by design) and samples a GRID x GRID pixel grid of the game canvas.
+# A sample counts when it lies outside the interior of the corridor the ninja
+# is in (the segments around screen.segmentIndex as far as they reach into
+# the view without a break) by more than the border's cap / inner neon glow
+# band; it must be the opaque wall mass colour STYLE.momentum.wallFill.
+PIXELS = '''(grid) => {
+    const state = runRngState()
+    const ui = visualEffects.ui, uiDraw = ui.draw, fpsDraw = ui.drawFpsCounter, hint = TUTORIAL_HINT.visible
+    ui.draw = () => {}; ui.drawFpsCounter = () => {}; TUTORIAL_HINT.visible = false
+    try { draw() } finally { ui.draw = uiDraw; ui.drawFpsCounter = fpsDraw; TUTORIAL_HINT.visible = hint }
+    runRngState(state)
+    const view = {l: -screen.x, t: -screen.y}
+    view.r = view.l + width / scale[version]; view.b = view.t + height / scale[version]
+    const course = momentumCourse
+    const box = i => {
+        const lines = momentumSegmentBorderLines(course, i, GAMEPLAY.momentumBorders.halfWidth)
+        const xs = lines.flatMap(l => [l.x0, l.x1]), ys = lines.flatMap(l => [l.y0, l.y1])
+        return {l: Math.min(...xs), r: Math.max(...xs), t: Math.min(...ys), b: Math.max(...ys)}
+    }
+    const inView = b => b.l < view.r && b.r > view.l && b.t < view.b && b.b > view.t
+    const last = course.segments.length - 2, cur = Math.min(screen.segmentIndex, last)
+    const boxes = [box(cur)]
+    for (let i = cur - 1; i >= 0 && inView(box(i)); --i) boxes.push(box(i))
+    for (let i = cur + 1; i <= last && inView(box(i)); ++i) boxes.push(box(i))
+    const T = ctx.getTransform(), k = T.a * scale[version]
+    const neon = STYLE.strokes.neonOutline
+    const cap = Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent))
+    // Canvas px -> world units: the cap strip / widest inner glow line + AA
+    const band = (Math.max(4 * neon.width * T.a, cap * k) + 3) / k
+    const hex = STYLE.momentum.wallFill
+    const want = [1, 3, 5].map(i => parseInt(hex.substr(i, 2), 16))
+    const cw = canvas.width, ch = canvas.height
+    const data = ctx.getImageData(0, 0, cw, ch).data
+    let samples = 0, nonWall = 0
+    const bad = []
+    for (let gx = 0; gx < grid; ++gx)
+        for (let gy = 0; gy < grid; ++gy) {
+            const px = Math.floor((gx + 0.5) * cw / grid), py = Math.floor((gy + 0.5) * ch / grid)
+            const wx = (px + 0.5 - T.e) / k - screen.x, wy = (py + 0.5 - T.f) / k - screen.y
+            if (boxes.some(b => b.l - band < wx && wx < b.r + band && b.t - band < wy && wy < b.b + band))
+                continue
+            ++samples
+            const o = 4 * (py * cw + px)
+            const rgba = [data[o], data[o + 1], data[o + 2], data[o + 3]]
+            if (rgba[0] != want[0] || rgba[1] != want[1] || rgba[2] != want[2] || rgba[3] != 255) {
+                ++nonWall
+                if (bad.length < 3) bad.push([px, py, rgba])
+            }
+        }
+    return {samples, nonWall, bad}
+}'''
+GRID = 48
+# Pixel check every PIXEL_EVERY driven frames (and at the shot frames)
+PIXEL_EVERY = 60
 
 # One driven frame (the DRIVE body of test_momentum_run for one frame), then
 # a sample; stops early at the first mid-shaft / shaft-exit frame not shot yet
@@ -114,6 +182,8 @@ RUN = '''([frames, step, want]) => {
         if (want == 'corner' && seg.dir == 'right' && momentumCourse.segment(screen.segmentIndex - 1).dir != 'right' &&
             before != screen.segmentIndex)
             return {out, shot: 'corner'}
+        if (runFrame % ''' + str(PIXEL_EVERY) + ''' == 0)
+            return {out, shot: null}
     }
     return {out, shot: null}
 }'''
@@ -121,6 +191,7 @@ RUN = '''([frames, step, want]) => {
 
 class MomentumNoOutsideTests(unittest.TestCase):
     results = {}
+    pixel_results = {}
 
     @classmethod
     def setUpClass(cls):
@@ -131,6 +202,7 @@ class MomentumNoOutsideTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         (cls.out / 'outside-area.json').write_text(json.dumps(cls.results, separators=(',', ':')) + '\n')
+        (cls.out / 'outside-pixels.json').write_text(json.dumps(cls.pixel_results, separators=(',', ':')) + '\n')
 
     def run_viewport(self, w, h):
         context = self.browser.new_context(viewport={'width': w, 'height': h})
@@ -146,12 +218,23 @@ class MomentumNoOutsideTests(unittest.TestCase):
         # World units^2 -> screen px^2
         px = (h / page.evaluate('height / scale[version]')) ** 2
         samples, shots = [], {}
+        pixels = {'frames': 0, 'samples': 0, 'nonWallPixels': 0, 'bad': []}
+
+        def check_pixels(frame):
+            p = page.evaluate(PIXELS, GRID)
+            pixels['frames'] += 1
+            pixels['samples'] += p['samples']
+            pixels['nonWallPixels'] += p['nonWall']
+            if p['bad'] and len(pixels['bad']) < 5:
+                pixels['bad'].append([frame] + p['bad'][0])
         left = SECONDS * FPS
         while left:
             want = 'mid' if 'mid' not in shots else 'corner' if 'corner' not in shots else None
             r = page.evaluate(RUN, [left, step, want])
             samples += r['out']
             left -= len(r['out'])
+            if r['out'][-1][0] % PIXEL_EVERY == 0 or r['shot']:
+                check_pixels(r['out'][-1][0])
             if r['shot']:
                 name = f'{w}x{h}-{"mid-shaft" if r["shot"] == "mid" else "corner"}.png'
                 page.evaluate(DRAW)
@@ -165,29 +248,27 @@ class MomentumNoOutsideTests(unittest.TestCase):
                   'worst': {'frame': worst[0], 'segment': worst[1], 'dir': worst[2]},
                   'seed': SEED, 'shots': shots}
         self.results[f'{w}x{h}'] = result
+        self.pixel_results[f'{w}x{h}'] = pixels
+        print(f'{w}x{h} pixels:', json.dumps(pixels, separators=(',', ':')), file=sys.stderr)
         print(f'{w}x{h}:', json.dumps(result, separators=(',', ':')), file=sys.stderr)
         self.assertEqual(errors, [])
+        self.assertGreater(pixels['samples'], 0, pixels)
+        self.assertEqual(pixels['nonWallPixels'], 0, pixels)
         self.assertEqual(len(samples), SECONDS * FPS)
         self.assertGreaterEqual(len(shafts), 1)
         self.assertEqual(result['maxOutsideArea'], 0, result)
         self.assertEqual(result['maxWallInCorridorArea'], 0, result)
         self.assertEqual(sorted(shots), ['corner', 'mid'])
 
-    # TASK-043 halved the shafts, so the area outside their walls shows
-    # again; TASK-044 paints it over with wall mass and removes these marks
-    @unittest.expectedFailure
     def test_390x844(self):
         self.run_viewport(390, 844)
 
-    @unittest.expectedFailure  # TASK-044
     def test_1280x720(self):
         self.run_viewport(1280, 720)
 
-    @unittest.expectedFailure  # TASK-044
     def test_1024x768(self):
         self.run_viewport(1024, 768)
 
-    @unittest.expectedFailure  # TASK-044
     def test_844x390(self):
         self.run_viewport(844, 390)
 

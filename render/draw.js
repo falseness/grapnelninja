@@ -36,6 +36,8 @@ function drawWorldLayer()
     screen.leftWall.draw()
     if (screen.backWall)
         screen.backWall.draw()
+    if (version == 'momentum')
+        drawMomentumOutsideMask()
     screen.draw()
     grapnel.drawHook()
 }

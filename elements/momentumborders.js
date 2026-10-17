@@ -152,14 +152,22 @@ class MomentumBorder extends Ground
     }
     draw()
     {
+        ctx.save()
+        ctx.fillStyle = this.fill
+        ctx.fill(this.getShapePath())
+        this.drawCap(this.capFill)
+        ctx.restore()
+
+        this.drawNeonBoundary()
+    }
+    // The strip along the corridor face
+    drawCap(fill)
+    {
         const line = this.line
         const o = line.normal
         const cap = Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent))
 
-        ctx.save()
-        ctx.fillStyle = this.fill
-        ctx.fill(this.getShapePath())
-        ctx.fillStyle = this.capFill
+        ctx.fillStyle = fill
         ctx.beginPath()
         ctx.moveTo(line.x0 + screen.x, line.y0 + screen.y)
         ctx.lineTo(line.x1 + screen.x, line.y1 + screen.y)
@@ -167,9 +175,6 @@ class MomentumBorder extends Ground
         ctx.lineTo(line.x0 + cap * o.x + screen.x, line.y0 + cap * o.y + screen.y)
         ctx.closePath()
         ctx.fill()
-        ctx.restore()
-
-        this.drawNeonBoundary()
     }
     // Neon only along the corridor face
     drawNeonBoundary()
@@ -258,4 +263,96 @@ function momentumBorders()
         }
     }
     return lines.sort((a, b) => a.segment - b.segment || b.side - a.side)
+}
+
+// Interior boxes (world units) of the corridor the ninja is in: the segments
+// around screen.segmentIndex, as far as they reach into the view without a
+// break. Another part of the course coming back into the view is left out.
+// Only segments already generated (generating more draws Math.random).
+function momentumVisibleCorridor()
+{
+    const course = momentumCourse
+    const view = {l: -screen.x, t: -screen.y}
+    view.r = view.l + width / scale[version]
+    view.b = view.t + height / scale[version]
+    const box = index =>
+    {
+        const lines = momentumSegmentBorderLines(course, index)
+        const xs = lines.flatMap(l => [l.x0, l.x1]), ys = lines.flatMap(l => [l.y0, l.y1])
+        return {segment: index, l: Math.min(...xs), r: Math.max(...xs), t: Math.min(...ys), b: Math.max(...ys)}
+    }
+    const inView = b => b.l < view.r && b.r > view.l && b.t < view.b && b.b > view.t
+    const last = course.segments.length - 2
+    const current = Math.min(screen.segmentIndex, last)
+    const boxes = [box(current)]
+    for (let i = current - 1; i >= 0; --i)
+    {
+        const b = box(i)
+        if (!inView(b))
+            break
+        boxes.unshift(b)
+    }
+    for (let i = current + 1; i <= last; ++i)
+    {
+        const b = box(i)
+        if (!inView(b))
+            break
+        boxes.push(b)
+    }
+    return {view: view, boxes: boxes}
+}
+// Everything in the view outside that corridor: the cells (world units) of
+// the box edge grid not inside any box
+function momentumOutsideCells()
+{
+    const corridor = momentumVisibleCorridor()
+    const view = corridor.view
+    const boxes = corridor.boxes
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+    const xs = [...new Set([view.l, view.r, ...boxes.flatMap(b => [clamp(b.l, view.l, view.r), clamp(b.r, view.l, view.r)])])]
+        .sort((a, b) => a - b)
+    const ys = [...new Set([view.t, view.b, ...boxes.flatMap(b => [clamp(b.t, view.t, view.b), clamp(b.b, view.t, view.b)])])]
+        .sort((a, b) => a - b)
+    const cells = []
+    for (let i = 0; i + 1 < xs.length; ++i)
+        for (let j = 0; j + 1 < ys.length; ++j)
+        {
+            const cx = (xs[i] + xs[i + 1]) / 2, cy = (ys[j] + ys[j + 1]) / 2
+            if (!boxes.some(b => b.l < cx && cx < b.r && b.t < cy && cy < b.b))
+                cells.push({l: xs[i], r: xs[i + 1], t: ys[j], b: ys[j + 1]})
+        }
+    return {cells: cells, segments: boxes.map(b => b.segment)}
+}
+// Those cells as one screen path, so neighbouring cells leave no
+// anti-aliased seam
+function momentumOutsidePath()
+{
+    const outside = momentumOutsideCells()
+    const path = new Path2D()
+    for (const c of outside.cells)
+        path.rect(c.l + screen.x, c.t + screen.y, c.r - c.l, c.b - c.t)
+    return {path: path, segments: outside.segments}
+}
+// Momentum: the view outside the current corridor is solid wall mass, over
+// the background, other corridors and pieces, under the corridor contents.
+// The corridor's own borders get their cap and neon face back on it.
+function drawMomentumOutsideMask()
+{
+    const outside = momentumOutsidePath()
+    ctx.save()
+    ctx.fillStyle = STYLE.momentum.wallFill
+    ctx.fill(outside.path)
+    ctx.clip(outside.path)
+    for (const floor of floors)
+    {
+        if (!(floor instanceof MomentumBorderFloor))
+            continue
+        for (const element of floor.elements)
+            if (outside.segments.includes(element.line.segment))
+            {
+                element.drawCap(STYLE.momentum.wallCapFill)
+                element.drawNeonBoundary()
+            }
+    }
+    ctx.restore()
 }
