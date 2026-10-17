@@ -137,6 +137,7 @@
         
         <script src = "moveScreen.js"></script>
         <script src = "elements/momentumcamera.js"></script>
+        <script src = "elements/momentumpatterns.js"></script>
         
         <script src = "render/effects.js"></script>
         <script src = "render/tutorialhint.js"></script>
@@ -537,6 +538,8 @@
                 [
                     new MomentumBorderFloor(momentumCourse, ['floor', 'ceiling'], floorY, floorY + borders.thickness),
                     new MomentumObstacleFloor(0.2 * height, 2 * height, {min: 0, max: 0}, badFrameCreations(), 1),
+                    // Catalog patterns (elements/momentumpatterns.js), placed only by momentumPlacePattern for now
+                    new MomentumPatternFloor(),
                     new MomentumBorderFloor(momentumCourse, ['wall'], 0, 0)
                 ]
                 ninja = new Ninja(
