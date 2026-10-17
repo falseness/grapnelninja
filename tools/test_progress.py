@@ -122,9 +122,61 @@ class ProgressTests(unittest.TestCase):
         records = json.loads(self.fake_store(page)[RECORDS_KEY])
         log(f'after reload menu={texts} stored={records}')
         self.assertEqual((texts['classic'], texts['bad']), ('record: 7', 'record: 5'))
-        self.assertEqual(records, {'classic': 7, 'bad': 5})
+        self.assertEqual(records, {'classic': 7, 'bad': 5, 'momentum': 0})
         self.assertEqual(page.evaluate('[scoreText.record.classic, scoreText.record.bad]'),
                          [7, 5])
+
+    def test_momentum_record_survives_reload(self):
+        """A momentum score raises record.momentum, is stored and comes back after reload."""
+        page = self.boot()
+        self.score(page, 'classic', 2)
+        page.evaluate('reStart()')
+        self.wait_throttle(page)
+        self.score(page, 'momentum', 6)
+        self.assertEqual(page.evaluate('[version, scoreText.record.momentum]'),
+                         ['momentum', 6])
+        page.evaluate('menu.startPause()')
+        records = json.loads(self.fake_store(page)[RECORDS_KEY])
+        log(f'stored after momentum pause={records}')
+        self.assertEqual(records, {'classic': 2, 'bad': 0, 'momentum': 6})
+        self.reload(page)
+        state = page.evaluate('''[scoreText.record.classic, scoreText.record.bad,
+            scoreText.record.momentum]''')
+        log(f'after reload records={state}')
+        self.assertEqual(state, [2, 0, 6])
+        # A lower momentum score never lowers the record
+        self.score(page, 'momentum', 3)
+        page.evaluate('menu.startPause()')
+        self.wait_throttle(page)
+        self.assertEqual(json.loads(self.fake_store(page)[RECORDS_KEY])['momentum'], 6)
+
+    def test_old_records_json_loads_momentum_zero(self):
+        """A stored pre-momentum {classic, bad} record loads with momentum 0."""
+        page = self.boot()
+        self.seed_and_reload(page, {RECORDS_KEY: '{"classic":8,"bad":3}'})
+        state = page.evaluate('''[scoreText.record.classic, scoreText.record.bad,
+            scoreText.record.momentum]''')
+        log(f'old json -> records={state}')
+        self.assertEqual(state, [8, 3, 0])
+        self.score(page, 'momentum', 2)
+        page.evaluate('menu.startPause()')
+        records = json.loads(self.fake_store(page)[RECORDS_KEY])
+        log(f'after momentum score stored={records}')
+        self.assertEqual(records, {'classic': 8, 'bad': 3, 'momentum': 2})
+
+    def test_corrupt_momentum_record_falls_back_to_zero(self):
+        """Junk, NaN, negative and non-number momentum values load as 0, others kept."""
+        page = self.boot()
+        for value in ('"NaN"', '-7', '"abc"', 'null', '{"a":1}', '"Infinity"'):
+            raw = '{"classic":4,"bad":2,"momentum":%s}' % value
+            self.seed_and_reload(page, {RECORDS_KEY: raw})
+            state = page.evaluate('''[scoreText.record.classic, scoreText.record.bad,
+                scoreText.record.momentum]''')
+            log(f'momentum={value} -> records={state}')
+            self.assertEqual(state, [4, 2, 0], value)
+        # A valid value is floored and kept
+        self.seed_and_reload(page, {RECORDS_KEY: '{"classic":4,"bad":2,"momentum":"9.7"}'})
+        self.assertEqual(page.evaluate('scoreText.record.momentum'), 9)
 
     def test_time_and_settings_survive_reload(self):
         """Time in game and the lang key round-trip."""
@@ -159,16 +211,16 @@ class ProgressTests(unittest.TestCase):
         for store in cases:
             self.seed_and_reload(page, store)
             state = page.evaluate('''[scoreText.record.classic, scoreText.record.bad,
-                PROGRESS.getTime(), PROGRESS.getLang()]''')
+                scoreText.record.momentum, PROGRESS.getTime(), PROGRESS.getLang()]''')
             log(f'seed={store} -> state={state}')
-            self.assertEqual(state, [0, 0, 0, None])
+            self.assertEqual(state, [0, 0, 0, 0, None])
             texts = self.menu_texts(page)
             self.assertEqual((texts['classic'], texts['bad']), ('record: 0', 'record: 0'))
             self.assertIn(' 0 minutes', texts['time'])
         self.score(page, 'classic', 3)
         page.evaluate('reStart()')
         self.assertEqual(json.loads(self.fake_store(page)[RECORDS_KEY]),
-                         {'classic': 3, 'bad': 0})
+                         {'classic': 3, 'bad': 0, 'momentum': 0})
 
     def test_storage_keys(self):
         """Progress goes to localStorage under exactly PROGRESS.keys and survives reload."""
@@ -184,7 +236,7 @@ class ProgressTests(unittest.TestCase):
         dump = page.evaluate('''Object.fromEntries(Object.keys(localStorage).sort()
             .map(k => [k, localStorage.getItem(k)]))''')
         log(f'localStorage={dump} menu={texts}')
-        self.assertEqual(json.loads(local), {'classic': 4, 'bad': 6})
+        self.assertEqual(json.loads(local), {'classic': 4, 'bad': 6, 'momentum': 0})
         self.assertEqual((texts['classic'], texts['bad']), ('record: 4', 'record: 6'))
         self.assertEqual(sorted(dump), sorted(KEYS))
 
@@ -237,7 +289,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(len(sets), 2)
         self.assertTrue(all(g >= 990 for g in gaps))
         self.assertEqual(json.loads(sets[-1]['args'][1][0]),
-                         {'classic': 5, 'bad': 0})
+                         {'classic': 5, 'bad': 0, 'momentum': 0})
 
     def test_pagehide_flushes_new_record(self):
         """Closing the tab mid-run keeps a new record."""
