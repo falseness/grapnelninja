@@ -106,9 +106,16 @@ class MomentumScreen extends Screen
         const along = Math.max(0, ninja.speedX * seg.x + ninja.speedY * seg.y) / dt
 
         let wantX = 0
-        const targetX = ninja.x - this.borderX + lookAhead * look.x
+        let targetX = ninja.x - this.borderX + lookAhead * look.x
+        // In a vertical segment, or a right one leading into one, the shaft's
+        // left wall stays in view: x stops short of its face like y does
+        const capX = this.getShaftCapX()
+        targetX = Math.min(targetX, capX)
         if (targetX >= camX)
             wantX = look.x * along + brake(targetX - camX)
+        // The y braking curve, aimed a buffer short of the cap: the jerk
+        // limited acceleration trails the curve and runs on a little
+        wantX = Math.min(wantX, brake(Math.max(0, capX - options.shaftBrakeBufferHeightRatio * view - camX)))
 
         let wantY = 0
         if (this.verticalTravel)
@@ -139,10 +146,25 @@ class MomentumScreen extends Screen
         }
         const jx = ax - this.accelX, jy = ay - this.accelY
         const j = Math.hypot(jx, jy)
-        if (j > maxJerk * dt)
+        const maxJ = maxJerk * dt
+        if (j > maxJ)
         {
-            ax = this.accelX + jx / j * maxJerk * dt
-            ay = this.accelY + jy / j * maxJerk * dt
+            // An axis easing its acceleration off (toward a stop) gets its
+            // share first, the other one the rest: a camera x starting from
+            // rest at a shaft exit must not make y overrun its stop
+            const easeX = jx * this.accelX < 0, easeY = jy * this.accelY < 0
+            if (easeX != easeY)
+            {
+                const first = Math.max(-maxJ, Math.min(maxJ, easeX ? jx : jy))
+                const rest = Math.sign(easeX ? jy : jx) * Math.sqrt(maxJ * maxJ - first * first)
+                ax = this.accelX + (easeX ? first : rest)
+                ay = this.accelY + (easeX ? rest : first)
+            }
+            else
+            {
+                ax = this.accelX + jx / j * maxJ
+                ay = this.accelY + jy / j * maxJ
+            }
         }
         const a = Math.hypot(ax, ay)
         if (a > maxAccel)
@@ -151,6 +173,9 @@ class MomentumScreen extends Screen
             ay *= maxAccel / a
         }
         let vx = this.velocityX + ax * dt, vy = this.velocityY + ay * dt
+        // Last resort, inert when braking in time: never past the shaft cap
+        if (camX + vx * dt > capX)
+            vx = Math.max(0, (capX - camX) / dt)
         // Never back
         if (vx < 0)
             vx = ax = 0
@@ -160,6 +185,20 @@ class MomentumScreen extends Screen
         this.velocityX = vx; this.velocityY = vy
         this.speedX = -vx * dt
         this.speedY = -vy * dt
+    }
+    // Largest camera x (-screen.x) that keeps the left wall of the current
+    // vertical segment, or of the next one from a right segment, in view
+    // with its thickness and a margin; Infinity when there is none
+    getShaftCapX()
+    {
+        let shaft = this.getSegment()
+        if (shaft.dir == 'right')
+            shaft = this.course.segment(this.segmentIndex + 1)
+        if (shaft.dir == 'right')
+            return Infinity
+        const borders = GAMEPLAY.momentumBorders
+        return shaft.x0 - borders.halfWidth - borders.thickness -
+               GAMEPLAY.momentumCamera.shaftMarginHeightRatio * this.getViewHeight()
     }
     // A box (world coordinates) fully out of view on the vertical side left behind
     isBoxBehind(top, bottom, margin)

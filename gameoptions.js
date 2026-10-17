@@ -103,14 +103,18 @@ const GAMEPLAY = Object.freeze({
     // damped follow pull on the target error (1/s), acceleration limit (/s^2),
     // limit on the change of acceleration (/s^3), target shift along the
     // travel direction, ease time of that direction at a turn (ms); and how far
-    // past the view edge left behind elements are deleted.
+    // past the view edge left behind elements are deleted; the gap kept
+    // between the view's left edge and a vertical shaft's left wall body,
+    // and how far short of that the camera x aims its braking.
     momentumCamera: Object.freeze({
         stiffness: 4,
         maxAccel: 8,
         maxJerk: 80,
         lookAhead: 0.1,
         turnMs: 250,
-        deletionMarginHeightRatio: 0.1
+        deletionMarginHeightRatio: 0.1,
+        shaftMarginHeightRatio: 0.02,
+        shaftBrakeBufferHeightRatio: 0.05
     }),
     // Momentum HP (elements/momentumstate.js): hp at every run start (no upper
     // cap) and how many green touches in a row give one hp.
