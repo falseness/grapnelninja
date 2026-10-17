@@ -297,11 +297,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         {...rectangle('S03-crest-hook',3443,-3745,90,30,true),role:'bounce'},
         lowRest('S03-ledge',4007,-3630,200),
         rectangle('S03-trolley',4303,-4085,120,30,true),
-        lowRest('S03-exit-pad',4600,-3830,150,140),
-        // Legacy v1 Deflector Works entrance deck until S04 is rebuilt: the v1 S03 exit
-        // cropped 240 -> 200 from the right, so the v1 S04-01 start (5050.8,-4830.8) is unchanged.
-        {id:'S03-exit',x:5000,y:-4820,role:'solid',grapplable:true,
-            points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:200,y:0},{x:200,y:55},{x:0,y:55}]}
+        lowRest('S03-exit-pad',4600,-3830,150,140)
     ];
     // Pass-through brakes: the in-flight ledge catch settles on the ledge deck, and the
     // trolley arc sheds horizontal speed over the narrower exit pad before its tall lip.
@@ -324,8 +320,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             {element:'S03-pier',kind:'rest-pad',reason:'S03-01 landing / S03-02 launch rest; low right end stop catches the carriage swing'},
             {element:'S03-far-deck',kind:'rest-pad',reason:'S03-02 landing / S03-03 launch rest across the broken span; tall left lip stops the buffer rebound'},
             {element:'S03-ledge',kind:'rest-pad',reason:'S03-03 landing / S03-04 launch rest under the ledge brake, low right end stop'},
-            {element:'S03-exit-pad',kind:'rest-pad',reason:'S03 exit rest, 150 wide under the exit brake; tall right lip stops the trolley landing'},
-            {element:'S03-exit',kind:'rest-pad',reason:'Legacy v1 Deflector Works entrance deck until S04 is rebuilt for layout v2'}],
+            {element:'S03-exit-pad',kind:'rest-pad',reason:'S03 exit rest, 150 wide under the exit brake; tall right lip stops the trolley landing'}],
         // Rope-to-anchor reach from the resting launch point to the nominal acquisition point.
         gaps:[{id:'S03-01-carriage',from:{x:2050.8,y:-2690.8},to:{x:2239.1,y:-3120}},
             {id:'S03-02-lift',from:{x:2569.2,y:-3010.8},to:{x:2886.6,y:-3354.7}},
@@ -360,72 +355,55 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(recoveries[2], {status:'built',elements:['S03-fall-drag','S02-landing','S02-crest-hook','S02-ledge'],
         rejoin:'S02-03',sideRoute:'Short S03-02 releases rebound off the span buffer, drop through the fall column onto the S02 landing deck and stop; the S02-03 crest-hook pull rejoins the Switchback route'});
     Object.assign(shortcuts[0], {intent:'Optional faster high-risk launch from S03-01 to S03-04; kept planned (not yet authored) for layout v2'});
-    // Deflector Works: a flat press face and tilted chute, above open catch basins.
-    // Green polygons are the machinery itself, with matching reflection colliders.
+    // Deflector Works v2 (layout v2): travelling left from the Viaduct exit pad, the
+    // mirror image of the S03 opening (x' = 6726 - x, 1150 higher). S04-01: blue
+    // carriage pulled up-left; the swing skims its underside and carries leftward speed
+    // onto the pier pad. S04-02: blue lift pulled from the pier; release across the open
+    // works floor (landing far beyond the 540 range) into the flat green press face,
+    // whose reflection settles on the press deck against its tall right lip. The pier's
+    // right end stays left of x 4250, clear of the S03-04 trolley arcs (x >= 4282).
+    // Mover phases mirror the S03 movers at the S03 exit rest time (tick 3270 of the
+    // base-start route). S04-03/04 are planned; until they are rebuilt the v1 upper
+    // step and exit deck stay as the legacy Cable Galleries entrance.
     const deflectors = [
-        {id:'S04-flat-press',x:5500,y:-5270,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:60,y:0},{x:90,y:60},{x:90,y:350},{x:0,y:350}]},
-        rest('S04-rest',4900,-5000,360),
-        {id:'S04-angled-chute',x:5000,y:-5380,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:280,y:-140},{x:310,y:-100},{x:30,y:40}]},
-        rest('S04-transfer-ledge',5220,-5250,160),
-        {id:'S04-catch-basin',x:5240,y:-4800,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:700,y:0},{x:700,y:-100},{x:740,y:-100},
-                {x:740,y:65},{x:0,y:65}]},
-        rectangle('S04-lower-stair',5200,-4770,100,35,true)
-    ];
-    for (const e of deflectors) {e.x=10300-e.x; e.points=e.points.map(p=>({x:-p.x,y:p.y})).reverse();}
-    // Low departure lip catches the angled return while allowing the next shot.
-    deflectors.find(e=>e.id==='S04-transfer-ledge').points.forEach(p=>{if(p.y===-60)p.y=-20;});
-    deflectors.push(
-        {id:'S04-combination-press',x:4620,y:-5700,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:0,y:350},{x:-75,y:350},{x:-60,y:40}]},
-        {id:'S04-combination-rest',x:4990,y:-5530,role:'solid',grapplable:true,points:[{x:0,y:0},{x:-150,y:0},{x:-150,y:-8},{x:-190,y:-8},{x:-190,y:55},{x:0,y:55}]},
-        {id:'S04-double-left',x:4820,y:-6000,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:0,y:170},{x:-65,y:170},{x:-65,y:30}]},
-        {id:'S04-double-right',x:5160,y:-5980,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:65,y:30},{x:65,y:350},{x:0,y:350}]},
-        rectangle('S04-brake-anchor',4800,-5730,40,35,true),
-        // The landing is frictionless after the double reflection; a low mid
-        // lip stops the westward slide where the exit stairs climb begins.
-        {id:'S04-double-landing',x:4880,y:-5780,role:'solid',grapplable:true,
-            points:[{x:0,y:-30},{x:15,y:-30},{x:15,y:0},{x:85.47,y:0},{x:85.47,y:-20},
-                {x:100.47,y:-20},{x:100.47,y:0},{x:155,y:0},
-                {x:155,y:-30},{x:170,y:-30},{x:170,y:35},{x:0,y:35}]},
+        rectangle('S04-carriage',4366,-4285,120,30,true),
+        lowRest('S04-pier',4106,-4150,140,20,true),
+        rectangle('S04-lift',3748,-4586+80*10/24,120,30,true),
+        lowRest('S04-press-deck',3196,-4400,200,60),
+        {id:'S04-flat-press',x:3196,y:-4640,role:'bounce',grapplable:true,
+            points:[{x:0,y:0},{x:30,y:0},{x:30,y:240},{x:0,y:240}]},
         rest('S04-upper-step',4700,-6050,200),
         {id:'S04-exit',x:4460,y:-6480,role:'solid',grapplable:true,points:[{x:0,y:-180},{x:40,y:-180},{x:40,y:0},{x:160,y:0},{x:160,y:-30},{x:200,y:-30},{x:200,y:55},{x:0,y:55}]}
-    );
+    ];
     deflectors.find(e=>e.id==='S04-upper-step').points.forEach(p=>{if(p.y===-60)p.y=-30;});
     deflectors.find(e=>e.id==='S04-upper-step').points.splice(0,1,{x:0,y:-180},{x:40,y:-180},{x:40,y:0});
-    Object.assign(encounters[14], {status:'built',x:4620,y:-5630,
-        elements:['S04-transfer-ledge','S04-combination-press','S04-combination-rest'],
-        start:{from:'S04-02'},target:{x:4610,y:-5630},
-        exit:{left:4811,right:4979,top:-5550,bottom:-5530},
-        action:'Reflect off the upper press then acquire the new rest shelf while airborne'});
-    Object.assign(encounters[15], {status:'built',x:5000,y:-5850,
-        elements:['S04-combination-rest','S04-double-left','S04-double-right','S04-brake-anchor','S04-double-landing','S04-upper-step','S04-exit'],
-        start:{from:'S04-03'},target:{x:5170,y:-5910},
-        exit:{left:4510.8,right:4609.2,top:-6492,bottom:-6480},
-        action:'Release into opposing green faces for two reflections; land and climb the exposed departure stairs'});
-    connectors[14].status='built';
-    Object.assign(connectors[15], {status:'built',intent:'Authored S04 departure to the Cable Galleries band; destination remains planned'});
-    Object.assign(sections[3], {status:'built',landmark:{id:'S04-landmark',
-        name:'angled green machinery',x:5050,y:-5370}});
-    Object.assign(encounters[12], {status:'built',x:4900,y:-5030,
-        elements:['S03-exit','S04-flat-press','S04-rest','S04-catch-basin'],
-        start:{x:5050.8,y:-4830.8,from:'S03-04'},target:{x:4790,y:-5200},
-        exit:{left:5090.8,right:5389.2,top:-5012,bottom:-5000},
-        action:'Pull toward the flat green press; release, reflect right, and brake onto the rest shelf'});
-    Object.assign(encounters[13], {status:'built',x:5150,y:-5400,
-        elements:['S04-rest','S04-angled-chute','S04-transfer-ledge','S04-catch-basin'],
-        start:{from:'S04-01'},target:{x:5150,y:-5430},
-        exit:{left:4970.8,right:5069.2,top:-5262,bottom:-5250},
-        action:'Pull toward the tilted green chute; release and redirect momentum toward the transfer ledge'});
-    // Planned until S04 is rebuilt for layout v2 from the S03 exit pad; v1 S04-01 still starts on the legacy S03-exit deck.
-    Object.assign(connectors[12], {intent:'Physical pull from Viaduct exit to flat press; planned until S04 is rebuilt from the v2 S03 exit pad'});
+    const worksMovers = [
+        {id:'S04-carriage-travel',element:'S04-carriage',axis:'x',min:4296,max:4416,periodMs:4000,phase:17/24,velocity:-60},
+        {id:'S04-lift-travel',element:'S04-lift',axis:'y',min:-4586,max:-4506,periodMs:4000,phase:5/24,velocity:40}];
+    Object.assign(sections[3], {status:'partial', designVersion:2, landmark:{id:'S04-landmark',
+        name:'angled green machinery',x:3800,y:-4900},
+        solidExceptions:[
+            {element:'S04-pier',kind:'rest-pad',reason:'S04-01 landing / S04-02 launch rest, 140 wide; low left end stop catches the carriage swing'},
+            {element:'S04-press-deck',kind:'rest-pad',reason:'S04-02 landing rest under the flat press; tall right lip stops the reflection'},
+            {element:'S04-upper-step',kind:'rest-pad',reason:'Legacy v1 Cable Galleries recovery step until S04-03/04 are rebuilt for layout v2'},
+            {element:'S04-exit',kind:'rest-pad',reason:'Legacy v1 Cable Galleries entrance deck (S05-01 start) until S04-03/04 are rebuilt for layout v2'}],
+        // Rope-to-anchor reach from the resting launch point to the nominal acquisition point.
+        gaps:[{id:'S04-01-carriage',from:{x:4675.2,y:-3840.8},to:{x:4450.6,y:-4255}},
+            {id:'S04-02-lift',from:{x:4156.8,y:-4160.8},to:{x:3839.4,y:-4504.7}}],
+        fallLines:[]});
+    // Encounter nodes sit on the band edge (y -4860); the starts below the band are the real rest poses.
+    Object.assign(encounters[12], {status:'built',x:4675,y:-4860,
+        elements:['S03-exit-pad','S04-carriage','S04-pier'],
+        start:{x:4675.2,y:-3840.8,from:'S03-04'},target:{x:4466,y:-4225},
+        exit:{left:4146,right:4246,top:-4170,bottom:-4150},
+        action:'Pull the blue carriage up-left from the Viaduct exit pad, skim its underside and carry the speed onto the pier pad'});
+    Object.assign(encounters[13], {status:'built',x:4157,y:-4860,
+        elements:['S04-pier','S04-lift','S04-flat-press','S04-press-deck'],
+        start:{from:'S04-01',x:4156.8,y:-4160.8},target:{x:3823,y:-4520},
+        exit:{left:3226,right:3356,top:-4420,bottom:-4400},
+        action:'Pull the blue lift, release across the works floor beyond grapnel range into the flat green press and reflect onto the press deck'});
+    Object.assign(connectors[12], {status:'built',intent:'Physical ascent from the Viaduct exit pad to the blue carriage'});
     connectors[13].status='built';
-    Object.assign(recoveries[3], {openingElements:['S04-catch-basin','S04-lower-stair','S03-exit'],
-        openingRejoin:'S03-04',sideRoute:'Catch basin and lower stairs reconnect physically to the Viaduct'});
     // Cable Galleries: cantilever girders and a deep service overhang. The
     // open shaft below the projecting tips returns misses to Deflector Works.
     const galleries = [
@@ -466,7 +444,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:6210.8,right:6389.2,top:-8082,bottom:-8070}});
     connectors[18].status='built';
     Object.assign(connectors[19], {status:'built',intent:'Exposed departure ledge to the next band; S06 counterweight entrance'});
-    Object.assign(connectors[16], {status:'built',intent:'Pull from the Works exit around the projecting girder'});
+    // Planned until S04-04 is rebuilt for layout v2; v1 S05-01 still starts on the legacy S04-exit deck.
+    Object.assign(connectors[16], {intent:'Pull from the Works exit around the projecting girder; planned until S04-04 is rebuilt'});
     connectors[17].status='built';
     Object.assign(recoveries[4], {openingElements:['S05-rest','S04-exit','S04-upper-step'],
         openingRejoin:'S04-04',sideRoute:'Visible open shaft west of the girders; reachable Works mast and upper step'});
@@ -488,7 +467,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             points:[{x:0,y:0},{x:220,y:0},{x:220,y:-25},{x:260,y:-25},{x:260,y:130},{x:190,y:130},{x:190,y:40},{x:0,y:40}]},
         {...rest('S06-exit',5520,-9680,260),points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:-20},{x:260,y:-20},{x:260,y:55},{x:0,y:55}]}
     );
-    const liftMovers = [...yardMovers, ...shaftMovers, ...viaductMovers, {id:'S06-counterweight-travel',element:'S06-counterweight',
+    const liftMovers = [...yardMovers, ...shaftMovers, ...viaductMovers, ...worksMovers, {id:'S06-counterweight-travel',element:'S06-counterweight',
         axis:'y',min:-8480,max:-8320,periodMs:4000,phase:0,velocity:80},
         {id:'S06-upper-weight-travel',element:'S06-upper-weight',axis:'y',
             min:-9010,max:-8890,periodMs:4000,phase:0,velocity:60}];

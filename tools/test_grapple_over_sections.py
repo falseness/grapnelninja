@@ -4609,7 +4609,8 @@ class Task511Tests(unittest.TestCase):
         for g in gaps:
             self.assertTrue(self.BAND[0] <= g['distance'] <= self.BAND[1], g)
         self.assertEqual(v2['rules']['gapBand']['measured']['target'], list(self.BAND))
-        self.assertEqual(r['report']['v2'], ['S01','S02','S03'])
+        # TASK-514 later rebuilds S04 as layout v2; the first three v2 sections stay as built here.
+        self.assertEqual(r['report']['v2'][:3], ['S01','S02','S03'])
         self.assertFalse(r['report']['failed'])
         # Travelling right: every S03-01/02 route element sits right of the S02 exit pad's left lip.
         route = [e for e in own if e['id'] in set(e1['elements']+e2['elements'])]
@@ -4823,7 +4824,9 @@ class Task512Tests(unittest.TestCase):
         self.assertEqual([e['status'] for e in enc], ['built']*4)
         for a, b in zip(enc, enc[1:]):
             self.assertEqual(b['start']['from'], a['id'])
-        self.assertEqual([c['status'] for c in m['connectors'][8:13]], ['built','built','built','built','planned'])
+        # TASK-514 builds the S04 entrance (connectors[12]) from the S03 exit pad.
+        self.assertEqual([c['status'] for c in m['connectors'][8:12]], ['built','built','built','built'])
+        self.assertIn(m['connectors'][12]['status'], ('planned','built'))
         sc = m['shortcuts'][0]
         self.assertEqual((sc['from'], sc['to'], sc['optional']), ('S03-01', 'S03-04', True))
         rec = m['recoveries'][2]
@@ -5408,3 +5411,280 @@ class Task513Tests(unittest.TestCase):
                 max_tick_displacement=step, press_targets=targets, mechanic_events=mechanics, final=players[-1]))
             print('PASS fall '+device+': drag column ticks', zone[0], '-', zone[-1], '; S02 landing rest tick', rest,
                   '; S02-03 rejoin to the S02 ledge tick', rejoined, '; no relocation')
+
+
+class Task514Tests(unittest.TestCase):
+    """Layout-v2 Deflector Works S04-01/02 from the real v2 S03 exit rest, with real input."""
+    task_id = 'TASK-514'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    report = Task505Tests.report
+    compact = Task506Tests.compact
+    replay = Task506Tests.replay
+    filmstrip = Task507Tests.filmstrip
+    bounds = Task509Tests.bounds
+    at_rest = Task511Tests.at_rest
+    events = Task511Tests.events
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+    # One base-start run: the S01+S02 v2 routes (TASK-511), then the TASK-513 S03 nominal from tick 2120.
+    BASE_ROUTE = Task511Tests.BASE_ROUTE+[(t+2120, e, x, y) for t, e, x, y in Task513Tests.NOMINAL]
+    BASE_TICKS = 2120+1150
+    # S04-01: the blue carriage pull (held 120) swings the player up over the carriage; on release it
+    # drops onto the carriage top, rides it left and falls onto the pier against its low left lip.
+    # S04-02: the lift press at 440 (one 240-tick mover period after the mirrored S03-02 press at 200).
+    CARRIAGE, LIFT = (4466,-4225), (3823,-4520)
+    S04_01 = [(5,'mousedown',*CARRIAGE),(125,'mouseup',*CARRIAGE)]
+    S04_02 = [(440,'mousedown',*LIFT),(505,'mouseup',*LIFT)]
+    MOVERS = ('S04-carriage','S04-lift')
+    PRESS = 'S04-flat-press'
+    BAND, RANGE = (459, 486), 540
+    REST = Task511Tests.REST
+    BOXES = {'S02-04':Task511Tests.BOXES['S02-04'],
+             'S03-04':dict(x=[4600,4710],y=[-3841,-3840],**REST),
+             'S04-01':dict(x=[4146,4246],y=[-4161,-4160],**REST),
+             'S04-02':dict(x=[3226,3356],y=[-4411,-4410],**REST)}
+    S03_ACQUISITIONS = ['S03-carriage','S03-lift','S03-crest-hook','S03-ledge','S03-trolley','S03-trolley']
+
+    def reach(self, players, mech, press_tick, element):
+        return Task508Tests.reach(self, players, mech, press_tick, element)
+
+    def s03_exit(self):
+        """Real S03 exit rest pose: one base-start real-input run of the v2 S01, S02 and S03 routes (no placement)."""
+        from grapple_over_verify import metadata, execute, check_trace
+        if hasattr(type(self), 'start'): return type(self).start
+        m = dict(metadata=metadata('base-start'), ticks=self.BASE_TICKS, expected_exit=self.BOXES['S03-04'],
+            inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in self.BASE_ROUTE],
+            required_events=['acquisition','release'])
+        m['metadata']['compact_contacts'] = True
+        setup = execute(m, self.browser, self.url, str(self.evidence.path('encounters/S03-exit-start')))
+        check_trace(m, setup)
+        self.assertEqual(setup['metadata']['setupOnlySpawns'], [])
+        players = [s['state']['simulation']['player'] for s in setup['snapshots']]
+        self.assertEqual((players[0]['x'], players[0]['y']), (2160, 0))
+        acquired = [e['after']['rope'][0]['id'] for e in setup['events'] if e['type']=='acquisition']
+        self.assertEqual(acquired[:10], ['S01-hoist','S01-lift','S01-crane-hook','S01-jib-hook','S01-boom-hook',
+            'S02-shuttle','S02-lift','S02-crest-hook','S02-ledge','S02-trolley'])
+        self.assertEqual(acquired[10:], self.S03_ACQUISITIONS)
+        self.assertTrue(self.at_rest(players[2120], 'S02-04'), players[2120])
+        self.evidence.write('encounters/S03-exit-start/trace.json', self.compact(setup))
+        rest = next(t for t in range(3000, self.BASE_TICKS+1) if self.at_rest(players[t], 'S03-04'))
+        self.assertTrue(all(self.at_rest(p, 'S03-04') for p in players[rest:]))
+        self.assertEqual((round(players[-1]['x'],1), round(players[-1]['y'],1)), (4675.2, -3840.8))
+        start = setup['snapshots'][-1]['state']['simulation']
+        type(self).start = start
+        type(self).start_proof = dict(kind='base-start S01+S02+S03 v2 routes (TASK-507 S01, TASK-510 S02 nominal from tick 1120, '
+            'TASK-513 S03 nominal from tick 2120), real mouse input, no placement', inputs=m['inputs'], acquisitions=acquired,
+            s02_exit_rest_at_tick_2120=players[2120], s03_exit_rest_from_tick=rest, final_tick=self.BASE_TICKS, player=start['player'],
+            snapshot_sha256=setup['snapshots'][-1]['sha256'], trace='encounters/S03-exit-start/trace.json')
+        self.evidence.write('encounters/S03-exit-start/result.json', dict(passed=True, **type(self).start_proof))
+        return start
+
+    def test_01_geometry_and_rules(self):
+        r = self.report()
+        m = r['manifest']; elements = m['geometry']['elements']
+        byid = {e['id']:e for e in elements}
+        s04 = m['sections'][3]
+        self.assertEqual(s04['designVersion'], 2); self.assertIn(s04['status'], ('partial','built'))
+        enc = m['encounters'][12:16]
+        self.assertEqual([e['status'] for e in enc[:2]], ['built','built'])
+        self.assertEqual(enc[1]['start']['from'], 'S04-01')
+        self.assertEqual([c['status'] for c in m['connectors'][12:14]], ['built','built'])
+        self.assertEqual((m['connectors'][12]['from'], m['connectors'][12]['to']), ('S03-04','S04-01'))
+        self.assertEqual(r['runtime']['elements'], elements)
+        colliders = [e for e in elements if e['role'] != 'drag']
+        self.assertEqual(len(r['colliders']), len(colliders))
+        for actual, expected in zip(r['colliders'], colliders):
+            self.assertEqual(actual, {k:expected[k] for k in ('id','x','y','points','role')})
+        own = [e for e in elements if e['id'].startswith('S04-')]
+        movers = {v['element']:v for v in m['geometry']['movers'] if v['element'].startswith('S04-')}
+        self.assertTrue(set(self.MOVERS) <= set(movers))
+        exceptions = {x['element']:x for x in s04['solidExceptions']}
+        roles = {}
+        for e in own:
+            roles[e['id']] = 'blue mover' if e['id'] in movers else 'green bounce' if e['role'] == 'bounce' else \
+                'drag zone' if e['role'] == 'drag' else 'solid '+exceptions[e['id']]['kind']+' exception'
+            if e['role'] == 'solid' and e['id'] not in movers:
+                self.assertIn(e['id'], exceptions)
+                if exceptions[e['id']]['kind'] == 'rest-pad':
+                    self.assertLessEqual(self.bounds(e)[1]-self.bounds(e)[0], 200, e['id'])
+        self.assertEqual((roles['S04-carriage'], roles['S04-lift'], roles[self.PRESS]), ('blue mover','blue mover','green bounce'))
+        # The v1 Deflector Works geometry and the legacy S03-exit deck are gone.
+        removed = ['S03-exit','S04-rest','S04-angled-chute','S04-transfer-ledge','S04-catch-basin','S04-lower-stair',
+            'S04-combination-press','S04-combination-rest','S04-double-left','S04-double-right','S04-brake-anchor','S04-double-landing']
+        self.assertFalse(set(removed) & set(byid))
+        e1, e2 = enc[0], enc[1]
+        self.assertEqual(e1['start'], {'x':4675.2,'y':-3840.8,'from':'S03-04'})
+        self.assertEqual(e2['start'], {'from':'S04-01','x':4156.8,'y':-4160.8})
+        self.assertEqual(m['encounters'][11]['exit'], {'left':4600,'right':4710,'top':-3850,'bottom':-3830})
+        self.assertIn('S04-carriage', e1['elements']); self.assertIn('S04-pier', e1['elements'])
+        self.assertIn('S04-lift', e2['elements']); self.assertIn(self.PRESS, e2['elements'])
+        # Distinct roles: S04-01 rides a blue carriage with no green surface; S04-02 reflects off the flat green press.
+        self.assertFalse(any(roles[x] == 'green bounce' for x in e1['elements'] if x in roles))
+        v2 = next(s for s in r['report']['sections'] if s['id'] == 'S04')
+        self.assertEqual((v2['designVersion'], v2['passed'], v2['errors'], v2['range']), (2, True, [], self.RANGE))
+        for name in ('bounceDefault','moverCoverage','direction','gapBand','fallDrag'):
+            self.assertTrue(v2['rules'][name]['passed'], name)
+        direction = v2['rules']['direction']['measured']
+        self.assertEqual((direction['required'], direction['actual']), ('left', 'left'))
+        mover_encounters = v2['rules']['moverCoverage']['measured']['encounters']
+        self.assertEqual(mover_encounters[:2], ['S04-01','S04-02'])
+        gaps = v2['rules']['gapBand']['measured']['gaps']
+        self.assertEqual([g['id'] for g in gaps][:2], ['S04-01-carriage','S04-02-lift'])
+        gaps = gaps[:2]
+        for g in gaps:
+            self.assertTrue(self.BAND[0] <= g['distance'] <= self.BAND[1], g)
+        self.assertEqual(v2['rules']['gapBand']['measured']['target'], list(self.BAND))
+        self.assertEqual(r['report']['v2'][:4], ['S01','S02','S03','S04'])
+        self.assertFalse(r['report']['failed'])
+        # Travelling left: every S04-01/02 route element sits left of the S03 exit pad's right lip,
+        # and the route keeps clear of the S03-04 trolley arcs (x >= 4282 up to y -4185, TASK-513 attempts).
+        route = [e for e in own if e['id'] in set(e1['elements']+e2['elements'])]
+        self.assertTrue(all(self.bounds(e)[1] <= 4750 for e in route))
+        self.assertLess(self.bounds(byid['S04-press-deck'])[0], self.bounds(byid['S04-pier'])[0])
+        self.assertLessEqual(self.bounds(byid['S04-pier'])[1], 4250)
+        self.evidence.write('rules.json', dict(self.proof, validator='layoutV2Report (TASK-504)',
+            section=v2, all_applicable_rules_passed=True, encounters=['S04-01','S04-02'], planned=['S04-03','S04-04'],
+            direction=direction, mover_encounters=mover_encounters,
+            gap_targets_reference='artifacts/TASK-503/calibration.json gap_metric (459-486 at 540)',
+            measured_gap_distances={g['id']:g['distance'] for g in gaps},
+            fall_lines='none declared yet (S04-03/04 and the S04 fall recovery are planned); rule passes over an empty list',
+            other_v2_sections={s['id']:s['passed'] for s in r['report']['sections'] if not s['legacy']}))
+        self.evidence.write('geometry.json', dict(self.proof, manifest_section=s04, encounters=enc[:2], planned_encounters=enc[2:],
+            connectors=m['connectors'][12:17], recovery=m['recoveries'][3], elements=own,
+            movers=list(movers.values()), roles=roles,
+            encounter_roles={'S04-01':'blue carriage (x mover) pulled up-left from the S03 exit pad; the long pull swings the player up '
+                                       'over the carriage, the release drops it onto the moving carriage top (mover contact), it rides left '
+                                       'and falls onto the narrow pier pad against its low left lip',
+                             'S04-02':'blue lift (y mover) pulled up-left from the pier; release across the open works floor, landing '
+                                       'beyond the 540 grapnel range; the flat green press face reflects the arc onto the press deck against its tall right lip'},
+            runtime_matches_manifest=True, long_walking_floors=False,
+            removed_v1_elements=removed,
+            legacy_kept={'S04-upper-step':'v1 Cable Galleries recovery step (recoveries[4] opening) until S04-03/04 are rebuilt',
+                         'S04-exit':'v1 Cable Galleries entrance deck; v1 S05-01 start (4530,-6490.8) unchanged; connector S05-entrance '
+                                    'is planned until S04-04 is rebuilt'}))
+        self.overview(elements, own, movers, roles, s04, enc[:2], gaps)
+        print('PASS geometry: S04 designVersion 2 partial (S04-01/02 built, 03/04 planned); roles', sorted(set(roles.values())),
+              '; validator rules all pass; direction left; gaps', [round(g['distance'],1) for g in gaps], '; overview.png')
+
+    def overview(self, elements, own, movers, roles, s04, enc, gaps):
+        colors = {'blue mover':'#2f86ff','green bounce':'#3ddc84'}
+        parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="3000 -4800 1800 1125" style="background:#111827">']
+        for e in elements:
+            if not e['id'].startswith('S03-'): continue
+            pts = ' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+            fill = 'rgba(160,160,160,.18)' if e['role'] == 'drag' else '#374151'
+            parts.append(f'<polygon points="{pts}" fill="{fill}" stroke="#6b7280" stroke-width="2"/>')
+            if e['role'] != 'drag':
+                parts.append(f'<text x="{e["x"]}" y="{e["y"]+40}" fill="#9ca3af" font-size="20">{e["id"]}</text>')
+        for e in own:
+            if e['id'] in ('S04-exit','S04-upper-step'): continue
+            pts = ' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
+            parts.append(f'<polygon points="{pts}" fill="{colors.get(roles[e["id"]], "#a3a3a3")}" stroke="white" stroke-width="2"/>')
+            label_y = e['y']-30 if e['id'] in movers or e['id'] == self.PRESS else e['y']+60
+            parts.append(f'<text x="{e["x"]}" y="{label_y}" fill="white" font-size="24">{e["id"]}</text>')
+        for v in movers.values():
+            e = next(x for x in own if x['id'] == v['element'])
+            x0, y0 = (v['min'], e['y']-10) if v['axis'] == 'x' else (e['x']+130, v['min'])
+            x1, y1 = (v['max']+120, e['y']-10) if v['axis'] == 'x' else (e['x']+130, v['max']+30)
+            parts.append(f'<line x1="{x0}" y1="{y0}" x2="{x1}" y2="{y1}" stroke="#2f86ff" stroke-width="5" stroke-dasharray="10,6"/>')
+        for g in s04['gaps']:
+            parts.append(f'<line x1="{g["from"]["x"]}" y1="{g["from"]["y"]}" x2="{g["to"]["x"]}" y2="{g["to"]["y"]}" stroke="#facc15" stroke-width="4" stroke-dasharray="8,6"/>')
+        for e in enc:
+            b = e['exit']
+            parts.append(f'<rect x="{b["left"]}" y="{b["top"]-20}" width="{b["right"]-b["left"]}" height="{b["bottom"]-b["top"]+20}" fill="none" stroke="#f472b6" stroke-width="4"/>')
+        parts.append(f'<circle cx="4156.8" cy="-4160.8" r="{self.RANGE}" fill="none" stroke="#fb7185" stroke-width="2" stroke-dasharray="6,8"/>')
+        for x, y in ((4675.2,-3840.8),(4156.8,-4160.8),(3345.2,-4410.8)):
+            parts.append(f'<circle cx="{x}" cy="{y}" r="11" fill="#ff7a1a"/>')
+        for i, t in enumerate(['S04 Deflector Works layout v2 (direction left): S03 exit-pad rest (orange) -> S04-01 blue carriage ride -> pier',
+                '-> S04-02 blue lift -> long release across the works floor -> flat green press reflection -> press deck',
+                'yellow = gaps %s of 540; pink = exit boxes; red circle = 540 range from the pier; grey = S03 v2' % '/'.join(str(round(g['distance'],1)) for g in gaps)]):
+            parts.append(f'<text x="3020" y="{-4760+i*36}" fill="#67e8f9" font-size="26">{t}</text>')
+        parts.append('</svg>')
+        page = self.browser.new_page(viewport=dict(width=1280, height=800)); self.addCleanup(page.close)
+        page.set_content('<style>body{margin:0}</style>'+''.join(parts))
+        page.screenshot(path=str(self.evidence.path('overview.png')))
+
+    def isolated(self, name, plan, ticks, box):
+        start = self.s03_exit()
+        trace, mech, players, result = self.replay(name, plan, ticks, self.BOXES[box], kind='isolated', snapshot=start)
+        self.filmstrip('encounters/'+name, VIEWPORT)
+        self.assertEqual((players[0]['x'], players[0]['y']), (start['player']['x'], start['player']['y']))
+        self.assertTrue(self.at_rest(players[0], 'S03-04'), players[0])
+        result.update(proof_kind='isolated: one labeled initial placement = restoreClimbState of the real S03 exit rest pose '
+                      'from one base-start real-input S01+S02+S03 run; production input/physics thereafter; not a continuous-completion claim',
+            not_continuous_completion_claim=True, initial_placement=dict(labeled=True, source=self.start_proof),
+            mechanic_events=[dict(tick=x['tick'], type=x['type'], element=x['element'], mover=x['element'] in self.MOVERS,
+                player=x['player']) for x in mech])
+        return trace, mech, players, result
+
+    def s04_01_checks(self, trace, mech, players):
+        carriage = self.reach(players, mech, 5, 'S04-carriage')
+        anchors = [s['state']['rope'][0] for s in trace['snapshots'] if s['state']['rope'] and s['state']['rope'][0]['id']=='S04-carriage']
+        self.assertGreater(abs(anchors[-1]['x']-anchors[0]['x']), 1)
+        # After the release the player lands on the moving carriage top and rides it left. Contacts
+        # carry no element id; the carriage is the only surface with its top at y -4285, and the
+        # contact lies inside its x travel (4296..4536).
+        top = [dict(tick=e['tick'], type='mover contact', element='S04-carriage', contact=e['contact'],
+                    player=e['after']['simulation']['player']) for e in trace['events']
+               if e['type']=='contact' and e['tick'] > 125 and e['contact']['y'] == -4285 and e['contact']['ny'] == -1]
+        self.assertTrue(top)
+        self.assertTrue(all(4296 <= x['contact']['x'] <= 4536 for x in top), top[0])
+        ride = [t for t in range(125, 300) if abs(players[t]['y']-(-4285-10.8)) < .01]
+        self.assertGreater(len(ride), 20)
+        self.assertLess(players[ride[-1]]['x'], players[ride[0]]['x'])
+        landed = next(t for t in range(125, 440) if self.at_rest(players[t], 'S04-01'))
+        self.assertTrue(all(self.at_rest(p, 'S04-01') for p in players[landed:440]))
+        return carriage, dict(dx=anchors[-1]['x']-anchors[0]['x'], ticks=len(anchors)), \
+            dict(first_contact_tick=top[0]['tick'], last_contact_tick=top[-1]['tick'], contacts=len(top), ride_ticks=[ride[0], ride[-1]],
+                 ride_x=[players[ride[0]]['x'], players[ride[-1]]['x']], ride_y=-4295.8, first_contact=top[0]), landed
+
+    def test_02_s04_01_nominal(self):
+        trace, mech, players, result = self.isolated('S04-01', self.S04_01, 440, 'S04-01')
+        self.assertEqual(self.events(mech), [('acquisition','S04-carriage'),('release','S04-carriage')])
+        carriage, travel, ride, landed = self.s04_01_checks(trace, mech, players)
+        self.assertEqual((round(players[-1]['x'],1), round(players[-1]['y'],1)), (4156.8, -4160.8))
+        self.assertTrue(all(p['x'] <= 4750 for p in players))
+        result.update(encounter='S04-01', carriage_reach=carriage, carriage_anchor_travel_while_attached=travel,
+            carriage_top_ride=ride, pier_rest_from_tick=landed, pier_rest=players[landed])
+        result['mechanic_events'] = sorted(result['mechanic_events']+[ride['first_contact']], key=lambda x: x['tick'])
+        self.evidence.write('encounters/S04-01/result.json', result)
+        print('PASS S04-01: from the real S03 exit rest; blue carriage acquisition', round(carriage['distance'],1),
+              '; carriage top contact tick', ride['first_contact_tick'], 'ride ticks', ride['ride_ticks'], '; pier rest from tick', landed, 'at',
+              (round(players[-1]['x'],1), round(players[-1]['y'],1)), '; identical replay; trusted input')
+
+    def test_03_s04_02_nominal(self):
+        trace, mech, players, result = self.isolated('S04-02', self.S04_01+self.S04_02, 760, 'S04-02')
+        self.assertEqual(self.events(mech), [('acquisition','S04-carriage'),('release','S04-carriage'),
+            ('acquisition','S04-lift'),('release','S04-lift')])
+        ride = self.s04_01_checks(trace, mech, players)[2]
+        result['mechanic_events'] = sorted(result['mechanic_events']+[ride['first_contact']], key=lambda x: x['tick'])
+        self.assertTrue(self.at_rest(players[439], 'S04-01'), players[439])
+        launch = players[440]
+        self.assertEqual((round(launch['x'],1), round(launch['y'],1)), (4156.8, -4160.8))
+        lift = self.reach(players, mech, 440, 'S04-lift')
+        anchors = [s['state']['rope'][0] for s in trace['snapshots'] if s['state']['rope'] and s['state']['rope'][0]['id']=='S04-lift']
+        self.assertGreater(abs(anchors[-1]['y']-anchors[0]['y']), 1)
+        bounce = next(e for e in trace['events'] if e['type']=='bounce' and e['contact']['elementId']==self.PRESS)
+        before, after = bounce['before']['simulation']['player'], bounce['after']['simulation']['player']
+        self.assertLess(before['speedX'], 0); self.assertGreater(after['speedX'], 0)
+        far = lambda p: ((p['x']-launch['x'])**2 + (p['y']-launch['y'])**2) ** .5
+        self.assertGreater(far(before), self.RANGE)
+        landed = next(t for t in range(505, 761) if self.at_rest(players[t], 'S04-02'))
+        self.assertTrue(all(self.at_rest(p, 'S04-02') for p in players[landed:]))
+        self.assertGreater(far(players[landed]), self.RANGE)
+        self.assertEqual((round(players[-1]['x'],1), round(players[-1]['y'],1)), (3345.2, -4410.8))
+        rules = json.loads(self.evidence.path('rules.json').read_text()) if self.evidence.path('rules.json').exists() else None
+        carriage = self.reach(players, mech, 5, 'S04-carriage')
+        if rules:
+            rules['trace_measured_reach'] = {'S04-carriage':carriage, 'S04-lift':lift}
+            self.evidence.write('rules.json', rules)
+        result.update(encounter='S04-02', s04_01_exit_at_tick_439=players[439], lift_reach=lift,
+            lift_anchor_travel_while_attached=dict(dy=anchors[-1]['y']-anchors[0]['y'], ticks=len(anchors)),
+            press_bounce=dict(tick=bounce['tick'], before=before, after=after, distance_from_launch=far(before)),
+            span=dict(launch=dict(x=launch['x'], y=launch['y']), range=self.RANGE, landing_distance_from_launch=far(players[landed]),
+                beyond_range=True, release_tick=505, press_bounce_tick=bounce['tick']),
+            press_deck_rest_from_tick=landed, press_deck_rest=players[landed])
+        self.evidence.write('encounters/S04-02/result.json', result)
+        print('PASS S04-02: from the S04-01 pier rest; blue lift acquisition', round(lift['distance'],1),
+              '; flat green press reflection tick', bounce['tick'], 'at', round(far(before),1), 'from launch; press-deck rest from tick', landed,
+              round(far(players[landed]),1), 'from launch (> 540); identical replay; trusted input')
