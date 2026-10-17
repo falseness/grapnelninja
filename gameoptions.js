@@ -123,7 +123,26 @@ const GAMEPLAY = Object.freeze({
     momentumFadeMs: 800,
     // Momentum blue objects (sprites/momentumblue.js) scale the ninja's
     // velocity by this on their one contact (direction kept).
-    momentumBlueSlow: 0.6
+    momentumBlueSlow: 0.6,
+    // Momentum obstacle spawning (MomentumObstacleFloor): patterns fill the
+    // course up to aheadViewLengths view lengths ahead of the ninja (and as many
+    // view widths right of the view), the first
+    // startViewWidths view widths ahead of its start; gaps between patterns
+    // are gapViewWidths view widths (times obstacleSpacingScale, like bad);
+    // patterns keep joinMarginHalfWidths corridor half widths off a join; a
+    // turn type takes a direction change with turnChancePercent where its
+    // pieces fit and the vertical side has no room for a pattern. Integer pick weights by
+    // difficulty 1..5 go from earlyWeights at score 0 to lateWeights at rampScore.
+    momentumSpawn: Object.freeze({
+        aheadViewLengths: 3,
+        startViewWidths: 0.5,
+        gapViewWidths: Object.freeze({min: 0.20, max: 0.30}),
+        joinMarginHalfWidths: 1.1,
+        turnChancePercent: 70,
+        earlyWeights: Object.freeze([12, 6, 3, 1, 1]),
+        lateWeights: Object.freeze([3, 3, 3, 3, 3]),
+        rampScore: 40
+    })
 })
 const defaultEqualityTolerance = 1
 

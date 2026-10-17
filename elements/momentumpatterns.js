@@ -1,6 +1,7 @@
 // Momentum obstacle patterns: every type of the TASK-012 horizontal and the
 // TASK-013 vertical catalog, built from one-time MomentumGreen / MomentumBlue
-// boxes, nothing lethal.
+// boxes, nothing lethal, and their spawning along the course
+// (MomentumObstacleFloor).
 // A horizontal type fills the whole corridor band (v 0 = ceiling face, 1 = floor face)
 // over a footprint `span` band heights long (u 0..1 along the travel
 // direction). Pieces are [kind, u, v, w, h] in those fractions.
@@ -241,6 +242,25 @@ class MomentumTurnPatternFactory
     {
         return 4 * GAMEPLAY.momentumBorders.halfWidth
     }
+    // How far the pieces reach from the course vertex of join, world units:
+    // back along the incoming segment and ahead along the outgoing one
+    getReach(join)
+    {
+        const size = this.getSize()
+        const transform = MOMENTUM_TURN_TRANSFORMS[join]
+        const vertex = transform(0.75, 0.75)
+        const [from, to] = join.split('->').map(momentumDirection)
+        let back = 0, ahead = 0
+        for (const [, px, py, w, h] of this.pattern.pieces)
+            for (const [u, v] of [[px, py], [px + w, py], [px, py + h], [px + w, py + h]])
+            {
+                const p = transform(u, v)
+                const dx = (p.x - vertex.x) * size, dy = (p.y - vertex.y) * size
+                back = Math.max(back, -(dx * from.x + dy * from.y))
+                ahead = Math.max(ahead, dx * to.x + dy * to.y)
+            }
+        return {back: back, ahead: ahead}
+    }
     // (x, y): the course vertex of the join; join: 'right->up' etc.
     create(x, y, join)
     {
@@ -282,34 +302,261 @@ const momentumPatternsByDir = Object.freeze({
     down: Object.freeze(MOMENTUM_PATTERNS_V.filter(pattern => pattern.dirs.includes('down')).map(pattern => pattern.id))
 })
 
-// Holds placed patterns, one generation group each. Nothing spawns here on
-// its own yet; deletion and scoring work like the obstacle floor's.
+// Holds placed patterns, one generation group each, with the group's box
+// kept apart from its pieces: a group is scored once it is passed (left of
+// the view, or behind it vertically) even when its one-time pieces have
+// already faded, and deleted with its pieces past the deletion borders.
 class MomentumPatternFloor extends Floor
 {
     constructor()
     {
         super(0.2 * height, 2 * height, {min: 0, max: 0}, [], 1)
+        this.groups = []
     }
     generatePrimaryElements()
     {
         this.elements = []
+        this.groups = []
         this.nextGenerationGroupId = 0
     }
     replenishElements() {}
     place(elements)
     {
         const generationGroupId = this.nextGenerationGroupId++
+        const group = {id: generationGroupId, left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity,
+                       scored: false}
         for (const element of elements)
+        {
             element.generationGroupId = generationGroupId
+            const bounds = getElementBounds(element)
+            group.left = Math.min(group.left, bounds.left)
+            group.top = Math.min(group.top, bounds.top)
+            group.right = Math.max(group.right, bounds.right)
+            group.bottom = Math.max(group.bottom, bounds.bottom)
+        }
         this.elements.push(...elements)
+        this.groups.push(group)
         return generationGroupId
     }
     deleteElements()
     {
-        super.deleteElements()
-        screen.deleteBehind(this, false)
+        const border = screen.getDeletionBorder()
+        const margin = GAMEPLAY.momentumCamera.deletionMarginHeightRatio * screen.getViewHeight()
+        const deleted = new Set()
+        for (const group of this.groups)
+        {
+            if (!group.scored && (group.right + screen.x < 0 || screen.isBoxBehind(group.top, group.bottom, 0)))
+            {
+                group.scored = true
+                changeScoreText()
+            }
+            const behind = screen.isBoxBehind(group.top, group.bottom, margin)
+            if (behind || group.right + screen.x < border)
+            {
+                deleted.add(group.id)
+                if (behind)
+                    screen.deletedBehind += this.elements.filter(e => e.generationGroupId === group.id).length
+            }
+        }
+        if (!deleted.size)
+            return
+        this.groups = this.groups.filter(group => !deleted.has(group.id))
+        this.elements = this.elements.filter(element => !deleted.has(element.generationGroupId))
     }
 }
+
+// The momentum obstacles: catalog patterns spawned along the course ahead of
+// the ninja (GAMEPLAY.momentumSpawn). Stretch by stretch (consecutive
+// segments of one direction), a turn type may take the join at the stretch
+// end (its pieces' reach on both stretches), the rest gets patterns of its
+// direction, spaced like the bad obstacle floor
+// (Floor.alignBadVersionGeneratedElements). Types are picked with
+// integer weights by difficulty (Floor.generateElements), easy types first.
+class MomentumObstacleFloor extends MomentumPatternFloor
+{
+    constructor(course)
+    {
+        super()
+        this.course = course
+    }
+    generatePrimaryElements()
+    {
+        super.generatePrimaryElements()
+        this.arcStarts = [0]
+        this.segmentIndex = 0
+        this.plan = null
+        this.nextClaim = 0
+        this.replenishElements()
+    }
+    getViewLength()
+    {
+        return Math.max(width, height) / scale[version]
+    }
+    // Course length before segment index
+    getArcStart(index)
+    {
+        while (this.arcStarts.length <= index)
+        {
+            const i = this.arcStarts.length - 1
+            this.arcStarts.push(this.arcStarts[i] + this.course.segment(i).length)
+        }
+        return this.arcStarts[index]
+    }
+    // The ninja's course position: its segment start plus its progress along it
+    getNinjaArc()
+    {
+        const index = screen.segmentIndex
+        const segment = this.course.segment(index)
+        const d = momentumDirection(segment.dir)
+        const along = (ninja.x - segment.x0) * d.x + (ninja.y - segment.y0) * d.y
+        return this.getArcStart(index) + Math.max(0, Math.min(segment.length, along))
+    }
+    // Integer weights by difficulty: options.earlyWeights at score 0 moving
+    // to options.lateWeights at options.rampScore
+    pickType(ids, difficultyOf)
+    {
+        const options = GAMEPLAY.momentumSpawn
+        const ramp = Math.min(1, scoreText.count[version] / options.rampScore)
+        const weights = ids.map(id =>
+        {
+            const d = Math.min(difficultyOf(id), options.earlyWeights.length) - 1
+            return Math.max(1, Math.round(options.earlyWeights[d] +
+                (options.lateWeights[d] - options.earlyWeights[d]) * ramp))
+        })
+        const total = weights.reduce((sum, weight) => sum + weight, 0)
+        const num = Math.min(random(0, total), total - 1)
+        let bound = 0
+        for (let i = 0; i < ids.length; ++i)
+        {
+            bound += weights[i]
+            if (num < bound)
+                return ids[i]
+        }
+        return ids[ids.length - 1]
+    }
+    getGap()
+    {
+        const options = GAMEPLAY.momentumSpawn
+        const view = width / scale[version]
+        const spacing = obstacleSpacingScale(scoreText.count[version])
+        return random(options.gapViewWidths.min * view * spacing, options.gapViewWidths.max * view * spacing)
+    }
+    // Last segment index of the straight stretch starting at segment index
+    // (consecutive segments of one direction)
+    getStretchEnd(index)
+    {
+        const dir = this.course.segment(index).dir
+        while (this.course.segment(index + 1).dir == dir)
+            ++index
+        return index
+    }
+    // Whether a vertical stretch this long holds a pattern of its direction
+    hasPatternRoom(dir, length)
+    {
+        const margin = GAMEPLAY.momentumSpawn.joinMarginHalfWidths * GAMEPLAY.momentumBorders.halfWidth
+        const shortest = Math.min(...momentumPatternsByDir[dir].map(id => momentumPatternFactories[id].getLength()))
+        return length >= 2 * margin + shortest
+    }
+    // Where patterns of the stretch from segment index may go (course
+    // distance from its start) and whether a turn takes the join at its end.
+    // Vertical patterns come first: no turn next to a vertical stretch long
+    // enough for one (a turn would leave it no room). A turn needs its piece
+    // reach (MomentumTurnPatternFactory.getReach) on both stretches, plus the
+    // join margin at the far end of the next one; patterns keep the minimum
+    // gap off its pieces.
+    planStretch(index)
+    {
+        const options = GAMEPLAY.momentumSpawn
+        const margin = options.joinMarginHalfWidths * GAMEPLAY.momentumBorders.halfWidth
+        const last = this.getStretchEnd(index)
+        const segment = this.course.segment(index)
+        const end = this.course.segment(last)
+        const next = this.course.segment(last + 1)
+        const length = this.getArcStart(last + 1) - this.getArcStart(index)
+        const nextLength = this.getArcStart(this.getStretchEnd(last + 1) + 1) - this.getArcStart(last + 1)
+        let start = Math.max(margin, this.nextClaim)
+        if (index == 0)
+            start = Math.max(start, ninja.x - segment.x0 + options.startViewWidths * width / scale[version])
+        const join = segment.dir + '->' + next.dir
+        const vertical = segment.dir == 'right' ? [next.dir, nextLength] : [segment.dir, length]
+        let turn = null, reach = null
+        if (momentumTurnsByJoin[join].length && !this.hasPatternRoom(...vertical) &&
+            random(0, 100) < options.turnChancePercent)
+        {
+            turn = this.pickType(momentumTurnsByJoin[join], id => momentumTurnFactories[id].pattern.difficulty)
+            reach = momentumTurnFactories[turn].getReach(join)
+            if (start > length - reach.back || nextLength < reach.ahead + margin)
+                turn = null
+        }
+        const gap = options.gapViewWidths.min * width / scale[version]
+        return {segment: segment, index: index, last: last, vertex: {x: end.x1, y: end.y1}, cursor: start,
+                join: join, turn: turn, end: turn ? length - reach.back - gap : length - margin,
+                turnArc: turn ? length - reach.back : 0, nextClaim: turn ? reach.ahead + gap : 0, filled: false}
+    }
+    spawned(id, kind, dir, difficulty, arc)
+    {
+        if (MomentumObstacleFloor.onSpawn)
+        {
+            const group = this.groups[this.groups.length - 1]
+            MomentumObstacleFloor.onSpawn({id: id, kind: kind, dir: dir, difficulty: difficulty, segment: this.plan.index,
+                          arcAhead: arc - this.getNinjaArc(), group: group,
+                          lethal: this.elements.filter(e => e.generationGroupId === group.id && isLethalElement(e)).length})
+        }
+    }
+    // Spawns until the next free course position is aheadViewLengths ahead
+    // along the course and as many view widths right of the view (the
+    // course never goes left, so nothing later can show up in the view)
+    replenishElements()
+    {
+        const ahead = GAMEPLAY.momentumSpawn.aheadViewLengths
+        const target = this.getNinjaArc() + ahead * this.getViewLength()
+        const targetX = -screen.x + ahead * width / scale[version]
+        const reached = (segment, arc) => arc >= target &&
+            segment.x0 + momentumDirection(segment.dir).x * (arc - this.getArcStart(this.plan.index)) >= targetX
+        for (;;)
+        {
+            if (!this.plan)
+                this.plan = this.planStretch(this.segmentIndex)
+            const plan = this.plan
+            const segment = plan.segment
+            const arc = this.getArcStart(plan.index)
+            if (!plan.filled)
+            {
+                if (reached(segment, arc + plan.cursor))
+                    return
+                const ids = momentumPatternsByDir[segment.dir]
+                const id = this.pickType(ids, id => momentumPatternFactories[id].pattern.difficulty)
+                const factory = momentumPatternFactories[id]
+                if (plan.cursor + factory.getLength() > plan.end)
+                {
+                    plan.filled = true
+                    continue
+                }
+                const d = momentumDirection(segment.dir)
+                this.place(factory.create(segment.x0 + d.x * plan.cursor, segment.y0 + d.y * plan.cursor, segment.dir))
+                this.spawned(id, segment.dir == 'right' ? 'horizontal' : 'vertical', segment.dir,
+                             factory.pattern.difficulty, arc + plan.cursor)
+                plan.cursor += factory.getLength() + this.getGap()
+                continue
+            }
+            if (plan.turn)
+            {
+                if (reached(segment, arc + plan.turnArc))
+                    return
+                const factory = momentumTurnFactories[plan.turn]
+                this.place(factory.create(plan.vertex.x, plan.vertex.y, plan.join))
+                this.spawned(plan.turn, 'turn', plan.join, factory.pattern.difficulty, arc + plan.turnArc)
+                plan.turn = null
+            }
+            this.nextClaim = plan.nextClaim
+            this.segmentIndex = plan.last + 1
+            this.plan = null
+        }
+    }
+}
+
+// Called with every spawned group (tests and tools)
+MomentumObstacleFloor.onSpawn = null
 
 // Places catalog type id on the momentum pattern floor, for tests and
 // screenshots. Returns the placed boxes, or null outside momentum and for a

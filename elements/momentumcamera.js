@@ -198,13 +198,3 @@ class MomentumScreen extends Screen
     }
 }
 
-// The bad obstacle floor in momentum, also deleting what the camera leaves
-// behind vertically
-class MomentumObstacleFloor extends Floor
-{
-    deleteElements()
-    {
-        super.deleteElements()
-        screen.deleteBehind(this, true)
-    }
-}
