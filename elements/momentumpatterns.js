@@ -1,4 +1,4 @@
-// Momentum obstacle patterns: catalog types (TASK-012 horizontal catalog)
+// Momentum obstacle patterns: every type of the TASK-012 horizontal catalog,
 // built from one-time MomentumGreen / MomentumBlue boxes, nothing lethal.
 // A type fills the whole corridor band (v 0 = ceiling face, 1 = floor face)
 // over a footprint `span` band heights long (u 0..1 along the travel
@@ -35,6 +35,45 @@ const MOMENTUM_PATTERNS_H = Object.freeze([
         ['blue', 0.48, 0.2, 0.08, 0.28],
         ['green', 0.3, 0.9, 0.1, 0.04],
         ['green', 0.62, 0.9, 0.1, 0.04]
+    ]},
+    {id: 'cube-shuffle', difficulty: 3, span: 1.0, pieces: [
+        ['green', 0.26, 0.55, 0.16, 0.06],
+        ['blue', 0.45, 0.25, 0.1, 0.12],
+        ['blue', 0.45, 0.64, 0.1, 0.26],
+        ['green', 0.58, 0.55, 0.16, 0.06],
+        ['green', 0.86, 0.2, 0.1, 0.04]
+    ]},
+    {id: 'stair-run', difficulty: 3, span: 1.1, pieces: [
+        ['green', 0.0364, 0.3, 0.0909, 0.04],
+        ['green', 0.1818, 0.48, 0.0909, 0.04],
+        ['green', 0.3273, 0.66, 0.0909, 0.04],
+        ['blue', 0.4545, 0.82, 0.0909, 0.18],
+        ['green', 0.5818, 0.66, 0.0909, 0.04],
+        ['green', 0.7273, 0.48, 0.0909, 0.04],
+        ['green', 0.8727, 0.3, 0.0909, 0.04]
+    ]},
+    {id: 'double-dare', difficulty: 4, span: 1.0, pieces: [
+        ['green', 0.04, 0.04, 0.06, 0.26],
+        ['green', 0.04, 0.7, 0.06, 0.26],
+        ['green', 0.3, 0.16, 0.1, 0.04],
+        ['blue', 0.47, 0.36, 0.06, 0.28],
+        ['green', 0.62, 0.16, 0.1, 0.04],
+        ['green', 0.9, 0.04, 0.06, 0.26],
+        ['green', 0.9, 0.7, 0.06, 0.26]
+    ]},
+    {id: 'needle-streak', difficulty: 5, span: 1.1, pieces: [
+        ['green', 0.0364, 0.7, 0.0727, 0.04],
+        ['blue', 0.0364, 0.0, 0.0727, 0.2],
+        ['green', 0.2, 0.3, 0.0727, 0.04],
+        ['blue', 0.2, 0.8, 0.0727, 0.2],
+        ['green', 0.3636, 0.7, 0.0727, 0.04],
+        ['blue', 0.3636, 0.0, 0.0727, 0.2],
+        ['green', 0.5273, 0.3, 0.0727, 0.04],
+        ['blue', 0.5273, 0.8, 0.0727, 0.2],
+        ['green', 0.6909, 0.7, 0.0727, 0.04],
+        ['blue', 0.6909, 0.0, 0.0727, 0.2],
+        ['green', 0.8545, 0.3, 0.0727, 0.04],
+        ['blue', 0.8545, 0.8, 0.0727, 0.2]
     ]}
 ].map(pattern => Object.freeze(pattern)))
 

@@ -1,12 +1,14 @@
-"""Momentum horizontal obstacle patterns, batch 1 (elements/momentumpatterns.js).
+"""Momentum horizontal obstacle patterns (elements/momentumpatterns.js).
 
 Reads the TASK-012 horizontal catalog (MOMENTUM_CATALOG_H, default
-artifacts/TASK-012/catalog-h.json) and takes its 5 lowest-difficulty types
-(ties in catalog order). Starts momentum on a course whose first right
+artifacts/TASK-012/catalog-h.json) and checks every type of it, or with
+MOMENTUM_PATTERNS_H_BATCH=N only the N lowest-difficulty ones (ties in
+catalog order; 5 = the TASK-014 batch 1). Starts momentum on a course whose first right
 segment is long (scripted MomentumCourse.generate, as in
 test_momentum_borders), stops the rAF loop, empties the bad obstacle floor
 and places each type alone with window.momentumPlacePattern on that
-segment. Asserts: exactly those ids are registered; per type the element
+segment. Asserts: all catalog ids are registered, in catalog order (a
+batch: its ids are among them); per type the element
 count, green count and blue count equal the catalog piece list, piece by
 piece (class and box at the catalog fractions of the footprint and band);
 no element is lethal (isLethalElement, and only MomentumGreen/MomentumBlue
@@ -14,7 +16,7 @@ classes); every element lies inside the floor/ceiling band and footprint.
 Also: an 'up' placement stays inside the vertical corridor, and bad mode
 has no pattern floor (momentumPlacePattern returns null).
 
-Writes to MOMENTUM_PATTERNS_H_EVIDENCE_DIR (default artifacts/TASK-014):
+Writes to MOMENTUM_PATTERNS_H_EVIDENCE_DIR (default artifacts/TASK-015):
 patterns-h.json (compact {id: {greens, blues, classes, lethal, bbox, bboxBand}};
 bbox in world units, bboxBand in footprint/band fractions) and
 compare-<id>.png (game canvas left, catalog SVG right).
@@ -35,8 +37,8 @@ from test_momentum_borders import SEED_COURSE
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = Path(os.environ.get('MOMENTUM_CATALOG_H', ROOT / 'artifacts/TASK-012/catalog-h.json'))
 SVG_DIR = CATALOG.parent / 'diagrams'
-EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_PATTERNS_H_EVIDENCE_DIR', ROOT / 'artifacts/TASK-014'))
-BATCH = 5
+EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_PATTERNS_H_EVIDENCE_DIR', ROOT / 'artifacts/TASK-015'))
+BATCH = int(os.environ.get('MOMENTUM_PATTERNS_H_BATCH', 0)) or None
 # First segment right with a length draw of 0.99 (~5 heights), then the LCG
 SCRIPT = [0.99]
 EPS = 1e-6
@@ -58,6 +60,8 @@ SHOOT = '''([cx, cy]) => {
 
 
 def batch_types(catalog):
+    if BATCH is None:
+        return catalog
     order = sorted(range(len(catalog)), key=lambda i: (catalog[i]['difficulty'], i))
     return [catalog[i] for i in order[:BATCH]]
 
@@ -66,7 +70,8 @@ class MomentumPatternsHTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-        cls.types = batch_types(json.loads(CATALOG.read_text()))
+        cls.catalog = json.loads(CATALOG.read_text())
+        cls.types = batch_types(cls.catalog)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         context = cls.browser.new_context(viewport={'width': 1280, 'height': 720})
         cls.addClassCleanup(context.close)
@@ -95,9 +100,13 @@ class MomentumPatternsHTests(unittest.TestCase):
     def test_1_registered_ids(self):
         ids = self.page.evaluate('Object.keys(momentumPatternFactories)')
         want = [t['id'] for t in self.types]
-        print('registered:', ids, 'catalog batch:', want,
-              'difficulties:', [t['difficulty'] for t in self.types])
-        self.assertEqual(ids, want)
+        print('registered:', len(ids), ids, 'checked:', len(want), want,
+              'difficulties:', [t['difficulty'] for t in self.types], 'catalog length:', len(self.catalog))
+        if BATCH is None:
+            self.assertEqual(ids, [t['id'] for t in self.catalog])
+            self.assertEqual(len(want), len(self.catalog))
+        else:
+            self.assertTrue(set(want) <= set(ids))
 
     def test_2_types_match_catalog(self):
         band = 2 * self.half
@@ -149,7 +158,8 @@ class MomentumPatternsHTests(unittest.TestCase):
                                  round((bbox[2] - x) / length, 4), round((bbox[3] - top) / band, 4)]}
                 self.placed[t['id']] = (x + length / 2, y)
         (EVIDENCE_DIR / 'patterns-h.json').write_text(json.dumps(self.summary, separators=(',', ':')))
-        print('wrote patterns-h.json with', len(self.summary), 'types')
+        print('wrote patterns-h.json with', len(self.summary), 'types; catalog length', len(self.catalog),
+              '; lethal elements in all types', sum(v['lethal'] for v in self.summary.values()))
 
     def test_3_up_placement_inside_corridor(self):
         t = self.types[0]
