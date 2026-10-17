@@ -371,7 +371,10 @@ class MomentumPatternFloor extends Floor
 // end (its pieces' reach on both stretches), the rest gets patterns of its
 // direction, spaced like the bad obstacle floor
 // (Floor.alignBadVersionGeneratedElements). Types are picked with
-// integer weights by difficulty (Floor.generateElements), easy types first.
+// integer weights by difficulty (Floor.generateElements), easy types first,
+// skipping the options.avoidRecent types placed last in the same direction
+// (up and down together; turns: join) while another type is left, and never
+// the last one in the same direction or join while there is another type.
 class MomentumObstacleFloor extends MomentumPatternFloor
 {
     constructor(course)
@@ -386,6 +389,9 @@ class MomentumObstacleFloor extends MomentumPatternFloor
         this.segmentIndex = 0
         this.plan = null
         this.nextClaim = 0
+        // Up to options.avoidRecent recently placed type ids (latest last)
+        // by direction, 'vertical' (up and down) and turn join
+        this.recentIds = {}
         this.replenishElements()
     }
     getViewLength()
@@ -412,10 +418,20 @@ class MomentumObstacleFloor extends MomentumPatternFloor
         return this.getArcStart(index) + Math.max(0, Math.min(segment.length, along))
     }
     // Integer weights by difficulty: options.earlyWeights at score 0 moving
-    // to options.lateWeights at options.rampScore
-    pickType(ids, difficultyOf)
+    // to options.lateWeights at options.rampScore. Skips the ids in avoid
+    // while one is left (the latest one last).
+    pickType(ids, difficultyOf, avoid = [])
     {
         const options = GAMEPLAY.momentumSpawn
+        for (let i = 0; i < avoid.length; ++i)
+        {
+            const left = ids.filter(id => !avoid.slice(i).includes(id))
+            if (left.length)
+            {
+                ids = left
+                break
+            }
+        }
         const ramp = Math.min(1, scoreText.count[version] / options.rampScore)
         const weights = ids.map(id =>
         {
@@ -483,7 +499,8 @@ class MomentumObstacleFloor extends MomentumPatternFloor
         if (momentumTurnsByJoin[join].length && !this.hasPatternRoom(...vertical) &&
             random(0, 100) < options.turnChancePercent)
         {
-            turn = this.pickType(momentumTurnsByJoin[join], id => momentumTurnFactories[id].pattern.difficulty)
+            turn = this.pickType(momentumTurnsByJoin[join], id => momentumTurnFactories[id].pattern.difficulty,
+                                 this.getAvoidedTypes(join))
             reach = momentumTurnFactories[turn].getReach(join)
             if (start > length - reach.back || nextLength < reach.ahead + margin)
                 turn = null
@@ -492,6 +509,26 @@ class MomentumObstacleFloor extends MomentumPatternFloor
         return {segment: segment, index: index, last: last, vertex: {x: end.x1, y: end.y1}, cursor: start,
                 join: join, turn: turn, end: turn ? length - reach.back - gap : length - margin,
                 turnArc: turn ? length - reach.back : 0, nextClaim: turn ? reach.ahead + gap : 0, filled: false}
+    }
+    // Up and down patterns share their types: their recent types are kept
+    // together, and the latest one per direction too
+    getRecentKey(dir)
+    {
+        return dir == 'up' || dir == 'down' ? 'vertical' : dir
+    }
+    placedType(dir, id)
+    {
+        for (const key of new Set([this.getRecentKey(dir), dir]))
+        {
+            const recent = (this.recentIds[key] || []).concat(id)
+            this.recentIds[key] = recent.slice(Math.max(0, recent.length - GAMEPLAY.momentumSpawn.avoidRecent))
+        }
+    }
+    // For pickType: the recent types of dir (a direction or a turn join), the
+    // latest one in dir itself last
+    getAvoidedTypes(dir)
+    {
+        return (this.recentIds[this.getRecentKey(dir)] || []).concat((this.recentIds[dir] || []).slice(-1))
     }
     spawned(id, kind, dir, difficulty, arc)
     {
@@ -525,7 +562,8 @@ class MomentumObstacleFloor extends MomentumPatternFloor
                 if (reached(segment, arc + plan.cursor))
                     return
                 const ids = momentumPatternsByDir[segment.dir]
-                const id = this.pickType(ids, id => momentumPatternFactories[id].pattern.difficulty)
+                const id = this.pickType(ids, id => momentumPatternFactories[id].pattern.difficulty,
+                                         this.getAvoidedTypes(segment.dir))
                 const factory = momentumPatternFactories[id]
                 if (plan.cursor + factory.getLength() > plan.end)
                 {
@@ -534,6 +572,7 @@ class MomentumObstacleFloor extends MomentumPatternFloor
                 }
                 const d = momentumDirection(segment.dir)
                 this.place(factory.create(segment.x0 + d.x * plan.cursor, segment.y0 + d.y * plan.cursor, segment.dir))
+                this.placedType(segment.dir, id)
                 this.spawned(id, segment.dir == 'right' ? 'horizontal' : 'vertical', segment.dir,
                              factory.pattern.difficulty, arc + plan.cursor)
                 plan.cursor += factory.getLength() + this.getGap()
@@ -545,6 +584,7 @@ class MomentumObstacleFloor extends MomentumPatternFloor
                     return
                 const factory = momentumTurnFactories[plan.turn]
                 this.place(factory.create(plan.vertex.x, plan.vertex.y, plan.join))
+                this.placedType(plan.join, plan.turn)
                 this.spawned(plan.turn, 'turn', plan.join, factory.pattern.difficulty, arc + plan.turnArc)
                 plan.turn = null
             }

@@ -136,7 +136,9 @@ const GAMEPLAY = Object.freeze({
     // patterns keep joinMarginHalfWidths corridor half widths off a join; a
     // turn type takes a direction change with turnChancePercent where its
     // pieces fit and the vertical side has no room for a pattern. Integer pick weights by
-    // difficulty 1..5 go from earlyWeights at score 0 to lateWeights at rampScore.
+    // difficulty 1..5 go from earlyWeights at score 0 to lateWeights at rampScore;
+    // the avoidRecent types placed last in a direction (up and down together;
+    // turns: join) are skipped while another type is left.
     momentumSpawn: Object.freeze({
         aheadViewLengths: 3,
         startViewWidths: 0.5,
@@ -145,7 +147,8 @@ const GAMEPLAY = Object.freeze({
         turnChancePercent: 70,
         earlyWeights: Object.freeze([12, 6, 3, 1, 1]),
         lateWeights: Object.freeze([3, 3, 3, 3, 3]),
-        rampScore: 40
+        rampScore: 40,
+        avoidRecent: 3
     })
 })
 const defaultEqualityTolerance = 1

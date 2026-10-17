@@ -16,6 +16,8 @@ Asserts:
 - >= 8 distinct horizontal, >= 4 distinct vertical and >= 2 distinct turn
   types spawned, every horizontal type on a right segment, vertical types on
   their own direction, turns on direction-changing joins;
+- no type spawned twice in a row in the same direction (turns: join)
+  (TASK-027);
 - every group spawned after the start is at least 2 view lengths ahead of the
   ninja along the course and outside the view;
 - difficulty weighted toward the catalog's early types in the first 20 s: the
@@ -28,9 +30,12 @@ MOMENTUM_RUN_EVIDENCE_DIR (default artifacts/TASK-018) receives
 run-trace.json (compact; per second [t, segDir, liveElements, score,
 spawnedTypes] where spawnedTypes are the ids spawned during that second),
 run-spawns.json (compact per spawn [t, id, kind, dir, difficulty, arcAhead/view])
-and run-up.png / run-right.png (page screenshots during the run, the first
-second >= 5 in that segment direction with >= 3 obstacle pieces in view and,
-for up, the camera moving).
+run-no-repeat.json (compact {seed, spawns, immediateRepeatsSameDir}) and
+run-up.png / run-right.png (page screenshots during the run: right, the first
+second from second 5 on in a right segment with >= 3 obstacle pieces in view;
+up, the frame in an up segment with the camera moving and the most (>= 1)
+pieces in view, the first with >= 3 ending the search). Screenshots draw with
+the seeded Math.random state restored, so they don't change the run.
 Requires Playwright Chromium. No remote requests.
 """
 import json
@@ -61,6 +66,7 @@ SETUP = '''(seed) => {
         t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296
     }
+    window.runRngState = (v) => v === undefined ? a : (a = v)
     window.lethalCalls = 0
     const lethal = onLethalDeath
     onLethalDeath = function() { lethalCalls++; return lethal.apply(this, arguments) }
@@ -80,7 +86,21 @@ SETUP = '''(seed) => {
     window.runArc = floor.getNinjaArc()
     return {view, startArc: runArc, lethalCalls}
 }'''
-DRIVE = '''([frames, step]) => {
+
+# Draws for a screenshot without using up the seeded Math.random (render code
+# draws from it too), so screenshots don't change the run's spawns
+DRAW = '(() => { const state = runRngState(); draw(); runRngState(state) })()'
+
+# Obstacle pieces inside the view
+VISIBLE = '''floors.find(f => f instanceof MomentumObstacleFloor).elements.filter(e => {
+    const b = getElementBounds(e), w = width / scale[version], h = height / scale[version]
+    return b.right > -screen.x && b.left < -screen.x + w && b.bottom > -screen.y && b.top < -screen.y + h
+}).length'''
+
+# Drives up to frames frames; with upMin > 0 it stops after the first frame
+# in an up segment with the camera moving and >= upMin obstacle pieces in view
+# (returns the frames driven and that count)
+DRIVE = '''([frames, step, upMin]) => {
     const samples = []
     const v = step / cyclesPerTick
     const startHp = GAMEPLAY.momentumHp.startHp
@@ -107,15 +127,14 @@ DRIVE = '''([frames, step]) => {
             samples.push([runFrame / 60, screen.getSegment().dir, live, scoreText.count.momentum, lethal,
                           screen.segmentIndex])
         }
+        if (upMin > 0 && screen.getSegment().dir == 'up' && Math.abs(screen.velocityY) > 0) {
+            const pieces = ''' + VISIBLE + '''
+            if (pieces >= upMin)
+                return {samples, frames: k + 1, pieces}
+        }
     }
-    return samples
+    return {samples, frames, pieces: 0}
 }'''
-
-# Obstacle pieces inside the view
-VISIBLE = '''floors.find(f => f instanceof MomentumObstacleFloor).elements.filter(e => {
-    const b = getElementBounds(e), w = width / scale[version], h = height / scale[version]
-    return b.right > -screen.x && b.left < -screen.x + w && b.bottom > -screen.y && b.top < -screen.y + h
-}).length'''
 
 
 class MomentumRunTests(unittest.TestCase):
@@ -136,17 +155,29 @@ class MomentumRunTests(unittest.TestCase):
         step = page.evaluate('height') * DRIVE_SPEED
         cls.samples = []
         shots = {}
+        up_pieces = 0
         for second in range(SECONDS):
-            cls.samples += page.evaluate(DRIVE, [FPS, step])
+            # Up: any frame with more pieces in view than the last up shot,
+            # until one has >= 3 (some seeds leave every later up shaft empty)
+            left = FPS
+            while left:
+                up_min = up_pieces + 1 if up_pieces < 3 else 0
+                driven = page.evaluate(DRIVE, [left, step, up_min])
+                cls.samples += driven['samples']
+                left -= driven['frames']
+                if driven['pieces']:
+                    page.evaluate(DRAW)
+                    page.screenshot(path=str(cls.out / 'run-up.png'))
+                    shots['run-up.png'] = second + 1
+                    up_pieces = driven['pieces']
             seg = cls.samples[-1][1]
-            name = {'up': 'run-up.png', 'right': 'run-right.png'}.get(seg)
-            # Mid-segment and with the run under way
-            if name and name not in shots and second >= 5 and page.evaluate(VISIBLE) >= 3 and \
-                    (seg == 'right' or page.evaluate('Math.abs(screen.velocityY) > 0')):
-                page.evaluate('draw()')
-                page.screenshot(path=str(cls.out / name))
-                shots[name] = second + 1
+            # Right: mid-segment and with the run under way
+            if second >= 5 and seg == 'right' and 'run-right.png' not in shots and page.evaluate(VISIBLE) >= 3:
+                page.evaluate(DRAW)
+                page.screenshot(path=str(cls.out / 'run-right.png'))
+                shots['run-right.png'] = second + 1
         cls.shots = shots
+        cls.up_pieces = up_pieces
         cls.spawns = page.evaluate('runSpawns')
         cls.final = page.evaluate('''({score: scoreText.count.momentum, lethalCalls, version, runInProgress,
             course: momentumCourse.segments.slice(0, screen.segmentIndex + 1).map(s => s.dir[0] + Math.round(s.length)),
@@ -167,6 +198,15 @@ class MomentumRunTests(unittest.TestCase):
             {'fields': ['t', 'id', 'kind', 'dir', 'difficulty', 'arcAheadViews'],
              'spawns': [[round(s[0], 3), s[1], s[2], s[3], s[4], round(s[5], 3)] for s in cls.spawns]},
             separators=(',', ':')))
+        last, repeats = {}, []
+        for s in cls.spawns:
+            key = (s[2], s[3])
+            if last.get(key) == s[1]:
+                repeats.append([round(s[0], 3), s[1], s[2], s[3]])
+            last[key] = s[1]
+        cls.repeats = repeats
+        (cls.out / 'run-no-repeat.json').write_text(json.dumps(
+            {'seed': SEED, 'spawns': len(cls.spawns), 'immediateRepeatsSameDir': len(repeats)}, separators=(',', ':')))
         print('course segments driven:', ' '.join(cls.final['course']), file=sys.stderr)
         print('spawns:', len(cls.spawns), 'at start:', sum(1 for s in cls.spawns if s[0] == 0), 'final:', {k: v for k, v in cls.final.items() if k not in ('catalog', 'course')},
               'screenshots (second):', shots, file=sys.stderr)
@@ -194,6 +234,9 @@ class MomentumRunTests(unittest.TestCase):
         print(f'distinct horizontal {len(h)} {h}', file=sys.stderr)
         print(f'distinct vertical {len(v)} {v}', file=sys.stderr)
         print(f'distinct turn {len(turn)} {turn}', file=sys.stderr)
+        print(f'spawns {len(self.spawns)}, immediate repeats in the same direction {len(self.repeats)} '
+              f'{self.repeats}', file=sys.stderr)
+        self.assertEqual(self.repeats, [])
         self.assertGreaterEqual(len(h), 8)
         self.assertGreaterEqual(len(v), 4)
         self.assertGreaterEqual(len(turn), 2)
@@ -247,8 +290,9 @@ class MomentumRunTests(unittest.TestCase):
         self.assertEqual(self.errors, [])
 
     def test_7_screenshots(self):
-        print('screenshots taken at second:', self.shots, file=sys.stderr)
+        print('screenshots taken at second:', self.shots, 'up pieces in view:', self.up_pieces, file=sys.stderr)
         self.assertEqual(set(self.shots), {'run-up.png', 'run-right.png'})
+        self.assertGreaterEqual(self.up_pieces, 1)
 
 
 if __name__ == '__main__':
