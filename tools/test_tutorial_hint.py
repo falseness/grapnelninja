@@ -1,4 +1,5 @@
-"""The canvas tutorial hint (render/tutorialhint.js) over a running 'bad' run.
+"""The canvas tutorial hint (render/tutorialhint.js) over a running 'bad' run
+(the lifecycle tests use the boot run, momentum since TASK-019).
 
 The rendering tests force TUTORIAL_HINT.visible. Rendering checks: the hint is
 drawn between the player and the HUD; a visible hint adds no shadowBlur sets
@@ -24,6 +25,7 @@ from pathlib import Path
 import unittest
 
 from browser_test_support import start_browser_test
+from game_harness import switch_mode
 from render_snapshot import CLOCK_SCRIPT
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -81,7 +83,8 @@ DEATH = """() => {
     onLethalDeath()
     return {offer: continueOffer.visible, runInProgress, newNinja: ninja !== ninja0, version}
 }"""
-FAST = {'offer': False, 'runInProgress': True, 'newNinja': True, 'version': 'bad'}
+# The boot run is momentum (TASK-019): a death fast-restarts momentum
+FAST = {'offer': False, 'runInProgress': True, 'newNinja': True, 'version': 'momentum'}
 # Records PLATFORM.startup stages (a no-op locally) in window.__startups
 STARTUPS = """() => {
     window.__startups = []
@@ -124,6 +127,8 @@ class TutorialHintTests(unittest.TestCase):
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.goto(self.url + 'index.html')
         page.wait_for_function(BOOT_DONE)
+        # Boot runs momentum (TASK-019); the rendering tests draw over bad
+        switch_mode(page, 'bad')
         self.assertEqual(page.evaluate('({version, runInProgress, paused: menu.gamePaused})'),
                          {'version': 'bad', 'runInProgress': True, 'paused': False})
         return page
@@ -275,7 +280,8 @@ class TutorialHintTests(unittest.TestCase):
             self.frames(page, 1)
             self.assertFalse(page.evaluate('TUTORIAL_HINT.visible'))
         self.assertEqual(page.evaluate('[continueOffer.visible, runInProgress]'), [False, True])
-        self.leave_run(page, '() => { menu.startPause(); menu.backToMenu.click() }', check_hidden=True)
+        self.leave_run(page, '() => { menu.startPause(); menu.modeSelector.button("classic").click() }',
+                       check_hidden=True)
         self.frames(page, 30)
         self.assertEqual(page.evaluate('({version, visible: TUTORIAL_HINT.visible})'),
                          {'version': 'classic', 'visible': False})

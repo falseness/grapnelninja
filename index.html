@@ -182,7 +182,7 @@
             boot()
             
             // Platform init -> one storage read -> canvas setup -> hide the
-            // loading overlay -> attach input -> start a main-version run ->
+            // loading overlay -> attach input -> start a momentum run ->
             // paint its first frame -> game_ready. Earlier clicks and keys are
             // ignored until input is attached.
             function boot()
@@ -223,11 +223,11 @@
                 document.getElementById('loading').hidden = true
                 createEvents()
                 bootComplete = true
-                // Every launch skips the title menu and starts a main-version
+                // Every launch skips the title menu and starts a momentum
                 // run. Its level_started waits in PLATFORM's lifecycle queue
                 // until game_ready has been delivered.
                 const shouldPause = hostPaused || isViewRotated() || document.visibilityState === 'hidden'
-                startGame('bad')
+                startGame('momentum')
                 if (shouldPause)
                 {
                     draw()

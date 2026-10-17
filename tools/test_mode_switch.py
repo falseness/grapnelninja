@@ -19,6 +19,7 @@ from pathlib import Path
 import unittest
 
 from browser_test_support import start_browser_test
+from game_harness import switch_mode
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOT_DONE = 'bootComplete && runInProgress'
@@ -107,6 +108,8 @@ class ModeSwitchTests(unittest.TestCase):
 
     def test_death_fast_restart(self):
         page = self.open({'width': 1280, 'height': 720})
+        # Boot runs momentum (TASK-019); this tests bad's death handling
+        switch_mode(page, 'bad')
         self.assertEqual(page.evaluate('version'), 'bad')
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
         fast = self.die_fast_restart(page)
@@ -165,6 +168,8 @@ class ModeSwitchTests(unittest.TestCase):
 
     def test_language_on_pause(self):
         page = self.open({'width': 1280, 'height': 720})
+        # Boot runs momentum (TASK-019); the labels below are bad's pause screen
+        switch_mode(page, 'bad')
         self.assertEqual(page.evaluate('[version, I18N.language]'), ['bad', 'en'])
         chill_ru = '\u0441\u043f\u043e\u043a\u043e\u0439\u043d\u044b\u0439 \u0440\u0435\u0436\u0438\u043c'
 

@@ -106,11 +106,11 @@ class InputTests(unittest.TestCase):
         print('  ASSERT one tap -> exactly 1 grapnel throw: pass', file=sys.stderr)
 
     def test_first_tap_on_menu_starts_game(self):
-        # Boot runs 'bad' with no title menu: real taps on the HUD menu button
-        # and then the pause-screen mode switch must start classic
+        # Boot runs 'momentum' (TASK-019) with no title menu: real taps on the
+        # HUD menu button and then the pause-screen classic button start classic
         context, page, errors = open_touch_game(self.browser, self.url)
         self.track(context, errors)
-        self.assertEqual(page.evaluate('version'), 'bad')
+        self.assertEqual(page.evaluate('version'), 'momentum')
         page.wait_for_function('!unTouch')
         c = page.evaluate('''(() => { const b = menu.button.background, s = scale[version]
             return {x: (b.x + b.width / 2) * s, y: (b.y + b.height / 2) * s} })()''')
@@ -118,7 +118,7 @@ class InputTests(unittest.TestCase):
         page.touchscreen.tap(point['x'], point['y'])
         page.wait_for_function('menu.gamePaused', timeout=5000)
         page.wait_for_function('!unTouch')
-        c = page.evaluate('''(() => { const b = menu.backToMenu.background
+        c = page.evaluate('''(() => { const b = menu.modeSelector.button('classic').background
             return {x: b.x + b.width / 2, y: b.y + b.height / 2} })()''')
         point = canvas_to_viewport(page, c['x'], c['y'])
         page.touchscreen.tap(point['x'], point['y'])

@@ -36,7 +36,9 @@ class MomentumRegistryTests(unittest.TestCase):
 
     def test_start_game_momentum_runs(self):
         page = self.open()
-        self.assertEqual(page.evaluate('version'), 'bad')
+        # Boot runs momentum (TASK-019): start bad, then momentum again
+        self.assertEqual(page.evaluate('version'), 'momentum')
+        page.evaluate("startGame('bad')")
         page.evaluate("startGame('momentum')")
         page.wait_for_timeout(500)
         state = page.evaluate('({version, runInProgress, runOver, x: ninja.x})')

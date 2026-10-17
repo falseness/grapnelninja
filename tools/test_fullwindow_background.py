@@ -298,17 +298,17 @@ class FullWindowBackgroundTests(unittest.TestCase):
                     self.assertTrue(page.evaluate("document.getElementById('stage').inert"))
                     # The boot run waits paused behind the prompt
                     point = click_canvas(page, *page.evaluate('''() => {
-                        const b = menu.backToMenu.background
+                        const b = menu.modeSelector.button('classic').background
                         return [b.x + b.width / 2, b.y + b.height / 2]
                     }'''))
                     page.wait_for_timeout(500)
-                    self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
+                    self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'momentum'])
                     page.set_viewport_size({'width': viewport[1], 'height': viewport[0]})
                     page.wait_for_function('() => !isViewRotated() && !document.getElementById("stage").inert')
                     page.wait_for_timeout(300)
                 # No title menu (TASK-364): a real click on the HUD menu
-                # button pauses the boot run, and the pause screen's mode
-                # switch ('chill version') starts classic
+                # button pauses the boot run (momentum since TASK-019), and
+                # the pause screen's 'chill version' button starts classic
                 if not page.evaluate('menu.gamePaused'):
                     page.wait_for_function('!unTouch')
                     click_canvas(page, *page.evaluate('''() => {
@@ -318,9 +318,9 @@ class FullWindowBackgroundTests(unittest.TestCase):
                     page.wait_for_function('() => menu.gamePaused')
                 page.wait_for_function('!unTouch')
                 button = page.evaluate('''() => {
-                    const b = menu.backToMenu.background
+                    const b = menu.modeSelector.button('classic').background
                     return {x: b.x + b.width / 2, y: b.y + b.height / 2,
-                            label: menu.backToMenu.text.text}
+                            label: menu.modeSelector.button('classic').text.text}
                 }''')
                 point = click_canvas(page, button['x'], button['y'])
                 page.wait_for_function('() => version === "classic" && !menu.gamePaused')

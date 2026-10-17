@@ -61,9 +61,9 @@ class ModeMenuTests(unittest.TestCase):
             self.assertLess(a['x'] + a['width'], b['x'], (a, b))
             self.assertAlmostEqual(a['y'], b['y'])
 
-    def test_boot_default_is_bad(self):
+    def test_boot_default_is_momentum(self):
         page = self.open()
-        self.assertEqual(page.evaluate('version'), 'bad')
+        self.assertEqual(page.evaluate('version'), 'momentum')
 
     def test_transitions(self):
         for source, target in TRANSITIONS:
@@ -100,6 +100,8 @@ class ModeMenuTests(unittest.TestCase):
 
     def test_death_screen_picks_mode(self):
         page = self.open()
+        # Boot runs momentum (TASK-019); this is bad's death screen
+        switch_mode(page, 'bad')
         page.wait_for_function('!ninja.isInvulnerable()')
         page.evaluate('PLATFORM.isInterstitialDue = () => true; onLethalDeath()')
         page.wait_for_function('continueOffer.visible')

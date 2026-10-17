@@ -71,11 +71,11 @@ class I18nTests(unittest.TestCase):
         return page
 
     def ui(self, page):
-        # The pause switch is relabelled for the running mode on pause
+        # The pause screen's classic button (the boot run is momentum since TASK-019)
         page.evaluate('() => { if (!menu.gamePaused) menu.startPause() }')
         return page.evaluate('''() => ({lang: I18N.language, title: document.title,
             htmlLang: document.documentElement.lang,
-            chill: menu.backToMenu.text.text, button: I18N.t('language.name')})''')
+            chill: menu.modeSelector.button('classic').text.text, button: I18N.t('language.name')})''')
 
     def click_language(self, page):
         # The language button lives on the pause and death screens (TASK-363)
