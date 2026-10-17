@@ -160,12 +160,14 @@ class MomentumGreenTests(unittest.TestCase):
         self.first_contact(page)
         alpha = page.evaluate('''() => {
             const g = window.__green.green
-            g.fadeStartMs = performance.now() - GAMEPLAY.momentumFadeMs / 2
             // Ninja well above the box so it does not cover it
             ninja.x = window.__green.x
             ninja.y = window.__green.y - 15 * ninja.radius
+            g.fadeStartMs = performance.now() - GAMEPLAY.momentumFadeMs / 2
+            // Read before draw(): a cold headless draw can take ~40 ms (2.5% of alpha)
+            const alpha = g.getAlpha()
             draw()
-            return g.getAlpha()
+            return alpha
         }''')
         page.screenshot(path=str(EVIDENCE_DIR / 'green-fade.png'))
         print('mid-fade alpha', round(alpha, 4))

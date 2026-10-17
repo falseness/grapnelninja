@@ -76,6 +76,12 @@ class Ninja
     // Edges the ball moves into rank first, so a shared seam edge never wins.
     hitLine(element, line, best)
     {
+        // Momentum blues let the ninja through (sprites/momentumblue.js)
+        if (element.onNinjaPass)
+        {
+            element.onNinjaPass(this)
+            return best
+        }
         const bouncy = element instanceof Trampoline ||
             (element instanceof Side && element.isBadVersionCeilingBoundary(line))
         if (!bouncy)

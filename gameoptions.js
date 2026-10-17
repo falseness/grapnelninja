@@ -118,9 +118,12 @@ const GAMEPLAY = Object.freeze({
         startHp: 5,
         greenStreakForHp: 5
     }),
-    // Momentum green objects (sprites/momentumgreen.js) fade out over this
-    // long after their one bounce, then leave their floor.
-    momentumFadeMs: 800
+    // Momentum one-time objects (sprites/momentumonetime.js) fade out over
+    // this long after their one contact, then leave their floor.
+    momentumFadeMs: 800,
+    // Momentum blue objects (sprites/momentumblue.js) scale the ninja's
+    // velocity by this on their one contact (direction kept).
+    momentumBlueSlow: 0.6
 })
 const defaultEqualityTolerance = 1
 

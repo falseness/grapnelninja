@@ -475,7 +475,11 @@ const STYLE = Object.freeze({
         wallStroke: '#1f7a2e',
         wallCore: '#5f9a68',
         wallFill: '#020a06',
-        wallCapFill: '#0a1d10'
+        wallCapFill: '#0a1d10',
+        // Blue one-time objects: the blue cube colours
+        blueStroke: '#2f86ff',
+        blueFill: '#061234',
+        blueBadVersionFill: 'rgba(10, 36, 96, 0.8)'
     }),
     // The player alone keeps outer glow; obstacles retain their inward light.
     player: Object.freeze({
