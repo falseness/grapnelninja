@@ -292,7 +292,11 @@ const momentumPatternsByDir = Object.freeze({
 // Holds placed patterns, one generation group each, with the group's box
 // kept apart from its pieces: a group is scored once it is passed (left of
 // the view, or behind it vertically) even when its one-time pieces have
-// already faded, and deleted with its pieces past the deletion borders.
+// already faded, and deleted with its pieces past the deletion borders. A
+// group placed for course segment index counts as behind vertically only
+// once the camera has reached that segment: screen.verticalTravel keeps the
+// last shaft's direction, so after an up shaft a down shaft's patterns
+// spawned ahead, below the view, would look behind.
 class MomentumPatternFloor extends Floor
 {
     constructor()
@@ -307,11 +311,11 @@ class MomentumPatternFloor extends Floor
         this.nextGenerationGroupId = 0
     }
     replenishElements() {}
-    place(elements)
+    place(elements, segment = -Infinity)
     {
         const generationGroupId = this.nextGenerationGroupId++
         const group = {id: generationGroupId, left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity,
-                       scored: false}
+                       scored: false, segment: segment}
         for (const element of elements)
         {
             element.generationGroupId = generationGroupId
@@ -332,12 +336,13 @@ class MomentumPatternFloor extends Floor
         const deleted = new Set()
         for (const group of this.groups)
         {
-            if (!group.scored && (group.right + screen.x < 0 || screen.isBoxBehind(group.top, group.bottom, 0)))
+            const reached = group.segment <= screen.segmentIndex
+            if (!group.scored && (group.right + screen.x < 0 || reached && screen.isBoxBehind(group.top, group.bottom, 0)))
             {
                 group.scored = true
                 changeScoreText()
             }
-            const behind = screen.isBoxBehind(group.top, group.bottom, margin)
+            const behind = reached && screen.isBoxBehind(group.top, group.bottom, margin)
             if (behind || group.right + screen.x < border)
             {
                 deleted.add(group.id)
@@ -459,22 +464,13 @@ class MomentumObstacleFloor extends MomentumPatternFloor
     {
         return GAMEPLAY.momentumSpawn.joinMarginHalfWidths * momentumSegmentHalfWidth(segment)
     }
-    // Whether a vertical stretch this long, of shaft half width halfWidth,
-    // holds a pattern of its direction (its joins are with right segments)
-    hasPatternRoom(dir, length, halfWidth)
-    {
-        const margin = GAMEPLAY.momentumSpawn.joinMarginHalfWidths * GAMEPLAY.momentumBorders.halfWidth
-        const shortest = Math.min(...momentumPatternsByDir[dir].map(id =>
-            momentumPatternFactories[id].getLength(halfWidth)))
-        return length >= 2 * margin + shortest
-    }
     // Where patterns of the stretch from segment index may go (course
     // distance from its start) and whether a turn takes the join at its end.
-    // Vertical patterns come first: no turn next to a vertical stretch long
-    // enough for one (a turn would leave it no room). A turn needs its piece
-    // reach (MomentumTurnPatternFactory.getReach) on both stretches, plus the
-    // join margin at the far end of the next one; patterns keep the minimum
-    // gap off its pieces. Join margins and the turn's square across the
+    // A turn lies in the right corridor only (before or after the corner
+    // box), so it leaves the shaft's room to its vertical patterns. It needs
+    // its piece reach (MomentumTurnPatternFactory.getReach) on both
+    // stretches, plus the join margin at the far end of the next one;
+    // patterns keep the minimum gap off its pieces. Join margins and the turn's square across the
     // shaft follow the shafts' own half widths.
     planStretch(index)
     {
@@ -495,21 +491,26 @@ class MomentumObstacleFloor extends MomentumPatternFloor
         if (index == 0)
             start = Math.max(start, ninja.x - segment.x0 + options.startViewWidths * width / scale[version])
         const join = segment.dir + '->' + next.dir
-        const vertical = segment.dir == 'right' ? [next.dir, nextLength, shaftHalfWidth] :
-                                                   [segment.dir, length, shaftHalfWidth]
-        let turn = null, reach = null
-        if (momentumTurnsByJoin[join].length && !this.hasPatternRoom(...vertical) &&
-            random(0, 100) < options.turnChancePercent)
+        // Only the turn types whose pieces fit both stretches, never the
+        // latest one of the join again
+        const latest = (this.recentIds[join] || []).slice(-1)[0]
+        const turns = momentumTurnsByJoin[join].filter(id =>
         {
-            turn = this.pickType(momentumTurnsByJoin[join], id => momentumTurnFactories[id].pattern.difficulty,
-                                 this.getAvoidedTypes(join))
+            if (id === latest)
+                return false
+            const reach = momentumTurnFactories[id].getReach(join, shaftHalfWidth)
+            return start <= length - reach.back && nextLength >= reach.ahead + nextMargin
+        })
+        let turn = null, reach = null
+        if (turns.length && random(0, 100) < options.turnChancePercent)
+        {
+            turn = this.pickType(turns, id => momentumTurnFactories[id].pattern.difficulty, this.getAvoidedTypes(join))
             reach = momentumTurnFactories[turn].getReach(join, shaftHalfWidth)
-            if (start > length - reach.back || nextLength < reach.ahead + nextMargin)
-                turn = null
         }
         const gap = options.gapViewWidths.min * width / scale[version]
         return {segment: segment, index: index, last: last, vertex: {x: end.x1, y: end.y1}, cursor: start,
-                join: join, turn: turn, shaftHalfWidth: shaftHalfWidth, end: turn ? length - reach.back - gap : length - margin,
+                join: join, turn: turn, shaftHalfWidth: shaftHalfWidth,
+                end: turn ? Math.min(length - margin, length - reach.back - gap) : length - margin,
                 turnArc: turn ? length - reach.back : 0, nextClaim: turn ? reach.ahead + gap : 0, filled: false}
     }
     // Up and down patterns share their types: their recent types are kept
@@ -581,7 +582,7 @@ class MomentumObstacleFloor extends MomentumPatternFloor
                 const factory = momentumPatternFactories[id]
                 const d = momentumDirection(segment.dir)
                 this.place(factory.create(segment.x0 + d.x * plan.cursor, segment.y0 + d.y * plan.cursor, segment.dir,
-                                          halfWidth))
+                                          halfWidth), plan.last)
                 this.placedType(segment.dir, id)
                 this.spawned(id, segment.dir == 'right' ? 'horizontal' : 'vertical', segment.dir,
                              factory.pattern.difficulty, arc + plan.cursor)
@@ -593,7 +594,8 @@ class MomentumObstacleFloor extends MomentumPatternFloor
                 if (reached(segment, arc + plan.turnArc))
                     return
                 const factory = momentumTurnFactories[plan.turn]
-                this.place(factory.create(plan.vertex.x, plan.vertex.y, plan.join, plan.shaftHalfWidth))
+                this.place(factory.create(plan.vertex.x, plan.vertex.y, plan.join, plan.shaftHalfWidth),
+                           plan.join.startsWith('right->') ? plan.last : plan.last + 1)
                 this.placedType(plan.join, plan.turn)
                 this.spawned(plan.turn, 'turn', plan.join, factory.pattern.difficulty, arc + plan.turnArc)
                 plan.turn = null
