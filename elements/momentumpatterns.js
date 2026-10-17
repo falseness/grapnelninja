@@ -1,6 +1,7 @@
-// Momentum obstacle patterns: every type of the TASK-012 horizontal catalog,
-// built from one-time MomentumGreen / MomentumBlue boxes, nothing lethal.
-// A type fills the whole corridor band (v 0 = ceiling face, 1 = floor face)
+// Momentum obstacle patterns: every type of the TASK-012 horizontal and the
+// TASK-013 vertical catalog, built from one-time MomentumGreen / MomentumBlue
+// boxes, nothing lethal.
+// A horizontal type fills the whole corridor band (v 0 = ceiling face, 1 = floor face)
 // over a footprint `span` band heights long (u 0..1 along the travel
 // direction). Pieces are [kind, u, v, w, h] in those fractions.
 const MOMENTUM_PATTERNS_H = Object.freeze([
@@ -77,6 +78,64 @@ const MOMENTUM_PATTERNS_H = Object.freeze([
     ]}
 ].map(pattern => Object.freeze(pattern)))
 
+// Every vertical type of the TASK-013 catalog, for 'up'/'down' segments. A
+// type fills the shaft between the two dark-green walls: x 0 = left wall
+// face, 1 = right wall face; y 0 = top of a footprint `span` band heights
+// long. The layout is the same in both directions (going down, the route is
+// run backwards). dirs: the only directions the type is built for.
+// Pieces are [kind, x, y, w, h] in those fractions.
+const MOMENTUM_PATTERNS_V = Object.freeze([
+    {id: 'wall-ladder', difficulty: 1, span: 1.0, dirs: ['up', 'down'], pieces: [
+        ['green', 0.0, 0.82, 0.06, 0.16],
+        ['green', 0.94, 0.62, 0.06, 0.16],
+        ['green', 0.0, 0.42, 0.06, 0.16],
+        ['green', 0.94, 0.22, 0.06, 0.16],
+        ['green', 0.0, 0.02, 0.06, 0.16]
+    ]},
+    {id: 'gate-bypass', difficulty: 2, span: 1.0, dirs: ['up', 'down'], pieces: [
+        ['blue', 0.3, 0.48, 0.7, 0.08],
+        ['green', 0.0, 0.7, 0.06, 0.14],
+        ['green', 0.94, 0.2, 0.06, 0.14]
+    ]},
+    {id: 'trampoline-chimney', difficulty: 2, span: 1.0, dirs: ['up'], pieces: [
+        ['green', 0.0, 0.8, 0.35, 0.04],
+        ['green', 0.65, 0.55, 0.35, 0.04],
+        ['green', 0.0, 0.3, 0.35, 0.04]
+    ]},
+    {id: 'ricochet-well', difficulty: 3, span: 1.0, dirs: ['down'], pieces: [
+        ['green', 0.0, 0.12, 0.3, 0.1],
+        ['green', 0.7, 0.38, 0.3, 0.1],
+        ['green', 0.0, 0.64, 0.3, 0.1],
+        ['green', 0.7, 0.86, 0.3, 0.1],
+        ['blue', 0.42, 0.14, 0.16, 0.06],
+        ['blue', 0.42, 0.4, 0.16, 0.06],
+        ['blue', 0.42, 0.66, 0.16, 0.06]
+    ]},
+    {id: 'staggered-column', difficulty: 3, span: 1.1, dirs: ['up', 'down'], pieces: [
+        ['green', 0.42, 0.7, 0.16, 0.14],
+        ['blue', 0.42, 0.46, 0.16, 0.14],
+        ['green', 0.42, 0.22, 0.16, 0.14],
+        ['blue', 0.42, 0.0, 0.16, 0.1],
+        ['green', 0.0, 0.48, 0.05, 0.12],
+        ['green', 0.95, 0.3, 0.05, 0.12]
+    ]},
+    {id: 'needle-shaft', difficulty: 5, span: 1.1, dirs: ['up', 'down'], pieces: [
+        ['green', 0.2, 0.84, 0.06, 0.1],
+        ['blue', 0.0, 0.84, 0.1, 0.1],
+        ['green', 0.72, 0.68, 0.06, 0.1],
+        ['blue', 0.9, 0.68, 0.1, 0.1],
+        ['green', 0.2, 0.52, 0.06, 0.1],
+        ['blue', 0.0, 0.52, 0.1, 0.1],
+        ['green', 0.72, 0.36, 0.06, 0.1],
+        ['blue', 0.9, 0.36, 0.1, 0.1],
+        ['green', 0.2, 0.2, 0.06, 0.1],
+        ['blue', 0.0, 0.2, 0.1, 0.1],
+        ['green', 0.72, 0.04, 0.06, 0.1],
+        ['blue', 0.9, 0.04, 0.1, 0.1]
+    ]}
+
+].map(pattern => Object.freeze(pattern)))
+
 // Builds one catalog type, like the frame factories of elements/factory.js
 class MomentumPatternFactory
 {
@@ -114,9 +173,37 @@ class MomentumPatternFactory
     }
 }
 
-// Catalog id -> factory
-const momentumPatternFactories = Object.freeze(Object.fromEntries(
-    MOMENTUM_PATTERNS_H.map(pattern => [pattern.id, new MomentumPatternFactory(pattern)])))
+// Builds one vertical catalog type
+class MomentumVerticalPatternFactory extends MomentumPatternFactory
+{
+    // (x, y): the footprint start on the course centre line, its bottom
+    // going up and its top going down
+    create(x, y, dir)
+    {
+        const band = 2 * GAMEPLAY.momentumBorders.halfWidth
+        const length = this.getLength()
+        const left = x - 0.5 * band
+        const top = dir == 'up' ? y - length : y
+        return this.pattern.pieces.map(([kind, px, py, w, h]) =>
+        {
+            const box = kind == 'blue' ? MomentumBlue.box : MomentumGreen.box
+            return box(left + px * band, top + py * length, w * band, h * length)
+        })
+    }
+}
+
+// Catalog id -> factory, horizontal types first, in catalog order
+const momentumPatternFactories = Object.freeze(Object.fromEntries([
+    ...MOMENTUM_PATTERNS_H.map(pattern => [pattern.id, new MomentumPatternFactory(pattern)]),
+    ...MOMENTUM_PATTERNS_V.map(pattern => [pattern.id, new MomentumVerticalPatternFactory(pattern)])
+]))
+// Segment direction -> the ids built for it. A vertical type restricted to
+// one direction is only registered there.
+const momentumPatternsByDir = Object.freeze({
+    right: Object.freeze(MOMENTUM_PATTERNS_H.map(pattern => pattern.id)),
+    up: Object.freeze(MOMENTUM_PATTERNS_V.filter(pattern => pattern.dirs.includes('up')).map(pattern => pattern.id)),
+    down: Object.freeze(MOMENTUM_PATTERNS_V.filter(pattern => pattern.dirs.includes('down')).map(pattern => pattern.id))
+})
 
 // Holds placed patterns, one generation group each. Nothing spawns here on
 // its own yet; deletion and scoring work like the obstacle floor's.
@@ -148,10 +235,13 @@ class MomentumPatternFloor extends Floor
 }
 
 // Places catalog type id on the momentum pattern floor, for tests and
-// screenshots. Returns the placed boxes, or null outside momentum.
+// screenshots. Returns the placed boxes, or null outside momentum and for a
+// vertical type in a direction it is not registered for.
 function momentumPlacePattern(id, x, y, dir = 'right')
 {
-    const factory = momentumPatternFactories[id]
+    let factory = momentumPatternFactories[id]
+    if (factory instanceof MomentumVerticalPatternFactory && !momentumPatternsByDir[dir]?.includes(id))
+        factory = undefined
     const floor = version == 'momentum' && floors ? floors.find(f => f instanceof MomentumPatternFloor) : null
     if (!factory || !floor)
         return null

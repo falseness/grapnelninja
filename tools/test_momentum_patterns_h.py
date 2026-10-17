@@ -98,7 +98,7 @@ class MomentumPatternsHTests(unittest.TestCase):
         return x, y, self.page.evaluate(PLACE, [t['id'], x, y, dir])
 
     def test_1_registered_ids(self):
-        ids = self.page.evaluate('Object.keys(momentumPatternFactories)')
+        ids = self.page.evaluate("Object.keys(momentumPatternFactories).filter(id => momentumPatternsByDir.right.includes(id))")
         want = [t['id'] for t in self.types]
         print('registered:', len(ids), ids, 'checked:', len(want), want,
               'difficulties:', [t['difficulty'] for t in self.types], 'catalog length:', len(self.catalog))
