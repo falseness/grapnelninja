@@ -242,7 +242,8 @@ class Task504Tests(unittest.TestCase):
             const current=layoutV2Report(GRAPPLE_OVER_MOUNTAIN); loadMountainLevel()
             const d=eval(fixture)(structuredClone(GRAPPLE_OVER_MOUNTAIN)), world=loadMountainLevel(d)
             return {current, fixture:layoutV2Report(d), fixtureLoaded:world.level.elements.length,
-                fixtureDrag:world.dragZones.length, targets:LAYOUT_V2_GAP_TARGETS}
+                fixtureDrag:world.dragZones.map(z=>z.id), targets:LAYOUT_V2_GAP_TARGETS,
+                currentDrag:GRAPPLE_OVER_MOUNTAIN.geometry.elements.filter(e=>e.role==='drag').map(e=>e.id)}
         }''',V2_FIXTURE)
         cur=r['current']['sections']
         self.assertEqual([s['id'] for s in cur],[f'S{i:02}' for i in range(1,9)])
@@ -266,7 +267,8 @@ class Task504Tests(unittest.TestCase):
         for g in rules['gapBand']['measured']['gaps']: self.assertTrue(689<=g['distance']<=729 and 0.85<=g['fraction']<=0.9,g)
         self.assertEqual(rules['fallDrag']['measured']['fallLines'][0]['dragZone'],'S06-fall-drag')
         self.assertTrue(all(p['role']=='bounce' or p['mover'] or p['exception'] for p in rules['bounceDefault']['measured']['platforms']))
-        self.assertEqual(r['fixtureDrag'],1)
+        # The fixture adds exactly one drag zone to those already in the manifest (S01 since TASK-506).
+        self.assertEqual(sorted(r['fixtureDrag']),sorted(r['currentDrag']+['S06-fall-drag']))
         self.evidence.write('rules.json',dict(self.proof,current_manifest=r['current'],v2_fixture=fx,
             v2_fixture_section=s6,fixture_loaded_elements=r['fixtureLoaded'],gap_targets=r['targets'],
             current_all_legacy_no_failure=True,fixture_all_rules_passed=True))

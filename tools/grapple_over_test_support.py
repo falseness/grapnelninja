@@ -43,7 +43,7 @@ class EvidenceWriter:
         return path
 
     def write(self, name, value):
-        self.path(name).write_text(json.dumps(value, indent=2) + '\n')
+        self.path(name).write_text(json.dumps(value, separators=(',', ':')) + '\n')
 
     def log(self, line):
         with self.path('commands.log').open('a') as stream:
