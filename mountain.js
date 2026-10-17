@@ -671,6 +671,17 @@ const LAYOUT_V2_GAP_TARGETS = {540:[459,486], 810:[689,729]}
 const LAYOUT_V2_RANGE = {base:540, upgraded:810}
 const LAYOUT_V2_SOLID_EXCEPTIONS = ['rest-pad','lip','side-wall']
 const LAYOUT_V2_REST_PAD_MAX_WIDTH = 200
+const LAYOUT_V2_DENSITY_CAP_TICKS = 180
+
+// Layout-v3 targets, frozen by TASK-544 from the 1080/1620 recalibration.
+// Gaps: twice the v2 band, inside 85-90% of the measured reach at each range.
+// Extent: twice v2. Density cap: longest nominal-trace stretch without an
+// acquisition, bounce or mover contact, i.e. the v2 cap scaled by the measured
+// free-fall flight-time ratio across a v3 vs a v2 band height.
+const LAYOUT_V3_GAP_TARGETS = {1080:[918,972], 1620:[1378,1458]}
+const LAYOUT_V3_RANGE = {base:1080, upgraded:1620}
+const LAYOUT_V3_EXTENT = {ascent:25920, horizontalEnvelope:12960, bandHeight:3240, encountersPerSection:4}
+const LAYOUT_V3_DENSITY_CAP_TICKS = 254
 
 function layoutV2Report(m)
 {

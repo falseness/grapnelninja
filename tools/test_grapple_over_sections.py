@@ -5688,3 +5688,233 @@ class Task514Tests(unittest.TestCase):
         print('PASS S04-02: from the S04-01 pier rest; blue lift acquisition', round(lift['distance'],1),
               '; flat green press reflection tick', bounce['tick'], 'at', round(far(before),1), 'from launch; press-deck rest from tick', landed,
               round(far(players[landed]),1), 'from launch (> 540); identical replay; trusted input')
+
+
+TASK544_RANGES = {1080: False, 1620: True}
+
+
+class Task544Tests(unittest.TestCase):
+    """Recalibrate the TASK-503 families at 1080/1620; freeze the v3 gaps, extent and density cap."""
+    import test_grapple_over_physics as physics
+    attempt = physics.Task503Tests.attempt
+    drag_pairs = physics.Task503Tests.drag_pairs
+    judge = physics.Task503Tests.judge
+    envelope = physics.Task503Tests.envelope
+    del physics
+    results, reach, flight = {}, {}, {}
+
+    @classmethod
+    def setUpClass(cls):
+        import test_grapple_over_tools as task463
+        cls.task463 = task463
+        cls.evidence = EvidenceWriter('TASK-544')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.hashes = cls.current_hashes()
+        cls.proof = dict(revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
+            text=True).strip(), source_hashes=cls.hashes, browser=cls.browser.version,
+            viewport=task463.VIEWPORT, device_scale_factor=1, has_touch=True, hz=60, substeps=8, seed=1)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.proof, sort_keys=True))
+
+    @staticmethod
+    def current_hashes():
+        from grapple_over_verify import hashes
+        result = hashes()
+        for path in ('tools/grapple_over_calibration.js', 'tools/test_grapple_over_physics.py'):
+            result[path] = hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+        return result
+
+    def open(self):
+        page = self.task463.Task461Tests.open(self)
+        self.task463.install_recorder(page)
+        page.add_script_tag(path=str(ROOT / 'tools/grapple_over_calibration.js'))
+        return page
+
+    def test_01_families_at_both_ranges(self):
+        import test_grapple_over_physics as physics
+        page = self.open()
+        constants = page.evaluate('''() => ({gravity:GRAVITY,pull:grappleSpeed,
+            throwSpeed:grapnelSpeed,cyclesPerTick,physicsStepMs,radius:ninja.radius,
+            range:MODE_DEFINITIONS.grapple_over.acquisitionRadius,
+            upgradedRange:MODE_DEFINITIONS.grapple_over.upgradedAcquisitionRadius,
+            dragDamping:DRAG_ZONE_HORIZONTAL_DAMPING,scale:scale.grapple_over})''')
+        baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())['modes']['classic']
+        for key in ('gravity', 'pull', 'throwSpeed', 'cyclesPerTick', 'physicsStepMs'):
+            self.assertEqual(constants[key], baseline['constants'][key])
+        self.assertEqual((constants['range'], constants['upgradedRange'], constants['scale']), (1080, 1620, 0.375))
+        v2 = json.loads((ROOT / 'artifacts/TASK-503/calibration.json').read_text())['measured_envelopes']['540']
+        out = {}
+        for rng, upgraded in TASK544_RANGES.items():
+            out[rng] = {}
+            for family in physics.TASK503_FAMILIES:
+                runs = [self.attempt(page, family, upgraded, dt, aim) for dt, aim in
+                        ((0, 0), (-3, 0), (3, 0), (0, -10.8), (0, 10.8))]
+                runs.append(self.attempt(page, family, upgraded, negative=True))
+                for r in runs:
+                    self.assertEqual(r['range'], rng)
+                    if family == 'drag_zone':
+                        r['drag_pairs'] = self.drag_pairs(r, constants['dragDamping'])
+                    self.judge(family, r)
+                    print('MEASURE', rng, family, r['dt'], r['aim'], r['negative'], 'success=%s' % r['success'],
+                          {k: round(r['rows'][100][k], 3) for k in ('x', 'y', 'speedX', 'speedY')},
+                          'landing_tick=%d' % r['landing_contact']['tick'])
+                    self.assertEqual(r['success'], not r['negative'], (rng, family, r['dt'], r['aim']))
+                successes = [r for r in runs if r['success']]
+                self.assertEqual(len(successes), 5)
+                envelope = self.envelope(family, successes)
+                envelope['differs_from_v2_540_envelope'] = sorted(k for k in v2[family] if envelope[k] != v2[family][k])
+                print('PASS', rng, family, ': nominal + 4 variants; negative rejected; landing ticks',
+                      envelope['landing_ticks'], 'v2 540 landing ticks', v2[family]['landing_ticks'],
+                      'keys differing from TASK-503 540 envelope', envelope['differs_from_v2_540_envelope'])
+                out[rng][family] = dict(runs=runs, envelope=envelope)
+        self.__class__.results = dict(constants=constants, families=out)
+
+    def test_02_gap_metric_reach(self):
+        """Bisect the longest acquiring rope-to-anchor distance with trusted mouse input at 1080/1620."""
+        page = self.open()
+        trial = '''([d, upgraded]) => {
+            const rect=(id,x,y,w,h)=>({id,x,y,role:'solid',points:[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]});
+            const level=structuredClone(GRAPPLE_OVER_LEVEL);
+            level.movers=[];
+            level.elements=[rect('floor',-2000,1000,8000,60),rect('post',700+d,700,40,300)];
+            level.encounters[0].elements=level.elements.map(e=>e.id);
+            GRAPPLE_OVER_TEST.spawn({level,player:{x:700,y:1000-ninja.radius,speedX:0,speedY:0},
+                camera:{x:700+d/2-innerWidth/2/scale.grapple_over,y:1000-innerHeight/2/scale.grapple_over}});
+            floors[0].rangeUpgraded=upgraded;
+            return GRAPPLE_OVER_TEST.client({x:700+d+20,y:1000-ninja.radius});
+        }'''
+
+        def shoot(d, upgraded):
+            page.mouse.up()
+            page.evaluate('GRAPPLE_OVER_TEST.attempts.length=0')
+            page.evaluate("GRAPPLE_OVER_TEST.begin('reach')")
+            p = page.evaluate(trial, [d, upgraded])
+            self.assertTrue(0 <= p['x'] <= 1280 and 0 <= p['y'] <= 720, (d, p))
+            page.mouse.move(p['x'], p['y'])
+            page.mouse.down()
+            page.evaluate('() => {for(let i=0;i<90 && !grapnel.isGrappled();i++) GRAPPLE_OVER_TEST.step(1)}')
+            r = page.evaluate('''() => ({grappled:grapnel.isGrappled(),range:grappleOverAcquisitionRadius(),
+                target:grapnel.isGrappled()?grapnel.pos[0][2].id:null,
+                rope:grapnel.isGrappled()?Math.hypot(grapnel.pos[0][0]-ninja.x,grapnel.pos[0][1]-ninja.y):null})''')
+            page.mouse.up()
+            page.evaluate("GRAPPLE_OVER_TEST.finish('measured')")
+            return r
+        frozen = page.evaluate('LAYOUT_V3_GAP_TARGETS')
+        v2 = page.evaluate('LAYOUT_V2_GAP_TARGETS')
+        reach = {}
+        for rng, upgraded in TASK544_RANGES.items():
+            lo, hi = rng - 300.0, rng + 200.0
+            first = shoot(lo, upgraded)
+            self.assertTrue(first['grappled'])
+            self.assertFalse(shoot(hi, upgraded)['grappled'])
+            best, steps = first, 0
+            while hi - lo > 0.05:
+                mid = (lo + hi) / 2
+                r = shoot(mid, upgraded)
+                self.assertEqual(r['range'], rng)
+                steps += 1
+                if r['grappled']:
+                    self.assertEqual(r['target'], 'post')
+                    lo, best = mid, r
+                else:
+                    hi = mid
+            measured = best['rope']
+            self.assertAlmostEqual(measured, rng, delta=0.5)
+            # Frozen v3 band: twice the v2 band, which must sit inside 85-90% of the measured reach
+            # (upper end judged against the bisection bracket: true reach lies within measured + 0.05).
+            v2_band = v2[str(rng // 2)]
+            gap = [2 * v2_band[0], 2 * v2_band[1]]
+            self.assertEqual(frozen[str(rng)], gap)
+            fraction = [gap[0] / measured, gap[1] / measured]
+            self.assertTrue(0.85 * measured <= gap[0] < gap[1] <= 0.90 * (measured + 0.05), fraction)
+            band = [shoot(d, upgraded) for d in gap]
+            self.assertTrue(all(b['grappled'] and b['target'] == 'post' for b in band))
+            self.assertFalse(shoot(hi + 1, upgraded)['grappled'])
+            reach[rng] = dict(measured_reach=measured, last_acquiring_post_face_distance=lo,
+                first_missing_post_face_distance=hi, bisection_steps=steps, gap_targets=gap,
+                gap_targets_as_fraction=fraction, v2_gap_targets=v2_band,
+                v3_over_v2_gap_ratio=[gap[0] / v2_band[0], gap[1] / v2_band[1]],
+                target_band_acquires=[dict(distance=d, rope=b['rope']) for d, b in zip(gap, band)])
+            print('PASS reach %d: measured reach %.3f; v3 gap targets %s acquire (%.2f%%-%.2f%% of reach); v3/v2 %s'
+                  % (rng, measured, gap, 100 * fraction[0], 100 * fraction[1], reach[rng]['v3_over_v2_gap_ratio']))
+        self.__class__.reach = reach
+
+    def test_03_flight_time_and_density_cap(self):
+        """Free fall from rest across a v2 vs a v3 band height, stepped by the production physics."""
+        page = self.open()
+        r = page.evaluate('''() => {
+            const fall = h => {
+                GRAPPLE_OVER_TEST.attempts.length=0;
+                GRAPPLE_OVER_TEST.begin('flight');
+                const rect=(id,x,y,w,h)=>({id,x,y,role:'solid',points:[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]});
+                const level=structuredClone(GRAPPLE_OVER_LEVEL);
+                level.movers=[];
+                level.elements=[rect('floor',-2000,h,8000,60)];
+                level.encounters[0].elements=['floor'];
+                GRAPPLE_OVER_TEST.spawn({level,player:{x:700,y:-ninja.radius,speedX:0,speedY:0},camera:{x:0,y:-300}});
+                let t=0;
+                while(t<2000 && !(ninja.speedY===0 && Math.abs(ninja.y-(h-ninja.radius))<1e-5)) {GRAPPLE_OVER_TEST.step(1);t++}
+                GRAPPLE_OVER_TEST.finish('measured');
+                return {height:h,ticks:t,landed_y:ninja.y,speedY:ninja.speedY};
+            };
+            const out={v2:fall(3*540), v3:fall(LAYOUT_V3_EXTENT.bandHeight)};
+            return Object.assign(out,{v2Cap:LAYOUT_V2_DENSITY_CAP_TICKS,v3Cap:LAYOUT_V3_DENSITY_CAP_TICKS,
+                extent:LAYOUT_V3_EXTENT,v2Extent:{ascent:GRAPPLE_OVER_MOUNTAIN.ascent,
+                horizontalEnvelope:GRAPPLE_OVER_MOUNTAIN.horizontalEnvelope,bandHeight:3*540,
+                encountersPerSection:GRAPPLE_OVER_MOUNTAIN.encounters.length/GRAPPLE_OVER_MOUNTAIN.sections.length}});
+        }''')
+        self.assertTrue(r['v2']['ticks'] < r['v3']['ticks'] < 2000, r)
+        ratio = r['v3']['ticks'] / r['v2']['ticks']
+        self.assertAlmostEqual(ratio, 2 ** 0.5, delta=0.02)
+        self.assertEqual(r['v2Cap'], 180)
+        self.assertEqual(r['v3Cap'], round(180 * ratio))
+        v2e, v3e = r['v2Extent'], r['extent']
+        self.assertEqual(v2e, dict(ascent=12960, horizontalEnvelope=6480, bandHeight=1620, encountersPerSection=4))
+        self.assertEqual(v3e, dict(ascent=25920, horizontalEnvelope=12960, bandHeight=3240, encountersPerSection=4))
+        for k in ('ascent', 'horizontalEnvelope', 'bandHeight'):
+            self.assertEqual(v3e[k], 2 * v2e[k])
+        r['flight_time_ratio'] = ratio
+        self.__class__.flight = r
+        print('PASS flight: free fall %d ticks over %d vs %d ticks over %d, ratio %.4f; density cap 180 x ratio = %.2f -> %d'
+              % (r['v2']['ticks'], r['v2']['height'], r['v3']['ticks'], r['v3']['height'], ratio, 180 * ratio, r['v3Cap']))
+        print('PASS extent: v3 %s = 2 x v2 %s' % (json.dumps(v3e, sort_keys=True), json.dumps(v2e, sort_keys=True)))
+
+    def test_04_write_and_audit_calibration(self):
+        import test_grapple_over_physics as physics
+        self.assertTrue(self.results and self.reach and self.flight)
+        fams = self.results['families']
+        envelopes = {str(rng): {f: v['envelope'] for f, v in fs.items()} for rng, fs in fams.items()}
+        runs = {str(rng): {f: [dict(dt=r['dt'], aim=r['aim'], negative=r['negative'], success=r['success'],
+                range=r['range'], exit={k: r['rows'][100][k] for k in ('tick', 'x', 'y', 'speedX', 'speedY')},
+                landing_tick=r['landing_contact']['tick'], trusted_inputs=len(r['inputs']),
+                event_types=sorted(set(e['type'] for e in r['events']))) for r in v['runs']]
+                for f, v in fs.items()} for rng, fs in fams.items()}
+        current = self.current_hashes()
+        self.assertEqual(current, self.hashes)
+        f = self.flight
+        data = dict(self.proof, constants=self.results['constants'], ranges=[1080, 1620],
+            families_list=list(physics.TASK503_FAMILIES), exit_tick=100, success_exit_regions=physics.TASK503_BOXES,
+            proof_convention='nominal + dt -3/+3 + aim -10.8/+10.8 must succeed, negative control must fail',
+            measured_envelopes=envelopes, families=runs,
+            measured_reach={str(k): v['measured_reach'] for k, v in self.reach.items()},
+            gap_metric=dict(name='v3 mandatory gap', version=3, frozen=True,
+                targets={str(k): v['gap_targets'] for k, v in self.reach.items()},
+                rule='twice the TASK-503 v2 band; each endpoint inside 85-90% of measured reach and acquiring',
+                measured={str(k): v for k, v in self.reach.items()}),
+            extent=dict(frozen=f['extent'], v2=f['v2Extent'], ratio=2),
+            flight_time=dict(definition='ticks of free fall from rest across one band height to a floor contact',
+                v2=f['v2'], v3=f['v3'], ratio=f['flight_time_ratio']),
+            density_cap=dict(frozen_ticks=f['v3Cap'], v2_ticks=f['v2Cap'], ratio=f['flight_time_ratio'],
+                rule='longest allowed nominal-trace stretch without an acquisition, bounce or mover contact'),
+            v2_reference='artifacts/TASK-503/calibration.json', all_families_pass=True)
+        self.evidence.write('calibration.json', data)
+        disk = json.loads(self.evidence.path('calibration.json').read_text())
+        self.assertEqual(disk['source_hashes'], self.current_hashes())
+        for rng in ('1080', '1620'):
+            self.assertEqual(sorted(disk['families'][rng]), sorted(physics.TASK503_FAMILIES))
+            for name, rows in disk['families'][rng].items():
+                self.assertEqual([r['success'] for r in rows], [True] * 5 + [False])
+                self.assertTrue(all(r['range'] == int(rng) for r in rows))
+        print('PASS audit: 7 families x 2 ranges, 70 successful traces, 14 negative controls; reach %s; '
+              'gap targets %s; extent %s; density cap %d; source hashes match'
+              % (disk['measured_reach'], disk['gap_metric']['targets'], disk['extent']['frozen'],
+                 disk['density_cap']['frozen_ticks']))
