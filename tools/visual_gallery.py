@@ -51,8 +51,10 @@ TICKS = [300, 900]
 # Since the boot run (TASK-360) draws from the seeded Math.random first, the
 # phone bad run scrolls over ticks ~622-736 instead. Since e882a5e (TASK-370)
 # its tick-174 death fast-restarts instead of waiting for the tick-301 tap on
-# the offer, so the swing starts at tick 646 and holds from tick ~760.
-GIF_CAPTURE = {'bad': ('phone', 646), 'classic': ('desktop', 60)}
+# the offer, so the swing starts at tick 646 and holds from tick ~760. Since
+# the boot run is a momentum run (TASK-019) it draws a different amount of
+# the seeded Math.random, so the swing starts at tick 846 (TASK-026).
+GIF_CAPTURE = {'bad': ('phone', 846), 'classic': ('desktop', 60)}
 GIF_SIZE = (960, 540)
 GIF_FPS = 15
 GIF_STEP = 60 // GIF_FPS          # game ticks per GIF frame
@@ -235,7 +237,8 @@ def run(rev, out, log=print):
                 page.on('pageerror', lambda e, n=vp['name']: errors.append(f'{n}: {e}'))
                 page.goto(url + 'index.html', wait_until='load')
                 boot_frozen(page)
-                # Current trees boot straight into a 'bad' run (TASK-360/364);
+                # Current trees boot straight into a 'momentum' run (TASK-360/364,
+                # momentum since TASK-019);
                 # older revisions open the title menu
                 if not page.evaluate('''() => typeof menu != "undefined" && (menu.visible ||
                         typeof runInProgress != "undefined" && runInProgress)'''):
