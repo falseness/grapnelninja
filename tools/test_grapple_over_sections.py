@@ -5918,3 +5918,131 @@ class Task544Tests(unittest.TestCase):
               'gap targets %s; extent %s; density cap %d; source hashes match'
               % (disk['measured_reach'], disk['gap_metric']['targets'], disk['extent']['frozen'],
                  disk['density_cap']['frozen_ticks']))
+
+
+# TASK-546 layout-v3 fixture: S06 (range 1620) rebuilt as a v3 section. Static pads turn green, no
+# solid exceptions, a 3240 band, gaps in the 1620 band and one miss point with a drag zone under it.
+V3_FIXTURE = '''d => {
+    const el=id=>d.geometry.elements.find(e=>e.id===id), rect=(w,h)=>[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]
+    for (const id of ['S06-loading-floor','S06-phase-rest','S06-fixed-head','S06-transfer-head','S06-exit']) el(id).role='bounce'
+    d.geometry.elements.push({id:'S06-fall-drag',x:6150,y:-8300,role:'drag',grapplable:false,points:rect(160,100)})
+    const s=d.sections[5]
+    delete s.solidExceptions
+    Object.assign(s,{designVersion:3, band:{...s.band, top:s.band.bottom-3240},
+        gaps:[{id:'head-run',mandatory:true,from:{x:4000,y:-8630},to:{x:5400,y:-8630}},
+            {id:'exit-run',mandatory:true,from:{x:5600,y:-9700},to:{x:4180,y:-9700}}],
+        fallPoints:[{id:'transfer-miss',encounter:'S06-04',x:6230,y:-9170}]})
+    return d
+}'''
+# One mutation per v3 rule (plus the exception and below-bouncer variants) and its exact thrown error.
+V3_NEGATIVE = {
+    'staticGrayPad': ("d=>{d.geometry.elements.find(e=>e.id==='S06-phase-rest').role='solid'}",
+                      'LayoutV3GraySolid: S06.S06-phase-rest', ['graySolid']),
+    'solidException': ("d=>{d.sections[5].solidExceptions=[{element:'S06-exit',kind:'rest-pad',reason:'gray pad'}]}",
+                       'LayoutV3GraySolid: S06.solidExceptions', ['graySolid']),
+    'gapOutOfBand': ("d=>{d.sections[5].gaps[0].to={x:4000+0.95*1620,y:-8630}}",
+                     'LayoutV3GapBand: S06.gaps.head-run', ['gapBand']),
+    'fallWithoutDrag': ("d=>{d.sections[5].fallPoints.push({id:'exit-miss',encounter:'S06-04',x:5600,y:-9625})}",
+                        'LayoutV3DragUnderFall: S06.fallPoints.exit-miss', ['dragUnderFall']),
+    'dragBelowBouncer': ("d=>{d.geometry.elements.find(e=>e.id==='S06-fall-drag').y=-8000}",
+                         'LayoutV3DragUnderFall: S06.fallPoints.transfer-miss', ['dragUnderFall', 'strayDrag']),
+    'strayDrag': ("d=>{d.geometry.elements.push({id:'S06-stray-drag',x:300,y:-9000,role:'drag',grapplable:false,"
+                  "points:[{x:0,y:0},{x:200,y:0},{x:200,y:80},{x:0,y:80}]})}",
+                  'LayoutV3StrayDrag: S06.S06-stray-drag', ['strayDrag']),
+    'wrongBandHeight': ("d=>{d.sections[5].band.top=d.sections[5].band.bottom-1620}",
+                        'LayoutV3Extent: S06.band', ['extent']),
+}
+V3_RULE_CODES = {'graySolid': 'LayoutV3GraySolid', 'moverCoverage': 'LayoutV2MoverCoverage',
+                 'direction': 'LayoutV2Direction', 'gapBand': 'LayoutV3GapBand',
+                 'dragUnderFall': 'LayoutV3DragUnderFall', 'strayDrag': 'LayoutV3StrayDrag',
+                 'extent': 'LayoutV3Extent'}
+
+
+class Task546Tests(unittest.TestCase):
+    """Layout-v3 design-rule validator: designVersion 3 opt-in with rule-specific failure codes."""
+    task_id = 'TASK-546'
+    open = Task465Tests.open
+    test_03_source_hashes = Task465Tests.test_03_source_hashes
+
+    @classmethod
+    def setUpClass(cls):
+        Task465Tests.setUpClass.__func__(cls)
+        for name in ('tools/test_grapple_over_physics.py', 'tools/test_grapple_over_level.py'):
+            cls.proof['source_hashes'][name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.evidence.log('HASHES+ '+json.dumps(cls.proof['source_hashes'], sort_keys=True))
+
+    def test_01_current_manifest_and_v3_fixture(self):
+        page = self.open()
+        r = page.evaluate('''fixture => {
+            const current=layoutV2Report(GRAPPLE_OVER_MOUNTAIN); loadMountainLevel()
+            const d=eval(fixture)(structuredClone(GRAPPLE_OVER_MOUNTAIN)), world=loadMountainLevel(d)
+            return {current, fixture:layoutV2Report(d), codes:LAYOUT_V3_RULES, loaded:world.level.elements.length,
+                targets:LAYOUT_V3_GAP_TARGETS, extent:LAYOUT_V3_EXTENT, columnRadius:LAYOUT_V3_FALL_COLUMN_RADIUS}
+        }''', V3_FIXTURE)
+        self.assertEqual(r['codes'], V3_RULE_CODES)
+        cur = r['current']
+        self.assertEqual([s['id'] for s in cur['sections']], [f'S{i:02}' for i in range(1, 9)])
+        self.assertEqual(cur['v3'], [])
+        self.assertFalse(cur['failed'])
+        for s in cur['sections']:
+            self.assertIn(s['designVersion'], (1, 2), s)
+            self.assertFalse(s['failed'], s)
+            self.assertNotIn('graySolid', s.get('rules', {}), s)
+        fx = r['fixture']
+        self.assertEqual(fx['v3'], ['S06'])
+        self.assertFalse(fx['failed'])
+        s6 = next(s for s in fx['sections'] if s['id'] == 'S06')
+        self.assertEqual(sorted(s6['rules']), sorted(V3_RULE_CODES))
+        for name, rule in s6['rules'].items():
+            self.assertTrue(rule['passed'], (name, rule))
+        rules = s6['rules']
+        self.assertEqual(s6['range'], 1620)
+        self.assertEqual(rules['gapBand']['measured']['target'], [1378, 1458])
+        for g in rules['gapBand']['measured']['gaps']:
+            self.assertTrue(1378 <= g['distance'] <= 1458, g)
+        self.assertEqual(rules['graySolid']['measured']['staticSolids'], [])
+        self.assertEqual(sorted(rules['graySolid']['measured']['movers']), ['S06-counterweight', 'S06-upper-weight'])
+        fall = rules['dragUnderFall']['measured']['fallPoints'][0]
+        self.assertEqual(fall['dragZones'], ['S06-fall-drag'])
+        self.assertEqual(fall['firstBouncer'], 'S05-exit')
+        self.assertEqual(rules['strayDrag']['measured']['dragZones'], [dict(id='S06-fall-drag', fallPoints=['transfer-miss'])])
+        self.assertEqual(rules['extent']['measured']['bandHeight'], 3240)
+        self.assertEqual(rules['moverCoverage']['measured']['count'], 4)
+        self.assertEqual(rules['direction']['measured']['actual'], 'left')
+        # v1/v2 sections in the fixture are still reported, never judged by v3 rules.
+        for s in fx['sections']:
+            if s['id'] != 'S06':
+                self.assertIn(s['designVersion'], (1, 2))
+                self.assertNotIn('graySolid', s.get('rules', {}))
+        self.evidence.write('rules.json', dict(self.proof, rules=[dict(rule=k, code=v) for k, v in V3_RULE_CODES.items()],
+            gap_targets=r['targets'], extent=r['extent'], fall_column_radius=r['columnRadius'],
+            current_manifest=dict(v1=[s['id'] for s in cur['sections'] if s['designVersion'] == 1],
+                v2=cur['v2'], v3=cur['v3'], failed=cur['failed'],
+                sections=[dict(id=s['id'], designVersion=s['designVersion'], failed=s['failed'],
+                               judged_by_v3=False) for s in cur['sections']]),
+            v3_fixture_section=s6, v3_fixture_loaded_elements=r['loaded'],
+            current_no_v3_failure=True, fixture_all_v3_rules_passed=True))
+        print('PASS rules: current manifest v1 %s, v2 %s, v3 %s, no failure; v3 fixture S06 passes %s'
+              % ([s['id'] for s in cur['sections'] if s['designVersion'] == 1], cur['v2'], cur['v3'], sorted(rules)))
+
+    def test_02_each_rule_rejects_its_mutation(self):
+        page = self.open()
+        cases = {k: v[0] for k, v in V3_NEGATIVE.items()}
+        r = page.evaluate('''([fixture,cases]) => Object.entries(cases).map(([name,mutate])=>{
+            const d=eval(fixture)(structuredClone(GRAPPLE_OVER_MOUNTAIN)); eval(mutate)(d)
+            const s=layoutV2Report(d).sections.find(s=>s.id==='S06')
+            let error=null; try {validateMountainManifest(d)} catch(e){error=e.message}
+            return {name,mutation:mutate,error,failedRules:Object.entries(s.rules).filter(([,v])=>!v.passed).map(([k])=>k),
+                errors:s.errors}
+        })''', [V3_FIXTURE, cases])
+        self.assertEqual([c['name'] for c in r], list(V3_NEGATIVE))
+        for c in r:
+            _, error, failed = V3_NEGATIVE[c['name']]
+            self.assertEqual(c['error'], error, c)
+            self.assertEqual(c['failedRules'], failed, c)
+        self.assertEqual({c['error'].split(':')[0] for c in r},
+                         {'LayoutV3GraySolid', 'LayoutV3GapBand', 'LayoutV3DragUnderFall', 'LayoutV3StrayDrag', 'LayoutV3Extent'})
+        self.evidence.write('negative.json', dict(self.proof, fixture=V3_FIXTURE, cases=r,
+            all_rejected_with_rule_specific_code=True))
+        for c in r:
+            print(f"PASS negative {c['name']}: rejected {c['error']}")

@@ -682,6 +682,13 @@ const LAYOUT_V3_GAP_TARGETS = {1080:[918,972], 1620:[1378,1458]}
 const LAYOUT_V3_RANGE = {base:1080, upgraded:1620}
 const LAYOUT_V3_EXTENT = {ascent:25920, horizontalEnvelope:12960, bandHeight:3240, encountersPerSection:4}
 const LAYOUT_V3_DENSITY_CAP_TICKS = 254
+// Layout-v3 design rules (TASK-546). A section opts in with designVersion:3;
+// v1/v2 sections are reported but not judged by them. Fall columns are as wide
+// as the player circle (the radius the spawn guard below uses).
+const LAYOUT_V3_FALL_COLUMN_RADIUS = 18
+const LAYOUT_V3_RULES = {graySolid:'LayoutV3GraySolid', moverCoverage:'LayoutV2MoverCoverage',
+    direction:'LayoutV2Direction', gapBand:'LayoutV3GapBand', dragUnderFall:'LayoutV3DragUnderFall',
+    strayDrag:'LayoutV3StrayDrag', extent:'LayoutV3Extent'}
 
 function layoutV2Report(m)
 {
@@ -690,6 +697,21 @@ function layoutV2Report(m)
     const elements = new Map(m.geometry.elements.map(e=>[e.id,e]))
     const encounters = new Map(m.encounters.map(e=>[e.id,e]))
     const upgradeOrder = m.sections.find(s=>s.id===m.range.upgradeBand).order
+    // v3 fall columns: from a declared fall point straight down to the first
+    // bouncer (any collider) under it; a drag zone counts if it crosses that stretch.
+    const inColumn = (b, x) => b.left < x+LAYOUT_V3_FALL_COLUMN_RADIUS && b.right > x-LAYOUT_V3_FALL_COLUMN_RADIUS
+    const fallColumn = f => {
+        const hit = m.geometry.elements.filter(e=>['bounce','solid'].includes(e.role))
+            .map(e=>({id:e.id, b:box(e)})).filter(h=>inColumn(h.b, f.x) && h.b.top > f.y)
+            .map(h=>({id:h.id, top:h.b.top})).sort((a,b)=>a.top-b.top)[0]
+        const floor = hit ? hit.top : m.bounds.bottom
+        const zones = m.geometry.elements.filter(e=>e.role === 'drag').filter(d=>{const b = box(d)
+            return inColumn(b, f.x) && b.bottom > f.y && b.top < floor}).map(d=>d.id)
+        return {id:f.id, encounter:f.encounter, x:f.x, y:f.y, firstBouncer:hit ? hit.id : null,
+            firstBouncerTop:floor, dragZones:zones}
+    }
+    const v3Falls = m.sections.filter(s=>s.designVersion === 3 && Array.isArray(s.fallPoints))
+        .flatMap(s=>s.fallPoints.map(fallColumn))
     const sections = m.sections.map(s=>{
         const version = s.designVersion ?? 1
         if (version === 1) return {id:s.id, designVersion:1, legacy:true, failed:false}
@@ -698,7 +720,7 @@ function layoutV2Report(m)
             problems.forEach(path=>errors.push({rule:name, code, path:s.id+'.'+path}))
             rules[name] = {passed:!problems.length, measured}
         }
-        if (version !== 2) {
+        if (version !== 2 && version !== 3) {
             errors.push({rule:'designVersion', code:'InvalidDesignVersion', path:s.id+'.designVersion'})
             return {id:s.id, designVersion:version, legacy:false, failed:true, passed:false, errors, rules}
         }
@@ -706,6 +728,58 @@ function layoutV2Report(m)
         const movers = m.geometry.movers.filter(v=>v.element.startsWith(s.id+'-'))
         const moving = new Set(movers.map(v=>v.element))
         const exceptions = new Map((s.solidExceptions||[]).map(x=>[x.element,x]))
+        // Blue movers are exempt from the bounce default but must carry >=2 encounters.
+        const moverCoverage = () => {
+            const carrying = s.encounters.filter(id=>encounters.get(id).elements.some(e=>moving.has(e)))
+            rule('moverCoverage', LAYOUT_V3_RULES.moverCoverage, {movers:movers.map(v=>v.id), encounters:carrying,
+                count:carrying.length, required:2}, carrying.length >= 2 ? [] : ['movers'])
+        }
+        // Travel alternates: odd sections exit right of entry, even sections left.
+        const direction = () => {
+            const first = encounters.get(s.encounters[0]), last = encounters.get(s.encounters[3])
+            const entryX = first.start?.x ?? first.x, exitX = last.exit ? (last.exit.left+last.exit.right)/2 : last.x
+            const required = s.order % 2 ? 'right' : 'left'
+            const actual = exitX > entryX ? 'right' : exitX < entryX ? 'left' : 'none'
+            rule('direction', LAYOUT_V3_RULES.direction, {entryX, exitX, required, actual},
+                actual === required ? [] : ['direction'])
+        }
+        // Mandatory gaps sit in the frozen band for the active range.
+        const gapBand = (code, ranges, targets) => {
+            const range = s.order >= upgradeOrder ? ranges.upgraded : ranges.base, target = targets[range]
+            const gaps = (s.gaps||[]).filter(g=>g.mandatory !== false).map(g=>{
+                const distance = Math.hypot(g.to.x-g.from.x, g.to.y-g.from.y)
+                return {id:g.id, distance, fraction:distance/range,
+                    inBand:distance >= target[0] && distance <= target[1]}
+            })
+            rule('gapBand', code, {range, target, gaps},
+                [...(Array.isArray(s.gaps) ? [] : ['gaps']), ...gaps.filter(g=>!g.inBand).map(g=>'gaps.'+g.id)])
+            return range
+        }
+        if (version === 3) {
+            // No gray pads: every static solid is a stray, and no exception is accepted.
+            const statics = own.filter(e=>e.role === 'solid' && !moving.has(e.id)).map(e=>e.id)
+            rule('graySolid', LAYOUT_V3_RULES.graySolid, {staticSolids:statics, movers:[...moving],
+                solidExceptions:s.solidExceptions ?? null},
+                [...(s.solidExceptions !== undefined ? ['solidExceptions'] : []), ...statics])
+            moverCoverage()
+            direction()
+            const range = gapBand(LAYOUT_V3_RULES.gapBand, LAYOUT_V3_RANGE, LAYOUT_V3_GAP_TARGETS)
+            // Each declared fall/miss point has a drag zone in its column above the first bouncer.
+            const falls = (s.fallPoints||[]).map(f=>({...fallColumn(f), ownEncounter:s.encounters.includes(f.encounter)}))
+            rule('dragUnderFall', LAYOUT_V3_RULES.dragUnderFall, {columnRadius:LAYOUT_V3_FALL_COLUMN_RADIUS, fallPoints:falls},
+                [...(Array.isArray(s.fallPoints) ? [] : ['fallPoints']),
+                    ...falls.filter(f=>!f.ownEncounter || !f.dragZones.length).map(f=>'fallPoints.'+f.id)])
+            // Drag zones exist only under declared fall points.
+            const drags = own.filter(e=>e.role === 'drag').map(d=>({id:d.id,
+                fallPoints:v3Falls.filter(f=>f.dragZones.includes(d.id)).map(f=>f.id)}))
+            rule('strayDrag', LAYOUT_V3_RULES.strayDrag, {dragZones:drags},
+                drags.filter(d=>!d.fallPoints.length).map(d=>d.id))
+            const height = s.band.bottom-s.band.top, width = s.band.right-s.band.left
+            rule('extent', LAYOUT_V3_RULES.extent, {bandHeight:height, bandWidth:width, encounters:s.encounters.length,
+                frozen:LAYOUT_V3_EXTENT}, height === LAYOUT_V3_EXTENT.bandHeight && width <= LAYOUT_V3_EXTENT.horizontalEnvelope &&
+                s.encounters.length === LAYOUT_V3_EXTENT.encountersPerSection ? [] : ['band'])
+            return {id:s.id, designVersion:3, legacy:false, failed:!!errors.length, passed:!errors.length, range, errors, rules}
+        }
         // Grappleable platforms bounce; solid only through a reasoned exception.
         let problems = [], platforms = [], excepted = []
         for (const x of exceptions.values()) {
@@ -724,27 +798,9 @@ function layoutV2Report(m)
         }
         rule('bounceDefault', 'LayoutV2StraySolid', {platforms, exceptions:excepted,
             restPadMaxWidth:LAYOUT_V2_REST_PAD_MAX_WIDTH}, problems)
-        // Blue movers are exempt from the bounce default but must carry >=2 encounters.
-        const carrying = s.encounters.filter(id=>encounters.get(id).elements.some(e=>moving.has(e)))
-        rule('moverCoverage', 'LayoutV2MoverCoverage', {movers:movers.map(v=>v.id), encounters:carrying,
-            count:carrying.length, required:2}, carrying.length >= 2 ? [] : ['movers'])
-        // Travel alternates: odd sections exit right of entry, even sections left.
-        const first = encounters.get(s.encounters[0]), last = encounters.get(s.encounters[3])
-        const entryX = first.start?.x ?? first.x, exitX = last.exit ? (last.exit.left+last.exit.right)/2 : last.x
-        const required = s.order % 2 ? 'right' : 'left'
-        const actual = exitX > entryX ? 'right' : exitX < entryX ? 'left' : 'none'
-        rule('direction', 'LayoutV2Direction', {entryX, exitX, required, actual},
-            actual === required ? [] : ['direction'])
-        // Mandatory gaps sit in the frozen band for the active range.
-        const range = s.order >= upgradeOrder ? LAYOUT_V2_RANGE.upgraded : LAYOUT_V2_RANGE.base
-        const target = LAYOUT_V2_GAP_TARGETS[range]
-        const gaps = (s.gaps||[]).filter(g=>g.mandatory !== false).map(g=>{
-            const distance = Math.hypot(g.to.x-g.from.x, g.to.y-g.from.y)
-            return {id:g.id, distance, fraction:distance/range,
-                inBand:distance >= target[0] && distance <= target[1]}
-        })
-        rule('gapBand', 'LayoutV2GapBand', {range, target, gaps},
-            [...(Array.isArray(s.gaps) ? [] : ['gaps']), ...gaps.filter(g=>!g.inBand).map(g=>'gaps.'+g.id)])
+        moverCoverage()
+        direction()
+        const range = gapBand('LayoutV2GapBand', LAYOUT_V2_RANGE, LAYOUT_V2_GAP_TARGETS)
         // Each fall line lands in the section below under a drag zone.
         const below = m.sections.find(b=>b.order === s.order-1)
         const drags = m.geometry.elements.filter(e=>e.role === 'drag')
@@ -761,7 +817,8 @@ function layoutV2Report(m)
             fallLines.filter(f=>!f.onBelow || !f.underLanding || !f.dragZone).map(f=>'fallLines.'+f.id))
         return {id:s.id, designVersion:2, legacy:false, failed:!!errors.length, passed:!errors.length, range, errors, rules}
     })
-    return {sections, v2:sections.filter(s=>!s.legacy).map(s=>s.id),
+    return {sections, v2:sections.filter(s=>s.designVersion === 2).map(s=>s.id),
+        v3:sections.filter(s=>s.designVersion === 3).map(s=>s.id),
         legacy:sections.filter(s=>s.legacy).map(s=>s.id), failed:sections.some(s=>s.failed)}
 }
 
@@ -804,7 +861,7 @@ function validateMountainManifest(m)
     m.sections.forEach((s,i)=>{
         const id='S'+String(i+1).padStart(2,'0')
         if (s.id !== id || s.order !== i+1 || s.band.bottom !== m.base.y-i*1620 ||
-            s.band.top !== s.band.bottom-1620 || s.band.left !== m.bounds.left || s.band.right !== m.bounds.right ||
+            (s.designVersion !== 3 && s.band.top !== s.band.bottom-1620) || s.band.left !== m.bounds.left || s.band.right !== m.bounds.right ||
             s.encounters.length !== 4) fail('InvalidSectionOrder',s.id)
         if (!['planned','partial','built'].includes(s.status)) fail('InvalidBuildStatus',s.id)
         s.encounters.forEach((eid,j)=>{

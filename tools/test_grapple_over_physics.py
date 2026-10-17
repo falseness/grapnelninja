@@ -477,13 +477,14 @@ TASK503_BOXES = {
 # Landing contact after the drag band: undamped release lands with |vx| ~0.58.
 TASK503_DRAG_LANDING = {'x': [1200, 1540], 'speedX': [0, 0.2]}
 TASK503_FAMILIES = ('launch', 'release', 'braking', 'angled_bounce', 'corner_wrap', 'moving_transfer', 'drag_zone')
-TASK503_RANGES = {540: False, 810: True}
-# Frozen v2 mandatory-gap targets: 85-90% of each range, as rope-to-anchor reach.
-TASK503_GAP_TARGETS = {540: [459, 486], 810: [689, 729]}
+# TASK-546: re-specced to the live TASK-543 range; the gap targets are the frozen
+# layout-v3 band (LAYOUT_V3_GAP_TARGETS), 85-90% of the measured reach.
+TASK503_RANGES = {1080: False, 1620: True}
+TASK503_GAP_TARGETS = {1080: [918, 972], 1620: [1378, 1458]}
 
 
 class Task503Tests(unittest.TestCase):
-    """Recalibrate the movement families at 540/810 range, add drag_zone, freeze v2 gaps."""
+    """Recalibrate the movement families at the live 1080/1620 range, add drag_zone, check the frozen gaps."""
     results = {}
 
     @classmethod
@@ -583,7 +584,7 @@ class Task503Tests(unittest.TestCase):
         baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())['modes']['classic']
         for key in ('gravity', 'pull', 'throwSpeed', 'cyclesPerTick', 'physicsStepMs'):
             self.assertEqual(constants[key], baseline['constants'][key])
-        self.assertEqual((constants['range'], constants['upgradedRange'], constants['scale']), (540, 810, 0.75))
+        self.assertEqual((constants['range'], constants['upgradedRange'], constants['scale']), (1080, 1620, 0.375))
         out = {}
         for rng, upgraded in TASK503_RANGES.items():
             out[rng] = {}
@@ -607,9 +608,9 @@ class Task503Tests(unittest.TestCase):
                 print('PASS', rng, family, ': nominal + 4 variants; negative rejected; landing ticks',
                       envelope['landing_ticks'])
                 out[rng][family] = dict(runs=runs, envelope=envelope)
-        # Every fixture anchor lies inside 540, so 810 must not change any trajectory.
+        # Every fixture anchor lies inside 1080, so 1620 must not change any trajectory.
         for family in TASK503_FAMILIES:
-            for a, b in zip(out[540][family]['runs'], out[810][family]['runs']):
+            for a, b in zip(out[1080][family]['runs'], out[1620][family]['runs']):
                 self.assertEqual([(r['x'], r['y'], r['speedX'], r['speedY']) for r in a['rows']],
                                  [(r['x'], r['y'], r['speedX'], r['speedY']) for r in b['rows']])
         self.__class__.results = dict(constants=constants, families=out)
@@ -666,7 +667,7 @@ class Task503Tests(unittest.TestCase):
             level.elements=[rect('floor',-2000,1000,8000,60),rect('post',700+d,700,40,300)];
             level.encounters[0].elements=level.elements.map(e=>e.id);
             GRAPPLE_OVER_TEST.spawn({level,player:{x:700,y:1000-ninja.radius,speedX:0,speedY:0},
-                camera:{x:-300-d/2,y:-300}});
+                camera:{x:700+d/2-innerWidth/2/scale.grapple_over,y:1000-innerHeight/2/scale.grapple_over}});
             floors[0].rangeUpgraded=upgraded;
             return GRAPPLE_OVER_TEST.client({x:700+d+20,y:1000-ninja.radius});
         }'''
@@ -677,7 +678,7 @@ class Task503Tests(unittest.TestCase):
             p = page.evaluate(trial, [d, upgraded])
             page.mouse.move(p['x'], p['y'])
             page.mouse.down()
-            page.evaluate('() => {for(let i=0;i<45 && !grapnel.isGrappled();i++) GRAPPLE_OVER_TEST.step(1)}')
+            page.evaluate('() => {for(let i=0;i<90 && !grapnel.isGrappled();i++) GRAPPLE_OVER_TEST.step(1)}')
             r = page.evaluate('''() => ({grappled:grapnel.isGrappled(),range:grappleOverAcquisitionRadius(),
                 target:grapnel.isGrappled()?grapnel.pos[0][2].id:null,
                 rope:grapnel.isGrappled()?Math.hypot(grapnel.pos[0][0]-ninja.x,grapnel.pos[0][1]-ninja.y):null,
@@ -687,7 +688,7 @@ class Task503Tests(unittest.TestCase):
             return r
         reach = {}
         for rng, upgraded in TASK503_RANGES.items():
-            lo, hi = 300.0, 1100.0
+            lo, hi = rng - 300.0, rng + 200.0
             first = shoot(lo, upgraded)
             self.assertTrue(first['grappled'])
             self.assertFalse(shoot(hi, upgraded)['grappled'])
@@ -705,8 +706,9 @@ class Task503Tests(unittest.TestCase):
             gap = TASK503_GAP_TARGETS[rng]
             measured = best['rope']
             self.assertAlmostEqual(measured, rng, delta=0.5)
-            self.assertEqual(gap, [math.ceil(0.85 * rng), math.floor(0.90 * rng)])
-            self.assertTrue(gap[1] < measured)
+            # Frozen band inside 85-90% of measured reach (true reach lies within measured + 0.05).
+            self.assertEqual(gap, page.evaluate('LAYOUT_V3_GAP_TARGETS')[str(rng)])
+            self.assertTrue(0.85 * measured <= gap[0] < gap[1] <= 0.90 * (measured + 0.05))
             # Inside the target band the shot must acquire; just past measured reach it must miss.
             band = [shoot(d, upgraded) for d in gap]
             self.assertTrue(all(b['grappled'] for b in band))
@@ -718,7 +720,7 @@ class Task503Tests(unittest.TestCase):
                 bisection=trials)
             print('PASS reach %d: measured rope-to-anchor reach %.3f; gap targets %s acquire (%.1f%%-%.1f%% of reach)'
                   % (rng, measured, gap, 100 * gap[0] / measured, 100 * gap[1] / measured))
-        self.assertTrue(reach[540]['measured_reach'] < 600 < reach[810]['measured_reach'])
+        self.assertTrue(reach[1080]['measured_reach'] < 1200 < reach[1620]['measured_reach'])
         self.__class__.reach = reach
 
     def test_03_manifest_range_object(self):
@@ -737,9 +739,9 @@ class Task503Tests(unittest.TestCase):
                 wrongEnvelope:fixture(m=>{m.horizontalEnvelope=6400}),
                 modes:MODE_DEFINITIONS.grapple_over};
         }''')
-        self.assertEqual(r['range'], dict(base=540, upgraded=810, upgradeBand='S05'))
+        self.assertEqual(r['range'], dict(base=1080, upgraded=1620, upgradeBand='S05'))
         self.assertEqual((r['modes']['acquisitionRadius'], r['modes']['upgradedAcquisitionRadius'],
-                          r['modes']['rangeUpgradeSection']), (540, 810, 'S05'))
+                          r['modes']['rangeUpgradeSection']), (1080, 1620, 'S05'))
         self.assertEqual(r['current'], 'valid')
         for key in ('bare540', 'wrongUpgraded', 'wrongBand', 'extraKey'):
             self.assertEqual(r[key], 'InvalidRange: mountain.range', key)
@@ -772,7 +774,7 @@ class Task503Tests(unittest.TestCase):
                 for r in runs:
                     for key in ('launch', 'exit'):
                         r[key] = {k: r[key][k] for k in ('tick', 'x', 'y', 'speedX', 'speedY')}
-        gap = dict(name='v2 mandatory gap', version=2, frozen=True,
+        gap = dict(name='v3 mandatory gap', version=3, frozen=True,
             definition='measured rope-to-anchor reach distance: the longest straight distance from the player '
                        'center to the acquired anchor point of a held grapnel shot fired with trusted mouse input '
                        'at a solid face, bisected to 0.05 world units; mandatory gaps must sit at 85-90% of it',
@@ -780,22 +782,22 @@ class Task503Tests(unittest.TestCase):
             measured={str(k): {key: v[key] for key in ('measured_reach', 'last_acquiring_post_face_distance',
                       'first_missing_post_face_distance', 'gap_targets_as_fraction', 'target_band_acquires')}
                       for k, v in self.reach.items()},
-            range_upgrade=dict(base=540, upgraded=810, upgradeBand='S05'))
+            range_upgrade=dict(base=1080, upgraded=1620, upgradeBand='S05'))
         current = self.current_hashes()
         self.assertEqual(current, self.hashes)
-        data = dict(self.proof, constants=self.results['constants'], ranges=[540, 810],
+        data = dict(self.proof, constants=self.results['constants'], ranges=[1080, 1620],
             families_list=list(TASK503_FAMILIES), exit_tick=100, success_exit_regions=TASK503_BOXES,
             drag_zone_landing_region=TASK503_DRAG_LANDING,
             drag_zone_fixture='release fixture plus 600x10 drag band at (1150,900); negative omits the band',
             proof_convention='nominal + dt -3/+3 + aim -10.8/+10.8 must succeed, negative control must fail',
             measured_envelopes=envelopes, families=families, gap_metric=gap,
-            trajectories_540_equal_810=True, baseline_reference='artifacts/TASK-463/calibration.json',
+            trajectories_1080_equal_1620=True, baseline_reference='artifacts/TASK-463/calibration.json',
             all_families_pass=True)
         self.evidence.write('calibration.json', data)
         # Independent re-read of the file just written.
         disk = json.loads(self.evidence.path('calibration.json').read_text())
         self.assertEqual(disk['source_hashes'], self.current_hashes())
-        for rng in ('540', '810'):
+        for rng in ('1080', '1620'):
             self.assertEqual(sorted(disk['families'][rng]), sorted(TASK503_FAMILIES))
             for name, runs in disk['families'][rng].items():
                 self.assertEqual(len(runs), 6)
