@@ -1,47 +1,9 @@
 // Momentum obstacle patterns: the bad frames ported to momentum (TASK-036
-// port catalog) for the right segments and, rotated, for the up/down shafts,
-// and every type of the TASK-013 turn catalog, built from one-time
-// MomentumGreen / MomentumBlue pieces, nothing lethal, and their spawning
-// along the course (MomentumObstacleFloor). The TASK-012 horizontal and
-// TASK-013 vertical types are retired (TASK-038, TASK-039): the ported
-// frames replace them.
-
-// A turn type of the TASK-013 catalog sits on a segment join. Pieces are
-// [kind, x, y, w, h] in a 2 x 2 band square drawn for right->up: incoming
-// corridor y 0.5..1 (enter at x 0), outgoing shaft x 0.5..1 (leave at y 0),
-// inner wall block (0, 0, 0.5, 0.5), course vertex at (0.75, 0.75).
-const MOMENTUM_PATTERNS_TURN = Object.freeze([
-    {id: 'corner-kicker', difficulty: 1, joins: ['right->up', 'right->down', 'down->right', 'up->right'], pieces: [
-        ['green', 0.94, 0.55, 0.06, 0.3],
-        ['green', 0.5, 0.15, 0.04, 0.2]
-    ]},
-    {id: 'apex-net', difficulty: 2, joins: ['right->up', 'up->right'], pieces: [
-        ['green', 0.55, 0.95, 0.4, 0.05],
-        ['green', 0.95, 0.3, 0.05, 0.15]
-    ]},
-    {id: 'blue-corner-cut', difficulty: 3, joins: ['right->up', 'right->down', 'down->right', 'up->right'], pieces: [
-        ['blue', 0.5, 0.5, 0.14, 0.14],
-        ['green', 0.75, 0.94, 0.15, 0.06],
-        ['green', 0.94, 0.55, 0.06, 0.15],
-        ['green', 0.5, 0.15, 0.04, 0.15]
-    ]},
-    {id: 'pinwheel', difficulty: 4, joins: ['right->up', 'right->down'], pieces: [
-        ['green', 0.2, 0.95, 0.12, 0.05],
-        ['green', 0.38, 0.5, 0.12, 0.05],
-        ['green', 0.62, 0.95, 0.12, 0.05],
-        ['green', 0.95, 0.62, 0.05, 0.12],
-        ['green', 0.5, 0.34, 0.04, 0.12],
-        ['green', 0.95, 0.2, 0.05, 0.12],
-        ['blue', 0.66, 0.66, 0.12, 0.12]
-    ]}
-].map(pattern => Object.freeze(pattern)))
-// The other joins are rigid transforms of the right->up drawing
-const MOMENTUM_TURN_TRANSFORMS = Object.freeze({
-    'right->up': (x, y) => ({x: x, y: y}),
-    'right->down': (x, y) => ({x: x, y: 1 - y}),
-    'down->right': (x, y) => ({x: 1 - x, y: y}),
-    'up->right': (x, y) => ({x: 1 - x, y: 1 - y})
-})
+// port catalog) for the right segments, rotated for the up/down shafts and
+// placed at a join as turn types, built from one-time MomentumGreen /
+// MomentumBlue pieces, nothing lethal, and their spawning along the course
+// (MomentumObstacleFloor). The TASK-012 horizontal and TASK-013 vertical and
+// turn types are retired (TASK-038..040): the ported frames replace them.
 
 // Bad frames ported to momentum (the TASK-036 port catalog,
 // artifacts/TASK-036/catalog-bad-port.json): the right corridor band is the
@@ -259,66 +221,57 @@ class MomentumPortVerticalPatternFactory
     }
 }
 
-// Builds one turn catalog type
+// Turn types: the port catalog's turn candidates (turnJoins), each a ported
+// bad frame (MOMENTUM_PATTERNS_PORT_H, by source id) placed whole in the
+// right corridor at the join: before the corner box on right->up/down, after
+// it on up/down->right, never in it, so the corner itself stays open.
+const MOMENTUM_PATTERNS_TURN = Object.freeze([
+    {id: 'bad-frame3-turn', source: 'bad-frame3', joins: ['right->up', 'right->down']},
+    {id: 'bad-frame6-turn', source: 'bad-frame6', joins: ['right->up', 'right->down', 'down->right', 'up->right']},
+    {id: 'bad-frame7-turn', source: 'bad-frame7', joins: ['right->up', 'right->down']},
+    {id: 'bad-frame10-turn', source: 'bad-frame10', joins: ['down->right', 'up->right']},
+    {id: 'bad-frame11-turn', source: 'bad-frame11', joins: ['down->right', 'up->right']}
+].map(turn =>
+{
+    const frame = MOMENTUM_PATTERNS_PORT_H.find(pattern => pattern.id == turn.source)
+    return Object.freeze({...turn, difficulty: frame.difficulty, span: frame.span, pieces: frame.pieces})
+}))
+
+// Builds one turn type
 class MomentumTurnPatternFactory
 {
     constructor(pattern)
     {
         this.pattern = pattern
+        this.frame = new MomentumPortPatternFactory(pattern)
     }
-    // Sides of the 2 x 2 band square in world units: across the shaft
-    // (x) at its own half width shaftHalfWidth, across the right corridor (y)
-    // at the base half width
-    getSize(shaftHalfWidth = momentumShaftHalfWidth())
+    // Footprint start of the frame along the right corridor, from the course
+    // vertex of join: the corner box (the shaft, half width shaftHalfWidth,
+    // across the corridor) plus the clearance lies between them
+    getOffset(join, shaftHalfWidth = momentumShaftHalfWidth())
     {
-        return {x: 4 * shaftHalfWidth, y: 4 * GAMEPLAY.momentumBorders.halfWidth}
+        const clear = shaftHalfWidth +
+            GAMEPLAY.momentumSpawn.turnClearanceHalfWidths * GAMEPLAY.momentumBorders.halfWidth
+        return join.startsWith('right->') ? -clear - this.pattern.span : clear
     }
     // How far the pieces reach from the course vertex of join, world units:
     // back along the incoming segment and ahead along the outgoing one
     getReach(join, shaftHalfWidth)
     {
-        const size = this.getSize(shaftHalfWidth)
-        const transform = MOMENTUM_TURN_TRANSFORMS[join]
-        const vertex = transform(0.75, 0.75)
-        const [from, to] = join.split('->').map(momentumDirection)
-        let back = 0, ahead = 0
-        for (const [, px, py, w, h] of this.pattern.pieces)
-            for (const [u, v] of [[px, py], [px + w, py], [px, py + h], [px + w, py + h]])
-            {
-                const p = transform(u, v)
-                const dx = (p.x - vertex.x) * size.x, dy = (p.y - vertex.y) * size.y
-                back = Math.max(back, -(dx * from.x + dy * from.y))
-                ahead = Math.max(ahead, dx * to.x + dy * to.y)
-            }
-        return {back: back, ahead: ahead}
+        const offset = this.getOffset(join, shaftHalfWidth)
+        return join.startsWith('right->') ? {back: -offset, ahead: 0} : {back: 0, ahead: offset + this.pattern.span}
     }
     // (x, y): the course vertex of the join; join: 'right->up' etc.;
     // shaftHalfWidth: the half width of the join's vertical segment
     create(x, y, join, shaftHalfWidth)
     {
-        const size = this.getSize(shaftHalfWidth)
-        const transform = MOMENTUM_TURN_TRANSFORMS[join]
-        const vertex = transform(0.75, 0.75)
-        const at = (u, v) =>
-        {
-            const p = transform(u, v)
-            return {x: x + (p.x - vertex.x) * size.x, y: y + (p.y - vertex.y) * size.y}
-        }
-        return this.pattern.pieces.map(([kind, px, py, w, h]) =>
-        {
-            const a = at(px, py)
-            const b = at(px + w, py + h)
-            const left = Math.min(a.x, b.x)
-            const top = Math.min(a.y, b.y)
-            const box = kind == 'blue' ? MomentumBlue.box : MomentumGreen.box
-            return box(left, top, Math.max(a.x, b.x) - left, Math.max(a.y, b.y) - top)
-        })
+        return this.frame.create(x + this.getOffset(join, shaftHalfWidth), y)
     }
 }
 // Turn id -> factory, in catalog order; join -> the turn ids built for it
 const momentumTurnFactories = Object.freeze(Object.fromEntries(
     MOMENTUM_PATTERNS_TURN.map(pattern => [pattern.id, new MomentumTurnPatternFactory(pattern)])))
-const momentumTurnsByJoin = Object.freeze(Object.fromEntries(Object.keys(MOMENTUM_TURN_TRANSFORMS).map(join =>
+const momentumTurnsByJoin = Object.freeze(Object.fromEntries(['right->up', 'right->down', 'down->right', 'up->right'].map(join =>
     [join, Object.freeze(MOMENTUM_PATTERNS_TURN.filter(pattern => pattern.joins.includes(join)).map(pattern => pattern.id))])))
 
 // Catalog id -> factory: the ported bad frames first, in port catalog
@@ -700,7 +653,9 @@ function momentumPlaceTurn(id, segmentIndex)
     const shaftHalfWidth = momentumSegmentHalfWidth(shaft)
     const elements = factory.create(segment.x1, segment.y1, join, shaftHalfWidth)
     const group = floor.place(elements)
-    return {id: id, join: join, segment: segmentIndex, group: group, size: factory.getSize(shaftHalfWidth),
+    const offset = factory.getOffset(join, shaftHalfWidth)
+    return {id: id, join: join, segment: segmentIndex, group: group, shaftHalfWidth: shaftHalfWidth,
+            footprint: {x0: segment.x1 + offset, x1: segment.x1 + offset + factory.pattern.span},
             vertex: {x: segment.x1, y: segment.y1}, elements: elements.map(element =>
     {
         const bounds = getElementBounds(element)

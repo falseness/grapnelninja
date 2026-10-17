@@ -150,7 +150,9 @@ const GAMEPLAY = Object.freeze({
     // are gapViewWidths view widths (times obstacleSpacingScale, like bad);
     // patterns keep joinMarginHalfWidths corridor half widths off a join; a
     // turn type takes a direction change with turnChancePercent where its
-    // pieces fit and the vertical side has no room for a pattern. Integer pick weights by
+    // pieces fit and the vertical side has no room for a pattern; its frame
+    // keeps turnClearanceHalfWidths corridor half widths off the corner box
+    // (the shaft's width around the join). Integer pick weights by
     // difficulty 1..5 go from earlyWeights at score 0 to lateWeights at rampScore;
     // the avoidRecent types placed last in a direction (up and down together;
     // turns: join) are skipped while another type is left.
@@ -160,6 +162,7 @@ const GAMEPLAY = Object.freeze({
         gapViewWidths: Object.freeze({min: 0.20, max: 0.30}),
         joinMarginHalfWidths: 1.1,
         turnChancePercent: 70,
+        turnClearanceHalfWidths: 0.5,
         earlyWeights: Object.freeze([12, 6, 3, 1, 1]),
         lateWeights: Object.freeze([3, 3, 3, 3, 3]),
         rampScore: 40,
