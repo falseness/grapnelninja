@@ -114,8 +114,12 @@ class MomentumScreen extends Screen
         if (targetX >= camX)
             wantX = look.x * along + brake(targetX - camX)
         // The y braking curve, aimed a buffer short of the cap: the jerk
-        // limited acceleration trails the curve and runs on a little
-        wantX = Math.min(wantX, brake(Math.max(0, capX - options.shaftBrakeBufferHeightRatio * view - camX)))
+        // limited acceleration trails the curve and runs on a little. The
+        // buffer shrinks with the x speed below the curve's speed at it, so
+        // a slow camera creeps on to the cap (the view centred on the shaft).
+        const buffer = options.shaftBrakeBufferHeightRatio * view
+        const bufferNow = buffer * Math.min(1, Math.max(0, this.velocityX) / (options.stiffness * buffer))
+        wantX = Math.min(wantX, brake(Math.max(0, capX - bufferNow - camX)))
 
         let wantY = 0
         if (this.verticalTravel)

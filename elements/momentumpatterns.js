@@ -215,10 +215,11 @@ class MomentumPatternFactory
 class MomentumVerticalPatternFactory extends MomentumPatternFactory
 {
     // (x, y): the footprint start on the course centre line, its bottom
-    // going up and its top going down
-    create(x, y, dir)
+    // going up and its top going down; halfWidth: the shaft's own half width
+    // (momentumSegmentHalfWidth), the pieces span its inner width
+    create(x, y, dir, halfWidth = momentumShaftHalfWidth())
     {
-        const band = 2 * GAMEPLAY.momentumBorders.halfWidth
+        const band = 2 * halfWidth
         const length = this.getLength()
         const left = x - 0.5 * band
         const top = dir == 'up' ? y - length : y
@@ -237,16 +238,18 @@ class MomentumTurnPatternFactory
     {
         this.pattern = pattern
     }
-    // Side of the 2 x 2 band square in world units
-    getSize()
+    // Sides of the 2 x 2 band square in world units: across the shaft
+    // (x) at its own half width shaftHalfWidth, across the right corridor (y)
+    // at the base half width
+    getSize(shaftHalfWidth = momentumShaftHalfWidth())
     {
-        return 4 * GAMEPLAY.momentumBorders.halfWidth
+        return {x: 4 * shaftHalfWidth, y: 4 * GAMEPLAY.momentumBorders.halfWidth}
     }
     // How far the pieces reach from the course vertex of join, world units:
     // back along the incoming segment and ahead along the outgoing one
-    getReach(join)
+    getReach(join, shaftHalfWidth)
     {
-        const size = this.getSize()
+        const size = this.getSize(shaftHalfWidth)
         const transform = MOMENTUM_TURN_TRANSFORMS[join]
         const vertex = transform(0.75, 0.75)
         const [from, to] = join.split('->').map(momentumDirection)
@@ -255,22 +258,23 @@ class MomentumTurnPatternFactory
             for (const [u, v] of [[px, py], [px + w, py], [px, py + h], [px + w, py + h]])
             {
                 const p = transform(u, v)
-                const dx = (p.x - vertex.x) * size, dy = (p.y - vertex.y) * size
+                const dx = (p.x - vertex.x) * size.x, dy = (p.y - vertex.y) * size.y
                 back = Math.max(back, -(dx * from.x + dy * from.y))
                 ahead = Math.max(ahead, dx * to.x + dy * to.y)
             }
         return {back: back, ahead: ahead}
     }
-    // (x, y): the course vertex of the join; join: 'right->up' etc.
-    create(x, y, join)
+    // (x, y): the course vertex of the join; join: 'right->up' etc.;
+    // shaftHalfWidth: the half width of the join's vertical segment
+    create(x, y, join, shaftHalfWidth)
     {
-        const size = this.getSize()
+        const size = this.getSize(shaftHalfWidth)
         const transform = MOMENTUM_TURN_TRANSFORMS[join]
         const vertex = transform(0.75, 0.75)
         const at = (u, v) =>
         {
             const p = transform(u, v)
-            return {x: x + (p.x - vertex.x) * size, y: y + (p.y - vertex.y) * size}
+            return {x: x + (p.x - vertex.x) * size.x, y: y + (p.y - vertex.y) * size.y}
         }
         return this.pattern.pieces.map(([kind, px, py, w, h]) =>
         {
@@ -466,7 +470,14 @@ class MomentumObstacleFloor extends MomentumPatternFloor
             ++index
         return index
     }
+    // How far patterns keep off a join with segment (the half widths of its
+    // corridor, which crosses the stretch there)
+    getJoinMargin(segment)
+    {
+        return GAMEPLAY.momentumSpawn.joinMarginHalfWidths * momentumSegmentHalfWidth(segment)
+    }
     // Whether a vertical stretch this long holds a pattern of its direction
+    // (its joins are with right segments)
     hasPatternRoom(dir, length)
     {
         const margin = GAMEPLAY.momentumSpawn.joinMarginHalfWidths * GAMEPLAY.momentumBorders.halfWidth
@@ -479,18 +490,24 @@ class MomentumObstacleFloor extends MomentumPatternFloor
     // enough for one (a turn would leave it no room). A turn needs its piece
     // reach (MomentumTurnPatternFactory.getReach) on both stretches, plus the
     // join margin at the far end of the next one; patterns keep the minimum
-    // gap off its pieces.
+    // gap off its pieces. Join margins and the turn's square across the
+    // shaft follow the shafts' own half widths.
     planStretch(index)
     {
         const options = GAMEPLAY.momentumSpawn
-        const margin = options.joinMarginHalfWidths * GAMEPLAY.momentumBorders.halfWidth
         const last = this.getStretchEnd(index)
         const segment = this.course.segment(index)
         const end = this.course.segment(last)
         const next = this.course.segment(last + 1)
+        const nextLast = this.getStretchEnd(last + 1)
         const length = this.getArcStart(last + 1) - this.getArcStart(index)
-        const nextLength = this.getArcStart(this.getStretchEnd(last + 1) + 1) - this.getArcStart(last + 1)
-        let start = Math.max(margin, this.nextClaim)
+        const nextLength = this.getArcStart(nextLast + 1) - this.getArcStart(last + 1)
+        const margin = this.getJoinMargin(next)
+        const nextMargin = this.getJoinMargin(this.course.segment(nextLast + 1))
+        const shaftHalfWidth = momentumSegmentHalfWidth(segment.dir == 'right' ? next : end)
+        let start = Math.max(index ? this.getJoinMargin(this.course.segment(index - 1)) :
+                             GAMEPLAY.momentumSpawn.joinMarginHalfWidths * GAMEPLAY.momentumBorders.halfWidth,
+                             this.nextClaim)
         if (index == 0)
             start = Math.max(start, ninja.x - segment.x0 + options.startViewWidths * width / scale[version])
         const join = segment.dir + '->' + next.dir
@@ -501,13 +518,13 @@ class MomentumObstacleFloor extends MomentumPatternFloor
         {
             turn = this.pickType(momentumTurnsByJoin[join], id => momentumTurnFactories[id].pattern.difficulty,
                                  this.getAvoidedTypes(join))
-            reach = momentumTurnFactories[turn].getReach(join)
-            if (start > length - reach.back || nextLength < reach.ahead + margin)
+            reach = momentumTurnFactories[turn].getReach(join, shaftHalfWidth)
+            if (start > length - reach.back || nextLength < reach.ahead + nextMargin)
                 turn = null
         }
         const gap = options.gapViewWidths.min * width / scale[version]
         return {segment: segment, index: index, last: last, vertex: {x: end.x1, y: end.y1}, cursor: start,
-                join: join, turn: turn, end: turn ? length - reach.back - gap : length - margin,
+                join: join, turn: turn, shaftHalfWidth: shaftHalfWidth, end: turn ? length - reach.back - gap : length - margin,
                 turnArc: turn ? length - reach.back : 0, nextClaim: turn ? reach.ahead + gap : 0, filled: false}
     }
     // Up and down patterns share their types: their recent types are kept
@@ -571,7 +588,8 @@ class MomentumObstacleFloor extends MomentumPatternFloor
                     continue
                 }
                 const d = momentumDirection(segment.dir)
-                this.place(factory.create(segment.x0 + d.x * plan.cursor, segment.y0 + d.y * plan.cursor, segment.dir))
+                this.place(factory.create(segment.x0 + d.x * plan.cursor, segment.y0 + d.y * plan.cursor, segment.dir,
+                                          momentumSegmentHalfWidth(segment)))
                 this.placedType(segment.dir, id)
                 this.spawned(id, segment.dir == 'right' ? 'horizontal' : 'vertical', segment.dir,
                              factory.pattern.difficulty, arc + plan.cursor)
@@ -583,7 +601,7 @@ class MomentumObstacleFloor extends MomentumPatternFloor
                 if (reached(segment, arc + plan.turnArc))
                     return
                 const factory = momentumTurnFactories[plan.turn]
-                this.place(factory.create(plan.vertex.x, plan.vertex.y, plan.join))
+                this.place(factory.create(plan.vertex.x, plan.vertex.y, plan.join, plan.shaftHalfWidth))
                 this.placedType(plan.join, plan.turn)
                 this.spawned(plan.turn, 'turn', plan.join, factory.pattern.difficulty, arc + plan.turnArc)
                 plan.turn = null
@@ -600,8 +618,9 @@ MomentumObstacleFloor.onSpawn = null
 
 // Places catalog type id on the momentum pattern floor, for tests and
 // screenshots. Returns the placed boxes, or null outside momentum and for a
-// vertical type in a direction it is not registered for.
-function momentumPlacePattern(id, x, y, dir = 'right')
+// vertical type in a direction it is not registered for. A vertical type
+// spans halfWidth (default: a shaft built now, momentumShaftHalfWidth).
+function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaftHalfWidth())
 {
     let factory = momentumPatternFactories[id]
     if (factory instanceof MomentumVerticalPatternFactory && !momentumPatternsByDir[dir]?.includes(id))
@@ -609,7 +628,7 @@ function momentumPlacePattern(id, x, y, dir = 'right')
     const floor = version == 'momentum' && floors ? floors.find(f => f instanceof MomentumPatternFloor) : null
     if (!factory || !floor)
         return null
-    const elements = factory.create(x, y, dir)
+    const elements = factory.create(x, y, dir, halfWidth)
     const group = floor.place(elements)
     return {id: id, group: group, length: factory.getLength(), elements: elements.map(element =>
     {
@@ -633,9 +652,11 @@ function momentumPlaceTurn(id, segmentIndex)
     const join = segment.dir + '->' + momentumCourse.segment(segmentIndex + 1).dir
     if (!factory.pattern.joins.includes(join))
         return null
-    const elements = factory.create(segment.x1, segment.y1, join)
+    const shaft = segment.dir == 'right' ? momentumCourse.segment(segmentIndex + 1) : segment
+    const shaftHalfWidth = momentumSegmentHalfWidth(shaft)
+    const elements = factory.create(segment.x1, segment.y1, join, shaftHalfWidth)
     const group = floor.place(elements)
-    return {id: id, join: join, segment: segmentIndex, group: group, size: factory.getSize(),
+    return {id: id, join: join, segment: segmentIndex, group: group, size: factory.getSize(shaftHalfWidth),
             vertex: {x: segment.x1, y: segment.y1}, elements: elements.map(element =>
     {
         const bounds = getElementBounds(element)

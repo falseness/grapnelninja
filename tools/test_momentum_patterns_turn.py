@@ -12,7 +12,8 @@ momentumTurnsByJoin lists exactly the types declaring each join; a join a type
 does not declare places nothing (null); per type and join the element count,
 green count and blue count equal the catalog, piece by piece (class and box
 at the catalog fractions of the 2 x 2 band square, moved by the join's
-transform onto the course vertex); no element is lethal; no piece crosses a
+transform onto the course vertex; since TASK-031 its side across the shaft
+is 4 of the shaft's own half widths); no element is lethal; no piece crosses a
 border line (momentumBorders() of the segments around the join) and every
 piece lies inside the corridor (incoming corridor or outgoing one).
 
@@ -64,8 +65,9 @@ MAX_MOVES = 4000
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
     floors.find(f => f instanceof MomentumObstacleFloor).elements = [] }'''
+# halves: per segment its own half width (vertical ones wider, TASK-030)
 COURSE = '''() => ({segments: momentumCourse.take(5), half: GAMEPLAY.momentumBorders.halfWidth,
-    borders: momentumBorders()})'''
+    borders: momentumBorders(), halves: momentumCourse.take(5).map(momentumSegmentHalfWidth)})'''
 PLACE = '''([id, segment]) => {
     floors.find(f => f instanceof MomentumPatternFloor).elements = []
     return momentumPlaceTurn(id, segment)
@@ -136,16 +138,25 @@ def turn_types():
 
 
 def to_world(join, vertex, size, x, y):
-    """Catalog square point (right->up drawing) -> world point for join."""
+    """Catalog square point (right->up drawing) -> world point for join;
+    size: (x, y) sides of the square (x across the shaft, TASK-031)."""
     tx, ty = TRANSFORMS[join](x, y)
     vx, vy = TRANSFORMS[join](0.75, 0.75)
-    return vertex[0] + (tx - vx) * size, vertex[1] + (ty - vy) * size
+    return vertex[0] + (tx - vx) * size[0], vertex[1] + (ty - vy) * size[1]
 
 
-def corridor_rect(s, half):
-    """Corridor of segment s run on half a width past both ends: [l, t, r, b]."""
-    return [min(s['x0'], s['x1']) - half, min(s['y0'], s['y1']) - half,
-            max(s['x0'], s['x1']) + half, max(s['y0'], s['y1']) + half]
+def turn_size(course, i):
+    """Square sides at join i: 4 shaft half widths across the shaft (x), 4
+    base half widths across the right corridor (y)."""
+    segs, halves = course['segments'], course['halves']
+    shaft = i + 1 if segs[i]['dir'] == 'right' else i
+    return 4 * halves[shaft], 4 * course['half']
+
+
+def corridor_rect(s, hx, hy):
+    """Corridor of segment s run on hx / hy past both ends: [l, t, r, b]."""
+    return [min(s['x0'], s['x1']) - hx, min(s['y0'], s['y1']) - hy,
+            max(s['x0'], s['x1']) + hx, max(s['y0'], s['y1']) + hy]
 
 
 def inside(rect, x, y):
@@ -227,8 +238,9 @@ class MomentumPatternsTurnTests(unittest.TestCase):
                     r = self.page.evaluate(PLACE, [t['id'], i])
                     self.assertIsNotNone(r)
                     self.assertEqual(r['join'], join)
-                    size = 4 * half
-                    self.assertAlmostEqual(r['size'], size, delta=EPS)
+                    size = turn_size(self.course, i)
+                    self.assertAlmostEqual(r['size']['x'], size[0], delta=EPS)
+                    self.assertAlmostEqual(r['size']['y'], size[1], delta=EPS)
                     vertex = (segs[i]['x1'], segs[i]['y1'])
                     self.assertAlmostEqual(r['vertex']['x'], vertex[0], delta=EPS)
                     self.assertAlmostEqual(r['vertex']['y'], vertex[1], delta=EPS)
@@ -238,7 +250,7 @@ class MomentumPatternsTurnTests(unittest.TestCase):
                     blues = sum(e['className'] == 'MomentumBlue' for e in els)
                     lethal = sum(e['lethal'] for e in els)
                     lines = [b for b in self.course['borders'] if i - 1 <= b['segment'] <= i + 2]
-                    rects = [corridor_rect(segs[i], half), corridor_rect(segs[i + 1], half)]
+                    rects = [corridor_rect(segs[k], size[0] / 4, half) for k in (i, i + 1)]
                     crossings = 0
                     outside = 0
                     for p, e in zip(t['pieces'], els):
@@ -278,7 +290,7 @@ class MomentumPatternsTurnTests(unittest.TestCase):
                     i = JOINS[join]
                     self.page.evaluate(PLACE, [t['id'], i])
                     # Centre of the 2 x 2 band square
-                    cx, cy = to_world(join, (segs[i]['x1'], segs[i]['y1']), 4 * half, 0.5, 0.5)
+                    cx, cy = to_world(join, (segs[i]['x1'], segs[i]['y1']), turn_size(self.course, i), 0.5, 0.5)
                     self.page.evaluate(SHOOT, [cx, cy])
                     path = EVIDENCE_DIR / f"turn-{t['id']}-{join.replace('->', '-')}.png"
                     self.page.screenshot(path=str(path))
@@ -308,7 +320,8 @@ class MomentumTurnRouteTests(unittest.TestCase):
                 for route in t['routes']:
                     with self.subTest(id=t['id'], join=join, route=route['name']):
                         points = route['points'][::-1] if join in REVERSED else route['points']
-                        world = [[*to_world(join, vertex, 4 * half, x, y), c] for x, y, c in points]
+                        world = [[*to_world(join, vertex, turn_size(self.course, i), x, y), c]
+                                 for x, y, c in points]
                         contacts = [p[2] for p in points if p[2] is not None]
                         r = self.page.evaluate(DRIVE, [t['id'], i, world, DRIVE_SPEED, MAX_MOVES])
                         used = r['used']

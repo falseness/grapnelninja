@@ -21,8 +21,10 @@ Asserts:
 - every group spawned after the start is at least 2 view lengths ahead of the
   ninja along the course and outside the view;
 - difficulty weighted toward the catalog's early types in the first 20 s: the
-  share of difficulty <= 2 spawns is above the catalog's (uniform) share and
-  above the share in the last 20 s;
+  share of difficulty <= 2 spawns is above the catalog's (uniform) share, and
+  the pick weights' share of them (averaged over the window's spawns) is above
+  the one in the last 20 s (since TASK-031; the drawn share of ~10 spawns per
+  window flipped seeds 2, 3 and 7 with every change in the draws);
 - zero lethal elements: none at spawn, none live in any floor at any sample;
 - no death.
 
@@ -76,7 +78,22 @@ SETUP = '''(seed) => {
         const g = s.group, w = width / scale[version], h = height / scale[version]
         const view = Math.max(width, height) / scale[version]
         const inView = g.right > -screen.x && g.left < -screen.x + w && g.bottom > -screen.y && g.top < -screen.y + h
-        runSpawns.push([runFrame / 60, s.id, s.kind, s.dir, s.difficulty, s.arcAhead / view, s.lethal, inView])
+        // Share of difficulty <= 2 in the pick weights for this spawn (the
+        // ramp of MomentumObstacleFloor.pickType at the current score)
+        const options = GAMEPLAY.momentumSpawn
+        const turn = s.kind == 'turn'
+        const ids = turn ? momentumTurnsByJoin[s.dir] : momentumPatternsByDir[s.dir]
+        const ramp = Math.min(1, scoreText.count[version] / options.rampScore)
+        let easy = 0, total = 0
+        for (const id of ids) {
+            const d = (turn ? momentumTurnFactories : momentumPatternFactories)[id].pattern.difficulty
+            const k = Math.min(d, options.earlyWeights.length) - 1
+            const w = Math.max(1, Math.round(options.earlyWeights[k] + (options.lateWeights[k] - options.earlyWeights[k]) * ramp))
+            total += w
+            if (d <= 2) easy += w
+        }
+        runSpawns.push([runFrame / 60, s.id, s.kind, s.dir, s.difficulty, s.arcAhead / view, s.lethal, inView,
+                        easy / total])
     }
     startGame('momentum')
     cancelAnimationFrame(game)
@@ -271,11 +288,14 @@ class MomentumRunTests(unittest.TestCase):
         first = [s for s in self.spawns if s[0] < 20]
         last = [s for s in self.spawns if s[0] >= SECONDS - 20]
         mean = lambda spawns: sum(s[4] for s in spawns) / len(spawns)
+        # Pick-weight share of difficulty <= 2, averaged over the window's
+        # spawns: the ramp itself, without the sampling noise of ~10 picks
+        weighted = lambda spawns: sum(s[8] for s in spawns) / len(spawns)
         print(f'difficulty <= 2 share: first 20 s {share(first):.3f} ({len(first)} spawns, mean d '
-              f'{mean(first):.2f}), last 20 s {share(last):.3f} ({len(last)} spawns, mean d {mean(last):.2f}), '
-              f'catalog {uniform:.3f}', file=sys.stderr)
+              f'{mean(first):.2f}, weights {weighted(first):.3f}), last 20 s {share(last):.3f} ({len(last)} spawns,'
+              f' mean d {mean(last):.2f}, weights {weighted(last):.3f}), catalog {uniform:.3f}', file=sys.stderr)
         self.assertGreater(share(first), uniform)
-        self.assertGreater(share(first), share(last))
+        self.assertGreater(weighted(first), weighted(last))
 
     def test_6_nothing_lethal(self):
         at_spawn = sum(s[6] for s in self.spawns)

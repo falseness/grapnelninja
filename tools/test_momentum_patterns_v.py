@@ -54,9 +54,11 @@ SEGMENT = {'up': 1, 'down': 3}
 EPS = 1e-6
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
 # World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (5.56 at h 1080
-# since TASK-029 halved it; was 10 with 1000 moves under the old 11.12 cap)
+# since TASK-029 halved it; was 10 with 1000 moves under the old 11.12 cap).
+# 4000 moves: since TASK-031 the routes cross the shaft's own (about 2x
+# wider at 1280x720) inner width
 DRIVE_SPEED = 5
-MAX_MOVES = 2000
+MAX_MOVES = 4000
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
     floors.find(f => f instanceof MomentumObstacleFloor).elements = [] }'''
@@ -84,7 +86,7 @@ DRIVE = '''([id, dir, points, speed, maxMoves, x0, y0]) => {
     momentumState.reset()
     const floor = floors.find(f => f instanceof MomentumPatternFloor)
     floor.elements = []
-    const half = GAMEPLAY.momentumBorders.halfWidth
+    const half = momentumSegmentHalfWidth(momentumCourse.segment(dir == 'up' ? 1 : 3))
     const placed = momentumPlacePattern(id, x0, y0, dir)
     const elements = floor.elements.slice()
     const left = x0 - half, top = dir == 'up' ? y0 - placed.length : y0
@@ -210,10 +212,13 @@ class MomentumPatternsVTests(unittest.TestCase):
 
     def check_placement(self, t, d, f, r, entry):
         half, s = f['half'], f['segment']
-        band = 2 * half
-        length = t['span'] * band
+        # Footprint length at the base band; the pieces span the shaft's own
+        # (wider, TASK-030) inner width since TASK-031
+        shaft_half = f['segment'].get('halfWidth', half)
+        band = 2 * shaft_half
+        length = t['span'] * 2 * half
         x, y = f['x'], f['y']
-        left, top = x - half, (y - length if d == 'up' else y)
+        left, top = x - shaft_half, (y - length if d == 'up' else y)
         self.assertAlmostEqual(r['length'], length, delta=EPS)
         els = r['elements']
         kinds = [p['kind'] for p in t['pieces']]
@@ -232,9 +237,7 @@ class MomentumPatternsVTests(unittest.TestCase):
         self.assertTrue(set(classes) <= set(CLASSES.values()))
         wall_lo = min(w['x0'] for w in f['walls'])
         wall_hi = max(w['x0'] for w in f['walls'])
-        # Walls at the shaft's own (wider, TASK-030) half width; patterns
-        # still span the base band around the centre line
-        shaft_half = f['segment'].get('halfWidth', half)
+        # Walls at the shaft's own half width, the band between them
         self.assertGreaterEqual(shaft_half, half)
         self.assertAlmostEqual(wall_lo, x - shaft_half, delta=EPS)
         self.assertAlmostEqual(wall_hi, x + shaft_half, delta=EPS)
