@@ -10,8 +10,10 @@ clock. This suite checks:
   the trail), the pieces are drawn (neon of their colour inside their box),
   and backgroundPixels (background_mask) is over 20% of the frame;
 - helpers: hud_mask covers the HUD text, emissive_mask / region_luminance /
-  compare_png behave; fx_on=False equals fx_on=True (no FX rendering yet);
-  the parent-commit export (rev 'HEAD~1') captures the same scene; extra_js
+  compare_png behave; fx_on=False reaches the page and, since the momentum
+  lighting (TASK-053), differs from fx_on=True;
+  the parent-commit export (rev 'HEAD~1') captures the same scene (fx off:
+  every lighting ticket keeps the switch-off frame identical); extra_js
   runs before the frame.
 
 MOMENTUM_FX_HARNESS_EVIDENCE_DIR (default /tmp/momentum-fx-harness, so a
@@ -237,7 +239,7 @@ class MomentumFxHarnessTests(unittest.TestCase):
         lum_em = fx.region_luminance(f, em)
         self.assertLess(lum_bg, lum_em)
         self.assertIsNone(fx.region_luminance(f, np.zeros(f.shape[:2], bool)))
-        # fx_on False: no lighting FX are drawn yet, so the frame is identical
+        # fx_on False reaches the page; the momentum lighting (TASK-053) changes the frame
         off = fx.capture('mid-shaft', DESKTOP, fx_on=False)
         self.assertIs(off.info['fx'], False)
         self.assertIs(f.info['fx'], True)
@@ -245,7 +247,7 @@ class MomentumFxHarnessTests(unittest.TestCase):
         hidden = fx.capture('mid-shaft', DESKTOP, extra_js='() => { ninja.track.pos = [{x: ninja.x, y: ninja.y}] }')
         self.assertEqual(hidden.info['trailPoints'], 1)
         # The parent commit (git archive export) captures the same scene
-        parent = fx.parent_capture('mid-shaft', DESKTOP)
+        parent = fx.parent_capture('mid-shaft', DESKTOP, fx_on=False)
         self.assertNotEqual(parent.info['rev'], f.info['rev'])
         self.assertEqual(parent.info['pieces'], f.info['pieces'])
         out = EVIDENCE_DIR / 'compare-selftest.png'
@@ -258,9 +260,9 @@ class MomentumFxHarnessTests(unittest.TestCase):
             'emissiveLuminance': round(lum_em, 4), 'fxOffMaxDelta': fx.max_delta(f, off),
             'extraJsDifferingPixels': int((np.asarray(f) != np.asarray(hidden)).any(axis=2).sum()),
             'parentRev': parent.info['rev'], 'headRev': f.info['rev'],
-            'parentMaxDelta': fx.max_delta(f, parent), 'compareSize': list(sheet.size)})
+            'parentMaxDelta': fx.max_delta(off, parent), 'compareSize': list(sheet.size)})
         print('  helpers: ' + compact(self.helpers), file=sys.stderr)
-        self.assertEqual(self.helpers['fxOffMaxDelta'], 0)
+        self.assertGreater(self.helpers['fxOffMaxDelta'], 0)
         self.assertGreater(self.helpers['extraJsDifferingPixels'], 0)
         self.assertEqual(self.helpers['parentMaxDelta'], 0)
         self.assertEqual(sheet.size, (1280 * 2 + 8, 720 + 22))

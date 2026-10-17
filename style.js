@@ -258,12 +258,26 @@ const STYLE = Object.freeze({
         ]),
         // hard-light pushes the crystals toward the light's hue (green stays
         // green on the blue rock); keep it faint and behind all gameplay art.
-        // There is no player light: its cyan disc hid the cave around the ring.
+        // Classic and bad have no player light: its cyan disc hid the cave
+        // around the ring. Momentum lights the ninja instead (momentumLight).
         compositeAlpha: 0.3,
         // Stronger obstacle spill; the cached falloff and background masks
         // preserve soft edges, cave texture and untouched gameplay art.
         worldCompositeAlpha: 0.85,
         compositeOperation: 'hard-light'
+    }),
+    // Momentum lighting (MOMENTUM_FX): the cave background is dimmed to
+    // ambient and the ninja carries a cyan point light. A low-resolution light
+    // canvas (ambient grey plus the light, colors.player.halo) multiplies the
+    // background, then a faint haze of the same cyan is added round the
+    // ninja. Radii are screen px at 1080.
+    momentumLight: Object.freeze({
+        ambient: 0.42,
+        ninjaRadius: 520,
+        // Light added over the ambient at the ninja (the falloff of lights)
+        lightAlpha: 0.8,
+        hazeRadius: 300,
+        hazeAlpha: 0.3
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a

@@ -82,7 +82,22 @@ class BackgroundRenderer
     draw()
     {
         this.paint()
-        this.drawWindowBars('game', () => this.paint())
+        // Momentum lighting dims the bars to its ambient with the play rect
+        const ambient = visualEffects.lightmap.getMomentumAmbient()
+        this.drawWindowBars('game' + (ambient ? ambient : ''), () =>
+        {
+            this.paint()
+            if (ambient)
+                this.dimToAmbient(ambient)
+        })
+    }
+    dimToAmbient(ambient)
+    {
+        this.ctx.save()
+        this.ctx.globalCompositeOperation = 'multiply'
+        this.ctx.fillStyle = ambient
+        this.fillAll()
+        this.ctx.restore()
     }
     // Area the full-size fills cover: the logical viewport, or a bar canvas
     // (in logical units) while drawWindowBars paints the bars.
@@ -598,6 +613,12 @@ class LightmapRenderer
         // Unit-radius gradients by colour; drawRadialLight scales them to size
         this.gradients = new Map()
         this.shapeLights = new Map()
+        // Momentum lighting: the ambient grey with the ninja's light, multiplied
+        // over the background (same size as lightCanvas)
+        this.momentumCanvas = document.createElement('canvas')
+        this.momentumCtx = this.momentumCanvas.getContext('2d')
+        this.momentumAmbient = null
+        this.momentumGradient = null
         this.resize()
     }
     shouldDraw()
@@ -614,6 +635,26 @@ class LightmapRenderer
 
         this.lightCanvas.width = nextWidth
         this.lightCanvas.height = nextHeight
+        this.momentumCanvas.width = nextWidth
+        this.momentumCanvas.height = nextHeight
+    }
+    // Momentum lighting runs in momentum mode with the pause-screen switch
+    // (MOMENTUM_FX) on; classic and bad keep no player light
+    shouldDrawMomentumLight()
+    {
+        return version == 'momentum' && MOMENTUM_FX.enabled && this.shouldDraw()
+    }
+    // The ambient as an opaque grey fill, or null while momentum lighting is off
+    getMomentumAmbient()
+    {
+        if (!this.shouldDrawMomentumLight())
+            return null
+        if (!this.momentumAmbient)
+        {
+            const level = Math.round(STYLE.momentumLight.ambient * 255)
+            this.momentumAmbient = 'rgb(' + level + ', ' + level + ', ' + level + ')'
+        }
+        return this.momentumAmbient
     }
     clear()
     {
@@ -628,23 +669,35 @@ class LightmapRenderer
     // radius in screen px at 1080. Lights fully off screen are skipped.
     drawRadialLight(x, y, radius, color, alpha)
     {
+        if (!this.isLightOnScreen(x, y, radius))
+            return false
+
+        this.fillRadialLight(this.lightCtx, x, y, radius, this.getLightGradient(color), alpha)
+        this.hasLights = true
+        return true
+    }
+    isLightOnScreen(x, y, radius)
+    {
         const toLight = this.scale * scale[version]
         const lightX = x * toLight
         const lightY = y * toLight
         const lightRadius = radius * height / 1080 * this.scale
 
-        if (lightX < -lightRadius || lightY < -lightRadius
+        return !(lightX < -lightRadius || lightY < -lightRadius
             || lightX > this.lightCanvas.width + lightRadius
             || lightY > this.lightCanvas.height + lightRadius)
-            return false
+    }
+    // Fills a unit gradient scaled to radius into lightCtx (a context of
+    // lightCanvas's size)
+    fillRadialLight(lightCtx, x, y, radius, gradient, alpha)
+    {
+        const toLight = this.scale * scale[version]
+        const lightRadius = radius * height / 1080 * this.scale
 
-        const lightCtx = this.lightCtx
-        lightCtx.setTransform(lightRadius, 0, 0, lightRadius, lightX, lightY)
+        lightCtx.setTransform(lightRadius, 0, 0, lightRadius, x * toLight, y * toLight)
         lightCtx.globalAlpha = alpha
-        lightCtx.fillStyle = this.getLightGradient(color)
+        lightCtx.fillStyle = gradient
         lightCtx.fillRect(-1, -1, 2, 2)
-        this.hasLights = true
-        return true
     }
     getLightGradient(color)
     {
@@ -656,14 +709,27 @@ class LightmapRenderer
         if (this.gradients.size >= 64)
             this.gradients.clear()
 
+        gradient = this.createLightGradient(color)
+        this.gradients.set(color, gradient)
+        return gradient
+    }
+    createLightGradient(color)
+    {
         const falloff = STYLE.lights.falloff
-        gradient = this.lightCtx.createRadialGradient(0, 0, 0, 0, 0, 1)
+        const gradient = this.lightCtx.createRadialGradient(0, 0, 0, 0, 0, 1)
         for (let i = 0; i < falloff.length; ++i)
         {
             gradient.addColorStop(falloff[i][0], colorWithAlpha(color, falloff[i][1]))
         }
-        this.gradients.set(color, gradient)
         return gradient
+    }
+    // The ninja's light and haze gradient, kept apart from the obstacle
+    // light cache so classic and bad see the same cache as before
+    getMomentumGradient()
+    {
+        if (!this.momentumGradient)
+            this.momentumGradient = this.createLightGradient(STYLE.colors.player.halo)
+        return this.momentumGradient
     }
     draw(gameState)
     {
@@ -802,19 +868,65 @@ class LightmapRenderer
     }
     composite()
     {
+        const momentum = this.shouldDrawMomentumLight()
+        if (momentum)
+            this.compositeMomentumLight()
+
         // A fully transparent lightmap cannot affect the frame. Avoid the
         // full-canvas blend when all world lights were culled.
-        if (!this.shouldDraw() || !this.hasLights)
-            return
+        if (this.shouldDraw() && this.hasLights)
+            this.compositeCanvas(this.lightCanvas, STYLE.lights.worldCompositeAlpha,
+                STYLE.lights.compositeOperation)
 
+        if (momentum)
+            this.addMomentumHaze()
+    }
+    compositeCanvas(source, alpha, operation)
+    {
         const viewWidth = LOGICAL_VIEWPORT.width / scale[version]
         const viewHeight = LOGICAL_VIEWPORT.height / scale[version]
 
         this.ctx.save()
-        this.ctx.globalAlpha = STYLE.lights.worldCompositeAlpha
-        this.ctx.globalCompositeOperation = STYLE.lights.compositeOperation
+        this.ctx.globalAlpha = alpha
+        this.ctx.globalCompositeOperation = operation
         this.ctx.imageSmoothingEnabled = true
-        this.ctx.drawImage(this.lightCanvas, 0, 0, viewWidth, viewHeight)
+        this.ctx.drawImage(source, 0, 0, viewWidth, viewHeight)
+        this.ctx.restore()
+    }
+    // Dims the background to the ambient, lit by the ninja: the ambient grey
+    // plus its cyan light, multiplied (before the world, motes and trail)
+    compositeMomentumLight()
+    {
+        const config = STYLE.momentumLight
+        const lightCtx = this.momentumCtx
+
+        lightCtx.save()
+        lightCtx.setTransform(1, 0, 0, 1, 0, 0)
+        lightCtx.globalAlpha = 1
+        lightCtx.fillStyle = this.getMomentumAmbient()
+        lightCtx.fillRect(0, 0, this.momentumCanvas.width, this.momentumCanvas.height)
+        lightCtx.globalCompositeOperation = 'lighter'
+        const x = ninja.x + screen.x
+        const y = ninja.y + screen.y
+        if (this.isLightOnScreen(x, y, config.ninjaRadius))
+            this.fillRadialLight(lightCtx, x, y, config.ninjaRadius, this.getMomentumGradient(), config.lightAlpha)
+        lightCtx.restore()
+
+        this.compositeCanvas(this.momentumCanvas, 1, 'multiply')
+    }
+    // A faint cyan glow of the air round the ninja, added at full resolution
+    addMomentumHaze()
+    {
+        const config = STYLE.momentumLight
+        const radius = config.hazeRadius * height / 1080 / scale[version]
+
+        this.ctx.save()
+        this.ctx.translate(ninja.x + screen.x, ninja.y + screen.y)
+        this.ctx.scale(radius, radius)
+        this.ctx.globalAlpha = config.hazeAlpha
+        this.ctx.globalCompositeOperation = 'lighter'
+        this.ctx.fillStyle = this.getMomentumGradient()
+        this.ctx.fillRect(-1, -1, 2, 2)
         this.ctx.restore()
     }
 }
