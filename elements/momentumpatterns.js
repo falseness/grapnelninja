@@ -174,6 +174,42 @@ const MOMENTUM_TURN_TRANSFORMS = Object.freeze({
     'up->right': (x, y) => ({x: 1 - x, y: 1 - y})
 })
 
+// Bad frames ported to momentum (the TASK-036 port catalog,
+// artifacts/TASK-036/catalog-bad-port.json): the right corridor band is the
+// bad floor..ceiling band, so the pieces keep their bad world sizes. span =
+// footprint length in world units; a piece is a MomentumGreen/MomentumBlue
+// .shape spec centred on (x, y): x along from the footprint start, y across
+// from the corridor centre line (+ = floor side), motion yMin/yMax across
+// as well. Right segments only: the motion is vertical.
+const MOMENTUM_PATTERNS_PORT_H = Object.freeze([
+    {id: 'bad-frame1', difficulty: 3, span: 2813.5, pieces: [
+        {kind: 'green', x: 98.1, y: 38.2, shape: 'rect', w: 196.1, h: 1415.1},
+        {kind: 'green', x: 2715.5, y: 38.2, shape: 'rect', w: 196.1, h: 1415.1},
+        {kind: 'blue', x: 912.7, y: 565.7, shape: 'rect', w: 577, h: 588.4, motion: {speedY: -1.65, yMin: -972, yMax: 972, gravity: true}}
+    ]},
+    {id: 'bad-frame3', difficulty: 2, span: 800.2, pieces: [
+        {kind: 'blue', x: 400.1, y: -40, shape: 'polygon', points: [[-400.1, -439.9], [400.1, -439.9], [0, 439.8]], motion: {speedY: -0.675, yMin: -961.2, yMax: 961.2, gravity: false}}
+    ]},
+    {id: 'bad-frame4', difficulty: 4, span: 1007, pieces: [
+        {kind: 'green', x: 503.5, y: -39.6, shape: 'rect', w: 1007, h: 199.8},
+        {kind: 'blue', x: 533.7, y: -467.7, shape: 'rect', w: 192.3, h: 196.1, motion: {speedY: -1.29, yMin: -972, yMax: -139.5, gravity: true}},
+        {kind: 'blue', x: 505.4, y: 490.3, shape: 'polygon', points: [[-196, -215], [196, -215], [0, 215]], motion: {speedY: 0.675, yMin: 71.1, yMax: 961.2, gravity: false}}
+    ]},
+    {id: 'bad-frame5', difficulty: 2, span: 1742.5, pieces: [
+        {kind: 'green', x: 1644.5, y: -397.9, shape: 'rect', w: 196.1, h: 1003.2},
+        {kind: 'green', x: 98.1, y: 211.2, shape: 'rect', w: 196.1, h: 1376.6},
+        {kind: 'green', x: 437.5, y: -396, shape: 'rect', w: 482.7, h: 162.2}
+    ]},
+    {id: 'bad-frame6', difficulty: 2, span: 196.1, pieces: [
+        {kind: 'blue', x: 98, y: -735.9, shape: 'rect', w: 196.1, h: 472.3},
+        {kind: 'blue', x: 98, y: 611.4, shape: 'rect', w: 196.1, h: 721.2}
+    ]},
+    {id: 'bad-frame7', difficulty: 2, span: 777, pieces: [
+        {kind: 'green', x: 388.5, y: 516.7, shape: 'rect', w: 777, h: 531.8},
+        {kind: 'blue', x: 388.5, y: -309.2, shape: 'rect', w: 192.4, h: 196.1, motion: {speedY: -0.693, yMin: -972, yMax: 250.8, gravity: true}}
+    ]}
+].map(pattern => Object.freeze(pattern)))
+
 // Builds one catalog type, like the frame factories of elements/factory.js
 class MomentumPatternFactory
 {
@@ -227,6 +263,34 @@ class MomentumVerticalPatternFactory extends MomentumPatternFactory
         {
             const box = kind == 'blue' ? MomentumBlue.box : MomentumGreen.box
             return box(left + px * band, top + py * length, w * band, h * length)
+        })
+    }
+}
+
+// Builds one ported bad frame (MOMENTUM_PATTERNS_PORT_H) in a right segment
+class MomentumPortPatternFactory
+{
+    constructor(pattern)
+    {
+        this.pattern = pattern
+        this.dirs = ['right']
+    }
+    getLength()
+    {
+        return this.pattern.span
+    }
+    // (x, y): the footprint start on the corridor centre line
+    create(x, y)
+    {
+        return this.pattern.pieces.map(piece =>
+        {
+            const spec = {shape: piece.shape, x: x + piece.x, y: y + piece.y, w: piece.w, h: piece.h}
+            if (piece.points)
+                spec.points = piece.points.map(([px, py]) => ({x: px, y: py}))
+            if (piece.motion)
+                spec.motion = {speedY: piece.motion.speedY, yMin: y + piece.motion.yMin,
+                               yMax: y + piece.motion.yMax, gravity: piece.motion.gravity}
+            return (piece.kind == 'blue' ? MomentumBlue : MomentumGreen).shape(spec)
         })
     }
 }
@@ -293,13 +357,16 @@ const momentumTurnFactories = Object.freeze(Object.fromEntries(
 const momentumTurnsByJoin = Object.freeze(Object.fromEntries(Object.keys(MOMENTUM_TURN_TRANSFORMS).map(join =>
     [join, Object.freeze(MOMENTUM_PATTERNS_TURN.filter(pattern => pattern.joins.includes(join)).map(pattern => pattern.id))])))
 
-// Catalog id -> factory, horizontal types first, in catalog order
+// Catalog id -> factory, horizontal types first, in catalog order, then the
+// ported bad frames
 const momentumPatternFactories = Object.freeze(Object.fromEntries([
     ...MOMENTUM_PATTERNS_H.map(pattern => [pattern.id, new MomentumPatternFactory(pattern)]),
-    ...MOMENTUM_PATTERNS_V.map(pattern => [pattern.id, new MomentumVerticalPatternFactory(pattern)])
+    ...MOMENTUM_PATTERNS_V.map(pattern => [pattern.id, new MomentumVerticalPatternFactory(pattern)]),
+    ...MOMENTUM_PATTERNS_PORT_H.map(pattern => [pattern.id, new MomentumPortPatternFactory(pattern)])
 ]))
-// Segment direction -> the ids built for it. A vertical type restricted to
-// one direction is only registered there.
+// Segment direction -> the ids spawned there. A vertical type restricted to
+// one direction is only registered there. The ported frames do not spawn
+// yet (placed with momentumPlacePattern only).
 const momentumPatternsByDir = Object.freeze({
     right: Object.freeze(MOMENTUM_PATTERNS_H.map(pattern => pattern.id)),
     up: Object.freeze(MOMENTUM_PATTERNS_V.filter(pattern => pattern.dirs.includes('up')).map(pattern => pattern.id)),
@@ -618,12 +685,16 @@ MomentumObstacleFloor.onSpawn = null
 
 // Places catalog type id on the momentum pattern floor, for tests and
 // screenshots. Returns the placed boxes, or null outside momentum and for a
-// vertical type in a direction it is not registered for. A vertical type
-// spans halfWidth (default: a shaft built now, momentumShaftHalfWidth).
+// vertical type in a direction it is not registered for and for a ported
+// frame (bad-frameN) outside a right segment. A vertical type spans
+// halfWidth (default: a shaft built now, momentumShaftHalfWidth). Elements
+// also carry their polygon points, speedY and motion.
 function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaftHalfWidth())
 {
     let factory = momentumPatternFactories[id]
     if (factory instanceof MomentumVerticalPatternFactory && !momentumPatternsByDir[dir]?.includes(id))
+        factory = undefined
+    if (factory?.dirs && !factory.dirs.includes(dir))
         factory = undefined
     const floor = version == 'momentum' && floors ? floors.find(f => f instanceof MomentumPatternFloor) : null
     if (!factory || !floor)
@@ -634,7 +705,9 @@ function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaft
     {
         const bounds = getElementBounds(element)
         return {className: element.constructor.name, lethal: isLethalElement(element),
-                left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom}
+                left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom,
+                points: element.getPoints().map(point => [point.x, point.y]), speedY: element.speedY || 0,
+                motion: element.motion}
     })}
 }
 window.momentumPlacePattern = momentumPlacePattern
