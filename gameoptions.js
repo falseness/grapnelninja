@@ -117,7 +117,10 @@ const GAMEPLAY = Object.freeze({
     momentumHp: Object.freeze({
         startHp: 5,
         greenStreakForHp: 5
-    })
+    }),
+    // Momentum green objects (sprites/momentumgreen.js) fade out over this
+    // long after their one bounce, then leave their floor.
+    momentumFadeMs: 800
 })
 const defaultEqualityTolerance = 1
 

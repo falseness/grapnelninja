@@ -215,10 +215,16 @@ class Floor
     }
     moveElements()
     {
+        let faded = false
         for (let i = 0; i < this.elements.length; ++i)
         {
             this.elements[i].move()
+            if (this.elements[i].faded)
+                faded = true
         }
+        // Momentum greens whose fade-out ended (sprites/momentumgreen.js)
+        if (faded)
+            this.elements = this.elements.filter(element => !element.faded)
     }
     draw()
     {

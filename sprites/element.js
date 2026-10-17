@@ -286,8 +286,15 @@ class Element
     {
         options = options || {}
         const points = this.getPoints()
+        // options.alpha fades the whole shape (momentum greens)
+        const fading = options.alpha !== undefined
+        const outlineAlpha = fading
+            ? options.alpha * (options.outlineAlpha === undefined ? 1 : options.outlineAlpha)
+            : options.outlineAlpha
 
         ctx.save()
+        if (fading)
+            ctx.globalAlpha = options.alpha
         ctx.beginPath()
         ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
         for (let i = 0; i < points.length; ++i)
@@ -305,7 +312,7 @@ class Element
         ctx.fillStyle = fillStyle
         ctx.fill()
 
-        strokeNeonPath(strokeStyle, options.outlineAlpha, undefined, undefined, options.coreColor)
+        strokeNeonPath(strokeStyle, outlineAlpha, undefined, undefined, options.coreColor)
 
         ctx.restore()
     }

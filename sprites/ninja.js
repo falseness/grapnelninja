@@ -32,7 +32,8 @@ class Ninja
             for (let i = 0; i < floors[k].elements.length; ++i)
             {
                 const element = floors[k].elements[i]
-                if (!element)
+                // A used momentum green fades out without colliding
+                if (!element || element.passThrough)
                     continue
                 // The circumscribed circle is the cheap reject (no point arrays),
                 // so it runs before the bounds of the points.
