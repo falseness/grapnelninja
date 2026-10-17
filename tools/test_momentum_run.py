@@ -201,7 +201,7 @@ class MomentumRunTests(unittest.TestCase):
             passed: floors.find(f => f instanceof MomentumObstacleFloor).nextGenerationGroupId -
                     floors.find(f => f instanceof MomentumObstacleFloor).groups.filter(g => !g.scored).length,
             catalog: {h: MOMENTUM_PATTERNS_PORT_H.map(p => [p.id, p.difficulty]),
-                      v: MOMENTUM_PATTERNS_V.map(p => [p.id, p.difficulty]),
+                      v: MOMENTUM_PATTERNS_PORT_V.map(p => [p.id, p.difficulty]),
                       turn: MOMENTUM_PATTERNS_TURN.map(p => [p.id, p.difficulty])}})''')
         by_second = {}
         for s in cls.spawns:

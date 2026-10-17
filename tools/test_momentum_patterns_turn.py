@@ -223,7 +223,7 @@ class MomentumPatternsTurnTests(unittest.TestCase):
                     print(f"{t['id']} {join}: not declared -> {r}")
                     self.assertIsNone(r)
         self.assertIsNone(self.page.evaluate(PLACE, ['no-such-turn', 0]))
-        self.assertIsNone(self.page.evaluate(PLACE, ['wall-ladder', 0]))
+        self.assertIsNone(self.page.evaluate(PLACE, ['bad-frame6-v', 0]))
         self.assertIsNone(self.page.evaluate("momentumPlacePattern('corner-kicker', 0, 0, 'right')"))
 
     def test_2_types_match_catalog(self):

@@ -1,67 +1,10 @@
-// Momentum obstacle patterns: the bad frames ported to momentum for the
-// right segments (TASK-036 port catalog) and every type of the TASK-013
-// vertical and turn catalogs, built from one-time MomentumGreen /
-// MomentumBlue pieces, nothing lethal, and their spawning along the course
-// (MomentumObstacleFloor). The TASK-012 horizontal types are retired
-// (TASK-038): the ported frames replace them.
-
-// Every vertical type of the TASK-013 catalog, for 'up'/'down' segments. A
-// type fills the shaft between the two dark-green walls: x 0 = left wall
-// face, 1 = right wall face; y 0 = top of a footprint `span` band heights
-// long. The layout is the same in both directions (going down, the route is
-// run backwards). dirs: the only directions the type is built for.
-// Pieces are [kind, x, y, w, h] in those fractions.
-const MOMENTUM_PATTERNS_V = Object.freeze([
-    {id: 'wall-ladder', difficulty: 1, span: 1.0, dirs: ['up', 'down'], pieces: [
-        ['green', 0.0, 0.82, 0.06, 0.16],
-        ['green', 0.94, 0.62, 0.06, 0.16],
-        ['green', 0.0, 0.42, 0.06, 0.16],
-        ['green', 0.94, 0.22, 0.06, 0.16],
-        ['green', 0.0, 0.02, 0.06, 0.16]
-    ]},
-    {id: 'gate-bypass', difficulty: 2, span: 1.0, dirs: ['up', 'down'], pieces: [
-        ['blue', 0.3, 0.48, 0.7, 0.08],
-        ['green', 0.0, 0.7, 0.06, 0.14],
-        ['green', 0.94, 0.2, 0.06, 0.14]
-    ]},
-    {id: 'trampoline-chimney', difficulty: 2, span: 1.0, dirs: ['up'], pieces: [
-        ['green', 0.0, 0.8, 0.35, 0.04],
-        ['green', 0.65, 0.55, 0.35, 0.04],
-        ['green', 0.0, 0.3, 0.35, 0.04]
-    ]},
-    {id: 'ricochet-well', difficulty: 3, span: 1.0, dirs: ['down'], pieces: [
-        ['green', 0.0, 0.12, 0.3, 0.1],
-        ['green', 0.7, 0.38, 0.3, 0.1],
-        ['green', 0.0, 0.64, 0.3, 0.1],
-        ['green', 0.7, 0.86, 0.3, 0.1],
-        ['blue', 0.42, 0.14, 0.16, 0.06],
-        ['blue', 0.42, 0.4, 0.16, 0.06],
-        ['blue', 0.42, 0.66, 0.16, 0.06]
-    ]},
-    {id: 'staggered-column', difficulty: 3, span: 1.1, dirs: ['up', 'down'], pieces: [
-        ['green', 0.42, 0.7, 0.16, 0.14],
-        ['blue', 0.42, 0.46, 0.16, 0.14],
-        ['green', 0.42, 0.22, 0.16, 0.14],
-        ['blue', 0.42, 0.0, 0.16, 0.1],
-        ['green', 0.0, 0.48, 0.05, 0.12],
-        ['green', 0.95, 0.3, 0.05, 0.12]
-    ]},
-    {id: 'needle-shaft', difficulty: 5, span: 1.1, dirs: ['up', 'down'], pieces: [
-        ['green', 0.2, 0.84, 0.06, 0.1],
-        ['blue', 0.0, 0.84, 0.1, 0.1],
-        ['green', 0.72, 0.68, 0.06, 0.1],
-        ['blue', 0.9, 0.68, 0.1, 0.1],
-        ['green', 0.2, 0.52, 0.06, 0.1],
-        ['blue', 0.0, 0.52, 0.1, 0.1],
-        ['green', 0.72, 0.36, 0.06, 0.1],
-        ['blue', 0.9, 0.36, 0.1, 0.1],
-        ['green', 0.2, 0.2, 0.06, 0.1],
-        ['blue', 0.0, 0.2, 0.1, 0.1],
-        ['green', 0.72, 0.04, 0.06, 0.1],
-        ['blue', 0.9, 0.04, 0.1, 0.1]
-    ]}
-
-].map(pattern => Object.freeze(pattern)))
+// Momentum obstacle patterns: the bad frames ported to momentum (TASK-036
+// port catalog) for the right segments and, rotated, for the up/down shafts,
+// and every type of the TASK-013 turn catalog, built from one-time
+// MomentumGreen / MomentumBlue pieces, nothing lethal, and their spawning
+// along the course (MomentumObstacleFloor). The TASK-012 horizontal and
+// TASK-013 vertical types are retired (TASK-038, TASK-039): the ported
+// frames replace them.
 
 // A turn type of the TASK-013 catalog sits on a segment join. Pieces are
 // [kind, x, y, w, h] in a 2 x 2 band square drawn for right->up: incoming
@@ -171,35 +114,88 @@ const MOMENTUM_PATTERNS_PORT_H = Object.freeze([
     ]}
 ].map(pattern => Object.freeze(pattern)))
 
-// Builds one vertical catalog type, like the frame factories of
-// elements/factory.js
-class MomentumVerticalPatternFactory
-{
-    constructor(pattern)
-    {
-        this.pattern = pattern
-    }
-    // Footprint length in world units
-    getLength()
-    {
-        return this.pattern.span * 2 * GAMEPLAY.momentumBorders.halfWidth
-    }
-    // (x, y): the footprint start on the course centre line, its bottom
-    // going up and its top going down; halfWidth: the shaft's own half width
-    // (momentumSegmentHalfWidth), the pieces span its inner width
-    create(x, y, dir, halfWidth = momentumShaftHalfWidth())
-    {
-        const band = 2 * halfWidth
-        const length = this.getLength()
-        const left = x - 0.5 * band
-        const top = dir == 'up' ? y - length : y
-        return this.pattern.pieces.map(([kind, px, py, w, h]) =>
-        {
-            const box = kind == 'blue' ? MomentumBlue.box : MomentumGreen.box
-            return box(left + px * band, top + py * length, w * band, h * length)
-        })
-    }
-}
+// Vertical variants of the static ported frames (the catalog's `vertical`
+// lists): the bad frame rotated 90 deg. Per direction the pieces are rects
+// centred on (x, y) in world units at the base half width: x across from
+// the shaft centre line, y along from the footprint start (- = up). In a
+// shaft they are scaled uniformly by its half width over the base one, so
+// they span it wall to wall as the frame spans floor..ceiling in bad. wall
+// '-'/'+': flush with the wall on the side of its centre. dirs: the only
+// directions the variant is built for.
+const MOMENTUM_PATTERNS_PORT_V = Object.freeze([
+    {id: 'bad-frame5-v', source: 'bad-frame5', difficulty: 2, span: 1742.5, dirs: ['up', 'down'], pieces: {
+        up: [
+            {kind: 'green', x: -397.9, y: -1644.5, w: 1003.2, h: 196.1},
+            {kind: 'green', x: 211.2, y: -98.1, w: 1376.6, h: 196.1},
+            {kind: 'green', x: -396, y: -437.5, w: 162.2, h: 482.7}
+        ],
+        down: [
+            {kind: 'green', x: 397.9, y: 1644.5, w: 1003.2, h: 196.1},
+            {kind: 'green', x: -211.2, y: 98.1, w: 1376.6, h: 196.1},
+            {kind: 'green', x: 396, y: 437.5, w: 162.2, h: 482.7}
+        ]
+    }},
+    {id: 'bad-frame6-v', source: 'bad-frame6', difficulty: 2, span: 196.1, dirs: ['up', 'down'], pieces: {
+        up: [
+            {kind: 'blue', x: -735.9, y: -98, w: 472.3, h: 196.1, wall: '-'},
+            {kind: 'blue', x: 611.4, y: -98, w: 721.2, h: 196.1, wall: '+'}
+        ],
+        down: [
+            {kind: 'blue', x: 735.9, y: 98, w: 472.3, h: 196.1, wall: '-'},
+            {kind: 'blue', x: -611.4, y: 98, w: 721.2, h: 196.1, wall: '+'}
+        ]
+    }},
+    {id: 'bad-frame8-v', source: 'bad-frame8', difficulty: 3, span: 2594.8, dirs: ['up', 'down'], pieces: {
+        up: [
+            {kind: 'blue', x: 54.7, y: -1312.5, w: 648.7, h: 196.1},
+            {kind: 'green', x: -1.9, y: -98, w: 1003.2, h: 196.1},
+            {kind: 'green', x: 641.2, y: -2496.7, w: 516.7, h: 196.2},
+            {kind: 'green', x: -641.1, y: -2496.7, w: 516.7, h: 196.2}
+        ],
+        down: [
+            {kind: 'blue', x: -54.7, y: 1312.5, w: 648.7, h: 196.1},
+            {kind: 'green', x: 1.9, y: 98, w: 1003.2, h: 196.1},
+            {kind: 'green', x: -641.2, y: 2496.7, w: 516.7, h: 196.2},
+            {kind: 'green', x: 641.1, y: 2496.7, w: 516.7, h: 196.2}
+        ]
+    }},
+    {id: 'bad-frame10-v', source: 'bad-frame10', difficulty: 3, span: 1497.2, dirs: ['up', 'down'], pieces: {
+        up: [
+            {kind: 'green', x: -1.8, y: -748.6, w: 196.1, h: 1497.2},
+            {kind: 'blue', x: 698.2, y: -748.6, w: 547.7, h: 196.1, wall: '+'},
+            {kind: 'blue', x: -341.3, y: -748.6, w: 475.2, h: 196.1}
+        ],
+        down: [
+            {kind: 'green', x: 1.8, y: 748.6, w: 196.1, h: 1497.2},
+            {kind: 'blue', x: -698.2, y: 748.6, w: 547.7, h: 196.1, wall: '+'},
+            {kind: 'blue', x: 341.3, y: 748.6, w: 475.2, h: 196.1}
+        ]
+    }},
+    {id: 'bad-frame11-v', source: 'bad-frame11', difficulty: 3, span: 1497.2, dirs: ['up', 'down'], pieces: {
+        up: [
+            {kind: 'green', x: -1.8, y: -748.6, w: 196.1, h: 1497.2},
+            {kind: 'blue', x: 337.5, y: -748.6, w: 475.2, h: 196.1},
+            {kind: 'blue', x: -665.7, y: -748.6, w: 475.2, h: 196.1}
+        ],
+        down: [
+            {kind: 'green', x: 1.8, y: 748.6, w: 196.1, h: 1497.2},
+            {kind: 'blue', x: -337.5, y: 748.6, w: 475.2, h: 196.1},
+            {kind: 'blue', x: 665.7, y: 748.6, w: 475.2, h: 196.1}
+        ]
+    }},
+    {id: 'bad-frame14-v', source: 'bad-frame14', difficulty: 2, span: 1972.4, dirs: ['up', 'down'], pieces: {
+        up: [
+            {kind: 'green', x: 434.2, y: -1874.3, w: 1075.7, h: 196.1, wall: '+'},
+            {kind: 'green', x: -290.4, y: -98, w: 1218.2, h: 196.1},
+            {kind: 'green', x: 237.6, y: -548.7, w: 162.2, h: 705.2}
+        ],
+        down: [
+            {kind: 'green', x: -434.2, y: 1874.3, w: 1075.7, h: 196.1, wall: '+'},
+            {kind: 'green', x: 290.4, y: 98, w: 1218.2, h: 196.1},
+            {kind: 'green', x: -237.6, y: 548.7, w: 162.2, h: 705.2}
+        ]
+    }}
+].map(pattern => Object.freeze(pattern)))
 
 // Builds one ported bad frame (MOMENTUM_PATTERNS_PORT_H) in a right segment
 class MomentumPortPatternFactory
@@ -224,6 +220,40 @@ class MomentumPortPatternFactory
             if (piece.motion)
                 spec.motion = {speedY: piece.motion.speedY, yMin: y + piece.motion.yMin,
                                yMax: y + piece.motion.yMax, gravity: piece.motion.gravity}
+            return (piece.kind == 'blue' ? MomentumBlue : MomentumGreen).shape(spec)
+        })
+    }
+}
+
+// Builds one vertical port (MOMENTUM_PATTERNS_PORT_V) in an up/down shaft
+class MomentumPortVerticalPatternFactory
+{
+    constructor(pattern)
+    {
+        this.pattern = pattern
+        this.dirs = pattern.dirs
+    }
+    // World units per catalog unit in a shaft of half width halfWidth
+    getScale(halfWidth = momentumShaftHalfWidth())
+    {
+        return halfWidth / GAMEPLAY.momentumBorders.halfWidth
+    }
+    // Footprint length in world units
+    getLength(halfWidth = momentumShaftHalfWidth())
+    {
+        return this.pattern.span * this.getScale(halfWidth)
+    }
+    // (x, y): the footprint start on the shaft centre line, its bottom going
+    // up and its top going down; halfWidth: the shaft's own half width
+    // (momentumSegmentHalfWidth)
+    create(x, y, dir, halfWidth = momentumShaftHalfWidth())
+    {
+        const k = this.getScale(halfWidth)
+        return this.pattern.pieces[dir].map(piece =>
+        {
+            const w = piece.w * k
+            const across = piece.wall ? Math.sign(piece.x) * (halfWidth - w / 2) : piece.x * k
+            const spec = {shape: 'rect', x: x + across, y: y + piece.y * k, w: w, h: piece.h * k}
             return (piece.kind == 'blue' ? MomentumBlue : MomentumGreen).shape(spec)
         })
     }
@@ -292,18 +322,18 @@ const momentumTurnsByJoin = Object.freeze(Object.fromEntries(Object.keys(MOMENTU
     [join, Object.freeze(MOMENTUM_PATTERNS_TURN.filter(pattern => pattern.joins.includes(join)).map(pattern => pattern.id))])))
 
 // Catalog id -> factory: the ported bad frames first, in port catalog
-// order, then the vertical types
+// order, then their vertical variants (bad-frameN-v)
 const momentumPatternFactories = Object.freeze(Object.fromEntries([
     ...MOMENTUM_PATTERNS_PORT_H.map(pattern => [pattern.id, new MomentumPortPatternFactory(pattern)]),
-    ...MOMENTUM_PATTERNS_V.map(pattern => [pattern.id, new MomentumVerticalPatternFactory(pattern)])
+    ...MOMENTUM_PATTERNS_PORT_V.map(pattern => [pattern.id, new MomentumPortVerticalPatternFactory(pattern)])
 ]))
 // Segment direction -> the ids spawned there: right segments spawn the
-// ported frames only. A vertical type restricted to one direction is only
-// registered there.
+// ported frames, shafts their vertical variants only. A variant restricted
+// to one direction is only registered there.
 const momentumPatternsByDir = Object.freeze({
     right: Object.freeze(MOMENTUM_PATTERNS_PORT_H.map(pattern => pattern.id)),
-    up: Object.freeze(MOMENTUM_PATTERNS_V.filter(pattern => pattern.dirs.includes('up')).map(pattern => pattern.id)),
-    down: Object.freeze(MOMENTUM_PATTERNS_V.filter(pattern => pattern.dirs.includes('down')).map(pattern => pattern.id))
+    up: Object.freeze(MOMENTUM_PATTERNS_PORT_V.filter(pattern => pattern.dirs.includes('up')).map(pattern => pattern.id)),
+    down: Object.freeze(MOMENTUM_PATTERNS_PORT_V.filter(pattern => pattern.dirs.includes('down')).map(pattern => pattern.id))
 })
 
 // Holds placed patterns, one generation group each, with the group's box
@@ -476,12 +506,13 @@ class MomentumObstacleFloor extends MomentumPatternFloor
     {
         return GAMEPLAY.momentumSpawn.joinMarginHalfWidths * momentumSegmentHalfWidth(segment)
     }
-    // Whether a vertical stretch this long holds a pattern of its direction
-    // (its joins are with right segments)
-    hasPatternRoom(dir, length)
+    // Whether a vertical stretch this long, of shaft half width halfWidth,
+    // holds a pattern of its direction (its joins are with right segments)
+    hasPatternRoom(dir, length, halfWidth)
     {
         const margin = GAMEPLAY.momentumSpawn.joinMarginHalfWidths * GAMEPLAY.momentumBorders.halfWidth
-        const shortest = Math.min(...momentumPatternsByDir[dir].map(id => momentumPatternFactories[id].getLength()))
+        const shortest = Math.min(...momentumPatternsByDir[dir].map(id =>
+            momentumPatternFactories[id].getLength(halfWidth)))
         return length >= 2 * margin + shortest
     }
     // Where patterns of the stretch from segment index may go (course
@@ -511,7 +542,8 @@ class MomentumObstacleFloor extends MomentumPatternFloor
         if (index == 0)
             start = Math.max(start, ninja.x - segment.x0 + options.startViewWidths * width / scale[version])
         const join = segment.dir + '->' + next.dir
-        const vertical = segment.dir == 'right' ? [next.dir, nextLength] : [segment.dir, length]
+        const vertical = segment.dir == 'right' ? [next.dir, nextLength, shaftHalfWidth] :
+                                                   [segment.dir, length, shaftHalfWidth]
         let turn = null, reach = null
         if (momentumTurnsByJoin[join].length && !this.hasPatternRoom(...vertical) &&
             random(0, 100) < options.turnChancePercent)
@@ -578,22 +610,29 @@ class MomentumObstacleFloor extends MomentumPatternFloor
             {
                 if (reached(segment, arc + plan.cursor))
                     return
-                const ids = momentumPatternsByDir[segment.dir]
-                const id = this.pickType(ids, id => momentumPatternFactories[id].pattern.difficulty,
-                                         this.getAvoidedTypes(segment.dir))
-                const factory = momentumPatternFactories[id]
-                if (plan.cursor + factory.getLength() > plan.end)
+                // Only the types that fit the room left (the long ported
+                // frames, and in wide shafts their scaled variants, may
+                // never fit a short stretch), never the latest one of the
+                // direction again
+                const halfWidth = momentumSegmentHalfWidth(segment)
+                const latest = (this.recentIds[segment.dir] || []).slice(-1)[0]
+                const ids = momentumPatternsByDir[segment.dir].filter(id => id !== latest &&
+                    plan.cursor + momentumPatternFactories[id].getLength(halfWidth) <= plan.end)
+                if (!ids.length)
                 {
                     plan.filled = true
                     continue
                 }
+                const id = this.pickType(ids, id => momentumPatternFactories[id].pattern.difficulty,
+                                         this.getAvoidedTypes(segment.dir))
+                const factory = momentumPatternFactories[id]
                 const d = momentumDirection(segment.dir)
                 this.place(factory.create(segment.x0 + d.x * plan.cursor, segment.y0 + d.y * plan.cursor, segment.dir,
-                                          momentumSegmentHalfWidth(segment)))
+                                          halfWidth))
                 this.placedType(segment.dir, id)
                 this.spawned(id, segment.dir == 'right' ? 'horizontal' : 'vertical', segment.dir,
                              factory.pattern.difficulty, arc + plan.cursor)
-                plan.cursor += factory.getLength() + this.getGap()
+                plan.cursor += factory.getLength(halfWidth) + this.getGap()
                 continue
             }
             if (plan.turn)
@@ -618,15 +657,14 @@ MomentumObstacleFloor.onSpawn = null
 
 // Places catalog type id on the momentum pattern floor, for tests and
 // screenshots. Returns the placed boxes, or null outside momentum and for a
-// vertical type in a direction it is not registered for and for a ported
-// frame (bad-frameN) outside a right segment. A vertical type spans
-// halfWidth (default: a shaft built now, momentumShaftHalfWidth). Elements
+// pattern in a direction it is not registered for (a ported frame
+// bad-frameN outside a right segment, a vertical variant bad-frameN-v
+// outside its shaft directions). A vertical variant spans halfWidth
+// (default: a shaft built now, momentumShaftHalfWidth). Elements
 // also carry their polygon points, speedY and motion.
 function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaftHalfWidth())
 {
     let factory = momentumPatternFactories[id]
-    if (factory instanceof MomentumVerticalPatternFactory && !momentumPatternsByDir[dir]?.includes(id))
-        factory = undefined
     if (factory?.dirs && !factory.dirs.includes(dir))
         factory = undefined
     const floor = version == 'momentum' && floors ? floors.find(f => f instanceof MomentumPatternFloor) : null
@@ -634,7 +672,7 @@ function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaft
         return null
     const elements = factory.create(x, y, dir, halfWidth)
     const group = floor.place(elements)
-    return {id: id, group: group, length: factory.getLength(), elements: elements.map(element =>
+    return {id: id, group: group, length: factory.getLength(halfWidth), elements: elements.map(element =>
     {
         const bounds = getElementBounds(element)
         return {className: element.constructor.name, lethal: isLethalElement(element),
