@@ -23,7 +23,9 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_GREEN_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-009'))
-FALL_SPEED = 8
+# Straight fall in world units per physics cycle, under GAMEPLAY.momentumMaxSpeed
+# (5.56 at h 1080 since TASK-029; was 8 under the old 11.12 cap)
+FALL_SPEED = 5
 MAX_MOVES = 60
 
 SETUP = '''() => {

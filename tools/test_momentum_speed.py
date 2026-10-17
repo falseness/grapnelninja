@@ -18,8 +18,9 @@ the ninja just moved with) and after physics() (after the grapple pull).
   reached; >= 5 approaching bounces; same ninja (no death/restart);
 - bad: the same forcing reaches |speedX| > momentumMaxSpeed (bad keeps only
   its vertical cap) and |speedY| stays within that vertical cap;
-- GAMEPLAY.momentumMaxSpeed / the bad cruise median (BAD_CRUISE_JSON, default
-  artifacts/TASK-007/bad-cruise.json) is in [1.3, 1.7];
+- GAMEPLAY.momentumMaxSpeed is 0.75 * 0.006867 * height (TASK-029 halved the
+  1.5x cap) and / the bad cruise median (BAD_CRUISE_JSON, default
+  artifacts/TASK-007/bad-cruise.json) is in [0.65, 0.85];
 - control: the momentum forcing with Ninja.limitMomentumSpeed stubbed out
   goes past 1.2x the limit (the forcing does push past the cap).
 
@@ -89,7 +90,7 @@ RUN = '''([mode, frames]) => {
         rows.push([frame, speedProbe.maxV, mode == 'momentum' ? speedProbe.bounces : speedProbe.maxSX])
     }
     return {rows, sameNinja: ninja === startNinja, deaths: lethalDeaths - deaths, version,
-            limit: GAMEPLAY.momentumMaxSpeed,
+            limit: GAMEPLAY.momentumMaxSpeed, height,
             verticalCap: screenHeightPercent(GAMEPLAY.ninjaMaxSpeedHeightPercent),
             segment: screen.segmentIndex === undefined ? null : screen.segmentIndex}
 }'''
@@ -162,14 +163,20 @@ class MomentumSpeedTests(unittest.TestCase):
         print(f'bad: max |speedX| {peak_x!r} > momentumMaxSpeed {self.limit!r}', file=sys.stderr)
         self.assertGreater(peak_x, self.limit)
 
+    def test_limit_is_075_of_cruise_median(self):
+        expected = 0.75 * 0.006867 * self.runs['momentum']['height']
+        print(f'momentumMaxSpeed {self.limit!r}, expected 0.75 * 0.006867 * height = {expected!r}',
+              file=sys.stderr)
+        self.assertAlmostEqual(self.limit, expected, delta=1e-9)
+
     def test_limit_vs_bad_cruise(self):
         cruise = json.loads(Path(os.environ.get('BAD_CRUISE_JSON',
                                                 ROOT / 'artifacts/TASK-007/bad-cruise.json')).read_text())
         ratio = self.limit / cruise['median']
         print(f'momentumMaxSpeed {self.limit!r} / bad cruise median {cruise["median"]!r} = {ratio!r}',
               file=sys.stderr)
-        self.assertGreaterEqual(ratio, 1.3)
-        self.assertLessEqual(ratio, 1.7)
+        self.assertGreaterEqual(ratio, 0.65)
+        self.assertLessEqual(ratio, 0.85)
 
 
 if __name__ == '__main__':

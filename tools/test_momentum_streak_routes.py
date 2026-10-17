@@ -29,9 +29,10 @@ from test_momentum_patterns_h import SCRIPT
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = Path(os.environ.get('MOMENTUM_CATALOG_H', ROOT / 'artifacts/TASK-012/catalog-h.json'))
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_STREAK_EVIDENCE_DIR', ROOT / 'artifacts/TASK-015'))
-# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (11.12 at h 1080)
-DRIVE_SPEED = 10
-MAX_MOVES = 1000
+# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (5.56 at h 1080
+# since TASK-029 halved it; was 10 with 1000 moves under the old 11.12 cap)
+DRIVE_SPEED = 5
+MAX_MOVES = 2000
 
 DRIVE = '''([id, points, speed, maxMoves]) => {
     momentumState.reset()

@@ -57,9 +57,10 @@ TRANSFORMS = {
 REVERSED = {'down->right', 'up->right'}
 EPS = 1e-6
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
-# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (11.12 at h 1080)
-DRIVE_SPEED = 10
-MAX_MOVES = 2000
+# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (5.56 at h 1080
+# since TASK-029 halved it; was 10 with 2000 moves under the old 11.12 cap)
+DRIVE_SPEED = 5
+MAX_MOVES = 4000
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
     floors.find(f => f instanceof MomentumObstacleFloor).elements = [] }'''

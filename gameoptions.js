@@ -78,10 +78,11 @@ const GAMEPLAY = Object.freeze({
     // Numerical separation, not a visible clearance: intentionally unscaled.
     cubeContactEpsilon: 1e-7,
     // Momentum hard limit on the ninja's |velocity| (world units per physics
-    // cycle): 1.5x the bad-mode cruise median 0.006867 * height (7.417 at
+    // cycle): 0.75x the bad-mode cruise median 0.006867 * height (7.417 at
     // height 1080; tools/measure_bad_cruise.py, autopilot seed 2, 1200 frames,
     // p95 0.007471 * height), applied in momentum only (Ninja.limitMomentumSpeed).
-    momentumMaxSpeed: 1.5 * 0.006867 * height,
+    // Halved from 1.5x after the playtest (the ninja was too fast).
+    momentumMaxSpeed: 0.75 * 0.006867 * height,
     // Momentum course segment lengths in world units (the momentum camera
     // shows height / scale.momentum = 2.2 heights of world vertically).
     // After a 'right' segment another 'right' follows with this chance,

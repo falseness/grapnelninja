@@ -50,9 +50,10 @@ SCRIPT = [0.1, 0.99, 0.1, 0.99, 0.1, 0.99, 0.9, 0.99]
 SEGMENT = {'up': 1, 'down': 3}
 EPS = 1e-6
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
-# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (11.12 at h 1080)
-DRIVE_SPEED = 10
-MAX_MOVES = 1000
+# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (5.56 at h 1080
+# since TASK-029 halved it; was 10 with 1000 moves under the old 11.12 cap)
+DRIVE_SPEED = 5
+MAX_MOVES = 2000
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
     floors.find(f => f instanceof MomentumObstacleFloor).elements = [] }'''
