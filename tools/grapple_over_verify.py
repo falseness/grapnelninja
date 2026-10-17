@@ -268,6 +268,19 @@ def check_s01_mechanics(encounter, trace, required=True):
     return observations
 
 
+def check_s02_mechanics(encounter, trace, required=True):
+    """Layout-v2 Switchback: blue shuttle, blue lift + green bulkhead, green crest hook, blue trolley."""
+    observations=check_s01_mechanics('S01-01', trace, required=False)
+    if required:
+        need={'S02-01':'S02-shuttle','S02-02':'S02-lift','S02-03':'S02-crest-hook','S02-04':'S02-trolley'}[encounter]
+        require(observations['acquisitions'][:1]==[need],'S02 acquisition sequence mismatch')
+        if encounter=='S02-02':
+            require('S02-bulkhead' in [b['element'] for b in observations['bounces']],'S02 bulkhead bounce missing')
+        if encounter=='S02-03':
+            require('S02-ledge' in observations['airborne_acquisitions'],'S02 in-flight ledge catch missing')
+    return observations
+
+
 def check_s04_mechanics(encounter, trace, required=True):
     """Measure reflection contacts and airborne reacquisition from recorded events."""
     bounces = [e for e in trace['events'] if e['type'] == 'bounce']
@@ -443,6 +456,7 @@ def audit_suite(manifest, browser, url, out):
             try:
                 check_trace(recorded, replayed)
                 if section == 'S01' and 'mechanic_events' in a: check_s01_mechanics(encounter, replayed)
+                if section == 'S02' and 'mechanic_events' in a: check_s02_mechanics(encounter, replayed)
                 if section == 'S05': check_s05_mechanics(encounter, replayed)
                 if section == 'S06': check_s06_mechanics(encounter, replayed)
                 if section == 'S07': check_s07_mechanics(encounter, replayed)
@@ -453,6 +467,8 @@ def audit_suite(manifest, browser, url, out):
             require(success == a['success'], 'outcome mismatch')
             if section == 'S01' and 'mechanic_events' in a:
                 require(check_s01_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S01 mechanics mismatch')
+            if section == 'S02' and 'mechanic_events' in a:
+                require(check_s02_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S02 mechanics mismatch')
             if section == 'S04':
                 require(check_s04_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S04 mechanics mismatch')
             if section == 'S05':
