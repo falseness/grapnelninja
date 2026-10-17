@@ -79,11 +79,14 @@ PLACE = '''([id, x, y, dir, half]) => {
     floor.elements = []
     return momentumPlacePattern(id, x, y, dir, half)
 }'''
-# Centres the view on (cx, cy) at zoom (< 1 zooms out), draws, restores scale
-SHOOT = '''([cx, cy, zoom]) => {
+# Centres the view on (cx, cy) at zoom (< 1 zooms out) with the camera in
+# course segment `segment` (the TASK-044 wall mask keeps the corridor round
+# screen.segmentIndex), draws, restores scale and segment
+SHOOT = '''([cx, cy, zoom, segment]) => {
     TUTORIAL_HINT.visible = false; TUTORIAL_HINT.done = true
-    const s0 = scale[version]
+    const s0 = scale[version], i0 = screen.segmentIndex
     scale[version] = s0 * zoom
+    screen.segmentIndex = segment
     try {
         const w = width / scale[version], h = height / scale[version]
         screen.x = -(cx - w / 2); screen.y = -(cy - h / 2)
@@ -93,7 +96,7 @@ SHOOT = '''([cx, cy, zoom]) => {
                 f.replenishElements()
         ninja.x = cx - 0.3 * w; ninja.y = cy; ninja.speedX = ninja.speedY = 0
         draw()
-    } finally { scale[version] = s0 }
+    } finally { scale[version] = s0; screen.segmentIndex = i0 }
 }'''
 
 
@@ -262,7 +265,7 @@ class MomentumPatternsVLandscapeTests(PortVBase, unittest.TestCase):
                     x0, start, top, length, k = self.footprint(e, d)
                     self.assertIsNotNone(self.page.evaluate(PLACE, [e['id'] + '-v', x0, start, d, shaft['half']]))
                     zoom = min(1, view_h / (length + 0.3 * shaft['half']))
-                    self.page.evaluate(SHOOT, [x0, top + length / 2, zoom])
+                    self.page.evaluate(SHOOT, [x0, top + length / 2, zoom, 1 if d == 'up' else 3])
                     game = Image.open(io.BytesIO(self.page.screenshot())).convert('RGB')
                     # Up: the bad frame's right (travel) points up; down: it points down
                     bad = montage.rotate(90 if d == 'up' else -90, expand=True)

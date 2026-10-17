@@ -79,13 +79,17 @@ PLACE = '''([id, segment]) => {
     floors.find(f => f instanceof MomentumPatternFloor).elements = []
     return momentumPlaceTurn(id, segment)
 }'''
-SHOOT = '''([cx, cy, path, at]) => {
+# The camera is put in the join's incoming segment: the TASK-044 wall mask
+# keeps only the corridor round screen.segmentIndex (restored after drawing)
+SHOOT = '''([cx, cy, path, at, segment]) => {
     TUTORIAL_HINT.visible = false; TUTORIAL_HINT.done = true
     const w = width / scale[version], h = height / scale[version]
     screen.x = -(cx - w / 2); screen.y = -(cy - h / 2)
     screen.leftWall.update(screen)
     ninja.x = at[0]; ninja.y = at[1]; ninja.speedX = ninja.speedY = 0
-    draw()
+    const i0 = screen.segmentIndex
+    screen.segmentIndex = segment
+    try { draw() } finally { screen.segmentIndex = i0 }
     ctx.save()
     // The canvas is width x height game pixels drawn at its own size
     const k = ctx.canvas.width / width * scale[version]
@@ -414,7 +418,7 @@ class MomentumTurnRouteTests(unittest.TestCase):
                     # Ninja drawn at the frame's exit (or entry) on its lane
                     at = points[1] if join.startswith('right->') else points[2]
                     self.page.evaluate(PLACE, [t, i])
-                    self.page.evaluate(SHOOT, [cx, cy, r['path'], list(at)])
+                    self.page.evaluate(SHOOT, [cx, cy, r['path'], list(at), i])
                     path = EVIDENCE_DIR / 'shots' / f"turn-{t}-{join.replace('->', '-')}.png"
                     self.page.screenshot(path=str(path))
                     shots += 1
