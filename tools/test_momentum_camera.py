@@ -54,12 +54,14 @@ START = '''() => {
     cancelAnimationFrame(game)
 }'''
 # Centre-line points from the ninja's start through segment last plus half
-# of the next, step apart
+# of the next (at least out of the corner box, where the camera switches to
+# it, TASK-034), step apart
 PATH = '''([last, step]) => {
     const points = []
     for (let i = 0; i <= last + 1; ++i) {
         const s = momentumCourse.segment(i)
-        const length = i <= last ? s.length : s.length / 2
+        const box = momentumSegmentHalfWidth(momentumCourse.segment(last)) + 2 * step
+        const length = i <= last ? s.length : Math.min(s.length, Math.max(s.length / 2, box))
         // The run starts with the ninja inside segment 0
         for (let d = i == 0 ? ninja.x - s.x0 : 0; d < length; d += step)
             points.push([s.x0 + (s.x1 - s.x0) * d / s.length, s.y0 + (s.y1 - s.y0) * d / s.length, s.dir])

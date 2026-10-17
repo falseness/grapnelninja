@@ -28,6 +28,9 @@ class MomentumScreen extends Screen
         this.accelX = this.accelY = 0
         this.turnFrom = this.turnTo = segmentDirection('right')
         this.turnElapsedMs = 0
+        // Peak camera speed since the last turn, and that peak at the last
+        // turn (the catch-up limit after it)
+        this.peakSpeed = this.turnPeakSpeed = 0
     }
     getViewHeight()
     {
@@ -37,15 +40,38 @@ class MomentumScreen extends Screen
     {
         return this.course.segment(this.segmentIndex)
     }
+    // Whether the ninja has left the segment for the next one. On a straight
+    // join, past its end; on a turn, out of the corner box (the overlap of
+    // the two corridors around the join) into the next corridor, so a ninja
+    // cutting the corner does not turn the camera early; or, in the box,
+    // once it is closer than holdMargin to the view edge ahead along the
+    // next axis (holding on would let it run out of the view).
+    hasPassed(segment, next)
+    {
+        if (next.dir == segment.dir)
+            return segment.dir == 'right' ? ninja.x >= segment.x1
+                 : segment.dir == 'up' ? ninja.y <= segment.y1 : ninja.y >= segment.y1
+        const halfWidth = momentumSegmentHalfWidth(segment), nextHalfWidth = momentumSegmentHalfWidth(next)
+        const out = next.dir == 'right' ? ninja.x >= segment.x1 + halfWidth
+                  : next.dir == 'up' ? ninja.y <= segment.y1 - halfWidth : ninja.y >= segment.y1 + halfWidth
+        const inBox = segment.dir == 'right' ? ninja.x >= segment.x1 - nextHalfWidth
+                    : segment.dir == 'up' ? ninja.y <= segment.y1 + nextHalfWidth : ninja.y >= segment.y1 - nextHalfWidth
+        return out || inBox && this.nextAxisMargin(next.dir) < GAMEPLAY.momentumCamera.holdMargin
+    }
+    // The ninja's distance to the view edge ahead along dir, share of the view
+    nextAxisMargin(dir)
+    {
+        const view = this.getViewHeight(), viewW = width / scale[version]
+        return dir == 'right' ? (viewW - this.x - ninja.x) / viewW
+             : dir == 'up' ? (ninja.y + this.y) / view : (view - this.y - ninja.y) / view
+    }
     // Moves to the next segment once the ninja passes the end of this one
     updateSegment()
     {
         for (;;)
         {
             const segment = this.getSegment()
-            const passed = segment.dir == 'right' ? ninja.x >= segment.x1
-                         : segment.dir == 'up' ? ninja.y <= segment.y1 : ninja.y >= segment.y1
-            if (!passed)
+            if (!this.hasPassed(segment, this.course.segment(this.segmentIndex + 1)))
                 return
             ++this.segmentIndex
             const next = this.getSegment()
@@ -80,6 +106,8 @@ class MomentumScreen extends Screen
         this.turnFrom = this.getLookDirection()
         this.turnTo = segmentDirection(dir)
         this.turnElapsedMs = 0
+        this.turnPeakSpeed = this.peakSpeed
+        this.peakSpeed = 0
     }
     // Damped follow of the camera's top-left world corner (-x, -y), one
     // physics cycle of dtMs. The target is the base bad-mode x (ninja at
@@ -123,6 +151,15 @@ class MomentumScreen extends Screen
         const buffer = options.shaftBrakeBufferHeightRatio * view
         const bufferNow = buffer * Math.min(1, Math.max(0, this.velocityX) / (options.stiffness * buffer))
         wantX = Math.min(wantX, brake(Math.max(0, capX - bufferNow - camX)))
+        // Right after a turn the camera along the next axis is no faster
+        // than it was along the previous segment (or the ninja, its full
+        // speed: in the box it may still run along the old axis): a camera
+        // held in the corner box catches up the ninja's lead later, not as a
+        // burst at the turn
+        const catchUp = this.turnElapsedMs >= options.turnCatchUpMs ? Infinity
+                      : options.turnCatchUpSpeedRatio * Math.max(this.turnPeakSpeed, Math.hypot(ninja.speedX, ninja.speedY) / dt)
+        if (segment.dir == 'right')
+            wantX = Math.min(wantX, catchUp)
 
         let wantY = 0
         if (this.verticalTravel)
@@ -135,19 +172,38 @@ class MomentumScreen extends Screen
             targetY = travel < 0 ? Math.max(targetY, stop) : Math.min(targetY, stop)
             if ((targetY - camY) * travel >= 0)
                 wantY = (segment.dir == 'right' ? 0 : look.y * along) + brake(targetY - camY)
-            // Never past the stop: slow down in time
-            wantY = travel < 0 ? Math.max(wantY, -stopSpeed(camY - stop))
-                               : Math.min(wantY, stopSpeed(stop - camY))
+            // Never past the stop: slow down in time, on a curve aimed the
+            // same speed-scaled buffer short of it as x (the jerk limited
+            // braking trails the curve), so a ninja climbing on through the
+            // corner box does not carry the camera past the corridor centre
+            const bufferY = buffer * Math.min(1, Math.abs(this.velocityY) / (options.stiffness * buffer))
+            wantY = travel < 0 ? Math.max(wantY, -stopSpeed(camY - stop - bufferY))
+                               : Math.min(wantY, stopSpeed(stop - camY - bufferY))
+            if (segment.dir != 'right')
+                wantY = Math.max(-catchUp, Math.min(catchUp, wantY))
         }
 
         // Acceleration toward the wanted velocity, limited by maxAccel, its
-        // change by maxJerk; the sqrt term lets it reach zero in time
+        // change by maxJerk; the sqrt term lets it reach zero in time. An
+        // axis braking (wanted velocity against its motion: the old axis
+        // stopping at its cap at a turn) gets its share first, the other one
+        // the rest: the next axis starting hard as the ninja leaves a corner
+        // box must not make the old one overrun its cap.
         const dvX = wantX - this.velocityX, dvY = wantY - this.velocityY
+        const accelFor = d => Math.min(d / dt, Math.sqrt(maxJerk * d), maxAccel, 4 * options.stiffness * d)
+        const brakeX = dvX * this.velocityX < 0, brakeY = dvY * this.velocityY < 0
         const dv = Math.hypot(dvX, dvY)
         let ax = 0, ay = 0
-        if (dv > 0)
+        if (brakeX != brakeY)
         {
-            const a = Math.min(dv / dt, Math.sqrt(maxJerk * dv), maxAccel, 4 * options.stiffness * dv)
+            const first = accelFor(Math.abs(brakeX ? dvX : dvY))
+            const rest = Math.min(accelFor(Math.abs(brakeX ? dvY : dvX)), Math.sqrt(maxAccel * maxAccel - first * first))
+            ax = Math.sign(dvX) * (brakeX ? first : rest)
+            ay = Math.sign(dvY) * (brakeX ? rest : first)
+        }
+        else if (dv > 0)
+        {
+            const a = accelFor(dv)
             ax = dvX / dv * a
             ay = dvY / dv * a
         }
@@ -158,14 +214,16 @@ class MomentumScreen extends Screen
         {
             // An axis easing its acceleration off (toward a stop) gets its
             // share first, the other one the rest: a camera x starting from
-            // rest at a shaft exit must not make y overrun its stop
+            // rest at a shaft exit must not make y overrun its stop. Else
+            // the braking axis does.
             const easeX = jx * this.accelX < 0, easeY = jy * this.accelY < 0
-            if (easeX != easeY)
+            const firstX = easeX != easeY ? easeX : brakeX != brakeY ? brakeX : null
+            if (firstX !== null)
             {
-                const first = Math.max(-maxJ, Math.min(maxJ, easeX ? jx : jy))
-                const rest = Math.sign(easeX ? jy : jx) * Math.sqrt(maxJ * maxJ - first * first)
-                ax = this.accelX + (easeX ? first : rest)
-                ay = this.accelY + (easeX ? rest : first)
+                const first = Math.max(-maxJ, Math.min(maxJ, firstX ? jx : jy))
+                const rest = Math.sign(firstX ? jy : jx) * Math.sqrt(maxJ * maxJ - first * first)
+                ax = this.accelX + (firstX ? first : rest)
+                ay = this.accelY + (firstX ? rest : first)
             }
             else
             {
@@ -190,6 +248,7 @@ class MomentumScreen extends Screen
             vy = ay = 0
         this.accelX = ax; this.accelY = ay
         this.velocityX = vx; this.velocityY = vy
+        this.peakSpeed = Math.max(this.peakSpeed, Math.hypot(vx, vy))
         this.speedX = -vx * dt
         this.speedY = -vy * dt
     }

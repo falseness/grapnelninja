@@ -1,4 +1,4 @@
-"""Momentum camera on a corner shortcut (TASK-033, reproduction).
+"""Momentum camera on a corner shortcut (TASK-033 reproduction, TASK-034 fix).
 
 User report: "if we take a short cut on the corner, the camera moves too
 soon". Course scripts right -> up -> right and right -> down -> right
@@ -24,16 +24,25 @@ exit edge into the next corridor):
 - the camera never goes past its cap along the old axis (x past the shaft
   cap getShaftCapX into a shaft, y past the corridor-centred stop out of one).
 
-Joins that fail on the current game are marked expectedFailure (TASK-034
-fixes them); MOMENTUM_CORNER_STRICT=1 runs them as plain tests.
+The camera switches to a turn's next segment (MomentumScreen.hasPassed) once
+the ninja has left the corner box into the next corridor, or, in the box,
+once the ninja's margin to the view edge ahead along the next axis drops
+below GAMEPLAY.momentumCamera.holdMargin (holding on would let it run out of
+the view; TASK-034 amended rule). So the camera must not move along the next
+axis in the box before that margin drops below holdMargin, and it must start
+later (the ninja closer to the next corridor, toNext) than on 8be0b76.
 
-MOMENTUM_CORNER_CAMERA_EVIDENCE_DIR (default artifacts/TASK-033) receives
-corner-trace.json ({join: {box, rows: [{cycle, nx, ny, camVx, camVy, seg}]}}
+MOMENTUM_CORNER_CAMERA_EVIDENCE_DIR (default artifacts/TASK-034) receives
+corner-trace.json ({join: {box, rows: [{cycle, nx, ny, camVx, camVy, seg, margin}]}}
 for the cycles from 8 before the box to 24 after it: every 4th one, and every
-one within 16 of the first early cycle or 8 of the box exit), corner-camera.json
-(per join summary) and shots/<join>.png at 1280x720: the first early camera
-cycle of a failing join, or the box exit cycle of a passing one, with the
-corner box and the ninja marked in a DOM overlay (not drawn by the game).
+one within 16 of the first early cycle or 8 of the box exit or the camera
+start), corner-camera.json (per join summary: released, the first box cycle
+with the margin below holdMargin; start, the first cycle from the box entry
+with the camera moving along the next axis) and, at 1280x720 with the corner box and the ninja
+marked in a DOM overlay (not drawn by the game), shots/<join>-1-enter.png
+(the ninja enters the box), -2-mid.png (halfway to the camera start) and
+-3-turn.png (the camera starts moving along the next axis) for the four
+shortcut joins (none for the contrast case).
 Requires Playwright Chromium.
 """
 import json
@@ -47,11 +56,13 @@ from test_momentum_camera import SEED_COURSE
 from test_momentum_shaft_view import SCRIPTS
 
 ROOT = Path(__file__).resolve().parents[1]
-STRICT = os.environ.get('MOMENTUM_CORNER_STRICT') == '1'
 # Camera velocity tolerance: 1% of the view height per second (about 0.2 px
 # a frame), above the TASK-031 creep toward a shaft's centre (a few world
 # units per second), far below a scroll
 EPS_VIEW = 0.01
+# World units between the ninja and the next corridor when the camera started
+# moving along the next axis on 8be0b76 (artifacts/TASK-033/head-fail.log)
+BASELINE_TO_NEXT = {'right-up': 758.76, 'right-down': 758.76, 'up-right': 1522.19, 'down-right': 1522.19}
 # case: (course script, index of the segment before the join, route).
 # right-up-inner is the contrast case: the corner cut on its inner side,
 # straight from the old centre line on the entry edge to the new centre line
@@ -113,7 +124,11 @@ SETUP = '''([index, route]) => {
 }'''
 
 # Runs the path up to stop ('early': the first cycle with the camera moving
-# early, 'exit': the first cycle with the ninja out of the box) or its end
+# early, 'exit': the first cycle with the ninja out of the box, 'start': the
+# first cycle from the box entry with the camera moving along the next axis,
+# a number: that cycle) or its end. Early: moving along the next axis in the
+# box before the ninja's margin to the view edge ahead along it (share of the
+# view) has dropped below GAMEPLAY.momentumCamera.holdMargin (released).
 RUN = '''([stop, epsView]) => {
     const st = window.cornerState, box = st.box, a = st.a, b = st.b
     const view = height / scale[version], viewW = width / scale[version]
@@ -124,6 +139,10 @@ RUN = '''([stop, epsView]) => {
     const toNext = () => b.dir == 'right' ? box.right - ninja.x
         : b.dir == 'up' ? ninja.y - box.top : box.bottom - ninja.y
     const nextV = () => b.dir == 'right' ? screen.velocityX : screen.velocityY
+    // The ninja's margin to the view edge ahead along the next axis
+    const hold = GAMEPLAY.momentumCamera.holdMargin
+    const margin = () => b.dir == 'right' ? (viewW - screen.x - ninja.x) / viewW
+        : b.dir == 'up' ? (ninja.y + screen.y) / view : (view - screen.y - ninja.y) / view
     // Past the old-axis cap (world units): x past the shaft cap / y past the
     // corridor-centred stop
     const pastCap = () => {
@@ -148,8 +167,8 @@ RUN = '''([stop, epsView]) => {
             return {stop: 'gameOver', cycle}
         const row = {cycle, nx: +ninja.x.toFixed(2), ny: +ninja.y.toFixed(2),
                      camVx: +screen.velocityX.toFixed(3), camVy: +screen.velocityY.toFixed(3),
-                     seg: screen.segmentIndex}
-        if (cycle >= st.boxStart - 8 && (!st.exitCycle || cycle < st.exitCycle + 24))
+                     seg: screen.segmentIndex, margin: +margin().toFixed(4)}
+        if (cycle >= st.boxStart - 8 && (!st.exitCycle || cycle < st.exitCycle + 24 || !st.start || cycle < st.start.cycle + 8))
             st.rows.push(row)
         const inside = cycle >= st.boxStart && inBox()
         if (inside) {
@@ -163,7 +182,9 @@ RUN = '''([stop, epsView]) => {
             // starts following it) while the ninja is still in the box
             if (screen.segmentIndex > st.index && !st.switched)
                 st.switched = {cycle, toNext: +toNext().toFixed(2)}
-            if (Math.abs(nextV()) > eps && !st.early) {
+            if (!st.released && margin() < hold)
+                st.released = {cycle, toNext: +toNext().toFixed(2), margin: +margin().toFixed(4)}
+            if (Math.abs(nextV()) > eps && !st.early && !st.released) {
                 st.early = {cycle, toNext: +toNext().toFixed(2), camV: +nextV().toFixed(3), seg: screen.segmentIndex,
                             ninja: [row.nx, row.ny]}
                 if (stop == 'early')
@@ -174,11 +195,25 @@ RUN = '''([stop, epsView]) => {
             if (stop == 'exit')
                 return {stop, cycle}
         }
+        if (cycle >= st.boxStart && !st.start && Math.abs(nextV()) > eps) {
+            st.start = {cycle, toNext: +toNext().toFixed(2), camV: +nextV().toFixed(3), inBox: inside,
+                        margin: +margin().toFixed(4)}
+            if (stop == 'start')
+                return {stop, cycle}
+        }
+        if (stop === cycle)
+            return {stop, cycle}
     }
     return {stop: null, early: st.early, switched: st.switched || null, pastCap: st.pastCap, maxPastCap: +(st.maxPastCap || 0).toFixed(4), inBoxCycles: st.inBoxCycles,
-            exitCycle: st.exitCycle || null, deaths: lethalDeaths - st.deaths0, rows: st.rows}
+            exitCycle: st.exitCycle || null, released: st.released || null, start: st.start || null, hold, deaths: lethalDeaths - st.deaths0, rows: st.rows}
 }'''
 
+# The ninja's margin to the view edge ahead along the next axis (as in RUN)
+MARGIN = '''(() => {
+    const b = window.cornerState.b, view = height / scale[version], viewW = width / scale[version]
+    return b.dir == 'right' ? (viewW - screen.x - ninja.x) / viewW
+        : b.dir == 'up' ? (ninja.y + screen.y) / view : (view - screen.y - ninja.y) / view
+})()'''
 DRAW = '(() => { visualEffects.screenEffects.landings.length = 0; draw() })()'
 # DOM overlay (screenshot only): the corner box and the ninja in CSS pixels
 OVERLAY = '''(label) => {
@@ -203,18 +238,13 @@ OVERLAY = '''(label) => {
 UNOVERLAY = '(() => document.getElementById("corner-overlay").remove())()'
 
 
-def failing(name):
-    """Joins that fail on the current game (TASK-034 fixes them)."""
-    return JOINS[name][2] == 'shortcut'
-
-
 class MomentumCornerCameraTests(unittest.TestCase):
     results = {}
     traces = {}
 
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('MOMENTUM_CORNER_CAMERA_EVIDENCE_DIR', ROOT / 'artifacts/TASK-033'))
+        cls.out = Path(os.environ.get('MOMENTUM_CORNER_CAMERA_EVIDENCE_DIR', ROOT / 'artifacts/TASK-034'))
         (cls.out / 'shots').mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
 
@@ -249,17 +279,29 @@ class MomentumCornerCameraTests(unittest.TestCase):
             self.shoot(page, name, f'{name} cycle {shot}: camera moving early, ninja {st["toNext"]} '
                                    f'from the next corridor (camV {st["camV"]})')
         r = page.evaluate(RUN, [None, EPS_VIEW])
-        if first['stop'] is None:
-            # Never early: shoot a rerun at the box exit for contrast
+        if first['stop'] is None and route == 'shortcut' and r['exitCycle'] and r['start']:
+            # Never early: a rerun shot as the ninja enters the box, halfway
+            # through the shortcut to the camera start and as it starts turning
             page.evaluate(SETUP, [index, route])
-            exit = page.evaluate(RUN, ['exit', EPS_VIEW])
-            shot = exit['cycle']
-            self.shoot(page, name, f'{name} cycle {shot}: ninja leaves the box, no early camera motion')
-        # Every 4th cycle, every one near the early cycle and the box exit
+            mid = (setup['boxStart'] + r['start']['cycle']) // 2
+            shot = []
+            for suffix, stop, what in (('1-enter', setup['boxStart'], 'ninja enters the corner box'),
+                                       ('2-mid', mid, 'mid shortcut'),
+                                       ('3-turn', 'start', 'camera starts turning')):
+                at = page.evaluate(RUN, [stop, EPS_VIEW])['cycle']
+                st = page.evaluate('[screen.velocityX, screen.velocityY]')
+                m = page.evaluate(MARGIN)
+                self.shoot(page, f'{name}-{suffix}', f'{name} cycle {at}: {what} (box exit {r["exitCycle"]}), '
+                                                     f'cam v ({st[0]:.1f}, {st[1]:.1f}), margin {m:.3f} '
+                                                     f'(hold {r["hold"]})')
+                shot.append(at)
+        # Every 4th cycle, every one near the early cycle, the box exit and the start
         early_cycle = r['early']['cycle'] if r['early'] else None
+        turn_cycle = r['start']['cycle'] if r['start'] else None
         self.traces[name] = {'box': setup['box'], 'rows': [
             row for row in r.pop('rows') if row['cycle'] % 4 == 0 or abs(row['cycle'] - r['exitCycle']) <= 8 or
-            early_cycle is not None and abs(row['cycle'] - early_cycle) <= 16]}
+            early_cycle is not None and abs(row['cycle'] - early_cycle) <= 16 or
+            turn_cycle is not None and abs(row['cycle'] - turn_cycle) <= 8]}
         result = dict(r, setup=setup, shot=shot)
         result.pop('stop')
         self.results[name] = result
@@ -276,13 +318,19 @@ class MomentumCornerCameraTests(unittest.TestCase):
                                  f'switched in the box at {r["switched"]}); '
                                  f'old-axis cap passed in {r["pastCap"]} box cycles, by up to {r["maxPastCap"]}')
         self.assertEqual(r['pastCap'], 0, f'{name}: camera past its old-axis cap in {r["pastCap"]} cycles')
+        if route == 'shortcut':
+            # Then it does follow the next corridor, later than on 8be0b76
+            start = r['start']
+            self.assertIsNotNone(start, f'{name}: camera never moves along the next axis')
+            print(f'{name}: camera starts at cycle {start["cycle"]}, toNext {start["toNext"]} '
+                  f'(8be0b76: {BASELINE_TO_NEXT[name]}), in box {start["inBox"]}, margin {start["margin"]}, '
+                  f'released {r["released"]}, box exit {r["exitCycle"]}', file=sys.stderr)
+            self.assertLess(start['toNext'], BASELINE_TO_NEXT[name])
 
 
 def make_test(name):
     def test(self):
         self.check(name)
-    if failing(name) and not STRICT:
-        test = unittest.expectedFailure(test)
     return test
 
 

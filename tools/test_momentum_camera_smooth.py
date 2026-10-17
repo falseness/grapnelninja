@@ -47,6 +47,9 @@ from test_momentum_camera import SEED_COURSE, START
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEED_HEIGHT_RATIO = 0.06
+# MOMENTUM_SMOOTH_SPEED=cap drives at GAMEPLAY.momentumMaxSpeed per physics
+# step instead (TASK-034 sweep)
+AT_CAP = os.environ.get('MOMENTUM_SMOOTH_SPEED') == 'cap'
 # The TASK-004 draws after two long right segments (draws: segment 0 length,
 # right-after-right, its length): the camera cruises for more than 10 frames
 # at 30 fps before the first turn (the TASK-004 segment 0 ends 2 frames in)
@@ -59,7 +62,9 @@ PATH = '''([last, step]) => {
     const points = []
     for (let i = 0; i <= last; ++i) {
         const s = momentumCourse.segment(i)
-        const length = i < last ? s.length : s.length / 2
+        // At least out of the corner box, where the camera switches (TASK-034)
+        const box = momentumSegmentHalfWidth(momentumCourse.segment(last - 1)) + 2 * step
+        const length = i < last ? s.length : Math.min(s.length, Math.max(s.length / 2, box))
         for (let d = i == 0 ? ninja.x - s.x0 : 0; d < length; d += step)
             points.push([s.x0 + (s.x1 - s.x0) * d / s.length, s.y0 + (s.y1 - s.y0) * d / s.length, s.dir, i])
     }
@@ -141,7 +146,8 @@ class SmoothCameraTests(unittest.TestCase):
         cls.options = cls.page.evaluate('({...GAMEPLAY.momentumCamera})')
         print('method: frame-skip emulation of runFixedPhysics, 60 fps = 1 physics() per '
               'frame, 30 fps = 2 physics() per frame; ninja speed '
-              f'{SPEED_HEIGHT_RATIO} height per physics tick', file=sys.stderr)
+              + ('GAMEPLAY.momentumMaxSpeed per physics step (cap)' if AT_CAP else
+                 f'{SPEED_HEIGHT_RATIO} height per physics tick'), file=sys.stderr)
         print('GAMEPLAY.momentumCamera:', cls.options, file=sys.stderr)
         cls.runs = {fps: cls.run_course(fps) for fps in (60, 30)}
         cls.write_evidence()
@@ -154,7 +160,7 @@ class SmoothCameraTests(unittest.TestCase):
         # course until TASK-018) would hit the driven ninja
         page.evaluate('floors = floors.filter(f => !(f instanceof MomentumObstacleFloor))')
         before = page.evaluate('window.startNinja = ninja, window.startScreen = screen, lethalDeaths')
-        step = page.evaluate(f'{SPEED_HEIGHT_RATIO} * height')
+        step = page.evaluate('GAMEPLAY.momentumMaxSpeed * cyclesPerTick' if AT_CAP else f'{SPEED_HEIGHT_RATIO} * height')
         points = page.evaluate(PATH, [LAST_SEGMENT, step])
         per = 60 // fps
         frames = [points[i:i + per] for i in range(0, len(points) - per + 1, per)]
@@ -187,16 +193,16 @@ class SmoothCameraTests(unittest.TestCase):
             trace = []
             for k, r in enumerate(rows):
                 p = rows[k - 1] if k else r
-                trace.append([r[0], r[1], r[2], r[3], (r[2] - p[2]) / dt, (r[3] - p[3]) / dt])
+                trace.append([r[0], r[1], r[2], r[3], (r[2] - p[2]) / dt, (r[3] - p[3]) / dt, r[4], r[5]])
             run['trace'] = trace
             (cls.out / f'camera-trace-{fps}.json').write_text(json.dumps(
-                {'fields': ['frame', 'segDir', 'camX', 'camY', 'vX', 'vY'], 'fps': fps,
+                {'fields': ['frame', 'segDir', 'camX', 'camY', 'vX', 'vY', 'ninjaX', 'ninjaY'], 'fps': fps,
                  'units': 'world, world/s (from camera displacement)', 'trace': trace},
                 separators=(',', ':')))
             run['metrics'] = cls.metrics(run)
             summary[fps] = {k: run['metrics'][k] for k in
                             ('maxAccel', 'maxJerk', 'maxStepTurn', 'maxStepStraight', 'turnRatioMax',
-                             'minMargin', 'turns')}
+                             'minMargin', 'minMarginFrame', 'turns')}
         summary['limits'] = {'maxAccel': cls.options['maxAccel'], 'maxJerk': cls.options['maxJerk'],
                              'turnRatio': 1.1, 'minMargin': 0.1,
                              'units': 'view heights /s^2, /s^3; steps in view heights; margin share of view; '
@@ -248,7 +254,7 @@ class SmoothCameraTests(unittest.TestCase):
                 # The turn with the largest turn / straight step ratio
                 **{k: worst[k] for k in ('maxStepTurn', 'maxStepStraight')},
                 'turnRatioMax': worst['maxStepTurn'] / worst['maxStepStraight'],
-                'minMargin': min(margins), 'turnList': [c['turn'] for c in turn_checks]}
+                'minMargin': min(margins), 'minMarginFrame': rows[margins.index(min(margins))][0], 'turnList': [c['turn'] for c in turn_checks]}
 
     def tearDown(self):
         self.assertEqual(self.errors, [])

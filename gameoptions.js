@@ -113,7 +113,11 @@ const GAMEPLAY = Object.freeze({
     // travel direction, ease time of that direction at a turn (ms); and how far
     // past the view edge left behind elements are deleted; the gap kept
     // between the view's left edge and a vertical shaft's left wall body,
-    // and how far short of that the camera x aims its braking.
+    // and how far short of that the camera x aims its braking; at a turn,
+    // the share of the view kept between the ninja in the corner box and the
+    // view edge ahead along the next axis before the camera turns early; how
+    // long after a turn the camera along the next axis stays no faster than
+    // the ninja times a ratio (ms, ratio).
     momentumCamera: Object.freeze({
         stiffness: 4,
         maxAccel: 8,
@@ -122,7 +126,10 @@ const GAMEPLAY = Object.freeze({
         turnMs: 250,
         deletionMarginHeightRatio: 0.1,
         shaftMarginHeightRatio: 0.02,
-        shaftBrakeBufferHeightRatio: 0.05
+        shaftBrakeBufferHeightRatio: 0.05,
+        holdMargin: 0.35,
+        turnCatchUpMs: 400,
+        turnCatchUpSpeedRatio: 1
     }),
     // Momentum HP (elements/momentumstate.js): hp at every run start (no upper
     // cap) and how many green touches in a row give one hp.
