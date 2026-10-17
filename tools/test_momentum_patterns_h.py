@@ -13,7 +13,9 @@ the port ids in catalog order and no retired TASK-012 id is registered
 (MOMENTUM_CATALOG_H, default artifacts/TASK-012/catalog-h.json); the frames
 are refused outside a right segment; every built piece matches the catalog
 piece in order: class (colour), shape (polygon points), box within GEOM_TOL
-world units, speedY and motion bounds; nothing lethal. Also: bad mode has no
+world units, speedY and motion bounds; nothing lethal. A catalog rect that pokes past the
+corridor band (BAND, by the catalog's 0.05 rounding: bad-frame6/10/14) is
+expected flush with the band edge instead (TASK-043). Also: bad mode has no
 pattern floor (momentumPlacePattern returns null).
 
 Writes to MOMENTUM_PATTERNS_H_EVIDENCE_DIR (default artifacts/TASK-038):
@@ -27,6 +29,7 @@ Requires Playwright Chromium and Pillow. No remote requests.
 """
 import io
 import json
+import math
 import os
 from pathlib import Path
 import unittest
@@ -49,6 +52,8 @@ BAD_CENTRE_Y = 1188
 # First segment right with a length draw of 0.99 (~5 heights), then the LCG
 SCRIPT = [0.99]
 EPS = 1e-6
+# Right corridor half width: wall-flush catalog rects are built ending here (TASK-043)
+BAND = 972
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
 
 PLACE = '''([id, x, y, dir]) => {
@@ -159,7 +164,10 @@ class MomentumPatternsHTests(unittest.TestCase):
                                  [p['w'] / 2, p['h'] / 2], [-p['w'] / 2, p['h'] / 2]]
                     else:
                         local = p['points']
-                    shape = [[x + p['x'] + a, y + p['y'] + c] for a, c in local]
+                    py = p['y']
+                    if p['shape'] == 'rect' and abs(py) + p['h'] / 2 > BAND:
+                        py = math.copysign(BAND - p['h'] / 2, py)
+                    shape = [[x + p['x'] + a, y + py + c] for a, c in local]
                     self.assertEqual(len(e['points']), len(shape))
                     shape_diff = max(max(abs(a[0] - c[0]), abs(a[1] - c[1])) for a, c in zip(e['points'], shape))
                     m = p.get('motion')
