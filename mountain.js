@@ -209,37 +209,56 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // S02-01: from the S01 exit pad, pull the blue hoist up out of the exit drag zone and
     // release up-left into the green canopy, which turns the climb into a down-left drop.
     // S02-02: on that drop, catch the blue lift, swing left under it and release into the
-    // green west bulkhead, which rebounds the player right. S02-03/04 are planned. The
-    // canopy, hoist and bulkhead stay clear of the S01-03/04 flight (apex ~-3640).
+    // green west bulkhead, which rebounds the player right. S02-03 (TASK-551): off that
+    // rebound, catch the green gallery hook and ride the pull up-right into the green east
+    // wall, whose rebound reverses the climb left over the canopy. S02-04: catch the green
+    // crown hook above, climb out up-right, glance off the crown-hook top and the east wall and drop into
+    // the exit drag zone onto the green exit ledge, where the player settles. The canopy,
+    // hoist, bulkhead and east wall stay clear of the S01-03/04 flight (apex ~-3640); the
+    // S02-03/04 elements stay right of the v2 Viaduct/Deflector geometry (x <= 4750), so
+    // every declared S02 miss falls onto S01.
     const shaft = [
         rectangle('S02-hoist',6040,-3710,120,30,true),
-        bouncer('S02-canopy',5700,-4320,360,30),
+        bouncer('S02-canopy',5700,-4320,420,30),
         rectangle('S02-lift',4925,-4705,120,30,true),
         bouncer('S02-bulkhead',4840,-4300,30,500),
+        bouncer('S02-gallery-hook',5480,-4720,120,30),
+        bouncer('S02-east-wall',6330,-5800,30,2100),
+        bouncer('S02-crown-hook',6000,-5630,120,30),
+        bouncer('S02-exit-ledge',5640,-4860,520,40),
         // v2 pads kept (converted to green) only as references of the v2 Broken Viaduct:
         // the S03-01 start pad and the S03-02 fall-line landing.
         bouncer('S02-landing',2987,-2100,200,40),
         bouncer('S02-exit-pad',2000,-2680,200,40)
     ];
-    // Every declared S02 miss drops into an S01 drag zone, so S02 adds none of its own.
-    const shaftDrags = [];
+    // The exit drag zone holds the exit ledge; the S02-04 overshoot line (a crown release
+    // that misses the crown-hook top and carries past the ledge) falls through it and the S01 exit drag zone onto the S01 exit pad. Every
+    // other declared S02 miss drops into an S01 drag zone.
+    const shaftDrags = [{id:'S02-exit-drag',x:5620,y:-5260,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:710,y:0},{x:710,y:440},{x:0,y:440}]}];
     const shaftMovers = [
         {id:'S02-hoist-travel',element:'S02-hoist',axis:'y',min:-3710,max:-3630,periodMs:4000,phase:0,velocity:40},
         {id:'S02-lift-travel',element:'S02-lift',axis:'y',min:-4705,max:-4625,periodMs:4000,phase:0,velocity:40}];
-    Object.assign(sections[1], {status:'partial', designVersion:3, landmark:{id:'S02-landmark',
+    Object.assign(sections[1], {status:'built', designVersion:3, landmark:{id:'S02-landmark',
         name:'alternating industrial balconies',x:5450,y:-4000},
         band:{...sections[1].band, top:-4860},
         // Rope-to-anchor reach from the player at the press to the acquisition point.
         gaps:[{id:'S02-01-hoist',from:{x:6373.4,y:-2711.1},to:{x:6109.6,y:-3637}},
             // Caught in flight on the drop off the canopy.
-            {id:'S02-02-lift',from:{x:5863.4,y:-4163.6},to:{x:5029.3,y:-4642}}],
+            {id:'S02-02-lift',from:{x:5863.4,y:-4163.6},to:{x:5029.3,y:-4642}},
+            // Caught on the bulkhead rebound, then in flight on the east-wall reversal.
+            {id:'S02-03-gallery',from:{x:5183.6,y:-3796.3},to:{x:5533,y:-4690}},
+            {id:'S02-04-crown',from:{x:5549.8,y:-4810.7},to:{x:6050.2,y:-5600}}],
         // Declared miss points: a short hoist pull settles back on the S01 exit pad; a
         // missed lift catch drops off the canopy; the bulkhead rebound with no further
-        // catch crosses to the right wall and drops along it. Each falls through an S01
-        // drag zone onto a green bouncer.
+        // catch crosses to the right wall and drops along it; a short gallery pull banks off
+        // the east wall onto the S01 exit pad; an early crown release misses the crown-hook top and
+        // carries past the exit ledge. Each falls through a drag zone onto a green S01 bouncer.
         fallPoints:[{id:'S02-01-short',encounter:'S02-01',x:6355,y:-3000},
             {id:'S02-02-missed',encounter:'S02-02',x:5650,y:-3800},
-            {id:'S02-02-rebound',encounter:'S02-02',x:6460,y:-3150}]});
+            {id:'S02-02-rebound',encounter:'S02-02',x:6460,y:-3150},
+            {id:'S02-03-short',encounter:'S02-03',x:6190,y:-3650},
+            {id:'S02-04-overshoot',encounter:'S02-04',x:6230,y:-5100}]});
     Object.assign(encounters[4], {status:'built',x:6373,y:-2711,
         elements:['S01-exit-pad','S02-hoist','S02-canopy'],
         start:{x:6373.4,y:-2711.1,from:'S01-04'},target:{x:6100,y:-3670},
@@ -250,11 +269,21 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S02-01',x:5863.4,y:-4163.6},target:{x:4985,y:-4665},
         exit:{left:4950,right:5150,top:-3880,bottom:-3760},
         action:'On the drop off the canopy, catch the blue lift, swing left and rebound off the green west bulkhead'});
-    for (const i of [6,7]) Object.assign(encounters[i], {status:'planned', elements:[]});
+    Object.assign(encounters[6], {status:'built',x:4977,y:-3846,
+        elements:['S02-bulkhead','S02-gallery-hook','S02-east-wall'],
+        start:{from:'S02-02',x:4977.1,y:-3845.8},target:{x:5540,y:-4705},
+        exit:{left:5500,right:5700,top:-4860,bottom:-4760},
+        action:'Off the bulkhead rebound, catch the green gallery hook, ride the pull up-right into the green east wall and reverse left over the canopy'});
+    // The node is the S02-04 launch; the climb-out and the exit ledge overlap the band above.
+    Object.assign(encounters[7], {status:'built',x:5550,y:-4811,
+        elements:['S02-crown-hook','S02-exit-ledge','S02-exit-drag'],
+        start:{from:'S02-03',x:5549.8,y:-4810.7},target:{x:6060,y:-5615},
+        exit:{left:5640,right:6160,top:-4890,bottom:-4860},
+        action:'Catch the green crown hook on the reversal, climb out up-right, glance off the crown-hook top and the east wall and drop into the exit drag zone to settle on the green exit ledge'});
     Object.assign(connectors[4], {status:'built',intent:'Physical ascent: the S02-01 hoist pull starts on the v3 Foundations exit pad'});
-    connectors[5].status='built';
-    Object.assign(recoveries[1], {status:'planned',elements:[],
-        intent:'Replanned with S02-03/04 (layout v3); S02-01/02 misses already fall into the S01 drag zones'});
+    for (let i=5;i<8;i++) connectors[i].status='built';
+    Object.assign(recoveries[1], {status:'built',elements:['S02-exit-drag','S01-exit-drag','S01-exit-pad','S01-yard-drag','S01-floor'],
+        rejoin:'S02-02',sideRoute:'Every declared S02 miss falls through a drag zone onto a green S01 bouncer and settles; from the S01 exit pad a blue hoist pull, the east-wall and canopy-underside bounces and a swing from the green canopy rejoin the route at the bulkhead rebound'});
     // Broken Viaduct v2 (layout v2): travelling right from the Switchback exit pad.
     // S03-01: blue departure carriage pulled up-right; the swing skims its underside and
     // carries rightward speed onto the pier pad. S03-02: blue span lift pulled from the
@@ -330,7 +359,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S03-03',x:4104.7,y:-3640.8},target:{x:4353,y:-4055},
         exit:{left:4600,right:4710,top:-3850,bottom:-3830},
         action:'Catch the blue trolley from the ledge, pull up-right, re-catch the trolley top in flight and brake into the narrower exit pad against its tall right lip'});
-    Object.assign(connectors[8], {status:'planned',intent:'Physical ascent from the Switchback exit pad to the blue departure carriage; replanned until the S02 v3 exit is built'});
+    Object.assign(connectors[8], {status:'planned',intent:'Physical ascent to the blue departure carriage; the v2 Viaduct still starts on the v2 Switchback exit pad, so this stays planned until S03 is rebuilt from the v3 S02 exit ledge'});
     for (let i=9;i<12;i++) connectors[i].status='built';
     Object.assign(recoveries[2], {status:'planned',elements:['S03-fall-drag','S02-landing'],
         rejoin:'S02-03',sideRoute:'Short S03-02 releases rebound off the span buffer, drop through the fall column onto the S02 landing deck and stop; the S02-03 crest-hook pull rejoins the Switchback route'});
