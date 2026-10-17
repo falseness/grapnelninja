@@ -136,6 +136,43 @@ const MOMENTUM_PATTERNS_V = Object.freeze([
 
 ].map(pattern => Object.freeze(pattern)))
 
+// A turn type of the TASK-013 catalog sits on a segment join. Pieces are
+// [kind, x, y, w, h] in a 2 x 2 band square drawn for right->up: incoming
+// corridor y 0.5..1 (enter at x 0), outgoing shaft x 0.5..1 (leave at y 0),
+// inner wall block (0, 0, 0.5, 0.5), course vertex at (0.75, 0.75).
+const MOMENTUM_PATTERNS_TURN = Object.freeze([
+    {id: 'corner-kicker', difficulty: 1, joins: ['right->up', 'right->down', 'down->right', 'up->right'], pieces: [
+        ['green', 0.94, 0.55, 0.06, 0.3],
+        ['green', 0.5, 0.15, 0.04, 0.2]
+    ]},
+    {id: 'apex-net', difficulty: 2, joins: ['right->up', 'up->right'], pieces: [
+        ['green', 0.55, 0.95, 0.4, 0.05],
+        ['green', 0.95, 0.3, 0.05, 0.15]
+    ]},
+    {id: 'blue-corner-cut', difficulty: 3, joins: ['right->up', 'right->down', 'down->right', 'up->right'], pieces: [
+        ['blue', 0.5, 0.5, 0.14, 0.14],
+        ['green', 0.75, 0.94, 0.15, 0.06],
+        ['green', 0.94, 0.55, 0.06, 0.15],
+        ['green', 0.5, 0.15, 0.04, 0.15]
+    ]},
+    {id: 'pinwheel', difficulty: 4, joins: ['right->up', 'right->down'], pieces: [
+        ['green', 0.2, 0.95, 0.12, 0.05],
+        ['green', 0.38, 0.5, 0.12, 0.05],
+        ['green', 0.62, 0.95, 0.12, 0.05],
+        ['green', 0.95, 0.62, 0.05, 0.12],
+        ['green', 0.5, 0.34, 0.04, 0.12],
+        ['green', 0.95, 0.2, 0.05, 0.12],
+        ['blue', 0.66, 0.66, 0.12, 0.12]
+    ]}
+].map(pattern => Object.freeze(pattern)))
+// The other joins are rigid transforms of the right->up drawing
+const MOMENTUM_TURN_TRANSFORMS = Object.freeze({
+    'right->up': (x, y) => ({x: x, y: y}),
+    'right->down': (x, y) => ({x: x, y: 1 - y}),
+    'down->right': (x, y) => ({x: 1 - x, y: y}),
+    'up->right': (x, y) => ({x: 1 - x, y: 1 - y})
+})
+
 // Builds one catalog type, like the frame factories of elements/factory.js
 class MomentumPatternFactory
 {
@@ -191,6 +228,46 @@ class MomentumVerticalPatternFactory extends MomentumPatternFactory
         })
     }
 }
+
+// Builds one turn catalog type
+class MomentumTurnPatternFactory
+{
+    constructor(pattern)
+    {
+        this.pattern = pattern
+    }
+    // Side of the 2 x 2 band square in world units
+    getSize()
+    {
+        return 4 * GAMEPLAY.momentumBorders.halfWidth
+    }
+    // (x, y): the course vertex of the join; join: 'right->up' etc.
+    create(x, y, join)
+    {
+        const size = this.getSize()
+        const transform = MOMENTUM_TURN_TRANSFORMS[join]
+        const vertex = transform(0.75, 0.75)
+        const at = (u, v) =>
+        {
+            const p = transform(u, v)
+            return {x: x + (p.x - vertex.x) * size, y: y + (p.y - vertex.y) * size}
+        }
+        return this.pattern.pieces.map(([kind, px, py, w, h]) =>
+        {
+            const a = at(px, py)
+            const b = at(px + w, py + h)
+            const left = Math.min(a.x, b.x)
+            const top = Math.min(a.y, b.y)
+            const box = kind == 'blue' ? MomentumBlue.box : MomentumGreen.box
+            return box(left, top, Math.max(a.x, b.x) - left, Math.max(a.y, b.y) - top)
+        })
+    }
+}
+// Turn id -> factory, in catalog order; join -> the turn ids built for it
+const momentumTurnFactories = Object.freeze(Object.fromEntries(
+    MOMENTUM_PATTERNS_TURN.map(pattern => [pattern.id, new MomentumTurnPatternFactory(pattern)])))
+const momentumTurnsByJoin = Object.freeze(Object.fromEntries(Object.keys(MOMENTUM_TURN_TRANSFORMS).map(join =>
+    [join, Object.freeze(MOMENTUM_PATTERNS_TURN.filter(pattern => pattern.joins.includes(join)).map(pattern => pattern.id))])))
 
 // Catalog id -> factory, horizontal types first, in catalog order
 const momentumPatternFactories = Object.freeze(Object.fromEntries([
@@ -255,3 +332,28 @@ function momentumPlacePattern(id, x, y, dir = 'right')
     })}
 }
 window.momentumPlacePattern = momentumPlacePattern
+
+// Places turn type id on the join at the end of course segment segmentIndex
+// (between it and the next segment). Returns the placed boxes, or null
+// outside momentum, on a straight join and on a join the type is not built for.
+function momentumPlaceTurn(id, segmentIndex)
+{
+    const factory = momentumTurnFactories[id]
+    const floor = version == 'momentum' && floors ? floors.find(f => f instanceof MomentumPatternFloor) : null
+    if (!factory || !floor || typeof momentumCourse === 'undefined' || !momentumCourse)
+        return null
+    const segment = momentumCourse.segment(segmentIndex)
+    const join = segment.dir + '->' + momentumCourse.segment(segmentIndex + 1).dir
+    if (!factory.pattern.joins.includes(join))
+        return null
+    const elements = factory.create(segment.x1, segment.y1, join)
+    const group = floor.place(elements)
+    return {id: id, join: join, segment: segmentIndex, group: group, size: factory.getSize(),
+            vertex: {x: segment.x1, y: segment.y1}, elements: elements.map(element =>
+    {
+        const bounds = getElementBounds(element)
+        return {className: element.constructor.name, lethal: isLethalElement(element),
+                left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom}
+    })}
+}
+window.momentumPlaceTurn = momentumPlaceTurn
