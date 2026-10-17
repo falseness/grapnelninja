@@ -142,6 +142,22 @@ class Grapnel
             }
         }
     }
+    // Drops every rope point anchored on element (a momentum one-time object
+    // that was just used up). If the hook itself sat on it, or no point is
+    // left, the grapnel is released like a normal release.
+    releaseElement(element)
+    {
+        if (!this.throwed || !this.pos.some(point => point[2] === element))
+            return
+        const hookLost = this.pos[0][2] === element
+        this.pos = this.pos.filter(point => point[2] !== element)
+        if (hookLost || this.pos.length == 0)
+        {
+            this.setGrappled(false)
+            this.throwed = false
+            this.pos = []
+        }
+    }
     isGrappled()
     {
         return this.grappled

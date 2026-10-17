@@ -1,6 +1,6 @@
 // Momentum one-time objects (greens and blues): the first ninja contact
 // uses them up (use()); from then on they let the ninja and the grapnel
-// through and fade out linearly over GAMEPLAY.momentumFadeMs of render clock
+// through (a grapnel hooked on them is released, Grapnel.releaseElement) and fade out linearly over GAMEPLAY.momentumFadeMs of render clock
 // (performance.now()). Their floor drops them once the fade is over
 // (Floor.moveElements reads `faded`). Trampoline geometry, own colours.
 class MomentumOneTime extends Trampoline
@@ -29,6 +29,9 @@ class MomentumOneTime extends Trampoline
             return false
         this.passThrough = true
         this.fadeStartMs = performance.now()
+        // A used object no longer holds the grapnel
+        if (grapnel)
+            grapnel.releaseElement(this)
         return true
     }
     getAlpha(now)
