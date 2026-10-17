@@ -25,8 +25,12 @@ const GRAPPLE_OVER_LEVEL = {
 }
 
 // Fraction of horizontal velocity kept per simulation tick while the player
-// circle overlaps a `drag` zone. Vertical velocity is never touched.
+// circle overlaps a `drag` zone.
 const DRAG_ZONE_HORIZONTAL_DAMPING = 0.8
+// Fraction of vertical velocity kept per tick in a drag zone (TASK-545
+// drag_zone_vertical): a 1620 drop through a 300-tall zone onto a bouncer
+// rebounds to well under half the drop height instead of the release height.
+const DRAG_ZONE_VERTICAL_DAMPING = 0.985
 
 function validateFixedLevel(data)
 {
@@ -183,7 +187,10 @@ class PersistentWorld extends Floor
         const r2 = player.radius * player.radius
         if (this.dragZones.some(zone => pointInPolygon(zone.getPoints(), player.x, player.y) ||
             zone.getLines().some(line => segmentDistanceSquared(line, player.x, player.y) < r2)))
+        {
             player.speedX *= DRAG_ZONE_HORIZONTAL_DAMPING
+            player.speedY *= DRAG_ZONE_VERTICAL_DAMPING
+        }
     }
     draw()
     {

@@ -27,6 +27,13 @@ window.calibrationSetup = ({family, negative, upgraded=false}) => {
     }
     // Release flight through a thin pass-through drag band; the negative control omits it.
     if(family==='drag_zone' && !negative) level.elements.push(rect('drag',1150,900,600,10,'drag'));
+    // 1620 drop onto a green bouncer through a 300-tall drag zone resting on it;
+    // the negative control omits the zone.
+    if(family==='drag_zone_vertical') {
+        player={x:500,y:1000-ninja.radius-1620,speedX:0.05,speedY:0};
+        level.elements=[rect('bouncer',-500,1000,2000,60,'bounce')];
+        if(!negative) level.elements.push(rect('drag',-500,700,2000,300,'drag'));
+    }
     level.encounters[0].elements=level.elements.map(e=>e.id);
     GRAPPLE_OVER_TEST.spawn({level,player,camera:{x:-300,y:-300}});
     // Range calibration: 810 is the persistent upgrade granted on entering S05.

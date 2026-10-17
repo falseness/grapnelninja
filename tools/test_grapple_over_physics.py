@@ -353,8 +353,10 @@ class Task501Tests(unittest.TestCase):
         self.assertGreater(rows[-1]['y'] - zone['radius'], 820)
         zone_vy = [r['vy'] for r in rows]
         plain_vy = [r['vy'] for r in plain['rows']]
-        self.assertEqual(zone_vy, plain_vy)
-        self.assertEqual([r['y'] for r in rows], [r['y'] for r in plain['rows']])
+        # TASK-545: drag zones also damp vy, so the series match only until the zone is entered.
+        self.assertEqual(zone_vy[:first], plain_vy[:first])
+        self.assertEqual([r['y'] for r in rows[:first]], [r['y'] for r in plain['rows'][:first]])
+        self.assertTrue(all(a < b for a, b in zip(zone_vy[first:], plain_vy[first:])))
         for a, b in zip(rows[first:last + 1], rows[first - 1:last]):
             self.assertAlmostEqual(a['vx'], b['vx'] * zone['damping'], places=12)
         self.assertTrue(all(r['vx'] == 1.0 for r in plain['rows']))
@@ -368,8 +370,8 @@ class Task501Tests(unittest.TestCase):
             entry=dict(tick=entry['tick'], vx=entry['vx']), exit=dict(tick=exit_['tick'], vx=exit_['vx']),
             ticks_overlapping=len(inside), player_radius=zone['radius'],
             player_contacts=zone['calls'], series=rows, no_zone_series=plain['rows'],
-            vy_series_identical=True, y_series_identical=True, player_passed_through=True)
-        print('PASS drag fall: entry |vx|=%.3f exit |vx|=%.4f over %d ticks; vy series identical to no-zone run; 0 contacts'
+            vy_identical_until_zone_entry=True, vy_damped_in_zone=True, player_passed_through=True)
+        print('PASS drag fall: entry |vx|=%.3f exit |vx|=%.4f over %d ticks; vy identical to no-zone run until entry, damped after; 0 contacts'
               % (abs(entry['vx']), abs(exit_['vx']), len(inside)))
 
     def test_02_grapnel_passes_through(self):
@@ -806,3 +808,178 @@ class Task503Tests(unittest.TestCase):
             self.assertTrue(all(abs(p['exit_vx']) < abs(p['entry_vx']) for p in pairs))
         print('PASS audit: 7 families x 2 ranges, 70 successful traces, 14 negative controls, '
               '10 drag vx pairs, gap targets %s, source hashes match' % disk['gap_metric']['targets'])
+
+
+# TASK-545 drag_zone_vertical: a 1620 drop through a 300-tall drag zone resting on a
+# green bouncer. Speeds are world units per physics cycle (8 cycles per tick).
+TASK545_DROP_HEIGHT = 1620
+TASK545_FIRST_PEAK_MAX_FRACTION = 0.5
+TASK545_NEGATIVE_PEAK_MIN_FRACTION = 0.95
+TASK545_SETTLE_SPEED = 0.05
+TASK545_SETTLE_TICK_BOUND = 1200
+TASK545_RUN_TICKS = 1500
+TASK545_DAMPING = dict(horizontal=0.8, vertical=0.985)
+
+
+class Task545Tests(unittest.TestCase):
+    """Drag zones damp vertical speed: a fall through a zone cannot bounce back to the release height."""
+    results = {}
+    open = Task503Tests.open
+    current_hashes = staticmethod(Task503Tests.current_hashes)
+
+    @classmethod
+    def setUpClass(cls):
+        import test_grapple_over_tools as task463
+        cls.task463 = task463
+        cls.evidence = EvidenceWriter('TASK-545')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.hashes = cls.current_hashes()
+        cls.proof = dict(revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
+            text=True).strip(), source_hashes=cls.hashes, browser=cls.browser.version,
+            viewport=task463.VIEWPORT, device_scale_factor=1, has_touch=True, hz=60, substeps=8, seed=1)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.proof, sort_keys=True))
+
+    def drop(self, negative):
+        page = self.open()
+        page.evaluate("GRAPPLE_OVER_TEST.begin('drag_zone_vertical')")
+        setup = page.evaluate('calibrationSetup', dict(family='drag_zone_vertical', negative=negative))
+        r = page.evaluate('''n => {
+            const z=floors[0], r2=ninja.radius*ninja.radius;
+            const inZone=()=>z.dragZones.some(d=>pointInPolygon(d.getPoints(),ninja.x,ninja.y)||
+                d.getLines().some(l=>segmentDistanceSquared(l,ninja.x,ninja.y)<r2));
+            const rows=[{tick:0,x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,in:inZone()}];
+            for(let t=1;t<=n;t++){GRAPPLE_OVER_TEST.step(1);
+                rows.push({tick:t,x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,in:inZone()});}
+            const a=GRAPPLE_OVER_TEST.attempts.at(-1);
+            GRAPPLE_OVER_TEST.finish('measured');
+            return {rows,radius:ninja.radius,gravity:GRAVITY,cyclesPerTick,
+                damping:{horizontal:DRAG_ZONE_HORIZONTAL_DAMPING,vertical:DRAG_ZONE_VERTICAL_DAMPING},
+                eventTypes:[...new Set(a.events.map(e=>e.type))],
+                bounceElements:[...new Set(a.events.filter(e=>e.type==='bounce').map(e=>e.contact.elementId))],
+                collidable:z.elements.map(e=>({id:e.id,role:e.surfaceRole,fill:e.fill,stroke:e.stroke})),
+                zones:z.dragZones.map(e=>({id:e.id,role:e.surfaceRole,grapplable:e.grapplable,fill:e.fill,
+                    stroke:e.stroke,colors:STYLE.colors.drag}))};
+        }''', TASK545_RUN_TICKS)
+        rows = r.pop('rows')
+        floor_y = 1000 - r['radius']
+        release = rows[0]
+        self.assertAlmostEqual(floor_y - release['y'], TASK545_DROP_HEIGHT, places=9)
+        bounces = [t for t in range(1, len(rows)) if rows[t - 1]['vy'] > 0 and rows[t]['vy'] < 0]
+        peaks = [dict(tick=rows[t]['tick'], height=floor_y - rows[t]['y'],
+                      fraction=(floor_y - rows[t]['y']) / TASK545_DROP_HEIGHT)
+                 for t in range(1, len(rows)) if rows[t - 1]['vy'] < 0 <= rows[t]['vy']]
+        pairs, t = [], 1
+        while t < len(rows):
+            if rows[t]['in'] and not rows[t - 1]['in']:
+                start = t
+                while t < len(rows) and rows[t]['in']:
+                    t += 1
+                pairs.append(dict(entry_tick=start, entry_vx=rows[start - 1]['vx'], entry_vy=rows[start - 1]['vy'],
+                    exit_tick=t - 1, exit_vx=rows[t - 1]['vx'], exit_vy=rows[t - 1]['vy'],
+                    still_inside_at_end=t == len(rows)))
+            t += 1
+        calm = lambda row: abs(row['vx']) < TASK545_SETTLE_SPEED and abs(row['vy']) < TASK545_SETTLE_SPEED
+        settle = next((rows[i]['tick'] for i in range(len(rows)) if all(calm(x) for x in rows[i:])), None)
+        sample = [dict(tick=x['tick'], x=x['x'], y=x['y'], vx=x['vx'], vy=x['vy'], in_zone=x['in'])
+                  for x in rows if x['tick'] % 50 == 0]
+        return dict(setup=dict(player=setup['player'], elements=[dict(id=e['id'], role=e['role'], x=e['x'], y=e['y'],
+                    width=e['points'][2]['x'], height=e['points'][2]['y']) for e in setup['level']['elements']]),
+                    floor_contact_y=floor_y, release=dict(tick=0, y=release['y'], height=TASK545_DROP_HEIGHT,
+                    vx=release['vx'], vy=release['vy']),
+                    first_bounce_tick=rows[bounces[0]]['tick'] if bounces else None, bounce_ticks=len(bounces),
+                    peaks=peaks, zone_passes=pairs, settle_tick=settle,
+                    final=dict(tick=rows[-1]['tick'], y=rows[-1]['y'], vx=rows[-1]['vx'], vy=rows[-1]['vy'],
+                               in_zone=rows[-1]['in']),
+                    in_zone_after_settle=all(x['in'] for x in rows[settle:]) if settle is not None else False,
+                    max_height_after_settle=max(floor_y - x['y'] for x in rows[settle:]) if settle is not None else None,
+                    samples_every_50_ticks=sample, rows_full=rows, **r)
+
+    def test_01_drop_through_zone(self):
+        d = self.drop(False)
+        rows = d.pop('rows_full')
+        self.assertEqual(d['damping'], TASK545_DAMPING)
+        # Pass-through, nonlethal, non-grappleable and amber: only the bouncer is collidable or touched.
+        self.assertEqual([z['id'] for z in d['zones']], ['drag'])
+        zone = d['zones'][0]
+        self.assertEqual((zone['role'], zone['grapplable'], zone['stroke'], zone['fill']),
+                         ('drag', False, '#ffc400', zone['colors']['fill']))
+        self.assertEqual([e['id'] for e in d['collidable']], ['bouncer'])
+        self.assertEqual(d['bounceElements'], ['bouncer'])
+        self.assertEqual(sorted(d['eventTypes']), ['bounce'])
+        # Damping is exactly per tick on both axes while overlapping (bounces only flip vy sign).
+        for a, b in zip(rows, rows[1:]):
+            if b['in'] and a['in']:
+                self.assertAlmostEqual(b['vx'], a['vx'] * 0.8, places=12)
+        first = d['peaks'][0]
+        self.assertLessEqual(first['tick'], d['first_bounce_tick'] + 200)
+        self.assertGreater(first['tick'], d['first_bounce_tick'])
+        self.assertLessEqual(first['fraction'], TASK545_FIRST_PEAK_MAX_FRACTION)
+        heights = [p['height'] for p in d['peaks']]
+        self.assertEqual(heights[:8], sorted(heights[:8], reverse=True))
+        self.assertTrue(d['zone_passes'][0]['entry_vy'] > 0 and d['zone_passes'][0]['entry_tick'] < d['first_bounce_tick'])
+        self.assertIsNotNone(d['settle_tick'])
+        self.assertLessEqual(d['settle_tick'], TASK545_SETTLE_TICK_BOUND)
+        self.assertTrue(d['in_zone_after_settle'] and d['final']['in_zone'])
+        self.assertTrue(d['zone_passes'][-1]['still_inside_at_end'])
+        self.assertGreater(d['bounce_ticks'], 8)  # it keeps oscillating on the bouncer inside the zone
+        self.__class__.results['drop'] = d
+        self.evidence.write('drop.json', dict(self.proof, family='drag_zone_vertical', speed_units='world units per cycle',
+            settle_threshold=TASK545_SETTLE_SPEED, settle_tick_bound=TASK545_SETTLE_TICK_BOUND, **d))
+        print('PASS drop: release %d, first peak %.1f (%.1f%%), peaks %s, settle tick %d <= %d, %d zone passes, '
+              '%d bounces, pass-through amber zone' % (TASK545_DROP_HEIGHT, first['height'], 100 * first['fraction'],
+              [round(h, 1) for h in heights[:6]], d['settle_tick'], TASK545_SETTLE_TICK_BOUND,
+              len(d['zone_passes']), d['bounce_ticks']))
+
+    def test_02_negative_control_without_zone(self):
+        d = self.drop(True)
+        d.pop('rows_full')
+        self.assertEqual(d['zones'], [])
+        self.assertEqual(d['zone_passes'], [])
+        first = d['peaks'][0]
+        self.assertGreaterEqual(first['fraction'], TASK545_NEGATIVE_PEAK_MIN_FRACTION)
+        self.assertIsNone(d['settle_tick'])
+        self.__class__.results['negative'] = d
+        self.evidence.write('negative-control.json', dict(self.proof, family='drag_zone_vertical', negative=True,
+            speed_units='world units per cycle', **d))
+        print('PASS negative control: no zone, first peak %.1f (%.1f%% >= %d%%), never settles'
+              % (first['height'], 100 * first['fraction'], 100 * TASK545_NEGATIVE_PEAK_MIN_FRACTION))
+
+    def test_03_calibration_and_classic_bad_baseline(self):
+        self.assertTrue({'drop', 'negative'} <= set(self.results))
+        baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())
+        lines = ['baseline artifacts/TASK-444/baseline.json']
+        for mode in ('classic', 'bad'):
+            page, errors = open_fixture(self.browser, self.url, mode, self.addCleanup)
+            initial = page.evaluate(STATE)
+            trace = step(page, 12)
+            self.assertEqual(initial, baseline['modes'][mode]['initial'])
+            self.assertEqual(trace, baseline['modes'][mode]['movement_trace'])
+            self.assertFalse(page.evaluate('floors.some(f=>f.dragZones)'))
+            self.assertEqual(errors, [])
+            lines.append('PASS %s initial state and 12-tick seeded trace equal TASK-444 baseline (%d ticks); '
+                         'no drag zones loaded' % (mode, len(trace)))
+        self.evidence.path('baseline.log').write_text('\n'.join(lines) + '\n')
+        drop, neg = self.results['drop'], self.results['negative']
+        data = dict(self.proof, family=dict(name='drag_zone_vertical', frozen=True,
+            fixture='player released at rest (vx 0.05) 1620 above a 2000x60 green bounce element at y=1000; '
+                    'a 2000x300 drag zone rests directly on it; the negative control omits the zone',
+            damping=dict(constant='DRAG_ZONE_VERTICAL_DAMPING', value=TASK545_DAMPING['vertical'],
+                horizontal_constant='DRAG_ZONE_HORIZONTAL_DAMPING', horizontal_value=TASK545_DAMPING['horizontal'],
+                applied='once per simulation tick (physics()) while the player circle overlaps a drag zone; '
+                        'speedX and speedY'),
+            first_peak_max_fraction=TASK545_FIRST_PEAK_MAX_FRACTION,
+            negative_first_peak_min_fraction=TASK545_NEGATIVE_PEAK_MIN_FRACTION,
+            settle=dict(threshold=TASK545_SETTLE_SPEED, units='world units per cycle, |vx| and |vy|',
+                        tick_bound=TASK545_SETTLE_TICK_BOUND, run_ticks=TASK545_RUN_TICKS,
+                        definition='first tick after which every tick to run end has |vx| and |vy| below threshold'),
+            measured=dict(first_peak=drop['peaks'][0], settle_tick=drop['settle_tick'],
+                          negative_first_peak=neg['peaks'][0])),
+            baseline=dict(path='artifacts/TASK-444/baseline.json', log='baseline.log', classic_bad_equal=True))
+        self.assertEqual(self.current_hashes(), self.hashes)
+        self.evidence.write('calibration.json', data)
+        disk = json.loads(self.evidence.path('calibration.json').read_text())
+        self.assertEqual(disk['source_hashes'], self.current_hashes())
+        self.assertEqual(disk['family']['damping']['value'], TASK545_DAMPING['vertical'])
+        print('PASS calibration: drag_zone_vertical factor %.3f, settle |v|<%.2f by tick %d (measured %d); '
+              'classic/bad equal TASK-444 baseline; source hashes match'
+              % (TASK545_DAMPING['vertical'], TASK545_SETTLE_SPEED, TASK545_SETTLE_TICK_BOUND, drop['settle_tick']))
