@@ -21,7 +21,8 @@ RECORDS_KEY = 'grapnelninja.records'
 TIME_KEY = 'grapnelninja.time'
 # PROGRESS.keys order (one get). A set carries the same keys in snapshot()
 # order (progress.js), so sets are compared as key sets.
-KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang', 'grapnelninja.tutorialDone']
+KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang', 'grapnelninja.tutorialDone',
+        'grapnelninja.lighting']
 READY = ('PLATFORM.environment !== "pending" && bootComplete && runInProgress'
          ' && document.getElementById("loading").hidden')
 FREEZE = '''() => {

@@ -278,6 +278,8 @@ class Checkbox
         this.clickable = object.clickable
         this.click = clickFunc
         this.fontSize = object.fontSize + 'px ' + STYLE.ui.fontFamily
+        // Ticked state; the fps counter unless given
+        this.checked = object.checked || (() => fpsCounter.enabled)
     }
     draw()
     {
@@ -295,7 +297,7 @@ class Checkbox
         ctx.globalAlpha = 1
         ctx.lineWidth = STYLE.ui.buttonLineWidth
 
-        if (fpsCounter.enabled)
+        if (this.checked())
         {
             const stroke = this.stroke, size = this.size, y = this.y
             const markWidth = Math.max(STYLE.ui.buttonLineWidth, size * 0.12)
@@ -597,6 +599,26 @@ class Menu
             draw()
             menu.drawPauseScreen()
         })
+        // Momentum lighting effects on/off (MOMENTUM_FX), stored by PROGRESS
+        this.pauseLightingCheckbox = new Checkbox(
+        {
+            x       : this.center.x - 0.15 * this.width,
+            y       : 0.78 * this.height,
+            size    : 0.09 * this.height,
+            fontSize: 0.09 * this.height,
+            fill    : STYLE.colors.ui.text,
+            stroke  : STYLE.colors.ui.primary,
+            label   : I18N.t('menu.lighting'),
+            checked : () => MOMENTUM_FX.enabled,
+            clickable: false
+        },
+        function()
+        {
+            PROGRESS.setLighting(!MOMENTUM_FX.enabled)
+            PROGRESS.save()
+            draw()
+            menu.drawPauseScreen()
+        })
         
         this.args = 
         [
@@ -752,39 +774,88 @@ class Menu
         const selectorWidth = panel.width * 0.9
         this.modeSelector.layout(centerX, panel.y + panel.height * 0.52, selectorWidth, buttonHeight)
 
-        const rowY = panel.y + panel.height * 0.72
         const resumeFontSize = parseFloat(this.resume.text.fontSize)
         const fpsFontSize = Math.min(resumeFontSize, panel.width * 0.09)
         const boxSize = fpsFontSize
+        const checkboxes = [this.pauseFpsCounterCheckbox, this.pauseLightingCheckbox]
 
         ctx.save()
         ctx.font = getArcadeFont(fpsFontSize)
-        const labelWidth = ctx.measureText(this.pauseFpsCounterCheckbox.label).width
+        const labelWidth = Math.max(...checkboxes.map(check => ctx.measureText(check.label).width))
         ctx.restore()
 
+        // One column of checkboxes, boxes left-aligned, centred as a group
         const rowWidth = boxSize * 1.55 + labelWidth
         const rowX = centerX - rowWidth / 2
+        for (const check of checkboxes)
+        {
+            check.x = rowX
+            check.size = boxSize
+            check.fontSize = getArcadeFont(fpsFontSize)
+        }
+        const rowHeight = this.pauseFpsCounterCheckbox.hitRect().height
 
-        this.pauseFpsCounterCheckbox.x = rowX
-        this.pauseFpsCounterCheckbox.y = rowY
-        this.pauseFpsCounterCheckbox.size = boxSize
-        this.pauseFpsCounterCheckbox.fontSize = getArcadeFont(fpsFontSize)
-
-        // Play time under the fps row, fitted to the panel width
+        // Play time under the checkbox rows, fitted to the panel width
         const timeFontSize = this.getPauseTimeFontSize(panel, fpsFontSize * 0.7)
         this.timeInGame.x = centerX
-        this.timeInGame.y = panel.y + panel.height * 0.89
         this.timeInGame.fontSize = getArcadeFont(timeFontSize)
 
-        if (!touch)
+        // Between the mode selector and the panel bottom when they fit
+        // there, else (phones, small letterboxed views) every row is stacked
+        const top = panel.y + panel.height * 0.52 + buttonHeight / 2
+        const lower = [rowHeight, rowHeight, timeFontSize]
+        if (!touch && lower.reduce((a, b) => a + b, 0) <= panel.y + panel.height - top)
+        {
+            const rows = stackRows(top, panel.y + panel.height, lower)
+            this.pauseFpsCounterCheckbox.y = rows[0]
+            this.pauseLightingCheckbox.y = rows[1]
+            this.timeInGame.y = rows[2]
             return
-        const rows = stackRows(panel.y, panel.y + panel.height, [this.getPauseTitleFontSize(panel),
-            buttonHeight, buttonHeight, this.pauseFpsCounterCheckbox.hitRect().height, timeFontSize])
+        }
+        // Letterboxed, the language button can reach into the panel bottom
+        const bottom = Math.min(panel.y + panel.height, LANGUAGE_BUTTON.rect().y)
+        const heights = [this.getPauseTitleFontSize(panel), buttonHeight, buttonHeight,
+            rowHeight, rowHeight, timeFontSize]
+        // Too short for two checkbox rows (touch-size floors in a small
+        // letterboxed view): both checkboxes side by side in one row
+        const sideBySide = heights.reduce((a, b) => a + b, 0) > bottom - panel.y
+        if (sideBySide)
+        {
+            heights.splice(4, 1)
+            this.layoutCheckboxRow(checkboxes, centerX, panel.width * 0.9, fpsFontSize)
+        }
+        const rows = stackRows(panel.y, bottom, heights)
         this.pauseTitleY = rows[0]
         this.layoutPauseButton(this.resume, centerX, rows[1], buttonWidth, buttonHeight)
         this.modeSelector.layout(centerX, rows[2], selectorWidth, buttonHeight)
         this.pauseFpsCounterCheckbox.y = rows[3]
-        this.timeInGame.y = rows[4]
+        this.pauseLightingCheckbox.y = rows[sideBySide ? 3 : 4]
+        this.timeInGame.y = rows[rows.length - 1]
+    }
+    // Checkboxes in one centred row within maxWidth, hit rects side by side
+    layoutCheckboxRow(checkboxes, centerX, maxWidth, fontSize)
+    {
+        const widths = () => checkboxes.map(check => check.hitRect().width)
+        const gap = () => fontSize * 0.6
+        const total = () => widths().reduce((a, b) => a + b, 0) + gap() * (checkboxes.length - 1)
+        const fit = size =>
+        {
+            fontSize = size
+            for (const check of checkboxes)
+            {
+                check.size = size
+                check.fontSize = getArcadeFont(size)
+            }
+        }
+        if (total() > maxWidth)
+            fit(fontSize * maxWidth / total())
+        let x = centerX - total() / 2
+        for (const check of checkboxes)
+        {
+            const hit = check.hitRect()
+            check.x = x + check.x - hit.x
+            x += hit.width + gap()
+        }
     }
     getPauseTimeFontSize(panel, preferredSize)
     {
@@ -803,6 +874,7 @@ class Menu
     {
         return  this.resume.isClickOnButton(coord)                  ||
                 this.pauseFpsCounterCheckbox.isClickOnButton(coord) ||
+                this.pauseLightingCheckbox.isClickOnButton(coord)   ||
                 this.modeSelector.click(coord)
     }
     clickToPause(coord)
@@ -814,6 +886,7 @@ class Menu
         this.gamePaused = isPaused
         
         this.pauseFpsCounterCheckbox.clickable = isPaused
+        this.pauseLightingCheckbox.clickable    = isPaused
         this.resume.clickable                   = isPaused
         this.modeSelector.setClickable(isPaused)
     }
@@ -866,12 +939,14 @@ class Menu
             this.resume.drawGlow()
             this.modeSelector.drawGlow()
             this.pauseFpsCounterCheckbox.drawGlow()
+            this.pauseLightingCheckbox.drawGlow()
             LANGUAGE_BUTTON.drawGlow()
         })
         
         title.draw()
         
         this.pauseFpsCounterCheckbox.draw()
+        this.pauseLightingCheckbox.draw()
         this.timeInGame.draw()
         
         this.resume.draw()

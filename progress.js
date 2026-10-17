@@ -6,10 +6,13 @@ const PROGRESS = (function()
     const timeKey = 'grapnelninja.time'
     const langKey = 'grapnelninja.lang'
     const tutorialKey = 'grapnelninja.tutorialDone'
+    const lightingKey = 'grapnelninja.lighting'
     const state = {time: 0, lang: null, tutorialDone: false}
-    let loaded = false, known = false, baseTime = 0, langChanged = false
+    let loaded = false, known = false, baseTime = 0, langChanged = false, lightingChanged = false
     let savedJson = null, saveTimer = null, writing = false, lastSaveAt = -Infinity
     function number(value) { const n = Number(value); return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0 }
+    // Missing (an older stored blob) or anything but 'false' is on
+    function lighting(value) { return value !== 'false' }
     function parse(value)
     {
         try { return JSON.parse(value) || {} } catch (_) { return {} }
@@ -20,7 +23,8 @@ const PROGRESS = (function()
             [recordsKey]: JSON.stringify({classic: scoreText.record.classic, bad: scoreText.record.bad,
                 momentum: scoreText.record.momentum}),
             [tutorialKey]: String(state.tutorialDone),
-            [timeKey]: String(state.time), [langKey]: state.lang || ''
+            [timeKey]: String(state.time), [langKey]: state.lang || '',
+            [lightingKey]: String(MOMENTUM_FX.enabled)
         }
     }
     function refresh()
@@ -40,6 +44,7 @@ const PROGRESS = (function()
         baseTime = Math.max(baseTime, number(values[timeKey]))
         state.time = baseTime + delta
         if (!langChanged) state.lang = values[langKey] || null
+        if (!lightingChanged) MOMENTUM_FX.enabled = lighting(values[lightingKey])
         known = true
         refresh()
         PROGRESS.save()
@@ -53,7 +58,7 @@ const PROGRESS = (function()
         if (json === savedJson) return
         writing = true
         lastSaveAt = performance.now()
-        const sentTime = state.time, sentLang = state.lang
+        const sentTime = state.time, sentLang = state.lang, sentLighting = MOMENTUM_FX.enabled
         const ok = await PLATFORM.storage.setMany(values)
         writing = false
         if (ok)
@@ -61,12 +66,13 @@ const PROGRESS = (function()
             savedJson = json
             baseTime = sentTime
             if (state.lang === sentLang) langChanged = false
+            if (MOMENTUM_FX.enabled === sentLighting) lightingChanged = false
         }
         if (JSON.stringify(snapshot()) !== savedJson)
             saveTimer = setTimeout(write, 1000)
     }
     const PROGRESS = {
-        keys: [recordsKey, timeKey, langKey, tutorialKey],
+        keys: [recordsKey, timeKey, langKey, tutorialKey, lightingKey],
         load(values)
         {
             const records = parse(values[recordsKey])
@@ -76,6 +82,8 @@ const PROGRESS = (function()
             state.time = baseTime
             state.lang = values[langKey] || null
             langChanged = false
+            MOMENTUM_FX.enabled = lighting(values[lightingKey])
+            lightingChanged = false
             for (const mode of ['classic', 'bad', 'momentum'])
                 scoreText.record[mode] = number(records[mode])
             savedJson = known ? JSON.stringify(snapshot()) : null
@@ -98,7 +106,8 @@ const PROGRESS = (function()
         getTime() { return state.time },
         setTime(seconds) { state.time = Math.max(state.time, number(seconds)) },
         getLang() { return state.lang },
-        setLang(lang) { state.lang = lang || null; langChanged = true }
+        setLang(lang) { state.lang = lang || null; langChanged = true },
+        setLighting(on) { MOMENTUM_FX.enabled = !!on; lightingChanged = true }
     }
     PLATFORM.storage.onRecovery(values => { if (loaded) reconcile(values) })
     window.addEventListener('pagehide', () => PROGRESS.flush())
