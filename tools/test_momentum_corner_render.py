@@ -36,7 +36,9 @@ stroke/core, and the other way round for a wall profile.
 (b) strayNeonPixels: mass pixels that are neon-coloured (green channel >=
     half the dimmer of the two STYLE stroke colours' green) farther than
     the neon width (STYLE.strokes.neonOutline.width in canvas pixels) + 1 px
-    from both corridor faces (rays from C).
+    from both corridor faces (rays from C; in the outer corner square past
+    C, u > 0 and v > 0, the mitred depth max(u, v) as in (a), since the
+    face bands turn on the mitre there instead of rounding the corner).
 (c) stepPx: per face, the neon centre (mean depth of the pixels within
     NEON_TOL of the reference profile's brightest colour, +-SPAN px across
     the face) sampled every pixel from 2 px to the box edge along the face:
@@ -46,12 +48,12 @@ stroke/core, and the other way round for a wall profile.
     than half the neon width + 1 px past C is a protrusion (its length).
     stepPx is the largest of these; <= 1 passes.
 
-All 8 cases fail on the current renderer (outside the turn the corner
-square's cap/glow is not filled up to the mitre; inside it the
-floor/ceiling neon and glow run under the wall strip up to C) and are
-marked expectedFailure until TASK-050; MOMENTUM_CORNER_RENDER_STRICT=1 drops the marks (head-fail run).
+All 8 cases failed before TASK-050 (outside the turn the corner square's
+cap/glow was not filled up to the mitre; inside it the floor/ceiling neon
+and glow ran under the wall strip up to C); TASK-050 mitres the drawing
+of MomentumBorder, so all 8 pass.
 
-Writes to MOMENTUM_CORNER_RENDER_EVIDENCE_DIR (default artifacts/TASK-049):
+Writes to MOMENTUM_CORNER_RENDER_EVIDENCE_DIR (default artifacts/TASK-050):
 corner-pixels.json (compact {case: {wrongSidePixels, strayNeonPixels,
 stepPx}}), corner-detail.json (+ parts, samples, reference peaks) and
 shots/<case>.png: 64 x 64 px round C zoomed 10x with the mitre diagonal as
@@ -73,8 +75,7 @@ from test_momentum_borders import SEED_COURSE
 from test_momentum_patterns_turn import SCRIPT
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_CORNER_RENDER_EVIDENCE_DIR', ROOT / 'artifacts/TASK-049'))
-STRICT = os.environ.get('MOMENTUM_CORNER_RENDER_STRICT') == '1'
+EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_CORNER_RENDER_EVIDENCE_DIR', ROOT / 'artifacts/TASK-050'))
 # Join -> incoming segment index on the scripted course
 JOINS = {'right->up': 0, 'up->right': 1, 'right->down': 2, 'down->right': 3}
 SIDES = ('inner', 'outer')
@@ -89,8 +90,6 @@ STEP_TOL = 1
 # Evidence crops: +-SHOT_HALF px round C, ZOOM x
 SHOT_HALF = 32
 ZOOM = 10
-# Failing on the current renderer, fixed by TASK-050 (the mitred join)
-EXPECTED_FAILURES = {f"{j.replace('->', '-')}-{s}" for j in JOINS for s in SIDES}
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game) }'''
 # Both border lines of the incoming segment and the outgoing segment's, the
@@ -235,7 +234,8 @@ def analyse(image, g, c):
                     own = 'in' if u < v else 'out'
                 if math.dist(p, expected(own, u if own == 'in' else v)) > COLOUR_TOL:
                     wrong.append((x, y))
-            if face > neon_tol and p[1] >= neon_green:
+            neon_depth = max(u, v) if (c['outer'] and u > 0 and v > 0) else face
+            if neon_depth > neon_tol and p[1] >= neon_green:
                 stray.append((x, y))
 
     allowance = g['neonWidth'] / 2 + FACE_TOL
@@ -332,7 +332,7 @@ def _make(name):
     def test(self):
         self.check(name)
     test.__name__ = 'test_' + name.replace('-', '_')
-    return test if STRICT or name not in EXPECTED_FAILURES else unittest.expectedFailure(test)
+    return test
 
 
 for _join in JOINS:

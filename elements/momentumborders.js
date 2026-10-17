@@ -67,7 +67,9 @@ function momentumBorderKind(dir, side)
     return side > 0 ? 'floor' : 'ceiling'
 }
 // The two border lines of course segment index, start to end in the travel
-// direction. outerEnd is set where the line ends on the outside of a turn.
+// direction. outerEnd is set where the line ends on the outside of a turn;
+// startMitre / endMitre are the side normal of the segment met at a turn
+// (null on a straight join): the drawing is mitred along n + that normal.
 function momentumSegmentBorderLines(course, index)
 {
     const segment = course.segment(index)
@@ -83,6 +85,7 @@ function momentumSegmentBorderLines(course, index)
         const end = momentumBorderCorner(segment, next, side)
         const d = momentumDirection(segment.dir)
         const m = momentumSideNormal(next.dir, side)
+        const turnIn = previous && previous.dir != segment.dir
         lines.push({
             kind: momentumBorderKind(segment.dir, side),
             segment: index,
@@ -90,7 +93,9 @@ function momentumSegmentBorderLines(course, index)
             x0: start.x, y0: start.y, x1: end.x, y1: end.y,
             normal: n,
             direction: d,
-            outerEnd: next.dir != segment.dir && m.x * d.x + m.y * d.y > 0
+            outerEnd: next.dir != segment.dir && m.x * d.x + m.y * d.y > 0,
+            startMitre: turnIn ? momentumSideNormal(previous.dir, side) : null,
+            endMitre: next.dir != segment.dir ? m : null
         })
     }
     return lines
@@ -104,7 +109,8 @@ class MomentumBorder extends Ground
     {
         const o = line.normal
         // On the outside of a turn the strip runs on past the corner, so its
-        // outer corner square is filled; it stays outside the corridor.
+        // outer corner square is solid; it stays outside the corridor. The
+        // drawing is the mitred band (getShapePath), not this polygon.
         const extend = line.outerEnd ? thickness : 0
         const ex = line.x1 + extend * line.direction.x
         const ey = line.y1 + extend * line.direction.y
@@ -115,6 +121,7 @@ class MomentumBorder extends Ground
             {x: line.x0 + thickness * o.x, y: line.y0 + thickness * o.y}
         ]})
         this.line = line
+        this.thickness = thickness
         this.kind = line.kind
         if (line.kind == 'wall')
         {
@@ -136,15 +143,57 @@ class MomentumBorder extends Ground
     {
         momentumState.onBorderTouch()
     }
-    getShapePath()
+    // Point depth into the strip at its start or end. At a turn it lies on
+    // the mitre (the diagonal from the corner point), so the two strips
+    // meet along it; the collision polygon (getPoints) is unchanged.
+    mitrePoint(end, depth)
     {
-        const points = this.getPoints()
+        const line = this.line
+        const n = line.normal
+        const m = (end ? line.endMitre : line.startMitre) || {x: 0, y: 0}
+        return {x: (end ? line.x1 : line.x0) + depth * (n.x + m.x) + screen.x,
+                y: (end ? line.y1 : line.y0) + depth * (n.y + m.y) + screen.y}
+    }
+    // The band of the strip from its face to depth, mitred at turns
+    getBandPath(depth)
+    {
+        const points = [this.mitrePoint(false, 0), this.mitrePoint(true, 0),
+                        this.mitrePoint(true, depth), this.mitrePoint(false, depth)]
         const shape = new Path2D()
-        shape.moveTo(points[0].x + screen.x, points[0].y + screen.y)
+        shape.moveTo(points[0].x, points[0].y)
         for (let i = 1; i < points.length; ++i)
-            shape.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+            shape.lineTo(points[i].x, points[i].y)
         shape.closePath()
         return shape
+    }
+    getShapePath()
+    {
+        return this.getBandPath(this.thickness)
+    }
+    // Clips to this strip's side of the mitre at each turn end, so the face
+    // lines run on past the corner point and still join on the diagonal
+    clipMitres()
+    {
+        const line = this.line
+        const d = line.direction
+        const far = Math.hypot(line.x1 - line.x0, line.y1 - line.y0) + 4 * this.thickness
+        for (const end of [false, true])
+        {
+            if (!(end ? line.endMitre : line.startMitre))
+                continue
+            const p = this.mitrePoint(end, 0)
+            const q = this.mitrePoint(end, far)
+            const mx = q.x - p.x, my = q.y - p.y
+            // Towards the rest of the strip
+            const bx = (end ? -far : far) * d.x, by = (end ? -far : far) * d.y
+            const half = new Path2D()
+            half.moveTo(p.x - mx, p.y - my)
+            half.lineTo(p.x + mx, p.y + my)
+            half.lineTo(p.x + mx + bx, p.y + my + by)
+            half.lineTo(p.x - mx + bx, p.y - my + by)
+            half.closePath()
+            ctx.clip(half)
+        }
     }
     drawGlow()
     {
@@ -163,27 +212,25 @@ class MomentumBorder extends Ground
     // The strip along the corridor face
     drawCap(fill)
     {
-        const line = this.line
-        const o = line.normal
         const cap = Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent))
 
         ctx.fillStyle = fill
-        ctx.beginPath()
-        ctx.moveTo(line.x0 + screen.x, line.y0 + screen.y)
-        ctx.lineTo(line.x1 + screen.x, line.y1 + screen.y)
-        ctx.lineTo(line.x1 + cap * o.x + screen.x, line.y1 + cap * o.y + screen.y)
-        ctx.lineTo(line.x0 + cap * o.x + screen.x, line.y0 + cap * o.y + screen.y)
-        ctx.closePath()
-        ctx.fill()
+        ctx.fill(this.getBandPath(cap))
     }
     // Neon only along the corridor face
     drawNeonBoundary()
     {
         const line = this.line
+        const d = line.direction
+        // At a turn the face runs on past the corner point (its glow fills
+        // the strip's half of the corner), cut on the mitre
+        const before = line.startMitre ? this.thickness : 0
+        const after = line.endMitre ? this.thickness : 0
         ctx.save()
+        this.clipMitres()
         ctx.beginPath()
-        ctx.moveTo(line.x0 + screen.x, line.y0 + screen.y)
-        ctx.lineTo(line.x1 + screen.x, line.y1 + screen.y)
+        ctx.moveTo(line.x0 - before * d.x + screen.x, line.y0 - before * d.y + screen.y)
+        ctx.lineTo(line.x1 + after * d.x + screen.x, line.y1 + after * d.y + screen.y)
         strokeNeonPath(this.stroke, undefined, undefined, this.getShapePath(), this.coreColor)
         ctx.restore()
     }
