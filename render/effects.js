@@ -82,6 +82,11 @@ class BackgroundRenderer
         this.layerBuilds = {}
         // The game canvas transform the layers were last painted in
         this.paintTransform = null
+        // Momentum depth grade (getDepthGrade): the hue (degrees) the graded
+        // tiles were built for, the tiles they were built from, the graded
+        // 'farBaked'/'near' copies with their edge fills, and how often a
+        // new step was built
+        this.depthGrade = {hue: 0, sources: null, tiles: null, rebuilds: 0}
     }
     draw()
     {
@@ -181,10 +186,60 @@ class BackgroundRenderer
             this.paintTransform = this.ctx.getTransform()
 
         // Base gradient, far crystals and haze come baked in one opaque tile
-        this.drawCrystalLayer(width, height, this.getLayerShift(width, height, caveLayers.crystals))
+        const grade = this.getDepthGrade(width, height)
+        this.drawCrystalLayer(width, height, this.getLayerShift(width, height, caveLayers.crystals), grade)
         this.preserveGameplayRandomSequence(1, 40)
-        this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks))
+        this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks), grade)
         this.drawVignette(width, height)
+    }
+    // Hue rotation (degrees) of the momentum cave at score: the last
+    // depthStages stage reached, moving linearly to the next one over the
+    // depthBlend points before it, quantized to depthSteps steps
+    getDepthHue(score)
+    {
+        const fx = STYLE.momentumFx
+        const stages = fx.depthStages
+        let i = 0
+        while (i + 1 < stages.length && score >= stages[i + 1].score)
+            ++i
+        const next = stages[i + 1]
+        if (!next || score <= next.score - fx.depthBlend)
+            return stages[i].hue
+        const step = Math.round((score - next.score + fx.depthBlend) / fx.depthBlend * fx.depthSteps)
+        return stages[i].hue + (next.hue - stages[i].hue) * step / fx.depthSteps
+    }
+    // The graded far/near tiles and edge fills of this frame, or null for
+    // the plain cave (other modes, MOMENTUM_FX off, hue 0). They are built
+    // only when the hue step (or a source tile) changes, never per frame.
+    getDepthGrade(width, height)
+    {
+        if (version != 'momentum' || !MOMENTUM_FX.enabled || !STYLE.momentumFx.depthStages)
+            return null
+        const hue = this.getDepthHue(scoreText.count.momentum || 0)
+        if (!hue)
+            return null
+        const far = this.getFarBakedTile(width, height)
+        const near = this.getNearTile(width, height)
+        const grade = this.depthGrade
+        if (grade.hue === hue && grade.sources && grade.sources[0] === far && grade.sources[1] === near)
+            return grade.tiles
+        const background = STYLE.colors.background
+        const haze = this.ctx.createLinearGradient(0, 0, 0, height)
+        const hazeStops = [[0, background.hazeTop], [0.24, background.hazeUpper], [0.5, background.hazeMiddle],
+            [0.74, background.hazeLower], [1, background.hazeBottom]]
+        for (const [offset, color] of hazeStops)
+            haze.addColorStop(offset, hueRotateColor(color, hue))
+        grade.tiles = {
+            far: hueRotateTile(far, hue),
+            near: hueRotateTile(near, hue),
+            crystalRock: hueRotateColor(background.crystalRock, hue),
+            nearRock: hueRotateColor(background.nearRock, hue),
+            haze
+        }
+        grade.hue = hue
+        grade.sources = [far, near]
+        ++grade.rebuilds
+        return grade.tiles
     }
     // The removed decorations consumed the shared gameplay RNG once per scene
     // per run: 40 draws in game (the title menu's 18 left with the menu,
@@ -545,11 +600,18 @@ class BackgroundRenderer
     // fills, which software canvases such as Firefox's pay per pixel). They
     // follow the tile's small vertical parallax; the uncovered edge rows get
     // the rock colour and the haze as before.
-    drawCrystalLayer(width, height, shift)
+    drawCrystalLayer(width, height, shift, grade)
+    {
+        if (grade)
+            return this.drawLayerTile(grade.far, width, height, shift, grade.crystalRock, grade.haze)
+        this.drawLayerTile(this.getFarBakedTile(width, height), width, height, shift,
+            STYLE.colors.background.crystalRock, this.getGradients(width, height).haze)
+    }
+    getFarBakedTile(width, height)
     {
         const far = this.getLayerTile('far', width, height, STYLE.caveLayers.crystals,
             (...args) => this.paintCrystalTile(...args))
-        const baked = this.getLayerTile('farBaked', width, height, STYLE.caveLayers.crystals,
+        return this.getLayerTile('farBaked', width, height, STYLE.caveLayers.crystals,
             (ctx, w, h) =>
             {
                 const gradients = this.createVerticalGradients(ctx, h)
@@ -559,14 +621,17 @@ class BackgroundRenderer
                 ctx.fillStyle = gradients.haze
                 ctx.fillRect(0, 0, w, h)
             })
-        this.drawLayerTile(baked, width, height, shift, STYLE.colors.background.crystalRock,
-            this.getGradients(width, height).haze)
     }
-    drawNearLayer(width, height, shift)
+    drawNearLayer(width, height, shift, grade)
     {
-        const layer = this.getLayerTile('near', width, height, STYLE.caveLayers.nearRocks,
+        if (grade)
+            return this.drawLayerTile(grade.near, width, height, shift, grade.nearRock)
+        this.drawLayerTile(this.getNearTile(width, height), width, height, shift, STYLE.colors.background.nearRock)
+    }
+    getNearTile(width, height)
+    {
+        return this.getLayerTile('near', width, height, STYLE.caveLayers.nearRocks,
             (...args) => this.paintNearTile(...args))
-        this.drawLayerTile(layer, width, height, shift, STYLE.colors.background.nearRock)
     }
     // The crystal and rock edges where this frame's layers lie, opaque white
     // into ctx (a canvas of the game canvas's size, in its px): the far
@@ -636,6 +701,52 @@ class BackgroundRenderer
                 this.ctx.fillRect(...edge)
         }
     }
+}
+
+// Rotation by deg about the RGB grey axis (row major, 3x3): moves the HSV
+// hue by about deg and keeps greys (the CSS hue-rotate matrix shifts the
+// deep blues of the cave much less than its angle)
+function hueRotateMatrix(deg)
+{
+    const c = Math.cos(deg * Math.PI / 180), s = Math.sin(deg * Math.PI / 180) / Math.sqrt(3)
+    const d = c + (1 - c) / 3, p = (1 - c) / 3 + s, n = (1 - c) / 3 - s
+    return [d, n, p, p, d, n, n, p, d]
+}
+
+// '#rrggbb' or 'rgba(r, g, b, a)' hue-rotated by deg, as 'rgba(...)'
+function hueRotateColor(color, deg)
+{
+    const rgba = color[0] == '#'
+        ? [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16), 1]
+        : color.match(/[\d.]+/g).map(Number)
+    const m = hueRotateMatrix(deg)
+    const channel = row => Math.max(0, Math.min(255, Math.round(
+        m[row * 3] * rgba[0] + m[row * 3 + 1] * rgba[1] + m[row * 3 + 2] * rgba[2])))
+    return 'rgba(' + [0, 1, 2].map(channel).join(', ') + ', ' + (rgba[3] === undefined ? 1 : rgba[3]) + ')'
+}
+
+// A copy of a layer tile ({canvas, width, height}) hue-rotated by deg, per
+// pixel (built once per depth step, not per frame)
+function hueRotateTile(layer, deg)
+{
+    const canvas = document.createElement('canvas')
+    canvas.width = layer.canvas.width
+    canvas.height = layer.canvas.height
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(layer.canvas, 0, 0)
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const data = image.data
+    const m = hueRotateMatrix(deg)
+    for (let i = 0; i < data.length; i += 4)
+    {
+        const r = data[i], g = data[i + 1], b = data[i + 2]
+        // Uint8ClampedArray rounds and clamps
+        data[i] = m[0] * r + m[1] * g + m[2] * b
+        data[i + 1] = m[3] * r + m[4] * g + m[5] * b
+        data[i + 2] = m[6] * r + m[7] * g + m[8] * b
+    }
+    ctx.putImageData(image, 0, 0)
+    return {key: layer.key, canvas, width: layer.width, height: layer.height}
 }
 
 // '#rrggbb' -> 'rgba(r, g, b, alpha)' (used only when a gradient is built)

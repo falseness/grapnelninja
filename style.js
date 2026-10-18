@@ -404,6 +404,22 @@ const STYLE = Object.freeze({
         lowHpVignette: 0.15,
         lowHpVignetteInner: 0.4,
         lowHpVignetteColor: '#ff1a2e',
+        // Cave colour by depth (BackgroundRenderer.getDepthGrade): the far
+        // tile (base gradient, crystals, haze), the near rocks and their edge
+        // fills are hue-rotated by the hue (degrees) of the last stage whose
+        // score the run's score reached; over depthBlend points before each
+        // stage the hue moves linearly to that stage's, in depthSteps steps.
+        // Graded tiles are rebuilt only when the step changes. The lights,
+        // neon, pieces, trail, motes and HUD keep their colours. The dark
+        // cave clips part of a rotation: -82 / +92 move its mean hue by
+        // about -70 (teal) / +88 (crimson).
+        depthStages: Object.freeze([
+            Object.freeze({score: 0, hue: 0}),
+            Object.freeze({score: 150, hue: -82}),
+            Object.freeze({score: 400, hue: 92})
+        ]),
+        depthBlend: 60,
+        depthSteps: 16,
         // Foreground crystal silhouettes (render/foreground.js): near-black
         // crystals rising from the bottom edge and hanging under the HUD,
         // seen only through windows bandWidth of the view width wide at the
