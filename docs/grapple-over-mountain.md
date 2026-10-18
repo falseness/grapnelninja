@@ -20,8 +20,10 @@ TASK-548. S02 is layout v3 too (TASK-550): from the S01 exit pad, S02-01/02
 travel left through a blue hoist, a green canopy, a blue lift and a green west
 bulkhead; TASK-551 built S02-03/04 up to a green exit ledge. S03 is layout v3
 too (TASK-553): from that ledge, S03-01/02 climb through a blue hoist, a green
-west pier, a blue span lift and a green east pier; S03-03/04 are planned. Other
-sections keep their own build status; both optional
+west pier, a blue span lift and a green east pier; TASK-554 built S03-03/04: a
+blue shutter stops the leftward flight, a green crest hook lifts the player to
+the right map edge, and a green exit hook pulls it into the exit drag zone onto
+a green exit ledge. Other sections keep their own build status; both optional
 shortcuts are planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and

@@ -284,20 +284,30 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     for (let i=5;i<8;i++) connectors[i].status='built';
     Object.assign(recoveries[1], {status:'built',elements:['S02-exit-drag','S01-exit-drag','S01-exit-pad','S01-yard-drag','S01-floor'],
         rejoin:'S02-02',sideRoute:'Every declared S02 miss falls through a drag zone onto a green S01 bouncer and settles; from the S01 exit pad a blue hoist pull, the east-wall and canopy-underside bounces and a swing from the green canopy rejoin the route at the bulkhead rebound'});
-    // Broken Viaduct v3 (layout v3, TASK-553): no gray pads. From the green S02 exit ledge
+    // Broken Viaduct v3 (layout v3, TASK-553/554): no gray pads. From the green S02 exit ledge
     // (inside S02-exit-drag) at the doubled 1080-range distances; the right map edge is only
-    // ~500 east of the ledge, so the opening climbs in a west-east zigzag and ends east of
+    // ~500 east of the ledge, so the section climbs in a west-east zigzag and ends east of
     // its entry. S03-01: pull the blue hoist up-left out of the S02 exit drag zone (the drag
     // kills horizontal speed, so the pull is steep) and release into the green west pier,
     // which rebounds the climb right. S03-02: on that rightward flight, catch the blue span
     // lift up-right, swing across the broken span and release into the green east pier,
-    // which rebounds the player left. S03-03/04 are planned. The hoist stays above and west
-    // of the S02-04 climb-out (apex ~-5656); the piers and lift are above the S02 shaft.
+    // which rebounds the player left. S03-03 (TASK-554): the leftward flight slams into the
+    // blue shutter under the legacy gallery staircase, which kills its speed; pull the green
+    // crest hook up-right past the lift, release into the right map edge (which stops the
+    // sideways speed) and rise along it to an apex under the legacy Cable Galleries exit.
+    // S03-04: at that apex, pull the green exit hook west under the galleries exit into the
+    // exit drag zone and settle on the green exit ledge laid over the recessed ceiling top.
+    // The hoist stays above and west of the S02-04 climb-out (apex ~-5656); the piers, lift
+    // and shutter are above the S02 shaft, and the shutter stays above the S03-02 lift rope.
     const viaduct = [
         rectangle('S03-hoist',5460,-5827,120,30,true),
         bouncer('S03-west-pier',5150,-6600,30,900),
         rectangle('S03-lift',6140,-6960,120,30,true),
         bouncer('S03-east-pier',6420,-7300,30,700),
+        rectangle('S03-shutter',5715,-6960,30,230,true),
+        bouncer('S03-crest-hook',6090,-7675,120,25),
+        bouncer('S03-exit-hook',5400,-7975,120,25),
+        bouncer('S03-exit-ledge',5800,-7770,390,25),
         // Lower broken bridge: green catch in the slot between the S02 east wall and the
         // right map edge, where the missed-lift flight drops after glancing off the wall top.
         bouncer('S03-lower-bridge',6360,-5400,120,40),
@@ -305,25 +315,40 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // start reference; no v3 S03 route uses it.
         bouncer('S03-exit-pad',4600,-3830,150,55)
     ];
-    // The fall drag zone holds the lower bridge; the S03-02 missed line drops through it.
-    // A short S03-01 pull falls back through S02-exit-drag onto the green S02 exit ledge.
+    // The fall drag zone holds the lower bridge; the S03-02 missed line and an S03-04 miss
+    // (no exit-hook catch at the apex) drop through it along the right map edge. The exit
+    // drag zone holds the exit ledge; an S03-04 overshoot (holding the exit hook too long)
+    // drifts inside it and settles on the ledge. A short S03-01 pull or an early S03-03
+    // release falls back through S02-exit-drag onto the green S02 exit ledge.
     const viaductDrags = [{id:'S03-fall-drag',x:6360,y:-5800,role:'drag',grapplable:false,
-        points:[{x:0,y:0},{x:120,y:0},{x:120,y:440},{x:0,y:440}]}];
+        points:[{x:0,y:0},{x:120,y:0},{x:120,y:440},{x:0,y:440}]},
+        {id:'S03-exit-drag',x:5790,y:-8095,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:410,y:0},{x:410,y:325},{x:0,y:325}]}];
     const viaductMovers = [
         {id:'S03-hoist-travel',element:'S03-hoist',axis:'y',min:-5827,max:-5747,periodMs:4000,phase:0,velocity:40},
-        {id:'S03-lift-travel',element:'S03-lift',axis:'x',min:6140,max:6260,periodMs:4000,phase:0,velocity:60}];
-    Object.assign(sections[2], {status:'partial', designVersion:3, landmark:{id:'S03-landmark',
+        {id:'S03-lift-travel',element:'S03-lift',axis:'x',min:6140,max:6260,periodMs:4000,phase:0,velocity:60},
+        {id:'S03-shutter-travel',element:'S03-shutter',axis:'x',min:5715,max:5745,periodMs:4000,phase:0,velocity:15}];
+    Object.assign(sections[2], {status:'built', designVersion:3, landmark:{id:'S03-landmark',
         name:'interrupted elevated bridge',x:5800,y:-6300},
         band:{...sections[2].band, top:-6480},
         // Rope-to-anchor reach from the player at the press to the acquisition point.
         gaps:[{id:'S03-01-hoist',from:{x:5955.4,y:-4870.9},to:{x:5532,y:-5726.7}},
             // Caught in flight on the rightward rebound off the west pier.
-            {id:'S03-02-lift',from:{x:5388.9,y:-6501.3},to:{x:6224.5,y:-6955.3}}],
+            {id:'S03-02-lift',from:{x:5388.9,y:-6501.3},to:{x:6224.5,y:-6955.3}},
+            // From rest against the shutter; then from rest at the apex on the map edge.
+            {id:'S03-03-crest',from:{x:5767.1,y:-6771.4},to:{x:6147.3,y:-7650}},
+            {id:'S03-04-exit',from:{x:6469.2,y:-7954.9},to:{x:5520,y:-7953.1}}],
         // Declared miss points: a short hoist pull drops back onto the S02 exit ledge through
         // S02-exit-drag; a missed lift catch glances off the S02 east-wall top and drops along
-        // the right map edge through S03-fall-drag onto the green lower bridge.
+        // the right map edge through S03-fall-drag onto the green lower bridge; an early
+        // crest-hook release drops off the shutter through S02-exit-drag onto the S02 exit
+        // ledge; a missed exit-hook catch falls back down the right map edge through
+        // S03-fall-drag onto the lower bridge; an exit-hook overshoot stays in the exit drag.
         fallPoints:[{id:'S03-01-short',encounter:'S03-01',x:5910,y:-5400},
-            {id:'S03-02-missed',encounter:'S03-02',x:6460,y:-6000}]});
+            {id:'S03-02-missed',encounter:'S03-02',x:6460,y:-6000},
+            {id:'S03-03-early',encounter:'S03-03',x:5780,y:-6760},
+            {id:'S03-04-missed',encounter:'S03-04',x:6469,y:-7800},
+            {id:'S03-04-overshoot',encounter:'S03-04',x:6000,y:-8050}]});
     Object.assign(encounters[8], {status:'built',x:5955,y:-4871,
         elements:['S02-exit-ledge','S03-hoist','S03-west-pier'],
         start:{x:5955.4,y:-4870.9,from:'S02-04'},target:{x:5520,y:-5750},
@@ -335,13 +360,21 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S03-01',x:5388.9,y:-6501.3},target:{x:6200,y:-6940},
         exit:{left:6150,right:6400,top:-6820,bottom:-6720},
         action:'On the rebound off the west pier, catch the blue span lift, swing across the broken span and rebound left off the green east pier'});
-    // Planned S03-03/04 reservations east of the entry (the section travels right).
-    Object.assign(encounters[10], {x:6000,y:-6400});
-    Object.assign(encounters[11], {x:6300,y:-6450});
+    // S03-03/04 nodes sit on the band top; the climb runs above it (the S04 band overlaps).
+    Object.assign(encounters[10], {status:'built',x:5767,y:-6480,
+        elements:['S03-east-pier','S03-shutter','S03-crest-hook'],
+        start:{from:'S03-02',x:5767.1,y:-6771.4},target:{x:6150,y:-7650},
+        exit:{left:6440,right:6480,top:-7990,bottom:-7900},
+        action:'Slam into the blue shutter off the east-pier rebound, pull the green crest hook up-right past the lift, release into the right map edge and rise along it'});
+    Object.assign(encounters[11], {status:'built',x:6469,y:-6480,
+        elements:['S03-exit-hook','S03-exit-ledge','S03-exit-drag'],
+        start:{from:'S03-03',x:6469.2,y:-7954.9},target:{x:5460,y:-7950},
+        exit:{left:5960,right:6190,top:-7800,bottom:-7770},
+        action:'At the apex on the map edge, pull the green exit hook west under the galleries exit into the exit drag zone and settle on the green exit ledge'});
     Object.assign(connectors[8], {status:'built',intent:'Physical ascent: the S03-01 hoist pull starts on the v3 Switchback exit ledge'});
-    connectors[9].status='built';
-    Object.assign(recoveries[2], {status:'planned',elements:['S03-fall-drag','S03-lower-bridge','S02-exit-drag','S02-exit-ledge'],
-        sideRoute:'Declared S03 misses fall through a drag zone onto the green S02 exit ledge or the green lower bridge and settle; the rejoin is planned with S03-03/04'});
+    for (let i=9;i<12;i++) connectors[i].status='built';
+    Object.assign(recoveries[2], {status:'built',elements:['S03-fall-drag','S03-lower-bridge','S02-exit-drag','S02-exit-ledge'],
+        rejoin:'S03-01',sideRoute:'Every declared S03 miss falls through a drag zone onto the green S02 exit ledge or the green lower bridge and settles; from the S02 exit ledge a blue hoist pull rejoins the route at S03-01'});
     Object.assign(shortcuts[0], {intent:'Optional faster high-risk launch from S03-01 to S03-04; kept planned for layout v3'});
     // Deflector Works v2 (layout v2): travelling left from the Viaduct exit pad, the
     // mirror image of the S03 opening (x' = 6726 - x, 1150 higher). S04-01: blue
@@ -390,8 +423,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S04-01',x:4156.8,y:-4160.8},target:{x:3823,y:-4520},
         exit:{left:3226,right:3356,top:-4420,bottom:-4400},
         action:'Pull the blue lift, release across the works floor beyond grapnel range into the flat green press and reflect onto the press deck'});
-    // Planned again since TASK-553: the v3 Viaduct S03-04 is planned, so the S04 entrance cannot be built.
-    Object.assign(connectors[12], {status:'planned',intent:'Physical ascent from the Viaduct exit pad to the blue carriage; planned until the v3 S03-04 is built'});
+    // Planned since TASK-553: the v2 S04-01 still starts on the v2 Viaduct exit pad, not on the v3 exit ledge.
+    Object.assign(connectors[12], {status:'planned',intent:'Physical ascent from the Viaduct exit pad to the blue carriage; planned until Deflector Works is rebuilt from the v3 Viaduct exit ledge'});
     connectors[13].status='built';
     // Cable Galleries: cantilever girders and a deep service overhang. The
     // open shaft below the projecting tips returns misses to Deflector Works.
