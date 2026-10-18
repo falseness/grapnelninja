@@ -30,7 +30,11 @@ built S04-03/04 in the open upper-left of the map: at the top of the climb a
 green crest hook and a green baffle send the player back to the left map edge,
 and a green exit hook swings it into the exit drag zone onto a green exit
 ledge. TASK-516 lowered both S04 hooks out from under the HUD text (they are
-pulled at about 33 degrees from the left map edge). Other sections keep their own build status; both optional
+pulled at about 33 degrees from the left map edge). S05 is layout v3 too
+(TASK-517) at the 1620 range: from the S04 exit ledge, S05-01/02 travel right
+through a blue hoist, a green canopy that turns the rise into a drop, an angled
+green deflector that throws the player under the legacy S08 spill deck, a blue
+lift caught in flight and a green baffle; S05-03/04 are planned again. Other sections keep their own build status; both optional
 shortcuts are planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and

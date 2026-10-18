@@ -478,52 +478,68 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     for (let i=13;i<16;i++) connectors[i].status='built';
     Object.assign(recoveries[3], {status:'built',elements:['S04-fall-drag','S04-catch-basin','S04-exit-drag','S04-exit-ledge','S03-exit-drag','S03-exit-ledge'],
         rejoin:'S04-01',sideRoute:'Every declared S04 miss falls through a drag zone onto a green bouncer and settles: short or late hoist holds on the green S03 exit ledge, from which the S04-01 hoist pull rejoins the route; missed lift, crest-hook and exit-hook catches down the left map edge onto the green catch basin; an exit-hook overshoot on the green S04 exit ledge'});
-    // Cable Galleries: cantilever girders and a deep service overhang. The
-    // open shaft below the projecting tips returns misses to Deflector Works.
+    // Cable Galleries v3 (layout v3, TASK-517): no gray pads. Travelling right from the green S04
+    // exit ledge (inside S04-exit-drag) at the 1620-range distances (the range upgrade is already held:
+    // the S03 route climbs through the S05 band), under the legacy S08 spill deck and left of the legacy
+    // S07 rooftop. S05-01: pull the blue hoist up-right out of the exit drag zone, release under the
+    // green gallery canopy (it turns the rise into a drop) and fall onto the angled green deflector,
+    // which throws the flight right under the spill deck. S05-02: catch the blue lift in flight, swing
+    // under it and release into the green gallery baffle, which rebounds the flight back west.
+    // S05-03/04 stay planned. A short hoist hold drops back into the S04 exit drag zone onto the S04
+    // exit ledge; a missed lift catch falls through the fall drag zone onto the green catch deck.
     const galleries = [
-        {id:'S05-projecting-girder',x:4650,y:-6800,role:'solid',grapplable:true,
+        rectangle('S05-hoist',2490,-12470,120,30,true),
+        // The canopy sits right of the hoist rope (the rope passes under its right end at the release).
+        bouncer('S05-canopy',1590,-12150,90,30),
+        // Angled green face from (2190,-11190) down-right to (2790,-10590); its normal points up-right.
+        {id:'S05-deflector',x:2190,y:-11190,role:'bounce',grapplable:true,points:[{x:0,y:0},{x:600,y:600},{x:0,y:600}]},
+        rectangle('S05-lift',3800,-10870,120,30,true),
+        bouncer('S05-baffle',4500,-10980,30,930),
+        bouncer('S05-catch-deck',3800,-9500,600,40),
+        // Legacy v1 Cable Galleries pieces still named by the v1 Liftworks/Crown (the S06-01 start deck and
+        // their recovery colliders), converted to green in place; no v3 S05 route uses them.
+        {id:'S05-projecting-girder',x:4650,y:-6800,role:'bounce',grapplable:true,
             points:[{x:0,y:0},{x:200,y:0},{x:200,y:-20},{x:240,y:-20},{x:240,y:35},{x:80,y:35},{x:80,y:110},{x:0,y:110}]},
-        rest('S05-rest',4740,-6620,260),
-        {id:'S05-deep-overhang',x:5000,y:-7100,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:250,y:0},{x:250,y:-20},{x:300,y:-20},{x:300,y:150},{x:230,y:150},{x:230,y:45},{x:0,y:45}]},
-        rest('S05-lower-gallery',5100,-6810,260),
-        {id:'S05-transfer-canopy',x:5420,y:-7400,role:'solid',grapplable:true,
+        {id:'S05-transfer-canopy',x:5420,y:-7400,role:'bounce',grapplable:true,
             points:[{x:0,y:0},{x:230,y:0},{x:230,y:-25},{x:270,y:-25},{x:270,y:160},{x:180,y:160},{x:180,y:45},{x:0,y:45}]},
-        rest('S05-upper-rest',5500,-7190,230),
-        {id:'S05-recessed-ceiling',x:5800,y:-7720,role:'solid',grapplable:true,
+        {id:'S05-recessed-ceiling',x:5800,y:-7720,role:'bounce',grapplable:true,
             points:[{x:0,y:0},{x:230,y:0},{x:230,y:-25},{x:270,y:-25},{x:270,y:190},{x:210,y:190},{x:210,y:55},{x:65,y:55},{x:65,y:120},{x:0,y:120}]},
-        {...rest('S05-exit',6200,-8070,240), points:[{x:0,y:0},{x:200,y:0},{x:200,y:-20},{x:240,y:-20},{x:240,y:55},{x:0,y:55}]}
+        {...rest('S05-exit',6200,-8070,240), role:'bounce', points:[{x:0,y:0},{x:200,y:0},{x:200,y:-20},{x:240,y:-20},{x:240,y:55},{x:0,y:55}]}
     ];
-    Object.assign(sections[4], {status:'built',landmark:{id:'S05-landmark',
-        name:'projecting beams and deep overhangs',x:4990,y:-6900}});
-    Object.assign(encounters[16], {status:'built',x:4530,y:-6480,
-        elements:['S04-exit','S05-projecting-girder','S05-rest'],
-        start:{from:'S04-04',x:4530,y:-6490.8},target:{x:4655,y:-6780},
-        action:'Wrap the rope around the projecting girder corner; release onto the service rest',
-        exit:{x:4839.2,y:-6810.8,width:200}});
-    Object.assign(encounters[17], {status:'built',x:4839.2,y:-6800,
-        elements:['S05-rest','S05-deep-overhang','S05-lower-gallery'],
-        start:{from:'S05-01',x:4839.2,y:-6810.8},target:{x:5005,y:-7080},
-        action:'Pull around the deep overhang using the wrapped segment; release onto its departure shelf',
-        exit:{x:5239.2,y:-7110.8,width:250}});
-    Object.assign(encounters[18], {status:'built',x:5420,y:-7400,
-        elements:['S05-deep-overhang','S05-transfer-canopy','S05-upper-rest'],
-        start:{from:'S05-02',x:5239.2,y:-7110.8},target:{x:5425,y:-7380},
-        action:'Release beyond the overhang and reacquire the projecting canopy while airborne',
-        exit:{x:5639.2,y:-7410.8,width:230}});
-    Object.assign(encounters[19], {status:'built',x:5800,y:-7720,
-        elements:['S05-upper-rest','S05-recessed-ceiling','S05-exit'],
-        start:{from:'S05-03',x:5639.2,y:-7410.8},target:{x:5805,y:-7700},
-        action:'Traverse the recessed ceiling around its lip; release and climb to the next band',
-        exit:{left:6210.8,right:6389.2,top:-8082,bottom:-8070}});
-    connectors[18].status='built';
-    Object.assign(connectors[19], {status:'built',intent:'Exposed departure ledge to the next band; S06 counterweight entrance'});
-    // Planned until S05 is rebuilt for layout v3: the v1 S05-01 still starts on the legacy S04-exit deck,
-    // not on the v3 S04 exit ledge.
-    Object.assign(connectors[16], {intent:'Pull from the Works exit around the projecting girder; planned until S05 is rebuilt from the v3 S04 exit ledge'});
+    // The fall drag zone holds the catch deck; only the S05-02 missed line drops through it.
+    const galleriesDrags = [{id:'S05-fall-drag',x:3800,y:-9900,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:600,y:0},{x:600,y:400},{x:0,y:400}]}];
+    const galleriesMovers = [
+        {id:'S05-hoist-travel',element:'S05-hoist',axis:'x',min:2490,max:2610,periodMs:4000,phase:0,velocity:60},
+        {id:'S05-lift-travel',element:'S05-lift',axis:'x',min:3800,max:3920,periodMs:4000,phase:0,velocity:60}];
+    Object.assign(sections[4], {status:'partial', designVersion:3, landmark:{id:'S05-landmark',
+        name:'projecting beams and deep overhangs',x:3000,y:-10900},
+        band:{...sections[4].band, top:-9720},
+        // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
+        gaps:[{id:'S05-01-hoist',from:{x:1387.9,y:-11660.9},to:{x:2566.6,y:-12469.7}},
+            // Caught in flight just after the deflector bounce.
+            {id:'S05-02-lift',from:{x:2511.7,y:-10905.2},to:{x:3904.5,y:-10853.5}}],
+        // Declared miss points: a short hoist hold drops from its apex back into S04-exit-drag onto the
+        // green S04 exit ledge; a missed lift catch carries the deflector throw down through S05-fall-drag
+        // onto the green catch deck.
+        fallPoints:[{id:'S05-01-short',encounter:'S05-01',x:1560,y:-12070},
+            {id:'S05-02-missed',encounter:'S05-02',x:3850,y:-10000}]});
+    // Encounter nodes sit inside the band (y >= -9720): S05-01 below the S06-04 node (S06-fall rejoins
+    // S05-01) and the planned S05-04 above the S04-01 node (S05-fall rejoins S04-01); the route runs above.
+    Object.assign(encounters[16], {status:'built',x:1388,y:-8000,
+        elements:['S04-exit-ledge','S05-hoist','S05-canopy','S05-deflector'],
+        start:{x:1387.9,y:-11660.9,from:'S04-04'},target:{x:2548,y:-12456.9},
+        exit:{left:2440,right:2580,top:-10960,bottom:-10860},
+        action:'Pull the blue hoist up-right out of the Works exit drag zone, release under the green canopy and drop onto the angled green deflector'});
+    Object.assign(encounters[17], {status:'built',x:2512,y:-8000,
+        elements:['S05-deflector','S05-lift','S05-baffle'],
+        start:{from:'S05-01',x:2511.7,y:-10905.2},target:{x:3860,y:-10855.2},
+        exit:{left:4050,right:4300,top:-10250,bottom:-10120},
+        action:'On the deflector throw, catch the blue lift, swing under the spill deck and rebound off the green gallery baffle'});
+    Object.assign(encounters[18], {x:4400,y:-9720});
+    Object.assign(encounters[19], {x:5800,y:-9720});
+    Object.assign(connectors[16], {status:'built',intent:'Physical ascent: the S05-01 hoist pull starts on the v3 Works exit ledge'});
     connectors[17].status='built';
-    Object.assign(recoveries[4], {openingElements:['S05-rest','S04-exit','S04-upper-step'],
-        openingRejoin:'S04-04',sideRoute:'Visible open shaft west of the girders; reachable Works mast and upper step'});
     // Liftworks opening: a travelling counterweight over a wide loading floor.
     // The open western edge drops onto the existing Galleries ceiling/recovery rests.
     const liftworks = [
@@ -542,7 +558,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             points:[{x:0,y:0},{x:220,y:0},{x:220,y:-25},{x:260,y:-25},{x:260,y:130},{x:190,y:130},{x:190,y:40},{x:0,y:40}]},
         {...rest('S06-exit',5520,-9680,260),points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:-20},{x:260,y:-20},{x:260,y:55},{x:0,y:55}]}
     );
-    const liftMovers = [...yardMovers, ...shaftMovers, ...viaductMovers, ...worksMovers, {id:'S06-counterweight-travel',element:'S06-counterweight',
+    const liftMovers = [...yardMovers, ...shaftMovers, ...viaductMovers, ...worksMovers, ...galleriesMovers, {id:'S06-counterweight-travel',element:'S06-counterweight',
         axis:'y',min:-8480,max:-8320,periodMs:4000,phase:0,velocity:80},
         {id:'S06-upper-weight-travel',element:'S06-upper-weight',axis:'y',
             min:-9010,max:-8890,periodMs:4000,phase:0,velocity:60}];
@@ -558,7 +574,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S06-01',attachedTo:'S06-counterweight'},target:{x:5900,y:-8270},
         action:'Remain attached through counterweight travel and reversal',
         exit:{left:5830.8,right:5989.2,top:-8282,bottom:-8270}});
-    Object.assign(connectors[20], {status:'built',intent:'Acquire counterweight from the Galleries departure ledge'});
+    // Planned until S05-04 is rebuilt for layout v3 (the v1 S06-01 starts on the legacy S05-exit deck).
+    Object.assign(connectors[20], {intent:'Acquire counterweight from the Galleries departure ledge; planned until S05-04 is rebuilt'});
     Object.assign(connectors[21], {status:'built',intent:'Keep attachment through reversal before the rising-phase release'});
     Object.assign(encounters[22], {status:'built',x:5900,y:-8270,
         elements:['S06-counterweight','S06-phase-rest'],
@@ -729,7 +746,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags], movers:liftMovers},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags,...galleriesDrags], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         finish, completion:'Summit finish region on the S08-04 beacon pad; reaching it completes the climb',
