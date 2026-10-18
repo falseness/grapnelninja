@@ -154,7 +154,12 @@ const GAMEPLAY = Object.freeze({
         // trailing (opposite) view edge; exitDepth: depth out of a shaft,
         // share of the view width past the shaft's right wall (start in view
         // heights there)
-        preview: Object.freeze({start: 1.25, depth: 0.35, exitDepth: 0.35, ninjaMargin: 0.15})
+        preview: Object.freeze({start: 1.25, depth: 0.35, exitDepth: 0.35, ninjaMargin: 0.15}),
+        // Camera rail (elements/momentumcamerarail.js): radius of the quarter
+        // circle replacing each turn join of the course centre line, in view
+        // heights (at most half of either adjacent segment; its middle stays
+        // 0.29 radius off both centre lines, well inside both corridors)
+        railRadius: 0.5
     }),
     // Momentum HP (elements/momentumstate.js): hp at every run start (no upper
     // cap) and how many green touches in a row give one hp.
