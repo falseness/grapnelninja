@@ -1,7 +1,8 @@
 """Matched native danger-spill pixels, controls, masks and warm-cache costs.
 
 The baseline comes from ORANGE_LIGHT_BASE_REV, else <ORANGE_LIGHT_EVIDENCE_DIR or artifacts/TASK-227>/BASE_REV;
-with neither the test is skipped. Run from the repo root:
+with neither the test is skipped. Pages boot with the momentum Lighting switch off, so
+the momentum boot frames leave the shared light caches as on trees before it. Run from the repo root:
   ORANGE_LIGHT_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_orange_light.py -v
 """
 from contextlib import ExitStack
@@ -77,6 +78,9 @@ def rgb_hsv(pixels):
 BASE_REV_FILE = ROOT / os.environ.get('ORANGE_LIGHT_EVIDENCE_DIR', 'artifacts/TASK-227') / 'BASE_REV'
 
 
+LIGHTING_OFF = "localStorage.setItem('grapnelninja.lighting', 'false')"
+
+
 @unittest.skipUnless(os.environ.get('ORANGE_LIGHT_BASE_REV') or BASE_REV_FILE.is_file(), f'requires ORANGE_LIGHT_BASE_REV or {BASE_REV_FILE}; run: ORANGE_LIGHT_BASE_REV=<rev> python3 -m unittest discover -s tools -p test_orange_light.py -v')
 class OrangeLightTests(unittest.TestCase):
     def test_matched_pixels_controls_masks_and_cost(self):
@@ -99,6 +103,10 @@ class OrangeLightTests(unittest.TestCase):
                             try:
                                 context.add_init_script(SEED_SCRIPT%1)
                                 context.add_init_script(CLOCK_SCRIPT)
+                                # The boot run is momentum: with its Lighting on (TASK-051..066)
+                                # the boot frames fill the shared light caches differently, so
+                                # boot with it off (= the plain momentum path; no-op on older trees)
+                                context.add_init_script(LIGHTING_OFF)
                                 page=context.new_page(); errors=[]
                                 page.on('pageerror',lambda e:errors.append(str(e)))
                                 page.goto(url);boot_frozen(page)
