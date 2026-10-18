@@ -586,6 +586,15 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // A short carriage hold drops from the exit-pocket mouth through S06-fall-drag onto the green catch
     // ledge; a missed lift catch carries the rising flight under the canopy into the left map edge and
     // drops along it through S04-fall-drag onto the green S04 catch basin.
+    // S06-03 (TASK-521): sliding down the left map edge below the canopy, catch the green climb hook;
+    // the swing skips over the bounce-only green swing skid at its bottom and, released at the top of
+    // the upswing, rises straight up between the S04 baffle and the exit pocket. S06-04: near the top
+    // of that rise, catch the green exit hook far to the east (the rope runs above the S05 deflector)
+    // and release once the pull has carried the player into the exit drag zone under the S04 exit
+    // ledge; it settles on the green exit ledge. A missed climb-hook catch slides on down the map edge
+    // through S04-fall-drag onto the green S04 catch basin; a missed exit-hook catch drops straight back
+    // down the rise through S06-drop-drag onto the green drop ledge (the climb hook is in reach again);
+    // an early exit-hook release still settles in the exit drag zone.
     const liftworks = [
         rectangle('S06-carriage',4600,-9120,120,30,true),
         // Bounce only (not grappleable): S05 ropes pass over it; the S05 exit-hook throws pass east of it.
@@ -594,6 +603,17 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // Up-left of the lift, right of the S04 climb along the left map edge; the missed-lift flight passes under it.
         bouncer('S06-canopy',700,-9905,450,30),
         bouncer('S06-catch-ledge',5700,-8350,390,30),
+        // Up-right of the map-edge slide, above the canopy (the throw passes left of its end).
+        bouncer('S06-climb-hook',1090,-10460,60,25),
+        // Bounce only (not grappleable): the climb swing grazes it at its lowest point.
+        {...bouncer('S06-swing-skid',300,-8896,220,30), grapplable:false},
+        // Far east of the rise, above the S05 deflector apex and right of the S05-01 flight.
+        bouncer('S06-exit-hook',2620,-11515,60,25),
+        // Exit pocket floor under the S04 exit ledge, left of the S05-01 flight; the drag zone above it
+        // is the pocket (no canopy: the pull reaches it near the top of the rise).
+        bouncer('S06-exit-ledge',1450,-11250,400,30),
+        // Under the rise, between the S06-02 missed flight and the S05-03 missed fall.
+        bouncer('S06-drop-ledge',1150,-9080,160,30),
         // Legacy v1 Liftworks pieces still named by the v1 Crown (the S07-01 start ledge and a recovery
         // opening collider), converted to green in place; no v3 S06 route uses them.
         {id:'S06-phase-rest',x:5780,y:-8270,role:'bounce',grapplable:true,
@@ -603,22 +623,36 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     ];
     // The fall drag zone holds the catch ledge below the exit-pocket mouth; only S06-01-short drops through it.
     const liftworksDrags = [{id:'S06-fall-drag',x:5700,y:-8800,role:'drag',grapplable:false,
-        points:[{x:0,y:0},{x:390,y:0},{x:390,y:450},{x:0,y:450}]}];
+        points:[{x:0,y:0},{x:390,y:0},{x:390,y:450},{x:0,y:450}]},
+        // The exit pocket above the exit ledge (S06-04-early) and the drop column above the drop ledge (S06-04-missed).
+        {id:'S06-exit-drag',x:1450,y:-11570,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:400,y:0},{x:400,y:320},{x:0,y:320}]},
+        {id:'S06-drop-drag',x:1150,y:-9400,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:160,y:0},{x:160,y:320},{x:0,y:320}]}];
     const liftMovers = [...yardMovers, ...shaftMovers, ...viaductMovers, ...worksMovers, ...galleriesMovers,
         {id:'S06-carriage-travel',element:'S06-carriage',axis:'x',min:4600,max:4720,periodMs:4000,phase:0,velocity:60},
         {id:'S06-lift-travel',element:'S06-lift',axis:'x',min:1880,max:2000,periodMs:4000,phase:0,velocity:60}];
-    Object.assign(sections[5], {status:'partial', designVersion:3, landmark:{id:'S06-landmark',
+    Object.assign(sections[5], {status:'built', designVersion:3, landmark:{id:'S06-landmark',
         name:'moving counterweights',x:3400,y:-9600},
         band:{...sections[5].band, top:-11340},
         // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
         gaps:[{id:'S06-01-carriage',from:{x:6120.4,y:-9432.4},to:{x:4756.5,y:-9119.5}},
             // Caught in flight from the skid rebound.
-            {id:'S06-02-lift',from:{x:3269.4,y:-9059},to:{x:2004.5,y:-9649.1}}],
+            {id:'S06-02-lift',from:{x:3269.4,y:-9059},to:{x:2004.5,y:-9649.1}},
+            // Pressed sliding down the map edge; then near the top of the rise off the climb swing.
+            {id:'S06-03-climb',from:{x:10.8,y:-9519.5},to:{x:1100.5,y:-10435}},
+            {id:'S06-04-exit',from:{x:1239.8,y:-11279.8},to:{x:2620,y:-11502.6}}],
         // Declared miss points: a short carriage hold drops from the exit-pocket mouth through
         // S06-fall-drag onto the green catch ledge; a missed lift catch carries the rising flight into the
-        // left map edge and drops along it through S04-fall-drag onto the green S04 catch basin.
+        // left map edge and drops along it through S04-fall-drag onto the green S04 catch basin; a
+        // missed climb-hook catch slides on down the map edge the same way; a missed exit-hook catch
+        // drops from the top of the rise through S06-drop-drag onto the green drop ledge; an early
+        // exit-hook release drops through S06-exit-drag onto the green exit ledge.
         fallPoints:[{id:'S06-01-short',encounter:'S06-01',x:6020,y:-8900},
-            {id:'S06-02-missed',encounter:'S06-02',x:30,y:-9450}]});
+            {id:'S06-02-missed',encounter:'S06-02',x:30,y:-9450},
+            {id:'S06-03-missed',encounter:'S06-03',x:30,y:-9540},
+            {id:'S06-04-missed',encounter:'S06-04',x:1230,y:-11500},
+            {id:'S06-04-early',encounter:'S06-04',x:1500,y:-11520}]});
     Object.assign(encounters[20], {status:'built',x:6120,y:-9432,
         elements:['S05-exit-ledge','S06-carriage','S06-skid'],
         start:{x:6120.4,y:-9432.4,from:'S05-04'},target:{x:4708,y:-9108.4},
@@ -630,9 +664,21 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:540,right:660,top:-9800,bottom:-9720},
         action:'On the rising flight, catch the blue lift, swing up-left past it and release into the green Liftworks canopy, which turns the rise into a drop'});
     Object.assign(connectors[20], {status:'built',intent:'Physical ascent: the S06-01 carriage pull starts on the v3 Galleries exit ledge'});
-    Object.assign(connectors[21], {status:'built'});
-    // S06-03/04 stay planned (TASK-521): their route links, the S06 fall recovery and the S07 entrance too.
-    Object.assign(recoveries[5], {intent:'Liftworks misses fall through drag zones onto green catches; planned until S06-03/04 are rebuilt'});
+    Object.assign(encounters[22], {status:'built',x:597,y:-9758,
+        elements:['S06-climb-hook','S06-swing-skid'],
+        start:{from:'S06-02',x:597.5,y:-9758.5},target:{x:1120,y:-10451.4},
+        exit:{left:1180,right:1280,top:-11330,bottom:-11230},
+        action:'Sliding down the map edge under the canopy, catch the green climb hook, skip over the green swing skid and release at the top of the upswing into a straight rise'});
+    Object.assign(encounters[23], {status:'built',x:1240,y:-11280,
+        elements:['S06-exit-hook','S06-exit-ledge','S06-exit-drag'],
+        start:{from:'S06-03',x:1239.8,y:-11279.8},target:{x:2648,y:-11507.1},
+        exit:{left:1450,right:1850,top:-11300,bottom:-11250},
+        action:'Near the top of the rise, catch the green exit hook far to the east, release in the exit drag zone under the Works exit ledge and settle on the green exit ledge'});
+    for (let i=21;i<24;i++) connectors[i].status='built';
+    // The S07 entrance stays planned: the v1 Crown still starts on the legacy S06-exit ledge.
+    Object.assign(recoveries[5], {status:'built',elements:['S06-fall-drag','S06-catch-ledge','S04-fall-drag','S04-catch-basin','S06-drop-drag','S06-drop-ledge','S06-exit-drag','S06-exit-ledge'],
+        rejoin:'S06-03',intent:'Liftworks misses fall through drag zones onto green catches',
+        sideRoute:'Every declared S06 miss falls through a drag zone onto a green bouncer and settles: a short carriage hold on the green catch ledge; missed lift and climb-hook catches down the left map edge onto the green S04 catch basin; a missed exit-hook catch on the green drop ledge, from which the S06-03 climb hook rejoins the route; an early exit-hook release on the green exit ledge'});
     // Open rooftop: a swept red rotor, torn service gantry and vent plinth.
     // All silhouettes are the actual collision polygons; no invisible helper floors.
     const crown = [

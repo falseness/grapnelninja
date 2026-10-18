@@ -42,9 +42,14 @@ canopy turns the rise into a drop onto the green exit ledge against the right ma
 edge. S06 is layout v3 too (TASK-520) at the 1620 range: from the S05 exit ledge,
 S06-01/02 travel left through a blue carriage pulled out of the S05 exit drag zone,
 a green skid that turns the dive into a rising flight under the S05 catch deck, a
-blue lift caught in flight west of the S05 swing loop and a green baffle that
-rebounds the swing release; S06-03/04, the S06 fall recovery and the S07 entrance
-are planned again. Other sections keep their own build status; both optional
+blue lift caught in flight west of the S05 swing loop and a green canopy that
+turns the swing release into a drop. TASK-521 completed S06: S06-03 catches a
+green climb hook while sliding down the left map edge, skips over a bounce-only
+green swing skid and is released into a straight rise; S06-04 pulls from a green
+exit hook far east into an exit drag zone under the S04 exit ledge, where the
+player settles on the green exit ledge. A missed exit hook falls back down the
+rise onto a green drop ledge, from which the climb hook rejoins the route; the S07
+entrance stays planned. Other sections keep their own build status; both optional
 shortcuts are planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and
