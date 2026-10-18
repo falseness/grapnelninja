@@ -2,9 +2,10 @@
 // ninja is in. A damped follow (follow()): right segments scroll right like
 // bad mode, previewing a shaft ahead (getPreviewStop); up/down segments keep
 // the ninja vertically centred, moving only in the segment direction and
-// stopping where the next right corridor is centred. The camera never goes back: what leaves the view behind the
-// travel direction is deleted; a camera-owned BackWall (sprites/backwall.js)
-// bounces a ninja falling back on that side.
+// stopping where the next right corridor is centred. The camera never goes
+// back: what leaves the view behind the travel direction is deleted; a
+// camera-owned BackWall (sprites/backwall.js) bounces a ninja falling back on
+// that side.
 function segmentDirection(dir)
 {
     return dir == 'right' ? {x: 1, y: 0} : dir == 'up' ? {x: 0, y: -1} : {x: 0, y: 1}

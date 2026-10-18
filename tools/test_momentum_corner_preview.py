@@ -255,6 +255,7 @@ class MomentumCornerPreviewTests(unittest.TestCase):
         at = page.evaluate(RUN, [shot_d, START_D])
         self.assertEqual(at['stop'], 'd')
         page.evaluate(DRAW)
+        print(f'shot {join} {viewport[0]}x{viewport[1]} d {at["d"]:.4f} preview {at["preview"]:.4f}', file=sys.stderr)
         page.evaluate(OVERLAY, f'{join} {viewport[0]}x{viewport[1]} d {at["d"]:.2f} preview {at["preview"]:.3f} '
                                f'(magenta: opening)')
         page.screenshot(path=str(self.out / 'shots' / f'{join}-{viewport[0]}x{viewport[1]}-d{shot_d}.png'))
