@@ -1,7 +1,8 @@
 // Momentum blue object: never bounces. The first ninja contact
 // (Ninja.hitLine -> onNinjaPass) lets the ninja through, scales its velocity
 // by GAMEPLAY.momentumBlueSlow (same direction) and costs one hp
-// (momentumState.onBlueTouch), then it fades out like a green
+// (momentumState.onBlueTouch) and starts its hit flash and ring
+// (ScreenEffects.triggerBlueHit, visual only), then it fades out like a green
 // (sprites/momentumonetime.js). Not lethal by itself.
 class MomentumBlue extends MomentumOneTime
 {
@@ -30,5 +31,8 @@ class MomentumBlue extends MomentumOneTime
         who.speedX *= GAMEPLAY.momentumBlueSlow
         who.speedY *= GAMEPLAY.momentumBlueSlow
         momentumState.onBlueTouch()
+        // Flash and ring (render clock only, STYLE.momentumFx)
+        if (visualEffects && visualEffects.screenEffects)
+            visualEffects.screenEffects.triggerBlueHit(this)
     }
 }

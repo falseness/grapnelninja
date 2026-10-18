@@ -349,6 +349,27 @@ const STYLE = Object.freeze({
         streakSpread: Object.freeze([14, 55]),
         streakPeriodMs: 280
     }),
+    // Momentum hit effects (MOMENTUM_FX), on the render clock. A blue touch
+    // (MomentumBlue.onNinjaPass) starts a blueHitMs flash: the blue's light
+    // (and its haze) times 1 + (flashGain - 1) x (1 - t)^2, t = 0..1 of
+    // blueHitMs. An elliptical neon ring of momentum.blueStroke grows from
+    // the blue's centre, its x radius ringFrom -> ringTo times the blue's
+    // circumscribed radius (eased out), y radius ringAspect of it, and fades
+    // out; an echo ring follows at ringEcho of its radius. Widths in screen
+    // px at 1080.
+    momentumFx: Object.freeze({
+        blueHitMs: 400,
+        flashGain: 2.5,
+        ringFrom: 0.3,
+        ringTo: 1.6,
+        ringAspect: 0.8,
+        ringWidth: 4,
+        ringAlpha: 0.9,
+        ringHaloWidth: 16,
+        ringHaloAlpha: 0.3,
+        ringEcho: 0.72,
+        ringEchoAlpha: 0.45
+    }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a
     // downsample chain and added over the frame before the HUD.

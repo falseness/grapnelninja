@@ -1351,7 +1351,7 @@ class LightmapRenderer
     }
     // momentumEmitters plus an area light per visible blue piece: at its
     // centre, reaching blueSpread past its outline, at blueAlpha times its
-    // fade alpha (none once faded)
+    // fade alpha (none once faded) and its hit flash (momentumFx)
     collectEmitters(gameState)
     {
         const config = STYLE.momentumLight
@@ -1360,6 +1360,7 @@ class LightmapRenderer
         for (let i = 0; i < this.momentumEmitters.length; ++i)
             emitters.push(this.momentumEmitters[i])
         const toScreen = scale[version] * 1080 / height
+        const now = performance.now()
         const floors = gameState.floors
         for (let i = 0; i < floors.length; ++i)
         {
@@ -1375,7 +1376,9 @@ class LightmapRenderer
                 const circle = element.circle
                 emitters.push({x: element.x + circle.x, y: element.y + circle.y,
                     radius: config.blueSpread + circle.radius * toScreen,
-                    color: STYLE.momentum.blueStroke, alpha: config.blueAlpha * alpha, element: element})
+                    color: STYLE.momentum.blueStroke,
+                    alpha: config.blueAlpha * alpha * visualEffects.screenEffects.getBlueFlash(element, now),
+                    element: element})
             }
         }
         return emitters
@@ -1492,7 +1495,8 @@ class LightmapRenderer
         rect.h = bottom - top
         return rect
     }
-    // A blue's outline light (the obstacle spill sprite, wider) at alpha
+    // A blue's outline light (the obstacle spill sprite, wider) at alpha;
+    // past 1 (a hit flash) whole passes are added
     fillAreaLight(lightCtx, element, alpha)
     {
         const box = getElementCullBox(element)
@@ -1502,9 +1506,14 @@ class LightmapRenderer
         const spread = STYLE.momentumLight.blueSpread * height / 1080 / scale[version]
         const sprite = this.getShapeLightSprite(element, box, STYLE.momentum.blueStroke, spread, toLight)
         lightCtx.setTransform(toLight, 0, 0, toLight, 0, 0)
-        lightCtx.globalAlpha = alpha
-        lightCtx.drawImage(sprite, box.left + screen.x - spread, box.top + screen.y - spread,
-            sprite.width / toLight, sprite.height / toLight)
+        for (let left = alpha; left > 0; left -= 1)
+        {
+            if (left < alpha)
+                lightCtx.globalCompositeOperation = 'lighter'
+            lightCtx.globalAlpha = Math.min(1, left)
+            lightCtx.drawImage(sprite, box.left + screen.x - spread, box.top + screen.y - spread,
+                sprite.width / toLight, sprite.height / toLight)
+        }
     }
     // A piece stands in the open between the light and the cave: its shadow
     // also darkens the ambient and the obstacle spill by up to shadowDepth,
@@ -3231,6 +3240,8 @@ class ScreenEffects
         this.ctx = context
         this.shockwaves = []
         this.landings = []
+        // Blue hits {element, start} of the momentumFx flash and ring
+        this.blueHits = []
         this.shakeUntil = 0
         this.shakeStart = 0
         this.shakeOffset = {x: 0, y: 0}
@@ -3341,12 +3352,94 @@ class ScreenEffects
         this.ctx.translate(this.shakeOffset.x, this.shakeOffset.y)
         this.isShaking = true
     }
+    // A blue piece was touched (MomentumBlue.onNinjaPass): its flash and
+    // ring start now. Only recorded; nothing of the game reads it.
+    triggerBlueHit(element)
+    {
+        const now = performance.now()
+        this.pruneBlueHits(now)
+        this.blueHits.push({element: element, start: now})
+    }
+    pruneBlueHits(now)
+    {
+        const duration = STYLE.momentumFx.blueHitMs
+        for (let i = this.blueHits.length - 1; i >= 0; --i)
+            if (now - this.blueHits[i].start >= duration)
+                this.blueHits.splice(i, 1)
+    }
+    // 0..1 of the blue hit effect at now, or -1 outside it
+    getBlueHitProgress(hit, now)
+    {
+        const t = (now - hit.start) / STYLE.momentumFx.blueHitMs
+        return t >= 0 && t < 1 ? t : -1
+    }
+    // The light gain of element's hit flash at now (1 without one)
+    getBlueFlash(element, now)
+    {
+        const hits = this.blueHits
+        for (let i = hits.length - 1; i >= 0; --i)
+            if (hits[i].element === element)
+            {
+                const t = this.getBlueHitProgress(hits[i], now)
+                return t < 0 ? 1 : 1 + (STYLE.momentumFx.flashGain - 1) * (1 - t) * (1 - t)
+            }
+        return 1
+    }
+    // The blue hits' rings (momentum lighting only), 'lighter' strokes: a
+    // wide faint halo and the core line of the ring and of its echo
+    drawBlueHits(now)
+    {
+        if (!this.blueHits.length || version != 'momentum' || !MOMENTUM_FX.enabled)
+            return
+        this.pruneBlueHits(now)
+        const config = STYLE.momentumFx
+        const context = this.ctx
+        context.save()
+        context.globalCompositeOperation = 'lighter'
+        context.strokeStyle = STYLE.momentum.blueStroke
+        for (const hit of this.blueHits)
+        {
+            const t = this.getBlueHitProgress(hit, now)
+            if (t < 0)
+                continue
+            const element = hit.element
+            const x = element.x + element.circle.x + screen.x
+            const y = element.y + element.circle.y + screen.y
+            const rx = this.getBlueRingRadius(element, t)
+            this.strokeBlueRing(x, y, rx, config.ringAlpha * (1 - t))
+            this.strokeBlueRing(x, y, rx * config.ringEcho, config.ringAlpha * config.ringEchoAlpha * (1 - t))
+        }
+        context.restore()
+    }
+    // The ring's x radius (world units) at progress t: ringFrom -> ringTo
+    // times the blue's circumscribed radius, eased out
+    getBlueRingRadius(element, t)
+    {
+        const config = STYLE.momentumFx
+        const eased = 1 - (1 - t) * (1 - t)
+        return element.circle.radius * (config.ringFrom + (config.ringTo - config.ringFrom) * eased)
+    }
+    strokeBlueRing(x, y, rx, alpha)
+    {
+        const config = STYLE.momentumFx
+        const toWorld = height / 1080 / scale[version]
+        const context = this.ctx
+        context.beginPath()
+        context.ellipse(x, y, rx, rx * config.ringAspect, 0, 0, Math.PI * 2)
+        context.lineWidth = config.ringHaloWidth * toWorld
+        context.globalAlpha = alpha * config.ringHaloAlpha
+        context.stroke()
+        context.lineWidth = config.ringWidth * toWorld
+        context.globalAlpha = alpha
+        context.stroke()
+    }
     draw()
     {
+        const now = performance.now()
+        this.drawBlueHits(now)
         if (!this.shouldApply())
             return
 
-        const now = performance.now()
         const config = STYLE.screenEffects
 
         this.drawLandings(now)
