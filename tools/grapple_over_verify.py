@@ -143,6 +143,7 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False):
         # target a player cannot aim at, so it and its release are not dispatched; the run then
         # fails check_trace (input count mismatch) and replays identically.
         blind = None
+        layout = {}
         for tick, next_tick in zip(boundaries, boundaries[1:]):
             for event in (e for e in manifest['inputs'] if e['tick'] == tick):
                 if blind and event['event'].endswith(('up', 'end')):
@@ -165,7 +166,13 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False):
                         if event['event'] == 'touchstart' else []))
             page.evaluate('n=>{GRAPPLE_OVER_TEST.step(n); TUTORIAL_HINT.advance(n*physicsStepMs)}', next_tick-tick)
             if filmstrip and (tick % 60 == 0 or tick == manifest['ticks']-1 or any(e['tick'] == tick for e in manifest['inputs'])):
-                page.evaluate('draw()')
+                if manifest['metadata'].get('layout_probe'):
+                    # HUD obstruction proof: the drawn UI text/button boxes (CSS px) of this frame and the
+                    # camera it was drawn with; display only, the trace is unchanged.
+                    layout[tick] = page.evaluate('''() => {LAYOUT_PROBE.boxes=[]; draw();
+                        const b=LAYOUT_PROBE.boxes; LAYOUT_PROBE.boxes=null; return {camera:{x:screen.x,y:screen.y},boxes:b}}''')
+                else:
+                    page.evaluate('draw()')
                 page.screenshot(path=str(evidence.path(prefix + f'/frame-{tick:04d}.png')))
             if clip:
                 page.evaluate('draw()')
@@ -194,6 +201,9 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False):
         trace = export_recording(page)[0]
         require(not errors, 'browser errors: ' + repr(errors))
         evidence.write(prefix + '/trace.json', trace)
+        if layout:
+            evidence.write(prefix + '/layout-probe.json', dict(frames={str(t): v for t, v in layout.items()},
+                note='frame-NNNN is drawn after the inputs of tick NNNN and one physics step'))
         evidence.write(prefix + '/browser.json', dict(browser=browser.version, viewport=viewport,
             revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
             source_hashes=hashes()))
@@ -430,6 +440,62 @@ def check_s03_v3_mechanics(encounter, trace, required=True):
     return observations
 
 
+S04_V3_ENCOUNTERS = {'S04-01':('S04-hoist','S04-reflector'), 'S04-02':('S04-lift','S04-deflector'),
+                     'S04-03':('S04-crest-hook','S04-baffle'), 'S04-04':('S04-exit-hook','S04-exit-ledge')}
+# Fall bouncers: reaching one after the hoist release means the S04 route was lost (the S04 catch
+# basin, the legacy v1 S05 decks converted to green, and every S01-S03 element).
+S04_V3_FALL_BOUNCERS = ('S04-catch-basin', 'S04-upper-step', 'S04-exit')
+
+
+def check_s04_v3_mechanics(encounter, trace, required=True):
+    """Layout-v3 Deflector Works (TASK-556/515/516): every attempt runs the S04 route from the real
+    S03 v3 exit settled pose up to the encounter's exit. The encounter's anchor is acquired and
+    released and its green surface is bounced after the release: S04-01 the flat reflector (vertical
+    speed mirrored, sideways speed kept), S04-02 the angled deflector (leftward flight turned into a
+    steeper climb) after an in-flight lift catch, S04-03 the vertical baffle (sideways speed reversed
+    to the left) followed by a stop on the left map edge, S04-04 the exit ledge. The S04 anchors up to
+    the encounter are acquired in route order, and after the hoist release the run never bounces on an
+    S01-S03 element or an S04 fall bouncer (no fall)."""
+    observations=check_s01_mechanics('S01-01', trace, required=False)
+    events=trace['events']
+    releases=[(e['tick'],e['before']['rope'][0]['id']) for e in events if e['type']=='release' and e['before']['rope']]
+    observations['releases']=[dict(tick=t,element=el) for t,el in releases]
+    anchor, bouncer = S04_V3_ENCOUNTERS[encounter]
+    grab=next((t for el,t in zip(observations['acquisitions'],observations['acquisition_ticks']) if el==anchor),None)
+    release=next((t for t,el in releases if el==anchor and grab is not None and t>=grab),None)
+    bounce=next((e for e in events if e['type']=='bounce' and release is not None and e['tick']>=release
+                 and e['contact']['elementId']==bouncer),None)
+    # Compact contacts carry no element id: the left map edge is the contact at x 0.
+    edge=next((e['tick'] for e in events if e['type']=='contact' and bounce is not None and e['tick']>bounce['tick']
+               and e['contact']['x']==0),None)
+    hoist=next((t for t,el in releases if el=='S04-hoist'),None)
+    fallen=[b for b in observations['bounces'] if hoist is not None and b['tick']>hoist
+            and (b['element'].startswith(('S01-','S02-','S03-')) or b['element'] in S04_V3_FALL_BOUNCERS)]
+    observations['fall_bounces_after_hoist_release']=fallen
+    speeds=lambda e: [{k:e[s]['simulation']['player'][k] for k in ('speedX','speedY')} for s in ('before','after')]
+    observations['encounter']=dict(anchor=anchor,acquisition_tick=grab,release_tick=release,bouncer=bouncer,
+        bounce_tick=bounce and bounce['tick'],bounce_speeds=bounce and speeds(bounce),map_edge_contact_tick=edge)
+    if required:
+        route=[a for a,_ in S04_V3_ENCOUNTERS.values()]
+        route=route[:route.index(anchor)+1]
+        ids=[a for a in observations['acquisitions'] if a.startswith('S04-')]
+        require(ids[:len(route)]==route,'S04 v3 acquisition sequence mismatch')
+        require(release is not None,'S04 v3 '+anchor+' release missing')
+        require(bounce is not None,'S04 v3 '+bouncer+' bounce missing')
+        b, a = observations['encounter']['bounce_speeds']
+        if encounter=='S04-01':
+            require(b['speedY']>0>a['speedY'] and abs(a['speedX']-b['speedX'])<1e-6,'S04 v3 flat reflector reflection missing')
+        if encounter=='S04-02':
+            require(anchor in observations['airborne_acquisitions'],'S04 v3 in-flight lift acquisition missing')
+            require(b['speedX']<0 and a['speedX']<0 and abs(a['speedX'])<abs(b['speedX']) and a['speedY']<b['speedY'],
+                    'S04 v3 deflector climb redirect missing')
+        if encounter=='S04-03':
+            require(b['speedX']>0>a['speedX'],'S04 v3 baffle reversal missing')
+            require(edge is not None,'S04 v3 left map-edge stop missing')
+        require(not fallen,'S04 v3 route fell onto a fall bouncer')
+    return observations
+
+
 def check_s02_mechanics(encounter, trace, required=True):
     """Layout-v2 Switchback: blue shuttle, blue lift + green bulkhead, green crest hook, blue trolley."""
     observations=check_s01_mechanics('S01-01', trace, required=False)
@@ -620,7 +686,7 @@ def audit_suite(manifest, browser, url, out):
     section = manifest.get('section', 'S01')
     require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
-    v3 = section in ('S01', 'S02', 'S03') and manifest.get('designVersion') == 3
+    v3 = section in ('S01', 'S02', 'S03', 'S04') and manifest.get('designVersion') == 3
     s01 = check_s01_v3_mechanics if v3 else check_s01_mechanics
     s02 = check_s02_v3_mechanics if v3 else check_s02_mechanics
     s03 = check_s03_v3_mechanics if v3 else check_s03_mechanics
@@ -642,6 +708,7 @@ def audit_suite(manifest, browser, url, out):
                 if section == 'S01' and 'mechanic_events' in a: s01(encounter, replayed)
                 if section == 'S02' and 'mechanic_events' in a: s02(encounter, replayed)
                 if section == 'S03' and 'mechanic_events' in a: s03(encounter, replayed)
+                if section == 'S04' and v3: check_s04_v3_mechanics(encounter, replayed)
                 if section == 'S05': check_s05_mechanics(encounter, replayed)
                 if section == 'S06': check_s06_mechanics(encounter, replayed)
                 if section == 'S07': check_s07_mechanics(encounter, replayed)
@@ -657,7 +724,8 @@ def audit_suite(manifest, browser, url, out):
             if section == 'S03' and 'mechanic_events' in a:
                 require(s03(encounter, replayed, success) == a['mechanic_events'], 'S03 mechanics mismatch')
             if section == 'S04':
-                require(check_s04_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S04 mechanics mismatch')
+                s04 = check_s04_v3_mechanics if v3 else check_s04_mechanics
+                require(s04(encounter, replayed, success) == a['mechanic_events'], 'S04 mechanics mismatch')
             if section == 'S05':
                 require(check_s05_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S05 mechanics mismatch')
             if section == 'S06':

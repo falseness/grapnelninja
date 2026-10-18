@@ -29,7 +29,8 @@ plate, a blue lift caught in flight and an angled green deflector; TASK-515
 built S04-03/04 in the open upper-left of the map: at the top of the climb a
 green crest hook and a green baffle send the player back to the left map edge,
 and a green exit hook swings it into the exit drag zone onto a green exit
-ledge. Other sections keep their own build status; both optional
+ledge. TASK-516 lowered both S04 hooks out from under the HUD text (they are
+pulled at about 33 degrees from the left map edge). Other sections keep their own build status; both optional
 shortcuts are planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and

@@ -403,10 +403,15 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         {id:'S04-deflector',x:900,y:-8550,role:'bounce',grapplable:true,points:[{x:0,y:0},{x:300,y:300},{x:0,y:300}]},
         bouncer('S04-catch-basin',0,-6000,300,40),
         // S04-03/04: crest hook up-right of the climb apex, the baffle wall east of it, the exit hook
-        // up-right of the second apex and the exit ledge east of the baffle top.
-        bouncer('S04-crest-hook',620,-11110,120,25),
-        bouncer('S04-baffle',1000,-11450,30,500),
-        bouncer('S04-exit-hook',600,-12070,120,25),
+        // up-right of the second apex and the exit ledge east of the baffle top. TASK-516: both hooks
+        // sit at most ~530 above the press pose and right of world x 800, so at the press (the camera
+        // keeps the climbing player at 0.4 of the view height on the left map edge) they are drawn
+        // below and right of the HUD text on both viewports (on touch the 12 px HUD font covers the
+        // top-left 170x79 px). The narrow crest hook sits between the release flight (under it) and
+        // the baffle rebound (over it); the baffle moved east so that gap is wide.
+        bouncer('S04-crest-hook',800,-10915,60,25),
+        bouncer('S04-baffle',1100,-11150,30,400),
+        bouncer('S04-exit-hook',800,-12015,60,25),
         bouncer('S04-exit-ledge',1350,-11650,390,25),
         // v1 Cable Galleries recovery step and entrance deck (v1 S05-01 start), converted to green;
         // no v3 S04 route uses them.
@@ -433,8 +438,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             // Caught in flight on the rebound off the reflector plate.
             {id:'S04-02-lift',from:{x:3194.9,y:-7569.5},to:{x:2352.5,y:-8000}},
             // From the climb apex on the left map edge; then from the second apex on it.
-            {id:'S04-03-crest',from:{x:10.8,y:-10404.9},to:{x:663.1,y:-11085}},
-            {id:'S04-04-exit',from:{x:10.8,y:-11356.4},to:{x:646.9,y:-12045}}],
+            {id:'S04-03-crest',from:{x:10.8,y:-10385.5},to:{x:800,y:-10893}},
+            {id:'S04-04-exit',from:{x:10.8,y:-11507.2},to:{x:800,y:-11992.9}}],
         // Declared miss points: a short hoist hold leaves the player in S03-exit-drag, where it
         // settles on the green S03 exit ledge; a missed lift catch carries the reflector rebound into
         // the left map edge and drops along it through S04-fall-drag onto the green catch basin; a
@@ -446,7 +451,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             {id:'S04-01-late',encounter:'S04-01',x:5830,y:-7880},
             {id:'S04-03-missed',encounter:'S04-03',x:30,y:-10350},
             {id:'S04-04-missed',encounter:'S04-04',x:30,y:-11300},
-            {id:'S04-04-overshoot',encounter:'S04-04',x:1400,y:-11950}]});
+            {id:'S04-04-overshoot',encounter:'S04-04',x:1400,y:-11900}]});
     // Encounter nodes sit inside the band (y >= -8100) and below the S05-04 node (S05-fall rejoins S04-01).
     Object.assign(encounters[12], {status:'built',x:6127,y:-7700,
         elements:['S03-exit-ledge','S04-hoist','S04-reflector'],
@@ -461,12 +466,12 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // S04-03/04 nodes sit on the band top; the climb runs above it (the S06-S08 bands overlap).
     Object.assign(encounters[14], {status:'built',x:11,y:-8100,
         elements:['S04-deflector','S04-crest-hook','S04-baffle'],
-        start:{from:'S04-02',x:10.8,y:-10404.9},target:{x:680,y:-11100},
-        exit:{left:0,right:30,top:-11400,bottom:-11320},
+        start:{from:'S04-02',x:10.8,y:-10385.5},target:{x:820,y:-10902},
+        exit:{left:0,right:30,top:-11600,bottom:-11380},
         action:'At the top of the climb on the left map edge, pull the green crest hook up-right, release into the green baffle and rebound back left into the map edge, rising along it'});
     Object.assign(encounters[15], {status:'built',x:11,y:-8100,
         elements:['S04-exit-hook','S04-exit-ledge','S04-exit-drag'],
-        start:{from:'S04-03',x:10.8,y:-11356.4},target:{x:660,y:-12057},
+        start:{from:'S04-03',x:10.8,y:-11507.2},target:{x:820,y:-12002},
         exit:{left:1350,right:1740,top:-11680,bottom:-11650},
         action:'At the apex on the left map edge, pull the green exit hook up-right, release over the baffle into the exit drag zone and settle on the green exit ledge'});
     Object.assign(connectors[12], {status:'built',intent:'Physical ascent: the S04-01 hoist pull starts on the v3 Viaduct exit ledge'});
