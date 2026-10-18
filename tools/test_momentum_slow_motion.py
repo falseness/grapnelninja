@@ -83,8 +83,8 @@ RUN = '''({seed, baseline, anchor, groundY, vx0, release, baselineCycles}) => {
     // events.js throwGrapnel
     grapnel.pos = [[ninja.x, ninja.y, new Empty()]]
     const dir = grapnel.calcSpeed({x: ax, y: ay})
-    grapnel.speedX = dir.cos * grapnelSpeed
-    grapnel.speedY = dir.sin * grapnelSpeed
+    grapnel.speedX = dir.cos * grapnelSpeed * momentumMotionScale(1)
+    grapnel.speedY = dir.sin * grapnelSpeed * momentumMotionScale(1)
     grapnel.throwed = true
     grapnel.setGrappled(false)
     let cycle = 0
@@ -172,7 +172,6 @@ class MomentumSlowMotionTests(unittest.TestCase):
         self.assertEqual(b['xs'], b2['xs'])
         self.assertEqual(b['ys'], b2['ys'])
 
-    @unittest.expectedFailure  # fails until TASK-073 applies GAMEPLAY.momentumTimeScale
     def test_shape(self):
         b, n = self.baseline, self.normal
         path = sum(self.speeds(b))
@@ -181,7 +180,6 @@ class MomentumSlowMotionTests(unittest.TestCase):
         print(f'max shape error {error / path:.4f} of the baseline path {path:.1f}')
         self.assertLessEqual(error / path, SHAPE_TOLERANCE)
 
-    @unittest.expectedFailure  # fails until TASK-073 applies GAMEPLAY.momentumTimeScale
     def test_half_speed(self):
         ratio = statistics.median(self.speeds(self.normal)) / statistics.median(self.speeds(self.baseline))
         print(f'median speed ratio normal/baseline {ratio:.4f}')

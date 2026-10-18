@@ -18,7 +18,7 @@ function calcPhysics()
     if (continueOffer.visible)
         return
 
-    ninja.speedY += GRAVITY
+    ninja.speedY += GRAVITY * momentumMotionScale(2)
 
     if (screen.shouldStartMove())
         screen.move()
@@ -41,8 +41,8 @@ function calcPhysics()
         if (grapnel.isGrappled())
         {
             let ratio = grapnel.calcSpeed({x: grapnel.pos[grapnel.pos.length - 1][0], y: grapnel.pos[grapnel.pos.length - 1][1]})
-            ninja.speedX += grappleSpeed * ratio.cos
-            ninja.speedY += grappleSpeed * ratio.sin
+            ninja.speedX += grappleSpeed * momentumMotionScale(2) * ratio.cos
+            ninja.speedY += grappleSpeed * momentumMotionScale(2) * ratio.sin
             ninja.limitMomentumSpeed()
         }
         grapnel.collision()

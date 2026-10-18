@@ -31,8 +31,9 @@ function createEvents()
     {
         grapnel.pos = [[ninja.x, ninja.y, new Empty()]]
         let ratio = grapnel.calcSpeed(getRealCoords(event))
-        grapnel.speedY = ratio.sin * grapnelSpeed// + ninja.speedY
-        grapnel.speedX = ratio.cos * grapnelSpeed// + ninja.speedX    
+        const speed = grapnelSpeed * momentumMotionScale(1)
+        grapnel.speedY = ratio.sin * speed// + ninja.speedY
+        grapnel.speedX = ratio.cos * speed// + ninja.speedX    
         
         grapnel.throwed = true
         PLATFORM.startup('first_grapple', version)

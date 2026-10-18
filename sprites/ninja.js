@@ -163,7 +163,7 @@ class Ninja
     }
     move()
     {
-        const maxSpeed = screenHeightPercent(GAMEPLAY.ninjaMaxSpeedHeightPercent)
+        const maxSpeed = screenHeightPercent(GAMEPLAY.ninjaMaxSpeedHeightPercent) * momentumMotionScale(1)
         if (this.speedY > maxSpeed)
             this.speedY = maxSpeed
         if (this.speedY < -maxSpeed)
@@ -201,9 +201,10 @@ class Ninja
         if (version != 'momentum')
             return
         const speed = Math.hypot(this.speedX, this.speedY)
-        if (speed > GAMEPLAY.momentumMaxSpeed)
+        const cap = GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1)
+        if (speed > cap)
         {
-            const ratio = GAMEPLAY.momentumMaxSpeed / speed
+            const ratio = cap / speed
             this.speedX *= ratio
             this.speedY *= ratio
         }

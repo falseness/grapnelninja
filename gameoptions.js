@@ -82,8 +82,19 @@ const GAMEPLAY = Object.freeze({
     // height 1080; tools/measure_bad_cruise.py, autopilot seed 2, 1200 frames,
     // p95 0.007471 * height), applied in momentum only (Ninja.limitMomentumSpeed).
     // Halved twice after playtests (1.5x -> 0.75x -> 0.375x; the ninja was
-    // still too fast).
+    // still too fast). The slow motion of momentumTimeScale scales it at the
+    // use site: effective cap momentumMaxSpeed * momentumMotionScale(1)
+    // = 0.1875x (1.39 at height 1080).
     momentumMaxSpeed: 0.375 * 0.006867 * height,
+    // Momentum slow motion: the whole motion runs at this fraction of its
+    // speed with the same trajectory shapes. Velocities (world units per
+    // physics cycle) x scale, accelerations (per cycle^2) x scale^2,
+    // dimensionless values x 1; ms timers stay in real time and world-unit
+    // lengths are unchanged. Applied at the use sites through
+    // momentumMotionScale(), never to the per-cycle consts (classic and bad
+    // keep them). Halved after the TASK-029 and TASK-047 cap halvings per
+    // user request (the whole motion, not only the cap).
+    momentumTimeScale: 0.5,
     // Momentum course segment lengths in world units (the momentum camera
     // shows height / scale.momentum = 2.2 heights of world vertically).
     // After a 'right' segment another 'right' follows with this chance,
@@ -182,6 +193,16 @@ const GAMEPLAY = Object.freeze({
         avoidRecent: 3
     })
 })
+// Momentum slow motion factor for a quantity of the given power of the time
+// scale (1 for velocities, 2 for accelerations); 1 in the other modes.
+// window.MOMENTUM_TIME_SCALE_OVERRIDE exists only for the full-speed baseline
+// of tools/test_momentum_slow_motion.py.
+function momentumMotionScale(power)
+{
+    if (version != 'momentum')
+        return 1
+    return (window.MOMENTUM_TIME_SCALE_OVERRIDE ?? GAMEPLAY.momentumTimeScale) ** power
+}
 const defaultEqualityTolerance = 1
 
 // Cleared groups, not elapsed time or saved records, set encounter pacing.

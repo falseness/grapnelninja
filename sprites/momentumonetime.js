@@ -27,7 +27,7 @@ class MomentumOneTime extends Trampoline
         {
             const motion = object.motion
             this.motion = {yMin: motion.yMin, yMax: motion.yMax, gravity: !!motion.gravity}
-            this.speedY = motion.speedY || 0
+            this.speedY = (motion.speedY || 0) * momentumMotionScale(1)
         }
     }
     // Extents and circle over every point (the Trampoline constructor
@@ -123,15 +123,16 @@ class MomentumOneTime extends Trampoline
     moveY()
     {
         const motion = this.motion
+        const gravity = GRAVITY * momentumMotionScale(2)
         if (motion.gravity)
-            this.speedY += GRAVITY
+            this.speedY += gravity
         const top = this.y + this.topOffset + this.speedY
         const bottom = this.y + this.bottomOffset + this.speedY
         if ((this.speedY < 0 && top < motion.yMin) || (this.speedY > 0 && bottom > motion.yMax))
         {
             this.speedY *= -1
             if (motion.gravity)
-                this.speedY += this.speedY > 0 ? GRAVITY : -GRAVITY
+                this.speedY += this.speedY > 0 ? gravity : -gravity
         }
         this.y += this.speedY
         this.dy = this.speedY

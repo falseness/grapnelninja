@@ -22,8 +22,9 @@ function bounceSpeed(who, line)
 
         who.speedX = xn
         who.speedY = yn
-        who.speedX += GRAVITY * Math.cos(lineAngle) * Math.sin(lineAngle)
-        who.speedY -= GRAVITY * Math.pow(Math.cos(lineAngle), 2)
+        const gravity = GRAVITY * momentumMotionScale(2)
+        who.speedX += gravity * Math.cos(lineAngle) * Math.sin(lineAngle)
+        who.speedY -= gravity * Math.pow(Math.cos(lineAngle), 2)
     }
     else
         console.log('collision with trampoline error')

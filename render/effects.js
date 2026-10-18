@@ -1397,7 +1397,7 @@ class LightmapRenderer
         this.momentumLightsFrame = drawFrameId
         return lights
     }
-    // Eases speedLight.s toward |ninja speed| / GAMEPLAY.momentumMaxSpeed over
+    // Eases speedLight.s toward |ninja speed| / the effective momentum cap over
     // momentumLight.speedSmoothMs of render clock (a run's first frame and
     // one after speedResetMs take it as is) and sets the frame's ninja light
     // radius and alpha, haze scale and trail gain (fixed with speedLight off)
@@ -1417,7 +1417,7 @@ class LightmapRenderer
         if (state.frame === drawFrameId)
             return state
         const now = performance.now()
-        const target = Math.min(1, Math.hypot(ninja.speedX, ninja.speedY) / GAMEPLAY.momentumMaxSpeed) || 0
+        const target = Math.min(1, Math.hypot(ninja.speedX, ninja.speedY) / (GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1))) || 0
         const elapsed = now - state.time
         if (state.time < 0 || state.ninja !== ninja || !(elapsed >= 0) || elapsed > config.speedResetMs)
             state.s = target
