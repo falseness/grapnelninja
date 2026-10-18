@@ -249,9 +249,12 @@ class FxHarness:
     """Captures scenes of one revision ('worktree' or a git rev).
 
     browser: share another harness's browser (one Playwright per process).
+    style_patch: [(old, new), ...] text replacements served in style.js (a
+    STYLE override; each old must occur exactly once).
     """
-    def __init__(self, rev='worktree', browser=None):
+    def __init__(self, rev='worktree', browser=None, style_patch=None):
         self.stack = ExitStack()
+        self.style_patch = style_patch
         self.root, self.rev = export_rev(rev, self.stack.callback)
         if browser is None:
             self.url, self.browser = start_browser_test(self.root, self.stack.callback)
@@ -281,6 +284,14 @@ class FxHarness:
         context = self.browser.new_context(viewport={'width': w, 'height': h}, is_mobile=touch, has_touch=touch)
         context.add_init_script(SEED_SCRIPT % SEED)
         context.add_init_script(render_snapshot.CLOCK_SCRIPT)
+        if self.style_patch:
+            style = (self.root / 'style.js').read_text()
+            for old, new in self.style_patch:
+                if style.count(old) != 1:
+                    raise ValueError(f'style_patch: {old!r} occurs {style.count(old)} times')
+                style = style.replace(old, new)
+            context.route('**/style.js', lambda route: route.fulfill(
+                body=style, content_type='application/javascript'))
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))

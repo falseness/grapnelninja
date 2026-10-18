@@ -298,7 +298,14 @@ const STYLE = Object.freeze({
         // its pixels); light px the band reaches past the ribbon's edge
         trailBandMargin: 2,
         // Light px of the soft edge round it (shadowBlur)
-        trailBandFeather: 6
+        trailBandFeather: 6,
+        // The player trail is a faint light: this many points spread evenly
+        // along it, each a light of the ninja's colour at trailIntensity of
+        // the ninja's (times the trail's own alpha there), radius trailRadius
+        // (screen px at 1080), shadowed like the ninja light (no deep shadows)
+        trailSamples: 6,
+        trailIntensity: 0.35,
+        trailRadius: 260
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a

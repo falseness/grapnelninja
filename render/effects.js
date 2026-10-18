@@ -638,6 +638,12 @@ class LightmapRenderer
         this.momentumEmitters = []
         // Those plus the blue pieces' area lights of the frame
         this.emitterCandidates = []
+        // The player trail's light samples ({x, y, alpha}, world units) and
+        // their lights, reused per frame
+        this.trailSamples = []
+        this.trailLights = []
+        // Light px rectangle a radial light covers ({x, y, w, h}, reused)
+        this.lightRect = {x: 0, y: 0, w: 0, h: 0}
         this.momentumAmbient = null
         this.momentumGradient = null
         this.trailBand = null
@@ -1031,7 +1037,36 @@ class LightmapRenderer
                     gradient: e.element ? null : this.getLightGradient(e.color), alpha: e.alpha,
                     contact: 0, element: e.element || null})
         }
+        this.collectTrailLights(lights)
         return lights
+    }
+    // The player trail's lights (momentumLight.trailSamples), outside the
+    // emitter cap: the ninja's light at trailIntensity of its alpha, times
+    // the trail's own alpha at each sample, cast no deep shadows
+    collectTrailLights(lights)
+    {
+        const config = STYLE.momentumLight
+        const samples = this.trailSamples
+        const count = visualEffects.playerTrail.getLightSamples(ninja.track, config.trailSamples, samples)
+        const pool = this.trailLights
+        for (let i = 0; i < count; ++i)
+        {
+            const x = samples[i].x + screen.x
+            const y = samples[i].y + screen.y
+            const alpha = config.lightAlpha * config.trailIntensity * samples[i].alpha
+            if (alpha <= 0 || !this.isLightOnScreen(x, y, config.trailRadius))
+                continue
+            if (pool.length <= i)
+                pool.push({x: 0, y: 0, radius: 0, gradient: null, alpha: 0, contact: 0, element: null, trail: true})
+            const light = pool[i]
+            light.x = x
+            light.y = y
+            light.radius = config.trailRadius
+            light.gradient = this.getMomentumGradient()
+            light.alpha = alpha
+            light.contact = this.getNinjaContact()
+            lights.push(light)
+        }
     }
     // momentumEmitters plus an area light per visible blue piece: at its
     // centre, reaching blueSpread past its outline, at blueAlpha times its
@@ -1125,22 +1160,55 @@ class LightmapRenderer
     // One light into the layer canvas, its shadows cut out, added to target.
     // A blue's area light casts its shadows from its centre (not by itself)
     // and only stops at the pieces and walls: no deep shadows.
+    // A radial light is drawn, shadowed and added only inside its square
+    // (getLightRect): nothing of it lies outside.
     addShadowedLight(target, light)
     {
         const layer = this.lightLayerCtx
+        const rect = light.element ? null : this.getLightRect(light)
+        if (rect && (rect.w <= 0 || rect.h <= 0))
+            return
         layer.save()
         layer.setTransform(1, 0, 0, 1, 0, 0)
         layer.globalCompositeOperation = 'source-over'
-        layer.clearRect(0, 0, this.lightLayerCanvas.width, this.lightLayerCanvas.height)
+        if (rect)
+        {
+            layer.clearRect(rect.x, rect.y, rect.w, rect.h)
+            layer.beginPath()
+            layer.rect(rect.x, rect.y, rect.w, rect.h)
+            layer.clip()
+        }
+        else
+            layer.clearRect(0, 0, this.lightLayerCanvas.width, this.lightLayerCanvas.height)
         if (light.element)
             this.fillAreaLight(layer, light.element, light.alpha)
         else
             this.fillRadialLight(layer, light.x, light.y, light.radius, light.gradient, light.alpha)
         this.cutShadows(layer, light.x, light.y, light.radius, light.contact, light.element)
         layer.restore()
-        target.drawImage(this.lightLayerCanvas, 0, 0)
-        if (!light.element)
+        if (rect)
+            target.drawImage(this.lightLayerCanvas, rect.x, rect.y, rect.w, rect.h, rect.x, rect.y, rect.w, rect.h)
+        else
+            target.drawImage(this.lightLayerCanvas, 0, 0)
+        if (!light.element && !light.trail)
             this.addDeepShadows(light)
+    }
+    // The whole light px square round a radial light's fill (fillRadialLight),
+    // within the light canvas
+    getLightRect(light)
+    {
+        const toLight = this.scale * scale[version]
+        const lightRadius = light.radius * height / 1080 * this.scale
+        const rect = this.lightRect
+        const left = Math.max(0, Math.floor(light.x * toLight - lightRadius) - 1)
+        const top = Math.max(0, Math.floor(light.y * toLight - lightRadius) - 1)
+        const right = Math.min(this.lightLayerCanvas.width, Math.ceil(light.x * toLight + lightRadius) + 1)
+        const bottom = Math.min(this.lightLayerCanvas.height, Math.ceil(light.y * toLight + lightRadius) + 1)
+        rect.x = left
+        rect.y = top
+        rect.w = right - left
+        rect.h = bottom - top
+        return rect
     }
     // A blue's outline light (the obstacle spill sprite, wider) at alpha
     fillAreaLight(lightCtx, element, alpha)
@@ -2074,6 +2142,52 @@ class PlayerTrailRenderer
         const widthRatio = STYLE.player.outerGlow ? Math.max(1, config.haloWidthRatio) : 1
         const outline = this.getRibbonOutline(positions, visibleStart, this.getRibbonWidth(track) * widthRatio)
         return outline.length ? outline : null
+    }
+    // Fills out with count points ({x, y, alpha}, world units, objects
+    // reused) spread evenly by length along the visible ribbon, tail first;
+    // alpha is the ribbon's fade there (0 at its tail, 1 at the head).
+    // Returns how many were filled (0 with no ribbon).
+    getLightSamples(track, count, out)
+    {
+        if (!this.shouldDraw() || !track || track.pos.length < 2 || count <= 0)
+            return 0
+
+        const config = STYLE.trails.player
+        const positions = this.getRibbonPoints(track.pos, track.lineWidth * config.minPointDistanceRatio)
+        const visibleStart = Math.max(1, Math.floor(positions.length * config.minSegmentRatio))
+        if (positions.length - visibleStart < 2)
+            return 0
+
+        // Same span as getRibbonOutline
+        const start = Math.max(0, visibleStart - 1)
+        const end = positions.length - 1
+        let total = 0
+        for (let i = start; i < end; ++i)
+            total += Math.hypot(positions[i + 1].x - positions[i].x, positions[i + 1].y - positions[i].y)
+        if (total <= 0)
+            return 0
+
+        let i = start
+        let walked = 0
+        for (let k = 0; k < count; ++k)
+        {
+            const target = total * (k + 0.5) / count
+            let step = Math.hypot(positions[i + 1].x - positions[i].x, positions[i + 1].y - positions[i].y)
+            while (walked + step < target && i < end - 1)
+            {
+                walked += step
+                ++i
+                step = Math.hypot(positions[i + 1].x - positions[i].x, positions[i + 1].y - positions[i].y)
+            }
+            const t = step > 0 ? Math.min(1, (target - walked) / step) : 0
+            if (out.length <= k)
+                out.push({x: 0, y: 0, alpha: 0})
+            const sample = out[k]
+            sample.x = positions[i].x + (positions[i + 1].x - positions[i].x) * t
+            sample.y = positions[i].y + (positions[i + 1].y - positions[i].y) * t
+            sample.alpha = this.clampAlpha((i - start + t) / Math.max(1, end - start))
+        }
+        return count
     }
     getRibbonWidth(track)
     {
