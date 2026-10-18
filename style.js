@@ -402,7 +402,9 @@ const STYLE = Object.freeze({
         // outline (rimWidth screen px at 1080) is lit by the frame's lights
         // reaching rimReach times as far, rimGain times as bright, unshadowed
         foreground: Object.freeze({
-            show: true,
+            // Switched off after the 2026-10-18 playtest; set true to bring
+            // the silhouettes back
+            show: false,
             parallax: 1.3,
             bandWidth: 0.14,
             bandHeight: 0.3,

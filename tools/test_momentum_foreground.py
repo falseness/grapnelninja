@@ -30,7 +30,14 @@ foreground" = the same frame with the FOREGROUND.enabled test hook off):
   harness viewports and the classic and bad test_visual_gallery frames with
   the switch on equal the parent commit (decoded maxDelta 0);
 - shots/: mid-shaft at 1280x720, 844x390, 390x844, at 1280x720 after a 200 px
-  camera move, compare-mid-shaft.png (vs concept 7-foreground.png).
+  camera move, compare-mid-shaft.png (vs concept 7-foreground.png);
+- default-off.json: STYLE.momentumFx.foreground.show is false by default
+  (switched off after the 2026-10-18 playtest, TASK-087): DEFAULT_FRAMES steps
+  of a momentum run at 1280x720 and 390x844 build no strip and draw no frame,
+  and the default mid-shaft frame equals the show=true frame with
+  FOREGROUND.enabled off (decoded maxDelta 0).
+Tests 0-3 and 5 draw the silhouettes through FOREGROUND_ON, a style patch
+setting show back to true (STYLE is frozen).
 MOMENTUM_FOREGROUND_EVIDENCE_DIR (default /tmp/momentum-foreground) receives
 the json files (compact) and shots/. MOMENTUM_FOREGROUND_PARENT is the parent
 revision (default: the parent of the commit that added this file, or HEAD
@@ -69,6 +76,18 @@ FRAMES = 300
 CONCEPT = fx.CONCEPT_DIR / '7-foreground.png'
 NO_FOREGROUND = '() => { FOREGROUND.enabled = false }'
 NO_RIM = '() => { FOREGROUND.rimEnabled = false }'
+DEFAULT_FRAMES = 600
+FOREGROUND_ON = [('// the silhouettes back\n            show: false,', '// the silhouettes back\n            show: true,')]
+_ON_HARNESS = []
+
+# DEFAULT_FRAMES steps of the booted momentum run; strip builds, drawn frames
+DEFAULT_RUN = r'''(frames) => {
+    for (let i = 0; i < frames; ++i)
+        __snap.step()
+    return {show: STYLE.momentumFx.foreground.show, shouldDraw: FOREGROUND.shouldDraw(), frames: frames,
+            buildCount: FOREGROUND.builds.bottom + FOREGROUND.builds.top, drawnFrames: FOREGROUND.frames,
+            fx: MOMENTUM_FX.enabled, version: version}
+}'''
 
 # Camera moved by dx canvas px; frames with and without the foreground
 CAMERA_PAIR = r'''([dx, rim]) => {
@@ -127,6 +146,13 @@ CACHE = r'''(frames) => {
             gradientsFrame1: gradientsFrame1, gradientsAfterFrame1: gradients - gradientsFrame1,
             canvasesFrame1: canvasesFrame1, canvasesAfterFrame1: canvases - canvasesFrame1}
 }'''
+
+
+def on_harness():
+    """Worktree harness with the silhouettes switched on (FOREGROUND_ON)."""
+    if not _ON_HARNESS:
+        _ON_HARNESS.append(fx.FxHarness('worktree', fx.harness().browser, style_patch=FOREGROUND_ON))
+    return _ON_HARNESS[0]
 
 
 def compact(data):
@@ -214,13 +240,15 @@ class MomentumForegroundTests(unittest.TestCase):
     def tearDownClass(cls):
         if cls.result:
             (EVIDENCE_DIR / 'foreground.json').write_text(compact(cls.result))
+        while _ON_HARNESS:
+            _ON_HARNESS.pop().close()
         fx.close()
 
     def test_0_silhouettes_in_edge_bands(self):
         rows = []
         for vp in VIEWPORTS:
-            on = fx.capture(SCENE, vp)
-            off = fx.capture(SCENE, vp, extra_js=NO_FOREGROUND)
+            on = on_harness().capture(SCENE, vp)
+            off = on_harness().capture(SCENE, vp, extra_js=NO_FOREGROUND)
             mask = diff(on, off) > 0
             bands = band_mask(mask.shape)
             hud = fx.hud_mask(vp, mask.shape)
@@ -251,7 +279,7 @@ class MomentumForegroundTests(unittest.TestCase):
 
     def test_1_parallax(self):
         vp = VIEWPORTS[0]
-        context, page = fx.harness().open(vp)
+        context, page = on_harness().open(vp)
         try:
             page.evaluate(fx.BUILD, [fx.SCENE_SPECS[SCENE], True])
             masks, layouts, outside = [], [], []
@@ -292,12 +320,12 @@ class MomentumForegroundTests(unittest.TestCase):
 
     def test_2_rim_near_ninja_light(self):
         vp = VIEWPORTS[0]
-        rim = fx.capture(SCENE, vp)
-        flat = fx.capture(SCENE, vp, extra_js=NO_RIM)
+        rim = on_harness().capture(SCENE, vp)
+        flat = on_harness().capture(SCENE, vp, extra_js=NO_RIM)
         lift = (np.asarray(rim, dtype=np.int16) - np.asarray(flat, dtype=np.int16)).max(axis=2)
         lit = lift > 0
         bands = band_mask(lit.shape)
-        context, page = fx.harness().open(vp)
+        context, page = on_harness().open(vp)
         try:
             page.evaluate(fx.BUILD, [fx.SCENE_SPECS[SCENE], True])
             page.evaluate(fx.DRAW)
@@ -324,7 +352,7 @@ class MomentumForegroundTests(unittest.TestCase):
     def test_3_cache(self):
         rows = []
         for vp in (VIEWPORTS[0], VIEWPORTS[2]):
-            context, page = fx.harness().open(vp)
+            context, page = on_harness().open(vp)
             try:
                 page.evaluate(fx.BUILD, [fx.SCENE_SPECS[SCENE], True])
                 row = page.evaluate(CACHE, FRAMES)
@@ -380,13 +408,13 @@ class MomentumForegroundTests(unittest.TestCase):
     def test_5_shots(self):
         shots = EVIDENCE_DIR / 'shots'
         for vp in VIEWPORTS:
-            frame = fx.capture(SCENE, vp)
+            frame = on_harness().capture(SCENE, vp)
             name = f'{vp[0]}x{vp[1]}-mid-shaft.png'
             fx.save_png(frame, shots / name)
             if vp == VIEWPORTS[0]:
                 fx.compare_png(frame, CONCEPT, shots / 'compare-mid-shaft.png',
                                labels=('new frame (mid-shaft, foreground silhouettes)', 'concept'))
-        moved = fx.capture(SCENE, VIEWPORTS[0], extra_js='''() => {
+        moved = on_harness().capture(SCENE, VIEWPORTS[0], extra_js='''() => {
             screen.x += 200 / (canvas.width / width * scale[version])
             screen.leftWall.update(screen)
             for (const f of floors)
@@ -395,6 +423,36 @@ class MomentumForegroundTests(unittest.TestCase):
         }''')
         fx.save_png(moved, shots / '1280x720-mid-shaft-camera-200px.png')
         self.assertEqual(len(list(shots.glob('*.png'))), 5)
+
+    def test_6_default_off(self):
+        rows = []
+        for vp in (VIEWPORTS[0], VIEWPORTS[2]):
+            context, page = fx.harness().open(vp)
+            try:
+                row = page.evaluate(DEFAULT_RUN, DEFAULT_FRAMES)
+                self.assertFalse(page.errors, page.errors)
+            finally:
+                context.close()
+            default = fx.capture(SCENE, vp)
+            off = on_harness().capture(SCENE, vp, extra_js=NO_FOREGROUND)
+            mask = diff(default, off) > 0
+            row.update(viewport=list(vp), sceneMaxDelta=fx.max_delta(default, off),
+                       sideWindowDiffPixels=int((mask & band_mask(mask.shape)).sum()))
+            row['pass'] = (row['show'] is False and row['buildCount'] == 0 and row['drawnFrames'] == 0
+                           and row['sceneMaxDelta'] == 0)
+            rows.append(row)
+            print('default', row)
+        (EVIDENCE_DIR / 'default-off.json').write_text(compact({'scene': SCENE, 'rows': rows,
+                                                                'allPass': all(r['pass'] for r in rows)}))
+        for row in rows:
+            with self.subTest(viewport=row['viewport']):
+                self.assertIs(row['show'], False)
+                self.assertTrue(row['fx'])
+                self.assertEqual(row['version'], 'momentum')
+                self.assertFalse(row['shouldDraw'])
+                self.assertEqual(row['buildCount'], 0)
+                self.assertEqual(row['drawnFrames'], 0)
+                self.assertEqual(row['sceneMaxDelta'], 0)
 
 
 if __name__ == '__main__':
