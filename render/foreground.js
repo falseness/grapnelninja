@@ -250,34 +250,8 @@ const FOREGROUND = (function()
         // 'lighter' passes past alpha 1), unshadowed; false without lights
         fillLight(lightmap)
         {
-            const lights = lightmap.getFrameLights()
-            if (!lights || !lights.length)
-                return false
             const config = STYLE.momentumFx.foreground
-            const c = this.lightCtx
-            c.setTransform(1, 0, 0, 1, 0, 0)
-            c.globalAlpha = 1
-            c.globalCompositeOperation = 'source-over'
-            c.clearRect(0, 0, this.light.width, this.light.height)
-            c.globalCompositeOperation = 'lighter'
-            for (const light of lights)
-            {
-                let radius = light.radius
-                let gradient = light.gradient
-                if (light.element)
-                {
-                    radius = STYLE.momentumLight.blueSpread
-                        + light.element.circle.radius * scale[version] * 1080 / height
-                    gradient = lightmap.getLightGradient(light.color)
-                }
-                for (let alpha = light.alpha * config.rimGain; alpha > 0; alpha -= 1)
-                    lightmap.fillRadialLight(c, light.x, light.y, radius * config.rimReach, gradient,
-                        Math.min(1, alpha))
-            }
-            c.setTransform(1, 0, 0, 1, 0, 0)
-            c.globalAlpha = 1
-            c.globalCompositeOperation = 'source-over'
-            return true
+            return lightmap.fillUnshadowedLights(this.lightCtx, config.rimReach, config.rimGain)
         },
         // Composes source (a strip, its shift wrapped) into the work canvas
         // through the band's windows and mask; lit: masked by the light first

@@ -20,9 +20,10 @@ the shafts, the view outside the walls is covered by the wall mass instead
 counted is the view outside every corridor interior and every wall mass
 cell. Asserts per viewport:
 - that area is 0 at every sample;
-- pixels (PIXELS, every PIXEL_EVERY frames and at the shot frames, HUD and
-  hint not drawn): every sampled canvas pixel outside the current corridor's
-  interior (past its border cap/glow band) is the wall mass colour
+- pixels (PIXELS, every PIXEL_EVERY frames and at the shot frames, HUD,
+  hint and momentum lighting (MOMENTUM_FX) off): every sampled canvas pixel
+  outside the current corridor's interior (past its border cap/glow band) is
+  the wall mass colour
   STYLE.momentum.wallFill, so no piece, other corridor or background shows;
 - >= 1 shaft (vertical segment) was driven through;
 - no live border body overlaps a corridor interior (wide shafts never
@@ -102,8 +103,13 @@ MEASURE = '''() => {
 PIXELS = '''(grid) => {
     const state = runRngState()
     const ui = visualEffects.ui, uiDraw = ui.draw, fpsDraw = ui.drawFpsCounter, hint = TUTORIAL_HINT.visible
+    // Momentum lighting (TASK-051..) paints over the wall mass by design
+    // (foreground silhouettes, wall veins, light): sampled with it off
+    const fx = typeof MOMENTUM_FX != 'undefined' ? MOMENTUM_FX.enabled : null
     ui.draw = () => {}; ui.drawFpsCounter = () => {}; TUTORIAL_HINT.visible = false
-    try { draw() } finally { ui.draw = uiDraw; ui.drawFpsCounter = fpsDraw; TUTORIAL_HINT.visible = hint }
+    if (fx !== null) MOMENTUM_FX.enabled = false
+    try { draw() } finally { ui.draw = uiDraw; ui.drawFpsCounter = fpsDraw; TUTORIAL_HINT.visible = hint
+        if (fx !== null) MOMENTUM_FX.enabled = fx }
     runRngState(state)
     const view = {l: -screen.x, t: -screen.y}
     view.r = view.l + width / scale[version]; view.b = view.t + height / scale[version]

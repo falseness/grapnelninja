@@ -413,6 +413,29 @@ const STYLE = Object.freeze({
             rimWidth: 3,
             rimReach: 1.6,
             rimGain: 2.2
+        }),
+        // Crystal veins in the momentum wall bodies (render/wallveins.js):
+        // each wall is cut into squares of its thickness along it, world
+        // anchored; a square's veins (veinCount angular lines of 3-7
+        // straight pieces at 30 degree multiples, branchChance of a short
+        // branch per joint) are seeded from its world position and painted
+        // once into a cached tile, lineWidth screen px at 1080 with a glow
+        // glowWidth wide at glowAlpha. Drawn between the wall's cap and its
+        // back, masked by the frame's lights (unshadowed) reaching reach
+        // times as far at gain, added 'lighter' under the neon face
+        veins: Object.freeze({
+            show: true,
+            veinCount: [4, 7],
+            pieces: [3, 7],
+            pieceLength: [0.08, 0.22],
+            branchChance: 0.35,
+            branchLength: [0.03, 0.08],
+            margin: 0.04,
+            lineWidth: 1.6,
+            glowWidth: 5,
+            glowAlpha: 0.25,
+            reach: 0.9,
+            gain: 3
         })
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,

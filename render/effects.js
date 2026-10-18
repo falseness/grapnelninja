@@ -1177,6 +1177,38 @@ class LightmapRenderer
             return null
         return this.momentumLights
     }
+    // This frame's lights, unshadowed, into c (a context of lightCanvas's
+    // size): reach times as far, gain times as bright (whole 'lighter'
+    // passes past alpha 1), a blue as a radial of blueSpread past its
+    // circumscribed circle. False (c untouched) without lights.
+    fillUnshadowedLights(c, reach, gain)
+    {
+        const lights = this.getFrameLights()
+        if (!lights || !lights.length)
+            return false
+        c.setTransform(1, 0, 0, 1, 0, 0)
+        c.globalAlpha = 1
+        c.globalCompositeOperation = 'source-over'
+        c.clearRect(0, 0, c.canvas.width, c.canvas.height)
+        c.globalCompositeOperation = 'lighter'
+        for (const light of lights)
+        {
+            let radius = light.radius
+            let gradient = light.gradient
+            if (light.element)
+            {
+                radius = STYLE.momentumLight.blueSpread
+                    + light.element.circle.radius * scale[version] * 1080 / height
+                gradient = this.getLightGradient(light.color)
+            }
+            for (let alpha = light.alpha * gain; alpha > 0; alpha -= 1)
+                this.fillRadialLight(c, light.x, light.y, radius * reach, gradient, Math.min(1, alpha))
+        }
+        c.setTransform(1, 0, 0, 1, 0, 0)
+        c.globalAlpha = 1
+        c.globalCompositeOperation = 'source-over'
+        return true
+    }
     // The light of light (a momentumLights entry) at x, y (world units) on
     // the ambient, 0..alpha: the radial falloff of STYLE.lights.falloff, a
     // blue's from its outline (its circumscribed circle) over blueSpread,

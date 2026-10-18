@@ -154,10 +154,10 @@ class MomentumBorder extends Ground
         return {x: (end ? line.x1 : line.x0) + depth * (n.x + m.x) + screen.x,
                 y: (end ? line.y1 : line.y0) + depth * (n.y + m.y) + screen.y}
     }
-    // The band of the strip from its face to depth, mitred at turns
-    getBandPath(depth)
+    // The band of the strip from from (0: its face) to depth, mitred at turns
+    getBandPath(depth, from = 0)
     {
-        const points = [this.mitrePoint(false, 0), this.mitrePoint(true, 0),
+        const points = [this.mitrePoint(false, from), this.mitrePoint(true, from),
                         this.mitrePoint(true, depth), this.mitrePoint(false, depth)]
         const shape = new Path2D()
         shape.moveTo(points[0].x, points[0].y)
@@ -212,10 +212,12 @@ class MomentumBorder extends Ground
     // The strip along the corridor face
     drawCap(fill)
     {
-        const cap = Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent))
-
         ctx.fillStyle = fill
-        ctx.fill(this.getBandPath(cap))
+        ctx.fill(this.getBandPath(this.getCapDepth()))
+    }
+    getCapDepth()
+    {
+        return Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent))
     }
     // Neon only along the corridor face
     drawNeonBoundary()
@@ -390,16 +392,21 @@ function drawMomentumOutsideMask()
     ctx.fillStyle = STYLE.momentum.wallFill
     ctx.fill(outside.path)
     ctx.clip(outside.path)
+    const borders = []
     for (const floor of floors)
     {
         if (!(floor instanceof MomentumBorderFloor))
             continue
         for (const element of floor.elements)
             if (outside.segments.includes(element.line.segment))
-            {
-                element.drawCap(STYLE.momentum.wallCapFill)
-                element.drawNeonBoundary()
-            }
+                borders.push(element)
+    }
+    // Crystal veins in their bodies (momentum lighting), under cap and neon
+    WALL_VEINS.draw(borders)
+    for (const element of borders)
+    {
+        element.drawCap(STYLE.momentum.wallCapFill)
+        element.drawNeonBoundary()
     }
     ctx.restore()
 }
