@@ -1,4 +1,4 @@
-"""Momentum camera x keeps a vertical shaft in view (TASK-023; TASK-070 exit preview exemption).
+"""Momentum camera x keeps a vertical shaft in view (TASK-023; TASK-070 exit preview exemption; TASK-085 exit arc exemption).
 
 Course scripts right(5368) -> up and right(5368) -> down. With the rAF loop
 stopped and the obstacle floor emptied, the ninja is driven (one
@@ -11,22 +11,24 @@ be under the right corridors' GAMEPLAY.momentumBorders.halfWidth).
 Per shaft cycle (screen.getSegment().dir is the shaft direction):
 - shaftLeftFace + screen.x >= 0 (left wall face on screen) and
   screen.leftWall.x <= shaftLeftFace (the camera LeftWall is not inside the
-  shaft), both only while d > GAMEPLAY.momentumCamera.preview.start (d: the
-  ninja's distance to the corner box entry of the right corridor after the
-  shaft, its half width before the join, in view heights). User decision of
+  shaft), both only before the exit arc: while the view centre's rail
+  position (screen.railS) is short of the start of the rail's quarter arc
+  from the shaft into the right corridor after it. User decision of
   TASK-068..071 ("I would prefer it to change direction earlier ... i have to
-  go there blindly"): from there on the exit preview
-  (MomentumScreen.getExitPreviewX, TASK-070) moves the camera x past the
-  shaft-centred cap toward the right corridor, up to preview.exitDepth of the
-  view past the shaft's right wall, so its left wall may leave the view
-  (the ninja kept preview.ninjaMargin off the left edge);
+  go there blindly"): on that arc the camera turns toward the right corridor,
+  so its left wall may leave the view. TASK-085: the rail camera (TASK-084)
+  centres the view on the rail, i.e. on the shaft's centre line; the
+  TASK-070 exemption window (d <= GAMEPLAY.momentumCamera.preview.start, the
+  exit preview getExitPreviewX) was removed with the preview, the exit arc
+  replaces it;
 - shaftRightFace + screen.x <= view width (right wall face on screen);
 - no lethal death.
 
-MOMENTUM_SHAFT_VIEW_EVIDENCE_DIR (default artifacts/TASK-023) receives
+MOMENTUM_SHAFT_VIEW_EVIDENCE_DIR (default /tmp/momentum-shaft-view: a bare
+run must not rewrite the TASK-023 evidence) receives
 shaft-view.json: {case: {minLeftFaceOnScreen, maxRightFaceOnScreen,
-leftWallInsideCycles, previewCycles}} (world units; previewCycles: shaft
-cycles with d <= preview.start, exempt from the left checks). Requires Playwright Chromium.
+leftWallInsideCycles, arcCycles}} (world units; arcCycles: shaft cycles
+on the exit arc, exempt from the left checks). Requires Playwright Chromium.
 """
 import json
 import os
@@ -49,7 +51,8 @@ SHAFT_DRIVE = '''([dir, xFrac]) => {
     floors.find(f => f instanceof MomentumObstacleFloor).elements = []
     const s0 = momentumCourse.segment(0), s1 = momentumCourse.segment(1)
     const hw = momentumSegmentHalfWidth(s1), hwNext = momentumSegmentHalfWidth(momentumCourse.segment(2))
-    const view = height / scale[version], start = GAMEPLAY.momentumCamera.preview.start
+    // Rail position where the exit arc (the shaft into segment 2) starts
+    const rail = screen.rail, exitArc = rail.pieces[rail.pieceAt(rail.joinAt(1))]
     const shaftX = s1.x0 + xFrac * hw
     const leftFace = s1.x0 - hw, rightFace = s1.x0 + hw
     const viewWidth = width / scale[version]
@@ -58,7 +61,7 @@ SHAFT_DRIVE = '''([dir, xFrac]) => {
     for (let x = Math.max(ninja.x, s0.x0); x < shaftX; x += v) path.push([x, s0.y0, v, 0])
     for (let y = s0.y0; (s1.y1 - sy * hw - y) * sy > 0; y += sy * v) path.push([shaftX, y, 0, sy * v])
     const n0 = ninja, deaths0 = lethalDeaths
-    let minLeft = Infinity, maxRight = -Infinity, inside = 0, cycles = 0, previewCycles = 0
+    let minLeft = Infinity, maxRight = -Infinity, inside = 0, cycles = 0, arcCycles = 0
     for (const [x, y, vx, vy] of path) {
         grapnel.setGrappled(false); grapnel.throwed = false; grapnel.pos = []
         ninja.invulnerableMs = 1e9
@@ -69,9 +72,8 @@ SHAFT_DRIVE = '''([dir, xFrac]) => {
         if (screen.getSegment().dir == s1.dir) {
             cycles++
             maxRight = Math.max(maxRight, rightFace + screen.x)
-            const d = (sy < 0 ? ninja.y - s1.y1 - hwNext : s1.y1 - hwNext - ninja.y) / view
-            if (d <= start) {
-                previewCycles++
+            if (screen.railS >= exitArc.s0) {
+                arcCycles++
                 continue
             }
             minLeft = Math.min(minLeft, leftFace + screen.x)
@@ -80,8 +82,8 @@ SHAFT_DRIVE = '''([dir, xFrac]) => {
         }
     }
     return {dir: s1.dir, cycles, minLeftFaceOnScreen: minLeft, maxRightFaceOnScreen: maxRight,
-            leftWallInsideCycles: inside, previewCycles, viewWidth, deaths: lethalDeaths - deaths0,
-            sameRun: ninja === n0}
+            leftWallInsideCycles: inside, arcCycles, exitArc: {type: exitArc.type, s0: exitArc.s0}, viewWidth,
+            deaths: lethalDeaths - deaths0, sameRun: ninja === n0}
 }'''
 
 
@@ -90,14 +92,14 @@ class ShaftViewTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('MOMENTUM_SHAFT_VIEW_EVIDENCE_DIR', ROOT / 'artifacts/TASK-023'))
+        cls.out = Path(os.environ.get('MOMENTUM_SHAFT_VIEW_EVIDENCE_DIR', '/tmp/momentum-shaft-view'))
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
 
     @classmethod
     def tearDownClass(cls):
         (cls.out / 'shaft-view.json').write_text(json.dumps(
-            {k: {f: r[f] for f in ('minLeftFaceOnScreen', 'maxRightFaceOnScreen', 'leftWallInsideCycles', 'previewCycles')}
+            {k: {f: r[f] for f in ('minLeftFaceOnScreen', 'maxRightFaceOnScreen', 'leftWallInsideCycles', 'arcCycles')}
              for k, r in cls.results.items()}, separators=(',', ':')))
 
     def check_shaft(self, dir):
@@ -118,8 +120,9 @@ class ShaftViewTests(unittest.TestCase):
                     print(key, json.dumps(r, separators=(',', ':')), file=sys.stderr)
                     self.assertEqual(r['dir'], dir)
                     self.assertGreater(r['cycles'], 300)
-                    self.assertGreater(r['cycles'] - r['previewCycles'], 0)
-                    self.assertGreater(r['previewCycles'], 0)
+                    self.assertEqual(r['exitArc']['type'], 'arc')
+                    self.assertGreater(r['cycles'] - r['arcCycles'], 0)
+                    self.assertGreater(r['arcCycles'], 0)
                     self.assertTrue(r['sameRun'])
                     self.assertEqual(r['deaths'], 0)
                     self.assertGreaterEqual(r['minLeftFaceOnScreen'], 0)

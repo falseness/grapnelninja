@@ -1,4 +1,4 @@
-"""Momentum camera on a corner shortcut (TASK-033 reproduction, TASK-034 fix, TASK-069 into shafts, TASK-070 out of shafts).
+"""Momentum camera on a corner shortcut (TASK-033 reproduction, TASK-034 fix, TASK-069 into shafts, TASK-070 out of shafts, TASK-085 rail camera).
 
 User report: "if we take a short cut on the corner, the camera moves too
 soon". Course scripts right -> up -> right and right -> down -> right
@@ -19,34 +19,36 @@ settle on it.
 User decision of TASK-068..071: "I would prefer it to change direction
 earlier. e.g. if there is a tunnel down, i see nothing down and i have to go
 there blindly." This overrides the TASK-033/034 "camera moves too soon on
-shortcuts" rule (no motion along the next axis in the corner box) on all four
-joins: the camera previews the next corridor before and in the corner box
-(GAMEPLAY.momentumCamera.preview; into a shaft MomentumScreen.getPreviewStop,
-TASK-069; out of one getExitPreviewX, TASK-070), so per cycle of the whole
-drive:
-- the camera motion along the next axis (velocityY into a shaft, velocityX
-  out of one) is never away from the next corridor (away 0);
-- in the box the camera never goes past its old-axis cap (pastCap 0): into a
-  shaft x past the shaft cap getShaftCapX; out of one y past the
-  corridor-centred stop (once the camera is on the right segment, past its
-  preview stop of a following shaft, MomentumScreen.getPreviewStop: the
-  'up' script's right corridor after the shaft is shorter than a view, so
-  the next up shaft's preview starts as the camera switches to it);
+shortcuts" rule (no motion along the next axis in the corner box). Since
+TASK-084 the camera rides the rail (MomentumScreen, the course centre line
+with every join a quarter circle): its view centre is lead() ahead of the
+trigger point along the rail, so it turns along the arc before and in the
+corner box. Per cycle of the whole drive (camera velocity camVx, camVy: the
+camera top-left world corner's displacement over the cycle, world units a
+second):
+- the camera motion along the next axis is never away from the next
+  corridor (away 0): along a quarter arc the tangent never points back;
+- the camera never goes backwards along the rail (back 0: screen.railS never
+  decreases). TASK-085: replaces the TASK-034/069/070 pastCap check (x past
+  the shaft cap getShaftCapX, y past the corridor-centred / preview stop
+  getPreviewStop), removed with them; the speed rules on this same shortcut
+  drive (camera speed <= the ninja's along the rail, no jump, direction
+  turning only on the arc, ninja in view with a 0.10 margin) are
+  test_momentum_camera_speed's *_diagonal_* cases;
 - on a shortcut the camera does move along the next axis (start).
 
-The camera switches to a turn's next segment (MomentumScreen.hasPassed) once
-the ninja has left the corner box into the next corridor, or, in the box,
-once the ninja's margin to the view edge ahead along the next axis drops
-below GAMEPLAY.momentumCamera.holdMargin. 'early' (a next-axis motion in the
-box before that margin drops) is still reported, no longer asserted.
+The camera's segment switches to the next one (screen.segmentIndex) once its
+trigger point passes the join; 'switched' reports that cycle (not asserted).
+TASK-085: the corner-box hold (holdMargin, 'released' / 'early') and its
+release are gone with the follow camera.
 
-MOMENTUM_CORNER_CAMERA_EVIDENCE_DIR (default artifacts/TASK-034) receives
-corner-trace.json ({join: {box, rows: [{cycle, nx, ny, camVx, camVy, seg, margin}]}}
+MOMENTUM_CORNER_CAMERA_EVIDENCE_DIR (default /tmp/momentum-corner-camera:
+a bare run must not rewrite the TASK-034 evidence) receives
+corner-trace.json ({join: {box, rows: [{cycle, nx, ny, camVx, camVy, railS, seg, margin}]}}
 for the cycles from 8 before the box to 24 after it: every 4th one, and every
-one within 16 of the first early cycle or 8 of the box exit or the camera
-start), corner-camera.json (per join summary: released, the first box cycle
-with the margin below holdMargin; start, the first cycle from the box entry
-with the camera moving along the next axis) and, at 1280x720 with the corner box and the ninja
+one within 8 of the box exit or the camera start), corner-camera.json (per
+join summary: start, the first cycle from the box entry with the camera
+moving along the next axis) and, at 1280x720 with the corner box and the ninja
 marked in a DOM overlay (not drawn by the game), shots/<join>-1-enter.png
 (the ninja enters the box), -2-mid.png (halfway to the camera start) and
 -3-turn.png (the camera starts moving along the next axis; if it already
@@ -129,44 +131,28 @@ SETUP = '''([index, route]) => {
             pathLength: path.length, boxStart, entry, exit}
 }'''
 
-# Runs the path up to stop ('early': the first cycle with the camera moving
-# early, 'exit': the first cycle with the ninja out of the box, 'start': the
-# first cycle from the box entry with the camera moving along the next axis,
-# a number: that cycle) or its end. Early: moving along the next axis in the
-# box before the ninja's margin to the view edge ahead along it (share of the
-# view) has dropped below GAMEPLAY.momentumCamera.holdMargin (released).
+# Runs the path up to stop ('exit': the first cycle with the ninja out of
+# the box, 'start': the first cycle from the box entry with the camera moving
+# along the next axis, a number: that cycle) or its end. Camera velocity:
+# displacement of the camera top-left world corner over the cycle, world
+# units a second
 RUN = '''([stop, epsView]) => {
     const st = window.cornerState, box = st.box, a = st.a, b = st.b
     const view = height / scale[version], viewW = width / scale[version]
     const eps = epsView * view
+    const perSecond = 60 * cyclesPerTick
     const inBox = () => b.dir == 'right' ? ninja.x <= box.right
         : b.dir == 'up' ? ninja.y >= box.top : ninja.y <= box.bottom
     // World units between the ninja centre and the next corridor
     const toNext = () => b.dir == 'right' ? box.right - ninja.x
         : b.dir == 'up' ? ninja.y - box.top : box.bottom - ninja.y
-    const nextV = () => b.dir == 'right' ? screen.velocityX : screen.velocityY
     // The ninja's margin to the view edge ahead along the next axis
-    const hold = GAMEPLAY.momentumCamera.holdMargin
     const margin = () => b.dir == 'right' ? (viewW - screen.x - ninja.x) / viewW
         : b.dir == 'up' ? (ninja.y + screen.y) / view : (view - screen.y - ninja.y) / view
-    // Past the old-axis cap (world units): x past the shaft cap / y past the
-    // corridor-centred stop
-    const pastCap = () => {
-        if (a.dir == 'right')
-            return -screen.x - (b.x0 - viewW / 2)
-        // Once the camera is on the right segment, its preview of a
-        // following shaft (TASK-069) moves the stop toward that shaft
-        let stop = a.y1 - view / 2
-        const preview = screen.segmentIndex > st.index ? screen.getPreviewStop(b) : null
-        if (preview !== null)
-            stop = a.dir == 'up' ? Math.min(stop, preview) : Math.max(stop, preview)
-        return a.dir == 'up' ? stop + screen.y : -screen.y - stop
-    }
     st.rows = st.rows || []
-    st.early = st.early || null
-    st.pastCap = st.pastCap || 0
     st.inBoxCycles = st.inBoxCycles || 0
     st.away = st.away || 0
+    st.back = st.back || 0
     // Camera motion along the next axis away from the next corridor
     const towards = b.dir == 'up' ? -1 : 1
     st.wasInBox = st.wasInBox || false
@@ -175,55 +161,52 @@ RUN = '''([stop, epsView]) => {
         grapnel.setGrappled(false); grapnel.throwed = false; grapnel.pos = []
         ninja.invulnerableMs = 1e9
         ninja.x = x; ninja.y = y; ninja.speedX = vx; ninja.speedY = vy - GRAVITY
+        const cam0 = [-screen.x, -screen.y], rail0 = screen.railS
         calcPhysics()
         const cycle = st.i++
         if (ninja !== st.n0)
             return {stop: 'gameOver', cycle}
+        const camVx = (-screen.x - cam0[0]) * perSecond, camVy = (-screen.y - cam0[1]) * perSecond
+        const nextV = b.dir == 'right' ? camVx : camVy
         const row = {cycle, nx: +ninja.x.toFixed(2), ny: +ninja.y.toFixed(2),
-                     camVx: +screen.velocityX.toFixed(3), camVy: +screen.velocityY.toFixed(3),
+                     camVx: +camVx.toFixed(3), camVy: +camVy.toFixed(3), railS: +screen.railS.toFixed(2),
                      seg: screen.segmentIndex, margin: +margin().toFixed(4)}
         if (cycle >= st.boxStart - 8 && (!st.exitCycle || cycle < st.exitCycle + 24 || !st.start || cycle < st.start.cycle + 8))
             st.rows.push(row)
-        if (nextV() * towards < -eps) {
+        if (nextV * towards < -eps) {
             st.away++
-            st.firstAway = st.firstAway || {cycle, camV: +nextV().toFixed(3)}
+            st.firstAway = st.firstAway || {cycle, camV: +nextV.toFixed(3)}
+        }
+        // Never backwards along the rail
+        if (rail0 !== null && screen.railS < rail0 - 1e-6) {
+            st.back++
+            st.firstBack = st.firstBack || {cycle, from: rail0, to: screen.railS}
         }
         const inside = cycle >= st.boxStart && inBox()
         if (inside) {
             st.inBoxCycles++
             st.wasInBox = true
-            const past = pastCap()
-            st.maxPastCap = Math.max(st.maxPastCap || 0, past)
-            if (past > 1e-6)
-                st.pastCap++
-            // The course segment switches to the next one (the camera
-            // starts following it) while the ninja is still in the box
+            // The camera's segment switches to the next one while the ninja
+            // is still in the box
             if (screen.segmentIndex > st.index && !st.switched)
                 st.switched = {cycle, toNext: +toNext().toFixed(2)}
-            if (!st.released && margin() < hold)
-                st.released = {cycle, toNext: +toNext().toFixed(2), margin: +margin().toFixed(4)}
-            if (Math.abs(nextV()) > eps && !st.early && !st.released) {
-                st.early = {cycle, toNext: +toNext().toFixed(2), camV: +nextV().toFixed(3), seg: screen.segmentIndex,
-                            ninja: [row.nx, row.ny]}
-                if (stop == 'early')
-                    return {stop, cycle}
-            }
         } else if (st.wasInBox && !st.exitCycle) {
             st.exitCycle = cycle
             if (stop == 'exit')
-                return {stop, cycle}
+                return {stop, cycle, camV: [camVx, camVy]}
         }
-        if (cycle >= st.boxStart && !st.start && Math.abs(nextV()) > eps) {
-            st.start = {cycle, toNext: +toNext().toFixed(2), camV: +nextV().toFixed(3), inBox: inside,
+        if (cycle >= st.boxStart && !st.start && Math.abs(nextV) > eps) {
+            st.start = {cycle, toNext: +toNext().toFixed(2), camV: +nextV.toFixed(3), inBox: inside,
                         margin: +margin().toFixed(4)}
             if (stop == 'start')
-                return {stop, cycle}
+                return {stop, cycle, camV: [camVx, camVy]}
         }
         if (stop === cycle)
-            return {stop, cycle}
+            return {stop, cycle, camV: [camVx, camVy]}
     }
-    return {stop: null, away: st.away, firstAway: st.firstAway || null, early: st.early, switched: st.switched || null, pastCap: st.pastCap, maxPastCap: +(st.maxPastCap || 0).toFixed(4), inBoxCycles: st.inBoxCycles,
-            exitCycle: st.exitCycle || null, released: st.released || null, start: st.start || null, hold, deaths: lethalDeaths - st.deaths0, rows: st.rows}
+    return {stop: null, away: st.away, firstAway: st.firstAway || null, back: st.back, firstBack: st.firstBack || null,
+            switched: st.switched || null, inBoxCycles: st.inBoxCycles,
+            exitCycle: st.exitCycle || null, start: st.start || null, deaths: lethalDeaths - st.deaths0, rows: st.rows}
 }'''
 
 # The ninja's margin to the view edge ahead along the next axis (as in RUN)
@@ -262,7 +245,7 @@ class MomentumCornerCameraTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('MOMENTUM_CORNER_CAMERA_EVIDENCE_DIR', ROOT / 'artifacts/TASK-034'))
+        cls.out = Path(os.environ.get('MOMENTUM_CORNER_CAMERA_EVIDENCE_DIR', '/tmp/momentum-corner-camera'))
         (cls.out / 'shots').mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
 
@@ -294,8 +277,8 @@ class MomentumCornerCameraTests(unittest.TestCase):
         if route == 'shortcut' and r['exitCycle'] and r['start']:
             # A rerun shot as the ninja enters the box, halfway through the
             # shortcut to the camera start and as it starts turning; a camera
-            # already turning at the box entry (out of a shaft, the TASK-070
-            # exit preview): halfway to the box exit and at it
+            # already turning at the box entry (on the rail arc): halfway to
+            # the box exit and at it
             page.evaluate(SETUP, [index, route])
             enter, turn = setup['boxStart'], r['start']['cycle']
             end, end_what = (turn, 'camera starts turning') if turn > enter + 1 else \
@@ -304,19 +287,16 @@ class MomentumCornerCameraTests(unittest.TestCase):
             for suffix, stop, what in (('1-enter', enter, 'ninja enters the corner box'),
                                        ('2-mid', (enter + end) // 2, 'mid shortcut'),
                                        ('3-turn', end, end_what)):
-                at = page.evaluate(RUN, [stop, EPS_VIEW])['cycle']
-                st = page.evaluate('[screen.velocityX, screen.velocityY]')
+                stopped = page.evaluate(RUN, [stop, EPS_VIEW])
+                at, st = stopped['cycle'], stopped['camV']
                 m = page.evaluate(MARGIN)
                 self.shoot(page, f'{name}-{suffix}', f'{name} cycle {at}: {what} (box exit {r["exitCycle"]}), '
-                                                     f'cam v ({st[0]:.1f}, {st[1]:.1f}), margin {m:.3f} '
-                                                     f'(hold {r["hold"]})')
+                                                     f'cam v ({st[0]:.1f}, {st[1]:.1f}), margin {m:.3f}')
                 shot.append(at)
-        # Every 4th cycle, every one near the early cycle, the box exit and the start
-        early_cycle = r['early']['cycle'] if r['early'] else None
+        # Every 4th cycle, every one near the box exit and the start
         turn_cycle = r['start']['cycle'] if r['start'] else None
         self.traces[name] = {'box': setup['box'], 'rows': [
             row for row in r.pop('rows') if row['cycle'] % 4 == 0 or abs(row['cycle'] - r['exitCycle']) <= 8 or
-            early_cycle is not None and abs(row['cycle'] - early_cycle) <= 16 or
             turn_cycle is not None and abs(row['cycle'] - turn_cycle) <= 8]}
         result = dict(r, setup=setup, shot=shot)
         result.pop('stop')
@@ -326,16 +306,19 @@ class MomentumCornerCameraTests(unittest.TestCase):
         self.assertEqual(r['deaths'], 0)
         self.assertGreater(r['inBoxCycles'], 0)
         self.assertIsNotNone(r['exitCycle'])
-        self.assertEqual(r['pastCap'], 0, f'{name}: camera past its old-axis cap in {r["pastCap"]} cycles')
-        # TASK-069/070: the preview may move the camera toward the next
-        # corridor before and in the box, never away from it
+        # TASK-085: the rail camera never goes backwards (replaces the
+        # removed shaft cap / preview stop pastCap check)
+        self.assertEqual(r['back'], 0, f'{name}: camera goes back along the rail in {r["back"]} cycles '
+                                       f'(first {r["firstBack"]})')
+        # The camera turns toward the next corridor along the rail arc
+        # before and in the box, never away from it
         self.assertEqual(r['away'], 0, f'{name}: camera moves away from the next corridor in {r["away"]} cycles '
                                        f'(first {r["firstAway"]})')
         if route == 'shortcut':
             start = r['start']
             self.assertIsNotNone(start, f'{name}: camera never moves along the next axis')
             print(f'{name}: camera starts at cycle {start["cycle"]}, toNext {start["toNext"]}, in box '
-                  f'{start["inBox"]}, margin {start["margin"]}, released {r["released"]}, early {r["early"]}, '
+                  f'{start["inBox"]}, margin {start["margin"]}, switched {r["switched"]}, '
                   f'box exit {r["exitCycle"]}', file=sys.stderr)
 
 

@@ -1,4 +1,4 @@
-"""Smooth momentum camera (TASK-006): MomentumScreen.follow().
+"""Smooth momentum camera (TASK-006; TASK-085: the rail camera of TASK-084).
 
 Starts momentum on the scripted course R R U R R D R (the TASK-004 draws, see
 test_momentum_borders, after two long right segments), stops the rAF loop and drives the ninja along the
@@ -16,17 +16,22 @@ physics() twice per frame and samples the camera once per frame.
 
 Per frame, from camera positions (top-left world corner = -screen.x,
 -screen.y) in view heights, dt = 1/fps:
-- |delta velocity| <= maxAccel * dt (+1e-6), |delta acceleration| <=
-  maxJerk * dt (+1e-6);
-- largest single-frame camera displacement within +-10 frames of each turn
-  <= 1.1x the largest on the straight before it (no snap);
+- the camera's displacement is at most the ninja's (the driven speed along
+  the centre line) * 1.05 + 1 world unit, the rail rule of
+  test_momentum_camera_speed (no catch-up, no snap at a turn), and its rail
+  position (MomentumScreen.railS) never decreases (never backwards). TASK-085:
+  the damped follow's maxAccel / maxJerk limits and the turn step <= 1.1 x
+  straight step check were removed with the follow (TASK-084); the rail
+  camera's speed changes are bounded by test_momentum_camera_speed rules 2
+  and 5;
 - the ninja stays inside the view, >= 10% of the view from the edge in its
   travel direction; no lethal death, no restart;
 - the 30 fps trajectory matches the 60 fps one at the same physics ticks.
 
-MOMENTUM_SMOOTH_EVIDENCE_DIR (default artifacts/TASK-006) receives
+MOMENTUM_SMOOTH_EVIDENCE_DIR (default /tmp/momentum-camera-smooth: a bare
+run must not rewrite the TASK-006 evidence) receives
 camera-trace-60.json / camera-trace-30.json ([frame, segDir, camX, camY, vX,
-vY], world units and world units per second), smoothness.json and
+vY, ninjaX, ninjaY, railS], world units and world units per second), smoothness.json and
 turn-strip.png (before / during / after the right->up turn, 60 fps run).
 
 BadCameraXTests: bad mode on a seeded Math.random with the rAF loop stopped,
@@ -85,7 +90,7 @@ DRIVE = '''([frames, step, first]) => {
             physics()
         }
         out.push([first + k, screen.getSegment().dir, -screen.x, -screen.y, ninja.x, ninja.y,
-                  screen.segmentIndex, screen.hasLeftBehind(ninja)])
+                  screen.segmentIndex, screen.hasLeftBehind(ninja), screen.railS])
     })
     return out
 }'''
@@ -132,7 +137,7 @@ def norm(x, y):
 class SmoothCameraTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('MOMENTUM_SMOOTH_EVIDENCE_DIR', ROOT / 'artifacts/TASK-006'))
+        cls.out = Path(os.environ.get('MOMENTUM_SMOOTH_EVIDENCE_DIR', '/tmp/momentum-camera-smooth'))
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         context = cls.browser.new_context(viewport={'width': 1280, 'height': 720})
@@ -194,20 +199,20 @@ class SmoothCameraTests(unittest.TestCase):
             trace = []
             for k, r in enumerate(rows):
                 p = rows[k - 1] if k else r
-                trace.append([r[0], r[1], r[2], r[3], (r[2] - p[2]) / dt, (r[3] - p[3]) / dt, r[4], r[5]])
+                trace.append([r[0], r[1], r[2], r[3], (r[2] - p[2]) / dt, (r[3] - p[3]) / dt, r[4], r[5], r[8]])
             run['trace'] = trace
             (cls.out / f'camera-trace-{fps}.json').write_text(json.dumps(
-                {'fields': ['frame', 'segDir', 'camX', 'camY', 'vX', 'vY', 'ninjaX', 'ninjaY'], 'fps': fps,
+                {'fields': ['frame', 'segDir', 'camX', 'camY', 'vX', 'vY', 'ninjaX', 'ninjaY', 'railS'], 'fps': fps,
                  'units': 'world, world/s (from camera displacement)', 'trace': trace},
                 separators=(',', ':')))
             run['metrics'] = cls.metrics(run)
             summary[fps] = {k: run['metrics'][k] for k in
-                            ('maxAccel', 'maxJerk', 'maxStepTurn', 'maxStepStraight', 'turnRatioMax',
+                            ('maxStepRatio', 'maxStepRatioFrame', 'fasterFrames', 'backFrames',
                              'minMargin', 'minMarginFrame', 'turns')}
-        summary['limits'] = {'maxAccel': cls.options['maxAccel'], 'maxJerk': cls.options['maxJerk'],
-                             'turnRatio': 1.1, 'minMargin': 0.1,
-                             'units': 'view heights /s^2, /s^3; steps in view heights; margin share of view; '
-                                      'maxStepTurn/maxStepStraight: the turn with the largest ratio'}
+        summary['limits'] = {'cameraStep': 'ninja step * 1.05 + 1 world unit', 'railS': 'non-decreasing',
+                             'minMargin': 0.1,
+                             'units': 'steps in view heights; margin share of view; maxStepRatio: camera step / '
+                                      'ninja step, the largest over frames with the camera moving'}
         (cls.out / 'smoothness.json').write_text(json.dumps(summary, separators=(',', ':')))
         names = ['before', 'during', 'after']
         files = [cls.out / f'turn-{n}.png' for n in names]
@@ -227,34 +232,28 @@ class SmoothCameraTests(unittest.TestCase):
         rows, trace, state = run['rows'], run['trace'], run['state']
         fps, dt = run['fps'], 1 / run['fps']
         H, W = state['viewHeight'], state['viewWidth']
-        # Per frame velocity (k >= 1) and acceleration (k >= 2), view heights
-        v = [(t[4] / H, t[5] / H) for t in trace]
-        acc = [None] + [((v[k][0] - v[k - 1][0]) / dt, (v[k][1] - v[k - 1][1]) / dt)
-                        for k in range(1, len(v))]
-        dv = [norm(v[k][0] - v[k - 1][0], v[k][1] - v[k - 1][1]) for k in range(2, len(v))]
-        da = [norm(acc[k][0] - acc[k - 1][0], acc[k][1] - acc[k - 1][1]) for k in range(3, len(v))]
-        step = [norm(v[k][0], v[k][1]) * dt for k in range(len(v))]
+        # Per frame camera step (k >= 1), view heights; the ninja moves
+        # step world units a physics tick along the centre line, 60 / fps
+        # ticks a frame (the first frame from the ninja's start)
+        step = [norm(t[4], t[5]) * dt / H for t in trace]
+        ninja_step = run['step'] * (60 // fps) / H
+        limit = ninja_step * 1.05 + 1 / H
+        faster = [(rows[k][0], round(step[k] / ninja_step, 4)) for k in range(1, len(rows)) if step[k] > limit]
+        ratios = [(step[k] / ninja_step, rows[k][0]) for k in range(1, len(rows))]
+        back = [rows[k][0] for k in range(1, len(rows)) if rows[k][8] < rows[k - 1][8] - 1e-6]
         # Turns: frames where the camera's segment direction changes
         turns = [k for k in range(1, len(rows)) if rows[k][1] != rows[k - 1][1]]
-        turn_checks = []
-        for i, t in enumerate(turns):
-            start = turns[i - 1] + 10 if i else 1
-            straight = max(step[start:t - 10]) if t - 10 > start else 0
-            near = max(step[max(1, t - 10):t + 11])
-            turn_checks.append({'frame': t, 'turn': f'{rows[t - 1][1]}->{rows[t][1]}',
-                                'maxStepTurn': near, 'maxStepStraight': straight})
-        worst = max(turn_checks, key=lambda c: c['maxStepTurn'] / max(c['maxStepStraight'], 1e-12))
+        turn_checks = [{'frame': t, 'turn': f'{rows[t - 1][1]}->{rows[t][1]}',
+                        'maxStepRatio': round(max(step[max(1, t - 10):t + 11]) / ninja_step, 4)} for t in turns]
         margins, inside = [], []
         for r in rows:
             camX, camY, x, y, d = r[2], r[3], r[4], r[5], r[1]
             margins.append((camX + W - x) / W if d == 'right' else
                            (y - camY) / H if d == 'up' else (camY + H - y) / H)
             inside.append(min(x - camX, camX + W - x) / W >= 0 and min(y - camY, camY + H - y) >= 0)
-        return {'dv': dv, 'da': da, 'turns': turn_checks, 'margins': margins, 'inside': inside,
-                'maxAccel': max(dv) / dt, 'maxJerk': max(da) / dt,
-                # The turn with the largest turn / straight step ratio
-                **{k: worst[k] for k in ('maxStepTurn', 'maxStepStraight')},
-                'turnRatioMax': worst['maxStepTurn'] / worst['maxStepStraight'],
+        return {'turns': turn_checks, 'margins': margins, 'inside': inside,
+                'ninjaStep': ninja_step, 'stepLimit': limit, 'fasterFrames': faster, 'backFrames': back,
+                'maxStepRatio': round(max(ratios)[0], 4), 'maxStepRatioFrame': max(ratios)[1],
                 'minMargin': min(margins), 'minMarginFrame': rows[margins.index(min(margins))][0], 'turnList': [c['turn'] for c in turn_checks]}
 
     def tearDown(self):
@@ -268,33 +267,24 @@ class SmoothCameraTests(unittest.TestCase):
                 self.assertEqual(run['state']['segments'], SMOOTH_DIRS)
                 self.assertEqual(m['turnList'], ['right->up', 'up->right', 'right->down', 'down->right'])
 
-    def test_acceleration_limited(self):
+    def test_camera_not_faster_than_ninja(self):
+        # TASK-085: replaces the damped follow's maxAccel / maxJerk and turn
+        # snap checks; the rail camera moves at most at the ninja's speed
         for fps, run in self.runs.items():
             with self.subTest(fps=fps):
-                m, dt = run['metrics'], 1 / fps
-                limit = self.options['maxAccel'] * dt + 1e-6
-                print(f'{fps} fps: max |delta v| per frame {max(m["dv"]):.6f} view heights/s, '
-                      f'limit maxAccel*dt+1e-6 = {limit:.6f}; frames checked {len(m["dv"])}')
-                self.assertLessEqual(max(m['dv']), limit)
+                m = run['metrics']
+                print(f'{fps} fps: max camera step / ninja step {m["maxStepRatio"]} at frame '
+                      f'{m["maxStepRatioFrame"]} (limit 1.05 + 1 world unit), frames over it {len(m["fasterFrames"])}; '
+                      'per turn (+-10 frames): ' + ', '.join(f'{c["turn"]} {c["maxStepRatio"]}' for c in m['turns']))
+                self.assertEqual(m['fasterFrames'][:5], [])
 
-    def test_jerk_limited(self):
+    def test_camera_never_backwards(self):
         for fps, run in self.runs.items():
             with self.subTest(fps=fps):
-                m, dt = run['metrics'], 1 / fps
-                limit = self.options['maxJerk'] * dt + 1e-6
-                print(f'{fps} fps: max |delta a| per frame {max(m["da"]):.6f} view heights/s^2, '
-                      f'limit maxJerk*dt+1e-6 = {limit:.6f}; frames checked {len(m["da"])}')
-                self.assertLessEqual(max(m['da']), limit)
-
-    def test_no_snap_at_turns(self):
-        for fps, run in self.runs.items():
-            with self.subTest(fps=fps):
-                for c in run['metrics']['turns']:
-                    print(f'{fps} fps {c["turn"]} at frame {c["frame"]}: max step +-10 frames '
-                          f'{c["maxStepTurn"]:.5f}, straight before {c["maxStepStraight"]:.5f} view heights, '
-                          f'ratio {c["maxStepTurn"] / max(c["maxStepStraight"], 1e-12):.3f} (limit 1.1)')
-                    self.assertGreater(c['maxStepStraight'], 0)
-                    self.assertLessEqual(c['maxStepTurn'], 1.1 * c['maxStepStraight'], c)
+                m, rows = run['metrics'], run['rows']
+                print(f'{fps} fps: railS {rows[0][8]:.1f} -> {rows[-1][8]:.1f}, frames going back {len(m["backFrames"])}')
+                self.assertEqual(m['backFrames'][:5], [])
+                self.assertGreater(rows[-1][8], rows[0][8])
 
     def test_ninja_in_view_with_margin(self):
         for fps, run in self.runs.items():
