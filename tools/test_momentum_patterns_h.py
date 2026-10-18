@@ -142,6 +142,9 @@ class MomentumPatternsHTests(unittest.TestCase):
 
     def test_3_port_pieces_match_catalog(self):
         s = self.segment
+        # Catalog motion speeds are full speed; the pieces move at the TASK-073
+        # slow motion (speedY x momentumMotionScale(1))
+        motion_scale = self.page.evaluate("momentumMotionScale(1)")
         diffs = {}
         for t in self.port:
             with self.subTest(id=t['id']):
@@ -171,7 +174,7 @@ class MomentumPatternsHTests(unittest.TestCase):
                     self.assertEqual(len(e['points']), len(shape))
                     shape_diff = max(max(abs(a[0] - c[0]), abs(a[1] - c[1])) for a, c in zip(e['points'], shape))
                     m = p.get('motion')
-                    speed = m['speedY'] if m else 0
+                    speed = m['speedY'] * motion_scale if m else 0
                     print(f"{t['id']} piece {i}: {e['className']} {p['shape']} box diff {box_diff:.3f}"
                           f" shape diff {shape_diff:.2e} speedY {e['speedY']}/{speed}"
                           f" motion {e['motion']}")

@@ -23,11 +23,12 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_GREEN_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-009'))
-# Straight fall in world units per physics cycle, under GAMEPLAY.momentumMaxSpeed
-# (2.78 at h 1080 since TASK-047; was 5 under the 5.56 cap of TASK-029 and 8
-# under the original 11.12 cap)
-FALL_SPEED = 2.5
-MAX_MOVES = 120
+# Straight fall in world units per physics cycle, under the effective cap
+# GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1) (1.39 at h 1080 since the
+# TASK-073 slow motion; was 2.5 under 2.78, 5 under 5.56 and 8 under 11.12);
+# move budget doubled with the halved speed
+FALL_SPEED = 1.25
+MAX_MOVES = 240
 
 SETUP = '''() => {
     startGame('momentum')
@@ -110,8 +111,9 @@ class MomentumGreenTests(unittest.TestCase):
         self.assertEqual(hit['version'], 'momentum')
         self.assertTrue(hit['runInProgress'])
         self.assertLess(hit['moves'], MAX_MOVES)
-        # Reflected normal (vertical) component; bounceSpeed also subtracts one GRAVITY
-        gravity = page.evaluate('GRAVITY')
+        # Reflected normal (vertical) component; bounceSpeed also subtracts one
+        # momentum gravity (GRAVITY * momentumMotionScale(2) since TASK-073)
+        gravity = page.evaluate('GRAVITY * momentumMotionScale(2)')
         self.assertAlmostEqual(hit['speedY'], -FALL_SPEED - gravity, places=6)
         self.assertEqual(hit['speedX'], 0)
         self.assertEqual(hit['streak'], 1)

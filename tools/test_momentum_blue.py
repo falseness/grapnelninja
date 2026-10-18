@@ -25,14 +25,15 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_BLUE_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-010'))
-# Diagonal flight in world units per physics cycle, |v| 2.5 under
-# GAMEPLAY.momentumMaxSpeed (2.78 at h 1080 since TASK-047; (3, 4) = 5 was
-# above it and Ninja.move clamped it)
-SPEED = (1.5, 2)
-MAX_MOVES = 240
-# moves recorded after the contact (5 at |v| 5; doubled with the halved speed
-# so the slowed ninja still gets past the box top)
-AFTER = 10
+# Diagonal flight in world units per physics cycle, |v| 1.25 under the
+# effective cap GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1) (1.39 at
+# h 1080 since the TASK-073 slow motion; (1.5, 2) = 2.5 under 2.78 and (3, 4)
+# = 5 are above it and Ninja.move clamps them)
+SPEED = (0.75, 1)
+MAX_MOVES = 480
+# moves recorded after the contact (5 at |v| 5, 10 at 2.5; doubled with each
+# halved speed so the slowed ninja still gets past the box top)
+AFTER = 20
 
 SETUP = '''() => {
     startGame('momentum')

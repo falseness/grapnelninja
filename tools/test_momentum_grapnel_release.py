@@ -8,7 +8,7 @@ cancelled. Then real calcPhysics() cycles run:
   green  - a MomentumGreen below the ninja; the rope pulls the ninja onto it,
            ninja.move() bounces off it (use()), and from that cycle on the
            grapnel is released: not grappled, not throwed, no rope point on
-           the green, and the next calcPhysics changes the speed by GRAVITY
+           the green, and the next calcPhysics changes the speed by gravity
            only (no grapple pull).
   blue   - the same with a MomentumBlue the ninja passes through.
   border - hooked on the momentum ceiling (MomentumBorder): stays hooked
@@ -51,11 +51,12 @@ window.__throwAt = function(tx, ty) {
     }
     return steps
 }
-// Speed change of one calcPhysics minus gravity
+// Speed change of one calcPhysics minus gravity (momentum gravity is
+// GRAVITY * momentumMotionScale(2) since the TASK-073 slow motion)
 window.__pull = function() {
     const vx = ninja.speedX, vy = ninja.speedY
     calcPhysics()
-    return [ninja.speedX - vx, ninja.speedY - vy - GRAVITY]
+    return [ninja.speedX - vx, ninja.speedY - vy - GRAVITY * momentumMotionScale(2)]
 }
 window.__state = function(element) {
     return {grappled: grapnel.isGrappled(), throwed: grapnel.throwed,
