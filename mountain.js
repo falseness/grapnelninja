@@ -386,9 +386,15 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // the exit ledge out of the exit drag zone, release the swing and reflect off the flat green
     // reflector plate. S04-02: on the rebound, catch the blue lift in flight, swing up-left under it
     // and release into the angled green deflector, which turns the leftward flight into a steep
-    // climb along the left map edge. S04-03/04 are planned. A missed lift catch drops down the left
+    // climb along the left map edge. S04-03 (TASK-515): at the top of that climb on the left map
+    // edge, pull the green crest hook up-right, release into the green baffle, which turns the flight
+    // back left into the map edge (it stops the sideways speed), and rise along it to an apex.
+    // S04-04: at that apex, pull the green exit hook up-right, release and fall east into the exit
+    // drag zone onto the green exit ledge. The route stays in the open upper-left of the map, clear
+    // of the legacy S06-S08 geometry. A missed lift, crest-hook or exit-hook catch drops down the left
     // map edge through the fall drag zone onto the green catch basin; a short hoist hold stays in the
-    // S03 exit drag zone and settles on the S03 exit ledge.
+    // S03 exit drag zone, and a hoist held too long swings back east into it, settling on the S03 exit
+    // ledge; an exit hook held too long still drops into the S04 exit drag zone.
     const deflectors = [
         rectangle('S04-hoist',5154,-7900,120,30,true),
         bouncer('S04-reflector',3200,-7450,600,30),
@@ -396,6 +402,12 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // Angled green face from (900,-8550) down-right to (1200,-8250); its normal points up-right.
         {id:'S04-deflector',x:900,y:-8550,role:'bounce',grapplable:true,points:[{x:0,y:0},{x:300,y:300},{x:0,y:300}]},
         bouncer('S04-catch-basin',0,-6000,300,40),
+        // S04-03/04: crest hook up-right of the climb apex, the baffle wall east of it, the exit hook
+        // up-right of the second apex and the exit ledge east of the baffle top.
+        bouncer('S04-crest-hook',620,-11110,120,25),
+        bouncer('S04-baffle',1000,-11450,30,500),
+        bouncer('S04-exit-hook',600,-12070,120,25),
+        bouncer('S04-exit-ledge',1350,-11650,390,25),
         // v1 Cable Galleries recovery step and entrance deck (v1 S05-01 start), converted to green;
         // no v3 S04 route uses them.
         {...rest('S04-upper-step',4700,-6050,200),role:'bounce'},
@@ -403,25 +415,38 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     ];
     deflectors.find(e=>e.id==='S04-upper-step').points.forEach(p=>{if(p.y===-60)p.y=-30;});
     deflectors.find(e=>e.id==='S04-upper-step').points.splice(0,1,{x:0,y:-180},{x:40,y:-180},{x:40,y:0});
-    // The fall drag zone holds the catch basin against the left map edge; the S04-02 missed line
-    // drops through it.
+    // The fall drag zone holds the catch basin against the left map edge; the S04-02, S04-03 and
+    // S04-04 missed lines drop through it. The exit drag zone holds the exit ledge; an S04-04
+    // overshoot (exit hook held too long) falls inside it and settles on the ledge.
     const worksDrags = [{id:'S04-fall-drag',x:0,y:-6440,role:'drag',grapplable:false,
-        points:[{x:0,y:0},{x:300,y:0},{x:300,y:440},{x:0,y:440}]}];
+        points:[{x:0,y:0},{x:300,y:0},{x:300,y:440},{x:0,y:440}]},
+        {id:'S04-exit-drag',x:1340,y:-11975,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:410,y:0},{x:410,y:325},{x:0,y:325}]}];
     const worksMovers = [
         {id:'S04-hoist-travel',element:'S04-hoist',axis:'y',min:-7900,max:-7820,periodMs:4000,phase:0,velocity:40},
         {id:'S04-lift-travel',element:'S04-lift',axis:'x',min:2240,max:2360,periodMs:4000,phase:0,velocity:60}];
-    Object.assign(sections[3], {status:'partial', designVersion:3, landmark:{id:'S04-landmark',
+    Object.assign(sections[3], {status:'built', designVersion:3, landmark:{id:'S04-landmark',
         name:'angled green machinery',x:2400,y:-7700},
         band:{...sections[3].band, top:-8100},
         // Rope-to-anchor reach from the player at the press to the acquisition point.
         gaps:[{id:'S04-01-hoist',from:{x:6127,y:-7781.1},to:{x:5174.1,y:-7866.3}},
             // Caught in flight on the rebound off the reflector plate.
-            {id:'S04-02-lift',from:{x:3194.9,y:-7569.5},to:{x:2352.5,y:-8000}}],
+            {id:'S04-02-lift',from:{x:3194.9,y:-7569.5},to:{x:2352.5,y:-8000}},
+            // From the climb apex on the left map edge; then from the second apex on it.
+            {id:'S04-03-crest',from:{x:10.8,y:-10404.9},to:{x:663.1,y:-11085}},
+            {id:'S04-04-exit',from:{x:10.8,y:-11356.4},to:{x:646.9,y:-12045}}],
         // Declared miss points: a short hoist hold leaves the player in S03-exit-drag, where it
         // settles on the green S03 exit ledge; a missed lift catch carries the reflector rebound into
-        // the left map edge and drops along it through S04-fall-drag onto the green catch basin.
+        // the left map edge and drops along it through S04-fall-drag onto the green catch basin; a
+        // hoist held too long swings back east and drops into S03-exit-drag onto the S03 exit ledge;
+        // a missed crest-hook or exit-hook catch drops from its apex down the left map edge through
+        // S04-fall-drag onto the catch basin; an exit hook held too long stays in S04-exit-drag.
         fallPoints:[{id:'S04-01-short',encounter:'S04-01',x:5900,y:-7850},
-            {id:'S04-02-missed',encounter:'S04-02',x:30,y:-6900}]});
+            {id:'S04-02-missed',encounter:'S04-02',x:30,y:-6900},
+            {id:'S04-01-late',encounter:'S04-01',x:5830,y:-7880},
+            {id:'S04-03-missed',encounter:'S04-03',x:30,y:-10350},
+            {id:'S04-04-missed',encounter:'S04-04',x:30,y:-11300},
+            {id:'S04-04-overshoot',encounter:'S04-04',x:1400,y:-11950}]});
     // Encounter nodes sit inside the band (y >= -8100) and below the S05-04 node (S05-fall rejoins S04-01).
     Object.assign(encounters[12], {status:'built',x:6127,y:-7700,
         elements:['S03-exit-ledge','S04-hoist','S04-reflector'],
@@ -433,8 +458,21 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S04-01',x:3194.9,y:-7569.5},target:{x:2350,y:-8000},
         exit:{left:780,right:920,top:-9100,bottom:-8950},
         action:'On the rebound off the reflector plate, catch the blue lift, swing up-left and redirect off the angled green deflector into a climb along the left map edge'});
+    // S04-03/04 nodes sit on the band top; the climb runs above it (the S06-S08 bands overlap).
+    Object.assign(encounters[14], {status:'built',x:11,y:-8100,
+        elements:['S04-deflector','S04-crest-hook','S04-baffle'],
+        start:{from:'S04-02',x:10.8,y:-10404.9},target:{x:680,y:-11100},
+        exit:{left:0,right:30,top:-11400,bottom:-11320},
+        action:'At the top of the climb on the left map edge, pull the green crest hook up-right, release into the green baffle and rebound back left into the map edge, rising along it'});
+    Object.assign(encounters[15], {status:'built',x:11,y:-8100,
+        elements:['S04-exit-hook','S04-exit-ledge','S04-exit-drag'],
+        start:{from:'S04-03',x:10.8,y:-11356.4},target:{x:660,y:-12057},
+        exit:{left:1350,right:1740,top:-11680,bottom:-11650},
+        action:'At the apex on the left map edge, pull the green exit hook up-right, release over the baffle into the exit drag zone and settle on the green exit ledge'});
     Object.assign(connectors[12], {status:'built',intent:'Physical ascent: the S04-01 hoist pull starts on the v3 Viaduct exit ledge'});
-    connectors[13].status='built';
+    for (let i=13;i<16;i++) connectors[i].status='built';
+    Object.assign(recoveries[3], {status:'built',elements:['S04-fall-drag','S04-catch-basin','S04-exit-drag','S04-exit-ledge','S03-exit-drag','S03-exit-ledge'],
+        rejoin:'S04-01',sideRoute:'Every declared S04 miss falls through a drag zone onto a green bouncer and settles: short or late hoist holds on the green S03 exit ledge, from which the S04-01 hoist pull rejoins the route; missed lift, crest-hook and exit-hook catches down the left map edge onto the green catch basin; an exit-hook overshoot on the green S04 exit ledge'});
     // Cable Galleries: cantilever girders and a deep service overhang. The
     // open shaft below the projecting tips returns misses to Deflector Works.
     const galleries = [
@@ -475,8 +513,9 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:6210.8,right:6389.2,top:-8082,bottom:-8070}});
     connectors[18].status='built';
     Object.assign(connectors[19], {status:'built',intent:'Exposed departure ledge to the next band; S06 counterweight entrance'});
-    // Planned until S04-04 is rebuilt for layout v2; v1 S05-01 still starts on the legacy S04-exit deck.
-    Object.assign(connectors[16], {intent:'Pull from the Works exit around the projecting girder; planned until S04-04 is rebuilt'});
+    // Planned until S05 is rebuilt for layout v3: the v1 S05-01 still starts on the legacy S04-exit deck,
+    // not on the v3 S04 exit ledge.
+    Object.assign(connectors[16], {intent:'Pull from the Works exit around the projecting girder; planned until S05 is rebuilt from the v3 S04 exit ledge'});
     connectors[17].status='built';
     Object.assign(recoveries[4], {openingElements:['S05-rest','S04-exit','S04-upper-step'],
         openingRejoin:'S04-04',sideRoute:'Visible open shaft west of the girders; reachable Works mast and upper step'});

@@ -25,8 +25,11 @@ blue shutter stops the leftward flight, a green crest hook lifts the player to
 the right map edge, and a green exit hook pulls it into the exit drag zone onto
 a green exit ledge. S04 is layout v3 too (TASK-556): from that ledge, S04-01/02
 travel left through a blue hoist pulled along the ledge, a flat green reflector
-plate, a blue lift caught in flight and an angled green deflector; S04-03/04 are
-planned. Other sections keep their own build status; both optional
+plate, a blue lift caught in flight and an angled green deflector; TASK-515
+built S04-03/04 in the open upper-left of the map: at the top of the climb a
+green crest hook and a green baffle send the player back to the left map edge,
+and a green exit hook swings it into the exit drag zone onto a green exit
+ledge. Other sections keep their own build status; both optional
 shortcuts are planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and
