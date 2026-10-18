@@ -549,10 +549,12 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             {id:'S05-04-early',encounter:'S05-04',x:6200,y:-9960}]});
     // Encounter nodes sit inside the band (y >= -9720): S05-01 below the S06-04 node (S06-fall rejoins
     // S05-01) and S05-04 above the S04-01 node (S05-fall rejoins S04-01); the route runs above.
+    // TASK-519: the S05-01 exit box also takes a 3-tick-early hoist release (deflector bounce at 295,
+    // x 2437.5 y -11019 at tick 304); the nominal state (2511.7,-10905.2) is unchanged.
     Object.assign(encounters[16], {status:'built',x:1388,y:-8000,
         elements:['S04-exit-ledge','S05-hoist','S05-canopy','S05-deflector'],
         start:{x:1387.9,y:-11660.9,from:'S04-04'},target:{x:2548,y:-12456.9},
-        exit:{left:2440,right:2580,top:-10960,bottom:-10860},
+        exit:{left:2420,right:2580,top:-11040,bottom:-10860},
         action:'Pull the blue hoist up-right out of the Works exit drag zone, release under the green canopy and drop onto the angled green deflector'});
     Object.assign(encounters[17], {status:'built',x:2512,y:-8000,
         elements:['S05-deflector','S05-lift','S05-baffle'],
