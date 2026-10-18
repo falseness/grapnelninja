@@ -126,14 +126,18 @@ const GAMEPLAY = Object.freeze({
     // Momentum camera (elements/momentumcamera.js), lengths in view heights:
     // how far past the view edge left behind elements are deleted; the gap
     // kept between the start view's right edge and the first shaft's left
-    // wall body (index.html firstMinLen); how far short of the trigger point
-    // a ninja still moves the camera, at a share of its speed falling to 0
-    // there (a ninja cutting a corner on the outer side of the arc falls a
-    // little behind the trigger).
+    // wall body (index.html firstMinLen); how far the ninja may fall behind
+    // the trigger point and still move a moving camera on, over how much of
+    // that lag the camera's speed blends from the ninja's speed into its
+    // progress along the course (averaged over that many physics cycles),
+    // and how fast (blend weight a cycle).
     momentumCamera: Object.freeze({
         deletionMarginHeightRatio: 0.1,
         shaftMarginHeightRatio: 0.02,
-        triggerRampHeightRatio: 0.1,
+        triggerSlackHeightRatio: 0.1,
+        triggerBlendHeightRatio: 0.03,
+        triggerBlendRate: 0.01,
+        triggerProgressCycles: 40,
         // Camera rail (elements/momentumcamerarail.js): radius of the quarter
         // circle replacing each turn join of the course centre line, in view
         // heights (at most half of either adjacent segment; its middle stays

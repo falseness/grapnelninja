@@ -25,8 +25,11 @@ frame at 60 fps is one tick and at 30 fps two (maxPhysicsStepsPerFrame): the
 per-cycle camera positions of one drive are sampled at both frame rates.
 Per frame: the camera velocity (camVx, camVy: the camera top-left world
 corner -screen.x/-screen.y, delta over the frame), its speed and direction,
-and ninjaAlong, the ninja's velocity projected on the rail tangent at its
-nearest rail point, summed over the frame's cycles (world units a frame).
+and ninjaAlong, the ninja's forward speed along the course: the most of its
+velocity's projections on the rail tangent at its nearest rail point and on
+the direction of the course segment it is on (the one whose join arc middle
+it has not passed), summed over the frame's cycles (world units a frame). On
+the centre drive it is the ninja's speed all the way through the corner.
 
 Assertions over the 3 s around the corner (the frame where the ninja's rail
 position passes the join's arc middle, +-1.5 s, WINDOW_S: wider than the
@@ -41,15 +44,24 @@ rest by design), the new rule:
    on both frames) its direction angle changes by at most
    90 deg / arcFrames * 1.5 a frame (arcFrames: the quarter arc's length
    over the ninja's speed a frame), and only while the camera is on an arc:
-   the ninja's rail position within [arc start - one frame, arc end +
-   borderX + one frame] (the camera trails the ninja by the bad-mode borderX
-   along the rail); elsewhere by at most 1 deg;
-4. the ninja stays in view with a 0.10 margin of each view dimension.
+   the rail position of the view centre within [arc start - one frame, arc
+   end + one frame]; elsewhere by at most 1 deg;
+4. the ninja stays in view with a 0.10 margin of each view dimension;
+5. flat through the corner (TASK-084 verification): on the centre drive
+   (the ninja's speed along the course is constant) |v_cam| varies by at most
+   0.05 x the ninja's speed over the window (the camera moves along the rail,
+   shorter than the centre line by the arcs, so it is a few percent slower
+   than the ninja all through a segment, not just at its corner); on both
+   drives it never stalls: |v_cam| >= ninjaAlong * 0.5 - 1 on every frame
+   (across the corner box on the diagonal the ninja moves along the course
+   slower than its speed).
 
-All 16 cases failed on the damped-follow camera (artifacts/TASK-082/
-head-fail.log); since TASK-084 the camera rides the rail and they must pass.
+All 16 cases failed rules 1-4 on the damped-follow camera (artifacts/
+TASK-082/head-fail.log); since TASK-084 the camera rides the rail and they
+must pass.
 MOMENTUM_CAMERA_SPEED_EVIDENCE_DIR (default
-artifacts/TASK-082) receives speed-trace.json (compact {case: {cornerFrame,
+/tmp/momentum-camera-speed: a bare run must not rewrite the TASK-082/084
+evidence) receives speed-trace.json (compact {case: {cornerFrame,
 fps, window, rows: [[frame, camVx, camVy, camSpeed, ninjaAlong]]}} over the
 window)
 and camera-speed.json (per case: pass flags, peak |v_cam| / ninjaAlong ratio,
@@ -78,10 +90,13 @@ JUMP_RATIO = 0.10
 TURN_RATIO = 1.5
 STRAIGHT_TURN_DEG = 1.0
 MIN_MOVING = 1.0
+FLAT_RANGE = 0.05
+STALL_RATIO = 0.5
 # Seconds either side of the corner checked and traced
 WINDOW_S = 1.5
 VIEW_MARGIN = 0.10
 DEFAULT_RAIL_RADIUS = 0.5
+SEGMENT_DIRECTIONS = {'right': (1, 0), 'up': (0, -1), 'down': (0, 1)}
 
 # Builds the course and the path (one point per physics cycle, the effective
 # speed cap apart along it, with the unit direction of the path piece)
@@ -287,24 +302,28 @@ def angle_diff(a, b):
     return abs(d)
 
 
-def analyse(setup, index, cycles, fps):
+def analyse(setup, index, cycles, fps, route):
     """Per-frame rows and the rule checks over the window around the join"""
     cpf = setup['cyclesPerTick'] * setup['ticksPerSecond'] // fps
     v, view, viewW = setup['v'], setup['view'], setup['viewW']
     rail = Rail(course_vertices(setup, index), setup['railRadius'])
     path = cycles['path']
     rows = cycles['rows']
-    along, rail_s = [], []
+    segs = setup['segs']
+    along, rail_s, centre_s = [], [], []
     for (x, y, ux, uy), row in zip(path, rows):
         _, s, t = rail.project((x, y))
-        along.append(max(0.0, (ux * t[0] + uy * t[1]) * v))
+        k = sum(1 for _, _, middle in rail.arcs if s >= middle)
+        d = SEGMENT_DIRECTIONS[segs[k]['dir']]
+        along.append(max(0.0, (ux * t[0] + uy * t[1]) * v, (ux * d[0] + uy * d[1]) * v))
         rail_s.append(s)
+        centre_s.append(rail.project((row[0] + viewW / 2, row[1] + view / 2))[1])
     frames = []
     for k in range(1, len(rows) // cpf):
         e, p = (k + 1) * cpf - 1, k * cpf - 1
         vx, vy = rows[e][0] - rows[p][0], rows[e][1] - rows[p][1]
         frames.append({'frame': k, 'vx': vx, 'vy': vy, 'speed': math.hypot(vx, vy),
-                       'along': sum(along[p + 1:e + 1]), 's': rail_s[e],
+                       'along': sum(along[p + 1:e + 1]), 's': rail_s[e], 'cs': centre_s[e],
                        'nx': (rows[e][2] - rows[e][0]) / viewW, 'ny': (rows[e][3] - rows[e][1]) / view})
     ninja_speed = cpf * v
     arc = rail.arcs[index]
@@ -314,19 +333,23 @@ def analyse(setup, index, cycles, fps):
     window = [f for f in frames if first <= f['frame'] <= corner + WINDOW_S * fps]
     arc_frames = (math.pi / 2 * setup['railRadius']) / ninja_speed
     turn_limit = 90 / arc_frames * TURN_RATIO
-    zones = [(a0 - ninja_speed, a1 + setup['borderX'] + ninja_speed) for a0, a1, _ in rail.arcs]
+    zones = [(a0 - ninja_speed, a1 + ninja_speed) for a0, a1, _ in rail.arcs]
     result = {'fps': fps, 'cornerFrame': corner, 'window': [window[0]['frame'], window[-1]['frame']],
               'ninjaSpeed': round(ninja_speed, 4), 'turnLimitDeg': round(turn_limit, 3),
               'railRadius': round(setup['railRadius'], 3)}
-    catch, jump, turn, out = [], [], [], []
+    catch, jump, turn, out, slow = [], [], [], [], []
     first_out = None
-    peak_ratio = peak_jump = peak_turn = None
+    peak_ratio = peak_jump = peak_turn = min_ratio = None
     for i, f in enumerate(window):
         ratio = f['speed'] / max(f['along'], 1e-9)
         if peak_ratio is None or ratio > peak_ratio[0]:
             peak_ratio = (ratio, f['frame'])
+        if min_ratio is None or ratio < min_ratio[0]:
+            min_ratio = (ratio, f['frame'])
         if f['speed'] > f['along'] * CATCH_UP_RATIO + CATCH_UP_SLACK:
             catch.append(f['frame'])
+        if f['speed'] < f['along'] * STALL_RATIO - CATCH_UP_SLACK:
+            slow.append(f['frame'])
         if not (VIEW_MARGIN <= f['nx'] <= 1 - VIEW_MARGIN and VIEW_MARGIN <= f['ny'] <= 1 - VIEW_MARGIN):
             out.append(f['frame'])
             first_out = first_out or [f['frame'], round(f['nx'], 4), round(f['ny'], 4)]
@@ -340,16 +363,24 @@ def analyse(setup, index, cycles, fps):
             jump.append(f['frame'])
         if f['speed'] >= MIN_MOVING and g['speed'] >= MIN_MOVING:
             d = angle_diff(math.degrees(math.atan2(f['vy'], f['vx'])), math.degrees(math.atan2(g['vy'], g['vx'])))
-            on_arc = any(z0 <= f['s'] <= z1 for z0, z1 in zones)
+            on_arc = any(z0 <= f['cs'] <= z1 for z0, z1 in zones)
             if peak_turn is None or d > peak_turn[0]:
                 peak_turn = (d, f['frame'], on_arc)
             if d > (turn_limit if on_arc else STRAIGHT_TURN_DEG) + 1e-9:
                 turn.append(f['frame'])
     result.update({
         'peakRatio': [round(peak_ratio[0], 4), peak_ratio[1]],
+        'minRatio': [round(min_ratio[0], 4), min_ratio[1]],
+        'minViewY': round(min(f['ny'] for f in window), 4), 'maxViewY': round(max(f['ny'] for f in window), 4),
+        'minViewX': round(min(f['nx'] for f in window), 4), 'maxViewX': round(max(f['nx'] for f in window), 4),
         'peakJump': [round(peak_jump[0], 4), peak_jump[1]],
         'peakTurnDeg': [round(peak_turn[0], 3), peak_turn[1], peak_turn[2]] if peak_turn else None,
-        'lastFrame': frames[-1]['frame'], 'firstOutOfView': first_out, 'catchUpFrames': catch, 'jumpFrames': jump, 'turnFrames': turn, 'outOfViewFrames': out})
+        'lastFrame': frames[-1]['frame'], 'firstOutOfView': first_out, 'catchUpFrames': catch, 'jumpFrames': jump, 'turnFrames': turn, 'outOfViewFrames': out,
+        'slowFrames': slow, 'speedRange': [round(min(f['speed'] for f in window), 3),
+                                           round(max(f['speed'] for f in window), 3)]})
+    spread = (result['speedRange'][1] - result['speedRange'][0]) / ninja_speed
+    result['speedSpread'] = round(spread, 4)
+    result['flat'] = route != 'centre' or spread <= FLAT_RANGE
     trace = [[f['frame'], round(f['vx'], 3), round(f['vy'], 3), round(f['speed'], 3), round(f['along'], 3)]
              for f in window]
     return result, trace
@@ -362,7 +393,7 @@ class MomentumCameraSpeedTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.out = Path(os.environ.get('MOMENTUM_CAMERA_SPEED_EVIDENCE_DIR', ROOT / 'artifacts/TASK-082'))
+        cls.out = Path(os.environ.get('MOMENTUM_CAMERA_SPEED_EVIDENCE_DIR', '/tmp/momentum-camera-speed'))
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
 
@@ -398,17 +429,20 @@ class MomentumCameraSpeedTests(unittest.TestCase):
         index = JOINS[join][1]
         name = f'{join}-{route}-{fps}'
         self.assertEqual('-'.join(s['dir'] for s in setup['segs'][index:index + 2]), join)
-        result, trace = analyse(setup, index, run, fps)
+        result, trace = analyse(setup, index, run, fps, route)
         self.results[name] = result
         self.traces[name] = {'cornerFrame': result['cornerFrame'], 'fps': fps, 'window': result['window'],
                              'rows': trace}
-        ok = not (result['catchUpFrames'] or result['jumpFrames'] or result['turnFrames'] or result['outOfViewFrames'])
+        ok = not (result['catchUpFrames'] or result['jumpFrames'] or result['turnFrames'] or result['outOfViewFrames']
+                  or result['slowFrames'] or not result['flat'])
         print(f'{name}: {"PASS" if ok else "FAIL"} peak |v_cam|/ninjaAlong {result["peakRatio"][0]} at frame '
-              f'{result["peakRatio"][1]}, peak speed change {result["peakJump"][0]} x ninja speed at frame '
+              f'{result["peakRatio"][1]}, min {result["minRatio"][0]} at frame {result["minRatio"][1]}, peak speed change {result["peakJump"][0]} x ninja speed at frame '
               f'{result["peakJump"][1]}, peak turn {result["peakTurnDeg"]} deg (limit {result["turnLimitDeg"]}), '
               f'corner frame {result["cornerFrame"]}, window {result["window"]}, frames failing: catch-up '
               f'{len(result["catchUpFrames"])}, jump {len(result["jumpFrames"])}, turn {len(result["turnFrames"])}, '
-              f'out of view {len(result["outOfViewFrames"])}', file=sys.stderr)
+              f'out of view {len(result["outOfViewFrames"])}, stall {len(result["slowFrames"])}, |v_cam| range '
+              f'{result["speedRange"]} = {result["speedSpread"]} x ninja speed, ninja view x '
+              f'{result["minViewX"]}..{result["maxViewX"]} y {result["minViewY"]}..{result["maxViewY"]}', file=sys.stderr)
         self.assertEqual(errors, [])
         self.assertIsNone(run['gameOver'])
         self.assertEqual(run['deaths'], 0)
@@ -417,7 +451,11 @@ class MomentumCameraSpeedTests(unittest.TestCase):
         self.assertEqual(result['jumpFrames'], [], f'{name}: camera speed jumps (peak {result["peakJump"]})')
         self.assertEqual(result['turnFrames'], [], f'{name}: camera direction turns too fast or off the arc '
                                                    f'(peak {result["peakTurnDeg"]})')
-        self.assertEqual(result['outOfViewFrames'], [], f'{name}: ninja within {VIEW_MARGIN} of the view edge')
+        self.assertEqual(result['outOfViewFrames'], [], f'{name}: ninja within {VIEW_MARGIN} of the view edge '
+                                                        f'(first {result["firstOutOfView"]})')
+        self.assertEqual(result['slowFrames'], [], f'{name}: camera stalls (min ratio {result["minRatio"]})')
+        self.assertTrue(result['flat'], f'{name}: camera speed not flat through the corner on the centre line '
+                                        f'(range {result["speedRange"]}, {result["speedSpread"]} x ninja speed)')
 
 
 def make_test(join, route, fps):
