@@ -1,8 +1,8 @@
 // Momentum: camera-owned boundary on the vertical side of the view left
-// behind by the last shaft (MomentumScreen.verticalTravel): the bottom after
-// going up, the top after going down. Like LeftWall, the local origin is the
-// collision face and only that face is playable; inactive (no collision,
-// hook or drawing) while verticalTravel is 0.
+// behind by the last shaft the ninja was in (MomentumScreen.backTravel): the
+// bottom after going up, the top after going down. Like LeftWall, the local
+// origin is the collision face and only that face is playable; inactive (no
+// collision, hook or drawing) while backTravel is 0.
 class BackWall extends LeftWall
 {
     update(camera)
@@ -11,7 +11,7 @@ class BackWall extends LeftWall
         const h = height / scale[version]
         const inset = height * 0.01 / scale[version]
         // +1: the wall lies below its face, -1: above, 0: inactive
-        const side = -Math.sign(camera.verticalTravel || 0)
+        const side = -Math.sign(camera.backTravel || 0)
         const x = -camera.x
         const y = side > 0 ? h - inset - camera.y : inset - camera.y
         // A side switch jumps the face; anchors only follow the camera

@@ -44,6 +44,12 @@ class MomentumScreen extends Screen
         // shaft): the far side of the view stays behind through the
         // following right segments
         this.verticalTravel = 0
+        // The ninja's side left behind: the direction of the last shaft at or
+        // before the trigger point's segment. The camera turns toward the
+        // next shaft from lead() before the trigger point, while the ninja
+        // can still drop back into the shaft it came out of (a short
+        // corridor between opposite shafts)
+        this.backTravel = 0
         // Bouncy boundary on that side (sprites/backwall.js)
         this.backWall = new BackWall(this)
         this.deletedBehind = 0
@@ -137,11 +143,22 @@ class MomentumScreen extends Screen
     }
     // Moves to the next segment once the trigger point passes the join. The
     // vertical direction left behind follows the camera's own: from the
-    // start of an arc into a shaft, what it turns away from is behind.
+    // start of an arc into a shaft, what it turns away from is behind. The
+    // ninja's (backTravel) changes only once the trigger point is in the
+    // next shaft.
     updateSegment()
     {
         while (this.courseS >= this.courseEnd(this.segmentIndex))
             ++this.segmentIndex
+        for (let i = this.segmentIndex; i >= 0; --i)
+        {
+            const dir = this.course.segment(i).dir
+            if (dir != 'right')
+            {
+                this.backTravel = dir == 'up' ? -1 : 1
+                break
+            }
+        }
         const tangent = this.rail.tangentAt(this.railS)
         if (Math.abs(tangent.y) > 1e-9)
             this.verticalTravel = Math.sign(tangent.y)
@@ -230,18 +247,19 @@ class MomentumScreen extends Screen
         this.speedY = -at.y - this.y
         return this.speedX != 0 || this.speedY != 0
     }
-    // A box (world coordinates) fully out of view on the vertical side left behind
-    isBoxBehind(top, bottom, margin)
+    // A box (world coordinates) fully out of view on the vertical side left
+    // behind (travel: the camera's verticalTravel unless given)
+    isBoxBehind(top, bottom, margin, travel = this.verticalTravel)
     {
-        if (this.verticalTravel < 0)
+        if (travel < 0)
             return top + this.y > this.getViewHeight() + margin
-        if (this.verticalTravel > 0)
+        if (travel > 0)
             return bottom + this.y < -margin
         return false
     }
     hasLeftBehind(who)
     {
-        return this.isBoxBehind(who.y - who.radius, who.y + who.radius, 0)
+        return this.isBoxBehind(who.y - who.radius, who.y + who.radius, 0, this.backTravel)
     }
     // Removes whole generation groups of floor whose elements are all behind
     // vertically. keepLast keeps the newest group, the floor replenishes from it.
