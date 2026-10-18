@@ -1,4 +1,4 @@
-"""Momentum corner preview: seeing into the next corridor before a corner (TASK-068 reproduction, TASK-069 into shafts).
+"""Momentum corner preview: seeing into the next corridor before a corner (TASK-068 reproduction, TASK-069 into shafts, TASK-070 out of shafts).
 
 User report: "we still have troubles with camera on corners. I would prefer
 it to change direction earlier. e.g. if there is a tunnel down, i see nothing
@@ -38,8 +38,10 @@ MOMENTUM_CORNER_PREVIEW_EVIDENCE_DIR (default artifacts/TASK-068) receives
 preview-trace.json ({join: {drive: [{cycle, d, preview, margin, camVx, camVy,
 seg}]}}, every 4th cycle) and, on the centre drive with the opening and the
 ninja outlined in a DOM overlay (not drawn by the game),
-shots/<join>-<w>x<h>-d<d>.png: right-down and right-up at d = 0.5 and 0.25 at
-1280x720, right-down at d = 0.25 at 390x844 (SHOTS). Requires Playwright Chromium.
+shots/<join>-<w>x<h>-d<d>.png: MOMENTUM_CORNER_PREVIEW_SHOTS 'exit' (default,
+TASK-070) down-right and up-right at d = 0.5 and 0.25 at 1280x720, down-right
+at d = 0.25 at 390x844; 'entry' (TASK-069) the same for right-down and
+right-up; 'all' both; 'none' no shots (SHOTS). Requires Playwright Chromium.
 """
 import json
 import os
@@ -60,8 +62,11 @@ START_D = 1.5
 LEAD = 0.2
 VIEWPORT = (1280, 720)
 # join: [(viewport, d)] shots on the centre drive
-SHOTS = {'right-down': [((1280, 720), 0.5), ((1280, 720), 0.25), ((390, 844), 0.25)],
-         'right-up': [((1280, 720), 0.5), ((1280, 720), 0.25)]}
+JOIN_SHOTS = [((1280, 720), 0.5), ((1280, 720), 0.25), ((390, 844), 0.25)]
+SHOT_SETS = {'entry': {'right-down': JOIN_SHOTS, 'right-up': JOIN_SHOTS[:2]},
+             'exit': {'down-right': JOIN_SHOTS, 'up-right': JOIN_SHOTS[:2]}}
+SHOT_SETS['all'] = dict(SHOT_SETS['entry'], **SHOT_SETS['exit'])
+SHOTS = SHOT_SETS.get(os.environ.get('MOMENTUM_CORNER_PREVIEW_SHOTS', 'exit'), {})
 # Into a shaft: right, right (the rightAfterRight draw 0.1 < 0.4 keeps it
 # right, no dir draw), then the shaft: about 2.5 views of straight corridor at
 # 1280x720 before the join, where one right segment (at most maxLen, 5
@@ -73,11 +78,10 @@ SCRIPTS = dict(SHAFT_SCRIPTS, **{'right-right-down': [0.99, 0.1, 0.99, 0.9, 0.9,
 JOINS = {'right-down': ('right-right-down', 1), 'right-up': ('right-right-up', 1),
          'down-right': ('down', 1), 'up-right': ('up', 1)}
 DRIVES = ['centre', 'far']
-# Joins whose preview test fails on 7d04e88..332a63d: none since TASK-069
-# (into shafts: the pre-turn preview). Out of a shaft (down/up->right) the
-# camera centred on a shaft half a view wide (TASK-043) already sees 0.27 of
-# the view past its right wall: those pass since 7d04e88.
-EXPECTED_FAILURES = []
+# Every join passes since TASK-070: into shafts the pre-turn preview
+# (TASK-069); out of a shaft the camera centred on a shaft half a view wide
+# (TASK-043) already sees 0.27 of the view past its right wall, and the exit
+# preview (MomentumScreen.getExitPreviewX) raises it to preview.exitDepth.
 
 # Builds the drive's path and the join geometry; window.previewState drives RUN
 SETUP = '''([index, drive, startD]) => {
@@ -309,8 +313,6 @@ class MomentumCornerPreviewTests(unittest.TestCase):
 def make_test(join, kind):
     def test(self):
         getattr(self, f'check_{kind}')(join)
-    if kind == 'preview' and join in EXPECTED_FAILURES:
-        test = unittest.expectedFailure(test)
     return test
 
 

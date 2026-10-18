@@ -142,8 +142,12 @@ class MomentumScreen extends Screen
         let targetX = ninja.x - this.borderX + lookAhead * look.x
         // In a vertical segment, or a right one leading into one, the shaft's
         // left wall stays in view: x stops short of its face like y does
-        const capX = this.getShaftCapX()
+        // (or, approaching a right corridor, past it: getExitPreviewX)
+        const exitX = this.getExitPreviewX(segment)
+        const capX = exitX !== null ? exitX : this.getShaftCapX()
         targetX = Math.min(targetX, capX)
+        if (exitX !== null)
+            targetX = Math.max(targetX, exitX)
         if (targetX >= camX)
             wantX = look.x * along + brake(targetX - camX)
         // The y braking curve, aimed a buffer short of the cap: the jerk
@@ -289,6 +293,31 @@ class MomentumScreen extends Screen
         const limit = travel > 0 ? ninja.y - preview.ninjaMargin * view
                                  : ninja.y + preview.ninjaMargin * view - view
         return travel > 0 ? Math.max(centre, Math.min(stop, limit)) : Math.min(centre, Math.max(stop, limit))
+    }
+    // Exit preview (GAMEPLAY.momentumCamera.preview, exitDepth): in a
+    // vertical segment leading into a right corridor, once the ninja is d <=
+    // start view heights before the corner box (the corridor's half width
+    // before the join), the camera x (-screen.x) at which the view reaches
+    // exitDepth * smoothstep(1 - d / start) of its width past the shaft's
+    // right-wall face, the ninja kept ninjaMargin of the view width off the
+    // left edge, never short of getShaftCapX (the view centred on the
+    // shaft). follow() aims x at it and caps x there. null elsewhere.
+    getExitPreviewX(segment)
+    {
+        const next = this.course.segment(this.segmentIndex + 1)
+        if (segment.dir == 'right' || next.dir != 'right')
+            return null
+        const preview = GAMEPLAY.momentumCamera.preview
+        const view = this.getViewHeight(), viewW = width / scale[version]
+        const halfWidth = momentumSegmentHalfWidth(next)
+        const d = (segment.dir == 'up' ? ninja.y - segment.y1 - halfWidth : segment.y1 - halfWidth - ninja.y) / view
+        if (d > preview.start)
+            return null
+        const t = Math.min(1, Math.max(0, 1 - d / preview.start))
+        const depth = preview.exitDepth * t * t * (3 - 2 * t) * viewW
+        const stop = segment.x0 + momentumSegmentHalfWidth(segment) + depth - viewW
+        const limit = ninja.x - preview.ninjaMargin * viewW
+        return Math.max(this.getShaftCapX(), Math.min(stop, limit))
     }
     // Largest camera x (-screen.x): the view centred on the current vertical
     // segment, or on the next one from a right segment, where it shows only

@@ -139,8 +139,10 @@ const GAMEPLAY = Object.freeze({
         // start: view widths before the corner box where the preview begins;
         // depth: share of the view shown past the floor / ceiling face at the
         // box entry; ninjaMargin: share of the view the ninja keeps to the
-        // trailing (opposite) view edge
-        preview: Object.freeze({start: 1.25, depth: 0.35, ninjaMargin: 0.15})
+        // trailing (opposite) view edge; exitDepth: depth out of a shaft,
+        // share of the view width past the shaft's right wall (start in view
+        // heights there)
+        preview: Object.freeze({start: 1.25, depth: 0.35, exitDepth: 0.35, ninjaMargin: 0.15})
     }),
     // Momentum HP (elements/momentumstate.js): hp at every run start (no upper
     // cap) and how many green touches in a row give one hp.
