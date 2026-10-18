@@ -1,4 +1,4 @@
-"""Momentum corner preview: seeing into the next corridor before a corner (TASK-068 reproduction).
+"""Momentum corner preview: seeing into the next corridor before a corner (TASK-068 reproduction, TASK-069 into shafts).
 
 User report: "we still have troubles with camera on corners. I would prefer
 it to change direction earlier. e.g. if there is a tunnel down, i see nothing
@@ -36,10 +36,10 @@ cycle.
 
 MOMENTUM_CORNER_PREVIEW_EVIDENCE_DIR (default artifacts/TASK-068) receives
 preview-trace.json ({join: {drive: [{cycle, d, preview, margin, camVx, camVy,
-seg}]}}, every 4th cycle) and, on the centre drive at d = 0.25 with the
-opening and the ninja outlined in a DOM overlay (not drawn by the game),
-shots/right-down-<w>x<h>.png and shots/down-right-<w>x<h>.png at 1280x720
-and 390x844. Requires Playwright Chromium.
+seg}]}}, every 4th cycle) and, on the centre drive with the opening and the
+ninja outlined in a DOM overlay (not drawn by the game),
+shots/<join>-<w>x<h>-d<d>.png: right-down and right-up at d = 0.5 and 0.25 at
+1280x720, right-down at d = 0.25 at 390x844 (SHOTS). Requires Playwright Chromium.
 """
 import json
 import os
@@ -58,10 +58,10 @@ MIN_MARGIN = 0.10
 START_D = 1.5
 # Least straight approach before START_D (views), to get onto the far lane
 LEAD = 0.2
-SHOT_D = 0.25
 VIEWPORT = (1280, 720)
-SHOT_VIEWPORTS = [(1280, 720), (390, 844)]
-SHOT_JOINS = ['right-down', 'down-right']
+# join: [(viewport, d)] shots on the centre drive
+SHOTS = {'right-down': [((1280, 720), 0.5), ((1280, 720), 0.25), ((390, 844), 0.25)],
+         'right-up': [((1280, 720), 0.5), ((1280, 720), 0.25)]}
 # Into a shaft: right, right (the rightAfterRight draw 0.1 < 0.4 keeps it
 # right, no dir draw), then the shaft: about 2.5 views of straight corridor at
 # 1280x720 before the join, where one right segment (at most maxLen, 5
@@ -73,10 +73,11 @@ SCRIPTS = dict(SHAFT_SCRIPTS, **{'right-right-down': [0.99, 0.1, 0.99, 0.9, 0.9,
 JOINS = {'right-down': ('right-right-down', 1), 'right-up': ('right-right-up', 1),
          'down-right': ('down', 1), 'up-right': ('up', 1)}
 DRIVES = ['centre', 'far']
-# Joins whose preview test fails on 7d04e88..332a63d. Out of a shaft
-# (down/up->right) the camera centred on a shaft half a view wide (TASK-043)
-# already sees 0.27 of the view past its right wall: those pass on HEAD.
-INTO_SHAFT = ['right-down', 'right-up']
+# Joins whose preview test fails on 7d04e88..332a63d: none since TASK-069
+# (into shafts: the pre-turn preview). Out of a shaft (down/up->right) the
+# camera centred on a shaft half a view wide (TASK-043) already sees 0.27 of
+# the view past its right wall: those pass since 7d04e88.
+EXPECTED_FAILURES = []
 
 # Builds the drive's path and the join geometry; window.previewState drives RUN
 SETUP = '''([index, drive, startD]) => {
@@ -246,17 +247,17 @@ class MomentumCornerPreviewTests(unittest.TestCase):
         wait_for_boot_run(page)
         return page, errors
 
-    def shoot(self, join, viewport):
+    def shoot(self, join, viewport, shot_d):
         script, index = JOINS[join]
         page, errors = self.page(viewport)
         page.evaluate(SEED_COURSE, SCRIPTS[script])
         page.evaluate(SETUP, [index, 'centre', START_D])
-        at = page.evaluate(RUN, [SHOT_D, START_D])
+        at = page.evaluate(RUN, [shot_d, START_D])
         self.assertEqual(at['stop'], 'd')
         page.evaluate(DRAW)
         page.evaluate(OVERLAY, f'{join} {viewport[0]}x{viewport[1]} d {at["d"]:.2f} preview {at["preview"]:.3f} '
                                f'(magenta: opening)')
-        page.screenshot(path=str(self.out / 'shots' / f'{join}-{viewport[0]}x{viewport[1]}.png'))
+        page.screenshot(path=str(self.out / 'shots' / f'{join}-{viewport[0]}x{viewport[1]}-d{shot_d}.png'))
         page.evaluate(UNOVERLAY)
         self.assertEqual(errors, [])
 
@@ -284,9 +285,8 @@ class MomentumCornerPreviewTests(unittest.TestCase):
             result[drive] = {'rows': rows, 'summary': summary}
         self.assertEqual(errors, [])
         self.runs[join] = result
-        if join in SHOT_JOINS:
-            for viewport in SHOT_VIEWPORTS:
-                self.shoot(join, viewport)
+        for viewport, shot_d in SHOTS.get(join, []):
+            self.shoot(join, viewport, shot_d)
         return result
 
     def check_preview(self, join):
@@ -308,8 +308,7 @@ class MomentumCornerPreviewTests(unittest.TestCase):
 def make_test(join, kind):
     def test(self):
         getattr(self, f'check_{kind}')(join)
-    if kind == 'preview' and join in INTO_SHAFT:
-        # fails on HEAD until TASK-069 (into shafts) / TASK-070 (out of shafts)
+    if kind == 'preview' and join in EXPECTED_FAILURES:
         test = unittest.expectedFailure(test)
     return test
 

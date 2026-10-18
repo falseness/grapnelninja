@@ -133,7 +133,14 @@ const GAMEPLAY = Object.freeze({
         shaftBrakeBufferHeightRatio: 0.05,
         holdMargin: 0.35,
         turnCatchUpMs: 400,
-        turnCatchUpSpeedRatio: 1
+        turnCatchUpSpeedRatio: 1,
+        // Pre-turn preview (MomentumScreen.follow): in a right segment
+        // leading into a shaft the camera eases toward it before the corner.
+        // start: view widths before the corner box where the preview begins;
+        // depth: share of the view shown past the floor / ceiling face at the
+        // box entry; ninjaMargin: share of the view the ninja keeps to the
+        // trailing (opposite) view edge
+        preview: Object.freeze({start: 1.0, depth: 0.35, ninjaMargin: 0.15})
     }),
     // Momentum HP (elements/momentumstate.js): hp at every run start (no upper
     // cap) and how many green touches in a row give one hp.

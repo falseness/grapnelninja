@@ -6,8 +6,11 @@ course centre line: every frame sets ninja position/speed through
 page.evaluate, then runs one physics() frame (cyclesPerTick physics steps).
 Asserts, with the camera's own segment (screen.getSegment()):
 - screen.y grows monotonically in the up segment (camera moves up) and
-  shrinks monotonically in the down segment; it stays put in right segments
-  that follow no vertical one;
+  shrinks monotonically in the down segment; in right segments it stays put
+  while no vertical one was entered or previewed, and otherwise moves only
+  toward the last vertical direction (MomentumScreen.verticalTravel: the
+  last shaft's, or from TASK-069 the next one's once its pre-turn preview
+  started, getPreviewStop);
 - the camera never scrolls back in x: screen.x (= -camera left) never grows;
 - borders and obstacles left behind below/above the view are deleted
   (screen.deletedBehind > 0);
@@ -82,7 +85,7 @@ DRIVE = '''([points, step, first]) => {
         const frame = first + k
         if (frame % 10 == 0) draw()
         frames.push([frame, screen.getSegment().dir, screen.x, screen.y, ninja.x, ninja.y,
-                     screen.hasLeftBehind(ninja), screen.segmentIndex])
+                     screen.hasLeftBehind(ninja), screen.segmentIndex, screen.verticalTravel])
     })
     return frames
 }'''
@@ -178,15 +181,30 @@ class MomentumCameraTests(unittest.TestCase):
         self.assertGreater(ys[0] - ys[-1], 0.5 * segment_length)
 
     def test_screen_y_still_before_first_vertical(self):
-        ys = {f[3] for f in self.frames_in(0)}
-        print('segment 0 (right) screen.y values:', sorted(ys))
-        self.assertEqual(ys, {0})
+        # Still until the preview of the first shaft (up) starts, then only
+        # up (segment 0 of this course is shorter than preview.start: the
+        # preview runs from the spawn, there may be no still frame)
+        frames = self.frames_in(0)
+        ys = {f[3] for f in frames if f[8] == 0}
+        print('segment 0 (right) screen.y values before the preview:', sorted(ys),
+              'preview frames:', sum(1 for f in frames if f[8] != 0), 'of', len(frames))
+        self.assertLessEqual(ys, {0})
+        self.assertTrue(all(f[8] == -1 for f in frames if f[8] != 0))
+        self.assert_monotone('segment 0 preview: screen.y non-decreasing', [f[3] for f in frames if f[8] == -1], 1)
 
     def test_right_segments_settle_towards_previous_vertical(self):
-        # After the up segment the camera only moves up; after down only down
+        # Right segments after a shaft: the camera moves only toward the last
+        # vertical direction, the up shaft's until the preview of the down
+        # shaft after them starts (verticalTravel +1), then only down
         up, down = course_index('up'), course_index('down')
-        ys = [f[3] for f in self.frames if up < f[7] < down]
-        self.assert_monotone('right segments after up: screen.y non-decreasing', ys, 1)
+        after_up = [f for f in self.frames if up < f[7] < down]
+        self.assert_monotone('right segments after up: screen.y non-decreasing',
+                             [f[3] for f in after_up if f[8] == -1], 1)
+        self.assert_monotone('right segments after up, down preview: screen.y non-increasing',
+                             [f[3] for f in after_up if f[8] == 1], -1)
+        # No preview back up once it started
+        travel = [f[8] for f in after_up]
+        self.assertEqual(travel, sorted(travel), 'verticalTravel after up: -1 then +1')
         ys = [f[3] for f in self.frames if f[7] > down]
         self.assert_monotone('right segment after down: screen.y non-increasing', ys, -1)
 

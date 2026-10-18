@@ -119,16 +119,19 @@ PIXELS = '''(grid) => {
         const xs = lines.flatMap(l => [l.x0, l.x1]), ys = lines.flatMap(l => [l.y0, l.y1])
         return {l: Math.min(...xs), r: Math.max(...xs), t: Math.min(...ys), b: Math.max(...ys)}
     }
-    const inView = b => b.l < view.r && b.r > view.l && b.t < view.b && b.b > view.t
-    const last = course.segments.length - 2, cur = Math.min(screen.segmentIndex, last)
-    const boxes = [box(cur)]
-    for (let i = cur - 1; i >= 0 && inView(box(i)); --i) boxes.push(box(i))
-    for (let i = cur + 1; i <= last && inView(box(i)); ++i) boxes.push(box(i))
     const T = ctx.getTransform(), k = T.a * scale[version]
     const neon = STYLE.strokes.neonOutline
     const cap = Math.max(2, screenHeightPercent(STYLE.spriteGeometry.capHeightPercent))
     // Canvas px -> world units: the cap strip / widest inner glow line + AA
     const band = (Math.max(4 * neon.width * T.a, cap * k) + 3) / k
+    // A corridor counts when its interior or its face band is in view: the
+    // view can stop just short of a corridor's face (its band only in view;
+    // the 1280x720 mid-shaft frame since TASK-069)
+    const inView = b => b.l - band < view.r && b.r + band > view.l && b.t - band < view.b && b.b + band > view.t
+    const last = course.segments.length - 2, cur = Math.min(screen.segmentIndex, last)
+    const boxes = [box(cur)]
+    for (let i = cur - 1; i >= 0 && inView(box(i)); --i) boxes.push(box(i))
+    for (let i = cur + 1; i <= last && inView(box(i)); ++i) boxes.push(box(i))
     const hex = STYLE.momentum.wallFill
     const want = [1, 3, 5].map(i => parseInt(hex.substr(i, 2), 16))
     const cw = canvas.width, ch = canvas.height
