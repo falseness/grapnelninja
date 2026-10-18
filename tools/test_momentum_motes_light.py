@@ -70,7 +70,7 @@ BLUE_LIGHT = '#2f86ff'
 HIDE_MOTES = '() => { QUALITY.ambient = false }'
 # Later effects (the TASK-059 speed light) are switched off in the tree by a
 # STYLE override, so only the lit motes are compared with the parent
-LATER_EFFECTS_OFF = [('speedLight: true', 'speedLight: false')]
+LATER_EFFECTS_OFF = [('speedLight: true', 'speedLight: false'), ('show: true', 'show: false')]
 # Ninja to the left edge of the view, no trail: most of the view is far
 NINJA_LEFT = '''() => { ninja.x = -screen.x + 60 * width / scale[version] / 1280; ninja.track.pos = [] }'''
 

@@ -385,7 +385,35 @@ const STYLE = Object.freeze({
         // the blue toward it, fringePx (screen px at 1080) each at the screen
         // edges, 0 at the centre; strength 1 - t^2 over fringeMs
         fringeMs: 150,
-        fringePx: 5
+        fringePx: 5,
+        // Foreground crystal silhouettes (render/foreground.js): near-black
+        // crystals rising from the bottom edge and hanging under the HUD,
+        // seen only through windows bandWidth of the view width wide at the
+        // left and right edges and bandHeight of its height tall (fading out
+        // over fadeWidth of the view width towards the centre). One bottom
+        // and one top strip of the view's width, painted once per viewport
+        // at 1 / blur of its resolution and scaled up (soft edges), scroll
+        // horizontally at parallax x the camera shift, wrapping. Their
+        // outline (rimWidth screen px at 1080) is lit by the frame's lights
+        // reaching rimReach times as far, rimGain times as bright, unshadowed
+        foreground: Object.freeze({
+            show: true,
+            parallax: 1.3,
+            bandWidth: 0.14,
+            bandHeight: 0.3,
+            fadeWidth: 0.035,
+            seed: 0x7f0e63,
+            spacing: [0.035, 0.07],
+            crystalHeight: [0.35, 0.97],
+            crystalWidth: [0.24, 0.46],
+            lean: 0.35,
+            fill: '#04050b',
+            facet: '#090b18',
+            blur: 2.5,
+            rimWidth: 3,
+            rimReach: 1.6,
+            rimGain: 2.2
+        })
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a

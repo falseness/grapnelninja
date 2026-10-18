@@ -86,6 +86,13 @@ function drawPlayerLayer()
     ninja.draw()
 }
 
+// Foreground crystal silhouettes in front of the world and the player,
+// under the HUD (momentum lighting only)
+function drawForegroundLayer()
+{
+    FOREGROUND.draw()
+}
+
 // Colour grade and vignette over the world, under the player and HUD
 function drawColorGradeLayer()
 {
@@ -216,6 +223,7 @@ function draw()
     drawPlayerGlowLayer(gameState)
     drawColorGradeLayer()
     drawPlayerLayer()
+    drawForegroundLayer()
     drawBlueFringeLayer()
     if (TUTORIAL_HINT.visible)
         drawTutorialHintLayer()
