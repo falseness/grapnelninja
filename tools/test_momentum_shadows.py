@@ -20,7 +20,7 @@ tools/momentum_fx_support.py this suite checks:
   (and to the ninja from LEAK_MARGIN px around them) cross a wall have a
   luminance within 2% of the ambient-only frame (the ninja light and haze
   removed); unshadowedRise reports what the light would add there with the
-  shadows disabled;
+  shadows disabled; blue area lights (TASK-055) are off in these frames;
 - perf: median and p95 of draw() + a 1 px readback over PERF_FRAMES frames
   of mid-shaft at 1280x720, parent vs tree (interleaved batches); tree
   median <= 1.25x parent median;
@@ -72,6 +72,11 @@ NO_NINJA_LIGHT = '''() => {
     lightmap.collectMomentumLights = function() { this.momentumLights.length = 0; return this.momentumLights }
     lightmap.addMomentumHaze = () => {}
 }'''
+# Blue pieces emit no area light (trees before TASK-055 have none)
+NO_BLUE_LIGHT = '''() => { const l = visualEffects.lightmap, collect = l.collectEmitters
+    if (collect) l.collectEmitters = function(s) { const e = collect.call(this, s)
+        for (let i = e.length - 1; i >= 0; --i) if (e[i].element) e.splice(i, 1)
+        return e } }'''
 # The light without any shadow (what would leak through the walls)
 NO_SHADOWS = '''() => { const lightmap = visualEffects.lightmap
     lightmap.cutShadows = () => {}; lightmap.addDeepShadows = () => {} }'''
@@ -283,9 +288,11 @@ class MomentumShadowsTests(unittest.TestCase):
             for variant in ('scene', 'near-corner'):
                 move = '' if variant == 'scene' else \
                     f'(() => ({MOVE_NINJA})({list(NEAR_CORNER[scene])}))();'
+                # The ninja light only: blue area lights (TASK-055, tested by
+                # test_momentum_blue_light) are off in all three frames
                 def js(extra):
                     body = extra.strip()
-                    return f'() => {{ {move} ({body})() }}'
+                    return f'() => {{ {move} ({NO_BLUE_LIGHT})(); ({body})() }}'
                 on = fx.capture(scene, (1280, 720), extra_js=js('() => {}'))
                 ambient = fx.capture(scene, (1280, 720), extra_js=js(NO_NINJA_LIGHT))
                 unshadowed = fx.capture(scene, (1280, 720), extra_js=js(NO_SHADOWS))

@@ -281,6 +281,13 @@ const STYLE = Object.freeze({
         // Point lights besides the ninja's (nearest first); walls and pieces
         // cast hard shadows from every one of them
         maxEmitters: 6,
+        // A blue piece is an area light of momentum.blueStroke: it lights
+        // from its outline outward over blueSpread (screen px at 1080), at
+        // blueAlpha times its fade alpha. Greens emit nothing.
+        blueSpread: 220,
+        blueAlpha: 0.9,
+        // Its haze ('lighter', like the ninja's) at this alpha
+        blueHazeAlpha: 0.25,
         // A piece's shadow also darkens the ambient by up to this much,
         // fading out over shadowRadius (screen px at 1080) from the light
         shadowDepth: 0.92,

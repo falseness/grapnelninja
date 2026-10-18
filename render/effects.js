@@ -636,6 +636,8 @@ class LightmapRenderer
         // Extra point lights ({x, y, radius, color, alpha}, world units,
         // radius screen px at 1080) that later effects put here per frame
         this.momentumEmitters = []
+        // Those plus the blue pieces' area lights of the frame
+        this.emitterCandidates = []
         this.momentumAmbient = null
         this.momentumGradient = null
         this.trailBand = null
@@ -762,6 +764,14 @@ class LightmapRenderer
         if (!this.shouldDraw())
             return
 
+        // Momentum lighting: the pieces (the only spill there) emit no spill,
+        // blues are area lights instead (collectMomentumLights). Only under
+        // the translucent player trail, whose pixels stay as with the
+        // lighting off, the spill is kept (clipToTrailBand).
+        const momentum = this.shouldDrawMomentumLight()
+        const band = momentum ? visualEffects.playerTrail.getRibbonBand(ninja.track) : null
+        if (momentum && !band)
+            return
         const lightCtx = this.lightCtx
         lightCtx.save()
         lightCtx.globalCompositeOperation = 'lighter'
@@ -797,6 +807,30 @@ class LightmapRenderer
             ninja.radius * 1.5 + 2 / unit, 0, Math.PI * 2)
         lightCtx.fill()
         lightCtx.restore()
+        if (momentum && this.hasLights)
+            this.clipToTrailBand(band)
+    }
+    // Keeps lightCanvas only inside the trail band (fillTrailBand, built in
+    // the light layer canvas, free until composite)
+    clipToTrailBand(band)
+    {
+        const layer = this.lightLayerCtx
+        layer.save()
+        layer.setTransform(1, 0, 0, 1, 0, 0)
+        layer.globalCompositeOperation = 'source-over'
+        layer.globalAlpha = 1
+        layer.clearRect(0, 0, this.lightLayerCanvas.width, this.lightLayerCanvas.height)
+        layer.fillStyle = '#ffffff'
+        layer.strokeStyle = '#ffffff'
+        this.fillTrailBand(layer, band)
+        layer.restore()
+        const lightCtx = this.lightCtx
+        lightCtx.save()
+        lightCtx.setTransform(1, 0, 0, 1, 0, 0)
+        lightCtx.globalAlpha = 1
+        lightCtx.globalCompositeOperation = 'destination-in'
+        lightCtx.drawImage(this.lightLayerCanvas, 0, 0)
+        lightCtx.restore()
     }
     drawWorldLights(floors)
     {
@@ -823,6 +857,21 @@ class LightmapRenderer
             || (x - spread) * toLight > this.lightCanvas.width
             || (y - spread) * toLight > this.lightCanvas.height) return
         const color = this.getElementLightColor(element)
+        const sprite = this.getShapeLightSprite(element, box, color, spread, toLight)
+        this.lightCtx.setTransform(toLight, 0, 0, toLight, 0, 0)
+        this.lightCtx.globalAlpha = element instanceof Triangle
+            ? STYLE.lights.hazardAlpha : this.isOrangeDangerLight(element)
+                ? STYLE.lights.dangerAlpha : STYLE.lights.cubeAlpha
+        this.lightCtx.drawImage(sprite, x - spread, y - spread,
+            sprite.width / toLight, sprite.height / toLight)
+        this.hasLights = true
+    }
+    // The cached light of element's outline in colour, fading out over spread
+    // world units from it: a canvas at toLight px per world unit whose (0, 0)
+    // lies spread above and left of box (the element's cull box)
+    getShapeLightSprite(element, box, color, spread, toLight)
+    {
+        const w = box.right - box.left, h = box.bottom - box.top
         // Translation is deliberately absent from the key: moving hazards reuse
         // their sprite. Quantization removes floating point translation noise.
         // An element whose points, colour and scale did not change keeps its key.
@@ -863,13 +912,7 @@ class LightmapRenderer
             }
             this.shapeLights.set(key, sprite)
         }
-        this.lightCtx.setTransform(toLight, 0, 0, toLight, 0, 0)
-        this.lightCtx.globalAlpha = element instanceof Triangle
-            ? STYLE.lights.hazardAlpha : this.isOrangeDangerLight(element)
-                ? STYLE.lights.dangerAlpha : STYLE.lights.cubeAlpha
-        this.lightCtx.drawImage(sprite, x - spread, y - spread,
-            sprite.width / toLight, sprite.height / toLight)
-        this.hasLights = true
+        return sprite
     }
     isCubeOrPlatform(element)
     {
@@ -935,7 +978,7 @@ class LightmapRenderer
         lightCtx.globalCompositeOperation = 'lighter'
         this.collectOccluders(gameState)
         this.hasDeepShadows = false
-        const lights = this.collectMomentumLights()
+        const lights = this.collectMomentumLights(gameState)
         for (let i = 0; i < lights.length; ++i)
             this.addShadowedLight(lightCtx, lights[i])
         this.trailBand = visualEffects.playerTrail.getRibbonBand(ninja.track)
@@ -963,8 +1006,10 @@ class LightmapRenderer
         this.compositeCanvas(this.momentumCanvas, 1, 'multiply')
     }
     // The ninja's light plus the momentumLight.maxEmitters emitters nearest
-    // to it, each {x, y, radius, gradient, alpha} with x, y on screen
-    collectMomentumLights()
+    // to it (momentumEmitters and the blue pieces), each {x, y, radius,
+    // gradient, alpha} with x, y on screen; a blue's light has its element
+    // instead of a gradient
+    collectMomentumLights(gameState)
     {
         const config = STYLE.momentumLight
         const lights = this.momentumLights
@@ -974,7 +1019,7 @@ class LightmapRenderer
         if (this.isLightOnScreen(x, y, config.ninjaRadius))
             lights.push({x: x, y: y, radius: config.ninjaRadius,
                 gradient: this.getMomentumGradient(), alpha: config.lightAlpha, contact: this.getNinjaContact()})
-        const emitters = this.momentumEmitters
+        const emitters = this.collectEmitters(gameState)
         if (emitters.length > config.maxEmitters)
             emitters.sort((a, b) => Math.hypot(a.x - ninja.x, a.y - ninja.y)
                 - Math.hypot(b.x - ninja.x, b.y - ninja.y))
@@ -983,9 +1028,41 @@ class LightmapRenderer
             const e = emitters[i]
             if (this.isLightOnScreen(e.x + screen.x, e.y + screen.y, e.radius))
                 lights.push({x: e.x + screen.x, y: e.y + screen.y, radius: e.radius,
-                    gradient: this.getLightGradient(e.color), alpha: e.alpha, contact: 0})
+                    gradient: e.element ? null : this.getLightGradient(e.color), alpha: e.alpha,
+                    contact: 0, element: e.element || null})
         }
         return lights
+    }
+    // momentumEmitters plus an area light per visible blue piece: at its
+    // centre, reaching blueSpread past its outline, at blueAlpha times its
+    // fade alpha (none once faded)
+    collectEmitters(gameState)
+    {
+        const config = STYLE.momentumLight
+        const emitters = this.emitterCandidates
+        emitters.length = 0
+        for (let i = 0; i < this.momentumEmitters.length; ++i)
+            emitters.push(this.momentumEmitters[i])
+        const toScreen = scale[version] * 1080 / height
+        const floors = gameState.floors
+        for (let i = 0; i < floors.length; ++i)
+        {
+            const elements = floors[i].elements
+            for (let j = 0; j < elements.length; ++j)
+            {
+                const element = elements[j]
+                if (!(element instanceof MomentumBlue))
+                    continue
+                const alpha = element.getAlpha()
+                if (alpha <= 0)
+                    continue
+                const circle = element.circle
+                emitters.push({x: element.x + circle.x, y: element.y + circle.y,
+                    radius: config.blueSpread + circle.radius * toScreen,
+                    color: STYLE.momentum.blueStroke, alpha: config.blueAlpha * alpha, element: element})
+            }
+        }
+        return emitters
     }
     // The ninja is a light of its own size: a piece it touches (within this
     // many world units of its centre) casts no shadow from it, so a bounce
@@ -1012,7 +1089,7 @@ class LightmapRenderer
                 {
                     const alpha = element.getAlpha()
                     if (alpha > 0)
-                        this.addOccluder(element.getPoints(), alpha, true)
+                        this.addOccluder(element.getPoints(), alpha, true, element)
                 }
                 else if (element instanceof MomentumBorder)
                 {
@@ -1030,8 +1107,9 @@ class LightmapRenderer
         for (const c of cells)
             this.addOccluder([{x: c.l, y: c.t}, {x: c.r, y: c.t}, {x: c.r, y: c.b}, {x: c.l, y: c.b}], 1)
     }
-    // deep: a piece, whose shadow also darkens the ambient (addDeepShadows)
-    addOccluder(points, alpha, deep)
+    // deep: a piece, whose shadow also darkens the ambient (addDeepShadows);
+    // element: that piece
+    addOccluder(points, alpha, deep, element)
     {
         let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
         for (let i = 0; i < points.length; ++i)
@@ -1041,10 +1119,12 @@ class LightmapRenderer
             top = Math.min(top, points[i].y)
             bottom = Math.max(bottom, points[i].y)
         }
-        this.occluders.push({points: points, alpha: alpha, deep: !!deep,
+        this.occluders.push({points: points, alpha: alpha, deep: !!deep, element: element || null,
             left: left, top: top, right: right, bottom: bottom})
     }
-    // One light into the layer canvas, its shadows cut out, added to target
+    // One light into the layer canvas, its shadows cut out, added to target.
+    // A blue's area light casts its shadows from its centre (not by itself)
+    // and only stops at the pieces and walls: no deep shadows.
     addShadowedLight(target, light)
     {
         const layer = this.lightLayerCtx
@@ -1052,11 +1132,29 @@ class LightmapRenderer
         layer.setTransform(1, 0, 0, 1, 0, 0)
         layer.globalCompositeOperation = 'source-over'
         layer.clearRect(0, 0, this.lightLayerCanvas.width, this.lightLayerCanvas.height)
-        this.fillRadialLight(layer, light.x, light.y, light.radius, light.gradient, light.alpha)
-        this.cutShadows(layer, light.x, light.y, light.radius, light.contact)
+        if (light.element)
+            this.fillAreaLight(layer, light.element, light.alpha)
+        else
+            this.fillRadialLight(layer, light.x, light.y, light.radius, light.gradient, light.alpha)
+        this.cutShadows(layer, light.x, light.y, light.radius, light.contact, light.element)
         layer.restore()
         target.drawImage(this.lightLayerCanvas, 0, 0)
-        this.addDeepShadows(light)
+        if (!light.element)
+            this.addDeepShadows(light)
+    }
+    // A blue's outline light (the obstacle spill sprite, wider) at alpha
+    fillAreaLight(lightCtx, element, alpha)
+    {
+        const box = getElementCullBox(element)
+        if (!box)
+            return
+        const toLight = this.scale * scale[version]
+        const spread = STYLE.momentumLight.blueSpread * height / 1080 / scale[version]
+        const sprite = this.getShapeLightSprite(element, box, STYLE.momentum.blueStroke, spread, toLight)
+        lightCtx.setTransform(toLight, 0, 0, toLight, 0, 0)
+        lightCtx.globalAlpha = alpha
+        lightCtx.drawImage(sprite, box.left + screen.x - spread, box.top + screen.y - spread,
+            sprite.width / toLight, sprite.height / toLight)
     }
     // A piece stands in the open between the light and the cave: its shadow
     // also darkens the ambient and the obstacle spill by up to shadowDepth,
@@ -1110,15 +1208,16 @@ class LightmapRenderer
     // Hard shadows: every occluder within radius of the light at x, y (on
     // screen) erases, by its alpha, the quads its edges sweep away from the
     // light. The low-resolution canvas softens their edges when enlarged.
-    cutShadows(lightCtx, x, y, radius, contact)
+    cutShadows(lightCtx, x, y, radius, contact, emitter)
     {
         lightCtx.globalCompositeOperation = 'destination-out'
-        this.traceShadows(lightCtx, x, y, radius, null, contact)
+        this.traceShadows(lightCtx, x, y, radius, null, contact, emitter)
     }
     // Fills those quads white, each occluder at its alpha, in the context's
     // current composite operation; deep true: the pieces' only, false: the
-    // walls' only, null: all. Pieces within contact of the light are skipped.
-    traceShadows(lightCtx, x, y, radius, deep, contact)
+    // walls' only, null: all. Pieces within contact of the light and the
+    // emitter (the piece that is the light) are skipped.
+    traceShadows(lightCtx, x, y, radius, deep, contact, emitter)
     {
         const toLight = this.scale * scale[version]
         const reach = radius * height / 1080 / scale[version]
@@ -1132,7 +1231,7 @@ class LightmapRenderer
         for (let i = 0; i < occluders.length; ++i)
         {
             const o = occluders[i]
-            if (deep !== null && o.deep !== deep)
+            if ((deep !== null && o.deep !== deep) || (emitter && o.element === emitter))
                 continue
             if (o.right < lx - reach || o.left > lx + reach || o.bottom < ly - reach || o.top > ly + reach)
                 continue
@@ -1192,7 +1291,8 @@ class LightmapRenderer
         lightCtx.fill()
         lightCtx.stroke()
     }
-    // A faint cyan glow of the air round the ninja, added from hazeCanvas
+    // A faint cyan glow of the air round the ninja and a blue one round each
+    // lit blue piece (shadowed like their lights), added from hazeCanvas
     addMomentumHaze()
     {
         const config = STYLE.momentumLight
@@ -1201,15 +1301,40 @@ class LightmapRenderer
         hazeCtx.save()
         hazeCtx.setTransform(1, 0, 0, 1, 0, 0)
         hazeCtx.clearRect(0, 0, this.hazeCanvas.width, this.hazeCanvas.height)
+        let any = false
         const x = ninja.x + screen.x
         const y = ninja.y + screen.y
-        if (!this.isLightOnScreen(x, y, config.hazeRadius))
+        if (this.isLightOnScreen(x, y, config.hazeRadius))
+        {
+            this.fillRadialLight(hazeCtx, x, y, config.hazeRadius, this.getMomentumGradient(), config.hazeAlpha)
+            this.cutShadows(hazeCtx, x, y, config.hazeRadius, this.getNinjaContact())
+            any = true
+        }
+        const lights = this.momentumLights
+        for (let i = 0; i < lights.length; ++i)
+        {
+            const light = lights[i]
+            if (!light.element)
+                continue
+            const layer = this.lightLayerCtx
+            layer.save()
+            layer.setTransform(1, 0, 0, 1, 0, 0)
+            layer.globalCompositeOperation = 'source-over'
+            layer.clearRect(0, 0, this.lightLayerCanvas.width, this.lightLayerCanvas.height)
+            this.fillAreaLight(layer, light.element, light.alpha / config.blueAlpha * config.blueHazeAlpha)
+            this.cutShadows(layer, light.x, light.y, light.radius, 0, light.element)
+            layer.restore()
+            hazeCtx.setTransform(1, 0, 0, 1, 0, 0)
+            hazeCtx.globalAlpha = 1
+            hazeCtx.globalCompositeOperation = 'lighter'
+            hazeCtx.drawImage(this.lightLayerCanvas, 0, 0)
+            any = true
+        }
+        if (!any)
         {
             hazeCtx.restore()
             return
         }
-        this.fillRadialLight(hazeCtx, x, y, config.hazeRadius, this.getMomentumGradient(), config.hazeAlpha)
-        this.cutShadows(hazeCtx, x, y, config.hazeRadius, this.getNinjaContact())
         if (this.trailBand)
         {
             hazeCtx.globalAlpha = 1
