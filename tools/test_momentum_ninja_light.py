@@ -36,6 +36,8 @@ receives ninja-light.json, allocations.json, switch-off-identical.json
 compare-run-right.png / compare-mid-shaft.png (left the new frame, right the
 concept). MOMENTUM_NINJA_LIGHT_PARENT is the parent revision (default: the
 parent of the commit that added this file, or HEAD while uncommitted).
+Frames of the tree are taken with LATER_EFFECTS_OFF served in style.js
+(later tickets' effects on emissive art, e.g. the TASK-058 lit motes).
 Requires Playwright Chromium. No remote requests.
 """
 import io
@@ -63,6 +65,7 @@ NEAR_PX = 80
 MAX_FAR_RATIO = 0.60
 MIN_NEAR_RATIO = 1.25
 MAX_EMISSIVE_DELTA = 3
+LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0')]
 ALLOC_FRAMES = 120
 # Opaque art: black- and white-background captures differ by at most this
 OPAQUE_TOLERANCE = 2
@@ -210,16 +213,25 @@ class MomentumNinjaLightTests(unittest.TestCase):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
         cls.frames = {}
+        # Later effects that change emissive art on purpose (the TASK-058 lit
+        # motes) are switched off by a STYLE override, so only the ninja
+        # light is compared
+        tree = fx.harness()
+        later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
+        cls.light_harness = fx.FxHarness('worktree', tree.browser, style_patch=later_off) if later_off else None
+        light = cls.light_harness or tree
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 for on in (True, False):
-                    cls.frames[scene, viewport, on] = fx.capture(scene, viewport, fx_on=on)
+                    cls.frames[scene, viewport, on] = light.capture(scene, viewport, fx_on=on)
                 for colour in ('black', 'white'):
-                    cls.frames[scene, viewport, colour] = fx.capture(
+                    cls.frames[scene, viewport, colour] = light.capture(
                         scene, viewport, extra_js=FLAT_BACKGROUND % colour)
 
     @classmethod
     def tearDownClass(cls):
+        if cls.light_harness:
+            cls.light_harness.close()
         fx.close()
 
     def test_0_far_dimmed_near_lit_emissive_kept(self):
@@ -271,7 +283,8 @@ class MomentumNinjaLightTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
-                d = fx.max_delta(self.frames[scene, viewport, False], base)
+                # The tree as served, without the LATER_EFFECTS_OFF override
+                d = fx.max_delta(fx.capture(scene, viewport, fx_on=False), base)
                 rows.append({'scene': f'momentum-{scene}-{viewport[0]}x{viewport[1]}', 'fx': 'off',
                              'maxDelta': d, 'identical': d == 0})
         tree = fx.harness()

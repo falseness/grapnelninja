@@ -53,7 +53,7 @@ MIN_RATIO = 1.10
 POINT_X = (80, 140, 200)
 TRAIL_OFF = [('trailIntensity: 0.35', 'trailIntensity: 0')]
 EMPTY_TRAIL = '() => { ninja.track.pos = [] }'
-LATER_EFFECTS_OFF = [('rimStrength: 1', 'rimStrength: 0')]
+LATER_EFFECTS_OFF = [('rimStrength: 1', 'rimStrength: 0'), ('moteGain: 5', 'moteGain: 0')]
 REUSE = r'''() => {
     const l = visualEffects.lightmap
     draw()
@@ -127,8 +127,8 @@ class MomentumTrailLightTests(unittest.TestCase):
             self.assertGreaterEqual(row['ratio'], MIN_RATIO)
 
     def test_1_empty_trail_equals_parent(self):
-        # Later effects (the TASK-057 crystal rim) are switched off by a STYLE
-        # override, so only the trail light is compared
+        # Later effects (the TASK-057 crystal rim, the TASK-058 lit motes) are
+        # switched off by a STYLE override, so only the trail light is compared
         tree = fx.harness()
         later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
         rim_harness = fx.FxHarness('worktree', tree.browser, style_patch=later_off) if later_off else None

@@ -683,6 +683,8 @@ class LightmapRenderer
         // and the lights ({x, y, radius, gradient, alpha}), reused per frame
         this.occluders = []
         this.momentumLights = []
+        // drawFrameId of the frame momentumLights were collected for
+        this.momentumLightsFrame = -1
         // Extra point lights ({x, y, radius, color, alpha}, world units,
         // radius screen px at 1080) that later effects put here per frame
         this.momentumEmitters = []
@@ -1164,6 +1166,41 @@ class LightmapRenderer
         this.ctx.drawImage(rim, left, top, right - left, bottom - top, left, top, right - left, bottom - top)
         this.ctx.restore()
     }
+    // This frame's momentum lights (collectMomentumLights), or null when
+    // momentum lighting is off or has not run this frame
+    getFrameLights()
+    {
+        if (!this.shouldDrawMomentumLight() || this.momentumLightsFrame !== drawFrameId)
+            return null
+        return this.momentumLights
+    }
+    // The light of light (a momentumLights entry) at x, y (world units) on
+    // the ambient, 0..alpha: the radial falloff of STYLE.lights.falloff, a
+    // blue's from its outline (its circumscribed circle) over blueSpread,
+    // the radius times reach. No shadows.
+    getLightAt(light, x, y, reach)
+    {
+        const toWorld = reach * height / 1080 / scale[version]
+        let distance = Math.hypot(x - light.x, y - light.y)
+        let radius = light.radius * toWorld
+        if (light.element)
+        {
+            const circle = light.element.circle
+            distance = Math.max(0, distance - circle.radius)
+            radius = STYLE.momentumLight.blueSpread * toWorld
+        }
+        if (!(radius > 0) || distance >= radius)
+            return 0
+        const falloff = STYLE.lights.falloff
+        const r = distance / radius
+        for (let i = 1; i < falloff.length; ++i)
+            if (r <= falloff[i][0])
+            {
+                const a = falloff[i - 1], b = falloff[i]
+                return light.alpha * (a[1] + (b[1] - a[1]) * (r - a[0]) / (b[0] - a[0]))
+            }
+        return 0
+    }
     // The ninja's light plus the momentumLight.maxEmitters emitters nearest
     // to it (momentumEmitters and the blue pieces), each {x, y, radius,
     // gradient, alpha} with x, y on screen; a blue's light has its element
@@ -1176,7 +1213,7 @@ class LightmapRenderer
         const x = ninja.x + screen.x
         const y = ninja.y + screen.y
         if (this.isLightOnScreen(x, y, config.ninjaRadius))
-            lights.push({x: x, y: y, radius: config.ninjaRadius,
+            lights.push({x: x, y: y, radius: config.ninjaRadius, color: STYLE.colors.player.halo,
                 gradient: this.getMomentumGradient(), alpha: config.lightAlpha, contact: this.getNinjaContact()})
         const emitters = this.collectEmitters(gameState)
         if (emitters.length > config.maxEmitters)
@@ -1186,11 +1223,12 @@ class LightmapRenderer
         {
             const e = emitters[i]
             if (this.isLightOnScreen(e.x + screen.x, e.y + screen.y, e.radius))
-                lights.push({x: e.x + screen.x, y: e.y + screen.y, radius: e.radius,
+                lights.push({x: e.x + screen.x, y: e.y + screen.y, radius: e.radius, color: e.color,
                     gradient: e.element ? null : this.getLightGradient(e.color), alpha: e.alpha,
                     contact: 0, element: e.element || null})
         }
         this.collectTrailLights(lights)
+        this.momentumLightsFrame = drawFrameId
         return lights
     }
     // The player trail's lights (momentumLight.trailSamples), outside the
@@ -1210,7 +1248,8 @@ class LightmapRenderer
             if (alpha <= 0 || !this.isLightOnScreen(x, y, config.trailRadius))
                 continue
             if (pool.length <= i)
-                pool.push({x: 0, y: 0, radius: 0, gradient: null, alpha: 0, contact: 0, element: null, trail: true})
+                pool.push({x: 0, y: 0, radius: 0, color: STYLE.colors.player.halo, gradient: null, alpha: 0,
+                    contact: 0, element: null, trail: true})
             const light = pool[i]
             light.x = x
             light.y = y
@@ -1608,6 +1647,12 @@ class ParticleSystem
         // Ambient mote rects of the current game frame (layoutAmbientMotes)
         this.moteLayout = null
         this.moteLayoutFrame = -1
+        // Lit mote fill styles: base colour -> light colour -> one per
+        // momentumLight.moteSteps step (getLitMoteColor)
+        this.litMoteColors = new Map()
+        // The light at the mote being drawn: amount (moteGain applied, 0..1)
+        // and the brightest light's colour (litMoteLight)
+        this.moteLight = {amount: 0, color: null}
         this.lastTime = 0
         this.lastWorldEmitTime = 0
         this.emberBounds = {left: 0, right: 0, top: 0, bottom: 0}
@@ -2062,11 +2107,19 @@ class ParticleSystem
         // The game frame's motes and their bloom copy share one layout
         const layout = view ? this.layoutAmbientMotes(motes, view) : this.getFrameMoteLayout(motes)
         const ctx = this.ctx
+        // Momentum lighting: motes in the frame's lights brighten and tint
+        const lights = view ? null : visualEffects.lightmap.getFrameLights()
 
         ctx.save()
         ctx.globalCompositeOperation = 'source-over'
         for (let i = 0, j = 0; i < motes.length; ++i, j += MOTE_LAYOUT_STRIDE)
         {
+            const light = lights ? this.litMoteLight(lights, layout, j) : null
+            if (light)
+            {
+                this.drawLitMote(motes[i].color, layout, j, light)
+                continue
+            }
             ctx.fillStyle = motes[i].color
             ctx.globalAlpha = layout[j]
             ctx.fillRect(layout[j + 1], layout[j + 2], layout[j + 3], layout[j + 3])
@@ -2078,6 +2131,75 @@ class ParticleSystem
         // control bloom. The glow pass calls back here with recursion guarded.
         if (!bloomPassActive && BACKDROP.glowFrame !== drawFrameId)
             visualEffects.ambientGlow.drawScreen(() => this.drawAmbientMotes(view))
+    }
+    // The light (this.moteLight, reused) at the mote at layout[j], or null
+    // outside every light: momentumLight.moteGain times the sum of the
+    // lights there, up to 1, in moteSteps steps, and the brightest one's colour
+    litMoteLight(lights, layout, j)
+    {
+        const config = STYLE.momentumLight
+        const x = layout[j + 5] + layout[j + 7] / 2
+        const y = layout[j + 6] + layout[j + 7] / 2
+        const lightmap = visualEffects.lightmap
+        let sum = 0, best = 0, color = null
+        for (let k = 0; k < lights.length; ++k)
+        {
+            const amount = lightmap.getLightAt(lights[k], x, y, config.moteReach)
+            sum += amount
+            if (amount > best && lights[k].color)
+            {
+                best = amount
+                color = lights[k].color
+            }
+        }
+        const step = Math.round(Math.min(1, sum * config.moteGain) * config.moteSteps)
+        if (step <= 0 || !color)
+            return null
+        this.moteLight.amount = step / config.moteSteps
+        this.moteLight.color = color
+        return this.moteLight
+    }
+    // The mote at layout[j] (halo and core) grown and brightened by
+    // light.amount x moteBoost about its centre, in its lit colour
+    drawLitMote(baseColor, layout, j, light)
+    {
+        const ctx = this.ctx
+        const boost = light.amount * STYLE.momentumLight.moteBoost
+        const grow = 1 + boost
+        ctx.fillStyle = this.getLitMoteColor(baseColor, light.color, light.amount)
+        for (let k = j; k < j + 8; k += 4)
+        {
+            const size = layout[k + 3] * grow
+            ctx.globalAlpha = Math.min(1, layout[k] * grow)
+            ctx.fillRect(layout[k + 1] - (size - layout[k + 3]) / 2, layout[k + 2] - (size - layout[k + 3]) / 2,
+                size, size)
+        }
+    }
+    // baseColor moved amount (0..1, a moteSteps step) of the way to
+    // lightColor lifted moteWhite toward white ('#rrggbb' both), cached
+    getLitMoteColor(baseColor, lightColor, amount)
+    {
+        const steps = STYLE.momentumLight.moteSteps
+        const white = STYLE.momentumLight.moteWhite
+        let byLight = this.litMoteColors.get(baseColor)
+        if (!byLight)
+            this.litMoteColors.set(baseColor, byLight = new Map())
+        let colors = byLight.get(lightColor)
+        if (!colors)
+        {
+            const from = parseInt(baseColor.slice(1, 7), 16)
+            const to = parseInt(lightColor.slice(1, 7), 16)
+            colors = []
+            for (let i = 0; i <= steps; ++i)
+            {
+                const t = i / steps
+                const lit = shift => (to >> shift & 255) * (1 - white) + 255 * white
+                const channel = shift => Math.round((from >> shift & 255) * (1 - t) + lit(shift) * t)
+                colors.push('rgb(' + channel(16) + ', ' + channel(8) + ', ' + channel(0) + ')')
+            }
+            byLight.set(lightColor, colors)
+        }
+        return colors[Math.round(amount * steps)]
     }
     getFrameMoteLayout(motes)
     {

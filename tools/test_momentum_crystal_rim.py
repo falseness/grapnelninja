@@ -7,7 +7,7 @@ its layer's getLayerShift parallax) masked by the frame's shadowed lights
 (rimLightCanvas, source-in) over the dimmed background at
 momentumLight.rimStrength. Checks (tools/momentum_fx_support.py scenes,
 1280x720), the parent commit being the TASK-056 look:
-- rim.json: the edge mask is drawLayerEdges into a blank canvas of the
+- rim.json (later effects off, LATER_EFFECTS_OFF): the edge mask is drawLayerEdges into a blank canvas of the
   frame (alpha >= EDGE_ALPHA), restricted to the background mask of both
   frames. run-right and mid-shaft: edge pixels within NEAR_PX of the ninja
   are on average >= MIN_EDGE_RATIO x the parent's luminance; background
@@ -60,6 +60,9 @@ MAX_NON_EDGE_CHANGE = 0.05
 MAX_FAR_DELTA = 2
 FRAMES = 300
 CONCEPT = fx.CONCEPT_DIR / '5-rim-slow.png'
+# Later effects (the TASK-058 lit motes) switched off by a STYLE override in
+# the rim and far checks, so only the rim is compared with the parent
+LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0')]
 # Ninja to the left edge of the view, no trail: most of the view is far
 NINJA_LEFT = '''() => { ninja.x = -screen.x + 60 * width / scale[version] / 1280; ninja.track.pos = [] }'''
 
@@ -129,9 +132,23 @@ def parent_rev():
                                    cwd=ROOT, text=True).strip()
 
 
+_RIM_HARNESS = []
+
+
+def rim_harness():
+    """The worktree harness, with LATER_EFFECTS_OFF served when its style.js has them."""
+    tree = fx.harness()
+    later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
+    if not later_off:
+        return tree
+    if not _RIM_HARNESS:
+        _RIM_HARNESS.append(fx.FxHarness('worktree', tree.browser, style_patch=later_off))
+    return _RIM_HARNESS[0]
+
+
 def capture_with_edges(scene, extra_js=None):
     """(frame, edge alpha (h, w) uint8, light centres) of scene at VIEWPORT (worktree)."""
-    context, page = fx.harness().open(VIEWPORT)
+    context, page = rim_harness().open(VIEWPORT)
     try:
         page.evaluate(fx.BUILD, [fx.SCENE_SPECS[scene], True])
         if extra_js:
@@ -180,6 +197,8 @@ class MomentumCrystalRimTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         (EVIDENCE_DIR / 'rim.json').write_text(compact(cls.result))
+        while _RIM_HARNESS:
+            _RIM_HARNESS.pop().close()
         fx.close()
 
     def test_0_near_edges_lit_rest_kept(self):

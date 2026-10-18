@@ -308,7 +308,19 @@ const STYLE = Object.freeze({
         trailRadius: 260,
         // Crystal and rock edges catch the lights: their edge tile, masked by
         // the frame's lights, is added over the background at this strength
-        rimStrength: 1
+        rimStrength: 1,
+        // Ambient motes in a light brighten and take its colour: alpha and
+        // size grow by up to moteBoost of theirs and the colour moves to the
+        // brightest light's colour lifted moteWhite of the way to white (its
+        // hue, bright enough to read as lit); both by min(1, moteGain x the
+        // light reaching the mote) in moteSteps steps. For motes the lights
+        // reach moteReach times as far, unshadowed. Unlit motes are drawn as
+        // before.
+        moteBoost: 0.6,
+        moteGain: 5,
+        moteReach: 1.5,
+        moteWhite: 0.2,
+        moteSteps: 8
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a
