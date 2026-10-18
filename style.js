@@ -398,6 +398,9 @@ const STYLE = Object.freeze({
         // The ninja's haze ('lighter', its colour over the cave) x this at
         // the last heart, so the light reads pink on the blue cave
         lowHpHaze: 2.5,
+        // The colour the last-heart light and haze are drawn in: heartStroke
+        // with its blue cut, so the cave (deep blue) under it reads pink
+        lowHpLightColor: '#ff1f3a',
         lowHpVignette: 0.15,
         lowHpVignetteInner: 0.4,
         lowHpVignetteColor: '#ff1a2e',

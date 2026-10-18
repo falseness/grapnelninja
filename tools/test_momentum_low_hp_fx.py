@@ -12,10 +12,9 @@ draw(), the pulse phase via the hook visualEffects.lightmap.lowHp
 .pulseShiftMs so nothing else of the frame moves):
 - low-hp.json: at hp 1 the mean colour of the background px (fx
   .background_mask of the hp 1 frame with the ninja light and haze alpha 0,
-  past 1.5 ninja radii) within NEAR_PX of the ninja: the light there (mean
-  colour minus that of the unlit frame) has a hue within HUE_TOL of
-  heartStroke's (the pixel hue, the deep blue cave times the pink light, is
-  recorded too); corners (4 boxes of 1/8 of the view
+  past 1.5 ninja radii) within NEAR_PX of the ninja has a hue within
+  HUE_TOL of heartStroke's (the hue of the light alone, mean colour minus
+  that of the unlit frame, is recorded too); corners (4 boxes of 1/8 of the view
   each, HUD boxes out) mean red >= +CORNER_RED vs hp 2; the centre box (1/10
   of the view each way) maxDelta <= CENTRE_MAX vs hp 2. Pulse: at phases 0,
   1/4, 1/2, 3/4 of lowHpPulseMs the ninja light (mean luminance in the
@@ -173,8 +172,7 @@ class MomentumLowHpFxTests(unittest.TestCase):
         mean = [float(v) for v in np.asarray(low)[near].mean(axis=0)]
         mean2 = [float(v) for v in np.asarray(hp2)[near].mean(axis=0)]
         unlit = [float(v) for v in np.asarray(dark)[near].mean(axis=0)]
-        # The ninja light's own colour there: lit minus unlit (the cave under
-        # it is deep blue, so the lit pixels themselves read magenta)
+        # The ninja light's own colour there (lit minus unlit), recorded
         added = [a - b for a, b in zip(mean, unlit)]
         heart_rgb = [int(HEART[i:i + 2], 16) for i in (1, 3, 5)]
         hue, heart_hue = hue_deg(added), hue_deg(heart_rgb)
@@ -191,7 +189,8 @@ class MomentumLowHpFxTests(unittest.TestCase):
                            'lightRgbHp1': [round(v, 2) for v in added], 'lightHueHp1': round(hue, 2),
                            'pixelHueHp1': round(hue_deg(mean), 2), 'pixelHueHp2': round(hue_deg(mean2), 2),
                            'heartHue': round(heart_hue, 2),
-                           'hueDistance': round(hue_distance(hue, heart_hue), 2), 'tolerance': HUE_TOL},
+                           'hueDistance': round(hue_distance(hue_deg(mean), heart_hue), 2),
+                           'lightHueDistance': round(hue_distance(hue, heart_hue), 2), 'tolerance': HUE_TOL},
                   'corners': {'pixels': int(corners.sum()), 'meanRedHp1': round(red[0], 3),
                               'meanRedHp2': round(red[1], 3), 'redGain': round(red[0] - red[1], 3),
                               'min': CORNER_RED},

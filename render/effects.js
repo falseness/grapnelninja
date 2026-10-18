@@ -1361,8 +1361,11 @@ class LightmapRenderer
         let entry = state.gradients.get(step)
         if (!entry)
         {
+            // The light and haze themselves take lowHpLightColor (heartStroke
+            // compensated for the deep blue cave they multiply / add over)
             const color = mixHexColors(STYLE.colors.player.halo, STYLE.momentum.heartStroke, step / 16)
-            entry = {color: color, gradient: this.createLightGradient(color)}
+            const lightColor = mixHexColors(STYLE.colors.player.halo, config.lowHpLightColor, step / 16)
+            entry = {color: color, gradient: this.createLightGradient(lightColor)}
             state.gradients.set(step, entry)
         }
         state.color = entry.color
