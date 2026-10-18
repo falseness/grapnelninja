@@ -1593,7 +1593,8 @@ class LightmapRenderer
             const alpha = config.lightAlpha * config.trailIntensity * samples[i].alpha * this.speedLight.trailGain
             if (alpha <= 0 || !this.isLightOnScreen(x, y, config.trailRadius))
                 continue
-            if (pool.length <= i)
+            // while: off-screen samples before i skip growing the pool
+            while (pool.length <= i)
                 pool.push({x: 0, y: 0, radius: 0, color: STYLE.colors.player.halo, gradient: null, alpha: 0,
                     contact: 0, element: null, trail: true})
             const light = pool[i]

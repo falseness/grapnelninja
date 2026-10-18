@@ -15,7 +15,8 @@ lights are reused objects. Checks (tools/momentum_fx_support.py scenes,
   1.10; with an empty trail (ninja.track.pos = []) the frame (later
   effects such as the TASK-057 crystal rim off by a STYLE override) equals the parent
   commit's (maxDelta 0); the sample/light objects are the same after a second
-  draw (no per-frame allocation);
+  draw (no per-frame allocation); with the tail sample off screen on an
+  empty pool the later samples still get lights (no hole, TASK-071);
 - switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
   viewports and the classic and bad test_visual_gallery frames with the switch
   on equal the parent commit (decoded maxDelta 0);
@@ -67,6 +68,21 @@ REUSE = r'''() => {
             sameSamples: samples.every((x, i) => l.trailSamples[i] === x) && samples.length == l.trailSamples.length,
             inFrame: l.momentumLights.filter(x => x.trail).every(x => l.trailLights.includes(x)),
             alphas: l.momentumLights.filter(x => x.trail).map(x => Math.round(x.alpha * 1000) / 1000)}
+}'''
+# The tail sample off screen on an empty pool (TASK-071: MOMENTUM_RUN_SEED 6
+# threw in collectTrailLights once the corner preview moved the camera)
+TAIL_OFF_SCREEN = r'''() => {
+    const l = visualEffects.lightmap
+    draw()
+    l.trailLights.length = 0
+    let calls = 0
+    l.isLightOnScreen = () => calls++ > 0
+    const lights = []
+    let error = null
+    try { l.collectTrailLights(lights) } catch (e) { error = String(e) }
+    delete l.isLightOnScreen
+    return {error, count: lights.length, pool: l.trailLights.length,
+            holes: Array.from(l.trailLights, x => !x).some(x => x)}
 }'''
 
 
@@ -163,6 +179,18 @@ class MomentumTrailLightTests(unittest.TestCase):
         self.assertTrue(reuse['sameLights'])
         self.assertTrue(reuse['sameSamples'])
         self.assertTrue(reuse['inFrame'])
+
+    def test_2b_tail_off_screen_grows_the_pool(self):
+        context, page = fx.harness().open(VIEWPORT)
+        try:
+            page.evaluate(fx.BUILD, [fx.SCENE_SPECS[SCENE], True])
+            r = page.evaluate(TAIL_OFF_SCREEN)
+        finally:
+            context.close()
+        print('tail off screen', r)
+        self.assertIsNone(r['error'])
+        self.assertGreaterEqual(r['count'], 2)
+        self.assertFalse(r['holes'])
 
     def test_3_switch_off_and_other_modes_equal_parent(self):
         rows = []
