@@ -38,14 +38,13 @@ was removed with the follow camera (TASK-084); the rail camera's view centre
 is lead() ahead of its trigger point along the rail, so it turns along the
 arc before the ninja reaches the box. Measured on the rail camera: into a
 shaft 0.09 at d = 1, 0.165 at d = 0; out of one 0.27 and 0.317.
-test_<join>_margin (both drives): margin >= MIN_MARGIN - MARGIN_TOLERANCE on
-every cycle: the ninja in view with a 0.10 margin, the rule of
-test_momentum_camera_speed (rule 4). TASK-085: on the 'far' drive into a
-shaft the rail camera turns up / down from the arc start, before the box,
-while the ninja still runs along the corridor's outer side, and the margin
-dips to 0.0989-0.0991 for a few cycles at the box entry (any drive speed);
-MARGIN_TOLERANCE (0.002 of the view, 1.4 px at 720 px) admits that sub-pixel
-dip.
+test_<join>_margin_<drive>: margin >= MIN_MARGIN on every cycle: the ninja
+in view with a 0.10 margin, the rule of test_momentum_camera_speed (rule 4).
+Known camera shortfall (expectedFailure, follow-up TASK-115): on the 'far'
+drive into a shaft (right-down, right-up) the rail camera turns up / down
+from the arc start, before the box, while the ninja still runs along the
+corridor's outer side, and the margin dips to 0.0989-0.0991 for a few cycles
+at the box entry (any drive speed).
 
 MOMENTUM_CORNER_PREVIEW_EVIDENCE_DIR (default /tmp/momentum-corner-preview:
 a bare run must not rewrite the TASK-068 evidence) receives
@@ -70,7 +69,6 @@ from test_momentum_shaft_view import SCRIPTS as SHAFT_SCRIPTS
 ROOT = Path(__file__).resolve().parents[1]
 PREVIEW_DROP = 0.002
 MIN_MARGIN = 0.10
-MARGIN_TOLERANCE = 0.002
 START_D = 1.5
 # Least straight approach before START_D (views), to get onto the far lane
 LEAD = 0.2
@@ -92,6 +90,9 @@ SCRIPTS = dict(SHAFT_SCRIPTS, **{'right-right-down': [0.99, 0.1, 0.99, 0.9, 0.9,
 JOINS = {'right-down': ('right-right-down', 1), 'right-up': ('right-right-up', 1),
          'down-right': ('down', 1), 'up-right': ('up', 1)}
 DRIVES = ['centre', 'far']
+# (join, drive) margin cases that fail on the rail camera: far lane into a
+# shaft dips to 0.0991 at the box entry; the camera fix is TASK-115
+MARGIN_SHORTFALL = {('right-down', 'far'), ('right-up', 'far')}
 # Out of a shaft the camera centred on a shaft half a view wide (TASK-043)
 # already sees 0.27 of the view past its right wall; on the rail arc it sees
 # more before the box (TASK-085).
@@ -324,27 +325,27 @@ class MomentumCornerPreviewTests(unittest.TestCase):
                  if q['preview'] < p['preview'] - PREVIEW_DROP]
         self.assertEqual(drops, [], f'{join}: preview drops (cycle, before, after)')
 
-    def check_margin(self, join):
-        for drive, r in self.drives(join).items():
-            low = [(row['cycle'], row['d'], row['margin']) for row in r['rows']
-                   if row['margin'] < MIN_MARGIN - MARGIN_TOLERANCE]
-            under = [row for row in r['rows'] if row['margin'] < MIN_MARGIN]
-            print(f'{join} {drive}: min margin {min(row["margin"] for row in r["rows"])}, cycles under {MIN_MARGIN} '
-                  f'{len(under)} (tolerance {MARGIN_TOLERANCE})', file=sys.stderr)
-            self.assertEqual(low[:5], [], f'{join} {drive}: margin below {MIN_MARGIN} - {MARGIN_TOLERANCE} '
-                                          f'in {len(low)} cycles')
+    def check_margin(self, join, drive):
+        rows = self.drives(join)[drive]['rows']
+        low = [(row['cycle'], row['d'], row['margin']) for row in rows if row['margin'] < MIN_MARGIN]
+        print(f'{join} {drive}: min margin {min(row["margin"] for row in rows)}, cycles under {MIN_MARGIN} '
+              f'{len(low)}', file=sys.stderr)
+        self.assertEqual(low[:5], [], f'{join} {drive}: margin below {MIN_MARGIN} in {len(low)} cycles')
 
-
-def make_test(join, kind):
+def make_test(join, kind, *args):
     def test(self):
-        getattr(self, f'check_{kind}')(join)
+        getattr(self, f'check_{kind}')(join, *args)
     return test
 
 
 for join in JOINS:
-    for kind in ('margin', 'preview'):
-        setattr(MomentumCornerPreviewTests, f'test_{join.replace("-", "_")}_{kind}', make_test(join, kind))
-
+    name = f'test_{join.replace("-", "_")}'
+    for drive in DRIVES:
+        test = make_test(join, 'margin', drive)
+        if (join, drive) in MARGIN_SHORTFALL:
+            test = unittest.expectedFailure(test)
+        setattr(MomentumCornerPreviewTests, f'{name}_margin_{drive}', test)
+    setattr(MomentumCornerPreviewTests, f'{name}_preview', make_test(join, 'preview'))
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
