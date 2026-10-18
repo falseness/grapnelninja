@@ -1,5 +1,4 @@
-// Momentum camera rail: the path the camera will travel (TASK-083, not used
-// by the camera yet). It is the course centre line (elements/momentumcourse.js
+// Momentum camera rail: the path the camera travels (MomentumScreen). It is the course centre line (elements/momentumcourse.js
 // segments) with every turn join replaced by a quarter circle of radius
 // GAMEPLAY.momentumCamera.railRadius view heights, at most half of either
 // adjacent segment, so the tangent is continuous. A straight join stays a
@@ -22,6 +21,8 @@ class MomentumCameraRail
         this.x = course.x0
         this.y = course.y0
         this.joins = 0
+        // s of each built join: its arc middle, or the shared end point
+        this.joinS = []
     }
 
     static direction(segment)
@@ -40,6 +41,7 @@ class MomentumCameraRail
             const wx = db.x / db.length, wy = db.y / db.length
             const r = ux == wx && uy == wy ? 0 : Math.min(this.radius, a.length / 2, b.length / 2)
             this.line(a.x1 - ux * r, a.y1 - uy * r)
+            this.joinS.push(this.length + Math.PI / 4 * r)
             if (r > 0)
             {
                 const length = Math.PI / 2 * r
@@ -64,6 +66,13 @@ class MomentumCameraRail
         }
         this.x = x
         this.y = y
+    }
+
+    // s of join index (segment index -> index + 1): its arc middle
+    joinAt(index)
+    {
+        this.extend(index)
+        return this.joinS[index]
     }
 
     // The piece holding s (built as far as needed)

@@ -46,9 +46,9 @@ rest by design), the new rule:
    along the rail); elsewhere by at most 1 deg;
 4. the ninja stays in view with a 0.10 margin of each view dimension.
 
-Cases failing on HEAD are expectedFailure until TASK-084 rewrites the camera
-on the rail. MOMENTUM_CAMERA_SPEED_STRICT=1 drops the expectedFailure marks
-(the head-fail reproduction). MOMENTUM_CAMERA_SPEED_EVIDENCE_DIR (default
+All 16 cases failed on the damped-follow camera (artifacts/TASK-082/
+head-fail.log); since TASK-084 the camera rides the rail and they must pass.
+MOMENTUM_CAMERA_SPEED_EVIDENCE_DIR (default
 artifacts/TASK-082) receives speed-trace.json (compact {case: {cornerFrame,
 fps, window, rows: [[frame, camVx, camVy, camSpeed, ninjaAlong]]}} over the
 window)
@@ -68,7 +68,6 @@ from test_momentum_camera import SEED_COURSE
 from test_momentum_shaft_view import SCRIPTS
 
 ROOT = Path(__file__).resolve().parents[1]
-STRICT = os.environ.get('MOMENTUM_CAMERA_SPEED_STRICT') == '1'
 # join: (course script, index of the segment before the join)
 JOINS = {'right-up': ('up', 0), 'right-down': ('down', 0), 'up-right': ('up', 1), 'down-right': ('down', 1)}
 DRIVES = ('centre', 'diagonal')
@@ -83,11 +82,6 @@ MIN_MOVING = 1.0
 WINDOW_S = 1.5
 VIEW_MARGIN = 0.10
 DEFAULT_RAIL_RADIUS = 0.5
-# Cases failing on HEAD (artifacts/TASK-082/head-fail.log): expected failures
-# until TASK-084 puts the camera on the rail: every case (the damped follow
-# stops at the shaft cap, waits in the corner and bursts after it; the
-# preview turns it before the arc)
-HEAD_FAILS = {f'{join}-{route}-{fps}' for join in JOINS for route in DRIVES for fps in FPS}
 
 # Builds the course and the path (one point per physics cycle, the effective
 # speed cap apart along it, with the unit direction of the path piece)
@@ -280,9 +274,12 @@ class Rail:
 
 
 def course_vertices(setup, index):
+    """The course segments' vertices from the course start to the end of the
+    segment after the join: the game's rail (elements/momentumcamerarail.js)
+    caps each arc radius at half of the real adjacent segments, not of the
+    driven part of them"""
     segs = setup['segs']
-    end = setup['pts'][-1]
-    return [setup['pts'][0]] + [[s['x1'], s['y1']] for s in segs[:index + 1]] + [end]
+    return [[segs[0]['x0'], segs[0]['y0']]] + [[s['x1'], s['y1']] for s in segs[:index + 2]]
 
 
 def angle_diff(a, b):
@@ -432,11 +429,8 @@ def make_test(join, route, fps):
 for i, join in enumerate(JOINS):
     for route in DRIVES:
         for fps in FPS:
-            test = make_test(join, route, fps)
-            # Expected failures until TASK-084 (the rail camera)
-            if f'{join}-{route}-{fps}' in HEAD_FAILS and not STRICT:
-                test = unittest.expectedFailure(test)
-            setattr(MomentumCameraSpeedTests, f'test_{chr(97 + i)}_{join.replace("-", "_")}_{route}_{fps}', test)
+            setattr(MomentumCameraSpeedTests, f'test_{chr(97 + i)}_{join.replace("-", "_")}_{route}_{fps}',
+                    make_test(join, route, fps))
 
 
 if __name__ == '__main__':

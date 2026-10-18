@@ -1,11 +1,12 @@
-// Momentum camera: Screen with Y motion, driven by the course segment the
-// ninja is in. A damped follow (follow()): right segments scroll right like
-// bad mode, previewing a shaft ahead (getPreviewStop); up/down segments keep
-// the ninja vertically centred, moving only in the segment direction and
-// stopping where the next right corridor is centred. The camera never goes
-// back: what leaves the view behind the travel direction is deleted; a
-// camera-owned BackWall (sprites/backwall.js) bounces a ninja falling back on
-// that side.
+// Momentum camera: Screen with Y motion riding the camera rail
+// (elements/momentumcamerarail.js: the course centre line, every turn a
+// quarter circle). Like bad mode (Screen.shouldStartMoveX) the camera moves
+// only while the ninja is past its trigger point and moving forward, at the
+// ninja's speed along the rail tangent, and never goes back; at a corner its
+// direction turns along the arc at that same speed. What leaves the view
+// behind the travel direction is deleted; a camera-owned BackWall
+// (sprites/backwall.js) bounces a ninja falling back on that side.
+// Unit direction of a course segment (tests drive the ninja with it)
 function segmentDirection(dir)
 {
     return dir == 'right' ? {x: 1, y: 0} : dir == 'up' ? {x: 0, y: -1} : {x: 0, y: 1}
@@ -17,21 +18,22 @@ class MomentumScreen extends Screen
     {
         super(true, 0)
         this.course = course
+        this.rail = new MomentumCameraRail(course)
+        // Camera rail position: the trigger point is borderX further on.
+        // Set on the first cycle from the start view (the course start
+        // segment is a right one).
+        this.railS = null
+        // The ninja's position at the last cycle: its motion since then is
+        // its speed (speedX/Y, or more when it is placed further on)
+        this.lastNinja = null
         this.segmentIndex = 0
-        // Direction of the last vertical segment entered: its far side of the
-        // view stays behind through the following right segments
+        // The camera's last vertical direction (from its first turn toward a
+        // shaft): the far side of the view stays behind through the
+        // following right segments
         this.verticalTravel = 0
         // Bouncy boundary on that side (sprites/backwall.js)
         this.backWall = new BackWall(this)
         this.deletedBehind = 0
-        // Damped follow state, world units per second (camera top-left)
-        this.velocityX = this.velocityY = 0
-        this.accelX = this.accelY = 0
-        this.turnFrom = this.turnTo = segmentDirection('right')
-        this.turnElapsedMs = 0
-        // Peak camera speed since the last turn, and that peak at the last
-        // turn (the catch-up limit after it)
-        this.peakSpeed = this.turnPeakSpeed = 0
     }
     getViewHeight()
     {
@@ -41,296 +43,57 @@ class MomentumScreen extends Screen
     {
         return this.course.segment(this.segmentIndex)
     }
-    // Whether the ninja has left the segment for the next one. On a straight
-    // join, past its end; on a turn, out of the corner box (the overlap of
-    // the two corridors around the join) into the next corridor, so a ninja
-    // cutting the corner does not turn the camera early; or, in the box,
-    // once it is closer than holdMargin to the view edge ahead along the
-    // next axis (holding on would let it run out of the view).
-    hasPassed(segment, next)
+    // Camera top-left world corner (-x, -y) for rail position s: the trigger
+    // point (s + borderX) where bad mode keeps the ninja, borderX from the
+    // view's left edge and vertically centred. On a straight right segment
+    // that is the bad camera; through a corner the view travels along the
+    // arc, its speed the rail's.
+    viewAt(s)
     {
-        if (next.dir == segment.dir)
-            return segment.dir == 'right' ? ninja.x >= segment.x1
-                 : segment.dir == 'up' ? ninja.y <= segment.y1 : ninja.y >= segment.y1
-        const halfWidth = momentumSegmentHalfWidth(segment), nextHalfWidth = momentumSegmentHalfWidth(next)
-        const out = next.dir == 'right' ? ninja.x >= segment.x1 + halfWidth
-                  : next.dir == 'up' ? ninja.y <= segment.y1 - halfWidth : ninja.y >= segment.y1 + halfWidth
-        const inBox = segment.dir == 'right' ? ninja.x >= segment.x1 - nextHalfWidth
-                    : segment.dir == 'up' ? ninja.y <= segment.y1 + nextHalfWidth : ninja.y >= segment.y1 - nextHalfWidth
-        return out || inBox && this.nextAxisMargin(next.dir) < GAMEPLAY.momentumCamera.holdMargin
+        const p = this.rail.pointAt(s + this.borderX)
+        return {x: p.x - this.borderX, y: p.y - this.getViewHeight() / 2}
     }
-    // The ninja's distance to the view edge ahead along dir, share of the view
-    nextAxisMargin(dir)
-    {
-        const view = this.getViewHeight(), viewW = width / scale[version]
-        return dir == 'right' ? (viewW - this.x - ninja.x) / viewW
-             : dir == 'up' ? (ninja.y + this.y) / view : (view - this.y - ninja.y) / view
-    }
-    // Moves to the next segment once the ninja passes the end of this one
+    // Moves to the next segment once the trigger point passes the join (its
+    // arc middle). The vertical direction left behind follows the camera's
+    // own: from the start of an arc into a shaft, what it turns away from
+    // is behind.
     updateSegment()
     {
-        for (;;)
-        {
-            const segment = this.getSegment()
-            if (!this.hasPassed(segment, this.course.segment(this.segmentIndex + 1)))
-                return
+        while (this.railS + this.borderX >= this.rail.joinAt(this.segmentIndex))
             ++this.segmentIndex
-            const next = this.getSegment()
-            if (next.dir != 'right')
-                this.verticalTravel = next.dir == 'up' ? -1 : 1
-            if (next.dir != segment.dir)
-                this.startTurn(next.dir)
-        }
+        const tangent = this.rail.tangentAt(this.railS + this.borderX)
+        if (Math.abs(tangent.y) > 1e-9)
+            this.verticalTravel = Math.sign(tangent.y)
     }
+    // One physics cycle: the ninja's rail position (searched from a view
+    // behind the trigger) and its speed along the tangent there (its motion
+    // since the last cycle, at least its speed: a ninja moved on faster
+    // than speedX, by a respawn or a scripted drive, is followed). Past the
+    // trigger and moving forward the camera advances by that speed; within
+    // triggerRampHeightRatio short of it, by a share falling to 0 at that
+    // distance, so a ninja falling behind the trigger on the outer side of
+    // an arc slows the camera instead of stopping it dead.
     shouldStartMove()
     {
-        this.updateSegment()
-        this.follow(physicsStepMs / cyclesPerTick)
-        return this.speedX != 0 || this.speedY != 0
-    }
-    // screen.y of a camera centred on world y
-    centredOn(y)
-    {
-        return -(y - this.getViewHeight() / 2)
-    }
-    // Look-ahead direction: eased from the previous segment direction to the
-    // current one over turnMs (smoothstep), not a unit vector mid-turn
-    getLookDirection()
-    {
-        const t = Math.min(1, this.turnElapsedMs / GAMEPLAY.momentumCamera.turnMs)
-        const k = t * t * (3 - 2 * t)
-        return {x: this.turnFrom.x + (this.turnTo.x - this.turnFrom.x) * k,
-                y: this.turnFrom.y + (this.turnTo.y - this.turnFrom.y) * k}
-    }
-    startTurn(dir)
-    {
-        this.turnFrom = this.getLookDirection()
-        this.turnTo = segmentDirection(dir)
-        this.turnElapsedMs = 0
-        this.turnPeakSpeed = this.peakSpeed
-        this.peakSpeed = 0
-    }
-    // Damped follow of the camera's top-left world corner (-x, -y), one
-    // physics cycle of dtMs. The target is the base bad-mode x (ninja at
-    // borderX) / the vertical TASK-005 target, both shifted by lookAhead along
-    // the eased direction. The desired velocity is a feed-forward of the
-    // ninja's speed along the segment plus a braking-curve pull on the target
-    // error; the camera velocity moves toward it with acceleration clamped to
-    // maxAccel and its change clamped to maxJerk. The camera never goes back:
-    // x only grows, y only moves in the last vertical direction (or the next
-    // shaft's, getPreviewStop).
-    follow(dtMs)
-    {
-        const options = GAMEPLAY.momentumCamera
+        if (this.railS === null)
+            this.railS = -this.x - this.course.x0
         const view = this.getViewHeight()
-        const dt = dtMs / 1000
-        const maxAccel = options.maxAccel * view, maxJerk = options.maxJerk * view
-        const brakeAccel = 0.5 * maxAccel
-        const brake = e => Math.sign(e) * Math.min(options.stiffness * Math.abs(e),
-                                                   Math.sqrt(2 * brakeAccel * Math.abs(e)))
-        const stopSpeed = d => Math.sqrt(2 * brakeAccel * Math.max(0, d))
-        this.turnElapsedMs += dtMs
-        const segment = this.getSegment()
-        const look = this.getLookDirection()
-        const lookAhead = options.lookAhead * view
-        const camX = -this.x, camY = -this.y
-        // Ninja speed along the segment, world units per second
-        const seg = segmentDirection(segment.dir)
-        const along = Math.max(0, ninja.speedX * seg.x + ninja.speedY * seg.y) / dt
-
-        let wantX = 0
-        let targetX = ninja.x - this.borderX + lookAhead * look.x
-        // In a vertical segment, or a right one leading into one, the shaft's
-        // left wall stays in view: x stops short of its face like y does
-        // (or, approaching a right corridor, past it: getExitPreviewX)
-        const exitX = this.getExitPreviewX(segment)
-        const capX = exitX !== null ? exitX : this.getShaftCapX()
-        targetX = Math.min(targetX, capX)
-        if (exitX !== null)
-            targetX = Math.max(targetX, exitX)
-        if (targetX >= camX)
-            wantX = look.x * along + brake(targetX - camX)
-        // The y braking curve, aimed a buffer short of the cap: the jerk
-        // limited acceleration trails the curve and runs on a little. The
-        // buffer shrinks with the x speed below the curve's speed at it, so
-        // a slow camera creeps on to the cap (the view centred on the shaft).
-        const buffer = options.shaftBrakeBufferHeightRatio * view
-        const bufferNow = buffer * Math.min(1, Math.max(0, this.velocityX) / (options.stiffness * buffer))
-        wantX = Math.min(wantX, brake(Math.max(0, capX - bufferNow - camX)))
-        // Right after a turn the camera along the next axis is no faster
-        // than it was along the previous segment (or the ninja, its full
-        // speed: in the box it may still run along the old axis): a camera
-        // held in the corner box catches up the ninja's lead later, not as a
-        // burst at the turn
-        const catchUp = this.turnElapsedMs >= options.turnCatchUpMs ? Infinity
-                      : options.turnCatchUpSpeedRatio * Math.max(this.turnPeakSpeed, Math.hypot(ninja.speedX, ninja.speedY) / dt)
-        if (segment.dir == 'right')
-            wantX = Math.min(wantX, catchUp)
-
-        const previewStop = this.getPreviewStop(segment)
-        let wantY = 0
-        if (this.verticalTravel)
-        {
-            // Vertical segments: ninja centred, up to where the next right
-            // corridor is centred; right segments: the corridor centre, or
-            // the preview stop toward the next shaft
-            const stop = previewStop !== null ? previewStop
-                       : -this.centredOn(segment.dir == 'right' ? segment.y0 : segment.y1)
-            let targetY = segment.dir == 'right' ? stop : ninja.y - view / 2 + lookAhead * look.y
-            const travel = this.verticalTravel
-            targetY = travel < 0 ? Math.max(targetY, stop) : Math.min(targetY, stop)
-            if ((targetY - camY) * travel >= 0)
-                wantY = (segment.dir == 'right' ? 0 : look.y * along) + brake(targetY - camY)
-            // Never past the stop: slow down in time, on a curve aimed the
-            // same speed-scaled buffer short of it as x (the jerk limited
-            // braking trails the curve), so a ninja climbing on through the
-            // corner box does not carry the camera past the corridor centre
-            const bufferY = buffer * Math.min(1, Math.abs(this.velocityY) / (options.stiffness * buffer))
-            wantY = travel < 0 ? Math.max(wantY, -stopSpeed(camY - stop - bufferY))
-                               : Math.min(wantY, stopSpeed(stop - camY - bufferY))
-            if (segment.dir != 'right')
-                wantY = Math.max(-catchUp, Math.min(catchUp, wantY))
-        }
-
-        // Acceleration toward the wanted velocity, limited by maxAccel, its
-        // change by maxJerk; the sqrt term lets it reach zero in time. An
-        // axis braking (wanted velocity against its motion: the old axis
-        // stopping at its cap at a turn) gets its share first, the other one
-        // the rest: the next axis starting hard as the ninja leaves a corner
-        // box must not make the old one overrun its cap.
-        const dvX = wantX - this.velocityX, dvY = wantY - this.velocityY
-        const accelFor = d => Math.min(d / dt, Math.sqrt(maxJerk * d), maxAccel, 4 * options.stiffness * d)
-        const brakeX = dvX * this.velocityX < 0, brakeY = dvY * this.velocityY < 0
-        const dv = Math.hypot(dvX, dvY)
-        let ax = 0, ay = 0
-        if (brakeX != brakeY)
-        {
-            const first = accelFor(Math.abs(brakeX ? dvX : dvY))
-            const rest = Math.min(accelFor(Math.abs(brakeX ? dvY : dvX)), Math.sqrt(maxAccel * maxAccel - first * first))
-            ax = Math.sign(dvX) * (brakeX ? first : rest)
-            ay = Math.sign(dvY) * (brakeX ? rest : first)
-        }
-        else if (dv > 0)
-        {
-            const a = accelFor(dv)
-            ax = dvX / dv * a
-            ay = dvY / dv * a
-        }
-        const jx = ax - this.accelX, jy = ay - this.accelY
-        const j = Math.hypot(jx, jy)
-        const maxJ = maxJerk * dt
-        if (j > maxJ)
-        {
-            // An axis easing its acceleration off (toward a stop) gets its
-            // share first, the other one the rest: a camera x starting from
-            // rest at a shaft exit must not make y overrun its stop. Else
-            // the braking axis does.
-            const easeX = jx * this.accelX < 0, easeY = jy * this.accelY < 0
-            const firstX = easeX != easeY ? easeX : brakeX != brakeY ? brakeX : null
-            if (firstX !== null)
-            {
-                const first = Math.max(-maxJ, Math.min(maxJ, firstX ? jx : jy))
-                const rest = Math.sign(firstX ? jy : jx) * Math.sqrt(maxJ * maxJ - first * first)
-                ax = this.accelX + (firstX ? first : rest)
-                ay = this.accelY + (firstX ? rest : first)
-            }
-            else
-            {
-                ax = this.accelX + jx / j * maxJ
-                ay = this.accelY + jy / j * maxJ
-            }
-        }
-        const a = Math.hypot(ax, ay)
-        if (a > maxAccel)
-        {
-            ax *= maxAccel / a
-            ay *= maxAccel / a
-        }
-        let vx = this.velocityX + ax * dt, vy = this.velocityY + ay * dt
-        // Last resort, inert when braking in time: never past the shaft cap
-        if (camX + vx * dt > capX)
-            vx = Math.max(0, (capX - camX) / dt)
-        // Never back
-        if (vx < 0)
-            vx = ax = 0
-        if (vy * this.verticalTravel < 0 || !this.verticalTravel)
-            vy = ay = 0
-        this.accelX = ax; this.accelY = ay
-        this.velocityX = vx; this.velocityY = vy
-        this.peakSpeed = Math.max(this.peakSpeed, Math.hypot(vx, vy))
-        this.speedX = -vx * dt
-        this.speedY = -vy * dt
-    }
-    // Pre-turn preview (GAMEPLAY.momentumCamera.preview): in a right segment
-    // leading into a shaft, once the ninja is d <= start view widths before
-    // the corner box (the shaft's half width before the join), the camera y
-    // (-screen.y) at which the view reaches depth * smoothstep(1 - d / start)
-    // of itself past the corridor's floor / ceiling face (the full depth in
-    // the box), the ninja kept ninjaMargin of the view off the trailing
-    // edge, never short of the corridor centre. Sets verticalTravel to the
-    // shaft direction so y may move; against a camera still moving the other
-    // way (after an opposite shaft) only once it has stopped where it is, so
-    // its velocity is not cut off. null elsewhere.
-    getPreviewStop(segment)
-    {
-        const next = this.course.segment(this.segmentIndex + 1)
-        if (segment.dir != 'right' || next.dir == 'right')
-            return null
-        const preview = GAMEPLAY.momentumCamera.preview
-        const view = this.getViewHeight(), viewW = width / scale[version]
-        const d = (segment.x1 - momentumSegmentHalfWidth(next) - ninja.x) / viewW
-        if (d > preview.start)
-            return null
-        const travel = next.dir == 'up' ? -1 : 1
-        if (this.verticalTravel == -travel && this.velocityY * travel < -1e-9 * view)
-            return -this.y
-        this.verticalTravel = travel
-        const centre = -this.centredOn(segment.y0)
-        const t = Math.min(1, Math.max(0, 1 - d / preview.start))
-        const depth = preview.depth * t * t * (3 - 2 * t) * view
-        const face = segment.y0 + travel * momentumSegmentHalfWidth(segment)
-        const stop = travel > 0 ? face + depth - view : face - depth
-        const limit = travel > 0 ? ninja.y - preview.ninjaMargin * view
-                                 : ninja.y + preview.ninjaMargin * view - view
-        return travel > 0 ? Math.max(centre, Math.min(stop, limit)) : Math.min(centre, Math.max(stop, limit))
-    }
-    // Exit preview (GAMEPLAY.momentumCamera.preview, exitDepth): in a
-    // vertical segment leading into a right corridor, once the ninja is d <=
-    // start view heights before the corner box (the corridor's half width
-    // before the join), the camera x (-screen.x) at which the view reaches
-    // exitDepth * smoothstep(1 - d / start) of its width past the shaft's
-    // right-wall face, the ninja kept ninjaMargin of the view width off the
-    // left edge, never short of getShaftCapX (the view centred on the
-    // shaft). follow() aims x at it and caps x there. null elsewhere.
-    getExitPreviewX(segment)
-    {
-        const next = this.course.segment(this.segmentIndex + 1)
-        if (segment.dir == 'right' || next.dir != 'right')
-            return null
-        const preview = GAMEPLAY.momentumCamera.preview
-        const view = this.getViewHeight(), viewW = width / scale[version]
-        const halfWidth = momentumSegmentHalfWidth(next)
-        const d = (segment.dir == 'up' ? ninja.y - segment.y1 - halfWidth : segment.y1 - halfWidth - ninja.y) / view
-        if (d > preview.start)
-            return null
-        const t = Math.min(1, Math.max(0, 1 - d / preview.start))
-        const depth = preview.exitDepth * t * t * (3 - 2 * t) * viewW
-        const stop = segment.x0 + momentumSegmentHalfWidth(segment) + depth - viewW
-        const limit = ninja.x - preview.ninjaMargin * viewW
-        return Math.max(this.getShaftCapX(), Math.min(stop, limit))
-    }
-    // Largest camera x (-screen.x): the view centred on the current vertical
-    // segment, or on the next one from a right segment, where it shows only
-    // the shaft and its walls (momentumShaftHalfWidth); Infinity when there
-    // is none
-    getShaftCapX()
-    {
-        let shaft = this.getSegment()
-        if (shaft.dir == 'right')
-            shaft = this.course.segment(this.segmentIndex + 1)
-        if (shaft.dir == 'right')
-            return Infinity
-        return shaft.x0 - width / scale[version] / 2
+        const trigger = this.railS + this.borderX
+        const ninjaS = this.rail.project(ninja.x, ninja.y, trigger - view, view + width / scale[version])
+        const tangent = this.rail.tangentAt(ninjaS)
+        const last = this.lastNinja
+        const moved = last && last.ninja === ninja ? (ninja.x - last.x) * tangent.x + (ninja.y - last.y) * tangent.y : 0
+        const along = Math.max(moved, ninja.speedX * tangent.x + ninja.speedY * tangent.y)
+        this.lastNinja = {ninja: ninja, x: ninja.x, y: ninja.y}
+        const ramp = GAMEPLAY.momentumCamera.triggerRampHeightRatio * view
+        const share = Math.min(1, 1 - (trigger - ninjaS) / ramp)
+        if (along > 0 && share > 0)
+            this.railS += along * share
+        this.updateSegment()
+        const at = this.viewAt(this.railS)
+        this.speedX = -at.x - this.x
+        this.speedY = -at.y - this.y
+        return this.speedX != 0 || this.speedY != 0
     }
     // A box (world coordinates) fully out of view on the vertical side left behind
     isBoxBehind(top, bottom, margin)

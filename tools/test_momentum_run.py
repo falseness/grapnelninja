@@ -175,7 +175,7 @@ DRIVE = '''([frames, step, want]) => {
             return b.left >= -screen.x && b.right <= -screen.x + w && b.top >= -screen.y && b.bottom <= -screen.y + h
         }
         const dir = screen.getSegment().dir
-        if (want[dir] > 0 && Math.abs(screen.velocityY) > 0) {
+        if (want[dir] > 0 && screen.speedY != 0) {
             const pieces = floor.elements.filter(e => runShaftGroups[e.generationGroupId] == dir && inside(e)).length
             if (pieces >= want[dir])
                 return {samples, frames: k + 1, hit: dir, pieces}

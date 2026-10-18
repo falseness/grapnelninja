@@ -124,37 +124,16 @@ const GAMEPLAY = Object.freeze({
         shaftWidthScale: 0.5
     }),
     // Momentum camera (elements/momentumcamera.js), lengths in view heights:
-    // damped follow pull on the target error (1/s), acceleration limit (/s^2),
-    // limit on the change of acceleration (/s^3), target shift along the
-    // travel direction, ease time of that direction at a turn (ms); and how far
-    // past the view edge left behind elements are deleted; the gap kept
-    // between the view's left edge and a vertical shaft's left wall body,
-    // and how far short of that the camera x aims its braking; at a turn,
-    // the share of the view kept between the ninja in the corner box and the
-    // view edge ahead along the next axis before the camera turns early; how
-    // long after a turn the camera along the next axis stays no faster than
-    // the ninja times a ratio (ms, ratio).
+    // how far past the view edge left behind elements are deleted; the gap
+    // kept between the start view's right edge and the first shaft's left
+    // wall body (index.html firstMinLen); how far short of the trigger point
+    // a ninja still moves the camera, at a share of its speed falling to 0
+    // there (a ninja cutting a corner on the outer side of the arc falls a
+    // little behind the trigger).
     momentumCamera: Object.freeze({
-        stiffness: 4,
-        maxAccel: 8,
-        maxJerk: 80,
-        lookAhead: 0.1,
-        turnMs: 250,
         deletionMarginHeightRatio: 0.1,
         shaftMarginHeightRatio: 0.02,
-        shaftBrakeBufferHeightRatio: 0.05,
-        holdMargin: 0.4,
-        turnCatchUpMs: 400,
-        turnCatchUpSpeedRatio: 0.72,
-        // Pre-turn preview (MomentumScreen.follow): in a right segment
-        // leading into a shaft the camera eases toward it before the corner.
-        // start: view widths before the corner box where the preview begins;
-        // depth: share of the view shown past the floor / ceiling face at the
-        // box entry; ninjaMargin: share of the view the ninja keeps to the
-        // trailing (opposite) view edge; exitDepth: depth out of a shaft,
-        // share of the view width past the shaft's right wall (start in view
-        // heights there)
-        preview: Object.freeze({start: 1.25, depth: 0.35, exitDepth: 0.35, ninjaMargin: 0.15}),
+        triggerRampHeightRatio: 0.1,
         // Camera rail (elements/momentumcamerarail.js): radius of the quarter
         // circle replacing each turn join of the course centre line, in view
         // heights (at most half of either adjacent segment; its middle stays

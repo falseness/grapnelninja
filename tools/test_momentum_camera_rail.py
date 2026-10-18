@@ -2,8 +2,8 @@
 
 The rail is the course centre line with every turn join replaced by a
 quarter circle of radius GAMEPLAY.momentumCamera.railRadius view heights (at
-most half of either adjacent segment). It is not used by the camera yet
-(TASK-084). Course scripts right -> up -> right and right -> down -> right
+most half of either adjacent segment). Since TASK-084 the camera rides it
+(MomentumScreen.rail). Course scripts right -> up -> right and right -> down -> right
 (test_momentum_shaft_view) give the joins right->up, up->right, right->down
 and down->right. Per join:
 1. C1 continuity: at both straight/arc boundaries of its arc the position
@@ -19,8 +19,8 @@ and down->right. Per join:
 5. the arc lies inside both corridors (momentumSegmentHalfWidth) and its
    middle sits on the corner diagonal.
 Also C1 continuity and length over the first 12 joins of both courses
-(straight joins included, they stay lines), and the rail is not used by the
-camera (MomentumScreen has no rail). MOMENTUM_CAMERA_RAIL_EVIDENCE_DIR
+(straight joins included, they stay lines), and the camera has a rail
+(TASK-084; until then it had none). MOMENTUM_CAMERA_RAIL_EVIDENCE_DIR
 (default artifacts/TASK-083) receives rail-check.json (compact, per join
 {maxPosGap, maxTangentJump, arcLengthError, projectError, ...}).
 Requires Playwright Chromium.
@@ -184,7 +184,7 @@ class MomentumCameraRailTests(unittest.TestCase):
         self.assertLess(r['all']['maxTangentJump'], EPS)
         self.assertLess(r['all']['maxSGap'], EPS)
         self.assertLess(r['all']['lengthError'], EPS)
-        self.assertFalse(r['cameraHasRail'])
+        self.assertTrue(r['cameraHasRail'])
 
     def test_a_right_up(self):
         self.check('right-up')

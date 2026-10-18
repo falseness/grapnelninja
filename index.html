@@ -536,11 +536,16 @@
                 momentumState.reset()
                 // The first join (a shaft's left wall) at least a wall plus the
                 // camera's shaft margin right of the start view and the ninja:
-                // the camera can't scroll back to show it later
+                // the camera can't scroll back to show it later. Its rail arc
+                // (elements/momentumcamerarail.js) starts past the camera's
+                // start trigger point (bad mode's borderX), so the start view
+                // is the rail's.
                 const ninjaStartX = 0.2 * width
                 const shaftHalfWidth = momentumShaftHalfWidth()
-                const firstMinLen = width + ninjaStartX + shaftHalfWidth + borders.thickness +
-                    GAMEPLAY.momentumCamera.shaftMarginHeightRatio * height / scale.momentum
+                const startTriggerX = screenWidthPercent(GAMEPLAY.cameraBorderWidthPercent) / scale.momentum
+                const firstMinLen = Math.max(width + ninjaStartX + shaftHalfWidth + borders.thickness +
+                    GAMEPLAY.momentumCamera.shaftMarginHeightRatio * height / scale.momentum,
+                    width + startTriggerX + GAMEPLAY.momentumCamera.railRadius * height / scale.momentum)
                 // Shafts up and down side by side: neither one's border body
                 // reaches into the other
                 const oppositeShaftGap = () =>
