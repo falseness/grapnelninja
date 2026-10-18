@@ -5956,253 +5956,320 @@ class Task512Tests(ViaductV3CompleteChecks, unittest.TestCase):
         'S02-ledge':dict(x=[2350,2510],y=[-2491,-2490],**REST)})
 
 
-class Task513Tests(unittest.TestCase):
-    """Layout-v2 Broken Viaduct (S03) tolerance on desktop and touch: recorded real input, replayable suite."""
-    task_id = 'TASK-513'
-    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
-    compact = Task506Tests.compact
-    make_input = Task507Tests.make_input
-    run_attempt = Task507Tests.run_attempt
-    filmstrip = Task507Tests.filmstrip
-    targets = Task507Tests.targets
-    HUD = Task507Tests.HUD
-    VARIANTS = Task507Tests.VARIANTS
-    s02_exit = Task511Tests.s02_exit
-    at_rest = Task511Tests.at_rest
-    brake_ticks = Task509Tests.brake_ticks
-    test_04_source_hashes = Task465Tests.test_03_source_hashes
-    BASE_ROUTE = Task511Tests.BASE_ROUTE
-    BOXES, DRAG, BUFFER = Task512Tests.BOXES, Task512Tests.DRAG, Task512Tests.BUFFER
-    FALL, MOVERS = Task512Tests.FALL, Task512Tests.MOVERS
-    # TASK-513 tuning (with the shorter span buffer, narrower crest hook and taller exit-pad lip):
-    # S03-03 pulls the crest hook 10 units further left (3508, held 45) so the arc clears both the
-    # buffer top and the hook's right end; S03-04 holds the trolley 46 ticks and the in-flight
-    # re-catch aims straight at the trolley top (4380,-4086), not past it at the exit pad.
-    CREST, TROLLEY, TOP = (3508,-3715), Task512Tests.TROLLEY, (4380,-4086)
-    S03_03 = [(455,'mousedown',*CREST),(500,'mouseup',*CREST)]+Task512Tests.S03_03[2:]
-    S03_04 = [(755,'mousedown',*TROLLEY),(801,'mouseup',*TROLLEY),(885,'mousedown',*TOP),(900,'mouseup',*TOP)]
-    NOMINAL = Task512Tests.S03_01+Task512Tests.S03_02+S03_03+S03_04
-    # Encounter starts are ticks of one S03 nominal run from the real S02 exit rest, a few ticks
-    # before the encounter's first press while the player rests on the previous pad.
-    STARTS = {'S03-01':0, 'S03-02':195, 'S03-03':450, 'S03-04':750}
-    PRESSES = {'S03-01':5, 'S03-02':200, 'S03-03':455, 'S03-04':755}
+class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
+    """Layout-v3 Broken Viaduct (S03) tolerance on desktop 1280x720 and touch 844x390 (TASK-555).
 
-    @classmethod
-    def encounters(cls):
-        # (id, global plan, ticks, critical timing index, aim index, mechanic). Every aimed
-        # surface is a horizontal face, so the aim variants move along x.
-        return [('S03-01',Task512Tests.S03_01,240,1,0,'blue carriage pull up-right from the S02 exit pad; underside skim onto the pier pad'),
-                ('S03-02',Task512Tests.S03_02,300,1,0,'blue span lift released across the broken span; green buffer rebound onto the far deck'),
-                ('S03-03',cls.S03_03,320,1,0,'green crest hook pulled over the span buffer; ledge caught in flight, ledge brake onto the ledge'),
-                ('S03-04',cls.S03_04,400,1,0,'blue trolley pull, in-flight trolley top re-catch, exit brake onto the narrow exit pad (section exit)')]
+    Proof kind (as TASK-553/554): the real S02 v3 exit settled pose of one base-start real-input
+    S01+S02 v3 run is restored once as a labeled initial placement (initial_snapshot); production
+    trusted mouse/touch input and physics run from there. An attempt on encounter k replays the S03
+    route up to k: the encounter's inputs carry the variant, the earlier encounters keep their nominal
+    inputs. S03-01..03 end in flight, so they are judged at their mountain.js exit boxes (position at
+    the nominal exit tick 250/360/625); S03-04 at the S03 section exit (settled on the green exit
+    ledge inside S03-exit-drag at tick 1300). check_s03_v3_mechanics requires the encounter's own
+    mechanic, the S03 anchors in route order and no fall onto an S01/S02 bouncer or the lower bridge.
+    Shared by Task555Tests and the re-specced Task513Tests.
+    """
+    VC = ViaductV3CompleteChecks
+    # TASK-555 tolerance nominal for S03-03: the crest press aims along the same ray as TASK-554 but at
+    # 0.6 of the way from the shutter rest pose (5767.1,-6771.4) to the hook (6150,-7650). On touch the
+    # TASK-554 aim point (the hook itself) is under the pause button (client x 793-836, y 5-48), so that
+    # tap opens the pause menu; the ray still ends on the crest-hook underside (catch at tick 405).
+    CREST_RAY = (5997,-7299)
+    S03_03_TOL = [(400,'mousedown',*CREST_RAY),(472,'mouseup',*CREST_RAY)]
+    SEGMENTS = [VC.S03_01_V3, VC.S03_02_V3, S03_03_TOL, VC.S03_04_V3]
+    V3_ENCOUNTERS = [('S03-01','blue hoist pull up-left out of S02-exit-drag, release into the green west-pier rebound to the right',0,VC.S03_01_TICKS),
+                     ('S03-02','blue span lift caught in flight off the west-pier rebound, release into the green east-pier rebound to the left',VC.S03_01_TICKS,VC.S03_02_TICKS),
+                     ('S03-03','blue shutter stops the leftward flight, green crest-hook pull up-right, release into the right map edge and rise to the apex',VC.S03_02_TICKS,VC.S03_03_TICKS),
+                     ('S03-04','green exit hook pulled from the apex into S03-exit-drag, settle on the green exit ledge (S03 section exit)',VC.S03_03_TICKS,None)]
+    S04_TICKS = 1300
+    STRICT = {'S03-01':VC.S03_01_EXIT, 'S03-02':VC.S03_02_EXIT, 'S03-03':VC.S03_03_EXIT}
+    # Mistimed releases, one per encounter, no further input afterwards: (encounter, release tick
+    # replacing the nominal one, nominal release tick, ticks, declared fall point or None, landing bouncer).
+    # S03-04: the exit hook released 3 ticks after the catch drops past the S02 exit ledge through
+    # S02-exit-drag and S01-exit-drag onto the green S01 exit pad (no S03 fall point declares it).
+    MISTIMED = [('S03-01',75,120,900,'S03-01-short','S02-exit-ledge'), ('S03-02',290,311,1300,'S03-02-missed','S03-lower-bridge'),
+                ('S03-03',413,472,1300,'S03-03-early','S02-exit-ledge'), ('S03-04',633,695,1700,None,'S01-exit-pad')]
+    V3_MOVERS = ViaductV3Checks.S03_V3_MOVERS
+    # Client rectangles that open the pause menu (scanned with menu.clickToPause), per viewport width.
+    PAUSE_BUTTON = {1280:dict(x=[1210,1261], y=[16,67]), 844:dict(x=[793,836], y=[5,48])}
+    S02_V3_ROUTE, S02_V3_TICKS, S02_V3_SETTLE = ViaductV3Checks.S02_V3_ROUTE, ViaductV3Checks.S02_V3_TICKS, ViaductV3Checks.S02_V3_SETTLE
+    S02_EXIT_DRAG, S02_V3_ACQUIRED = ViaductV3Checks.S02_EXIT_DRAG, ViaductV3Checks.S02_V3_ACQUIRED
+    s02_v3_exit = ViaductV3Checks.s02_v3_exit
 
-    def interactions(self, trace):
-        """Acquisitions, bounces and mover contacts. Contacts carry no element id, so the carriage
-        underside (y -3120, ny 1) identifies the carriage contact (as TASK-512)."""
-        ticks = []
+    def targets(self, trace, viewport):
+        """Every press lands inside the viewport, outside the HUD block and outside the pause button."""
+        rows = FoundationsV3ToleranceChecks.targets(self, trace, viewport)
+        pause = self.PAUSE_BUTTON[viewport['width']]
+        for r in rows:
+            r['under_pause_button'] = self.inside(r['client'], pause)
+        return rows
+
+    def clear(self, targets):
+        return all(t['in_viewport'] and not t['under_hud'] and not t['under_pause_button'] for t in targets)
+
+    def density_v3(self, trace, name, start, end):
+        """As FoundationsV3ToleranceChecks.density_v3; compact contacts carry no element id, so a mover
+        contact is a contact point on the blue shutter's right face (the only S03 mover the player touches)."""
+        face = self.VC.SHUTTER_FACE
+        marks = []
         for e in trace['events']:
-            c = e.get('contact') or {}
-            if e['type'] == 'acquisition': el = e['after']['rope'][0]['id']
-            elif e['type'] == 'bounce': el = c.get('elementId')
-            elif e['type'] == 'contact' and c.get('elementId') in self.MOVERS: el = c['elementId']
-            elif e['type'] == 'contact' and c.get('y') == -3120 and c.get('ny') == 1: el = 'S03-carriage'
-            else: continue
-            if not ticks or ticks[-1][0] != e['tick']: ticks.append((e['tick'], e['type'], el))
-        return ticks
-
-    def density(self, trace, bounds, name):
-        ticks = self.interactions(trace)
-        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
-        exit_tick = next(t for t, p in enumerate(players) if all(b[0] <= p[k] <= b[1] for k, b in bounds.items()))
-        points = [0]+[t for t, _, _ in ticks if t <= exit_tick]+[exit_tick]
+            element = (e.get('contact') or {}).get('elementId')
+            if e['type'] == 'acquisition': element = e['after']['rope'][0]['id']
+            if e['type'] == 'contact' and face['left'] <= e['contact']['x'] <= face['right'] and face['top'] <= e['contact']['y'] <= face['bottom']:
+                element = 'S03-shutter'
+            if e['type'] in ('acquisition','bounce') or (e['type']=='contact' and element in self.V3_MOVERS):
+                if start <= e['tick'] <= end and (not marks or marks[-1]['tick'] != e['tick']):
+                    marks.append(dict(tick=e['tick'], type=e['type'], element=element))
+        points = [start]+[m['tick'] for m in marks]+[end]
         gaps = [b-a for a, b in zip(points, points[1:])]
         i = gaps.index(max(gaps))
-        return dict(trace=name, exit_tick=exit_tick, interactions=[dict(tick=t, type=k, element=el) for t, k, el in ticks if t <= exit_tick],
-                    max_gap=max(gaps), longest_gap=[points[i], points[i+1]], limit=180)
+        return dict(trace=name, window=[start, end], interactions=marks, max_gap=max(gaps),
+                    longest_gap=[points[i], points[i+1]], cap=self.DENSITY_CAP)
 
-    def landed(self, name):
-        """Density window end: first tick landed (|speedY| < .001) inside the exit box (as TASK-510)."""
-        return {k: v for k, v in self.BOXES[name].items() if k != 'speedX'}
-
-    def starts(self):
-        """One S03 nominal run from the real S02 exit rest; its states start S03-02..04."""
-        if hasattr(type(self), 'start_states'): return type(self).start_states
-        from grapple_over_verify import execute, check_trace
-        start = self.s02_exit()
-        setup = self.make_input(self.NOMINAL, 1150, self.BOXES['S03-04'], snapshot=start)
-        trace = execute(setup, self.browser, self.url, str(self.evidence.path('starts')))
-        check_trace(setup, trace)
-        self.evidence.write('starts/trace.json', self.compact(trace))
-        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
-        previous = {'S03-02':'S03-01','S03-03':'S03-02','S03-04':'S03-03'}
-        states, rests = {'S03-01': start}, {}
-        for name, t in self.STARTS.items():
-            if not t: continue
-            states[name] = trace['snapshots'][t]['state']['simulation']
-            # At rest on the previous pad from before the start tick until the encounter's press.
-            rests[name] = min(u for u in range(t+1) if all(self.at_rest(players[v], previous[name]) for v in range(u, self.PRESSES[name])))
-            self.assertLess(rests[name], t, name)
-        self.evidence.write('starts/snapshots.json', dict(
-            s02_exit=dict(source='encounters/S02-exit-start/trace.json (base-start S01+S02 v2 routes, real mouse input)', **type(self).start_proof),
-            s03_run='starts/trace.json (TASK-512 S03 nominal inputs from the S02 exit rest, real mouse input)',
-            ticks={name: dict(tick=t, sha256=trace['snapshots'][t]['sha256'], player=states[name]['player'],
-                              previous_pad_rest_from_tick=rests[name], first_press_tick=self.PRESSES[name])
-                   for name, t in self.STARTS.items() if t}))
-        type(self).start_states, type(self).start_trace = states, trace
-        return states
+    def exits(self):
+        """Per encounter: (ticks, judged exit bounds, meaning), from the runtime manifest."""
+        enc = {e['id']:e for e in self.report()['manifest']['encounters'][8:12]}
+        out = {}
+        for name, _, _, tick in self.V3_ENCOUNTERS:
+            if tick:
+                b = enc[name]['exit']
+                out[name] = (tick, dict(x=[b['left'],b['right']], y=[b['top'],b['bottom']]),
+                             f'inside the mountain.js {name} exit box at the nominal exit tick {tick}')
+            else:
+                out[name] = (self.S04_TICKS, self.VC.S03_04_EXIT,
+                             'settled on S03-exit-ledge inside S03-exit-drag (S03 section exit) at tick %d' % self.S04_TICKS)
+        return out
 
     def test_01_tolerance_matrix(self):
-        from grapple_over_verify import hashes, check_s03_mechanics
-        states = self.starts()
-        suite = dict(section='S03', designVersion=2, source_hashes=hashes(), level_sha256=dict(
-            **{'mountain.js': hashes()['mountain.js'], 'fixedlevel.js': hashes()['fixedlevel.js']}),
-            proof_kind='S03-01 from the real S02 exit rest (base-start S01+S02 routes); S03-02..04 restored from starts/trace.json states (initial_snapshot)',
-            browser=self.browser.version, revision=self.proof['revision'],
+        from grapple_over_verify import hashes, check_s03_v3_mechanics
+        start = self.s02_v3_exit()
+        self.assertTrue(self.inside(start['player'], self.S02_V3_SETTLE), start['player'])
+        exits = self.exits()
+        source = hashes()
+        suite = dict(section='S03', designVersion=3, source_hashes=source, level_sha256={k: source[k] for k in ('mountain.js','fixedlevel.js')},
+            proof_kind='isolated: one labeled initial placement (initial_snapshot) = the real S02 v3 exit settled pose of a base-start '
+                       'real-input S01+S02 v3 run (encounters/S02-exit-start), then production trusted mouse/touch input and physics; an '
+                       'attempt on encounter k carries the variant on k and TASK-553/554 nominal inputs on S03-01..k-1',
+            initial_placement=type(self).v3_s02_start_proof, browser=self.browser.version, revision=self.proof['revision'],
             viewports=dict(desktop=VIEWPORT, touch=dict(width=844, height=390)),
-            encounters={}, negative_control='negative-control.json', density='density.json',
-            starts=dict(self.STARTS), start_snapshots='starts/snapshots.json',
-            critical_inputs={r[0]: dict(timing_index=r[3], aim_index=r[4], tangent=(1,0), mechanic=r[5]) for r in self.encounters()})
+            intended_exits={n: dict(ticks=t, box=b, meaning=w) for n, (t, b, w) in exits.items()},
+            mechanics_check='tools/grapple_over_verify.py check_s03_v3_mechanics',
+            nominal_note='S03-03 crest press aimed along the TASK-554 ray at (5997,-7299) instead of the hook point (6150,-7650), '
+                         'which is under the touch pause button; see S03_03_TOL and hud_probe',
+            pause_button_client_rects={str(k): v for k, v in self.PAUSE_BUTTON.items()},
+            encounters={}, negative_control='negative-control.json', density='density.json', no_bounce_back='no-bounce-back.json',
+            critical_inputs={r[0]: dict(timing_index=1, aim_indices=[0,1], tangent=(1,0), mechanic=r[1],
+                                        inputs=self.SEGMENTS[k]) for k, r in enumerate(self.V3_ENCOUNTERS)})
         failures, nominal = [], {}
-        for name, plan, ticks, critical, aim, mechanic in self.encounters():
+        for k, (name, mechanic, begin, exit_tick) in enumerate(self.V3_ENCOUNTERS):
             attempts = []; suite['encounters'][name] = attempts
-            offset = self.STARTS[name]
+            ticks, bounds, meaning = exits[name]
             for device in ('desktop','touch'):
-                for variant, delta, shift in self.VARIANTS:
-                    local = [(t-offset+(delta if i==critical else 0), e, x+(shift if i in (aim, aim+1) else 0), y)
-                             for i, (t, e, x, y) in enumerate(plan)]
+                for variant, delta, shift in self.V3_VARIANTS:
                     label = f'{name}-{device}-{variant}'
                     prefix = ('clips/' if variant=='nominal' else 'attempts/')+label
-                    m = self.make_input(local, ticks, self.BOXES[name], device, states[name])
+                    m = self.make_input(self.variant_plan(k, delta, shift), ticks, bounds, device, snapshot=start)
+                    m['metadata']['blind_targets'] = 'skip'
                     trace, success, reason = self.run_attempt(m, prefix, variant=='nominal')
-                    mechanics = check_s03_mechanics(name, trace, required=False)
+                    dispatched = [(e['tick'], e['event']) for e in trace['events'] if e['type']=='input']
+                    blind = [i for i in m['inputs'] if (i['tick'], i['event']) not in dispatched]
+                    if blind: reason = 'blind target: off-screen press not dispatched '+json.dumps(blind[0])+' ('+reason+')'
+                    self.assertEqual(trace['metadata']['setupOnlySpawns'], [])
+                    mechanics = check_s03_v3_mechanics(name, trace, required=False)
                     if success:
-                        try: check_s03_mechanics(name, trace)
+                        try: check_s03_v3_mechanics(name, trace)
                         except ValueError as error: success, reason = False, str(error)
                     targets = self.targets(trace, m['metadata']['viewport'])
+                    players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+                    self.assertEqual((players[0]['x'], players[0]['y']), (start['player']['x'], start['player']['y']))
                     if variant == 'nominal':
-                        self.assertTrue(all(t['in_viewport'] and not t['under_hud'] for t in targets), (label, targets))
-                        if success: nominal[label] = self.density(trace, self.landed(name), prefix+'/trace.json')
-                    final = trace['snapshots'][-1]['state']['simulation']['player']
-                    attempts.append(dict(name=label, device=device, variant=variant, critical_input_index=critical,
-                        aim_input_index=aim, timing_delta=delta, tangent_aim_delta=shift, surface_tangent=(1,0),
+                        self.assertTrue(success, (label, reason))
+                        self.assertTrue(self.clear(targets), (label, targets))
+                        if exit_tick:
+                            self.assertTrue(self.inside(players[exit_tick], self.STRICT[name]), (label, players[exit_tick]))
+                            end = exit_tick
+                        else:
+                            end = next(b['tick'] for b in mechanics['bounces'] if b['element']=='S03-exit-ledge')
+                        nominal[label] = self.density_v3(trace, prefix+'/trace.json', begin, end)
+                    final = players[-1]
+                    attempts.append(dict(name=label, device=device, variant=variant, critical_input_index=1,
+                        aim_input_indices=[0,1], timing_delta=delta, tangent_aim_delta=shift, surface_tangent=(1,0),
                         input=prefix+'/input.json.gz', trace=prefix+'/trace.json', success=success, reason=reason,
-                        outcome='exit reached' if success else 'intended exit missed', mechanic=mechanic, mechanic_events=mechanics,
-                        press_targets=targets, source_hashes_sha256=state_hash(hashes()), level_sha256=hashes()['mountain.js'],
-                        final=final))
+                        intended_exit=dict(ticks=ticks, box=bounds, meaning=meaning),
+                        outcome=f'{name} exit reached through the encounter mechanic' if success else 'intended exit missed',
+                        mechanic=mechanic, mechanic_events=mechanics, press_targets=targets, blind_inputs_not_dispatched=blind,
+                        source_hashes_sha256=state_hash(source), level_sha256=source['mountain.js'],
+                        trace_sha256=state_hash(trace), final=final))
                     self.evidence.write('manifest.json', suite)
                     print('ATTEMPT', label, 'PASS' if success else 'FAIL', reason, mechanics['acquisitions'],
                           (round(final['x'],1), round(final['y'],1)), flush=True)
                 group = [a for a in attempts if a['device']==device]
                 if not group[0]['success'] or sum(a['success'] for a in group[1:]) < 2:
                     failures.append(name+' '+device)
-        worst = max([d['max_gap'] for d in nominal.values()] or [0])
-        self.evidence.write('density.json', dict(rule='no nominal-trace gap > 180 ticks without an acquisition, bounce or mover contact',
-            counted=['acquisition','bounce','contact with '+'/'.join(self.MOVERS)+' (carriage by its underside y -3120, ny 1)'],
-            window='each nominal encounter trace from tick 0 to the first tick landed (|speedY|<.001) inside its expected exit box',
-            traces=nominal, max_gap=worst, passed=worst <= 180,
-            full_route='test_02 adds the S03 traversal from the real S02 exit rest segmented per encounter'))
-        self.assertEqual(failures, [])
+        worst = max(d['max_gap'] for d in nominal.values())
+        self.evidence.write('density.json', dict(rule='no nominal-trace gap longer than the TASK-544 v3 density cap '
+            '(LAYOUT_V3_DENSITY_CAP_TICKS = 254) without an acquisition, bounce or mover contact',
+            counted=['acquisition','bounce','contact with the S03-shutter right face (S03-hoist/S03-lift are only rope anchors)'],
+            cap=self.DENSITY_CAP,
+            window='each encounter from its start tick in the nominal S03 run (0/250/360/625) to its manifest exit tick '
+                   '(250/360/625) or, for S03-04, the exit-ledge landing; the settle on the exit ledge is not a stretch of play',
+            traces=nominal, max_gap=worst, passed=worst <= self.DENSITY_CAP))
         self.assertEqual(len(nominal), 8)
-        self.assertLessEqual(worst, 180, {k: v['max_gap'] for k, v in nominal.items()})
-        self.negative_control(states)
-        print('PASS S03 v2 four encounters: both viewports nominal + >=2/4 variants; density max gap', worst,
-              '; mistimed-lift negative control fails the exit')
+        self.assertLessEqual(worst, self.DENSITY_CAP, {k: v['max_gap'] for k, v in nominal.items()})
+        self.negative_control(start, exits['S03-04'])
+        self.hud_probe(start)
+        self.assertEqual(failures, [])
+        print('PASS S03 v3 four encounters: both viewports nominal + >=2/4 variants;',
+              {n: {d: sum(a['success'] for a in suite['encounters'][n] if a['device']==d and a['variant']!='nominal') for d in ('desktop','touch')}
+               for n in suite['encounters']}, '; density max gap', worst, '<=', self.DENSITY_CAP, '; omitted-exit-hook negative control fails the exit')
 
-    def negative_control(self, states):
-        from grapple_over_verify import hashes, check_s03_mechanics
-        # Named mistiming: S03-02 span lift released after 50 ticks instead of 65, same start and physics.
-        name, offset = 'S03-02', self.STARTS['S03-02']
-        m = self.make_input([(t-offset, e, x, y) for t, e, x, y in self.FALL[2:4]], 400, self.BOXES[name], snapshot=states[name])
+    def negative_control(self, start, exit):
+        from grapple_over_verify import hashes, check_s03_v3_mechanics
+        # Named omission: the S03-04 exit-hook press/release left out; same placement, physics and
+        # S03-01..03 inputs as every S03-04 attempt.
+        ticks, bounds, meaning = exit
+        plan = self.variant_plan(3)[:6]
+        m = self.make_input(plan, ticks, bounds, snapshot=start)
         trace, success, reason = self.run_attempt(m, 'clips/negative', True)
         players = [r['state']['simulation']['player'] for r in trace['snapshots']]
         step = max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a, b in zip(players, players[1:]))
-        mechanics = check_s03_mechanics(name, trace, required=False)
-        rest = next(t for t, p in enumerate(players) if self.at_rest(p, 'S02-landing'))
-        self.assertTrue(all(self.at_rest(p, 'S02-landing') for p in players[rest:]))
-        self.evidence.write('negative-control.json', dict(name='mistimed S03-02: S03-lift released at hold 50 instead of 65',
+        mechanics = check_s03_v3_mechanics('S03-04', trace, required=False)
+        self.evidence.write('negative-control.json', dict(name='omitted exit hook: S03-04 S03-exit-hook press/release left out',
             input='clips/negative/input.json.gz', trace='clips/negative/trace.json', failed_intended_exit=not success,
-            reason=reason, intended_exit=self.BOXES[name], unchanged_physics=True, source_hashes=hashes(),
-            start=f'starts/trace.json tick {offset} (same as the S03-02 attempts)', mechanic_events=mechanics,
-            max_tick_displacement=step, final_player=players[-1], s02_landing_rest=dict(tick=rest, player=players[rest]),
-            scope='Same start, physics and lift aim; the early release rebounds off the span buffer back over the span and falls '
-                  'physically through S03-fall-drag onto the S02 landing deck, never reaching the S03 far deck.'))
+            reason=reason, intended_exit=dict(ticks=ticks, box=bounds, meaning=meaning), unchanged_physics=True, source_hashes=hashes(),
+            proof_kind='same labeled S02-exit placement, real mouse input, same S03-01..03 inputs as the S03-04 attempts', inputs=plan,
+            mechanic_events=mechanics, max_tick_displacement=step,
+            exit_ledge_contact='S03-exit-ledge' in [b['element'] for b in mechanics['bounces']], final_player=players[-1],
+            scope='Without the exit-hook pull the apex on the right map edge drops back down the edge (S03-04-missed), '
+                  'through S03-fall-drag onto the green lower bridge, and the S03 section exit is missed.'))
         self.assertFalse(success); self.assertIn('expected exit mismatch', reason)
-        self.assertEqual(mechanics['acquisitions'], ['S03-lift'])
-        self.assertIn(self.BUFFER, [b['element'] for b in mechanics['bounces']])
+        self.assertNotIn('S03-exit-hook', mechanics['acquisitions'])
+        self.assertFalse(self.inside(players[-1], self.VC.S03_04_EXIT))
         self.assertLess(step, 60)
 
-    def test_02_full_traversal(self):
-        """The S03 nominal run from the real S02 exit rest (starts/trace.json), segmented per encounter."""
-        from grapple_over_verify import check_s03_mechanics
-        self.starts()
-        trace = type(self).start_trace
-        mechanics = check_s03_mechanics('S03-01', trace)
-        self.assertEqual(mechanics['acquisitions'], ['S03-carriage','S03-lift','S03-crest-hook','S03-ledge','S03-trolley','S03-trolley'])
-        self.assertIn(self.BUFFER, [b['element'] for b in mechanics['bounces']])
-        self.assertIn('S03-ledge', mechanics['airborne_acquisitions'])
-        players = [r['state']['simulation']['player'] for r in trace['snapshots']]
-        self.assertTrue(self.at_rest(players[-1], 'S03-04'), players[-1])
-        segments = {}
-        for name, start_tick in self.PRESSES.items():
-            window = dict(trace, events=[dict(e, tick=e['tick']-start_tick) for e in trace['events'] if e['tick'] >= start_tick],
-                          snapshots=[dict(r, tick=r['tick']-start_tick) for r in trace['snapshots'][start_tick:]])
-            d = self.density(window, self.landed(name), 'starts/trace.json')
-            d.update(start_tick=start_tick, exit_tick_absolute=start_tick+d['exit_tick'])
-            segments[name] = d
-        presses = self.PRESSES
-        idle = [dict(after=a, rest_from=segments[a]['exit_tick_absolute'], next_press=presses[b], player=players[presses[b]])
-                for a, b in zip(list(presses)[:-1], list(presses)[1:])]
-        for row in idle:
-            self.assertTrue(abs(row['player']['speedX']) < .001 and abs(row['player']['speedY']) < .001, row)
-        density = json.loads(self.evidence.path('density.json').read_text()) if self.evidence.path('density.json').exists() else {}
-        density['full_route'] = dict(trace='starts/trace.json', proof_kind='isolated: one labeled placement at the real S02 exit rest; '
-            'real mouse input (TASK-512 S03 nominal inputs)', segments=segments, idle_rests=idle,
-            max_gap=max(d['max_gap'] for d in segments.values()))
-        self.evidence.write('density.json', density)
-        self.assertLessEqual(density['full_route']['max_gap'], 180, {k: v['max_gap'] for k, v in segments.items()})
-        print('PASS full S03: S02 exit rest to the S03 exit pad; acquisitions', mechanics['acquisitions'],
-              '; per-encounter max gaps', {k: v['max_gap'] for k, v in segments.items()})
-
-    def test_03_drag_zone_fall_clips(self):
-        from grapple_over_verify import check_s03_mechanics
-        states = self.starts()
-        offset = self.STARTS['S03-02']
-        plan = [(t-offset, e, x, y) for t, e, x, y in self.FALL[2:]]
+    def hud_probe(self, start):
+        """Records where the TASK-554 crest aim point (the hook itself) lands on each viewport at the press."""
+        from grapple_over_verify import check_s03_v3_mechanics
+        plan = self.SEGMENTS[0]+self.SEGMENTS[1]+self.VC.S03_03_V3
+        rows = {}
         for device in ('desktop','touch'):
-            m = self.make_input(plan, plan[2][0]+400, self.BOXES['S02-ledge'], device, states['S03-02'])
-            prefix = 'clips/fall-'+device
-            trace, success, reason = self.run_attempt(m, prefix, True)
-            self.assertTrue(success, reason)
-            players = [r['state']['simulation']['player'] for r in trace['snapshots']]
-            step = max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a, b in zip(players, players[1:]))
-            press = plan[2][0]
-            zone = [t for t in self.brake_ticks(players, self.DRAG) if t < press]
-            deck = [e['tick'] for e in trace['events'] if e['type']=='contact' and (e.get('contact') or {}).get('y') == -2100
-                    and (e.get('contact') or {}).get('ny') == -1 and e['tick'] < press]
-            land = deck[0]
-            rest = next(t for t in range(land, press) if self.at_rest(players[t], 'S02-landing'))
-            self.assertTrue(all(self.at_rest(players[t], 'S02-landing') for t in range(rest, press)))
-            base = [e['tick'] for e in trace['events'] if e['type']=='contact' and (e.get('contact') or {}).get('y') == 120]
-            mechanics = check_s03_mechanics('S03-02', trace, required=False)
-            targets = self.targets(trace, m['metadata']['viewport'])
-            self.assertTrue(zone and all(t['in_viewport'] and not t['under_hud'] for t in targets), targets)
-            self.assertEqual(base, [])
-            self.assertEqual(mechanics['acquisitions'], ['S03-lift','S02-crest-hook','S02-ledge'])
-            self.assertIn(self.BUFFER, [b['element'] for b in mechanics['bounces']])
-            self.assertLess(step, 60)
-            ratios = [players[t+1]['speedX']/players[t]['speedX'] for t in zone[:-1] if players[t]['speedX']]
-            rejoined = next(t for t in range(press, len(players)) if self.at_rest(players[t], 'S02-ledge'))
-            self.evidence.write(prefix+'/result.json', dict(passed=True, device=device, viewport=m['metadata']['viewport'],
-                scenario='mistimed S03-02 lift release (hold 50, nominal 65) from the S03-02 start state; buffer rebound; physical fall '
-                         'through S03-fall-drag onto the S02 landing deck; input-only S02-03 rejoin onto the S02 ledge',
-                drag_zone=self.DRAG, drag_zone_ticks=[zone[0], zone[-1]], vx_entering=players[zone[0]-1]['speedX'],
-                vx_leaving=players[zone[-1]+1]['speedX'], per_tick_vx_ratio_count=len(ratios),
-                per_tick_vx_ratio_min_max=[min(ratios), max(ratios)] if ratios else None,
-                s02_landing_first_contact_tick=land, s02_landing_rest=dict(tick=rest, player=players[rest]), base_contact=False,
-                rejoin=dict(press_tick=press, acquisitions=mechanics['acquisitions'][1:], ledge_rest_tick=rejoined, player=players[rejoined]),
-                max_tick_displacement=step, press_targets=targets, mechanic_events=mechanics, final=players[-1]))
-            print('PASS fall '+device+': drag column ticks', zone[0], '-', zone[-1], '; S02 landing rest tick', rest,
-                  '; S02-03 rejoin to the S02 ledge tick', rejoined, '; no relocation')
+            m = self.make_input(plan, 480, dict(y=[-1e9, 1e9]), device, snapshot=start)
+            prefix = 'hud-probe/'+device
+            trace, _, _ = self.run_attempt(m, prefix)
+            press = next(t for t in self.targets(trace, m['metadata']['viewport']) if t['tick']==400)
+            acquired = check_s03_v3_mechanics('S03-03', trace, required=False)['acquisitions']
+            rows[device] = dict(input=prefix+'/input.json.gz', trace=prefix+'/trace.json', press=press,
+                                crest_hook_acquired='S03-crest-hook' in acquired, acquisitions=acquired)
+            self.assertEqual(press['under_pause_button'], not rows[device]['crest_hook_acquired'], rows[device])
+        self.evidence.write('hud-probe.json', dict(finding='The S03-crest-hook graphic is drawn under the touch pause button '
+            'at the S03-03 press pose; a touch tap on the hook opens the pause menu (no acquisition). The tolerance nominal aims '
+            'along the same ray at a nearer point (S03_03_TOL), clear of the button, and catches the hook on both viewports.',
+            aim_point=self.VC.CREST_V3, pause_button_client_rects={str(k): v for k, v in self.PAUSE_BUTTON.items()}, runs=rows))
+        self.assertFalse(rows['desktop']['press']['under_pause_button'])
+
+    def test_02_mistimed_release_no_bounce_back(self):
+        from grapple_over_verify import check_s03_v3_mechanics
+        start = self.s02_v3_exit()
+        elements = {e['id']:e for e in self.report()['manifest']['geometry']['elements']}
+        zones = {k: self.bounds_v3(e) for k, e in elements.items() if e['role']=='drag' and k.startswith(('S01-','S02-','S03-'))}
+        falls = {f['id']:f for f in self.report()['report']['sections'][2]['rules']['dragUnderFall']['measured']['fallPoints']}
+        inzone = lambda p, b: b['left'] <= p['x'] <= b['right'] and b['top'] <= p['y'] <= b['bottom']
+        rows = {}
+        for k, (name, release, nominal, ticks, fall_id, landing_id) in enumerate(self.MISTIMED):
+            segment = self.SEGMENTS[k]
+            self.assertEqual(segment[1][0], nominal)
+            for device in ('desktop','touch'):
+                plan = [p for seg in self.SEGMENTS[:k] for p in seg]+[segment[0], (release,)+segment[1][1:]]
+                m = self.make_input(plan, ticks, dict(y=[-1e9, 1e9]), device, snapshot=start)
+                prefix = f'clips/fall-{name}-{device}'
+                trace, success, reason = self.run_attempt(m, prefix, True)
+                self.assertTrue(success, reason)
+                self.assertEqual(trace['metadata']['setupOnlySpawns'], [])
+                players = [r['state']['simulation']['player'] for r in trace['snapshots']]
+                mech = check_s03_v3_mechanics(name, trace, required=False)
+                anchor = mech['encounter']['anchor']
+                rel = next(r for r in mech['releases'] if r['element']==anchor)
+                self.assertEqual(rel['tick'], release)
+                r_player = players[release]
+                bounces = [e for e in trace['events'] if e['type']=='bounce' and e['tick'] > release]
+                landings = [e for e in bounces if e['contact']['elementId']==landing_id]
+                self.assertTrue(landings, name)
+                landing = landings[0]; land = landing['tick']
+                self.assertEqual(elements[landing_id]['role'], 'bounce')
+                # The landing bouncer is the first surface bounced after the release (no glances on the way down).
+                self.assertEqual(bounces[0]['tick'], land, (name, bounces[0]['contact']))
+                crossed = {z: [t for t in range(release, land+1) if inzone(players[t], b)] for z, b in zones.items()}
+                crossed = {z: ts for z, ts in crossed.items() if ts}
+                self.assertTrue(crossed, name)
+                # The landing is inside or directly below the last drag zone crossed.
+                last = max(crossed, key=lambda z: crossed[z][-1])
+                self.assertLessEqual(land - crossed[last][-1], 120, (name, last))
+                rest_y = landing['after']['simulation']['player']['y']
+                apex_tick = min(range(release, land), key=lambda t: players[t]['y'])
+                second = next((e['tick'] for e in landings if e['tick'] > land+1), ticks)
+                peak_tick = min(range(land+1, second), key=lambda t: players[t]['y'])
+                release_height = rest_y - r_player['y']
+                peak_height = rest_y - players[peak_tick]['y']
+                fall_height = rest_y - players[apex_tick]['y']
+                self.assertGreater(release_height, 0, name)
+                self.assertLessEqual(peak_height, .5*release_height, name)
+                self.assertLessEqual(peak_height, .5*fall_height, name)
+                targets = self.targets(trace, m['metadata']['viewport'])
+                self.assertTrue(self.clear(targets), targets)
+                step = max(abs(a['x']-b['x'])+abs(a['y']-b['y']) for a, b in zip(players, players[1:]))
+                self.assertLess(step, 60)
+                declared = falls[fall_id] if fall_id else None
+                if declared:
+                    self.assertEqual(declared['firstBouncer'], landing_id)
+                row = dict(encounter=name, device=device, viewport=m['metadata']['viewport'], anchor=anchor,
+                    mistiming=f'{anchor} released at tick {release} instead of {nominal}; no further input',
+                    input=prefix+'/input.json.gz', trace=prefix+'/trace.json', filmstrip=prefix+'/filmstrip.jpg',
+                    release=dict(tick=release, player=r_player), landing_rest_y=rest_y,
+                    release_height=release_height, release_height_definition='landing-bouncer bounce y minus player y at the release tick',
+                    apex=dict(tick=apex_tick, y=players[apex_tick]['y']), fall_height_from_apex=fall_height,
+                    bounces_before_landing=[],
+                    drag_zones_crossed=[dict(id=z, box=zones[z], ticks=[ts[0], ts[-1]], entry_player=players[ts[0]],
+                        exit_player=players[ts[-1]]) for z, ts in sorted(crossed.items(), key=lambda x: x[1][0])],
+                    declared_fall_point=dict(id=fall_id, x=declared['x'], dragZones=declared['dragZones'], firstBouncer=declared['firstBouncer'])
+                        if declared else dict(id=None, note='undeclared S03 line: drops past the S02 exit ledge through the S02 and S01 '
+                                                            'exit drag zones onto the S01 exit pad (S01/S02 declared drag columns)'),
+                    first_bounce=dict(element=landing_id, tick=land, before=landing['before']['simulation']['player'],
+                        after=landing['after']['simulation']['player']),
+                    first_bounce_peak=dict(tick=peak_tick, y=players[peak_tick]['y'], height=peak_height,
+                        fraction_of_release_height=peak_height/release_height, fraction_of_apex_fall=peak_height/fall_height),
+                    at_most_half_of_release_height=True, max_tick_displacement=step, press_targets=targets, relocation=False)
+                rows.setdefault(name, {})[device] = row
+                print('PASS fall', name, device, ': release tick', release, 'y', round(r_player['y'],1), '; drag zones',
+                      [d['id'] for d in row['drag_zones_crossed']], '; first bounce', landing_id, 'tick', land, '; first peak',
+                      round(peak_height,1), '=', round(peak_height/release_height,3), 'of release height', round(release_height,1))
+        self.evidence.write('no-bounce-back.json', dict(self.proof, rule='a mistimed release passes through the drag zone below '
+            'it and its first bounce peaks at most 50% of the release height (i.e. at least 50% lower)',
+            proof_kind='labeled S02-exit placement, real mouse (desktop 1280x720) and touch (844x390) input; physical fall, no relocation',
+            encounters=rows, passed=True))
+
+
+class Task513Tests(ViaductV3ToleranceChecks, unittest.TestCase):
+    """Broken Viaduct (S03) tolerance, re-specced by TASK-555 from layout v2 to layout v3.
+
+    Mapping (v2 case -> v3 case, shared with Task555Tests via ViaductV3ToleranceChecks):
+    test_01_tolerance_matrix: v2 S03-01 from the v2 S02 exit-pad rest and S03-02..04 from restored v2
+    rest states (starts/trace.json), 180-tick density, mistimed-lift negative control -> v3 S03-01..04 from
+    the labeled real S02 v3 exit pose, S03-01..03 judged at their mountain.js exit boxes and S03-04 at the
+    exit-ledge settle, 254-tick density cap, omitted-exit-hook negative control, touch pause-button probe.
+    test_02_full_traversal: the v3 full route is the nominal S03-04 attempt of test_01 (and Task554
+    test_07). test_03_drag_zone_fall_clips -> test_02_mistimed_release_no_bounce_back (one mistimed
+    release per encounter through a drag zone onto a green bouncer, desktop and touch).
+    test_04_source_hashes is unchanged. The v2 constants below stay only because the later v2 suite
+    Task514Tests builds its base route from NOMINAL.
+    """
+    task_id = 'TASK-513'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    compact = Task506Tests.compact
+    test_04_source_hashes = Task465Tests.test_03_source_hashes
+    CREST, TROLLEY, TOP = (3508,-3715), Task512Tests.TROLLEY, (4380,-4086)
+    S03_03 = [(455,'mousedown',*CREST),(500,'mouseup',*CREST)]+Task512Tests.S03_03[2:]
+    S03_04 = [(755,'mousedown',*TROLLEY),(801,'mouseup',*TROLLEY),(885,'mousedown',*TOP),(900,'mouseup',*TOP)]
+    NOMINAL = Task512Tests.S03_01+Task512Tests.S03_02+S03_03+S03_04
 
 
 class Task514Tests(unittest.TestCase):
@@ -6909,3 +6976,11 @@ class Task554Tests(ViaductV3CompleteChecks, unittest.TestCase):
     setUpClass = classmethod(Task465Tests.setUpClass.__func__)
     open = Task465Tests.open
     test_09_source_hashes = Task465Tests.test_03_source_hashes
+
+
+class Task555Tests(ViaductV3ToleranceChecks, unittest.TestCase):
+    """Layout-v3 Broken Viaduct (S03) mechanics and tolerance: 40 real-input attempts, drag-zone falls."""
+    task_id = 'TASK-555'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    compact = Task506Tests.compact
+    test_03_source_hashes = Task465Tests.test_03_source_hashes
