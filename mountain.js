@@ -314,8 +314,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // Lower broken bridge: green catch in the slot between the S02 east wall and the
         // right map edge, where the missed-lift flight drops after glancing off the wall top.
         bouncer('S03-lower-bridge',6360,-5400,120,40),
-        // v2 Viaduct exit pad kept (converted to green) only as the v2 Deflector Works S04-01
-        // start reference; no v3 S03 route uses it.
+        // v2 Viaduct exit pad kept (converted to green); the v2 Deflector Works S04-01 started on it
+        // until TASK-556. No v3 route uses it.
         bouncer('S03-exit-pad',4600,-3830,150,55)
     ];
     // The fall drag zone holds the lower bridge; the S03-02 missed line and an S03-04 miss
@@ -379,55 +379,61 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(recoveries[2], {status:'built',elements:['S03-fall-drag','S03-lower-bridge','S02-exit-drag','S02-exit-ledge'],
         rejoin:'S03-01',sideRoute:'Every declared S03 miss falls through a drag zone onto the green S02 exit ledge or the green lower bridge and settles; from the S02 exit ledge a blue hoist pull rejoins the route at S03-01'});
     Object.assign(shortcuts[0], {intent:'Optional faster high-risk launch from S03-01 to S03-04; kept planned for layout v3'});
-    // Deflector Works v2 (layout v2): travelling left from the Viaduct exit pad, the
-    // mirror image of the S03 opening (x' = 6726 - x, 1150 higher). S04-01: blue
-    // carriage pulled up-left; the swing skims its underside and carries leftward speed
-    // onto the pier pad. S04-02: blue lift pulled from the pier; release across the open
-    // works floor (landing far beyond the 540 range) into the flat green press face,
-    // whose reflection settles on the press deck against its tall right lip. The pier's
-    // right end stays left of x 4250, clear of the S03-04 trolley arcs (x >= 4282).
-    // Mover phases mirror the S03 movers at the S03 exit rest time (tick 3270 of the
-    // base-start route). S04-03/04 are planned; until they are rebuilt the v1 upper
-    // step and exit deck stay as the legacy Cable Galleries entrance.
+    // Deflector Works v3 (layout v3, TASK-556): no gray pads. Travelling left from the green S03
+    // exit ledge (inside S03-exit-drag) at the doubled 1080-range distances, across the open west
+    // half of the map above the legacy Cable Galleries. The legacy S06 loading floor caps the S03
+    // exit drag zone, so the first pull is near-horizontal. S04-01: pull the blue hoist west along
+    // the exit ledge out of the exit drag zone, release the swing and reflect off the flat green
+    // reflector plate. S04-02: on the rebound, catch the blue lift in flight, swing up-left under it
+    // and release into the angled green deflector, which turns the leftward flight into a steep
+    // climb along the left map edge. S04-03/04 are planned. A missed lift catch drops down the left
+    // map edge through the fall drag zone onto the green catch basin; a short hoist hold stays in the
+    // S03 exit drag zone and settles on the S03 exit ledge.
     const deflectors = [
-        rectangle('S04-carriage',4366,-4285,120,30,true),
-        lowRest('S04-pier',4106,-4150,140,20,true),
-        rectangle('S04-lift',3748,-4586+80*10/24,120,30,true),
-        lowRest('S04-press-deck',3196,-4400,200,60),
-        {id:'S04-flat-press',x:3196,y:-4640,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:30,y:0},{x:30,y:240},{x:0,y:240}]},
-        rest('S04-upper-step',4700,-6050,200),
-        {id:'S04-exit',x:4460,y:-6480,role:'solid',grapplable:true,points:[{x:0,y:-180},{x:40,y:-180},{x:40,y:0},{x:160,y:0},{x:160,y:-30},{x:200,y:-30},{x:200,y:55},{x:0,y:55}]}
+        rectangle('S04-hoist',5154,-7900,120,30,true),
+        bouncer('S04-reflector',3200,-7450,600,30),
+        rectangle('S04-lift',2240,-8030,120,30,true),
+        // Angled green face from (900,-8550) down-right to (1200,-8250); its normal points up-right.
+        {id:'S04-deflector',x:900,y:-8550,role:'bounce',grapplable:true,points:[{x:0,y:0},{x:300,y:300},{x:0,y:300}]},
+        bouncer('S04-catch-basin',0,-6000,300,40),
+        // v1 Cable Galleries recovery step and entrance deck (v1 S05-01 start), converted to green;
+        // no v3 S04 route uses them.
+        {...rest('S04-upper-step',4700,-6050,200),role:'bounce'},
+        {id:'S04-exit',x:4460,y:-6480,role:'bounce',grapplable:true,points:[{x:0,y:-180},{x:40,y:-180},{x:40,y:0},{x:160,y:0},{x:160,y:-30},{x:200,y:-30},{x:200,y:55},{x:0,y:55}]}
     ];
     deflectors.find(e=>e.id==='S04-upper-step').points.forEach(p=>{if(p.y===-60)p.y=-30;});
     deflectors.find(e=>e.id==='S04-upper-step').points.splice(0,1,{x:0,y:-180},{x:40,y:-180},{x:40,y:0});
+    // The fall drag zone holds the catch basin against the left map edge; the S04-02 missed line
+    // drops through it.
+    const worksDrags = [{id:'S04-fall-drag',x:0,y:-6440,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:300,y:0},{x:300,y:440},{x:0,y:440}]}];
     const worksMovers = [
-        {id:'S04-carriage-travel',element:'S04-carriage',axis:'x',min:4296,max:4416,periodMs:4000,phase:17/24,velocity:-60},
-        {id:'S04-lift-travel',element:'S04-lift',axis:'y',min:-4586,max:-4506,periodMs:4000,phase:5/24,velocity:40}];
-    Object.assign(sections[3], {status:'partial', designVersion:2, landmark:{id:'S04-landmark',
-        name:'angled green machinery',x:3800,y:-4900},
-        solidExceptions:[
-            {element:'S04-pier',kind:'rest-pad',reason:'S04-01 landing / S04-02 launch rest, 140 wide; low left end stop catches the carriage swing'},
-            {element:'S04-press-deck',kind:'rest-pad',reason:'S04-02 landing rest under the flat press; tall right lip stops the reflection'},
-            {element:'S04-upper-step',kind:'rest-pad',reason:'Legacy v1 Cable Galleries recovery step until S04-03/04 are rebuilt for layout v2'},
-            {element:'S04-exit',kind:'rest-pad',reason:'Legacy v1 Cable Galleries entrance deck (S05-01 start) until S04-03/04 are rebuilt for layout v2'}],
-        // Rope-to-anchor reach from the resting launch point to the nominal acquisition point.
-        gaps:[{id:'S04-01-carriage',from:{x:4675.2,y:-3840.8},to:{x:4450.6,y:-4255}},
-            {id:'S04-02-lift',from:{x:4156.8,y:-4160.8},to:{x:3839.4,y:-4504.7}}],
-        fallLines:[]});
-    // Encounter nodes sit on the band edge (y -4860); the starts below the band are the real rest poses.
-    Object.assign(encounters[12], {status:'built',x:4675,y:-4860,
-        elements:['S03-exit-pad','S04-carriage','S04-pier'],
-        start:{x:4675.2,y:-3840.8,from:'S03-04'},target:{x:4466,y:-4225},
-        exit:{left:4146,right:4246,top:-4170,bottom:-4150},
-        action:'Pull the blue carriage up-left from the Viaduct exit pad, skim its underside and carry the speed onto the pier pad'});
-    Object.assign(encounters[13], {status:'built',x:4157,y:-4860,
-        elements:['S04-pier','S04-lift','S04-flat-press','S04-press-deck'],
-        start:{from:'S04-01',x:4156.8,y:-4160.8},target:{x:3823,y:-4520},
-        exit:{left:3226,right:3356,top:-4420,bottom:-4400},
-        action:'Pull the blue lift, release across the works floor beyond grapnel range into the flat green press and reflect onto the press deck'});
-    // Planned since TASK-553: the v2 S04-01 still starts on the v2 Viaduct exit pad, not on the v3 exit ledge.
-    Object.assign(connectors[12], {status:'planned',intent:'Physical ascent from the Viaduct exit pad to the blue carriage; planned until Deflector Works is rebuilt from the v3 Viaduct exit ledge'});
+        {id:'S04-hoist-travel',element:'S04-hoist',axis:'y',min:-7900,max:-7820,periodMs:4000,phase:0,velocity:40},
+        {id:'S04-lift-travel',element:'S04-lift',axis:'x',min:2240,max:2360,periodMs:4000,phase:0,velocity:60}];
+    Object.assign(sections[3], {status:'partial', designVersion:3, landmark:{id:'S04-landmark',
+        name:'angled green machinery',x:2400,y:-7700},
+        band:{...sections[3].band, top:-8100},
+        // Rope-to-anchor reach from the player at the press to the acquisition point.
+        gaps:[{id:'S04-01-hoist',from:{x:6127,y:-7781.1},to:{x:5174.1,y:-7866.3}},
+            // Caught in flight on the rebound off the reflector plate.
+            {id:'S04-02-lift',from:{x:3194.9,y:-7569.5},to:{x:2352.5,y:-8000}}],
+        // Declared miss points: a short hoist hold leaves the player in S03-exit-drag, where it
+        // settles on the green S03 exit ledge; a missed lift catch carries the reflector rebound into
+        // the left map edge and drops along it through S04-fall-drag onto the green catch basin.
+        fallPoints:[{id:'S04-01-short',encounter:'S04-01',x:5900,y:-7850},
+            {id:'S04-02-missed',encounter:'S04-02',x:30,y:-6900}]});
+    // Encounter nodes sit inside the band (y >= -8100) and below the S05-04 node (S05-fall rejoins S04-01).
+    Object.assign(encounters[12], {status:'built',x:6127,y:-7700,
+        elements:['S03-exit-ledge','S04-hoist','S04-reflector'],
+        start:{x:6127,y:-7781.1,from:'S03-04'},target:{x:5234,y:-7860},
+        exit:{left:3200,right:3400,top:-7600,bottom:-7480},
+        action:'Pull the blue hoist west along the Viaduct exit ledge out of the exit drag zone, release and reflect off the flat green reflector plate'});
+    Object.assign(encounters[13], {status:'built',x:3195,y:-7700,
+        elements:['S04-reflector','S04-lift','S04-deflector'],
+        start:{from:'S04-01',x:3194.9,y:-7569.5},target:{x:2350,y:-8000},
+        exit:{left:780,right:920,top:-9100,bottom:-8950},
+        action:'On the rebound off the reflector plate, catch the blue lift, swing up-left and redirect off the angled green deflector into a climb along the left map edge'});
+    Object.assign(connectors[12], {status:'built',intent:'Physical ascent: the S04-01 hoist pull starts on the v3 Viaduct exit ledge'});
     connectors[13].status='built';
     // Cable Galleries: cantilever girders and a deep service overhang. The
     // open shaft below the projecting tips returns misses to Deflector Works.
@@ -679,7 +685,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags], movers:liftMovers},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         finish, completion:'Summit finish region on the S08-04 beacon pad; reaching it completes the climb',
