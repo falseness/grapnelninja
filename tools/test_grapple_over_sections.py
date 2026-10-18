@@ -5131,7 +5131,8 @@ V2_S03_DISPOSITION = {
                     'S04-01 encounter still starts on it; no v3 S03 route uses it')}
 # The other v2 S03 elements (movers, bouncers, drag zones): deleted or id re-used by a new v3 element.
 V2_S03_OTHER = {'S03-carriage':'deleted', 'S03-trolley':'deleted', 'S03-span-buffer':'deleted',
-    'S03-crest-hook':'id re-used: new green hook (6090,-7675) 120x25 for the v3 S03-03 crest pull (TASK-554)',
+    'S03-crest-hook':'id re-used: new green hook (6330,-7500) 120x25 for the v3 S03-03 crest pull (TASK-554; moved by TASK-555 '
+                     'from (6090,-7675), which was under the touch pause button)',
     'S03-ledge-brake':'deleted', 'S03-exit-brake':'deleted',
     'S03-lift':'id re-used: new blue x mover (6140,-6960) for the v3 S03-02 span lift',
     'S03-fall-drag':'id re-used: new drag zone (6360,-5800) 120x440 over the green lower bridge (S03-02-missed)'}
@@ -5344,7 +5345,7 @@ class ViaductV3Checks:
         self.assertEqual(enc['S03-01']['start'], {'x':5955.4,'y':-4870.9,'from':'S02-04'})
         self.assertEqual(enc['S03-02']['start'], {'from':'S03-01','x':5388.9,'y':-6501.3})
         self.assertEqual(enc['S03-03']['start'], {'from':'S03-02','x':5767.1,'y':-6771.4})
-        self.assertEqual(enc['S03-04']['start'], {'from':'S03-03','x':6469.2,'y':-7954.9})
+        self.assertEqual(enc['S03-04']['start'], {'from':'S03-03','x':6469.2,'y':-7939.9})
         for e in enc.values():
             self.assertTrue(all(x in by_id for x in e['elements']), e['id'])
             self.assertTrue(any(by_id[x]['role'] == 'bounce' for x in e['elements']), e['id'])
@@ -5581,25 +5582,30 @@ class ViaductV3CompleteChecks(ViaductV3Checks):
     segmented from the S03-02 exit (tick 360) and the S03-03 apex (tick 625), not placed. Not a
     continuous-completion claim. Shared by Task554Tests and the re-specced Task512Tests.
     """
-    CREST_V3, EXIT_HOOK_V3 = (6150,-7650), (5460,-7950)
+    # TASK-555 moved the crest hook from (6090,-7675) to (6330,-7500), out from under the touch pause
+    # button, and lowered the east pier top to -7000 so the up-right pull clears it.
+    CREST_V3, EXIT_HOOK_V3 = (6430,-7488), (5460,-7950)
+    CREST_RELEASE = 485
     # S03-03: the leftward flight off the east pier hits the blue shutter (tick ~394, speed killed); the
-    # crest hook is pressed from rest at 400 and held 72; the release flies into the right map edge.
+    # crest hook is pressed from rest at 400 and held to CREST_RELEASE; the release flies over the east
+    # pier top into the right map edge.
     # S03-04: pressed at the apex on the map edge (625), held 70; the pull carries the player into the
     # exit drag zone, where it is released and settles on the green exit ledge.
-    S03_03_V3 = [(400,'mousedown',*CREST_V3),(472,'mouseup',*CREST_V3)]
+    S03_03_V3 = [(400,'mousedown',*CREST_V3),(CREST_RELEASE,'mouseup',*CREST_V3)]
     S03_04_V3 = [(625,'mousedown',*EXIT_HOOK_V3),(695,'mouseup',*EXIT_HOOK_V3)]
     S03_ROUTE_V3 = ViaductV3Checks.S03_01_V3+ViaductV3Checks.S03_02_V3+S03_03_V3+S03_04_V3
     S03_03_TICKS, S03_04_TICKS, S03_FULL_TICKS, S03_LAND_BY = 625, 1300, 1500, 800
     S03_EXIT_DRAG = dict(left=5790, right=6200, top=-8095, bottom=-7770)
     MAP_EDGE_X = 6469.2
-    # Mistimed S03-03 (fall.json): the crest hook released 8 ticks after the catch (413 instead of 472).
+    # Mistimed S03-03 (fall.json): the crest hook released 5 ticks after the catch (410 instead of CREST_RELEASE;
+    # TASK-555: with the moved hook a 413 release carries enough rightward speed to land on the S02 crown hook).
     # The player drops off the shutter through S02-exit-drag onto the green S02 exit ledge and settles.
     # Rejoin after 6 mover periods (1440 ticks, so every mover is back in phase): the unchanged S03-01/02
-    # inputs, then S03-03 held 69 (the rejoined east-pier rebound is ~18 higher) and S03-04 at the apex.
-    REJOIN_S03_TICK = 1440
-    S03_03_EARLY = ViaductV3Checks.S03_01_V3+ViaductV3Checks.S03_02_V3+[(400,'mousedown',*CREST_V3),(413,'mouseup',*CREST_V3)]
+    # inputs, then S03-03 released 3 ticks earlier (the rejoined east-pier rebound is ~18 higher) and S03-04 at the apex.
+    REJOIN_S03_TICK, EARLY_RELEASE = 1440, 410
+    S03_03_EARLY = ViaductV3Checks.S03_01_V3+ViaductV3Checks.S03_02_V3+[(400,'mousedown',*CREST_V3),(EARLY_RELEASE,'mouseup',*CREST_V3)]
     REJOIN_S03 = [(t+1440, e, x, y) for t, e, x, y in ViaductV3Checks.S03_01_V3+ViaductV3Checks.S03_02_V3+
-                  [(400,'mousedown',*CREST_V3),(469,'mouseup',*CREST_V3),(622,'mousedown',*EXIT_HOOK_V3),(692,'mouseup',*EXIT_HOOK_V3)]]
+                  [(400,'mousedown',*CREST_V3),(CREST_RELEASE-3,'mouseup',*CREST_V3),(622,'mousedown',*EXIT_HOOK_V3),(692,'mouseup',*EXIT_HOOK_V3)]]
     FALL_S03, FALL_S03_TICKS = S03_03_EARLY+REJOIN_S03, REJOIN_S03_TICK+1300
     # Declared S03-04 misses: no exit-hook press (falls down the right map edge through S03-fall-drag onto
     # the green lower bridge) and an exit hook held 300 ticks (drifts west inside the exit drag, settles on the
@@ -5643,10 +5649,10 @@ class ViaductV3CompleteChecks(ViaductV3Checks):
         acq = next(e for e in mech if e['type']=='acquisition' and e['element']=='S03-crest-hook')
         self.assertGreater(acq['tick'], shutter['tick'])
         release = next(e for e in mech if e['type']=='release' and e['element']=='S03-crest-hook')
-        self.assertEqual(release['tick'], 472)
+        self.assertEqual(release['tick'], self.CREST_RELEASE)
         wall, apex = self.wall_and_apex(players, release['tick'])
         self.assertGreater(players[wall-1]['speedX'], .5); self.assertEqual(players[wall]['speedX'], 0)
-        self.assertTrue(-7800 < players[wall]['y'] < -7600, players[wall])
+        self.assertTrue(-7400 < players[wall]['y'] < -7150, players[wall])
         self.assertTrue(-7990 < players[apex]['y'] < -7900, players[apex])
         reach = self.reach_s03(players, mech, 400, 'S03-crest-hook')
         return dict(shutter_contact=dict(tick=shutter['tick'], before=before, after=after),
@@ -5669,7 +5675,7 @@ class ViaductV3CompleteChecks(ViaductV3Checks):
         print('PASS S03-03: from the S03-02 exit at tick 360; blue shutter contact tick', out['shutter_contact']['tick'], 'vx',
               round(out['shutter_contact']['before']['speedX'],3), '->', round(out['shutter_contact']['after']['speedX'],3),
               '; green crest-hook acquisition', round(out['crest_acquisition_reach']['distance'],1), 'at tick',
-              out['crest_acquisition_reach']['acquisition_tick'], '; release 472; map edge stop tick', out['map_edge_stop']['tick'],
+              out['crest_acquisition_reach']['acquisition_tick'], '; release', self.CREST_RELEASE, '; map edge stop tick', out['map_edge_stop']['tick'],
               '; apex', round(out['apex']['player']['y'],1), 'at tick', out['apex']['tick'], '; final',
               {k:round(result['final'][k],2) for k in ('x','y','speedX','speedY')}, 'in exit box; longest dull stretch',
               result['longest_stretch_without_mechanic_ticks'], '; identical replay; trusted input')
@@ -5743,9 +5749,9 @@ class ViaductV3CompleteChecks(ViaductV3Checks):
 
     def test_08_fall_through_drag_and_rejoin(self):
         trace, players, mech, result = self.run_s03('S03-03-early', self.FALL_S03, self.FALL_S03_TICKS, self.S03_04_EXIT,
-                                                    density_until=413, folder='falls')
+                                                    density_until=self.EARLY_RELEASE, folder='falls')
         release = next(e for e in mech if e['type']=='release' and e['element']=='S03-crest-hook')
-        self.assertEqual(release['tick'], 413)
+        self.assertEqual(release['tick'], self.EARLY_RELEASE)
         ledge = [e for e in mech if e['type']=='bounce' and e['element']=='S02-exit-ledge' and release['tick'] < e['tick'] < self.REJOIN_S03_TICK]
         self.assertTrue(ledge)
         land = ledge[0]['tick']
@@ -5783,9 +5789,9 @@ class ViaductV3CompleteChecks(ViaductV3Checks):
         for el in ('S03-west-pier','S03-east-pier'):
             self.assertIn(('bounce', el), [(e['type'], e['element']) for e in after_rejoin])
         s4 = self.s03_04_checks(trace, players, mech, press=self.REJOIN_S03_TICK+622)
-        fall = dict(scenario='naturally mistimed S03-03 release: crest hook released 8 ticks after the catch (tick 413 instead of 472); '
+        fall = dict(scenario='naturally mistimed S03-03 release: crest hook released 5 ticks after the catch (tick %d instead of %d); ' % (self.EARLY_RELEASE, self.CREST_RELEASE) +
                              'physical fall; no relocation after the labeled S02 v3 exit start placement',
-            release=dict(tick=release['tick'], element='S03-crest-hook', nominal_release_tick=472, player=release['player'],
+            release=dict(tick=release['tick'], element='S03-crest-hook', nominal_release_tick=self.CREST_RELEASE, player=release['player'],
                          release_height_y=release['player']['y']),
             fall_point=dict(id='S03-03-early', declared_x=5780, declared_y=-6760, release_x=release['player']['x'], landing_x=at_ledge['x']),
             apex=dict(tick=apex_tick, player=apex), fall_height=fall_height,
@@ -5807,7 +5813,7 @@ class ViaductV3CompleteChecks(ViaductV3Checks):
         result.update(fall)
         self.evidence.write('falls/S03-03-early/result.json', result)
         self.evidence.write('fall.json', dict(self.proof, **result))
-        print('PASS fall: mistimed crest release tick 413 at y', round(release['player']['y'],1), '; apex', round(apex['y'],1),
+        print('PASS fall: mistimed crest release tick', self.EARLY_RELEASE, 'at y', round(release['player']['y'],1), '; apex', round(apex['y'],1),
               '; S02-exit-drag vx/vy', round(before['speedX'],3), round(before['speedY'],3), '->', round(at_ledge['speedX'],5),
               round(at_ledge['speedY'],3), '; S02 exit ledge bounce peaks', [round(p['fraction'],3) for p in peaks[:5]], 'of',
               round(fall_height,1), '; settled; input-only rejoin from tick', self.REJOIN_S03_TICK, ': acquisitions',
@@ -5815,9 +5821,9 @@ class ViaductV3CompleteChecks(ViaductV3Checks):
               s4['section_exit']['settle_tick'])
         # The other declared S03-04 fall points, each from the same labeled start.
         out = {}
-        trace, players, mech, result = self.run_s03('S03-04-missed', self.S03_04_MISSED, 1900, self.BRIDGE_SETTLE, density_until=472, folder='falls')
+        trace, players, mech, result = self.run_s03('S03-04-missed', self.S03_04_MISSED, 1900, self.BRIDGE_SETTLE, density_until=self.CREST_RELEASE, folder='falls')
         self.assertNotIn('S03-exit-hook', [e['element'] for e in mech if e['type']=='acquisition'])
-        out['S03-04-missed'] = self.fall_s03(trace, players, mech, 472, 'S03-lower-bridge', self.S03_FALL_DRAG, self.BRIDGE_SETTLE)
+        out['S03-04-missed'] = self.fall_s03(trace, players, mech, self.CREST_RELEASE, 'S03-lower-bridge', self.S03_FALL_DRAG, self.BRIDGE_SETTLE)
         trace, players, mech, result = self.run_s03('S03-04-overshoot', self.S03_04_OVERSHOOT, 1500, self.OVERSHOOT_SETTLE,
                                                     density_until=self.S03_LAND_BY, folder='falls')
         out['S03-04-overshoot'] = self.fall_s03(trace, players, mech, 925, 'S03-exit-ledge', self.S03_EXIT_DRAG, self.OVERSHOOT_SETTLE)
@@ -5970,13 +5976,7 @@ class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
     Shared by Task555Tests and the re-specced Task513Tests.
     """
     VC = ViaductV3CompleteChecks
-    # TASK-555 tolerance nominal for S03-03: the crest press aims along the same ray as TASK-554 but at
-    # 0.6 of the way from the shutter rest pose (5767.1,-6771.4) to the hook (6150,-7650). On touch the
-    # TASK-554 aim point (the hook itself) is under the pause button (client x 793-836, y 5-48), so that
-    # tap opens the pause menu; the ray still ends on the crest-hook underside (catch at tick 405).
-    CREST_RAY = (5997,-7299)
-    S03_03_TOL = [(400,'mousedown',*CREST_RAY),(472,'mouseup',*CREST_RAY)]
-    SEGMENTS = [VC.S03_01_V3, VC.S03_02_V3, S03_03_TOL, VC.S03_04_V3]
+    SEGMENTS = [VC.S03_01_V3, VC.S03_02_V3, VC.S03_03_V3, VC.S03_04_V3]
     V3_ENCOUNTERS = [('S03-01','blue hoist pull up-left out of S02-exit-drag, release into the green west-pier rebound to the right',0,VC.S03_01_TICKS),
                      ('S03-02','blue span lift caught in flight off the west-pier rebound, release into the green east-pier rebound to the left',VC.S03_01_TICKS,VC.S03_02_TICKS),
                      ('S03-03','blue shutter stops the leftward flight, green crest-hook pull up-right, release into the right map edge and rise to the apex',VC.S03_02_TICKS,VC.S03_03_TICKS),
@@ -5985,10 +5985,11 @@ class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
     STRICT = {'S03-01':VC.S03_01_EXIT, 'S03-02':VC.S03_02_EXIT, 'S03-03':VC.S03_03_EXIT}
     # Mistimed releases, one per encounter, no further input afterwards: (encounter, release tick
     # replacing the nominal one, nominal release tick, ticks, declared fall point or None, landing bouncer).
-    # S03-04: the exit hook released 3 ticks after the catch drops past the S02 exit ledge through
-    # S02-exit-drag and S01-exit-drag onto the green S01 exit pad (no S03 fall point declares it).
+    # S03-04: the exit hook released 8 ticks after the catch (638) drops back down past the moved crest
+    # hook through S02-exit-drag onto the green S02 exit ledge (no S03 fall point declares it). TASK-555:
+    # a 633 release now lands on the crest hook (6330..6450, -7500), which has no drag zone above it.
     MISTIMED = [('S03-01',75,120,900,'S03-01-short','S02-exit-ledge'), ('S03-02',290,311,1300,'S03-02-missed','S03-lower-bridge'),
-                ('S03-03',413,472,1300,'S03-03-early','S02-exit-ledge'), ('S03-04',633,695,1700,None,'S01-exit-pad')]
+                ('S03-03',VC.EARLY_RELEASE,VC.CREST_RELEASE,1300,'S03-03-early','S02-exit-ledge'), ('S03-04',638,695,1700,None,'S02-exit-ledge')]
     V3_MOVERS = ViaductV3Checks.S03_V3_MOVERS
     # Client rectangles that open the pause menu (scanned with menu.clickToPause), per viewport width.
     PAUSE_BUTTON = {1280:dict(x=[1210,1261], y=[16,67]), 844:dict(x=[793,836], y=[5,48])}
@@ -6054,8 +6055,8 @@ class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
             viewports=dict(desktop=VIEWPORT, touch=dict(width=844, height=390)),
             intended_exits={n: dict(ticks=t, box=b, meaning=w) for n, (t, b, w) in exits.items()},
             mechanics_check='tools/grapple_over_verify.py check_s03_v3_mechanics',
-            nominal_note='S03-03 crest press aimed along the TASK-554 ray at (5997,-7299) instead of the hook point (6150,-7650), '
-                         'which is under the touch pause button; see S03_03_TOL and hud_probe',
+            nominal_note='every nominal press aims at its anchor; the S03-03 crest press aims at the hook itself, which is '
+                         'clear of the touch pause button (hud-probe.json)',
             pause_button_client_rects={str(k): v for k, v in self.PAUSE_BUTTON.items()},
             encounters={}, negative_control='negative-control.json', density='density.json', no_bounce_back='no-bounce-back.json',
             critical_inputs={r[0]: dict(timing_index=1, aim_indices=[0,1], tangent=(1,0), mechanic=r[1],
@@ -6148,24 +6149,48 @@ class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
         self.assertLess(step, 60)
 
     def hud_probe(self, start):
-        """Records where the TASK-554 crest aim point (the hook itself) lands on each viewport at the press."""
+        """The nominal S03-03 crest press aims at the hook itself: on each viewport its press point and the
+        hook's drawn rectangle (mapped from world to client at the press) are clear of the pause button, and
+        the tap acquires the hook. The TASK-555 rework moved the hook down-right out from under the touch
+        pause button (it was at (6090,-7675), client ~791-807 x 34-39 on 844x390)."""
         from grapple_over_verify import check_s03_v3_mechanics
         plan = self.SEGMENTS[0]+self.SEGMENTS[1]+self.VC.S03_03_V3
+        hook = self.bounds_v3(next(e for e in self.report()['manifest']['geometry']['elements'] if e['id']=='S03-crest-hook'))
         rows = {}
         for device in ('desktop','touch'):
-            m = self.make_input(plan, 480, dict(y=[-1e9, 1e9]), device, snapshot=start)
+            m = self.make_input(plan, 500, dict(y=[-1e9, 1e9]), device, snapshot=start)
             prefix = 'hud-probe/'+device
             trace, _, _ = self.run_attempt(m, prefix)
-            press = next(t for t in self.targets(trace, m['metadata']['viewport']) if t['tick']==400)
+            viewport = m['metadata']['viewport']
+            press = next(t for t in self.targets(trace, viewport) if t['tick']==400)
+            # Client pixels per world unit: the 1080-unit logical height at the grapple_over camera scale.
+            k = viewport['height']/1080*0.375
+            to_client = lambda x, y: (press['client']['x']+(x-press['world']['x'])*k, press['client']['y']+(y-press['world']['y'])*k)
+            (l, t), (r, b) = to_client(hook['left'], hook['top']), to_client(hook['right'], hook['bottom'])
+            # Cross-check of the mapping: the camera is clamped to the right map edge (x 6480) at the press.
+            edge = to_client(6480, 0)[0]
+            self.assertLess(abs(edge-viewport['width']), 2, (device, edge))
+            pause = self.PAUSE_BUTTON[viewport['width']]
+            overlap = l <= pause['x'][1] and r >= pause['x'][0] and t <= pause['y'][1] and b >= pause['y'][0]
+            margin = min(t-pause['y'][1] if l <= pause['x'][1] else 1e9, pause['x'][0]-r if t <= pause['y'][1] else 1e9)
             acquired = check_s03_v3_mechanics('S03-03', trace, required=False)['acquisitions']
             rows[device] = dict(input=prefix+'/input.json.gz', trace=prefix+'/trace.json', press=press,
+                                hook_client_rect=dict(x=[l, r], y=[t, b]), right_map_edge_client_x=edge,
+                                hook_overlaps_pause_button=overlap, clearance_px=margin,
                                 crest_hook_acquired='S03-crest-hook' in acquired, acquisitions=acquired)
-            self.assertEqual(press['under_pause_button'], not rows[device]['crest_hook_acquired'], rows[device])
-        self.evidence.write('hud-probe.json', dict(finding='The S03-crest-hook graphic is drawn under the touch pause button '
-            'at the S03-03 press pose; a touch tap on the hook opens the pause menu (no acquisition). The tolerance nominal aims '
-            'along the same ray at a nearer point (S03_03_TOL), clear of the button, and catches the hook on both viewports.',
-            aim_point=self.VC.CREST_V3, pause_button_client_rects={str(k): v for k, v in self.PAUSE_BUTTON.items()}, runs=rows))
-        self.assertFalse(rows['desktop']['press']['under_pause_button'])
+            self.assertFalse(press['under_pause_button'], rows[device])
+            self.assertFalse(overlap, rows[device])
+            self.assertGreaterEqual(margin, 8, rows[device])
+            self.assertTrue(rows[device]['crest_hook_acquired'], rows[device])
+            print('PASS hud probe', device, ': crest press client', (round(press['client']['x']), round(press['client']['y'])),
+                  '; hook drawn at client x', [round(l), round(r)], 'y', [round(t), round(b)], '; pause button', pause,
+                  '; clearance', round(margin, 1), 'px; hook acquired', flush=True)
+        self.evidence.write('hud-probe.json', dict(finding_closed='The S03-crest-hook was moved from (6090,-7675) to '
+            '(6330,-7500) (and the east pier top lowered from -7300 to -7000 so the pull clears it), so at the S03-03 press '
+            'pose its drawn rectangle and the nominal aim point (the hook itself) are below the touch pause button; '
+            'the tap acquires the hook on both viewports.',
+            aim_point=self.VC.CREST_V3, hook_world_rect=hook, client_px_per_world={'1280':720/1080*0.375, '844':390/1080*0.375},
+            pause_button_client_rects={str(k): v for k, v in self.PAUSE_BUTTON.items()}, runs=rows))
 
     def test_02_mistimed_release_no_bounce_back(self):
         from grapple_over_verify import check_s03_v3_mechanics
@@ -6231,8 +6256,8 @@ class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
                     drag_zones_crossed=[dict(id=z, box=zones[z], ticks=[ts[0], ts[-1]], entry_player=players[ts[0]],
                         exit_player=players[ts[-1]]) for z, ts in sorted(crossed.items(), key=lambda x: x[1][0])],
                     declared_fall_point=dict(id=fall_id, x=declared['x'], dragZones=declared['dragZones'], firstBouncer=declared['firstBouncer'])
-                        if declared else dict(id=None, note='undeclared S03 line: drops past the S02 exit ledge through the S02 and S01 '
-                                                            'exit drag zones onto the S01 exit pad (S01/S02 declared drag columns)'),
+                        if declared else dict(id=None, note='undeclared S03 line: drops from the map-edge apex past the crest hook '
+                                                            'through S02-exit-drag onto the S02 exit ledge (S02 declared drag column)'),
                     first_bounce=dict(element=landing_id, tick=land, before=landing['before']['simulation']['player'],
                         after=landing['after']['simulation']['player']),
                     first_bounce_peak=dict(tick=peak_tick, y=players[peak_tick]['y'], height=peak_height,

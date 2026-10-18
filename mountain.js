@@ -297,15 +297,18 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // sideways speed) and rise along it to an apex under the legacy Cable Galleries exit.
     // S03-04: at that apex, pull the green exit hook west under the galleries exit into the
     // exit drag zone and settle on the green exit ledge laid over the recessed ceiling top.
+    // TASK-555: the crest hook sits down-right of the galleries exit, over the east pier, so at the
+    // S03-03 press it is drawn below the touch pause button (top-right HUD corner); the pier top is
+    // at -7000 so the up-right pull flies over it into the map edge.
     // The hoist stays above and west of the S02-04 climb-out (apex ~-5656); the piers, lift
     // and shutter are above the S02 shaft, and the shutter stays above the S03-02 lift rope.
     const viaduct = [
         rectangle('S03-hoist',5460,-5827,120,30,true),
         bouncer('S03-west-pier',5150,-6600,30,900),
         rectangle('S03-lift',6140,-6960,120,30,true),
-        bouncer('S03-east-pier',6420,-7300,30,700),
+        bouncer('S03-east-pier',6420,-7000,30,400),
         rectangle('S03-shutter',5715,-6960,30,230,true),
-        bouncer('S03-crest-hook',6090,-7675,120,25),
+        bouncer('S03-crest-hook',6330,-7500,120,25),
         bouncer('S03-exit-hook',5400,-7975,120,25),
         bouncer('S03-exit-ledge',5800,-7770,390,25),
         // Lower broken bridge: green catch in the slot between the S02 east wall and the
@@ -336,8 +339,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             // Caught in flight on the rightward rebound off the west pier.
             {id:'S03-02-lift',from:{x:5388.9,y:-6501.3},to:{x:6224.5,y:-6955.3}},
             // From rest against the shutter; then from rest at the apex on the map edge.
-            {id:'S03-03-crest',from:{x:5767.1,y:-6771.4},to:{x:6147.3,y:-7650}},
-            {id:'S03-04-exit',from:{x:6469.2,y:-7954.9},to:{x:5520,y:-7953.1}}],
+            {id:'S03-03-crest',from:{x:5767.1,y:-6771.4},to:{x:6412.8,y:-7475}},
+            {id:'S03-04-exit',from:{x:6469.2,y:-7939.9},to:{x:5520,y:-7952.2}}],
         // Declared miss points: a short hoist pull drops back onto the S02 exit ledge through
         // S02-exit-drag; a missed lift catch glances off the S02 east-wall top and drops along
         // the right map edge through S03-fall-drag onto the green lower bridge; an early
@@ -363,12 +366,12 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // S03-03/04 nodes sit on the band top; the climb runs above it (the S04 band overlaps).
     Object.assign(encounters[10], {status:'built',x:5767,y:-6480,
         elements:['S03-east-pier','S03-shutter','S03-crest-hook'],
-        start:{from:'S03-02',x:5767.1,y:-6771.4},target:{x:6150,y:-7650},
+        start:{from:'S03-02',x:5767.1,y:-6771.4},target:{x:6430,y:-7488},
         exit:{left:6440,right:6480,top:-7990,bottom:-7900},
         action:'Slam into the blue shutter off the east-pier rebound, pull the green crest hook up-right past the lift, release into the right map edge and rise along it'});
     Object.assign(encounters[11], {status:'built',x:6469,y:-6480,
         elements:['S03-exit-hook','S03-exit-ledge','S03-exit-drag'],
-        start:{from:'S03-03',x:6469.2,y:-7954.9},target:{x:5460,y:-7950},
+        start:{from:'S03-03',x:6469.2,y:-7939.9},target:{x:5460,y:-7950},
         exit:{left:5960,right:6190,top:-7800,bottom:-7770},
         action:'At the apex on the map edge, pull the green exit hook west under the galleries exit into the exit drag zone and settle on the green exit ledge'});
     Object.assign(connectors[8], {status:'built',intent:'Physical ascent: the S03-01 hoist pull starts on the v3 Switchback exit ledge'});
