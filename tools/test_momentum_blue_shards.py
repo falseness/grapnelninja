@@ -1,29 +1,25 @@
-"""Momentum lighting 11/17: a used blue breaks into shards (TASK-061).
+"""Momentum lighting 11/17: a used blue breaks into shards (TASK-061),
+retired by TASK-076.
 
-MomentumOneTime.use() lays out STYLE.momentumFx.shardCount shards of a blue
-(MomentumBlue.hasShards) from its own geometry (hash of its points and
-position, no Math.random); while it fades, its glow pass draws them instead
-of the plain fading outline: neon triangles starting on the outline, drifting
-outward with a slight fall and spinning, alpha = getAlpha(). MOMENTUM_FX only;
-greens keep their fade. Checks (the blue-hit harness scene with its green
-moved clear of the blue, both used at the same time, fade progress f of
+TASK-061 drew a used blue's fading outline as shards. TASK-076 makes a
+touched blue vanish at once (no fade, no shards; its outline pop and the
+death ring are checked by tools/test_momentum_blue.py), so the shard checks
+are retired. What is left (the blue-hit harness scene with its green moved
+clear of the blue, both used at the same time, fade progress f of
 GAMEPLAY.momentumFadeMs, 1280x720):
-- shards.json: at f 0, 0.25, 0.5, 1: shardPixels = pixels whose max channel
-  differs by >= SHARD_DELTA from the same frame served with shardCount 0:
-  > 0 at 0.25 and 0.5, 0 at 1; meanDistancePx of those pixels from the
-  blue's centre strictly increasing over 0 / 0.25 / 0.5; a second run of
-  every frame gives maxDelta 0 (deterministic); the green's mask (its
-  polygon dilated by GREEN_PAD px) has maxDelta 0 against the parent commit
-  at every f;
+- shards.json: at f 0, 0.25, 0.5, 1: the used blue has no shards
+  (blue.shards undefined) and alpha 0, and the frame equals the same frame
+  with the blue taken off its floor (maxDelta 0: nothing of it is drawn, lit
+  or occluding); a second run gives maxDelta 0 (deterministic); the used
+  green still fades (alpha 1 - f);
 - switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports (plus usedBlueSwitchOff: this scene at f 0.25 / 0.5 switch off) and the classic and bad test_visual_gallery frames with the switch
-  on equal the parent commit (decoded maxDelta 0);
-- shots/: the blue touched (hit ring started with its fade) at 0, 25, 50 and
-  100 % of the fade (1280x720) and compare-25.png (vs concept
-  8-blue-hit-fx.png).
+  viewports and the classic and bad test_visual_gallery frames with the
+  switch on equal the parent commit (decoded maxDelta 0). (The TASK-061
+  usedBlueSwitchOff frames are retired: a used blue no longer fades with
+  either switch.)
 
 MOMENTUM_BLUE_SHARDS_EVIDENCE_DIR (default /tmp/momentum-blue-shards) receives
-the json files (compact) and shots/. MOMENTUM_BLUE_SHARDS_PARENT is the parent
+the json files (compact). MOMENTUM_BLUE_SHARDS_PARENT is the parent
 revision (default: the parent of the commit that added this file, or HEAD
 while uncommitted). Requires Playwright Chromium. No remote requests.
 """
@@ -49,30 +45,27 @@ TEST_PATH = 'tools/test_momentum_blue_shards.py'
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_BLUE_SHARDS_EVIDENCE_DIR', '/tmp/momentum-blue-shards'))
 VIEWPORT = (1280, 720)
 FRACTIONS = (0, 0.25, 0.5, 1)
-SHARD_DELTA = 6
-GREEN_PAD = 12
-SHARDS_OFF = [('shardCount: 12', 'shardCount: 0')]
 
-# blue-hit with the green 225 px left of its place (clear of the shards)
+# blue-hit with the green 225 px left of its place (clear of the blue)
 SPEC = copy.deepcopy(fx.SCENE_SPECS['blue-hit'])
 SPEC['pieces'][1]['x'] = -150
 
-# Both pieces used at fade progress f (same start); hit: the blue's hit ring
-# started with its fade (as a touch does)
-USE = r'''([f, hit]) => {
-    const els = floors.find(e => e instanceof MomentumPatternFloor).elements
+# Both pieces used at fade progress f (same start); drop: the blue taken off
+# its floor afterwards (reference frame)
+USE = r'''([f, drop]) => {
+    const floor = floors.find(e => e instanceof MomentumPatternFloor)
+    const els = floor.elements
     const start = __snap.now - f * GAMEPLAY.momentumFadeMs
     for (const e of els) {
         if (!e.passThrough) e.use()
         e.fadeStartMs = start
     }
     const blue = els.find(e => e instanceof MomentumBlue)
-    if (hit) {
-        visualEffects.screenEffects.triggerBlueHit(blue)
-        visualEffects.screenEffects.blueHits[visualEffects.screenEffects.blueHits.length - 1].start = start
-    }
-    return {alpha: blue.getAlpha(), shards: blue.shards ? blue.shards.length : 0,
-            greenShards: els.filter(e => !(e instanceof MomentumBlue)).map(e => e.shards)}
+    const green = els.find(e => !(e instanceof MomentumBlue))
+    if (drop)
+        floor.elements = els.filter(e => e !== blue)
+    return {alpha: blue.getAlpha(), faded: blue.faded, shards: blue.shards === undefined ? null : 'present',
+            greenAlpha: green.getAlpha()}
 }'''
 
 
@@ -89,12 +82,12 @@ def parent_rev():
                                    cwd=ROOT, text=True).strip()
 
 
-def fade_frame(harness, f, hit=False, fx_on=True):
+def fade_frame(harness, f, drop=False, fx_on=True):
     """The scene with both pieces f through their fade, as a Frame."""
     context, page = harness.open(VIEWPORT)
     try:
         page.evaluate(fx.BUILD, [SPEC, fx_on])
-        state = page.evaluate(USE, [f, hit])
+        state = page.evaluate(USE, [f, drop])
         info = page.evaluate(fx.DRAW)
         png = render_snapshot.png_bytes(page.evaluate('() => __snap.capture()'))
         if page.errors:
@@ -106,77 +99,39 @@ def fade_frame(harness, f, hit=False, fx_on=True):
     return fx.Frame(np.asarray(Image.open(io.BytesIO(png)).convert('RGB')), info)
 
 
-def diff_mask(a, b, delta=1):
-    return np.abs(a.astype(np.int16) - b.astype(np.int16)).max(axis=2) >= delta
-
-
-def piece(frame, kind):
-    return next(p for p in frame.info['pieces'] if p['kind'] == kind)
-
-
-def green_mask(frame):
-    x0, y0, x1, y1 = piece(frame, 'green')['bbox']
-    h, w = frame.shape[:2]
-    mask = np.zeros((h, w), dtype=bool)
-    mask[max(0, int(y0) - GREEN_PAD):int(np.ceil(y1)) + GREEN_PAD + 1,
-         max(0, int(x0) - GREEN_PAD):int(np.ceil(x1)) + GREEN_PAD + 1] = True
-    return mask
-
-
 class MomentumBlueShardsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
-        tree = fx.harness()
-        cls.shards_off = fx.FxHarness('worktree', tree.browser, style_patch=SHARDS_OFF)
         cls.result = {}
 
     @classmethod
     def tearDownClass(cls):
         if cls.result:
             (EVIDENCE_DIR / 'shards.json').write_text(compact(cls.result))
-        cls.shards_off.close()
         fx.close()
 
-    def test_0_shards_spread_and_end(self):
+    def test_0_used_blue_draws_nothing(self):
         rows = []
-        parent = fx.harness(self.parent)
         for f in FRACTIONS:
             on = fade_frame(fx.harness(), f)
             again = fade_frame(fx.harness(), f)
-            off = fade_frame(self.shards_off, f)
-            old = fade_frame(parent, f)
-            self.assertEqual(on.info['use']['shards'], 12)
-            self.assertEqual(on.info['use']['greenShards'], [None])
-            mask = diff_mask(on, off, SHARD_DELTA)
-            blue = np.asarray(piece(on, 'blue')['poly'])
-            cx, cy = blue.mean(axis=0)
-            ys, xs = np.nonzero(mask)
-            green = green_mask(on)
-            rows.append({'fraction': f, 'fadeMs': round(f * 800), 'alpha': on.info['use']['alpha'],
-                         'shardPixels': int(mask.sum()),
-                         'meanDistancePx': round(float(np.hypot(xs - cx, ys - cy).mean()), 2) if len(xs) else 0,
-                         'maxDistancePx': round(float(np.hypot(xs - cx, ys - cy).max()), 2) if len(xs) else 0,
-                         'rerunMaxDelta': fx.max_delta(on, again),
-                         'greenMaskPixels': int(green.sum()),
-                         'greenMaxDeltaVsParent': fx.max_delta(on[green], old[green]),
-                         'greenShardOverlap': int((mask & green).sum())})
-            print('shards', rows[-1])
-        by = {r['fraction']: r for r in rows}
-        dists = [by[f]['meanDistancePx'] for f in (0, 0.25, 0.5)]
+            dropped = fade_frame(fx.harness(), f, drop=True)
+            use = on.info['use']
+            rows.append({'fraction': f, 'fadeMs': round(f * 800), 'alpha': use['alpha'], 'faded': use['faded'],
+                         'shards': use['shards'], 'greenAlpha': use['greenAlpha'],
+                         'maxDeltaVsBlueOffFloor': fx.max_delta(on, dropped),
+                         'rerunMaxDelta': fx.max_delta(on, again)})
+            print('used blue', rows[-1])
         self.result.update({'scene': 'blue-hit (green at x -150)', 'viewport': list(VIEWPORT),
-                            'tree': fx.harness().rev, 'parent': parent.rev, 'shardDelta': SHARD_DELTA,
-                            'greenPad': GREEN_PAD, 'rows': rows,
-                            'distanceIncreasing': all(a < b for a, b in zip(dists, dists[1:])),
-                            'deterministic': all(r['rerunMaxDelta'] == 0 for r in rows),
-                            'greenIdentical': all(r['greenMaxDeltaVsParent'] == 0 for r in rows)})
-        self.assertGreater(by[0.25]['shardPixels'], 0)
-        self.assertGreater(by[0.5]['shardPixels'], 0)
-        self.assertEqual(by[1]['shardPixels'], 0)
-        self.assertTrue(self.result['distanceIncreasing'])
-        self.assertTrue(self.result['deterministic'])
-        self.assertTrue(self.result['greenIdentical'])
+                            'tree': fx.harness().rev, 'rows': rows})
+        for r in rows:
+            with self.subTest(fraction=r['fraction']):
+                self.assertEqual((r['alpha'], r['faded'], r['shards']), (0, True, None))
+                self.assertEqual(r['maxDeltaVsBlueOffFloor'], 0)
+                self.assertEqual(r['rerunMaxDelta'], 0)
+                self.assertAlmostEqual(r['greenAlpha'], max(0, 1 - r['fraction']), delta=1e-9)
 
     def test_1_switch_off_and_other_modes_equal_parent(self):
         rows = []
@@ -188,12 +143,6 @@ class MomentumBlueShardsTests(unittest.TestCase):
                 d = fx.max_delta(new, base)
                 rows.append({'scene': f'momentum-{scene}-{viewport[0]}x{viewport[1]}', 'fx': 'off',
                              'maxDelta': d, 'identical': d == 0})
-        # The used blue itself with the switch off: the parent's fading outline
-        used = []
-        for f in (0.25, 0.5):
-            d = fx.max_delta(fade_frame(fx.harness(), f, fx_on=False), fade_frame(fx.harness(self.parent), f, fx_on=False))
-            used.append({'scene': f'blue-shards-{round(f * 100)}pct-1280x720', 'fx': 'off', 'maxDelta': d,
-                         'identical': d == 0})
         tree = fx.harness()
         parent = fx.harness(self.parent)
         new = gallery_frames(tree.browser, tree.url, ['classic', 'bad'])
@@ -206,23 +155,11 @@ class MomentumBlueShardsTests(unittest.TestCase):
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
             'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
-            'allIdentical': all(r['identical'] for r in rows), 'frames': rows, 'usedBlueSwitchOff': used}))
+            'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
-        for row in rows + used:
+        for row in rows:
             with self.subTest(scene=row['scene']):
                 self.assertEqual(row['maxDelta'], 0)
-
-    def test_2_shots(self):
-        shots = EVIDENCE_DIR / 'shots'
-        for f in FRACTIONS:
-            frame = fade_frame(fx.harness(), f, hit=True)
-            pct = round(f * 100)
-            fx.save_png(frame, shots / f'1280x720-blue-shards-{pct}pct.png')
-            if pct == 25:
-                fx.compare_png(frame, fx.CONCEPT_DIR / '8-blue-hit-fx.png', shots / 'compare-25.png',
-                               labels=('new frame 25% through the used blue fade', 'concept'))
-        self.assertEqual(len(list(shots.glob('*.png'))), 5)
-
 
 if __name__ == '__main__':
     unittest.main()

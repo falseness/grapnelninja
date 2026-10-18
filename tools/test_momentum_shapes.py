@@ -14,9 +14,10 @@ colour it asserts:
 - response: green bounces (reversed or deflected by the edge) and adds 1 to
   the streak; blue keeps the direction, scales the speed by
   GAMEPLAY.momentumBlueSlow and costs 1 hp,
-- fade: getAlpha falls from 1 to 0 over GAMEPLAY.momentumFadeMs and the
-  floor drops the piece,
-- motion: 400 cycles of a moving cube without (Triangle-like) and with
+- fade: a green's getAlpha falls from 1 to 0 over GAMEPLAY.momentumFadeMs
+  and the floor drops the piece; a used blue is gone at once (TASK-076:
+  alpha 0, dropped by the floor's first pass),
+- motion: 400 / momentumMotionScale(1) cycles of a moving cube without (Triangle-like) and with
   gravity (JumpingCube-like): y changes by speedY every cycle, speedY flips
   at the limits, the cube stays inside them.
 
@@ -40,10 +41,12 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_SHAPES_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-035'))
-# World units per physics cycle, under GAMEPLAY.momentumMaxSpeed (2.78 at
-# h 1080 since TASK-047; 5 was clamped to it); move budget doubled with it
-SPEED = 2.5
-MAX_MOVES = 240
+# World units per physics cycle, under the effective cap
+# GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1) (1.39 at h 1080 since the
+# TASK-073 slow motion; 2.5 under 2.78 and 5 are clamped to it); move budget
+# doubled with each halved speed
+SPEED = 1.25
+MAX_MOVES = 480
 SHAPES = ['triangle', 'tall', 'wide', 'moving']
 
 SETUP = '''() => {
@@ -130,15 +133,19 @@ MOTION = '''([gravity]) => {
     const piece = momentumPlacePiece('green', {shape: 'rect', x: x0, y: y0, w: 6 * r, h: 6 * r, motion}).element
     const rows = []
     let bad = 0, flips = 0, outside = 0, prevSpeed = piece.speedY
-    for (let k = 0; k < 400; ++k) {
+    // 400 cycles at full speed: 1/s as many under the slow motion (TASK-073)
+    const cycles = Math.round(400 / momentumMotionScale(1))
+    for (let k = 0; k < cycles; ++k) {
         const y = piece.y
         floor.moveElements()
         const b = getElementBounds(piece)
         if (Math.abs(piece.y - y - piece.speedY) > 1e-9 || piece.dy !== piece.speedY) ++bad
         if (Math.sign(piece.speedY) != Math.sign(prevSpeed)) ++flips
         if (b.top < motion.yMin - Math.abs(piece.speedY) - 1e-9 || b.bottom > motion.yMax + Math.abs(piece.speedY) + 1e-9) ++outside
-        // gravity: the speed grows by GRAVITY per cycle between bounces
-        if (gravity && Math.sign(piece.speedY) == Math.sign(prevSpeed) && Math.abs(piece.speedY - prevSpeed - GRAVITY) > 1e-9) ++bad
+        // gravity: the speed grows by GRAVITY x s^2 per cycle between bounces
+        // (TASK-073 slow motion, momentumonetime.js moveY)
+        if (gravity && Math.sign(piece.speedY) == Math.sign(prevSpeed) &&
+            Math.abs(piece.speedY - prevSpeed - GRAVITY * momentumMotionScale(2)) > 1e-9) ++bad
         prevSpeed = piece.speedY
         if (k % 20 == 0) rows.push([k, +piece.y.toFixed(3), +piece.speedY.toFixed(4)])
     }
@@ -293,14 +300,18 @@ class MomentumShapesTests(unittest.TestCase):
         # Second approach: passes with the start speed, state unchanged
         self.assertEqual((second['speedX'], second['speedY']), (0, SPEED) if fall else (SPEED, 0))
         self.assertEqual({'hp': res['hp'], 'streak': res['streak']}, res['state1'])
-        # Fade
+        # Fade (greens); a used blue vanishes at once (TASK-076)
         alphas = [a for _, a in fade['samples']]
-        self.assertAlmostEqual(alphas[0], 1, places=3)
-        self.assertEqual(alphas, sorted(alphas, reverse=True))
-        self.assertEqual(alphas[-1], 0)
-        self.assertGreaterEqual(fade['removedMs'], fade['fadeMs'])
-        mid = [a for t, a in fade['samples'] if 0.3 * fade['fadeMs'] < t < 0.7 * fade['fadeMs']]
-        self.assertTrue(mid and all(0 < a < 1 for a in mid))
+        if kind == 'blue':
+            # alpha 0 from the touch, dropped by the first moveElements
+            self.assertEqual(alphas, [0, 0])
+        else:
+            self.assertAlmostEqual(alphas[0], 1, places=3)
+            self.assertEqual(alphas, sorted(alphas, reverse=True))
+            self.assertEqual(alphas[-1], 0)
+            self.assertGreaterEqual(fade['removedMs'], fade['fadeMs'])
+            mid = [a for t, a in fade['samples'] if 0.3 * fade['fadeMs'] < t < 0.7 * fade['fadeMs']]
+            self.assertTrue(mid and all(0 < a < 1 for a in mid))
         self.cases[f'{kind}-{shape}'] = {
             'contactMove': first['moves'], 'depthPastBox': round(depth, 2), 'radius': round(r, 2),
             'firstSpeed': [round(first['speedX'], 4), round(first['speedY'], 4)],

@@ -989,7 +989,10 @@ class LightmapRenderer
         for (const floor of gameState.floors)
             for (const element of floor.elements)
             {
-                if (!(element instanceof Rect || element instanceof Trampoline || element instanceof Triangle)) continue
+                // A used blue is gone at once (MomentumOneTime.faded), also
+                // before its floor drops it
+                if (element.faded || !(element instanceof Rect || element instanceof Trampoline ||
+                    element instanceof Triangle)) continue
                 const points = element.getPoints()
                 lightCtx.beginPath()
                 const last = points[points.length - 1]
@@ -1045,7 +1048,7 @@ class LightmapRenderer
     }
     drawElementLight(element)
     {
-        if (!(element instanceof Triangle) && !this.isCubeOrPlatform(element))
+        if (element.faded || (!(element instanceof Triangle) && !this.isCubeOrPlatform(element)))
             return
         const box = getElementCullBox(element)
         if (!box) return
@@ -1609,7 +1612,7 @@ class LightmapRenderer
     }
     // momentumEmitters plus an area light per visible blue piece: at its
     // centre, reaching blueSpread past its outline, at blueAlpha times its
-    // fade alpha (none once faded) and its hit flash (momentumFx)
+    // fade alpha (none once used: a used blue vanishes at once)
     collectEmitters(gameState)
     {
         const config = STYLE.momentumLight
@@ -1618,7 +1621,6 @@ class LightmapRenderer
         for (let i = 0; i < this.momentumEmitters.length; ++i)
             emitters.push(this.momentumEmitters[i])
         const toScreen = scale[version] * 1080 / height
-        const now = performance.now()
         const floors = gameState.floors
         for (let i = 0; i < floors.length; ++i)
         {
@@ -1635,7 +1637,7 @@ class LightmapRenderer
                 emitters.push({x: element.x + circle.x, y: element.y + circle.y,
                     radius: config.blueSpread + circle.radius * toScreen,
                     color: STYLE.momentum.blueStroke,
-                    alpha: config.blueAlpha * alpha * visualEffects.screenEffects.getBlueFlash(element, now),
+                    alpha: config.blueAlpha * alpha,
                     element: element})
             }
         }
@@ -3503,8 +3505,10 @@ class ScreenEffects
         this.ctx = context
         this.shockwaves = []
         this.landings = []
-        // Blue hits {element, start} of the momentumFx flash and ring
-        this.blueHits = []
+        // Render clock of the last blue touch (colour fringe) and the blue
+        // outline pops {points (world), cx, cy, start}
+        this.blueTouchMs = null
+        this.bluePops = []
         this.shakeUntil = 0
         this.shakeStart = 0
         this.shakeOffset = {x: 0, y: 0}
@@ -3615,94 +3619,68 @@ class ScreenEffects
         this.ctx.translate(this.shakeOffset.x, this.shakeOffset.y)
         this.isShaking = true
     }
-    // A blue piece was touched (MomentumBlue.onNinjaPass): its flash and
-    // ring start now. Only recorded; nothing of the game reads it.
-    triggerBlueHit(element)
+    // A blue piece was touched (MomentumBlue.onNinjaPass), visual only: the
+    // death ring round the ninja (no shake), its outline pop on the spot and
+    // the colour fringe (blueTouchMs, momentumFx) start now
+    triggerBlueTouch(element, who)
     {
         const now = performance.now()
-        this.pruneBlueHits(now)
-        this.blueHits.push({element: element, start: now})
-    }
-    pruneBlueHits(now)
-    {
-        const duration = STYLE.momentumFx.blueHitMs
-        for (let i = this.blueHits.length - 1; i >= 0; --i)
-            if (now - this.blueHits[i].start >= duration)
-                this.blueHits.splice(i, 1)
-    }
-    // 0..1 of the blue hit effect at now, or -1 outside it
-    getBlueHitProgress(hit, now)
-    {
-        const t = (now - hit.start) / STYLE.momentumFx.blueHitMs
-        return t >= 0 && t < 1 ? t : -1
-    }
-    // The light gain of element's hit flash at now (1 without one)
-    getBlueFlash(element, now)
-    {
-        const hits = this.blueHits
-        for (let i = hits.length - 1; i >= 0; --i)
-            if (hits[i].element === element)
-            {
-                const t = this.getBlueHitProgress(hits[i], now)
-                return t < 0 ? 1 : 1 + (STYLE.momentumFx.flashGain - 1) * (1 - t) * (1 - t)
-            }
-        return 1
-    }
-    // The blue hits' rings (momentum lighting only), 'lighter' strokes: a
-    // wide faint halo and the core line of the ring and of its echo
-    drawBlueHits(now)
-    {
-        if (!this.blueHits.length || version != 'momentum' || !MOMENTUM_FX.enabled)
-            return
-        this.pruneBlueHits(now)
-        const config = STYLE.momentumFx
-        const context = this.ctx
-        context.save()
-        context.globalCompositeOperation = 'lighter'
-        context.strokeStyle = STYLE.momentum.blueStroke
-        for (const hit of this.blueHits)
+        this.blueTouchMs = now
+        if (this.shouldApply())
+            this.shockwaves.push({x: who.x + screen.x, y: who.y + screen.y,
+                start: now, end: now + STYLE.screenEffects.shockwaveDurationMs})
+        const points = element.getPoints().map(point => ({x: point.x, y: point.y}))
+        let cx = 0, cy = 0
+        for (const point of points)
         {
-            const t = this.getBlueHitProgress(hit, now)
-            if (t < 0)
-                continue
-            const element = hit.element
-            const x = element.x + element.circle.x + screen.x
-            const y = element.y + element.circle.y + screen.y
-            const rx = this.getBlueRingRadius(element, t)
-            this.strokeBlueRing(x, y, rx, config.ringAlpha * (1 - t))
-            this.strokeBlueRing(x, y, rx * config.ringEcho, config.ringAlpha * config.ringEchoAlpha * (1 - t))
+            cx += point.x
+            cy += point.y
         }
-        context.restore()
+        this.bluePops.push({points: points, cx: cx / points.length, cy: cy / points.length, start: now})
     }
-    // The ring's x radius (world units) at progress t: ringFrom -> ringTo
-    // times the blue's circumscribed radius, eased out
-    getBlueRingRadius(element, t)
+    // 0..1 of a pop at now, or -1 once it is over
+    getBluePopProgress(pop, now)
     {
-        const config = STYLE.momentumFx
-        const eased = 1 - (1 - t) * (1 - t)
-        return element.circle.radius * (config.ringFrom + (config.ringTo - config.ringFrom) * eased)
+        const t = (now - pop.start) / Math.max(1, STYLE.momentum.bluePopMs)
+        return t < 1 ? Math.max(0, t) : -1
     }
-    strokeBlueRing(x, y, rx, alpha)
+    // The touched blues' outlines (world points at the touch, drawn with the
+    // current screen offset): scale 1 -> bluePopScale about their centre and
+    // alpha 1 -> 0, eased like the shockwave; neon stroke, plain line in the
+    // bloom pass (global ctx). Finished pops are dropped.
+    drawBluePops(now)
     {
-        const config = STYLE.momentumFx
-        const toWorld = height / 1080 / scale[version]
-        const context = this.ctx
-        context.beginPath()
-        context.ellipse(x, y, rx, rx * config.ringAspect, 0, 0, Math.PI * 2)
-        context.lineWidth = config.ringHaloWidth * toWorld
-        context.globalAlpha = alpha * config.ringHaloAlpha
-        context.stroke()
-        context.lineWidth = config.ringWidth * toWorld
-        context.globalAlpha = alpha
-        context.stroke()
+        const pops = this.bluePops
+        for (let i = pops.length - 1; i >= 0; --i)
+            if (this.getBluePopProgress(pops[i], now) < 0)
+                pops.splice(i, 1)
+        if (!pops.length)
+            return
+        const popScale = STYLE.momentum.bluePopScale
+        ctx.save()
+        for (const pop of pops)
+        {
+            const t = this.getBluePopProgress(pop, now)
+            const eased = 1 - (1 - t) * (1 - t)
+            const k = 1 + (popScale - 1) * eased
+            const points = pop.points
+            const ox = pop.cx + screen.x, oy = pop.cy + screen.y
+            ctx.beginPath()
+            ctx.moveTo(ox + (points[points.length - 1].x - pop.cx) * k, oy + (points[points.length - 1].y - pop.cy) * k)
+            for (let i = 0; i < points.length; ++i)
+                ctx.lineTo(ox + (points[i].x - pop.cx) * k, oy + (points[i].y - pop.cy) * k)
+            ctx.closePath()
+            strokeNeonPath(STYLE.momentum.blueStroke, 1 - t)
+        }
+        ctx.restore()
     }
     // 0..1 strength of the colour fringe at now: 1 - t^2 over fringeMs after
     // the newest blue hit, 0 outside it (momentum lighting only)
     getBlueFringe(now)
     {
-        if (!this.blueHits.length || version != 'momentum' || !MOMENTUM_FX.enabled)
+        if (this.blueTouchMs === null || version != 'momentum' || !MOMENTUM_FX.enabled)
             return 0
-        const t = (now - this.blueHits[this.blueHits.length - 1].start) / STYLE.momentumFx.fringeMs
+        const t = (now - this.blueTouchMs) / STYLE.momentumFx.fringeMs
         return t >= 0 && t < 1 ? 1 - t * t : 0
     }
     // Chromatic aberration over the frame drawn so far: the red channel
@@ -3773,7 +3751,7 @@ class ScreenEffects
     draw()
     {
         const now = performance.now()
-        this.drawBlueHits(now)
+        this.drawBluePops(now)
         if (!this.shouldApply())
             return
 
@@ -3809,6 +3787,8 @@ class ScreenEffects
     // Bloom pass (global ctx is the glow canvas): the rings as plain lines
     drawShockwaveGlow()
     {
+        if (this.bluePops.length)
+            this.drawBluePops(performance.now())
         if (!this.shouldApply() || !this.shockwaves.length)
             return
 

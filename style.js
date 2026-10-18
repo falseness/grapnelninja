@@ -349,37 +349,8 @@ const STYLE = Object.freeze({
         streakSpread: Object.freeze([14, 55]),
         streakPeriodMs: 280
     }),
-    // Momentum hit effects (MOMENTUM_FX), on the render clock. A blue touch
-    // (MomentumBlue.onNinjaPass) starts a blueHitMs flash: the blue's light
-    // (and its haze) times 1 + (flashGain - 1) x (1 - t)^2, t = 0..1 of
-    // blueHitMs. An elliptical neon ring of momentum.blueStroke grows from
-    // the blue's centre, its x radius ringFrom -> ringTo times the blue's
-    // circumscribed radius (eased out), y radius ringAspect of it, and fades
-    // out; an echo ring follows at ringEcho of its radius. Widths in screen
-    // px at 1080.
+    // Momentum hit effects (MOMENTUM_FX), on the render clock
     momentumFx: Object.freeze({
-        blueHitMs: 400,
-        flashGain: 2.5,
-        ringFrom: 0.3,
-        ringTo: 1.6,
-        ringAspect: 0.8,
-        ringWidth: 4,
-        ringAlpha: 0.9,
-        ringHaloWidth: 16,
-        ringHaloAlpha: 0.3,
-        ringEcho: 0.72,
-        ringEchoAlpha: 0.45,
-        // A used blue breaks into shardCount neon triangles instead of its
-        // fading outline (MomentumOneTime.drawShards): they start on its
-        // outline and drift outward by shardTravel x its circumscribed
-        // radius (eased out), fall by shardFall x radius x t^2 and spin up
-        // to shardSpin turns, sides shardSize x its shorter extent
-        shardCount: 12,
-        shardTravel: [0.5, 1.1],
-        shardFall: 0.35,
-        shardSpin: 1.2,
-        shardSize: [0.22, 0.4],
-        shardFillAlpha: 0.75,
         // Colour fringe of a blue hit (ScreenEffects.drawBlueFringe): for
         // fringeMs the red channel is scaled away from the screen centre and
         // the blue toward it, fringePx (screen px at 1080) each at the screen
@@ -687,6 +658,12 @@ const STYLE = Object.freeze({
         blueStroke: '#2f86ff',
         blueFill: '#061234',
         blueBadVersionFill: 'rgba(10, 36, 96, 0.8)',
+        // A touched blue vanishes at once; its outline (blueStroke neon)
+        // pops on the spot: scale 1 -> bluePopScale about its centre and
+        // alpha 1 -> 0 over bluePopMs of render clock, eased out like the
+        // death shockwave (ScreenEffects.drawBluePops)
+        bluePopMs: 180,
+        bluePopScale: 1.3,
         // HUD: one heart per hp up to hudMaxHearts, else a heart and the
         // number; the green streak as 'n/5' in the green object colour
         hudMaxHearts: 10,

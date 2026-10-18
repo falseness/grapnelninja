@@ -1,7 +1,7 @@
 """Momentum lighting 12/17: blue-hit colour fringe (TASK-062).
 
-For STYLE.momentumFx.fringeMs after a blue touch (ScreenEffects.blueHits, the
-TASK-060 trigger) ScreenEffects.drawBlueFringe scales the frame's red channel
+For STYLE.momentumFx.fringeMs after a blue touch (ScreenEffects.blueTouchMs, the
+TASK-076 triggerBlueTouch) ScreenEffects.drawBlueFringe scales the frame's red channel
 away from the screen centre and its blue channel toward it, fringePx (px at
 1080) each at the screen edges and 0 at the centre, strength 1 - t^2; the HUD
 boxes are clipped out. Checks (tools/momentum_fx_support.py blue-hit scene,
@@ -75,7 +75,7 @@ HIT = r'''([touch, dt]) => {
         blue.onNinjaPass(ninja)
     __snap.now = t0 + dt
     const effects = visualEffects.screenEffects
-    return {touched: effects.blueHits.length > 0, dtMs: dt, fringe: effects.getBlueFringe(__snap.now)}
+    return {touched: effects.blueTouchMs !== null, dtMs: dt, fringe: effects.getBlueFringe(__snap.now)}
 }'''
 
 # First fringe draw at T0, then canvases created during draws at T0 + dts

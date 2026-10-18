@@ -17,9 +17,10 @@ blues); no-piece frames drop the piece. Checks:
   light-off >= 1.4 (also reported vs no-piece), hue of the ring's mean colour
   and of the added light within 25 deg of momentum.blueStroke; blue fill
   pixels (the polygon eroded by FILL_INSET px) maxDelta <= 3 vs MOMENTUM_FX off;
-- blue-fade.json: ring gain (luminance on / light-off - 1) of a used blue rect
-  at fade alpha 1, 0.5, 0 (frozen clock): monotonic, gain(0.5) / gain(1) in
-  [0.35, 0.65], gain(0) <= 1 % (one ring, background in all six frames);
+- blue-fade.json: ring gain (luminance on / light-off - 1) of a blue rect
+  untouched and used at fade progress 0 and 0.5 (frozen clock): > 0.4
+  untouched, <= 1 % used (TASK-076: a used blue vanishes at once; one ring,
+  background in all six frames);
 - green-dark.json: a lone green at the same positions: pixels outside the
   green's own pixels (the diff with / without it with the lightmap disabled)
   equal the no-piece frame (maxDelta 0); parentMaxDelta shows the old spill;
@@ -284,28 +285,28 @@ class MomentumBlueLightTests(unittest.TestCase):
                 self.assertGreater(r['fillPixels'], 500)
                 self.assertLessEqual(r['fillMaxDelta'], MAX_FILL_DELTA)
 
-    def test_1_light_follows_the_fade(self):
+    def test_1_light_ends_with_the_touch(self):
+        # TASK-076: a used blue vanishes at once (no fade), so its light goes
+        # with it: untouched (fade None) vs used at fade progress 0 and 0.5
         spec = SHAPES['rect']
         rows = []
         pairs = {fade: (lone([('blue', spec, fade)]), lone([('blue', spec, fade)], extra=LIGHT_OFF))
-                 for fade in (0, 0.5, 1)}
+                 for fade in (None, 0, 0.5)}
         # One ring for all three: background in every frame
-        ring = ring_mask([f for pair in pairs.values() for f in pair], polygon_px(pairs[0][0]))
+        ring = ring_mask([f for pair in pairs.values() for f in pair], polygon_px(pairs[None][0]))
         for fade, (on, dark) in pairs.items():
             gain = fx.region_luminance(on, ring) / fx.region_luminance(dark, ring) - 1
-            rows.append({'fade': fade, 'alpha': round(1 - fade, 3), 'ringPixels': int(ring.sum()),
+            rows.append({'fade': fade, 'used': fade is not None, 'ringPixels': int(ring.sum()),
                          'gain': round(gain, 5)})
-        g1, g05, g0 = (r['gain'] for r in rows)
+        g_full, g_used0, g_used05 = (r['gain'] for r in rows)
         result = {'scene': SCENE, 'viewport': list(VIEWPORT), 'tree': fx.harness().rev, 'clock': 'frozen',
-                  'ringPx': RING_PX, 'rows': rows, 'halfOverFull': round(g05 / g1, 4),
-                  'monotonic': g1 > g05 > g0, 'zeroGainMax': 0.01}
-        result['pass'] = result['monotonic'] and 0.35 <= result['halfOverFull'] <= 0.65 and abs(g0) <= 0.01
+                  'ringPx': RING_PX, 'rows': rows, 'zeroGainMax': 0.01,
+                  'pass': g_full > 0.4 and abs(g_used0) <= 0.01 and abs(g_used05) <= 0.01}
         print(result)
         (EVIDENCE_DIR / 'blue-fade.json').write_text(compact(result))
-        self.assertTrue(result['monotonic'])
-        self.assertGreaterEqual(result['halfOverFull'], 0.35)
-        self.assertLessEqual(result['halfOverFull'], 0.65)
-        self.assertLessEqual(abs(g0), 0.01)
+        self.assertGreater(g_full, 0.4)
+        self.assertLessEqual(abs(g_used0), 0.01)
+        self.assertLessEqual(abs(g_used05), 0.01)
 
     def test_2_greens_emit_nothing(self):
         rows = []

@@ -312,9 +312,7 @@ class Element
         ctx.fillStyle = fillStyle
         ctx.fill()
 
-        // options.noOutline: the caller draws its own (used blue's shards)
-        if (!options.noOutline)
-            strokeNeonPath(strokeStyle, outlineAlpha, undefined, undefined, options.coreColor)
+        strokeNeonPath(strokeStyle, outlineAlpha, undefined, undefined, options.coreColor)
 
         ctx.restore()
     }
