@@ -3591,6 +3591,24 @@ class ScreenEffects
             this.shakeUntil = now + STYLE.screenEffects.shakeDurationMs
         }
     }
+    // The death ring without the shake, anchored in world coordinates (drawn
+    // at world + the current screen offset, so it stays where it started
+    // while the camera moves); same radius, duration and alpha as a death
+    triggerRing(worldX, worldY)
+    {
+        if (!this.shouldApply())
+            return
+
+        const now = performance.now()
+
+        this.shockwaves.push({
+            x: worldX,
+            y: worldY,
+            world: true,
+            start: now,
+            end: now + STYLE.screenEffects.shockwaveDurationMs
+        })
+    }
     begin()
     {
         if (!this.shouldApply())
@@ -3619,16 +3637,13 @@ class ScreenEffects
         this.ctx.translate(this.shakeOffset.x, this.shakeOffset.y)
         this.isShaking = true
     }
-    // A blue piece was touched (MomentumBlue.onNinjaPass), visual only: the
-    // death ring round the ninja (no shake), its outline pop on the spot and
-    // the colour fringe (blueTouchMs, momentumFx) start now
-    triggerBlueTouch(element, who)
+    // A blue piece was touched (MomentumBlue.onNinjaPass), visual only: its
+    // outline pop on the spot and the colour fringe (blueTouchMs, momentumFx)
+    // start now (the ring is triggerRing)
+    triggerBlueTouch(element)
     {
         const now = performance.now()
         this.blueTouchMs = now
-        if (this.shouldApply())
-            this.shockwaves.push({x: who.x + screen.x, y: who.y + screen.y,
-                start: now, end: now + STYLE.screenEffects.shockwaveDurationMs})
         const points = element.getPoints().map(point => ({x: point.x, y: point.y}))
         let cx = 0, cy = 0
         for (const point of points)
@@ -3817,7 +3832,10 @@ class ScreenEffects
 
             context.globalAlpha = config.shockwaveAlpha * stableAlpha * (1 - progress) * alpha
             context.beginPath()
-            context.arc(shockwave.x, shockwave.y, radius, 0, Math.PI * 2)
+            if (shockwave.world)
+                context.arc(shockwave.x + screen.x, shockwave.y + screen.y, radius, 0, Math.PI * 2)
+            else
+                context.arc(shockwave.x, shockwave.y, radius, 0, Math.PI * 2)
             context.stroke()
             context.closePath()
         }

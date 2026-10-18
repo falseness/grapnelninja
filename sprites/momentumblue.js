@@ -2,9 +2,11 @@
 // (Ninja.hitLine -> onNinjaPass) lets the ninja through, scales its velocity
 // by GAMEPLAY.momentumBlueSlow (same direction) and costs one hp
 // (momentumState.onBlueTouch). It vanishes at once (no fade, unlike a green;
-// sprites/momentumonetime.js); its outline pops on the spot and the death
-// ring plays round the ninja without the shake (ScreenEffects.triggerBlueTouch,
-// visual only). Not lethal by itself.
+// sprites/momentumonetime.js); its outline pops on the spot
+// (ScreenEffects.triggerBlueTouch) and the death ring plays where the ninja
+// touched it, without the shake (ScreenEffects.triggerRing, world-anchored;
+// visual only). A touch that takes the last hp runs the death flow, whose
+// own ring (with the shake) is the only one. Not lethal by itself.
 class MomentumBlue extends MomentumOneTime
 {
     constructor(object)
@@ -35,9 +37,17 @@ class MomentumBlue extends MomentumOneTime
             return
         who.speedX *= GAMEPLAY.momentumBlueSlow
         who.speedY *= GAMEPLAY.momentumBlueSlow
+        // Taking the last hp runs the death flow (unless the respawn shield
+        // ignores it), which restarts the run: decided before the touch
+        const lethal = momentumState.hp <= 1 && !who.isInvulnerable()
+        const x = who.x, y = who.y
         momentumState.onBlueTouch()
-        // Pop and ring (render clock only)
+        // Pop and ring (render clock only); a lethal touch has the death ring
         if (visualEffects && visualEffects.screenEffects)
-            visualEffects.screenEffects.triggerBlueTouch(this, who)
+        {
+            visualEffects.screenEffects.triggerBlueTouch(this)
+            if (!lethal)
+                visualEffects.screenEffects.triggerRing(x, y)
+        }
     }
 }

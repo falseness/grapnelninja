@@ -4,8 +4,8 @@ retired by TASK-076.
 TASK-060 gave a blue touch a light flash and its own elliptical ring
 (ScreenEffects.triggerBlueHit). TASK-076 replaced both: a touched blue
 vanishes at once, its outline pops (ScreenEffects.bluePops) and the death
-shockwave plays round the ninja without the shake (triggerBlueTouch; checked
-by tools/test_momentum_blue.py). The ring growth, flash and shot checks are
+shockwave plays at the touch without the shake (TASK-077 triggerRing; checked
+by tools/test_momentum_blue.py and test_momentum_blue_ring.py). The ring growth, flash and shot checks are
 retired; what is left (tools/momentum_fx_support.py blue-hit scene):
 - test_0_flash_and_ring_replaced: the TASK-060 hooks (triggerBlueHit,
   getBlueFlash, drawBlueHits, blueHits, STYLE.momentumFx.flashGain/ring*) are
