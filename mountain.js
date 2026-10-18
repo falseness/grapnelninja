@@ -679,69 +679,65 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(recoveries[5], {status:'built',elements:['S06-fall-drag','S06-catch-ledge','S04-fall-drag','S04-catch-basin','S06-drop-drag','S06-drop-ledge','S06-exit-drag','S06-exit-ledge'],
         rejoin:'S06-03',intent:'Liftworks misses fall through drag zones onto green catches',
         sideRoute:'Every declared S06 miss falls through a drag zone onto a green bouncer and settles: a short carriage hold on the green catch ledge; missed lift and climb-hook catches down the left map edge onto the green S04 catch basin; a missed exit-hook catch on the green drop ledge, from which the S06-03 climb hook rejoins the route; an early exit-hook release on the green exit ledge'});
-    // Open rooftop: a swept red rotor, torn service gantry and vent plinth.
-    // All silhouettes are the actual collision polygons; no invisible helper floors.
+    // Exposed Crown v3 (layout v3, TASK-523): no gray pads. Travelling right from the green S06 exit ledge
+    // (inside S06-exit-drag, under the S04 exit ledge) at the 1620-range distances. S07-01: pull the blue
+    // trolley up-left, far over the S04 route; the drag zone only lets the player crawl out of the pocket's
+    // open west side, then the pull swings it west under the trolley; released just before the green west
+    // wall, it ricochets east into a long flight between the S05 canopy and the S05 hoist. S07-02: catch the
+    // blue carriage in that flight; the swing climbs up-right over the hoist, and released early it rebounds
+    // off the green crown wall (west of the legacy beacon mast) into a flight west along the top.
+    // A short trolley hold drops onto the left map edge and slides down it through S04-fall-drag onto the
+    // green S04 catch basin; a missed carriage catch carries the flight under the hoist into S07-crown-drag,
+    // where it drops onto the green crown ledge. S07-03/04 stay planned.
     const crown = [
-        {id:'S07-service-gantry',x:5310,y:-10030,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:240,y:0},{x:240,y:25},{x:200,y:45},{x:30,y:45},{x:0,y:25}]},
-        {id:'S07-sweeper',x:5420,y:-9860,role:'hazard',grapplable:false,
-            points:[{x:0,y:0},{x:90,y:0},{x:110,y:20},{x:90,y:40},{x:0,y:40},{x:-20,y:20}]},
-        {id:'S07-rest-ledge',x:5060,y:-9740,role:'solid',grapplable:true,
-            points:[{x:0,y:-30},{x:30,y:-30},{x:30,y:0},{x:320,y:0},{x:320,y:8},{x:280,y:8},{x:280,y:20},{x:40,y:20},{x:40,y:8},{x:0,y:8}]},
-        {id:'S07-shortcut-jib',x:5130,y:-10040,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:140,y:0},{x:140,y:35},{x:90,y:35},{x:90,y:90},{x:55,y:90},{x:55,y:35},{x:0,y:35}]}
-    ];
-    liftMovers.push({id:'S07-rotor-sweep',element:'S07-sweeper',axis:'x',
-        min:5420,max:5700,periodMs:3000,phase:0,velocity:186.66666666666666});
-    Object.assign(sections[6],{status:'built',landmark:{id:'S07-landmark',
-        name:'open rooftop machinery',x:5420,y:-9930}});
-    Object.assign(encounters[24],{status:'built',x:5650,y:-9720,
-        elements:['S06-exit','S07-service-gantry','S07-sweeper'],
-        start:{x:5650,y:-9690.8,from:'S06-04'},target:{x:5430,y:-10000},
-        exit:{left:5100.8,right:5369.2,top:-9762,bottom:-9740},
-        action:'Watch the red rotor sweep from the Liftworks ledge; time a pull to the gray service gantry'});
-    Object.assign(encounters[25],{status:'built',x:5270,y:-9740,
-        elements:['S07-service-gantry','S07-rest-ledge','S07-shortcut-jib'],
-        start:{from:'S07-01'},target:{x:5200,y:-9970},
-        exit:{left:5100,right:5500,top:-10000,bottom:-9400,attachedTo:'S07-shortcut-jib'},
-        rest:'S07-rest-ledge',
-        action:'After rotor displacement, release and press again to catch the safe jib and brake the fall; the normal rooftop route has a broad rest ledge'});
-    Object.assign(connectors[24],{status:'planned',intent:'S06-exit exposes the rotor and safe gantry before commitment'});
-    Object.assign(connectors[25],{status:'built',intent:'Normal gantry route reaches the vent-plinth rest; displaced players can catch the safe jib'});
-    Object.assign(shortcuts[1],{openingStatus:'built',openingExit:'S07-02',
-        elements:['S07-shortcut-jib','S07-rest-ledge']});
-    Object.assign(recoveries[6],{openingElements:['S06-exit','S06-phase-rest','S05-projecting-girder'],
-        openingRejoin:'S05-04',sideRoute:'Unwalled rooftop edges permit physical falls through Liftworks into Cable Galleries'});
-    // The upper roof is open underneath: a missed launch can lose several bands.
-    // A narrow eastern maintenance balcony offers a lower physical route back.
-    crown.push(
-        {id:'S07-launch-head',x:4850,y:-10090,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:150,y:0},{x:150,y:25},{x:105,y:45},{x:0,y:45}]},
-        {id:'S07-roof-boom',x:5150,y:-10410,role:'solid',grapplable:true,
+        rectangle('S07-trolley',250,-11960,120,30,true),
+        // Against the left map edge, above the S04 route's map-edge contact; the S07-01 swing ricochets off it.
+        bouncer('S07-west-wall',0,-12260,30,400),
+        // High over the S05 hoist throw lines and ropes.
+        rectangle('S07-carriage',1930,-12910,120,30,true),
+        // East of the S05 hoist travel and west of the legacy beacon mast; the drag zone under its upper part
+        // holds the crown ledge (only S07-02-missed drops through it).
+        bouncer('S07-crown-wall',2930,-12950,30,960),
+        bouncer('S07-crown-ledge',2740,-12020,190,30),
+        // Legacy v1 Crown pieces still named by the v1 Summit Array (the S08-01 start ledge and recovery
+        // opening colliders), converted to green in place; no v3 S07 route uses them.
+        {id:'S07-roof-boom',x:5150,y:-10410,role:'bounce',grapplable:true,
             points:[{x:0,y:0},{x:170,y:0},{x:170,y:30},{x:60,y:30},{x:40,y:65},{x:0,y:65}]},
-        {id:'S07-upper-motor',x:5430,y:-10810,role:'solid',grapplable:true,
-            points:[{x:0,y:15},{x:35,y:0},{x:150,y:0},{x:175,y:25},{x:175,y:55},{x:0,y:55}]},
-        rest('S07-recovery-balcony',5480,-10180,340),
-        {id:'S07-side-hoist',x:5690,y:-10510,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:100,y:0},{x:100,y:55},{x:65,y:55},{x:65,y:100},{x:35,y:100},{x:35,y:55},{x:0,y:55}]},
-        {...rest('S07-exit',5240,-11340,150),points:[{x:0,y:-30},{x:20,y:-30},{x:20,y:0},{x:110,y:0},{x:110,y:-60},{x:150,y:-60},{x:150,y:55},{x:0,y:55}]}
-    );
-    Object.assign(encounters[26],{status:'built',x:5101,y:-9750,
-        elements:['S07-rest-ledge','S07-launch-head','S07-roof-boom','S07-upper-motor'],
-        start:{from:'S07-02',x:5101,y:-9750.8},target:{x:4995,y:-10060},
-        action:'Launch across the open roof above earlier terrain; transfer from torn head to boom and motor',
-        exit:{left:5400,right:5670,top:-10900,bottom:-10600}});
-    Object.assign(encounters[27],{status:'built',x:5600,y:-10180,
-        elements:['S07-recovery-balcony','S07-side-hoist','S07-upper-motor','S07-exit'],
-        start:{from:'S07-03'},target:{x:5695,y:-10480},
-        action:'Catch the lower eastern maintenance balcony after a miss; climb the side hoist and rejoin the motor before the departure ledge',
-        exit:{left:5270.8,right:5339.2,top:-11352,bottom:-11340}});
-    Object.assign(connectors[26],{status:'built',intent:'Rest at vent plinth before exposed head-to-boom launch'});
-    Object.assign(connectors[27],{status:'built',intent:'Normal motor route and lower side hoist converge on S07-exit at the next band; S08 is not required'});
-    Object.assign(shortcuts[1],{status:'built',elements:['S07-shortcut-jib','S07-rest-ledge','S07-launch-head','S07-roof-boom','S07-upper-motor','S07-exit'],
-        intent:'Optional jib cut reaches the rest sooner, then shares the exposed head/boom crossing to S07-04; normal gantry route remains'});
-    Object.assign(recoveries[6],{status:'built',elements:['S07-recovery-balcony','S07-side-hoist','S07-upper-motor'],
-        rejoin:'S07-04',sideRoute:'Lower eastern balcony and hoist rejoin the upper motor; misses outside it fall physically into earlier sections'});
+        {...rest('S07-recovery-balcony',5480,-10180,340),role:'bounce'},
+        {id:'S07-exit',x:5240,y:-11340,role:'bounce',grapplable:true,
+            points:[{x:0,y:-30},{x:20,y:-30},{x:20,y:0},{x:110,y:0},{x:110,y:-60},{x:150,y:-60},{x:150,y:55},{x:0,y:55}]}
+    ];
+    const crownDrags = [{id:'S07-crown-drag',x:2740,y:-12530,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:190,y:0},{x:190,y:510},{x:0,y:510}]}];
+    liftMovers.push({id:'S07-trolley-travel',element:'S07-trolley',axis:'x',min:250,max:370,periodMs:4000,phase:0,velocity:60},
+        {id:'S07-carriage-travel',element:'S07-carriage',axis:'x',min:1930,max:2050,periodMs:4000,phase:0,velocity:60});
+    Object.assign(sections[6], {status:'partial', designVersion:3, landmark:{id:'S07-landmark',
+        name:'open rooftop machinery',x:1500,y:-12600},
+        band:{...sections[6].band, top:-12960},
+        // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
+        gaps:[{id:'S07-01-trolley',from:{x:1543.2,y:-11261.3},to:{x:313.1,y:-11930}},
+            // Caught in flight after the west-wall ricochet.
+            {id:'S07-02-carriage',from:{x:770.1,y:-12154.3},to:{x:1988.4,y:-12882.7}}],
+        // Declared miss points: a short trolley hold flies west onto the left map edge and slides down it
+        // through S04-fall-drag onto the green S04 catch basin; a missed carriage catch carries the flight
+        // into S07-crown-drag, which drops it onto the green crown ledge.
+        fallPoints:[{id:'S07-01-short',encounter:'S07-01',x:30,y:-11560},
+            {id:'S07-02-missed',encounter:'S07-02',x:2800,y:-12330}]});
+    Object.assign(encounters[24], {status:'built',x:1543,y:-11261,
+        elements:['S06-exit-ledge','S07-trolley','S07-west-wall'],
+        start:{x:1543.2,y:-11261.3,from:'S06-04'},target:{x:308,y:-11933.3},
+        exit:{left:700,right:840,top:-12200,bottom:-12110},
+        action:'Pull the blue trolley up-left, crawl out of the Liftworks exit pocket, swing west under the trolley and ricochet off the green west wall into a long flight east'});
+    Object.assign(encounters[25], {status:'built',x:770,y:-12154,
+        elements:['S07-carriage','S07-crown-wall'],
+        start:{from:'S07-01',x:770.1,y:-12154.3},target:{x:1988,y:-12882.5},
+        exit:{left:1600,right:1800,top:-12780,bottom:-12680},
+        action:'In the flight, catch the blue carriage, swing up-right over the Galleries hoist and rebound off the green crown wall into a flight west along the top'});
+    Object.assign(connectors[24], {status:'built',intent:'Physical ascent: the S07-01 trolley pull starts on the v3 Liftworks exit ledge'});
+    Object.assign(connectors[25], {status:'built'});
+    // S07-03/04 stay planned: their route links, the S07 fall recovery and the optional shortcut too.
+    Object.assign(shortcuts[1], {intent:'Optional exposed skill shortcut from S07-01 to S07-04; kept planned for layout v3'});
+    Object.assign(recoveries[6], {intent:'Crown misses fall through drag zones onto green catches; planned until S07-03/04 are rebuilt'});
     // Summit Array opening: beacon arms, a davit brake, a green ramp and the
     // lamp mast. Every silhouette is its own collider; the mast is the landmark.
     const summit = [
@@ -781,7 +777,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:3070.8,right:3409.2,top:-12092,bottom:-12080},
         rest:'S08-rest-ledge',
         action:'Pull the lamp hook, fall onto the angled green ramp, grab the mast yard in flight and release onto the beacon rest ledge'});
-    Object.assign(connectors[28],{status:'built',intent:'S07-exit launches directly to the beacon arm; the davit and footing rest are visible before commitment'});
+    // Planned until S07-04 is rebuilt for layout v3 (the v1 S08-01 starts on the legacy S07-exit ledge).
+    Object.assign(connectors[28],{status:'planned',intent:'S07-exit launches directly to the beacon arm; the davit and footing rest are visible before commitment; planned until S07-04 is rebuilt'});
     Object.assign(connectors[29],{status:'built',intent:'Footing rest separates the brake from the bounce transfer; S08-02 ends on the beacon rest ledge'});
     Object.assign(recoveries[7],{openingElements:['S08-spill-deck','S08-recovery-hook','S07-roof-boom','S07-recovery-balcony'],
         openingRejoin:'S07-03',sideRoute:'Western misses collect on the spill deck; the recovery hook throws players back onto the Crown boom or balcony. Eastern misses fall through the Crown into Liftworks. No hazards.'});
@@ -832,7 +829,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags,...galleriesDrags,...liftworksDrags], movers:liftMovers},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags,...galleriesDrags,...liftworksDrags,...crownDrags], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         finish, completion:'Summit finish region on the S08-04 beacon pad; reaching it completes the climb',

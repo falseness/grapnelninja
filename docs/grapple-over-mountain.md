@@ -48,9 +48,18 @@ green climb hook while sliding down the left map edge, skips over a bounce-only
 green swing skid and is released into a straight rise; S06-04 pulls from a green
 exit hook far east into an exit drag zone under the S04 exit ledge, where the
 player settles on the green exit ledge. A missed exit hook falls back down the
-rise onto a green drop ledge, from which the climb hook rejoins the route; the S07
-entrance stays planned. Other sections keep their own build status; both optional
-shortcuts are planned. The three built
+rise onto a green drop ledge, from which the climb hook rejoins the route. S07 is
+layout v3 too (TASK-523) at the 1620 range, opening only: from the S06 exit ledge,
+S07-01 pulls a blue trolley up-left, crawls out of the exit pocket's open west
+side, swings west under the trolley and ricochets off a green west wall into a
+long flight east between the S05 canopy and the S05 hoist; S07-02 catches a blue
+carriage in that flight, swings up-right over the hoist and rebounds off a green
+crown wall into a flight west along the top. A short trolley hold slides down the
+left map edge onto the S04 catch basin; a missed carriage catch drops through a
+crown drag zone onto a green crown ledge. The v1 red rotor is removed (no S07
+hazard exists yet), and S07-03/04, the S08 entrance and the S07 shortcut stay
+planned. Other sections keep their own build status; both optional shortcuts are
+planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and
 landmark symbols are schematic reservations, not verified landing locations or
