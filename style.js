@@ -278,6 +278,15 @@ const STYLE = Object.freeze({
         lightAlpha: 0.8,
         hazeRadius: 300,
         hazeAlpha: 0.4,
+        // Point lights besides the ninja's (nearest first); walls and pieces
+        // cast hard shadows from every one of them
+        maxEmitters: 6,
+        // A piece's shadow also darkens the ambient by up to this much,
+        // fading out over shadowRadius (screen px at 1080) from the light
+        shadowDepth: 0.92,
+        shadowRadius: 900,
+        // Ninja radii round the ninja in which a piece casts no shadow from it
+        contactRadii: 2,
         // The cave under the player trail stays undimmed (the trail keeps
         // its pixels); light px the band reaches past the ribbon's edge
         trailBandMargin: 2,
