@@ -42,6 +42,9 @@ class MomentumBlue extends MomentumOneTime
         const lethal = momentumState.hp <= 1 && !who.isInvulnerable()
         const x = who.x, y = who.y
         momentumState.onBlueTouch()
+        // A lethal touch that restarted the run leaves only the death ring
+        if (ninja !== who)
+            return
         // Pop and ring (render clock only); a lethal touch has the death ring
         if (visualEffects && visualEffects.screenEffects)
         {

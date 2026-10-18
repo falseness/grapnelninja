@@ -3653,6 +3653,16 @@ class ScreenEffects
         }
         this.bluePops.push({points: points, cx: cx / points.length, cy: cy / points.length, start: now})
     }
+    // A new momentum run: the last run's blue pops, colour fringe and
+    // world-anchored touch rings go (the death ring of reStart stays)
+    clearMomentumRun()
+    {
+        this.blueTouchMs = null
+        this.bluePops.length = 0
+        for (let i = this.shockwaves.length - 1; i >= 0; --i)
+            if (this.shockwaves[i].world)
+                this.shockwaves.splice(i, 1)
+    }
     // 0..1 of a pop at now, or -1 once it is over
     getBluePopProgress(pop, now)
     {

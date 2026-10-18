@@ -534,6 +534,8 @@
             {
                 const borders = GAMEPLAY.momentumBorders
                 momentumState.reset()
+                if (visualEffects && visualEffects.screenEffects)
+                    visualEffects.screenEffects.clearMomentumRun()
                 // The first join (a shaft's left wall) at least a wall plus the
                 // camera's shaft margin right of the start view and the ninja:
                 // the camera can't scroll back to show it later. Its rail arc

@@ -52,6 +52,9 @@ class Ninja
                             contact = this.hitLine(element, lines[j], contact)
                             collision = lines[j]
                             hit = true
+                            // A lethal hit restarted the run: this pass is over
+                            if (ninja !== this)
+                                return collision
                         }
                     }
                     // A ball that already sank in still hits the nearest edge.
@@ -59,6 +62,8 @@ class Ninja
                     {
                         collision = nearestLine(lines, this.x, this.y)
                         contact = this.hitLine(element, collision, contact)
+                        if (ninja !== this)
+                            return collision
                     }
                     if (contact && (!this.bounce || this.deeperContact(contact, this.bounce)))
                         this.bounce = contact
