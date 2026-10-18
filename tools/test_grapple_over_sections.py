@@ -7435,11 +7435,13 @@ V1_S05_DISPOSITION = {
     'S05-deep-overhang':('deleted','v1 S05-02 overhang; the v3 S05-02 swings under the blue lift into the green baffle'),
     'S05-lower-gallery':('deleted','v1 S05-02 rest pad; the v3 S05-02 ends in flight off the green baffle'),
     'S05-transfer-canopy':('converted-to-bounce','v1 S05-03 canopy; still the v1 Liftworks recovery collider (recoveries[5]); same place and shape, now green'),
-    'S05-upper-rest':('deleted','v1 S05-03 landing rest pad; S05-03 is planned again'),
+    'S05-upper-rest':('deleted','v1 S05-03 landing rest pad; the v3 S05-03 swings from the green pull hook and ends in flight (TASK-518)'),
     'S05-recessed-ceiling':('converted-to-bounce','v1 S05-04 ceiling; still a v1 Liftworks recovery collider (recoveries[5]); same place and shape, now green'),
     'S05-exit':('converted-to-bounce','v1 S05 exit deck; still the v1 S06-01 start and encounters[20] element; same place and shape, now green'),
 }
-V3_S05_ADDED = ('S05-hoist','S05-canopy','S05-deflector','S05-lift','S05-baffle','S05-catch-deck','S05-fall-drag')
+V3_S05_ADDED = ('S05-hoist','S05-canopy','S05-deflector','S05-lift','S05-baffle','S05-catch-deck','S05-fall-drag',
+                # TASK-518: S05-03/04 and the section exit.
+                'S05-pull-hook','S05-exit-hook','S05-exit-canopy','S05-exit-ledge','S05-exit-drag')
 
 
 class GalleriesV3Checks:
@@ -7451,7 +7453,7 @@ class GalleriesV3Checks:
     initial placement (initial_snapshot), then production trusted input and physics run. Not a continuous-
     completion claim. Range is 1620 from the start pose on (the S03 route climbs through the S05 band, which is
     the TASK-502 upgrade trigger); every S05 gap is judged at 1620 and the 1080 negative control shows neither
-    S05 anchor is acquirable at the base range. S05-03/04 stay planned.
+    S05 anchor is acquirable at the base range. TASK-518 built S05-03/04: test_01 judges the completed section.
     """
     DC = DeflectorV3CompleteChecks
     S04_V3_ROUTE = DeflectorV3Checks.S03_V3_ROUTE+[(t+4545, e, x, y) for t, e, x, y in DC.S04_ROUTE_V3]
@@ -7473,9 +7475,17 @@ class GalleriesV3Checks:
     S05_01_EXIT = dict(x=[2440,2580], y=[-10960,-10860], speedX=[1.5,1.8], speedY=[.6,.9])
     S05_02_EXIT = dict(x=[4050,4300], y=[-10250,-10120], speedX=[-3.5,-3.1], speedY=[.85,1.25])
     S05_01_TICKS, S05_02_TICKS = 304, 405
-    S05_V3_FALLS = {'S05-01-short':(['S04-exit-drag'],'S04-exit-ledge'), 'S05-02-missed':(['S05-fall-drag'],'S05-catch-deck')}
-    S05_V3_GAPS = ('S05-01-hoist','S05-02-lift')
-    S05_V3_ROUTE_ELEMENTS = ('S05-hoist','S05-canopy','S05-deflector','S05-lift','S05-baffle','S05-catch-deck')
+    # TASK-518: the S05-03 exit is the swing-release flight at the S05-04 press (tick 655); the S05-04 exit is the
+    # green exit ledge inside S05-exit-drag (the ledge keeps a small damped hop, hence the speedY band).
+    S05_03_EXIT = dict(x=[3900,4030], y=[-8100,-7980], speedX=[1.8,2.1], speedY=[-1.0,-0.7])
+    S05_04_EXIT = dict(x=[6100,6470], y=[-9460,-9420], speedX=[-.001,.001], speedY=[-.2,.2])
+    S05_V3_FALLS = {'S05-01-short':(['S04-exit-drag'],'S04-exit-ledge'), 'S05-02-missed':(['S05-fall-drag'],'S05-catch-deck'),
+                    'S05-03-missed':(['S04-fall-drag'],'S04-catch-basin'), 'S05-04-early':(['S05-exit-drag'],'S05-exit-ledge')}
+    S05_V3_GAPS = ('S05-01-hoist','S05-02-lift','S05-03-pull','S05-04-exit')
+    # The anchor element of each gap (the 1080 check uses its nearest point over the whole mover travel).
+    S05_V3_ANCHORS = ('S05-hoist','S05-lift','S05-pull-hook','S05-exit-hook')
+    S05_V3_ROUTE_ELEMENTS = ('S05-hoist','S05-canopy','S05-deflector','S05-lift','S05-baffle','S05-catch-deck',
+                             'S05-pull-hook','S05-exit-hook','S05-exit-canopy','S05-exit-ledge')
     # Declared misses: a short hoist hold (released at 130) drops from its apex back into S04-exit-drag onto
     # the green S04 exit ledge; no lift press carries the deflector throw down through S05-fall-drag onto the
     # green catch deck.
@@ -7651,13 +7661,16 @@ class GalleriesV3Checks:
         r = self.report(); v1 = self.v1_s05()
         m = r['manifest']; elements = m['geometry']['elements']
         s05 = m['sections'][4]
-        self.assertEqual((s05['designVersion'], s05['status']), (3, 'partial'))
+        self.assertEqual((s05['designVersion'], s05['status']), (3, 'built'))
         enc_all = m['encounters'][16:20]
-        self.assertEqual([e['status'] for e in enc_all], ['built','built','planned','planned'])
-        self.assertEqual([e['elements'] for e in enc_all[2:]], [[], []])
-        self.assertEqual([c['status'] for c in m['connectors'][16:21]], ['built','built','planned','planned','planned'])
+        self.assertEqual([e['status'] for e in enc_all], ['built']*4)
+        # S06 is still layout v1 (its S06-01 starts on the legacy S05-exit deck): the S06 entrance stays planned.
+        self.assertEqual([c['status'] for c in m['connectors'][16:21]], ['built','built','built','built','planned'])
         self.assertEqual((m['connectors'][16]['from'], m['connectors'][16]['to']), ('S04-04','S05-01'))
-        self.assertEqual((m['recoveries'][4]['status'], m['connectors'][20]['id']), ('planned', 'S06-entrance'))
+        self.assertEqual((m['connectors'][20]['id'], m['connectors'][20]['from']), ('S06-entrance', 'S05-04'))
+        rec = m['recoveries'][4]
+        self.assertEqual((rec['status'], rec['from'], rec['to'], rec['rejoin']), ('built', 'S05-04', 'S04-01', 'S05-01'))
+        self.assertTrue(all(x in {e['id'] for e in elements} for x in rec['elements']), rec)
         self.assertNotIn('solidExceptions', s05)
         self.assertNotIn('fallLines', s05)
         self.assertEqual((s05['band']['top'], s05['band']['bottom']), (-9720, -6480))
@@ -7682,11 +7695,13 @@ class GalleriesV3Checks:
         enc = {e['id']:e for e in enc_all}
         self.assertEqual(enc['S05-01']['start'], {'x':1387.9,'y':-11660.9,'from':'S04-04'})
         self.assertEqual(enc['S05-02']['start'], {'from':'S05-01','x':2511.7,'y':-10905.2})
-        for e in enc_all[:2]:
+        for e in enc_all:
             self.assertTrue(all(x in by_id for x in e['elements']), e['id'])
             self.assertTrue(any(by_id[x]['role'] == 'bounce' for x in e['elements']), e['id'])
+        for e in enc_all[:2]:
             self.assertTrue(any(x in movers for x in e['elements']), e['id'])
-        for name, box in (('S05-01', self.S05_01_EXIT), ('S05-02', self.S05_02_EXIT)):
+        self.assertEqual([e['start']['from'] for e in enc_all], ['S04-04','S05-01','S05-02','S05-03'])
+        for name, box in (('S05-01', self.S05_01_EXIT), ('S05-02', self.S05_02_EXIT), ('S05-03', self.S05_03_EXIT), ('S05-04', self.S05_04_EXIT)):
             self.assertEqual(enc[name]['exit'], dict(left=box['x'][0], right=box['x'][1], top=box['y'][0], bottom=box['y'][1]))
         sec = r['report']['sections'][4]
         self.assertEqual((sec['id'], sec['designVersion'], sec['passed'], sec['errors'], sec['range']), ('S05', 3, True, [], 1620))
@@ -7706,11 +7721,13 @@ class GalleriesV3Checks:
         # Not crossable at 1080: from each press pose the nearest point of the mover (over its whole travel) is beyond 1080.
         travel = {v['element']:v for v in m['geometry']['movers']}
         base_range = {}
-        for g, mover in zip(s05['gaps'], self.S05_V3_MOVERS):
-            b = self.bounds_v3(by_id[mover], travel[mover]); p = g['from']
+        self.assertEqual([g['id'] for g in s05['gaps']], list(self.S05_V3_GAPS))
+        for g, mover in zip(s05['gaps'], self.S05_V3_ANCHORS):
+            b = self.bounds_v3(by_id[mover], travel.get(mover)); p = g['from']
             near = math.hypot(max(b['left']-p['x'], 0, p['x']-b['right']), max(b['top']-p['y'], 0, p['y']-b['bottom']))
             self.assertGreater(near, 1080, (g['id'], near))
-            base_range[g['id']] = dict(mover=mover, mover_travel_box=b, nearest_point_distance=near, base_range=1080, beyond_base_range=True)
+            base_range[g['id']] = dict(anchor=mover, blue_mover=mover in movers, anchor_box_over_travel=b, nearest_point_distance=near,
+                                       base_range=1080, beyond_base_range=True)
         falls = sec['rules']['dragUnderFall']['measured']['fallPoints']
         self.assertEqual([f['id'] for f in falls], list(self.S05_V3_FALLS))
         for f in falls:
@@ -7719,7 +7736,8 @@ class GalleriesV3Checks:
             for dz in f['dragZones']:
                 b = self.bounds_v3(by_id[dz])
                 self.assertTrue(b['left'] <= f['x']-18 and f['x']+18 <= b['right'] and b['bottom'] > f['y'] and b['top'] < f['firstBouncerTop'], (f, dz))
-        self.assertEqual(sec['rules']['strayDrag']['measured']['dragZones'], [dict(id='S05-fall-drag', fallPoints=['S05-02-missed'])])
+        self.assertEqual(sec['rules']['strayDrag']['measured']['dragZones'], [dict(id='S05-fall-drag', fallPoints=['S05-02-missed']),
+                                                                              dict(id='S05-exit-drag', fallPoints=['S05-04-early'])])
         # Every static v1 S05 solid is deleted or converted to a green bouncer in place.
         self.assertEqual(sorted(v1['staticSolids']), sorted(V1_S05_DISPOSITION))
         self.assertEqual(v1['movers'], [])
@@ -7746,22 +7764,22 @@ class GalleriesV3Checks:
                 self.assertFalse(ba['left'] < bo['right'] and bo['left'] < ba['right'] and ba['top'] < bo['bottom'] and bo['top'] < ba['bottom'], (a['id'], o['id']))
         measured = {g['id']:g['distance'] for g in gaps}
         self.evidence.write('rules.json', dict(self.proof, validator='layoutV2Report designVersion 3 rules (TASK-546)',
-            section=sec, all_applicable_rules_passed=True, encounters=['S05-01','S05-02'], planned=['S05-03','S05-04'],
+            section=sec, all_applicable_rules_passed=True, encounters=['S05-01','S05-02','S05-03','S05-04'], planned=[],
             active_range=sec['range'], gap_targets_reference='LAYOUT_V3_GAP_TARGETS[1620] = 1378-1458 (artifacts/TASK-544/calibration.json)',
             measured_gap_distances=measured, gaps_not_crossable_at_1080=base_range, direction=direction,
-            direction_note='the direction rule reads the planned S05-04 node x (5800) against the S05-01 entry x (1387.9); the built '
-                           'encounter exits also lie east of the entry (exit boxes centred at x 2510 and 4175)',
+            direction_note='the direction rule reads the S05-04 exit box centre x (6285, the green exit ledge against the right map edge) '
+                           'against the S05-01 entry x (1387.9); the encounter exits are centred at x 2510, 4175, 3965 and 6285',
             fall_points=falls, own_drag_zones=sec['rules']['strayDrag']['measured']['dragZones'],
             drag_below_every_fall_point=True, gray_solid_count=len(gray)))
-        self.evidence.write('geometry.json', dict(self.proof, manifest_section=s05, encounters=enc_all, planned_encounters=['S05-03','S05-04'],
+        self.evidence.write('geometry.json', dict(self.proof, manifest_section=s05, encounters=enc_all, planned_encounters=[],
             connectors=m['connectors'][16:21], recovery=m['recoveries'][4], elements=own, movers=list(movers.values()),
             roles=roles, gray_solids=gray, gray_solid_count=len(gray), runtime_matches_manifest=True, v1_revision=V1_S05_REVISION,
             v1_static_solids=v1['staticSolids'], v1_solid_disposition=mapping, v3_added=list(V3_S05_ADDED),
             route_overlaps_with_s04_s08_colliders=[]))
         colors = {'blue mover':'#2f86ff','green bounce':'#3ddc84','yellow drag':'#facc15'}
-        parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="975" viewBox="1000 -12750 4400 3350" style="background:#111827">']
+        parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="950" viewBox="-50 -12750 6600 4900" style="background:#111827">']
         for e in elements:
-            if e['id'].split('-')[0] not in ('S04','S06','S07','S08'): continue
+            if e['id'].split('-')[0] not in ('S04','S06','S07','S08') and e['id'] != 'mountain-right': continue
             pts = ' '.join(f'{e["x"]+p["x"]},{e["y"]+p["y"]}' for p in e['points'])
             fill = '#facc15" fill-opacity="0.18' if e['role'] == 'drag' else '#374151'
             parts.append(f'<polygon points="{pts}" fill="{fill}" stroke="#6b7280" stroke-width="3"/>')
@@ -7770,33 +7788,36 @@ class GalleriesV3Checks:
             fill = colors[roles[e['id']]] + ('" fill-opacity="0.35' if roles[e['id']] == 'yellow drag' else '')
             parts.append(f'<polygon points="{pts}" fill="{fill}" stroke="white" stroke-width="3"/>')
             if e['id'] in V3_S05_ADDED:
-                dx = {'S05-baffle':-420,'S05-canopy':-200}.get(e['id'], 0)
-                parts.append(f'<text x="{e["x"]+dx}" y="{e["y"]-16}" fill="white" font-size="40">{e["id"]} ({roles[e["id"]]})</text>')
+                dx, dy = {'S05-baffle':(-600,0),'S05-canopy':(-280,0),'S05-exit-canopy':(-1000,0),'S05-exit-ledge':(-1000,-40),
+                          'S05-exit-drag':(-850,250),'S05-pull-hook':(-150,110),'S05-exit-hook':(-300,0)}.get(e['id'], (0,0))
+                parts.append(f'<text x="{e["x"]+dx}" y="{e["y"]-16+dy}" fill="white" font-size="56">{e["id"]} ({roles[e["id"]]})</text>')
         for v in movers.values():
             e = by_id[v['element']]
             parts.append(f'<line x1="{e["x"]+60}" y1="{e["y"]+15}" x2="{e["x"]+60+v["max"]-v["min"]}" y2="{e["y"]+15}" stroke="#93c5fd" stroke-width="6" stroke-dasharray="12,8"/>')
         for g in s05['gaps']:
             parts.append(f'<line x1="{g["from"]["x"]}" y1="{g["from"]["y"]}" x2="{g["to"]["x"]}" y2="{g["to"]["y"]}" stroke="#facc15" stroke-width="6" stroke-dasharray="14,10"/>')
         for f in falls:
-            parts.append(f'<line x1="{f["x"]}" y1="{f["y"]}" x2="{f["x"]}" y2="{f["firstBouncerTop"]}" stroke="#fb923c" stroke-width="5" stroke-dasharray="8,12"/>'
-                         f'<circle cx="{f["x"]}" cy="{f["y"]}" r="16" fill="#fb923c"/><text x="{f["x"]+30}" y="{f["y"]+12}" fill="#fb923c" font-size="38">{f["id"]}</text>')
-        for e in enc_all[:2]:
+            parts.append(f'<line x1="{f["x"]}" y1="{f["y"]}" x2="{f["x"]}" y2="{max(f["firstBouncerTop"], -7850)}" stroke="#fb923c" stroke-width="5" stroke-dasharray="8,12"/>'
+                         f'<circle cx="{f["x"]}" cy="{f["y"]}" r="16" fill="#fb923c"/><text x="{f["x"]+30}" y="{f["y"]+12}" fill="#fb923c" font-size="52">{f["id"]}</text>')
+        for e in enc_all:
             b = e['exit']
             parts.append(f'<rect x="{b["left"]}" y="{b["top"]}" width="{b["right"]-b["left"]}" height="{b["bottom"]-b["top"]}" fill="none" stroke="#f472b6" stroke-width="6"/>'
-                         f'<text x="{b["left"]}" y="{b["bottom"]+50}" fill="#f472b6" font-size="38">{e["id"]} exit</text>')
+                         f'<text x="{b["left"]}" y="{b["bottom"]+50}" fill="#f472b6" font-size="52">{e["id"]} exit</text>')
         parts.append('<circle cx="1387.9" cy="-11660.9" r="28" fill="#ff7a1a"/>')
-        for i, t in enumerate(['S05 Cable Galleries v3 (designVersion 3, travelling right), zero gray solids; S05-03/04 planned',
-                'orange dot = real S04 v3 exit settled pose; grey = S04 and legacy S06-S08',
+        for i, t in enumerate(['S05 Cable Galleries v3 (designVersion 3, built, travelling right), zero gray solids',
+                'orange dot = real S04 v3 exit settled pose; grey = S04, legacy S06-S08 and the right map edge',
                 'S05-01: blue hoist out of S04-exit-drag -> green canopy -> angled green deflector',
                 'S05-02: blue lift caught in flight -> swing under the spill deck -> green baffle',
-                'yellow dashes = gaps %s of 1620 (both > 1080)' % '/'.join(str(round(g['distance'],1)) for g in gaps),
-                'orange = fall points over drag zones; pink = exit boxes']):
-            parts.append(f'<text x="1030" y="{-10250+i*48}" fill="#67e8f9" font-size="36">{t}</text>')
+                'S05-03: green pull hook caught flying west -> long swing under the catch deck, released east',
+                'S05-04: green exit hook -> release into S05-exit-drag -> green exit canopy -> green exit ledge',
+                'yellow dashes = gaps %s of 1620 (all > 1080)' % '/'.join(str(round(g['distance'],1)) for g in gaps),
+                'orange = fall points over drag zones (S05-03-missed drops down the left edge to the catch basin at y -6000); pink = exit boxes']):
+            parts.append(f'<text x="250" y="{-9750+i*66}" fill="#67e8f9" font-size="54">{t}</text>')
         parts.append('</svg>')
-        overview = self.browser.new_page(viewport=dict(width=1280, height=975)); self.addCleanup(overview.close)
+        overview = self.browser.new_page(viewport=dict(width=1280, height=950)); self.addCleanup(overview.close)
         overview.set_content('<style>body{margin:0}</style>'+''.join(parts))
         overview.screenshot(path=str(self.evidence.path('overview.png')))
-        print('PASS geometry: S05 designVersion 3 partial (S05-01/02 built, S05-03/04 planned); gray solids', len(gray), '; roles',
+        print('PASS geometry: S05 designVersion 3 built (S05-01..04); gray solids', len(gray), '; roles',
               sorted(set(roles.values())), '; all 7 v3 rules pass at range', sec['range'], '; direction right', direction['entryX'], '<', direction['exitX'],
               '; gaps', [round(g['distance'],1) for g in gaps], 'in', list(self.S05_V3_BAND), '; nearest mover point from each press',
               {k:round(v['nearest_point_distance'],1) for k, v in base_range.items()}, '> 1080; fall points over drag',
@@ -7924,6 +7945,381 @@ class GalleriesV3Checks:
             note='with the base range the hoist and lift shots fall short (no acquisition): the S05 gaps are not crossable before the range upgrade'))
         print('PASS 1080 negative control: S05-01 hoist not acquired (player stays on the S04 exit ledge); S05-02 lift not acquired, no baffle; final',
               {k:round(players[-1][k],1) for k in ('x','y')})
+
+
+
+class GalleriesV3CompleteChecks(GalleriesV3Checks):
+    """Layout-v3 Cable Galleries S05-03/04, section exit and fall recovery (TASK-518), with real input.
+
+    Same labeled-placement proof as GalleriesV3Checks: the start is the real S04 v3 exit settled pose of one
+    base-start real-input S01..S04 v3 run. S05-03/04 continue the S05-01/02 inputs of the same run, so they are
+    segmented from the S05-02 exit (tick 405) and the S05-03 exit (tick 655), not placed. Not a
+    continuous-completion claim. Shared by Task518Tests (the inherited S05-01/02 cases also run).
+    """
+    DV = DeflectorV3Checks
+    # Exact world points of the desktop press pixels (1037,644) and (1055,130).
+    PULL_V3, EXIT_HOOK_V3 = (5264.844856808948,-9308.088482900792), (4978.889259856017,-9089.19141110997)
+    PULL_PRESS, PULL_RELEASE, EXIT_PRESS, EXIT_RELEASE = 410, 650, 655, 775
+    # S05-03: flying west off the baffle, the green pull hook (east, below the baffle foot) is pressed at 410;
+    # the long swing runs west and down past the catch deck, turns, and comes back east under it; released
+    # on the upswing at 650. S05-04: the green exit hook is pressed from that flight at 655 and held 120; the
+    # swing carries the player up-right past the legacy S06 exit (staying left of the exit drag zone) and the
+    # release rises into S05-exit-drag, where the green exit canopy turns the rise into a drop onto the green
+    # exit ledge. Probed (not asserted): exit-hook releases 735-800 all settle on the exit ledge.
+    S05_03_V3 = [(PULL_PRESS,'mousedown',*PULL_V3),(PULL_RELEASE,'mouseup',*PULL_V3)]
+    S05_04_V3 = [(EXIT_PRESS,'mousedown',*EXIT_HOOK_V3),(EXIT_RELEASE,'mouseup',*EXIT_HOOK_V3)]
+    S05_ROUTE_V3 = GalleriesV3Checks.S05_01_V3+GalleriesV3Checks.S05_02_V3+S05_03_V3+S05_04_V3
+    S05_03_TICKS, S05_04_TICKS, S05_FULL_TICKS, S05_LAND_BY = 655, 1300, 1400, 930
+    S05_EXIT_DRAG = dict(left=6100, right=6480, top=-9990, bottom=-9420)
+    S04_FALL_DRAG, BASIN_SETTLE = DV.S04_FALL_DRAG, DV.BASIN_SETTLE
+    CATCH_DECK = dict(left=3800, right=4400, top=-9500, bottom=-9460)
+    S05_02_AT_410 = dict(x=[3950,4200], y=[-10250,-10050], speedX=[-3.5,-3.1], speedY=[.8,1.3])
+    # Mistimed S05-01 (fall.json): the blue hoist held 30 ticks short (released at 120 instead of 150). The
+    # rise tops out above S04-exit-drag and drops back through it onto the green S04 exit ledge (the S04-04
+    # route bouncer, the S04 section exit), where it settles at x ~1503. Input-only rejoin from tick 960 (4
+    # mover periods): a 105-tick tug on the green S04 exit hook steps the player back west along the exit
+    # ledge (it settles at x ~1391, 3 east of the nominal start); then the S05 route from tick 1445 (6 mover
+    # periods), retimed for that pose: the hoist is acquired one tick later and the canopy bounce comes earlier,
+    # so the lift is pressed 3 ticks after the deflector bounce (1752) and held 55, the pull hook is pressed
+    # 15 ticks after the baffle (1850) and released at 2070, and the exit hook is held 120 from 2075.
+    S04_EXIT_HOOK_PIXEL = (828,-12003.637493210137)
+    SHORT_RELEASE, REJOIN_TICK = 120, 960
+    S05_01_SHORTER = [(5,'mousedown',*GalleriesV3Checks.HOIST_V3),(SHORT_RELEASE,'mouseup',*GalleriesV3Checks.HOIST_V3)]
+    REJOIN_S05 = [(960,'mousedown',*S04_EXIT_HOOK_PIXEL),(1065,'mouseup',*S04_EXIT_HOOK_PIXEL),
+                  (1445,'mousedown',*GalleriesV3Checks.HOIST_V3),(1590,'mouseup',*GalleriesV3Checks.HOIST_V3),
+                  (1752,'mousedown',*GalleriesV3Checks.LIFT_V3),(1807,'mouseup',*GalleriesV3Checks.LIFT_V3),
+                  (1850,'mousedown',*PULL_V3),(2070,'mouseup',*PULL_V3),
+                  (2075,'mousedown',*EXIT_HOOK_V3),(2195,'mouseup',*EXIT_HOOK_V3)]
+    REJOIN_EXIT_PRESS = 2075
+    FALL_S05, FALL_S05_TICKS = S05_01_SHORTER+REJOIN_S05, 3000
+    SHORTER_SETTLE = dict(x=[1480,1530], y=[-11680,-11650], speedX=[-.001,.001], speedY=[-.05,.05])
+    # Declared S05-03/04 misses: no pull-hook press (the baffle rebound flies into the left map edge and drops
+    # along it through S04-fall-drag onto the green S04 catch basin); an exit hook released 40 ticks early
+    # (still rises into S05-exit-drag and drops from the exit canopy onto the exit ledge).
+    S05_03_MISSED = GalleriesV3Checks.S05_01_V3+GalleriesV3Checks.S05_02_V3
+    S05_04_EARLY = S05_03_MISSED+S05_03_V3+[(EXIT_PRESS,'mousedown',*EXIT_HOOK_V3),(EXIT_RELEASE-40,'mouseup',*EXIT_HOOK_V3)]
+
+    def contacts(self, trace):
+        return [e for e in trace['events'] if e['type']=='contact']
+
+    def no_legacy_contact(self, trace):
+        """No contact point lies on legacy gray geometry (S06-S08) or on a converted v1 S05 piece."""
+        m = self.report()['manifest']
+        legacy = {e['id']:self.bounds_v3(e) for e in m['geometry']['elements']
+                  if e['id'].split('-')[0] in ('S06','S07','S08') or e['id'] in V1_S05_DISPOSITION}
+        hits = sorted({k for e in self.contacts(trace) for k, b in legacy.items()
+                       if b['left']-1 <= e['contact']['x'] <= b['right']+1 and b['top']-1 <= e['contact']['y'] <= b['bottom']+1})
+        self.assertEqual(hits, [])
+        return dict(legacy_contact_points=hits, contact_events=len(self.contacts(trace)))
+
+    def s05_03_checks(self, trace, players, mech):
+        self.assertTrue(self.inside(players[self.S05_02_TICKS], self.S05_02_EXIT), players[self.S05_02_TICKS])
+        baffle = next(e for e in mech if e['type']=='bounce' and e['element']=='S05-baffle')
+        acq = next(e for e in mech if e['type']=='acquisition' and e['element']=='S05-pull-hook')
+        release = next(e for e in mech if e['type']=='release' and e['element']=='S05-pull-hook')
+        self.assertTrue(baffle['tick'] < self.PULL_PRESS < acq['tick'] < release['tick'] == self.PULL_RELEASE)
+        launch = players[self.PULL_PRESS]
+        self.assertEqual((round(launch['x'],1), round(launch['y'],1)), (4078.6, -10145.9))
+        # Caught while still flying west off the baffle.
+        self.assertLess(players[acq['tick']]['speedX'], -3)
+        swing = range(acq['tick'], release['tick']+1)
+        turn = min(swing, key=lambda t: players[t]['x'])
+        low = max(swing, key=lambda t: players[t]['y'])
+        self.assertTrue(players[turn]['x'] < self.CATCH_DECK['left'] and abs(players[turn]['speedX']) < .1, players[turn])
+        # The return passes under the catch deck going east.
+        under = [t for t in range(turn, release['tick']) if self.CATCH_DECK['left'] <= players[t]['x'] <= self.CATCH_DECK['right']]
+        self.assertTrue(under and all(players[t]['y'] > self.CATCH_DECK['bottom'] + 1000 and players[t]['speedX'] > 1 for t in under))
+        # No contact at all while the rope is on the pull hook.
+        self.assertFalse([e for e in self.contacts(trace) if acq['tick'] <= e['tick'] <= release['tick']])
+        rel = players[release['tick']]
+        self.assertTrue(rel['speedX'] > 1.5 and rel['speedY'] < 0, rel)
+        self.assertTrue(self.inside(players[self.S05_03_TICKS], self.S05_03_EXIT), players[self.S05_03_TICKS])
+        reach = self.reach_s05(players, mech, self.PULL_PRESS, 'S05-pull-hook')
+        return dict(pull_acquisition_reach=reach, caught_flying_west=dict(tick=acq['tick'], player=players[acq['tick']]),
+            swing=dict(west_turn=dict(tick=turn, player=players[turn]), lowest=dict(tick=low, player=players[low]),
+                       under_catch_deck_ticks=[under[0], under[-1]], catch_deck=self.CATCH_DECK, contacts_on_rope=[]),
+            pull_release=dict(tick=release['tick'], player=rel))
+
+    def s05_04_checks(self, trace, players, mech, press=None, ticks=None):
+        """Exit-hook swing, release into S05-exit-drag, exit canopy, exit ledge landing and settle."""
+        press = press or self.EXIT_PRESS
+        ticks = ticks or len(players)-1
+        acq = next(e for e in mech if e['type']=='acquisition' and e['element']=='S05-exit-hook' and e['tick'] >= press)
+        release = next(e for e in mech if e['type']=='release' and e['element']=='S05-exit-hook' and e['tick'] > acq['tick'])
+        # The swing stays left of the exit pocket and touches nothing.
+        self.assertLess(max(players[t]['x'] for t in range(acq['tick'], release['tick']+1)), self.S05_EXIT_DRAG['left']-10.8)
+        self.assertFalse([e for e in self.contacts(trace) if acq['tick'] <= e['tick'] <= release['tick']])
+        entry = next(t for t in range(release['tick'], ticks+1) if self.in_box(players[t], self.S05_EXIT_DRAG))
+        self.assertTrue(all(self.in_box(players[t], self.S05_EXIT_DRAG) for t in range(entry, ticks+1)))
+        before = players[entry-1]
+        self.assertGreater(before['speedX'], 0); self.assertLess(before['speedY'], 0)
+        ratios = [players[t+1]['speedX']/players[t]['speedX'] for t in range(entry, entry+6) if abs(players[t]['speedX']) > 1e-9]
+        canopy = [e for e in mech if e['type']=='bounce' and e['element']=='S05-exit-canopy' and e['tick'] > release['tick']]
+        ledge = [e for e in mech if e['type']=='bounce' and e['element']=='S05-exit-ledge' and e['tick'] > release['tick']]
+        self.assertTrue(ledge)
+        land = ledge[0]
+        if canopy:
+            c = next(e for e in trace['events'] if e['type']=='bounce' and e['tick']==canopy[0]['tick'])
+            cb, ca = c['before']['simulation']['player'], c['after']['simulation']['player']
+            self.assertLess(cb['speedY'], 0); self.assertGreater(ca['speedY'], 0)
+            self.assertLess(canopy[0]['tick'], land['tick'])
+            canopy_out = dict(tick=canopy[0]['tick'], before=cb, after=ca)
+        else:
+            canopy_out = None
+        settle = next(t for t in range(land['tick'], ticks+1) if all(self.inside(players[u], self.S05_04_EXIT) for u in range(t, ticks+1)))
+        tail = players[settle:ticks+1]
+        reach = self.reach_s05(players, mech, press, 'S05-exit-hook') if press == self.EXIT_PRESS else None
+        return dict(exit_hook_acquisition_reach=reach, exit_hook_acquisition_tick=acq['tick'],
+            exit_hook_release=dict(tick=release['tick'], player=release['player']),
+            swing_max_x=max(players[t]['x'] for t in range(acq['tick'], release['tick']+1)),
+            exit_drag_entry=dict(tick=entry, before=before, at_entry=players[entry], per_tick_vx_ratio=ratios),
+            exit_canopy_bounce=canopy_out, exit_ledge_landing=dict(tick=land['tick'], player=land['player']), ledge_bounces=len(ledge),
+            section_exit=dict(element='S05-exit-ledge', drag_zone='S05-exit-drag', settle_tick=settle, settled_ticks=len(tail),
+                settled_y_range=[min(p['y'] for p in tail), max(p['y'] for p in tail)],
+                settled_max_abs_speedY=max(abs(p['speedY']) for p in tail), settled_max_abs_speedX=max(abs(p['speedX']) for p in tail),
+                rest=players[ticks], settle_box=self.S05_04_EXIT, inside_exit_drag=True))
+
+    def test_06_s05_03_nominal(self):
+        plan = self.S05_01_V3+self.S05_02_V3+self.S05_03_V3
+        trace, players, mech, result = self.run_s05('S05-03', plan, self.S05_03_TICKS, self.S05_03_EXIT)
+        self.assertEqual(self.s05_kinds(mech), [('acquisition','S05-hoist'),('release','S05-hoist'),('bounce','S05-canopy'),
+            ('bounce','S05-deflector'),('acquisition','S05-lift'),('release','S05-lift'),('bounce','S05-baffle'),
+            ('acquisition','S05-pull-hook'),('release','S05-pull-hook')])
+        out = self.s05_03_checks(trace, players, mech)
+        touched = self.no_legacy_contact(trace)
+        result.update(encounter='S05-03', segmented_from='S05-02 exit at tick 405 of the same run (no further placement)',
+            s05_02_exit_at_tick_405=players[self.S05_02_TICKS], exit_judged_at_tick=self.S05_03_TICKS, contacts=touched, **out)
+        self.evidence.write('encounters/S05-03/result.json', result)
+        r = out['pull_acquisition_reach']
+        print('PASS S05-03: from the S05-02 exit at tick 405; green pull-hook acquisition', round(r['distance'],1), 'at tick',
+              r['acquisition_tick'], 'flying west (vx', round(out['caught_flying_west']['player']['speedX'],2), '); west turn at x',
+              round(out['swing']['west_turn']['player']['x'],1), 'tick', out['swing']['west_turn']['tick'], '; under the catch deck ticks',
+              out['swing']['under_catch_deck_ticks'], '; release', self.PULL_RELEASE, 'v', (round(out['pull_release']['player']['speedX'],2),
+              round(out['pull_release']['player']['speedY'],2)), '; final', {k:round(result['final'][k],2) for k in ('x','y','speedX','speedY')},
+              'in exit box; longest dull stretch', result['longest_stretch_without_mechanic_ticks'], '; identical replay; trusted input')
+
+    def test_07_s05_04_nominal(self):
+        trace, players, mech, result = self.run_s05('S05-04', self.S05_ROUTE_V3, self.S05_04_TICKS, self.S05_04_EXIT,
+                                                    density_until=self.S05_LAND_BY)
+        self.assertTrue(self.inside(players[self.S05_03_TICKS], self.S05_03_EXIT), players[self.S05_03_TICKS])
+        self.assertEqual(self.s05_kinds(mech)[9:13], [('acquisition','S05-exit-hook'),('release','S05-exit-hook'),
+            ('bounce','S05-exit-canopy'),('bounce','S05-exit-ledge')])
+        out = self.s05_04_checks(trace, players, mech)
+        self.assertIsNotNone(out['exit_canopy_bounce'])
+        self.assertLessEqual(out['exit_ledge_landing']['tick'], self.S05_LAND_BY)
+        touched = self.no_legacy_contact(trace)
+        result.update(encounter='S05-04', segmented_from='S05-03 exit (swing-release flight) at tick 655 of the same run (no further placement)',
+            s05_03_exit_at_tick_655=players[self.S05_03_TICKS], contacts=touched, **out)
+        self.evidence.write('encounters/S05-04/result.json', result)
+        r = out['exit_hook_acquisition_reach']
+        print('PASS S05-04: from the S05-03 flight at tick 655; green exit-hook acquisition', round(r['distance'],1), 'at tick',
+              r['acquisition_tick'], '; swing max x', round(out['swing_max_x'],1), '; release', out['exit_hook_release']['tick'],
+              '; enters S05-exit-drag at tick', out['exit_drag_entry']['tick'], 'vx ratio', [round(x,3) for x in out['exit_drag_entry']['per_tick_vx_ratio'][:3]],
+              '; green exit canopy bounce tick', out['exit_canopy_bounce']['tick'], '; green exit ledge landing tick', out['exit_ledge_landing']['tick'],
+              '; settled from tick', out['section_exit']['settle_tick'], 'at', {k:round(result['final'][k],3) for k in ('x','y','speedX','speedY')},
+              '; longest dull stretch', result['longest_stretch_without_mechanic_ticks'], 'until tick', self.S05_LAND_BY, '; identical replay; trusted input')
+
+    def test_08_full_traversal(self):
+        trace, players, mech, result = self.run_s05('S05-full', self.S05_ROUTE_V3, self.S05_FULL_TICKS, self.S05_04_EXIT,
+                                                    density_until=self.S05_LAND_BY)
+        self.assertEqual([e['element'] for e in mech if e['type']=='acquisition' and e['element'] != 'S04-exit-ledge'],
+                         ['S05-hoist','S05-lift','S05-pull-hook','S05-exit-hook'])
+        self.assertEqual([e['element'] for e in mech if e['type']=='bounce' and e['element'] != 'S04-exit-ledge'][:5],
+                         ['S05-canopy','S05-deflector','S05-baffle','S05-exit-canopy','S05-exit-ledge'])
+        exits = {}
+        for name, tick, bounds in (('S05-01',self.S05_01_TICKS,self.S05_01_EXIT),('S05-02',self.S05_02_TICKS,self.S05_02_EXIT),
+                                   ('S05-03',self.S05_03_TICKS,self.S05_03_EXIT)):
+            self.assertTrue(self.inside(players[tick], bounds), (name, players[tick]))
+            exits[name] = dict(tick=tick, player=players[tick], box=bounds)
+        s3 = self.s05_03_checks(trace, players, mech)
+        s4 = self.s05_04_checks(trace, players, mech)
+        exits['S05-04'] = dict(tick=s4['section_exit']['settle_tick'], player=players[s4['section_exit']['settle_tick']], box=self.S05_04_EXIT)
+        touched = self.no_legacy_contact(trace)
+        reaches = [self.reach_s05(players, mech, t, el) for t, el in ((5,'S05-hoist'),(304,'S05-lift'),(self.PULL_PRESS,'S05-pull-hook'),(self.EXIT_PRESS,'S05-exit-hook'))]
+        result.update(encounter='S05 full traversal', encounter_exits=exits, s05_03=s3, s05_04=s4, section_exit=s4['section_exit'],
+            section_exit_reached=True, settled_at_section_exit=True, contacts=touched, reaches=reaches)
+        self.evidence.write('encounters/S05-full/result.json', result)
+        if self.evidence.path('rules.json').exists():
+            rules = json.loads(self.evidence.path('rules.json').read_text())
+            rules.setdefault('trace_measured_reach', {}).update({x['element']:x for x in reaches})
+            self.evidence.write('rules.json', rules)
+        print('PASS full S05: from the real S04 v3 exit pose; exits', {k:v['tick'] for k, v in exits.items()}, '; reaches',
+              [round(x['distance'],1) for x in reaches], '; exit ledge landing tick', s4['exit_ledge_landing']['tick'], '; settled from tick',
+              s4['section_exit']['settle_tick'], 'for', s4['section_exit']['settled_ticks'], 'ticks at',
+              {k:round(players[-1][k],3) for k in ('x','y','speedX','speedY')}, 'inside S05-exit-drag; longest dull stretch',
+              result['longest_stretch_without_mechanic_ticks'], '; identical replay; trusted input')
+
+    def test_09_fall_through_drag_and_rejoin(self):
+        trace, players, mech, result = self.run_s05('S05-01-shorter', self.FALL_S05, self.FALL_S05_TICKS, self.S05_04_EXIT,
+                                                    density_until=self.SHORT_RELEASE, folder='falls')
+        release = next(e for e in mech if e['type']=='release' and e['element']=='S05-hoist')
+        self.assertEqual(release['tick'], self.SHORT_RELEASE)
+        rel = players[self.SHORT_RELEASE]
+        ledge = [e for e in mech if e['type']=='bounce' and e['element']=='S04-exit-ledge' and release['tick'] < e['tick'] < self.REJOIN_TICK]
+        self.assertTrue(ledge)
+        land = ledge[0]['tick']
+        # Nothing but the S04 exit ledge is touched between the release and the rejoin.
+        self.assertFalse([e for e in mech if release['tick'] < e['tick'] < self.REJOIN_TICK and e['element'] != 'S04-exit-ledge'])
+        self.assertFalse([e for e in self.contacts(trace) if release['tick'] < e['tick'] < self.REJOIN_TICK
+                          and not (1340 <= e['contact']['x'] <= 1750 and abs(e['contact']['y'] + 11650) < 2)])
+        apex_tick = min(range(release['tick'], land), key=lambda t: players[t]['y'])
+        apex = players[apex_tick]
+        drag = self.S04_EXIT_DRAG
+        # The rise leaves S04-exit-drag above its top; the drop re-enters it and stays inside to the ledge.
+        self.assertLess(apex['y'], drag['top'])
+        ticks = [t for t in range(apex_tick, land+1) if self.in_box(players[t], drag)]
+        entry, leave = ticks[0], ticks[-1]
+        self.assertEqual(ticks, list(range(entry, land+1)))
+        before, inside_last = players[entry-1], players[leave]
+        self.assertFalse(self.in_box(before, drag)); self.assertGreater(before['speedY'], 0)
+        ratios = [players[t+1]['speedX']/players[t]['speedX'] for t in range(entry, leave) if abs(players[t]['speedX']) > 1e-9][:8]
+        self.assertTrue(ratios and all(abs(x-.8) < 1e-9 for x in ratios), ratios)
+        vdamp = [players[t+1]['speedY']-players[t]['speedY']*.985 for t in range(entry, leave)][:8]
+        contact = next(e for e in trace['events'] if e['type']=='bounce' and e['tick']==land)
+        at_ledge = contact['before']['simulation']['player']
+        self.assertLess(abs(at_ledge['speedX']), max(abs(before['speedX'])*.01, 1e-6))
+        self.assertLess(at_ledge['speedY'], before['speedY'] + 1)
+        rest_y = ledge[0]['player']['y']
+        fall_height = rest_y - apex['y']
+        self.assertGreater(fall_height, 50)
+        peaks = []
+        for a, b in zip(ledge, ledge[1:]+[None]):
+            end = b['tick'] if b else self.REJOIN_TICK
+            top = min(range(a['tick'], end), key=lambda t: players[t]['y'])
+            peaks.append(dict(bounce_tick=a['tick'], bounce_speedY=a['player']['speedY'], peak_tick=top,
+                              peak_y=players[top]['y'], height=rest_y-players[top]['y'], fraction=(rest_y-players[top]['y'])/fall_height))
+        self.assertLessEqual(peaks[0]['fraction'], .5)
+        self.assertTrue(all(p['peak_y'] > rel['y'] for p in peaks))
+        # Settled on the green S04 exit ledge inside S04-exit-drag before the rejoin press.
+        window = players[self.REJOIN_TICK-100:self.REJOIN_TICK]
+        self.assertTrue(all(self.inside(p, self.SHORTER_SETTLE) and self.in_box(p, drag) for p in window))
+        rejoin_inputs = [i for i in result['inputs'] if i['tick'] >= self.REJOIN_TICK]
+        self.assertEqual(len(rejoin_inputs), len(self.REJOIN_S05))
+        self.assertEqual(trace['metadata']['setupOnlySpawns'], [])
+        after_rejoin = [e for e in mech if e['tick'] >= self.REJOIN_TICK]
+        self.assertEqual([e['element'] for e in after_rejoin if e['type']=='acquisition' and e['element'] != 'S04-exit-ledge'],
+                         ['S04-exit-hook','S05-hoist','S05-lift','S05-pull-hook','S05-exit-hook'])
+        for el in ('S05-canopy','S05-deflector','S05-baffle'):
+            self.assertIn(('bounce', el), [(e['type'], e['element']) for e in after_rejoin])
+        # The tug leaves the player settled back on the ledge near the nominal S05-01 start before the hoist press.
+        stepped = players[1444]
+        self.assertTrue(self.in_box(stepped, drag) and abs(stepped['x'] - 1387.9) < 5 and abs(stepped['speedX']) < .001, stepped)
+        s4 = self.s05_04_checks(trace, players, mech, press=self.REJOIN_EXIT_PRESS)
+        fall = dict(scenario='naturally mistimed S05-01 release: blue hoist held %d ticks short (released at tick %d instead of %d); '
+                             % (150-self.SHORT_RELEASE, self.SHORT_RELEASE, 150) +
+                             'the rise tops out above S04-exit-drag and the player falls physically; no relocation after the labeled S04 v3 exit start placement',
+            release=dict(tick=release['tick'], element='S05-hoist', nominal_release_tick=150, player=rel, release_height_y=rel['y']),
+            fall_point=dict(id='S05-01-short (declared column x 1560; this shorter hold drops at x %.1f, same drag zone and bouncer)' % apex['x'],
+                            declared_x=1560, declared_y=-12070, apex_x=apex['x'], landing_x=at_ledge['x']),
+            apex=dict(tick=apex_tick, player=apex), fall_height=fall_height,
+            fall_height_definition='S04 exit ledge bounce rest y minus the apex y after the release',
+            drag_zone=dict(id='S04-exit-drag', box=drag, entry_tick=entry, last_tick_inside_before_landing=leave,
+                before=dict(tick=entry-1, x=before['x'], y=before['y'], speedX=before['speedX'], speedY=before['speedY']),
+                after=dict(tick=land, x=at_ledge['x'], y=at_ledge['y'], speedX=at_ledge['speedX'], speedY=at_ledge['speedY'],
+                           note='player state just before the ledge bounce, after crossing the drag zone'),
+                per_tick_vx_ratio_airborne=ratios, vertical_damping_per_tick=0.985,
+                vy_minus_damped_previous_vy_first_ticks=vdamp),
+            s04_bouncer=dict(element='S04-exit-ledge', route='S04-04 exit ledge (S04 route bouncer, the S04 section exit)', first_bounce_tick=land,
+                rest_y=rest_y, inside='S04-exit-drag'),
+            bounce_peaks=peaks[:8], bounce_count=len(peaks), first_peak_fraction=peaks[0]['fraction'], first_peak_at_most_half=True,
+            never_back_to_release_height=True,
+            settled=dict(window=[self.REJOIN_TICK-100, self.REJOIN_TICK-1], box=self.SHORTER_SETTLE,
+                max_abs_speedX=max(abs(p['speedX']) for p in window), max_abs_speedY=max(abs(p['speedY']) for p in window),
+                y_range=[min(p['y'] for p in window), max(p['y'] for p in window)], inside_drag_zone='S04-exit-drag', on='S04-exit-ledge'),
+            rejoin=dict(input_only=True, setup_spawns=trace['metadata']['setupOnlySpawns'], inputs=rejoin_inputs,
+                start_tick=self.REJOIN_TICK, mover_periods_after_start=self.REJOIN_TICK//240,
+                step_back=dict(element='S04-exit-hook', press=960, release=1065, settled_at_tick_1444=stepped, nominal_start_x=1387.9),
+                mechanics=[{k:e[k] for k in ('tick','type','element','player')} for e in after_rejoin
+                           if e['type'] != 'contact' and e['element'] != 'S04-exit-ledge'],
+                s05_04=s4, final=players[-1], encounter_rejoined='S05-01 (the section start) through the S05 exit ledge', exit_box=self.S05_04_EXIT))
+        result.update(fall)
+        self.evidence.write('falls/S05-01-shorter/result.json', result)
+        self.evidence.write('fall.json', dict(self.proof, **result))
+        print('PASS fall: mistimed hoist release tick', self.SHORT_RELEASE, 'at y', round(rel['y'],1), '; apex', round(apex['y'],1),
+              '; S04-exit-drag vx/vy', round(before['speedX'],4), round(before['speedY'],3), '->', round(at_ledge['speedX'],6),
+              round(at_ledge['speedY'],3), '; S04 exit ledge bounce peaks', [round(p['fraction'],3) for p in peaks[:5]], 'of',
+              round(fall_height,1), '; settled at x', round(window[-1]['x'],1), '; input-only rejoin from tick', self.REJOIN_TICK,
+              ': stepped back to x', round(stepped['x'],1), '; acquisitions',
+              [e['element'] for e in after_rejoin if e['type']=='acquisition' and e['element'] != 'S04-exit-ledge'],
+              '; settled on the S05 exit ledge from tick', s4['section_exit']['settle_tick'])
+        # The declared S05-03/04 fall points, each from the same labeled start.
+        out = {}
+        trace, players, mech, result = self.run_s05('S05-03-missed', self.S05_03_MISSED, 2400, self.BASIN_SETTLE,
+                                                    density_until=self.S05_02_TICKS, folder='falls')
+        self.assertNotIn('S05-pull-hook', [e['element'] for e in mech if e['type']=='acquisition'])
+        baffle = next(e['tick'] for e in mech if e['element']=='S05-baffle')
+        edge = [e['tick'] for e in self.contacts(trace) if e['contact']['x'] == 0]
+        self.assertTrue(edge)
+        out['S05-03-missed'] = self.fall_s03(trace, players, mech, baffle, 'S04-catch-basin', self.S04_FALL_DRAG, self.BASIN_SETTLE)
+        out['S05-03-missed']['left_map_edge_first_contact'] = dict(tick=edge[0], player=players[edge[0]])
+        self.assertLessEqual(players[edge[0]]['y'], -8000+20)
+        trace, players, mech, result = self.run_s05('S05-04-early', self.S05_04_EARLY, self.S05_04_TICKS, self.S05_04_EXIT,
+                                                    density_until=self.S05_LAND_BY, folder='falls')
+        out['S05-04-early'] = self.fall_s03(trace, players, mech, self.EXIT_RELEASE-40, 'S05-exit-ledge', self.S05_EXIT_DRAG, self.S05_04_EXIT)
+        for k, v in out.items():
+            # Every drop starts at its apex on (or above) the declared fall point.
+            self.assertLessEqual(v['apex']['player']['y'], {'S05-03-missed':-8000,'S05-04-early':-9960}[k]+1)
+            v['declared_fall_point'] = {'S05-03-missed':(30,-8000),'S05-04-early':(6200,-9960)}[k]
+        self.evidence.write('falls/s05_03_04_result.json', dict(self.proof, passed=True, falls=out,
+            note='each declared S05-03/04 fall point is exercised from the labeled real S04 v3 exit pose; the player crosses the drag zone, '
+                 'lands on the green bouncer, rebounds to at most half the drop (never back to the release height) and settles'))
+        for k, v in out.items():
+            print('PASS fall', k, ': apex', round(v['apex']['player']['y'],1), '; drag', v['drag_zone'], 'entry tick', v['drag_entry_tick'],
+                  '; lands on', v['landing']['element'], 'at tick', v['landing']['tick'], '; first rebound / drop', round(v['first_rebound_over_drop'],3),
+                  '; settled from tick', v['settled_from_tick'])
+
+    def test_10_s05_03_04_not_crossable_at_1080(self):
+        """Negative control at the base 1080 range from the nominal S05-03/04 press states.
+
+        S05-03 (press pose y -10146, above the S05 band): the pull hook is never acquired. S05-04 (press pose
+        y -8040, inside the S05 band, which is the TASK-502 upgrade trigger in physics.js): the game re-grants
+        the 1620 range before the throw lands, so the base range cannot occur there; the run records that, and
+        the 1080 claim for S05-04 rests on test_01 (nearest exit-hook point 1428.7 from the press pose).
+        """
+        out = {}
+        band = self.report()['manifest']['sections'][4]['band']
+        for name, anchor, plan, tick, box, press in (
+                ('S05-03', 'S05-pull-hook', self.S05_01_V3+self.S05_02_V3, self.PULL_PRESS, self.S05_02_AT_410,
+                 [(0,'mousedown',*self.PULL_V3),(200,'mouseup',*self.PULL_V3)]),
+                ('S05-04', 'S05-exit-hook', self.S05_01_V3+self.S05_02_V3+self.S05_03_V3, self.EXIT_PRESS, self.S05_03_EXIT,
+                 [(0,'mousedown',*self.EXIT_HOOK_V3),(120,'mouseup',*self.EXIT_HOOK_V3)])):
+            nominal = self.run_s05(name+'-to-%d' % tick, plan, tick, box, folder='negative', density_until=0)[0]
+            mid = dict(nominal['snapshots'][tick]['state']['simulation']); mid['upgrades'] = dict(mid['upgrades'], range=False)
+            label = 'NEGATIVE CONTROL: the nominal %s press state at tick %d with upgrades.range set to false (base 1080 range)' % (name, tick)
+            trace, players, mech, result = self.run_s05(name+'-range1080', press, 240, dict(x=[0,6480], y=[-13500,180], speedX=[-30,30], speedY=[-30,30]),
+                                                        folder='negative', density_until=0, start=mid, start_label=label)
+            acquired = [dict(tick=e['tick'], element=e['element'], anchor=e['rope'][0]) for e in mech if e['type']=='acquisition']
+            ranges = [snap['state']['simulation']['upgrades']['range'] for snap in trace['snapshots']]
+            upgraded = next((t for t, r in enumerate(ranges) if r), None)
+            in_band = band['top'] <= mid['player']['y'] <= band['bottom']
+            hit = [a for a in acquired if a['element'] == anchor]
+            if name == 'S05-03':
+                # Above the band: the press and the whole throw stay at the base range and the pull hook is out of reach.
+                # (The throw instead catches the near corner of the green catch deck; that swing drops into the band,
+                # so the upgrade is re-earned later in the run.)
+                self.assertFalse(in_band)
+                self.assertFalse(any(ranges[:21]), ranges[:21])
+                self.assertEqual(hit, [], mech)
+                self.assertFalse([e for e in mech if e['element'] in ('S05-exit-hook','S05-exit-canopy','S05-exit-ledge')], mech)
+                self.assertFalse(any(self.in_box(p, self.S05_EXIT_DRAG) for p in players))
+            else:
+                # Inside the band: the range is re-granted before the exit-hook acquisition, so that catch is a 1620 catch.
+                self.assertTrue(in_band)
+                self.assertTrue(hit and upgraded is not None and upgraded <= hit[0]['tick'], (upgraded, acquired))
+            out[name] = dict(start=label, press_pose=mid['player'], press_pose_inside_s05_upgrade_band=in_band, s05_band=band,
+                             gap_anchor=anchor, gap_anchor_acquired=bool(hit), acquisitions=acquired, range_reearned_at_tick=upgraded,
+                             range_false_through_throw=not any(ranges[:21]), final=players[-1],
+                             exit_pocket_reached=any(self.in_box(p, self.S05_EXIT_DRAG) for p in players))
+        out['S05-04']['note'] = ('the S05-04 press pose lies inside the S05 band, the TASK-502 upgrade trigger (physics.js): the game re-grants 1620 at tick %s, '
+                                 'before the exit-hook catch, so a base-range S05-04 press cannot occur; its 1080 non-crossability is the geometric '
+                                 'nearest-point check in rules.json (gaps_not_crossable_at_1080)' % out['S05-04']['range_reearned_at_tick'])
+        self.evidence.write('negative/s05_03_04_result.json', dict(self.proof, passed=True, range_1080=out,
+            note='S05-03: with the base range the pull-hook shot falls short (gap anchor never acquired, exit pocket never reached). '
+                 'S05-04: see range_1080.S05-04.note'))
+        print('PASS 1080 negative control: S05-03 pull hook not acquired at the base range (other acquisitions',
+              [a['element'] for a in out['S05-03']['acquisitions']], ', range false through the throw, exit pocket not reached); '
+              'S05-04 press pose inside the S05 upgrade band: range re-granted at tick', out['S05-04']['range_reearned_at_tick'],
+              'before the exit-hook catch at tick', [a['tick'] for a in out['S05-04']['acquisitions']], '(1080 claim = test_01 nearest point)')
 
 
 class Task544Tests(unittest.TestCase):
@@ -8398,3 +8794,15 @@ class Task517Tests(GalleriesV3Checks, unittest.TestCase):
     setUpClass = classmethod(Task465Tests.setUpClass.__func__)
     open = Task465Tests.open
     test_06_source_hashes = Task465Tests.test_03_source_hashes
+
+
+class Task518Tests(GalleriesV3CompleteChecks, unittest.TestCase):
+    """Layout-v3 Cable Galleries complete (S05-01..04, exit and fall recovery) from the real S04 v3 exit settled pose, with real input.
+
+    test_01-05 are the shared GalleriesV3Checks cases (geometry and rules now judge the completed section);
+    test_06-10 are the S05-03, S05-04, full-traversal, fall/rejoin and 1080 negative-control cases.
+    """
+    task_id = 'TASK-518'
+    setUpClass = classmethod(Task465Tests.setUpClass.__func__)
+    open = Task465Tests.open
+    test_11_source_hashes = Task465Tests.test_03_source_hashes

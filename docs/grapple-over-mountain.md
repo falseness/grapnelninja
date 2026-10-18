@@ -34,7 +34,12 @@ pulled at about 33 degrees from the left map edge). S05 is layout v3 too
 (TASK-517) at the 1620 range: from the S04 exit ledge, S05-01/02 travel right
 through a blue hoist, a green canopy that turns the rise into a drop, an angled
 green deflector that throws the player under the legacy S08 spill deck, a blue
-lift caught in flight and a green baffle; S05-03/04 are planned again. Other sections keep their own build status; both optional
+lift caught in flight and a green baffle. TASK-518 completed S05: S05-03 catches a
+green pull hook below the baffle foot while flying west and swings west and back
+east under the catch deck; S05-04 swings from a green exit hook up-right past the
+legacy Liftworks exit and releases into an exit drag zone, where a green exit
+canopy turns the rise into a drop onto the green exit ledge against the right map
+edge. The S06 entrance stays planned until S06 is rebuilt. Other sections keep their own build status; both optional
 shortcuts are planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and

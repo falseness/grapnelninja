@@ -478,15 +478,21 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     for (let i=13;i<16;i++) connectors[i].status='built';
     Object.assign(recoveries[3], {status:'built',elements:['S04-fall-drag','S04-catch-basin','S04-exit-drag','S04-exit-ledge','S03-exit-drag','S03-exit-ledge'],
         rejoin:'S04-01',sideRoute:'Every declared S04 miss falls through a drag zone onto a green bouncer and settles: short or late hoist holds on the green S03 exit ledge, from which the S04-01 hoist pull rejoins the route; missed lift, crest-hook and exit-hook catches down the left map edge onto the green catch basin; an exit-hook overshoot on the green S04 exit ledge'});
-    // Cable Galleries v3 (layout v3, TASK-517): no gray pads. Travelling right from the green S04
+    // Cable Galleries v3 (layout v3, TASK-517/518): no gray pads. Travelling right from the green S04
     // exit ledge (inside S04-exit-drag) at the 1620-range distances (the range upgrade is already held:
     // the S03 route climbs through the S05 band), under the legacy S08 spill deck and left of the legacy
     // S07 rooftop. S05-01: pull the blue hoist up-right out of the exit drag zone, release under the
     // green gallery canopy (it turns the rise into a drop) and fall onto the angled green deflector,
     // which throws the flight right under the spill deck. S05-02: catch the blue lift in flight, swing
     // under it and release into the green gallery baffle, which rebounds the flight back west.
-    // S05-03/04 stay planned. A short hoist hold drops back into the S04 exit drag zone onto the S04
-    // exit ledge; a missed lift catch falls through the fall drag zone onto the green catch deck.
+    // S05-03: catch the green pull hook east of the baffle foot while flying west; the long swing runs
+    // west under the catch deck and back east, released on the upswing. S05-04: catch the green exit
+    // hook from that flight, swing up-right past the legacy S06 exit and release into the exit drag
+    // zone, where the green exit canopy turns the rise into a drop onto the green exit ledge.
+    // A short hoist hold drops back into the S04 exit drag zone onto the S04 exit ledge; a missed lift
+    // catch falls through the fall drag zone onto the green catch deck; a missed pull-hook catch flies
+    // into the left map edge and drops through S04-fall-drag onto the green S04 catch basin; an early
+    // exit-hook release still settles in the exit drag zone.
     const galleries = [
         rectangle('S05-hoist',2490,-12470,120,30,true),
         // The canopy sits right of the hoist rope (the rope passes under its right end at the release).
@@ -496,6 +502,13 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         rectangle('S05-lift',3800,-10870,120,30,true),
         bouncer('S05-baffle',4500,-10980,30,930),
         bouncer('S05-catch-deck',3800,-9500,600,40),
+        // Under the baffle foot, left of the legacy S07 rest ledge: the rope passes below the baffle.
+        bouncer('S05-pull-hook',5220,-9320,90,30),
+        bouncer('S05-exit-hook',4950,-9100,60,25),
+        // Exit pocket against the right map edge, above the legacy S06 transfer head; the exit-hook
+        // swing stays left of it (x <= 6080).
+        bouncer('S05-exit-canopy',6100,-10030,370,30),
+        bouncer('S05-exit-ledge',6100,-9420,370,30),
         // Legacy v1 Cable Galleries pieces still named by the v1 Liftworks/Crown (the S06-01 start deck and
         // their recovery colliders), converted to green in place; no v3 S05 route uses them.
         {id:'S05-projecting-girder',x:4650,y:-6800,role:'bounce',grapplable:true,
@@ -506,26 +519,36 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             points:[{x:0,y:0},{x:230,y:0},{x:230,y:-25},{x:270,y:-25},{x:270,y:190},{x:210,y:190},{x:210,y:55},{x:65,y:55},{x:65,y:120},{x:0,y:120}]},
         {...rest('S05-exit',6200,-8070,240), role:'bounce', points:[{x:0,y:0},{x:200,y:0},{x:200,y:-20},{x:240,y:-20},{x:240,y:55},{x:0,y:55}]}
     ];
-    // The fall drag zone holds the catch deck; only the S05-02 missed line drops through it.
+    // The fall drag zone holds the catch deck; only the S05-02 missed line drops through it. The exit
+    // drag zone fills the exit pocket between the exit canopy and the exit ledge.
     const galleriesDrags = [{id:'S05-fall-drag',x:3800,y:-9900,role:'drag',grapplable:false,
-        points:[{x:0,y:0},{x:600,y:0},{x:600,y:400},{x:0,y:400}]}];
+        points:[{x:0,y:0},{x:600,y:0},{x:600,y:400},{x:0,y:400}]},
+        {id:'S05-exit-drag',x:6100,y:-9990,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:380,y:0},{x:380,y:570},{x:0,y:570}]}];
     const galleriesMovers = [
         {id:'S05-hoist-travel',element:'S05-hoist',axis:'x',min:2490,max:2610,periodMs:4000,phase:0,velocity:60},
         {id:'S05-lift-travel',element:'S05-lift',axis:'x',min:3800,max:3920,periodMs:4000,phase:0,velocity:60}];
-    Object.assign(sections[4], {status:'partial', designVersion:3, landmark:{id:'S05-landmark',
+    Object.assign(sections[4], {status:'built', designVersion:3, landmark:{id:'S05-landmark',
         name:'projecting beams and deep overhangs',x:3000,y:-10900},
         band:{...sections[4].band, top:-9720},
         // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
         gaps:[{id:'S05-01-hoist',from:{x:1387.9,y:-11660.9},to:{x:2566.6,y:-12469.7}},
             // Caught in flight just after the deflector bounce.
-            {id:'S05-02-lift',from:{x:2511.7,y:-10905.2},to:{x:3904.5,y:-10853.5}}],
+            {id:'S05-02-lift',from:{x:2511.7,y:-10905.2},to:{x:3904.5,y:-10853.5}},
+            // Caught in flight after the baffle rebound; then from the swing release.
+            {id:'S05-03-pull',from:{x:4078.6,y:-10145.9},to:{x:5248,y:-9320}},
+            {id:'S05-04-exit',from:{x:3965.2,y:-8039.9},to:{x:4965.2,y:-9075}}],
         // Declared miss points: a short hoist hold drops from its apex back into S04-exit-drag onto the
         // green S04 exit ledge; a missed lift catch carries the deflector throw down through S05-fall-drag
-        // onto the green catch deck.
+        // onto the green catch deck; a missed pull-hook catch carries the baffle rebound into the left map
+        // edge and drops along it through S04-fall-drag onto the green S04 catch basin; an early exit-hook
+        // release drops from the exit canopy through S05-exit-drag onto the green exit ledge.
         fallPoints:[{id:'S05-01-short',encounter:'S05-01',x:1560,y:-12070},
-            {id:'S05-02-missed',encounter:'S05-02',x:3850,y:-10000}]});
+            {id:'S05-02-missed',encounter:'S05-02',x:3850,y:-10000},
+            {id:'S05-03-missed',encounter:'S05-03',x:30,y:-8000},
+            {id:'S05-04-early',encounter:'S05-04',x:6200,y:-9960}]});
     // Encounter nodes sit inside the band (y >= -9720): S05-01 below the S06-04 node (S06-fall rejoins
-    // S05-01) and the planned S05-04 above the S04-01 node (S05-fall rejoins S04-01); the route runs above.
+    // S05-01) and S05-04 above the S04-01 node (S05-fall rejoins S04-01); the route runs above.
     Object.assign(encounters[16], {status:'built',x:1388,y:-8000,
         elements:['S04-exit-ledge','S05-hoist','S05-canopy','S05-deflector'],
         start:{x:1387.9,y:-11660.9,from:'S04-04'},target:{x:2548,y:-12456.9},
@@ -536,10 +559,20 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S05-01',x:2511.7,y:-10905.2},target:{x:3860,y:-10855.2},
         exit:{left:4050,right:4300,top:-10250,bottom:-10120},
         action:'On the deflector throw, catch the blue lift, swing under the spill deck and rebound off the green gallery baffle'});
-    Object.assign(encounters[18], {x:4400,y:-9720});
-    Object.assign(encounters[19], {x:5800,y:-9720});
+    Object.assign(encounters[18], {status:'built',x:4400,y:-9720,
+        elements:['S05-baffle','S05-pull-hook'],
+        start:{from:'S05-02',x:4078.6,y:-10145.9},target:{x:5265,y:-9305},
+        exit:{left:3900,right:4030,top:-8100,bottom:-7980},
+        action:'Flying west off the baffle, catch the green pull hook below its foot, swing west under the catch deck and back east, release on the upswing'});
+    Object.assign(encounters[19], {status:'built',x:5800,y:-9720,
+        elements:['S05-exit-hook','S05-exit-canopy','S05-exit-ledge'],
+        start:{from:'S05-03',x:3965.2,y:-8039.9},target:{x:4980,y:-9087.5},
+        exit:{left:6100,right:6470,top:-9460,bottom:-9420},
+        action:'Catch the green exit hook from the swing release, swing up-right past the Liftworks exit and release into the exit drag zone under the green exit canopy; settle on the green exit ledge'});
     Object.assign(connectors[16], {status:'built',intent:'Physical ascent: the S05-01 hoist pull starts on the v3 Works exit ledge'});
-    connectors[17].status='built';
+    for (let i=17;i<20;i++) connectors[i].status='built';
+    Object.assign(recoveries[4], {status:'built',elements:['S04-exit-drag','S04-exit-ledge','S05-fall-drag','S05-catch-deck','S04-fall-drag','S04-catch-basin','S05-exit-drag','S05-exit-ledge'],
+        rejoin:'S05-01',sideRoute:'Every declared S05 miss falls through a drag zone onto a green bouncer and settles: a short hoist hold on the green S04 exit ledge, from which the S05-01 hoist pull rejoins the route; a missed lift catch on the green catch deck; a missed pull-hook catch down the left map edge onto the green S04 catch basin; an early exit-hook release on the green exit ledge'});
     // Liftworks opening: a travelling counterweight over a wide loading floor.
     // The open western edge drops onto the existing Galleries ceiling/recovery rests.
     const liftworks = [
