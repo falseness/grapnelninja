@@ -17,17 +17,17 @@ Per frame the largest |v| = hypot(speedX, speedY) is taken over every
 sub-step of Ninja.move (the speed at each collision() call, i.e. the speed
 the ninja just moved with) and after physics() (after the grapple pull).
 
-- momentum: max |v| <= the effective cap + 1e-6 on all 1200 frames; the cap is
+- momentum: max |v| <= the effective cap + 1e-6 on all 800 frames; the cap is
   reached; >= 4 approaching bounces (the bound was 5 before TASK-030 widened the shafts:
   the forcing reaches their walls less often); same ninja (no death/restart);
 - bad: the same forcing reaches |speedX| > the effective cap (bad keeps only
   its vertical cap) and |speedY| stays within that vertical cap;
-- the effective cap is 0.1875 * 0.006867 * height: GAMEPLAY.momentumMaxSpeed
+- the effective cap is 0.28125 * 0.006867 * height: GAMEPLAY.momentumMaxSpeed
   0.375 * 0.006867 * height (TASK-029 halved the 1.5x cap, TASK-047 halved
-  it again) times GAMEPLAY.momentumTimeScale 0.5 (TASK-073 slow motion), and
-  / the bad cruise median
+  it again) times GAMEPLAY.momentumTimeScale 0.75 (TASK-073 slow motion 0.5,
+  sped up 1.5x by TASK-081), and / the bad cruise median
   (BAD_CRUISE_JSON, default artifacts/TASK-007/bad-cruise.json) is in
-  [0.1625, 0.2125] (TASK-047's [0.325, 0.425] x 0.5);
+  TASK-047's [0.325, 0.425] x momentumTimeScale ([0.24375, 0.31875]);
 - control: the momentum forcing with Ninja.limitMomentumSpeed stubbed out
   goes past 1.2x the limit (the forcing does push past the cap).
 
@@ -141,7 +141,7 @@ class MomentumSpeedTests(unittest.TestCase):
     def test_momentum_never_exceeds_limit(self):
         run = self.runs['momentum']
         self.assertEqual(run['version'], 'momentum')
-        self.assertEqual(run['s'], 0.5)
+        self.assertEqual(run['s'], 0.75)
         self.assertEqual(len(run['rows']), round(FRAMES / run['s']))
         over = [r for r in run['rows'] if r[1] > self.limit + TOLERANCE]
         self.assertEqual(over, [], 'frames over the effective cap')
@@ -175,23 +175,24 @@ class MomentumSpeedTests(unittest.TestCase):
         print(f'bad: max |speedX| {peak_x!r} > effective cap {self.limit!r}', file=sys.stderr)
         self.assertGreater(peak_x, self.limit)
 
-    def test_limit_is_01875_of_cruise_median(self):
+    def test_limit_is_028125_of_cruise_median(self):
         run = self.runs['momentum']
-        expected = 0.375 * 0.006867 * run['height'] * 0.5
+        expected = 0.28125 * 0.006867 * run['height']
         print(f'effective cap {self.limit!r} (momentumMaxSpeed {run["rawLimit"]!r} x momentumTimeScale '
-              f'{run["timeScale"]!r}), expected 0.375 * 0.006867 * height * 0.5 = {expected!r}', file=sys.stderr)
+              f'{run["timeScale"]!r}), expected 0.28125 * 0.006867 * height = {expected!r}', file=sys.stderr)
         self.assertAlmostEqual(self.limit, expected, delta=1e-9)
         self.assertAlmostEqual(run['rawLimit'], 0.375 * 0.006867 * run['height'], delta=1e-9)
-        self.assertEqual(run['timeScale'], 0.5)
+        self.assertEqual(run['timeScale'], 0.75)
 
     def test_limit_vs_bad_cruise(self):
         cruise = json.loads(Path(os.environ.get('BAD_CRUISE_JSON',
                                                 ROOT / 'artifacts/TASK-007/bad-cruise.json')).read_text())
         ratio = self.limit / cruise['median']
-        print(f'effective cap {self.limit!r} / bad cruise median {cruise["median"]!r} = {ratio!r}',
-              file=sys.stderr)
-        self.assertGreaterEqual(ratio, 0.1625)
-        self.assertLessEqual(ratio, 0.2125)
+        s = self.runs['momentum']['timeScale']
+        print(f'effective cap {self.limit!r} / bad cruise median {cruise["median"]!r} = {ratio!r}, '
+              f'range [0.325, 0.425] x {s}', file=sys.stderr)
+        self.assertGreaterEqual(ratio, 0.325 * s)
+        self.assertLessEqual(ratio, 0.425 * s)
 
 
 if __name__ == '__main__':

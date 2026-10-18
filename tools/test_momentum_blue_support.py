@@ -24,7 +24,9 @@ a sibling green's face. Once that green is used the bound stays.
    every other sibling in the blue's path on that side, so that the next
    solid is the corridor limit) and the blue is stepped for PERIODS bounce
    periods: for a yMax support its bottom goes below the old support's top
-   and reaches the corridor limit (within LIMIT_TOL), for a yMin support its
+   and reaches the corridor limit (within limit_tol = LIMIT_TOL_PER_SCALE *
+   GAMEPLAY.momentumTimeScale: a turn is sampled on whole cycles and the
+   per-cycle step scales with the time scale), for a yMin support its
    top goes above the old support's bottom and reaches the corridor limit.
    TASK-079: MomentumPortPatternFactory gives each supported side its
    candidates (siblings in the path, then the corridor limit) and
@@ -45,8 +47,8 @@ shots/ (bad-frame7 at 1280x720: the blue on the green before the use, the
 blue falling through the gap after it, the blue turning at the corridor
 floor limit, and the same after-use frame at 390x844; bad-frame4 at
 1280x720: the polygon blue rising past the used green).
-MOMENTUM_BLUE_SUPPORT_BASELINE (default artifacts/TASK-078/baseline-trace.json)
-is the trace the baseline compares against. Requires Playwright Chromium.
+MOMENTUM_BLUE_SUPPORT_BASELINE (default artifacts/TASK-081/baseline-trace.json,
+regenerated for momentumTimeScale 0.75; TASK-078's is the 0.5 one) is the trace the baseline compares against. Requires Playwright Chromium.
 """
 import io
 import json
@@ -62,14 +64,15 @@ from test_momentum_borders import SEED_COURSE
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_BLUE_SUPPORT_EVIDENCE_DIR', '/tmp/momentum-blue-support'))
 BASELINE = Path(os.environ.get('MOMENTUM_BLUE_SUPPORT_BASELINE',
-                               ROOT / 'artifacts' / 'TASK-078' / 'baseline-trace.json'))
+                               ROOT / 'artifacts' / 'TASK-081' / 'baseline-trace.json'))
 # First segment right with a length draw of 0.99 (~5 heights), then the LCG
 SCRIPT = [0.99]
 # The bad frames leave 0.01 * height gaps between a bound and its support
 SUPPORT_TOL_RATIO = 0.02
 # Right corridor half width (catalog corridor bound of a rect)
 BAND = 972
-LIMIT_TOL = 2
+# 2 world units at momentumTimeScale 0.5
+LIMIT_TOL_PER_SCALE = 4
 TRACE_EVERY = 4
 USE_LEAD = 20
 PERIODS = 3
@@ -322,6 +325,7 @@ class MomentumBlueSupportTests(unittest.TestCase):
         cls.page.evaluate(SEED_COURSE, SCRIPT)
         info = cls.page.evaluate(SETUP)
         cls.height = info['height']
+        cls.limit_tol = LIMIT_TOL_PER_SCALE * cls.page.evaluate('GAMEPLAY.momentumTimeScale')
         cls.patterns = {p['id']: p for p in info['patterns']}
         segment = info['segment']
         cls.origin = (segment['x0'] + 0.2 * info['half'], segment['y0'])
@@ -396,7 +400,7 @@ class MomentumBlueSupportTests(unittest.TestCase):
               f'face {face:.2f} limit {limit:.2f} extreme {extreme:.3f} turns after {len(turns_after)}')
         if side == 'yMax':
             self.assertGreater(extreme, face + 1)
-            self.assertGreaterEqual(extreme, limit - LIMIT_TOL)
+            self.assertGreaterEqual(extreme, limit - self.limit_tol)
             self.assertLessEqual(extreme, limit + 1e-6)
         else:
             self.assertLess(extreme, face - 1)
@@ -445,7 +449,7 @@ class MomentumBlueSupportTests(unittest.TestCase):
         self.assertLess(top_between, y0 + g_bottom - 1)
         self.assertGreater(res['minClear'], -1)
         self.assertEqual(res['bounds'][-1][1], limit)
-        self.assertLessEqual(top_after, limit + LIMIT_TOL)
+        self.assertLessEqual(top_after, limit + self.limit_tol)
         self.assertGreaterEqual(top_after, limit - 1e-6)
 
     def test_initial_bounds_equal_catalog(self):
@@ -520,7 +524,7 @@ class MomentumBlueSupportTests(unittest.TestCase):
         # On to the turn at the corridor floor limit
         turn = self.page.evaluate(NEXT_BOTTOM_TURN)
         print('turn at the corridor floor', turn, 'limit', y0 + BAND)
-        self.assertLessEqual(abs(turn['bottom'] - (y0 + BAND)), LIMIT_TOL)
+        self.assertLessEqual(abs(turn['bottom'] - (y0 + BAND)), self.limit_tol)
         self.shoot('frame7-turn-at-corridor-floor.png', cx, y0 + BAND - 300)
 
     def test_4_bad_frame4_shot(self):

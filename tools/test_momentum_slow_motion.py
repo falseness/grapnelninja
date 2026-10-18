@@ -1,4 +1,5 @@
-"""Momentum slow motion: same trajectory shape at half the speed (TASK-072).
+"""Momentum slow motion: same trajectory shape at momentumTimeScale of the
+speed (TASK-072; 0.5 since TASK-073, 0.75 since TASK-081).
 
 A momentum run (seeded Math.random, rAF loop cancelled, obstacle floor
 emptied and frozen, ninja invulnerable, deaths only counted) gets two
@@ -15,13 +16,17 @@ Positions are recorded before the first and after every calcPhysics. The baselin
 window.MOMENTUM_TIME_SCALE_OVERRIDE = 1, so it runs at full speed; the normal
 run uses GAMEPLAY.momentumTimeScale (1 while it does not exist). The time
 scale s also stretches the script: VX0 * s, release at RELEASE / s cycles,
-2 * BASELINE_CYCLES cycles recorded.
+round(BASELINE_CYCLES / s) cycles recorded.
 
   test_baseline_reproducible - two baseline runs give identical positions,
       the grapnel hooks the anchor, one ground bounce inside the segment;
-  test_shape - normal position at cycle 2n within 2% of the baseline path
-      length of the baseline position at cycle n, for every baseline n;
-  test_half_speed - median |v| normal / baseline in [0.45, 0.55].
+  test_shape - normal position at cycle n / s (linearly interpolated
+      between whole cycles) within 2% of the baseline path length of the
+      baseline position at cycle n, for every baseline n;
+  test_scaled_speed - median |v| normal / baseline in [s - 0.05, s + 0.05];
+  test_time_scale - s is 0.75 (TASK-081: the game 1.5x faster than the 0.5
+      slow motion) and the effective cap GAMEPLAY.momentumMaxSpeed *
+      momentumMotionScale(1) is 0.28125 * 0.006867 * height.
 
 Writes MOMENTUM_SLOW_MOTION_EVIDENCE_DIR (default artifacts/TASK-072)/
 baseline-trajectory.json: compact {cycle, x, y} every 4th cycle, relative to
@@ -48,7 +53,7 @@ VX0 = 1.2
 RELEASE = 300
 BASELINE_CYCLES = 2100
 SHAPE_TOLERANCE = 0.02
-SPEED_RATIO = (0.45, 0.55)
+SPEED_RATIO_TOLERANCE = 0.05
 
 RUN = '''({seed, baseline, anchor, groundY, vx0, release, baselineCycles}) => {
     let a = seed >>> 0
@@ -96,7 +101,7 @@ RUN = '''({seed, baseline, anchor, groundY, vx0, release, baselineCycles}) => {
         return applyBounce.apply(this, arguments)
     }
     const releaseCycle = Math.round(release / s)
-    const cycles = baseline ? baselineCycles : 2 * baselineCycles
+    const cycles = baseline ? baselineCycles : Math.round(baselineCycles / s)
     let hookCycle = null, hookedAnchor = false
     // xs[c], ys[c]: position after c cycles
     const xs = [0], ys = [0]
@@ -114,7 +119,8 @@ RUN = '''({seed, baseline, anchor, groundY, vx0, release, baselineCycles}) => {
         xs.push(ninja.x - x0)
         ys.push(ninja.y - y0)
     }
-    return {s, xs, ys, hookCycle, hookedAnchor, releaseCycle, bounces, lethal, version}
+    return {s, xs, ys, hookCycle, hookedAnchor, releaseCycle, bounces, lethal, version,
+            cap: GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1), height}
 }'''
 
 
@@ -175,16 +181,30 @@ class MomentumSlowMotionTests(unittest.TestCase):
     def test_shape(self):
         b, n = self.baseline, self.normal
         path = sum(self.speeds(b))
-        error = max(math.hypot(n['xs'][2 * i] - b['xs'][i], n['ys'][2 * i] - b['ys'][i])
+        s = n['s']
+
+        def at(values, c):
+            # position at the fractional cycle c (linear between whole cycles)
+            lo = min(int(c), len(values) - 2)
+            return values[lo] + (values[lo + 1] - values[lo]) * (c - lo)
+        error = max(math.hypot(at(n['xs'], i / s) - b['xs'][i], at(n['ys'], i / s) - b['ys'][i])
                     for i in range(len(b['xs'])))
         print(f'max shape error {error / path:.4f} of the baseline path {path:.1f}')
         self.assertLessEqual(error / path, SHAPE_TOLERANCE)
 
-    def test_half_speed(self):
+    def test_scaled_speed(self):
+        s = self.normal['s']
         ratio = statistics.median(self.speeds(self.normal)) / statistics.median(self.speeds(self.baseline))
-        print(f'median speed ratio normal/baseline {ratio:.4f}')
-        self.assertGreaterEqual(ratio, SPEED_RATIO[0])
-        self.assertLessEqual(ratio, SPEED_RATIO[1])
+        print(f'median speed ratio normal/baseline {ratio:.4f}, time scale {s}')
+        self.assertGreaterEqual(ratio, s - SPEED_RATIO_TOLERANCE)
+        self.assertLessEqual(ratio, s + SPEED_RATIO_TOLERANCE)
+
+    def test_time_scale(self):
+        n = self.normal
+        expected = 0.28125 * 0.006867 * n['height']
+        print(f'time scale {n["s"]}, effective cap {n["cap"]!r}, expected 0.28125 * 0.006867 * height = {expected!r}')
+        self.assertEqual(n['s'], 0.75)
+        self.assertAlmostEqual(n['cap'], expected, delta=1e-9)
 
 
 if __name__ == '__main__':

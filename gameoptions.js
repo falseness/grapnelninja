@@ -84,7 +84,7 @@ const GAMEPLAY = Object.freeze({
     // Halved twice after playtests (1.5x -> 0.75x -> 0.375x; the ninja was
     // still too fast). The slow motion of momentumTimeScale scales it at the
     // use site: effective cap momentumMaxSpeed * momentumMotionScale(1)
-    // = 0.1875x (1.39 at height 1080).
+    // = 0.28125x (2.09 at height 1080).
     momentumMaxSpeed: 0.375 * 0.006867 * height,
     // Momentum slow motion: the whole motion runs at this fraction of its
     // speed with the same trajectory shapes. Velocities (world units per
@@ -93,8 +93,9 @@ const GAMEPLAY = Object.freeze({
     // lengths are unchanged. Applied at the use sites through
     // momentumMotionScale(), never to the per-cycle consts (classic and bad
     // keep them). Halved after the TASK-029 and TASK-047 cap halvings per
-    // user request (the whole motion, not only the cap).
-    momentumTimeScale: 0.5,
+    // user request (the whole motion, not only the cap), then sped up 1.5x
+    // (0.5 -> 0.75, TASK-081).
+    momentumTimeScale: 0.75,
     // Momentum course segment lengths in world units (the momentum camera
     // shows height / scale.momentum = 2.2 heights of world vertically).
     // After a 'right' segment another 'right' follows with this chance,
