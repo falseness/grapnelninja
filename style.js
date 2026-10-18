@@ -277,7 +277,12 @@ const STYLE = Object.freeze({
         // Light added over the ambient at the ninja (the falloff of lights)
         lightAlpha: 0.8,
         hazeRadius: 300,
-        hazeAlpha: 0.3
+        hazeAlpha: 0.4,
+        // The cave under the player trail stays undimmed (the trail keeps
+        // its pixels); light px the band reaches past the ribbon's edge
+        trailBandMargin: 2,
+        // Light px of the soft edge round it (shadowBlur)
+        trailBandFeather: 6
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a

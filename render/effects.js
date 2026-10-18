@@ -617,8 +617,12 @@ class LightmapRenderer
         // over the background (same size as lightCanvas)
         this.momentumCanvas = document.createElement('canvas')
         this.momentumCtx = this.momentumCanvas.getContext('2d')
+        // Its haze, added over the background after the obstacle spill
+        this.hazeCanvas = document.createElement('canvas')
+        this.hazeCtx = this.hazeCanvas.getContext('2d')
         this.momentumAmbient = null
         this.momentumGradient = null
+        this.trailBand = null
         this.resize()
     }
     shouldDraw()
@@ -637,6 +641,8 @@ class LightmapRenderer
         this.lightCanvas.height = nextHeight
         this.momentumCanvas.width = nextWidth
         this.momentumCanvas.height = nextHeight
+        this.hazeCanvas.width = nextWidth
+        this.hazeCanvas.height = nextHeight
     }
     // Momentum lighting runs in momentum mode with the pause-screen switch
     // (MOMENTUM_FX) on; classic and bad keep no player light
@@ -910,24 +916,69 @@ class LightmapRenderer
         const y = ninja.y + screen.y
         if (this.isLightOnScreen(x, y, config.ninjaRadius))
             this.fillRadialLight(lightCtx, x, y, config.ninjaRadius, this.getMomentumGradient(), config.lightAlpha)
+        this.trailBand = visualEffects.playerTrail.getRibbonBand(ninja.track)
+        if (this.trailBand)
+        {
+            lightCtx.globalAlpha = 1
+            lightCtx.globalCompositeOperation = 'source-over'
+            lightCtx.fillStyle = '#ffffff'
+            lightCtx.strokeStyle = '#ffffff'
+            this.fillTrailBand(lightCtx, this.trailBand)
+        }
         lightCtx.restore()
 
         this.compositeCanvas(this.momentumCanvas, 1, 'multiply')
     }
-    // A faint cyan glow of the air round the ninja, added at full resolution
+    // The player trail is translucent and drawn after the lights: the cave
+    // under it keeps its undimmed, unhazed pixels so the trail's own pixels
+    // stay as with the lighting off. Fills the ribbon's widest outline grown
+    // by trailBandMargin light px (filtering keeps its inside exact), its
+    // edge feathered over trailBandFeather light px so it reads as a glow.
+    fillTrailBand(lightCtx, outline)
+    {
+        const toLight = this.scale * scale[version]
+
+        lightCtx.setTransform(toLight, 0, 0, toLight, 0, 0)
+        lightCtx.shadowColor = '#ffffff'
+        lightCtx.shadowBlur = STYLE.momentumLight.trailBandFeather
+        lightCtx.lineWidth = 2 * STYLE.momentumLight.trailBandMargin / toLight
+        lightCtx.lineJoin = 'round'
+        lightCtx.beginPath()
+        lightCtx.moveTo(outline[0].x, outline[0].y)
+        for (let i = 1; i < outline.length; ++i)
+            lightCtx.lineTo(outline[i].x, outline[i].y)
+        lightCtx.closePath()
+        lightCtx.fill()
+        lightCtx.stroke()
+    }
+    // A faint cyan glow of the air round the ninja, added from hazeCanvas
     addMomentumHaze()
     {
         const config = STYLE.momentumLight
-        const radius = config.hazeRadius * height / 1080 / scale[version]
+        const hazeCtx = this.hazeCtx
 
-        this.ctx.save()
-        this.ctx.translate(ninja.x + screen.x, ninja.y + screen.y)
-        this.ctx.scale(radius, radius)
-        this.ctx.globalAlpha = config.hazeAlpha
-        this.ctx.globalCompositeOperation = 'lighter'
-        this.ctx.fillStyle = this.getMomentumGradient()
-        this.ctx.fillRect(-1, -1, 2, 2)
-        this.ctx.restore()
+        hazeCtx.save()
+        hazeCtx.setTransform(1, 0, 0, 1, 0, 0)
+        hazeCtx.clearRect(0, 0, this.hazeCanvas.width, this.hazeCanvas.height)
+        const x = ninja.x + screen.x
+        const y = ninja.y + screen.y
+        if (!this.isLightOnScreen(x, y, config.hazeRadius))
+        {
+            hazeCtx.restore()
+            return
+        }
+        this.fillRadialLight(hazeCtx, x, y, config.hazeRadius, this.getMomentumGradient(), config.hazeAlpha)
+        if (this.trailBand)
+        {
+            hazeCtx.globalAlpha = 1
+            hazeCtx.globalCompositeOperation = 'destination-out'
+            hazeCtx.fillStyle = '#ffffff'
+            hazeCtx.strokeStyle = '#ffffff'
+            this.fillTrailBand(hazeCtx, this.trailBand)
+        }
+        hazeCtx.restore()
+
+        this.compositeCanvas(this.hazeCanvas, 1, 'lighter')
     }
 }
 
@@ -1621,6 +1672,24 @@ class PlayerTrailRenderer
         this.drawRibbon(positions, visibleStart, width, alpha)
 
         ctx.restore()
+    }
+    // The widest ribbon layer's outline this frame (world-on-screen units),
+    // or null when no ribbon is drawn; the momentum light keeps the cave
+    // under it undimmed
+    getRibbonBand(track)
+    {
+        if (!this.shouldDraw() || !track || track.pos.length < 2)
+            return null
+
+        const config = STYLE.trails.player
+        const positions = this.getRibbonPoints(track.pos, track.lineWidth * config.minPointDistanceRatio)
+        const visibleStart = Math.max(1, Math.floor(positions.length * config.minSegmentRatio))
+        if (positions.length - visibleStart < 2)
+            return null
+
+        const widthRatio = STYLE.player.outerGlow ? Math.max(1, config.haloWidthRatio) : 1
+        const outline = this.getRibbonOutline(positions, visibleStart, this.getRibbonWidth(track) * widthRatio)
+        return outline.length ? outline : null
     }
     getRibbonWidth(track)
     {

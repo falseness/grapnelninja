@@ -19,9 +19,10 @@ the background cannot show through) and emissive over black. The far
 mask is background_mask of both frames; the near mask (where the trail and
 player glow lift every pixel over the emissive threshold) is the corridor
 interior outside pieces, HUD and the emissive art. The trail ribbon is
-translucent along its whole length (no opaque pixel), so it blends with the
-dimmed cave: its emissive pixels (emissive_mask of both frames within 3 px
-of the trail polyline) are reported as trailMaxDelta, not asserted. Also:
+translucent, so the light leaves the cave under it undimmed: its emissive
+pixels (emissive_mask of both frames within 3 px of the trail polyline) join
+the emissive art in emissiveMaxDelta (artMaxDelta / trailMaxDelta apart).
+Also:
 - allocations: 120 frames with the ninja moving create no CanvasGradient
   inside the lightmap (clear/draw/composite) or the background after the
   first frame;
@@ -122,9 +123,9 @@ def light_metrics(on, off, black, white):
         'farRatio': round(far_on / far_off, 4),
         'nearPixels': int(near.sum()), 'nearOn': round(near_on, 5), 'nearOff': round(near_off, 5),
         'nearRatio': round(near_on / near_off, 4),
-        'emissivePixels': int(emissive.sum()), 'emissiveMaxDelta': int(delta[emissive].max()),
-        'trailPixels': int(trail.sum()), 'trailOpaquePixels': int((trail & emissive).sum()),
-        'trailMaxDelta': int(delta[trail].max()) if trail.any() else None,
+        'emissivePixels': int((emissive | trail).sum()), 'emissiveMaxDelta': int(delta[emissive | trail].max()),
+        'artPixels': int(emissive.sum()), 'artMaxDelta': int(delta[emissive].max()),
+        'trailPixels': int(trail.sum()), 'trailMaxDelta': int(delta[trail].max()) if trail.any() else None,
     }
 
 

@@ -23,6 +23,8 @@ from render_snapshot import CLOCK_SCRIPT, boot_frozen
 ROOT = Path(__file__).resolve().parents[1]
 SCENE = r'''([mode, control]) => {
     startGame(mode); screen.x = screen.y = 0;
+    // The later first-run hint covers the sampled patches; trees before it have none
+    if (typeof TUTORIAL_HINT != 'undefined') TUTORIAL_HINT.visible = false;
     for (const f of floors) f.elements = [];
     const u = scale[version];
     const rect = new Rect({x:width*.4/u,y:height*.4/u,
