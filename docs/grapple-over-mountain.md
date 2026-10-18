@@ -39,7 +39,12 @@ green pull hook below the baffle foot while flying west and swings west and back
 east under the catch deck; S05-04 swings from a green exit hook up-right past the
 legacy Liftworks exit and releases into an exit drag zone, where a green exit
 canopy turns the rise into a drop onto the green exit ledge against the right map
-edge. The S06 entrance stays planned until S06 is rebuilt. Other sections keep their own build status; both optional
+edge. S06 is layout v3 too (TASK-520) at the 1620 range: from the S05 exit ledge,
+S06-01/02 travel left through a blue carriage pulled out of the S05 exit drag zone,
+a green skid that turns the dive into a rising flight under the S05 catch deck, a
+blue lift caught in flight west of the S05 swing loop and a green baffle that
+rebounds the swing release; S06-03/04, the S06 fall recovery and the S07 entrance
+are planned again. Other sections keep their own build status; both optional
 shortcuts are planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and

@@ -575,59 +575,64 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     for (let i=17;i<20;i++) connectors[i].status='built';
     Object.assign(recoveries[4], {status:'built',elements:['S04-exit-drag','S04-exit-ledge','S05-fall-drag','S05-catch-deck','S04-fall-drag','S04-catch-basin','S05-exit-drag','S05-exit-ledge'],
         rejoin:'S05-01',sideRoute:'Every declared S05 miss falls through a drag zone onto a green bouncer and settles: a short hoist hold on the green S04 exit ledge, from which the S05-01 hoist pull rejoins the route; a missed lift catch on the green catch deck; a missed pull-hook catch down the left map edge onto the green S04 catch basin; an early exit-hook release on the green exit ledge'});
-    // Liftworks opening: a travelling counterweight over a wide loading floor.
-    // The open western edge drops onto the existing Galleries ceiling/recovery rests.
+    // Liftworks v3 (layout v3, TASK-520): no gray pads. Travelling left from the green S05 exit ledge
+    // (inside S05-exit-drag, against the right map edge) at the 1620-range distances. S06-01: pull the
+    // blue carriage left out of the exit drag zone (the rope runs under the S05 pull hook and over the
+    // S05 exit hook) and release; the dive lands on the green skid, which turns it into a long rising
+    // flight west under the S05 catch deck. S06-02: catch the blue lift in flight, west of the S05-03
+    // swing loop, swing up-left past it and release into the green Liftworks canopy, which turns the
+    // rise into a drop toward the S04 climb. The carriage sits under every S05 throw line; the skid
+    // is bounce-only (not grappleable, so S05 ropes pass over it) and west of the S05-04 exit-hook throws.
+    // A short carriage hold drops from the exit-pocket mouth through S06-fall-drag onto the green catch
+    // ledge; a missed lift catch carries the rising flight under the canopy into the left map edge and
+    // drops along it through S04-fall-drag onto the green S04 catch basin.
     const liftworks = [
-        {...rest('S06-loading-floor',5780,-8130,400), points:[{x:0,y:0},{x:400,y:0},{x:400,y:15},{x:300,y:15},{x:300,y:30},{x:70,y:30},{x:70,y:15},{x:0,y:15}]},
-        {id:'S06-counterweight',x:6060,y:-8480,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:100,y:0},{x:100,y:35},{x:125,y:35},{x:125,y:110},{x:-25,y:110},{x:-25,y:35},{x:0,y:35}]},
-        {...rest('S06-phase-rest',5780,-8270,220), points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:50},{x:70,y:50},{x:70,y:110},{x:0,y:110}]}
+        rectangle('S06-carriage',4600,-9120,120,30,true),
+        // Bounce only (not grappleable): S05 ropes pass over it; the S05 exit-hook throws pass east of it.
+        {...bouncer('S06-skid',4140,-8650,230,30), grapplable:false},
+        rectangle('S06-lift',1880,-9665,120,30,true),
+        // Up-left of the lift, right of the S04 climb along the left map edge; the missed-lift flight passes under it.
+        bouncer('S06-canopy',700,-9905,450,30),
+        bouncer('S06-catch-ledge',5700,-8350,390,30),
+        // Legacy v1 Liftworks pieces still named by the v1 Crown (the S07-01 start ledge and a recovery
+        // opening collider), converted to green in place; no v3 S06 route uses them.
+        {id:'S06-phase-rest',x:5780,y:-8270,role:'bounce',grapplable:true,
+            points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:50},{x:70,y:50},{x:70,y:110},{x:0,y:110}]},
+        {id:'S06-exit',x:5520,y:-9680,role:'bounce',grapplable:true,
+            points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:-20},{x:260,y:-20},{x:260,y:55},{x:0,y:55}]}
     ];
-    // Alternating fixed heads and a second travelling weight form the upper lift.
-    liftworks.push(
-        {id:'S06-fixed-head',x:5480,y:-8610,role:'solid',grapplable:true,
-            points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:240,y:0},{x:240,y:110},{x:170,y:110},{x:170,y:35},{x:0,y:35}]},
-        {id:'S06-upper-weight',x:5780,y:-9010,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:100,y:0},{x:100,y:35},{x:125,y:35},{x:125,y:100},{x:-25,y:100},{x:-25,y:35},{x:0,y:35}]},
-        {id:'S06-transfer-head',x:6100,y:-9300,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:220,y:0},{x:220,y:-25},{x:260,y:-25},{x:260,y:130},{x:190,y:130},{x:190,y:40},{x:0,y:40}]},
-        {...rest('S06-exit',5520,-9680,260),points:[{x:0,y:-20},{x:40,y:-20},{x:40,y:0},{x:220,y:0},{x:220,y:-20},{x:260,y:-20},{x:260,y:55},{x:0,y:55}]}
-    );
-    const liftMovers = [...yardMovers, ...shaftMovers, ...viaductMovers, ...worksMovers, ...galleriesMovers, {id:'S06-counterweight-travel',element:'S06-counterweight',
-        axis:'y',min:-8480,max:-8320,periodMs:4000,phase:0,velocity:80},
-        {id:'S06-upper-weight-travel',element:'S06-upper-weight',axis:'y',
-            min:-9010,max:-8890,periodMs:4000,phase:0,velocity:60}];
-    Object.assign(sections[5], {status:'built',landmark:{id:'S06-landmark',
-        name:'moving counterweights',x:6110,y:-8400}});
-    Object.assign(encounters[20], {status:'built',x:6300,y:-8130,
-        elements:['S05-exit','S06-loading-floor','S06-counterweight'],
-        start:{from:'S05-04',x:6300,y:-8080.8},target:{x:6110,y:-8370},
-        action:'Acquire the moving blue counterweight above the broad loading floor',
-        exit:{left:6030,right:6200,top:-8500,bottom:-8300}});
-    Object.assign(encounters[21], {status:'built',x:6110,y:-8400,
-        elements:['S06-counterweight','S06-loading-floor','S06-phase-rest'],
-        start:{from:'S06-01',attachedTo:'S06-counterweight'},target:{x:5900,y:-8270},
-        action:'Remain attached through counterweight travel and reversal',
-        exit:{left:5830.8,right:5989.2,top:-8282,bottom:-8270}});
-    // Planned until S05-04 is rebuilt for layout v3 (the v1 S06-01 starts on the legacy S05-exit deck).
-    Object.assign(connectors[20], {intent:'Acquire counterweight from the Galleries departure ledge; planned until S05-04 is rebuilt'});
-    Object.assign(connectors[21], {status:'built',intent:'Keep attachment through reversal before the rising-phase release'});
-    Object.assign(encounters[22], {status:'built',x:5900,y:-8270,
-        elements:['S06-counterweight','S06-phase-rest'],
-        start:{from:'S06-02',attachedTo:'S06-counterweight'},target:{x:5900,y:-8270},
-        action:'Release on the rising phase to settle behind the fixed rest end stop',
-        exit:{left:5830.8,right:5989.2,top:-8282,bottom:-8270}});
-    Object.assign(encounters[23], {status:'built',x:5830,y:-8970,
-        elements:['S06-phase-rest','S06-fixed-head','S06-upper-weight','S06-transfer-head','S06-exit'],
-        start:{from:'S06-03',x:5830.8,y:-8280.8},target:{x:5715,y:-8590},
-        action:'Transfer from fixed head to travelling weight, then fixed upper head and exposed departure',
-        exit:{left:5570.8,right:5729.2,top:-9692,bottom:-9680}});
-    Object.assign(connectors[22], {status:'built',intent:'Rising-phase release onto ordinary fixed rest'});
-    Object.assign(connectors[23], {status:'built',intent:'Alternating moving/fixed targets reach S06-exit at the Crown band; connects to the exposed rooftop entrance'});
-    Object.assign(recoveries[5], {status:'built',
-        elements:['S06-phase-rest','S06-loading-floor','S05-transfer-canopy','S05-recessed-ceiling'],
-        openingElements:['S06-loading-floor','S05-exit','S05-recessed-ceiling'],
-        openingRejoin:'S05-04',sideRoute:'Open western loading-floor edge returns to the static Galleries ceiling and rests'});
+    // The fall drag zone holds the catch ledge below the exit-pocket mouth; only S06-01-short drops through it.
+    const liftworksDrags = [{id:'S06-fall-drag',x:5700,y:-8800,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:390,y:0},{x:390,y:450},{x:0,y:450}]}];
+    const liftMovers = [...yardMovers, ...shaftMovers, ...viaductMovers, ...worksMovers, ...galleriesMovers,
+        {id:'S06-carriage-travel',element:'S06-carriage',axis:'x',min:4600,max:4720,periodMs:4000,phase:0,velocity:60},
+        {id:'S06-lift-travel',element:'S06-lift',axis:'x',min:1880,max:2000,periodMs:4000,phase:0,velocity:60}];
+    Object.assign(sections[5], {status:'partial', designVersion:3, landmark:{id:'S06-landmark',
+        name:'moving counterweights',x:3400,y:-9600},
+        band:{...sections[5].band, top:-11340},
+        // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
+        gaps:[{id:'S06-01-carriage',from:{x:6120.4,y:-9432.4},to:{x:4756.5,y:-9119.5}},
+            // Caught in flight from the skid rebound.
+            {id:'S06-02-lift',from:{x:3269.4,y:-9059},to:{x:2004.5,y:-9649.1}}],
+        // Declared miss points: a short carriage hold drops from the exit-pocket mouth through
+        // S06-fall-drag onto the green catch ledge; a missed lift catch carries the rising flight into the
+        // left map edge and drops along it through S04-fall-drag onto the green S04 catch basin.
+        fallPoints:[{id:'S06-01-short',encounter:'S06-01',x:6020,y:-8900},
+            {id:'S06-02-missed',encounter:'S06-02',x:30,y:-9450}]});
+    Object.assign(encounters[20], {status:'built',x:6120,y:-9432,
+        elements:['S05-exit-ledge','S06-carriage','S06-skid'],
+        start:{x:6120.4,y:-9432.4,from:'S05-04'},target:{x:4708,y:-9108.4},
+        exit:{left:3200,right:3340,top:-9120,bottom:-9000},
+        action:'Pull the blue carriage left out of the Galleries exit drag zone, release into a dive and skip off the green skid into a rising flight west'});
+    Object.assign(encounters[21], {status:'built',x:3269,y:-9059,
+        elements:['S06-lift','S06-canopy'],
+        start:{from:'S06-01',x:3269.4,y:-9059},target:{x:1986.1,y:-9657.6},
+        exit:{left:540,right:660,top:-9800,bottom:-9720},
+        action:'On the rising flight, catch the blue lift, swing up-left past it and release into the green Liftworks canopy, which turns the rise into a drop'});
+    Object.assign(connectors[20], {status:'built',intent:'Physical ascent: the S06-01 carriage pull starts on the v3 Galleries exit ledge'});
+    Object.assign(connectors[21], {status:'built'});
+    // S06-03/04 stay planned (TASK-521): their route links, the S06 fall recovery and the S07 entrance too.
+    Object.assign(recoveries[5], {intent:'Liftworks misses fall through drag zones onto green catches; planned until S06-03/04 are rebuilt'});
     // Open rooftop: a swept red rotor, torn service gantry and vent plinth.
     // All silhouettes are the actual collision polygons; no invisible helper floors.
     const crown = [
@@ -655,7 +660,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:5100,right:5500,top:-10000,bottom:-9400,attachedTo:'S07-shortcut-jib'},
         rest:'S07-rest-ledge',
         action:'After rotor displacement, release and press again to catch the safe jib and brake the fall; the normal rooftop route has a broad rest ledge'});
-    Object.assign(connectors[24],{status:'built',intent:'S06-exit exposes the rotor and safe gantry before commitment'});
+    Object.assign(connectors[24],{status:'planned',intent:'S06-exit exposes the rotor and safe gantry before commitment'});
     Object.assign(connectors[25],{status:'built',intent:'Normal gantry route reaches the vent-plinth rest; displaced players can catch the safe jib'});
     Object.assign(shortcuts[1],{openingStatus:'built',openingExit:'S07-02',
         elements:['S07-shortcut-jib','S07-rest-ledge']});
@@ -781,7 +786,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags,...galleriesDrags], movers:liftMovers},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags,...galleriesDrags,...liftworksDrags], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         finish, completion:'Summit finish region on the S08-04 beacon pad; reaching it completes the climb',
