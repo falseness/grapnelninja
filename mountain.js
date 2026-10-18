@@ -667,7 +667,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(encounters[22], {status:'built',x:597,y:-9758,
         elements:['S06-climb-hook','S06-swing-skid'],
         start:{from:'S06-02',x:597.5,y:-9758.5},target:{x:1120,y:-10451.4},
-        exit:{left:1180,right:1280,top:-11330,bottom:-11230},
+        exit:{left:1130,right:1360,top:-11330,bottom:-11230},
         action:'Sliding down the map edge under the canopy, catch the green climb hook, skip over the green swing skid and release at the top of the upswing into a straight rise'});
     Object.assign(encounters[23], {status:'built',x:1240,y:-11280,
         elements:['S06-exit-hook','S06-exit-ledge','S06-exit-drag'],
