@@ -305,7 +305,10 @@ const STYLE = Object.freeze({
         // (screen px at 1080), shadowed like the ninja light (no deep shadows)
         trailSamples: 6,
         trailIntensity: 0.35,
-        trailRadius: 260
+        trailRadius: 260,
+        // Crystal and rock edges catch the lights: their edge tile, masked by
+        // the frame's lights, is added over the background at this strength
+        rimStrength: 1
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a

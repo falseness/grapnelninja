@@ -12,7 +12,8 @@ lights are reused objects. Checks (tools/momentum_fx_support.py scenes,
   mask of both frames) BESIDE_PX above the trail at 3 points >= MIN_NINJA_PX
   from the ninja: mean luminance / the same scene with the trail light
   disabled by a STYLE override (style.js served with trailIntensity 0) >=
-  1.10; with an empty trail (ninja.track.pos = []) the frame equals the parent
+  1.10; with an empty trail (ninja.track.pos = []) the frame (later
+  effects such as the TASK-057 crystal rim off by a STYLE override) equals the parent
   commit's (maxDelta 0); the sample/light objects are the same after a second
   draw (no per-frame allocation);
 - switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
@@ -52,6 +53,7 @@ MIN_RATIO = 1.10
 POINT_X = (80, 140, 200)
 TRAIL_OFF = [('trailIntensity: 0.35', 'trailIntensity: 0')]
 EMPTY_TRAIL = '() => { ninja.track.pos = [] }'
+LATER_EFFECTS_OFF = [('rimStrength: 1', 'rimStrength: 0')]
 REUSE = r'''() => {
     const l = visualEffects.lightmap
     draw()
@@ -125,12 +127,22 @@ class MomentumTrailLightTests(unittest.TestCase):
             self.assertGreaterEqual(row['ratio'], MIN_RATIO)
 
     def test_1_empty_trail_equals_parent(self):
-        new = fx.capture(SCENE, VIEWPORT, fx_on=True, extra_js=EMPTY_TRAIL)
+        # Later effects (the TASK-057 crystal rim) are switched off by a STYLE
+        # override, so only the trail light is compared
+        tree = fx.harness()
+        later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
+        rim_harness = fx.FxHarness('worktree', tree.browser, style_patch=later_off) if later_off else None
+        try:
+            new = (rim_harness or tree).capture(SCENE, VIEWPORT, fx_on=True, extra_js=EMPTY_TRAIL)
+        finally:
+            if rim_harness:
+                rim_harness.close()
         old = fx.capture(SCENE, VIEWPORT, fx_on=True, extra_js=EMPTY_TRAIL, rev=self.parent)
         self.assertEqual(new.info['trailPoints'], 0)
         d = fx.max_delta(new, old)
         print('empty trail maxDelta', d)
         self.result['emptyTrail'] = {'parent': old.info['rev'], 'trailPoints': 0, 'maxDelta': d,
+                                     'laterEffectsOff': [patch[1] for patch in later_off],
                                      'identical': d == 0}
         self.assertEqual(d, 0)
 

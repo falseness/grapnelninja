@@ -76,8 +76,12 @@ class BackgroundRenderer
         this.randomSequenceScenes = 0
         this.gradientCache = new Map()
         this.lastGameGradients = null
-        // Offscreen crystal/rock tiles by name ('far', 'near')
+        // Offscreen crystal/rock tiles by name ('far', 'near', their edge
+        // tiles 'farEdges', 'nearEdges') and how often each was built
         this.layerCache = {}
+        this.layerBuilds = {}
+        // The game canvas transform the layers were last painted in
+        this.paintTransform = null
     }
     draw()
     {
@@ -173,6 +177,8 @@ class BackgroundRenderer
         const height = LOGICAL_VIEWPORT.height
 
         const caveLayers = STYLE.caveLayers
+        if (!this.bounds)
+            this.paintTransform = this.ctx.getTransform()
 
         // Base gradient, far crystals and haze come baked in one opaque tile
         this.drawCrystalLayer(width, height, this.getLayerShift(width, height, caveLayers.crystals))
@@ -355,6 +361,7 @@ class BackgroundRenderer
 
         const layer = {key, canvas: layerCanvas, width, height}
         this.layerCache[name] = layer
+        this.layerBuilds[name] = (this.layerBuilds[name] || 0) + 1
         return layer
     }
     // Seeded random numbers and wrapped polygon drawing for a tile
@@ -396,10 +403,13 @@ class BackgroundRenderer
 
         return {random, between, wrapped, polygon}
     }
-    paintCrystalTile(ctx, width, height, crystals, tools)
+    // edgesOnly: the same shards' edges alone, opaque white (the edge tile
+    // the momentum crystal rim masks by the light)
+    paintCrystalTile(ctx, width, height, crystals, tools, edgesOnly)
     {
         const colors = STYLE.colors.background
-        const {random, between, wrapped, polygon} = tools
+        const {random, between, wrapped} = tools
+        const polygon = edgesOnly ? () => {} : tools.polygon
         // A faceted shard from baseY towards dir (-1 up, 1 down): a shadow
         // facet left of the ridge and a lit facet right of it
         const shard = (x, baseY, dir, h, w, lean, shadow, lit, edge) =>
@@ -419,7 +429,7 @@ class BackgroundRenderer
                 ctx.moveTo(left[0], left[1])
                 ctx.lineTo(tip[0], tip[1])
                 ctx.lineTo(ridge[0], ridge[1])
-                ctx.strokeStyle = edge
+                ctx.strokeStyle = edgesOnly ? '#ffffff' : edge
                 ctx.lineWidth = crystals.edgeLineWidth
                 ctx.stroke()
             })
@@ -477,6 +487,8 @@ class BackgroundRenderer
             colors.crystalFrontShadow, colors.crystalFrontLit, colors.crystalEdge)
         rocks(crystals.rockCount, bottom, -1, crystals.rockHeight)
         rocks(crystals.rockCount, top, 1, crystals.rockHeight.map(h => h * 0.6))
+        if (edgesOnly)
+            return
         // Solid rock rows at both edges: drawLayerTile extends them over
         // whatever the shifted tile leaves uncovered
         ctx.fillStyle = colors.crystalRock
@@ -485,10 +497,11 @@ class BackgroundRenderer
     }
     // Large dark boulders: a shadow, a middle and a lit facet around the
     // summit, and a faint rim along the lit side
-    paintNearTile(ctx, width, height, rocks, tools)
+    paintNearTile(ctx, width, height, rocks, tools, edgesOnly)
     {
         const colors = STYLE.colors.background
-        const {random, between, wrapped, polygon} = tools
+        const {random, between, wrapped} = tools
+        const polygon = edgesOnly ? () => {} : tools.polygon
         const boulder = (x, baseY, dir, h, w) =>
         {
             const summit = [x + (random() - 0.5) * w * 0.5, baseY + dir * h]
@@ -505,7 +518,7 @@ class BackgroundRenderer
                 ctx.moveTo(leftShoulder[0], leftShoulder[1])
                 ctx.lineTo(summit[0], summit[1])
                 ctx.lineTo(rightShoulder[0], rightShoulder[1])
-                ctx.strokeStyle = colors.nearRim
+                ctx.strokeStyle = edgesOnly ? '#ffffff' : colors.nearRim
                 ctx.lineWidth = rocks.rimLineWidth
                 ctx.stroke()
             })
@@ -521,6 +534,8 @@ class BackgroundRenderer
         row(rocks.outcropCount, bottom, -1, rocks.outcropHeight, rocks.outcropHalfWidth)
         row(rocks.bottomCount, bottom, -1, rocks.bottomHeight, rocks.bottomHalfWidth)
         row(rocks.topCount, top, 1, rocks.topHeight, rocks.topHalfWidth)
+        if (edgesOnly)
+            return
         ctx.fillStyle = colors.nearRock
         ctx.fillRect(0, 0, width, height * 0.012)
         ctx.fillRect(0, height * 0.988, width, height * 0.012)
@@ -553,6 +568,39 @@ class BackgroundRenderer
             (...args) => this.paintNearTile(...args))
         this.drawLayerTile(layer, width, height, shift, STYLE.colors.background.nearRock)
     }
+    // The crystal and rock edges where this frame's layers lie, opaque white
+    // into ctx (a canvas of the game canvas's size, in its px): the far
+    // crystals' edges with the near rocks cut out of them, then the near
+    // rocks' rims. Edge tiles are built once per viewport like the layers.
+    drawLayerEdges(ctx)
+    {
+        const width = LOGICAL_VIEWPORT.width
+        const height = LOGICAL_VIEWPORT.height
+        const caveLayers = STYLE.caveLayers
+        const near = this.layerCache.near
+        if (!this.paintTransform || !near)
+            return
+        const farEdges = this.getLayerTile('farEdges', width, height, caveLayers.crystals,
+            (c, w, h, config, tools) => this.paintCrystalTile(c, w, h, config, tools, true))
+        const nearEdges = this.getLayerTile('nearEdges', width, height, caveLayers.nearRocks,
+            (c, w, h, config, tools) => this.paintNearTile(c, w, h, config, tools, true))
+        const nearShift = this.getLayerShift(width, height, caveLayers.nearRocks)
+        const gameCtx = this.ctx
+        this.ctx = ctx
+        try
+        {
+            ctx.setTransform(this.paintTransform)
+            this.drawLayerTile(farEdges, width, height, this.getLayerShift(width, height, caveLayers.crystals))
+            ctx.globalCompositeOperation = 'destination-out'
+            this.drawLayerTile(near, width, height, nearShift)
+            ctx.globalCompositeOperation = 'source-over'
+            this.drawLayerTile(nearEdges, width, height, nearShift)
+        }
+        finally
+        {
+            this.ctx = gameCtx
+        }
+    }
     // Tiles a layer across fillBounds() at shift. Tile edges are snapped to
     // device pixels so neighbouring copies neither overlap nor leave a gap;
     // edgeFill covers what the shifted tile leaves uncovered above and below
@@ -573,6 +621,8 @@ class BackgroundRenderer
             left = next
             ++k
         }
+        if (!edgeFill)
+            return
 
         const edges = []
         if (bounds.y < shift.y)
@@ -644,6 +694,14 @@ class LightmapRenderer
         this.trailLights = []
         // Light px rectangle a radial light covers ({x, y, w, h}, reused)
         this.lightRect = {x: 0, y: 0, w: 0, h: 0}
+        // Crystal rim: the frame's momentum lights alone (light px) with the
+        // light px box they cover, and the cave edges lit by them (the target
+        // canvas's px)
+        this.rimLightCanvas = document.createElement('canvas')
+        this.rimLightCtx = this.rimLightCanvas.getContext('2d')
+        this.rimBox = {left: 0, top: 0, right: 0, bottom: 0}
+        this.rimCanvas = document.createElement('canvas')
+        this.rimCtx = this.rimCanvas.getContext('2d')
         this.momentumAmbient = null
         this.momentumGradient = null
         this.trailBand = null
@@ -671,6 +729,8 @@ class LightmapRenderer
         this.lightLayerCanvas.height = nextHeight
         this.shadowLayerCanvas.width = nextWidth
         this.shadowLayerCanvas.height = nextHeight
+        this.rimLightCanvas.width = nextWidth
+        this.rimLightCanvas.height = nextHeight
     }
     // Momentum lighting runs in momentum mode with the pause-screen switch
     // (MOMENTUM_FX) on; classic and bad keep no player light
@@ -982,6 +1042,7 @@ class LightmapRenderer
         lightCtx.fillStyle = this.getMomentumAmbient()
         lightCtx.fillRect(0, 0, this.momentumCanvas.width, this.momentumCanvas.height)
         lightCtx.globalCompositeOperation = 'lighter'
+        this.clearRimLight()
         this.collectOccluders(gameState)
         this.hasDeepShadows = false
         const lights = this.collectMomentumLights(gameState)
@@ -1010,6 +1071,98 @@ class LightmapRenderer
         lightCtx.restore()
 
         this.compositeCanvas(this.momentumCanvas, 1, 'multiply')
+        this.addCrystalRim()
+    }
+    clearRimLight()
+    {
+        const rim = this.rimLightCtx
+        rim.setTransform(1, 0, 0, 1, 0, 0)
+        rim.globalAlpha = 1
+        rim.globalCompositeOperation = 'source-over'
+        rim.clearRect(0, 0, this.rimLightCanvas.width, this.rimLightCanvas.height)
+        rim.globalCompositeOperation = 'lighter'
+        const box = this.rimBox
+        box.left = box.top = Infinity
+        box.right = box.bottom = -Infinity
+    }
+    // The shadowed light in the light layer canvas (inside rect, or all of
+    // it) also goes into the rim's light
+    addRimLight(rect)
+    {
+        const box = this.rimBox
+        if (rect)
+            this.rimLightCtx.drawImage(this.lightLayerCanvas, rect.x, rect.y, rect.w, rect.h,
+                rect.x, rect.y, rect.w, rect.h)
+        else
+            this.rimLightCtx.drawImage(this.lightLayerCanvas, 0, 0)
+        box.left = Math.min(box.left, rect ? rect.x : 0)
+        box.top = Math.min(box.top, rect ? rect.y : 0)
+        box.right = Math.max(box.right, rect ? rect.x + rect.w : this.lightLayerCanvas.width)
+        box.bottom = Math.max(box.bottom, rect ? rect.y + rect.h : this.lightLayerCanvas.height)
+    }
+    // Crystal edges catch the light: the background's edge tiles
+    // (drawLayerEdges) masked by the frame's lights (source-in) and added
+    // over the dimmed background at momentumLight.rimStrength, only inside
+    // the lights' box. The cave under the player trail gets none (it keeps
+    // its pixels).
+    addCrystalRim()
+    {
+        const strength = STYLE.momentumLight.rimStrength
+        const box = this.rimBox
+        const background = visualEffects.background
+        const transform = background.paintTransform
+        if (!(strength > 0) || !STYLE.features.background || !transform
+            || box.right <= box.left || box.bottom <= box.top)
+            return
+        if (this.trailBand)
+        {
+            const rimLight = this.rimLightCtx
+            rimLight.save()
+            rimLight.globalAlpha = 1
+            rimLight.globalCompositeOperation = 'destination-out'
+            rimLight.fillStyle = '#ffffff'
+            rimLight.strokeStyle = '#ffffff'
+            this.fillTrailBand(rimLight, this.trailBand)
+            rimLight.restore()
+        }
+        const target = this.ctx.canvas
+        const rim = this.rimCanvas
+        if (rim.width != target.width || rim.height != target.height)
+        {
+            rim.width = target.width
+            rim.height = target.height
+        }
+        // The lights' box in target px (the light canvas spans the viewport)
+        const toTargetX = transform.a * LOGICAL_VIEWPORT.width / this.lightCanvas.width
+        const toTargetY = transform.d * LOGICAL_VIEWPORT.height / this.lightCanvas.height
+        const left = Math.max(0, Math.floor(box.left * toTargetX + transform.e) - 2)
+        const top = Math.max(0, Math.floor(box.top * toTargetY + transform.f) - 2)
+        const right = Math.min(rim.width, Math.ceil(box.right * toTargetX + transform.e) + 2)
+        const bottom = Math.min(rim.height, Math.ceil(box.bottom * toTargetY + transform.f) + 2)
+        if (right <= left || bottom <= top)
+            return
+        const rimCtx = this.rimCtx
+        rimCtx.save()
+        rimCtx.setTransform(1, 0, 0, 1, 0, 0)
+        rimCtx.globalAlpha = 1
+        rimCtx.globalCompositeOperation = 'source-over'
+        rimCtx.clearRect(left, top, right - left, bottom - top)
+        rimCtx.beginPath()
+        rimCtx.rect(left, top, right - left, bottom - top)
+        rimCtx.clip()
+        background.drawLayerEdges(rimCtx)
+        rimCtx.setTransform(transform)
+        rimCtx.globalCompositeOperation = 'source-in'
+        rimCtx.imageSmoothingEnabled = true
+        rimCtx.drawImage(this.rimLightCanvas, 0, 0, LOGICAL_VIEWPORT.width, LOGICAL_VIEWPORT.height)
+        rimCtx.restore()
+
+        this.ctx.save()
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+        this.ctx.globalAlpha = strength
+        this.ctx.globalCompositeOperation = 'lighter'
+        this.ctx.drawImage(rim, left, top, right - left, bottom - top, left, top, right - left, bottom - top)
+        this.ctx.restore()
     }
     // The ninja's light plus the momentumLight.maxEmitters emitters nearest
     // to it (momentumEmitters and the blue pieces), each {x, y, radius,
@@ -1190,6 +1343,7 @@ class LightmapRenderer
             target.drawImage(this.lightLayerCanvas, rect.x, rect.y, rect.w, rect.h, rect.x, rect.y, rect.w, rect.h)
         else
             target.drawImage(this.lightLayerCanvas, 0, 0)
+        this.addRimLight(rect)
         if (!light.element && !light.trail)
             this.addDeepShadows(light)
     }
