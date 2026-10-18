@@ -20,7 +20,9 @@ tools/momentum_fx_support.py this suite checks:
   (and to the ninja from LEAK_MARGIN px around them) cross a wall have a
   luminance within 2% of the ambient-only frame (the ninja light and haze
   removed); unshadowedRise reports what the light would add there with the
-  shadows disabled; blue area lights (TASK-055) are off in these frames;
+  shadows disabled; blue area lights (TASK-055) are off in these frames, and
+  the tree's are taken with LEAK_LATER_EFFECTS_OFF served in style.js (the
+  TASK-058 lit motes take light unshadowed);
 - perf: median and p95 of draw() + a 1 px readback over PERF_FRAMES frames
   of mid-shaft at 1280x720, parent vs tree (interleaved batches); tree
   median <= 1.25x parent median;
@@ -64,6 +66,10 @@ LEAK_TOLERANCE = 0.02
 LEAK_GRID = 12
 LEAK_MARGIN = 12
 PERF_FRAMES = 300
+# Later effects that are not the shadowed ninja light: the TASK-058 lit
+# motes take light unshadowed (behind a wall too), so the wall-leak frames
+# of the tree are taken with them off (style.js served with moteGain 0)
+LEAK_LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0')]
 PERF_BATCH = 50
 MAX_PERF_RATIO = 1.25
 # The ninja light and haze removed: the ambient-only frame
@@ -283,6 +289,16 @@ class MomentumShadowsTests(unittest.TestCase):
                 self.assertLessEqual(r['ratio'], MAX_SHADOW_RATIO)
 
     def test_1_no_light_through_walls(self):
+        tree = fx.harness()
+        later_off = [patch for patch in LEAK_LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
+        leak_harness = fx.FxHarness('worktree', tree.browser, style_patch=later_off) if later_off else tree
+        try:
+            self.check_leaks(leak_harness, [patch[1] for patch in later_off])
+        finally:
+            if leak_harness is not tree:
+                leak_harness.close()
+
+    def check_leaks(self, harness, later_off):
         rows = []
         for scene in ('blue-corner', 'run-right'):
             for variant in ('scene', 'near-corner'):
@@ -293,9 +309,9 @@ class MomentumShadowsTests(unittest.TestCase):
                 def js(extra):
                     body = extra.strip()
                     return f'() => {{ {move} ({NO_BLUE_LIGHT})(); ({body})() }}'
-                on = fx.capture(scene, (1280, 720), extra_js=js('() => {}'))
-                ambient = fx.capture(scene, (1280, 720), extra_js=js(NO_NINJA_LIGHT))
-                unshadowed = fx.capture(scene, (1280, 720), extra_js=js(NO_SHADOWS))
+                on = harness.capture(scene, (1280, 720), extra_js=js('() => {}'))
+                ambient = harness.capture(scene, (1280, 720), extra_js=js(NO_NINJA_LIGHT))
+                unshadowed = harness.capture(scene, (1280, 720), extra_js=js(NO_SHADOWS))
                 metrics = leak_metrics(on, ambient, unshadowed)
                 metrics.update(scene=scene, variant=variant)
                 rows.append(metrics)
@@ -304,7 +320,7 @@ class MomentumShadowsTests(unittest.TestCase):
                     fx.save_png(on, EVIDENCE_DIR / 'leak-frames' / f'{scene}-near-corner.png')
         (EVIDENCE_DIR / 'wall-leak.json').write_text(compact({
             'viewport': [1280, 720], 'tree': fx.harness().rev, 'tolerance': LEAK_TOLERANCE, 'gridPx': LEAK_GRID,
-            'marginPx': LEAK_MARGIN, 'results': rows, 'leak': any(r['leak'] for r in rows)}))
+            'marginPx': LEAK_MARGIN, 'laterEffectsOff': later_off, 'results': rows, 'leak': any(r['leak'] for r in rows)}))
         for scene in ('blue-corner', 'run-right'):
             self.assertGreater(sum(r['samples'] for r in rows if r['scene'] == scene), 20, scene)
         for r in rows:

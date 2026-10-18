@@ -694,6 +694,9 @@ class LightmapRenderer
         // their lights, reused per frame
         this.trailSamples = []
         this.trailLights = []
+        // Speed light (updateSpeedLight): s eased over render time, the
+        // ninja light's radius/alpha and the trail gain for frame
+        this.speedLight = {s: 0, time: -1, ninja: null, frame: -1, radius: 0, alpha: 0, trailGain: 1, hazeScale: 1}
         // Light px rectangle a radial light covers ({x, y, w, h}, reused)
         this.lightRect = {x: 0, y: 0, w: 0, h: 0}
         // Crystal rim: the frame's momentum lights alone (light px) with the
@@ -1210,11 +1213,12 @@ class LightmapRenderer
         const config = STYLE.momentumLight
         const lights = this.momentumLights
         lights.length = 0
+        const speed = this.updateSpeedLight()
         const x = ninja.x + screen.x
         const y = ninja.y + screen.y
-        if (this.isLightOnScreen(x, y, config.ninjaRadius))
-            lights.push({x: x, y: y, radius: config.ninjaRadius, color: STYLE.colors.player.halo,
-                gradient: this.getMomentumGradient(), alpha: config.lightAlpha, contact: this.getNinjaContact()})
+        if (this.isLightOnScreen(x, y, speed.radius))
+            lights.push({x: x, y: y, radius: speed.radius, color: STYLE.colors.player.halo,
+                gradient: this.getMomentumGradient(), alpha: speed.alpha, contact: this.getNinjaContact()})
         const emitters = this.collectEmitters(gameState)
         if (emitters.length > config.maxEmitters)
             emitters.sort((a, b) => Math.hypot(a.x - ninja.x, a.y - ninja.y)
@@ -1231,6 +1235,91 @@ class LightmapRenderer
         this.momentumLightsFrame = drawFrameId
         return lights
     }
+    // Eases speedLight.s toward |ninja speed| / GAMEPLAY.momentumMaxSpeed over
+    // momentumLight.speedSmoothMs of render clock (a run's first frame and
+    // one after speedResetMs take it as is) and sets the frame's ninja light
+    // radius and alpha, haze scale and trail gain (fixed with speedLight off)
+    updateSpeedLight()
+    {
+        const config = STYLE.momentumLight
+        const state = this.speedLight
+        if (!config.speedLight)
+        {
+            state.radius = config.ninjaRadius
+            state.alpha = config.lightAlpha
+            state.trailGain = 1
+            state.hazeScale = 1
+            state.frame = -1
+            return state
+        }
+        if (state.frame === drawFrameId)
+            return state
+        const now = performance.now()
+        const target = Math.min(1, Math.hypot(ninja.speedX, ninja.speedY) / GAMEPLAY.momentumMaxSpeed) || 0
+        const elapsed = now - state.time
+        if (state.time < 0 || state.ninja !== ninja || !(elapsed >= 0) || elapsed > config.speedResetMs)
+            state.s = target
+        else
+            state.s += (target - state.s) * (1 - Math.exp(-elapsed / config.speedSmoothMs))
+        state.time = now
+        state.ninja = ninja
+        state.frame = drawFrameId
+        const s = state.s, slow = config.slow, fast = config.fast
+        state.radius = slow.radius + (fast.radius - slow.radius) * s
+        state.alpha = slow.alpha + (fast.alpha - slow.alpha) * s
+        state.trailGain = slow.trailGain + (fast.trailGain - slow.trailGain) * s
+        state.hazeScale = state.radius / config.ninjaRadius
+        return state
+    }
+    // Speed streaks (momentumLight.streak*) into targetCtx under the game
+    // transform: thin lines behind the ninja against its velocity once this
+    // frame's speedLight.s reaches streakFrom. Placed by streakHash of each
+    // streak's index and cycle of the render clock (no Math.random).
+    drawSpeedStreaks(targetCtx)
+    {
+        const config = STYLE.momentumLight
+        const state = this.speedLight
+        if (!this.shouldDrawMomentumLight() || !config.speedLight || state.frame !== drawFrameId
+            || state.s < config.streakFrom)
+            return
+        const speed = Math.hypot(ninja.speedX, ninja.speedY)
+        if (!(speed > 0))
+            return
+        // Backward and sideways unit vectors
+        const bx = -ninja.speedX / speed, by = -ninja.speedY / speed
+        const px = -by, py = bx
+        const u = Math.min(1, (state.s - config.streakFrom) / (1 - config.streakFrom))
+        const count = Math.round(config.streakMin + (config.streakMax - config.streakMin) * u)
+        const alpha = config.streakAlpha * (0.35 + 0.65 * u)
+        const toWorld = height / 1080 / scale[version]
+        const [shortest, longest] = config.streakLength
+        const [nearest, farthest] = config.streakSpread
+        const x0 = ninja.x + screen.x, y0 = ninja.y + screen.y
+        const clock = performance.now() / config.streakPeriodMs
+        targetCtx.save()
+        targetCtx.globalCompositeOperation = 'lighter'
+        targetCtx.strokeStyle = STYLE.colors.player.halo
+        targetCtx.lineWidth = config.streakWidth * toWorld
+        targetCtx.lineCap = 'round'
+        for (let i = 0; i < count; ++i)
+        {
+            // Golden-ratio phases keep the streaks out of step
+            const phase = clock + i * 0.6180339887
+            const cycle = Math.floor(phase)
+            const t = phase - cycle
+            const offset = streakHash(i, cycle, 1)
+            const side = (offset < 0.5 ? -1 : 1) * (nearest + (farthest - nearest) * (2 * offset % 1)) * toWorld
+            const length = (shortest + (longest - shortest) * streakHash(i, cycle, 2)) * (0.6 + 0.4 * u) * toWorld
+            const back = 1.2 * ninja.radius + t * config.streakTravel * toWorld
+            const sx = x0 + bx * back + px * side, sy = y0 + by * back + py * side
+            targetCtx.globalAlpha = alpha * Math.sin(Math.PI * t)
+            targetCtx.beginPath()
+            targetCtx.moveTo(sx, sy)
+            targetCtx.lineTo(sx + bx * length, sy + by * length)
+            targetCtx.stroke()
+        }
+        targetCtx.restore()
+    }
     // The player trail's lights (momentumLight.trailSamples), outside the
     // emitter cap: the ninja's light at trailIntensity of its alpha, times
     // the trail's own alpha at each sample, cast no deep shadows
@@ -1244,7 +1333,7 @@ class LightmapRenderer
         {
             const x = samples[i].x + screen.x
             const y = samples[i].y + screen.y
-            const alpha = config.lightAlpha * config.trailIntensity * samples[i].alpha
+            const alpha = config.lightAlpha * config.trailIntensity * samples[i].alpha * this.speedLight.trailGain
             if (alpha <= 0 || !this.isLightOnScreen(x, y, config.trailRadius))
                 continue
             if (pool.length <= i)
@@ -1565,10 +1654,11 @@ class LightmapRenderer
         let any = false
         const x = ninja.x + screen.x
         const y = ninja.y + screen.y
-        if (this.isLightOnScreen(x, y, config.hazeRadius))
+        const hazeRadius = config.hazeRadius * this.speedLight.hazeScale
+        if (this.isLightOnScreen(x, y, hazeRadius))
         {
-            this.fillRadialLight(hazeCtx, x, y, config.hazeRadius, this.getMomentumGradient(), config.hazeAlpha)
-            this.cutShadows(hazeCtx, x, y, config.hazeRadius, this.getNinjaContact())
+            this.fillRadialLight(hazeCtx, x, y, hazeRadius, this.getMomentumGradient(), config.hazeAlpha)
+            this.cutShadows(hazeCtx, x, y, hazeRadius, this.getNinjaContact())
             any = true
         }
         const lights = this.momentumLights
@@ -1625,6 +1715,18 @@ function polygonDistance(points, x, y)
         best = Math.min(best, Math.hypot(a.x + t * dx - x, a.y + t * dy - y))
     }
     return inside ? 0 : best
+}
+
+// 0..1 from a speed streak's index, cycle and a salt (integer hash)
+function streakHash(index, cycle, salt)
+{
+    let h = Math.imul(index + 1, 0x9e3779b1) ^ Math.imul(cycle | 0, 0x85ebca77) ^ Math.imul(salt, 0xc2b2ae3d)
+    h ^= h >>> 15
+    h = Math.imul(h, 0x2c1b3c6d)
+    h ^= h >>> 12
+    h = Math.imul(h, 0x297a2d39)
+    h ^= h >>> 15
+    return (h >>> 0) / 4294967296
 }
 
 function positiveModulo(value, modulus)

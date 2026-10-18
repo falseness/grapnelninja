@@ -60,6 +60,12 @@ function drawParticlesAndTrailsLayer(gameState)
     visualEffects.screenEffects.draw(gameState)
 }
 
+// Momentum speed streaks behind the ninja (MOMENTUM_FX only)
+function drawSpeedStreaksLayer()
+{
+    visualEffects.lightmap.drawSpeedStreaks(ctx)
+}
+
 // Glow halo of the emissive shapes, added before the HUD so text stays crisp
 function drawBloomLayer(gameState)
 {
@@ -157,6 +163,7 @@ function draw()
     drawPlayerTrailLayer(gameState)
     drawWorldLayer()
     drawParticlesAndTrailsLayer(gameState)
+    drawSpeedStreaksLayer()
     if (STYLE.features.bloom)
         drawBloomLayer(gameState)
     drawPlayerGlowLayer(gameState)

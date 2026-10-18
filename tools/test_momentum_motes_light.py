@@ -68,6 +68,9 @@ CONCEPT = fx.CONCEPT_DIR / '5-rim-slow.png'
 NINJA_LIGHT = '#22c8ff'
 BLUE_LIGHT = '#2f86ff'
 HIDE_MOTES = '() => { QUALITY.ambient = false }'
+# Later effects (the TASK-059 speed light) are switched off in the tree by a
+# STYLE override, so only the lit motes are compared with the parent
+LATER_EFFECTS_OFF = [('speedLight: true', 'speedLight: false')]
 # Ninja to the left edge of the view, no trail: most of the view is far
 NINJA_LEFT = '''() => { ninja.x = -screen.x + 60 * width / scale[version] / 1280; ninja.track.pos = [] }'''
 
@@ -99,9 +102,23 @@ def parent_rev():
                                    cwd=ROOT, text=True).strip()
 
 
+_TREE_HARNESS = []
+
+
+def tree_harness():
+    """The worktree harness, with LATER_EFFECTS_OFF served when its style.js has them."""
+    tree = fx.harness()
+    later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
+    if not later_off:
+        return tree
+    if not _TREE_HARNESS:
+        _TREE_HARNESS.append(fx.FxHarness('worktree', tree.browser, style_patch=later_off))
+    return _TREE_HARNESS[0]
+
+
 def capture_with_motes(scene, rev='worktree', extra_js=None):
     """(frame, motes data) of scene at VIEWPORT with MOMENTUM_FX on."""
-    context, page = fx.harness(rev).open(VIEWPORT)
+    context, page = (tree_harness() if rev == 'worktree' else fx.harness(rev)).open(VIEWPORT)
     try:
         page.evaluate(fx.BUILD, [fx.SCENE_SPECS[scene], True])
         if extra_js:
@@ -221,6 +238,8 @@ class MomentumMotesLightTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         (EVIDENCE_DIR / 'motes.json').write_text(compact(cls.result))
+        while _TREE_HARNESS:
+            _TREE_HARNESS.pop().close()
         fx.close()
 
     def test_0_motes_near_ninja_brighter_and_cyan(self):

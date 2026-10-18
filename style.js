@@ -320,7 +320,34 @@ const STYLE = Object.freeze({
         moteGain: 5,
         moteReach: 1.5,
         moteWhite: 0.2,
-        moteSteps: 8
+        moteSteps: 8,
+        // Speed light: s = |ninja speed| / GAMEPLAY.momentumMaxSpeed (0..1),
+        // eased toward over speedSmoothMs of render clock (taken as is on a
+        // run's first frame or after speedResetMs without one). The ninja
+        // light's radius and alpha go from slow to fast with s, its haze
+        // radius with the light's, the trail lights' alpha times trailGain.
+        // speedLight false: ninjaRadius, lightAlpha, no streaks.
+        speedLight: true,
+        speedSmoothMs: 150,
+        speedResetMs: 500,
+        slow: Object.freeze({radius: 360, alpha: 0.6, trailGain: 0.7}),
+        fast: Object.freeze({radius: 820, alpha: 1, trailGain: 1.4}),
+        // Speed streaks from s >= streakFrom: streakMin..streakMax thin lines
+        // of the ninja's colour behind it, against its velocity, alpha up to
+        // streakAlpha with s. Each drifts back streakTravel over
+        // streakPeriodMs and comes back at a new place (seeded by its index
+        // and cycle of the render clock), streakSpread off the ninja's line
+        // on either side (clear of the trail ribbon). Lengths, travel, width
+        // and spread in screen px at 1080.
+        streakFrom: 0.6,
+        streakMin: 3,
+        streakMax: 6,
+        streakAlpha: 0.9,
+        streakLength: Object.freeze([50, 150]),
+        streakTravel: 120,
+        streakWidth: 2.5,
+        streakSpread: Object.freeze([14, 55]),
+        streakPeriodMs: 280
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a
