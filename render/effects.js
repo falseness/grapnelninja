@@ -3433,6 +3433,80 @@ class ScreenEffects
         context.globalAlpha = alpha
         context.stroke()
     }
+    // 0..1 strength of the colour fringe at now: 1 - t^2 over fringeMs after
+    // the newest blue hit, 0 outside it (momentum lighting only)
+    getBlueFringe(now)
+    {
+        if (!this.blueHits.length || version != 'momentum' || !MOMENTUM_FX.enabled)
+            return 0
+        const t = (now - this.blueHits[this.blueHits.length - 1].start) / STYLE.momentumFx.fringeMs
+        return t >= 0 && t < 1 ? 1 - t * t : 0
+    }
+    // Chromatic aberration over the frame drawn so far: the red channel
+    // scaled away from the screen centre and the blue toward it by up to
+    // fringePx at the edges (an axis scale each, so every edge gets the full
+    // shift and the centre none), green kept. hudBoxes [x, y, w, h] (integer
+    // canvas px) are copied back unfringed and keep their exact pixels.
+    // Offscreen canvases are made once and reused; nothing is drawn at
+    // strength 0.
+    drawBlueFringe(now, hudBoxes)
+    {
+        const strength = this.getBlueFringe(now)
+        if (strength <= 0)
+            return
+        const main = this.ctx.canvas
+        const w = main.width
+        const h = main.height
+        const shift = STYLE.momentumFx.fringePx * h / 1080 * strength
+        if (!this.fringe)
+            this.fringe = [0, 1, 2].map(() => document.createElement('canvas').getContext('2d'))
+        const [source, red, blue] = this.fringe
+        for (const c of this.fringe)
+            if (c.canvas.width != w || c.canvas.height != h)
+            {
+                c.canvas.width = w
+                c.canvas.height = h
+            }
+        source.globalCompositeOperation = 'copy'
+        source.drawImage(main, 0, 0)
+        this.drawFringeChannel(red, source.canvas, shift, '#ff0000')
+        this.drawFringeChannel(blue, source.canvas, -shift, '#0000ff')
+
+        const context = this.ctx
+        context.save()
+        context.setTransform(1, 0, 0, 1, 0, 0)
+        context.globalAlpha = 1
+        context.globalCompositeOperation = 'multiply'
+        context.fillStyle = '#00ff00'
+        context.fillRect(0, 0, w, h)
+        context.globalCompositeOperation = 'lighter'
+        context.drawImage(red.canvas, 0, 0)
+        context.drawImage(blue.canvas, 0, 0)
+        // The HUD boxes back from the unfringed copy (opaque, 1:1: exact)
+        context.globalCompositeOperation = 'source-over'
+        for (const box of hudBoxes)
+            context.drawImage(source.canvas, box[0], box[1], box[2], box[3], box[0], box[1], box[2], box[3])
+        context.restore()
+    }
+    // One channel of the frame scaled about the centre so its edges move by
+    // shift px (the unscaled frame under it fills the border of a shrink)
+    drawFringeChannel(c, source, shift, colour)
+    {
+        const w = source.width
+        const h = source.height
+        const sx = 1 + shift / (w / 2)
+        const sy = 1 + shift / (h / 2)
+        c.setTransform(1, 0, 0, 1, 0, 0)
+        c.globalCompositeOperation = 'copy'
+        c.drawImage(source, 0, 0)
+        c.globalCompositeOperation = 'source-over'
+        c.setTransform(sx, 0, 0, sy, w / 2 * (1 - sx), h / 2 * (1 - sy))
+        c.drawImage(source, 0, 0)
+        c.setTransform(1, 0, 0, 1, 0, 0)
+        c.globalCompositeOperation = 'multiply'
+        c.fillStyle = colour
+        c.fillRect(0, 0, w, h)
+    }
     draw()
     {
         const now = performance.now()

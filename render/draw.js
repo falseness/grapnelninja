@@ -92,6 +92,53 @@ function drawColorGradeLayer()
     visualEffects.colorGrade.draw()
 }
 
+// Blue-hit colour fringe over everything drawn so far (momentum lighting
+// only, a short while after a blue touch); the HUD boxes are left out
+const fringeHudBoxes = []
+function drawBlueFringeLayer()
+{
+    const effects = visualEffects.screenEffects
+    if (effects.getBlueFringe(performance.now()) <= 0)
+        return
+    collectHudBoxes(fringeHudBoxes)
+    effects.drawBlueFringe(performance.now(), fringeHudBoxes)
+}
+
+// The HUD's boxes this frame in canvas px, padded by its glow: the HUD is
+// laid out (LAYOUT_PROBE) into the warmGlowSprites scratch canvas
+function collectHudBoxes(out)
+{
+    out.length = 0
+    if (!visualEffects.ui.shouldDraw())
+        return
+    if (!warmGlowSprites.ctx)
+        warmGlowSprites.ctx = document.createElement('canvas').getContext('2d')
+    const mainCtx = ctx
+    const scratch = warmGlowSprites.ctx
+    const boxes = LAYOUT_PROBE.boxes
+    scratch.setTransform(mainCtx.getTransform())
+    LAYOUT_PROBE.boxes = []
+    ctx = scratch
+    try
+    {
+        scoreText.draw()
+        menu.button.draw()
+        const k = canvas.width / getCanvasCssRect().width
+        const pad = 2 * (STYLE.ui.textShadowBlur + STYLE.ui.hudExtraShadowBlur) * canvas.height / height + 2
+        for (const b of LAYOUT_PROBE.boxes)
+        {
+            const x0 = Math.max(0, Math.floor(b.x * k - pad))
+            const y0 = Math.max(0, Math.floor(b.y * k - pad))
+            out.push([x0, y0, Math.ceil((b.x + b.width) * k + pad) - x0, Math.ceil((b.y + b.height) * k + pad) - y0])
+        }
+    }
+    finally
+    {
+        ctx = mainCtx
+        LAYOUT_PROBE.boxes = boxes
+    }
+}
+
 // First-run control hint: above the world and the player, under the HUD
 function drawTutorialHintLayer()
 {
@@ -169,6 +216,7 @@ function draw()
     drawPlayerGlowLayer(gameState)
     drawColorGradeLayer()
     drawPlayerLayer()
+    drawBlueFringeLayer()
     if (TUTORIAL_HINT.visible)
         drawTutorialHintLayer()
     drawUILayer(gameState)

@@ -379,7 +379,13 @@ const STYLE = Object.freeze({
         shardFall: 0.35,
         shardSpin: 1.2,
         shardSize: [0.22, 0.4],
-        shardFillAlpha: 0.75
+        shardFillAlpha: 0.75,
+        // Colour fringe of a blue hit (ScreenEffects.drawBlueFringe): for
+        // fringeMs the red channel is scaled away from the screen centre and
+        // the blue toward it, fringePx (screen px at 1080) each at the screen
+        // edges, 0 at the centre; strength 1 - t^2 over fringeMs
+        fringeMs: 150,
+        fringePx: 5
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a
