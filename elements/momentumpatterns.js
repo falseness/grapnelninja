@@ -691,7 +691,7 @@ MomentumObstacleFloor.onSpawn = null
 function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaftHalfWidth())
 {
     let factory = momentumPatternFactories[id]
-    if (factory?.dirs && !factory.dirs.includes(dir))
+    if (factory && factory.dirs && !factory.dirs.includes(dir))
         factory = undefined
     const floor = version == 'momentum' && floors ? floors.find(f => f instanceof MomentumPatternFloor) : null
     if (!factory || !floor)

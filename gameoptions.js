@@ -190,7 +190,9 @@ function momentumMotionScale(power)
 {
     if (version != 'momentum')
         return 1
-    return (window.MOMENTUM_TIME_SCALE_OVERRIDE ?? GAMEPLAY.momentumTimeScale) ** power
+    const override = window.MOMENTUM_TIME_SCALE_OVERRIDE
+    const scale = override !== undefined && override !== null ? override : GAMEPLAY.momentumTimeScale
+    return scale ** power
 }
 const defaultEqualityTolerance = 1
 

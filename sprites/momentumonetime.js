@@ -44,7 +44,7 @@ class MomentumOneTime extends Trampoline
     // catalog bound while nothing is used), else the last one
     getMotionBound(side)
     {
-        const candidates = this.motionCandidates?.[side]
+        const candidates = this.motionCandidates && this.motionCandidates[side]
         if (!candidates)
             return this.motion[side]
         for (const candidate of candidates)
