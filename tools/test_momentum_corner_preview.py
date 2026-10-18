@@ -3,9 +3,10 @@
 User report: "we still have troubles with camera on corners. I would prefer
 it to change direction earlier. e.g. if there is a tunnel down, i see nothing
 down and i have to go there blindly." The drive is that of
-test_momentum_corner_camera: course scripts right -> up -> right and
-right -> down -> right (test_momentum_shaft_view) for the joins right->up,
-up->right, right->down and down->right, the rAF loop stopped, the obstacle
+test_momentum_corner_camera: course scripts right -> right -> down / up ->
+right for the joins right->down and right->up (a straight run longer than 1.5
+views before the join) and right -> down / up -> right (test_momentum_shaft_view)
+for down->right and up->right, the rAF loop stopped, the obstacle
 floor emptied, the ninja invulnerable, one calcPhysics() per point, points
 0.9 * momentumMaxSpeed apart. The corner box is the overlap of the two
 corridors around the join (the vertical segment's half width across x, the
@@ -48,19 +49,29 @@ import unittest
 
 from browser_test_support import start_browser_test, wait_for_boot_run
 from test_momentum_camera import SEED_COURSE
-from test_momentum_shaft_view import SCRIPTS
+from test_momentum_shaft_view import SCRIPTS as SHAFT_SCRIPTS
 
 ROOT = Path(__file__).resolve().parents[1]
 MIN_PREVIEW = 0.25
 PREVIEW_DROP = 0.002
 MIN_MARGIN = 0.10
 START_D = 1.5
+# Least straight approach before START_D (views), to get onto the far lane
+LEAD = 0.2
 SHOT_D = 0.25
 VIEWPORT = (1280, 720)
 SHOT_VIEWPORTS = [(1280, 720), (390, 844)]
 SHOT_JOINS = ['right-down', 'down-right']
+# Into a shaft: right, right (the rightAfterRight draw 0.1 < 0.4 keeps it
+# right, no dir draw), then the shaft: about 2.5 views of straight corridor at
+# 1280x720 before the join, where one right segment (at most maxLen, 5
+# heights) is under 1.5 views. Out of a shaft: the test_momentum_shaft_view
+# scripts
+SCRIPTS = dict(SHAFT_SCRIPTS, **{'right-right-down': [0.99, 0.1, 0.99, 0.9, 0.9, 0.99, 0.5],
+                                 'right-right-up': [0.99, 0.1, 0.99, 0.9, 0.1, 0.99, 0.5]})
 # join: (course script, index of the segment before the join)
-JOINS = {'right-down': ('down', 0), 'right-up': ('up', 0), 'down-right': ('down', 1), 'up-right': ('up', 1)}
+JOINS = {'right-down': ('right-right-down', 1), 'right-up': ('right-right-up', 1),
+         'down-right': ('down', 1), 'up-right': ('up', 1)}
 DRIVES = ['centre', 'far']
 # Joins whose preview test fails on 7d04e88..332a63d. Out of a shaft
 # (down/up->right) the camera centred on a shaft half a view wide (TASK-043)
@@ -69,7 +80,6 @@ INTO_SHAFT = ['right-down', 'right-up']
 
 # Builds the drive's path and the join geometry; window.previewState drives RUN
 SETUP = '''([index, drive, startD]) => {
-    const LEAD = 0.05
     resetCourseScript()
     startGame('momentum')
     cancelAnimationFrame(game)
@@ -88,9 +98,13 @@ SETUP = '''([index, drive, startD]) => {
         for (let i = 0; i < n; ++i)
             path.push([x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, (x1 - x0) / n, (y1 - y0) / n])
     }
-    // Earlier segments along the centre line
+    // Earlier segments along the centre line, up to the straight run that
+    // ends at the join (segments along a's axis before it are part of it)
+    let first = index
+    while (first > 0 && momentumCourse.segment(first - 1).dir == a.dir)
+        --first
     let x = ninja.x, y = momentumCourse.segment(0).y0
-    for (let i = 0; i < index; ++i) {
+    for (let i = 0; i < first; ++i) {
         const s = momentumCourse.segment(i)
         line(x, y, s.x1, s.y1)
         x = s.x1; y = s.y1
@@ -102,24 +116,17 @@ SETUP = '''([index, drive, startD]) => {
     // Sideways offset of the far lane: away from the next direction
     const side = drive == 'far' ? (a.dir == 'right' ? [0, -db.y * 0.8 * H] : [-db.x * 0.8 * W, 0]) : [0, 0]
     const lane = d => { const p = at(d); return [p[0] + side[0], p[1] + side[1]] }
-    // Centre line up to d = startD + 0.5, onto the lane by startD. A right
-    // segment is at most maxLen (5 heights) long, under 1.5 views at
-    // 1280x720: there the drive starts where the ninja is (dMax; the spawn,
-    // 0.09 of the view from its left edge before the camera scrolls), onto
-    // the lane by dMax - LEAD, and rows are kept from there
+    // Centre line up to d = startD + 0.5 (or from where the ninja is if the
+    // straight run is shorter: 1.77 views right, right at 1280x720, 1.85 in
+    // a shaft), onto the lane by startD (the caller checks dMax >= startD +
+    // LEAD)
     const dMax = a.dir == 'right' ? (box.left - x) / viewW
         : a.dir == 'down' ? (box.top - y) / viewH : (y - box.bottom) / viewH
     const entry = lane(0)
-    if (dMax >= startD + 0.5) {
-        const p0 = at(startD + 0.5), p1 = lane(startD)
-        line(x, y, p0[0], p0[1])
-        line(p0[0], p0[1], p1[0], p1[1])
-        line(p1[0], p1[1], entry[0], entry[1])
-    } else {
-        const p1 = lane(Math.max(0, Math.min(startD, dMax - LEAD)))
-        line(x, y, p1[0], p1[1])
-        line(p1[0], p1[1], entry[0], entry[1])
-    }
+    const p0 = at(Math.min(startD + 0.5, dMax)), p1 = lane(startD)
+    line(x, y, p0[0], p0[1])
+    line(p0[0], p0[1], p1[0], p1[1])
+    line(p1[0], p1[1], entry[0], entry[1])
     // Through the box: centre to the join point and out along the next centre
     // line; far straight to the next centre line on the exit edge
     const exit = [jx + db.x * W, jy + db.y * H]
@@ -129,8 +136,7 @@ SETUP = '''([index, drive, startD]) => {
     } else
         line(entry[0], entry[1], exit[0], exit[1])
     line(exit[0], exit[1], exit[0] + db.x * 4 * v, exit[1] + db.y * 4 * v)
-    window.previewState = {path, box, a, b, i: 0, n0: ninja, deaths0: lethalDeaths, W, H,
-                          from: Math.min(startD, dMax - LEAD)}
+    window.previewState = {path, box, a, b, i: 0, n0: ninja, deaths0: lethalDeaths, W, H, from: startD}
     return {box, dirs: [a.dir, b.dir], W, H, viewW, viewH, pathLength: path.length, dMax}
 }'''
 
@@ -264,15 +270,15 @@ class MomentumCornerPreviewTests(unittest.TestCase):
         for drive in DRIVES:
             setup = page.evaluate(SETUP, [index, drive, START_D])
             self.assertEqual('-'.join(setup['dirs']), join)
+            self.assertGreaterEqual(setup['dMax'], START_D + LEAD, f'{join} {drive}: approach of {setup["dMax"]} views')
             r = page.evaluate(RUN, [None, START_D])
             self.assertEqual(r['stop'], 'exit', f'{join} {drive}: drive ended without leaving the box ({r["stop"]})')
             self.assertEqual(r['deaths'], 0)
             rows = r['rows']
-            start = min(START_D, setup['dMax'] - 0.05)
-            self.assertGreaterEqual(rows[0]['d'], start - 0.01, f'{join} {drive}: drive starts at d {rows[0]["d"]}')
+            self.assertGreaterEqual(rows[0]['d'], START_D - 0.01, f'{join} {drive}: drive starts at d {rows[0]["d"]}')
             summary = {'startD': rows[0]['d']}
-            summary.update({f'preview@d{d}': first_at(rows, d)['preview'] if rows[0]['d'] >= d - 0.01 else None
-                            for d in (1, 0.5, 0)})
+            summary.update({f'preview@d{d}': first_at(rows, d)['preview'] for d in (1, 0.5, 0)})
+            summary['dMax'] = round(setup['dMax'], 4)
             summary['minMargin'] = min(row['margin'] for row in rows)
             print(f'{join} {drive}: {json.dumps(summary)} cycles {len(rows)}', file=sys.stderr)
             result[drive] = {'rows': rows, 'summary': summary}
