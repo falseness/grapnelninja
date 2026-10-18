@@ -9,7 +9,10 @@ after the canvas size changes. Gradients from any caller (lights,
 grade, sprites) are counted too: after WARMUP_FRAMES game frames (the first
 frames build the light and ninja sprite gradients), no game frame may create
 one, except CubeTrackLine.draw: its moving endpoints require a fresh trail
-gradient (TASK-184). Candidate: GRADIENT_REV (default worktree).
+gradient (TASK-184). The load-time creations are checked by caller: the 7
+legacy ones, plus 3 momentum lighting caches that only exist with the
+lighting switch on; with lighting stored off the load is the legacy 7 again.
+Candidate: GRADIENT_REV (default worktree).
 """
 from contextlib import ExitStack
 import os
@@ -28,12 +31,19 @@ VIEWPORT = render_snapshot.VIEWPORTS[0]
 # The baked far tile's own gradients are built once per tile size and fall
 # under the any-caller count.
 COUNT_SCRIPT = '''(() => {
-    const counter = window.__bgGradients = {frame: 0, all: 0}
+    const counter = window.__bgGradients = {frame: 0, all: 0, callers: {}}
     for (const name of ['createLinearGradient', 'createRadialGradient']) {
         const original = CanvasRenderingContext2D.prototype[name]
         CanvasRenderingContext2D.prototype[name] = function (...args) {
             // Hazard trails deliberately build a gradient from moving endpoints.
-            if (!/CubeTrackLine\\.draw /.test(new Error().stack)) counter.all++
+            const stack = new Error().stack
+            if (!/CubeTrackLine\\.draw /.test(stack)) {
+                counter.all++
+                // First frame outside this wrapper: function name and file
+                const m = /at (?:new )?([^ ]+) \\(.*\\/([^\\/]+\\.js):/.exec(stack.split('\\n')[2] || '')
+                const caller = m ? m[1] + ' ' + m[2] : '?'
+                counter.callers[caller] = (counter.callers[caller] || 0) + 1
+            }
             if (/\\.buildGradients /.test(new Error().stack)) counter.frame++
             return original.apply(this, args)
         }
@@ -41,6 +51,30 @@ COUNT_SCRIPT = '''(() => {
 })()'''
 
 TAKE_ALL_SCRIPT = '''() => { const n = __bgGradients.all; __bgGradients.all = 0; return n }'''
+TAKE_CALLERS_SCRIPT = '''() => { const c = __bgGradients.callers; __bgGradients.callers = {}; return c }'''
+# The momentum lighting switch stored off (PROGRESS reads it at boot)
+LIGHTING_OFF_SCRIPT = '''localStorage.setItem('grapnelninja.lighting', 'false')'''
+
+# Load-time creations by caller with lighting off (and on every tree before
+# the momentum lighting): the background cache's base, haze and vignette
+# (buildGradients, base and haze via createVerticalGradients), the baked far
+# tile's base and haze (createVerticalGradients), the ninja's glow sprite and
+# the tutorial hint sprite. No legacy washes.
+LEGACY_CALLERS = {
+    'BackgroundRenderer.createVerticalGradients effects.js': 4,
+    'BackgroundRenderer.buildGradients effects.js': 1,
+    'Ninja.getGlowSprite ninja.js': 1,
+    'Object.build tutorialhint.js': 1,
+}
+# Momentum lighting caches built at load (MOMENTUM_FX on), each reused by later
+# frames: the ninja light (LightmapRenderer.momentumGradient, via
+# getMomentumGradient), the wall veins' light colour (LightmapRenderer.gradients,
+# keyed by colour, via getLightGradient), both from createLightGradient; the
+# deep shadow mask (LightmapRenderer.shadowGradient).
+LIGHTING_CALLERS = {
+    'LightmapRenderer.createLightGradient effects.js': 2,
+    'LightmapRenderer.getShadowGradient effects.js': 1,
+}
 TAKE_SCRIPT = '''() => { const n = __bgGradients.frame; __bgGradients.frame = 0; return n }'''
 
 MENU_SCRIPT = '''frames => {
@@ -58,7 +92,7 @@ MENU_SCRIPT = '''frames => {
 }'''
 
 
-def background_gradient_counts(rev, mode='bad', frames=FRAMES):
+def background_gradient_counts(rev, mode='bad', frames=FRAMES, lighting=True):
     """Per-frame background gradient creations: 'load' (the menu drawn at page load,
     the first background frame), 'menu' (frames more menu frames), 'game' (startGame
     then frames game frames), 'resized' (10 game frames after a canvas size change)."""
@@ -73,6 +107,8 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         stack.callback(context.close)
         context.add_init_script(SEED_SCRIPT % render_snapshot.SEED)
         context.add_init_script(render_snapshot.CLOCK_SCRIPT)
+        if not lighting:
+            context.add_init_script(LIGHTING_OFF_SCRIPT)
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
@@ -81,6 +117,7 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         render_snapshot.boot_frozen(page)
         load = page.evaluate(TAKE_SCRIPT)
         load_all = page.evaluate(TAKE_ALL_SCRIPT)
+        load_callers = page.evaluate(TAKE_CALLERS_SCRIPT)
         page.evaluate(render_snapshot.SETUP_SCRIPT, [script, True])
         menu = page.evaluate(MENU_SCRIPT, frames)
         page.evaluate('mode => startGame(mode)', mode)
@@ -108,7 +145,8 @@ def background_gradient_counts(rev, mode='bad', frames=FRAMES):
         for tick in range(frames + 1, frames + 11):
             page.evaluate(render_snapshot.ADVANCE_SCRIPT, tick)
             resized.append(page.evaluate(TAKE_SCRIPT))
-        return {'rev': rev_id, 'mode': mode, 'frames': frames, 'load': load, 'load_all': load_all, 'menu': menu, 'game': game,
+        return {'rev': rev_id, 'mode': mode, 'frames': frames, 'load': load, 'load_all': load_all,
+                'load_callers': load_callers, 'menu': menu, 'game': game,
                 'game_all': game_all,
                 'resized_canvas': size, 'resized': resized, 'page_errors': errors}
 
@@ -117,7 +155,7 @@ class BackgroundGradientCacheTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.r = background_gradient_counts(os.environ.get('GRADIENT_REV', 'worktree'))
-        print('rev', cls.r['rev'], 'load', cls.r['load'], 'game[:3]', cls.r['game'][:3], 'resized', cls.r['resized'],
+        print('rev', cls.r['rev'], 'load', cls.r['load'], 'load_callers', cls.r['load_callers'], 'game[:3]', cls.r['game'][:3], 'resized', cls.r['resized'],
               'menu[:3]', cls.r['menu'][:3], 'game_all', cls.r['game_all'])
 
     def test_no_page_errors(self):
@@ -125,9 +163,17 @@ class BackgroundGradientCacheTest(unittest.TestCase):
 
     def test_first_frame_builds_all(self):
         self.assertEqual(self.r['load'], 3)
-        # Base, haze, vignette, the baked far tile's base and haze, plus two
-        # warmed ninja sprites; no legacy washes.
-        self.assertEqual(self.r['load_all'], 7)
+        # The 7 legacy creations plus the 3 momentum lighting caches
+        self.assertEqual(self.r['load_callers'], {**LEGACY_CALLERS, **LIGHTING_CALLERS})
+        self.assertEqual(self.r['load_all'], 10)
+
+    def test_lighting_off_load_builds_legacy_only(self):
+        off = background_gradient_counts(os.environ.get('GRADIENT_REV', 'worktree'), frames=10, lighting=False)
+        print('lighting off: load', off['load'], 'load_all', off['load_all'], 'load_callers', off['load_callers'])
+        self.assertEqual(off['page_errors'], [])
+        self.assertEqual(off['load'], 3)
+        self.assertEqual(off['load_callers'], LEGACY_CALLERS)
+        self.assertEqual(off['load_all'], 7)
 
     def test_next_frames_build_none(self):
         self.assertEqual(self.r['menu'], [0] * FRAMES)
