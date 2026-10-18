@@ -3,7 +3,7 @@
 // by GAMEPLAY.momentumBlueSlow (same direction) and costs one hp
 // (momentumState.onBlueTouch) and starts its hit flash and ring
 // (ScreenEffects.triggerBlueHit, visual only), then it fades out like a green
-// (sprites/momentumonetime.js). Not lethal by itself.
+// (sprites/momentumonetime.js) while its outline breaks into shards. Not lethal by itself.
 class MomentumBlue extends MomentumOneTime
 {
     constructor(object)
@@ -21,6 +21,11 @@ class MomentumBlue extends MomentumOneTime
         return new MomentumBlue(MomentumOneTime.shapeObject(spec))
     }
     hasInnerShell()
+    {
+        return true
+    }
+    // Used: shards instead of the fading outline (MOMENTUM_FX)
+    hasShards()
     {
         return true
     }

@@ -368,7 +368,18 @@ const STYLE = Object.freeze({
         ringHaloWidth: 16,
         ringHaloAlpha: 0.3,
         ringEcho: 0.72,
-        ringEchoAlpha: 0.45
+        ringEchoAlpha: 0.45,
+        // A used blue breaks into shardCount neon triangles instead of its
+        // fading outline (MomentumOneTime.drawShards): they start on its
+        // outline and drift outward by shardTravel x its circumscribed
+        // radius (eased out), fall by shardFall x radius x t^2 and spin up
+        // to shardSpin turns, sides shardSize x its shorter extent
+        shardCount: 12,
+        shardTravel: [0.5, 1.1],
+        shardFall: 0.35,
+        shardSpin: 1.2,
+        shardSize: [0.22, 0.4],
+        shardFillAlpha: 0.75
     }),
     // Bloom: the emissive shapes (outlines, rope, player trail,
     // sparks) are redrawn into a low-resolution glow canvas, blurred by a
