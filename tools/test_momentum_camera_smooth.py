@@ -47,8 +47,9 @@ from test_momentum_camera import SEED_COURSE, START
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEED_HEIGHT_RATIO = 0.06
-# MOMENTUM_SMOOTH_SPEED=cap drives at GAMEPLAY.momentumMaxSpeed per physics
-# step instead (TASK-034 sweep)
+# MOMENTUM_SMOOTH_SPEED=cap drives at the effective cap GAMEPLAY.momentumMaxSpeed
+# * momentumMotionScale(1) per physics cycle instead (TASK-034 sweep; TASK-075:
+# the slow-motion cap is 0.0103 height per tick, under 0.06)
 AT_CAP = os.environ.get('MOMENTUM_SMOOTH_SPEED') == 'cap'
 # The TASK-004 draws after two long right segments (draws: segment 0 length,
 # right-after-right, its length): the camera cruises for more than 10 frames
@@ -146,7 +147,7 @@ class SmoothCameraTests(unittest.TestCase):
         cls.options = cls.page.evaluate('({...GAMEPLAY.momentumCamera})')
         print('method: frame-skip emulation of runFixedPhysics, 60 fps = 1 physics() per '
               'frame, 30 fps = 2 physics() per frame; ninja speed '
-              + ('GAMEPLAY.momentumMaxSpeed per physics step (cap)' if AT_CAP else
+              + ('GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1) per physics cycle (effective cap)' if AT_CAP else
                  f'{SPEED_HEIGHT_RATIO} height per physics tick'), file=sys.stderr)
         print('GAMEPLAY.momentumCamera:', cls.options, file=sys.stderr)
         cls.runs = {fps: cls.run_course(fps) for fps in (60, 30)}
@@ -160,7 +161,7 @@ class SmoothCameraTests(unittest.TestCase):
         # course until TASK-018) would hit the driven ninja
         page.evaluate('floors = floors.filter(f => !(f instanceof MomentumObstacleFloor))')
         before = page.evaluate('window.startNinja = ninja, window.startScreen = screen, lethalDeaths')
-        step = page.evaluate('GAMEPLAY.momentumMaxSpeed * cyclesPerTick' if AT_CAP else f'{SPEED_HEIGHT_RATIO} * height')
+        step = page.evaluate('GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1) * cyclesPerTick' if AT_CAP else f'{SPEED_HEIGHT_RATIO} * height')
         points = page.evaluate(PATH, [LAST_SEGMENT, step])
         per = 60 // fps
         frames = [points[i:i + per] for i in range(0, len(points) - per + 1, per)]

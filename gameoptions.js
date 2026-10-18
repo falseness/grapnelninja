@@ -142,9 +142,9 @@ const GAMEPLAY = Object.freeze({
         deletionMarginHeightRatio: 0.1,
         shaftMarginHeightRatio: 0.02,
         shaftBrakeBufferHeightRatio: 0.05,
-        holdMargin: 0.35,
+        holdMargin: 0.4,
         turnCatchUpMs: 400,
-        turnCatchUpSpeedRatio: 1,
+        turnCatchUpSpeedRatio: 0.72,
         // Pre-turn preview (MomentumScreen.follow): in a right segment
         // leading into a shaft the camera eases toward it before the corner.
         // start: view widths before the corner box where the preview begins;
