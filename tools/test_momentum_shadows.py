@@ -69,7 +69,8 @@ PERF_FRAMES = 300
 # Later effects that are not the shadowed ninja light: the TASK-058 lit
 # motes take light unshadowed (behind a wall too), so the wall-leak frames
 # of the tree are taken with them off (style.js served with moteGain 0)
-LEAK_LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'), ('show: true', 'show: false')]
+LEAK_LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'), ('show: true,\n            parallax', 'show: false,\n            parallax'),
+                     ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
 PERF_BATCH = 50
 MAX_PERF_RATIO = 1.25
 # The ninja light and haze removed: the ambient-only frame

@@ -386,6 +386,21 @@ const STYLE = Object.freeze({
         // edges, 0 at the centre; strength 1 - t^2 over fringeMs
         fringeMs: 150,
         fringePx: 5,
+        // Last heart (momentumState.hp == 1): the ninja light and its haze
+        // take momentum.heartStroke and their alpha pulses on the render
+        // clock, x 1 - lowHpPulse x (1 - cos(2 pi t / lowHpPulseMs)) / 2; a
+        // red vignette (lowHpVignetteColor, alpha 0 inside lowHpVignetteInner
+        // of the half diagonal, lowHpVignette at the corners) is laid under
+        // the HUD. Both blend in and out over lowHpBlendMs of render clock.
+        lowHpPulseMs: 1000,
+        lowHpPulse: 0.35,
+        lowHpBlendMs: 300,
+        // The ninja's haze ('lighter', its colour over the cave) x this at
+        // the last heart, so the light reads pink on the blue cave
+        lowHpHaze: 2.5,
+        lowHpVignette: 0.15,
+        lowHpVignetteInner: 0.4,
+        lowHpVignetteColor: '#ff1a2e',
         // Foreground crystal silhouettes (render/foreground.js): near-black
         // crystals rising from the bottom edge and hanging under the HUD,
         // seen only through windows bandWidth of the view width wide at the

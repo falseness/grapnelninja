@@ -645,6 +645,19 @@ function colorWithAlpha(hex, alpha)
     return 'rgba(' + (value >> 16 & 255) + ', ' + (value >> 8 & 255) + ', ' + (value & 255) + ', ' + alpha + ')'
 }
 
+// '#rrggbb' mix of two '#rrggbb' colours, t in [0, 1]
+function mixHexColors(from, to, t)
+{
+    const a = parseInt(from.slice(1, 7), 16), b = parseInt(to.slice(1, 7), 16)
+    let out = 0
+    for (const shift of [16, 8, 0])
+    {
+        const x = a >> shift & 255
+        out |= Math.round(x + ((b >> shift & 255) - x) * t) << shift
+    }
+    return '#' + out.toString(16).padStart(6, '0')
+}
+
 // Coloured light spill: obstacles add a soft radial light of their own
 // colour into a small canvas, which is added over the crystal background before
 // the world is drawn, so obstacles themselves are never washed out.
@@ -697,6 +710,11 @@ class LightmapRenderer
         // Speed light (updateSpeedLight): s eased over render time, the
         // ninja light's radius/alpha and the trail gain for frame
         this.speedLight = {s: 0, time: -1, ninja: null, frame: -1, radius: 0, alpha: 0, trailGain: 1, hazeScale: 1}
+        // Last-heart light (updateLowHp): blend 0..1 eased over render time,
+        // the frame's pulse gain, colour and gradient; pulseShiftMs moves
+        // the pulse's clock (a test hook, 0 in play)
+        this.lowHp = {blend: 0, time: -1, frame: -1, gain: 1, color: null, gradient: null,
+            pulseShiftMs: 0, gradients: new Map, vignette: null}
         // Light px rectangle a radial light covers ({x, y, w, h}, reused)
         this.lightRect = {x: 0, y: 0, w: 0, h: 0}
         // Crystal rim: the frame's momentum lights alone (light px) with the
@@ -1246,11 +1264,12 @@ class LightmapRenderer
         const lights = this.momentumLights
         lights.length = 0
         const speed = this.updateSpeedLight()
+        const lowHp = this.updateLowHp()
         const x = ninja.x + screen.x
         const y = ninja.y + screen.y
         if (this.isLightOnScreen(x, y, speed.radius))
-            lights.push({x: x, y: y, radius: speed.radius, color: STYLE.colors.player.halo,
-                gradient: this.getMomentumGradient(), alpha: speed.alpha, contact: this.getNinjaContact()})
+            lights.push({x: x, y: y, radius: speed.radius, color: lowHp.color,
+                gradient: lowHp.gradient, alpha: speed.alpha * lowHp.gain, contact: this.getNinjaContact()})
         const emitters = this.collectEmitters(gameState)
         if (emitters.length > config.maxEmitters)
             emitters.sort((a, b) => Math.hypot(a.x - ninja.x, a.y - ninja.y)
@@ -1302,6 +1321,98 @@ class LightmapRenderer
         state.trailGain = slow.trailGain + (fast.trailGain - slow.trailGain) * s
         state.hazeScale = state.radius / config.ninjaRadius
         return state
+    }
+    // Eases lowHp.blend toward 1 while momentumState.hp == 1 (else 0) by
+    // 1 / momentumFx.lowHpBlendMs per ms of render clock (the first frame
+    // and one after a pause of over a second take it as is) and sets the
+    // frame's ninja light colour, gradient and pulse gain; at blend 0 they
+    // are the plain ninja light's
+    updateLowHp()
+    {
+        const config = STYLE.momentumFx
+        const state = this.lowHp
+        if (state.frame === drawFrameId)
+            return state
+        const now = performance.now()
+        const target = version == 'momentum' && momentumState.hp == 1 ? 1 : 0
+        const elapsed = now - state.time
+        if (state.time < 0 || !(elapsed >= 0) || elapsed > 1000)
+            state.blend = target
+        else
+            state.blend = target > state.blend ? Math.min(target, state.blend + elapsed / config.lowHpBlendMs)
+                : Math.max(target, state.blend - elapsed / config.lowHpBlendMs)
+        state.time = now
+        state.frame = drawFrameId
+        const blend = state.blend
+        if (blend <= 0)
+        {
+            state.gain = 1
+            state.color = STYLE.colors.player.halo
+            state.gradient = this.getMomentumGradient()
+            return state
+        }
+        // Pulse phase from an integer ms clock (repeats exactly each period),
+        // gain in 1/512 steps; colour mixed in 1/16 steps (cached gradients)
+        const period = config.lowHpPulseMs
+        const phase = ((Math.round(now + state.pulseShiftMs) % period) + period) % period / period
+        const dip = config.lowHpPulse * (0.5 - 0.5 * Math.cos(2 * Math.PI * phase))
+        state.gain = Math.round((1 - dip * blend) * 512) / 512
+        const step = Math.round(blend * 16)
+        let entry = state.gradients.get(step)
+        if (!entry)
+        {
+            const color = mixHexColors(STYLE.colors.player.halo, STYLE.momentum.heartStroke, step / 16)
+            entry = {color: color, gradient: this.createLightGradient(color)}
+            state.gradients.set(step, entry)
+        }
+        state.color = entry.color
+        state.gradient = entry.gradient
+        return state
+    }
+    // The last-heart vignette (momentumFx.lowHp*) over the main canvas at the
+    // frame's blend, the HUD boxes ([x, y, w, h] canvas px) left out: one
+    // cached radial tile per canvas size, nothing drawn at blend 0
+    drawLowHpVignette(targetCtx, hudBoxes)
+    {
+        if (version != 'momentum' || !MOMENTUM_FX.enabled)
+            return
+        const blend = this.updateLowHp().blend
+        if (blend <= 0)
+            return
+        const w = targetCtx.canvas.width
+        const h = targetCtx.canvas.height
+        let tile = this.lowHp.vignette
+        if (!tile || tile.width != w || tile.height != h)
+        {
+            const config = STYLE.momentumFx
+            tile = tile || document.createElement('canvas')
+            tile.width = w
+            tile.height = h
+            const c = tile.getContext('2d')
+            const r = Math.hypot(w, h) / 2
+            const gradient = c.createRadialGradient(w / 2, h / 2, r * config.lowHpVignetteInner, w / 2, h / 2, r)
+            gradient.addColorStop(0, colorWithAlpha(config.lowHpVignetteColor, 0))
+            gradient.addColorStop(0.5, colorWithAlpha(config.lowHpVignetteColor, config.lowHpVignette * 0.3))
+            gradient.addColorStop(1, colorWithAlpha(config.lowHpVignetteColor, config.lowHpVignette))
+            c.fillStyle = gradient
+            c.fillRect(0, 0, w, h)
+            this.lowHp.vignette = tile
+        }
+        targetCtx.save()
+        targetCtx.setTransform(1, 0, 0, 1, 0, 0)
+        // One clip per box (boxes overlap: an even-odd path of all of them
+        // would let their overlaps through)
+        for (const box of hudBoxes)
+        {
+            targetCtx.beginPath()
+            targetCtx.rect(0, 0, w, h)
+            targetCtx.rect(box[0], box[1], box[2], box[3])
+            targetCtx.clip('evenodd')
+        }
+        targetCtx.globalAlpha = blend
+        targetCtx.globalCompositeOperation = 'source-over'
+        targetCtx.drawImage(tile, 0, 0)
+        targetCtx.restore()
     }
     // Speed streaks (momentumLight.streak*) into targetCtx under the game
     // transform: thin lines behind the ninja against its velocity once this
@@ -1698,7 +1809,12 @@ class LightmapRenderer
         const hazeRadius = config.hazeRadius * this.speedLight.hazeScale
         if (this.isLightOnScreen(x, y, hazeRadius))
         {
-            this.fillRadialLight(hazeCtx, x, y, hazeRadius, this.getMomentumGradient(), config.hazeAlpha)
+            const lowHp = this.updateLowHp()
+            const hazeAlpha = lowHp.blend > 0
+                ? config.hazeAlpha * lowHp.gain * (1 + (STYLE.momentumFx.lowHpHaze - 1) * lowHp.blend)
+                : config.hazeAlpha
+            for (let alpha = hazeAlpha; alpha > 0; alpha -= 1)
+                this.fillRadialLight(hazeCtx, x, y, hazeRadius, lowHp.gradient, Math.min(1, alpha))
             this.cutShadows(hazeCtx, x, y, hazeRadius, this.getNinjaContact())
             any = true
         }

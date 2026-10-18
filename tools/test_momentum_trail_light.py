@@ -54,7 +54,8 @@ POINT_X = (80, 140, 200)
 TRAIL_OFF = [('trailIntensity: 0.35', 'trailIntensity: 0')]
 EMPTY_TRAIL = '() => { ninja.track.pos = [] }'
 LATER_EFFECTS_OFF = [('rimStrength: 1', 'rimStrength: 0'), ('moteGain: 5', 'moteGain: 0'),
-                     ('speedLight: true', 'speedLight: false'), ('show: true', 'show: false')]
+                     ('speedLight: true', 'speedLight: false'), ('show: true,\n            parallax', 'show: false,\n            parallax'),
+                     ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
 REUSE = r'''() => {
     const l = visualEffects.lightmap
     draw()

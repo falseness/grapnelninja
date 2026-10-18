@@ -63,7 +63,8 @@ CONCEPT = fx.CONCEPT_DIR / '5-rim-slow.png'
 # Later effects (the TASK-058 lit motes) switched off by a STYLE override in
 # the rim and far checks, so only the rim is compared with the parent
 LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'), ('speedLight: true', 'speedLight: false'),
-                     ('show: true', 'show: false')]
+                     ('show: true,\n            parallax', 'show: false,\n            parallax'),
+                     ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
 # Ninja to the left edge of the view, no trail: most of the view is far
 NINJA_LEFT = '''() => { ninja.x = -screen.x + 60 * width / scale[version] / 1280; ninja.track.pos = [] }'''
 

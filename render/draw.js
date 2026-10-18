@@ -146,6 +146,18 @@ function collectHudBoxes(out)
     }
 }
 
+// Last-heart red vignette over the frame, the HUD boxes left out (momentum
+// lighting only, while the blend of momentumState.hp == 1 is above 0)
+const lowHpHudBoxes = []
+function drawLowHpVignetteLayer()
+{
+    const lightmap = visualEffects.lightmap
+    if (version != 'momentum' || !MOMENTUM_FX.enabled || lightmap.updateLowHp().blend <= 0)
+        return
+    collectHudBoxes(lowHpHudBoxes)
+    lightmap.drawLowHpVignette(ctx, lowHpHudBoxes)
+}
+
 // First-run control hint: above the world and the player, under the HUD
 function drawTutorialHintLayer()
 {
@@ -225,6 +237,7 @@ function draw()
     drawPlayerLayer()
     drawForegroundLayer()
     drawBlueFringeLayer()
+    drawLowHpVignetteLayer()
     if (TUTORIAL_HINT.visible)
         drawTutorialHintLayer()
     drawUILayer(gameState)

@@ -66,7 +66,8 @@ MAX_FAR_RATIO = 0.60
 MIN_NEAR_RATIO = 1.25
 MAX_EMISSIVE_DELTA = 3
 LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'), ('speedLight: true', 'speedLight: false'),
-                     ('show: true', 'show: false')]
+                     ('show: true,\n            parallax', 'show: false,\n            parallax'),
+                     ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
 ALLOC_FRAMES = 120
 # Opaque art: black- and white-background captures differ by at most this
 OPAQUE_TOLERANCE = 2
