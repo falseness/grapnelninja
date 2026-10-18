@@ -176,7 +176,8 @@ class MomentumPortPatternFactory
     // (x, y): the footprint start on the corridor centre line
     create(x, y)
     {
-        return this.pattern.pieces.map(piece =>
+        const pieces = this.pattern.pieces
+        const elements = pieces.map(piece =>
         {
             const spec = {shape: piece.shape, x: x + piece.x, y: y + piece.y, w: piece.w, h: piece.h}
             if (piece.points)
@@ -186,8 +187,75 @@ class MomentumPortPatternFactory
                                yMax: y + piece.motion.yMax, gravity: piece.motion.gravity}
             return (piece.kind == 'blue' ? MomentumBlue : MomentumGreen).shape(spec)
         })
+        pieces.forEach((piece, index) =>
+        {
+            if (!piece.motion)
+                return
+            for (const side of ['yMin', 'yMax'])
+            {
+                const candidates = MomentumPortPatternFactory.boundCandidates(pieces, index, side)
+                if (candidates)
+                    elements[index].setMotionCandidates(side, candidates.map(candidate =>
+                        candidate.index === undefined ? {value: y + candidate.value} :
+                        pieces[candidate.index].motion ?
+                            {element: elements[candidate.index], face: side == 'yMax' ? 'top' : 'bottom', gap: candidate.gap} :
+                            {element: elements[candidate.index], value: y + candidate.value}))
+            }
+        })
+        return elements
+    }
+    // Catalog box of a piece: {left, right, top, bottom} around (0, 0)
+    static pieceBox(piece)
+    {
+        if (piece.shape == 'rect')
+            return {left: piece.x - piece.w / 2, right: piece.x + piece.w / 2,
+                    top: piece.y - piece.h / 2, bottom: piece.y + piece.h / 2}
+        const xs = piece.points.map(point => piece.x + point[0])
+        const ys = piece.points.map(point => piece.y + point[1])
+        return {left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys)}
+    }
+    // Where the moving piece index may go on side 'yMin' | 'yMax' once the
+    // piece its catalog bound sits on (the support: the nearest sibling
+    // overlapping it in x on that side, its facing edge within
+    // MOMENTUM_SUPPORT_GAP of the bound) is used: null for a side without a
+    // support (the catalog corridor bound stays), else every sibling in its
+    // path nearest first ({index, value, gap}: the face less the support's
+    // gap; the support's value is the catalog bound itself), then the
+    // corridor limit ({value}: the opposite catalog bound mirrored)
+    static boundCandidates(pieces, index, side)
+    {
+        const piece = pieces[index]
+        const box = MomentumPortPatternFactory.pieceBox(piece)
+        const sign = side == 'yMax' ? 1 : -1
+        const path = []
+        pieces.forEach((sibling, j) =>
+        {
+            if (j == index)
+                return
+            const other = MomentumPortPatternFactory.pieceBox(sibling)
+            if (other.right <= box.left || other.left >= box.right)
+                return
+            const face = side == 'yMax' ? other.top : other.bottom
+            if (sign * (face - (side == 'yMax' ? box.bottom : box.top)) >= 0)
+                path.push({index: j, face: face})
+        })
+        path.sort((a, b) => sign * (a.face - b.face))
+        const bound = piece.motion[side]
+        const support = path[0]
+        if (!support)
+            return null
+        const gap = sign * (support.face - bound)
+        if (gap < 0 || gap > MOMENTUM_SUPPORT_GAP)
+            return null
+        const opposite = side == 'yMax' ? 'yMin' : 'yMax'
+        return [...path.map(entry => ({index: entry.index, gap: gap,
+                                       value: entry === support ? bound : entry.face - sign * gap})),
+                {value: -piece.motion[opposite]}]
     }
 }
+// Largest gap between a ported frame's motion bound and the face it sits on
+// (the bad frames leave 0.01 * height, 10.8 at the base height 1080)
+const MOMENTUM_SUPPORT_GAP = 21.6
 
 // Builds one vertical port (MOMENTUM_PATTERNS_PORT_V) in an up/down shaft
 class MomentumPortVerticalPatternFactory
@@ -618,7 +686,8 @@ MomentumObstacleFloor.onSpawn = null
 // bad-frameN outside a right segment, a vertical variant bad-frameN-v
 // outside its shaft directions). A vertical variant spans halfWidth
 // (default: a shaft built now, momentumShaftHalfWidth). Elements
-// also carry their polygon points, speedY and motion.
+// also carry their polygon points, speedY and motion (the effective
+// bounds, MomentumOneTime.getMotionBound).
 function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaftHalfWidth())
 {
     let factory = momentumPatternFactories[id]
@@ -635,7 +704,8 @@ function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaft
         return {className: element.constructor.name, lethal: isLethalElement(element),
                 left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom,
                 points: element.getPoints().map(point => [point.x, point.y]), speedY: element.speedY || 0,
-                motion: element.motion}
+                motion: element.motion && {yMin: element.getMotionBound('yMin'), yMax: element.getMotionBound('yMax'),
+                                           gravity: element.motion.gravity}}
     })}
 }
 window.momentumPlacePattern = momentumPlacePattern

@@ -1,4 +1,4 @@
-"""Momentum moving blue on a used green (TASK-078 reproduction).
+"""Momentum moving blue on a used green (TASK-078 reproduction, TASK-079 fix).
 
 Bug report: 'if green platform under the blue cube disappear, it still
 bounces of "removed" green platform'. MomentumOneTime.moveY reverses speedY
@@ -25,17 +25,28 @@ a sibling green's face. Once that green is used the bound stays.
    solid is the corridor limit) and the blue is stepped for PERIODS bounce
    periods: for a yMax support its bottom goes below the old support's top
    and reaches the corridor limit (within LIMIT_TOL), for a yMin support its
-   top goes above the old support's bottom. They fail on HEAD (the bug) and
-   are marked expectedFailure until TASK-079 opens the range.
+   top goes above the old support's bottom and reaches the corridor limit.
+   TASK-079: MomentumPortPatternFactory gives each supported side its
+   candidates (siblings in the path, then the corridor limit) and
+   MomentumOneTime.moveY bounces on the nearest unused one.
+3) test_initial_bounds_equal_catalog: every moving piece of every port
+   pattern and turn type, nothing used: its effective bounds
+   (getMotionBound, also momentumPlacePattern's motion) equal the catalog
+   ones exactly (bounds-identical.json, with the test_2 baseline verdict).
+   test_bad_frame4_chain: the green is used while the polygon blue bounces
+   under it: its range opens to the rect blue above (never overlapping it),
+   then that blue is used too and it opens to the corridor limit.
 
-MOMENTUM_BLUE_SUPPORT_EVIDENCE_DIR (default artifacts/TASK-078) receives
-supports.json, baseline-trace.json, bug-trace.json (per case [cycle, y,
-speedY] every TRACE_EVERY cycles from USE_LEAD cycles before the use to the
-end, plus the turns after the use) and shots/ (bad-frame7 at 1280x720: the
-green just used and fading with the blue on it; the green gone and the blue
-still turning on the empty spot). MOMENTUM_BLUE_SUPPORT_BASELINE (default
-artifacts/TASK-078/baseline-trace.json) is the trace the baseline compares
-against. Requires Playwright Chromium.
+MOMENTUM_BLUE_SUPPORT_EVIDENCE_DIR (default /tmp/momentum-blue-support)
+receives supports.json, baseline-trace.json, fix-trace.json (per case
+[cycle, y, speedY] every TRACE_EVERY cycles from USE_LEAD cycles before the
+use to the end, plus the turns after the use), bounds-identical.json and
+shots/ (bad-frame7 at 1280x720: the blue on the green before the use, the
+blue falling through the gap after it, the blue turning at the corridor
+floor limit, and the same after-use frame at 390x844; bad-frame4 at
+1280x720: the polygon blue rising past the used green).
+MOMENTUM_BLUE_SUPPORT_BASELINE (default artifacts/TASK-078/baseline-trace.json)
+is the trace the baseline compares against. Requires Playwright Chromium.
 """
 import io
 import json
@@ -49,7 +60,7 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 from test_momentum_borders import SEED_COURSE
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_BLUE_SUPPORT_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-078'))
+EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_BLUE_SUPPORT_EVIDENCE_DIR', '/tmp/momentum-blue-support'))
 BASELINE = Path(os.environ.get('MOMENTUM_BLUE_SUPPORT_BASELINE',
                                ROOT / 'artifacts' / 'TASK-078' / 'baseline-trace.json'))
 # First segment right with a length draw of 0.99 (~5 heights), then the LCG
@@ -118,6 +129,102 @@ SHOOT = '''([cx, cy]) => {
         screen.leftWall.update(screen)
     ninja.x = cx; ninja.y = cy - 1e5; ninja.speedX = ninja.speedY = 0
     draw()
+}'''
+
+# Places pattern id, then steps it: the green is used on cycle useGreen, the
+# rect blue (piece 1) on useBlue. Rows [cycle, y, speedY, top, rect bottom]
+# of piece index every `every` cycles, its yMin right after each use, and
+# its least clearance to the rect blue between the two uses
+CHAIN = '''([id, x, y, index, useGreen, useBlue, cycles, every]) => {
+    const floor = floors.find(f => f instanceof MomentumPatternFloor)
+    floor.elements = []
+    floor.groups = []
+    ninja.x = x; ninja.y = y - 1e5; ninja.speedX = ninja.speedY = 0
+    ninja.invulnerableMs = 1e9
+    momentumPlacePattern(id, x, y)
+    const els = floor.elements.slice()
+    const poly = els[index], rect = els[1]
+    const rows = [], bounds = []
+    let minClear = Infinity
+    for (let k = 0; k <= cycles; ++k) {
+        if (k == useGreen) els[0].use()
+        if (k == useBlue) rect.use()
+        if (k % every == 0)
+            rows.push([k, poly.y, poly.speedY, poly.y + poly.topOffset, rect.y + rect.bottomOffset])
+        if (k == useGreen + 1 || k == useBlue + 1)
+            bounds.push([k, poly.getMotionBound('yMin')])
+        if (k > useGreen && k < useBlue)
+            minClear = Math.min(minClear, poly.y + poly.topOffset - (rect.y + rect.bottomOffset))
+        floor.moveElements()
+    }
+    return {rows, bounds, minClear}
+}'''
+# Effective vs catalog bounds of every moving piece (port patterns and turn
+# types built by their factories at (x, y)), and momentumPlacePattern's motion
+BOUNDS = '''([x, y]) => {
+    const out = {}
+    const factories = [...MOMENTUM_PATTERNS_PORT_H.map(p => [p.id, momentumPatternFactories[p.id]]),
+                       ...MOMENTUM_PATTERNS_TURN.map(p => [p.id, momentumTurnFactories[p.id].frame])]
+    for (const [id, factory] of factories) {
+        const els = factory.create(x, y)
+        factory.pattern.pieces.forEach((piece, i) => {
+            if (!piece.motion) return
+            const e = els[i]
+            ;(out[id] = out[id] || {})[i] = {
+                catalog: [y + piece.motion.yMin, y + piece.motion.yMax],
+                effective: [e.getMotionBound('yMin'), e.getMotionBound('yMax')],
+                candidates: e.motionCandidates ? Object.keys(e.motionCandidates) : []}
+        })
+    }
+    const floor = floors.find(f => f instanceof MomentumPatternFloor)
+    const placed = {}
+    for (const p of MOMENTUM_PATTERNS_PORT_H) {
+        floor.elements = []
+        floor.groups = []
+        placed[p.id] = momentumPlacePattern(p.id, x, y).elements.map(e => e.motion && [e.motion.yMin, e.motion.yMax])
+    }
+    floor.elements = []
+    floor.groups = []
+    return {out, placed}
+}'''
+# Uses the green of the driven bad-frame7 (fade over) and steps until the
+# blue's top is half way through the old green
+FALL_THROUGH = '''([gTop, gBottom]) => {
+    const {floor, els} = __support
+    els[0].use()
+    els[0].fadeStartMs = performance.now() - 2 * GAMEPLAY.momentumFadeMs
+    const blue = els[1]
+    let k = 0
+    for (; k < 40000 && blue.y + blue.topOffset < (gTop + gBottom) / 2; ++k)
+        floor.moveElements()
+    return {cycles: k, greenInFloor: floor.elements.includes(els[0]), top: blue.y + blue.topOffset,
+            bottom: blue.y + blue.bottomOffset, speedY: blue.speedY, yMax: blue.getMotionBound('yMax')}
+}'''
+# Steps the driven blue (piece 1) to its next turn at the bottom
+NEXT_BOTTOM_TURN = '''() => {
+    const {floor, els} = __support
+    const blue = els[1]
+    let k = 0, prev = blue.speedY
+    for (; k < 40000; ++k) {
+        floor.moveElements()
+        if (prev > 0 && blue.speedY < 0) break
+        prev = blue.speedY
+    }
+    return {cycles: k, bottom: blue.y + blue.bottomOffset, speedY: blue.speedY}
+}'''
+# Uses the green (fade over) and the rect blue of the driven bad-frame4 and
+# steps the polygon blue until its top rises to `above`
+RISE_PAST = '''(above) => {
+    const {floor, els} = __support
+    els[0].use()
+    els[0].fadeStartMs = performance.now() - 2 * GAMEPLAY.momentumFadeMs
+    els[1].use()
+    const blue = els[2]
+    let k = 0
+    for (; k < 40000 && blue.y + blue.topOffset > above; ++k)
+        floor.moveElements()
+    return {cycles: k, greenInFloor: floor.elements.includes(els[0]), top: blue.y + blue.topOffset,
+            speedY: blue.speedY}
 }'''
 
 
@@ -247,6 +354,7 @@ class MomentumBlueSupportTests(unittest.TestCase):
             res = self.drive(pattern, moving, every=TRACE_EVERY)
             trace[pattern] = {str(p): [row[1] for row in rows] for p, rows in zip(moving, res['rows'])}
         first = not BASELINE.exists()
+        type(self).baseline_identical = None if first else trace == json.loads(BASELINE.read_text())
         (EVIDENCE_DIR / 'baseline-trace.json').write_text(json.dumps(trace, separators=(',', ':')))
         if first:
             print('baseline written (first run):', EVIDENCE_DIR / 'baseline-trace.json')
@@ -283,7 +391,7 @@ class MomentumBlueSupportTests(unittest.TestCase):
             'useAt': use_at, 'period': period, 'uses': uses, 'face': face, 'limit': limit,
             'extreme': extreme, 'turnsAfter': [[k, full[k][edge]] for k in turns_after],
             'rows': [[r[0], r[1], r[2]] for r in res['rows'][0]]}
-        (EVIDENCE_DIR / 'bug-trace.json').write_text(json.dumps(self.bug, separators=(',', ':')))
+        (EVIDENCE_DIR / 'fix-trace.json').write_text(json.dumps(self.bug, separators=(',', ':')))
         print(f'{pattern} piece {index} {side}: period {period:.1f} use at {use_at} uses {uses} '
               f'face {face:.2f} limit {limit:.2f} extreme {extreme:.3f} turns after {len(turns_after)}')
         if side == 'yMax':
@@ -293,65 +401,145 @@ class MomentumBlueSupportTests(unittest.TestCase):
         else:
             self.assertLess(extreme, face - 1)
 
-    # fails until TASK-079 opens the range
-    @unittest.expectedFailure
     def test_bad_frame4_yMax_opens(self):
         self.check_opens('bad-frame4', 1, 'yMax')
 
-    # fails until TASK-079 opens the range
-    @unittest.expectedFailure
     def test_bad_frame4_yMin_opens(self):
         self.check_opens('bad-frame4', 2, 'yMin')
 
-    # fails until TASK-079 opens the range
-    @unittest.expectedFailure
     def test_bad_frame7_yMax_opens(self):
         self.check_opens('bad-frame7', 1, 'yMax')
 
-    def shoot(self, name, cx, cy):
-        self.page.evaluate(SHOOT, [cx, cy])
-        img = Image.open(io.BytesIO(self.page.screenshot())).convert('RGB')
-        self.assertEqual(img.size, (1280, 720))
+    def test_bad_frame4_chain(self):
+        """Green used while the polygon blue bounces under it: its yMin opens
+        to the rect blue above (its live bottom + gap), then the rect blue is
+        used and it opens to the corridor limit"""
+        pattern, index, side = 'bad-frame4', 2, 'yMin'
+        pieces = self.patterns[pattern]['pieces']
+        x, y0 = self.origin
+        _, _, _, g_bottom = piece_box(pieces[0])
+        gap = pieces[index]['motion']['yMin'] - g_bottom
+        limit = y0 - pieces[index]['motion']['yMax']
+        rows = self.drive(pattern, [index], cycles=PERIOD_CYCLES)['rows'][0]
+        turns = turn_cycles(rows, side)
+        period = (turns[-1] - turns[1]) / (len(turns) - 2)
+        use_green = turns[1] + int(period // 2)
+        use_blue = use_green + int(2 * period)
+        res = self.page.evaluate(CHAIN, [pattern, x, y0, index, use_green, use_blue,
+                                         use_green + int(5 * period), TRACE_EVERY])
+        between = [r for r in res['rows'] if use_green < r[0] < use_blue]
+        after = [r for r in res['rows'] if r[0] > use_blue]
+        top_between = min(r[3] for r in between)
+        top_after = min(r[3] for r in after)
+        print(f'chain: green used at {use_green}, rect blue at {use_blue}; bounds {res["bounds"]}; '
+              f'top between {top_between:.2f} (old face {y0 + g_bottom:.2f}), min clearance to the rect '
+              f'{res["minClear"]:.3f} (gap {gap:.2f}); top after {top_after:.3f} limit {limit:.2f}')
+        self.bug['bad-frame4:2:chain'] = {'useGreen': use_green, 'useBlue': use_blue, 'bounds': res['bounds'],
+                                          'minClear': res['minClear'], 'topBetween': top_between,
+                                          'topAfter': top_after, 'limit': limit,
+                                          'rows': [r[:3] for r in res['rows'] if r[0] >= use_green - USE_LEAD]}
+        (EVIDENCE_DIR / 'fix-trace.json').write_text(json.dumps(self.bug, separators=(',', ':')))
+        # Opened past the used green, but held off by the rect blue: the
+        # rect falls onto it with its own gap (0), so they never overlap by
+        # more than one cycle's move
+        self.assertLess(top_between, y0 + g_bottom - 1)
+        self.assertGreater(res['minClear'], -1)
+        self.assertEqual(res['bounds'][-1][1], limit)
+        self.assertLessEqual(top_after, limit + LIMIT_TOL)
+        self.assertGreaterEqual(top_after, limit - 1e-6)
+
+    def test_initial_bounds_equal_catalog(self):
+        """Nothing used: the effective bounds equal the catalog ones for every
+        moving piece of every port pattern and turn type"""
+        x, y = self.origin
+        res = self.page.evaluate(BOUNDS, [x, y])
+        bounds = res['out']
+        all_equal = all(v['catalog'] == v['effective'] for pieces in bounds.values() for v in pieces.values())
+        placed_equal = all(res['placed'][pid][int(i)] == v['effective']
+                           for pid, pieces in bounds.items() if pid in res['placed'] for i, v in pieces.items())
+        with_candidates = sorted(f'{pid}:{i}:{c}' for pid, pieces in bounds.items()
+                                 for i, v in pieces.items() for c in v['candidates'])
+        print('moving pieces', sum(len(p) for p in bounds.values()), 'allEqual', all_equal,
+              'placedEqual', placed_equal, 'sides with candidates', with_candidates)
+        identical = getattr(type(self), 'baseline_identical', None)
+        (EVIDENCE_DIR / 'bounds-identical.json').write_text(json.dumps(
+            {**{pid: {i: {'catalog': v['catalog'], 'effective': v['effective']} for i, v in pieces.items()}
+                for pid, pieces in bounds.items()},
+             'allEqual': all_equal and placed_equal, 'noUseTraceIdentical': identical},
+            separators=(',', ':')))
+        self.assertTrue(all_equal)
+        self.assertTrue(placed_equal)
+        # The 3 support sides of the ported frames, plus bad-frame7-turn's
+        self.assertEqual(with_candidates, ['bad-frame4:1:yMax', 'bad-frame4:2:yMin', 'bad-frame7-turn:1:yMax',
+                                           'bad-frame7:1:yMax'])
+
+    def shoot(self, name, cx, cy, page=None, size=(1280, 720)):
+        page = page or self.page
+        page.evaluate(SHOOT, [cx, cy])
+        img = Image.open(io.BytesIO(page.screenshot())).convert('RGB')
+        self.assertEqual(img.size, size)
         img.save(EVIDENCE_DIR / 'shots' / name)
 
     def test_3_bad_frame7_shots(self):
         pattern = 'bad-frame7'
         x0, y0 = self.origin
         frame = self.patterns[pattern]
-        green = frame['pieces'][0]
-        _, _, g_top, _ = piece_box(green)
+        _, _, g_top, g_bottom = piece_box(frame['pieces'][0])
+        faces = [y0 + g_top, y0 + g_bottom]
         cx, cy = x0 + frame['span'] / 2, y0 + g_top
         rows = self.drive(pattern, [1], cycles=PERIOD_CYCLES)['rows'][0]
         turns = turn_cycles(rows, 'yMax')
-        # Use the green on a turn at its top: the blue sits on it
-        res = self.drive(pattern, [1], [0], turns[1], turns[1] + 1)
-        # Half way through the fade
-        state = self.page.evaluate('''() => { const g = __support.els[0]
-            g.fadeStartMs = performance.now() - GAMEPLAY.momentumFadeMs / 2
-            return {alpha: g.getAlpha(), passThrough: g.passThrough} }''')
-        print('used green', state, 'blue bottom', res['rows'][0][-1][4], 'green top', y0 + g_top)
-        self.assertTrue(state['passThrough'])
-        self.assertGreater(state['alpha'], 0.3)
-        self.shoot('frame7-green-used-fading.png', cx, cy)
-        # Fade over: the floor drops the green on its next pass; step on to
-        # the next turn of the blue at the old green top
-        after = self.page.evaluate('''() => {
-            const {floor, els} = __support
-            els[0].fadeStartMs = performance.now() - 2 * GAMEPLAY.momentumFadeMs
-            const blue = els[1]
-            let k = 0, flips = 0, prev = blue.speedY
-            for (; k < 40000 && flips < 2; ++k) {
-                floor.moveElements()
-                if (prev > 0 && blue.speedY < 0) ++flips
-                prev = blue.speedY
-            }
-            return {cycles: k, flips, greenInFloor: floor.elements.includes(els[0]),
-                    bottom: blue.y + blue.bottomOffset, speedY: blue.speedY}
-        }''')
-        print('after green gone', after)
-        self.assertFalse(after['greenInFloor'])
-        self.shoot('frame7-green-gone-blue-still-turning.png', cx, cy)
+        # Stop on a turn at the green's top: the blue sits on it
+        self.drive(pattern, [1], [], -1, turns[1] + 1)
+        self.shoot('frame7-before-use-blue-on-green.png', cx, cy)
+        # Use the green (fade over: dropped on the next pass) and step on
+        # until the blue is half way through the old green
+        state = self.page.evaluate(FALL_THROUGH, faces)
+        print('after use, falling through the gap', state)
+        self.assertFalse(state['greenInFloor'])
+        self.assertGreater(state['speedY'], 0)
+        self.assertGreater(state['top'], y0 + g_top)
+        self.assertEqual(state['yMax'], y0 + BAND)
+        cy2 = y0 + (g_top + g_bottom) / 2
+        self.shoot('frame7-after-use-blue-falling-through-gap.png', cx, cy2)
+        # The same frame at 390x844 (a second page, the same state replayed)
+        context = self.browser.new_context(viewport={'width': 390, 'height': 844})
+        try:
+            page = context.new_page()
+            page.goto(self.url)
+            wait_for_boot_run(page)
+            page.evaluate(SEED_COURSE, SCRIPT)
+            page.evaluate(SETUP)
+            page.evaluate(DRIVE, [pattern, x0, y0, [1], [], -1, turns[1] + 1, 1, 0])
+            narrow = page.evaluate(FALL_THROUGH, faces)
+            print('390x844 after use', narrow)
+            self.assertEqual(narrow['top'], state['top'])
+            self.shoot('frame7-after-use-390x844.png', cx, cy2, page, (390, 844))
+        finally:
+            context.close()
+        # On to the turn at the corridor floor limit
+        turn = self.page.evaluate(NEXT_BOTTOM_TURN)
+        print('turn at the corridor floor', turn, 'limit', y0 + BAND)
+        self.assertLessEqual(abs(turn['bottom'] - (y0 + BAND)), LIMIT_TOL)
+        self.shoot('frame7-turn-at-corridor-floor.png', cx, y0 + BAND - 300)
 
+    def test_4_bad_frame4_shot(self):
+        """The polygon blue rising past the used green (the rect blue above
+        used as well)"""
+        pattern = 'bad-frame4'
+        x0, y0 = self.origin
+        frame = self.patterns[pattern]
+        _, _, g_top, g_bottom = piece_box(frame['pieces'][0])
+        rows = self.drive(pattern, [2], cycles=PERIOD_CYCLES)['rows'][0]
+        turns = turn_cycles(rows, 'yMax')
+        self.drive(pattern, [2], [], -1, turns[1] + 1)
+        state = self.page.evaluate(RISE_PAST, y0 + g_top - 150)
+        print('frame4 polygon rising past the used green', state)
+        self.assertFalse(state['greenInFloor'])
+        self.assertLess(state['speedY'], 0)
+        self.assertLessEqual(state['top'], y0 + g_top - 150)
+        self.shoot('frame4-polygon-rising-past-used-green.png', x0 + frame['span'] / 2,
+                   y0 + (g_top + g_bottom) / 2)
 
 if __name__ == '__main__':
     unittest.main()

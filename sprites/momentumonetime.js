@@ -7,7 +7,8 @@
 // object.motion {speedY, yMin, yMax, gravity} adds the bad-mode vertical
 // motion: speedY reverses whenever the shape would leave [yMin, yMax]
 // (Triangle.changeSpeed), with gravity it falls and bounces like a
-// JumpingCube.
+// JumpingCube. setMotionCandidates opens a side past a used piece:
+// moveY bounces on the nearest unused candidate of that side instead.
 class MomentumOneTime extends Trampoline
 {
     constructor(object, stroke, fill, badVersionFill)
@@ -28,6 +29,36 @@ class MomentumOneTime extends Trampoline
             this.motion = {yMin: motion.yMin, yMax: motion.yMax, gravity: !!motion.gravity}
             this.speedY = (motion.speedY || 0) * momentumMotionScale(1)
         }
+        this.motionCandidates = null
+    }
+    // side 'yMin' | 'yMax': ordered candidates (nearest first), each
+    // {element, value} (a static face) or {element, face: 'top' | 'bottom',
+    // gap} (a moving sibling's live face), then {value} (the corridor limit)
+    setMotionCandidates(side, candidates)
+    {
+        if (!this.motionCandidates)
+            this.motionCandidates = {}
+        this.motionCandidates[side] = candidates
+    }
+    // Effective bound of that side: the nearest candidate not used yet (the
+    // catalog bound while nothing is used), else the last one
+    getMotionBound(side)
+    {
+        const candidates = this.motionCandidates?.[side]
+        if (!candidates)
+            return this.motion[side]
+        for (const candidate of candidates)
+        {
+            const element = candidate.element
+            if (element && element.passThrough)
+                continue
+            if (candidate.face == 'top')
+                return element.y + element.topOffset - candidate.gap
+            if (candidate.face == 'bottom')
+                return element.y + element.bottomOffset + candidate.gap
+            return candidate.value
+        }
+        return candidates[candidates.length - 1].value
     }
     // Extents and circle over every point (the Trampoline constructor
     // reads every other point, which misses a triangle's corner)
@@ -136,7 +167,8 @@ class MomentumOneTime extends Trampoline
             this.speedY += gravity
         const top = this.y + this.topOffset + this.speedY
         const bottom = this.y + this.bottomOffset + this.speedY
-        if ((this.speedY < 0 && top < motion.yMin) || (this.speedY > 0 && bottom > motion.yMax))
+        if ((this.speedY < 0 && top < this.getMotionBound('yMin')) ||
+            (this.speedY > 0 && bottom > this.getMotionBound('yMax')))
         {
             this.speedY *= -1
             if (motion.gravity)
