@@ -532,7 +532,8 @@ const momentumTurnsByJoin = Object.freeze(Object.fromEntries(['right->up', 'righ
 // scaled the same per axis; reach {in, out}: how far the pieces extend back
 // along the incoming corridor and ahead along the outgoing one (+ 0.1 W), in
 // W of that corridor's travel axis. motion {axis: 'x', min, max, speed} as in
-// MOMENTUM_FRAMES_V, across from the vertex in shaft W. Placeable
+// MOMENTUM_FRAMES_V, across from the vertex in shaft W; {axis: 'y', ...} the
+// top / bottom edge bounds from the vertex in corridor W. Placeable
 // (momentumPlaceTurn / momentumPlaceCorner), not spawned yet.
 const MOMENTUM_FRAMES_TURN = Object.freeze([
     // M18 Kicker: a green wedge in the outer bottom corner kicks the run up
@@ -544,6 +545,25 @@ const MOMENTUM_FRAMES_TURN = Object.freeze([
     {id: 'M60', join: 'right-down', difficulty: 3, reach: {in: 0.822917, out: 0.6}, pieces: [
         {kind: 'green', shape: 'polygon', x: -0.574306, y: 0.458333, points: [[-0.148611, 0.041667], [0.074306, 0.041667], [0.074306, -0.083333]]},
         {kind: 'blue', shape: 'rect', x: 0.235417, y: 0.458333, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.005208}}
+    ]},
+    // M39 Ramp Exit: a green slope at the shaft bottom, an elevator patrolling the exit corridor
+    {id: 'M39', join: 'down-right', difficulty: 2, reach: {in: 0.53125, out: 0.81875}, pieces: [
+        {kind: 'green', shape: 'polygon', x: -0.302083, y: 0.404861, points: [[-0.197917, 0.095139], [0.395833, 0.095139], [-0.197917, -0.190278]]},
+        {kind: 'blue', shape: 'rect', x: 0.65625, y: -0.36875, w: 0.125, h: 0.125, motion: {axis: 'y', min: -0.5, max: 0.5, speed: 0.007292}}
+    ]},
+    // M117 Slope Window: the bottom slope, a blue wall across the exit with one window
+    {id: 'M117', join: 'down-right', difficulty: 3, reach: {in: 0.6, out: 0.860417}, pieces: [
+        {kind: 'green', shape: 'polygon', x: -0.302083, y: 0.404861, points: [[-0.197917, 0.095139], [0.395833, 0.095139], [-0.197917, -0.190278]]},
+        {kind: 'blue', shape: 'rect', x: 0.71875, y: -0.34375, w: 0.083333, h: 0.3125},
+        {kind: 'blue', shape: 'rect', x: 0.71875, y: 0.34375, w: 0.083333, h: 0.3125}
+    ]},
+    // M134 Double Window: the bottom slope, two blue walls with offset 0.5 W windows
+    {id: 'M134', join: 'down-right', difficulty: 4, reach: {in: 0.6, out: 0.964583}, pieces: [
+        {kind: 'green', shape: 'polygon', x: -0.302083, y: 0.404861, points: [[-0.197917, 0.095139], [0.395833, 0.095139], [-0.197917, -0.190278]]},
+        {kind: 'blue', shape: 'rect', x: 0.604167, y: -0.361458, w: 0.0625, h: 0.277083},
+        {kind: 'blue', shape: 'rect', x: 0.604167, y: 0.388542, w: 0.0625, h: 0.222917},
+        {kind: 'blue', shape: 'rect', x: 0.833333, y: -0.444792, w: 0.0625, h: 0.110417},
+        {kind: 'blue', shape: 'rect', x: 0.833333, y: 0.305208, w: 0.0625, h: 0.389583}
     ]}
 ].map(pattern => Object.freeze(pattern)))
 
@@ -584,9 +604,12 @@ class MomentumCornerFrameFactory
             }
             else
                 spec.points = piece.points.map(([px, py]) => ({x: px * W.x, y: py * W.y}))
-            if (piece.motion)
+            if (piece.motion && piece.motion.axis == 'x')
                 spec.motion = {axis: 'x', speedX: piece.motion.speed * W.x,
                                xMin: x + piece.motion.min * W.x, xMax: x + piece.motion.max * W.x}
+            else if (piece.motion)
+                spec.motion = {speedY: -piece.motion.speed * W.y, yMin: y + piece.motion.min * W.y,
+                               yMax: y + piece.motion.max * W.y, gravity: false}
             return (piece.kind == 'blue' ? MomentumBlue : MomentumGreen).shape(spec)
         })
     }
@@ -1000,7 +1023,7 @@ window.momentumPlaceTurn = momentumPlaceTurn
 
 // Places corner frame id at the vertex of the join at the end of course
 // segment segmentIndex. Returns the vertex, the per-axis W, the reach (world
-// units) and the placed pieces (bounds, points, axis-x motion), or null
+// units) and the placed pieces (bounds, points, x or y motion), or null
 // outside momentum and on any other join than the frame's.
 function momentumPlaceCorner(id, segmentIndex)
 {
@@ -1012,7 +1035,8 @@ function momentumPlaceCorner(id, segmentIndex)
     const join = segment.dir + '->' + momentumCourse.segment(segmentIndex + 1).dir
     if (join != factory.join)
         return null
-    const shaftHalfWidth = momentumSegmentHalfWidth(momentumCourse.segment(segmentIndex + 1))
+    const shaft = segment.dir == 'right' ? momentumCourse.segment(segmentIndex + 1) : segment
+    const shaftHalfWidth = momentumSegmentHalfWidth(shaft)
     const W = factory.getUnits(shaftHalfWidth)
     const elements = factory.create(segment.x1, segment.y1, shaftHalfWidth)
     const group = floor.place(elements)
@@ -1023,8 +1047,9 @@ function momentumPlaceCorner(id, segmentIndex)
         return {className: element.constructor.name, lethal: isLethalElement(element),
                 left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom,
                 points: element.getPoints().map(point => [point.x, point.y]),
-                motion: element.motion && element.motion.axis == 'x' ?
-                    {axis: 'x', xMin: element.motion.xMin, xMax: element.motion.xMax, speedX: element.speedX} : null}
+                motion: !element.motion ? null : element.motion.axis == 'x' ?
+                    {axis: 'x', xMin: element.motion.xMin, xMax: element.motion.xMax, speedX: element.speedX} :
+                    {axis: 'y', yMin: element.motion.yMin, yMax: element.motion.yMax, speedY: element.speedY}}
     })}
 }
 window.momentumPlaceCorner = momentumPlaceCorner
