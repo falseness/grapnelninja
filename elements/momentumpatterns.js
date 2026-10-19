@@ -344,8 +344,20 @@ class MomentumFrameFactory
 // down). The -up entries are the down frames mirrored along the shaft (the
 // caps end up under the ledges: the user's mirror decision), so going up the
 // pieces are met in the order and at the distances they are met falling down.
-// Placeable (momentumPlacePattern), not spawned yet.
+// motion {axis: 'x', min, max, speed}: the bounds of the left (min) and
+// right (max) edge across from the centre line, speed per cycle before
+// momentumMotionScale. Placeable (momentumPlacePattern), not spawned yet.
 const MOMENTUM_FRAMES_V = Object.freeze([
+    // M11, M30: a flat blue bar sweeping left and right between the walls
+    {id: 'M11', dirs: ['down'], difficulty: 3, span: 1.033333, pieces: [
+        {kind: 'blue', shape: 'rect', x: 0, y: 0.50625, w: 0.416667, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.004861}},
+        {kind: 'green', shape: 'rect', x: -0.477083, y: 0.225, w: 0.045833, h: 0.25},
+        {kind: 'green', shape: 'rect', x: 0.477083, y: 0.808333, w: 0.045833, h: 0.25}
+    ]},
+    {id: 'M30', dirs: ['down'], difficulty: 3, span: 0.679167, pieces: [
+        {kind: 'green', shape: 'rect', x: 0.354167, y: 0.122917, w: 0.291667, h: 0.045833},
+        {kind: 'blue', shape: 'rect', x: -0.15625, y: 0.547917, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.005208}}
+    ]},
     // Capped blue ledges from alternating walls: the green cap is its own piece
     {id: 'M93', dirs: ['down'], difficulty: 3, span: 0.7875, pieces: [
         {kind: 'blue', shape: 'rect', x: -0.1875, y: 0.177083, w: 0.625, h: 0.0625},
@@ -360,6 +372,15 @@ const MOMENTUM_FRAMES_V = Object.freeze([
         {kind: 'green', shape: 'rect', x: 0.229167, y: 0.539583, w: 0.541667, h: 0.045833},
         {kind: 'blue', shape: 'rect', x: -0.229167, y: 1.010417, w: 0.541667, h: 0.0625},
         {kind: 'green', shape: 'rect', x: -0.229167, y: 0.95625, w: 0.541667, h: 0.045833}
+    ]},
+    {id: 'M11-up', dirs: ['up'], difficulty: 3, span: 1.033333, pieces: [
+        {kind: 'blue', shape: 'rect', x: 0, y: 0.527083, w: 0.416667, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.004861}},
+        {kind: 'green', shape: 'rect', x: -0.477083, y: 0.808333, w: 0.045833, h: 0.25},
+        {kind: 'green', shape: 'rect', x: 0.477083, y: 0.225, w: 0.045833, h: 0.25}
+    ]},
+    {id: 'M30-up', dirs: ['up'], difficulty: 3, span: 0.679167, pieces: [
+        {kind: 'green', shape: 'rect', x: 0.354167, y: 0.55625, w: 0.291667, h: 0.045833},
+        {kind: 'blue', shape: 'rect', x: -0.15625, y: 0.13125, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.005208}}
     ]},
     {id: 'M93-up', dirs: ['up'], difficulty: 3, span: 0.7875, pieces: [
         {kind: 'blue', shape: 'rect', x: -0.1875, y: 0.610417, w: 0.625, h: 0.0625},
@@ -397,7 +418,8 @@ class MomentumFrameVerticalFactory
     // (x, y): the footprint start on the shaft centre line, its top going
     // down and its bottom going up; halfWidth: the shaft's own half width
     // (momentumSegmentHalfWidth). A rect is cut at the wall faces, so a
-    // ledge reaching from a wall ends on its face despite catalog rounding.
+    // ledge reaching from a wall ends on its face despite catalog rounding;
+    // an axis-x sweeper reverses at the bounds centre + min/max x W.
     create(x, y, dir, halfWidth = momentumShaftHalfWidth())
     {
         const W = this.getUnit(halfWidth)
@@ -407,6 +429,9 @@ class MomentumFrameVerticalFactory
             const left = Math.max(-halfWidth, (piece.x - piece.w / 2) * W)
             const right = Math.min(halfWidth, (piece.x + piece.w / 2) * W)
             const spec = {shape: 'rect', x: x + (left + right) / 2, y: top + piece.y * W, w: right - left, h: piece.h * W}
+            if (piece.motion)
+                spec.motion = {axis: 'x', speedX: piece.motion.speed * W,
+                               xMin: x + piece.motion.min * W, xMax: x + piece.motion.max * W}
             return (piece.kind == 'blue' ? MomentumBlue : MomentumGreen).shape(spec)
         })
     }
@@ -845,7 +870,7 @@ MomentumObstacleFloor.onSpawn = null
 // outside its shaft directions). A vertical variant spans halfWidth
 // (default: a shaft built now, momentumShaftHalfWidth). Elements
 // also carry their polygon points, speedY and motion (the effective
-// bounds, MomentumOneTime.getMotionBound).
+// bounds, MomentumOneTime.getMotionBound; axis x: xMin, xMax, speedX).
 function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaftHalfWidth())
 {
     let factory = momentumPatternFactories[id]
@@ -862,8 +887,10 @@ function momentumPlacePattern(id, x, y, dir = 'right', halfWidth = momentumShaft
         return {className: element.constructor.name, lethal: isLethalElement(element),
                 left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom,
                 points: element.getPoints().map(point => [point.x, point.y]), speedY: element.speedY || 0,
-                motion: element.motion && {yMin: element.getMotionBound('yMin'), yMax: element.getMotionBound('yMax'),
-                                           gravity: element.motion.gravity}}
+                motion: element.motion && (element.motion.axis == 'x' ?
+                    {axis: 'x', xMin: element.motion.xMin, xMax: element.motion.xMax, speedX: element.speedX} :
+                    {yMin: element.getMotionBound('yMin'), yMax: element.getMotionBound('yMax'),
+                     gravity: element.motion.gravity})}
     })}
 }
 window.momentumPlacePattern = momentumPlacePattern
