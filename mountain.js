@@ -688,7 +688,14 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // off the green crown wall (west of the legacy beacon mast) into a flight west along the top.
     // A short trolley hold drops onto the left map edge and slides down it through S04-fall-drag onto the
     // green S04 catch basin; a missed carriage catch carries the flight under the hoist into S07-crown-drag,
-    // where it drops onto the green crown ledge. S07-03/04 stay planned.
+    // where it drops onto the green crown ledge. S07-03 (TASK-524): the westward flight meets the left map
+    // edge and drops onto the green west wall, which keeps bouncing it; from the top of a bounce pull the
+    // green gable hook (top of the band) east and release into a flight east along the top. S07-04: in that
+    // flight, catch the green exit ledge itself; the pull dives east into S07-exit-drag, where the player is
+    // released and settles on the exit ledge (the section exit, under the S05 hoist). A gable hook released
+    // early drops into S07-short-drag, which kills the drift, straight down the clear column onto the green
+    // S06 drop ledge inside S06-drop-drag; a missed exit-ledge catch lands in S07-crown-drag on the green
+    // crown ledge; an exit-ledge pull held too long dives into S07-exit-drag onto the exit ledge.
     const crown = [
         rectangle('S07-trolley',250,-11960,120,30,true),
         // Against the left map edge, above the S04 route's map-edge contact; the S07-01 swing ricochets off it.
@@ -699,6 +706,10 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // holds the crown ledge (only S07-02-missed drops through it).
         bouncer('S07-crown-wall',2930,-12950,30,960),
         bouncer('S07-crown-ledge',2740,-12020,190,30),
+        // At the top of the band, high over the S07-02 return flight.
+        bouncer('S07-gable-hook',1405,-12955,60,30),
+        // Under the S05 hoist, west of the crown drag; clear of the S05 hoist rope.
+        bouncer('S07-exit-ledge',2340,-11960,360,30),
         // Legacy v1 Crown pieces still named by the v1 Summit Array (the S08-01 start ledge and recovery
         // opening colliders), converted to green in place; no v3 S07 route uses them.
         {id:'S07-roof-boom',x:5150,y:-10410,role:'bounce',grapplable:true,
@@ -708,21 +719,35 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             points:[{x:0,y:-30},{x:20,y:-30},{x:20,y:0},{x:110,y:0},{x:110,y:-60},{x:150,y:-60},{x:150,y:55},{x:0,y:55}]}
     ];
     const crownDrags = [{id:'S07-crown-drag',x:2740,y:-12530,role:'drag',grapplable:false,
-        points:[{x:0,y:0},{x:190,y:0},{x:190,y:510},{x:0,y:510}]}];
+        points:[{x:0,y:0},{x:190,y:0},{x:190,y:510},{x:0,y:510}]},
+        {id:'S07-exit-drag',x:2340,y:-12260,role:'drag',grapplable:false,
+            points:[{x:0,y:0},{x:360,y:0},{x:360,y:300},{x:0,y:300}]},
+        // Over the clear column above the S06 drop ledge, under the S07-02 flights.
+        {id:'S07-short-drag',x:1145,y:-12520,role:'drag',grapplable:false,
+            points:[{x:0,y:0},{x:120,y:0},{x:120,y:160},{x:0,y:160}]}];
     liftMovers.push({id:'S07-trolley-travel',element:'S07-trolley',axis:'x',min:250,max:370,periodMs:4000,phase:0,velocity:60},
         {id:'S07-carriage-travel',element:'S07-carriage',axis:'x',min:1930,max:2050,periodMs:4000,phase:0,velocity:60});
-    Object.assign(sections[6], {status:'partial', designVersion:3, landmark:{id:'S07-landmark',
+    Object.assign(sections[6], {status:'built', designVersion:3, landmark:{id:'S07-landmark',
         name:'open rooftop machinery',x:1500,y:-12600},
         band:{...sections[6].band, top:-12960},
         // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
         gaps:[{id:'S07-01-trolley',from:{x:1543.2,y:-11261.3},to:{x:313.1,y:-11930}},
             // Caught in flight after the west-wall ricochet.
-            {id:'S07-02-carriage',from:{x:770.1,y:-12154.3},to:{x:1988.4,y:-12882.7}}],
+            {id:'S07-02-carriage',from:{x:770.1,y:-12154.3},to:{x:1988.4,y:-12882.7}},
+            // From the top of a west-wall bounce, and in the flight east along the top.
+            {id:'S07-03-gable',from:{x:10.8,y:-12696.3},to:{x:1405,y:-12935.4}},
+            {id:'S07-04-exit',from:{x:1164,y:-12742.7},to:{x:2344,y:-11960}}],
         // Declared miss points: a short trolley hold flies west onto the left map edge and slides down it
         // through S04-fall-drag onto the green S04 catch basin; a missed carriage catch carries the flight
-        // into S07-crown-drag, which drops it onto the green crown ledge.
+        // into S07-crown-drag, which drops it onto the green crown ledge; an early gable-hook release drifts
+        // into S07-short-drag and drops straight down through S06-drop-drag onto the green S06 drop ledge;
+        // a missed exit-ledge catch lands in S07-crown-drag; an exit-ledge pull held too long dives through
+        // S07-exit-drag onto the exit ledge.
         fallPoints:[{id:'S07-01-short',encounter:'S07-01',x:30,y:-11560},
-            {id:'S07-02-missed',encounter:'S07-02',x:2800,y:-12330}]});
+            {id:'S07-02-missed',encounter:'S07-02',x:2800,y:-12330},
+            {id:'S07-03-short',encounter:'S07-03',x:1180,y:-12400},
+            {id:'S07-04-missed',encounter:'S07-04',x:2794,y:-12150},
+            {id:'S07-04-late',encounter:'S07-04',x:2560,y:-12150}]});
     Object.assign(encounters[24], {status:'built',x:1543,y:-11261,
         elements:['S06-exit-ledge','S07-trolley','S07-west-wall'],
         start:{x:1543.2,y:-11261.3,from:'S06-04'},target:{x:308,y:-11933.3},
@@ -733,11 +758,25 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S07-01',x:770.1,y:-12154.3},target:{x:1988,y:-12882.5},
         exit:{left:1600,right:1800,top:-12780,bottom:-12680},
         action:'In the flight, catch the blue carriage, swing up-right over the Galleries hoist and rebound off the green crown wall into a flight west along the top'});
+    Object.assign(encounters[26], {status:'built',x:1687,y:-12736,
+        elements:['S07-west-wall','S07-gable-hook'],
+        start:{from:'S07-02',x:1687.3,y:-12735.5},target:{x:1435,y:-12940},
+        exit:{left:1050,right:1250,top:-12800,bottom:-12700},
+        action:'Ride the flight west onto the green west wall, then from the top of a bounce pull the green gable hook and release into a flight east along the top'});
+    Object.assign(encounters[27], {status:'built',x:1164,y:-12743,
+        elements:['S07-exit-ledge','S07-exit-drag'],
+        start:{from:'S07-03',x:1164,y:-12742.7},target:{x:2345,y:-11958},
+        exit:{left:2340,right:2700,top:-12010,bottom:-11960},
+        action:'In the flight, catch the green exit ledge, dive into the exit drag zone under the Galleries hoist, release and settle on the exit ledge'});
     Object.assign(connectors[24], {status:'built',intent:'Physical ascent: the S07-01 trolley pull starts on the v3 Liftworks exit ledge'});
     Object.assign(connectors[25], {status:'built'});
-    // S07-03/04 stay planned: their route links, the S07 fall recovery and the optional shortcut too.
+    Object.assign(connectors[26], {status:'built'});
+    Object.assign(connectors[27], {status:'built'});
+    // The optional shortcut stays planned (as the S03 one does for layout v3).
     Object.assign(shortcuts[1], {intent:'Optional exposed skill shortcut from S07-01 to S07-04; kept planned for layout v3'});
-    Object.assign(recoveries[6], {intent:'Crown misses fall through drag zones onto green catches; planned until S07-03/04 are rebuilt'});
+    Object.assign(recoveries[6], {status:'built',elements:['S04-fall-drag','S04-catch-basin','S07-crown-drag','S07-crown-ledge','S07-short-drag','S06-drop-drag','S06-drop-ledge','S07-exit-drag','S07-exit-ledge'],
+        rejoin:'S07-01',intent:'Crown misses fall through drag zones onto green catches',
+        sideRoute:'Every declared S07 miss falls through a drag zone onto a green bouncer and settles: a short trolley hold down the left map edge onto the green S04 catch basin; a missed carriage or exit-ledge catch on the green crown ledge; an early gable-hook release straight down onto the green S06 drop ledge, from which the S06 climb and exit hooks return to the S06 exit ledge and the S07-01 trolley; an exit-ledge pull held too long on the green exit ledge'});
     // Summit Array opening: beacon arms, a davit brake, a green ramp and the
     // lamp mast. Every silhouette is its own collider; the mast is the landmark.
     const summit = [
