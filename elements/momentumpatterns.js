@@ -257,6 +257,71 @@ class MomentumPortPatternFactory
 // (the bad frames leave 0.01 * height, 10.8 at the base height 1080)
 const MOMENTUM_SUPPORT_GAP = 21.6
 
+// The user's picked concept frames for the right corridor (TASK-102 catalog,
+// artifacts/TASK-102/catalog-m.json), everything in W = the corridor's
+// interior width, never in pixels: span = footprint length; a piece is a
+// MomentumGreen/MomentumBlue .shape spec centred on (x, y), x along from the
+// footprint start, y across from the centre line (+ = floor side), polygon
+// points relative to (x, y); motion {axis, min, max, speed}: the range of the
+// top/left edge (min) and bottom/right edge (max), speed per cycle before
+// momentumMotionScale. Placeable (momentumPlacePattern), not spawned yet.
+const MOMENTUM_FRAMES_H = Object.freeze([
+    {id: 'M04', difficulty: 2, span: 1.095833, pieces: [
+        {kind: 'green', shape: 'rect', x: 0.141667, y: 0.177083, w: 0.083333, h: 0.416667},
+        {kind: 'green', shape: 'rect', x: 0.954167, y: 0.177083, w: 0.083333, h: 0.416667},
+        {kind: 'blue', shape: 'rect', x: 0.55, y: 0.09375, w: 0.125, h: 0.125, motion: {axis: 'y', min: -0.427083, max: 0.489583, speed: 0.006597}}
+    ]},
+    {id: 'M23', difficulty: 1, span: 0.929167, pieces: [
+        {kind: 'green', shape: 'polygon', x: 0.322222, y: 0.440972, points: [[-0.222222, 0.059028], [0.111111, 0.059028], [0.111111, -0.118056]]},
+        {kind: 'blue', shape: 'rect', x: 0.745833, y: 0.333333, w: 0.166667, h: 0.333333}
+    ]},
+    {id: 'M24', difficulty: 2, span: 0.845833, pieces: [
+        {kind: 'green', shape: 'polygon', x: 0.308333, y: -0.447917, points: [[-0.208333, -0.052083], [0.104167, -0.052083], [0.104167, 0.104167]]},
+        {kind: 'blue', shape: 'rect', x: 0.704167, y: -0.234375, w: 0.083333, h: 0.53125}
+    ]}
+].map(pattern => Object.freeze(pattern)))
+
+// Builds one concept frame (MOMENTUM_FRAMES_H) in a right segment: the
+// pieces scaled by the live corridor W, then built like a ported frame
+// (MomentumPortPatternFactory, with its support candidates)
+class MomentumFrameFactory
+{
+    constructor(pattern)
+    {
+        this.pattern = pattern
+        this.dirs = ['right']
+    }
+    getUnit()
+    {
+        return 2 * GAMEPLAY.momentumBorders.halfWidth
+    }
+    getLength()
+    {
+        return this.pattern.span * this.getUnit()
+    }
+    // (x, y): the footprint start on the corridor centre line
+    create(x, y)
+    {
+        const W = this.getUnit()
+        const pieces = this.pattern.pieces.map(piece =>
+        {
+            const scaled = {kind: piece.kind, shape: piece.shape, x: piece.x * W, y: piece.y * W}
+            if (piece.shape == 'rect')
+            {
+                scaled.w = piece.w * W
+                scaled.h = piece.h * W
+            }
+            else
+                scaled.points = piece.points.map(([px, py]) => [px * W, py * W])
+            if (piece.motion)
+                scaled.motion = {speedY: -piece.motion.speed * W, yMin: piece.motion.min * W,
+                                 yMax: piece.motion.max * W, gravity: false}
+            return scaled
+        })
+        return new MomentumPortPatternFactory({span: this.getLength(), pieces: pieces}).create(x, y)
+    }
+}
+
 // Builds one vertical port (MOMENTUM_PATTERNS_PORT_V) in an up/down shaft
 class MomentumPortVerticalPatternFactory
 {
@@ -345,10 +410,12 @@ const momentumTurnsByJoin = Object.freeze(Object.fromEntries(['right->up', 'righ
     [join, Object.freeze(MOMENTUM_PATTERNS_TURN.filter(pattern => pattern.joins.includes(join)).map(pattern => pattern.id))])))
 
 // Catalog id -> factory: the ported bad frames first, in port catalog
-// order, then their vertical variants (bad-frameN-v)
+// order, then their vertical variants (bad-frameN-v), then the concept
+// frames (placeable only: not in momentumPatternsByDir)
 const momentumPatternFactories = Object.freeze(Object.fromEntries([
     ...MOMENTUM_PATTERNS_PORT_H.map(pattern => [pattern.id, new MomentumPortPatternFactory(pattern)]),
-    ...MOMENTUM_PATTERNS_PORT_V.map(pattern => [pattern.id, new MomentumPortVerticalPatternFactory(pattern)])
+    ...MOMENTUM_PATTERNS_PORT_V.map(pattern => [pattern.id, new MomentumPortVerticalPatternFactory(pattern)]),
+    ...MOMENTUM_FRAMES_H.map(pattern => [pattern.id, new MomentumFrameFactory(pattern)])
 ]))
 // Segment direction -> the ids spawned there: right segments spawn the
 // ported frames, shafts their vertical variants only. A variant restricted
