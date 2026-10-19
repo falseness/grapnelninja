@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import unittest
 
+from momentum_frames_catalog import CYCLES_PER_PASS
+
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'artifacts' / 'TASK-102' / 'catalog-m.json'))
 SOURCE = ROOT / 'artifacts' / 'momentum-frames' / 'catalog.json'
@@ -147,7 +149,7 @@ class MomentumFramesCatalogTest(unittest.TestCase):
                     self.assertEqual(pm['axis'], m['axis'])
                     self.assertLessEqual(abs(pm['min'] * UNIT + o - m['min']), 0.5, f['id'])
                     self.assertLessEqual(abs(pm['max'] * UNIT + o - (m['max'] + size)), 0.5, f['id'])
-                    self.assertAlmostEqual(pm['speed'], (pm['max'] - pm['min'] - size / UNIT) / 120, places=5)
+                    self.assertAlmostEqual(pm['speed'], (pm['max'] - pm['min'] - size / UNIT) / CYCLES_PER_PASS, places=5)
                 checked += 1
             self.assertIsNone(next(widened, None), f['id'])
         print('round-tripped %d pieces' % checked)

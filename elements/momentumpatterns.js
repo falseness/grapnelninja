@@ -269,7 +269,7 @@ const MOMENTUM_FRAMES_H = Object.freeze([
     {id: 'M04', difficulty: 2, span: 1.095833, pieces: [
         {kind: 'green', shape: 'rect', x: 0.141667, y: 0.177083, w: 0.083333, h: 0.416667},
         {kind: 'green', shape: 'rect', x: 0.954167, y: 0.177083, w: 0.083333, h: 0.416667},
-        {kind: 'blue', shape: 'rect', x: 0.55, y: 0.09375, w: 0.125, h: 0.125, motion: {axis: 'y', min: -0.427083, max: 0.489583, speed: 0.006597}}
+        {kind: 'blue', shape: 'rect', x: 0.55, y: 0.09375, w: 0.125, h: 0.125, motion: {axis: 'y', min: -0.427083, max: 0.489583, speed: 0.000942}}
     ]},
     {id: 'M23', difficulty: 1, span: 0.929167, pieces: [
         {kind: 'green', shape: 'polygon', x: 0.322222, y: 0.440972, points: [[-0.222222, 0.059028], [0.111111, 0.059028], [0.111111, -0.118056]]},
@@ -350,13 +350,13 @@ class MomentumFrameFactory
 const MOMENTUM_FRAMES_V = Object.freeze([
     // M11, M30: a flat blue bar sweeping left and right between the walls
     {id: 'M11', dirs: ['down'], difficulty: 3, span: 1.033333, pieces: [
-        {kind: 'blue', shape: 'rect', x: 0, y: 0.50625, w: 0.416667, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.004861}},
+        {kind: 'blue', shape: 'rect', x: 0, y: 0.50625, w: 0.416667, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.000694}},
         {kind: 'green', shape: 'rect', x: -0.477083, y: 0.225, w: 0.045833, h: 0.25},
         {kind: 'green', shape: 'rect', x: 0.477083, y: 0.808333, w: 0.045833, h: 0.25}
     ]},
     {id: 'M30', dirs: ['down'], difficulty: 3, span: 0.679167, pieces: [
         {kind: 'green', shape: 'rect', x: 0.354167, y: 0.122917, w: 0.291667, h: 0.045833},
-        {kind: 'blue', shape: 'rect', x: -0.15625, y: 0.547917, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.005208}}
+        {kind: 'blue', shape: 'rect', x: -0.15625, y: 0.547917, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.000744}}
     ]},
     // Capped blue ledges from alternating walls: the green cap is its own piece
     {id: 'M93', dirs: ['down'], difficulty: 3, span: 0.7875, pieces: [
@@ -374,13 +374,13 @@ const MOMENTUM_FRAMES_V = Object.freeze([
         {kind: 'green', shape: 'rect', x: -0.229167, y: 0.95625, w: 0.541667, h: 0.045833}
     ]},
     {id: 'M11-up', dirs: ['up'], difficulty: 3, span: 1.033333, pieces: [
-        {kind: 'blue', shape: 'rect', x: 0, y: 0.527083, w: 0.416667, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.004861}},
+        {kind: 'blue', shape: 'rect', x: 0, y: 0.527083, w: 0.416667, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.000694}},
         {kind: 'green', shape: 'rect', x: -0.477083, y: 0.808333, w: 0.045833, h: 0.25},
         {kind: 'green', shape: 'rect', x: 0.477083, y: 0.225, w: 0.045833, h: 0.25}
     ]},
     {id: 'M30-up', dirs: ['up'], difficulty: 3, span: 0.679167, pieces: [
         {kind: 'green', shape: 'rect', x: 0.354167, y: 0.55625, w: 0.291667, h: 0.045833},
-        {kind: 'blue', shape: 'rect', x: -0.15625, y: 0.13125, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.005208}}
+        {kind: 'blue', shape: 'rect', x: -0.15625, y: 0.13125, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.000744}}
     ]},
     {id: 'M93-up', dirs: ['up'], difficulty: 3, span: 0.7875, pieces: [
         {kind: 'blue', shape: 'rect', x: -0.1875, y: 0.610417, w: 0.625, h: 0.0625},
@@ -542,12 +542,12 @@ const MOMENTUM_FRAMES_TURN = Object.freeze([
     // M60 Lip Kicker: a green wedge on the floor's lip, a blue bar sweeping the shaft
     {id: 'M60', join: 'right-down', difficulty: 3, reach: {in: 0.822917, out: 0.6}, pieces: [
         {kind: 'green', shape: 'polygon', x: -0.574306, y: 0.458333, points: [[-0.148611, 0.041667], [0.074306, 0.041667], [0.074306, -0.083333]]},
-        {kind: 'blue', shape: 'rect', x: 0.235417, y: 0.458333, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.005208}}
+        {kind: 'blue', shape: 'rect', x: 0.235417, y: 0.458333, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.000744}}
     ]},
     // M39 Ramp Exit: a green slope at the shaft bottom, an elevator patrolling the exit corridor
     {id: 'M39', join: 'down-right', difficulty: 2, reach: {in: 0.53125, out: 0.81875}, pieces: [
         {kind: 'green', shape: 'polygon', x: -0.302083, y: 0.404861, points: [[-0.197917, 0.095139], [0.395833, 0.095139], [-0.197917, -0.190278]]},
-        {kind: 'blue', shape: 'rect', x: 0.65625, y: -0.36875, w: 0.125, h: 0.125, motion: {axis: 'y', min: -0.5, max: 0.5, speed: 0.007292}}
+        {kind: 'blue', shape: 'rect', x: 0.65625, y: -0.36875, w: 0.125, h: 0.125, motion: {axis: 'y', min: -0.5, max: 0.5, speed: 0.001042}}
     ]},
     // M117 Slope Window: the bottom slope, a blue wall across the exit with one window
     {id: 'M117', join: 'down-right', difficulty: 3, reach: {in: 0.6, out: 0.860417}, pieces: [
@@ -566,7 +566,7 @@ const MOMENTUM_FRAMES_TURN = Object.freeze([
     // M40 Corner Deflector: a green triangle in the outer top corner turns the climb right, an elevator in the exit
     {id: 'M40', join: 'up-right', difficulty: 4, reach: {in: 0.56875, out: 0.860417}, pieces: [
         {kind: 'green', shape: 'polygon', x: -0.371528, y: -0.371528, points: [[-0.128472, -0.128472], [0.256944, -0.128472], [-0.128472, 0.256944]]},
-        {kind: 'blue', shape: 'rect', x: 0.697917, y: -0.385417, w: 0.125, h: 0.125, motion: {axis: 'y', min: -0.5, max: 0.5, speed: 0.007292}},
+        {kind: 'blue', shape: 'rect', x: 0.697917, y: -0.385417, w: 0.125, h: 0.125, motion: {axis: 'y', min: -0.5, max: 0.5, speed: 0.001042}},
         {kind: 'blue', shape: 'rect', x: 0.395833, y: 0.395833, w: 0.145833, h: 0.145833}
     ]},
     // M98 Deflect Window: the corner triangle, a blue wall across the exit with one 0.5 W window

@@ -11,7 +11,7 @@ smallest piece edge - 48 (0.1 W), span = (largest edge + 48 - anchor)/480.
 relative to the course vertex (x scales by the shaft W, y by the corridor W).
 Piece x, y are centres (polygons: vertex centroid, points relative to it);
 motion {axis, min, max} bounds the piece's top/left edge (min) and
-bottom/right edge (max), speed = travel / 120 W per cycle.
+bottom/right edge (max), speed = travel / 840 W per cycle.
 
 Also re-plots every entry from the written catalog at 480 px per W (pieces
 and walls only) and builds concept | re-plot montage sheets in
@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FRAMES = ROOT / 'artifacts' / 'momentum-frames'
 UNIT = 480.0
 MARGIN = 48.0
-CYCLES_PER_PASS = 120.0
+CYCLES_PER_PASS = 840.0
 
 ORDER = [
     ('M04', 'right'), ('M23', 'right'), ('M24', 'right'), ('M46', 'right'), ('M47', 'right'), ('M66', 'right'),
