@@ -15,6 +15,15 @@
 // Automated browsers (navigator.webdriver: the test harnesses, whose
 // headless frame rate says nothing about players) stay at full quality
 // unless ?adaptive=1 asks for the switch.
+// Momentum lighting caps the backdrop by size (sizeCap), measured or not:
+// its ambient multiply, crystal rim, haze, deep shadows and light spill are
+// each a full-frame pass over the backdrop, but their sources are no finer
+// than LOGICAL_VIEWPORT px (background and edge tiles) and the small light
+// canvases. Past MAX_LIT_PX_PER_TILE_PX backing px per logical px the lit
+// backdrop is drawn at that density and copied up: 1920x1080 at DPR 3
+// (5760x3240, 2-4 s a frame in a software canvas) gets a 2715x1527
+// backdrop; the mote glow stays at full resolution there. Smaller backings
+// and momentum without lighting are unchanged.
 const BACKDROP = (function()
 {
     const FAST_SCALE = 0.5
@@ -33,6 +42,8 @@ const BACKDROP = (function()
     const MIN_DEVICE_RESOLUTION = 0.6
     // A step rebuilds caches and sprites: its first frames are not judged
     const SETTLE_MS = 1000
+    // Lit backdrop px per logical px (area) at most (sizeCap)
+    const MAX_LIT_PX_PER_TILE_PX = 2
 
     const params = new URLSearchParams(location.search)
     const forced = Number(params.get('backdrop'))
@@ -47,6 +58,10 @@ const BACKDROP = (function()
         active: false,
         // drawFrameId whose mote glow already went into the backdrop
         glowFrame: -1,
+        // The frame's mote glow goes into the backdrop (the measured switch
+        // only: its blur is sized in backdrop px, so under the size cap alone
+        // the glow stays at full resolution)
+        glowInBackdrop: false,
         canvas: null,
         ctx: null,
         saved: null,
@@ -99,19 +114,29 @@ const BACKDROP = (function()
             window.dispatchEvent(new Event('resize'))
             return true
         },
+        // The backdrop scale momentum lighting allows at this backing size
+        // (1: no cap)
+        sizeCap()
+        {
+            if (version != 'momentum' || !MOMENTUM_FX.enabled)
+                return 1
+            const logical = LOGICAL_VIEWPORT.width * LOGICAL_VIEWPORT.height
+            return Math.min(1, Math.sqrt(MAX_LIT_PX_PER_TILE_PX * logical / (canvas.width * canvas.height)))
+        },
         // Frame start, in the frame's base transform: points the backdrop
         // renderers at the offscreen canvas. False at full quality.
         begin()
         {
-            if (this.scale >= 1)
+            const scale = Math.min(this.scale, this.sizeCap())
+            if (scale >= 1)
                 return false
             if (!this.canvas)
             {
                 this.canvas = document.createElement('canvas')
                 this.ctx = this.canvas.getContext('2d', {alpha: false})
             }
-            const w = Math.max(1, Math.round(canvas.width * this.scale))
-            const h = Math.max(1, Math.round(canvas.height * this.scale))
+            const w = Math.max(1, Math.round(canvas.width * scale))
+            const h = Math.max(1, Math.round(canvas.height * scale))
             if (this.canvas.width != w || this.canvas.height != h)
             {
                 this.canvas.width = w
@@ -121,7 +146,10 @@ const BACKDROP = (function()
             this.ctx.globalCompositeOperation = 'source-over'
             this.ctx.imageSmoothingEnabled = true
             this.syncTransform()
-            const renderers = [visualEffects.background, visualEffects.lightmap, visualEffects.ambientGlow]
+            this.glowInBackdrop = this.scale < 1
+            const renderers = [visualEffects.background, visualEffects.lightmap]
+            if (this.glowInBackdrop)
+                renderers.push(visualEffects.ambientGlow)
             this.saved = renderers.map(renderer => [renderer, renderer.ctx, renderer.canvas])
             for (const renderer of renderers)
             {
@@ -140,14 +168,18 @@ const BACKDROP = (function()
             const sy = this.canvas.height / canvas.height
             this.ctx.setTransform(m.a * sx, m.b * sy, m.c * sx, m.d * sy, m.e * sx, m.f * sy)
         },
-        // Adds the mote glow into the backdrop (under the full-resolution
-        // motes), gives the renderers their frame back and copies the backdrop in
+        // Adds the mote glow into the backdrop (glowInBackdrop; under the
+        // full-resolution motes), gives the renderers their frame back and
+        // copies the backdrop in
         end()
         {
             if (!this.active)
                 return
-            visualEffects.ambientGlow.drawScreen(() => visualEffects.particles.drawAmbientMotes())
-            this.glowFrame = drawFrameId
+            if (this.glowInBackdrop)
+            {
+                visualEffects.ambientGlow.drawScreen(() => visualEffects.particles.drawAmbientMotes())
+                this.glowFrame = drawFrameId
+            }
             for (const [renderer, context, target] of this.saved)
             {
                 renderer.ctx = context
