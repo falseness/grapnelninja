@@ -24,8 +24,14 @@ tools/momentum_fx_support.py this suite checks:
   the tree's are taken with LEAK_LATER_EFFECTS_OFF served in style.js (the
   TASK-058 lit motes take light unshadowed);
 - perf: median and p95 of draw() + a 1 px readback over PERF_FRAMES frames
-  of mid-shaft at 1280x720, parent vs tree (interleaved batches); tree
-  median <= 1.25x parent median;
+  of mid-shaft at 1280x720, the tree with its shadows on vs the same tree
+  with NO_SHADOWS (cutShadows and addDeepShadows stubbed; alternating
+  batches); shadowsOn median <= 1.25x shadowsOff median. LIGHTING_BASELINE
+  (f978b44, before every lighting effect) is measured too and its
+  cumulative ratio only printed: the whole lighting budget is an open user
+  decision (artifacts/TASK-067/perf-ablation.json). With
+  MOMENTUM_SHADOWS_PARENT set, that parent is measured as well and the
+  tree median <= 1.25x its median;
 - switch off: the 4 scenes with MOMENTUM_FX off at both viewports and the
   classic and bad frames of test_visual_gallery with the switch on equal the
   parent commit (decoded maxDelta 0).
@@ -72,6 +78,9 @@ PERF_FRAMES = 300
 LEAK_LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'), ('show: true,\n            parallax', 'show: false,\n            parallax'),
                      ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
 PERF_BATCH = 50
+# TASK-054's parent, before every lighting effect: the cumulative lighting
+# cost is reported against it, not asserted
+LIGHTING_BASELINE = 'f978b44'
 MAX_PERF_RATIO = 1.25
 # The ninja light and haze removed: the ambient-only frame
 NO_NINJA_LIGHT = '''() => {
@@ -336,12 +345,18 @@ class MomentumShadowsTests(unittest.TestCase):
     def test_2_perf(self):
         pages = {}
         try:
-            for name, rev in (('parent', self.parent), ('tree', 'worktree')):
+            arms = [('shadowsOn', 'worktree', None), ('shadowsOff', 'worktree', NO_SHADOWS),
+                    ('baseline', LIGHTING_BASELINE, None)]
+            if os.environ.get('MOMENTUM_SHADOWS_PARENT'):
+                arms.append(('parent', self.parent, None))
+            for name, rev, extra in arms:
                 context, page = fx.harness(rev).open((1280, 720))
                 pages[name] = (context, page)
                 page.evaluate(fx.BUILD, [fx.SCENE_SPECS['mid-shaft'], True])
+                if extra:
+                    page.evaluate(extra)
                 page.evaluate(PERF_SCRIPT, 30)
-            times = {'parent': [], 'tree': []}
+            times = {name: [] for name in pages}
             for _ in range(PERF_FRAMES // PERF_BATCH):
                 for name in times:
                     times[name] += pages[name][1].evaluate(PERF_SCRIPT, PERF_BATCH)
@@ -350,14 +365,28 @@ class MomentumShadowsTests(unittest.TestCase):
         finally:
             for context, _ in pages.values():
                 context.close()
-        result = {'scene': 'mid-shaft', 'viewport': [1280, 720], 'fx': True, 'parent': fx.harness(self.parent).rev,
-                  'tree': fx.harness().rev, 'parentMs': stats(times['parent']), 'treeMs': stats(times['tree'])}
-        result['medianRatio'] = round(result['treeMs']['median'] / result['parentMs']['median'], 4)
-        result['pass'] = result['medianRatio'] <= MAX_PERF_RATIO
+        result = {'scene': 'mid-shaft', 'viewport': [1280, 720], 'fx': True, 'tree': fx.harness().rev,
+                  'shadowsOffPatch': 'cutShadows, addDeepShadows stubbed',
+                  'shadowsOnMs': stats(times['shadowsOn']), 'shadowsOffMs': stats(times['shadowsOff']),
+                  'baseline': fx.harness(LIGHTING_BASELINE).rev, 'baselineMs': stats(times['baseline'])}
+        result['medianRatio'] = round(result['shadowsOnMs']['median'] / result['shadowsOffMs']['median'], 4)
+        result['cumulativeRatio'] = round(result['shadowsOnMs']['median'] / result['baselineMs']['median'], 4)
+        if 'parent' in times:
+            result.update(parent=fx.harness(self.parent).rev, parentMs=stats(times['parent']))
+            result['parentRatio'] = round(result['shadowsOnMs']['median'] / result['parentMs']['median'], 4)
+        result['pass'] = result['medianRatio'] <= MAX_PERF_RATIO and result.get('parentRatio', 0) <= MAX_PERF_RATIO
         (EVIDENCE_DIR / 'perf.json').write_text(compact(result))
-        print('perf', result)
-        self.assertEqual(len(times['tree']), PERF_FRAMES)
+        print('perf shadowsOn median', result['shadowsOnMs']['median'], 'shadowsOff median',
+              result['shadowsOffMs']['median'], 'ratio', result['medianRatio'])
+        print('perf (information) cumulative ratio vs', result['baseline'], result['cumulativeRatio'],
+              'baseline median', result['baselineMs']['median'])
+        if 'parent' in times:
+            print('perf tree vs MOMENTUM_SHADOWS_PARENT', result['parent'], 'ratio', result['parentRatio'])
+        self.assertEqual(len(times['shadowsOn']), PERF_FRAMES)
+        self.assertEqual(len(times['shadowsOff']), PERF_FRAMES)
         self.assertLessEqual(result['medianRatio'], MAX_PERF_RATIO)
+        if 'parent' in times:
+            self.assertLessEqual(result['parentRatio'], MAX_PERF_RATIO)
 
     def test_3_switch_off_and_other_modes_equal_parent(self):
         rows = []
