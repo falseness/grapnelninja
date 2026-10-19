@@ -564,6 +564,26 @@ const MOMENTUM_FRAMES_TURN = Object.freeze([
         {kind: 'blue', shape: 'rect', x: 0.604167, y: 0.388542, w: 0.0625, h: 0.222917},
         {kind: 'blue', shape: 'rect', x: 0.833333, y: -0.444792, w: 0.0625, h: 0.110417},
         {kind: 'blue', shape: 'rect', x: 0.833333, y: 0.305208, w: 0.0625, h: 0.389583}
+    ]},
+    // M40 Corner Deflector: a green triangle in the outer top corner turns the climb right, an elevator in the exit
+    {id: 'M40', join: 'up-right', difficulty: 4, reach: {in: 0.56875, out: 0.860417}, pieces: [
+        {kind: 'green', shape: 'polygon', x: -0.371528, y: -0.371528, points: [[-0.128472, -0.128472], [0.256944, -0.128472], [-0.128472, 0.256944]]},
+        {kind: 'blue', shape: 'rect', x: 0.697917, y: -0.385417, w: 0.125, h: 0.125, motion: {axis: 'y', min: -0.5, max: 0.5, speed: 0.007292}},
+        {kind: 'blue', shape: 'rect', x: 0.395833, y: 0.395833, w: 0.145833, h: 0.145833}
+    ]},
+    // M98 Deflect Window: the corner triangle, a blue wall across the exit with one 0.5 W window
+    {id: 'M98', join: 'up-right', difficulty: 4, reach: {in: 0.6, out: 0.902083}, pieces: [
+        {kind: 'green', shape: 'polygon', x: -0.371528, y: -0.371528, points: [[-0.128472, -0.128472], [0.256944, -0.128472], [-0.128472, 0.256944]]},
+        {kind: 'blue', shape: 'rect', x: 0.75, y: -0.385417, w: 0.104167, h: 0.229167},
+        {kind: 'blue', shape: 'rect', x: 0.75, y: 0.364583, w: 0.104167, h: 0.270833}
+    ]},
+    // M136 Deflect Two Windows: the corner triangle, two blue walls with offset 0.5 W windows
+    {id: 'M136', join: 'up-right', difficulty: 4, reach: {in: 0.6, out: 0.985417}, pieces: [
+        {kind: 'green', shape: 'polygon', x: -0.371528, y: -0.371528, points: [[-0.128472, -0.128472], [0.256944, -0.128472], [-0.128472, 0.256944]]},
+        {kind: 'blue', shape: 'rect', x: 0.625, y: -0.453125, w: 0.0625, h: 0.09375},
+        {kind: 'blue', shape: 'rect', x: 0.625, y: 0.296875, w: 0.0625, h: 0.40625},
+        {kind: 'blue', shape: 'rect', x: 0.854167, y: -0.401042, w: 0.0625, h: 0.197917},
+        {kind: 'blue', shape: 'rect', x: 0.854167, y: 0.348958, w: 0.0625, h: 0.302083}
     ]}
 ].map(pattern => Object.freeze(pattern)))
 

@@ -1,20 +1,21 @@
 """Momentum corner frames M18 Kicker (right->up), M60 Lip Kicker
 (right->down) (TASK-108), M39 Ramp Exit, M117 Slope Window and M134 Double
-Window (down->right, TASK-109) at the course vertex.
+Window (down->right, TASK-109), M40 Corner Deflector, M98 Deflect Window and
+M136 Deflect Two Windows (up->right, TASK-110) at the course vertex.
 
 elements/momentumpatterns.js MOMENTUM_FRAMES_TURN holds the user's picked
 corner frames copied from the TASK-102 catalog (MOMENTUM_FRAMES_CATALOG,
 default artifacts/TASK-102/catalog-m.json); MomentumCornerFrameFactory places
 a piece at vertex + catalog * (shaft W across x, corridor W across y), the
-M60 bar an axis-x sweeper between the shaft wall faces, the M39 elevator an
-axis-y mover between the exit corridor's faces. momentumPlaceTurn(id,
+M60 bar an axis-x sweeper between the shaft wall faces, the M39 and M40
+elevators axis-y movers between the exit corridor's faces. momentumPlaceTurn(id,
 segmentIndex) hands a corner id to momentumPlaceCorner. Placeable only: no
 id is in momentumTurnsByJoin or momentumPatternsByDir.
 
 At 1280x720 and 390x844 (touch, as test_momentum_frames_v) momentum starts on
 a course right, up, right, down, right (SCRIPT, as test_momentum_patterns_turn:
-right->up after segment 0, right->down after segment 2, down->right after
-segment 3), rAF loop stopped,
+right->up after segment 0, up->right after segment 1, right->down after
+segment 2, down->right after segment 3), rAF loop stopped,
 obstacle floor emptied. Asserts:
 - test_1_geometry: per id at its join: piece count = catalog, class per kind,
   nothing lethal, vertex = the segment end, shaftW = 2 x the shaft half
@@ -28,12 +29,14 @@ obstacle floor emptied. Asserts:
   momentumMotionScale(1), getReach = reach.in x W of the incoming travel
   axis, reach.out x W of the outgoing one; the windows between two blue
   pieces at the same x (measured between the placed blue edges, in corridor
-  W): M117 one >= 0.375, M134 two >= 0.5 (the TASK-109 bigger gaps);
+  W): M117 one >= 0.375, M134 two >= 0.5 (the TASK-109 bigger gaps), M98
+  one >= 0.5, M136 two >= 0.5 (TASK-110);
 - test_2_refused: each id returns null on the three other joins, in classic
   and bad; momentumTurnsByJoin and momentumPatternsByDir hold no corner id
   and momentumPatternsByDir equals the port lists;
-- test_4_elevator: M39's blue moved 400 cycles: x constant, top/bottom never
-  outside the exit corridor faces, reverses at both faces, travel >= 0.5 W;
+- test_4_elevator: the M39 and M40 movers moved 400 cycles: x constant,
+  top/bottom never outside the exit corridor faces, reverses at both faces,
+  travel >= 0.5 W;
 - test_3_shots: per id per viewport a montage: left = the concept PNG, right
   = the game view of the same frame rectangle (only walls and pieces), scaled
   to the same height.
@@ -41,7 +44,8 @@ obstacle floor emptied. Asserts:
 MOMENTUM_FRAMES_TURN_EVIDENCE_DIR (default /tmp/momentum-frames-turn)
 receives placed.json (compact {id: {viewport: {vertex, shaftW, corridorW,
 reach, pieces}}}), windows.json (compact {id: {viewport: {corridorW,
-windows: [{top, bottom, size, sizeInW}]}}}), elevator.json and
+windows: [{top, bottom, size, sizeInW}]}}}), elevator.json ({id: {viewport:
+...}}) and
 shots/<id>-<viewport>.png.
 Requires Playwright Chromium and Pillow.
 """
@@ -61,7 +65,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_FRAMES_TURN_EVIDENCE_DIR', '/tmp/momentum-frames-turn'))
 CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'artifacts/TASK-102/catalog-m.json'))
 CONCEPTS = ROOT / 'artifacts/momentum-frames'
-IDS = ['M18', 'M60', 'M39', 'M117', 'M134']
+IDS = ['M18', 'M60', 'M39', 'M117', 'M134', 'M40', 'M98', 'M136']
 VIEWPORTS = [{'width': 1280, 'height': 720, 'touch': False}, {'width': 390, 'height': 844, 'touch': True}]
 # Segments: right, up, right, down, right, all ~5 heights long
 SCRIPT = [0.99, 0.99, 0.1, 0.99, 0.99, 0.99, 0.9, 0.99, 0.99]
@@ -71,10 +75,12 @@ GEOM_TOL = 1.0
 EPS = 1e-6
 FRAME_PX = 480
 # Concept frame px of the vertex per join
-VERTEX_PX = {'right-up': (457, 457), 'right-down': (457, 315), 'down-right': (315, 457)}
+VERTEX_PX = {'right-up': (457, 457), 'right-down': (457, 315), 'down-right': (315, 457), 'up-right': (315, 315)}
 # Window count and smallest window (corridor W) between two blue pieces at the same x
-WINDOWS = {'M117': (1, 0.375), 'M134': (2, 0.5)}
+WINDOWS = {'M117': (1, 0.375), 'M134': (2, 0.5), 'M98': (1, 0.5), 'M136': (2, 0.5)}
 ELEVATOR_CYCLES = 400
+# Elevator id -> its join
+ELEVATORS = {'M39': 'down->right', 'M40': 'up->right'}
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
@@ -387,9 +393,9 @@ class MomentumFramesTurnTests(unittest.TestCase):
 
     def test_4_elevator(self):
         out = {}
-        for name, page, course in self.pages:
-            i = JOINS['down->right']
-            self.assertIsNotNone(page.evaluate(PLACE, ['M39', i]))
+        for (id, join), (name, page, course) in ((x, y) for x in ELEVATORS.items() for y in self.pages):
+            i = JOINS[join]
+            self.assertIsNotNone(page.evaluate(PLACE, [id, i]))
             r = page.evaluate('''(cycles) => {
                 const floor = floors.find(f => f instanceof MomentumPatternFloor)
                 const e = floor.elements.find(e => e.motion)
@@ -407,7 +413,7 @@ class MomentumFramesTurnTests(unittest.TestCase):
                 return {top: top, bottom: bottom, x0: b0.left.toFixed(6) + ',' + b0.right.toFixed(6), xs: [...xs],
                         flips: flips, step: step, h: b0.bottom - b0.top} }''', ELEVATOR_CYCLES)
             vy, half = course['segments'][i]['y1'], course['half']
-            msg = (name, r)
+            msg = (id, name, r)
             self.assertEqual(r['xs'], [r['x0']], msg)
             self.assertGreaterEqual(r['top'], vy - half - GEOM_TOL, msg)
             self.assertLessEqual(r['bottom'], vy + half + GEOM_TOL, msg)
@@ -417,10 +423,10 @@ class MomentumFramesTurnTests(unittest.TestCase):
             self.assertLessEqual((vy + half) - r['bottom'], r['step'] + GEOM_TOL, msg)
             travel = (r['bottom'] - r['top'] - r['h']) / (2 * half)
             self.assertGreaterEqual(travel, 0.5, msg)
-            out[name] = {'cycles': ELEVATOR_CYCLES, 'corridor': [round(vy - half, 2), round(vy + half, 2)],
+            out.setdefault(id, {})[name] = {'cycles': ELEVATOR_CYCLES, 'corridor': [round(vy - half, 2), round(vy + half, 2)],
                          'sweep': [round(r['top'], 2), round(r['bottom'], 2)], 'flips': r['flips'],
                          'step': round(r['step'], 4), 'xConstant': True, 'travelInW': round(travel, 4)}
-            print(f"{name} M39 elevator {ELEVATOR_CYCLES} cycles: sweep {r['top']:.1f}..{r['bottom']:.1f} inside "
+            print(f"{name} {id} elevator {ELEVATOR_CYCLES} cycles: sweep {r['top']:.1f}..{r['bottom']:.1f} inside "
                   f"corridor {vy - half:.1f}..{vy + half:.1f}, {r['flips']} reversals, x constant, travel "
                   f"{travel:.3f} W OK")
         (EVIDENCE_DIR / 'elevator.json').write_text(json.dumps(out, separators=(',', ':')))
