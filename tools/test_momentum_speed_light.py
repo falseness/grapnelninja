@@ -2,9 +2,10 @@
 
 With MOMENTUM_FX on, LightmapRenderer.updateSpeedLight eases s toward
 |ninja speed| / the effective cap (GAMEPLAY.momentumMaxSpeed *
-momentumMotionScale(1)) over momentumLight.speedSmoothMs of render clock; the ninja light's radius and alpha go from momentumLight.slow to
-.fast with s (its haze radius with it), the trail lights' alpha times
-trailGain. From s >= streakFrom drawSpeedStreaks draws 3-6 thin lines behind
+momentumMotionScale(1), the most Ninja.limitMomentumSpeed lets through) over
+momentumLight.speedSmoothMs of render clock; the ninja light's radius and
+alpha go from momentumLight.slow to .fast with s (its haze radius with it), the
+trail lights' alpha times trailGain. From s >= streakFrom drawSpeedStreaks draws 3-6 thin lines behind
 the ninja against its velocity, placed from the render clock (no
 Math.random). Checks (tools/momentum_fx_support.py run-right scene, 1280x720,
 empty trail so the trail lights do not mix in; s set through the ninja's speed
@@ -30,8 +31,11 @@ along +x, then SETTLE_FRAMES draws 1/60 s apart):
 
 MOMENTUM_SPEED_LIGHT_EVIDENCE_DIR (default /tmp/momentum-speed-light)
 receives the json files (compact) and shots/. MOMENTUM_SPEED_LIGHT_PARENT is
-the parent revision (default: the parent of the commit that added this file,
-or HEAD while uncommitted). Requires Playwright Chromium. No remote requests.
+the parent revision (default DEFAULT_PARENT: at or after 9174492, which gave
+the speed light its effective-cap normalisation, and after the TASK-084 rail
+course, whose phone boot draws more Math.random values, so the phone classic
+and bad frames of older parents differ for that reason alone). Requires
+Playwright Chromium. No remote requests.
 """
 import io
 import json
@@ -50,7 +54,8 @@ import render_snapshot
 from test_momentum_ninja_light import gallery_frames
 
 ROOT = Path(__file__).resolve().parents[1]
-TEST_PATH = 'tools/test_momentum_speed_light.py'
+# TASK-084 (3338ffb): rail course, after the 9174492 effective-cap normalisation
+DEFAULT_PARENT = '3338ffb'
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_SPEED_LIGHT_EVIDENCE_DIR', '/tmp/momentum-speed-light'))
 VIEWPORT = (1280, 720)
 PHONE = (390, 844)
@@ -91,12 +96,8 @@ def compact(data):
 
 
 def parent_rev():
-    if os.environ.get('MOMENTUM_SPEED_LIGHT_PARENT'):
-        return os.environ['MOMENTUM_SPEED_LIGHT_PARENT']
-    added = subprocess.check_output(['git', 'log', '-1', '--format=%H', '--diff-filter=A', '--', TEST_PATH],
-                                    cwd=ROOT, text=True).strip()
-    return subprocess.check_output(['git', 'rev-parse', f'{added}~1' if added else 'HEAD'],
-                                   cwd=ROOT, text=True).strip()
+    rev = os.environ.get('MOMENTUM_SPEED_LIGHT_PARENT') or DEFAULT_PARENT
+    return subprocess.check_output(['git', 'rev-parse', rev], cwd=ROOT, text=True).strip()
 
 
 def grab(page):
