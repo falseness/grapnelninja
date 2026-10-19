@@ -159,6 +159,13 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         points:[{x:0,y:0},{x:3960,y:0},{x:3960,y:420},{x:0,y:420}]};
     const exitDrag = {id:'S01-exit-drag',x:5960,y:-3100,role:'drag',grapplable:false,
         points:[{x:0,y:0},{x:520,y:0},{x:520,y:440},{x:0,y:440}]};
+    // TASK-531: an S01-03 overpull (the gantry hook caught early at its near corner and held) flings the
+    // player up the S02 shaft past the canopy onto the S02-04 launch, or near enough to pull onto the S02 exit
+    // ledge. This drag zone, left of the canopy, covers that whole rise up to below the gallery hook, so the
+    // fling loses its horizontal speed and any pull from inside it stays slow; it is clear of every nominal
+    // S01/S02 flight (>= 132) and above the S02-03-short east-wall bank (apex ~-4065).
+    const overpullDrag = {id:'S01-overpull-drag',x:5380,y:-4650,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:260,y:0},{x:260,y:500},{x:0,y:500}]};
     const yardMovers = [
         {id:'S01-hoist-travel',element:'S01-hoist',axis:'x',min:2640,max:2760,periodMs:4000,phase:0,velocity:60},
         {id:'S01-lift-travel',element:'S01-lift',axis:'y',min:-1760,max:-1680,periodMs:4000,phase:0,velocity:40}];
@@ -178,7 +185,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
             {id:'S01-02-short',encounter:'S01-02',x:4300,y:-900},
             {id:'S01-02-overshoot',encounter:'S01-02',x:5200,y:-1600},
             {id:'S01-03-early',encounter:'S01-03',x:5000,y:-2700},
-            {id:'S01-04-short',encounter:'S01-04',x:6460,y:-3300}]});
+            {id:'S01-04-short',encounter:'S01-04',x:6460,y:-3300},
+            {id:'S01-03-overpull',encounter:'S01-03',x:5500,y:-4250}]});
     Object.assign(encounters[0], {status:'built',x:2160,y:0,
         elements:['S01-entry-pad','S01-hoist','S01-yard-pad'],
         start:{x:2160,y:0},target:{x:2700,y:-790},
@@ -513,8 +521,6 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // their recovery colliders), converted to green in place; no v3 S05 route uses them.
         {id:'S05-projecting-girder',x:4650,y:-6800,role:'bounce',grapplable:true,
             points:[{x:0,y:0},{x:200,y:0},{x:200,y:-20},{x:240,y:-20},{x:240,y:35},{x:80,y:35},{x:80,y:110},{x:0,y:110}]},
-        {id:'S05-transfer-canopy',x:5420,y:-7400,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:230,y:0},{x:230,y:-25},{x:270,y:-25},{x:270,y:160},{x:180,y:160},{x:180,y:45},{x:0,y:45}]},
         {id:'S05-recessed-ceiling',x:5800,y:-7720,role:'bounce',grapplable:true,
             points:[{x:0,y:0},{x:230,y:0},{x:230,y:-25},{x:270,y:-25},{x:270,y:190},{x:210,y:190},{x:210,y:55},{x:65,y:55},{x:65,y:120},{x:0,y:120}]},
         {...rest('S05-exit',6200,-8070,240), role:'bounce', points:[{x:0,y:0},{x:200,y:0},{x:200,y:-20},{x:240,y:-20},{x:240,y:55},{x:0,y:55}]}
@@ -888,7 +894,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags,...galleriesDrags,...liftworksDrags,...crownDrags,...summitDrags], movers:liftMovers},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,overpullDrag,...shaftDrags,...viaductDrags,...worksDrags,...galleriesDrags,...liftworksDrags,...crownDrags,...summitDrags], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         finish, completion:'Summit finish region on the S08-04 beacon pad; reaching it completes the climb',

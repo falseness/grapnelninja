@@ -2952,6 +2952,8 @@ V2_S01_DISPOSITION = {
     'S01-exit':('converted-to-bounce','Kept at (4060,-1620) as the v2 Switchback S02-01 start reference, now green; no S01 v3 route uses it')}
 # Elements TASK-548 added to complete the v3 S01 (no v2 counterpart).
 V3_S01_TASK548_ADDED = ('S01-gantry-hook','S01-crown-hook','S01-exit-pad','S01-floor','S01-exit-drag')
+# TASK-531: the S01-03 overpull drag zone (left of the S02 canopy) that stops the early-gantry fling up the S02 shaft.
+V3_S01_TASK531_ADDED = ('S01-overpull-drag',)
 
 
 class FoundationsV3Checks:
@@ -3062,7 +3064,7 @@ class FoundationsV3Checks:
         v2_ids = {e['id'] for e in v2['elements']}
         deleted_other = sorted(v2_ids - set(by_id) - set(V2_S01_DISPOSITION))
         self.assertEqual(deleted_other, ['S01-boom-hook','S01-crane-hook','S01-jib-hook'])
-        self.assertEqual(sorted(set(by_id) - v2_ids), sorted(V3_S01_TASK548_ADDED))
+        self.assertEqual(sorted(set(by_id) - v2_ids), sorted(V3_S01_TASK548_ADDED + V3_S01_TASK531_ADDED))
         self.evidence.write('rules.json', dict(self.proof, validator='layoutV2Report designVersion 3 rules (TASK-546)',
             section=sec, all_applicable_rules_passed=True, encounters=['S01-01','S01-02'],
             gap_targets_reference='LAYOUT_V3_GAP_TARGETS[1080] = 918-972 (artifacts/TASK-544/calibration.json)',
@@ -3328,7 +3330,8 @@ class FoundationsV3CompleteChecks:
         for g in gaps:
             self.assertTrue(self.V3_BAND[0] <= g['distance'] <= self.V3_BAND[1], g)
         falls = sec['rules']['dragUnderFall']['measured']['fallPoints']
-        self.assertEqual([f['id'] for f in falls], ['S01-01-short','S01-02-short','S01-02-overshoot','S01-03-early','S01-04-short'])
+        # TASK-531 adds S01-03-overpull (the early-gantry fling, over S01-overpull-drag).
+        self.assertEqual([f['id'] for f in falls], ['S01-01-short','S01-02-short','S01-02-overshoot','S01-03-early','S01-04-short','S01-03-overpull'])
         self.assertEqual(sorted({f['encounter'] for f in falls}), ['S01-01','S01-02','S01-03','S01-04'])
         under = {}
         for f in falls:
@@ -3342,7 +3345,8 @@ class FoundationsV3CompleteChecks:
         # Since TASK-550 the v3 S02 fall points also drop into these zones; only the S01 ones are pinned here.
         self.assertEqual([dict(id=d['id'], fallPoints=[p for p in d['fallPoints'] if p.startswith('S01-')])
                           for d in sec['rules']['strayDrag']['measured']['dragZones']],
-            [dict(id='S01-yard-drag', fallPoints=[f['id'] for f in falls]), dict(id='S01-exit-drag', fallPoints=['S01-04-short'])])
+            [dict(id='S01-yard-drag', fallPoints=[f['id'] for f in falls]), dict(id='S01-exit-drag', fallPoints=['S01-04-short']),
+             dict(id='S01-overpull-drag', fallPoints=['S01-03-overpull'])])
         self.assertEqual(r['report']['v3'][0], 'S01')
         self.assertFalse(r['report']['failed'])
         self.evidence.write('rules.json', dict(self.proof, validator='layoutV2Report designVersion 3 rules (TASK-546)',
@@ -7437,7 +7441,8 @@ V1_S05_DISPOSITION = {
     'S05-rest':('deleted','v1 S05-01 landing rest pad; the v3 S05-01 ends in flight off the green deflector'),
     'S05-deep-overhang':('deleted','v1 S05-02 overhang; the v3 S05-02 swings under the blue lift into the green baffle'),
     'S05-lower-gallery':('deleted','v1 S05-02 rest pad; the v3 S05-02 ends in flight off the green baffle'),
-    'S05-transfer-canopy':('converted-to-bounce','v1 S05-03 canopy; still the v1 Liftworks recovery collider (recoveries[5]); same place and shape, now green'),
+    # TASK-531: deleted (it carried a 1080 S04-01 -> S05 exit bypass; recoveries[5] stopped naming it in the v3 S06 rebuild).
+    'S05-transfer-canopy':('deleted','v1 S05-03 canopy; converted to green in TASK-517, deleted in TASK-531 (S04-01 -> S05 exit bypass at 1080)'),
     'S05-upper-rest':('deleted','v1 S05-03 landing rest pad; the v3 S05-03 swings from the green pull hook and ends in flight (TASK-518)'),
     'S05-recessed-ceiling':('converted-to-bounce','v1 S05-04 ceiling; still a v1 Liftworks recovery collider (recoveries[5]); same place and shape, now green'),
     'S05-exit':('converted-to-bounce','v1 S05 exit deck; still the v1 S06-01 start and encounters[20] element; same place and shape, now green'),
