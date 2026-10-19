@@ -786,34 +786,57 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     // the swing runs west under it, rebounds off the green west wall still attached, and the pull lifts it up-right
     // into a flight east under the roof. A trolley released too early drops back through S07-exit-drag onto the green
     // S07 exit ledge; a missed beacon catch carries the glide down into S08-glide-drag onto the green glide cap (above
-    // the Crown gable hook). S08-03/04 and the summit stay planned until TASK-527.
+    // the Crown gable hook).
+    // S08-03 (TASK-527): in the flight east under the roof, pull the green east wall (far east, out of reach of the Crown
+    // ledges); released before the wall, the player rebounds off its slightly leaning face back west, nearly level, and
+    // the rebound crosses the crown wall top into S08-crest-drag, which stops it in the crest pocket over the Crown.
+    // S08-04: from the crest pocket, pull the far west end of the roof: the drag only lets the player crawl west out of
+    // the pocket, straight into the summit finish region over the green summit pad (the pad keeps straight pulls from the
+    // Crown exit pocket and the crown ledge out of it). Without the S08-04 pull, or with the east wall released early,
+    // the player sinks through S08-crest-drag and S07-crown-drag onto the green S07 crown ledge.
     const summit = [
         // Up-left of the S07 exit pocket, between the S05 hoist's and the S07 carriage's travel lines.
         rectangle('S08-mast-trolley',2000,-13330,120,30,true),
-        // At the top of the map, over the mast trolley.
-        bouncer('S08-roof',1500,-13495,1100,25),
+        // At the top of the map, over the mast trolley; its far west end is the S08-04 anchor.
+        bouncer('S08-roof',1350,-13495,1250,25),
         rectangle('S08-beacon-trolley',370,-13360,120,30,true),
         // Against the left map edge, high above the S07-03 map-edge climb.
         bouncer('S08-west-wall',0,-13420,30,420),
         // Over the S07 gable hook, under the missed-beacon glide; the drag zone above it holds it.
-        bouncer('S08-glide-cap',1400,-13030,160,30)
+        bouncer('S08-glide-cap',1400,-13030,160,30),
+        // Far east of the Crown; its face leans back 42 px over its height, so the rebound leaves nearly level.
+        {id:'S08-east-wall',x:4150,y:-13470,role:'bounce',grapplable:true,
+            points:[{x:42,y:0},{x:72,y:0},{x:30,y:320},{x:0,y:320}]},
+        // Under the summit finish region, west of the crest pocket.
+        bouncer('S08-summit-floor',2370,-13110,380,30)
     ];
     const summitDrags = [{id:'S08-glide-drag',x:1400,y:-13140,role:'drag',grapplable:false,
-        points:[{x:0,y:0},{x:160,y:0},{x:160,y:110},{x:0,y:110}]}];
+        points:[{x:0,y:0},{x:160,y:0},{x:160,y:110},{x:0,y:110}]},
+        // The crest pocket: over S07-crown-drag and the crown ledge, under the S08-03 pull's outbound flight.
+        {id:'S08-crest-drag',x:2750,y:-13350,role:'drag',grapplable:false,
+            points:[{x:0,y:0},{x:180,y:0},{x:180,y:550},{x:0,y:550}]}];
     liftMovers.push({id:'S08-mast-trolley-travel',element:'S08-mast-trolley',axis:'x',min:2000,max:2120,periodMs:4000,phase:0,velocity:60},
         {id:'S08-beacon-trolley-travel',element:'S08-beacon-trolley',axis:'x',min:370,max:490,periodMs:4000,phase:0,velocity:60});
-    Object.assign(sections[7], {status:'partial', designVersion:3, landmark:{id:'S08-landmark',
+    Object.assign(sections[7], {status:'built', designVersion:3, landmark:{id:'S08-landmark',
         name:'distinct final beacon silhouette',x:1300,y:-12960},
         band:{...sections[7].band, top:-14580},
         // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
         gaps:[{id:'S08-01-trolley',from:{x:2608.9,y:-11971.2},to:{x:2058.4,y:-13300}},
             // Caught in the glide off the mast trolley.
-            {id:'S08-02-beacon',from:{x:1917.7,y:-13330.5},to:{x:491.6,y:-13331.9}}],
+            {id:'S08-02-beacon',from:{x:1917.7,y:-13330.5},to:{x:491.6,y:-13331.9}},
+            // Pressed in the flight east under the roof.
+            {id:'S08-03-wall',from:{x:2771.6,y:-13413.3},to:{x:4188.1,y:-13440.2}},
+            // Pressed in the crest pocket.
+            {id:'S08-04-roof',from:{x:2805.9,y:-13257.1},to:{x:1410.6,y:-13470}}],
         // Declared miss points: a mast trolley released too early rises short of the S05 hoist and drops back through
         // S07-exit-drag onto the green S07 exit ledge; a missed beacon catch glides down into S08-glide-drag, which
-        // drops it onto the green glide cap.
+        // drops it onto the green glide cap. An east wall released early rebounds lower and slower into the crest pocket,
+        // and without the S08-04 pull the pocket sinks: both drop through S08-crest-drag and S07-crown-drag onto the
+        // green S07 crown ledge.
         fallPoints:[{id:'S08-01-short',encounter:'S08-01',x:2587,y:-12300},
-            {id:'S08-02-missed',encounter:'S08-02',x:1560,y:-13150}]});
+            {id:'S08-02-missed',encounter:'S08-02',x:1560,y:-13150},
+            {id:'S08-03-short',encounter:'S08-03',x:2830,y:-13050},
+            {id:'S08-04-missed',encounter:'S08-04',x:2803,y:-13150}]});
     Object.assign(encounters[28], {status:'built',x:2609,y:-11971,
         elements:['S07-exit-ledge','S08-mast-trolley','S08-roof'],
         start:{x:2608.9,y:-11971.5,from:'S07-04'},target:{x:2060,y:-13300},
@@ -825,13 +848,27 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         start:{from:'S08-01',x:1917.7,y:-13330.5},target:{x:430,y:-13330},
         exit:{left:1450,right:1700,top:-13400,bottom:-13300},
         action:'In the glide, catch the blue beacon trolley, swing west under it, rebound off the green west wall and ride the pull up-right into a flight east under the roof'});
-    // Planned (schematic) final landing west of the S08 entry; built by TASK-527.
-    encounters[31].x = 1000
+    // The summit finish: over the green summit pad, entered from the crest pocket (west of the S08 entry).
+    const finish = {left:2380,right:2735,top:-13300,bottom:-13121}
+    Object.assign(encounters[30], {status:'built',x:2806,y:-12960,
+        elements:['S08-east-wall','S08-crest-drag'],
+        start:{from:'S08-02',x:1563,y:-13346.8},target:{x:4180,y:-13440},
+        exit:{left:2780,right:2840,top:-13290,bottom:-13230},
+        action:'In the flight east under the roof, pull the green east wall, release before it, rebound off its leaning face back west over the crown wall top and stop in the crest pocket'});
+    Object.assign(encounters[31], {status:'built',x:2560,y:-12960,
+        elements:['S08-crest-drag','S08-roof','S08-summit-floor'],
+        start:{from:'S08-03',x:2805.9,y:-13257.1},target:{x:1400,y:-13471},
+        exit:finish, finishRegion:finish,
+        action:'From the crest pocket, pull the far west end of the green roof and crawl west out of the pocket into the summit finish region over the green summit pad'});
     Object.assign(connectors[28], {status:'built',intent:'Physical ascent: the S08-01 mast trolley pull starts on the v3 Crown exit ledge'});
     Object.assign(connectors[29], {status:'built'});
-    Object.assign(recoveries[7], {intent:'Summit misses fall through drag zones onto green catches; planned until S08-04 is rebuilt'});
-    // The summit finish stays inactive (summit approach planned) until S08-04 is rebuilt for layout v3.
-    const finish = {left:3420,right:3700,top:-12772,bottom:-12760}
+    Object.assign(connectors[30], {status:'built',intent:'The S08-02 flight east under the roof carries the player into reach of the east wall'});
+    Object.assign(connectors[31], {status:'built',intent:'The crest pocket holds the S08-03 rebound within reach of the far west end of the roof'});
+    Object.assign(connectors[32], {status:'built',finishRegion:finish,
+        intent:'Controlled final approach: the crawl out of the crest pocket enters the summit finish region over the green summit pad'});
+    Object.assign(recoveries[7], {status:'built',elements:['S08-crest-drag','S07-crown-drag','S07-crown-ledge','S05-hoist','S07-exit-drag','S07-exit-ledge'],
+        rejoin:'S08-01',intent:'Summit misses fall through drag zones onto green catches',
+        sideRoute:'An early east-wall release or a missing roof pull sinks through S08-crest-drag and S07-crown-drag onto the green S07 crown ledge; from there the S05 hoist swings the player west into S07-exit-drag onto the S07 exit ledge, the S08 entrance, and the S08-01 mast trolley pull starts again. No hazards at the ending.'});
     return {schemaVersion:1, geometryVersion:1,
         // Grapnel range: base until the player enters upgradeBand, upgraded after.
         range:{base:R, upgraded:1620, upgradeBand:'S05'}, ascent:24*U, horizontalEnvelope:12*U,

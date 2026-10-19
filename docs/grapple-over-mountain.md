@@ -74,8 +74,16 @@ into a glide. S08-02 catches a blue beacon trolley in that glide, swings west
 under it, rebounds off a green west wall and rides the pull up-right into a flight
 east under the roof. An early trolley release drops back through the S07 exit drag
 zone onto the S07 exit ledge; a missed beacon catch glides into a drag zone onto a
-green glide cap above the Crown gable hook. S08-03/04 and the summit finish stay
-planned (the finish is inactive until they are rebuilt). Other sections keep their own build status; both optional shortcuts are
+green glide cap above the Crown gable hook. TASK-527 completes S08: S08-03 pulls a
+green east wall far east (out of reach of the Crown ledges) from that flight;
+released before the wall, the player rebounds off its leaning face back west over
+the crown wall top into a crest drag zone that stops it over the Crown. S08-04
+pulls the far west end of the roof from that crest pocket; the drag zone only lets
+the player crawl west out of the pocket, straight into the summit finish region
+over a green summit pad (west of the S08 entry), which triggers the ending once. An
+early east-wall release or a missing roof pull sinks through the crest and crown
+drag zones onto the S07 crown ledge; the S05 hoist swings the player from there
+into the S07 exit drag zone, back to the S08 entrance. Other sections keep their own build status; both optional shortcuts are
 planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and
