@@ -27,6 +27,27 @@ class MomentumBlue extends MomentumOneTime
     {
         return true
     }
+    // Faceted sapphire (render/crystalpieces.js) instead of the inset copy,
+    // under the piece's own neon outline (stroked again, inside the piece)
+    drawInnerShell(alpha)
+    {
+        if (bloomPassActive || !CRYSTAL_PIECES.enabled)
+        {
+            super.drawInnerShell(alpha)
+            return
+        }
+        CRYSTAL_PIECES.drawBlue(this, alpha)
+        const points = this.getPoints()
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
+        for (let i = 0; i < points.length; ++i)
+            ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+        ctx.closePath()
+        ctx.clip()
+        strokeNeonPath(this.stroke, alpha)
+        ctx.restore()
+    }
     vanishesOnUse()
     {
         return true
