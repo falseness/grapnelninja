@@ -531,6 +531,10 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(sections[4], {status:'built', designVersion:3, landmark:{id:'S05-landmark',
         name:'projecting beams and deep overhangs',x:3000,y:-10900},
         band:{...sections[4].band, top:-9720},
+        // TASK-529: the range upgrade is earned on entering S05, i.e. on landing on the S04 exit ledge (the
+        // S05-01 start): the top of the S04-04 exit box, above the settled pose (y -11660.9). The v3 S03/S04
+        // routes climb through the S05 band, so the band itself would grant 1620 inside S03.
+        rangeUpgradeZone:{left:1350, right:1740, top:-11680, bottom:-11662},
         // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
         gaps:[{id:'S05-01-hoist',from:{x:1387.9,y:-11660.9},to:{x:2566.6,y:-12469.7}},
             // Caught in flight just after the deflector bounce.
@@ -872,7 +876,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         rejoin:'S08-01',intent:'Summit misses fall through drag zones onto green catches',
         sideRoute:'An early east-wall release or a missing roof pull sinks through S08-crest-drag and S07-crown-drag onto the green S07 crown ledge; from there the S05 hoist swings the player west into S07-exit-drag onto the S07 exit ledge, the S08 entrance, and the S08-01 mast trolley pull starts again. No hazards at the ending.'});
     return {schemaVersion:1, geometryVersion:1,
-        // Grapnel range: base until the player enters upgradeBand, upgraded after.
+        // Grapnel range: base until the player enters upgradeBand (its rangeUpgradeZone when set), upgraded after.
         range:{base:R, upgraded:1620, upgradeBand:'S05'}, ascent:24*U, horizontalEnvelope:12*U,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*U},

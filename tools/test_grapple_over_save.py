@@ -449,8 +449,12 @@ RANGE_HELPERS = '''() => {
     // A point with nothing within 60 units on either axis.
     window.isFree=(x,y)=>!grapnel.nearestCrossing({x:x-60,y},[x+60,y])&&!grapnel.nearestCrossing({x,y:y-60},[x,y+60]);
     // TEST-ONLY PLACEMENT: put the player's center just inside the S05 band,
-    // at the free point nearest the band's horizontal middle.
-    window.placeInUpgradeBand=()=>{const b=bandOf('S05'),y=b.bottom-20,mid=(b.left+b.right)/2;
+    // at the free point nearest the band's horizontal middle. TASK-529: when S05
+    // has a rangeUpgradeZone (the top of the S04 exit box, against the ledge), the
+    // player is put at the middle of that zone instead.
+    window.placeInUpgradeBand=()=>{const z=floors[0].level.sections.find(s=>s.id==='S05').rangeUpgradeZone;
+        if(z){const x=(z.left+z.right)/2,y=(z.top+z.bottom)/2;placeAt(x,y);return {x,y,zone:z,label:'TEST-ONLY'}}
+        const b=bandOf('S05'),y=b.bottom-20,mid=(b.left+b.right)/2;
         for(let d=0;d<mid-b.left;d+=40) for(const x of [mid-d,mid+d]) if(isFree(x,y)){placeAt(x,y);return {x,y,label:'TEST-ONLY'}}
         throw Error('no free S05 placement')};
     // Radius argument actually passed to ctx.arc by the range circle.

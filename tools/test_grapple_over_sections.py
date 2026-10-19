@@ -8276,9 +8276,9 @@ class GalleriesV3CompleteChecks(GalleriesV3Checks):
         """Negative control at the base 1080 range from the nominal S05-03/04 press states.
 
         S05-03 (press pose y -10146, above the S05 band): the pull hook is never acquired. S05-04 (press pose
-        y -8040, inside the S05 band, which is the TASK-502 upgrade trigger in physics.js): the game re-grants
-        the 1620 range before the throw lands, so the base range cannot occur there; the run records that, and
-        the 1080 claim for S05-04 rests on test_01 (nearest exit-hook point 1428.7 from the press pose).
+        y -8040, inside the S05 band): before TASK-529 the band was the upgrade trigger and re-granted 1620
+        before the throw landed; TASK-529 moved the trigger to S05's rangeUpgradeZone (landing on the S04 exit
+        ledge), so the base range now holds through the S05-04 throw and the exit hook is never acquired.
         """
         out = {}
         band = self.report()['manifest']['sections'][4]['band']
@@ -8307,23 +8307,26 @@ class GalleriesV3CompleteChecks(GalleriesV3Checks):
                 self.assertFalse([e for e in mech if e['element'] in ('S05-exit-hook','S05-exit-canopy','S05-exit-ledge')], mech)
                 self.assertFalse(any(self.in_box(p, self.S05_EXIT_DRAG) for p in players))
             else:
-                # Inside the band: the range is re-granted before the exit-hook acquisition, so that catch is a 1620 catch.
+                # Inside the band, but the band no longer grants the range (TASK-529): the throw stays at the base
+                # range and the exit hook (nearest point 1428.7 from the press pose) is never acquired.
                 self.assertTrue(in_band)
-                self.assertTrue(hit and upgraded is not None and upgraded <= hit[0]['tick'], (upgraded, acquired))
+                self.assertFalse(any(ranges[:21]), ranges[:21])
+                self.assertEqual(hit, [], mech)
             out[name] = dict(start=label, press_pose=mid['player'], press_pose_inside_s05_upgrade_band=in_band, s05_band=band,
                              gap_anchor=anchor, gap_anchor_acquired=bool(hit), acquisitions=acquired, range_reearned_at_tick=upgraded,
                              range_false_through_throw=not any(ranges[:21]), final=players[-1],
                              exit_pocket_reached=any(self.in_box(p, self.S05_EXIT_DRAG) for p in players))
-        out['S05-04']['note'] = ('the S05-04 press pose lies inside the S05 band, the TASK-502 upgrade trigger (physics.js): the game re-grants 1620 at tick %s, '
-                                 'before the exit-hook catch, so a base-range S05-04 press cannot occur; its 1080 non-crossability is the geometric '
-                                 'nearest-point check in rules.json (gaps_not_crossable_at_1080)' % out['S05-04']['range_reearned_at_tick'])
+        out['S05-04']['note'] = ('the S05-04 press pose lies inside the S05 band, which since TASK-529 no longer grants the range (the trigger is '
+                                 "S05's rangeUpgradeZone on the S04 exit ledge): the base range holds through the throw and the exit hook is not "
+                                 'acquired (range re-earned at tick %s); the geometric nearest-point check is in rules.json (gaps_not_crossable_at_1080)'
+                                 % out['S05-04']['range_reearned_at_tick'])
         self.evidence.write('negative/s05_03_04_result.json', dict(self.proof, passed=True, range_1080=out,
             note='S05-03: with the base range the pull-hook shot falls short (gap anchor never acquired, exit pocket never reached). '
                  'S05-04: see range_1080.S05-04.note'))
         print('PASS 1080 negative control: S05-03 pull hook not acquired at the base range (other acquisitions',
               [a['element'] for a in out['S05-03']['acquisitions']], ', range false through the throw, exit pocket not reached); '
-              'S05-04 press pose inside the S05 upgrade band: range re-granted at tick', out['S05-04']['range_reearned_at_tick'],
-              'before the exit-hook catch at tick', [a['tick'] for a in out['S05-04']['acquisitions']], '(1080 claim = test_01 nearest point)')
+              'S05-04 exit hook not acquired at the base range (acquisitions', [a['element'] for a in out['S05-04']['acquisitions']],
+              ', range false through the throw; the S05 band no longer grants it)')
 
 
 class GalleriesV3ToleranceChecks(DeflectorV3ToleranceChecks):

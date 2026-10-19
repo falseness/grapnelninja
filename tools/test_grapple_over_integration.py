@@ -1,6 +1,7 @@
 """Continuous mountain proofs from the base, driven only by trusted input events."""
 import hashlib
 import json
+import math
 import shutil
 import subprocess
 import unittest
@@ -558,6 +559,400 @@ class Task490Tests(unittest.TestCase):
             self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, path)
         print('PASS source hashes: runtime, level and harness match the tested worktree', flush=True)
 
+
+class Task529Tests(unittest.TestCase):
+    """Layout-v3 lower four sections joined: base -> S01 -> S02 -> S03 -> S04 exit in one base-start
+    recording with trusted mouse input, plus a naturally initiated S04 -> S03 fall and an input-only rejoin.
+
+    The section routes are the v3 nominal routes of the section proofs (TASK-548/551/554/515), played
+    back to back in one run from the production restart at the base spawn: no placement, snapshot,
+    spawn or velocity/mover reset at a section boundary. Every section ends settled on its green exit
+    pad/ledge (the next section's start), and the next section's first press comes on the mover phase
+    its proof used (the movers are clocked by the simulation since the level load, period 240 ticks).
+    """
+    task_id = 'TASK-529'
+    # Segment starts (ticks): S01 at 0, S02 at 1495, S03 at 3245, S04 at 4545; the run ends at 6545.
+    SECTION_STARTS = dict(S01=0, S02=1495, S03=3245, S04=4545)
+    TICKS = 6545
+    PERIOD = 240
+    # Mistimed S04-01 (the recovery run): the blue hoist held 475 ticks instead of 365 (released at
+    # 5025, not 4915). The swing carries the player past the S03 exit ledge into the right map edge;
+    # it drops along it through S03-fall-drag onto the green S03 lower bridge (S03 band) and settles.
+    LATE_RELEASE = 5025
+    # Input-only rejoin from the bridge (a pocket between S02-east-wall and the right map edge): pull the
+    # top of the green S02 east wall (out of the pocket, over the wall), a 6-tick S03 hoist tap that drops
+    # the player west into S02-exit-drag onto the green S02 exit ledge, then a 125-tick pull along the
+    # ledge to the nominal S03-01 start. The S03 route then repeats on its phase (tick 6845 = 3245 + 15
+    # periods), and S04 (tick 8145 = 4545 + 15 periods) with inputs re-tuned for the rejoin camera: the
+    # camera rests 58 units lower after the re-climb, so the quantized hoist aim and the second apex
+    # differ (hoist aimed one pixel lower and held 369, exit hook at its near corner pressed at 1000).
+    WALL, HOIST_TAP, LEDGE = (6345, -5799), (5520, -5800), (5800, -4860)
+    REJOIN = [(5765,'mousedown',*WALL),(5975,'mouseup',*WALL),(5980,'mousedown',*HOIST_TAP),(5986,'mouseup',*HOIST_TAP),
+              (6610,'mousedown',*LEDGE),(6735,'mouseup',*LEDGE)]
+    REJOIN_S03, REJOIN_S04, RECOVERY_TICKS = 6845, 8145, 10045
+    S03_BAND_LANDING = 'S03-lower-bridge'
+    S02_LEDGE_SETTLE = dict(x=[5640,6160], y=[-4890,-4860], speedX=[-.001,.001], speedY=[-.05,.05])
+
+    @classmethod
+    def setUpClass(cls):
+        from grapple_over_verify import hashes
+        import test_grapple_over_sections as sections
+        cls.S = sections
+        cls.evidence = EvidenceWriter(cls.task_id)
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        page = cls.browser.new_page(viewport=VIEWPORT); page.goto(cls.url); wait_for_boot(page)
+        cls.mountain = page.evaluate('''() => ({sections:GRAPPLE_OVER_MOUNTAIN.sections,
+            encounters:GRAPPLE_OVER_MOUNTAIN.encounters.slice(0,17),spawn:GRAPPLE_OVER_MOUNTAIN.spawn,
+            range:GRAPPLE_OVER_MOUNTAIN.range,movers:GRAPPLE_OVER_MOUNTAIN.geometry.movers,
+            drags:GRAPPLE_OVER_MOUNTAIN.geometry.elements.filter(e=>e.role==='drag').map(e=>({id:e.id,
+                left:e.x+Math.min(...e.points.map(p=>p.x)),right:e.x+Math.max(...e.points.map(p=>p.x)),
+                top:e.y+Math.min(...e.points.map(p=>p.y)),bottom:e.y+Math.max(...e.points.map(p=>p.y))})),
+            radius:{base:MODE_DEFINITIONS.grapple_over.acquisitionRadius,upgraded:MODE_DEFINITIONS.grapple_over.upgradedAcquisitionRadius}})''')
+        page.close()
+        cls.hashes = hashes()
+        cls.hashes['tools/test_grapple_over_integration.py'] = hashlib.sha256(
+            (ROOT/'tools/test_grapple_over_integration.py').read_bytes()).hexdigest()
+        cls.proof = dict(browser=cls.browser.version, viewport=VIEWPORT, device_scale_factor=1,
+            hz=60, seed=1, revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+            dirty_paths=subprocess.check_output(['git','status','--porcelain','--','.',':!artifacts'],cwd=ROOT,text=True).splitlines(),
+            source_hashes=cls.hashes)
+        cls.evidence.log('CONFIG '+json.dumps(cls.proof, sort_keys=True))
+
+    # ---- routes ---------------------------------------------------------------------------------
+    @classmethod
+    def nominal(cls):
+        D, C = cls.S.DeflectorV3Checks, cls.S.DeflectorV3CompleteChecks
+        # D.S03_V3_ROUTE is the TASK-548 S01 route, the TASK-551 S02 route from 1495 and the
+        # TASK-554/555 S03 route from 3245; the TASK-515/516 S04 route follows from 4545.
+        return D.S03_V3_ROUTE + [(t+cls.SECTION_STARTS['S04'], e, x, y) for t, e, x, y in C.S04_ROUTE_V3]
+
+    @classmethod
+    def recovery(cls):
+        D, C, V = cls.S.DeflectorV3Checks, cls.S.DeflectorV3CompleteChecks, cls.S.ViaductV3CompleteChecks
+        H, s4 = D.HOIST_V3, cls.SECTION_STARTS['S04']
+        late = [(s4+5,'mousedown',*H),(cls.LATE_RELEASE,'mouseup',*H)]
+        s04 = [(5,'mousedown',H[0],H[1]+4),(374,'mouseup',H[0],H[1]+4)] + D.S04_02_V3 + C.S04_03_V3 + \
+              [(1000,'mousedown',812,-11994),(1065,'mouseup',812,-11994)]
+        return (D.S03_V3_ROUTE + late + cls.REJOIN + [(t+cls.REJOIN_S03, e, x, y) for t, e, x, y in V.S03_ROUTE_V3]
+                + [(t+cls.REJOIN_S04, e, x, y) for t, e, x, y in s04])
+
+    def manifest(self, plan, ticks):
+        from grapple_over_verify import metadata, validate
+        m = dict(metadata=metadata('base-start'), ticks=ticks, inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
+                 expected_exit=self.S.DeflectorV3CompleteChecks.S04_04_EXIT, required_events=['acquisition','release','bounce'])
+        m['metadata']['compact_contacts'] = True
+        validate(m)
+        self.assertNotIn('initial_setup', m); self.assertNotIn('initial_snapshot', m)
+        return m
+
+    def run_route(self, name, m, clip):
+        """Record, replay and compare; the raw recordings are deleted (the compact evidence is kept)."""
+        from grapple_over_verify import execute, check_trace
+        trace = execute(m, self.browser, self.url, str(self.evidence.path('runs/'+name)), clip=clip)
+        check_trace(m, trace)
+        replay = execute(m, self.browser, self.url, str(self.evidence.path('runs/'+name+'-replay')))
+        check_trace(m, replay)
+        self.assertEqual(trace, replay)
+        recorded, replayed = state_hash(trace), state_hash(replay)
+        del replay
+        self.evidence.path('runs/'+name+'/trace.json').unlink()
+        shutil.rmtree(self.evidence.path('runs/'+name+'-replay'))
+        return trace, recorded, replayed
+
+    # ---- shared checks --------------------------------------------------------------------------
+    @staticmethod
+    def players(trace):
+        return [r['state']['simulation']['player'] for r in trace['snapshots']]
+
+    @staticmethod
+    def inside(p, bounds):
+        return all(lo <= p[k] <= hi for k, (lo, hi) in bounds.items())
+
+    def first_exit_ticks(self, players, encounters=None, after=0):
+        out = {}
+        for e in encounters or self.mountain['encounters'][:16]:
+            b = exit_box(e['exit'])
+            out[e['id']] = next((t for t in range(after, len(players)) if b['left'] <= players[t]['x'] <= b['right']
+                                 and b['top'] <= players[t]['y'] <= b['bottom']), None)
+        return out
+
+    def continuity(self, m, trace, s04_exit_tick):
+        sim = [r['state']['simulation'] for r in trace['snapshots']]
+        self.assertEqual(m['metadata']['kind'], 'base-start')
+        self.assertEqual(trace['metadata']['setupOnlySpawns'], [])
+        self.assertIs(trace['metadata']['testOnly'], True)
+        p0 = sim[0]['player']; spawn = self.mountain['spawn']
+        self.assertEqual((p0['x'],p0['y'],p0['speedX'],p0['speedY']), (spawn['x'],spawn['y'],0,0))
+        self.assertEqual(sim[0]['stats']['maxHeight'], 0)
+        self.assertIs(sim[0]['upgrades']['range'], False)
+        ticks = [s['simulationTick'] for s in sim]
+        steps = sorted({b-a for a, b in zip(ticks, ticks[1:])})
+        # The fixed-step clock advances by the same amount every frame and never rewinds or restarts.
+        self.assertEqual(len(steps), 1, steps)
+        self.assertGreater(steps[0], 0)
+        jumps = [max(abs(b['player']['x']-a['player']['x']), abs(b['player']['y']-a['player']['y'])) for a, b in zip(sim, sim[1:])]
+        # No relocation: every per-tick displacement is covered by the recorded speeds (8 physics cycles per tick).
+        excess = max(j - 8*max(abs(a['player'][k]) for a in (u, v) for k in ('speedX', 'speedY'))
+                     for j, u, v in zip(jumps, sim, sim[1:]))
+        self.assertLess(excess, 1, excess)
+        self.assertLess(max(jumps), 40)
+        ids = [e['id'] for e in sim[0]['elements']]
+        self.assertTrue(all([e['id'] for e in s['elements']] == ids for s in sim))
+        # Lower-section movers: small continuous steps and a strict 240-tick period from the level load
+        # (a reset at a section boundary would break the period); every other element stays put.
+        index = {k: i for i, k in enumerate(ids)}
+        movers, period_error, mover_step = {}, 0, 0
+        for v in self.mountain['movers']:
+            if not v['element'].startswith(('S01','S02','S03','S04')): continue
+            i, k = index[v['element']], v['axis']
+            pos = [s['elements'][i][k] for s in sim]
+            mover_step = max(mover_step, max(abs(b-a) for a, b in zip(pos, pos[1:])))
+            period_error = max(period_error, max(abs(pos[t]-pos[t-self.PERIOD]) for t in range(self.PERIOD, len(pos))))
+            self.assertAlmostEqual(min(pos), v['min'], delta=1); self.assertAlmostEqual(max(pos), v['max'], delta=1)
+            movers[v['element']] = dict(axis=k, min=min(pos), max=max(pos), every_60_ticks=[round(x, 3) for x in pos[::60]])
+        self.assertLess(mover_step, 2)
+        self.assertLess(period_error, 1e-6)
+        mover_ids = {v['element'] for v in self.mountain['movers']}
+        origin = {e['id']: (e['x'], e['y']) for e in sim[0]['elements']}
+        moved = sorted({e['id'] for s in sim for e in s['elements'] if e['id'] not in mover_ids and (e['x'], e['y']) != origin[e['id']]})
+        self.assertEqual(moved, [])
+        self.assertFalse(any(s['stats']['completed'] for s in sim))
+        heights = [s['stats']['maxHeight'] for s in sim]
+        self.assertTrue(all(b >= a for a, b in zip(heights, heights[1:])))
+        # Active range: the base 1080 at every snapshot before the S04 exit; the upgrade is earned on the
+        # tick the player enters the S04-04 exit (the S05-01 start, S05's rangeUpgradeZone) and kept.
+        ranges = [s['upgrades']['range'] for s in sim]
+        upgrade = next((t for t, r in enumerate(ranges) if r), None)
+        self.assertEqual(upgrade, s04_exit_tick)
+        self.assertFalse(any(ranges[:s04_exit_tick]))
+        self.assertTrue(all(ranges[s04_exit_tick:]))
+        inputs = [e for e in trace['events'] if e['type'] == 'input']
+        self.assertEqual(len(inputs), len(m['inputs']))
+        self.assertTrue(all(e['trusted'] for e in inputs))
+        presses = [e for e in inputs if e['event'] == 'mousedown']
+        offscreen = [e['tick'] for e in presses if not (0 < e['client']['x'] < VIEWPORT['width'] and 0 < e['client']['y'] < VIEWPORT['height'])]
+        self.assertEqual(offscreen, [])
+        self.assertFalse(any(ranges[e['tick']] for e in presses))
+        return dict(base_start=True, kind=m['metadata']['kind'], initial_setup=None, initial_snapshot=None,
+            setup_only_spawns=trace['metadata']['setupOnlySpawns'], debug_mutation=False, state_reset=False,
+            initial_player=p0, simulation_ticks=[ticks[0], ticks[-1]], simulation_tick_increment=steps,
+            max_player_step=max(jumps), max_step_beyond_8x_speed=excess, static_elements_moved=moved, lower_movers=movers, max_mover_step=mover_step,
+            mover_period_ticks=self.PERIOD, max_mover_period_error=period_error, completed=False, max_height_monotonic=True,
+            range=dict(base=self.mountain['radius']['base'], upgraded=self.mountain['radius']['upgraded'],
+                       snapshots_at_base_range=s04_exit_tick, upgrade_tick=upgrade, s04_exit_tick=s04_exit_tick,
+                       all_presses_at_base_range=True, s05_zone=self.mountain['sections'][4]['rangeUpgradeZone']),
+            trusted_inputs=len(inputs), offscreen_presses=offscreen,
+            press_clients=[dict(tick=e['tick'], world=e['world'], client=e['client'], range=self.mountain['radius']['base']) for e in presses])
+
+    @staticmethod
+    def mechanics(trace):
+        out = []
+        for e in trace['events']:
+            if e['type'] in ('acquisition', 'release'):
+                rope = e['after']['rope'] if e['type'] == 'acquisition' else e['before']['rope']
+                element = rope[0]['id'] if rope else None
+            elif e['type'] == 'bounce':
+                element = e['contact']['elementId']
+            else:
+                continue
+            p = (e['after'] if e['type'] != 'bounce' else e['before'])['simulation']['player']
+            out.append(dict(tick=e['tick'], type=e['type'], element=element, player={k: p[k] for k in ('x', 'y', 'speedX', 'speedY')}))
+        return out
+
+    def compact(self, trace):
+        """Per-tick player/range/height rows, per-tick snapshot hashes and the input/rope/bounce events; no element lists."""
+        rows = []
+        for r in trace['snapshots']:
+            s = r['state']['simulation']; p = s['player']
+            rows.append([r['tick'], s['simulationTick'], p['x'], p['y'], p['speedX'], p['speedY'], int(s['upgrades']['range']),
+                         s['stats']['maxHeight'], int(bool(s['grapple'].get('grappled')))])
+        inputs = [{k: e[k] for k in ('tick', 'event', 'world', 'client', 'trusted')} for e in trace['events'] if e['type'] == 'input']
+        return dict(fields=['tick','simulationTick','x','y','speedX','speedY','rangeUpgraded','maxHeight','grappled'], rows=rows,
+                    snapshot_sha256=[r['sha256'] for r in trace['snapshots']], inputs=inputs, mechanics=self.mechanics(trace),
+                    metadata=trace['metadata'])
+
+    def handoffs(self, players, starts):
+        ids = {'S02':'S02-01', 'S03':'S03-01', 'S04':'S04-01', 'S05':'S05-01'}
+        encounters = {e['id']: e for e in self.mountain['encounters']}
+        out = []
+        for section, tick in starts.items():
+            p = players[tick]; declared = encounters[ids[section]]['start']
+            out.append(dict(into=section, tick=tick, player={k: p[k] for k in ('x','y','speedX','speedY')},
+                            carried_speed=math.hypot(p['speedX'], p['speedY']), declared_start=declared,
+                            distance_to_declared_start=math.hypot(p['x']-declared['x'], p['y']-declared['y'])))
+        return out
+
+    # ---- cases ----------------------------------------------------------------------------------
+    def test_01_continuous_lower(self):
+        m = self.manifest(self.nominal(), self.TICKS)
+        bounds = [*self.SECTION_STARTS.values(), self.TICKS]
+        segments = [dict(section=k, start=bounds[i], end=bounds[i+1]) for i, k in enumerate(self.SECTION_STARTS)]
+        self.evidence.write('inputs.json', dict(m, segments=segments,
+            scope='Base start: production CLIMB_UI.restart() at the base spawn; trusted Playwright mouse events only; '
+                  'no initial_setup/initial_snapshot, no spawn, no velocity or mover reset at any section boundary'))
+        trace, recorded, replayed = self.run_route('lower', m, clip=True)
+        shutil.move(str(self.evidence.path('runs/lower/clip.webm')), str(self.evidence.path('lower.webm')))
+        players = self.players(trace)
+        exits = self.first_exit_ticks(players)
+        order = [exits[e['id']] for e in self.mountain['encounters'][:16]]
+        self.assertTrue(all(t is not None for t in order), exits)
+        self.assertEqual(order, sorted(order))
+        continuity = self.continuity(m, trace, exits['S04-04'])
+        mech = self.mechanics(trace)
+        acquired = [x['element'] for x in mech if x['type'] == 'acquisition' and x['element'] not in ('S01-entry-pad', 'S02-exit-ledge')]
+        self.assertEqual(acquired, self.S.DeflectorV3Checks.S03_V3_ACQUIRED + ['S04-hoist','S04-lift','S04-crest-hook','S04-exit-hook'])
+        encounters = []
+        for e in self.mountain['encounters'][:16]:
+            touched = [x for x in mech if x['element'] in e['elements'] and x['type'] in ('acquisition','bounce')]
+            self.assertTrue(touched, e['id'])
+            encounters.append(dict(id=e['id'], section=e['section'], exit=exit_box(e['exit']), first_exit_tick=exits[e['id']],
+                                   first_interaction=touched[0]))
+        starts = {k: v for k, v in self.SECTION_STARTS.items() if k != 'S01'}; starts['S05'] = self.TICKS
+        handoffs = self.handoffs(players, starts)
+        for h in handoffs:
+            # Each section ends settled on the next section's start (its green exit pad/ledge).
+            self.assertLess(h['carried_speed'], .05, h)
+            self.assertLess(h['distance_to_declared_start'], 2, h)
+        final = players[-1]
+        result = dict(name='base to S04 exit (layout v3 S01-S04)', passed=True, matching_replay=True, recorded_sha256=recorded,
+            replayed_sha256=replayed, ticks=m['ticks'], final={k: final[k] for k in ('x','y','speedX','speedY')},
+            expected_exit=m['expected_exit'], encounter_exits_in_order=True, encounter_exit_ticks=order, encounters=encounters,
+            handoffs=handoffs, acquisitions=acquired, continuity=continuity, proof=self.proof, video='lower.webm', inputs='inputs.json',
+            trace=self.compact(trace))
+        self.evidence.write('trace.json', result)
+        print('PASS continuous lower: base start, %d trusted inputs, %d ticks, 16/16 encounter exits in order %s, hand-offs %s, '
+              'range 1080 at every snapshot before the S04 exit (upgrade on the S04-04 exit tick %d), final %.1f,%.1f at rest; replay identical'
+              % (continuity['trusted_inputs'], m['ticks'], order, [(h['into'], round(h['player']['x'],1), round(h['player']['y'],1)) for h in handoffs],
+                 exits['S04-04'], final['x'], final['y']), flush=True)
+
+    def test_02_fall_and_rejoin(self):
+        m = self.manifest(self.recovery(), self.RECOVERY_TICKS)
+        self.evidence.write('recovery-inputs.json', dict(m, scope='Same base start as inputs.json; the S04-01 hoist is held 105 ticks '
+            'too long; every later input is a trusted mouse press/release (no relocation, checkpoint or reset)'))
+        trace, recorded, replayed = self.run_route('recovery', m, clip=False)
+        players = self.players(trace); mech = self.mechanics(trace)
+        bands = {s['id']: s['band'] for s in self.mountain['sections']}
+        drag = next(d for d in self.mountain['drags'] if d['id'] == 'S03-fall-drag')
+        release = next(x for x in mech if x['type'] == 'release' and x['element'] == 'S04-hoist')
+        self.assertEqual(release['tick'], self.LATE_RELEASE)
+        # Natural initiation from the S04 band (the hoist swing), above the S03 band.
+        self.assertTrue(bands['S04']['top'] <= release['player']['y'] <= bands['S04']['bottom'])
+        self.assertLess(release['player']['y'], bands['S03']['top'])
+        landing = next(x for x in mech if x['type'] == 'bounce' and x['tick'] > release['tick'] and x['element'] == self.S03_BAND_LANDING)
+        between = [x for x in mech if release['tick'] < x['tick'] < landing['tick'] and x['type'] == 'acquisition']
+        self.assertEqual(between, [])
+        self.assertFalse(any(trace['snapshots'][t]['state']['simulation']['grapple'].get('grappled') for t in range(release['tick']+1, landing['tick'])))
+        apex_tick = min(range(release['tick'], landing['tick']), key=lambda t: players[t]['y'])
+        overlap = lambda p, b: (max(b['left']-p['x'], 0, p['x']-b['right'])**2 + max(b['top']-p['y'], 0, p['y']-b['bottom'])**2) < p['radius']**2
+        ticks = [t for t in range(apex_tick, landing['tick']+1) if overlap(players[t], drag)]
+        entry = ticks[0]
+        self.assertEqual(ticks, list(range(entry, landing['tick']+1)))
+        before, at = players[entry-1], landing['player']
+        land_y = players[landing['tick']]['y']
+        self.assertTrue(bands['S03']['top'] <= land_y <= bands['S03']['bottom'], land_y)
+        # The drag zone damps the vertical speed every tick on the way down to the bridge.
+        self.assertLess(at['speedY'], before['speedY'])
+        rejoin_tick = self.REJOIN[0][0]
+        bounces = [x for x in mech if x['type'] == 'bounce' and x['element'] == self.S03_BAND_LANDING and x['tick'] < rejoin_tick]
+        rest_y = max(players[t]['y'] for t in range(rejoin_tick-60, rejoin_tick))
+        fall_height = rest_y - players[apex_tick]['y']
+        peaks = []
+        for a, b in zip(bounces, bounces[1:]+[None]):
+            end = b['tick'] if b else rejoin_tick
+            top = min(range(a['tick'], end), key=lambda t: players[t]['y'])
+            peaks.append(dict(bounce_tick=a['tick'], peak_tick=top, peak_y=players[top]['y'], height=rest_y-players[top]['y'],
+                              fraction=(rest_y-players[top]['y'])/fall_height))
+        self.assertLessEqual(peaks[0]['fraction'], .5)
+        self.assertTrue(all(p['peak_y'] > release['player']['y'] for p in peaks))
+        settled = players[rejoin_tick-40:rejoin_tick]
+        self.assertTrue(all(overlap(p, drag) and abs(p['speedX']) < 1e-3 for p in settled))
+        # Rejoin: out of the pocket onto the S02 exit ledge, then the S03 and S04 routes to the S04 exit.
+        after = [x for x in mech if x['tick'] >= rejoin_tick and x['type'] == 'acquisition']
+        names = [x['element'] for x in after]
+        self.assertEqual(names[:3], ['S02-east-wall', 'S03-hoist', 'S02-exit-ledge'])
+        self.assertEqual(names[3:], ['S03-hoist','S03-lift','S03-crest-hook','S03-exit-hook','S04-hoist','S04-lift','S04-crest-hook','S04-exit-hook'])
+        ledge = players[self.REJOIN_S03]
+        self.assertTrue(self.inside(ledge, self.S02_LEDGE_SETTLE), ledge)
+        reclimb = self.first_exit_ticks(players, self.mountain['encounters'][8:16], after=self.REJOIN_S03)
+        s04_exit = reclimb['S04-04']
+        self.assertIsNotNone(s04_exit)
+        continuity = self.continuity(m, trace, s04_exit)
+        final = players[-1]
+        handoffs = self.handoffs(players, dict(S03=self.REJOIN_S03, S04=self.REJOIN_S04, S05=self.RECOVERY_TICKS))
+        for h in handoffs:
+            self.assertLess(h['carried_speed'], .05, h)
+        nominal_release = self.SECTION_STARTS['S04']+370
+        result = dict(name='S04 mistimed hoist release -> S03-fall-drag -> S03 lower bridge (S03 band) -> input-only rejoin -> S04 exit',
+            passed=True, matching_replay=True, recorded_sha256=recorded, replayed_sha256=replayed, ticks=m['ticks'],
+            natural_initiation=dict(input='S04-01 blue hoist pressed at %d and held %d ticks (nominal 365): released at tick %d instead of %d'
+                                    % (self.SECTION_STARTS['S04']+5, self.LATE_RELEASE-self.SECTION_STARTS['S04']-5, self.LATE_RELEASE, nominal_release),
+                                    release=release, from_band='S04', s04_band=bands['S04'], release_above_S03_band_top=True),
+            apex=dict(tick=apex_tick, player={k: players[apex_tick][k] for k in ('x','y','speedX','speedY')}),
+            drag_zone=dict(id='S03-fall-drag', box=drag, entry_tick=entry, last_tick_inside=ticks[-1],
+                before=dict(tick=entry-1, x=before['x'], y=before['y'], speedX=before['speedX'], speedY=before['speedY']),
+                after=dict(tick=landing['tick'], x=at['x'], y=at['y'], speedX=at['speedX'], speedY=at['speedY'],
+                           meaning='at the first contact with the S03 lower bridge (the end of the drag-zone descent)'),
+                vertical_speed_reduced=at['speedY'] < before['speedY'],
+                horizontal_note='the swing release hits the right map edge (x 6469.2) above the drag zone, so speedX is already 0 on entry'),
+            landing=dict(tick=landing['tick'], element=self.S03_BAND_LANDING, y=land_y, band='S03', s03_band=bands['S03'], in_s03_band=True),
+            fall_height=fall_height, fall_height_definition='settled rest y on the bridge minus the apex y after the release',
+            bounce_peaks=peaks[:8], first_peak_fraction=peaks[0]['fraction'], first_peak_at_most_half=True,
+            settled=dict(window=[rejoin_tick-40, rejoin_tick-1], inside='S03-fall-drag', on=self.S03_BAND_LANDING,
+                         player={k: settled[-1][k] for k in ('x','y','speedX','speedY')}),
+            rejoin=dict(input_only=True, setup_spawns=trace['metadata']['setupOnlySpawns'],
+                inputs=[i for i in m['inputs'] if i['tick'] >= rejoin_tick],
+                acquisitions=[{k: x[k] for k in ('tick','element','player')} for x in after],
+                s02_exit_ledge_pose=dict(tick=self.REJOIN_S03, player={k: ledge[k] for k in ('x','y','speedX','speedY')}, box=self.S02_LEDGE_SETTLE),
+                reclimb_exit_ticks=reclimb, handoffs=handoffs,
+                note='the S04-03 exit box (0..30, -11600..-11380) is %s in the re-climb: the second apex on the map edge is lower than '
+                     'nominal and the exit hook is caught from it at its near corner' % ('entered' if reclimb['S04-03'] else 'not entered'),
+                final={k: final[k] for k in ('x','y','speedX','speedY')}, s04_exit=m['expected_exit'], s04_exit_tick=s04_exit),
+            continuity={k: v for k, v in continuity.items() if k not in ('press_clients','lower_movers')}, proof=self.proof,
+            inputs='recovery-inputs.json', trace=self.compact(trace),
+            scope='Same base-start run; no relocation, checkpoint, spawn or velocity/mover reset; physical fall only')
+        self.evidence.write('recovery.json', result)
+        print('PASS fall and rejoin: S04-01 hoist released at %d (y %.1f, S04 band) -> apex %.1f -> S03-fall-drag at %d vx/vy %.3f/%.3f -> '
+              '%.3f/%.3f at the %s (y %.1f, S03 band) at %d; first bounce peak %.3f of %.1f; input-only rejoin %s; S04 exit at %d (%.1f,%.1f); '
+              'range 1080 until then; replay identical' % (release['tick'], release['player']['y'], players[apex_tick]['y'], entry,
+              before['speedX'], before['speedY'], at['speedX'], at['speedY'], self.S03_BAND_LANDING, land_y, landing['tick'],
+              peaks[0]['fraction'], fall_height, names, s04_exit, final['x'], final['y']), flush=True)
+
+    def test_03_transition_frames(self):
+        """Stills at the section hand-offs, drawn by the production renderer at exact ticks: a filmstrip replay
+        of the test_01 manifest (identical state hash) screenshots every 60 ticks; lower.webm is the full clip."""
+        from PIL import Image
+        from grapple_over_verify import execute, check_trace
+        self.assertTrue(self.evidence.path('lower.webm').stat().st_size > 0)
+        m = self.manifest(self.nominal(), self.TICKS)
+        trace = execute(m, self.browser, self.url, str(self.evidence.path('runs/frames')), filmstrip=True)
+        check_trace(m, trace)
+        lower = json.loads(self.evidence.path('trace.json').read_text())
+        self.assertEqual(state_hash(trace), lower['recorded_sha256'])
+        players = self.players(trace)
+        marks = [('S01-start', 0), ('S01-to-S02', 1500), ('S02-to-S03', 3240), ('S03-to-S04', 4560), ('S04-exit', self.TICKS-1)]
+        frames = []
+        for name, tick in marks:
+            src = self.evidence.path('runs/frames/frame-%04d.png' % tick)
+            self.assertTrue(src.exists(), src)
+            shutil.copy(str(src), str(self.evidence.path('transitions/%s.png' % name)))
+            p = players[tick]
+            frames.append(dict(name=name, tick=tick, player=dict(x=p['x'], y=p['y']), file='transitions/%s.png' % name))
+        shutil.rmtree(self.evidence.path('runs/frames'))
+        w, h = VIEWPORT['width']//2, VIEWPORT['height']//2
+        sheet = Image.new('RGB', (w*len(frames), h))
+        for i, f in enumerate(frames):
+            with Image.open(self.evidence.path(f['file'])) as img: sheet.paste(img.convert('RGB').resize((w, h)), (i*w, 0))
+        sheet.save(self.evidence.path('transitions.jpg'), quality=80)
+        self.evidence.write('transitions.json', dict(video='lower.webm', replay_sha256=state_hash(trace),
+            matches_trace_json_recorded_sha256=True, frames=frames,
+            note='frame-NNNN is drawn after the inputs of tick NNNN and one physics step; hand-off ticks rounded to the 60-tick filmstrip grid'))
+        print('PASS transition frames: filmstrip replay identical to trace.json (%s), %d stills at the section hand-offs %s -> transitions.jpg'
+              % (state_hash(trace)[:12], len(frames), [f['tick'] for f in frames]), flush=True)
+
+    def test_04_source_hashes(self):
+        for path, digest in self.proof['source_hashes'].items():
+            self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, path)
+        print('PASS source hashes: runtime, level and harness match the tested worktree', flush=True)
 
 if __name__ == '__main__':
     unittest.main()

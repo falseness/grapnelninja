@@ -1163,6 +1163,14 @@ TASK543_HELPERS = '''() => {
             try{circle()}finally{ctx.arc=arc}};
         try{draw()}finally{window.drawAcquisitionCircle=circle}
         if(radii.length!==1)throw Error('range circle arcs: '+radii.length);return radii[0]};
+    // TASK-529: the range is earned in S05's rangeUpgradeZone (the top of the S04-04
+    // exit box, i.e. landing on the S04 exit ledge), not anywhere in the S05 band.
+    window.upgradeZone=()=>floors[0].level.sections.find(s=>s.id==='S05').rangeUpgradeZone;
+    // TEST-ONLY PLACEMENT: at rest 120 above the zone middle, inside S04-exit-drag with a
+    // clear column down to the ledge, so the drop enters the zone physically.
+    window.placeAboveUpgradeZone=()=>{const z=upgradeZone(),x=(z.left+z.right)/2,y=z.top-120;
+        if(grapnel.nearestCrossing({x,y},[x,z.top]))throw Error('column above the zone is not clear');
+        placeAt(x,y);return {x,y,label:'TEST-ONLY placement above the S05 range-upgrade zone'}};
     // TEST-ONLY PLACEMENT: a point 200 below the S05 band bottom whose column up
     // to 200 inside S05 is clear, so an upward launch enters S05 physically.
     window.placeInS04Column=()=>{const b=bandOf('S05'),y=b.bottom+200,mid=(b.left+b.right)/2;
@@ -1235,21 +1243,23 @@ class Task543Tests(unittest.TestCase):
         self.assertEqual(modes['scale'], dict(classic=1, bad=1 / 2.2, grapple_over=0.375))
         self.assertEqual(modes['definitions']['classic'], dict(cameraScale=1, hudStyle='classic'))
         self.assertEqual(modes['definitions']['bad'], dict(cameraScale=1 / 2.2, hudStyle='bad'))
-        before = page.evaluate('''()=>{const s=placeInS04Column();return {placement:s,upgraded:floors[0].rangeUpgraded,
-            radius:grappleOverAcquisitionRadius(),drawn:drawnRadius(),inS05:ninja.y<=bandOf('S05').bottom}}''')
-        self.assertFalse(before['upgraded'] or before['inS05'])
+        # TASK-529: the S05 band no longer grants the range (the v3 S03/S04 routes climb through it); S05's
+        # rangeUpgradeZone does, on landing on the S04 exit ledge (the S05-01 start).
+        before = page.evaluate('''()=>{const s=placeAboveUpgradeZone(),z=upgradeZone();return {placement:s,zone:z,
+            upgraded:floors[0].rangeUpgraded,radius:grappleOverAcquisitionRadius(),drawn:drawnRadius(),inZone:ninja.y>=z.top}}''')
+        self.assertFalse(before['upgraded'] or before['inZone'])
         self.assertEqual((before['radius'], before['drawn']), (1080, 1080))
-        # Physical entry: an upward launch from S04; physics() decides the flip.
-        entry = page.evaluate('''()=>{const b=bandOf('S05');ninja.speedY=-4;const rows=[];
+        # Physical entry: a drop from rest onto the S04 exit ledge; physics() decides the flip.
+        entry = page.evaluate('''()=>{const z=upgradeZone();const rows=[];
             for(let n=0;n<600&&!floors[0].rangeUpgraded;n++){const y0=ninja.y;physics();
                 if(n%10===0||floors[0].rangeUpgraded)rows.push({tick:floors[0].elapsedSteps,y_before:y0,y:ninja.y,
                     vy:ninja.speedY,upgraded:floors[0].rangeUpgraded,radius:grappleOverAcquisitionRadius()})}
-            return {bandBottom:b.bottom,samples:rows,last:rows[rows.length-1],drawn:drawnRadius(),
+            return {zoneTop:z.top,samples:rows,last:rows[rows.length-1],drawn:drawnRadius(),
                 noticeMs:floors[0].rangeNoticeMs,saved:captureClimbState().upgrades}}''')
         last = entry['last']
         self.assertTrue(last['upgraded'], entry)
-        self.assertGreater(last['y_before'], entry['bandBottom'])
-        self.assertLessEqual(last['y'], entry['bandBottom'])
+        self.assertLess(last['y_before'], entry['zoneTop'])
+        self.assertGreaterEqual(last['y'], entry['zoneTop'])
         self.assertEqual((last['radius'], entry['drawn']), (1620, 1620))
         self.assertEqual(entry['saved'], dict(range=True))
         # Classic/bad: unchanged initial state and seeded movement vs the TASK-444 baseline.
@@ -1268,8 +1278,8 @@ class Task543Tests(unittest.TestCase):
         self.evidence.write('range.json', dict(self.proof, viewport=dict(width=1280, height=720),
             grapple_over=dict(cameraScale=modes['scale']['grapple_over'], definition=go,
                               manifest_range=modes['manifestRange']),
-            before_s05=before, s05_entry=dict(kind='physical upward launch from a TEST-ONLY S04 placement',
-                                              band_bottom=entry['bandBottom'], flip=last, samples=entry['samples'],
+            before_s05=before, s05_entry=dict(kind='physical drop onto the S04 exit ledge from a TEST-ONLY placement above the S05 range-upgrade zone',
+                                              zone_top=entry['zoneTop'], flip=last, samples=entry['samples'],
                                               drawn_radius=entry['drawn'], notice_ms=entry['noticeMs'],
                                               saved_upgrades=entry['saved']),
             classic_bad=dict(legacy, baseline_path='artifacts/TASK-444/baseline.json'),
