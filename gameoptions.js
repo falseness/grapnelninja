@@ -125,8 +125,10 @@ const GAMEPLAY = Object.freeze({
     }),
     // Momentum camera (elements/momentumcamera.js), lengths in view heights:
     // how far past the view edge left behind elements are deleted; the gap
-    // kept between the start view's right edge and the first shaft's left
-    // wall body (index.html firstMinLen); how far the ninja may fall behind
+    // kept between the ninja start and the first shaft's left wall body
+    // (index.html firstMinLen, where railRadius past the start view centre
+    // is the larger bound: the first shaft is centred once the camera is
+    // through its arc); how far the ninja may fall behind
     // the trigger point and still move a moving camera on, over how much of
     // that lag the camera's speed blends from the ninja's speed into its
     // progress along the course (averaged over that many physics cycles),
