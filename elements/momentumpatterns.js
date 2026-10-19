@@ -337,6 +337,81 @@ class MomentumFrameFactory
     }
 }
 
+// The user's picked concept frames for the shafts (TASK-102 catalog), in W =
+// the shaft's interior width (2 x its half width), never in pixels: span =
+// footprint length; a piece is a rect centred on (x, y), x across from the
+// shaft centre line (+ = right), y along from the footprint's top end (screen
+// down). The -up entries are the down frames mirrored along the shaft (the
+// caps end up under the ledges: the user's mirror decision), so going up the
+// pieces are met in the order and at the distances they are met falling down.
+// Placeable (momentumPlacePattern), not spawned yet.
+const MOMENTUM_FRAMES_V = Object.freeze([
+    // Capped blue ledges from alternating walls: the green cap is its own piece
+    {id: 'M93', dirs: ['down'], difficulty: 3, span: 0.7875, pieces: [
+        {kind: 'blue', shape: 'rect', x: -0.1875, y: 0.177083, w: 0.625, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: -0.1875, y: 0.122917, w: 0.625, h: 0.045833},
+        {kind: 'blue', shape: 'rect', x: 0.1875, y: 0.65625, w: 0.625, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: 0.1875, y: 0.602083, w: 0.625, h: 0.045833}
+    ]},
+    {id: 'M110', dirs: ['down'], difficulty: 4, span: 1.141667, pieces: [
+        {kind: 'blue', shape: 'rect', x: -0.229167, y: 0.177083, w: 0.541667, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: -0.229167, y: 0.122917, w: 0.541667, h: 0.045833},
+        {kind: 'blue', shape: 'rect', x: 0.229167, y: 0.59375, w: 0.541667, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: 0.229167, y: 0.539583, w: 0.541667, h: 0.045833},
+        {kind: 'blue', shape: 'rect', x: -0.229167, y: 1.010417, w: 0.541667, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: -0.229167, y: 0.95625, w: 0.541667, h: 0.045833}
+    ]},
+    {id: 'M93-up', dirs: ['up'], difficulty: 3, span: 0.7875, pieces: [
+        {kind: 'blue', shape: 'rect', x: -0.1875, y: 0.610417, w: 0.625, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: -0.1875, y: 0.664583, w: 0.625, h: 0.045833},
+        {kind: 'blue', shape: 'rect', x: 0.1875, y: 0.13125, w: 0.625, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: 0.1875, y: 0.185417, w: 0.625, h: 0.045833}
+    ]},
+    {id: 'M110-up', dirs: ['up'], difficulty: 4, span: 1.141667, pieces: [
+        {kind: 'blue', shape: 'rect', x: -0.229167, y: 0.964584, w: 0.541667, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: -0.229167, y: 1.01875, w: 0.541667, h: 0.045833},
+        {kind: 'blue', shape: 'rect', x: 0.229167, y: 0.547917, w: 0.541667, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: 0.229167, y: 0.602084, w: 0.541667, h: 0.045833},
+        {kind: 'blue', shape: 'rect', x: -0.229167, y: 0.13125, w: 0.541667, h: 0.0625},
+        {kind: 'green', shape: 'rect', x: -0.229167, y: 0.185417, w: 0.541667, h: 0.045833}
+    ]}
+].map(pattern => Object.freeze(pattern)))
+
+// Builds one concept frame (MOMENTUM_FRAMES_V) in an up/down shaft, scaled by
+// the live shaft W
+class MomentumFrameVerticalFactory
+{
+    constructor(pattern)
+    {
+        this.pattern = pattern
+        this.dirs = pattern.dirs
+    }
+    getUnit(halfWidth = momentumShaftHalfWidth())
+    {
+        return 2 * halfWidth
+    }
+    getLength(halfWidth = momentumShaftHalfWidth())
+    {
+        return this.pattern.span * this.getUnit(halfWidth)
+    }
+    // (x, y): the footprint start on the shaft centre line, its top going
+    // down and its bottom going up; halfWidth: the shaft's own half width
+    // (momentumSegmentHalfWidth). A rect is cut at the wall faces, so a
+    // ledge reaching from a wall ends on its face despite catalog rounding.
+    create(x, y, dir, halfWidth = momentumShaftHalfWidth())
+    {
+        const W = this.getUnit(halfWidth)
+        const top = dir == 'up' ? y - this.getLength(halfWidth) : y
+        return this.pattern.pieces.map(piece =>
+        {
+            const left = Math.max(-halfWidth, (piece.x - piece.w / 2) * W)
+            const right = Math.min(halfWidth, (piece.x + piece.w / 2) * W)
+            const spec = {shape: 'rect', x: x + (left + right) / 2, y: top + piece.y * W, w: right - left, h: piece.h * W}
+            return (piece.kind == 'blue' ? MomentumBlue : MomentumGreen).shape(spec)
+        })
+    }
+}
+
 // Builds one vertical port (MOMENTUM_PATTERNS_PORT_V) in an up/down shaft
 class MomentumPortVerticalPatternFactory
 {
@@ -430,7 +505,8 @@ const momentumTurnsByJoin = Object.freeze(Object.fromEntries(['right->up', 'righ
 const momentumPatternFactories = Object.freeze(Object.fromEntries([
     ...MOMENTUM_PATTERNS_PORT_H.map(pattern => [pattern.id, new MomentumPortPatternFactory(pattern)]),
     ...MOMENTUM_PATTERNS_PORT_V.map(pattern => [pattern.id, new MomentumPortVerticalPatternFactory(pattern)]),
-    ...MOMENTUM_FRAMES_H.map(pattern => [pattern.id, new MomentumFrameFactory(pattern)])
+    ...MOMENTUM_FRAMES_H.map(pattern => [pattern.id, new MomentumFrameFactory(pattern)]),
+    ...MOMENTUM_FRAMES_V.map(pattern => [pattern.id, new MomentumFrameVerticalFactory(pattern)])
 ]))
 // Segment direction -> the ids spawned there: right segments spawn the
 // ported frames, shafts their vertical variants only. A variant restricted
