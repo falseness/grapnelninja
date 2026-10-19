@@ -459,12 +459,14 @@ class BackgroundRenderer
         return {random, between, wrapped, polygon}
     }
     // edgesOnly: the same shards' edges alone, opaque white (the edge tile
-    // the momentum crystal rim masks by the light)
+    // the momentum crystal rim masks by the light). Its polygons erase what
+    // is under them (by their fill's alpha), so it only holds the edges the
+    // real tile leaves visible
     paintCrystalTile(ctx, width, height, crystals, tools, edgesOnly)
     {
         const colors = STYLE.colors.background
         const {random, between, wrapped} = tools
-        const polygon = edgesOnly ? () => {} : tools.polygon
+        const polygon = edgesOnly ? this.erasingPolygon(ctx, tools.polygon) : tools.polygon
         // A faceted shard from baseY towards dir (-1 up, 1 down): a shadow
         // facet left of the ridge and a lit facet right of it
         const shard = (x, baseY, dir, h, w, lean, shadow, lit, edge) =>
@@ -542,13 +544,9 @@ class BackgroundRenderer
             colors.crystalFrontShadow, colors.crystalFrontLit, colors.crystalEdge)
         rocks(crystals.rockCount, bottom, -1, crystals.rockHeight)
         rocks(crystals.rockCount, top, 1, crystals.rockHeight.map(h => h * 0.6))
-        if (edgesOnly)
-            return
         // Solid rock rows at both edges: drawLayerTile extends them over
         // whatever the shifted tile leaves uncovered
-        ctx.fillStyle = colors.crystalRock
-        ctx.fillRect(0, 0, width, height * 0.012)
-        ctx.fillRect(0, height * 0.988, width, height * 0.012)
+        this.fillEdgeRows(ctx, width, height, colors.crystalRock, edgesOnly)
     }
     // Large dark boulders: a shadow, a middle and a lit facet around the
     // summit, and a faint rim along the lit side
@@ -556,7 +554,7 @@ class BackgroundRenderer
     {
         const colors = STYLE.colors.background
         const {random, between, wrapped} = tools
-        const polygon = edgesOnly ? () => {} : tools.polygon
+        const polygon = edgesOnly ? this.erasingPolygon(ctx, tools.polygon) : tools.polygon
         const boulder = (x, baseY, dir, h, w) =>
         {
             const summit = [x + (random() - 0.5) * w * 0.5, baseY + dir * h]
@@ -589,11 +587,28 @@ class BackgroundRenderer
         row(rocks.outcropCount, bottom, -1, rocks.outcropHeight, rocks.outcropHalfWidth)
         row(rocks.bottomCount, bottom, -1, rocks.bottomHeight, rocks.bottomHalfWidth)
         row(rocks.topCount, top, 1, rocks.topHeight, rocks.topHalfWidth)
-        if (edgesOnly)
-            return
-        ctx.fillStyle = colors.nearRock
+        this.fillEdgeRows(ctx, width, height, colors.nearRock, edgesOnly)
+    }
+    // A tile polygon that erases the edge tile under it instead (by the
+    // fill's alpha: a translucent back shard dims the edges behind it as it
+    // does in the real tile); the strokes after it draw normally
+    erasingPolygon(ctx, polygon)
+    {
+        return (points, fill) =>
+        {
+            ctx.globalCompositeOperation = 'destination-out'
+            polygon(points, fill)
+            ctx.globalCompositeOperation = 'source-over'
+        }
+    }
+    fillEdgeRows(ctx, width, height, fill, erase)
+    {
+        ctx.fillStyle = fill
+        if (erase)
+            ctx.globalCompositeOperation = 'destination-out'
         ctx.fillRect(0, 0, width, height * 0.012)
         ctx.fillRect(0, height * 0.988, width, height * 0.012)
+        ctx.globalCompositeOperation = 'source-over'
     }
     // The base gradient and the haze are vertical, so they are baked into
     // the far tile with it (one drawImage instead of two full-frame gradient
