@@ -231,6 +231,9 @@ TOUCH_INIT = r'''() => {
     const t = window.__t = {fl, blue, green, drawn: 0, touch: null, frame: 0, deaths: 0,
         steps: Math.max(1, Math.round(1000 / 60 / physicsStepMs))}
     window.onLethalDeath = () => { ++t.deaths }
+    // The camera stays on the built scene: the rail camera's first move
+    // would put the view back on the course from the trigger point
+    screen.shouldStartMove = () => false
     const draw = blue.drawBadVersionPolygon
     blue.drawBadVersionPolygon = function() { ++t.drawn; return draw.apply(this, arguments) }
     const pass = blue.onNinjaPass
