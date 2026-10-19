@@ -246,18 +246,22 @@ class BackgroundRenderer
         const far = this.getFarBakedTile(width, height)
         const near = this.getNearTile(width, height)
         const sameSources = sources => sources && sources[0] === far && sources[1] === near
-        if (hue && !(grade.hue === hue && sameSources(grade.sources)))
+        const ready = target => grade.next && grade.next.hue === target && sameSources(grade.next.sources)
+        // New tiles of the same logical size (the adaptive backdrop or
+        // canvas resolution changed the pixel scale): the graded tiles drawn
+        // so far stay until the new ones are rotated, as a step's are
+        const rescaled = hue && grade.tiles && !sameSources(grade.sources) &&
+            grade.sources[0].width === far.width && grade.sources[0].height === far.height
+        const deferred = rescaled && !(ready(hue) && grade.next.done)
+        if (hue && !deferred && !(grade.hue === hue && sameSources(grade.sources)))
         {
-            const job = grade.next && grade.next.hue === hue && sameSources(grade.next.sources)
-                ? grade.next : new HueRotateJob(far, near, hue, grade.pool)
+            const job = ready(hue) ? grade.next : new HueRotateJob(far, near, hue, grade.pool)
             job.advance(Infinity)
             if (grade.next === job)
                 grade.next = null
             if (grade.tiles)
-            {
-                grade.pool[0].push(grade.tiles.far.canvas)
-                grade.pool[1].push(grade.tiles.near.canvas)
-            }
+                [grade.tiles.far, grade.tiles.near].forEach((tile, i) =>
+                    tile.bitmap ? tile.canvas.close() : grade.pool[i].push(tile.canvas))
             const background = STYLE.colors.background
             const haze = this.ctx.createLinearGradient(0, 0, 0, height)
             const hazeStops = [[0, background.hazeTop], [0.24, background.hazeUpper], [0.5, background.hazeMiddle],
@@ -276,14 +280,14 @@ class BackgroundRenderer
             ++grade.rebuilds
         }
         // Once per frame (the bar canvases paint the background again)
-        const nextHue = grade.nextHue
+        const nextHue = deferred ? hue : grade.nextHue
         if (nextHue && grade.advancedFrame !== drawFrameId)
         {
             grade.advancedFrame = drawFrameId
-            if (!(grade.next && grade.next.hue === nextHue && sameSources(grade.next.sources)))
+            if (!ready(nextHue))
             {
                 if (grade.next)
-                    grade.next.tiles.forEach((tile, i) => grade.pool[i].push(tile.canvas))
+                    grade.next.discard()
                 grade.next = new HueRotateJob(far, near, nextHue, grade.pool)
             }
             grade.next.advance(DEPTH_GRADE_BAND_WORK)
@@ -455,6 +459,8 @@ class BackgroundRenderer
 
         if (cached && cached.key === key)
             return cached
+        if (cached)
+            dropLayerTileColors(cached.canvas)
 
         const layerCanvas = document.createElement('canvas')
         layerCanvas.width = Math.max(1, Math.round(width * pixelScale))
@@ -482,7 +488,8 @@ class BackgroundRenderer
     }
     // DEPTH_GRADE_CANVASES canvases of source's size for depth grade tile
     // i (0 far, 1 near), drawn, being rotated or free (momentum depth grade
-    // only); free ones of other sizes are dropped
+    // only); free ones of other sizes are dropped. The worker starts
+    // reading source's colours.
     allocateDepthGradeCanvases(i, source)
     {
         if (version != 'momentum' || !MOMENTUM_FX.enabled || !STYLE.momentumFx.depthStages)
@@ -490,10 +497,12 @@ class BackgroundRenderer
         const grade = this.depthGrade
         const fits = canvas => canvas.width == source.width && canvas.height == source.height
         grade.pool[i] = grade.pool[i].filter(fits)
-        const used = [grade.tiles && [grade.tiles.far, grade.tiles.near][i], grade.next && grade.next.tiles[i]]
-        let count = grade.pool[i].length + used.filter(tile => tile && fits(tile.canvas)).length
+        const used = [grade.tiles && [grade.tiles.far, grade.tiles.near][i], grade.next && grade.next.tiles &&
+            grade.next.tiles[i]]
+        let count = grade.pool[i].length + used.filter(tile => tile && !tile.bitmap && fits(tile.canvas)).length
         for (; count < DEPTH_GRADE_CANVASES; ++count)
             grade.pool[i].push(newDepthGradeCanvas(source))
+        requestLayerTileColors(source)
     }
     // Seeded random numbers and wrapped polygon drawing for a tile
     getTileTools(ctx, width, initialSeed)
@@ -821,13 +830,21 @@ function hueRotateColor(color, deg)
 // counts DEPTH_GRADE_READ_WORK, a palette colour rotated
 // DEPTH_GRADE_COLOR_WORK): about 1.5 ms in headless Chromium. A step lasts
 // 3-4 score points, 140+ frames in play; the 844x390@3 tile pair (2.6M
-// pixels, 23k colours) takes about 30 frames, and its first reading about
-// 520 more, spread from depthBlend points before the first step.
+// pixels, 23k colours) takes about 30 frames. A tile's first reading is the
+// worker's (LAYER_TILE_WORKER); without one it takes about 520 frames more,
+// spread from depthBlend points before the first step.
 const DEPTH_GRADE_BAND_WORK = 120000
 const DEPTH_GRADE_READ_WORK = 24
 const DEPTH_GRADE_COLOR_WORK = 40
-// Rows rotated at a time
+// Rows rotated at a time, palette colours at most
 const DEPTH_GRADE_BAND_ROWS = 8
+const DEPTH_GRADE_BAND_COLORS = 4096
+// A job also stops once its frame took DEPTH_GRADE_FRAME_MS by
+// DEPTH_GRADE_CLOCK: the work above is a fast machine's, a busy or cold
+// one (loops not yet optimised) may take 10 times as long. Under a frozen
+// clock (render snapshots) only the work bounds.
+const DEPTH_GRADE_FRAME_MS = 2
+const DEPTH_GRADE_CLOCK = {now: () => performance.now()}
 // Frames a job advanced in since the page loaded: in the first ones (the
 // loops not yet optimised by the JIT, several times slower) a job does one
 // band of 1, 2, ... rows or 128, 256, ... colours
@@ -855,18 +872,33 @@ function newDepthGradeCanvas(source)
 // getImageData reads them in) and per pixel the index of its colour:
 // {rows read so far, index, palette, colors, keys/slots/shift (an
 // open-addressing colour -> index + 1 table of 2^(32 - shift) slots, until
-// every row is read)}. The tiles hold
-// about 21k (far) and 2k (near) colours, so a depth step rotates its
-// colours, not its pixels.
+// every row is read)}, set up once the main thread reads it (no index
+// before), and workerId while the worker holds its own copy
+// (requestLayerTileColors). The tiles hold about 21k (far) and 2k (near)
+// colours, so a depth step rotates its colours, not its pixels.
 const LAYER_TILE_COLORS = new WeakMap()
 
+// canvas's colours, set up for the main thread to read
 function getLayerTileColors(canvas)
 {
     let colors = LAYER_TILE_COLORS.get(canvas)
     if (!colors)
-        LAYER_TILE_COLORS.set(canvas, colors = {rows: 0, index: new Uint32Array(canvas.width * canvas.height),
-            palette: new Uint32Array(4096), colors: 0,
-            keys: new Uint32Array(1 << 13), slots: new Uint32Array(1 << 13), shift: 32 - 13})
+        LAYER_TILE_COLORS.set(canvas, colors = {workerId: 0})
+    if (!colors.index)
+        initLayerTileColors(colors, canvas.width * canvas.height)
+    return colors
+}
+
+// colors set up for pixels pixels, none read
+function initLayerTileColors(colors, pixels)
+{
+    colors.rows = 0
+    colors.index = new Uint32Array(pixels)
+    colors.palette = new Uint32Array(4096)
+    colors.colors = 0
+    colors.keys = new Uint32Array(1 << 13)
+    colors.slots = new Uint32Array(1 << 13)
+    colors.shift = 32 - 13
     return colors
 }
 
@@ -915,6 +947,134 @@ function layerTileColorIndex(colors, word)
     }
 }
 
+// The depth grade's worker. Reading a tile back on the main thread waits
+// for the GPU (2-25 ms per band in headless Chromium, however few rows) and
+// even a few ms of rotation per frame gets preempted on a busy machine, so
+// the worker reads and indexes each new tile (a snapshot,
+// requestLayerTileColors) and renders each step's rotated tiles into
+// ImageBitmaps (HueRotateJob): the main thread only swaps them in. worker
+// is null when workers or OffscreenCanvas are unavailable or failed (a CSP
+// without blob: workers, old browsers): jobs then rotate on the main
+// thread, in bands, as they do for a step needed at once.
+const LAYER_TILE_WORKER = {worker: undefined, nextTile: 0, nextJob: 0, jobs: new Map()}
+
+function layerTileWorkerMain()
+{
+    const tiles = new Map()
+    onmessage = event =>
+    {
+        const message = event.data
+        if (message.type == 'read')
+        {
+            const bitmap = message.bitmap, w = bitmap.width, h = bitmap.height
+            const ctx = new OffscreenCanvas(w, h).getContext('2d', {willReadFrequently: true})
+            ctx.drawImage(bitmap, 0, 0)
+            bitmap.close()
+            const data = ctx.getImageData(0, 0, w, h).data
+            const colors = initLayerTileColors({}, w * h)
+            indexLayerTileWords(colors, new Uint32Array(data.buffer, data.byteOffset, w * h), 0)
+            colors.keys = colors.slots = null
+            tiles.set(message.id, {w, h, colors})
+        }
+        else if (message.type == 'drop')
+            tiles.delete(message.id)
+        else if (message.type == 'rotate')
+        {
+            const bitmaps = message.ids.map(id =>
+            {
+                const tile = tiles.get(id)
+                if (!tile)
+                    return null
+                const {w, h, colors} = tile
+                const rotated = new Uint32Array(colors.colors)
+                hueRotateColors(colors.palette, 0, colors.colors, rotated, message.matrix)
+                const image = new ImageData(w, h)
+                gatherRotatedColors(new Uint32Array(image.data.buffer), rotated, colors.index, 0, w * h)
+                const canvas = new OffscreenCanvas(w, h)
+                canvas.getContext('2d').putImageData(image, 0, 0)
+                return canvas.transferToImageBitmap()
+            })
+            postMessage({job: message.job, bitmaps}, bitmaps.filter(Boolean))
+        }
+    }
+}
+
+function getLayerTileWorker()
+{
+    const state = LAYER_TILE_WORKER
+    if (state.worker !== undefined)
+        return state.worker
+    state.worker = null
+    if (typeof Worker != 'function' || typeof OffscreenCanvas != 'function' ||
+        typeof createImageBitmap != 'function')
+        return null
+    const source = [initLayerTileColors, layerTileColorIndex, indexLayerTileWords, hueRotateColors,
+        gatherRotatedColors, layerTileWorkerMain].join('\n') + '\nlayerTileWorkerMain()\n'
+    try
+    {
+        const url = URL.createObjectURL(new Blob([source], {type: 'text/javascript'}))
+        state.worker = new Worker(url)
+        URL.revokeObjectURL(url)
+    }
+    catch (error)
+    {
+        return null
+    }
+    state.worker.onmessage = event =>
+    {
+        const {job: id, bitmaps} = event.data
+        const job = state.jobs.get(id)
+        state.jobs.delete(id)
+        if (job)
+            job.received(bitmaps)
+        else
+            bitmaps.forEach(bitmap => bitmap && bitmap.close())
+    }
+    // Blocked or failed: the waiting jobs rotate on the main thread
+    state.worker.onerror = state.worker.onmessageerror = () =>
+    {
+        state.worker.terminate()
+        state.worker = null
+        for (const job of state.jobs.values())
+            job.remote = 0
+        state.jobs.clear()
+    }
+    return state.worker
+}
+
+// Has the worker read and index a new layer tile (see LAYER_TILE_WORKER);
+// colors.posted resolves once its snapshot is on the way
+function requestLayerTileColors(canvas)
+{
+    const worker = getLayerTileWorker()
+    if (!worker || LAYER_TILE_COLORS.has(canvas))
+        return
+    const colors = {workerId: ++LAYER_TILE_WORKER.nextTile}
+    LAYER_TILE_COLORS.set(canvas, colors)
+    colors.posted = createImageBitmap(canvas).then(bitmap =>
+    {
+        if (LAYER_TILE_WORKER.worker)
+            LAYER_TILE_WORKER.worker.postMessage({type: 'read', id: colors.workerId, bitmap}, [bitmap])
+        else
+            bitmap.close()
+    }, () =>
+    {
+        colors.workerId = 0
+    })
+}
+
+// The worker's copy of a replaced layer tile's colours goes
+function dropLayerTileColors(canvas)
+{
+    const colors = LAYER_TILE_COLORS.get(canvas)
+    if (!colors || !colors.workerId)
+        return
+    const id = colors.workerId
+    colors.workerId = 0
+    colors.posted.then(() => LAYER_TILE_WORKER.worker &&
+        LAYER_TILE_WORKER.worker.postMessage({type: 'drop', id}))
+}
+
 // Reads canvas's rows colors.rows..bottom into colors through a software
 // scratch canvas (an exact 1:1 copy, as the whole-tile rotation read one):
 // the tile itself, drawn every frame, is never read back
@@ -932,10 +1092,18 @@ function readLayerTileRows(canvas, colors, bottom)
     scratch.clearRect(0, 0, w, rows)
     scratch.drawImage(canvas, 0, top, w, rows, 0, 0, w, rows)
     const data = scratch.getImageData(0, 0, w, rows).data
-    const words = new Uint32Array(data.buffer, data.byteOffset, data.length >> 2)
+    indexLayerTileWords(colors, new Uint32Array(data.buffer, data.byteOffset, data.length >> 2), top * w)
+    colors.rows = bottom
+    if (bottom == canvas.height)
+        colors.keys = colors.slots = null
+}
+
+// Indexes the pixels words (colour words) into colors from pixel start on
+function indexLayerTileWords(colors, words, start)
+{
     const index = colors.index
     let last = -1, lastIndex = 0
-    for (let i = 0, j = top * w; i < words.length; ++i, ++j)
+    for (let i = 0, j = start; i < words.length; ++i, ++j)
     {
         const word = words[i]
         if (word !== last)
@@ -945,16 +1113,14 @@ function readLayerTileRows(canvas, colors, bottom)
         }
         index[j] = lastIndex
     }
-    colors.rows = bottom
-    if (bottom == canvas.height)
-        colors.keys = colors.slots = null
 }
 
-// Copies of the layer tiles sources ({key, canvas, width, height}) being
-// hue-rotated by deg, per colour, a band of rows at a time (built once per
-// depth step, not per frame); tiles holds them, complete once done. pool:
-// per tile canvases no longer drawn to write into (taken; other sizes are
-// dropped).
+// Copies of the layer tiles sources ({key, canvas, width, height}) hue-rotated
+// by deg, per colour (built once per depth step, not per frame); tiles holds
+// them ({key, canvas, width, height, bitmap}), complete once done: the
+// worker's ImageBitmaps (remote, its job id, while it renders them), or
+// canvases from pool (per tile canvases no longer drawn; other sizes are
+// dropped) rotated here a band of rows at a time.
 class HueRotateJob
 {
     constructor(far, near, deg, pool)
@@ -962,46 +1128,86 @@ class HueRotateJob
         this.sources = [far, near]
         this.hue = deg
         this.matrix = hueRotateMatrix(deg)
-        this.tiles = this.sources.map((layer, i) =>
-        {
-            let canvas = null
-            while (pool[i].length && !canvas)
-            {
-                canvas = pool[i].pop()
-                if (canvas.width != layer.canvas.width || canvas.height != layer.canvas.height)
-                    canvas = null
-            }
-            canvas = canvas || newDepthGradeCanvas(layer.canvas)
-            return {key: layer.key, canvas, width: layer.width, height: layer.height}
-        })
-        // Per tile the rotated palette and how many of its colours are done
-        this.rotated = [HUE_ROTATE_BUFFERS.palettes.pop() || null, HUE_ROTATE_BUFFERS.palettes.pop() || null]
-        this.rotatedColors = [0, 0]
-        this.tile = 0
-        this.row = 0
-        // The band's ImageData and its pixels as words
-        this.band = HUE_ROTATE_BUFFERS.bands.pop() || null
+        this.pool = pool
+        this.tiles = null
         this.done = false
+        this.remote = 0
+        const worker = getLayerTileWorker()
+        const colors = this.sources.map(layer => LAYER_TILE_COLORS.get(layer.canvas))
+        if (worker && colors.every(c => c && c.workerId))
+        {
+            const id = this.remote = ++LAYER_TILE_WORKER.nextJob
+            LAYER_TILE_WORKER.jobs.set(id, this)
+            const message = {type: 'rotate', job: id, ids: colors.map(c => c.workerId), matrix: this.matrix}
+            Promise.all(colors.map(c => c.posted)).then(() => LAYER_TILE_WORKER.worker &&
+                LAYER_TILE_WORKER.worker.postMessage(message))
+        }
+    }
+    // The worker's tiles: done, unless one is missing (rotated here then)
+    received(bitmaps)
+    {
+        if (this.done || !this.remote || !bitmaps.every(Boolean))
+        {
+            bitmaps.forEach(bitmap => bitmap && bitmap.close())
+            this.remote = 0
+            return
+        }
+        this.remote = 0
+        this.tiles = this.sources.map((layer, i) =>
+            ({key: layer.key, canvas: bitmaps[i], width: layer.width, height: layer.height, bitmap: true}))
+        this.done = true
+    }
+    // Its tiles' canvases back to pool, bitmaps closed, the worker's answer
+    // ignored (no longer drawn or never adopted)
+    discard()
+    {
+        if (this.remote)
+            LAYER_TILE_WORKER.jobs.delete(this.remote)
+        this.remote = 0
+        for (const [i, tile] of (this.tiles || []).entries())
+            if (tile.bitmap)
+                tile.canvas.close()
+            else
+                this.pool[i].push(tile.canvas)
+        this.tiles = null
+        if (this.rotated)
+            this.release()
     }
     // Rotates DEPTH_GRADE_BAND_ROWS rows at a time onward until about work
-    // (see DEPTH_GRADE_BAND_WORK) is done
+    // (see DEPTH_GRADE_BAND_WORK) is done; Infinity: all of it, at once (a
+    // step needed now, the worker's answer then ignored)
     advance(work)
     {
+        if (this.done)
+            return
+        if (this.remote)
+        {
+            if (work !== Infinity)
+                return
+            LAYER_TILE_WORKER.jobs.delete(this.remote)
+            this.remote = 0
+        }
+        if (!this.tiles)
+            this.startHere()
         const warmup = DEPTH_GRADE_WARMUP.frames
         if (work !== Infinity && warmup < DEPTH_GRADE_WARMUP.last)
             ++DEPTH_GRADE_WARMUP.frames
-        while (!this.done && work > 0)
+        const start = work === Infinity ? 0 : DEPTH_GRADE_CLOCK.now()
+        for (let first = true; !this.done && work > 0; first = false)
         {
+            if (!first && work !== Infinity && DEPTH_GRADE_CLOCK.now() - start >= DEPTH_GRADE_FRAME_MS)
+                break
             const source = this.sources[this.tile].canvas
             const w = source.width, h = source.height
             const colors = getLayerTileColors(source)
             let rows = Math.min(h - this.row, DEPTH_GRADE_BAND_ROWS, 1 + warmup)
             if (colors.rows < this.row + rows)
             {
-                // Rows not read yet: as many as the work left reads
+                // Rows not read yet: as many as the work left reads (all
+                // of them for a step needed now)
                 rows = Math.min(rows, Math.max(1, Math.floor(work / (w * DEPTH_GRADE_READ_WORK))))
                 work -= (this.row + rows - colors.rows) * w * DEPTH_GRADE_READ_WORK
-                readLayerTileRows(source, colors, this.row + rows)
+                readLayerTileRows(source, colors, work === Infinity ? h : this.row + rows)
             }
             let rotated = this.rotated[this.tile]
             if (!rotated || rotated.length < colors.colors)
@@ -1015,14 +1221,14 @@ class HueRotateJob
             const from = this.rotatedColors[this.tile]
             if (from < colors.colors)
             {
-                const to = Math.min(colors.colors, from + Math.ceil(work / DEPTH_GRADE_COLOR_WORK),
-                    from + (128 << warmup))
+                const to = Math.min(colors.colors, from + Math.max(0, Math.ceil(work / DEPTH_GRADE_COLOR_WORK)),
+                    from + Math.min(DEPTH_GRADE_BAND_COLORS, 128 << warmup))
                 hueRotateColors(colors.palette, from, to, rotated, this.matrix)
                 this.rotatedColors[this.tile] = to
                 work -= (to - from) * DEPTH_GRADE_COLOR_WORK
                 if (to < colors.colors)
                 {
-                    if (warmup < DEPTH_GRADE_WARMUP.last)
+                    if (warmup < DEPTH_GRADE_WARMUP.last && work !== Infinity)
                         break
                     continue
                 }
@@ -1032,10 +1238,7 @@ class HueRotateJob
                 const image = new ImageData(w, DEPTH_GRADE_BAND_ROWS)
                 this.band = {image, words: new Uint32Array(image.data.buffer, image.data.byteOffset, w * DEPTH_GRADE_BAND_ROWS)}
             }
-            const target = this.band.words
-            const index = colors.index
-            for (let i = this.row * w, j = 0, end = (this.row + rows) * w; i < end; ++i, ++j)
-                target[j] = rotated[index[i]]
+            gatherRotatedColors(this.band.words, rotated, colors.index, this.row * w, rows * w)
             this.tiles[this.tile].canvas.getContext('2d').putImageData(this.band.image, 0, this.row, 0, 0, w, rows)
             work -= rows * w
             this.row += rows
@@ -1050,6 +1253,29 @@ class HueRotateJob
                 break
         }
     }
+    // Rotating here: canvases from the pool, buffers of finished jobs
+    startHere()
+    {
+        this.tiles = this.sources.map((layer, i) =>
+        {
+            let canvas = null
+            while (this.pool[i].length && !canvas)
+            {
+                canvas = this.pool[i].pop()
+                if (canvas.width != layer.canvas.width || canvas.height != layer.canvas.height)
+                    canvas = null
+            }
+            canvas = canvas || newDepthGradeCanvas(layer.canvas)
+            return {key: layer.key, canvas, width: layer.width, height: layer.height, bitmap: false}
+        })
+        // Per tile the rotated palette and how many of its colours are done
+        this.rotated = [HUE_ROTATE_BUFFERS.palettes.pop() || null, HUE_ROTATE_BUFFERS.palettes.pop() || null]
+        this.rotatedColors = [0, 0]
+        this.tile = 0
+        this.row = 0
+        // The band's ImageData and its pixels as words
+        this.band = HUE_ROTATE_BUFFERS.bands.pop() || null
+    }
     // Its buffers back for the next jobs
     release()
     {
@@ -1058,6 +1284,13 @@ class HueRotateJob
             HUE_ROTATE_BUFFERS.bands.push(this.band)
         this.rotated = this.band = null
     }
+}
+
+// target[0..count) = the rotated colours of pixels from..from + count
+function gatherRotatedColors(target, rotated, index, from, count)
+{
+    for (let j = 0; j < count; ++j)
+        target[j] = rotated[index[from + j]]
 }
 
 // Colours palette[from..to) (RGBA words) rotated by the hue matrix m into

@@ -8,9 +8,14 @@ start scene (frozen clock, seeded course):
   per point, then the capture (on a tree with ahead-of-time rotation a
   step's tiles come from the job rotated over the earlier frames:
   stepChanges counts the draws reaching a new step, prepared those whose
-  HueRotateJob was complete before it).
+  HueRotateJob was complete before it);
+- yielding: the same ramp with each draw() its own task (a MessageChannel
+  message; the frozen clock holds timers) and the next step's job given up
+  to 10 s to finish before the capture, so a tree whose worker renders the
+  steps draws the worker's tiles (fromWorker) as in play.
 Each capture keeps the decoded frame and an FNV-1a hash of the graded far and
-near tiles' pixels (getImageData; null at hue 0). Per REV:BASE pair the report
+near tiles' pixels (a 1:1 copy into a software canvas, getImageData; null at
+hue 0). Per REV:BASE pair the report
 compares every capture of REV with the same capture of BASE: decoded maxDelta
 and tile hash equality.
 
@@ -34,9 +39,11 @@ MID_SCORES = (100, 120, 380)
 RAMP_POINTS = 12
 DRAWS_PER_POINT = 16
 
-CAPTURE = r'''([score, ramp, drawsPerPoint]) => {
+CAPTURE = r'''async ([score, ramp, drawsPerPoint, yielding]) => {
     const bg = visualEffects.background, grade = bg.depthGrade
     let stepChanges = 0, prepared = 0
+    const channel = new MessageChannel()
+    const nextTask = () => new Promise(resolve => { channel.port1.onmessage = resolve; channel.port2.postMessage(0) })
     const drawAt = s => {
         const hue = bg.getDepthHue(s)
         if (hue && hue !== grade.hue) {
@@ -47,19 +54,34 @@ CAPTURE = r'''([score, ramp, drawsPerPoint]) => {
         draw()
     }
     for (let s = Math.max(0, score - ramp); s < score; ++s)
-        for (let k = 0; k < drawsPerPoint; ++k)
+        for (let k = 0; k < drawsPerPoint; ++k) {
             drawAt(s)
+            if (yielding) await nextTask()
+        }
+    // yielding: the next step's job given up to 10 s (real time) to finish
+    // (on trees with a worker, its answer arrives between tasks)
+    const now = window.__realNow
+    for (const t0 = now(); yielding && grade.next && !grade.next.done && now() - t0 < 10000; )
+        await nextTask()
     const hue = bg.getDepthHue(score)
     drawAt(score)
+    // Pixels of a tile (a canvas, or the worker's ImageBitmap) through a 1:1
+    // copy into a software canvas
     const hash = tile => {
-        const c = tile.canvas, data = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+        const c = tile.canvas, copy = document.createElement('canvas')
+        copy.width = c.width
+        copy.height = c.height
+        const ctx = copy.getContext('2d', {willReadFrequently: true})
+        ctx.drawImage(c, 0, 0)
+        const data = ctx.getImageData(0, 0, c.width, c.height).data
         let h = 0x811c9dc5
         for (let i = 0; i < data.length; ++i)
             h = Math.imul(h ^ data[i], 16777619)
         return [c.width, c.height, (h >>> 0).toString(16)].join(':')
     }
     const tiles = hue && grade.tiles ? {far: hash(grade.tiles.far), near: hash(grade.tiles.near)} : null
-    return {score, hue, rebuilds: grade.rebuilds, stepChanges, prepared, tiles}
+    return {score, hue, rebuilds: grade.rebuilds, stepChanges, prepared, tiles,
+            fromWorker: !!(hue && grade.tiles && grade.tiles.far.bitmap)}
 }'''
 
 
@@ -68,10 +90,11 @@ def captures(rev, scores):
     out = {}
     for w, h, dpr in VIEWPORTS:
         for score in scores:
-            for mode, ramp in (('cold', 0), ('ramped', RAMP_POINTS)):
+            for mode, ramp, yielding in (('cold', 0, False), ('ramped', RAMP_POINTS, False),
+                                         ('yielding', RAMP_POINTS, True)):
                 context, page = open_page(tree, w, h, dpr)
                 try:
-                    info = page.evaluate(CAPTURE, [score, ramp, DRAWS_PER_POINT])
+                    info = page.evaluate(CAPTURE, [score, ramp, DRAWS_PER_POINT, yielding])
                     png = render_snapshot.png_bytes(page.evaluate('() => __snap.capture()'))
                     if page.errors:
                         raise RuntimeError(f'page errors: {page.errors}')
@@ -104,7 +127,7 @@ def main(out, pairs):
             base_info, base_frame = theirs[key]
             rows.append({'viewport': key[0], 'score': key[1], 'mode': key[2], 'hue': info['hue'],
                          'stageBoundary': key[1] in stages, 'stepChanges': info['stepChanges'],
-                         'prepared': info['prepared'],
+                         'prepared': info['prepared'], 'fromWorker': info['fromWorker'],
                          'maxDelta': int(np.abs(frame - base_frame).max()) if frame.shape == base_frame.shape else None,
                          'tiles': info['tiles'], 'baseTiles': base_info['tiles'],
                          'tilesEqual': info['tiles'] == base_info['tiles']})
@@ -112,7 +135,8 @@ def main(out, pairs):
                   'maxDelta': max(r['maxDelta'] if r['maxDelta'] is not None else 999 for r in rows),
                   'allTilesEqual': all(r['tilesEqual'] for r in rows),
                   'rampStepChanges': sum(r['stepChanges'] for r in rows if r['mode'] == 'ramped'),
-                  'rampPrepared': sum(r['prepared'] for r in rows if r['mode'] == 'ramped'), 'rows': rows}
+                  'rampPrepared': sum(r['prepared'] for r in rows if r['mode'] == 'ramped'),
+                  'workerCaptures': sum(r['fromWorker'] for r in rows), 'rows': rows}
         print({k: v for k, v in report.items() if k != 'rows'})
         reports.append(report)
     result = {'scores': scores, 'stageScores': stages, 'midScores': list(MID_SCORES), 'rampPoints': RAMP_POINTS,
