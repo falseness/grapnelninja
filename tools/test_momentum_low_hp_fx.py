@@ -9,7 +9,12 @@ corners) is laid under the HUD with the HUD boxes left out. Both blend over
 lowHpBlendMs of render clock. MOMENTUM_FX only. Checks (tools/
 momentum_fx_support.py blue-corner scene, 1280x720; hp is set before the one
 draw(), the pulse phase via the hook visualEffects.lightmap.lowHp
-.pulseShiftMs so nothing else of the frame moves):
+.pulseShiftMs so nothing else of the frame moves; the ninja speed is pinned
+at PIN_SPEED of the effective cap GAMEPLAY.momentumMaxSpeed *
+momentumMotionScale(1): the scene's own speed is 0.9 of the unscaled cap,
+which saturates the speed light since the slow motion (9174492), and the
+hp 1 haze, 2.5x and 1.58x as wide at s 1, then reaches the centre box,
+TASK-099):
 - low-hp.json: at hp 1 the mean colour of the background px (fx
   .background_mask of the hp 1 frame with the ninja light and haze alpha 0,
   past 1.5 ninja radii) within NEAR_PX of the ninja has a hue within
@@ -21,7 +26,9 @@ draw(), the pulse phase via the hook visualEffects.lightmap.lowHp
   background px (of the dark frame) LIGHT_RING from the ninja minus the same frame with the ninja
   light and haze alpha 0) max/min >= PULSE_RATIO, and each phase one period
   later equals it (maxDelta 0). hp 2 and hp 5 equal the parent commit (TASK-064)
-  at maxDelta 0. HUD boxes (fx.hud_mask) maxDelta 0 vs the hp 1 frame without
+  at maxDelta 0, and the same tree with the last-heart style
+  neutralised (LOW_HP_OFF) too, so hp >= 2 is checked on any later tree.
+  HUD boxes (fx.hud_mask) maxDelta 0 vs the hp 1 frame without
   the vignette (lowHpVignette 0). Blend: hp 2 drawn at T0, hp 1 at T0 + 150,
   T0 + 300 gives blend 0.5, 1; back to hp 2 at + 450 gives 0.5.
 - switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at
@@ -32,8 +39,10 @@ draw(), the pulse phase via the hook visualEffects.lightmap.lowHp
 
 MOMENTUM_LOW_HP_FX_EVIDENCE_DIR (default /tmp/momentum-low-hp-fx) receives
 the json files (compact) and shots/. MOMENTUM_LOW_HP_FX_PARENT is the parent
-revision (default: the parent of the commit that added this file, or HEAD
-while uncommitted). Requires Playwright Chromium. No remote requests.
+revision (default DEFAULT_PARENT d7d96c0: after the slow motion 9174492,
+which moved the speed light's cap, the TASK-084 phone boot RNG shift and the
+TASK-092 crystal rim edge tiles, the last change of the lit hp 2 frame; the
+file's own parent d3ce2fc predates all three). Requires Playwright Chromium. No remote requests.
 """
 import colorsys
 import json
@@ -67,17 +76,28 @@ NINJA_LIGHT_OFF = [('slow: Object.freeze({radius: 360, alpha: 0.6', 'slow: Objec
                    ('fast: Object.freeze({radius: 820, alpha: 1,', 'fast: Object.freeze({radius: 820, alpha: 0,'),
                    ('hazeAlpha: 0.4', 'hazeAlpha: 0')]
 VIGNETTE_OFF = [('lowHpVignette: 0.15', 'lowHpVignette: 0')]
+# Last-heart effect forced off: no pulse, haze gain 1, no vignette, the
+# light colour the plain halo (lowHp.color still mixes heartStroke)
+LOW_HP_OFF = [('lowHpPulse: 0.35', 'lowHpPulse: 0'), ('lowHpHaze: 2.5', 'lowHpHaze: 1'),
+              ("lowHpLightColor: '#ff1f3a'", "lowHpLightColor: '#22c8ff'")] + VIGNETTE_OFF
+DEFAULT_PARENT = 'd7d96c0'
+PIN_SPEED = 0.9
 
 # hp set (the next frame takes its blend as is, like a run's first frame),
 # the pulse clock shifted so the frame's pulse phase is `phase`
 # (0..1 of lowHpPulseMs) plus `periods` whole periods
 SET_HP = '''() => { momentumState.hp = %d
+    ninja.speedX = GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1) * %r; ninja.speedY = 0
     const lowHp = visualEffects.lightmap && visualEffects.lightmap.lowHp
     if (lowHp) {
         const P = STYLE.momentumFx.lowHpPulseMs, now = Math.round(performance.now())
         lowHp.pulseShiftMs = Math.round(%r * P) - now %% P + %d * P
         lowHp.time = -1
     } }'''
+
+
+def set_hp(hp, phase=0, periods=0):
+    return SET_HP % (hp, PIN_SPEED, phase, periods)
 
 # Blend over render time: hp 2 at T0, hp 1 at +150 and +300, hp 2 at +450
 BLEND = r'''() => {
@@ -100,14 +120,11 @@ def compact(data):
 def parent_rev():
     if os.environ.get('MOMENTUM_LOW_HP_FX_PARENT'):
         return os.environ['MOMENTUM_LOW_HP_FX_PARENT']
-    added = subprocess.check_output(['git', 'log', '-1', '--format=%H', '--diff-filter=A', '--', TEST_PATH],
-                                    cwd=ROOT, text=True).strip()
-    return subprocess.check_output(['git', 'rev-parse', f'{added}~1' if added else 'HEAD'],
-                                   cwd=ROOT, text=True).strip()
+    return subprocess.check_output(['git', 'rev-parse', DEFAULT_PARENT], cwd=ROOT, text=True).strip()
 
 
 def hp_frame(harness, hp, phase=0, periods=0, viewport=VIEWPORT, fx_on=True):
-    return harness.capture(SCENE, viewport, fx_on=fx_on, extra_js=SET_HP % (hp, phase, periods))
+    return harness.capture(SCENE, viewport, fx_on=fx_on, extra_js=set_hp(hp, phase, periods))
 
 
 def hue_deg(rgb):
@@ -149,13 +166,14 @@ class MomentumLowHpFxTests(unittest.TestCase):
         tree = fx.harness()
         cls.light_off = fx.FxHarness('worktree', tree.browser, style_patch=NINJA_LIGHT_OFF)
         cls.vignette_off = fx.FxHarness('worktree', tree.browser, style_patch=VIGNETTE_OFF)
+        cls.low_hp_off = fx.FxHarness('worktree', tree.browser, style_patch=LOW_HP_OFF)
         cls.result = {}
 
     @classmethod
     def tearDownClass(cls):
         if cls.result:
             (EVIDENCE_DIR / 'low-hp.json').write_text(compact(cls.result))
-        for h in (cls.vignette_off, cls.light_off):
+        for h in (cls.low_hp_off, cls.vignette_off, cls.light_off):
             h.close()
         fx.close()
 
@@ -235,13 +253,20 @@ class MomentumLowHpFxTests(unittest.TestCase):
         rows = []
         for hp in (2, 5):
             new = hp_frame(fx.harness(), hp)
-            old = fx.capture(SCENE, VIEWPORT, extra_js=f'() => {{ momentumState.hp = {hp} }}', rev=self.parent)
-            d = fx.max_delta(new, old)
-            rows.append({'hp': hp, 'parent': fx.harness(self.parent).rev, 'maxDelta': d, 'identical': d == 0})
-        print('higher hp', rows)
-        self.result['higherHp'] = rows
+            off = hp_frame(self.low_hp_off, hp)
+            # the parent's own pulse hook is irrelevant at hp >= 2 (gain 1)
+            old = hp_frame(fx.harness(self.parent), hp)
+            d, d_off = fx.max_delta(new, old), fx.max_delta(new, off)
+            rows.append({'hp': hp, 'parent': fx.harness(self.parent).rev, 'maxDelta': d, 'identical': d == 0,
+                         'maxDeltaVsLowHpOff': d_off})
+        # the forced-off tree does change hp 1 (else the check proves nothing)
+        hp1_off = fx.max_delta(hp_frame(fx.harness(), 1), hp_frame(self.low_hp_off, 1))
+        print('higher hp', rows, 'hp1 vs low-hp off', hp1_off)
+        self.result['higherHp'] = {'rows': rows, 'lowHpOff': LOW_HP_OFF, 'hp1MaxDeltaVsLowHpOff': hp1_off}
+        self.assertGreater(hp1_off, 0)
         for row in rows:
             self.assertEqual(row['maxDelta'], 0)
+            self.assertEqual(row['maxDeltaVsLowHpOff'], 0)
 
     def test_3_blend(self):
         context, page = fx.harness().open(VIEWPORT)
@@ -268,7 +293,7 @@ class MomentumLowHpFxTests(unittest.TestCase):
                              'maxDelta': d, 'identical': d == 0})
         # The switch off at the last heart too
         new = hp_frame(fx.harness(), 1, fx_on=False)
-        base = fx.capture(SCENE, VIEWPORT, fx_on=False, extra_js='() => { momentumState.hp = 1 }', rev=self.parent)
+        base = hp_frame(fx.harness(self.parent), 1, fx_on=False)
         d = fx.max_delta(new, base)
         rows.append({'scene': f'momentum-{SCENE}-hp1-1280x720', 'fx': 'off', 'maxDelta': d, 'identical': d == 0})
         tree = fx.harness()
