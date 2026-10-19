@@ -954,5 +954,376 @@ class Task529Tests(unittest.TestCase):
             self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, path)
         print('PASS source hashes: runtime, level and harness match the tested worktree', flush=True)
 
+class Task530Tests(unittest.TestCase):
+    """Layout-v3 upper four sections joined: v3 S04-exit fixture -> S05 -> S06 -> S07 -> S08 summit finish, in one
+    recording with trusted mouse input.
+
+    The fixture is ONE labeled placement (initial_snapshot) of real state: the TASK-529 base-start S01..S04 run at
+    tick 5787, dropping through S04-exit-drag 18 units above the S04 exit ledge, one tick before the player enters
+    S05.rangeUpgradeZone (range still 1080). Not a full-game completion claim. From there the S05..S08 v3 routes run
+    back to back with no placement, snapshot, spawn or velocity/mover reset: the range upgrade is earned in-run on the
+    S04 exit ledge (the S05 entrance), every section settles on its green exit ledge (the next section's start), and
+    every later section begins on the mover phase its section proof used (the movers are clocked by the simulation
+    since the level load; the section starts sit at the isolated chain's 1400/1300/1400-tick spacing).
+    The section proofs (TASK-517/518, 520/521, 523/524, 526/527) restore each start pose with a snapped camera; in this
+    continuous run the eased camera rests elsewhere, and Chromium mouse input is integer CSS pixels (4 world units),
+    so the isolated press points cannot be hit exactly. UPPER is the isolated routes with each press re-aimed to the
+    nearest pixel (and a few press/release ticks shifted by 1-3) chosen so the run follows the isolated chain.
+    """
+    task_id = 'TASK-530'
+    FIXTURE_TICK = 5787
+    # Section starts (ticks from the fixture): S05 at the isolated S04 exit pose tick (6545-5787), then the isolated
+    # chain spacing (S05 1400, S06 1300, S07 1400 ticks).
+    SECTION_STARTS = dict(S05=758, S06=2158, S07=3458, S08=4858)
+    PERIOD = 240
+    # The v3 section routes (TASK-517/518 S05, TASK-520/521 S06, TASK-523/524 S07, TASK-526/527 S08), ticks relative to each
+    # section start, re-aimed to the continuous camera: every press is the integer pixel nearest the isolated aim that keeps
+    # the run on the isolated chain (aim moved 2.1..5.5 world units, at most 1.4 px). Retimed: S06-02 pressed 4 ticks early
+    # and released 6 late (200/264, was 204/258), S06-03 pressed at 321 (319), S06-04 at 627/717 (628/718), S07-02..04 one
+    # tick later (291/323, 631/701, 737/762). S08-04 is held until the finish, as in TASK-527.
+    S05_UPPER = [(5,'mousedown',2544.0,-12453.554618784061),(150,'mouseup',2544.0,-12453.554618784061),
+                 (304,'mousedown',3860.0,-10850.298590759949),(365,'mouseup',3860.0,-10850.298590759949),
+                 (410,'mousedown',5263.585711890056,-9305.585082877235),(650,'mouseup',5263.585711890056,-9305.585082877235),
+                 (655,'mousedown',4978.056484272573,-9093.539714470548),(775,'mouseup',4978.056484272573,-9093.539714470548)]
+    S06_UPPER = [(5,'mousedown',4704.0,-9112.199723935715),(125,'mouseup',4704.0,-9112.199723935715),
+                 (200,'mousedown',1988.0,-9660.294050566703),(264,'mouseup',1988.0,-9660.294050566703),
+                 (321,'mousedown',1124.0,-10450.410099734427),(494,'mouseup',1124.0,-10450.410099734427),
+                 (627,'mousedown',2644.0,-11503.996354718722),(717,'mouseup',2644.0,-11503.996354718722)]
+    S07_UPPER = [(5,'mousedown',308.0,-11930.140890103135),(245,'mouseup',308.0,-11930.140890103135),
+                 (291,'mousedown',1992.0,-12880.388956174498),(323,'mouseup',1992.0,-12880.388956174498),
+                 (631,'mousedown',1432.0,-12944.0),(701,'mouseup',1432.0,-12944.0),
+                 (737,'mousedown',2348.0,-11960.0),(762,'mouseup',2348.0,-11960.0)]
+    S08_UPPER = [(185,'mousedown',2060.0,-13296.0),(303,'mouseup',2060.0,-13296.0),
+                 (390,'mousedown',432.0,-13330.616848123203),(550,'mouseup',432.0,-13330.616848123203),
+                 (627,'mousedown',4180.0,-13444.0),(672,'mouseup',4180.0,-13444.0),
+                 (740,'mousedown',1398.3078238591097,-13469.42904665146)]
+    UPPER = (lambda starts, plans: [(t+starts[k], e, x, y) for k, plan in plans for t, e, x, y in plan])(
+        SECTION_STARTS, (('S05',S05_UPPER),('S06',S06_UPPER),('S07',S07_UPPER),('S08',S08_UPPER)))
+    # The finish comes at 4858+809 (as in TASK-527's S08-full); the run continues 53 ticks into the frozen ending.
+    TICKS = 5720
+
+    @classmethod
+    def setUpClass(cls):
+        from grapple_over_verify import hashes
+        import test_grapple_over_sections as sections
+        cls.S = sections
+        cls.evidence = EvidenceWriter(cls.task_id)
+        cls.url, browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.browser = LifecycleBrowser(browser)
+        page = browser.new_page(viewport=VIEWPORT); page.goto(cls.url); wait_for_boot(page)
+        cls.mountain = page.evaluate('''() => ({sections:GRAPPLE_OVER_MOUNTAIN.sections,
+            encounters:GRAPPLE_OVER_MOUNTAIN.encounters.slice(16,32),finish:GRAPPLE_OVER_MOUNTAIN.finish,
+            connectors:GRAPPLE_OVER_MOUNTAIN.connectors.filter(c=>['S05','S06','S07','S08'].some(s=>c.id.startsWith(s))).map(c=>({id:c.id,from:c.from,to:c.to})),
+            movers:GRAPPLE_OVER_MOUNTAIN.geometry.movers,upgradeSection:MODE_DEFINITIONS.grapple_over.rangeUpgradeSection,
+            radius:{base:MODE_DEFINITIONS.grapple_over.acquisitionRadius,upgraded:MODE_DEFINITIONS.grapple_over.upgradedAcquisitionRadius},
+            notice:I18N.t('climb.rangeUpgrade'),sectionRows:Object.fromEntries(GRAPPLE_OVER_MOUNTAIN.sections.map(s=>[s.id,
+                I18N.t('climb.section',{value:I18N.t('climb.section.'+s.id)})]))})''')
+        page.close()
+        cls.hashes = hashes()
+        cls.hashes['tools/test_grapple_over_integration.py'] = hashlib.sha256(
+            (ROOT/'tools/test_grapple_over_integration.py').read_bytes()).hexdigest()
+        cls.proof = dict(browser=browser.version, viewport=VIEWPORT, device_scale_factor=1,
+            hz=60, seed=1, revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+            dirty_paths=subprocess.check_output(['git','status','--porcelain','--','.',':!artifacts'],cwd=ROOT,text=True).splitlines(),
+            source_hashes=cls.hashes)
+        cls.evidence.log('CONFIG '+json.dumps(cls.proof, sort_keys=True))
+        cls.fixture, cls.fixture_proof = cls.make_fixture()
+
+    # ---- fixture --------------------------------------------------------------------------------
+    @classmethod
+    def make_fixture(cls):
+        """The real state of the TASK-529 base-start S01..S04 run (Task529Tests.nominal) at FIXTURE_TICK."""
+        from grapple_over_verify import metadata, execute, check_trace, validate
+        route = Task529Tests.nominal.__func__(type('Lower', (), dict(S=cls.S, SECTION_STARTS=Task529Tests.SECTION_STARTS)))
+        m = dict(metadata=metadata('base-start'), ticks=cls.FIXTURE_TICK, expected_exit=dict(y=[-1e9, 1e9]),
+                 inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in route if t < cls.FIXTURE_TICK],
+                 required_events=['acquisition','release','bounce'])
+        m['metadata']['compact_contacts'] = True
+        validate(m)
+        trace = execute(m, cls.browser._browser, cls.url, str(cls.evidence.path('runs/fixture')))
+        check_trace(m, trace)
+        shutil.rmtree(cls.evidence.path('runs/fixture'))
+        assert trace['metadata']['setupOnlySpawns'] == [] and m['metadata']['kind'] == 'base-start'
+        sim = trace['snapshots'][-1]['state']['simulation']
+        acquired = [e['after']['rope'][0]['id'] for e in trace['events'] if e['type'] == 'acquisition']
+        proof = dict(label='v3 S04-exit fixture: real state of the TASK-529 base-start S01..S04 v3 run (Task529Tests.nominal inputs, '
+                     'trusted mouse, no placement) at tick %d, falling through S04-exit-drag onto the S04 exit ledge one tick before '
+                     'it enters S05.rangeUpgradeZone; range still 1080. One labeled placement; not a full-game completion claim' % cls.FIXTURE_TICK,
+                     base_run_ticks=cls.FIXTURE_TICK, base_run_inputs=len(m['inputs']), base_run_acquisitions=acquired,
+                     snapshot_sha256=trace['snapshots'][-1]['sha256'], base_run_sha256=state_hash(trace),
+                     player=sim['player'], upgrades=sim['upgrades'], simulationTick=sim['simulationTick'], stats=sim['stats'])
+        return sim, proof
+
+    # ---- shared checks --------------------------------------------------------------------------
+    mechanics = staticmethod(Task529Tests.mechanics)
+    compact = Task529Tests.compact
+    players = staticmethod(Task529Tests.players)
+
+    def manifest(self):
+        from grapple_over_verify import metadata, validate
+        f = self.mountain['finish']
+        m = dict(metadata=metadata('isolated'), initial_snapshot=self.fixture, ticks=self.TICKS,
+                 inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in self.UPPER],
+                 expected_exit=dict(x=[f['left'], f['right']], y=[f['top'], f['bottom']]),
+                 required_events=['acquisition','release','bounce'])
+        m['metadata']['compact_contacts'] = True
+        validate(m)
+        self.assertNotIn('initial_setup', m)
+        return m
+
+    @staticmethod
+    def in_box(p, b, pad=0):
+        return b['left']-pad <= p['x'] <= b['right']+pad and b['top']-pad <= p['y'] <= b['bottom']+pad
+
+    def finish(self, trace):
+        rows = trace['snapshots']; done = [r['state']['simulation']['stats']['completed'] for r in rows]
+        self.assertFalse(done[0])
+        flips = [t for t in range(1, len(done)) if done[t] and not done[t-1]]
+        self.assertEqual(len(flips), 1)
+        tick = flips[0]
+        self.assertTrue(all(done[tick:]))
+        self.assertGreaterEqual(tick, self.SECTION_STARTS['S08'])
+        p = rows[tick]['state']['simulation']['player']
+        self.assertTrue(self.in_box(p, self.mountain['finish']), p)
+        frozen = all(r['state']['simulation']['player'] == p for r in rows[tick:])
+        self.assertTrue(frozen)
+        return dict(completion_tick=tick, completed_transitions=len(flips), player={k: p[k] for k in ('x','y','speedX','speedY')},
+                    finish_region=self.mountain['finish'], frozen_after=frozen, ticks_after=len(rows)-1-tick)
+
+    def continuity(self, m, trace, done):
+        sim = [r['state']['simulation'] for r in trace['snapshots']]
+        self.assertEqual(m['metadata']['kind'], 'isolated')
+        # The only placement is the labeled fixture (initial_snapshot before tick 0): no spawn, no mid-run injection.
+        self.assertEqual(trace['metadata']['setupOnlySpawns'], [])
+        self.assertIs(trace['metadata']['testOnly'], True)
+        self.assertEqual(sim[0]['player'], self.fixture['player'])
+        self.assertEqual(sim[0]['simulationTick'], self.fixture['simulationTick'])
+        self.assertIs(sim[0]['upgrades']['range'], False)
+        ticks = [s['simulationTick'] for s in sim]
+        # The fixed-step clock advances 8 physics cycles every frame until the ending; the finish pauses play inside the
+        # completing frame (a partial step), and the clock stays frozen from then on.
+        steps = sorted({b-a for a, b in zip(ticks[:done], ticks[1:done])})
+        self.assertEqual(len(steps), 1, steps); self.assertGreater(steps[0], 0)
+        final_step = ticks[done]-ticks[done-1]
+        self.assertTrue(0 < final_step <= steps[0], final_step)
+        self.assertEqual(set(ticks[done:]), {ticks[done]})
+        live = sim[:done+1]
+        jumps = [max(abs(b['player']['x']-a['player']['x']), abs(b['player']['y']-a['player']['y'])) for a, b in zip(live, live[1:])]
+        excess = max(j - 8*max(abs(a['player'][k]) for a in (u, v) for k in ('speedX', 'speedY')) for j, u, v in zip(jumps, live, live[1:]))
+        self.assertLess(excess, 1, excess)
+        self.assertLess(max(jumps), 40)
+        ids = [e['id'] for e in sim[0]['elements']]
+        self.assertTrue(all([e['id'] for e in s['elements']] == ids for s in sim))
+        # Upper-section movers: small continuous steps and a strict 240-tick period across every section boundary
+        # (a reset at a hand-off would break it), up to the completing frame; every non-mover element stays put.
+        index = {k: i for i, k in enumerate(ids)}
+        movers, period_error, mover_step = {}, 0, 0
+        for v in self.mountain['movers']:
+            if not v['element'].startswith(('S05','S06','S07','S08')): continue
+            i, k = index[v['element']], v['axis']
+            pos = [s['elements'][i][k] for s in sim[:done]]
+            mover_step = max(mover_step, max(abs(b-a) for a, b in zip(pos, pos[1:])))
+            period_error = max(period_error, max(abs(pos[t]-pos[t-self.PERIOD]) for t in range(self.PERIOD, len(pos))))
+            self.assertAlmostEqual(min(pos), v['min'], delta=1); self.assertAlmostEqual(max(pos), v['max'], delta=1)
+            movers[v['element']] = dict(axis=k, min=min(pos), max=max(pos),
+                at_section_starts={s: round(pos[t], 3) for s, t in self.SECTION_STARTS.items()})
+        self.assertEqual(len(movers), 8)
+        self.assertLess(mover_step, 2)
+        self.assertLess(period_error, 1e-6)
+        mover_ids = {v['element'] for v in self.mountain['movers']}
+        origin = {e['id']: (e['x'], e['y']) for e in sim[0]['elements']}
+        moved = sorted({e['id'] for s in sim for e in s['elements'] if e['id'] not in mover_ids and (e['x'], e['y']) != origin[e['id']]})
+        self.assertEqual(moved, [])
+        heights = [s['stats']['maxHeight'] for s in sim]
+        self.assertTrue(all(b >= a for a, b in zip(heights, heights[1:])))
+        inputs = [e for e in trace['events'] if e['type'] == 'input']
+        self.assertEqual(len(inputs), len(m['inputs']))
+        self.assertTrue(all(e['trusted'] for e in inputs))
+        presses = [e for e in inputs if e['event'] == 'mousedown']
+        offscreen = [e['tick'] for e in presses if not (0 < e['client']['x'] < VIEWPORT['width'] and 0 < e['client']['y'] < VIEWPORT['height'])]
+        self.assertEqual(offscreen, [])
+        return dict(fixture=self.fixture_proof['label'], kind=m['metadata']['kind'], placements=1, initial_snapshot='fixture (before tick 0)',
+            setup_only_spawns=trace['metadata']['setupOnlySpawns'], mid_run_injection=False, state_reset=False,
+            initial_player=sim[0]['player'], simulation_ticks=[ticks[0], ticks[-1]], simulation_tick_increment=steps, completing_frame_step=final_step, clock_frozen_from_tick=done,
+            max_player_step=max(jumps), max_step_beyond_8x_speed=excess, static_elements_moved=moved, upper_movers=movers,
+            max_mover_step=mover_step, mover_period_ticks=self.PERIOD, max_mover_period_error=period_error, max_height_monotonic=True,
+            trusted_inputs=len(inputs), offscreen_presses=offscreen,
+            press_clients=[dict(tick=e['tick'], world=e['world'], client=e['client']) for e in presses])
+
+    def upgrade(self, trace):
+        """The upgrade tick, the S05 upgrade region it lies in, and the acquisition reaches before/after it."""
+        sim = [r['state']['simulation'] for r in trace['snapshots']]
+        s05 = next(s for s in self.mountain['sections'] if s['id'] == self.mountain['upgradeSection'])
+        self.assertEqual(s05['id'], 'S05')
+        # physics.js grants the upgrade in `rangeUpgradeZone ?? band` of the upgrade section (TASK-529: the zone).
+        region = s05.get('rangeUpgradeZone') or s05['band']
+        ranges = [s['upgrades']['range'] for s in sim]
+        tick = next(t for t, r in enumerate(ranges) if r)
+        self.assertGreater(tick, 0)
+        self.assertFalse(any(ranges[:tick])); self.assertTrue(all(ranges[tick:]))
+        p, before = sim[tick]['player'], sim[tick-1]['player']
+        self.assertTrue(self.in_box(p, region), p)
+        self.assertFalse(self.in_box(before, region), before)
+        presses = [e['tick'] for e in trace['events'] if e['type'] == 'input' and e['event'] == 'mousedown']
+        self.assertTrue(all(t > tick for t in presses))
+        self.assertLess(tick, self.SECTION_STARTS['S05'])
+        reaches = [dict(tick=e['tick'], element=e['after']['rope'][0]['id'], reach=e['after']['simulation']['grapple']['traveled'],
+                        range_upgraded=ranges[e['tick']]) for e in trace['events'] if e['type'] == 'acquisition']
+        self.assertTrue(all(r['range_upgraded'] for r in reaches))
+        self.assertTrue(all(r['reach'] <= self.mountain['radius']['upgraded'] for r in reaches))
+        beyond = [r for r in reaches if r['reach'] > self.mountain['radius']['base']]
+        # Most upper gaps are only crossable at 1620 (the S05-01 hoist is 1429 away from the S04 exit ledge).
+        self.assertGreaterEqual(len(beyond), 8)
+        self.assertEqual(beyond[0]['element'], 'S05-hoist')
+        return dict(upgrade_tick=tick, player={k: p[k] for k in ('x','y','speedX','speedY')},
+            previous_tick_player={k: before[k] for k in ('x','y','speedX','speedY')}, s05_upgrade_region=region,
+            s05_upgrade_region_source='S05.rangeUpgradeZone (physics.js: upgradeSection.rangeUpgradeZone ?? band)',
+            s05_declared_band=s05['band'], inside_s05_upgrade_region=True,
+            inside_s05_declared_band_rectangle=self.in_box(p, s05['band']),
+            band_note='the v3 S05 route (S05-01 start y -11660.9 .. S05-04 exit y -9432) mostly lies above the abstract S05 band '
+                      'rectangle (y -9720..-6480), which the v3 S03/S04 routes cross; TASK-529 made S05.rangeUpgradeZone the S05 upgrade '
+                      'region, so the upgrade tick is the tick the player enters it on the S04 exit ledge (the S05 entrance)',
+            range_false_ticks=[0, tick-1], range_true_ticks=[tick, len(ranges)-1], first_press_tick=presses[0],
+            radius_before=self.mountain['radius']['base'], radius_after=self.mountain['radius']['upgraded'],
+            acquisition_reaches=reaches, reaches_beyond_base_range=len(beyond), max_reach=max(r['reach'] for r in reaches))
+
+    # ---- cases ----------------------------------------------------------------------------------
+    def test_01_continuous_upper(self):
+        from grapple_over_verify import execute, check_trace
+        m = self.manifest()
+        bounds = [*self.SECTION_STARTS.values(), self.TICKS]
+        segments = [dict(section=k, start=bounds[i], end=bounds[i+1]) for i, k in enumerate(self.SECTION_STARTS)]
+        self.evidence.write('inputs.json', dict(m, segments=segments, fixture=self.fixture_proof,
+            scope='One labeled v3 S04-exit fixture placement (initial_snapshot = real base-start run state at tick %d), then trusted '
+                  'Playwright mouse events only; no spawn, snapshot or velocity/mover reset at any section boundary; not a '
+                  'full-game completion claim' % self.FIXTURE_TICK))
+        self.browser.calls.clear()
+        trace = execute(m, self.browser, self.url, str(self.evidence.path('runs/upper')), clip=True)
+        lifecycle = list(self.browser.calls)
+        check_trace(m, trace)
+        self.evidence.path('runs/upper/trace.json').unlink()
+        shutil.move(str(self.evidence.path('runs/upper/clip.webm')), str(self.evidence.path('upper.webm')))
+        self.browser.calls.clear()
+        replay = execute(m, self.browser, self.url, str(self.evidence.path('runs/upper-replay')))
+        replay_lifecycle = list(self.browser.calls)
+        check_trace(m, replay)
+        self.assertEqual(trace, replay)
+        recorded, replayed = state_hash(trace), state_hash(replay)
+        del replay
+        shutil.rmtree(self.evidence.path('runs'))
+        players = self.players(trace)
+        finish = self.finish(trace)
+        done = finish['completion_tick']
+        continuity = self.continuity(m, trace, done)
+        upgrade = self.upgrade(trace)
+        exits = Task529Tests.first_exit_ticks(self, players, self.mountain['encounters'])
+        order = [exits[e['id']] for e in self.mountain['encounters']]
+        self.assertTrue(all(t is not None for t in order), exits)
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(len(order), 16)
+        mech = self.mechanics(trace)
+        acquired = [x['element'] for x in mech if x['type'] == 'acquisition']
+        self.assertEqual(acquired, ['S05-hoist','S05-lift','S05-pull-hook','S05-exit-hook','S06-carriage','S06-lift','S06-climb-hook',
+            'S06-exit-hook','S07-trolley','S07-carriage','S07-gable-hook','S07-exit-ledge','S08-mast-trolley','S08-beacon-trolley',
+            'S08-east-wall','S08-roof'])
+        encounters = []
+        for e in self.mountain['encounters']:
+            touched = [x for x in mech if x['element'] in e['elements'] and x['type'] in ('acquisition','bounce')]
+            self.assertTrue(touched, e['id'])
+            encounters.append(dict(id=e['id'], section=e['section'], exit=exit_box(e['exit']), first_exit_tick=exits[e['id']],
+                                   first_interaction=touched[0], interactions=len(touched)))
+        # Each section starts settled on its green entrance ledge (the previous section's exit), at its declared start.
+        handoffs = []
+        starts = {e['id']: e['start'] for e in self.mountain['encounters']}
+        for section, encounter in (('S05','S05-01'),('S06','S06-01'),('S07','S07-01'),('S08','S08-01')):
+            t = self.SECTION_STARTS[section]; p = players[t]; d = starts[encounter]
+            h = dict(into=section, tick=t, connector=section+'-entrance', player={k: p[k] for k in ('x','y','speedX','speedY')},
+                     carried_speed=math.hypot(p['speedX'], p['speedY']), declared_start=d,
+                     distance_to_declared_start=math.hypot(p['x']-d['x'], p['y']-d['y']),
+                     simulation_tick=trace['snapshots'][t]['state']['simulation']['simulationTick'],
+                     mover_phase_ticks=(trace['snapshots'][t]['state']['simulation']['simulationTick']//continuity['simulation_tick_increment'][0]) % self.PERIOD)
+            self.assertLess(h['carried_speed'], .1, h)
+            self.assertLess(h['distance_to_declared_start'], 6, h)
+            handoffs.append(h)
+        self.assertEqual([c['id'] for c in self.mountain['connectors'] if c['id'].endswith('entrance')],
+                         ['S05-entrance','S06-entrance','S07-entrance','S08-entrance'])
+        completed = [c for c in lifecycle if c['name'] == 'level_completed']
+        self.assertEqual(len(completed), 1)
+        self.assertEqual([c['name'] for c in replay_lifecycle if c['name'] == 'level_completed'], ['level_completed'])
+        self.assertEqual((completed[0]['x'], completed[0]['y']), (finish['player']['x'], finish['player']['y']))
+        self.assertGreater(exits['S08-04'], exits['S08-03'])
+        self.assertEqual(exits['S08-04'], done)
+        result = dict(name='v3 S04-exit fixture to summit finish (layout v3 S05-S08)', passed=True, matching_replay=True,
+            full_game_completion=False, recorded_sha256=recorded, replayed_sha256=replayed, ticks=m['ticks'],
+            fixture=self.fixture_proof, finish=finish,
+            ending=dict(completed_transitions=finish['completed_transitions'], level_completed_calls=len(completed),
+                        recorded_lifecycle=lifecycle, replayed_lifecycle=replay_lifecycle),
+            upgrade=upgrade, encounter_exits_in_order=True, encounter_exit_ticks=order, encounters=encounters,
+            handoffs=handoffs, acquisitions=acquired, continuity=continuity, proof=self.proof, video='upper.webm', inputs='inputs.json',
+            trace=self.compact(trace))
+        self.evidence.write('trace.json', result)
+        print('PASS continuous upper: 1 labeled v3 S04-exit fixture (base-run tick %d), %d trusted inputs, %d ticks, range upgrade at tick %d '
+              '(%.1f,%.1f in S05.rangeUpgradeZone, 1080 before, 1620 after; %d reaches > 1080, max %.1f), 16/16 upper encounter exits in '
+              'order %s, hand-offs %s, finish at tick %d (%.1f,%.1f) with exactly one level_completed; replay identical'
+              % (self.FIXTURE_TICK, continuity['trusted_inputs'], m['ticks'], upgrade['upgrade_tick'], upgrade['player']['x'], upgrade['player']['y'],
+                 upgrade['reaches_beyond_base_range'], upgrade['max_reach'], order,
+                 [(h['into'], round(h['player']['x'],1), round(h['player']['y'],1)) for h in handoffs], done,
+                 finish['player']['x'], finish['player']['y']), flush=True)
+
+    def test_02_transition_frames(self):
+        """Stills drawn by the production renderer at exact ticks (a filmstrip replay of the test_01 manifest with the HUD layout
+        probe, identical state hash): the upgrade notice after the fixture, each section hand-off and the finish."""
+        from PIL import Image
+        from grapple_over_verify import execute, check_trace
+        self.assertTrue(self.evidence.path('upper.webm').stat().st_size > 0)
+        upper = json.loads(self.evidence.path('trace.json').read_text())
+        m = self.manifest(); m['metadata']['layout_probe'] = True
+        trace = execute(m, self.browser._browser, self.url, str(self.evidence.path('runs/frames')), filmstrip=True)
+        check_trace(m, trace)
+        self.assertEqual(state_hash(trace), upper['recorded_sha256'])
+        probe = json.loads(self.evidence.path('runs/frames/layout-probe.json').read_text())['frames']
+        texts = {int(t): [b['name'] for b in v['boxes'] if b['kind'] == 'text'] for t, v in probe.items()}
+        up = upper['upgrade']['upgrade_tick']; done = upper['finish']['completion_tick']
+        notice = sorted(t for t, names in texts.items() if self.mountain['notice'] in names)
+        # The one-time HUD notice is drawn after the in-run upgrade for its 3 s and never again (frame N shows state N+1).
+        self.assertTrue(notice and all(up <= t+1 <= up+180 for t in notice), notice)
+        self.assertIn(60, notice)
+        rows = self.mountain['sectionRows']
+        order = []
+        for t in sorted(texts):
+            sec = next((s for s, row in rows.items() if row in texts[t]), None)
+            if sec and (not order or order[-1][0] != sec): order.append((sec, t))
+        # Recorded, not ordered: the HUD section row names the first section with an encounter element within 300 of the
+        # player's height (menu.js drawHud), so it flickers where the v3 sections overlap in height.
+        self.assertTrue(all(any(sec == k for sec, _ in order) for k in ('S05','S06','S07','S08')), order)
+        players = self.players(trace)
+        grid = lambda t: min((f for f in texts), key=lambda f: abs(f-t))
+        marks = [('fixture-upgrade-notice', 60)] + [('%s-start' % s, grid(t)) for s, t in self.SECTION_STARTS.items()] + \
+                [('finish', min(f for f in texts if f > done))]
+        frames = []
+        for name, tick in marks:
+            src = self.evidence.path('runs/frames/frame-%04d.png' % tick)
+            self.assertTrue(src.exists(), src)
+            shutil.copy(str(src), str(self.evidence.path('transitions/%s.png' % name)))
+            p = players[tick]
+            frames.append(dict(name=name, tick=tick, player=dict(x=p['x'], y=p['y']), hud_text=texts[tick],
+                               file='transitions/%s.png' % name))
+        shutil.rmtree(self.evidence.path('runs/frames'))
+        w, h = VIEWPORT['width']//2, VIEWPORT['height']//2
+        sheet = Image.new('RGB', (w*3, h*2))
+        for i, f in enumerate(frames):
+            with Image.open(self.evidence.path(f['file'])) as img: sheet.paste(img.convert('RGB').resize((w, h)), ((i % 3)*w, (i//3)*h))
+        sheet.save(self.evidence.path('transitions.jpg'), quality=80)
+        self.evidence.write('transitions.json', dict(video='upper.webm', replay_sha256=state_hash(trace), matches_trace_json_recorded_sha256=True,
+            upgrade_tick=up, notice_text=self.mountain['notice'], notice_frames=notice, hud_section_changes=order, frames=frames,
+            note='frame-NNNN is drawn after the inputs of tick NNNN and one physics step; filmstrip frames every 60 ticks and at every input'))
+        print('PASS transition frames: filmstrip replay identical to trace.json (%s); notice %r drawn at frames %s (upgrade tick %d); HUD section '
+              'row changes %s; %d stills -> transitions.jpg' % (state_hash(trace)[:12], self.mountain['notice'], notice, up, order, len(frames)), flush=True)
+
+    def test_03_source_hashes(self):
+        for path, digest in self.proof['source_hashes'].items():
+            self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, path)
+        print('PASS source hashes: runtime, level and harness match the tested worktree', flush=True)
+
 if __name__ == '__main__':
     unittest.main()
