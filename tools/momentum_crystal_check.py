@@ -54,6 +54,8 @@ IDS = ['M04', 'M23', 'M24', 'M46', 'M47', 'M66',
 VIEWPORTS = [(1280, 720), (390, 844)]
 DILATE = 2
 ERODE = 6
+TEXTURE_FLAT_MAX = 1.0
+TEXTURE_HEAD_MIN = 15
 SHIFT_PX = 37
 PIN = 'updateNeonPulse = () => { neonPulse = 1 }; neonPulse = 1'
 
@@ -285,16 +287,19 @@ def cmd_texture(args):
         for (i, head, px, head_whole), (_, parent, _, parent_whole) in zip(
                 interior_stddevs(a, ia, args.kind), interior_stddevs(b, ib, args.kind)):
             head, parent = round(head, 3), round(parent, 3)
-            # A flat parent (stddev 0) gives an infinite ratio
+            # Region F (the parent's flat fill) has no meaningful ratio; both regions use absolute floors
             row = {'frame': id, 'piece': i, 'pixels': px, 'head': head, 'parent': parent,
-                   'ratio': round(head / parent, 2) if parent else 'inf',
                    'wholePieceHead': round(head_whole, 3), 'wholePieceParent': round(parent_whole, 3)}
-            row['pass'] = head > 0 and head >= 3.0 * parent
+            row['pass'] = parent <= TEXTURE_FLAT_MAX and head >= TEXTURE_HEAD_MIN \
+                and row['wholePieceHead'] >= TEXTURE_HEAD_MIN
             ok = ok and row['pass']
             rows.append(row)
     ok = ok and len(rows) > 0
     write(args.out, {'kind': args.kind, 'viewport': '1280x720', 'erodePx': ERODE,
-                     'region': 'inset-copy polygon (innerCopyInsetRatio) eroded erodePx; wholePiece* = piece eroded erodePx',
+                     'region': 'head/parent = region F, the inset-copy polygon (innerCopyInsetRatio) eroded erodePx; '
+                               'wholePiece* = region W, the piece eroded erodePx',
+                     'criterion': 'per row: parent <= %s and head >= %s (region F), wholePieceHead >= %s (region W); '
+                                  'no ratio to the parent' % (TEXTURE_FLAT_MAX, TEXTURE_HEAD_MIN, TEXTURE_HEAD_MIN),
                      'rev': fxs.harness('worktree').rev, 'parent': sha(args.rev), 'rows': rows, 'pass': ok})
     return 0 if ok else 1
 
