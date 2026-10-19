@@ -270,8 +270,8 @@ def compress_replay(evidence, prefix):
     path.unlink()
 
 
-def check_s01_mechanics(encounter, trace, required=True):
-    """Layout-v2 Foundations: blue hoist, lift + green deflector, in-flight jib, boom."""
+def rope_observations(trace):
+    """Acquisitions, releases, deduplicated bounces and airborne catches, shared by every section check."""
     events=trace['events'];rows=trace['snapshots']
     grabs=[e for e in events if e['type']=='acquisition']
     ids=[e['after']['rope'][0]['id'] for e in grabs]
@@ -285,15 +285,13 @@ def check_s01_mechanics(encounter, trace, required=True):
     observations=dict(acquisitions=ids,acquisition_ticks=[e['tick'] for e in grabs],
         release_ticks=[e['tick'] for e in events if e['type']=='release'],bounces=bounces,
         airborne_acquisitions=airborne)
-    if required:
-        need={'S01-01':['S01-hoist'],'S01-02':['S01-lift'],'S01-03':['S01-crane-hook','S01-jib-hook'],
-              'S01-04':['S01-boom-hook']}[encounter]
-        require(ids[:len(need)]==need,'S01 acquisition sequence mismatch')
-        if encounter=='S01-02':
-            require('S01-deflector' in [b['element'] for b in bounces],'S01 deflector bounce missing')
-        if encounter=='S01-03':
-            require('S01-jib-hook' in airborne,'S01 in-flight jib acquisition missing')
     return observations
+
+
+def check_s01_mechanics(encounter, trace, required=True):
+    """Foundations: S01-S04 were rebuilt as layout v3 and the layout-v1/v2 element IDs this
+    check used to require no longer exist, so it now judges the v3 encounter (TASK-532)."""
+    return check_s01_v3_mechanics(encounter, trace, required)
 
 
 S01_V3_ENCOUNTERS = {'S01-01':('S01-hoist','S01-yard-pad'), 'S01-02':('S01-lift','S01-deflector'),
@@ -305,7 +303,7 @@ def check_s01_v3_mechanics(encounter, trace, required=True):
     whole S01 route. The encounter's own mechanic must happen in order (anchor acquired, released,
     then its green bounce; S01-03 swings left-to-right on the gantry hook), every S01 anchor is
     acquired in route order, and the run never touches the S01-floor fall bouncers."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
+    observations=rope_observations(trace)
     events=trace['events']; rows=trace['snapshots']
     releases=[(e['tick'],e['before']['rope'][0]['id'],e['before']['simulation']['player']) for e in events
               if e['type']=='release' and e['before']['rope']]
@@ -346,7 +344,7 @@ def check_s02_v3_mechanics(encounter, trace, required=True):
     exit-ledge landing); the S02 anchors up to the encounter are acquired in route order, S02-02..04
     in flight, and after the hoist release the run never bounces on an S01 element (no fall back
     to the S01 drag zones)."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
+    observations=rope_observations(trace)
     events=trace['events']
     releases=[(e['tick'],e['before']['rope'][0]['id']) for e in events if e['type']=='release' and e['before']['rope']]
     observations['releases']=[dict(tick=t,element=el) for t,el in releases]
@@ -394,7 +392,7 @@ def check_s03_v3_mechanics(encounter, trace, required=True):
     edge, S03-04 lands on the green exit ledge after the release. The S03 anchors up to the encounter
     are acquired in route order, and after the hoist release the run never bounces on an S01/S02
     element or the S03 lower bridge (no fall)."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
+    observations=rope_observations(trace)
     events=trace['events']
     releases=[(e['tick'],e['before']['rope'][0]['id']) for e in events if e['type']=='release' and e['before']['rope']]
     observations['releases']=[dict(tick=t,element=el) for t,el in releases]
@@ -456,7 +454,7 @@ def check_s04_v3_mechanics(encounter, trace, required=True):
     to the left) followed by a stop on the left map edge, S04-04 the exit ledge. The S04 anchors up to
     the encounter are acquired in route order, and after the hoist release the run never bounces on an
     S01-S03 element or an S04 fall bouncer (no fall)."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
+    observations=rope_observations(trace)
     events=trace['events']
     releases=[(e['tick'],e['before']['rope'][0]['id']) for e in events if e['type']=='release' and e['before']['rope']]
     observations['releases']=[dict(tick=t,element=el) for t,el in releases]
@@ -513,7 +511,7 @@ def check_s05_v3_mechanics(encounter, trace, required=True):
     exit hook, released into the green exit canopy and onto the green exit ledge. The S05 anchors up
     to the encounter are acquired in route order, and after the hoist release the run never bounces
     on an S01-S04 element or an S05 fall bouncer (no fall)."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
+    observations=rope_observations(trace)
     events=trace['events']; rows=trace['snapshots']
     releases=[(e['tick'],e['before']['rope'][0]['id'],e['before']['simulation']['player']) for e in events
               if e['type']=='release' and e['before']['rope']]
@@ -578,7 +576,7 @@ def check_s06_v3_mechanics(encounter, trace, required=True):
     the green exit hook, released onto the green exit ledge. The S06 anchors up to the encounter are
     acquired in route order, and after the carriage release the run never bounces on an S01-S05
     element or an S06 fall bouncer (no fall)."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
+    observations=rope_observations(trace)
     events=trace['events']; rows=trace['snapshots']
     releases=[(e['tick'],e['before']['rope'][0]['id'],e['before']['simulation']['player']) for e in events
               if e['type']=='release' and e['before']['rope']]
@@ -638,7 +636,7 @@ def check_s07_v3_mechanics(encounter, trace, required=True):
     S07-04 the green exit ledge caught in flight, released onto the exit ledge itself. The S07 anchors
     up to the encounter are acquired in route order, and after the trolley release the run never
     bounces on an S01-S06 element or an S07 fall bouncer (no fall)."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
+    observations=rope_observations(trace)
     events=trace['events']; rows=trace['snapshots']
     releases=[(e['tick'],e['before']['rope'][0]['id'],e['before']['simulation']['player']) for e in events
               if e['type']=='release' and e['before']['rope']]
@@ -704,7 +702,7 @@ def check_s08_v3_mechanics(encounter, trace, required=True):
     climb completes in the summit finish region (no release). The S08 anchors up to the encounter are acquired
     in route order, and after the mast-trolley release the run never bounces on an S01-S07 element or an S08
     fall bouncer (no fall)."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
+    observations=rope_observations(trace)
     events=trace['events']; rows=trace['snapshots']
     releases=[(e['tick'],e['before']['rope'][0]['id'],e['before']['simulation']['player']) for e in events
               if e['type']=='release' and e['before']['rope']]
@@ -762,64 +760,21 @@ def check_s08_v3_mechanics(encounter, trace, required=True):
 
 
 def check_s02_mechanics(encounter, trace, required=True):
-    """Layout-v2 Switchback: blue shuttle, blue lift + green bulkhead, green crest hook, blue trolley."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
-    if required:
-        need={'S02-01':'S02-shuttle','S02-02':'S02-lift','S02-03':'S02-crest-hook','S02-04':'S02-trolley'}[encounter]
-        require(observations['acquisitions'][:1]==[need],'S02 acquisition sequence mismatch')
-        if encounter=='S02-02':
-            require('S02-bulkhead' in [b['element'] for b in observations['bounces']],'S02 bulkhead bounce missing')
-        if encounter=='S02-03':
-            require('S02-ledge' in observations['airborne_acquisitions'],'S02 in-flight ledge catch missing')
-    return observations
+    """Switchback: S01-S04 were rebuilt as layout v3 and the layout-v1/v2 element IDs this
+    check used to require no longer exist, so it now judges the v3 encounter (TASK-532)."""
+    return check_s02_v3_mechanics(encounter, trace, required)
 
 
 def check_s03_mechanics(encounter, trace, required=True):
-    """Layout-v2 Broken Viaduct: blue carriage, blue lift + green buffer, green crest hook + in-flight ledge, blue trolley."""
-    observations=check_s01_mechanics('S01-01', trace, required=False)
-    # The S03 ledge is caught at the apex (vy ~ 0), so airborne = moving at all on the tick before
-    # the catch (a launch from a rest pad has vx = vy = 0).
-    rows=trace['snapshots']
-    observations['airborne_acquisitions']=[e['after']['rope'][0]['id'] for e in trace['events'] if e['type']=='acquisition'
-        and abs(rows[e['tick']-1]['state']['simulation']['player']['speedX'])+abs(rows[e['tick']-1]['state']['simulation']['player']['speedY'])>.01]
-    if required:
-        need={'S03-01':'S03-carriage','S03-02':'S03-lift','S03-03':'S03-crest-hook','S03-04':'S03-trolley'}[encounter]
-        require(observations['acquisitions'][:1]==[need],'S03 acquisition sequence mismatch')
-        if encounter=='S03-02':
-            require('S03-span-buffer' in [b['element'] for b in observations['bounces']],'S03 span buffer bounce missing')
-        if encounter=='S03-03':
-            require('S03-ledge' in observations['airborne_acquisitions'],'S03 in-flight ledge catch missing')
-    return observations
+    """Broken Viaduct: S01-S04 were rebuilt as layout v3 and the layout-v1/v2 element IDs this
+    check used to require no longer exist, so it now judges the v3 encounter (TASK-532)."""
+    return check_s03_v3_mechanics(encounter, trace, required)
 
 
 def check_s04_mechanics(encounter, trace, required=True):
-    """Measure reflection contacts and airborne reacquisition from recorded events."""
-    bounces = [e for e in trace['events'] if e['type'] == 'bounce']
-    contacts = [e['contact']['elementId'] for e in bounces]
-    expected = {'S04-01':['S04-flat-press'], 'S04-02':['S04-angled-chute'],
-                'S04-03':['S04-combination-press'],
-                'S04-04':['S04-double-right','S04-double-left']}[encounter]
-    result = dict(contacts=contacts, bounce_ticks=[e['tick'] for e in bounces])
-    if required:
-        require(contacts == expected, 'S04 reflection sequence mismatch')
-        if encounter == 'S04-01':
-            e=bounces[0];before=e['before']['simulation']['player'];after=e['after']['simulation']['player']
-            require(before['speedX'] < 0 < after['speedX'], 'flat reflection missing')
-        if encounter == 'S04-02':
-            e=bounces[0];before=e['before']['simulation']['player'];after=e['after']['simulation']['player']
-            require(before['speedY'] < 0 < after['speedY'] and before['speedX'] > 0 > after['speedX'], 'sloped reflection missing')
-        if encounter == 'S04-03':
-            grabs=[e for e in trace['events'] if e['type']=='acquisition'
-                   and e['after']['rope'][0]['id']=='S04-combination-rest']
-            require(bool(grabs) and grabs[0]['tick'] > bounces[0]['tick']
-                    and grabs[0]['after']['simulation']['player']['y'] < -5540.8, 'airborne reacquisition missing')
-            result['airborne_reacquisition_tick']=grabs[0]['tick']
-        if encounter == 'S04-04':
-            tail=[r['state']['simulation']['player'] for r in trace['snapshots'][-60:]]
-            require(all(4880 <= p['x'] <= 5050 and -5821 <= p['y'] <= -5790
-                        and abs(p['speedY']) < .001 for p in tail), 'landing not sustained')
-            result['sustained_landing_ticks']=60
-    return result
+    """Deflector Works: S01-S04 were rebuilt as layout v3 and the layout-v1/v2 element IDs this
+    check used to require no longer exist, so it now judges the v3 encounter (TASK-532)."""
+    return check_s04_v3_mechanics(encounter, trace, required)
 
 
 def check_s05_mechanics(encounter, trace, required=True):
