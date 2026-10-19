@@ -524,6 +524,77 @@ const momentumTurnFactories = Object.freeze(Object.fromEntries(
 const momentumTurnsByJoin = Object.freeze(Object.fromEntries(['right->up', 'right->down', 'down->right', 'up->right'].map(join =>
     [join, Object.freeze(MOMENTUM_PATTERNS_TURN.filter(pattern => pattern.joins.includes(join)).map(pattern => pattern.id))])))
 
+// The user's picked corner frames (TASK-102 catalog), anchored at the course
+// vertex (where the two corridor centre lines meet) and free to use the
+// corner box: join '<incoming>-<outgoing>'; a piece is centred on (x, y)
+// from the vertex, x in shaft W (2 x the shaft's half width), y in corridor
+// W (2 x GAMEPLAY.momentumBorders.halfWidth), sizes and polygon points
+// scaled the same per axis; reach {in, out}: how far the pieces extend back
+// along the incoming corridor and ahead along the outgoing one (+ 0.1 W), in
+// W of that corridor's travel axis. motion {axis: 'x', min, max, speed} as in
+// MOMENTUM_FRAMES_V, across from the vertex in shaft W. Placeable
+// (momentumPlaceTurn / momentumPlaceCorner), not spawned yet.
+const MOMENTUM_FRAMES_TURN = Object.freeze([
+    // M18 Kicker: a green wedge in the outer bottom corner kicks the run up
+    {id: 'M18', join: 'right-up', difficulty: 2, reach: {in: 0.583333, out: 0.572917}, pieces: [
+        {kind: 'green', shape: 'polygon', x: 0.404861, y: 0.432639, points: [[-0.190278, 0.067361], [0.095139, 0.067361], [0.095139, -0.134722]]},
+        {kind: 'blue', shape: 'rect', x: -0.420833, y: -0.410417, w: 0.125, h: 0.125}
+    ]},
+    // M60 Lip Kicker: a green wedge on the floor's lip, a blue bar sweeping the shaft
+    {id: 'M60', join: 'right-down', difficulty: 3, reach: {in: 0.822917, out: 0.6}, pieces: [
+        {kind: 'green', shape: 'polygon', x: -0.574306, y: 0.458333, points: [[-0.148611, 0.041667], [0.074306, 0.041667], [0.074306, -0.083333]]},
+        {kind: 'blue', shape: 'rect', x: 0.235417, y: 0.458333, w: 0.375, h: 0.0625, motion: {axis: 'x', min: -0.5, max: 0.5, speed: 0.005208}}
+    ]}
+].map(pattern => Object.freeze(pattern)))
+
+// Builds one corner frame (MOMENTUM_FRAMES_TURN) at a join vertex, scaled
+// per axis by the live shaft W (x) and corridor W (y)
+class MomentumCornerFrameFactory
+{
+    constructor(pattern)
+    {
+        this.pattern = pattern
+        this.join = pattern.join.replace('-', '->')
+    }
+    getUnits(shaftHalfWidth = momentumShaftHalfWidth())
+    {
+        return {x: 2 * shaftHalfWidth, y: 2 * GAMEPLAY.momentumBorders.halfWidth}
+    }
+    // Reach from the vertex in world units: a right corridor runs along x
+    // (shaft W), a shaft along y (corridor W)
+    getReach(join = this.join, shaftHalfWidth = momentumShaftHalfWidth())
+    {
+        const W = this.getUnits(shaftHalfWidth)
+        const [incoming, outgoing] = join.split('->')
+        return {in: this.pattern.reach.in * (incoming == 'right' ? W.x : W.y),
+                out: this.pattern.reach.out * (outgoing == 'right' ? W.x : W.y)}
+    }
+    // (x, y): the course vertex; shaftHalfWidth: the half width of the
+    // join's vertical segment
+    create(x, y, shaftHalfWidth = momentumShaftHalfWidth())
+    {
+        const W = this.getUnits(shaftHalfWidth)
+        return this.pattern.pieces.map(piece =>
+        {
+            const spec = {shape: piece.shape, x: x + piece.x * W.x, y: y + piece.y * W.y}
+            if (piece.shape == 'rect')
+            {
+                spec.w = piece.w * W.x
+                spec.h = piece.h * W.y
+            }
+            else
+                spec.points = piece.points.map(([px, py]) => ({x: px * W.x, y: py * W.y}))
+            if (piece.motion)
+                spec.motion = {axis: 'x', speedX: piece.motion.speed * W.x,
+                               xMin: x + piece.motion.min * W.x, xMax: x + piece.motion.max * W.x}
+            return (piece.kind == 'blue' ? MomentumBlue : MomentumGreen).shape(spec)
+        })
+    }
+}
+// Corner frame id -> factory (placeable only: not in momentumTurnsByJoin)
+const momentumCornerFrameFactories = Object.freeze(Object.fromEntries(
+    MOMENTUM_FRAMES_TURN.map(pattern => [pattern.id, new MomentumCornerFrameFactory(pattern)])))
+
 // Catalog id -> factory: the ported bad frames first, in port catalog
 // order, then their vertical variants (bad-frameN-v), then the concept
 // frames (placeable only: not in momentumPatternsByDir)
@@ -898,8 +969,11 @@ window.momentumPlacePattern = momentumPlacePattern
 // Places turn type id on the join at the end of course segment segmentIndex
 // (between it and the next segment). Returns the placed boxes, or null
 // outside momentum, on a straight join and on a join the type is not built for.
+// A corner frame id (MOMENTUM_FRAMES_TURN) is placed by momentumPlaceCorner.
 function momentumPlaceTurn(id, segmentIndex)
 {
+    if (momentumCornerFrameFactories[id])
+        return momentumPlaceCorner(id, segmentIndex)
     const factory = momentumTurnFactories[id]
     const floor = version == 'momentum' && floors ? floors.find(f => f instanceof MomentumPatternFloor) : null
     if (!factory || !floor || typeof momentumCourse === 'undefined' || !momentumCourse)
@@ -923,6 +997,37 @@ function momentumPlaceTurn(id, segmentIndex)
     })}
 }
 window.momentumPlaceTurn = momentumPlaceTurn
+
+// Places corner frame id at the vertex of the join at the end of course
+// segment segmentIndex. Returns the vertex, the per-axis W, the reach (world
+// units) and the placed pieces (bounds, points, axis-x motion), or null
+// outside momentum and on any other join than the frame's.
+function momentumPlaceCorner(id, segmentIndex)
+{
+    const factory = momentumCornerFrameFactories[id]
+    const floor = version == 'momentum' && floors ? floors.find(f => f instanceof MomentumPatternFloor) : null
+    if (!factory || !floor || typeof momentumCourse === 'undefined' || !momentumCourse)
+        return null
+    const segment = momentumCourse.segment(segmentIndex)
+    const join = segment.dir + '->' + momentumCourse.segment(segmentIndex + 1).dir
+    if (join != factory.join)
+        return null
+    const shaftHalfWidth = momentumSegmentHalfWidth(momentumCourse.segment(segmentIndex + 1))
+    const W = factory.getUnits(shaftHalfWidth)
+    const elements = factory.create(segment.x1, segment.y1, shaftHalfWidth)
+    const group = floor.place(elements)
+    return {id: id, join: join, segment: segmentIndex, group: group, vertex: {x: segment.x1, y: segment.y1},
+            shaftW: W.x, corridorW: W.y, reach: factory.getReach(join, shaftHalfWidth), elements: elements.map(element =>
+    {
+        const bounds = getElementBounds(element)
+        return {className: element.constructor.name, lethal: isLethalElement(element),
+                left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom,
+                points: element.getPoints().map(point => [point.x, point.y]),
+                motion: element.motion && element.motion.axis == 'x' ?
+                    {axis: 'x', xMin: element.motion.xMin, xMax: element.motion.xMax, speedX: element.speedX} : null}
+    })}
+}
+window.momentumPlaceCorner = momentumPlaceCorner
 
 // Places one green or blue piece (kind 'green' | 'blue') built from a
 // MomentumOneTime.shapeObject spec on the momentum pattern floor, for tests
