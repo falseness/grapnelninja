@@ -687,6 +687,80 @@ def check_s07_v3_mechanics(encounter, trace, required=True):
     return observations
 
 
+S08_V3_ENCOUNTERS = {'S08-01':('S08-mast-trolley','S08-roof'), 'S08-02':('S08-beacon-trolley','S08-west-wall'),
+                     'S08-03':('S08-east-wall','S08-east-wall'), 'S08-04':('S08-roof',None)}
+# Fall bouncers: reaching one after the mast-trolley release means the S08 route was lost (the S08 glide cap and
+# summit floor, every S01-S07 element; the declared S08 falls land on the S07 exit/crown ledges or the glide cap).
+S08_V3_FALL_BOUNCERS = ('S08-glide-cap', 'S08-summit-floor')
+
+
+def check_s08_v3_mechanics(encounter, trace, required=True):
+    """Layout-v3 Summit Array (TASK-526/527/528): every attempt runs the S08 route from the real S07 v3 exit
+    settled pose up to the encounter's exit. S08-01: the blue mast trolley acquired and released, the release
+    rise turned into a drop by the green roof; S08-02: the blue beacon trolley caught in flight, the swing turned
+    east by the green west wall while still attached (vx reversed), released into a flight east; S08-03: the
+    green east wall caught in flight and released short of it, its leaning face rebounding the player west (vx
+    reversed after the release); S08-04: the far west end of the green roof caught in flight and held until the
+    climb completes in the summit finish region (no release). The S08 anchors up to the encounter are acquired
+    in route order, and after the mast-trolley release the run never bounces on an S01-S07 element or an S08
+    fall bouncer (no fall)."""
+    observations=check_s01_mechanics('S01-01', trace, required=False)
+    events=trace['events']; rows=trace['snapshots']
+    releases=[(e['tick'],e['before']['rope'][0]['id'],e['before']['simulation']['player']) for e in events
+              if e['type']=='release' and e['before']['rope']]
+    observations['releases']=[dict(tick=t,element=el) for t,el,_ in releases]
+    anchor, bouncer = S08_V3_ENCOUNTERS[encounter]
+    wall=next((t for t,el,_ in releases if el=='S08-east-wall'),None)
+    # The roof is the S08-01 bouncer and the S08-04 anchor: its S08-04 catch follows the east-wall release.
+    grab=next((t for el,t in zip(observations['acquisitions'],observations['acquisition_ticks'])
+               if el==anchor and (encounter!='S08-04' or (wall is not None and t>wall))),None)
+    release=next(((t,p) for t,el,p in releases if el==anchor and grab is not None and t>=grab),None)
+    if encounter=='S08-02':
+        bounce=next((e for e in events if e['type']=='bounce' and grab is not None and e['tick']>=grab
+                     and (release is None or e['tick']<release[0]) and e['contact']['elementId']==bouncer),None)
+    elif bouncer:
+        bounce=next((e for e in events if e['type']=='bounce' and release and e['tick']>=release[0]
+                     and e['contact']['elementId']==bouncer),None)
+    else:
+        bounce=None
+    done=next((r['tick'] for r in rows if r['state']['simulation']['stats']['completed']),None)
+    mast=next((t for t,el,_ in releases if el=='S08-mast-trolley'),None)
+    fallen=[b for b in observations['bounces'] if mast is not None and b['tick']>mast
+            and (b['element'].startswith(('S01-','S02-','S03-','S04-','S05-','S06-','S07-')) or b['element'] in S08_V3_FALL_BOUNCERS)]
+    observations['fall_bounces_after_mast_release']=fallen
+    speeds=lambda e: [{k:e[s]['simulation']['player'][k] for k in ('speedX','speedY')} for s in ('before','after')]
+    observations['encounter']=dict(anchor=anchor,acquisition_tick=grab,release_tick=release and release[0],bouncer=bouncer,
+        bounce_tick=bounce and bounce['tick'],bounce_speeds=bounce and speeds(bounce),
+        press_speedY=rows[grab-1]['state']['simulation']['player']['speedY'] if grab else None,
+        release_speedX=release and release[1]['speedX'], release_speedY=release and release[1]['speedY'],
+        completion_tick=done, grappled_at_completion=rows[done]['state']['simulation']['grapple']['grappled'] if done is not None else None)
+    if required:
+        route=[a for a,_ in S08_V3_ENCOUNTERS.values()]
+        route=route[:route.index(anchor, 1 if encounter=='S08-04' else 0)+1]
+        ids=[a for a in observations['acquisitions'] if a.startswith('S08-')]
+        require(ids[:len(route)]==route,'S08 v3 acquisition sequence mismatch')
+        enc=observations['encounter']
+        if encounter=='S08-04':
+            require(anchor in observations['airborne_acquisitions'] and grab is not None,'S08 v3 in-flight roof acquisition missing')
+            require(done is not None and done>grab and release is None,'S08 v3 summit finish on the held roof rope missing')
+        else:
+            require(release is not None,'S08 v3 '+anchor+' release missing')
+            require(bounce is not None,'S08 v3 '+bouncer+' bounce missing')
+            require(done is None,'S08 v3 climb completed before S08-04')
+            b, a = enc['bounce_speeds']
+            if encounter=='S08-01':
+                require(b['speedY']<0<a['speedY'],'S08 v3 roof rebound (rise turned into a drop) missing')
+            if encounter=='S08-02':
+                require(anchor in observations['airborne_acquisitions'],'S08 v3 in-flight beacon acquisition missing')
+                require(b['speedX']<0<a['speedX'],'S08 v3 attached west-wall rebound (swing turned east) missing')
+                require(enc['release_speedX']>0,'S08 v3 beacon release into a flight east missing')
+            if encounter=='S08-03':
+                require(anchor in observations['airborne_acquisitions'],'S08 v3 in-flight east-wall acquisition missing')
+                require(b['speedX']>0>a['speedX'],'S08 v3 leaning-face rebound (flight turned west) missing')
+        require(not fallen,'S08 v3 route fell onto a fall bouncer')
+    return observations
+
+
 def check_s02_mechanics(encounter, trace, required=True):
     """Layout-v2 Switchback: blue shuttle, blue lift + green bulkhead, green crest hook, blue trolley."""
     observations=check_s01_mechanics('S01-01', trace, required=False)
@@ -877,7 +951,7 @@ def audit_suite(manifest, browser, url, out):
     section = manifest.get('section', 'S01')
     require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
-    v3 = section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07') and manifest.get('designVersion') == 3
+    v3 = section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08') and manifest.get('designVersion') == 3
     s01 = check_s01_v3_mechanics if v3 else check_s01_mechanics
     s02 = check_s02_v3_mechanics if v3 else check_s02_mechanics
     s03 = check_s03_v3_mechanics if v3 else check_s03_mechanics
@@ -903,7 +977,7 @@ def audit_suite(manifest, browser, url, out):
                 if section == 'S05': (check_s05_v3_mechanics if v3 else check_s05_mechanics)(encounter, replayed)
                 if section == 'S06': (check_s06_v3_mechanics if v3 else check_s06_mechanics)(encounter, replayed)
                 if section == 'S07': (check_s07_v3_mechanics if v3 else check_s07_mechanics)(encounter, replayed)
-                if section == 'S08': check_s08_mechanics(encounter, replayed)
+                if section == 'S08': (check_s08_v3_mechanics if v3 else check_s08_mechanics)(encounter, replayed)
                 success = True
             except ValueError:
                 success = False
@@ -927,7 +1001,8 @@ def audit_suite(manifest, browser, url, out):
                 s07 = check_s07_v3_mechanics if v3 else check_s07_mechanics
                 require(s07(encounter, replayed, success) == a['mechanic_events'], 'S07 mechanics mismatch')
             if section == 'S08':
-                require(check_s08_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S08 mechanics mismatch')
+                s08 = check_s08_v3_mechanics if v3 else check_s08_mechanics
+                require(s08(encounter, replayed, success) == a['mechanic_events'], 'S08 mechanics mismatch')
             count += 1
     negative = json.loads(evidence.path(manifest['negative_control']).read_text())
     recorded = load_evidence(evidence, negative['input'])

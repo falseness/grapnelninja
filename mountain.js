@@ -800,8 +800,9 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // At the top of the map, over the mast trolley; its far west end is the S08-04 anchor.
         bouncer('S08-roof',1350,-13495,1250,25),
         rectangle('S08-beacon-trolley',370,-13360,120,30,true),
-        // Against the left map edge, high above the S07-03 map-edge climb.
-        bouncer('S08-west-wall',0,-13420,30,420),
+        // Against the left map edge, high above the S07-03 map-edge climb. It reaches down to the S08 band bottom
+        // (TASK-528), so an early beacon release flying west at the band bottom still rebounds off it, not the map edge.
+        bouncer('S08-west-wall',0,-13420,30,460),
         // Over the S07 gable hook, under the missed-beacon glide; the drag zone above it holds it.
         bouncer('S08-glide-cap',1400,-13030,160,30),
         // Far east of the Crown; its face leans back 42 px over its height, so the rebound leaves nearly level.
@@ -820,14 +821,15 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(sections[7], {status:'built', designVersion:3, landmark:{id:'S08-landmark',
         name:'distinct final beacon silhouette',x:1300,y:-12960},
         band:{...sections[7].band, top:-14580},
-        // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
+        // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620); S08-02..04
+        // re-measured on the TASK-528 camera (topLead), which moves the client pixel of each aimed press.
         gaps:[{id:'S08-01-trolley',from:{x:2608.9,y:-11971.2},to:{x:2058.4,y:-13300}},
             // Caught in the glide off the mast trolley.
-            {id:'S08-02-beacon',from:{x:1917.7,y:-13330.5},to:{x:491.6,y:-13331.9}},
+            {id:'S08-02-beacon',from:{x:1917.7,y:-13330.5},to:{x:491.6,y:-13333.3}},
             // Pressed in the flight east under the roof.
-            {id:'S08-03-wall',from:{x:2771.6,y:-13413.3},to:{x:4188.1,y:-13440.2}},
+            {id:'S08-03-wall',from:{x:2770.6,y:-13412.1},to:{x:4188.1,y:-13440.2}},
             // Pressed in the crest pocket.
-            {id:'S08-04-roof',from:{x:2805.9,y:-13257.1},to:{x:1410.6,y:-13470}}],
+            {id:'S08-04-roof',from:{x:2806.0,y:-13253.6},to:{x:1414.7,y:-13470}}],
         // Declared miss points: a mast trolley released too early rises short of the S05 hoist and drops back through
         // S07-exit-drag onto the green S07 exit ledge; a missed beacon catch glides down into S08-glide-drag, which
         // drops it onto the green glide cap. An east wall released early rebounds lower and slower into the crest pocket,
@@ -874,7 +876,11 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         range:{base:R, upgraded:1620, upgradeBand:'S05'}, ascent:24*U, horizontalEnvelope:12*U,
         coordinateConvention:'negative Y upward', base:{id:'base',x:2160,y:0},
         summit:{id:'summit',x:3780,y:-24*U},
-        bounds:{left:0,right:6480,top:-24*U-540,bottom:120},
+        // topLead (TASK-528): while the player is above y -24*U (the S08 band bottom; every S01-S07 pose is below
+        // it), the camera top bound rises `rate` times as fast as the player, up to the S08 band top, so the S08 anchors
+        // in the band's upper west corner (beacon trolley, roof end) are drawn below the HUD rows, not under them.
+        // Below y -24*U the bound is exactly bounds.top, so the S01-S07 cameras are unchanged; it never jumps.
+        bounds:{left:0,right:6480,top:-24*U-540,bottom:120,topLead:{from:-24*U,rate:3,limit:-27*U}},
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),

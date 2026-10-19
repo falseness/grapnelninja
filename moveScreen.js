@@ -51,8 +51,11 @@ class Screen
         }
         this.x = track(this.x, ninja.x, ninja.speedX, viewWidth,
             bounds.left, bounds.right, 0.35, 0.65)
+        const lead = bounds.topLead
+        const top = lead ? Math.max(lead.limit, Math.min(bounds.top,
+            bounds.top - lead.rate * (lead.from - ninja.y))) : bounds.top
         this.y = track(this.y, ninja.y, ninja.speedY, viewHeight,
-            bounds.top, bounds.bottom, 0.4, 0.6)
+            top, bounds.bottom, 0.4, 0.6)
     }
     getDeletionBorder()
     {
