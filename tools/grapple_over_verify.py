@@ -621,6 +621,72 @@ def check_s06_v3_mechanics(encounter, trace, required=True):
     return observations
 
 
+S07_V3_ENCOUNTERS = {'S07-01':('S07-trolley','S07-west-wall'), 'S07-02':('S07-carriage','S07-crown-wall'),
+                     'S07-03':('S07-gable-hook','S07-west-wall'), 'S07-04':('S07-exit-ledge','S07-exit-ledge')}
+# Fall bouncers: reaching one after the trolley release means the S07 route was lost (the S07 crown ledge,
+# every S01-S06 element and the v1 S07 pieces converted to green).
+S07_V3_FALL_BOUNCERS = ('S07-crown-ledge', 'S07-roof-boom', 'S07-recovery-balcony', 'S07-exit')
+
+
+def check_s07_v3_mechanics(encounter, trace, required=True):
+    """Layout-v3 Exposed Crown (TASK-523/524/525): every attempt runs the S07 route from the real S06 v3
+    exit settled pose up to the encounter's exit. The encounter's anchor is acquired and released:
+    S07-01 the blue trolley, whose release swing ricochets off the green west wall (flight turned
+    east); S07-02 the blue carriage caught in flight, released into the green crown wall (flight turned
+    west); S07-03 the green gable hook pressed after the flight west dropped onto the green west wall
+    (wall bounce between the carriage release and the gable acquisition), released into a flight east;
+    S07-04 the green exit ledge caught in flight, released onto the exit ledge itself. The S07 anchors
+    up to the encounter are acquired in route order, and after the trolley release the run never
+    bounces on an S01-S06 element or an S07 fall bouncer (no fall)."""
+    observations=check_s01_mechanics('S01-01', trace, required=False)
+    events=trace['events']; rows=trace['snapshots']
+    releases=[(e['tick'],e['before']['rope'][0]['id'],e['before']['simulation']['player']) for e in events
+              if e['type']=='release' and e['before']['rope']]
+    observations['releases']=[dict(tick=t,element=el) for t,el,_ in releases]
+    anchor, bouncer = S07_V3_ENCOUNTERS[encounter]
+    grab=next((t for el,t in zip(observations['acquisitions'],observations['acquisition_ticks']) if el==anchor),None)
+    release=next(((t,p) for t,el,p in releases if el==anchor and grab is not None and t>=grab),None)
+    carriage=next((t for t,el,_ in releases if el=='S07-carriage'),None)
+    # S07-03: the west-wall bounce precedes the gable press; every other bouncer follows the release.
+    if encounter=='S07-03':
+        bounce=next((e for e in events if e['type']=='bounce' and carriage is not None and grab is not None
+                     and carriage<=e['tick']<grab and e['contact']['elementId']==bouncer),None)
+    else:
+        bounce=next((e for e in events if e['type']=='bounce' and release and e['tick']>=release[0]
+                     and e['contact']['elementId']==bouncer),None)
+    trolley=next((t for t,el,_ in releases if el=='S07-trolley'),None)
+    fallen=[b for b in observations['bounces'] if trolley is not None and b['tick']>trolley
+            and (b['element'].startswith(('S01-','S02-','S03-','S04-','S05-','S06-')) or b['element'] in S07_V3_FALL_BOUNCERS)]
+    observations['fall_bounces_after_trolley_release']=fallen
+    speeds=lambda e: [{k:e[s]['simulation']['player'][k] for k in ('speedX','speedY')} for s in ('before','after')]
+    observations['encounter']=dict(anchor=anchor,acquisition_tick=grab,release_tick=release and release[0],bouncer=bouncer,
+        bounce_tick=bounce and bounce['tick'],bounce_speeds=bounce and speeds(bounce),
+        press_speedY=rows[grab-1]['state']['simulation']['player']['speedY'] if grab else None,
+        release_speedX=release and release[1]['speedX'], release_speedY=release and release[1]['speedY'])
+    if required:
+        route=[a for a,_ in S07_V3_ENCOUNTERS.values()]
+        route=route[:route.index(anchor)+1]
+        ids=[a for a in observations['acquisitions'] if a.startswith('S07-')]
+        require(ids[:len(route)]==route,'S07 v3 acquisition sequence mismatch')
+        require(release is not None,'S07 v3 '+anchor+' release missing')
+        require(bounce is not None,'S07 v3 '+bouncer+' bounce missing')
+        enc=observations['encounter']
+        b, a = enc['bounce_speeds']
+        if encounter=='S07-01':
+            require(b['speedX']<0<a['speedX'],'S07 v3 west-wall ricochet (flight turned east) missing')
+        if encounter=='S07-02':
+            require(anchor in observations['airborne_acquisitions'],'S07 v3 in-flight carriage acquisition missing')
+            require(b['speedX']>0>a['speedX'],'S07 v3 crown-wall rebound (flight turned west) missing')
+        if encounter=='S07-03':
+            require(b['speedY']>0>a['speedY'],'S07 v3 west-wall bounce before the gable press missing')
+            require(enc['release_speedX']>0,'S07 v3 gable release into a flight east missing')
+        if encounter=='S07-04':
+            require(anchor in observations['airborne_acquisitions'],'S07 v3 in-flight exit-ledge acquisition missing')
+            require(b['speedY']>0,'S07 v3 exit-ledge landing missing')
+        require(not fallen,'S07 v3 route fell onto a fall bouncer')
+    return observations
+
+
 def check_s02_mechanics(encounter, trace, required=True):
     """Layout-v2 Switchback: blue shuttle, blue lift + green bulkhead, green crest hook, blue trolley."""
     observations=check_s01_mechanics('S01-01', trace, required=False)
@@ -811,7 +877,7 @@ def audit_suite(manifest, browser, url, out):
     section = manifest.get('section', 'S01')
     require(section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07', 'S08'), 'unsupported section')
     require(set(manifest['encounters']) == {f'{section}-{i:02d}' for i in range(1, 5)}, 'encounter coverage')
-    v3 = section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06') and manifest.get('designVersion') == 3
+    v3 = section in ('S01', 'S02', 'S03', 'S04', 'S05', 'S06', 'S07') and manifest.get('designVersion') == 3
     s01 = check_s01_v3_mechanics if v3 else check_s01_mechanics
     s02 = check_s02_v3_mechanics if v3 else check_s02_mechanics
     s03 = check_s03_v3_mechanics if v3 else check_s03_mechanics
@@ -836,7 +902,7 @@ def audit_suite(manifest, browser, url, out):
                 if section == 'S04' and v3: check_s04_v3_mechanics(encounter, replayed)
                 if section == 'S05': (check_s05_v3_mechanics if v3 else check_s05_mechanics)(encounter, replayed)
                 if section == 'S06': (check_s06_v3_mechanics if v3 else check_s06_mechanics)(encounter, replayed)
-                if section == 'S07': check_s07_mechanics(encounter, replayed)
+                if section == 'S07': (check_s07_v3_mechanics if v3 else check_s07_mechanics)(encounter, replayed)
                 if section == 'S08': check_s08_mechanics(encounter, replayed)
                 success = True
             except ValueError:
@@ -858,7 +924,8 @@ def audit_suite(manifest, browser, url, out):
                 s06 = check_s06_v3_mechanics if v3 else check_s06_mechanics
                 require(s06(encounter, replayed, success) == a['mechanic_events'], 'S06 mechanics mismatch')
             if section == 'S07':
-                require(check_s07_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S07 mechanics mismatch')
+                s07 = check_s07_v3_mechanics if v3 else check_s07_mechanics
+                require(s07(encounter, replayed, success) == a['mechanic_events'], 'S07 mechanics mismatch')
             if section == 'S08':
                 require(check_s08_mechanics(encounter, replayed, success) == a['mechanic_events'], 'S08 mechanics mismatch')
             count += 1
