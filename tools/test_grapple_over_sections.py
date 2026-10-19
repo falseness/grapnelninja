@@ -11399,7 +11399,11 @@ class Task532Tests(unittest.TestCase):
             configs = [l for l in self.evidence.path(f'legacy/{task}/commands.log').read_text().splitlines()
                        if l.startswith('CONFIG ')]
             config = json.loads(configs[-1][7:])
-            self.assertEqual(config['revision'], self.proof['revision'], task)
+            # Committing the ticket moves HEAD, so the run's revision only has to be HEAD or an
+            # ancestor of it; the source hashes are the guard that the tested files are unchanged.
+            ancestor = subprocess.run(['git', 'merge-base', '--is-ancestor', config['revision'], 'HEAD'],
+                                      cwd=ROOT, capture_output=True)
+            self.assertEqual(ancestor.returncode, 0, (task, config['revision'], 'not an ancestor of HEAD'))
             self.assertEqual(config['source_hashes'], self.proof['source_hashes'], task)
             print(f'PASS {legacy}: {len(names)} cases ok, exit 0, no skips, source hashes match')
 
