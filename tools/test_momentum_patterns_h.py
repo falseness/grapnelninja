@@ -9,7 +9,9 @@ MomentumCourse.generate, as in test_momentum_borders), stops the rAF loop,
 empties the obstacle floor and places each frame alone with
 window.momentumPlacePattern on that segment. Asserts: the 'right' registry
 (momentumPatternsByDir.right, in momentumPatternFactories order) is exactly
-the port ids in catalog order and no retired TASK-012 id is registered
+the TASK-111 concept frames (FRAMES_H), no port id is in any spawn registry
+(momentumPatternsByDir, momentumTurnsByJoin; they stay placeable) and no
+retired TASK-012 id is registered
 (MOMENTUM_CATALOG_H, default artifacts/TASK-012/catalog-h.json); the frames
 are refused outside a right segment; every built piece matches the catalog
 piece in order: class (colour), shape (polygon points), box within GEOM_TOL
@@ -49,6 +51,8 @@ SHOTS_FROM = int(os.environ.get('MOMENTUM_PORT_SHOTS_FROM', 7))
 GEOM_TOL = 1.0
 # Bad corridor centre line (floor..ceiling band 0.2h..2h at h 1080)
 BAD_CENTRE_Y = 1188
+# The right corridor's spawn registry since TASK-111 (MOMENTUM_FRAMES_H)
+FRAMES_H = ['M04', 'M23', 'M24', 'M46', 'M47', 'M66']
 # First segment right with a length draw of 0.99 (~5 heights), then the LCG
 SCRIPT = [0.99]
 EPS = 1e-6
@@ -111,20 +115,26 @@ class MomentumPatternsHTests(unittest.TestCase):
         return x, y, self.page.evaluate(PLACE, [t['id'], x, y, dir])
 
     def test_1_right_registry_is_the_port(self):
-        r = self.page.evaluate('''(retired) => ({
+        # Since TASK-111 the right corridor spawns the concept frames only;
+        # the ported bad frames stay placeable (test_2..test_4) but spawn nowhere
+        ids = [t['id'] for t in self.port]
+        r = self.page.evaluate('''([retired, ids]) => ({
             right: Object.keys(momentumPatternFactories).filter(id => momentumPatternsByDir.right.includes(id)),
             byDir: momentumPatternsByDir.right.slice(),
+            spawned: ids.filter(id => Object.values(momentumPatternsByDir).some(l => l.includes(id)) ||
+                                      Object.values(momentumTurnsByJoin).some(l => l.includes(id))),
             retired: retired.filter(id => id in momentumPatternFactories ||
                                     Object.values(momentumPatternsByDir).some(l => l.includes(id)))})''',
-            self.retired)
-        ids = [t['id'] for t in self.port]
+            [self.retired, ids])
         (EVIDENCE_DIR / 'registry-ids.txt').write_text('\n'.join(r['byDir']) + '\n')
-        print('right registry:', len(r['byDir']), r['byDir'])
+        print('right registry:', len(r['byDir']), r['byDir'], '(want', FRAMES_H, ')')
         print('port catalog ids:', len(ids), ids)
+        print('port ids in a spawn registry:', r['spawned'])
         print('retired TASK-012 ids still registered:', r['retired'], 'of', len(self.retired))
         self.assertEqual(len(ids), PORT_COUNT)
-        self.assertEqual(r['byDir'], ids)
-        self.assertEqual(r['right'], ids)
+        self.assertEqual(r['byDir'], FRAMES_H)
+        self.assertEqual(r['right'], FRAMES_H)
+        self.assertEqual(r['spawned'], [])
         self.assertEqual(r['retired'], [])
 
     def test_2_port_refused_outside_right(self):

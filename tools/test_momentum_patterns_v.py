@@ -13,10 +13,11 @@ segment 1 goes up and segment 3 goes down, the rAF loop stopped and the bad
 obstacle floor emptied; each variant is placed alone with
 window.momentumPlacePattern in each of its directions, its footprint centred
 along the shaft. Asserts:
-- momentumPatternsByDir up/down list exactly the variants whose catalog
-  vertical list names that direction (right lists none of them), no retired
-  TASK-013 vertical type is registered, a variant in 'right' and a ported
-  frame (bad-frameN) in a shaft place nothing;
+- momentumPatternsByDir up/down list exactly the TASK-111 concept frames
+  (FRAMES_V), no variant is in any spawn registry (momentumPatternsByDir,
+  momentumTurnsByJoin) while every variant is still registered and placed
+  below, no retired TASK-013 vertical type is registered, a variant in
+  'right' and a ported frame (bad-frameN) in a shaft place nothing;
 - per variant and direction: class, colour and rect of every piece = the
   catalog piece scaled by the shaft half width / base half width (wall
   anchored pieces flush with their wall), footprint length = span x that
@@ -61,6 +62,9 @@ CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
 RETIRED = ['wall-ladder', 'gate-bypass', 'trampoline-chimney', 'ricochet-well', 'staggered-column', 'needle-shaft']
 # The bad frame's half of a TASK-036 montage (x 0..960, below the 30 px title)
 MONTAGE_BAD = (0, 30, 960, 570)
+# The shafts' spawn registries since TASK-111 (MOMENTUM_FRAMES_V); the
+# variants stay placeable but spawn nowhere
+FRAMES_V = {'up': ['M11-up', 'M30-up', 'M93-up', 'M110-up'], 'down': ['M11', 'M30', 'M93', 'M110']}
 INSIDE = {}
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
@@ -162,17 +166,21 @@ class PortVBase:
     def test_1_registry(self):
         ids, by_dir = self.course['registry'], self.course['byDir']
         want = {d: [e['id'] + '-v' for e in self.entries if d in variant_dirs(e)] for d in ('up', 'down')}
+        variants = want['up'] + [i for i in want['down'] if i not in want['up']]
+        spawned = [i for i in variants if any(i in v for v in by_dir.values()) or
+                   any(i in v for v in self.page.evaluate('Object.values(momentumTurnsByJoin)'))]
         lines = [f"viewport {self.viewport[0]}x{self.viewport[1]}",
                  f"catalog vertical variants: {[e['id'] for e in self.entries]}"]
         for d in ('up', 'down'):
-            lines.append(f"{d}: {by_dir[d]} (want {want[d]}) {'MATCH' if by_dir[d] == want[d] else 'MISMATCH'}")
+            lines.append(f"{d}: {by_dir[d]} (want {FRAMES_V[d]}) {'MATCH' if by_dir[d] == FRAMES_V[d] else 'MISMATCH'}")
+        lines.append(f"variants in a spawn registry: {spawned}")
         lines.append(f"right: {by_dir['right']}")
         retired = [i for i in RETIRED if i in ids or any(i in v for v in by_dir.values())]
         lines.append(f"retired TASK-013 vertical ids still registered: {retired}")
         refused = self.page.evaluate('''(ids) => ({right: ids.filter(id => momentumPlacePattern(id, 0, 0, 'right') !== null),
-            portInShaft: momentumPatternsByDir.right.filter(id => momentumPlacePattern(id, 0, 0, 'up') !== null ||
-                                                               momentumPlacePattern(id, 0, 0, 'down') !== null)})''',
-                                     want['up'] + want['down'])
+            portInShaft: ids.map(id => id.replace(/-v$/, '')).filter(id => momentumPlacePattern(id, 0, 0, 'up') !== null ||
+                                                                         momentumPlacePattern(id, 0, 0, 'down') !== null)})''',
+                                     variants)
         self.page.evaluate("floors.find(f => f instanceof MomentumPatternFloor).elements = []")
         lines.append(f"variants placed in 'right': {refused['right']}; ported frames placed in a shaft: "
                      f"{refused['portInShaft']}")
@@ -181,9 +189,9 @@ class PortVBase:
             (EVIDENCE_DIR / 'registry-ids.txt').write_text('\n'.join(lines) + '\n')
         self.assertEqual(len(self.entries), 6)
         for d in ('up', 'down'):
-            self.assertEqual(by_dir[d], want[d])
+            self.assertEqual(by_dir[d], FRAMES_V[d])
             self.assertEqual([i for i in ids if i in want[d]], want[d])
-        self.assertFalse(set(want['up'] + want['down']) & set(by_dir['right']))
+        self.assertEqual(spawned, [])
         self.assertEqual(retired, [])
         self.assertEqual(refused, {'right': [], 'portInShaft': []})
 

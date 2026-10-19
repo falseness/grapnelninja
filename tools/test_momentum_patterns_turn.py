@@ -14,8 +14,9 @@ right->up, up->right, right->down and down->right, stops the rAF loop,
 empties the bad obstacle floor and places each type alone with
 window.momentumPlaceTurn(id, segmentIndex) on every join it declares.
 Asserts: the registered ids are bad-frameN-turn for the catalog's turn
-frames, with the catalog's joins (momentumTurnsByJoin likewise), together
-covering all four joins; an undeclared join, a retired TASK-013 id and a
+frames, with the catalog's joins, together covering all four joins; none of
+them is in a spawn registry (momentumTurnsByJoin = the TASK-111 corner
+frames FRAMES_TURN, momentumPatternsByDir); an undeclared join, a retired TASK-013 id and a
 non-turn id place nothing (null); per type and join the pieces are the
 source frame's (class, box = footprint start + catalog offset), none is
 lethal, none crosses a border line of the segments round the join, all lie
@@ -57,6 +58,10 @@ SCRIPT = [0.99, 0.99, 0.1, 0.99, 0.99, 0.99, 0.9, 0.99, 0.99]
 JOINS = {'right->up': 0, 'up->right': 1, 'right->down': 2, 'down->right': 3}
 DIRS = {'right': (1, 0), 'up': (0, -1), 'down': (0, 1)}
 RETIRED = ['corner-kicker', 'apex-net', 'blue-corner-cut', 'pinwheel']
+# The corner spawn registry since TASK-111 (MOMENTUM_FRAMES_TURN per join);
+# the ported turn frames stay placeable with momentumPlaceTurn but spawn nowhere
+FRAMES_TURN = {'right->up': ['M18'], 'up->right': ['M40', 'M98', 'M136'],
+               'right->down': ['M60'], 'down->right': ['M39', 'M117', 'M134']}
 EPS = 1e-6
 # Port catalog rounding: wall-flush bad pieces end up to ~0.05 past the band
 TOL = 0.1
@@ -274,6 +279,7 @@ class MomentumPatternsTurnTests(unittest.TestCase):
             self.assertGreaterEqual(segs[i + 1]['length'], 3 * half)
         ids = self.page.evaluate('Object.keys(momentumTurnFactories)')
         by_join = self.page.evaluate('momentumTurnsByJoin')
+        by_dir = self.page.evaluate('momentumPatternsByDir')
         declared = self.page.evaluate('Object.fromEntries(MOMENTUM_PATTERNS_TURN.map(p => [p.id, p.joins]))')
         want = {f"{f['id']}-turn": f['turnJoins'] for f in self.frames}
         print('catalog turn frames:', want)
@@ -285,8 +291,11 @@ class MomentumPatternsTurnTests(unittest.TestCase):
         covered = sorted({j for joins in declared.values() for j in joins})
         print('joins covered:', covered)
         self.assertEqual(covered, sorted(JOINS))
+        spawned = sorted({t for t in want for l in list(by_join.values()) + list(by_dir.values()) if t in l})
+        print('turn ids in a spawn registry:', spawned)
+        self.assertEqual(spawned, [])
         for join in JOINS:
-            self.assertEqual(by_join[join], [t for t in want if join in want[t]])
+            self.assertEqual(by_join[join], FRAMES_TURN[join])
         for t, joins in want.items():
             for join, i in JOINS.items():
                 if join not in joins:
