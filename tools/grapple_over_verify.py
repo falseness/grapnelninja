@@ -778,125 +778,27 @@ def check_s04_mechanics(encounter, trace, required=True):
 
 
 def check_s05_mechanics(encounter, trace, required=True):
-    """Check inserted rope segments and motion around their active corner."""
-    elements={'S05-01':'S05-projecting-girder','S05-02':'S05-deep-overhang',
-              'S05-03':'S05-transfer-canopy','S05-04':'S05-recessed-ceiling'}
-    events=trace['events'];observations=[]
-    for wrap in events:
-        if wrap['type']!='wrap' or wrap['after']['rope'][-1]['id']!=elements[encounter]:
-            continue
-        rope=wrap['after']['rope']
-        release=next((e for e in events if e['type']=='release' and e['tick']>wrap['tick']),None)
-        if release is None: continue
-        before=wrap['after']['simulation']['player'];end=release['before']['simulation']['player']
-        observations.append(dict(wrap_tick=wrap['tick'],release_tick=release['tick'],
-            inserted_segment=len(rope)>=2 and rope[0]!=rope[-1],corner=rope[-1],
-            corner_directed_pull=release['tick']>wrap['tick'] and end['x']>before['x'] and end['x']>rope[-1]['x']))
-    acquisitions=[e for e in events if e['type']=='acquisition']
-    new_acquisition=any(a['tick']<r['tick']<b['tick'] and a['after']['rope'][0]!=b['after']['rope'][0]
-        for a,b in zip(acquisitions,acquisitions[1:]) for r in events if r['type']=='release')
-    if required:
-        require(any(o['inserted_segment'] and o['corner_directed_pull'] for o in observations), 'S05 corner pull missing')
-        if encounter in ('S05-03','S05-04'):
-            require(new_acquisition, 'S05 new acquisition missing')
-    return dict(wraps=observations,new_acquisition=new_acquisition)
+    """Cable Galleries: S05-S08 were rebuilt as layout v3 and the layout-v1 element IDs this
+    check used to require no longer exist, so it now judges the v3 encounter (TASK-533)."""
+    return check_s05_v3_mechanics(encounter, trace, required)
 
 
 def check_s06_mechanics(encounter, trace, required=True):
-    """Measure moving attachment, reversal, release phase and actual transfers."""
-    events=trace['events']; rows=trace['snapshots']
-    grabs=[e for e in events if e['type']=='acquisition']
-    ids=[e['after']['rope'][0]['id'] for e in grabs]
-    releases=[e for e in events if e['type']=='release']
-    mover='S06-upper-weight' if encounter=='S06-04' else 'S06-counterweight'
-    attached=[r for r in rows if r['state']['simulation']['grapple']['grappled'] and r['state']['rope'] and
-              r['state']['rope'][0]['id']==mover]
-    ys=[r['state']['rope'][0]['y'] for r in attached]
-    travel=max(ys)-min(ys) if ys else 0
-    differences=[b-a for a,b in zip(ys,ys[1:])]
-    reversal=any(d>0 for d in differences) and any(d<0 for d in differences)
-    rising_release=bool(differences and differences[-1]<0)
-    transfer=ids==['S06-fixed-head','S06-upper-weight','S06-transfer-head','S06-exit']
-    observations=dict(acquisitions=ids,moving_anchor_travel=travel,
-        attached_through_reversal=reversal,rising_phase_release=rising_release,
-        fixed_moving_fixed_transfer=transfer,release_ticks=[e['tick'] for e in releases])
-    if required:
-        require(mover in ids and travel>40, 'S06 moving anchor travel missing')
-        if encounter in ('S06-02','S06-03'):
-            require(reversal and travel>100, 'S06 attached reversal missing')
-        if encounter=='S06-03': require(rising_release, 'S06 rising phase release missing')
-        if encounter=='S06-04': require(transfer, 'S06 fixed moving fixed transfer missing')
-    return observations
+    """Liftworks: S05-S08 were rebuilt as layout v3 and the layout-v1 element IDs this
+    check used to require no longer exist, so it now judges the v3 encounter (TASK-533)."""
+    return check_s06_v3_mechanics(encounter, trace, required)
 
 
 def check_s07_mechanics(encounter, trace, required=True):
-    events=trace['events'];rows=trace['snapshots']
-    grabs=[e for e in events if e['type']=='acquisition']
-    ids=[e['after']['rope'][0]['id'] for e in grabs]
-    hits=[e for e in events if e['type']=='knockback']
-    detached=bool(hits and not hits[0]['after']['rope'])
-    caught=bool(hits and grabs and grabs[-1]['tick']>hits[0]['tick'] and
-                ids[-1]=='S07-shortcut-jib' and
-                all(r['state']['simulation']['grapple']['grappled'] for r in rows[195:]))
-    landed=any(abs(r['state']['simulation']['player']['y']+10190.8)<.001 and
-               abs(r['state']['simulation']['player']['speedY'])<.001 for r in rows)
-    observations=dict(acquisitions=ids,knockback_ticks=[e['tick'] for e in hits],
-        hazard_detach=detached,airborne_catch=caught,lower_balcony_landing=landed)
-    if required:
-        if encounter=='S07-01': require(not hits and 'S07-service-gantry' in ids,'S07 safe hazard passage missing')
-        if encounter=='S07-02': require(detached and caught,'S07 knockback detach/catch missing')
-        if encounter=='S07-03': require(ids==['S07-launch-head','S07-roof-boom','S07-upper-motor','S07-exit'],'S07 exposed crossing missing')
-        if encounter=='S07-04': require(landed and 'S07-side-hoist' in ids and ids[-1]=='S07-exit','S07 recovery missing')
-    return observations
+    """Exposed Crown: S05-S08 were rebuilt as layout v3 and the layout-v1 element IDs this
+    check used to require no longer exist, so it now judges the v3 encounter (TASK-533)."""
+    return check_s07_v3_mechanics(encounter, trace, required)
 
 
 def check_s08_mechanics(encounter, trace, required=True):
-    """Braking, bounce transfer, moving overhang attachment and final landing."""
-    events=trace['events'];rows=trace['snapshots']
-    grabs=[e for e in events if e['type']=='acquisition']
-    ids=[e['after']['rope'][0]['id'] for e in grabs]
-    releases=[e['tick'] for e in events if e['type']=='release']
-    bounces=[e for e in events if e['type']=='bounce']
-    player=lambda t:rows[t]['state']['simulation']['player']
-    brake=None
-    if 'S08-brake-davit' in ids:
-        a=grabs[ids.index('S08-brake-davit')]['tick']
-        r=next((t for t in releases if t>a),None)
-        if r is not None: brake=dict(acquisition_tick=a,release_tick=r,speedX_before=player(a)['speedX'],speedX_after=player(r)['speedX'])
-    transfer=None
-    if bounces and 'S08-mast-yard' in ids:
-        a=grabs[ids.index('S08-mast-yard')]['tick'];b=bounces[0]['tick']
-        transfer=dict(bounce_tick=b,bounce_element=bounces[0]['contact']['elementId'],acquisition_tick=a,
-            airborne=b<a and all(not rows[t]['state']['simulation']['grapple']['grappled'] for t in range(b+1,a)))
-    overhang=None
-    if 'S08-overhang-carriage' in ids:
-        a=grabs[ids.index('S08-overhang-carriage')]['tick'];r=next((t for t in releases if t>a),None)
-        if r is not None:
-            ys=[next(e['y'] for e in rows[t]['state']['simulation']['elements'] if e['id']=='S08-overhang-carriage') for t in range(a,r+1)]
-            overhang=dict(acquisition_tick=a,release_tick=r,carriage_travel=max(ys)-min(ys),
-                below_underside_at_grab=player(a)['y']>-12390,
-                above_deck_past_lip_at_release=player(r)['y']<-12420 and player(r)['x']>3420)
-    done=next((r['tick'] for r in rows if r['state']['simulation']['stats']['completed']),None)
-    landing=None
-    if done is not None:
-        p=player(done);landing=dict(completion_tick=done,x=p['x'],y=p['y'],
-            in_finish=3420<=p['x']<=3700 and -12772<=p['y']<=-12760)
-    observations=dict(acquisitions=ids,release_ticks=releases,
-        bounces=[e['contact']['elementId'] for e in bounces],braking=brake,bounce_transfer=transfer,
-        moving_overhang=overhang,final_landing=landing)
-    if required:
-        require(bool(releases),'S08 release missing')
-        if encounter=='S08-01':
-            require(ids[:2]==['S08-launch-arm','S08-brake-davit'] and brake and
-                    brake['speedX_before']<0 and abs(brake['speedX_after'])<.5*abs(brake['speedX_before']),'S08 braking missing')
-        if encounter=='S08-02':
-            require(transfer and transfer['bounce_element']=='S08-deflector-ramp' and transfer['airborne'],'S08 bounce transfer missing')
-        if encounter=='S08-03':
-            require(overhang and overhang['carriage_travel']>100 and overhang['below_underside_at_grab']
-                    and overhang['above_deck_past_lip_at_release'],'S08 moving overhang missing')
-        if encounter=='S08-04':
-            require(landing and landing['in_finish'] and 'S08-summit-gantry' in ids,'S08 final landing missing')
-    return observations
+    """Summit Array: S05-S08 were rebuilt as layout v3 and the layout-v1 element IDs this
+    check used to require no longer exist, so it now judges the v3 encounter (TASK-533)."""
+    return check_s08_v3_mechanics(encounter, trace, required)
 
 
 def audit_suite(manifest, browser, url, out):
