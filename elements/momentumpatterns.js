@@ -278,6 +278,21 @@ const MOMENTUM_FRAMES_H = Object.freeze([
     {id: 'M24', difficulty: 2, span: 0.845833, pieces: [
         {kind: 'green', shape: 'polygon', x: 0.308333, y: -0.447917, points: [[-0.208333, -0.052083], [0.104167, -0.052083], [0.104167, 0.104167]]},
         {kind: 'blue', shape: 'rect', x: 0.704167, y: -0.234375, w: 0.083333, h: 0.53125}
+    ]},
+    // M46, M66: the thin green cap is its own piece lying on the blue's top
+    {id: 'M46', difficulty: 2, span: 1.095833, pieces: [
+        {kind: 'green', shape: 'polygon', x: 0.308333, y: 0.444444, points: [[-0.208333, 0.055556], [0.104167, 0.055556], [0.104167, -0.111111]]},
+        {kind: 'blue', shape: 'rect', x: 0.870833, y: 0.333333, w: 0.25, h: 0.333333},
+        {kind: 'green', shape: 'rect', x: 0.870833, y: 0.14375, w: 0.25, h: 0.045833}
+    ]},
+    {id: 'M47', difficulty: 2, span: 0.929167, pieces: [
+        {kind: 'green', shape: 'polygon', x: 0.225, y: 0.427083, points: [[-0.125, 0.072917], [-0.125, -0.145833], [0.25, 0.072917]]},
+        {kind: 'blue', shape: 'rect', x: 0.777083, y: -0.1875, w: 0.104167, h: 0.625}
+    ]},
+    {id: 'M66', difficulty: 4, span: 1.054167, pieces: [
+        {kind: 'green', shape: 'polygon', x: 0.308333, y: 0.440972, points: [[-0.208333, 0.059028], [0.104167, 0.059028], [0.104167, -0.118056]]},
+        {kind: 'blue', shape: 'rect', x: 0.860417, y: 0.1875, w: 0.1875, h: 0.625},
+        {kind: 'green', shape: 'rect', x: 0.860417, y: -0.147917, w: 0.1875, h: 0.045833}
     ]}
 ].map(pattern => Object.freeze(pattern)))
 

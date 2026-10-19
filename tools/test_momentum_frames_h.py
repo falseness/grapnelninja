@@ -1,4 +1,5 @@
-"""Momentum concept frames M04, M23, M24 in the right corridor (TASK-104).
+"""Momentum concept frames M04, M23, M24, M46, M47, M66 in the right corridor
+(TASK-104, TASK-105).
 
 elements/momentumpatterns.js MOMENTUM_FRAMES_H holds the user's picked
 right-corridor concept frames copied from the TASK-102 catalog
@@ -21,11 +22,18 @@ stopped and the obstacle floor emptied; each frame is placed alone. Asserts:
 - test_3_shots: per id per viewport a montage: left = the concept PNG
   (artifacts/momentum-frames/png), right = the frame placed in the game, the
   view cropped to the concept's frame rectangle and scaled to its height
-  (only the game's walls and pieces: ninja parked away, no overlay).
+  (only the game's walls and pieces: ninja parked away, no overlay);
+- test_4_cap: M46 and M66 (a thin green cap lying on a blue block): the cap's
+  bottom edge touches the blue's top (gap and overlap <= CAP_TOL); a ninja
+  dropped straight down (vx 0, vy > 0) onto the cap centre from 0.2 W above
+  its top bounces (vy < 0 after), the cap is used, the blue is not, hp is
+  unchanged and momentumState.greenStreak + 1.
 
 MOMENTUM_FRAMES_H_EVIDENCE_DIR (default /tmp/momentum-frames-h) receives
 placed.json (compact {id: {viewport: {W, pieces: [{kind, box|points,
-motion}]}}}) and shots/<id>-<viewport>.png.
+motion}]}}}), cap-test.json (compact {id: {viewport: {vyBefore, vyAfter,
+greenUsed, blueUsed, hpBefore, hpAfter, streakBefore, streakAfter, moves}}})
+and shots/<id>-<viewport>.png.
 Requires Playwright Chromium and Pillow.
 """
 import base64
@@ -44,7 +52,14 @@ ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_FRAMES_H_EVIDENCE_DIR', '/tmp/momentum-frames-h'))
 CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'artifacts/TASK-102/catalog-m.json'))
 CONCEPTS = ROOT / 'artifacts/momentum-frames'
-IDS = ['M04', 'M23', 'M24']
+IDS = ['M04', 'M23', 'M24', 'M46', 'M47', 'M66']
+# Frames with a green cap on a blue block: catalog piece index of the blue and the cap
+CAPS = {'M46': (1, 2), 'M66': (1, 2)}
+CAP_TOL = 1.0
+# Drop: height above the cap top in W, start vy (world units per move), move budget
+DROP_W = 0.2
+DROP_VY = 1.25
+DROP_MOVES = 3000
 VIEWPORTS = [{'width': 1280, 'height': 720, 'touch': False}, {'width': 390, 'height': 844, 'touch': True}]
 SCRIPT = [0.99]
 GEOM_TOL = 1.0
@@ -87,6 +102,34 @@ SHOOT = '''([cx, cy, zoom]) => {
         return {png: canvas.toDataURL('image/png'), sx: screen.x, sy: screen.y,
                 k: scale[version] * canvas.width / width}
     } finally { scale[version] = s0; drawUILayer = ui; drawFpsCounterLayer = fps }
+}'''
+
+# Places id and drops the ninja straight down onto the cap centre from drop
+# above its top, moving only the ninja (ninja.move(), gravity on), until the
+# vertical speed turns up or a piece is used
+DROP = '''([id, x, y, bi, ci, drop, vy, maxMoves]) => {
+    const floor = floors.find(f => f instanceof MomentumPatternFloor)
+    floor.elements = []; floor.groups = []
+    momentumPlacePattern(id, x, y, 'right')
+    const blue = floor.elements[bi], cap = floor.elements[ci]
+    const bb = getElementBounds(blue), cb = getElementBounds(cap)
+    momentumState.reset()
+    const hpBefore = momentumState.hp, streakBefore = momentumState.greenStreak
+    ninja.x = (cb.left + cb.right) / 2
+    ninja.y = cb.top - drop
+    ninja.speedX = 0; ninja.speedY = vy
+    const start = {startY: ninja.y, vxBefore: ninja.speedX, vyBefore: ninja.speedY}
+    let moves = 0
+    while (moves < maxMoves && ninja.speedY >= 0 && !cap.passThrough && !blue.passThrough) {
+        ninja.move(); ++moves
+    }
+    // a few more moves: the bounce must not carry it into the blue
+    for (let k = 0; k < 20 && ninja.speedY < 0; ++k) ninja.move()
+    return {...start, moves, vyAfter: ninja.speedY, greenUsed: cap.passThrough, blueUsed: blue.passThrough,
+            hpBefore, hpAfter: momentumState.hp, streakBefore, streakAfter: momentumState.greenStreak,
+            capClass: cap.constructor.name, blueClass: blue.constructor.name,
+            cap: [cb.left, cb.top, cb.right, cb.bottom].map(v => +v.toFixed(3)),
+            blue: [bb.left, bb.top, bb.right, bb.bottom].map(v => +v.toFixed(3))}
 }'''
 
 
@@ -264,6 +307,35 @@ class MomentumFramesHTests(unittest.TestCase):
                 montage.save(path)
                 print(f'{path.name}: crop {box} of {shot.size}, zoom {zoom:.3f}')
             page.evaluate("floors.find(f => f instanceof MomentumPatternFloor).elements = []")
+
+    def test_4_cap(self):
+        out = {}
+        for name, page, info in self.pages:
+            W = 2 * info['half']
+            x0, y0 = self.origin(info)
+            for id, (bi, ci) in CAPS.items():
+                r = page.evaluate(DROP, [id, x0, y0, bi, ci, DROP_W * W, DROP_VY, DROP_MOVES])
+                msg = (name, id, r)
+                print(f"{name} {id}: cap {r['cap']} blue {r['blue']} start y {r['startY']:.2f} vy {r['vyBefore']} -> "
+                      f"{r['vyAfter']:.4f} after {r['moves']} moves; green used {r['greenUsed']} blue used {r['blueUsed']} "
+                      f"hp {r['hpBefore']}->{r['hpAfter']} streak {r['streakBefore']}->{r['streakAfter']}")
+                self.assertEqual(r['capClass'], 'MomentumGreen', msg)
+                self.assertEqual(r['blueClass'], 'MomentumBlue', msg)
+                # The cap lies on the blue: bottom edge on its top edge, same column
+                self.assertLessEqual(abs(r['cap'][3] - r['blue'][1]), CAP_TOL, msg)
+                self.assertGreater(r['cap'][2], r['blue'][0], msg)
+                self.assertLess(r['cap'][0], r['blue'][2], msg)
+                self.assertGreater(r['vyBefore'], 0, msg)
+                self.assertEqual(r['vxBefore'], 0, msg)
+                self.assertLess(r['vyAfter'], 0, msg)
+                self.assertTrue(r['greenUsed'], msg)
+                self.assertFalse(r['blueUsed'], msg)
+                self.assertEqual(r['hpAfter'], r['hpBefore'], msg)
+                self.assertEqual(r['streakAfter'], r['streakBefore'] + 1, msg)
+                out.setdefault(id, {})[name] = {k: r[k] for k in ('vyBefore', 'vyAfter', 'greenUsed', 'blueUsed', 'hpBefore',
+                                                                   'hpAfter', 'streakBefore', 'streakAfter', 'moves')}
+            page.evaluate("floors.find(f => f instanceof MomentumPatternFloor).elements = []")
+        (EVIDENCE_DIR / 'cap-test.json').write_text(json.dumps(out, separators=(',', ':')))
 
 
 if __name__ == '__main__':
