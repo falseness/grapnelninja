@@ -9,6 +9,9 @@
 // (Triangle.changeSpeed), with gravity it falls and bounces like a
 // JumpingCube. setMotionCandidates opens a side past a used piece:
 // moveY bounces on the nearest unused candidate of that side instead.
+// object.motion {axis: 'x', speedX, xMin, xMax} moves it left and right
+// instead (moveX): constant speed, reversing whenever its left or right
+// edge would leave [xMin, xMax] (absolute world x); no candidates on x.
 class MomentumOneTime extends Trampoline
 {
     constructor(object, stroke, fill, badVersionFill)
@@ -23,7 +26,13 @@ class MomentumOneTime extends Trampoline
         this.innerCache = null
         this.measureShape()
         this.motion = null
-        if (object.motion)
+        if (object.motion && object.motion.axis == 'x')
+        {
+            const motion = object.motion
+            this.motion = {axis: 'x', xMin: motion.xMin, xMax: motion.xMax}
+            this.speedX = (motion.speedX || 0) * momentumMotionScale(1)
+        }
+        else if (object.motion)
         {
             const motion = object.motion
             this.motion = {yMin: motion.yMin, yMax: motion.yMax, gravity: !!motion.gravity}
@@ -153,7 +162,9 @@ class MomentumOneTime extends Trampoline
     }
     move()
     {
-        if (this.motion)
+        if (this.motion && this.motion.axis == 'x')
+            this.moveX()
+        else if (this.motion)
             this.moveY()
         if (this.passThrough && this.getAlpha() <= 0)
             this.faded = true
@@ -176,6 +187,17 @@ class MomentumOneTime extends Trampoline
         }
         this.y += this.speedY
         this.dy = this.speedY
+    }
+    // One physics cycle of the horizontal motion; dx for a tethered grapnel
+    moveX()
+    {
+        const motion = this.motion
+        const left = this.x + this.leftPointX + this.speedX
+        const right = this.x + this.rightPointX + this.speedX
+        if ((this.speedX < 0 && left < motion.xMin) || (this.speedX > 0 && right > motion.xMax))
+            this.speedX *= -1
+        this.x += this.speedX
+        this.dx = this.speedX
     }
     // The grapnel cannot hook a used object
     getLines()
