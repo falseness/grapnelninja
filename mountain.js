@@ -777,88 +777,61 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(recoveries[6], {status:'built',elements:['S04-fall-drag','S04-catch-basin','S07-crown-drag','S07-crown-ledge','S07-short-drag','S06-drop-drag','S06-drop-ledge','S07-exit-drag','S07-exit-ledge'],
         rejoin:'S07-01',intent:'Crown misses fall through drag zones onto green catches',
         sideRoute:'Every declared S07 miss falls through a drag zone onto a green bouncer and settles: a short trolley hold down the left map edge onto the green S04 catch basin; a missed carriage or exit-ledge catch on the green crown ledge; an early gable-hook release straight down onto the green S06 drop ledge, from which the S06 climb and exit hooks return to the S06 exit ledge and the S07-01 trolley; an exit-ledge pull held too long on the green exit ledge'});
-    // Summit Array opening: beacon arms, a davit brake, a green ramp and the
-    // lamp mast. Every silhouette is its own collider; the mast is the landmark.
+    // Summit Array v3 (layout v3, TASK-526): no gray pads. Travelling left from the green S07 exit ledge (inside
+    // S07-exit-drag, under the S05 hoist) at the 1620-range distances, up into the open strip above the Crown.
+    // S08-01: pull the blue mast trolley (high up-left, right of the S07 carriage's travel); the drag zone lets the
+    // player rise only straight up out of the pocket, so the pull is timed to pass the S05 hoist at its east turn; the
+    // pull then hurls it up-left, and released early it rebounds off the green roof onto the top of the moving mast
+    // trolley and slides off west into a long glide. S08-02: from that glide, catch the blue beacon trolley (far west);
+    // the swing runs west under it, rebounds off the green west wall still attached, and the pull lifts it up-right
+    // into a flight east under the roof. A trolley released too early drops back through S07-exit-drag onto the green
+    // S07 exit ledge; a missed beacon catch carries the glide down into S08-glide-drag onto the green glide cap (above
+    // the Crown gable hook). S08-03/04 and the summit stay planned until TASK-527.
     const summit = [
-        {id:'S08-launch-arm',x:4900,y:-11760,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:180,y:0},{x:180,y:30},{x:40,y:30},{x:0,y:12}]},
-        {id:'S08-brake-davit',x:4880,y:-11880,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:100,y:0},{x:100,y:30},{x:65,y:30},{x:65,y:42},{x:35,y:42},{x:35,y:30},{x:0,y:30}]},
-        {id:'S08-footing-rest',x:4260,y:-11600,role:'solid',grapplable:true,
-            points:[{x:0,y:-20},{x:20,y:-20},{x:20,y:0},{x:200,y:0},{x:200,y:-60},{x:240,y:-60},{x:240,y:55},{x:0,y:55}]},
-        {id:'S08-lamp-hook',x:4020,y:-11960,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:100,y:0},{x:100,y:30},{x:60,y:30},{x:50,y:45},{x:40,y:30},{x:0,y:30}]},
-        {id:'S08-deflector-ramp',x:3520,y:-11800,role:'bounce',grapplable:true,
-            points:[{x:0,y:0},{x:360,y:180},{x:345,y:210},{x:-15,y:30}]},
-        {id:'S08-mast-yard',x:3400,y:-12200,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:100,y:0},{x:100,y:18},{x:80,y:30},{x:20,y:30},{x:0,y:18}]},
-        {id:'S08-rest-ledge',x:3020,y:-12080,role:'solid',grapplable:true,
-            points:[{x:0,y:-60},{x:40,y:-60},{x:40,y:0},{x:400,y:0},{x:400,y:-20},{x:420,y:-20},{x:420,y:55},{x:0,y:55}]},
-        {id:'S08-beacon-mast',x:3020,y:-12140,role:'solid',grapplable:true,
-            points:[{x:8,y:0},{x:32,y:0},{x:32,y:-460},{x:64,y:-460},{x:64,y:-540},{x:-24,y:-540},{x:-24,y:-460},{x:8,y:-460}]},
-        // Misses west of the footing roll down a tilted spill deck to its east stop;
-        // the pulley block above returns them onto the Crown boom and balcony.
-        {id:'S08-spill-deck',x:3340,y:-11160,role:'solid',grapplable:true,
-            points:[{x:0,y:-40},{x:30,y:-40},{x:30,y:2.5},{x:1440,y:120},{x:1440,y:105},{x:1480,y:105},{x:1480,y:160},{x:0,y:40}]},
-        {id:'S08-recovery-hook',x:4950,y:-11450,role:'solid',grapplable:true,
-            points:[{x:0,y:10},{x:20,y:0},{x:80,y:0},{x:100,y:10},{x:100,y:30},{x:0,y:30}]}
+        // Up-left of the S07 exit pocket, between the S05 hoist's and the S07 carriage's travel lines.
+        rectangle('S08-mast-trolley',2000,-13330,120,30,true),
+        // At the top of the map, over the mast trolley.
+        bouncer('S08-roof',1500,-13495,1100,25),
+        rectangle('S08-beacon-trolley',370,-13360,120,30,true),
+        // Against the left map edge, high above the S07-03 map-edge climb.
+        bouncer('S08-west-wall',0,-13420,30,420),
+        // Over the S07 gable hook, under the missed-beacon glide; the drag zone above it holds it.
+        bouncer('S08-glide-cap',1400,-13030,160,30)
     ];
-    Object.assign(sections[7],{status:'partial',landmark:{id:'S08-landmark',
-        name:'distinct final beacon silhouette',x:3040,y:-12640}});
-    Object.assign(encounters[28],{status:'built',x:5339,y:-11351,
-        elements:['S07-exit','S08-launch-arm','S08-brake-davit','S08-footing-rest'],
-        start:{from:'S07-04',x:5339.2,y:-11350.8},target:{x:5000,y:-11740},brakeTarget:{x:4930,y:-11865},
-        exit:{left:4290.8,right:4449.2,top:-11612,bottom:-11600},
-        action:'Pull up the launch arm and release west; brake on the opposing davit, then release onto the footing rest'});
-    Object.assign(encounters[29],{status:'built',x:4291,y:-11611,
-        elements:['S08-footing-rest','S08-lamp-hook','S08-deflector-ramp','S08-mast-yard','S08-rest-ledge'],
-        start:{from:'S08-01',x:4290.8,y:-11610.8},target:{x:4070,y:-11945},transferTarget:{x:3450,y:-12185},
-        exit:{left:3070.8,right:3409.2,top:-12092,bottom:-12080},
-        rest:'S08-rest-ledge',
-        action:'Pull the lamp hook, fall onto the angled green ramp, grab the mast yard in flight and release onto the beacon rest ledge'});
-    // Planned until S07-04 is rebuilt for layout v3 (the v1 S08-01 starts on the legacy S07-exit ledge).
-    Object.assign(connectors[28],{status:'planned',intent:'S07-exit launches directly to the beacon arm; the davit and footing rest are visible before commitment; planned until S07-04 is rebuilt'});
-    Object.assign(connectors[29],{status:'built',intent:'Footing rest separates the brake from the bounce transfer; S08-02 ends on the beacon rest ledge'});
-    Object.assign(recoveries[7],{openingElements:['S08-spill-deck','S08-recovery-hook','S07-roof-boom','S07-recovery-balcony'],
-        openingRejoin:'S07-03',sideRoute:'Western misses collect on the spill deck; the recovery hook throws players back onto the Crown boom or balcony. Eastern misses fall through the Crown into Liftworks. No hazards.'});
-    // Summit Array finish: the rest ledge sits under the beacon-deck overhang. A blue
-    // carriage rises beyond its lip and swings players up onto the array deck; the
-    // summit gantry then sets them down on the final beacon pad. No new hazards.
-    summit.push(
-        {id:'S08-beacon-deck',x:3052,y:-12390,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:368,y:0},{x:368,y:-50},{x:348,y:-50},{x:348,y:-30},{x:0,y:-30}]},
-        {id:'S08-overhang-carriage',x:3440,y:-12620,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:100,y:0},{x:100,y:28},{x:70,y:40},{x:30,y:40},{x:0,y:28}]},
-        {id:'S08-array-deck',x:3900,y:-12700,role:'solid',grapplable:true,
-            points:[{x:0,y:-20},{x:20,y:-20},{x:20,y:0},{x:300,y:0},{x:300,y:-120},{x:340,y:-120},{x:340,y:55},{x:0,y:55}]},
-        {id:'S08-summit-gantry',x:3700,y:-12930,role:'solid',grapplable:true,
-            points:[{x:0,y:0},{x:120,y:0},{x:120,y:30},{x:80,y:45},{x:40,y:45},{x:0,y:30}]},
-        {id:'S08-summit-pad',x:3380,y:-12760,role:'solid',grapplable:true,
-            points:[{x:0,y:55},{x:0,y:-160},{x:-40,y:-180},{x:20,y:-200},{x:80,y:-180},{x:40,y:-160},
-                {x:40,y:0},{x:320,y:0},{x:320,y:-20},{x:340,y:-20},{x:340,y:55}]}
-    )
-    liftMovers.push({id:'S08-carriage-lift',element:'S08-overhang-carriage',axis:'y',
-        min:-12620,max:-12340,periodMs:4000,phase:0,velocity:140});
+    const summitDrags = [{id:'S08-glide-drag',x:1400,y:-13140,role:'drag',grapplable:false,
+        points:[{x:0,y:0},{x:160,y:0},{x:160,y:110},{x:0,y:110}]}];
+    liftMovers.push({id:'S08-mast-trolley-travel',element:'S08-mast-trolley',axis:'x',min:2000,max:2120,periodMs:4000,phase:0,velocity:60},
+        {id:'S08-beacon-trolley-travel',element:'S08-beacon-trolley',axis:'x',min:370,max:490,periodMs:4000,phase:0,velocity:60});
+    Object.assign(sections[7], {status:'partial', designVersion:3, landmark:{id:'S08-landmark',
+        name:'distinct final beacon silhouette',x:1300,y:-12960},
+        band:{...sections[7].band, top:-14580},
+        // Rope-to-anchor reach from the player at the press to the acquisition point (range 1620).
+        gaps:[{id:'S08-01-trolley',from:{x:2608.9,y:-11971.2},to:{x:2058.4,y:-13300}},
+            // Caught in the glide off the mast trolley.
+            {id:'S08-02-beacon',from:{x:1917.7,y:-13330.5},to:{x:491.6,y:-13331.9}}],
+        // Declared miss points: a mast trolley released too early rises short of the S05 hoist and drops back through
+        // S07-exit-drag onto the green S07 exit ledge; a missed beacon catch glides down into S08-glide-drag, which
+        // drops it onto the green glide cap.
+        fallPoints:[{id:'S08-01-short',encounter:'S08-01',x:2587,y:-12300},
+            {id:'S08-02-missed',encounter:'S08-02',x:1560,y:-13150}]});
+    Object.assign(encounters[28], {status:'built',x:2609,y:-11971,
+        elements:['S07-exit-ledge','S08-mast-trolley','S08-roof'],
+        start:{x:2608.9,y:-11971.5,from:'S07-04'},target:{x:2060,y:-13300},
+        exit:{left:1850,right:2000,top:-13345,bottom:-13310},
+        action:'Pull the blue mast trolley up out of the Crown exit pocket past the Galleries hoist, rebound off the green roof onto the trolley top and slide off west into a glide'});
+    // Encounter nodes may not sit above the summit height (-12960); the start carries the real pose.
+    Object.assign(encounters[29], {status:'built',x:1918,y:-12960,
+        elements:['S08-beacon-trolley','S08-west-wall'],
+        start:{from:'S08-01',x:1917.7,y:-13330.5},target:{x:430,y:-13330},
+        exit:{left:1450,right:1700,top:-13400,bottom:-13300},
+        action:'In the glide, catch the blue beacon trolley, swing west under it, rebound off the green west wall and ride the pull up-right into a flight east under the roof'});
+    // Planned (schematic) final landing west of the S08 entry; built by TASK-527.
+    encounters[31].x = 1000
+    Object.assign(connectors[28], {status:'built',intent:'Physical ascent: the S08-01 mast trolley pull starts on the v3 Crown exit ledge'});
+    Object.assign(connectors[29], {status:'built'});
+    Object.assign(recoveries[7], {intent:'Summit misses fall through drag zones onto green catches; planned until S08-04 is rebuilt'});
+    // The summit finish stays inactive (summit approach planned) until S08-04 is rebuilt for layout v3.
     const finish = {left:3420,right:3700,top:-12772,bottom:-12760}
-    // The diamond lamp on the summit pad is the final beacon; the lower mast is a waypoint.
-    Object.assign(sections[7],{status:'built',landmark:{id:'S08-landmark',
-        name:'distinct final beacon silhouette',x:3400,y:-12940}});
-    Object.assign(encounters[30],{status:'built',x:3071,y:-12091,
-        elements:['S08-rest-ledge','S08-beacon-deck','S08-overhang-carriage','S08-array-deck'],
-        start:{from:'S08-02',x:3070.8,y:-12090.8},target:{x:3490,y:-12338},
-        exit:{left:3930.8,right:4189.2,top:-12712,bottom:-12700},
-        action:'Catch the blue carriage beyond the overhang lip on its low turn, ride it up and release onto the array deck'});
-    Object.assign(encounters[31],{status:'built',x:4189,y:-12711,
-        elements:['S08-array-deck','S08-summit-gantry','S08-summit-pad'],
-        start:{from:'S08-03',x:4189.2,y:-12710.8},target:{x:3760,y:-12890},
-        exit:finish,finishRegion:finish,
-        action:'Pull the summit gantry and release to settle on the final beacon pad inside the finish region'});
-    Object.assign(connectors[30],{status:'built',intent:'Rest ledge under the overhang shows the carriage and array deck before commitment'});
-    Object.assign(connectors[31],{status:'built',intent:'Array deck rest separates the overhang from the final landing; gantry and pad are visible'});
-    Object.assign(connectors[32],{status:'built',finishRegion:finish,
-        intent:'Controlled final landing: the finish region is the beacon pad surface between its lips'});
-    Object.assign(recoveries[7],{status:'built',elements:['S08-array-deck','S08-rest-ledge','S08-deflector-ramp','S08-spill-deck','S08-recovery-hook'],
-        rejoin:'S08-03',sideRoute:'Short gantry pulls drop back onto the array deck west lip; longer overhang/gantry misses fall via the green ramp onto the spill deck, whose hook returns to the Crown. No hazards at the ending.'});
     return {schemaVersion:1, geometryVersion:1,
         // Grapnel range: base until the player enters upgradeBand, upgraded after.
         range:{base:R, upgraded:1620, upgradeBand:'S05'}, ascent:24*U, horizontalEnvelope:12*U,
@@ -868,7 +841,7 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         spawn:{x:2160,y:0}, startSection:'S01', sections, encounters, connectors, recoveries, shortcuts,
         geometry:{version:1, elements:[rectangle('mountain-catch',0,120,6480,60,true),
             rectangle('mountain-left',-60,-13500,60,13680,false),
-            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags,...galleriesDrags,...liftworksDrags,...crownDrags], movers:liftMovers},
+            rectangle('mountain-right',6480,-13500,60,13680,false),...yard,...shaft,...viaduct,...deflectors,...galleries,...liftworks,...crown,...summit,yardDrag,exitDrag,...shaftDrags,...viaductDrags,...worksDrags,...galleriesDrags,...liftworksDrags,...crownDrags,...summitDrags], movers:liftMovers},
         difficulty:{targetFirstSuccessMinutes:[30,60], validated:false,
             note:'30-60 minute first success is unvalidated without human feedback.'},
         finish, completion:'Summit finish region on the S08-04 beacon pad; reaching it completes the climb',

@@ -65,7 +65,17 @@ ledge (the section exit). An early gable release sinks into a small drag zone th
 kills the drift and drops straight down onto the green S06 drop ledge, from which
 the S06 climb and exit hooks lead back to the S07 entrance; a missed exit-ledge
 catch lands on the crown ledge. The v1 red rotor is removed (no S07 hazard), and
-the S08 entrance and the S07 shortcut stay planned. Other sections keep their own build status; both optional shortcuts are
+the S07 shortcut stays planned. The Summit Array (S08) opening is layout v3
+(TASK-526; the v1 Summit Array geometry is deleted): travelling left from the S07
+exit ledge, S08-01 pulls a blue mast trolley high up-left, timed so the rise out of
+the exit drag zone passes the S05 hoist at its east turn; released early, the
+player rebounds off a green roof onto the moving trolley's top and slides off west
+into a glide. S08-02 catches a blue beacon trolley in that glide, swings west
+under it, rebounds off a green west wall and rides the pull up-right into a flight
+east under the roof. An early trolley release drops back through the S07 exit drag
+zone onto the S07 exit ledge; a missed beacon catch glides into a drag zone onto a
+green glide cap above the Crown gable hook. S08-03/04 and the summit finish stay
+planned (the finish is inactive until they are rebuilt). Other sections keep their own build status; both optional shortcuts are
 planned. The three built
 boundary polygons provide a nonlethal, grappleable catch floor and outer walls.
 They are infrastructure, not completed encounters. Planned coordinates and
