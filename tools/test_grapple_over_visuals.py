@@ -157,3 +157,266 @@ class Task453Tests(unittest.TestCase):
         self.proof.update(modes=rows,attachment=row)
         self.evidence.write('circle.json',proof)
         print('PASS modes: classic/bad zero circle arcs; world order circle/terrain/player/HUD; attached beyond R and pause visible; rendered radius equals real flight limit')
+
+
+BASELINE_538 = '530d25b'
+BANDS_538 = 8
+BAND_538 = 1620
+HALF_SPAN_538 = 400
+VIEWPORTS_538 = ({'width': 1280, 'height': 720}, {'width': 844, 'height': 390})
+GEOMETRY_538 = '''() => {
+    const level = validateMountainManifest(GRAPPLE_OVER_MOUNTAIN);
+    return JSON.stringify({elements: level.elements.map(e => ({id: e.id, role: e.role,
+        grapplable: e.grapplable, x: e.x, y: e.y, points: e.points})), movers: level.movers});
+}'''
+# The same seeded frame in both revisions: the animation clock is frozen before
+# the run starts and physics is stepped explicitly (no rAF).
+FRAME_538 = '''([mode, ticks]) => {
+    performance.now = () => 4321;
+    // Particles left by the title screen and the first start (their count
+    // depends on real frame timing) go, in both revisions alike
+    Object.assign(visualEffects.particles, {particles: [], pool: [], lastTime: 0,
+        lastWorldEmitTime: 0, trailSparkBudget: 0, sparkSeed: 181});
+    startGame(mode); cancelAnimationFrame(game);
+    for (let i = 0; i < ticks; i++) physics();
+    draw();
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    return {mode: version, width: canvas.width, height: canvas.height,
+        pixels: Array.from(data, v => String.fromCharCode(v)).join('')};
+}'''
+
+
+class Task538Tests(unittest.TestCase):
+    """Per-section Grapple Over backdrop palettes; classic/bad and geometry unchanged."""
+
+    @classmethod
+    def setUpClass(cls):
+        from functools import partial
+        from http.server import ThreadingHTTPServer
+        from threading import Thread
+        from browser_test_support import QuietHandler
+        from perf_mobile import export_rev
+        cls.evidence = EvidenceWriter('TASK-538')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        # The pre-ticket revision, served from a git archive copy, for the
+        # before/after geometry hash and the classic/bad pixel baseline
+        root, sha = export_rev(BASELINE_538, cls.addClassCleanup)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(root)))
+        cls.addClassCleanup(server.server_close)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cls.addClassCleanup(thread.join)
+        cls.addClassCleanup(server.shutdown)
+        cls.baseline_url = f'http://127.0.0.1:{server.server_port}/'
+        hashes = source_hashes()
+        name = 'tools/test_grapple_over_visuals.py'
+        hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.config = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            dirty=bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'],
+                                                cwd=ROOT, text=True).strip()),
+            baseline_revision=sha, source_hashes=hashes, browser=cls.browser.version,
+            viewports=VIEWPORTS_538, device_scale_factor=1, seed=1)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.config, sort_keys=True))
+
+    def open(self, url, viewport, mode='grapple_over', query=''):
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=1)
+        self.addCleanup(context.close)
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
+            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree',
+            viewport=viewport, dpr=1, mode=mode, query=query), sort_keys=True))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(url + query)
+        wait_for_boot(page)
+        page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
+        page.wait_for_function('!unTouch')
+        return page
+
+    def test_01_geometry_hash_unchanged(self):
+        row = {}
+        for label, url in (('before', self.baseline_url), ('after', self.url)):
+            page = self.open(url, VIEWPORTS_538[0])
+            geometry = page.evaluate(GEOMETRY_538)
+            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
+                              elements=len(json.loads(geometry)['elements']),
+                              movers=len(json.loads(geometry)['movers']))
+        row.update(baseline_revision=self.config['baseline_revision'],
+                   fields='elements: id, role, grapplable, x, y, points; movers: full',
+                   equal=row['before'] == row['after'])
+        self.evidence.write('geometry-hash.json', row)
+        self.assertEqual(row['before'], row['after'])
+        self.assertGreater(row['after']['elements'], 0)
+        print(f'PASS geometry: hash {row["after"]["sha256"][:16]} before == after '
+              f'({row["after"]["elements"]} elements, {row["after"]["movers"]} movers)')
+
+    def test_02_palette_sweep(self):
+        page = self.open(self.url, VIEWPORTS_538[0])
+        # Each sample sets the camera centre, runs the production
+        # drawBackgroundLayer, then renders the palette it chose with the
+        # production drawGrappleOverPalette into an opaque black probe and
+        # reads back the mean colour of its rows.
+        sweep = page.evaluate('''([bands, band]) => {
+            const H = LOGICAL_VIEWPORT.height, probe = document.createElement('canvas');
+            probe.width = 4; probe.height = H;
+            const p = probe.getContext('2d', {willReadFrequently: true});
+            const rows = [];
+            let shadowed = 0;
+            for (let y = 0; y >= -bands * band; y -= 10) {
+                screen.y = height / scale[version] / 2 - y;
+                drawBackgroundLayer();
+                const palette = visualEffects.background.palette;
+                p.setTransform(1, 0, 0, 1, 0, 0);
+                p.globalAlpha = 1; p.globalCompositeOperation = 'source-over';
+                p.fillStyle = '#000'; p.fillRect(0, 0, 4, H);
+                drawGrappleOverPalette(p, {x: 0, y: 0, width: 4, height: H}, palette);
+                if (p.shadowBlur) shadowed++;
+                const d = p.getImageData(0, 0, 1, H).data, m = [0, 0, 0];
+                for (let i = 0; i < d.length; i += 4) {m[0] += d[i]; m[1] += d[i + 1]; m[2] += d[i + 2]}
+                rows.push([y, ...m.map(v => Math.round(v / H * 1000) / 1000)]);
+            }
+            return {rows, shadowed, height: H,
+                palettes: GRAPPLE_OVER_THEME.palettes, theme: {bandHeight: GRAPPLE_OVER_THEME.bandHeight,
+                blendHalfSpan: GRAPPLE_OVER_THEME.blendHalfSpan, tintAlpha: GRAPPLE_OVER_THEME.tintAlpha,
+                glowAlpha: GRAPPLE_OVER_THEME.glowAlpha, glowTop: GRAPPLE_OVER_THEME.glowTop}};
+        }''', [BANDS_538, BAND_538])
+        rows = sweep['rows']
+        self.assertEqual(len(rows), BANDS_538 * BAND_538 // 10 + 1)
+        self.assertEqual(rows[-1][0], -12960)
+        self.assertEqual(sweep['shadowed'], 0)
+        dist = lambda a, b: sum((a[i] - b[i]) ** 2 for i in (1, 2, 3)) ** 0.5
+        cores, spans = [], []
+        for band in range(BANDS_538):
+            low, high = band * BAND_538, (band + 1) * BAND_538
+            core = [r for r in rows if low <= -r[0] <= high and
+                    all(abs(-r[0] - k * BAND_538) >= HALF_SPAN_538 for k in range(1, BANDS_538))]
+            colours = {tuple(r[1:]) for r in core}
+            self.assertEqual(len(colours), 1, f'band {band + 1} core not constant')
+            cores.append(dict(band=band + 1, name=sweep['palettes'][band]['name'],
+                              from_y=-core[0][0], to_y=-core[-1][0], samples=len(core),
+                              colour=list(colours.pop())))
+        for a, b in zip(cores, cores[1:]):
+            self.assertGreater(dist([0] + a['colour'], [0] + b['colour']), 20)
+        for k in range(1, BANDS_538):
+            span = [r for r in rows if abs(-r[0] - k * BAND_538) <= HALF_SPAN_538]
+            self.assertEqual(len(span), 2 * HALF_SPAN_538 // 10 + 1)
+            total = dist(span[0], span[-1])
+            steps = [dist(a, b) for a, b in zip(span, span[1:])]
+            spans.append(dict(boundary=-k * BAND_538, from_y=span[0][0], to_y=span[-1][0],
+                              total_change=round(total, 3), max_step=round(max(steps), 3),
+                              max_step_ratio=round(max(steps) / total, 5)))
+            self.assertGreater(total, 0)
+            self.assertLessEqual(max(steps), 0.02 * total, f'boundary {-k * BAND_538}')
+        self.evidence.write('palette-sweep.json', dict(
+            method='camera-centre y every 10 world units 0..-12960; production drawBackgroundLayer chooses '
+                   'the palette, production drawGrappleOverPalette renders it into an opaque black 4xH probe; '
+                   'colour = mean RGB over the probe rows; distances are Euclidean RGB',
+            theme=sweep['theme'], palettes=sweep['palettes'], probe_height=sweep['height'],
+            shadow_blur_draws=sweep['shadowed'], cores=cores, spans=spans,
+            all_cores_constant=True, worst_span_ratio=max(s['max_step_ratio'] for s in spans),
+            samples_columns=['y', 'r', 'g', 'b'], samples=rows))
+        print(f'PASS sweep: {len(rows)} samples; 8 constant band cores; 7 blend spans, '
+              f'worst max step {max(s["max_step_ratio"] for s in spans) * 100:.3f}% of span change (limit 2%)')
+
+    def test_03_band_screenshots_and_fast_backdrop(self):
+        targets = [(f'band{i + 1}-centre', -(i * BAND_538 + BAND_538 // 2)) for i in range(BANDS_538)]
+        targets += [(f'boundary{k}-{k + 1}', -k * BAND_538) for k in range(1, BANDS_538)]
+        shots = []
+        for viewport in VIEWPORTS_538:
+            page = self.open(self.url, viewport)
+            for name, y in targets:
+                row = page.evaluate('''y => {
+                    ninja.x = 3240; ninja.y = y; ninja.speedX = ninja.speedY = 0;
+                    screen.trackGrappleOver(true);
+                    screen.y = height / scale[version] / 2 - y;
+                    draw();
+                    const p = visualEffects.background.palette;
+                    return {camera_y: height / scale[version] / 2 - screen.y,
+                        palette: {from: p.from, to: p.to, t: Math.round(p.t * 1e4) / 1e4},
+                        names: [GRAPPLE_OVER_THEME.palettes[p.from].name, GRAPPLE_OVER_THEME.palettes[p.to].name],
+                        bars: Array.from(document.getElementsByClassName('window-bar')).filter(c => c.box)
+                            .map(c => c.barsKey.split(',').at(-1))};
+                }''', y)
+                path = f'bands/{name}-{viewport["width"]}x{viewport["height"]}.png'
+                page.screenshot(path=str(self.evidence.path(path)))
+                self.assertAlmostEqual(row['camera_y'], y, places=6)
+                # Window bars (wider than 16:9) were repainted with this palette
+                p = row['palette']
+                self.assertTrue(all(b == f'{p["from"]}:{p["to"]}:{round(p["t"] * 20)}' for b in row['bars']), row)
+                if name.endswith('centre'):
+                    band = int(name[4:name.index('-')]) - 1
+                    self.assertEqual(row['palette'], {'from': band, 'to': band, 't': 0})
+                else:
+                    k = int(name[8:name.index('-')])
+                    self.assertEqual(row['palette'], {'from': k - 1, 'to': k, 't': 0.5})
+                row.update(name=name, target_y=y, viewport=viewport, screenshot=path)
+                shots.append(row)
+            # Fast backdrop path (render/backdrop.js) still draws the palette,
+            # into the reduced-resolution backdrop canvas, without shadowBlur
+            fast = page.evaluate('''() => {
+                const original = drawGrappleOverPalette, seen = [];
+                drawGrappleOverPalette = function(context, bounds, palette) {
+                    seen.push({backdrop: context === BACKDROP.ctx, blur: context.shadowBlur});
+                    return original.apply(this, arguments)};
+                const scale0 = BACKDROP.scale;
+                BACKDROP.scale = 0.5; draw(); BACKDROP.scale = scale0; draw();
+                drawGrappleOverPalette = original;
+                return seen;
+            }''')
+            self.assertTrue(fast and fast[0]['backdrop'], fast)
+            self.assertTrue(any(not s['backdrop'] for s in fast[1:]), fast)
+            shots.append(dict(viewport=viewport, fast_backdrop_calls=fast))
+        centres = [s for s in shots if s.get('name', '').endswith('centre') and s['viewport'] == VIEWPORTS_538[0]]
+        self.assertEqual(len({json.dumps(s['palette']) for s in centres}), BANDS_538)
+        self.assertEqual(len([s for s in shots if 'screenshot' in s]), 30)
+        self.assertTrue(any(s.get('bars') for s in shots))
+        self.evidence.write('bands.json', shots)
+        print('PASS bands: 30 screenshots (8 band centres + 7 boundaries at 1280x720 and 844x390); '
+              '8 distinct centre palettes; window bars repainted with each palette; fast backdrop draws the palette into BACKDROP.ctx')
+
+    def test_04_classic_bad_pixels_unchanged(self):
+        rows = []
+        for mode in ('classic', 'bad'):
+            for ticks in (0, 90):
+                frames = {}
+                for label, url in (('before', self.baseline_url), ('after', self.url)):
+                    page = self.open(url, VIEWPORTS_538[0], mode)
+                    # Title-screen frames use a varying share of the seeded
+                    # stream: re-seed right before the measured run
+                    page.evaluate(SEED_SCRIPT % 1)
+                    frame = page.evaluate(FRAME_538, [mode, ticks])
+                    self.assertEqual(frame['mode'], mode)
+                    frames[label] = dict(width=frame['width'], height=frame['height'],
+                        sha256=hashlib.sha256(frame['pixels'].encode('latin-1')).hexdigest())
+                    page.close()
+                row = dict(mode=mode, seed=1, reseeded_before_start=True, ticks=ticks, **frames, equal=frames['before'] == frames['after'])
+                rows.append(row)
+                self.assertEqual(frames['before'], frames['after'], row)
+        self.evidence.write('classic-bad.json', dict(baseline_revision=self.config['baseline_revision'],
+            viewport=VIEWPORTS_538[0], dpr=1, clock='performance.now frozen at 4321 before startGame; particle system emptied before startGame',
+            frames=rows, all_equal=all(r['equal'] for r in rows)))
+        print(f'PASS classic/bad: {len(rows)} frame pixel hashes equal to the {BASELINE_538} frames (seed 1, ticks 0/90)')
+
+    def test_05_render_cost_ab(self):
+        # Relative A/B of the background layer (render/perfprofile.js) in
+        # matched pages; headless timings are not device FPS
+        result = {}
+        for label, url in (('before', self.baseline_url), ('after', self.url)):
+            page = self.open(url, VIEWPORTS_538[0], query='?perf=1')
+            result[label] = page.evaluate('''() => {
+                const means = [];
+                for (const y of [-810, -1620, -6480, -12150]) {
+                    screen.y = height / scale[version] / 2 - y;
+                    for (let i = 0; i < 120; i++) draw();
+                    means.push(PERF_PROFILE.snapshot().entries.find(e => e.name === 'background').meanMs);
+                }
+                return means;
+            }''')
+        ratio = sum(result['after']) / sum(result['before'])
+        self.evidence.write('perf-ab.json', dict(note='relative A/B only, matched headless pages; not device FPS',
+                                                 layer='background', camera_y=[-810, -1620, -6480, -12150],
+                                                 mean_ms=result, after_over_before=round(ratio, 3)))
+        print(f'PASS cost A/B: background layer after/before = {ratio:.3f} (relative, headless)')

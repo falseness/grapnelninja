@@ -76,6 +76,8 @@ class BackgroundRenderer
         this.randomSequenceScenes = 0
         this.gradientCache = new Map()
         this.lastGameGradients = null
+        // Grapple Over section palette for this frame (drawBackgroundLayer)
+        this.palette = null
         // Offscreen crystal/rock tiles by name ('far', 'near')
         this.layerCache = {}
     }
@@ -111,7 +113,10 @@ class BackgroundRenderer
         if (!barCanvases.length)
             return
 
-        const key = [scene, rect.left, rect.top, rect.width].join()
+        // A Grapple Over band change repaints them at once; a blend every 1/20
+        const palette = this.palette
+        const key = [scene, rect.left, rect.top, rect.width,
+            palette ? palette.from + ':' + palette.to + ':' + Math.round(palette.t * 20) : ''].join()
         if (barCanvases[0].barsKey === key && ++this.barsFramesSkipped < WINDOW_BARS_EVERY_FRAMES)
             return
         this.barsFramesSkipped = 0
@@ -163,6 +168,8 @@ class BackgroundRenderer
         this.drawCrystalLayer(width, height, this.getLayerShift(width, height, caveLayers.crystals))
         this.preserveGameplayRandomSequence(1, 40)
         this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks))
+        if (this.palette)
+            drawGrappleOverPalette(this.ctx, this.fillBounds(), this.palette)
         this.drawVignette(width, height)
     }
     // The removed decorations consumed the shared gameplay RNG once per scene

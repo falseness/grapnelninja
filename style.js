@@ -724,3 +724,28 @@ const QUALITY = {
         this.ambient = fullQuality
     }
 }
+
+// Grapple Over backdrop, one neon palette per 1620-unit section band from the
+// dusk quarry at the base (S01) to the night sky at the summit (S08). Each
+// tints the cave backdrop with a top-to-bottom wash and adds a horizon glow;
+// render/draw.js blends neighbours with a smoothstep over +-blendHalfSpan
+// around each band boundary.
+const GRAPPLE_OVER_THEME = Object.freeze({
+    bandHeight: 1620,
+    blendHalfSpan: 400,
+    // Source-over wash, then an additive ('lighter') glow rising from the bottom
+    tintAlpha: 0.5,
+    glowAlpha: 0.38,
+    glowTop: 0.45,
+    palettes: Object.freeze([
+        // name, wash top, wash bottom, horizon glow
+        Object.freeze({name: 'dusk quarry', top: '#3a1f5c', bottom: '#ff7a3d', glow: '#ff5a1f'}),
+        Object.freeze({name: 'ember works', top: '#2e1a66', bottom: '#ff3d7a', glow: '#ff2f6d'}),
+        Object.freeze({name: 'magenta haze', top: '#2a1470', bottom: '#d43dff', glow: '#c12bff'}),
+        Object.freeze({name: 'violet ridge', top: '#1d1a7a', bottom: '#8a4dff', glow: '#7a3dff'}),
+        Object.freeze({name: 'indigo cliffs', top: '#13207a', bottom: '#3d6dff', glow: '#2f5aff'}),
+        Object.freeze({name: 'cyan frost', top: '#0b2a6b', bottom: '#1fd1ff', glow: '#1fb8ff'}),
+        Object.freeze({name: 'teal aurora', top: '#061f4d', bottom: '#2dffc4', glow: '#19e6a8'}),
+        Object.freeze({name: 'night sky', top: '#020818', bottom: '#2a3a9e', glow: '#8fa8ff'})
+    ])
+})

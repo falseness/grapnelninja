@@ -5,7 +5,81 @@ let drawFrameId = 0
 
 function drawBackgroundLayer()
 {
+    // Grapple Over only: the section palette under the camera centre, painted
+    // over the cave backdrop by the background renderer (also into the window
+    // bars and the fast backdrop)
+    visualEffects.background.palette = version === 'grapple_over' ?
+        grappleOverBackdropPalette(height / scale[version] / 2 - screen.y) : null
     visualEffects.background.draw()
+}
+
+// Palette at world y cameraY (negative is up): {from, to, t} indices into
+// GRAPPLE_OVER_THEME.palettes. Inside a band core from == to and t == 0;
+// within blendHalfSpan of a band boundary t is a smoothstep from the lower
+// band's palette to the upper one's.
+function grappleOverBackdropPalette(cameraY)
+{
+    const theme = GRAPPLE_OVER_THEME
+    const last = theme.palettes.length - 1
+    const rise = Number.isFinite(cameraY) ? -cameraY : 0
+    const boundary = Math.min(last, Math.max(1, Math.round(rise / theme.bandHeight)))
+    const offset = rise - boundary * theme.bandHeight
+    if (Math.abs(offset) >= theme.blendHalfSpan)
+    {
+        const band = Math.min(last, Math.max(0, Math.floor(rise / theme.bandHeight)))
+        const core = grappleOverBackdropPalette.cores ||
+            (grappleOverBackdropPalette.cores = theme.palettes.map((p, i) => Object.freeze({from: i, to: i, t: 0})))
+        return core[band]
+    }
+    const x = (offset + theme.blendHalfSpan) / (2 * theme.blendHalfSpan)
+    return {from: boundary - 1, to: boundary, t: x * x * (3 - 2 * x)}
+}
+
+// Wash and horizon glow over bounds (logical units), from gradients built
+// once per palette (no shadowBlur). The wash is a source-over at tintAlpha,
+// done as a black fill at tintAlpha plus the palette colours added with
+// 'lighter': a blend adds both neighbours weighted by 1 - t and t, which
+// mixes them exactly (gradient stops would round each mixed colour to 8 bits
+// and step visibly during a slow climb).
+function drawGrappleOverPalette(context, bounds, palette)
+{
+    const theme = GRAPPLE_OVER_THEME
+    let cache = drawGrappleOverPalette.cache
+    if (!cache || cache.context !== context || cache.y !== bounds.y || cache.height !== bounds.height)
+        cache = drawGrappleOverPalette.cache = {context, y: bounds.y, height: bounds.height, gradients: []}
+    const gradients = index =>
+    {
+        if (cache.gradients[index])
+            return cache.gradients[index]
+        const p = theme.palettes[index]
+        const wash = context.createLinearGradient(0, bounds.y, 0, bounds.y + bounds.height)
+        wash.addColorStop(0, p.top)
+        wash.addColorStop(1, p.bottom)
+        const glow = context.createLinearGradient(0, bounds.y + bounds.height * theme.glowTop,
+            0, bounds.y + bounds.height)
+        glow.addColorStop(0, '#000000')
+        glow.addColorStop(1, p.glow)
+        return cache.gradients[index] = {wash, glow}
+    }
+    const layers = palette.t > 0 ? [[palette.from, 1 - palette.t], [palette.to, palette.t]] : [[palette.from, 1]]
+    const glowY = bounds.y + bounds.height * theme.glowTop
+    context.save()
+    context.shadowBlur = 0
+    context.globalCompositeOperation = 'source-over'
+    context.globalAlpha = theme.tintAlpha
+    context.fillStyle = '#000000'
+    context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height)
+    context.globalCompositeOperation = 'lighter'
+    for (const [index, weight] of layers)
+    {
+        context.globalAlpha = theme.tintAlpha * weight
+        context.fillStyle = gradients(index).wash
+        context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height)
+        context.globalAlpha = theme.glowAlpha * weight
+        context.fillStyle = gradients(index).glow
+        context.fillRect(bounds.x, glowY, bounds.width, bounds.y + bounds.height - glowY)
+    }
+    context.restore()
 }
 
 function drawLightsLayer(gameState)
