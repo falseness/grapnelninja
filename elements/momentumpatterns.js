@@ -585,6 +585,13 @@ const MOMENTUM_FRAMES_TURN = Object.freeze([
     ]}
 ].map(pattern => Object.freeze(pattern)))
 
+// A corner frame coordinate (in W from the vertex) within 1e-5 of a corridor
+// wall face (+-0.5) is that face
+function momentumSnapWallFace(v)
+{
+    return Math.abs(Math.abs(v) - 0.5) < 1e-5 ? Math.sign(v) * 0.5 : v
+}
+
 // Builds one corner frame (MOMENTUM_FRAMES_TURN) at a join vertex, scaled
 // per axis by the live shaft W (x) and corridor W (y)
 class MomentumCornerFrameFactory
@@ -617,8 +624,16 @@ class MomentumCornerFrameFactory
             const spec = {shape: piece.shape, x: x + piece.x * W.x, y: y + piece.y * W.y}
             if (piece.shape == 'rect')
             {
-                spec.w = piece.w * W.x
-                spec.h = piece.h * W.y
+                // A rect edge on a corridor wall face (+-0.5 W from the
+                // vertex) lands on it exactly: the catalog's 6 decimals
+                // put e.g. M136's -0.401042 - 0.197917 / 2 a 1e-3 world
+                // unit inside the wall body (TASK-113)
+                const [x0, x1] = [piece.x - piece.w / 2, piece.x + piece.w / 2].map(momentumSnapWallFace)
+                const [y0, y1] = [piece.y - piece.h / 2, piece.y + piece.h / 2].map(momentumSnapWallFace)
+                spec.x = x + (x0 + x1) / 2 * W.x
+                spec.y = y + (y0 + y1) / 2 * W.y
+                spec.w = (x1 - x0) * W.x
+                spec.h = (y1 - y0) * W.y
             }
             else
                 spec.points = piece.points.map(([px, py]) => ({x: px * W.x, y: py * W.y}))

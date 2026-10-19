@@ -13,24 +13,26 @@ Asserts:
 - the live element count (all floors) stays below LIVE_BOUND for the whole run;
 - the score (scoreText.count.momentum) increases, and equals the number of
   passed groups;
-- only the ported types spawn (TASK-041): >= 8 distinct horizontal
-  (bad-frameN, 12 in the catalog), >= 2 distinct turn (bad-frameN-turn, 5)
-  and >= min(2, fitting) distinct vertical types (bad-frameN-v, 6), where
-  fitting = the vertical types that fit the room of at least one shaft the
-  spawner planned (its length minus the join margins; at 1280x720 the variants of
-  frames 5, 8 and 14 never fit, and seeds whose shafts are all short only
-  fit bad-frame6-v); every spawned vertical type fits its shaft, every
-  horizontal type is on a right segment, vertical types on their own
-  direction, turns on direction-changing joins;
-- no type spawned twice in a row in the same direction (turns: join)
-  (TASK-027);
+- only the user's picked M frames spawn (TASK-113, since TASK-111): >= 5
+  distinct right ids (MOMENTUM_FRAMES_H, 6), >= 3 distinct corner ids
+  (MOMENTUM_FRAMES_TURN, 8) and >= 2 distinct vertical ids
+  (MOMENTUM_FRAMES_V, 4 down + their 4 -up mirrors), no bad-frame port
+  (bad-frameN, -v, -turn) spawned, every up-shaft spawn an -up id; every
+  spawned vertical type fits the room of a shaft the spawner planned (its
+  length minus the join margins), every horizontal type is on a right
+  segment, vertical types on their own direction, corners on
+  direction-changing joins;
+- no type spawned twice in a row in the same direction (corners: join; a
+  join with a single corner frame, right->up M18 and right->down M60, may
+  repeat it since TASK-111) (TASK-027);
 - every group spawned after the start is at least 2 view lengths ahead of the
   ninja along the course and outside the view;
 - difficulty weighted toward the catalog's early types in the first 20 s: the
   share of difficulty <= 2 spawns is above the catalog's (uniform) share, and
-  the pick weights' share of them (averaged over the window's spawns) is above
-  the one in the last 20 s (since TASK-031; the drawn share of ~10 spawns per
-  window flipped seeds 2, 3 and 7 with every change in the draws);
+  the pick weights' share of them (averaged over the window's right-corridor
+  spawns since TASK-113, over all its spawns before) is above the one in the
+  last 20 s (since TASK-031; the drawn share of ~10 spawns per window flipped
+  seeds 2, 3 and 7 with every change in the draws);
 - zero lethal elements: none at spawn, none live in any floor at any sample;
 - no death.
 
@@ -44,7 +46,7 @@ run-right.png, the first second from second 5 on in a right segment with
 >= 3 obstacle pieces in view; run-up.png / run-down.png, the frame in an
 up / down segment with the camera moving and the most (>= 1) pieces in view,
 the first with >= 3 ending the search; run-turn.png, the first frame with a
-spawned turn's course vertex and >= 1 of its pieces in view. Then the same
+spawned corner frame's course vertex and >= 1 of its pieces in view. Then the same
 seed is driven again in a 1280x720 and a 390x844 page up to the first frame
 from second 3 on with >= 3 pieces in view: overview-desktop.png and
 overview-phone.png. Screenshots draw with the seeded Math.random state
@@ -92,7 +94,7 @@ SETUP = '''(seed) => {
     window.runTurns = []
     window.runShaftGroups = {}
     MomentumObstacleFloor.onSpawn = (s) => {
-        if (s.kind == 'turn')
+        if (s.kind == 'corner')
             runTurns.push({group: s.group.id, vertex: floors.find(f => f instanceof MomentumObstacleFloor).plan.vertex})
         if (s.kind == 'vertical')
             runShaftGroups[s.group.id] = s.dir
@@ -102,12 +104,12 @@ SETUP = '''(seed) => {
         // Share of difficulty <= 2 in the pick weights for this spawn (the
         // ramp of MomentumObstacleFloor.pickType at the current score)
         const options = GAMEPLAY.momentumSpawn
-        const turn = s.kind == 'turn'
+        const turn = s.kind == 'corner'
         const ids = turn ? momentumTurnsByJoin[s.dir] : momentumPatternsByDir[s.dir]
         const ramp = Math.min(1, scoreText.count[version] / options.rampScore)
         let easy = 0, total = 0
         for (const id of ids) {
-            const d = (turn ? momentumTurnFactories : momentumPatternFactories)[id].pattern.difficulty
+            const d = (turn ? momentumCornerFrameFactories : momentumPatternFactories)[id].pattern.difficulty
             const k = Math.min(d, options.earlyWeights.length) - 1
             const w = Math.max(1, Math.round(options.earlyWeights[k] + (options.lateWeights[k] - options.earlyWeights[k]) * ramp))
             total += w
@@ -271,9 +273,11 @@ class MomentumRunTests(unittest.TestCase):
             })(),
             passed: floors.find(f => f instanceof MomentumObstacleFloor).nextGenerationGroupId -
                     floors.find(f => f instanceof MomentumObstacleFloor).groups.filter(g => !g.scored).length,
-            catalog: {h: MOMENTUM_PATTERNS_PORT_H.map(p => [p.id, p.difficulty]),
-                      v: MOMENTUM_PATTERNS_PORT_V.map(p => [p.id, p.difficulty]),
-                      turn: MOMENTUM_PATTERNS_TURN.map(p => [p.id, p.difficulty])}})''')
+            catalog: {h: MOMENTUM_FRAMES_H.map(p => [p.id, p.difficulty]),
+                      v: MOMENTUM_FRAMES_V.map(p => [p.id, p.difficulty]),
+                      turn: MOMENTUM_FRAMES_TURN.map(p => [p.id, p.difficulty])},
+            badFrameIds: [...MOMENTUM_PATTERNS_PORT_H, ...MOMENTUM_PATTERNS_PORT_V, ...MOMENTUM_PATTERNS_TURN].map(p => p.id),
+            singleJoins: Object.keys(momentumTurnsByJoin).filter(j => momentumTurnsByJoin[j].length == 1)})''')
         by_second = {}
         for s in cls.spawns:
             by_second.setdefault(math.ceil(s[0]), []).append(s[1])
@@ -286,10 +290,11 @@ class MomentumRunTests(unittest.TestCase):
             {'fields': ['t', 'id', 'kind', 'dir', 'difficulty', 'arcAheadViews'],
              'spawns': [[round(s[0], 3), s[1], s[2], s[3], s[4], round(s[5], 3)] for s in cls.spawns]},
             separators=(',', ':')))
+        # A join with a single corner frame repeats it (TASK-111)
         last, repeats = {}, []
         for s in cls.spawns:
             key = (s[2], s[3])
-            if last.get(key) == s[1]:
+            if last.get(key) == s[1] and s[3] not in cls.final['singleJoins']:
                 repeats.append([round(s[0], 3), s[1], s[2], s[3]])
             last[key] = s[1]
         cls.repeats = repeats
@@ -338,19 +343,25 @@ class MomentumRunTests(unittest.TestCase):
         self.assertEqual(self.final['score'], self.final['passed'])
 
     def test_3_distinct_types(self):
-        h, v, turn = self.kinds('horizontal'), self.kinds('vertical'), self.kinds('turn')
+        h, v, turn = self.kinds('horizontal'), self.kinds('vertical'), self.kinds('corner')
         fitting = self.final['fitting']
         print(f'distinct horizontal {len(h)} {h}', file=sys.stderr)
         print(f'distinct vertical {len(v)} {v} (fitting a planned shaft {len(fitting)} {fitting})', file=sys.stderr)
-        print(f'distinct turn {len(turn)} {turn}', file=sys.stderr)
+        print(f'distinct corner {len(turn)} {turn}', file=sys.stderr)
+        bad = [s[1] for s in self.spawns if s[1] in self.final['badFrameIds']]
+        up_not_mirrored = [s[1] for s in self.spawns if s[3] == 'up' and not s[1].endswith('-up')]
+        print(f'bad-frame ids spawned {len(bad)} {bad}; up-shaft spawns {sum(1 for s in self.spawns if s[3] == "up")}, '
+              f'not an -up id {up_not_mirrored}', file=sys.stderr)
         print(f'spawns {len(self.spawns)}, immediate repeats in the same direction {len(self.repeats)} '
               f'{self.repeats}', file=sys.stderr)
         self.assertEqual(self.repeats, [])
-        self.assertGreaterEqual(len(h), 8)
-        self.assertGreaterEqual(len(v), min(2, len(fitting)))
+        self.assertEqual(bad, [])
+        self.assertEqual(up_not_mirrored, [])
+        self.assertGreaterEqual(len(h), 5)
+        self.assertGreaterEqual(len(v), 2)
         self.assertGreaterEqual(len(fitting), 1)
         self.assertLessEqual(set(v), set(fitting))
-        self.assertGreaterEqual(len(turn), 2)
+        self.assertGreaterEqual(len(turn), 3)
         catalog = self.final['catalog']
         for t, id_, kind, dir_, *_ in self.spawns:
             if kind == 'horizontal':
@@ -383,8 +394,14 @@ class MomentumRunTests(unittest.TestCase):
         last = [s for s in self.spawns if s[0] >= SECONDS - 20]
         mean = lambda spawns: sum(s[4] for s in spawns) / len(spawns)
         # Pick-weight share of difficulty <= 2, averaged over the window's
-        # spawns: the ramp itself, without the sampling noise of ~10 picks
-        weighted = lambda spawns: sum(s[8] for s in spawns) / len(spawns)
+        # right-corridor spawns: the ramp itself, without the sampling noise
+        # of ~10 picks. Since the M catalog (TASK-113) the right list is the
+        # only one with a fixed easy/hard mix that every window samples; the
+        # shaft frames and the up->right corners are all difficulty >= 3 and
+        # the other joins have 1-3 frames, so averaging over every spawn
+        # measured which kinds the window drew (seeds 2, 3, 4), not the ramp
+        weighted = lambda spawns: (sum(s[8] for s in spawns if s[2] == 'horizontal') /
+                                   sum(1 for s in spawns if s[2] == 'horizontal'))
         print(f'difficulty <= 2 share: first 20 s {share(first):.3f} ({len(first)} spawns, mean d '
               f'{mean(first):.2f}, weights {weighted(first):.3f}), last 20 s {share(last):.3f} ({len(last)} spawns,'
               f' mean d {mean(last):.2f}, weights {weighted(last):.3f}), catalog {uniform:.3f}', file=sys.stderr)
