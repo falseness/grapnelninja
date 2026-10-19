@@ -132,7 +132,19 @@ SCRIPTED_TOUCH = r'''() => {
             last: fxs.shockwaves[fxs.shockwaves.length - 1]}
 }'''
 
-DEATH_START = '''(mode) => { startGame(mode); cancelAnimationFrame(game)
+# Math.random is reseeded before startGame(mode): FxHarness.open() starts
+# momentum first, and how many draws its spawner takes is not a classic/bad
+# matter (TASK-111's spawn change shifted the classic/bad course otherwise)
+DEATH_START = '''(mode) => {
+    let a = 12345
+    Math.random = () => {
+        a = (a + 0x6D2B79F5) >>> 0
+        let t = a
+        t = Math.imul(t ^ (t >>> 15), t | 1)
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    startGame(mode); cancelAnimationFrame(game)
     TUTORIAL_HINT.visible = false; TUTORIAL_HINT.done = true
     for (let i = 0; i < 30; ++i) { __snap.now += 1000 / 60; physics() }
     ninja.invulnerableMs = 0

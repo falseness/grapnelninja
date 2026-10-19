@@ -4233,6 +4233,15 @@ class ScreenEffects
             return
         const popScale = STYLE.momentum.bluePopScale
         ctx.save()
+        // Inside the corridor only: a blue flush with a wall (the M frames'
+        // ceiling bars, shaft sweepers) would pop its outline into the wall
+        if (version == 'momentum')
+        {
+            const inside = new Path2D()
+            for (const b of momentumVisibleCorridor().boxes)
+                inside.rect(b.l + screen.x, b.t + screen.y, b.r - b.l, b.b - b.t)
+            ctx.clip(inside)
+        }
         for (const pop of pops)
         {
             const t = this.getBluePopProgress(pop, now)

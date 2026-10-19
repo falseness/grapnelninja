@@ -196,7 +196,19 @@ def gallery_frames(browser, url, modes, prepare=None):
                 page.goto(url + 'index.html', wait_until='load')
                 boot_frozen(page)
                 page.evaluate(SETUP_SCRIPT, [script, vp['touch']])
+                # Math.random is reseeded before startGame(mode): boot runs a
+                # momentum run first, and how many draws its spawner takes is
+                # not a classic/bad matter (TASK-084 and TASK-111 spawn changes
+                # shifted the classic/bad courses otherwise)
                 page.evaluate('''mode => {
+                    let a = 12345
+                    Math.random = () => {
+                        a = (a + 0x6D2B79F5) >>> 0
+                        let t = a
+                        t = Math.imul(t ^ (t >>> 15), t | 1)
+                        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+                        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+                    }
                     startGame(mode)
                     if (continueOffer.otherVersion) continueOffer.otherVersion = () => version
                     if (continueOffer.switchTarget) continueOffer.switchTarget = () => version
