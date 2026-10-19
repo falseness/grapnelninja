@@ -35,7 +35,7 @@ obstacle floor emptied. Asserts:
 - test_2_refused: each id returns null on the three other joins, in classic
   and bad; momentumTurnsByJoin[join] = the ids of that catalog join and
   momentumPatternsByDir holds no corner id and no port id (TASK-111);
-- test_4_elevator: the M39 and M40 movers moved 400 cycles: x constant,
+- test_4_elevator: the M39 and M40 movers moved 2800 cycles: x constant,
   top/bottom never outside the exit corridor faces, reverses at both faces,
   travel >= 0.5 W;
 - test_3_shots: per id per viewport a montage: left = the concept PNG, right
@@ -79,7 +79,7 @@ FRAME_PX = 480
 VERTEX_PX = {'right-up': (457, 457), 'right-down': (457, 315), 'down-right': (315, 457), 'up-right': (315, 315)}
 # Window count and smallest window (corridor W) between two blue pieces at the same x
 WINDOWS = {'M117': (1, 0.375), 'M134': (2, 0.5), 'M98': (1, 0.5), 'M136': (2, 0.5)}
-ELEVATOR_CYCLES = 400
+ELEVATOR_CYCLES = 2800
 # Elevator id -> its join
 ELEVATORS = {'M39': 'down->right', 'M40': 'up->right'}
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}

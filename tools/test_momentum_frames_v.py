@@ -70,7 +70,7 @@ CONCEPTS = ROOT / 'artifacts/momentum-frames'
 IDS = ['M93', 'M110', 'M11', 'M30', 'M93-up', 'M110-up', 'M11-up', 'M30-up']
 SWEEPERS = ['M11', 'M30', 'M11-up', 'M30-up']
 SWEEP_SHOTS = ['M11', 'M30']
-SWEEP_CYCLES = 400
+SWEEP_CYCLES = 2800
 # Phone shots: the down frames only
 PHONE_SHOTS = ['M93', 'M110']
 VIEWPORTS = [{'width': 1280, 'height': 720, 'touch': False}, {'width': 390, 'height': 844, 'touch': True}]
