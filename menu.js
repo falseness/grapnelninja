@@ -777,6 +777,11 @@ class Menu
         const resumeFontSize = parseFloat(this.resume.text.fontSize)
         const fpsFontSize = Math.min(resumeFontSize, panel.width * 0.09)
         const boxSize = fpsFontSize
+        if (!this.showsLighting())
+        {
+            this.layoutPauseFpsOnly(panel, centerX, buttonWidth, buttonHeight, selectorWidth, fpsFontSize, touch)
+            return
+        }
         const checkboxes = [this.pauseFpsCounterCheckbox, this.pauseLightingCheckbox]
 
         ctx.save()
@@ -832,6 +837,46 @@ class Menu
         this.pauseLightingCheckbox.y = rows[sideBySide ? 3 : 4]
         this.timeInGame.y = rows[rows.length - 1]
     }
+    // The lighting switch only acts on momentum: classic and bad keep the
+    // pause screen they had before it (fps counter row only)
+    showsLighting()
+    {
+        return version === 'momentum'
+    }
+    layoutPauseFpsOnly(panel, centerX, buttonWidth, buttonHeight, selectorWidth, fpsFontSize, touch)
+    {
+        const rowY = panel.y + panel.height * 0.72
+        const boxSize = fpsFontSize
+
+        ctx.save()
+        ctx.font = getArcadeFont(fpsFontSize)
+        const labelWidth = ctx.measureText(this.pauseFpsCounterCheckbox.label).width
+        ctx.restore()
+
+        const rowWidth = boxSize * 1.55 + labelWidth
+        const rowX = centerX - rowWidth / 2
+
+        this.pauseFpsCounterCheckbox.x = rowX
+        this.pauseFpsCounterCheckbox.y = rowY
+        this.pauseFpsCounterCheckbox.size = boxSize
+        this.pauseFpsCounterCheckbox.fontSize = getArcadeFont(fpsFontSize)
+
+        // Play time under the fps row, fitted to the panel width
+        const timeFontSize = this.getPauseTimeFontSize(panel, fpsFontSize * 0.7)
+        this.timeInGame.x = centerX
+        this.timeInGame.y = panel.y + panel.height * 0.89
+        this.timeInGame.fontSize = getArcadeFont(timeFontSize)
+
+        if (!touch)
+            return
+        const rows = stackRows(panel.y, panel.y + panel.height, [this.getPauseTitleFontSize(panel),
+            buttonHeight, buttonHeight, this.pauseFpsCounterCheckbox.hitRect().height, timeFontSize])
+        this.pauseTitleY = rows[0]
+        this.layoutPauseButton(this.resume, centerX, rows[1], buttonWidth, buttonHeight)
+        this.modeSelector.layout(centerX, rows[2], selectorWidth, buttonHeight)
+        this.pauseFpsCounterCheckbox.y = rows[3]
+        this.timeInGame.y = rows[4]
+    }
     // Checkboxes in one centred row within maxWidth, hit rects side by side
     layoutCheckboxRow(checkboxes, centerX, maxWidth, fontSize)
     {
@@ -874,7 +919,7 @@ class Menu
     {
         return  this.resume.isClickOnButton(coord)                  ||
                 this.pauseFpsCounterCheckbox.isClickOnButton(coord) ||
-                this.pauseLightingCheckbox.isClickOnButton(coord)   ||
+                (this.showsLighting() && this.pauseLightingCheckbox.isClickOnButton(coord)) ||
                 this.modeSelector.click(coord)
     }
     clickToPause(coord)
@@ -939,14 +984,16 @@ class Menu
             this.resume.drawGlow()
             this.modeSelector.drawGlow()
             this.pauseFpsCounterCheckbox.drawGlow()
-            this.pauseLightingCheckbox.drawGlow()
+            if (this.showsLighting())
+                this.pauseLightingCheckbox.drawGlow()
             LANGUAGE_BUTTON.drawGlow()
         })
         
         title.draw()
         
         this.pauseFpsCounterCheckbox.draw()
-        this.pauseLightingCheckbox.draw()
+        if (this.showsLighting())
+            this.pauseLightingCheckbox.draw()
         this.timeInGame.draw()
         
         this.resume.draw()

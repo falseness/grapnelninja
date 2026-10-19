@@ -8,6 +8,9 @@ Layout: at 1280x720, 844x390 (touch) and 390x844 (mouse, letterboxed: a
 touch portrait phone shows the rotate overlay) the checkbox hit rect lies
 inside the canvas and intersects no other pause-screen button
 (LAYOUT_PROBE boxes of menu.drawPauseScreen()).
+The switch acts on momentum only, so the classic and bad pause screens
+neither draw it nor take clicks on it (TASK-095); switching modes leaves
+the stored setting as it is.
 
 Env: MOMENTUM_LIGHTING_SWITCH_EVIDENCE_DIR receives switch.json, layout.json
 and shots/pause-<w>x<h>-lighting-{on,off}.png.
@@ -19,7 +22,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from game_harness import READY, canvas_to_viewport, local_store, open_game, seed_store, start_game_test
+from game_harness import READY, canvas_to_viewport, local_store, open_game, seed_store, start_game_test, switch_mode
 import layout_matrix as lm
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -183,6 +186,48 @@ class MomentumLightingSwitchTests(unittest.TestCase):
         self.assertEqual(page.evaluate('[scoreText.record.classic, scoreText.record.bad, '
                                        'scoreText.record.momentum, PROGRESS.getTime(), PROGRESS.getLang()]'),
                          [3, 2, 4, 120, 'en'])
+
+    def test_f_hidden_outside_momentum(self):
+        """Classic/bad: a click at the momentum checkbox rect changes nothing; it is not drawn."""
+        page = self.boot()
+        self.assertEqual(page.evaluate('version'), 'momentum')
+        page.evaluate('menu.startPause()')
+        r = page.evaluate('menu.pauseLightingCheckbox.hitRect()')
+        drawn = page.evaluate(lm.PROBE, 'menu.drawPauseScreen()')
+        label = page.evaluate('menu.pauseLightingCheckbox.label')
+        self.assertIn(label, [b['name'] for b in drawn['boxes'] if b['kind'] == 'button'])
+        page.evaluate('menu.unPause()')
+        for mode in ['classic', 'bad']:
+            with self.subTest(mode=mode):
+                switch_mode(page, mode)
+                page.evaluate(FREEZE)
+                page.evaluate('menu.startPause()')
+                before = self.enabled(page)
+                shot = page.evaluate(lm.PROBE, 'menu.drawPauseScreen()')
+                names = [b['name'] for b in shot['boxes'] if b['kind'] == 'button']
+                point = canvas_to_viewport(page, r['x'] + r['width'] / 2, r['y'] + r['height'] / 2)
+                page.mouse.click(point['x'], point['y'])
+                # The same point through the menu's own hit test
+                page.evaluate('p => menu.click(p)', {'x': r['x'] + r['width'] / 2, 'y': r['y'] + r['height'] / 2})
+                after = self.enabled(page)
+                self.record(f'{mode}-click-at-momentum-rect', before, after, self.stored(page))
+                self.assertEqual(page.evaluate('version'), mode)
+                self.assertNotIn(label, names)
+                self.assertIs(before, True)
+                self.assertIs(after, True)
+                page.evaluate('menu.unPause()')
+        # Off in momentum survives a round trip through classic
+        switch_mode(page, 'momentum')
+        page.evaluate(FREEZE)
+        page.evaluate('menu.startPause()')
+        self.click_lighting(page)
+        self.assertIs(self.enabled(page), False)
+        page.evaluate('menu.unPause()')
+        switch_mode(page, 'classic')
+        page.evaluate(FREEZE)
+        switch_mode(page, 'momentum')
+        self.record('off-across-mode-switches', False, self.enabled(page), self.stored(page))
+        self.assertIs(self.enabled(page), False)
 
     def test_e_layout(self):
         """The hit rect is inside the canvas and overlaps no other pause button; shots on/off."""
