@@ -144,7 +144,10 @@ const GAMEPLAY = Object.freeze({
         // circle replacing each turn join of the course centre line, in view
         // heights (at most half of either adjacent segment; its middle stays
         // 0.29 radius off both centre lines, well inside both corridors)
-        railRadius: 0.5
+        railRadius: 0.5,
+        // How much slower the view turns at an arc's ends and faster in its
+        // middle (MomentumScreen.easedArcPoint, TASK-115)
+        railEase: 0.2
     }),
     // Momentum HP (elements/momentumstate.js): hp at every run start (no upper
     // cap) and how many green touches in a row give one hp.

@@ -135,11 +135,49 @@ class MomentumScreen extends Screen
     }
     // Camera top-left world corner (-x, -y) for rail position s: the view
     // centred on the rail point, so it travels along the rail at the speed
-    // s does and turns its direction along each arc
+    // s does and turns its direction along each arc (easedArcPoint)
     viewAt(s)
     {
-        const p = this.rail.pointAt(s)
+        s = Math.max(0, s)
+        const piece = this.rail.pieces[this.rail.pieceAt(s)]
+        const p = piece.type == 'arc' ? this.easedArcPoint(piece, s - piece.s0) : this.rail.pointAt(s)
         return {x: p.x - width / scale[version] / 2, y: p.y - this.getViewHeight() / 2}
+    }
+    // The view centre at d along an arc of the rail: from the arc's start
+    // to its end point and tangent like the arc, but its direction turns
+    // slower at both ends and faster in the middle
+    // (GAMEPLAY.momentumCamera.railEase: the direction angle at a share t of
+    // the arc is 90 deg * (t - railEase / 2pi * sin(2pi t)), so at most
+    // 1 + railEase times the arc's rate). Into a shaft the view leaves the
+    // old corridor's centre line less before the corner box, where a ninja
+    // on that corridor's far side keeps its margin to the view edge
+    // (TASK-115); the curve is a little longer than the arc, so the view
+    // moves (1.4% at 0.2) faster along it.
+    easedArcPoint(piece, d)
+    {
+        const ease = GAMEPLAY.momentumCamera.railEase
+        // Integral of the unit direction (cos, sin of the angle) over [0, t]
+        // (Simpson, n even)
+        const integrate = (t, n) =>
+        {
+            let x = 0, y = 0
+            for (let i = 0; i <= n; ++i)
+            {
+                const u = t * i / n
+                const angle = Math.PI / 2 * (u - ease / (2 * Math.PI) * Math.sin(2 * Math.PI * u))
+                const w = i == 0 || i == n ? 1 : i % 2 ? 4 : 2
+                x += w * Math.cos(angle)
+                y += w * Math.sin(angle)
+            }
+            return {x: x * t / (3 * n), y: y * t / (3 * n)}
+        }
+        // Curve length in radii: it ends at (1, 1) radii along u and w
+        if (this.easedArcLength === undefined)
+            this.easedArcLength = 1 / integrate(1, 64).x
+        const p = integrate(Math.min(1, Math.max(0, d / piece.length)), 32)
+        const along = piece.r * this.easedArcLength * p.x, across = piece.r * this.easedArcLength * p.y
+        return {x: piece.cx - piece.wx * piece.r + piece.ux * along + piece.wx * across,
+                y: piece.cy - piece.wy * piece.r + piece.uy * along + piece.wy * across}
     }
     // Moves to the next segment once the trigger point passes the join. The
     // vertical direction left behind follows the camera's own: from the

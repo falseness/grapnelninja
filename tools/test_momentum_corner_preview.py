@@ -40,11 +40,11 @@ arc before the ninja reaches the box. Measured on the rail camera: into a
 shaft 0.09 at d = 1, 0.165 at d = 0; out of one 0.27 and 0.317.
 test_<join>_margin_<drive>: margin >= MIN_MARGIN on every cycle: the ninja
 in view with a 0.10 margin, the rule of test_momentum_camera_speed (rule 4).
-Known camera shortfall (expectedFailure, follow-up TASK-115): on the 'far'
-drive into a shaft (right-down, right-up) the rail camera turns up / down
-from the arc start, before the box, while the ninja still runs along the
-corridor's outer side, and the margin dips to 0.0989-0.0991 for a few cycles
-at the box entry (any drive speed).
+TASK-115: on the 'far' drive into a shaft (right-down, right-up) the rail
+camera turned up / down from the arc start, before the box, while the ninja
+still ran along the corridor's outer side, and the margin dipped to 0.0991
+at the box entry; the view now turns slower at the arc's ends
+(GAMEPLAY.momentumCamera.railEase) and the margin stays >= 0.10.
 
 MOMENTUM_CORNER_PREVIEW_EVIDENCE_DIR (default /tmp/momentum-corner-preview:
 a bare run must not rewrite the TASK-068 evidence) receives
@@ -90,9 +90,6 @@ SCRIPTS = dict(SHAFT_SCRIPTS, **{'right-right-down': [0.99, 0.1, 0.99, 0.9, 0.9,
 JOINS = {'right-down': ('right-right-down', 1), 'right-up': ('right-right-up', 1),
          'down-right': ('down', 1), 'up-right': ('up', 1)}
 DRIVES = ['centre', 'far']
-# (join, drive) margin cases that fail on the rail camera: far lane into a
-# shaft dips to 0.0991 at the box entry; the camera fix is TASK-115
-MARGIN_SHORTFALL = {('right-down', 'far'), ('right-up', 'far')}
 # Out of a shaft the camera centred on a shaft half a view wide (TASK-043)
 # already sees 0.27 of the view past its right wall; on the rail arc it sees
 # more before the box (TASK-085).
@@ -341,10 +338,7 @@ def make_test(join, kind, *args):
 for join in JOINS:
     name = f'test_{join.replace("-", "_")}'
     for drive in DRIVES:
-        test = make_test(join, 'margin', drive)
-        if (join, drive) in MARGIN_SHORTFALL:
-            test = unittest.expectedFailure(test)
-        setattr(MomentumCornerPreviewTests, f'{name}_margin_{drive}', test)
+        setattr(MomentumCornerPreviewTests, f'{name}_margin_{drive}', make_test(join, 'margin', drive))
     setattr(MomentumCornerPreviewTests, f'{name}_preview', make_test(join, 'preview'))
 
 if __name__ == '__main__':
