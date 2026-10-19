@@ -85,8 +85,13 @@ class BackgroundRenderer
         // Momentum depth grade (getDepthGrade): the hue (degrees) the graded
         // tiles were built for, the tiles they were built from, the graded
         // 'farBaked'/'near' copies with their edge fills, and how often a
-        // new step was built
-        this.depthGrade = {hue: 0, sources: null, tiles: null, rebuilds: 0}
+        // new step was built; the next step's hue (for the score nextFor)
+        // and its HueRotateJob, advanced once per drawFrameId, and per tile
+        // the free canvases jobs write into (allocated with the source tiles,
+        // DEPTH_GRADE_CANVASES of them: a first write into a new canvas costs
+        // as much as a frame's rotation budget)
+        this.depthGrade = {hue: 0, sources: null, tiles: null, rebuilds: 0,
+            nextFor: null, nextHue: null, next: null, advancedFrame: null, pool: [[], []]}
     }
     draw()
     {
@@ -208,38 +213,82 @@ class BackgroundRenderer
         const step = Math.round((score - next.score + fx.depthBlend) / fx.depthBlend * fx.depthSteps)
         return stages[i].hue + (next.hue - stages[i].hue) * step / fx.depthSteps
     }
+    // The hue of the first step above score within depthBlend points, or
+    // null (no other step that close)
+    getNextDepthHue(score)
+    {
+        const hue = this.getDepthHue(score)
+        for (let s = Math.floor(score) + 1; s <= score + STYLE.momentumFx.depthBlend; ++s)
+            if (this.getDepthHue(s) !== hue)
+                return this.getDepthHue(s)
+        return null
+    }
     // The graded far/near tiles and edge fills of this frame, or null for
     // the plain cave (other modes, MOMENTUM_FX off, hue 0). They are built
     // only when the hue step (or a source tile) changes, never per frame.
+    // The tiles of the next step are rotated ahead, DEPTH_GRADE_BAND_WORK
+    // per frame, so reaching it costs no rotation; a step reached before its
+    // tiles are done (a score jump, a new viewport) finishes them at once.
     getDepthGrade(width, height)
     {
         if (version != 'momentum' || !MOMENTUM_FX.enabled || !STYLE.momentumFx.depthStages)
             return null
-        const hue = this.getDepthHue(scoreText.count.momentum || 0)
-        if (!hue)
+        const score = scoreText.count.momentum || 0
+        const hue = this.getDepthHue(score)
+        const grade = this.depthGrade
+        if (grade.nextFor !== score)
+        {
+            grade.nextFor = score
+            grade.nextHue = this.getNextDepthHue(score)
+        }
+        if (!hue && !grade.nextHue)
             return null
         const far = this.getFarBakedTile(width, height)
         const near = this.getNearTile(width, height)
-        const grade = this.depthGrade
-        if (grade.hue === hue && grade.sources && grade.sources[0] === far && grade.sources[1] === near)
-            return grade.tiles
-        const background = STYLE.colors.background
-        const haze = this.ctx.createLinearGradient(0, 0, 0, height)
-        const hazeStops = [[0, background.hazeTop], [0.24, background.hazeUpper], [0.5, background.hazeMiddle],
-            [0.74, background.hazeLower], [1, background.hazeBottom]]
-        for (const [offset, color] of hazeStops)
-            haze.addColorStop(offset, hueRotateColor(color, hue))
-        grade.tiles = {
-            far: hueRotateTile(far, hue),
-            near: hueRotateTile(near, hue),
-            crystalRock: hueRotateColor(background.crystalRock, hue),
-            nearRock: hueRotateColor(background.nearRock, hue),
-            haze
+        const sameSources = sources => sources && sources[0] === far && sources[1] === near
+        if (hue && !(grade.hue === hue && sameSources(grade.sources)))
+        {
+            const job = grade.next && grade.next.hue === hue && sameSources(grade.next.sources)
+                ? grade.next : new HueRotateJob(far, near, hue, grade.pool)
+            job.advance(Infinity)
+            if (grade.next === job)
+                grade.next = null
+            if (grade.tiles)
+            {
+                grade.pool[0].push(grade.tiles.far.canvas)
+                grade.pool[1].push(grade.tiles.near.canvas)
+            }
+            const background = STYLE.colors.background
+            const haze = this.ctx.createLinearGradient(0, 0, 0, height)
+            const hazeStops = [[0, background.hazeTop], [0.24, background.hazeUpper], [0.5, background.hazeMiddle],
+                [0.74, background.hazeLower], [1, background.hazeBottom]]
+            for (const [offset, color] of hazeStops)
+                haze.addColorStop(offset, hueRotateColor(color, hue))
+            grade.tiles = {
+                far: job.tiles[0],
+                near: job.tiles[1],
+                crystalRock: hueRotateColor(background.crystalRock, hue),
+                nearRock: hueRotateColor(background.nearRock, hue),
+                haze
+            }
+            grade.hue = hue
+            grade.sources = job.sources
+            ++grade.rebuilds
         }
-        grade.hue = hue
-        grade.sources = [far, near]
-        ++grade.rebuilds
-        return grade.tiles
+        // Once per frame (the bar canvases paint the background again)
+        const nextHue = grade.nextHue
+        if (nextHue && grade.advancedFrame !== drawFrameId)
+        {
+            grade.advancedFrame = drawFrameId
+            if (!(grade.next && grade.next.hue === nextHue && sameSources(grade.next.sources)))
+            {
+                if (grade.next)
+                    grade.next.tiles.forEach((tile, i) => grade.pool[i].push(tile.canvas))
+                grade.next = new HueRotateJob(far, near, nextHue, grade.pool)
+            }
+            grade.next.advance(DEPTH_GRADE_BAND_WORK)
+        }
+        return hue ? grade.tiles : null
     }
     // The removed decorations consumed the shared gameplay RNG once per scene
     // per run: 40 draws in game (the title menu's 18 left with the menu,
@@ -417,7 +466,34 @@ class BackgroundRenderer
         const layer = {key, canvas: layerCanvas, width, height}
         this.layerCache[name] = layer
         this.layerBuilds[name] = (this.layerBuilds[name] || 0) + 1
+        if (name == 'farBaked' || name == 'near')
+            this.allocateDepthGradeCanvases(name == 'near' ? 1 : 0, layerCanvas)
         return layer
+    }
+    // Momentum run start: the tiles the depth grade rotates and the
+    // canvases it rotates them into, before the run's frames
+    prepareDepthGrade()
+    {
+        if (version != 'momentum' || !MOMENTUM_FX.enabled || !STYLE.momentumFx.depthStages)
+            return
+        const width = LOGICAL_VIEWPORT.width, height = LOGICAL_VIEWPORT.height
+        this.allocateDepthGradeCanvases(0, this.getFarBakedTile(width, height).canvas)
+        this.allocateDepthGradeCanvases(1, this.getNearTile(width, height).canvas)
+    }
+    // DEPTH_GRADE_CANVASES canvases of source's size for depth grade tile
+    // i (0 far, 1 near), drawn, being rotated or free (momentum depth grade
+    // only); free ones of other sizes are dropped
+    allocateDepthGradeCanvases(i, source)
+    {
+        if (version != 'momentum' || !MOMENTUM_FX.enabled || !STYLE.momentumFx.depthStages)
+            return
+        const grade = this.depthGrade
+        const fits = canvas => canvas.width == source.width && canvas.height == source.height
+        grade.pool[i] = grade.pool[i].filter(fits)
+        const used = [grade.tiles && [grade.tiles.far, grade.tiles.near][i], grade.next && grade.next.tiles[i]]
+        let count = grade.pool[i].length + used.filter(tile => tile && fits(tile.canvas)).length
+        for (; count < DEPTH_GRADE_CANVASES; ++count)
+            grade.pool[i].push(newDepthGradeCanvas(source))
     }
     // Seeded random numbers and wrapped polygon drawing for a tile
     getTileTools(ctx, width, initialSeed)
@@ -740,28 +816,265 @@ function hueRotateColor(color, deg)
     return 'rgba(' + [0, 1, 2].map(channel).join(', ') + ', ' + (rgba[3] === undefined ? 1 : rgba[3]) + ')'
 }
 
-// A copy of a layer tile ({canvas, width, height}) hue-rotated by deg, per
-// pixel (built once per depth step, not per frame)
-function hueRotateTile(layer, deg)
+// Work the depth grade's next step is rotated by per frame, in pixels
+// written (a pixel first read from its source tile and indexed by colour
+// counts DEPTH_GRADE_READ_WORK, a palette colour rotated
+// DEPTH_GRADE_COLOR_WORK): about 1.5 ms in headless Chromium. A step lasts
+// 3-4 score points, 140+ frames in play; the 844x390@3 tile pair (2.6M
+// pixels, 23k colours) takes about 30 frames, and its first reading about
+// 520 more, spread from depthBlend points before the first step.
+const DEPTH_GRADE_BAND_WORK = 120000
+const DEPTH_GRADE_READ_WORK = 24
+const DEPTH_GRADE_COLOR_WORK = 40
+// Rows rotated at a time
+const DEPTH_GRADE_BAND_ROWS = 8
+// Frames a job advanced in since the page loaded: in the first ones (the
+// loops not yet optimised by the JIT, several times slower) a job does one
+// band of 1, 2, ... rows or 128, 256, ... colours
+const DEPTH_GRADE_WARMUP = {frames: 0, last: 8}
+// Graded canvases per tile: the step drawn and the next one
+const DEPTH_GRADE_CANVASES = 2
+// Buffers of finished jobs (rotated palettes; band ImageData and its words
+// by width) for the next ones: a job allocates nothing once warm, so it
+// does not set off a garbage collection in its frames
+const HUE_ROTATE_BUFFERS = {palettes: [], bands: []}
+
+// A canvas of source's size for a graded tile, its backing and the memory
+// of its first putImageData allocated (one pixel put; a job overwrites
+// every row): the first put into a canvas costs a frame's budget
+function newDepthGradeCanvas(source)
 {
     const canvas = document.createElement('canvas')
-    canvas.width = layer.canvas.width
-    canvas.height = layer.canvas.height
-    const ctx = canvas.getContext('2d')
-    ctx.drawImage(layer.canvas, 0, 0)
-    const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    const data = image.data
-    const m = hueRotateMatrix(deg)
-    for (let i = 0; i < data.length; i += 4)
+    canvas.width = source.width
+    canvas.height = source.height
+    canvas.getContext('2d').putImageData(new ImageData(1, 1), 0, 0)
+    return canvas
+}
+
+// A layer tile's pixels as colours (unpremultiplied RGBA words, the order
+// getImageData reads them in) and per pixel the index of its colour:
+// {rows read so far, index, palette, colors, keys/slots/shift (an
+// open-addressing colour -> index + 1 table of 2^(32 - shift) slots, until
+// every row is read)}. The tiles hold
+// about 21k (far) and 2k (near) colours, so a depth step rotates its
+// colours, not its pixels.
+const LAYER_TILE_COLORS = new WeakMap()
+
+function getLayerTileColors(canvas)
+{
+    let colors = LAYER_TILE_COLORS.get(canvas)
+    if (!colors)
+        LAYER_TILE_COLORS.set(canvas, colors = {rows: 0, index: new Uint32Array(canvas.width * canvas.height),
+            palette: new Uint32Array(4096), colors: 0,
+            keys: new Uint32Array(1 << 13), slots: new Uint32Array(1 << 13), shift: 32 - 13})
+    return colors
+}
+
+// The index of colour word in colors, added to its palette if new
+function layerTileColorIndex(colors, word)
+{
+    // Fibonacci hashing: the product's top bits (its low bits only
+    // depend on the low byte, red)
+    const mask = colors.keys.length - 1
+    for (let h = Math.imul(word, 0x9E3779B1) >>> colors.shift; ; ++h)
     {
-        const r = data[i], g = data[i + 1], b = data[i + 2]
-        // Uint8ClampedArray rounds and clamps
-        data[i] = m[0] * r + m[1] * g + m[2] * b
-        data[i + 1] = m[3] * r + m[4] * g + m[5] * b
-        data[i + 2] = m[6] * r + m[7] * g + m[8] * b
+        const slot = h & mask
+        const stored = colors.slots[slot]
+        if (!stored)
+        {
+            if (colors.colors == colors.palette.length)
+            {
+                const palette = new Uint32Array(colors.palette.length * 2)
+                palette.set(colors.palette)
+                colors.palette = palette
+            }
+            const index = colors.colors++
+            colors.palette[index] = word
+            colors.keys[slot] = word
+            colors.slots[slot] = index + 1
+            // At most half full
+            if (colors.colors * 2 > colors.keys.length)
+            {
+                colors.keys = new Uint32Array(colors.keys.length * 2)
+                colors.slots = new Uint32Array(colors.slots.length * 2)
+                --colors.shift
+                const next = colors.keys.length - 1
+                for (let i = 0; i < colors.colors; ++i)
+                {
+                    let k = Math.imul(colors.palette[i], 0x9E3779B1) >>> colors.shift
+                    while (colors.slots[k & next])
+                        ++k
+                    colors.keys[k & next] = colors.palette[i]
+                    colors.slots[k & next] = i + 1
+                }
+            }
+            return index
+        }
+        if (colors.keys[slot] === word)
+            return stored - 1
     }
-    ctx.putImageData(image, 0, 0)
-    return {key: layer.key, canvas, width: layer.width, height: layer.height}
+}
+
+// Reads canvas's rows colors.rows..bottom into colors through a software
+// scratch canvas (an exact 1:1 copy, as the whole-tile rotation read one):
+// the tile itself, drawn every frame, is never read back
+function readLayerTileRows(canvas, colors, bottom)
+{
+    const top = colors.rows, rows = bottom - top, w = canvas.width
+    let scratch = readLayerTileRows.scratch
+    if (!scratch || scratch.canvas.width < w || scratch.canvas.height < rows)
+    {
+        const next = document.createElement('canvas')
+        next.width = Math.max(w, scratch ? scratch.canvas.width : 0)
+        next.height = Math.max(rows, scratch ? scratch.canvas.height : 0)
+        scratch = readLayerTileRows.scratch = next.getContext('2d', {willReadFrequently: true})
+    }
+    scratch.clearRect(0, 0, w, rows)
+    scratch.drawImage(canvas, 0, top, w, rows, 0, 0, w, rows)
+    const data = scratch.getImageData(0, 0, w, rows).data
+    const words = new Uint32Array(data.buffer, data.byteOffset, data.length >> 2)
+    const index = colors.index
+    let last = -1, lastIndex = 0
+    for (let i = 0, j = top * w; i < words.length; ++i, ++j)
+    {
+        const word = words[i]
+        if (word !== last)
+        {
+            last = word
+            lastIndex = layerTileColorIndex(colors, word)
+        }
+        index[j] = lastIndex
+    }
+    colors.rows = bottom
+    if (bottom == canvas.height)
+        colors.keys = colors.slots = null
+}
+
+// Copies of the layer tiles sources ({key, canvas, width, height}) being
+// hue-rotated by deg, per colour, a band of rows at a time (built once per
+// depth step, not per frame); tiles holds them, complete once done. pool:
+// per tile canvases no longer drawn to write into (taken; other sizes are
+// dropped).
+class HueRotateJob
+{
+    constructor(far, near, deg, pool)
+    {
+        this.sources = [far, near]
+        this.hue = deg
+        this.matrix = hueRotateMatrix(deg)
+        this.tiles = this.sources.map((layer, i) =>
+        {
+            let canvas = null
+            while (pool[i].length && !canvas)
+            {
+                canvas = pool[i].pop()
+                if (canvas.width != layer.canvas.width || canvas.height != layer.canvas.height)
+                    canvas = null
+            }
+            canvas = canvas || newDepthGradeCanvas(layer.canvas)
+            return {key: layer.key, canvas, width: layer.width, height: layer.height}
+        })
+        // Per tile the rotated palette and how many of its colours are done
+        this.rotated = [HUE_ROTATE_BUFFERS.palettes.pop() || null, HUE_ROTATE_BUFFERS.palettes.pop() || null]
+        this.rotatedColors = [0, 0]
+        this.tile = 0
+        this.row = 0
+        // The band's ImageData and its pixels as words
+        this.band = HUE_ROTATE_BUFFERS.bands.pop() || null
+        this.done = false
+    }
+    // Rotates DEPTH_GRADE_BAND_ROWS rows at a time onward until about work
+    // (see DEPTH_GRADE_BAND_WORK) is done
+    advance(work)
+    {
+        const warmup = DEPTH_GRADE_WARMUP.frames
+        if (work !== Infinity && warmup < DEPTH_GRADE_WARMUP.last)
+            ++DEPTH_GRADE_WARMUP.frames
+        while (!this.done && work > 0)
+        {
+            const source = this.sources[this.tile].canvas
+            const w = source.width, h = source.height
+            const colors = getLayerTileColors(source)
+            let rows = Math.min(h - this.row, DEPTH_GRADE_BAND_ROWS, 1 + warmup)
+            if (colors.rows < this.row + rows)
+            {
+                // Rows not read yet: as many as the work left reads
+                rows = Math.min(rows, Math.max(1, Math.floor(work / (w * DEPTH_GRADE_READ_WORK))))
+                work -= (this.row + rows - colors.rows) * w * DEPTH_GRADE_READ_WORK
+                readLayerTileRows(source, colors, this.row + rows)
+            }
+            let rotated = this.rotated[this.tile]
+            if (!rotated || rotated.length < colors.colors)
+            {
+                const grown = new Uint32Array(colors.palette.length)
+                if (rotated)
+                    grown.set(rotated)
+                rotated = this.rotated[this.tile] = grown
+            }
+            // The band's colours first, at most about work of them at a time
+            const from = this.rotatedColors[this.tile]
+            if (from < colors.colors)
+            {
+                const to = Math.min(colors.colors, from + Math.ceil(work / DEPTH_GRADE_COLOR_WORK),
+                    from + (128 << warmup))
+                hueRotateColors(colors.palette, from, to, rotated, this.matrix)
+                this.rotatedColors[this.tile] = to
+                work -= (to - from) * DEPTH_GRADE_COLOR_WORK
+                if (to < colors.colors)
+                {
+                    if (warmup < DEPTH_GRADE_WARMUP.last)
+                        break
+                    continue
+                }
+            }
+            if (!this.band || this.band.image.width != w)
+            {
+                const image = new ImageData(w, DEPTH_GRADE_BAND_ROWS)
+                this.band = {image, words: new Uint32Array(image.data.buffer, image.data.byteOffset, w * DEPTH_GRADE_BAND_ROWS)}
+            }
+            const target = this.band.words
+            const index = colors.index
+            for (let i = this.row * w, j = 0, end = (this.row + rows) * w; i < end; ++i, ++j)
+                target[j] = rotated[index[i]]
+            this.tiles[this.tile].canvas.getContext('2d').putImageData(this.band.image, 0, this.row, 0, 0, w, rows)
+            work -= rows * w
+            this.row += rows
+            if (this.row == h)
+            {
+                this.row = 0
+                this.done = ++this.tile == this.tiles.length
+                if (this.done)
+                    this.release()
+            }
+            if (warmup < DEPTH_GRADE_WARMUP.last && work !== Infinity)
+                break
+        }
+    }
+    // Its buffers back for the next jobs
+    release()
+    {
+        HUE_ROTATE_BUFFERS.palettes.push(...this.rotated.filter(Boolean))
+        if (this.band)
+            HUE_ROTATE_BUFFERS.bands.push(this.band)
+        this.rotated = this.band = null
+    }
+}
+
+// Colours palette[from..to) (RGBA words) rotated by the hue matrix m into
+// target[from..to), alpha kept
+function hueRotateColors(palette, from, to, target, m)
+{
+    const source = new Uint8Array(palette.buffer, palette.byteOffset, palette.length * 4)
+    const bytes = new Uint8ClampedArray(target.buffer, target.byteOffset, target.length * 4)
+    for (let i = from * 4; i < to * 4; i += 4)
+    {
+        const r = source[i], g = source[i + 1], b = source[i + 2]
+        // Uint8ClampedArray rounds and clamps
+        bytes[i] = m[0] * r + m[1] * g + m[2] * b
+        bytes[i + 1] = m[3] * r + m[4] * g + m[5] * b
+        bytes[i + 2] = m[6] * r + m[7] * g + m[8] * b
+        bytes[i + 3] = source[i + 3]
+    }
 }
 
 // '#rrggbb' -> 'rgba(r, g, b, alpha)' (used only when a gradient is built)
