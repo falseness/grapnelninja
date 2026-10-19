@@ -10,10 +10,14 @@ colours. Checks (tools/momentum_fx_support.py run-right scene, 1280x720, the
 score set before the one draw()):
 - depth.json: mean colour of the light-free background (fx.background_mask
   of the score 0 frame, past LIGHT_FREE_PX from the ninja) at score 0, 150,
-  400: score 0 hue within HUE_TOL of the parent commit, shift at 150 -70 and
-  at 400 +85 within HUE_TOL; neon (emissive px on the walls), pieces and HUD
-  maxDelta <= REGION_MAX vs the same score with every stage hue 0; the score 0
-  frame equals the parent's (maxDelta 0); after a restart (startGame) from
+  400: score 0 hue within HUE_TOL of the same tree with the depth grade off
+  (STYLE.momentumFx.depthStages null), shift at 150 -70 and at 400 +85 within
+  HUE_TOL; neon (emissive px on the walls), pieces and HUD maxDelta <=
+  REGION_MAX vs the same score with every stage hue 0; the score 0 frame
+  equals the grade-off frame (maxDelta 0), and with
+  MOMENTUM_DEPTH_GRADE_PARENT set also the parent's (hue and maxDelta 0;
+  without it the parent comparison is skipped: later game changes such as
+  the TASK-073 slow motion move the frame, TASK-100); after a restart (startGame) from
   score 400 the depth hue is 0 and the frame equals the same restart from
   score 0 (maxDelta 0; the restart lays another course than the scene's).
 - rebuilds.json: a score ramp 0 -> 450 (one draw() per point) rebuilds the
@@ -21,22 +25,23 @@ score set before the one draw()):
   draws at a constant score (in a stage and inside a blend) rebuild nothing.
 - switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at
   both viewports (and run-right at score 400) and the classic and bad
-  test_visual_gallery frames with the switch on equal the parent commit
-  (decoded maxDelta 0);
+  test_visual_gallery frames with the switch on equal the same tree with the
+  depth grade off, or the parent commit when MOMENTUM_DEPTH_GRADE_PARENT is
+  set (decoded maxDelta 0);
 - shots/: run-right at score 0, 150, 400 (1280x720), compare-teal.png (vs
   concept 11-depth-teal.png), compare-crimson.png (vs 12-depth-crimson.png).
 
 MOMENTUM_DEPTH_GRADE_EVIDENCE_DIR (default /tmp/momentum-depth-grade)
-receives the json files (compact) and shots/. MOMENTUM_DEPTH_GRADE_PARENT is
-the parent revision (default: the parent of the commit that added this file,
-or HEAD while uncommitted). Requires Playwright Chromium. No remote requests.
+receives the json files (compact) and shots/. MOMENTUM_DEPTH_GRADE_PARENT, when set, is
+the parent revision the checks above also compare against (TASK-100: the
+old default, the parent of the commit that added this file, predates the
+TASK-073 slow motion and later game changes). Requires Playwright Chromium. No remote requests.
 """
 import colorsys
 import io
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import unittest
 
@@ -47,8 +52,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import momentum_fx_support as fx
 from test_momentum_ninja_light import gallery_frames
 
-ROOT = Path(__file__).resolve().parents[1]
-TEST_PATH = 'tools/test_momentum_depth_grade.py'
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_DEPTH_GRADE_EVIDENCE_DIR', '/tmp/momentum-depth-grade'))
 VIEWPORT = (1280, 720)
 SCENE = 'run-right'
@@ -59,6 +62,9 @@ REGION_MAX = 3
 LIGHT_FREE_PX = 400
 MAX_STEPS = 40
 GRADE_OFF = [('score: 150, hue: -82', 'score: 150, hue: 0'), ('score: 400, hue: 92', 'score: 400, hue: 0')]
+# The depth grade switched off: every getDepthGrade/prepareDepthGrade path
+# returns at once
+NO_GRADE = [('depthStages: Object.freeze([', 'depthStages: null && Object.freeze([')]
 
 SET_SCORE = '() => { scoreText.count.momentum = %d }'
 
@@ -101,12 +107,8 @@ def compact(data):
 
 
 def parent_rev():
-    if os.environ.get('MOMENTUM_DEPTH_GRADE_PARENT'):
-        return os.environ['MOMENTUM_DEPTH_GRADE_PARENT']
-    added = subprocess.check_output(['git', 'log', '-1', '--format=%H', '--diff-filter=A', '--', TEST_PATH],
-                                    cwd=ROOT, text=True).strip()
-    return subprocess.check_output(['git', 'rev-parse', f'{added}~1' if added else 'HEAD'],
-                                   cwd=ROOT, text=True).strip()
+    """The MOMENTUM_DEPTH_GRADE_PARENT revision, or None (no parent comparisons)."""
+    return os.environ.get('MOMENTUM_DEPTH_GRADE_PARENT') or None
 
 
 def hue_deg(rgb):
@@ -148,6 +150,7 @@ class MomentumDepthGradeTests(unittest.TestCase):
         cls.parent = parent_rev()
         tree = fx.harness()
         cls.grade_off = fx.FxHarness('worktree', tree.browser, style_patch=GRADE_OFF)
+        cls.no_grade = fx.FxHarness('worktree', tree.browser, style_patch=NO_GRADE)
         cls.result = {}
 
     @classmethod
@@ -155,14 +158,16 @@ class MomentumDepthGradeTests(unittest.TestCase):
         if cls.result:
             (EVIDENCE_DIR / 'depth.json').write_text(compact(cls.result))
         cls.grade_off.close()
+        cls.no_grade.close()
         fx.close()
 
     def test_0_hue_by_score(self):
         tree = fx.harness()
         frames = {score: score_frame(tree, score) for score in SCORES}
-        parent0 = score_frame(fx.harness(self.parent), 0)
+        off0 = score_frame(self.no_grade, 0)
+        parent0 = score_frame(fx.harness(self.parent), 0) if self.parent else None
         mask = light_free_mask(frames[0])
-        parent_hue = hue_deg(mean_rgb(parent0, mask))
+        off_hue = hue_deg(mean_rgb(off0, mask))
         hue0 = hue_deg(mean_rgb(frames[0], mask))
         rows = []
         for score in SCORES:
@@ -173,15 +178,24 @@ class MomentumDepthGradeTests(unittest.TestCase):
                          'shift': round(shift, 2), 'targetShift': TARGET_SHIFT[score],
                          'shiftError': round(abs(shift - TARGET_SHIFT[score]), 2), 'regions': regions})
             print('score', rows[-1])
-        result = {'scene': SCENE, 'viewport': list(VIEWPORT), 'tree': tree.rev, 'parent': fx.harness(self.parent).rev,
+        result = {'scene': SCENE, 'viewport': list(VIEWPORT), 'tree': tree.rev,
                   'lightFree': {'pastNinjaPx': LIGHT_FREE_PX, 'pixels': int(mask.sum())},
-                  'parentHue': round(parent_hue, 2), 'hue0VsParent': round(abs(hue_shift(parent_hue, hue0)), 2),
-                  'score0MaxDeltaVsParent': fx.max_delta(frames[0], parent0),
-                  'tolerance': HUE_TOL, 'regionMax': REGION_MAX, 'scores': rows}
+                  'gradeOffHue': round(off_hue, 2), 'hue0VsGradeOff': round(abs(hue_shift(off_hue, hue0)), 2),
+                  'score0MaxDeltaVsGradeOff': fx.max_delta(frames[0], off0),
+                  'parent': None, 'tolerance': HUE_TOL, 'regionMax': REGION_MAX, 'scores': rows}
+        if parent0 is not None:
+            parent_hue = hue_deg(mean_rgb(parent0, mask))
+            result.update(parent=fx.harness(self.parent).rev, parentHue=round(parent_hue, 2),
+                          hue0VsParent=round(abs(hue_shift(parent_hue, hue0)), 2),
+                          score0MaxDeltaVsParent=fx.max_delta(frames[0], parent0))
         self.result['depth'] = result
+        print('score 0', {k: v for k, v in result.items() if k != 'scores'})
         self.assertGreater(mask.sum(), 50000)
-        self.assertLessEqual(result['hue0VsParent'], HUE_TOL)
-        self.assertEqual(result['score0MaxDeltaVsParent'], 0)
+        self.assertLessEqual(result['hue0VsGradeOff'], HUE_TOL)
+        self.assertEqual(result['score0MaxDeltaVsGradeOff'], 0)
+        if parent0 is not None:
+            self.assertLessEqual(result['hue0VsParent'], HUE_TOL)
+            self.assertEqual(result['score0MaxDeltaVsParent'], 0)
         for row in rows:
             with self.subTest(score=row['score']):
                 self.assertLessEqual(row['shiftError'], HUE_TOL)
@@ -246,24 +260,24 @@ class MomentumDepthGradeTests(unittest.TestCase):
             self.assertEqual(row['rebuilds'], 0)
 
     def test_3_switch_off_and_other_modes_equal_parent(self):
+        tree = fx.harness()
+        ref = fx.harness(self.parent) if self.parent else self.no_grade
         rows = []
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
-                new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                new = tree.capture(scene, viewport, fx_on=False)
+                base = ref.capture(scene, viewport, fx_on=False)
                 self.assertFalse(new.info['fx'])
                 d = fx.max_delta(new, base)
                 rows.append({'scene': f'momentum-{scene}-{viewport[0]}x{viewport[1]}', 'fx': 'off',
                              'maxDelta': d, 'identical': d == 0})
         # The switch off deep in the run too
-        new = score_frame(fx.harness(), 400, fx_on=False)
-        base = score_frame(fx.harness(self.parent), 400, fx_on=False)
+        new = score_frame(tree, 400, fx_on=False)
+        base = score_frame(ref, 400, fx_on=False)
         d = fx.max_delta(new, base)
         rows.append({'scene': f'momentum-{SCENE}-score400-1280x720', 'fx': 'off', 'maxDelta': d, 'identical': d == 0})
-        tree = fx.harness()
-        parent = fx.harness(self.parent)
         new = gallery_frames(tree.browser, tree.url, ['classic', 'bad'])
-        old = gallery_frames(parent.browser, parent.url, ['classic', 'bad'])
+        old = gallery_frames(ref.browser, ref.url, ['classic', 'bad'], prepare=ref.patch_context)
         for name in new:
             self.assertIs(new[name][1], True)
             d = fx.max_delta(new[name][0], old[name][0])
@@ -271,7 +285,8 @@ class MomentumDepthGradeTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'reference': ref.rev + (' depth grade off' if ref is self.no_grade else ''), 'tree': tree.rev,
+            'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 17)
         for row in rows:

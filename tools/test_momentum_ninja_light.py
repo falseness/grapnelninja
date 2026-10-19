@@ -178,8 +178,9 @@ ALLOC_SCRIPT = r'''frames => {
 }'''
 
 
-def gallery_frames(browser, url, modes):
-    """Decoded frames of modes at the test_visual_gallery viewports and ticks."""
+def gallery_frames(browser, url, modes, prepare=None):
+    """Decoded frames of modes at the test_visual_gallery viewports and ticks
+    (prepare(context) runs on each new context, e.g. FxHarness.patch_context)."""
     frames = {}
     for vp in vg.VIEWPORTS:
         script = input_script(SEED, max(vg.TICKS), vp['width'], vp['height'])
@@ -188,6 +189,8 @@ def gallery_frames(browser, url, modes):
                                           device_scale_factor=vp['dpr'], is_mobile=vp['touch'], has_touch=vp['touch'])
             context.add_init_script(SEED_SCRIPT % SEED)
             context.add_init_script(CLOCK_SCRIPT)
+            if prepare:
+                prepare(context)
             page = context.new_page()
             try:
                 page.goto(url + 'index.html', wait_until='load')

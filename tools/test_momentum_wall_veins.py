@@ -22,19 +22,25 @@ WALL_VEINS.enabled test hook off, each frame from its own page):
   alpha delta <= MAX_MEAN_DELTA) and differs from it unshifted (the layout
   moves with the world); a redraw at the same camera builds no tile;
 - collision-identical.json: the TASK-050 scripted 20 s momentum run (R U R D
-  R course, 1200 ticks, ninja steered past both faces) on the tree and the
-  parent: per-cycle ninja x/y/speedX/speedY and every border's getLines()
-  (logged whenever the set changes) identical;
+  R course, 1200 ticks, ninja steered past both faces) on the tree and on the
+  same tree with the veins off (WALL_VEINS.enabled false), and with
+  MOMENTUM_WALL_VEINS_PARENT set also the parent: per-cycle ninja
+  x/y/speedX/speedY and every border's getLines() (logged whenever the set
+  changes) identical (without the env the parent run is skipped: later game
+  changes such as the TASK-073 slow motion move the ninja, TASK-100);
 - switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
   harness viewports and the classic and bad test_visual_gallery frames with
-  the switch on equal the parent commit (decoded maxDelta 0);
+  the switch on equal the same tree with the veins off (STYLE.momentumFx.veins
+  .show false), or the parent commit when MOMENTUM_WALL_VEINS_PARENT is set
+  (decoded maxDelta 0);
 - shots/: blue-corner at 1280x720, a 2x crop of the overhang wall over the
   ninja, mid-shaft at 390x844, compare-blue-corner.png (vs concept
   9-wall-veins.png).
 MOMENTUM_WALL_VEINS_EVIDENCE_DIR (default /tmp/momentum-wall-veins) receives
-the json files (compact) and shots/. MOMENTUM_WALL_VEINS_PARENT is the parent
-revision (default: the parent of the commit that added this file, or HEAD
-while uncommitted). Requires Playwright Chromium. No remote requests.
+the json files (compact) and shots/. MOMENTUM_WALL_VEINS_PARENT, when set, is
+the parent revision the checks above also compare against (TASK-100: the
+old default, the parent of the commit that added this file, predates the
+TASK-073 slow motion and later game changes). Requires Playwright Chromium. No remote requests.
 """
 import base64
 import hashlib
@@ -42,7 +48,6 @@ import io
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import unittest
 
@@ -57,8 +62,6 @@ from test_momentum_borders import SEED_COURSE
 from test_momentum_ninja_light import gallery_frames
 from test_momentum_patterns_turn import SCRIPT
 
-ROOT = Path(__file__).resolve().parents[1]
-TEST_PATH = 'tools/test_momentum_wall_veins.py'
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_WALL_VEINS_EVIDENCE_DIR', '/tmp/momentum-wall-veins'))
 LIT_CASES = [('blue-corner', (1280, 720)), ('mid-shaft', (390, 844))]
 NEAR_PX = 150
@@ -69,6 +72,10 @@ MAX_MEAN_DELTA = 0.5
 TICKS = 1200
 CONCEPT = fx.CONCEPT_DIR / '9-wall-veins.png'
 NO_VEINS = '() => { WALL_VEINS.enabled = false }'
+# The collision run with the veins off (the frame counter from 0: boot drew some)
+RUN_NO_VEINS = '() => { WALL_VEINS.enabled = false; WALL_VEINS.frames = 0 }'
+# The veins off in style.js (served to every page of a harness)
+NO_VEINS_STYLE = [('veins: Object.freeze({\n            show: true,', 'veins: Object.freeze({\n            show: false,')]
 
 # The corridor borders' bodies (the WALL_VEINS input) filled into a canvas,
 # and the frame's lights, in canvas px
@@ -162,12 +169,8 @@ def compact(data):
 
 
 def parent_rev():
-    if os.environ.get('MOMENTUM_WALL_VEINS_PARENT'):
-        return os.environ['MOMENTUM_WALL_VEINS_PARENT']
-    added = subprocess.check_output(['git', 'log', '-1', '--format=%H', '--diff-filter=A', '--', TEST_PATH],
-                                    cwd=ROOT, text=True).strip()
-    return subprocess.check_output(['git', 'rev-parse', f'{added}~1' if added else 'HEAD'],
-                                   cwd=ROOT, text=True).strip()
+    """The MOMENTUM_WALL_VEINS_PARENT revision, or None (no parent comparisons)."""
+    return os.environ.get('MOMENTUM_WALL_VEINS_PARENT') or None
 
 
 def data_url_alpha(url):
@@ -198,7 +201,7 @@ def capture(scene, viewport, extra_js=None, bodies=False):
     return fx.Frame(np.asarray(Image.open(io.BytesIO(png)).convert('RGB')), info), extra
 
 
-def collision_run(harness):
+def collision_run(harness, extra_js=None):
     context = harness.browser.new_context(viewport={'width': 1280, 'height': 720})
     try:
         page = context.new_page()
@@ -207,6 +210,8 @@ def collision_run(harness):
         page.goto(harness.url + 'index.html')
         wait_for_boot_run(page)
         page.evaluate(SEED_COURSE, SCRIPT)
+        if extra_js:
+            page.evaluate(extra_js)
         result = page.evaluate(RUN, [TICKS])
         if errors:
             raise RuntimeError(f'page errors: {errors}')
@@ -315,45 +320,67 @@ class MomentumWallVeinsTests(unittest.TestCase):
         self.assertEqual(result['tileBuildsOnRedraw'], [0, 0])
 
     def test_2_collision_identical_to_parent(self):
-        runs = {}
-        for name, rev in (('tree', 'worktree'), ('parent', self.parent)):
-            harness = fx.harness(rev)
-            runs[name] = (harness.rev, collision_run(harness))
+        tree = fx.harness()
+        runs = {'tree': (tree.rev, collision_run(tree)), 'veinsOff': (tree.rev, collision_run(tree, RUN_NO_VEINS))}
+        if self.parent:
+            parent = fx.harness(self.parent)
+            runs['parent'] = (parent.rev, collision_run(parent))
         sha = lambda v: hashlib.sha256(json.dumps(v).encode()).hexdigest()
-        tree, parent = runs['tree'][1], runs['parent'][1]
-        differing = sum(1 for p, q in zip(tree['cycles'], parent['cycles']) if p != q)
-        side = lambda name, r: {'rev': runs[name][0], 'cycles': len(r['cycles']), 'cyclesSha': sha(r['cycles']),
-                                'linesSha': sha(r['lineLog']), 'lineChanges': len(r['lineLog']),
-                                'segmentIndex': r['segmentIndex'], 'borderTouches': r['borderTouches'],
-                                'joins': r['joins'], 'veinFrames': r['veinFrames']}
-        result = {'identical': tree['cycles'] == parent['cycles'] and tree['lineLog'] == parent['lineLog'],
-                  'ticks': TICKS, 'seconds': TICKS / 60, 'cyclesCompared': len(tree['cycles']),
-                  'differingCycles': differing, 'cycleCountsEqual': len(tree['cycles']) == len(parent['cycles']),
-                  'lineSnapshotsCompared': len(tree['lineLog']), 'linesEqual': tree['lineLog'] == parent['lineLog'],
-                  'tree': side('tree', tree), 'parent': side('parent', parent),
+        side = lambda name: {'rev': runs[name][0], 'cycles': len(runs[name][1]['cycles']),
+                             'cyclesSha': sha(runs[name][1]['cycles']), 'linesSha': sha(runs[name][1]['lineLog']),
+                             'lineChanges': len(runs[name][1]['lineLog']), 'segmentIndex': runs[name][1]['segmentIndex'],
+                             'borderTouches': runs[name][1]['borderTouches'], 'joins': runs[name][1]['joins'],
+                             'veinFrames': runs[name][1]['veinFrames']}
+        new = runs['tree'][1]
+        comparisons = {}
+        for name in runs:
+            if name == 'tree':
+                continue
+            ref = runs[name][1]
+            comparisons[name] = {
+                'identical': new['cycles'] == ref['cycles'] and new['lineLog'] == ref['lineLog'],
+                'cyclesCompared': len(new['cycles']), 'cycleCountsEqual': len(new['cycles']) == len(ref['cycles']),
+                'differingCycles': sum(1 for p, q in zip(new['cycles'], ref['cycles']) if p != q),
+                'lineSnapshotsCompared': len(new['lineLog']), 'linesEqual': new['lineLog'] == ref['lineLog']}
+        result = {'identical': all(c['identical'] for c in comparisons.values()), 'ticks': TICKS,
+                  'seconds': TICKS / 60, 'comparisons': comparisons, **{name: side(name) for name in runs},
                   'script': 'TASK-050 scripted run (artifacts/TASK-050/scripts/collision.py) plus a draw() per '
                             'tick so the veins render during the run'}
         (EVIDENCE_DIR / 'collision-identical.json').write_text(compact(result))
-        print('collision', {k: v for k, v in result.items() if k not in ('tree', 'parent')},
-              result['tree']['borderTouches'], result['tree']['veinFrames'])
-        self.assertGreater(tree['borderTouches'], 0)
-        self.assertGreater(tree['veinFrames'], 0)
-        self.assertTrue(result['identical'])
+        print('collision', comparisons, result['tree']['borderTouches'], result['tree']['veinFrames'],
+              result['veinsOff']['veinFrames'])
+        self.assertGreater(new['borderTouches'], 0)
+        self.assertGreater(new['veinFrames'], 0)
+        self.assertEqual(result['veinsOff']['veinFrames'], 0)
+        for name, comparison in comparisons.items():
+            with self.subTest(reference=name):
+                self.assertTrue(comparison['identical'])
 
     def test_3_switch_off_and_other_modes_equal_parent(self):
+        tree = fx.harness()
+        no_veins = None
+        if self.parent:
+            ref = fx.harness(self.parent)
+        else:
+            ref = no_veins = fx.FxHarness('worktree', tree.browser, style_patch=NO_VEINS_STYLE)
+        try:
+            self.switch_off_rows(tree, ref, no_veins is not None)
+        finally:
+            if no_veins:
+                no_veins.close()
+
+    def switch_off_rows(self, tree, ref, veins_off):
         rows = []
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
-                new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                new = tree.capture(scene, viewport, fx_on=False)
+                base = ref.capture(scene, viewport, fx_on=False)
                 self.assertFalse(new.info['fx'])
                 d = fx.max_delta(new, base)
                 rows.append({'scene': f'momentum-{scene}-{viewport[0]}x{viewport[1]}', 'fx': 'off',
                              'maxDelta': d, 'identical': d == 0})
-        tree = fx.harness()
-        parent = fx.harness(self.parent)
         new = gallery_frames(tree.browser, tree.url, ['classic', 'bad'])
-        old = gallery_frames(parent.browser, parent.url, ['classic', 'bad'])
+        old = gallery_frames(ref.browser, ref.url, ['classic', 'bad'], prepare=ref.patch_context)
         for name in new:
             self.assertIs(new[name][1], True)
             d = fx.max_delta(new[name][0], old[name][0])
@@ -361,7 +388,7 @@ class MomentumWallVeinsTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'reference': ref.rev + (' veins off' if veins_off else ''), 'tree': tree.rev, 'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:

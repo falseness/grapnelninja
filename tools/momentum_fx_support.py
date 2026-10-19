@@ -277,13 +277,8 @@ class FxHarness:
     def close(self):
         self.stack.close()
 
-    def open(self, viewport):
-        """Booted page (frozen clock, seeded course) at viewport; caller closes its context."""
-        w, h = viewport
-        touch = h > w
-        context = self.browser.new_context(viewport={'width': w, 'height': h}, is_mobile=touch, has_touch=touch)
-        context.add_init_script(SEED_SCRIPT % SEED)
-        context.add_init_script(render_snapshot.CLOCK_SCRIPT)
+    def patch_context(self, context):
+        """Serve the style_patch'ed style.js to context's pages (no-op without a patch)."""
         if self.style_patch:
             style = (self.root / 'style.js').read_text()
             for old, new in self.style_patch:
@@ -292,6 +287,15 @@ class FxHarness:
                 style = style.replace(old, new)
             context.route('**/style.js', lambda route: route.fulfill(
                 body=style, content_type='application/javascript'))
+
+    def open(self, viewport):
+        """Booted page (frozen clock, seeded course) at viewport; caller closes its context."""
+        w, h = viewport
+        touch = h > w
+        context = self.browser.new_context(viewport={'width': w, 'height': h}, is_mobile=touch, has_touch=touch)
+        context.add_init_script(SEED_SCRIPT % SEED)
+        context.add_init_script(render_snapshot.CLOCK_SCRIPT)
+        self.patch_context(context)
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
