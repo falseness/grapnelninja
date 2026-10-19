@@ -283,7 +283,8 @@ const STYLE = Object.freeze({
         maxEmitters: 6,
         // A blue piece is an area light of momentum.blueStroke: it lights
         // from its outline outward over blueSpread (screen px at 1080), at
-        // blueAlpha times its fade alpha. Greens emit nothing.
+        // blueAlpha (it does not fade: a used blue vanishes at once). Greens
+        // emit nothing.
         blueSpread: 220,
         blueAlpha: 0.9,
         // Its haze ('lighter', like the ninja's) at this alpha
@@ -321,7 +322,8 @@ const STYLE = Object.freeze({
         moteReach: 1.5,
         moteWhite: 0.2,
         moteSteps: 8,
-        // Speed light: s = |ninja speed| / GAMEPLAY.momentumMaxSpeed (0..1),
+        // Speed light: s = |ninja speed| / the effective speed cap
+        // (GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1)), 0..1,
         // eased toward over speedSmoothMs of render clock (taken as is on a
         // run's first frame or after speedResetMs without one). The ninja
         // light's radius and alpha go from slow to fast with s, its haze

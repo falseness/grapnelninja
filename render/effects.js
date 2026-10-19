@@ -1370,10 +1370,7 @@ class LightmapRenderer
         this.momentumLights = []
         // drawFrameId of the frame momentumLights were collected for
         this.momentumLightsFrame = -1
-        // Extra point lights ({x, y, radius, color, alpha}, world units,
-        // radius screen px at 1080) that later effects put here per frame
-        this.momentumEmitters = []
-        // Those plus the blue pieces' area lights of the frame
+        // The blue pieces' area lights of the frame
         this.emitterCandidates = []
         // The player trail's light samples ({x, y, alpha}, world units) and
         // their lights, reused per frame
@@ -1929,10 +1926,9 @@ class LightmapRenderer
             }
         return 0
     }
-    // The ninja's light plus the momentumLight.maxEmitters emitters nearest
-    // to it (momentumEmitters and the blue pieces), each {x, y, radius,
-    // gradient, alpha} with x, y on screen; a blue's light has its element
-    // instead of a gradient
+    // The ninja's light plus the momentumLight.maxEmitters emitters (blue
+    // pieces) nearest to it, each {x, y, radius, gradient, alpha} with x, y
+    // on screen; a blue's light has its element instead of a gradient
     collectMomentumLights(gameState)
     {
         const config = STYLE.momentumLight
@@ -2171,16 +2167,14 @@ class LightmapRenderer
             lights.push(light)
         }
     }
-    // momentumEmitters plus an area light per visible blue piece: at its
-    // centre, reaching blueSpread past its outline, at blueAlpha times its
-    // fade alpha (none once used: a used blue vanishes at once)
+    // An area light per visible blue piece: at its centre, reaching
+    // blueSpread past its outline, at blueAlpha (none once used: a used blue
+    // vanishes at once)
     collectEmitters(gameState)
     {
         const config = STYLE.momentumLight
         const emitters = this.emitterCandidates
         emitters.length = 0
-        for (let i = 0; i < this.momentumEmitters.length; ++i)
-            emitters.push(this.momentumEmitters[i])
         const toScreen = scale[version] * 1080 / height
         const floors = gameState.floors
         for (let i = 0; i < floors.length; ++i)
@@ -2316,8 +2310,8 @@ class LightmapRenderer
         rect.h = bottom - top
         return rect
     }
-    // A blue's outline light (the obstacle spill sprite, wider) at alpha;
-    // past 1 (a hit flash) whole passes are added
+    // A blue's outline light (the obstacle spill sprite, wider) at alpha
+    // (at most 1)
     fillAreaLight(lightCtx, element, alpha)
     {
         const box = getElementCullBox(element)
@@ -2327,14 +2321,9 @@ class LightmapRenderer
         const spread = STYLE.momentumLight.blueSpread * height / 1080 / scale[version]
         const sprite = this.getShapeLightSprite(element, box, STYLE.momentum.blueStroke, spread, toLight)
         lightCtx.setTransform(toLight, 0, 0, toLight, 0, 0)
-        for (let left = alpha; left > 0; left -= 1)
-        {
-            if (left < alpha)
-                lightCtx.globalCompositeOperation = 'lighter'
-            lightCtx.globalAlpha = Math.min(1, left)
-            lightCtx.drawImage(sprite, box.left + screen.x - spread, box.top + screen.y - spread,
-                sprite.width / toLight, sprite.height / toLight)
-        }
+        lightCtx.globalAlpha = alpha
+        lightCtx.drawImage(sprite, box.left + screen.x - spread, box.top + screen.y - spread,
+            sprite.width / toLight, sprite.height / toLight)
     }
     // A piece stands in the open between the light and the cave: its shadow
     // also darkens the ambient and the obstacle spill by up to shadowDepth,

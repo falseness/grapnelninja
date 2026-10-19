@@ -1,8 +1,8 @@
 """Momentum lighting 9/17: speed-driven ninja light and speed streaks (TASK-059).
 
 With MOMENTUM_FX on, LightmapRenderer.updateSpeedLight eases s toward
-|ninja speed| / GAMEPLAY.momentumMaxSpeed over momentumLight.speedSmoothMs of
-render clock; the ninja light's radius and alpha go from momentumLight.slow to
+|ninja speed| / the effective cap (GAMEPLAY.momentumMaxSpeed *
+momentumMotionScale(1)) over momentumLight.speedSmoothMs of render clock; the ninja light's radius and alpha go from momentumLight.slow to
 .fast with s (its haze radius with it), the trail lights' alpha times
 trailGain. From s >= streakFrom drawSpeedStreaks draws 3-6 thin lines behind
 the ninja against its velocity, placed from the render clock (no
@@ -75,7 +75,7 @@ EMPTY_TRAIL = '() => { ninja.track.pos = [] }'
 # Sets the ninja's speed to s of the cap along the scene's direction, then
 # draws frames 1/60 s apart; returns the speed light state
 SETTLE = r'''([s, dir, frames]) => {
-    const v = GAMEPLAY.momentumMaxSpeed * s
+    const v = GAMEPLAY.momentumMaxSpeed * momentumMotionScale(1) * s
     ninja.speedX = dir[0] * v; ninja.speedY = dir[1] * v
     for (let i = 0; i < frames; ++i) {
         __snap.now += 1000 / 60
