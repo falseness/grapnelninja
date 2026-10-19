@@ -164,10 +164,11 @@ const GAMEPLAY = Object.freeze({
     // startViewWidths view widths ahead of its start; gaps between patterns
     // are gapViewWidths view widths (times obstacleSpacingScale, like bad);
     // patterns keep joinMarginHalfWidths corridor half widths off a join; a
-    // turn type takes a direction change with turnChancePercent where its
-    // pieces fit (in the right corridor, next to the shaft's patterns); its frame
-    // keeps turnClearanceHalfWidths corridor half widths off the corner box
-    // (the shaft's width around the join). Integer pick weights by
+    // corner frame (MOMENTUM_FRAMES_TURN) takes a direction change with
+    // turnChancePercent where its pieces fit, and the patterns of both
+    // stretches keep its reach plus the minimum gap off the course vertex.
+    // turnClearanceHalfWidths is the clearance of the ported turn types off
+    // the corner box (placeable only since TASK-111). Integer pick weights by
     // difficulty 1..5 go from earlyWeights at score 0 to lateWeights at rampScore;
     // the avoidRecent types placed last in a direction (up and down together;
     // turns: join) are skipped while another type is left.
@@ -176,7 +177,10 @@ const GAMEPLAY = Object.freeze({
         startViewWidths: 0.5,
         gapViewWidths: Object.freeze({min: 0.20, max: 0.30}),
         joinMarginHalfWidths: 1.1,
-        turnChancePercent: 35,
+        // 60 (35 before TASK-111): the corner frames are most of the user's
+        // picks (8 of 18) and only show up at joins, so they need the higher
+        // chance to be met about as often as the straight frames
+        turnChancePercent: 60,
         turnClearanceHalfWidths: 0.5,
         earlyWeights: Object.freeze([12, 6, 3, 1, 1]),
         lateWeights: Object.freeze([3, 3, 3, 3, 3]),

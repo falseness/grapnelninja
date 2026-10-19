@@ -9,8 +9,9 @@ default artifacts/TASK-102/catalog-m.json); MomentumCornerFrameFactory places
 a piece at vertex + catalog * (shaft W across x, corridor W across y), the
 M60 bar an axis-x sweeper between the shaft wall faces, the M39 and M40
 elevators axis-y movers between the exit corridor's faces. momentumPlaceTurn(id,
-segmentIndex) hands a corner id to momentumPlaceCorner. Placeable only: no
-id is in momentumTurnsByJoin or momentumPatternsByDir.
+segmentIndex) hands a corner id to momentumPlaceCorner. Since TASK-111
+momentumTurnsByJoin (the corner spawn registry) holds exactly these ids per
+join, and momentumPatternsByDir none of them.
 
 At 1280x720 and 390x844 (touch, as test_momentum_frames_v) momentum starts on
 a course right, up, right, down, right (SCRIPT, as test_momentum_patterns_turn:
@@ -32,8 +33,8 @@ obstacle floor emptied. Asserts:
   W): M117 one >= 0.375, M134 two >= 0.5 (the TASK-109 bigger gaps), M98
   one >= 0.5, M136 two >= 0.5 (TASK-110);
 - test_2_refused: each id returns null on the three other joins, in classic
-  and bad; momentumTurnsByJoin and momentumPatternsByDir hold no corner id
-  and momentumPatternsByDir equals the port lists;
+  and bad; momentumTurnsByJoin[join] = the ids of that catalog join and
+  momentumPatternsByDir holds no corner id and no port id (TASK-111);
 - test_4_elevator: the M39 and M40 movers moved 400 cycles: x constant,
   top/bottom never outside the exit corridor faces, reverses at both faces,
   travel >= 0.5 W;
@@ -334,11 +335,12 @@ class MomentumFramesTurnTests(unittest.TestCase):
                 own = join_arrow(self.catalog[id]['join'])
                 self.assertEqual(r['placed'][id], {j: j == own for j in JOINS}, (name, id))
             self.assertEqual(r['corner'], IDS)
+            # TASK-111: the spawn registries hold the M frames only
             for j, ids in r['byJoin'].items():
-                self.assertEqual([i for i in ids if i in IDS], [], j)
-            self.assertEqual(r['byDir'], r['ports'])
-            print(name, 'momentumPatternsByDir = port lists', {d: len(l) for d, l in r['byDir'].items()},
-                  'momentumTurnsByJoin', r['byJoin'])
+                self.assertEqual(ids, [i for i in IDS if join_arrow(self.catalog[i]['join']) == j], j)
+            for d, ids in r['byDir'].items():
+                self.assertEqual([i for i in ids if i in r['ports'][d] or i in IDS], [], d)
+            print(name, 'momentumPatternsByDir (no ports)', r['byDir'], 'momentumTurnsByJoin', r['byJoin'])
         context = self.browser.new_context(viewport={'width': 1280, 'height': 720})
         self.addCleanup(context.close)
         page = context.new_page()

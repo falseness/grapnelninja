@@ -8,7 +8,8 @@ interior width; MomentumFrameVerticalFactory places them scaled by the live
 shaft W (2 x momentumSegmentHalfWidth); the M11/M30 blue bar is an axis-x
 sweeper (MomentumOneTime {axis: 'x', speedX = speed x W, xMin/xMax = shaft
 centre + motion.min/max x W, the wall faces}). They are placeable
-(momentumPlacePattern) but not spawned: no id is in momentumPatternsByDir.
+(momentumPlacePattern) and, since TASK-111, spawned in their own direction
+(momentumPatternsByDir.down / .up).
 
 At 1280x720 and at 390x844 (touch: the stage is drawn landscape behind the
 rotate prompt, so the phone shaft is wider) momentum starts on a course whose segment 1 goes
@@ -26,7 +27,8 @@ footprint centred along its shaft. Asserts:
   placement mirrored along the shaft (in W, within GEOM_TOL);
 - test_2_refused: momentumPlacePattern returns null for every id in a right
   segment, for the down ids going up and the -up ids going down, and in
-  classic/bad; no id is in any momentumPatternsByDir list;
+  classic/bad; each id is in momentumPatternsByDir of its own direction
+  only (TASK-111);
 - test_3_shots: at 1280x720 one montage per id: left = the concept PNG
   (artifacts/momentum-frames/png; for -up the down PNG flipped vertically,
   labelled 'mirrored'), right = the frame placed in the game, the view
@@ -271,8 +273,10 @@ class MomentumFramesVTests(unittest.TestCase):
             self.assertEqual(r['right'], [])
             self.assertEqual(r['wrongDir'], [])
             self.assertEqual(r['registered'], IDS)
+            # TASK-111: each frame spawns in its own direction only
             for d, ids in r['byDir'].items():
-                self.assertEqual([i for i in ids if i in IDS], [], d)
+                self.assertEqual(sorted(i for i in ids if i in IDS),
+                                 sorted(i for i in IDS if (i.endswith('-up') == (d == 'up')) and d != 'right'), d)
         # Classic and bad on a page of their own: switching modes on a shared
         # page leaves the later momentum shots black
         context = self.browser.new_context(viewport={'width': 1280, 'height': 720})

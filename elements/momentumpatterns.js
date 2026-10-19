@@ -264,7 +264,7 @@ const MOMENTUM_SUPPORT_GAP = 21.6
 // footprint start, y across from the centre line (+ = floor side), polygon
 // points relative to (x, y); motion {axis, min, max, speed}: the range of the
 // top/left edge (min) and bottom/right edge (max), speed per cycle before
-// momentumMotionScale. Placeable (momentumPlacePattern), not spawned yet.
+// momentumMotionScale. Spawned (momentumPatternsByDir) and placeable (momentumPlacePattern).
 const MOMENTUM_FRAMES_H = Object.freeze([
     {id: 'M04', difficulty: 2, span: 1.095833, pieces: [
         {kind: 'green', shape: 'rect', x: 0.141667, y: 0.177083, w: 0.083333, h: 0.416667},
@@ -346,7 +346,7 @@ class MomentumFrameFactory
 // pieces are met in the order and at the distances they are met falling down.
 // motion {axis: 'x', min, max, speed}: the bounds of the left (min) and
 // right (max) edge across from the centre line, speed per cycle before
-// momentumMotionScale. Placeable (momentumPlacePattern), not spawned yet.
+// momentumMotionScale. Spawned (momentumPatternsByDir) and placeable (momentumPlacePattern).
 const MOMENTUM_FRAMES_V = Object.freeze([
     // M11, M30: a flat blue bar sweeping left and right between the walls
     {id: 'M11', dirs: ['down'], difficulty: 3, span: 1.033333, pieces: [
@@ -518,11 +518,9 @@ class MomentumTurnPatternFactory
         return this.frame.create(x + this.getOffset(join, shaftHalfWidth), y)
     }
 }
-// Turn id -> factory, in catalog order; join -> the turn ids built for it
+// Turn id -> factory, in catalog order (placeable only: not spawned)
 const momentumTurnFactories = Object.freeze(Object.fromEntries(
     MOMENTUM_PATTERNS_TURN.map(pattern => [pattern.id, new MomentumTurnPatternFactory(pattern)])))
-const momentumTurnsByJoin = Object.freeze(Object.fromEntries(['right->up', 'right->down', 'down->right', 'up->right'].map(join =>
-    [join, Object.freeze(MOMENTUM_PATTERNS_TURN.filter(pattern => pattern.joins.includes(join)).map(pattern => pattern.id))])))
 
 // The user's picked corner frames (TASK-102 catalog), anchored at the course
 // vertex (where the two corridor centre lines meet) and free to use the
@@ -533,8 +531,8 @@ const momentumTurnsByJoin = Object.freeze(Object.fromEntries(['right->up', 'righ
 // along the incoming corridor and ahead along the outgoing one (+ 0.1 W), in
 // W of that corridor's travel axis. motion {axis: 'x', min, max, speed} as in
 // MOMENTUM_FRAMES_V, across from the vertex in shaft W; {axis: 'y', ...} the
-// top / bottom edge bounds from the vertex in corridor W. Placeable
-// (momentumPlaceTurn / momentumPlaceCorner), not spawned yet.
+// top / bottom edge bounds from the vertex in corridor W. Spawned per join
+// (momentumTurnsByJoin), placeable with momentumPlaceTurn / momentumPlaceCorner.
 const MOMENTUM_FRAMES_TURN = Object.freeze([
     // M18 Kicker: a green wedge in the outer bottom corner kicks the run up
     {id: 'M18', join: 'right-up', difficulty: 2, reach: {in: 0.583333, out: 0.572917}, pieces: [
@@ -634,26 +632,29 @@ class MomentumCornerFrameFactory
         })
     }
 }
-// Corner frame id -> factory (placeable only: not in momentumTurnsByJoin)
+// Corner frame id -> factory; join -> the corner frame ids spawned there
 const momentumCornerFrameFactories = Object.freeze(Object.fromEntries(
     MOMENTUM_FRAMES_TURN.map(pattern => [pattern.id, new MomentumCornerFrameFactory(pattern)])))
+const momentumTurnsByJoin = Object.freeze(Object.fromEntries(['right->up', 'right->down', 'down->right', 'up->right'].map(join =>
+    [join, Object.freeze(MOMENTUM_FRAMES_TURN.filter(pattern => pattern.join.replace('-', '->') == join).map(pattern => pattern.id))])))
 
 // Catalog id -> factory: the ported bad frames first, in port catalog
 // order, then their vertical variants (bad-frameN-v), then the concept
-// frames (placeable only: not in momentumPatternsByDir)
+// frames
 const momentumPatternFactories = Object.freeze(Object.fromEntries([
     ...MOMENTUM_PATTERNS_PORT_H.map(pattern => [pattern.id, new MomentumPortPatternFactory(pattern)]),
     ...MOMENTUM_PATTERNS_PORT_V.map(pattern => [pattern.id, new MomentumPortVerticalPatternFactory(pattern)]),
     ...MOMENTUM_FRAMES_H.map(pattern => [pattern.id, new MomentumFrameFactory(pattern)]),
     ...MOMENTUM_FRAMES_V.map(pattern => [pattern.id, new MomentumFrameVerticalFactory(pattern)])
 ]))
-// Segment direction -> the ids spawned there: right segments spawn the
-// ported frames, shafts their vertical variants only. A variant restricted
-// to one direction is only registered there.
+// Segment direction -> the ids spawned there: the user's picked concept
+// frames only (MOMENTUM_FRAMES_H / _V, each shaft frame in its own
+// direction). The ported bad frames and their vertical variants stay
+// placeable (momentumPlacePattern) but no longer spawn.
 const momentumPatternsByDir = Object.freeze({
-    right: Object.freeze(MOMENTUM_PATTERNS_PORT_H.map(pattern => pattern.id)),
-    up: Object.freeze(MOMENTUM_PATTERNS_PORT_V.filter(pattern => pattern.dirs.includes('up')).map(pattern => pattern.id)),
-    down: Object.freeze(MOMENTUM_PATTERNS_PORT_V.filter(pattern => pattern.dirs.includes('down')).map(pattern => pattern.id))
+    right: Object.freeze(MOMENTUM_FRAMES_H.map(pattern => pattern.id)),
+    up: Object.freeze(MOMENTUM_FRAMES_V.filter(pattern => pattern.dirs.includes('up')).map(pattern => pattern.id)),
+    down: Object.freeze(MOMENTUM_FRAMES_V.filter(pattern => pattern.dirs.includes('down')).map(pattern => pattern.id))
 })
 
 // Holds placed patterns, one generation group each, with the group's box
@@ -726,14 +727,15 @@ class MomentumPatternFloor extends Floor
 
 // The momentum obstacles: catalog patterns spawned along the course ahead of
 // the ninja (GAMEPLAY.momentumSpawn). Stretch by stretch (consecutive
-// segments of one direction), a turn type may take the join at the stretch
+// segments of one direction), a corner frame may take the join at the stretch
 // end (its pieces' reach on both stretches), the rest gets patterns of its
 // direction, spaced like the bad obstacle floor
 // (Floor.alignBadVersionGeneratedElements). Types are picked with
 // integer weights by difficulty (Floor.generateElements), easy types first,
 // skipping the options.avoidRecent types placed last in the same direction
-// (up and down together; turns: join) while another type is left, and never
-// the last one in the same direction or join while there is another type.
+// (up and down together; corners: join) while another type is left, and never
+// the last one in the same direction or join while there is another type (a
+// join with a single corner frame may repeat it).
 class MomentumObstacleFloor extends MomentumPatternFloor
 {
     constructor(course)
@@ -832,13 +834,14 @@ class MomentumObstacleFloor extends MomentumPatternFloor
         return GAMEPLAY.momentumSpawn.joinMarginHalfWidths * momentumSegmentHalfWidth(segment)
     }
     // Where patterns of the stretch from segment index may go (course
-    // distance from its start) and whether a turn takes the join at its end.
-    // A turn lies in the right corridor only (before or after the corner
-    // box), so it leaves the shaft's room to its vertical patterns. It needs
-    // its piece reach (MomentumTurnPatternFactory.getReach) on both
-    // stretches, plus the join margin at the far end of the next one;
-    // patterns keep the minimum gap off its pieces. Join margins and the turn's square across the
-    // shaft follow the shafts' own half widths.
+    // distance from its start) and whether a corner frame takes the join at
+    // its end. A corner frame sits at the course vertex and claims its piece
+    // reach (MomentumCornerFrameFactory.getReach) back along this stretch
+    // and ahead along the next one, plus the join margin at the far end of
+    // the next one; the straight patterns of both stretches keep the
+    // minimum gap off that reach. Without a corner frame the join margins
+    // apply. Join margins and the corner box follow the shafts' own half
+    // widths.
     planStretch(index)
     {
         const options = GAMEPLAY.momentumSpawn
@@ -858,27 +861,29 @@ class MomentumObstacleFloor extends MomentumPatternFloor
         if (index == 0)
             start = Math.max(start, ninja.x - segment.x0 + options.startViewWidths * width / scale[version])
         const join = segment.dir + '->' + next.dir
-        // Only the turn types whose pieces fit both stretches, never the
-        // latest one of the join again
-        const latest = (this.recentIds[join] || []).slice(-1)[0]
-        const turns = momentumTurnsByJoin[join].filter(id =>
+        // Only the corner frames whose pieces fit both stretches, never the
+        // latest one of the join again while the join has another
+        const candidates = momentumTurnsByJoin[join] || []
+        const latest = candidates.length > 1 ? (this.recentIds[join] || []).slice(-1)[0] : undefined
+        const turns = candidates.filter(id =>
         {
             if (id === latest)
                 return false
-            const reach = momentumTurnFactories[id].getReach(join, shaftHalfWidth)
-            return start <= length - reach.back && nextLength >= reach.ahead + nextMargin
+            const reach = momentumCornerFrameFactories[id].getReach(join, shaftHalfWidth)
+            return start <= length - reach.in && nextLength >= reach.out + nextMargin
         })
         let turn = null, reach = null
         if (turns.length && random(0, 100) < options.turnChancePercent)
         {
-            turn = this.pickType(turns, id => momentumTurnFactories[id].pattern.difficulty, this.getAvoidedTypes(join))
-            reach = momentumTurnFactories[turn].getReach(join, shaftHalfWidth)
+            turn = this.pickType(turns, id => momentumCornerFrameFactories[id].pattern.difficulty,
+                                 candidates.length > 1 ? this.getAvoidedTypes(join) : [])
+            reach = momentumCornerFrameFactories[turn].getReach(join, shaftHalfWidth)
         }
         const gap = options.gapViewWidths.min * width / scale[version]
         return {segment: segment, index: index, last: last, vertex: {x: end.x1, y: end.y1}, cursor: start,
                 join: join, turn: turn, shaftHalfWidth: shaftHalfWidth,
-                end: turn ? Math.min(length - margin, length - reach.back - gap) : length - margin,
-                turnArc: turn ? length - reach.back : 0, nextClaim: turn ? reach.ahead + gap : 0, filled: false}
+                end: turn ? Math.min(length - margin, length - reach.in - gap) : length - margin,
+                turnArc: turn ? length - reach.in : 0, nextClaim: turn ? reach.out + gap : 0, filled: false}
     }
     // Up and down patterns share their types: their recent types are kept
     // together, and the latest one per direction too
@@ -931,10 +936,9 @@ class MomentumObstacleFloor extends MomentumPatternFloor
             {
                 if (reached(segment, arc + plan.cursor))
                     return
-                // Only the types that fit the room left (the long ported
-                // frames, and in wide shafts their scaled variants, may
-                // never fit a short stretch), never the latest one of the
-                // direction again
+                // Only the types that fit the room left (a long frame, and
+                // in a wide shaft any shaft frame, may never fit a short
+                // stretch), never the latest one of the direction again
                 const halfWidth = momentumSegmentHalfWidth(segment)
                 const latest = (this.recentIds[segment.dir] || []).slice(-1)[0]
                 const ids = momentumPatternsByDir[segment.dir].filter(id => id !== latest &&
@@ -960,11 +964,13 @@ class MomentumObstacleFloor extends MomentumPatternFloor
             {
                 if (reached(segment, arc + plan.turnArc))
                     return
-                const factory = momentumTurnFactories[plan.turn]
-                this.place(factory.create(plan.vertex.x, plan.vertex.y, plan.join, plan.shaftHalfWidth),
-                           plan.join.startsWith('right->') ? plan.last : plan.last + 1)
+                // Its group belongs to the outgoing segment: the pieces
+                // reach into it, so they only count as behind vertically
+                // once the camera has turned the corner
+                const factory = momentumCornerFrameFactories[plan.turn]
+                this.place(factory.create(plan.vertex.x, plan.vertex.y, plan.shaftHalfWidth), plan.last + 1)
                 this.placedType(plan.join, plan.turn)
-                this.spawned(plan.turn, 'turn', plan.join, factory.pattern.difficulty, arc + plan.turnArc)
+                this.spawned(plan.turn, 'corner', plan.join, factory.pattern.difficulty, arc + plan.turnArc)
                 plan.turn = null
             }
             this.nextClaim = plan.nextClaim

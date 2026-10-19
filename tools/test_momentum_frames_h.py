@@ -5,8 +5,9 @@ elements/momentumpatterns.js MOMENTUM_FRAMES_H holds the user's picked
 right-corridor concept frames copied from the TASK-102 catalog
 (MOMENTUM_FRAMES_CATALOG, default artifacts/TASK-102/catalog-m.json), every
 size in W = the corridor's interior width; MomentumFrameFactory places them
-scaled by the live W. They are placeable (momentumPlacePattern) but not
-spawned: momentumPatternsByDir.right stays the ported bad frames.
+scaled by the live W. They are placeable (momentumPlacePattern) and, since
+TASK-111, the only right-corridor frames spawned: momentumPatternsByDir.right
+= these ids (the ported bad frames stay placeable, not spawned).
 
 At 1280x720 and at 390x844 (touch) momentum starts on a course whose first
 right segment is long (SCRIPT, as test_momentum_patterns_h), the rAF loop
@@ -17,8 +18,9 @@ stopped and the obstacle floor emptied; each frame is placed alone. Asserts:
   momentumMotionScale(1)) match, every piece (and motion range) inside the
   corridor band, nothing lethal;
 - test_2_refused: momentumPlacePattern returns null for these ids in an up
-  and a down segment and in classic/bad; momentumPatternsByDir.right is still
-  MOMENTUM_PATTERNS_PORT_H and no frame id is in any direction list;
+  and a down segment and in classic/bad; momentumPatternsByDir.right is
+  exactly these ids (TASK-111), up/down hold none of them and no
+  MOMENTUM_PATTERNS_PORT_H id is in any direction list;
 - test_3_shots: per id per viewport a montage: left = the concept PNG
   (artifacts/momentum-frames/png), right = the frame placed in the game, the
   view cropped to the concept's frame rectangle and scaled to its height
@@ -261,9 +263,11 @@ class MomentumFramesHTests(unittest.TestCase):
             self.assertEqual(r['up'], [])
             self.assertEqual(r['down'], [])
             self.assertEqual(r['registered'], IDS)
-            self.assertEqual(r['byDir']['right'], r['port'])
+            self.assertEqual(r['byDir']['right'], IDS)
             for d, ids in r['byDir'].items():
-                self.assertEqual([i for i in ids if i in IDS], [], d)
+                self.assertEqual([i for i in ids if i in r['port']], [], d)
+                if d != 'right':
+                    self.assertEqual([i for i in ids if i in IDS], [], d)
         # Classic and bad: no pattern floor
         name, page, info = self.pages[0]
         r = page.evaluate('''(ids) => {
