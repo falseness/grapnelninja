@@ -24,12 +24,13 @@ function momentumDirection(dir)
 }
 // Half width of a vertical segment built now: shaftWidthScale of the width
 // that lets a view centred on it show only the corridor and its walls (their
-// outer edges shaftMargin past the view edges, never under halfWidth)
+// outer edges shaftMargin past the view edges, never under
+// shaftReferenceHalfWidth: the right corridors' old half width, TASK-128)
 function momentumShaftHalfWidth()
 {
     const options = GAMEPLAY.momentumBorders
     return options.shaftWidthScale *
-        Math.max(options.halfWidth,
+        Math.max(options.shaftReferenceHalfWidth,
                  width / scale.momentum / 2 - options.thickness + options.shaftMargin)
 }
 // Half width of a course segment's corridor. A vertical segment keeps the

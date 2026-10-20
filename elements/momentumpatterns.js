@@ -80,7 +80,8 @@ const MOMENTUM_PATTERNS_PORT_H = Object.freeze([
 
 // Vertical variants of the static ported frames (the catalog's `vertical`
 // lists): the bad frame rotated 90 deg. Per direction the pieces are rects
-// centred on (x, y) in world units at the base half width: x across from
+// centred on (x, y) in world units at the base half width
+// (GAMEPLAY.momentumBorders.shaftReferenceHalfWidth): x across from
 // the shaft centre line, y along from the footprint start (- = up). In a
 // shaft they are scaled uniformly by its half width over the base one, so
 // they span it wall to wall as the frame spans floor..ceiling in bad. wall
@@ -445,10 +446,11 @@ class MomentumPortVerticalPatternFactory
         this.pattern = pattern
         this.dirs = pattern.dirs
     }
-    // World units per catalog unit in a shaft of half width halfWidth
+    // World units per catalog unit in a shaft of half width halfWidth (the
+    // catalog is in the shafts' reference half width, TASK-128)
     getScale(halfWidth = momentumShaftHalfWidth())
     {
-        return halfWidth / GAMEPLAY.momentumBorders.halfWidth
+        return halfWidth / GAMEPLAY.momentumBorders.shaftReferenceHalfWidth
     }
     // Footprint length in world units
     getLength(halfWidth = momentumShaftHalfWidth())

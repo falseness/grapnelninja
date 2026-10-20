@@ -106,15 +106,21 @@ const GAMEPLAY = Object.freeze({
         rightAfterRightChancePercent: 40,
         upChancePercent: 50
     }),
-    // Momentum borders around the course centre line, in world units: the
-    // first right segment spans y 0.2..2 heights like the bad floor/ceiling.
-    // A vertical segment is wider when the view is (momentumShaftHalfWidth):
-    // shaftWidthScale of the width that puts its walls' outer edges
-    // shaftMargin past the edges of a view centred on it. Every border body runs on
-    // backing past thickness: the camera short of a shaft's centre or of a
-    // corridor's centre line still sees border there, not what is outside.
+    // Momentum borders around the course centre line, in world units: a
+    // right corridor is 2 x halfWidth = 1.0 height (TASK-128, 1.8 before),
+    // at most half of the 2.2-height view so the camera keeping the ninja in
+    // the vertical middle always shows its floor and ceiling; the first right
+    // segment spans y 0.6..1.6 heights. A vertical segment is wider when the
+    // view is (momentumShaftHalfWidth): shaftWidthScale of the width that
+    // puts its walls' outer edges shaftMargin past the edges of a view
+    // centred on it, never under shaftReferenceHalfWidth. Every border body
+    // runs on backing past thickness: the camera short of a shaft's centre or
+    // of a corridor's centre line still sees border there, not what is outside.
     momentumBorders: Object.freeze({
-        halfWidth: 0.9 * height,
+        halfWidth: 0.5 * height,
+        // The old corridor half width (0.9 height) the shafts and their
+        // frames are still measured against, so they keep their size
+        shaftReferenceHalfWidth: 0.9 * height,
         thickness: 0.2 * height,
         backing: 0.2 * height,
         originY: 1.1 * height,
