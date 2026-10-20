@@ -70,6 +70,8 @@ V2_S01_DISPOSITION = {
 V3_S01_TASK548_ADDED = ('S01-gantry-hook','S01-crown-hook','S01-exit-pad','S01-floor','S01-exit-drag')
 # TASK-531: the S01-03 overpull drag zone (left of the S02 canopy) that stops the early-gantry fling up the S02 shaft.
 V3_S01_TASK531_ADDED = ('S01-overpull-drag',)
+# TASK-491: the green recovery hook over the base left of the entry pad (no anchor reached that strip).
+V3_S01_TASK491_ADDED = ('S01-west-hook',)
 
 
 class FoundationsV3Checks:
@@ -180,7 +182,7 @@ class FoundationsV3Checks:
         v2_ids = {e['id'] for e in v2['elements']}
         deleted_other = sorted(v2_ids - set(by_id) - set(V2_S01_DISPOSITION))
         self.assertEqual(deleted_other, ['S01-boom-hook','S01-crane-hook','S01-jib-hook'])
-        self.assertEqual(sorted(set(by_id) - v2_ids), sorted(V3_S01_TASK548_ADDED + V3_S01_TASK531_ADDED))
+        self.assertEqual(sorted(set(by_id) - v2_ids), sorted(V3_S01_TASK548_ADDED + V3_S01_TASK531_ADDED + V3_S01_TASK491_ADDED))
         self.evidence.write('rules.json', dict(self.proof, validator='layoutV2Report designVersion 3 rules (TASK-546)',
             section=sec, all_applicable_rules_passed=True, encounters=['S01-01','S01-02'],
             gap_targets_reference='LAYOUT_V3_GAP_TARGETS[1080] = 918-972 (artifacts/TASK-544/calibration.json)',
@@ -3433,7 +3435,9 @@ V2_S04_OTHER = {'S04-carriage':'deleted', 'S04-flat-press':'deleted',
     'S04-lift':'id re-used: new blue x mover (2240,-8030) 120x30 for the v3 S04-02 in-flight lift catch'}
 V3_S04_ADDED = ('S04-hoist','S04-reflector','S04-deflector','S04-catch-basin','S04-fall-drag',
     # TASK-515: S04-03/04 and the S04 exit.
-    'S04-crest-hook','S04-baffle','S04-exit-hook','S04-exit-ledge','S04-exit-drag')
+    'S04-crest-hook','S04-baffle','S04-exit-hook','S04-exit-ledge','S04-exit-drag',
+    # TASK-491: the green recovery hook over the catch basin (the basin was a dead end).
+    'S04-basin-hook')
 
 
 class DeflectorV3Checks:

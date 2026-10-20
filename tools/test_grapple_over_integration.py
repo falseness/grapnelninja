@@ -1725,5 +1725,705 @@ class Task531Tests(unittest.TestCase):
         print('PASS source hashes: runtime, level and harness match the tested worktree', flush=True)
 
 
+# TASK-491: rest-pocket inventory and escape replays. The in-page part only reads production state and steps production
+# physics(); the inventory drop places the player once per sample (labeled, inventory only, never used for a fall).
+POCKET_JS = r"""() => {
+    const box = e => {const xs = e.points.map(p => p.x), ys = e.points.map(p => p.y)
+        return {left: e.x + Math.min(...xs), right: e.x + Math.max(...xs), top: e.y + Math.min(...ys), bottom: e.y + Math.max(...ys)}}
+    const settle = (limit, step) => {
+        const xs = [], ys = []
+        for (let i = 0; i < limit; i++) {
+            if (step(i)) return {ticks: i, settled: false, stop: true}
+            xs.push(ninja.x); ys.push(ninja.y); if (xs.length > 60) {xs.shift(); ys.shift()}
+            if (xs.length === 60 && Math.max(...xs) - Math.min(...xs) < 3 && Math.max(...ys) - Math.min(...ys) < 3) return {ticks: i, settled: true}
+        }
+        return {ticks: limit, settled: false}
+    }
+    window.P491 = {
+        base: captureClimbState(), exits: [], rec: null,
+        elements() {
+            return GRAPPLE_OVER_MOUNTAIN.geometry.elements.map(e => ({id: e.id, role: e.role, grapplable: e.grapplable !== false, ...box(e)}))
+        },
+        // Inventory sample: the base-start state with the player placed at (x, y) and speed (vx, 0), stepped until it rests
+        // (3-unit box for 60 ticks) or `limit` ticks pass.
+        drop(x, y, range, limit, vx) {
+            restoreClimbState(this.base); floors[0].rangeUpgraded = range
+            ninja.x = x; ninja.y = y; ninja.speedX = vx; ninja.speedY = 0
+            return settle(limit, () => {physics(); return floors[0].climbStats.completed})
+        },
+        reach(radius) {
+            const p = ninja
+            return GRAPPLE_OVER_MOUNTAIN.geometry.elements.filter(e => e.grapplable !== false && e.role !== 'drag').filter(e => {
+                const b = box(e), nx = Math.min(Math.max(p.x, b.left), b.right), ny = Math.min(Math.max(p.y, b.top), b.bottom)
+                return Math.hypot(nx - p.x, ny - p.y) <= radius}).map(e => e.id)
+        },
+        // Rows [sampleX, sampleY, restX, restY, status (1 rest, 0 still moving, 2 completed the climb), vx, anchors in reach if moving].
+        grid(pts, range, limit, vx) {
+            const solid = GRAPPLE_OVER_MOUNTAIN.geometry.elements.filter(e => e.role === 'solid' || e.role === 'bounce').map(box), out = []
+            for (const [x, y] of pts) {
+                if (solid.some(b => x > b.left-25 && x < b.right+25 && y > b.top-25 && y < b.bottom+25)) {out.push(null); continue}
+                const r = this.drop(x, y, range, limit, vx), done = floors[0].climbStats.completed
+                out.push([x, y, Math.round(ninja.x*10)/10, Math.round(ninja.y*10)/10, done ? 2 : r.settled ? 1 : 0, vx,
+                          r.settled || done ? null : this.reach(range ? 1620 : 1080)])
+                if (done) break
+            }
+            return out
+        },
+        // n production ticks with the escape recorder: acquisitions, bounces, exit boxes entered while rising after a rope
+        // acquisition, and the player every 10 ticks.
+        run(n, rec) {
+            this.rec = rec
+            for (let i = 0; i < n; i++) {
+                physics(); TUTORIAL_HINT.advance(physicsStepMs); rec.tick++
+                const x = ninja.x, y = ninja.y, g = grapnel.isGrappled()
+                if (g && !rec.g) {const a = grapnel.pos[0] && grapnel.pos[0][2]; rec.acq.push([rec.tick, a && a.id || null])}
+                rec.g = g
+                if (rec.acq.length && ninja.speedY < 0) for (const e of this.exits)
+                    if (!(e.id in rec.exits) && x >= e.left-15 && x <= e.right+15 && y >= e.top-15 && y <= e.bottom+15) rec.exits[e.id] = rec.tick
+                if (rec.tick % 10 === 0) rec.path.push([rec.tick, Math.round(x), Math.round(y)])
+                if (y < rec.minY) rec.minY = y
+                if (floors[0].climbStats.completed) rec.completed = true
+            }
+            this.rec = null
+            return rec
+        },
+        settle(limit, rec) {
+            const r = settle(limit, () => {this.run(1, rec); return rec.completed})
+            rec.settled = r.settled
+            return rec
+        },
+    }
+    const bounce = Ninja.prototype.applyBounce
+    Ninja.prototype.applyBounce = function(contact) {
+        const r = window.P491 && P491.rec
+        if (r && contact.approaching && r.bounces.length < 200 && r.bounces.every(b => b[1] !== contact.element.id || r.tick - b[0] > 1))
+            r.bounces.push([r.tick, contact.element.id])
+        return bounce.call(this, contact)
+    }
+}"""
+POCKET_RADIUS = 10.8
+# Rest pockets on these are on the climb: each is the start ledge of a section (S01: the spawn's entry pad).
+CLIMB_LEDGES = ('S01-entry-pad', 'S01-exit-pad', 'S02-exit-ledge', 'S03-exit-ledge', 'S04-exit-ledge', 'S05-exit-ledge',
+                'S06-exit-ledge', 'S07-exit-ledge')
+TASK491_HOOKS = ('S01-west-hook', 'S04-basin-hook')
+
+
+def contact_id(event, colliders=()):
+    """Element id of a recorded bounce (contact.elementId); a solid contact records only its point, so its element is the
+    collider whose box holds that point (within 1 unit)."""
+    c = event.get('contact') or {}
+    if c.get('elementId'): return c['elementId']
+    if 'x' in c and 'y' in c:
+        hit = [e['id'] for e in colliders if e['left']-1 <= c['x'] <= e['right']+1 and e['top']-1 <= c['y'] <= e['bottom']+1]
+        if hit: return hit[0]
+    return None
+
+
+def pocket_support(colliders, x, y):
+    """The collider the player rests on: its top within 6 of the player's bottom and its x span (padded) under it."""
+    c = [e for e in colliders if e['left']-POCKET_RADIUS-2 <= x <= e['right']+POCKET_RADIUS+2 and abs(e['top'] - (y+POCKET_RADIUS)) < 6]
+    return c[0]['id'] if c else None
+
+
+def pocket_segments(rows, colliders, width=300):
+    """Rest pockets: per supporting collider, rest x values joined while 160 apart or closer, split into <= `width` pieces."""
+    import collections
+    pts = collections.defaultdict(list)
+    for r in rows:
+        if r[4] == 2: continue
+        sid = pocket_support(colliders, r[2], r[3])
+        if sid: pts[sid].append((r[2], r[3], r[0], r[1], r[4], r[5]))
+    out = []
+    for sid, ps in sorted(pts.items()):
+        ps.sort()
+        groups = [[ps[0]]]
+        for q in ps[1:]:
+            (groups[-1].append(q) if q[0] - groups[-1][-1][0] <= 160 else groups.append([q]))
+        for g in groups:
+            while g:
+                lo = g[0][0]
+                piece, g = [q for q in g if q[0] < lo+width], [q for q in g if q[0] >= lo+width]
+                rep = piece[len(piece)//2]
+                out.append(dict(id='%s@%d-%d' % (sid, round(piece[0][0]), round(piece[-1][0])), support=sid, xmin=piece[0][0],
+                                xmax=piece[-1][0], y=rep[1], samples=len(piece), moving=sum(1 for q in piece if q[4] == 0),
+                                rep=dict(x=rep[2], y=rep[3], vx=rep[5])))
+    return out
+
+
+class PocketPage(LitePage):
+    """A LitePage with the TASK-491 pocket sampler and escape recorder installed."""
+    IDLE, SETTLE = 60, 3000
+
+    def __init__(self, browser, url, exits):
+        super().__init__(browser, url, exits)
+        self.exits = exits
+        self.install()
+        self.hud = self.page.evaluate('''() => {LAYOUT_PROBE.boxes=[]; draw(); const b=LAYOUT_PROBE.boxes;
+            LAYOUT_PROBE.boxes=null; return b.filter(x=>x.kind==='button')}''')
+
+    def install(self):
+        # Once per page: P491 (and LitePage's T531) survive a game reset on the same page.
+        self.page.evaluate(POCKET_JS)
+        self.page.evaluate('e=>{P491.exits=e}', self.exits)
+
+    def ensure_live(self):
+        if self.page.evaluate('[version, menu.gamePaused, floors[0].climbStats.completed]') != ['grapple_over', False, False]:
+            self.reset()
+
+    def grid(self, pts, rng, limit, vx):
+        out = []
+        while len(out) < len(pts):
+            r = self.page.evaluate('([p,g,l,v])=>P491.grid(p,g,l,v)', [pts[len(out):], rng, limit, vx])
+            out += r
+            if r and r[-1] and r[-1][4] == 2: self.ensure_live()
+        return [x for x in out if x]
+
+    def pocket_state(self, seg, rng):
+        """The rest state of a pocket: its representative inventory sample, stepped until it rests (or 3000 ticks)."""
+        self.ensure_live()
+        r = self.page.evaluate('([x,y,g,v])=>P491.drop(x,y,g,3000,v)', [seg['rep']['x'], seg['rep']['y'], rng, seg['rep']['vx']])
+        return r, self.page.evaluate('captureClimbState()')
+
+    def client(self, w):
+        c = self.page.evaluate('p=>GRAPPLE_OVER_TEST.client(p)', dict(x=w[0], y=w[1]))
+        on = 2 < c['x'] < VIEWPORT['width']-2 and 2 < c['y'] < VIEWPORT['height']-2
+        hud = any(b['x']-4 <= c['x'] <= b['x']+b['width']+4 and b['y']-4 <= c['y'] <= b['y']+b['height']+4 for b in self.hud)
+        return c, on and not hud
+
+    def escape(self, state, presses):
+        """Restore `state` (the restore snaps the camera), then trusted mouse presses [(tick, hold, x, y)] and settle."""
+        self.ensure_live()
+        self.restore(state)
+        rec = dict(tick=0, acq=[], g=False, exits={}, path=[], minY=1e18, completed=False, bounces=[])
+        plan = sorted([(t, 'mousedown', x, y) for t, h, x, y in presses] + [(t+h, 'mouseup', x, y) for t, h, x, y in presses])
+        marks = sorted({0, max(t+h for t, h, x, y in presses) + 60, *[q[0] for q in plan]})
+        clients = []
+        for a, b in zip(marks, marks[1:]):
+            for t, e, x, y in (q for q in plan if q[0] == a):
+                c, ok = self.client((x, y))
+                clients.append(dict(tick=t, event=e, world=dict(x=x, y=y), client=c, aimable=ok))
+                self.page.mouse.move(c['x'], c['y'])
+                (self.page.mouse.down if e == 'mousedown' else self.page.mouse.up)()
+            rec = self.page.evaluate('([n,r])=>P491.run(n,r)', [b-a, rec])
+        rec = self.page.evaluate('([n,r])=>P491.settle(n,r)', [self.SETTLE, rec])
+        final = self.page.evaluate('({x:ninja.x, y:ninja.y, speedX:ninja.speedX, speedY:ninja.speedY, range:floors[0].rangeUpgraded,'
+                                   ' elements:floors[0].elements.map(e=>e.id), completed:floors[0].climbStats.completed,'
+                                   ' paused:menu.gamePaused, mode:version})')
+        return rec, final, clients
+
+    def candidates(self, radius):
+        """Aimable anchors in reach of the live player: (id, aim kind, world point)."""
+        targets = self.page.evaluate('r=>T531.targets(r)', radius)
+        out = []
+        for t in targets:
+            for kind in ('center', 'nearest'):
+                w = t[kind]
+                if kind == 'nearest' and w == t['center']: continue
+                if self.client((w['x'], w['y']))[1]: out.append((t['id'], kind, (w['x'], w['y'])))
+        return out
+
+class Task491Tests(unittest.TestCase):
+    """Whole-mountain falls, recovery and trap escape on layout v3 (no checkpoints: falls are physical, saves keep state).
+
+    test_01: every rest pocket (inventory by placed samples, labeled inventory-only) is mapped to a recorded input-only
+    escape: straight back onto the climb (a section start ledge, or an encounter exit box entered while rising on the
+    rope), or to another pocket that chains there; the broad base chains back to the S01 route. test_02: a recorded
+    mistimed local miss in each of the eight sections from a labeled reachable start, its landing pocket and input-only
+    rejoin. test_03: two long falls (>= 3240 lost) started by a mistimed release from labeled reachable states, their
+    ordinary landings on retained terrain and input-driven re-ascents from the base and from a recovery ledge, plus
+    falls.webm. test_04 assembles recovery-map.json.
+    """
+    task_id = 'TASK-491'
+    ROUTES = ROOT / 'tools/grapple_over_recovery_routes.json'
+    BAND = 3240
+    # Inventory grids: zero-speed samples every 150 units (2400-tick limit) and sideways samples (vx -1/+1, how real
+    # falls arrive) every 300 units (3000-tick limit), over the whole map, range flag set (no press is made).
+    ZERO_GRID, SIDE_GRID = (150, 2400), (300, 3000)
+    BASE_TICKS, START_POSES = Task531Tests.BASE_TICKS, Task531Tests.START_POSES
+    section_starts = Task531Tests.__dict__['section_starts']
+    falls_spec = Task531Tests.__dict__['falls_spec']
+    s06_fall = Task531Tests.__dict__['s06_fall']
+    fall_run = Task531Tests.fall_run
+    analyse_fall = Task531Tests.analyse_fall
+    FIXTURE_TICK = Task530Tests.FIXTURE_TICK
+
+    @classmethod
+    def setUpClass(cls):
+        from grapple_over_verify import hashes
+        import test_grapple_over_sections as sections
+        cls.S = sections
+        cls.evidence = EvidenceWriter(cls.task_id)
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        page = cls.browser.new_page(viewport=VIEWPORT); page.goto(cls.url); wait_for_boot(page)
+        cls.mountain = page.evaluate('''() => {const box = e => ({id:e.id, role:e.role, grapplable:e.grapplable!==false,
+                left:e.x+Math.min(...e.points.map(p=>p.x)), right:e.x+Math.max(...e.points.map(p=>p.x)),
+                top:e.y+Math.min(...e.points.map(p=>p.y)), bottom:e.y+Math.max(...e.points.map(p=>p.y))});
+            return {sections:GRAPPLE_OVER_MOUNTAIN.sections.map(s=>({id:s.id, band:s.band, rangeUpgradeZone:s.rangeUpgradeZone||null})),
+                encounters:GRAPPLE_OVER_MOUNTAIN.encounters.slice(0,32).map(e=>({id:e.id, section:e.section, start:e.start, exit:e.exit})),
+                spawn:GRAPPLE_OVER_MOUNTAIN.spawn, finish:GRAPPLE_OVER_MOUNTAIN.finish, bounds:GRAPPLE_OVER_MOUNTAIN.bounds,
+                elements:GRAPPLE_OVER_MOUNTAIN.geometry.elements.map(box), movers:GRAPPLE_OVER_MOUNTAIN.geometry.movers,
+                recoveries:GRAPPLE_OVER_MOUNTAIN.recoveries.map(r=>({id:r.id, elements:r.elements||[], sideRoute:r.sideRoute||null})),
+                recoveryPolicy:GRAPPLE_OVER_MOUNTAIN.recoveryPolicy,
+                drags:GRAPPLE_OVER_MOUNTAIN.geometry.elements.filter(e=>e.role==='drag').map(box),
+                radius:{base:MODE_DEFINITIONS.grapple_over.acquisitionRadius, upgraded:MODE_DEFINITIONS.grapple_over.upgradedAcquisitionRadius},
+                physics:{gravityPerCycle:GRAVITY, cyclesPerTick, dragHorizontal:DRAG_ZONE_HORIZONTAL_DAMPING, dragVertical:DRAG_ZONE_VERTICAL_DAMPING}}}''')
+        page.close()
+        cls.drags = {d['id']: d for d in cls.mountain['drags']}
+        cls.colliders = [e for e in cls.mountain['elements'] if e['role'] in ('solid', 'bounce')]
+        cls.exits = [dict(id=e['id'], index=i, **{k: v for k, v in exit_box(e['exit']).items() if k in ('left', 'right', 'top', 'bottom')})
+                     for i, e in enumerate(cls.mountain['encounters'])]
+        cls.hashes = hashes()
+        for name in ('tools/test_grapple_over_integration.py', 'tools/grapple_over_recovery_routes.json'):
+            cls.hashes[name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.proof = dict(browser=cls.browser.version, viewport=VIEWPORT, device_scale_factor=1,
+            hz=60, seed=1, revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+            dirty_paths=subprocess.check_output(['git','status','--porcelain','--','.',':!artifacts'],cwd=ROOT,text=True).splitlines(),
+            source_hashes=cls.hashes)
+        cls.evidence.log('CONFIG '+json.dumps(cls.proof, sort_keys=True))
+        cls.lite = PocketPage(cls.browser, cls.url, cls.exits)
+        cls.addClassCleanup(cls.lite.context.close)
+        cls.routes = json.loads(cls.ROUTES.read_text())
+
+    # ---- pockets --------------------------------------------------------------------------------
+    @staticmethod
+    def required_ranges(seg):
+        """Lower pockets (base, S01..S04 terrain) at 1080 and 1620: a player can be there before or after the upgrade.
+        S05..S08 terrain is reached only through the S04 exit, where the range is earned (S05.rangeUpgradeZone), and
+        the range is kept (current-state saves; only a confirmed restart drops it): 1620."""
+        return [True] if seg['support'].split('-')[0] in ('S05', 'S06', 'S07', 'S08') else [False, True]
+
+    def locate(self, segs, x, y, settled):
+        if not settled: return 'unsettled'
+        sup = pocket_support(self.colliders, x, y)
+        if sup is None: return 'unsupported'
+        same = [s for s in segs if s['support'] == sup]
+        if not same: return sup + '@none'
+        return min(same, key=lambda s: 0 if s['xmin']-80 <= x <= s['xmax']+80 else min(abs(x-s['xmin']), abs(x-s['xmax'])))['id']
+
+    def kind(self, seg):
+        sup, x, y = seg['support'], seg['rep']['x'], seg['y']
+        movers = {v['element'] for v in self.mountain['movers']}
+        side = seg['xmin'] <= POCKET_RADIUS + .5 or seg['xmax'] >= self.mountain['bounds']['right'] - POCKET_RADIUS - .5
+        walls = sorted({e['id'] for e in self.colliders if e['id'] != sup and not e['id'].startswith('mountain-catch')
+                        and e['top'] < y + POCKET_RADIUS and e['bottom'] > y - POCKET_RADIUS
+                        and (abs(e['left'] - (seg['xmax'] + POCKET_RADIUS)) < 3 or abs(e['right'] - (seg['xmin'] - POCKET_RADIUS)) < 3)})
+        if sup in CLIMB_LEDGES: k = 'section start ledge (on the climb)'
+        elif sup in ('mountain-catch', 'S01-floor'): k = 'broad base'
+        elif sup in movers: k = 'mover top (rides a blue mover)'
+        elif any(w in sup for w in ('catch', 'basin', 'drop-ledge', 'lower-bridge', 'recovery', 'crown-ledge', 'glide-cap')): k = 'recovery ledge / catch'
+        else: k = 'ledge top'
+        return dict(kind=k, side_containment=side, concavity_walls=walls + (['map edge'] if side else []))
+
+    def pocket_escape(self, segs, seg, rng, route):
+        """Replay one stored escape from the pocket's rest state; returns the compact trace."""
+        r, state = self.lite.pocket_state(seg, rng)
+        presses = [tuple(p) for p in route['presses']]
+        rec, final, clients = self.lite.escape(state, presses)
+        dest = self.locate(segs, final['x'], final['y'], rec['settled'])
+        # On the climb: rests on a section start ledge, completes, or passes an encounter exit box rising on the rope and then
+        # settles outside the pocket it started in.
+        direct = bool(final['completed'] or dest.split('@')[0] in CLIMB_LEDGES or (rec['exits'] and rec['settled'] and dest != seg['id']))
+        return dict(pocket=seg['id'], range=1620 if rng else 1080, start=dict(settled=r['settled'],
+                    **{k: state['player'][k] for k in ('x', 'y', 'speedX', 'speedY')}, simulationTick=state['simulationTick']),
+                    inputs=clients, idle_ticks_before_first_press=presses[0][0], acquisitions=rec['acq'], bounces=rec['bounces'],
+                    exits_entered_rising=rec['exits'], path_every_10_ticks=rec['path'], min_y=round(rec['minY'], 1),
+                    rest=dict(x=round(final['x'], 1), y=round(final['y'], 1), speedX=final['speedX'], speedY=final['speedY'], settled=rec['settled']),
+                    destination=dest, direct_to_climb=direct, completed=final['completed'], paused=final['paused'], mode=final['mode'],
+                    element_ids_unchanged=final['elements'] == [e['id'] for e in state['elements']], range_after=final['range'])
+
+    def test_01_pocket_map(self):
+        lite = self.lite
+        zs, zl = self.ZERO_GRID
+        ss, sl = self.SIDE_GRID
+        rows = lite.grid([(x, y) for x in range(zs//2, 6480, zs) for y in range(-13400, 110, zs)], True, zl, 0)
+        for vx in (-1, 1):
+            rows += lite.grid([(x, y) for x in range(ss//2, 6480, ss) for y in range(-13400, 110, ss)], True, sl, vx)
+        segs = pocket_segments(rows, self.colliders)
+        type(self).segments = segs
+        oscillating = [r for r in rows if r[4] == 0 and not pocket_support(self.colliders, r[2], r[3])]
+        required = {'%s|%d' % (s['id'], r): (s, r) for s in segs if s['support'] not in CLIMB_LEDGES for r in self.required_ranges(s)}
+        self.assertEqual(sorted(set(required) - set(self.routes['routes'])), [], 'pockets without a stored escape route')
+        results = {}
+        for key, (seg, rng) in sorted(required.items()):
+            route = self.routes['routes'][key]
+            out = self.pocket_escape(segs, seg, rng, route)
+            self.assertEqual((out['destination'], out['direct_to_climb']), (route['dest'], route['direct']), key)
+            self.assertTrue(all(c['aimable'] for c in out['inputs'] if c['event'] == 'mousedown'), key)
+            self.assertTrue(out['element_ids_unchanged'], key)
+            self.assertEqual(out['mode'], 'grapple_over', key)
+            self.assertTrue(out['completed'] or not out['paused'], key)
+            out['targets'], out['aims'] = route.get('targets'), route.get('aims')
+            results[key] = out
+            self.evidence.write('traces/pockets/%s.json' % key.replace('|', '-r').replace('@', '_'), out)
+        # Every pocket chains to the climb: directly, or via the pocket it settles in (same range).
+        chain = {k: [] for k, v in results.items() if v['direct_to_climb']}
+        changed = True
+        while changed:
+            changed = False
+            for k, v in results.items():
+                nxt = '%s|%d' % (v['destination'], k.endswith('|1'))
+                if k not in chain and (nxt in chain or v['destination'].split('@')[0] in CLIMB_LEDGES):
+                    chain[k] = [v['destination']] + chain.get(nxt, []); changed = True
+        unresolved = sorted(set(results) - set(chain))
+        self.assertEqual(unresolved, [], 'pockets with no input-only way back to the climb')
+        climb_pockets = [s for s in segs if s['support'] in CLIMB_LEDGES]
+        self.assertEqual(sorted({s['support'] for s in climb_pockets}), sorted(CLIMB_LEDGES[1:]))
+        # The two pockets the hooks fix: without them, nothing but the floor/basin itself is in reach at either range.
+        necessity = {}
+        for name, hook in (('S04-catch-basin', 'S04-basin-hook'), ('mountain-catch', 'S01-west-hook')):
+            seg = next(s for s in segs if s['support'] == name and s['xmin'] <= POCKET_RADIUS + .5)
+            for rng in (False, True):
+                lite.pocket_state(seg, rng)
+                reach = lite.page.evaluate('r=>P491.reach(r)', 1620 if rng else 1080)
+                other = [e for e in reach if e not in TASK491_HOOKS and e not in (name, 'mountain-left')]
+                self.assertEqual(other, [], (name, rng, reach))
+                self.assertIn(hook, reach)
+                necessity['%s|%d' % (seg['id'], rng)] = dict(anchors_in_reach=reach, other_than_hook_and_support=other)
+        pockets = []
+        for s in segs:
+            ranges = {r: results.get('%s|%d' % (s['id'], r)) for r in self.required_ranges(s)}
+            pockets.append(dict(id=s['id'], support=s['support'], section=s['support'].split('-')[0] if s['support'].startswith('S') else 'base',
+                x=[s['xmin'], s['xmax']], rest_y=s['y'], inventory_samples=s['samples'], still_moving_samples=s['moving'],
+                representative_sample=s['rep'], **self.kind(s), on_climb=s['support'] in CLIMB_LEDGES,
+                escapes={('1620' if r else '1080'): (None if v is None else dict(trace='traces/pockets/%s-r%d.json' % (s['id'].replace('@', '_'), r),
+                    presses=[[c['tick'], c['event'], round(c['world']['x'], 1), round(c['world']['y'], 1)] for c in v['inputs']],
+                    targets=v['targets'], destination=v['destination'], direct_to_climb=v['direct_to_climb'],
+                    exits_entered_rising=v['exits_entered_rising'], rest=v['rest'],
+                    chain_to_climb=chain['%s|%d' % (s['id'], r)])) for r, v in ranges.items()}))
+        self.evidence.write('parts/pockets.json', dict(definition=dict(
+                inventory='placed samples (labeled inventory-only placements, never used to start a fall): zero speed every %d units '
+                          '(%d-tick limit) and sideways vx -1/+1 every %d units (%d-tick limit); a sample rests when it stays in a 3-unit '
+                          'box for 60 ticks; a pocket is a run of rest x on one supporting collider (160 joins, split at 300 wide)' % (zs, zl, ss, sl),
+                escape='restore the pocket rest state (the restore snaps the camera), 60 idle ticks, trusted mouse presses at aimable '
+                       'on-screen points, settle (<= 3000 ticks); on the climb = rests on a section start ledge, completes, or enters an '
+                       'encounter exit box while rising after a rope acquisition and then settles outside its start pocket; otherwise it '
+                       'must settle in a pocket that itself chains to the climb (same range)',
+                ranges='lower pockets at 1080 and 1620; S05..S08 terrain at 1620 (reached only after the S04-exit upgrade, which is kept)'),
+            samples=len(rows), pockets=pockets, climb_ledges=list(CLIMB_LEDGES), unresolved=unresolved,
+            fixes=dict(hooks=list(TASK491_HOOKS), necessity=necessity),
+            oscillating_samples=dict(count=len(oscillating), note='zero/low horizontal speed samples still bouncing on an elastic green '
+                'bouncer at the limit (never at rest); not rest pockets; grapple stays available in flight',
+                without_anchor_in_reach=len([r for r in oscillating if not r[6]]),
+                examples=[r for r in oscillating if not r[6]][:20]),
+            routes_file='tools/grapple_over_recovery_routes.json', proof=self.proof))
+        print('PASS pocket map: %d samples, %d pockets (%d on the climb), %d escape replays, 0 unresolved; %d oscillating samples (not at rest)'
+              % (len(rows), len(segs), len(climb_pockets), len(results), len(oscillating)), flush=True)
+
+    # ---- shared trace checks ----------------------------------------------------------------------
+    def pocket_of(self, x, y):
+        segs = getattr(type(self), 'segments', None)
+        if segs is None and self.evidence.path('parts/pockets.json').exists():
+            segs = [dict(id=p['id'], support=p['support'], xmin=p['x'][0], xmax=p['x'][1])
+                    for p in json.loads(self.evidence.path('parts/pockets.json').read_text())['pockets']]
+        return self.locate(segs or [], x, y, True)
+
+    def physical(self, trace):
+        """No death, checkpoint, restart or relocation: one fixed clock step per frame, every per-tick move covered by the
+        recorded speeds, the same element ids in every snapshot, static terrain in place, no completion, no setup spawns."""
+        sim = [r['state']['simulation'] for r in trace['snapshots']]
+        self.assertEqual(trace['metadata']['setupOnlySpawns'], [])
+        ticks = [s['simulationTick'] for s in sim]
+        steps = sorted({b-a for a, b in zip(ticks, ticks[1:])})
+        self.assertEqual(len(steps), 1, steps); self.assertGreater(steps[0], 0)
+        jumps = [max(abs(b['player']['x']-a['player']['x']), abs(b['player']['y']-a['player']['y'])) for a, b in zip(sim, sim[1:])]
+        excess = max(j - 8*max(abs(a['player'][k]) for a in (u, v) for k in ('speedX', 'speedY')) for j, u, v in zip(jumps, sim, sim[1:]))
+        self.assertLess(excess, 1, excess)
+        ids = [e['id'] for e in sim[0]['elements']]
+        self.assertTrue(all([e['id'] for e in s['elements']] == ids for s in sim))
+        movers = {v['element'] for v in self.mountain['movers']}
+        origin = {e['id']: (e['x'], e['y']) for e in sim[0]['elements']}
+        moved = sorted({e['id'] for s in sim for e in s['elements'] if e['id'] not in movers and (e['x'], e['y']) != origin[e['id']]})
+        self.assertEqual(moved, [])
+        self.assertFalse(any(s['stats']['completed'] for s in sim))
+        inputs = [e for e in trace['events'] if e['type'] == 'input']
+        self.assertTrue(inputs and all(e['trusted'] for e in inputs))
+        presses = [e for e in inputs if e['event'] == 'mousedown']
+        self.assertTrue(all(0 < e['client']['x'] < VIEWPORT['width'] and 0 < e['client']['y'] < VIEWPORT['height'] for e in presses))
+        types = sorted({e['type'] for e in trace['events']})
+        # The recorder's event types are input/acquisition/wrap/release/contact/knockback/bounce; hazards only knock back.
+        self.assertTrue(set(types) <= {'input', 'acquisition', 'wrap', 'release', 'contact', 'knockback', 'bounce'}, types)
+        return dict(clock_step=steps[0], simulation_ticks=[ticks[0], ticks[-1]], max_player_step=max(jumps), max_step_beyond_8x_speed=excess,
+                    element_ids=len(ids), element_ids_unchanged=True, static_elements_moved=moved, completed=False,
+                    setup_only_spawns=[], trusted_inputs=len(inputs), presses_on_screen=True, event_types=types,
+                    restarts_or_relocations=0, max_height_never_reset=all(b['stats']['maxHeight'] >= a['stats']['maxHeight'] for a, b in zip(sim, sim[1:])))
+
+    def write_trace(self, name, trace, every=5):
+        rows = []
+        for r in trace['snapshots'][::every] + trace['snapshots'][-1:]:
+            s = r['state']['simulation']; p = s['player']
+            rows.append([r['tick'], round(p['x'], 2), round(p['y'], 2), round(p['speedX'], 4), round(p['speedY'], 4),
+                         int(bool(s['grapple'].get('grappled'))), int(s['upgrades']['range'])])
+        inputs = [{k: e[k] for k in ('tick', 'event', 'world', 'client', 'trusted')} for e in trace['events'] if e['type'] == 'input']
+        contacts = sorted({(e['tick'], contact_id(e, self.colliders)) for e in trace['events'] if e['type'] in ('contact', 'bounce') and contact_id(e, self.colliders)})
+        ids0 = [e['id'] for e in trace['snapshots'][0]['state']['simulation']['elements']]
+        self.evidence.write(name, dict(fields=['tick', 'x', 'y', 'speedX', 'speedY', 'grappled', 'rangeUpgraded'], every=every, rows=rows,
+            inputs=inputs, mechanics=Task529Tests.mechanics(trace), contacts=[list(c) for c in contacts],
+            element_ids_sha256=hashlib.sha256(json.dumps(ids0).encode()).hexdigest(), element_count=len(ids0),
+            recorded_sha256=state_hash(trace), metadata={k: trace['metadata'].get(k) for k in ('kind', 'setupOnlySpawns', 'testOnly')}))
+
+    @staticmethod
+    def rest_tick(players, start, end, box=15):
+        """First tick from which the player stays in a `box`-unit box for 60 ticks (before `end`); 15 = the TASK-548 settle band."""
+        for t in range(start, end-60):
+            w = players[t:t+60]
+            if max(p['x'] for p in w)-min(p['x'] for p in w) < box and max(p['y'] for p in w)-min(p['y'] for p in w) < box: return t
+        return None
+
+    # ---- local misses ---------------------------------------------------------------------------
+    def s01_miss(self):
+        F = self.S.FoundationsV3CompleteChecks
+        return dict(section='S01', source='TASK-548 FoundationsV3CompleteChecks.FALL_V3', plan=F.FALL_V3, ticks=F.FALL_TICKS,
+                    release=(55, 'S01-hoist'), nominal_release=70, landing='S01-floor', drags=['S01-yard-drag'],
+                    rejoin_tick=F.REJOIN_TICK, end=F.S01_02_EXIT, rejoin_goal='S01-02 exit (S01-03 start) via the yard pad and the lift')
+
+    def test_02_local_misses(self):
+        from grapple_over_verify import metadata, execute, check_trace, validate
+        if not hasattr(type(self), 'starts'):
+            type(self).starts, type(self).start_proof = self.section_starts()
+        out = []
+        for spec in [self.s01_miss()] + self.falls_spec():
+            sec = spec['section']
+            if sec == 'S01':
+                m = dict(metadata=metadata('base-start'), ticks=spec['ticks'], expected_exit=spec['end'],
+                         inputs=[dict(tick=t, event=e, world=dict(x=x, y=y)) for t, e, x, y in spec['plan']],
+                         required_events=['acquisition', 'release', 'bounce'])
+                m['metadata']['compact_contacts'] = True
+                validate(m)
+                trace = execute(m, self.browser, self.url, str(self.evidence.path('runs/S01')))
+                check_trace(m, trace)
+                shutil.rmtree(self.evidence.path('runs/S01'))
+                analysis = None
+                start = dict(label='base start (the production restart at the spawn, no placement)', pose=self.mountain['spawn'])
+            else:
+                m, trace = self.fall_run(spec)
+                analysis = self.analyse_fall(spec, m, trace)
+                start = analysis['start']
+            phys = self.physical(trace)
+            players = Task529Tests.players(trace)
+            mech = Task529Tests.mechanics(trace)
+            tick, element = spec['release']
+            release = next(x for x in mech if x['type'] == 'release' and x['element'] == element and x['tick'] == tick)
+            rejoin = spec['rejoin_tick']
+            land = next(x for x in mech if x['type'] == 'bounce' and x['element'] == spec['landing'] and tick < x['tick'] < rejoin)
+            self.assertFalse([x for x in mech if x['type'] == 'acquisition' and tick < x['tick'] < rejoin])
+            rest = self.rest_tick(players, land['tick'], rejoin)
+            self.assertIsNotNone(rest, sec)
+            p = players[rejoin-1]
+            pocket = self.pocket_of(p['x'], p['y'])
+            final = players[-1]
+            self.assertTrue(all(spec['end'][k][0] <= final[k] <= spec['end'][k][1] for k in spec['end']), (sec, final))
+            after = [x for x in mech if x['tick'] >= rejoin and x['type'] == 'acquisition']
+            self.assertTrue(after)
+            name = 'traces/misses/%s.json' % sec
+            self.write_trace(name, trace)
+            out.append(dict(section=sec, source=spec['source'], start=start, trace=name,
+                release=dict(tick=tick, element=element, nominal_release_tick=spec['nominal_release'], player=release['player']),
+                landing=dict(tick=land['tick'], element=spec['landing'], section=spec['landing'].split('-')[0], player=land['player']),
+                settled=dict(tick=rest, pose={k: p[k] for k in ('x', 'y', 'speedX', 'speedY')}, pocket=pocket),
+                drop=p['y'] - release['player']['y'],
+                rejoin=dict(input_only=True, tick=rejoin, goal=spec['rejoin_goal'], inputs=[i for i in m['inputs'] if i['tick'] >= rejoin],
+                            acquisitions=[{k: x[k] for k in ('tick', 'element')} for x in after], end_bounds=spec['end'],
+                            final={k: final[k] for k in ('x', 'y', 'speedX', 'speedY')}, destination=spec['rejoin_goal']),
+                physical=phys, fall_chain_analysis=analysis, recorded_sha256=state_hash(trace)))
+            del trace
+            print('PASS miss %s: %s released at %d (nominal %d), lands on %s at %d, settles in %s, input-only rejoin from %d -> %s'
+                  % (sec, element, tick, spec['nominal_release'], spec['landing'], land['tick'], pocket, rejoin, spec['rejoin_goal']), flush=True)
+        self.assertEqual([o['section'] for o in out], ['S0%d' % i for i in range(1, 9)])
+        self.evidence.write('parts/misses.json', dict(misses=out, starts=self.start_proof, proof=self.proof))
+
+    # ---- long falls -------------------------------------------------------------------------------
+    # Fall A (TASK-542's fall): from the labeled v3 S04-exit fixture, the TASK-530 S05 route, then the S06-01 carriage pressed
+    # at 2163 and released after 110 ticks (nominal 120): the player drops from the S06 band down the left map edge to the
+    # base, coming to rest in its bottom-left corner. Re-ascent from the base: the green west hook onto the floor bouncers,
+    # the yard pad + lift rejoin (S01-02), the gantry hook (S01-03) and the crown hook (S01-04) onto the S01 exit pad.
+    ASCENT_A = [(4873,'mousedown',760,-545),(4953,'mouseup',760,-545),(5830,'mousedown',4050,-860),(5950,'mouseup',4050,-860),
+                (5955,'mousedown',4500,-1730),(6035,'mouseup',4500,-1730),(6064,'mousedown',5250,-2990),(6109,'mouseup',5250,-2990),
+                (6129,'mousedown',5950,-3130),(6214,'mouseup',5950,-3130)]
+    FALL_A_PRESS, FALL_A_RELEASE, FALL_A_TICKS = 2163, 2273, 7000
+    # Fall B: from the labeled S06 start (TASK-531 chain), the S06-01 carriage released at 325 (nominal 125): the swing carries
+    # the player east and it drops down the right side to the green S03 lower bridge (a recovery ledge). Re-ascent: the
+    # TASK-529 bridge rejoin (S02 east wall, hoist tap -> S02 exit ledge, ledge pull to the S03 start) and the S03 route on its
+    # mover phase (S06 start = simulation tick 7945, so the route starts at 2740 = 3245 mod 240) onto the S03 exit ledge.
+    ASCENT_B_WALL, ASCENT_B_S03 = 1660, 2740
+    FALL_B_RELEASE, FALL_B_TICKS = 325, 4600
+    S01_EXIT_PAD = dict(x=[6040, 6440], y=[-2730, -2700], speedX=[-.01, .01], speedY=[-.1, .1])
+    S03_EXIT_LEDGE = dict(x=[5800, 6190], y=[-7800, -7760], speedX=[-.01, .01], speedY=[-.1, .1])
+
+    def long_fall_specs(self):
+        U, L, V = Task530Tests.UPPER, self.S.LiftworksV3Checks, self.S.ViaductV3CompleteChecks
+        carriage = next(p for p in U if p[0] == self.FALL_A_PRESS and p[1] == 'mousedown')
+        plan_a = [p for p in U if p[0] < self.FALL_A_PRESS] + [carriage, (self.FALL_A_RELEASE, 'mouseup', carriage[2], carriage[3])] + self.ASCENT_A
+        T0, s03 = self.ASCENT_B_WALL, self.ASCENT_B_S03
+        W, H, LG = (6345, -5799), (5520, -5800), (5800, -4860)
+        plan_b = [(5, 'mousedown', *L.CARRIAGE_V3), (self.FALL_B_RELEASE, 'mouseup', *L.CARRIAGE_V3),
+                  (T0, 'mousedown', *W), (T0+210, 'mouseup', *W), (T0+215, 'mousedown', *H), (T0+221, 'mouseup', *H),
+                  (T0+845, 'mousedown', *LG), (T0+945, 'mouseup', *LG)] + [(t+s03, e, x, y) for t, e, x, y in V.S03_ROUTE_V3]
+        return [dict(name='A', start='fixture', plan=plan_a, ticks=self.FALL_A_TICKS, release=(self.FALL_A_RELEASE, 'S06-carriage'),
+                     nominal_release=self.FALL_A_PRESS+120, ascent_from=self.ASCENT_A[0][0], end=self.S01_EXIT_PAD,
+                     goal='S01 exit pad (the S02 start): S01 re-climbed from the base',
+                     source='TASK-542 fall (Task530 S04-exit fixture, S05 route, S06-01 carriage held 110 not 120)'),
+                dict(name='B', start='S06', plan=plan_b, ticks=self.FALL_B_TICKS, release=(self.FALL_B_RELEASE, 'S06-carriage'),
+                     nominal_release=L.S06_01_V3[1][0], ascent_from=T0, end=self.S03_EXIT_LEDGE,
+                     goal='S03 exit ledge (the S04 start): from the S03 lower bridge via the S02 exit ledge and the S03 route',
+                     source='new (TASK-491): S06-01 carriage released at 325 from the labeled S06 start')]
+
+    def long_fall(self, spec, start):
+        from grapple_over_verify import metadata, execute, check_trace, validate
+        m = dict(metadata=metadata('isolated'), initial_snapshot=start, ticks=spec['ticks'], expected_exit=spec['end'],
+                 inputs=[dict(tick=t, event=e, world=dict(x=x, y=y)) for t, e, x, y in spec['plan']],
+                 required_events=['acquisition', 'release', 'bounce'])
+        m['metadata']['compact_contacts'] = True
+        validate(m)
+        trace = execute(m, self.browser, self.url, str(self.evidence.path('runs/fall-' + spec['name'])))
+        check_trace(m, trace)
+        replay = execute(m, self.browser, self.url, str(self.evidence.path('runs/fall-%s-replay' % spec['name'])))
+        self.assertEqual(state_hash(trace), state_hash(replay))
+        del replay
+        for d in ('runs/fall-' + spec['name'], 'runs/fall-%s-replay' % spec['name']): shutil.rmtree(self.evidence.path(d))
+        phys = self.physical(trace)
+        sim = [r['state']['simulation'] for r in trace['snapshots']]
+        players = [s['player'] for s in sim]
+        mech = Task529Tests.mechanics(trace)
+        tick, element = spec['release']
+        release = next(x for x in mech if x['type'] == 'release' and x['element'] == element and x['tick'] == tick)
+        asc = spec['ascent_from']
+        self.assertFalse([x for x in mech if x['type'] == 'acquisition' and tick < x['tick'] < asc])
+        self.assertFalse([i for i in m['inputs'] if tick < i['tick'] < asc])
+        rest = self.rest_tick(players, tick, asc)
+        self.assertIsNotNone(rest)
+        landed = players[asc-1]
+        lost = landed['y'] - release['player']['y']
+        apex = min(players[tick:rest], key=lambda p: p['y'])
+        self.assertGreaterEqual(lost, self.BAND)
+        # Terrain touched during the fall (release .. settled): every id is a mountain element present, unmoved, in every snapshot.
+        touched = sorted({contact_id(e, self.colliders) for e in trace['events'] if e['type'] in ('contact', 'bounce', 'knockback')
+                          and tick < e['tick'] <= asc and contact_id(e, self.colliders)})
+        ids = {e['id'] for e in sim[0]['elements']}
+        self.assertTrue(touched and set(touched) <= ids, touched)
+        self.assertTrue(all(set(touched) <= {e['id'] for e in s['elements']} for s in (sim[tick], sim[asc], sim[-1])))
+        landing = next(e for e in trace['events'] if e['type'] in ('contact', 'bounce') and tick < e['tick'] <= asc
+                       and contact_id(e, self.colliders) == pocket_support(self.colliders, landed['x'], landed['y']))
+        final = players[-1]
+        self.assertTrue(all(spec['end'][k][0] <= final[k] <= spec['end'][k][1] for k in spec['end']), final)
+        ascent = [x for x in mech if x['tick'] >= asc]
+        name = 'traces/falls/%s.json' % spec['name']
+        self.write_trace(name, trace)
+        support = pocket_support(self.colliders, landed['x'], landed['y'])
+        # Declared section bands (y), the base (below the S01 band bottom) counted as S01.
+        band = lambda y: next((s['id'] for s in self.mountain['sections'] if s['band']['top'] <= y <= s['band']['bottom']), 'S01')
+        crossed = int(band(release['player']['y'])[1:]) - int(band(landed['y'])[1:])
+        self.assertGreaterEqual(crossed, 2)
+        return dict(name=spec['name'], source=spec['source'], trace=name, start_label=spec['start_label'], ticks=spec['ticks'],
+            release=dict(tick=tick, element=element, nominal_release_tick=spec['nominal_release'], player=release['player'], band=band(release['player']['y'])),
+            apex_after_release=dict(x=apex['x'], y=apex['y']),
+            landing=dict(first_contact_tick=landing['tick'], element=support, settled_tick=rest, pose={k: landed[k] for k in ('x', 'y', 'speedX', 'speedY')},
+                         pocket=self.pocket_of(landed['x'], landed['y']), band=band(landed['y'])),
+            world_units_lost=lost, lost_definition='settled landing y minus the player y at the release', bands_lost=lost / self.BAND,
+            at_least_3240=lost >= self.BAND, section_bands_crossed=crossed, lost_from_start_pose=landed['y'] - sim[0]['player']['y'],
+            terrain_touched_during_fall=touched, terrain_retained=True,
+            ascent=dict(input_only=True, from_tick=asc, inputs=[i for i in m['inputs'] if i['tick'] >= asc],
+                        acquisitions=[{k: x[k] for k in ('tick', 'element')} for x in ascent if x['type'] == 'acquisition'],
+                        bounces=[{k: x[k] for k in ('tick', 'element')} for x in ascent if x['type'] == 'bounce'][:60],
+                        final={k: final[k] for k in ('x', 'y', 'speedX', 'speedY')}, end_bounds=spec['end'], goal=spec['goal'],
+                        height_regained=landed['y'] - final['y'], destination_pocket=self.pocket_of(final['x'], final['y'])),
+            physical=phys, ranges=sorted({s['upgrades']['range'] for s in sim}), recorded_sha256=state_hash(trace), replay_identical=True,
+            final_player=final)
+
+    def falls_video(self, runs):
+        """falls.webm: both long falls drawn tick by tick in one recorded page (trusted mouse input, production physics);
+        each run's final player must equal its trace."""
+        from grapple_over_support import install_recorder
+        from perf_mobile import SEED_SCRIPT
+        tmp = self.evidence.path('runs/video/.keep').parent
+        # Half-size frames, one drawn frame per 2 physics ticks (played at 60 fps), keep the clip small; physics steps every tick.
+        context = self.browser.new_context(viewport=VIEWPORT, device_scale_factor=1, record_video_dir=str(tmp),
+                                           record_video_size=dict(width=VIEWPORT['width']//2, height=VIEWPORT['height']//2))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(self.url); wait_for_boot(page)
+        page.evaluate("cancelAnimationFrame(game); window.requestAnimationFrame=()=>0; startGame('grapple_over'); CLIMB_UI.restart()")
+        page.wait_for_function('!unTouch'); page.mouse.up()
+        install_recorder(page)
+        finals = []
+        for start, plan, ticks in runs:
+            page.evaluate('s=>restoreClimbState(s)', start)
+            for t in range(ticks):
+                for _, e, x, y in (q for q in plan if q[0] == t):
+                    c = page.evaluate('p=>GRAPPLE_OVER_TEST.client(p)', dict(x=x, y=y))
+                    page.mouse.move(c['x'], c['y']); (page.mouse.down if e == 'mousedown' else page.mouse.up)()
+                if t % 2:
+                    page.evaluate('()=>{physics(); TUTORIAL_HINT.advance(physicsStepMs); draw()}')
+                    page.wait_for_timeout(1000/60)
+                else:
+                    page.evaluate('()=>{physics(); TUTORIAL_HINT.advance(physicsStepMs)}')
+            finals.append(page.evaluate('({x:ninja.x, y:ninja.y, speedX:ninja.speedX, speedY:ninja.speedY})'))
+            page.mouse.up()
+        video = page.video
+        context.close()
+        video.save_as(str(self.evidence.path('falls.webm'))); video.delete()
+        shutil.rmtree(tmp, ignore_errors=True)
+        self.assertEqual(errors, [])
+        return finals
+
+    def test_03_long_falls(self):
+        if not hasattr(type(self), 'starts'):
+            type(self).starts, type(self).start_proof = self.section_starts()
+        fixture, fixture_proof = Task530Tests.make_fixture.__func__(type(self))
+        specs = self.long_fall_specs()
+        starts = dict(fixture=fixture, S06=self.starts['S06'])
+        specs[0]['start_label'] = fixture_proof['label']
+        specs[1]['start_label'] = 'labeled S06 start: the TASK-531 chain (base-start run of the v3 S01..S04 routes, then one restore of the S05 start and the S05 route)'
+        falls = []
+        for spec in specs:
+            f = self.long_fall(spec, starts[spec['start']])
+            falls.append(f)
+            print('PASS long fall %s: %s released at %d (nominal %d) in %s; lands on %s (%s, %s) at %d after %.1f lost (%.2f bands); '
+                  'terrain %s retained; input-only re-ascent from %d regains %.1f -> %s' % (f['name'], f['release']['element'], f['release']['tick'],
+                  f['release']['nominal_release_tick'], f['release']['band'], f['landing']['element'], f['landing']['pocket'], f['landing']['band'],
+                  f['landing']['first_contact_tick'], f['world_units_lost'], f['bands_lost'], f['terrain_touched_during_fall'],
+                  f['ascent']['from_tick'], f['ascent']['height_regained'], spec['goal']), flush=True)
+        self.assertEqual(len([f for f in falls if f['world_units_lost'] >= self.BAND]), 2)
+        self.assertEqual(falls[0]['landing']['element'], 'mountain-catch')
+        finals = self.falls_video([(starts[s['start']], s['plan'], s['ticks']) for s in specs])
+        for f, v in zip(falls, finals):
+            self.assertEqual(v, {k: f['final_player'][k] for k in ('x', 'y', 'speedX', 'speedY')})
+        self.assertGreater(self.evidence.path('falls.webm').stat().st_size, 0)
+        self.evidence.write('parts/long-falls.json', dict(falls=falls, fixture=fixture_proof, video=dict(file='falls.webm',
+            runs=[dict(name=s['name'], ticks=s['ticks']) for s in specs], frames='640x360, one draw per 2 physics ticks at 60 fps (2x game speed), fall A then fall B',
+            final_players_match_traces=True), proof=self.proof))
+
+    # ---- map ------------------------------------------------------------------------------------
+    def test_04_recovery_map(self):
+        parts = {k: json.loads(self.evidence.path('parts/%s.json' % k).read_text()) for k in ('pockets', 'misses', 'long-falls')}
+        pockets, misses, falls = parts['pockets'], parts['misses']['misses'], parts['long-falls']['falls']
+        self.assertEqual(pockets['unresolved'], [])
+        self.assertEqual(sorted(m['section'] for m in misses), ['S0%d' % i for i in range(1, 9)])
+        self.assertEqual(len(falls), 2)
+        self.assertTrue(all(f['world_units_lost'] >= self.BAND for f in falls))
+        for p in pockets['pockets']:
+            if not p['on_climb']: self.assertTrue(all(v and v['chain_to_climb'] is not None for v in p['escapes'].values()), p['id'])
+        summary = dict(pockets=len(pockets['pockets']), on_climb=sum(p['on_climb'] for p in pockets['pockets']),
+            by_kind={k: sum(p['kind'] == k for p in pockets['pockets']) for k in sorted({p['kind'] for p in pockets['pockets']})},
+            side_containment=[p['id'] for p in pockets['pockets'] if p['side_containment']],
+            concavities=[p['id'] for p in pockets['pockets'] if p['concavity_walls']],
+            escape_replays=sum(len(p['escapes']) for p in pockets['pockets'] if not p['on_climb']),
+            local_misses=[dict(section=m['section'], landing=m['landing']['element'], pocket=m['settled']['pocket'], destination=m['rejoin']['destination'])
+                          for m in misses],
+            long_falls=[dict(name=f['name'], lost=f['world_units_lost'], landing=f['landing']['element'], pocket=f['landing']['pocket'],
+                             terrain=f['terrain_touched_during_fall'], destination=f['ascent']['goal']) for f in falls],
+            checkpoints='none: falls are physical; every escape, miss and fall is a continuous recording with trusted input only',
+            fixes=pockets['fixes'])
+        self.evidence.write('recovery-map.json', dict(summary=summary, pockets=pockets, local_misses=misses, long_falls=falls,
+            policy=self.mountain['recoveryPolicy'], proof=self.proof))
+        print('PASS recovery map: %d pockets (%d on the climb), %d escape replays, 8 local misses, 2 long falls (%s lost)'
+              % (summary['pockets'], summary['on_climb'], summary['escape_replays'], [round(f['world_units_lost'], 1) for f in falls]), flush=True)
+
+    def test_05_source_hashes(self):
+        for path, digest in self.proof['source_hashes'].items():
+            self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, path)
+        print('PASS source hashes: runtime, level, routes and harness match the tested worktree', flush=True)
+
 if __name__ == '__main__':
     unittest.main()

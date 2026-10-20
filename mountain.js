@@ -147,7 +147,12 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // Green floor bouncers on the base catch every declared S01 fall line.
         bouncer('S01-floor',2520,80,3960,40),
         // Kept (converted to green) from the v2 Switchback S02-01 start; no v3 route uses it.
-        bouncer('S01-exit',4060,-1620,200,55)
+        bouncer('S01-exit',4060,-1620,200,55),
+        // TASK-491: the base left of the entry pad (x 0..2060, on mountain-catch) had no anchor in reach, so a
+        // fall that came to rest there (e.g. down the left map edge) forced a restart. This green recovery hook
+        // is within 1080 of the whole strip up to the entry pad; a pull and release lands on the green floor
+        // bouncers, whose yard-pad rejoin is the declared S01 recovery. It sits left of every S01 route rope.
+        bouncer('S01-west-hook',700,-560,120,30)
     ];
     // Misses fall to the green floor bouncers through this pass-through drag zone, which
     // damps horizontal and vertical speed (420 tall so the first rebound stays well under
@@ -209,8 +214,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         exit:{left:6040,right:6440,top:-2730,bottom:-2700},
         action:'Catch the green crown hook in flight, swing down-right and release into the exit drag zone to settle on the green exit pad'});
     for (let i=0;i<4;i++) connectors[i].status='built';
-    Object.assign(recoveries[0], {status:'built',elements:['S01-yard-drag','S01-exit-drag','S01-floor'],
-        rejoin:'S01-02',sideRoute:'Every declared S01 miss falls through a drag zone onto the green floor bouncers and settles; a green yard-pad pull and a blue lift pull rejoin the route through the deflector'});
+    Object.assign(recoveries[0], {status:'built',elements:['S01-yard-drag','S01-exit-drag','S01-floor','S01-west-hook'],
+        rejoin:'S01-02',sideRoute:'Every declared S01 miss falls through a drag zone onto the green floor bouncers and settles; a green yard-pad pull and a blue lift pull rejoin the route through the deflector. A rest on the base left of the entry pad pulls the green west hook onto the floor bouncers (TASK-491)'});
     // Switchback Shaft v3 (layout v3, TASK-550): no gray pads. Travelling left from the
     // green S01 exit pad at the doubled 1080-range distances, between opposing shaft walls.
     // S01's exit drag zone kills horizontal speed, so the hoist pull is near-vertical.
@@ -424,7 +429,11 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         // v1 Cable Galleries recovery step and entrance deck (v1 S05-01 start), converted to green;
         // no v3 S04 route uses them.
         {...rest('S04-upper-step',4700,-6050,200),role:'bounce'},
-        {id:'S04-exit',x:4460,y:-6480,role:'bounce',grapplable:true,points:[{x:0,y:-180},{x:40,y:-180},{x:40,y:0},{x:160,y:0},{x:160,y:-30},{x:200,y:-30},{x:200,y:55},{x:0,y:55}]}
+        {id:'S04-exit',x:4460,y:-6480,role:'bounce',grapplable:true,points:[{x:0,y:-180},{x:40,y:-180},{x:40,y:0},{x:160,y:0},{x:160,y:-30},{x:200,y:-30},{x:200,y:55},{x:0,y:55}]},
+        // TASK-491: the catch basin had no anchor in reach but itself (a dead end at 1080 and 1620 for every
+        // miss that settles there). Pulling this green recovery hook up-right off the basin and releasing is a
+        // deliberate fall east of the basin to the broad base. Right of the S04-fall-drag column (x <= 300).
+        bouncer('S04-basin-hook',590,-6630,120,30)
     ];
     deflectors.find(e=>e.id==='S04-upper-step').points.forEach(p=>{if(p.y===-60)p.y=-30;});
     deflectors.find(e=>e.id==='S04-upper-step').points.splice(0,1,{x:0,y:-180},{x:40,y:-180},{x:40,y:0});
@@ -484,8 +493,8 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         action:'At the apex on the left map edge, pull the green exit hook up-right, release over the baffle into the exit drag zone and settle on the green exit ledge'});
     Object.assign(connectors[12], {status:'built',intent:'Physical ascent: the S04-01 hoist pull starts on the v3 Viaduct exit ledge'});
     for (let i=13;i<16;i++) connectors[i].status='built';
-    Object.assign(recoveries[3], {status:'built',elements:['S04-fall-drag','S04-catch-basin','S04-exit-drag','S04-exit-ledge','S03-exit-drag','S03-exit-ledge'],
-        rejoin:'S04-01',sideRoute:'Every declared S04 miss falls through a drag zone onto a green bouncer and settles: short or late hoist holds on the green S03 exit ledge, from which the S04-01 hoist pull rejoins the route; missed lift, crest-hook and exit-hook catches down the left map edge onto the green catch basin; an exit-hook overshoot on the green S04 exit ledge'});
+    Object.assign(recoveries[3], {status:'built',elements:['S04-fall-drag','S04-catch-basin','S04-basin-hook','S04-exit-drag','S04-exit-ledge','S03-exit-drag','S03-exit-ledge'],
+        rejoin:'S04-01',sideRoute:'Every declared S04 miss falls through a drag zone onto a green bouncer and settles: short or late hoist holds on the green S03 exit ledge, from which the S04-01 hoist pull rejoins the route; missed lift, crest-hook and exit-hook catches down the left map edge onto the green catch basin, from which a green basin-hook pull is a deliberate fall to the broad base (TASK-491); an exit-hook overshoot on the green S04 exit ledge'});
     // Cable Galleries v3 (layout v3, TASK-517/518): no gray pads. Travelling right from the green S04
     // exit ledge (inside S04-exit-drag) at the 1620-range distances (the range upgrade is already held:
     // the S03 route climbs through the S05 band), under the legacy S08 spill deck and left of the legacy
