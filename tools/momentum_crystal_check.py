@@ -26,9 +26,28 @@ neonPulse is pinned to 1 before the draw. --rev R captures git rev R
         CRYSTAL_PIECES.stats after a seeded 60 s play (momentum_frames_gallery
         play setup, seed 1, a draw per frame) and builds over 120 frames of a
         static M04 scene after 10 warm-up frames
+        --kind green: the piece eroded 6 px minus the lip bands (the HEAD
+        free edges' bands dilated 1 px), on both sides; pass = head >= 3x parent
+    python3 momentum_crystal_check.py lips <out.json>
+        every green piece of the 22 M frames at 1280x720: its edges ('wall',
+        'piece' or 'free': piece.crystalEdges, re-derived in Python from the
+        course faces and the other pieces), and per edge the fraction of 20
+        points whose luminance >= 200 at outlineHalf + 2 px inside the edge
+        (in the lip band) and, for the record, at 2 px (under the unchanged
+        outline's inner half). The points are spread over the part of t 0.1
+        .. 0.9 that lies outside the other edges' outline and lip bands
+        (tRange): a free neighbour's lip runs into the shared corner
+    python3 momentum_crystal_check.py fade <out.json>
+        M23's green used (passThrough) at alpha 1, 0.5 and 0 and removed
+        (background): mean interior (eroded 6 px) contribution ratio, alpha 0
+        maxDelta inside the piece
     python3 momentum_crystal_check.py shots <dir> --kind blue [--rev R]
         M04/M24/M66-1280x720.png, M66-390x844.png, crop4x-cube.png and
         M04-parent-vs-head.png (needs --rev)
+    python3 momentum_crystal_check.py shots <dir> --kind green
+        M23/M46/M24-1280x720.png, M134-390x844.png, crop4x-M23-lip.png (the
+        ramp slope) and tutorial-legend.png (the momentum hint legend, 3x)
+--rev BASE is the parent of the TASK-122 game commit 4c9ba46.
 Every JSON is compact. Exit status 1 when a pass condition fails.
 Requires Playwright Chromium, numpy and Pillow.
 """
@@ -56,6 +75,13 @@ DILATE = 2
 ERODE = 6
 TEXTURE_FLAT_MAX = 1.0
 TEXTURE_HEAD_MIN = 15
+GREEN_TEXTURE_RATIO = 3.0
+LIT = 200
+LIP_DEPTH = 2
+LIP_FREE_MIN = 0.8
+LIP_CONTACT_MAX = 0.1
+FADE_TOLERANCE = 0.05
+REVS = {'BASE': '4c9ba46~1'}
 SHIFT_PX = 37
 PIN = 'updateNeonPulse = () => { neonPulse = 1 }; neonPulse = 1'
 
@@ -132,8 +158,13 @@ DRAW = r'''() => {
     draw()
     const k = canvas.width / width * scale[version]
     const floor = floors.find(f => f instanceof MomentumPatternFloor)
-    return {k: k, canvas: [canvas.width, canvas.height], pieces: floor.elements.map(e => ({
-        kind: e instanceof MomentumBlue ? 'blue' : 'green',
+    return {k: k, canvas: [canvas.width, canvas.height],
+        outlineHalf: STYLE.strokes.neonOutline.width / scale[version] * k / 2,
+        segments: momentumCourse.segments.map(s => ({dir: s.dir, x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1,
+            halfWidth: s.dir == 'right' ? GAMEPLAY.momentumBorders.halfWidth : s.halfWidth === undefined ? null : s.halfWidth})),
+        pieces: floor.elements.map(e => ({
+        kind: e instanceof MomentumBlue ? 'blue' : 'green', edges: e.crystalEdges || null,
+        world: e.getPoints().map(p => [p.x, p.y]),
         poly: e.getPoints().map(p => [(p.x + screen.x) * k, (p.y + screen.y) * k]),
         inner: e.getInnerPoints(STYLE.badVersionEffects.obstacles.innerCopyInsetRatio)
             .map(p => [(p.x + screen.x) * k, (p.y + screen.y) * k])}))}
@@ -244,13 +275,16 @@ def cmd_outside(args):
             pieces = a.info['pieces']
             mask = dilate(polygon_mask(a.shape, [p['poly'] for p in pieces]), DILATE)
             blue = polygon_mask(a.shape, [p['poly'] for p in pieces if p['kind'] == 'blue'])
+            green = polygon_mask(a.shape, [p['poly'] for p in pieces if p['kind'] == 'green'])
             diff = np.abs(a.astype(np.int16) - b.astype(np.int16)).max(axis=2)
             outside = diff[~mask]
             row = {'scene': scene, 'viewport': f'{vp[0]}x{vp[1]}',
                    'maxDelta': int(outside.max()) if outside.size else 0,
                    'differingPixels': int((outside > 0).sum()),
                    'bluePieces': sum(p['kind'] == 'blue' for p in pieces),
-                   'blueMaskPixels': int(blue.sum()), 'insideBlueDiffering': int((diff[blue] > 0).sum())}
+                   'blueMaskPixels': int(blue.sum()), 'insideBlueDiffering': int((diff[blue] > 0).sum()),
+                   'greenPieces': sum(p['kind'] == 'green' for p in pieces),
+                   'greenMaskPixels': int(green.sum()), 'insideGreenDiffering': int((diff[green] > 0).sum())}
             row['pass'] = row['maxDelta'] == 0 and row['differingPixels'] == 0 and \
                 (row['blueMaskPixels'] == 0 or row['insideBlueDiffering'] > 0)
             ok = ok and row['pass']
@@ -278,7 +312,224 @@ def interior_stddevs(img, info, kind):
     return out
 
 
+def winding(poly):
+    n = len(poly)
+    return 1 if sum(poly[j][0] * poly[(j + 1) % n][1] - poly[(j + 1) % n][0] * poly[j][1] for j in range(n)) > 0 else -1
+
+
+def inward(a, b, sign):
+    u = (b - a) / np.hypot(*(b - a))
+    return np.array([-u[1] * sign, u[0] * sign])
+
+
+def lip_mask(shape, info, piece):
+    """Lip bands of piece's free edges (HEAD info): depth outlineHalf ..
+    outlineHalf + 4 px x max(1, stage / 1080) inside each edge, dilated 1 px"""
+    poly = np.array(piece['poly'])
+    outer = info['outlineHalf'] + 4 * max(1.0, min(info['canvas']) / 1080)
+    mask = np.zeros(shape[:2], dtype=bool)
+    sign = winding(poly)
+    for i, kind in enumerate(piece['edges'] or []):
+        if kind != 'free':
+            continue
+        a, b = poly[i], poly[(i + 1) % len(poly)]
+        n = inward(a, b, sign)
+        mask |= polygon_mask(shape, [[a + n * info['outlineHalf'], b + n * info['outlineHalf'], b + n * outer, a + n * outer]])
+    return dilate(mask & polygon_mask(shape, [poly]), 1)
+
+
+def cmd_texture_green(args):
+    rows = []
+    ok = True
+    for id in args.frames.split(','):
+        a, ia, _ = capture_frame('worktree', id, (1280, 720))
+        b, _, _ = capture_frame(args.rev, id, (1280, 720))
+        la, lb = luminance255(a), luminance255(b)
+        for i, p in enumerate(ia['pieces']):
+            if p['kind'] != 'green':
+                continue
+            m = erode(polygon_mask(a.shape, [p['poly']]), ERODE) & ~lip_mask(a.shape, ia, p)
+            head, parent = round(float(la[m].std()), 3), round(float(lb[m].std()), 3)
+            row = {'frame': id, 'piece': i, 'pixels': int(m.sum()), 'head': head, 'parent': parent,
+                   'ratio': round(head / parent, 3) if parent else 'inf'}
+            row['pass'] = head >= GREEN_TEXTURE_RATIO * parent and head > 0
+            ok = ok and row['pass']
+            rows.append(row)
+    ok = ok and len(rows) > 0
+    write(args.out, {'kind': 'green', 'viewport': '1280x720', 'erodePx': ERODE,
+                     'region': 'the piece eroded erodePx minus the lip bands of its free edges (dilated 1 px), same mask on both sides',
+                     'criterion': 'per row: head >= %s x parent' % GREEN_TEXTURE_RATIO,
+                     'rev': fxs.harness('worktree').rev, 'parent': sha(args.rev), 'rows': rows, 'pass': ok})
+    return 0 if ok else 1
+
+
+def edge_contacts(piece, others, segments):
+    """Python re-derivation of piece.crystalEdges from world points"""
+    pts = np.array(piece['world'])
+    right = [s['halfWidth'] for s in segments if s['dir'] == 'right']
+    out = []
+    for i in range(len(pts)):
+        a, b = pts[i], pts[(i + 1) % len(pts)]
+        kind = 'free'
+        for s in segments:
+            hw = s['halfWidth']
+            if hw is None:
+                continue
+            tol, margin = 1e-5 * 2 * hw, 4 * hw
+            ax, al = (1, 0) if s['dir'] == 'right' else (0, 1)
+            ends = [(s['x0'], s['x1']), (s['y0'], s['y1'])][al]
+            if max(a[al], b[al]) < min(ends) - margin or min(a[al], b[al]) > max(ends) + margin:
+                continue
+            centre = [s['x0'], s['y0']][ax]
+            if any(abs(a[ax] - f) < tol and abs(b[ax] - f) < tol for f in (centre - hw, centre + hw)):
+                kind = 'wall'
+        if kind == 'free':
+            tol = 1e-5 * 2 * right[0]
+            length = np.hypot(*(b - a))
+            u = (b - a) / length
+            for o in others:
+                q = np.array(o['world'])
+                for j in range(len(q)):
+                    c, d = q[j], q[(j + 1) % len(q)]
+                    if max(abs((p[0] - a[0]) * u[1] - (p[1] - a[1]) * u[0]) for p in (c, d)) > tol:
+                        continue
+                    tc, td = (c - a) @ u, (d - a) @ u
+                    if min(length, max(tc, td)) - max(0, min(tc, td)) > tol:
+                        kind = 'piece'
+        out.append(kind)
+    return out
+
+
+def edge_samples(poly, e, depth, margin):
+    """20 points depth px inside edge e of poly, evenly over the stretch whose
+    points are at least margin px inside every other edge (off the other
+    edges' outline and lip bands, which reach into the corners), clipped to
+    t 0.1 .. 0.9; returns (points, [t0, t1])"""
+    sign = winding(poly)
+    a, b = poly[e], poly[(e + 1) % len(poly)]
+    n = inward(a, b, sign)
+    others = []
+    for j in range(len(poly)):
+        if j != e:
+            c, d = poly[j], poly[(j + 1) % len(poly)]
+            others.append((c, inward(c, d, sign)))
+    ok = [t for t in np.linspace(0.1, 0.9, 801)
+          if all((a + (b - a) * t + n * depth - c) @ m >= margin for c, m in others)]
+    t0, t1 = (ok[0], ok[-1]) if ok else (0.5, 0.5)
+    ts = [t0 + (t1 - t0) * (k + 0.5) / 20 for k in range(20)]
+    return [a + (b - a) * t + n * depth for t in ts], [round(float(t0), 3), round(float(t1), 3)]
+
+
+def edge_fraction(lum, points):
+    """Fraction of points whose luminance >= LIT"""
+    return sum(int(lum[int(q[1]), int(q[0])] >= LIT) for q in points) / len(points)
+
+
+def cmd_lips(args):
+    rows = []
+    ok = True
+    for id in IDS:
+        img, info, _ = capture_frame('worktree', id, (1280, 720))
+        lum = luminance255(img)
+        depth = info['outlineHalf'] + LIP_DEPTH
+        # Past the other edges' outline and lip bands (lip_mask's outer depth) plus 1 px
+        margin = info['outlineHalf'] + 4 * max(1.0, min(info['canvas']) / 1080) + 1
+        for i, p in enumerate(info['pieces']):
+            if p['kind'] != 'green':
+                continue
+            derived = edge_contacts(p, [o for j, o in enumerate(info['pieces']) if j != i], info['segments'])
+            poly = np.array(p['poly'])
+            edges = []
+            piece_ok = p['edges'] == derived
+            for e, kind in enumerate(p['edges']):
+                a, b = poly[e], poly[(e + 1) % len(poly)]
+                points, span = edge_samples(poly, e, depth, margin)
+                lit = edge_fraction(lum, points)
+                edge = {'edge': e, 'kind': kind, 'a': [round(float(v), 2) for v in a],
+                        'b': [round(float(v), 2) for v in b], 'litFraction': lit, 'tRange': span,
+                        'litFraction2px': edge_fraction(lum, edge_samples(poly, e, LIP_DEPTH, margin)[0])}
+                edge['pass'] = bool(lit >= LIP_FREE_MIN if kind == 'free' else lit <= LIP_CONTACT_MAX)
+                piece_ok = piece_ok and edge['pass']
+                edges.append(edge)
+            rows.append({'frame': id, 'piece': i, 'freeEdges': [[e['a'], e['b']] for e in edges if e['kind'] == 'free'],
+                         'edges': edges, 'geometryAgrees': p['edges'] == derived, 'pass': piece_ok})
+            ok = ok and piece_ok
+            print(id, i, [(e['kind'], e['litFraction']) for e in edges], flush=True)
+
+    def kinds(frame):
+        return [sorted(e['kind'] for e in r['edges']) for r in rows if r['frame'] == frame]
+    # M23 ramp: slope and vertical side free, floor on the wall face; M46: that ramp and the cap on the blue
+    expect = {'M23ramp': ['free', 'free', 'wall'] in kinds('M23'),
+              'M46ramp': ['free', 'free', 'wall'] in kinds('M46'),
+              'M46cap': ['free', 'free', 'free', 'piece'] in kinds('M46')}
+    ok = ok and all(expect.values()) and len(rows) > 0
+    write(args.out, {'rev': fxs.harness('worktree').rev, 'viewport': '1280x720', 'frames': len(IDS),
+                     'framesWithGreens': len({r['frame'] for r in rows}), 'greenPieces': len(rows), 'lit': LIT,
+                     'depth': 'outlineHalf + %s px; outlineHalf = %s px at 1280x720 is the inner half of the unchanged '
+                              'neon outline, drawn on top of the lip, so litFraction2px reads the outline itself on '
+                              'every edge' % (LIP_DEPTH, round(depth - LIP_DEPTH, 3)),
+                     'criterion': 'free litFraction >= %s, wall/piece litFraction <= %s, edges == Python re-derivation; '
+                                  'samples over tRange: t 0.1 .. 0.9 minus the stretch within outlineHalf + 4 px + 1 px '
+                                  'of another edge' % (LIP_FREE_MIN, LIP_CONTACT_MAX),
+                     'expect': expect, 'rows': rows, 'pass': ok})
+    return 0 if ok else 1
+
+
+FADE = r'''(alpha) => {
+    const floor = floors.find(f => f instanceof MomentumPatternFloor)
+    const green = floor.elements.find(e => e instanceof MomentumGreen)
+    if (alpha === null) {
+        floor.elements = floor.elements.filter(e => e !== green)
+        return null
+    }
+    green.passThrough = true
+    green.fadeStartMs = performance.now() - (1 - alpha) * GAMEPLAY.momentumFadeMs
+    green.faded = false
+    return green.getAlpha()
+}'''
+
+
+def cmd_fade(args):
+    shots = {}
+    for alpha in (None, 1.0, 0.5, 0.0):
+        context, page = fxs.harness('worktree').open((1280, 720))
+        try:
+            page.evaluate(PLACE, ['M23', 0])
+            got = page.evaluate(FADE, alpha)
+            info = page.evaluate(DRAW)
+            shots[alpha] = (np.asarray(snap(page), dtype=np.float64), info, got)
+            if page.errors:
+                raise RuntimeError(page.errors)
+        finally:
+            context.close()
+    bg = shots[None][0]
+    green = next(p for p in shots[1.0][1]['pieces'] if p['kind'] == 'green')
+    piece = polygon_mask(bg.shape, [green['poly']])
+    interior = erode(piece, ERODE)
+    lum = {a: luminance255(v[0]) for a, v in shots.items()}
+    full = float((lum[1.0][interior] - lum[None][interior]).mean())
+    half = float((lum[0.5][interior] - lum[None][interior]).mean())
+    full_rgb = (shots[1.0][0][interior] - bg[interior]).mean(axis=0)
+    half_rgb = (shots[0.5][0][interior] - bg[interior]).mean(axis=0)
+    zero = int(np.abs(shots[0.0][0] - bg).max(axis=2)[dilate(piece, DILATE)].max())
+    result = {'rev': fxs.harness('worktree').rev, 'frame': 'M23', 'viewport': '1280x720',
+              'alphas': {str(a): v[2] for a, v in shots.items() if a is not None},
+              'interiorPixels': int(interior.sum()), 'meanContributionFull': round(full, 3),
+              'meanContributionHalf': round(half, 3), 'ratio': round(half / full, 4),
+              'ratioRGB': [round(float(h / f), 4) for h, f in zip(half_rgb, full_rgb)],
+              'alpha0MaxDeltaInPiece': zero,
+              'criterion': 'ratio = mean(lum(alpha 0.5) - lum(background)) / mean(lum(alpha 1) - lum(background)) '
+                           'over the piece eroded %s px, 0.5 +- %s; alpha 0: maxDelta 0 vs the background over the '
+                           'piece dilated %s px' % (ERODE, FADE_TOLERANCE, DILATE)}
+    result['pass'] = abs(result['ratio'] - 0.5) <= FADE_TOLERANCE and zero == 0 and \
+        shots[0.5][2] == 0.5 and shots[1.0][2] == 1 and shots[0.0][2] == 0
+    write(args.out, result)
+    return 0 if result['pass'] else 1
+
+
 def cmd_texture(args):
+    if args.kind == 'green':
+        return cmd_texture_green(args)
     rows = []
     ok = True
     for id in args.frames.split(','):
@@ -377,7 +628,51 @@ def cmd_cache(args):
     return 0 if result['pass'] else 1
 
 
+LEGEND = r'''() => {
+    TUTORIAL_HINT.visible = true; TUTORIAL_HINT.done = false; TUTORIAL_HINT.pressed = false
+    TUTORIAL_HINT.alpha = 1; TUTORIAL_HINT.time = 0; TUTORIAL_HINT.invalidate()
+    updateNeonPulse = () => { neonPulse = 1 }; neonPulse = 1
+    draw()
+    return TUTORIAL_HINT.legendBoxes
+}'''
+
+
+def cmd_shots_green(args):
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    for id, vp in [('M23', (1280, 720)), ('M46', (1280, 720)), ('M24', (1280, 720)), ('M134', (390, 844))]:
+        img, info, _ = capture_frame('worktree', id, vp)
+        fxs.save_png(img, out / f'{id}-{vp[0]}x{vp[1]}.png')
+        if id == 'M23':
+            m23, m23_info = img, info
+    # The ramp's slope: its longest edge
+    poly = np.array(next(p['poly'] for p in m23_info['pieces'] if p['kind'] == 'green'))
+    e = max(range(len(poly)), key=lambda i: np.hypot(*(poly[(i + 1) % len(poly)] - poly[i])))
+    seg = np.array([poly[e], poly[(e + 1) % len(poly)]])
+    x0, y0 = np.floor(seg.min(axis=0)).astype(int) - 12
+    x1, y1 = np.ceil(seg.max(axis=0)).astype(int) + 12
+    crop = Image.fromarray(m23[max(0, y0):y1, max(0, x0):x1])
+    crop.resize((crop.width * 4, crop.height * 4), Image.NEAREST).save(out / 'crop4x-M23-lip.png')
+    context, page = fxs.harness('worktree').open((1280, 720))
+    try:
+        boxes = page.evaluate(LEGEND)
+        img = snap(page)
+        if page.errors:
+            raise RuntimeError(page.errors)
+    finally:
+        context.close()
+    b = np.array([[x, y, x + w, y + h] for x, y, w, h in boxes])
+    x0, y0 = np.floor(b[:, :2].min(axis=0)).astype(int) - 16
+    x1, y1 = np.ceil(b[:, 2:].max(axis=0)).astype(int) + 16
+    crop = Image.fromarray(img[max(0, y0):y1, max(0, x0):x1])
+    crop.resize((crop.width * 3, crop.height * 3), Image.NEAREST).save(out / 'tutorial-legend.png')
+    print(sorted(p.name for p in out.glob('*.png')))
+    return 0
+
+
 def cmd_shots(args):
+    if args.kind == 'green':
+        return cmd_shots_green(args)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for id, vp in [('M04', (1280, 720)), ('M24', (1280, 720)), ('M66', (1280, 720)), ('M66', (390, 844))]:
@@ -401,7 +696,8 @@ def cmd_shots(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['geometry', 'outside', 'texture', 'determinism', 'cache', 'shots'])
+    parser.add_argument('command', choices=['geometry', 'outside', 'texture', 'determinism', 'cache', 'shots',
+                                            'lips', 'fade'])
     parser.add_argument('out')
     parser.add_argument('--rev')
     parser.add_argument('--kind', default='blue')
@@ -409,6 +705,8 @@ def main():
     args = parser.parse_args()
     if args.command in ('outside', 'texture') and not args.rev:
         parser.error('--rev is required')
+    if args.rev in REVS:
+        args.rev = sha(REVS[args.rev])
     try:
         return globals()['cmd_' + args.command](args)
     finally:

@@ -1,8 +1,11 @@
 // Momentum crystal pieces (Cave Crystal concept A): the inside of a momentum
-// blue becomes faceted sapphire. A piece's sprite (a fan of facets over a
-// diagonal gradient, a top-left sheen, two hairline cracks and an inner
-// bevel) is painted once per shape and backing scale into a cached offscreen
-// canvas, clipped to the piece polygon, and blitted every frame. The pattern
+// blue becomes faceted sapphire (a fan of facets over a diagonal gradient, a
+// top-left sheen, two hairline cracks and an inner bevel), a green becomes
+// jade rock (diagonal strata, emerald nubs and a bright lip just inside the
+// outline along every free edge: one that neither lies on a corridor wall
+// face nor touches another piece). A piece's sprite is painted once per
+// shape and backing scale into a cached offscreen canvas, clipped to the
+// piece polygon, and blitted every frame. The pattern
 // is seeded from the piece kind and its points relative to its first point
 // (rounded to 0.01 world units), so a moving piece keeps its look and every
 // run and device draws the same crystal. Visual only; the only randomness is
@@ -19,7 +22,17 @@ const CRYSTAL_PIECES = (function()
     const BEVEL_INSET = 4
     const BEVEL_WIDTH = 1
     const PAD = 2
-    const KINDS = {blue: 1}
+    const KINDS = {blue: 1, green: 2}
+    // Green: strata spacing and width ranges, nub size range, lip width
+    const STRATA_SPACING = [7, 16]
+    const STRATA_WIDTH = [1, 4]
+    const NUB_SIZE = [3, 7]
+    const NUB_AREA = 2500
+    const NUB_GLOW = 4
+    const LIP_WIDTH = 4
+    // A corridor wall face or another piece's edge closer than this (in W,
+    // as momentumSnapWallFace) is in contact
+    const CONTACT_TOLERANCE = 1e-5
 
     // mulberry32 (render/wallveins.js): the same crystal on every run and device
     function generator(seed)
@@ -79,6 +92,77 @@ const CRYSTAL_PIECES = (function()
         }
         return res
     }
+    function polygonArea(points)
+    {
+        let area = 0
+        for (let i = 0; i < points.length; ++i)
+        {
+            const a = points[i], b = points[(i + 1) % points.length]
+            area += a[0] * b[1] - b[0] * a[1]
+        }
+        return area / 2
+    }
+    // Inside the convex polygon (either winding)
+    function insidePolygon(points, x, y)
+    {
+        let sign = 0
+        for (let i = 0; i < points.length; ++i)
+        {
+            const a = points[i], b = points[(i + 1) % points.length]
+            const cross = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])
+            if (cross == 0)
+                continue
+            if (sign && Math.sign(cross) != sign)
+                return false
+            sign = Math.sign(cross)
+        }
+        return true
+    }
+    // Edge i (points[i] -> points[i + 1]) lies on a face of a built corridor
+    // segment of momentumCourse
+    function onWallFace(a, b)
+    {
+        if (typeof momentumCourse === 'undefined' || !momentumCourse)
+            return false
+        for (const s of momentumCourse.segments)
+        {
+            const halfWidth = s.dir == 'right' ? GAMEPLAY.momentumBorders.halfWidth : s.halfWidth
+            if (halfWidth === undefined)
+                continue
+            const tolerance = CONTACT_TOLERANCE * 2 * halfWidth
+            const margin = 4 * halfWidth
+            // across: the face coordinate axis; along: the segment's own
+            const across = s.dir == 'right' ? 'y' : 'x', along = s.dir == 'right' ? 'x' : 'y'
+            const lo = Math.min(s[along + '0'], s[along + '1']) - margin
+            const hi = Math.max(s[along + '0'], s[along + '1']) + margin
+            if (Math.max(a[along], b[along]) < lo || Math.min(a[along], b[along]) > hi)
+                continue
+            for (const face of [s[across + '0'] - halfWidth, s[across + '0'] + halfWidth])
+                if (Math.abs(a[across] - face) < tolerance && Math.abs(b[across] - face) < tolerance)
+                    return true
+        }
+        return false
+    }
+    // Edge a-b overlaps (collinear, a common stretch) an edge of other
+    function touchesPiece(a, b, other, tolerance)
+    {
+        const length = Math.hypot(b.x - a.x, b.y - a.y)
+        if (!length)
+            return false
+        const ux = (b.x - a.x) / length, uy = (b.y - a.y) / length
+        const points = other.getPoints()
+        for (let i = 0; i < points.length; ++i)
+        {
+            const c = points[i], d = points[(i + 1) % points.length]
+            const off = p => Math.abs((p.x - a.x) * uy - (p.y - a.y) * ux)
+            if (off(c) > tolerance || off(d) > tolerance)
+                continue
+            const tc = (c.x - a.x) * ux + (c.y - a.y) * uy, td = (d.x - a.x) * ux + (d.y - a.y) * uy
+            if (Math.min(length, Math.max(tc, td)) - Math.max(0, Math.min(tc, td)) > tolerance)
+                return true
+        }
+        return false
+    }
     function tracePolygon(c, points)
     {
         c.beginPath()
@@ -110,6 +194,30 @@ const CRYSTAL_PIECES = (function()
         stats: {builds: 0, hits: 0, size: 0},
         sprites: new Map(),
 
+        // Per edge i (points[i] -> points[i + 1]) of a piece: 'wall' (on a
+        // corridor wall face), 'piece' (overlapping an edge of another piece
+        // of its placement group) or 'free'. Measured once, at the first draw,
+        // and kept on the piece: crystalEdges, crystalFreeEdges (free indices)
+        edges(piece)
+        {
+            if (piece.crystalEdges)
+                return piece.crystalEdges
+            const points = piece.getPoints()
+            const tolerance = CONTACT_TOLERANCE * 2 * GAMEPLAY.momentumBorders.halfWidth
+            const floor = typeof floors !== 'undefined' && floors && piece.generationGroupId !== undefined
+                ? floors.find(f => f.elements.includes(piece)) : null
+            const others = floor ? floor.elements.filter(e => e !== piece && e instanceof MomentumOneTime &&
+                e.generationGroupId === piece.generationGroupId) : []
+            piece.crystalEdges = points.map((a, i) =>
+            {
+                const b = points[(i + 1) % points.length]
+                if (onWallFace(a, b))
+                    return 'wall'
+                return others.some(other => touchesPiece(a, b, other, tolerance)) ? 'piece' : 'free'
+            })
+            piece.crystalFreeEdges = piece.crystalEdges.map((kind, i) => kind == 'free' ? i : -1).filter(i => i >= 0)
+            return piece.crystalEdges
+        },
         // 32-bit seed of the piece kind and its relative points
         seed(piece, kind)
         {
@@ -118,9 +226,9 @@ const CRYSTAL_PIECES = (function()
                 h = hash(h, x, y)
             return h
         },
-        // Paints the sprite of polygon points (canvas px, origin at the
+        // Paints the blue sprite of polygon points (canvas px, origin at the
         // sprite's top-left) of size w x h; unit = canvas px per 1080-stage px
-        paint(c, points, w, h, unit, seed)
+        paintBlue(c, points, w, h, unit, seed)
         {
             const random = generator(seed)
             const range = (a, b) => a + (b - a) * random()
@@ -211,12 +319,108 @@ const CRYSTAL_PIECES = (function()
             }
             c.restore()
         },
-        // Cached sprite of piece at canvas scale k (canvas px per world unit)
-        sprite(piece, kind, k)
+        // Paints the green sprite: jade gradient, diagonal strata, emerald
+        // nubs and the lip along the free edges (free[i]: edge i is free),
+        // inside the outline (its inner half is outlineHalf canvas px wide)
+        paintGreen(c, points, w, h, unit, seed, free, outlineHalf)
+        {
+            const random = generator(seed)
+            const range = (a, b) => a + (b - a) * random()
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+            for (const [x, y] of points)
+            {
+                x0 = Math.min(x0, x); y0 = Math.min(y0, y)
+                x1 = Math.max(x1, x); y1 = Math.max(y1, y)
+            }
+            c.save()
+            tracePolygon(c, points)
+            c.clip()
+            // Jade body: diagonal gradient
+            const body = c.createLinearGradient(x0, y0, x1, y1)
+            body.addColorStop(0, '#0f4a2a')
+            body.addColorStop(1, '#04180d')
+            c.fillStyle = body
+            c.fillRect(0, 0, w, h)
+            // Strata: parallel lines falling to the right at a seeded angle,
+            // seeded spacing, width and tone (30% light, the rest dark)
+            const angle = range(0.35, 0.7)
+            const dx = Math.cos(angle), dy = Math.sin(angle)
+            const reach = Math.hypot(w, h)
+            for (let d = -reach + range(0, STRATA_SPACING[0]) * unit; d < reach; d += range(...STRATA_SPACING) * unit)
+            {
+                // The line through (w/2, h/2) + d * normal
+                const cx = w / 2 - dy * d, cy = h / 2 + dx * d
+                const light = random() < 0.3
+                const alpha = range(0.08, 0.25).toFixed(3)
+                c.strokeStyle = light ? `rgba(120,255,160,${alpha})` : `rgba(0,0,0,${alpha})`
+                c.lineWidth = Math.max(0.5, range(...STRATA_WIDTH) * unit)
+                c.beginPath()
+                c.moveTo(cx - dx * reach, cy - dy * reach)
+                c.lineTo(cx + dx * reach, cy + dy * reach)
+                c.stroke()
+            }
+            // Lip: a band just inside the outline along each free edge,
+            // kept off the other edges' outlines
+            const lip = LIP_WIDTH * Math.max(1, unit)
+            const inner = insetPolygon(points, outlineHalf)
+            const lipped = free.some(f => f)
+            if (lipped && Math.min(x1 - x0, y1 - y0) > 2 * outlineHalf + 1)
+            {
+                c.save()
+                tracePolygon(c, inner)
+                c.clip()
+                const winding = polygonArea(points) > 0 ? 1 : -1
+                c.strokeStyle = '#b6ffbf'
+                c.lineWidth = lip
+                c.lineCap = 'butt'
+                c.beginPath()
+                for (let i = 0; i < points.length; ++i)
+                {
+                    if (!free[i])
+                        continue
+                    const a = points[i], b = points[(i + 1) % points.length]
+                    const length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1
+                    const ux = (b[0] - a[0]) / length, uy = (b[1] - a[1]) / length
+                    // Inward normal, the band's centre line; overlong, the clip trims it
+                    const nx = -uy * winding * (outlineHalf + lip / 2), ny = ux * winding * (outlineHalf + lip / 2)
+                    c.moveTo(a[0] + nx - ux * reach, a[1] + ny - uy * reach)
+                    c.lineTo(b[0] + nx + ux * reach, b[1] + ny + uy * reach)
+                }
+                c.stroke()
+                c.restore()
+            }
+            // Emerald nubs: rhombi wholly inside the polygon past the outline
+            // and the lip, glowing inside the shape only (the clip)
+            const room = insetPolygon(points, outlineHalf + lip + 1)
+            const nubs = Math.max(2, Math.floor(Math.abs(polygonArea(points)) / (unit * unit) / NUB_AREA))
+            c.fillStyle = 'rgba(110,255,140,0.85)'
+            c.shadowColor = 'rgba(110,255,140,0.85)'
+            c.shadowBlur = NUB_GLOW * unit
+            // An inset past the middle turns the polygon inside out: no room
+            const fits = polygonArea(room) * polygonArea(points) > 0
+            for (let n = 0, tries = 0; fits && n < nubs && tries < 50 * nubs; ++tries)
+            {
+                const size = range(...NUB_SIZE) * unit
+                const x = range(x0, x1), y = range(y0, y1)
+                const r = size / 2, s = r * 0.6
+                const rhombus = [[x, y - r], [x + s, y], [x, y + r], [x - s, y]]
+                if (!rhombus.every(([px, py]) => insidePolygon(room, px, py) && insidePolygon(points, px, py)))
+                    continue
+                tracePolygon(c, rhombus)
+                c.fill()
+                ++n
+            }
+            c.restore()
+        },
+        // Cached sprite of piece at canvas scale k (canvas px per world unit);
+        // a green also keys on its free edges and the outline width
+        sprite(piece, kind, k, free, outlineHalf)
         {
             const rel = relativePoints(piece.getPoints())
             const stage = Math.min(canvas.width, canvas.height)
-            const key = kind + ':' + k.toFixed(4) + ':' + stage + ':' + rel.join(';')
+            let key = kind + ':' + k.toFixed(4) + ':' + stage + ':' + rel.join(';')
+            if (kind == 'green')
+                key += ':' + free.map(f => f ? 1 : 0).join('') + ':' + outlineHalf.toFixed(3)
             let sprite = this.sprites.get(key)
             if (sprite)
             {
@@ -236,7 +440,11 @@ const CRYSTAL_PIECES = (function()
             const image = document.createElement('canvas')
             image.width = Math.max(1, w)
             image.height = Math.max(1, h)
-            this.paint(image.getContext('2d'), points, w, h, stage / REFERENCE_HEIGHT, this.seed(piece, kind))
+            if (kind == 'green')
+                this.paintGreen(image.getContext('2d'), points, w, h, stage / REFERENCE_HEIGHT, this.seed(piece, kind),
+                    free, outlineHalf)
+            else
+                this.paintBlue(image.getContext('2d'), points, w, h, stage / REFERENCE_HEIGHT, this.seed(piece, kind))
             // Sprite origin relative to the first point, in world units
             sprite = {image: image, dx: minX / 100 - PAD / k, dy: minY / 100 - PAD / k, k: k}
             this.sprites.set(key, sprite)
@@ -247,13 +455,31 @@ const CRYSTAL_PIECES = (function()
             return sprite
         },
         // Draws the blue crystal inside piece with globalAlpha alpha, clipped
-        // to its polygon (the current path is left as the piece outline)
+        // to its polygon
         drawBlue(piece, alpha)
+        {
+            this.draw(piece, 'blue', alpha)
+        },
+        // Draws the green jade (and its lip) inside piece with globalAlpha
+        // alpha, clipped to its polygon
+        drawGreen(piece, alpha)
+        {
+            this.draw(piece, 'green', alpha)
+        },
+        draw(piece, kind, alpha)
         {
             const points = piece.getPoints()
             const m = ctx.getTransform()
             const k = Math.hypot(m.a, m.b)
-            const sprite = this.sprite(piece, 'blue', k)
+            let sprite
+            if (kind == 'green')
+            {
+                const free = this.edges(piece).map(edge => edge == 'free')
+                const outlineHalf = STYLE.strokes.neonOutline.width / scale[version] * k / 2
+                sprite = this.sprite(piece, kind, k, free, outlineHalf)
+            }
+            else
+                sprite = this.sprite(piece, kind, k)
             ctx.save()
             ctx.beginPath()
             ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
