@@ -6,6 +6,9 @@ artifacts/TASK-036/catalog-bad-port.json; entries with turnJoins): each is
 the ported bad frame (MOMENTUM_PATTERNS_PORT_H) placed whole in the right
 corridor at the join, before the corner box on right->up/down and after it
 on up/down->right, with turnClearanceHalfWidths base half widths between.
+Since TASK-130 (corridor half width 0.5 height, TASK-128) the frame is
+scaled by momentumBorders.halfWidth / shaftReferenceHalfWidth (the catalog's
+0.9 height corridor): span, piece offsets, sizes and motion bounds.
 The TASK-013 turn types are retired.
 
 Starts momentum on a scripted course (MomentumCourse.generate, as in
@@ -80,6 +83,7 @@ START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
 COURSE = '''() => ({segments: momentumCourse.take(5), half: GAMEPLAY.momentumBorders.halfWidth,
     borders: momentumBorders(), halves: momentumCourse.take(5).map(momentumSegmentHalfWidth),
     clearance: GAMEPLAY.momentumSpawn.turnClearanceHalfWidths * GAMEPLAY.momentumBorders.halfWidth,
+    scale: GAMEPLAY.momentumBorders.halfWidth / GAMEPLAY.momentumBorders.shaftReferenceHalfWidth,
     radius: ninja.radius, view: [width / scale[version], height / scale[version]]})'''
 PLACE = '''([id, segment]) => {
     floors.find(f => f instanceof MomentumPatternFloor).elements = []
@@ -165,6 +169,21 @@ DRIVE = '''([id, segment, points, speed, maxMoves]) => {
 def turn_frames():
     """Port catalog entries that are turn candidates."""
     return [f for f in json.loads(CATALOG.read_text()) if f['turnJoins']]
+
+
+def scaled(frame, k):
+    """A port catalog frame scaled by k (TASK-130: the live corridor half
+    width over the catalog's shaftReferenceHalfWidth)"""
+    pieces = []
+    for p in frame['pieces']:
+        q = dict(p, x=p['x'] * k, y=p['y'] * k)
+        for key in ('w', 'h'):
+            if key in p:
+                q[key] = p[key] * k
+        if p.get('points'):
+            q['points'] = [[a * k, b * k] for a, b in p['points']]
+        pieces.append(q)
+    return dict(frame, span=frame['span'] * k, pieces=pieces)
 
 
 def piece_box(p, x0, y0):
@@ -263,8 +282,8 @@ class MomentumPatternsTurnTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-        cls.frames = turn_frames()
         open_page(cls)
+        cls.frames = [scaled(f, cls.course['scale']) for f in turn_frames()]
 
     def tearDown(self):
         self.assertEqual(self.errors, [])
@@ -370,8 +389,8 @@ class MomentumTurnRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         (EVIDENCE_DIR / 'shots').mkdir(parents=True, exist_ok=True)
-        cls.frames = turn_frames()
         open_page(cls)
+        cls.frames = [scaled(f, cls.course['scale']) for f in turn_frames()]
 
     def tearDown(self):
         self.assertEqual(self.errors, [])

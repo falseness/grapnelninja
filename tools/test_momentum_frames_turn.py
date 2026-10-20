@@ -40,14 +40,25 @@ obstacle floor emptied. Asserts:
   travel >= 0.5 W;
 - test_3_shots: per id per viewport a montage: left = the concept PNG, right
   = the game view of the same frame rectangle (only walls and pieces), scaled
-  to the same height.
+  to the same height;
+- test_5_fit (TASK-130, corridor 1.0 height since TASK-128): per id at its
+  join per viewport, the L of the two corridors round the vertex (FIT_RUN_W
+  shaft W past the corner box along each) rasterized at FIT_STEP world units
+  with every moving piece at its min and at its max bound: the widest path
+  from the incoming corridor's open end to the outgoing one's is >=
+  FIT_MIN_RATIO x the ninja diameter (bottleneck of the distance transform,
+  the walls count as obstacles); every piece is a grapnel target: hit first
+  (walls and other pieces block) by a straight throw from some cell the
+  ninja can stand on along that path (FIT_THROW_STRIDE apart); no piece
+  cell lies outside the L (in a wall or a face).
 
 MOMENTUM_FRAMES_TURN_EVIDENCE_DIR (default /tmp/momentum-frames-turn)
 receives placed.json (compact {id: {viewport: {vertex, shaftW, corridorW,
 reach, pieces}}}), windows.json (compact {id: {viewport: {corridorW,
 windows: [{top, bottom, size, sizeInW}]}}}), elevator.json ({id: {viewport:
-...}}) and
-shots/<id>-<viewport>.png.
+...}}), shots/<id>-<viewport>.png and frames-fit.json (compact [{id, join,
+status, fix, reason, viewport: {minGapOverDiameter, gap, gapAtBounds,
+reachable, targets, insideL, cellsOutsideL}}], TASK-130).
 Requires Playwright Chromium and Pillow.
 """
 import base64
@@ -57,10 +68,13 @@ import os
 from pathlib import Path
 import unittest
 
+import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 from browser_test_support import start_browser_test, wait_for_boot_run
 from test_momentum_borders import SEED_COURSE
+from test_momentum_frames_h import rasterize
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_FRAMES_TURN_EVIDENCE_DIR', '/tmp/momentum-frames-turn'))
@@ -83,6 +97,13 @@ ELEVATOR_CYCLES = 2800
 # Elevator id -> its join
 ELEVATORS = {'M39': 'down->right', 'M40': 'up->right'}
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
+# test_5_fit: raster step (world units), how far the L runs past the corner
+# box along each corridor (shaft W), smallest path width over the ninja
+# diameter, grapnel throws from every FIT_THROW_STRIDE-th standing cell
+FIT_STEP = 3.0
+FIT_RUN_W = 0.6
+FIT_MIN_RATIO = 1.2
+FIT_THROW_STRIDE = 24
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
     floors.find(f => f instanceof MomentumObstacleFloor).elements = []
@@ -179,6 +200,85 @@ def crosses(line, box, tol=EPS):
         return t + tol < y < b - tol and lo < r - EPS and hi > l + EPS
     x, lo, hi = line['x0'], min(line['y0'], line['y1']), max(line['y0'], line['y1'])
     return l + tol < x < r - tol and lo < b - EPS and hi > t + EPS
+
+
+def at_bound(e, side):
+    """Polygon points of a placed piece with its motion at bound side (min / max)"""
+    pts = [list(q) for q in e['points']]
+    mo = e.get('motion')
+    if not mo:
+        return pts
+    if mo['axis'] == 'y':
+        dy = mo['yMin'] - e['top'] if side == 'min' else mo['yMax'] - e['bottom']
+        return [[x, y + dy] for x, y in pts]
+    dx = mo['xMin'] - e['left'] if side == 'min' else mo['xMax'] - e['right']
+    return [[x + dx, y] for x, y in pts]
+
+
+def first_hit(blocked, x0, y0, x1, y1):
+    """First non-zero cell of blocked on the grid line (x0, y0) -> (x1, y1) (cell indices)"""
+    n = int(max(abs(x1 - x0), abs(y1 - y0))) + 2
+    ix = np.clip(np.round(np.linspace(x0, x1, n)).astype(int), 0, blocked.shape[1] - 1)
+    iy = np.clip(np.round(np.linspace(y0, y1, n)).astype(int), 0, blocked.shape[0] - 1)
+    hit = blocked[iy, ix]
+    hit = hit[hit != 0]
+    return hit[0] if len(hit) else 0
+
+
+def corner_fit(elements, join, vx, vy, sh, ch, radius):
+    """Path width / ninja diameter, reachable grapnel targets and piece cells
+    outside the L, per moving-piece position (all at min, all at max)"""
+    run = FIT_RUN_W * 2 * sh
+    xs = np.arange(vx - sh - run + FIT_STEP / 2, vx + sh + run, FIT_STEP)
+    ys = np.arange(vy - ch - run + FIT_STEP / 2, vy + ch + run, FIT_STEP)
+    X, Y = np.meshgrid(xs, ys)
+    corridor, shaft = l_interior(join, vx, vy, sh, ch)
+    in_l = np.zeros(X.shape, dtype=bool)
+    for l, t, r, b in (corridor, shaft):
+        in_l |= (l < X) & (X < r) & (t < Y) & (Y < b)
+    incoming, outgoing = join.split('->')
+    ends = {'right': (slice(None), 0), 'down': (0, slice(None)), 'up': (-1, slice(None))}
+    exits = {'right': (slice(None), -1), 'up': (0, slice(None)), 'down': (-1, slice(None))}
+    entry, exit = ends[incoming], exits[outgoing]
+    out = []
+    for side in ('min', 'max'):
+        polys = [at_bound(e, side) for e in elements]
+        owner = rasterize(polys, xs, ys)
+        outside = int(((owner > 0) & ~in_l).sum())
+        free = in_l & (owner == 0)
+        clearance = ndimage.distance_transform_edt(free) * FIT_STEP
+        lo, hi = 0.0, float(clearance.max())
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            labels, _n = ndimage.label(clearance >= mid)
+            a, b = labels[entry], labels[exit]
+            if set(a[a > 0]) & set(b[b > 0]):
+                lo = mid
+            else:
+                hi = mid
+        # Where the ninja can stand on its way in from the entry
+        labels, _n = ndimage.label(clearance >= radius)
+        a = labels[entry]
+        stand = np.isin(labels, list(set(a[a > 0]))) if (a > 0).any() else np.zeros(X.shape, dtype=bool)
+        sy, sx = np.nonzero(stand)
+        pick = np.arange(0, len(sx), max(1, len(sx) // 600)) if len(sx) else []
+        blocked = np.where(in_l, owner.astype(np.int32), -1)
+        reached = []
+        for k, pts in enumerate(polys):
+            targets = pts + [[(p[0] + q[0]) / 2, (p[1] + q[1]) / 2] for p, q in zip(pts, pts[1:] + pts[:1])]
+            # Aim just inside the piece: the centroid side of each target
+            cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+            cells = [((tx + 0.05 * (cx - tx) - xs[0]) / FIT_STEP, (ty + 0.05 * (cy - ty) - ys[0]) / FIT_STEP)
+                     for tx, ty in targets]
+            if any(first_hit(blocked, sx[i], sy[i], tx, ty) == k + 1 for i in pick for tx, ty in cells):
+                reached.append(k + 1)
+        out.append({'gap': 2 * lo, 'reached': reached, 'outside': outside})
+    best = max(out, key=lambda r: r['gap'])
+    reached = sorted(set().union(*[r['reached'] for r in out]))
+    cells = max(r['outside'] for r in out)
+    return {'minGapOverDiameter': round(best['gap'] / (2 * radius), 3), 'gap': round(best['gap'], 1),
+            'gapAtBounds': [round(r['gap'], 1) for r in out], 'reachable': len(reached),
+            'targets': len(elements), 'insideL': cells == 0, 'cellsOutsideL': cells}
 
 
 class MomentumFramesTurnTests(unittest.TestCase):
@@ -432,6 +532,37 @@ class MomentumFramesTurnTests(unittest.TestCase):
                   f"corridor {vy - half:.1f}..{vy + half:.1f}, {r['flips']} reversals, x constant, travel "
                   f"{travel:.3f} W OK")
         (EVIDENCE_DIR / 'elevator.json').write_text(json.dumps(out, separators=(',', ':')))
+
+
+    def test_5_fit(self):
+        fit = []
+        for id in IDS:
+            join = join_arrow(self.catalog[id]['join'])
+            i = JOINS[join]
+            row = {'id': id, 'join': join}
+            for name, page, course in self.pages:
+                r = page.evaluate(PLACE, [id, i])
+                vx, vy = course['segments'][i]['x1'], course['segments'][i]['y1']
+                sh, ch = course['halves'][shaft_index(join, i)], course['half']
+                radius = page.evaluate('ninja.radius')
+                f = corner_fit(r['elements'], join, vx, vy, sh, ch, radius)
+                f.update({'shaftW': round(2 * sh, 3), 'corridorW': round(2 * ch, 3), 'ninjaDiameter': 2 * radius})
+                print(f"{name} {id} {join}: shaft W {2 * sh:.0f} corridor W {2 * ch:.0f} path {f['gap']} (at bounds "
+                      f"{f['gapAtBounds']}) = {f['minGapOverDiameter']} x ninja diameter {2 * radius}; grapnel "
+                      f"targets reachable {f['reachable']}/{f['targets']}; piece cells outside the L "
+                      f"{f['cellsOutsideL']}")
+                self.assertGreaterEqual(f['minGapOverDiameter'], FIT_MIN_RATIO, (name, id))
+                self.assertEqual(f['reachable'], f['targets'], (name, id))
+                self.assertTrue(f['insideL'], (name, id))
+                row[name] = f
+                page.evaluate(CLEAR)
+            ratio = min(row[name]['minGapOverDiameter'] for name, _page, _course in self.pages)
+            row['status'] = 'ok'
+            row['fix'] = None
+            row['reason'] = (f'passable as scaled at {join}: path >= {ratio} x ninja diameter (min {FIT_MIN_RATIO}), '
+                             f'every grapnel target reachable along the path, no piece in a wall or face')
+            fit.append(row)
+        (EVIDENCE_DIR / 'frames-fit.json').write_text(json.dumps(fit, separators=(',', ':')))
 
 
 if __name__ == '__main__':

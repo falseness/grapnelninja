@@ -489,13 +489,35 @@ const MOMENTUM_PATTERNS_TURN = Object.freeze([
     return Object.freeze({...turn, difficulty: frame.difficulty, span: frame.span, pieces: frame.pieces})
 }))
 
-// Builds one turn type
+// Builds one turn type: the ported frame (in world units of the old 0.9
+// height corridor) scaled by the live corridor half width over
+// shaftReferenceHalfWidth (TASK-130), so it fits the corridor as it did
 class MomentumTurnPatternFactory
 {
     constructor(pattern)
     {
         this.pattern = pattern
-        this.frame = new MomentumPortPatternFactory(pattern)
+        const k = this.getScale()
+        this.span = pattern.span * k
+        this.frame = new MomentumPortPatternFactory({span: this.span, pieces: pattern.pieces.map(piece =>
+        {
+            const scaled = {...piece, x: piece.x * k, y: piece.y * k}
+            if (piece.shape == 'rect')
+            {
+                scaled.w = piece.w * k
+                scaled.h = piece.h * k
+            }
+            if (piece.points)
+                scaled.points = piece.points.map(([px, py]) => [px * k, py * k])
+            if (piece.motion)
+                scaled.motion = {...piece.motion, speedY: piece.motion.speedY * k, yMin: piece.motion.yMin * k,
+                                 yMax: piece.motion.yMax * k}
+            return scaled
+        })})
+    }
+    getScale()
+    {
+        return GAMEPLAY.momentumBorders.halfWidth / GAMEPLAY.momentumBorders.shaftReferenceHalfWidth
     }
     // Footprint start of the frame along the right corridor, from the course
     // vertex of join: the corner box (the shaft, half width shaftHalfWidth,
@@ -504,14 +526,14 @@ class MomentumTurnPatternFactory
     {
         const clear = shaftHalfWidth +
             GAMEPLAY.momentumSpawn.turnClearanceHalfWidths * GAMEPLAY.momentumBorders.halfWidth
-        return join.startsWith('right->') ? -clear - this.pattern.span : clear
+        return join.startsWith('right->') ? -clear - this.span : clear
     }
     // How far the pieces reach from the course vertex of join, world units:
     // back along the incoming segment and ahead along the outgoing one
     getReach(join, shaftHalfWidth)
     {
         const offset = this.getOffset(join, shaftHalfWidth)
-        return join.startsWith('right->') ? {back: -offset, ahead: 0} : {back: 0, ahead: offset + this.pattern.span}
+        return join.startsWith('right->') ? {back: -offset, ahead: 0} : {back: 0, ahead: offset + this.span}
     }
     // (x, y): the course vertex of the join; join: 'right->up' etc.;
     // shaftHalfWidth: the half width of the join's vertical segment
@@ -1054,7 +1076,7 @@ function momentumPlaceTurn(id, segmentIndex)
     const group = floor.place(elements)
     const offset = factory.getOffset(join, shaftHalfWidth)
     return {id: id, join: join, segment: segmentIndex, group: group, shaftHalfWidth: shaftHalfWidth,
-            footprint: {x0: segment.x1 + offset, x1: segment.x1 + offset + factory.pattern.span},
+            footprint: {x0: segment.x1 + offset, x1: segment.x1 + offset + factory.span},
             vertex: {x: segment.x1, y: segment.y1}, elements: elements.map(element =>
     {
         const bounds = getElementBounds(element)
