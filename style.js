@@ -749,3 +749,18 @@ const GRAPPLE_OVER_THEME = Object.freeze({
         Object.freeze({name: 'night sky', top: '#020818', bottom: '#2a3a9e', glow: '#8fa8ff'})
     ])
 })
+
+// Grapple Over parallax silhouettes (render/parallax.js), behind the near
+// rocks and the world. Each layer follows `factor` of the camera motion
+// (world translation) on both axes and repeats as a tileWidth x tileHeight
+// tile; every section (GRAPPLE_OVER_THEME band) has its own motif per layer,
+// cross-faded with the palette's smoothstep. Dim fills and thin rims, under
+// the palette wash, so they read as far scenery, not as grappleable terrain.
+const GRAPPLE_OVER_PARALLAX = Object.freeze({
+    layers: Object.freeze([
+        Object.freeze({name: 'ridges', factor: 0.15, tileWidth: 1920, tileHeight: 720, seed: 539, alpha: 0.6,
+            motifs: Object.freeze(['jagged', 'jagged', 'rolling', 'spires', 'mesa', 'spires', 'rolling', 'jagged'])}),
+        Object.freeze({name: 'skyline', factor: 0.35, tileWidth: 1440, tileHeight: 600, seed: 1539, alpha: 0.8,
+            motifs: Object.freeze(['cranes', 'chimneys', 'domes', 'pylons', 'towers', 'pylons', 'domes', 'antennas'])})
+    ])
+})

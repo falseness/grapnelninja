@@ -420,3 +420,383 @@ class Task538Tests(unittest.TestCase):
                                                  layer='background', camera_y=[-810, -1620, -6480, -12150],
                                                  mean_ms=result, after_over_before=round(ratio, 3)))
         print(f'PASS cost A/B: background layer after/before = {ratio:.3f} (relative, headless)')
+
+
+BASELINE_539 = 'a428389'
+# Configurations the tile-coverage proof must hold at
+COVERAGE_539 = (({'width': 1280, 'height': 720}, 1), ({'width': 844, 'height': 390}, 1),
+                ({'width': 1280, 'height': 720}, 2), ({'width': 844, 'height': 390}, 2))
+# Device rects of every parallax tile copy drawn into the game canvas by one
+# draw(), grouped per tile (layer and motif), plus the parallax state used
+TILE_DRAWS_539 = '''() => {
+    const original = CanvasRenderingContext2D.prototype.drawImage, draws = [];
+    CanvasRenderingContext2D.prototype.drawImage = function(image, ...args) {
+        if (this.canvas === canvas && image.tagName === 'CANVAS' && args.length === 4) {
+            const m = this.getTransform();
+            const [x, y, w, h] = args;
+            draws.push({image, rect: [m.a * x + m.e, m.d * y + m.f, m.a * (x + w) + m.e, m.d * (y + h) + m.f],
+                logical: [x, y], blur: this.shadowBlur, alpha: this.globalAlpha});
+        }
+        return original.call(this, image, ...args);
+    };
+    try { draw(); } finally { CanvasRenderingContext2D.prototype.drawImage = original; }
+    const names = new Map();
+    for (const [key, sprite] of GLOW_SPRITES.cache)
+        if (key.startsWith('parallax|')) names.set(sprite, key);
+    const groups = {};
+    for (const d of draws) {
+        const key = names.get(d.image);
+        if (!key) continue;
+        (groups[key] = groups[key] || []).push({rect: d.rect, logical: d.logical, blur: d.blur, alpha: d.alpha});
+    }
+    return {groups, frame: visualEffects.background.parallaxFrame, palette: visualEffects.background.palette,
+        width: canvas.width, height: canvas.height};
+}'''
+
+
+class Task539Tests(unittest.TestCase):
+    """Grapple Over parallax silhouette layers; classic/bad and geometry unchanged."""
+
+    @classmethod
+    def setUpClass(cls):
+        from functools import partial
+        from http.server import ThreadingHTTPServer
+        from threading import Thread
+        from browser_test_support import QuietHandler
+        from perf_mobile import export_rev
+        cls.evidence = EvidenceWriter('TASK-539')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        # The pre-ticket revision from a git archive copy: geometry hash and
+        # classic/bad pixel baseline
+        root, sha = export_rev(BASELINE_539, cls.addClassCleanup)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(root)))
+        cls.addClassCleanup(server.server_close)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cls.addClassCleanup(thread.join)
+        cls.addClassCleanup(server.shutdown)
+        cls.baseline_url = f'http://127.0.0.1:{server.server_port}/'
+        hashes = source_hashes()
+        name = 'tools/test_grapple_over_visuals.py'
+        hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.config = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            dirty=bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'],
+                                                cwd=ROOT, text=True).strip()),
+            baseline_revision=sha, source_hashes=hashes, browser=cls.browser.version,
+            configurations=[dict(viewport=v, dpr=d) for v, d in COVERAGE_539], seed=1)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.config, sort_keys=True))
+
+    def open(self, url, viewport, dpr=1, mode='grapple_over', query=''):
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=dpr)
+        self.addCleanup(context.close)
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
+            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree',
+            viewport=viewport, dpr=dpr, mode=mode, query=query), sort_keys=True))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(url + query)
+        wait_for_boot(page)
+        page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
+        page.wait_for_function('!unTouch')
+        return page
+
+    def test_01_geometry_hash_unchanged(self):
+        row = {}
+        for label, url in (('before', self.baseline_url), ('after', self.url)):
+            page = self.open(url, VIEWPORTS_538[0])
+            geometry = page.evaluate(GEOMETRY_538)
+            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
+                              elements=len(json.loads(geometry)['elements']),
+                              movers=len(json.loads(geometry)['movers']))
+        row.update(baseline_revision=self.config['baseline_revision'],
+                   fields='elements: id, role, grapplable, x, y, points; movers: full',
+                   equal=row['before'] == row['after'])
+        self.evidence.write('geometry-hash.json', row)
+        self.assertEqual(row['before'], row['after'])
+        self.assertGreater(row['after']['elements'], 0)
+        print(f'PASS geometry: hash {row["after"]["sha256"][:16]} before == after '
+              f'({row["after"]["elements"]} elements, {row["after"]["movers"]} movers)')
+
+    def test_02_parallax_climb_and_coverage(self):
+        # Recorded climb: the ninja is moved up a weaving path 6 units a tick
+        # from the spawn through the first band boundary, the production
+        # camera (screen.trackGrappleOver) follows it and the production draw()
+        # renders each frame; the renderer reports the offsets it used and
+        # the drawn tile rects must sit at those offsets.
+        page = self.open(self.url, VIEWPORTS_538[0])
+        climb = page.evaluate('''() => {
+            const frames = [], x0 = ninja.x, y0 = ninja.y;
+            const stats = {drawn_offset_mismatch: 0, frames_with_layers: 0};
+            for (let i = 0; i <= 900; i++) {
+                ninja.x = x0 + 260 * Math.sin(i / 37); ninja.y = y0 - 6 * i;
+                ninja.speedX = 260 / 37 * Math.cos(i / 37) / cyclesPerTick; ninja.speedY = -6 / cyclesPerTick;
+                screen.trackGrappleOver();
+                draw();
+                const f = visualEffects.background.parallaxFrame;
+                frames.push({i, screen: [screen.x, screen.y], ninja_y: ninja.y,
+                    layers: f.map(l => [l.name, l.factor, l.cameraX, l.cameraY, l.x, l.y, l.motifs])});
+            }
+            return {frames, scale: scale[version]};
+        }''')
+        factors = {}
+        rows, ratios = [], []
+        prev = None
+        for f in climb['frames']:
+            layers = {l[0]: l for l in f['layers']}
+            for name, l in layers.items():
+                factors[name] = l[1]
+            if prev is not None:
+                dcx = layers['ridges'][2] - prev['ridges'][2]
+                dcy = layers['ridges'][3] - prev['ridges'][3]
+                row = [f['i'], round(dcx, 9), round(dcy, 9)]
+                for name in ('ridges', 'skyline'):
+                    l, p = layers[name], prev[name]
+                    dx, dy = l[4] - p[4], l[5] - p[5]
+                    self.assertEqual((l[2], l[3]), (layers['ridges'][2], layers['ridges'][3]))
+                    rx = dx / dcx if abs(dcx) > 1e-3 else None
+                    ry = dy / dcy if abs(dcy) > 1e-3 else None
+                    for r in (rx, ry):
+                        if r is not None:
+                            self.assertLessEqual(abs(r - l[1]), 1e-6, (name, f['i'], r))
+                            ratios.append(abs(r - l[1]))
+                    # Stationary axis: the layer does not move either
+                    if rx is None:
+                        self.assertLessEqual(abs(dx), l[1] * 1e-3 + 1e-9)
+                    if ry is None:
+                        self.assertLessEqual(abs(dy), l[1] * 1e-3 + 1e-9)
+                    row += [round(dx, 9), round(dy, 9),
+                            None if rx is None else round(rx, 9), None if ry is None else round(ry, 9)]
+                rows.append(row)
+            prev = layers
+        rise = climb['frames'][-1]['screen'][1] - climb['frames'][0]['screen'][1]
+        self.assertGreater(rise, 1000)
+        moving = [r for r in rows if abs(r[2]) > 1e-3]
+        self.assertGreater(len(moving), 300)
+        motifs_seen = sorted({json.dumps(f['layers'][1][6]) for f in climb['frames']})
+        # The climb crosses band boundaries: blend frames, at least 3 skyline motifs
+        self.assertTrue(any(len(f['layers'][1][6]) == 2 for f in climb['frames']))
+        self.assertEqual(climb['frames'][0]['layers'][1][6][0][0], 'cranes')
+        self.assertGreaterEqual(len({m[0] for f in climb['frames'] for m in f['layers'][1][6]}), 3)
+
+        # Tile coverage: device rects of each tile copy, per configuration and
+        # camera position (a band core, a blend and an odd sub-pixel offset)
+        coverage = []
+        for viewport, dpr in COVERAGE_539:
+            page = self.open(self.url, viewport, dpr)
+            for y in (-810, -1620 + 157, -4860 - 333.37):
+                page.evaluate('''y => {
+                    ninja.x = 3240 + 61.3; ninja.y = y; ninja.speedX = ninja.speedY = 0;
+                    screen.trackGrappleOver(true);
+                    draw();
+                }''', y)
+                result = page.evaluate(TILE_DRAWS_539)
+                W, H = result['width'], result['height']
+                frame = {l['name']: l for l in result['frame']}
+                expected = sum(len(l['motifs']) for l in result['frame'])
+                self.assertEqual(len(result['groups']), expected, list(result['groups']))
+                checks = []
+                for key, draws in result['groups'].items():
+                    layer = key.split('|')[1]
+                    xs = sorted({(round(d['rect'][0], 6), round(d['rect'][2], 6)) for d in draws})
+                    ys = sorted({(round(d['rect'][1], 6), round(d['rect'][3], 6)) for d in draws})
+                    integral = all(abs(v - round(v)) < 1e-6 for d in draws for v in d['rect'])
+                    contiguous_x = all(abs(a[1] - b[0]) < 1e-6 for a, b in zip(xs, xs[1:]))
+                    contiguous_y = all(abs(a[1] - b[0]) < 1e-6 for a, b in zip(ys, ys[1:]))
+                    covers = xs[0][0] <= 0 and xs[-1][1] >= W and ys[0][0] <= 0 and ys[-1][1] >= H
+                    grid = len(draws) == len(xs) * len(ys) and len({(tuple(d['rect'])) for d in draws}) == len(draws)
+                    # The drawn origin sits on the layer offset (modulo a tile)
+                    cfg = dict(ridges=(1920, 720), skyline=(1440, 600))[layer]
+                    l = frame[layer]
+                    lx = [d['logical'][0] for d in draws]
+                    ly = [d['logical'][1] for d in draws]
+                    phase_x = min(abs(((v - l['x']) / cfg[0]) - round((v - l['x']) / cfg[0])) * cfg[0] for v in lx)
+                    phase_y = min(abs(((v - l['y']) / cfg[1]) - round((v - l['y']) / cfg[1])) * cfg[1] for v in ly)
+                    blur = max(d['blur'] for d in draws)
+                    check = dict(tile=key, copies=len(draws), columns=len(xs), rows=len(ys),
+                                 device_x_edges=[xs[0][0]] + [b for a, b in xs],
+                                 device_y_edges=[ys[0][0]] + [b for a, b in ys],
+                                 integral_edges=integral, contiguous_x=contiguous_x, contiguous_y=contiguous_y,
+                                 covers_canvas=covers, full_grid=grid, max_shadow_blur=blur,
+                                 origin_phase_logical=[round(phase_x, 4), round(phase_y, 4)])
+                    self.assertTrue(integral and contiguous_x and contiguous_y and covers and grid, check)
+                    self.assertEqual(blur, 0)
+                    # Snapping moves an origin by at most half a device pixel
+                    device_per_logical = result['width'] / page.evaluate('LOGICAL_VIEWPORT.width')
+                    self.assertLessEqual(phase_x, 0.5 / device_per_logical + 1e-6, check)
+                    self.assertLessEqual(phase_y, 0.5 / device_per_logical + 1e-6, check)
+                    checks.append(check)
+                coverage.append(dict(viewport=viewport, dpr=dpr, camera_y=y, canvas=[W, H],
+                                     palette=result['palette'], tiles=checks,
+                                     no_gaps_or_seams=True))
+        self.evidence.write('parallax.json', dict(
+            method='recorded climb: ninja moved 6 units/tick up a weaving path (x +-260) for 900 ticks from the '
+                   'spawn across band boundaries, production screen.trackGrappleOver() camera, production draw() '
+                   'per frame; camera and layer offsets are those the renderer used, in logical units '
+                   '(world translation * scale). Coverage: every parallax tile drawImage into the game canvas '
+                   'in one draw(), as device rects.',
+            factors=factors, scale=climb['scale'], tolerance=1e-6,
+            max_abs_ratio_error=max(ratios), ratio_samples=len(ratios), camera_rise_logical=round(rise * climb['scale'], 3),
+            motifs_seen=[json.loads(m) for m in motifs_seen],
+            frame_columns=['tick', 'camera_dx', 'camera_dy', 'ridges_dx', 'ridges_dy', 'ridges_ratio_x',
+                           'ridges_ratio_y', 'skyline_dx', 'skyline_dy', 'skyline_ratio_x', 'skyline_ratio_y'],
+            frames=rows, coverage=coverage,
+            coverage_configurations=[f'{v["width"]}x{v["height"]}@dpr{d}' for v, d in COVERAGE_539]))
+        print(f'PASS parallax: {len(rows)} climb frames, factors {factors}, {len(ratios)} ratio samples, '
+              f'max |ratio - factor| {max(ratios):.2e} (<= 1e-6); coverage {len(coverage)} frames at '
+              f'1280x720/844x390 DPR 1 and 2: contiguous integral device rects, full grid, no gaps or seams')
+
+    def test_03_crossfade_screenshots_and_fast_backdrop(self):
+        page = self.open(self.url, VIEWPORTS_538[0])
+        shots = []
+        offsets = (-400, -200, 0, 200, 400)
+        for k in range(1, BANDS_538):
+            for off in (offsets if k == 1 else (-400, 0, 400)):
+                y = -k * BAND_538 - off
+                row = page.evaluate('''y => {
+                    ninja.x = 3240; ninja.y = y; ninja.speedX = ninja.speedY = 0;
+                    screen.trackGrappleOver(true);
+                    screen.y = height / scale[version] / 2 - y;
+                    draw();
+                    const p = visualEffects.background.palette;
+                    return {camera_y: height / scale[version] / 2 - screen.y,
+                        palette: {from: p.from, to: p.to, t: p.t},
+                        layers: visualEffects.background.parallaxFrame.map(l => ({name: l.name, motifs: l.motifs}))};
+                }''', y)
+                path = f'crossfade/boundary{k}-{k + 1}-offset{off:+d}.png'
+                page.screenshot(path=str(self.evidence.path(path)))
+                p = row['palette']
+                for layer in row['layers']:
+                    weights = [w for _, w in layer['motifs']]
+                    if p['t'] > 0:
+                        self.assertEqual(len(weights), 2)
+                        self.assertAlmostEqual(weights[0], 1 - p['t'], places=12)
+                        self.assertAlmostEqual(weights[1], p['t'], places=12)
+                    else:
+                        self.assertEqual(weights, [1])
+                if off == 0:
+                    self.assertAlmostEqual(p['t'], 0.5, places=9)
+                if abs(off) == 400:
+                    self.assertEqual(p['t'], 0)
+                    self.assertEqual(p['from'], k if off > 0 else k - 1)
+                row.update(boundary=-k * BAND_538, offset=off, screenshot=path)
+                shots.append(row)
+        # Motifs differ across each boundary for at least one layer
+        for k in range(1, BANDS_538):
+            below = next(s for s in shots if s['boundary'] == -k * BAND_538 and s['offset'] == -400)
+            above = next(s for s in shots if s['boundary'] == -k * BAND_538 and s['offset'] == 400)
+            self.assertNotEqual([l['motifs'] for l in below['layers']], [l['motifs'] for l in above['layers']])
+        # Fast backdrop draws the layers into BACKDROP.ctx; tiles are built
+        # once (glow sprite builder), later frames copy them with no shadowBlur
+        fast = page.evaluate('''() => {
+            const original = drawGrappleOverParallax, seen = [];
+            drawGrappleOverParallax = function(renderer) {
+                seen.push({backdrop: renderer.ctx === BACKDROP.ctx, blur: renderer.ctx.shadowBlur});
+                return original.apply(this, arguments)};
+            const scale0 = BACKDROP.scale;
+            BACKDROP.scale = 0.5; draw(); BACKDROP.scale = scale0; draw();
+            drawGrappleOverParallax = original;
+            const build = buildGlowSprite; let builds = 0, buildBlur = 0;
+            buildGlowSprite = function() {builds++; return build.apply(this, arguments)};
+            let frameBlur = 0;
+            const di = CanvasRenderingContext2D.prototype.drawImage;
+            CanvasRenderingContext2D.prototype.drawImage = function() {
+                if (this.shadowBlur) frameBlur++; return di.apply(this, arguments)};
+            const ys = [-700, -900, -1100, -1300];
+            for (let i = 0; i < 120; i++) {screen.y = height / scale[version] / 2 - ys[i % 4] - i; draw();}
+            CanvasRenderingContext2D.prototype.drawImage = di;
+            buildGlowSprite = build;
+            return {seen, builds_in_120_warm_frames: builds, draw_image_with_shadow_blur: frameBlur};
+        }''')
+        self.assertTrue(fast['seen'] and fast['seen'][0]['backdrop'], fast)
+        self.assertTrue(any(not s['backdrop'] for s in fast['seen'][1:]), fast)
+        self.assertEqual(fast['builds_in_120_warm_frames'], 0, fast)
+        self.assertEqual(fast['draw_image_with_shadow_blur'], 0, fast)
+        self.evidence.write('crossfade/crossfade.json', dict(
+            note='smoothstep t is the palette blend (TASK-538: +/-400 around each boundary); each layer draws the '
+                 'lower motif at alpha*(1-t) and the upper at alpha*t', shots=shots, fast_backdrop=fast))
+        print(f'PASS crossfade: {len(shots)} boundary screenshots; motif weights (1-t, t) equal the palette blend; '
+              f'motifs change across all 7 boundaries; fast backdrop draws the layers; 0 tile builds and 0 '
+              f'shadowBlur drawImage calls in 120 warm frames')
+
+    def test_04_classic_bad_pixels_unchanged(self):
+        # Each frame is captured on 3 fresh pages per revision: the baseline
+        # itself occasionally yields a second 'bad' tick-0 hash (title-screen
+        # timing, seen in TASK-538 too), so every worktree hash must be one
+        # the baseline produced and the most frequent hashes must be equal
+        from collections import Counter
+        rows = []
+        for mode in ('classic', 'bad'):
+            for ticks in (0, 90):
+                frames = {}
+                for label, url in (('before', self.baseline_url), ('after', self.url)):
+                    captures = []
+                    for _ in range(3):
+                        page = self.open(url, VIEWPORTS_538[0], mode=mode)
+                        page.evaluate(SEED_SCRIPT % 1)
+                        frame = page.evaluate(FRAME_538, [mode, ticks])
+                        self.assertEqual(frame['mode'], mode)
+                        captures.append(f"{frame['width']}x{frame['height']}:" +
+                                        hashlib.sha256(frame['pixels'].encode('latin-1')).hexdigest())
+                        page.close()
+                    frames[label] = captures
+                common = {k: Counter(v).most_common(1)[0][0] for k, v in frames.items()}
+                row = dict(mode=mode, seed=1, ticks=ticks, before=frames['before'], after=frames['after'],
+                           most_common=common, after_subset_of_before=set(frames['after']) <= set(frames['before']),
+                           equal=common['before'] == common['after'] and set(frames['after']) <= set(frames['before']))
+                rows.append(row)
+                self.assertTrue(row['equal'], row)
+        self.evidence.write('classic-bad.json', dict(baseline_revision=self.config['baseline_revision'],
+            viewport=VIEWPORTS_538[0], dpr=1, captures_per_revision=3,
+            clock='performance.now frozen at 4321 before startGame; particle system emptied; Math.random re-seeded',
+            frames=rows, all_equal=all(r['equal'] for r in rows)))
+        print(f'PASS classic/bad: {len(rows)} frames x 3 captures per revision; every worktree pixel hash is a '
+              f'{BASELINE_539} hash and the most frequent hashes are equal (seed 1, ticks 0/90)')
+
+    def test_05_render_cost_ab(self):
+        # Matched A/B in the same browser: the same seed and the same scripted
+        # 480-frame climb, ?parallax=0 (layers off) vs default (on), pairs
+        # alternated; PERF_PROFILE background-layer mean (render/perfprofile.js).
+        # Relative only: headless timings are not device FPS.
+        script = '''() => {
+            const means = [], totals = [];
+            for (const y of [-810, -1620, -6480, -12150]) {
+                for (let i = 0; i < 120; i++) {screen.y = height / scale[version] / 2 - y - i * 2; draw();}
+                const entries = PERF_PROFILE.snapshot().entries;
+                means.push(entries.find(e => e.name === 'background').meanMs);
+                totals.push(entries.filter(e => e.name !== 'update' && e.name !== 'backdrop')
+                    .reduce((s, e) => s + (e.meanMs || 0), 0));
+            }
+            return {means, totals, layers: !!visualEffects.background.parallaxFrame && visualEffects.background.parallaxEnabled};
+        }'''
+        pairs = []
+        for rep in range(5):
+            pair = {}
+            for label, query in ((('off', '?perf=1&parallax=0'), ('on', '?perf=1')) if rep % 2 == 0
+                                 else (('on', '?perf=1'), ('off', '?perf=1&parallax=0'))):
+                page = self.open(self.url, VIEWPORTS_538[0], query=query)
+                result = page.evaluate(script)
+                self.assertEqual(result['layers'], label == 'on')
+                pair[label] = sum(result['means'])
+                pair[label + '_all_layers'] = sum(result['totals'])
+                page.close()
+            pair['ratio'] = pair['on'] / pair['off']
+            pair['all_layers_ratio'] = pair['on_all_layers'] / pair['off_all_layers']
+            pairs.append(pair)
+        ratios = sorted(p['ratio'] for p in pairs)
+        median = ratios[len(ratios) // 2]
+        self.evidence.write('cost.json', dict(
+            note='relative A/B only (matched headless pages, same browser, seed 1, same 480 scripted frames); '
+                 'not device FPS', layer='background (PERF_PROFILE)', browser=self.browser.version,
+            viewport=VIEWPORTS_538[0], dpr=1, seed=1, frames_per_run=480,
+            camera_y=[-810, -1620, -6480, -12150], off_query='?perf=1&parallax=0', on_query='?perf=1',
+            pairs=[{k: round(v, 5) for k, v in p.items()} for p in pairs],
+            median_on_over_off=round(median, 4),
+            median_all_layers_on_over_off=round(sorted(p['all_layers_ratio'] for p in pairs)[len(pairs) // 2], 4),
+            columns='on/off: sum of the background-layer means at the 4 camera ys (ms); *_all_layers: sum of all '
+                    'draw-layer means'))
+        print(f'PASS cost A/B: layers on/off median ratio {median:.3f} (background layer), '
+              f'{sorted(p["all_layers_ratio"] for p in pairs)[2]:.3f} (all draw layers) over 5 matched pairs (relative, headless)')

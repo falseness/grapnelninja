@@ -78,6 +78,10 @@ class BackgroundRenderer
         this.lastGameGradients = null
         // Grapple Over section palette for this frame (drawBackgroundLayer)
         this.palette = null
+        // Its parallax silhouettes (render/parallax.js), ?parallax=0 turns
+        // them off for A/B measurements; what the last frame used
+        this.parallaxEnabled = new URLSearchParams(location.search).get('parallax') !== '0'
+        this.parallaxFrame = null
         // Offscreen crystal/rock tiles by name ('far', 'near')
         this.layerCache = {}
     }
@@ -167,6 +171,12 @@ class BackgroundRenderer
         // Base gradient, far crystals and haze come baked in one opaque tile
         this.drawCrystalLayer(width, height, this.getLayerShift(width, height, caveLayers.crystals))
         this.preserveGameplayRandomSequence(1, 40)
+        if (this.palette && this.parallaxEnabled)
+        {
+            const used = drawGrappleOverParallax(this, this.palette)
+            if (!this.bounds)
+                this.parallaxFrame = used
+        }
         this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks))
         if (this.palette)
             drawGrappleOverPalette(this.ctx, this.fillBounds(), this.palette)
