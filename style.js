@@ -785,3 +785,17 @@ const GRAPPLE_OVER_ROLE_DETAIL = Object.freeze({
     drag: Object.freeze({particle: '#ffe680', radius: 2.2, density: 1 / 500, min: 4, max: 60,
         speed: 5, alpha: 1})
 })
+
+// Grapple Over section landmarks (render/landmarks.js): one large glowing
+// silhouette per section (GRAPPLE_OVER_MOUNTAIN landmark entries), behind the
+// world at background depth. Sizes are logical px (1080 tall viewport). A
+// landmark is placed where its mountain.js point lies from its section's entry
+// camera, pulled inside the viewport by `margin`, then follows `factor` of the
+// camera motion. It fades out between fadeNear and fadeFar world units of
+// camera travel away from that entry camera, and over rivalSpan once another
+// section's entry camera is nearer. Purely visual: no collider.
+const GRAPPLE_OVER_LANDMARKS = Object.freeze({
+    width: 420, height: 500, pad: 28, margin: 36, factor: 0.4,
+    alpha: 0.92, fadeNear: 1400, fadeFar: 2600, rivalSpan: 500,
+    body: 0.82, rimWidth: 4, coreWidth: 1.5, rimBlur: 18, haloAlpha: 0.45, lightRadius: 7
+})

@@ -1283,3 +1283,360 @@ class Task540Tests(unittest.TestCase):
 
 GRAPPLE_OVER_PALETTE_NAMES_540 = ('dusk quarry', 'ember works', 'magenta haze', 'violet ridge', 'indigo cliffs',
                                   'cyan frost', 'teal aurora', 'night sky')
+
+
+BASELINE_541 = 'be2ae6b'
+# Desktop mouse and a touch phone (is_mobile, has_touch), both at DPR 1
+VIEWPORTS_541 = (dict(name='desktop', viewport={'width': 1280, 'height': 720}, touch=False),
+                 dict(name='touch', viewport={'width': 844, 'height': 390}, touch=True))
+# Section entry pose (first encounter start, snapped camera), then one frame;
+# the section's own landmark as drawn (logical and client rects) and how many
+# of its pixels the landmark changes (same frame with LANDMARKS.enabled off)
+ENTRY_541 = '''i => {
+    const section = GRAPPLE_OVER_MOUNTAIN.sections[i];
+    const first = GRAPPLE_OVER_MOUNTAIN.encounters.find(e => e.id === section.encounters[0]);
+    const entry = first.start || first;
+    ninja.x = entry.x; ninja.y = entry.y; ninja.speedX = ninja.speedY = 0;
+    screen.trackGrappleOver(true);
+    const grab = () => ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    LANDMARKS.enabled = false; draw(); const off = grab();
+    LANDMARKS.enabled = true; draw(); const on = grab();
+    const own = LANDMARKS.frame.drawn.find(d => d.id === section.landmark.id);
+    const client = own && [canvasCoordsToViewportCoords({x: own.rect[0], y: own.rect[1]}),
+                           canvasCoordsToViewportCoords({x: own.rect[2], y: own.rect[3]})];
+    let changed = 0, total = 0;
+    if (own) {
+        const sx = canvas.width / width, sy = canvas.height / height;
+        for (let y = Math.max(0, Math.floor(own.rect[1] * sy)); y < Math.min(canvas.height, own.rect[3] * sy); y++)
+            for (let x = Math.max(0, Math.floor(own.rect[0] * sx)); x < Math.min(canvas.width, own.rect[2] * sx); x++) {
+                const p = (y * canvas.width + x) * 4;
+                total++;
+                if (Math.abs(on[p] - off[p]) + Math.abs(on[p + 1] - off[p + 1]) + Math.abs(on[p + 2] - off[p + 2]) > 24) changed++;
+            }
+    }
+    return {section: section.id, landmark: section.landmark, entry: {x: entry.x, y: entry.y},
+        camera: {x: screen.x, y: screen.y}, logical: {width, height}, canvas: [canvas.width, canvas.height],
+        rect: own ? own.rect.map(v => Math.round(v * 100) / 100) : null, weight: own ? own.weight : 0,
+        client: client && [client[0].x, client[0].y, client[1].x, client[1].y].map(v => Math.round(v * 100) / 100),
+        others: LANDMARKS.frame.drawn.filter(d => d !== own).map(d => ({id: d.id, weight: Math.round(d.weight * 1000) / 1000})),
+        changed, total, colliders: floors[0].elements.filter(e => /landmark/i.test(e.id)).length +
+            floors[0].dragZones.filter(e => /landmark/i.test(e.id)).length};
+}'''
+# Aim through the landmark: grid points in its rect (world units now) within
+# 0.9 of the range, whose full-range line from the ninja (also +-60 up/down,
+# for its fall during the shot) crosses no surface; nearest the rect centre.
+# Shot pose: the entry pose if the landmark is in range there, else the first
+# free pose (no surface within 120 of the ninja) on rings of 450/650 world
+# units around the landmark's drawn centre, with a snapped camera and a frame.
+ARM_541 = '''id => {
+    const k = scale[version], radius = grappleOverAcquisitionRadius();
+    const own = () => LANDMARKS.frame.drawn.find(d => d.id === id);
+    const aimFrom = () => {
+        const rect = own().rect, candidates = [];
+        for (let i = 1; i < 12; i++) for (let j = 1; j < 12; j++) {
+            const lx = rect[0] + (rect[2] - rect[0]) * i / 12, ly = rect[1] + (rect[3] - rect[1]) * j / 12;
+            const wx = lx / k - screen.x, wy = ly / k - screen.y;
+            const d = Math.hypot(wx - ninja.x, wy - ninja.y);
+            if (d < 150 || d > radius * 0.9) continue;
+            const clear = [-60, 0, 60].every(o => !grapnel.nearestCrossing({x: ninja.x, y: ninja.y + o},
+                [ninja.x + (wx - ninja.x) / d * radius, ninja.y + o + (wy - ninja.y) / d * radius]));
+            if (clear) candidates.push({lx, ly, wx, wy, d,
+                c: Math.hypot(lx - (rect[0] + rect[2]) / 2, ly - (rect[1] + rect[3]) / 2)});
+        }
+        candidates.sort((a, b) => a.c - b.c);
+        return candidates;
+    };
+    const free = (x, y) => {
+        const box = {left: x - 120, right: x + 120, top: y - 120, bottom: y + 120};
+        return ![...floors[0].elements, ...floors[0].dragZones].some(e =>
+            boundsOverlap(box, elementBounds(e, {left: 0, right: 0, top: 0, bottom: 0})));
+    };
+    const entry = {x: ninja.x, y: ninja.y};
+    let candidates = aimFrom(), pose = 'entry';
+    if (!candidates.length) {
+        const rect = own().rect;
+        const cx = (rect[0] + rect[2]) / 2 / k - screen.x, cy = (rect[1] + rect[3]) / 2 / k - screen.y;
+        search: for (const r of [450, 650])
+            for (let a = 0; a < 16; a++) {
+                const x = cx + Math.cos(a * Math.PI / 8 + Math.PI / 2) * r, y = cy + Math.sin(a * Math.PI / 8 + Math.PI / 2) * r;
+                const b = floors[0].level.bounds;
+                if (x < b.left + 150 || x > b.right - 150 || !free(x, y)) continue;
+                ninja.x = x; ninja.y = y; ninja.speedX = ninja.speedY = 0;
+                screen.trackGrappleOver(true); draw();
+                if (!own()) continue;
+                candidates = aimFrom();
+                if (candidates.length) {pose = 'near landmark (ring ' + r + ', step ' + a + ')'; break search;}
+            }
+    }
+    const best = candidates[0];
+    return best ? {...best, client: canvasCoordsToViewportCoords({x: best.lx, y: best.ly}), radius, pose, entry,
+        rect: own().rect, candidates: candidates.length, ninja: {x: ninja.x, y: ninja.y}} : {candidates: 0};
+}'''
+# One physics tick and frame; grapnel state and whether its tip lies in the
+# landmark's current rect (world units)
+SHOT_TICK_541 = '''id => {
+    physics(); draw();
+    const own = LANDMARKS.frame.drawn.find(d => d.id === id), k = scale[version];
+    const tip = grapnel.pos[0];
+    const inside = !!(own && tip && grapnel.throwed && !grapnel.grappled &&
+        tip[0] >= own.rect[0] / k - screen.x && tip[0] <= own.rect[2] / k - screen.x &&
+        tip[1] >= own.rect[1] / k - screen.y && tip[1] <= own.rect[3] / k - screen.y);
+    return {throwed: grapnel.throwed, grappled: grapnel.isGrappled(), clip: grapnel.clip,
+        traveled: Math.round(grapnel.traveled * 10) / 10, tip: tip ? [Math.round(tip[0]), Math.round(tip[1])] : null,
+        inside, ninja: [Math.round(ninja.x), Math.round(ninja.y)]};
+}'''
+
+
+class Task541Tests(unittest.TestCase):
+    """Grapple Over section landmarks as visible goals; classic/bad and geometry unchanged."""
+
+    @classmethod
+    def setUpClass(cls):
+        from functools import partial
+        from http.server import ThreadingHTTPServer
+        from threading import Thread
+        from browser_test_support import QuietHandler
+        from perf_mobile import export_rev
+        cls.evidence = EvidenceWriter('TASK-541')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        root, sha = export_rev(BASELINE_541, cls.addClassCleanup)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(root)))
+        cls.addClassCleanup(server.server_close)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cls.addClassCleanup(thread.join)
+        cls.addClassCleanup(server.shutdown)
+        cls.baseline_url = f'http://127.0.0.1:{server.server_port}/'
+        hashes = source_hashes()
+        for name in ('tools/test_grapple_over_visuals.py', 'render/landmarks.js'):
+            hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.config = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            dirty=bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'],
+                                                cwd=ROOT, text=True).strip()),
+            baseline_revision=sha, source_hashes=hashes, browser=cls.browser.version,
+            viewports=VIEWPORTS_541, device_scale_factor=1, seed=1)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.config, sort_keys=True))
+
+    def open(self, url, viewport, touch=False, mode='grapple_over', query=''):
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=1,
+                                           is_mobile=touch, has_touch=touch)
+        self.addCleanup(context.close)
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
+            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree',
+            viewport=viewport, dpr=1, is_mobile=touch, has_touch=touch, mode=mode, query=query), sort_keys=True))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(url + query)
+        wait_for_boot(page)
+        page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
+        page.wait_for_function('!unTouch')
+        return page
+
+    def test_01_geometry_hash_unchanged(self):
+        row = {}
+        for label, url in (('before', self.baseline_url), ('after', self.url)):
+            page = self.open(url, VIEWPORTS_541[0]['viewport'])
+            geometry = page.evaluate(GEOMETRY_538)
+            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
+                              elements=len(json.loads(geometry)['elements']),
+                              movers=len(json.loads(geometry)['movers']))
+        row.update(baseline_revision=self.config['baseline_revision'],
+                   fields='elements: id, role, grapplable, x, y, points; movers: full',
+                   equal=row['before'] == row['after'])
+        self.evidence.write('geometry-hash.json', row)
+        self.assertEqual(row['before'], row['after'])
+        self.assertGreater(row['after']['elements'], 0)
+        print(f'PASS geometry: hash {row["after"]["sha256"][:16]} before == after '
+              f'({row["after"]["elements"]} elements, {row["after"]["movers"]} movers)')
+
+    def press(self, page, touch, point):
+        if touch:
+            cdp = page.context.new_cdp_session(page)
+            cdp.send('Input.dispatchTouchEvent', dict(type='touchStart', touchPoints=[dict(x=point['x'], y=point['y'])]))
+            return lambda: cdp.send('Input.dispatchTouchEvent', dict(type='touchEnd', touchPoints=[]))
+        page.mouse.move(point['x'], point['y'])
+        page.mouse.down()
+        return page.mouse.up
+
+    def test_02_landmarks_entry_frames_and_shots(self):
+        rows = []
+        for config in VIEWPORTS_541:
+            viewport, touch = config['viewport'], config['touch']
+            size = f'{viewport["width"]}x{viewport["height"]}'
+            for i in range(8):
+                # A fresh page per section: the shot is real play from the entry pose
+                page = self.open(self.url, viewport, touch)
+                row = page.evaluate(ENTRY_541, i)
+                sid = row['section']
+                self.assertIsNotNone(row['rect'], row)
+                self.assertEqual(row['weight'], 1, row)
+                l, t, r, b = row['client']
+                row['inside_viewport'] = 0 <= l and 0 <= t and r <= viewport['width'] and b <= viewport['height']
+                row['inside_canvas'] = (row['rect'][0] >= 0 and row['rect'][1] >= 0 and
+                                        row['rect'][2] <= row['logical']['width'] and row['rect'][3] <= row['logical']['height'])
+                row['changed_fraction'] = round(row['changed'] / row['total'], 4)
+                self.assertTrue(row['inside_viewport'] and row['inside_canvas'], row)
+                self.assertGreater(row['changed_fraction'], 0.05, row)
+                self.assertEqual(row['colliders'], 0)
+                entry_png = f'landmarks/{sid}-entry-{config["name"]}-{size}.png'
+                close_png = f'landmarks/{sid}-close-{config["name"]}-{size}.png'
+                page.screenshot(path=str(self.evidence.path(entry_png)))
+                page.screenshot(path=str(self.evidence.path(close_png)),
+                                clip=dict(x=l, y=t, width=r - l, height=b - t), scale='css')
+                # Trusted input aimed through the landmark decoration
+                page.evaluate('menu.unPause()')
+                aim = page.evaluate(ARM_541, row['landmark']['id'])
+                self.assertGreater(aim['candidates'], 0, (sid, size))
+                release = self.press(page, touch, aim['client'])
+                ticks = []
+                for _ in range(90):
+                    tick = page.evaluate(SHOT_TICK_541, row['landmark']['id'])
+                    ticks.append(tick)
+                    if tick['throwed'] and tick['traveled'] >= aim['radius']:
+                        break
+                release()
+                ticks.append(page.evaluate(SHOT_TICK_541, row['landmark']['id']))
+                shot = dict(input='CDP touchStart/touchEnd' if touch else 'Playwright mouse down/up',
+                            aim_client={k: round(v, 2) for k, v in aim['client'].items()},
+                            aim_world=[round(aim['wx'], 1), round(aim['wy'], 1)],
+                            aim_distance=round(aim['d'], 1), radius=aim['radius'], clear_candidates=aim['candidates'],
+                            pose=aim['pose'], ninja_at_press=[round(v, 1) for v in aim['ninja'].values()],
+                            landmark_rect_at_press=[round(v, 2) for v in aim['rect']],
+                            ticks=len(ticks), thrown=any(x['throwed'] for x in ticks),
+                            grappled_ticks=sum(x['grappled'] for x in ticks),
+                            clipped_ticks=sum(x['clip'] is not None for x in ticks),
+                            tip_inside_landmark_ticks=sum(x['inside'] for x in ticks),
+                            max_traveled=max(x['traveled'] for x in ticks),
+                            released_shot_ended=not ticks[-1]['throwed'],
+                            samples=[x for j, x in enumerate(ticks) if j % 5 == 0 or j == len(ticks) - 1])
+                shot['passed_through'] = (shot['thrown'] and shot['grappled_ticks'] == 0 and shot['clipped_ticks'] == 0
+                                          and shot['tip_inside_landmark_ticks'] > 0
+                                          and shot['max_traveled'] >= aim['radius'])
+                self.assertTrue(shot['passed_through'], (sid, size, shot))
+                row.update(viewport=config, entry_screenshot=entry_png, close_screenshot=close_png, shot=shot)
+                del row['changed'], row['total']
+                rows.append(row)
+                page.close()
+        self.assertEqual(len(rows), 16)
+        self.evidence.write('landmarks.json', dict(
+            method='per section: ninja at its entry pose (first encounter start), real snapped Grapple Over camera, '
+                   'one draw(); rect = the landmark sprite rect drawn this frame (logical canvas units; client = CSS '
+                   'px); changed_fraction = share of rect device pixels changed by >24 (RGB sum) against the same '
+                   'frame with LANDMARKS.enabled off; shot = a trusted press aimed through the landmark, physics '
+                   'stepped one tick per evaluate until the tip used the whole range, then released; the shot starts '
+                   'from the entry pose when the landmark is within grapnel range there, else from a free pose near '
+                   'the landmark (shot.pose)',
+            all_inside_viewport=all(r['inside_viewport'] for r in rows),
+            all_shots_passed_through=all(r['shot']['passed_through'] for r in rows),
+            landmark_colliders=sum(r['colliders'] for r in rows), sections=rows))
+        print(f'PASS landmarks: 8 sections x 2 viewports (desktop 1280x720, touch 844x390): own landmark at full '
+              f'strength inside the viewport from the entry pose (min changed {min(r["changed_fraction"] for r in rows):.3f} '
+              f'of its rect); 16 trusted shots through each landmark with 0 grapples and 0 clips; 32 screenshots')
+
+    def test_03_fast_backdrop_and_sprites(self):
+        page = self.open(self.url, VIEWPORTS_541[0]['viewport'])
+        result = page.evaluate('''() => {
+            const poses = GRAPPLE_OVER_MOUNTAIN.sections.map(s => {
+                const e = GRAPPLE_OVER_MOUNTAIN.encounters.find(e => e.id === s.encounters[0]);
+                return e.start || e});
+            const at = p => {ninja.x = p.x; ninja.y = p.y; screen.trackGrappleOver(true); draw()};
+            for (const p of poses) at(p);
+            const original = drawGrappleOverLandmarks, seen = [];
+            drawGrappleOverLandmarks = function(renderer) {
+                const r = original.apply(this, arguments);
+                seen.push({backdrop: renderer.ctx === BACKDROP.ctx, drawn: r ? r.length : 0});
+                return r};
+            const scale0 = BACKDROP.scale;
+            at(poses[0]); seen.length = 0;
+            BACKDROP.scale = 0.5; draw(); BACKDROP.scale = scale0; draw();
+            drawGrappleOverLandmarks = original;
+            const build = buildGlowSprite; let builds = 0;
+            buildGlowSprite = function() {builds++; return build.apply(this, arguments)};
+            let blur = 0;
+            const P = CanvasRenderingContext2D.prototype, di = P.drawImage, st = P.stroke, fi = P.fill;
+            P.drawImage = function() {if (this.shadowBlur) blur++; return di.apply(this, arguments)};
+            P.stroke = function() {if (this.shadowBlur) blur++; return st.apply(this, arguments)};
+            P.fill = function() {if (this.shadowBlur) blur++; return fi.apply(this, arguments)};
+            for (let r = 0; r < 2; r++) for (const p of poses) at(p);
+            P.drawImage = di; P.stroke = st; P.fill = fi;
+            buildGlowSprite = build;
+            return {seen, builds_in_warm_frames: builds, shadow_blur_draw_calls: blur,
+                landmark_sprites: [...GLOW_SPRITES.cache.keys()].filter(k => k.startsWith('landmark|'))};
+        }''')
+        self.assertTrue(result['seen'][0]['backdrop'] and result['seen'][0]['drawn'] > 0, result['seen'])
+        self.assertTrue(any(not s['backdrop'] and s['drawn'] > 0 for s in result['seen'][1:]), result['seen'])
+        self.assertEqual(result['builds_in_warm_frames'], 0)
+        self.assertEqual(result['shadow_blur_draw_calls'], 0)
+        self.assertGreaterEqual(len(result['landmark_sprites']), 8)
+        self.evidence.write('fast-backdrop.json', dict(note='fast backdrop forced with BACKDROP.scale = 0.5; warm '
+                                                            'frames = 16 entry-pose frames after every sprite was built', **result))
+        print(f'PASS fast backdrop/sprites: landmarks drawn into BACKDROP.ctx when the fast backdrop is on; '
+              f'{len(result["landmark_sprites"])} cached landmark sprites; 0 builds and 0 shadowBlur draws in 16 warm frames')
+
+    def test_04_classic_bad_pixels_unchanged(self):
+        from collections import Counter
+        rows = []
+        for mode in ('classic', 'bad'):
+            for ticks in (0, 90):
+                frames = {}
+                for label, url in (('before', self.baseline_url), ('after', self.url)):
+                    captures = []
+                    for _ in range(3):
+                        page = self.open(url, VIEWPORTS_541[0]['viewport'], mode=mode)
+                        page.evaluate(SEED_SCRIPT % 1)
+                        frame = page.evaluate(FRAME_538, [mode, ticks])
+                        self.assertEqual(frame['mode'], mode)
+                        captures.append(f"{frame['width']}x{frame['height']}:" +
+                                        hashlib.sha256(frame['pixels'].encode('latin-1')).hexdigest())
+                        page.close()
+                    frames[label] = captures
+                common = {k: Counter(v).most_common(1)[0][0] for k, v in frames.items()}
+                row = dict(mode=mode, seed=1, ticks=ticks, before=frames['before'], after=frames['after'],
+                           most_common=common, after_subset_of_before=set(frames['after']) <= set(frames['before']),
+                           equal=common['before'] == common['after'] and set(frames['after']) <= set(frames['before']))
+                rows.append(row)
+                self.assertTrue(row['equal'], row)
+        self.evidence.write('classic-bad.json', dict(baseline_revision=self.config['baseline_revision'],
+            viewport=VIEWPORTS_541[0]['viewport'], dpr=1, captures_per_revision=3,
+            clock='performance.now frozen at 4321 before startGame; particle system emptied; Math.random re-seeded',
+            frames=rows, all_equal=all(r['equal'] for r in rows)))
+        print(f'PASS classic/bad: {len(rows)} frames x 3 captures per revision; every worktree pixel hash is a '
+              f'{BASELINE_541} hash and the most frequent hashes are equal (seed 1, ticks 0/90)')
+
+    def test_05_render_cost_ab(self):
+        # Matched A/B of the background layer (PERF_PROFILE) at the 8 entry
+        # poses, pairs alternated; relative only, headless is not device FPS
+        script = '''() => {
+            const means = [];
+            for (const s of GRAPPLE_OVER_MOUNTAIN.sections) {
+                const e = GRAPPLE_OVER_MOUNTAIN.encounters.find(e => e.id === s.encounters[0]), p = e.start || e;
+                ninja.x = p.x; ninja.y = p.y; screen.trackGrappleOver(true);
+                for (let i = 0; i < 60; i++) draw();
+                means.push(PERF_PROFILE.snapshot().entries.find(e => e.name === 'background').meanMs);
+            }
+            return {means, landmarks: typeof LANDMARKS !== 'undefined'};
+        }'''
+        pairs = []
+        for rep in range(3):
+            pair = {}
+            order = (('before', self.baseline_url), ('after', self.url))
+            for label, url in (order if rep % 2 == 0 else order[::-1]):
+                page = self.open(url, VIEWPORTS_541[0]['viewport'], query='?perf=1')
+                result = page.evaluate(script)
+                self.assertEqual(result['landmarks'], label == 'after')
+                pair[label] = sum(result['means'])
+                page.close()
+            pair['ratio'] = pair['after'] / pair['before']
+            pairs.append(pair)
+        ratios = sorted(p['ratio'] for p in pairs)
+        self.evidence.write('cost.json', dict(
+            note='relative A/B only (matched headless pages, same browser, seed 1, 480 frames at the 8 entry poses); '
+                 'not device FPS', before=f'{BASELINE_541} (git archive, no landmarks)', after='worktree',
+            layer='background (PERF_PROFILE)', viewport=VIEWPORTS_541[0]['viewport'], dpr=1, query='?perf=1',
+            pairs=[{k: round(v, 5) for k, v in p.items()} for p in pairs], median_after_over_before=round(ratios[1], 4)))
+        print(f'PASS cost A/B: background layer after/before median ratio {ratios[1]:.3f} over 3 matched pairs '
+              f'(relative, headless)')

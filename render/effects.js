@@ -180,6 +180,8 @@ class BackgroundRenderer
         this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks))
         if (this.palette)
             drawGrappleOverPalette(this.ctx, this.fillBounds(), this.palette)
+        if (this.palette)
+            drawGrappleOverLandmarks(this)
         this.drawVignette(width, height)
     }
     // The removed decorations consumed the shared gameplay RNG once per scene
