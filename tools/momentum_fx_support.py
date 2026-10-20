@@ -36,7 +36,7 @@ from pathlib import Path
 from threading import Thread
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from browser_test_support import QuietHandler, start_browser_test
 from perf_mobile import SEED_SCRIPT, export_rev
@@ -418,6 +418,30 @@ def background_mask(frame):
 
 def max_delta(a, b):
     return int(np.abs(np.asarray(a, dtype=np.int16) - np.asarray(b, dtype=np.int16)).max())
+
+
+def assert_equal_outside_pieces(head_frame, parent_frame, dilate=2, check=True):
+    """head_frame equals parent_frame (decoded) outside the blue pieces.
+
+    TASK-122 redrew the blue pieces' interiors (crystal sprite), so momentum
+    scenes compared with an older parent mask out every blue piece polygon of
+    either frame, dilated by dilate px. Returns {maxDelta (whole frame),
+    outsideMaxDelta, differingPixels (outside), maskedPixels}; with check, raises
+    AssertionError when any pixel outside the mask differs.
+    """
+    polys = [p['poly'] for f in (head_frame, parent_frame) for p in f.info['pieces'] if p['kind'] == 'blue']
+    mask = _polygon_mask(head_frame.shape, polys)
+    if dilate:
+        image = Image.fromarray(mask.astype(np.uint8) * 255).filter(ImageFilter.MaxFilter(2 * dilate + 1))
+        mask = np.asarray(image) > 0
+    delta = np.abs(np.asarray(head_frame, dtype=np.int16) - np.asarray(parent_frame, dtype=np.int16)).max(axis=2)
+    outside = delta[~mask]
+    stats = {'maxDelta': int(delta.max()), 'outsideMaxDelta': int(outside.max()) if outside.size else 0,
+             'differingPixels': int((outside > 0).sum()), 'maskedPixels': int(mask.sum())}
+    if check and stats['differingPixels']:
+        raise AssertionError(f"differingPixels {stats['differingPixels']} outside the blue pieces (dilate {dilate}), "
+                             f"outsideMaxDelta {stats['outsideMaxDelta']}")
+    return stats
 
 
 def save_png(img, path):

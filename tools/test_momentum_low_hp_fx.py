@@ -251,21 +251,24 @@ class MomentumLowHpFxTests(unittest.TestCase):
 
     def test_2_higher_hp_equals_parent(self):
         rows = []
+        pairs = []
         for hp in (2, 5):
             new = hp_frame(fx.harness(), hp)
             off = hp_frame(self.low_hp_off, hp)
             # the parent's own pulse hook is irrelevant at hp >= 2 (gain 1)
             old = hp_frame(fx.harness(self.parent), hp)
-            d, d_off = fx.max_delta(new, old), fx.max_delta(new, off)
-            rows.append({'hp': hp, 'parent': fx.harness(self.parent).rev, 'maxDelta': d, 'identical': d == 0,
-                         'maxDeltaVsLowHpOff': d_off})
+            # TASK-122 crystal pieces: the blue-corner scene equals the parent outside the blue pieces
+            d, d_off = fx.assert_equal_outside_pieces(new, old, check=False), fx.max_delta(new, off)
+            pairs.append((new, old))
+            rows.append({'hp': hp, 'parent': fx.harness(self.parent).rev, **d,
+                         'identical': d['differingPixels'] == 0, 'maxDeltaVsLowHpOff': d_off})
         # the forced-off tree does change hp 1 (else the check proves nothing)
         hp1_off = fx.max_delta(hp_frame(fx.harness(), 1), hp_frame(self.low_hp_off, 1))
         print('higher hp', rows, 'hp1 vs low-hp off', hp1_off)
         self.result['higherHp'] = {'rows': rows, 'lowHpOff': LOW_HP_OFF, 'hp1MaxDeltaVsLowHpOff': hp1_off}
         self.assertGreater(hp1_off, 0)
-        for row in rows:
-            self.assertEqual(row['maxDelta'], 0)
+        for row, pair in zip(rows, pairs):
+            fx.assert_equal_outside_pieces(*pair)
             self.assertEqual(row['maxDeltaVsLowHpOff'], 0)
 
     def test_3_blend(self):
@@ -283,19 +286,23 @@ class MomentumLowHpFxTests(unittest.TestCase):
 
     def test_4_switch_off_and_other_modes_equal_parent(self):
         rows = []
+        pairs = {}
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
                 base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
                 self.assertFalse(new.info['fx'])
-                d = fx.max_delta(new, base)
-                rows.append({'scene': f'momentum-{scene}-{viewport[0]}x{viewport[1]}', 'fx': 'off',
-                             'maxDelta': d, 'identical': d == 0})
+                name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
+                pairs[name] = (new, base)
+                d = fx.assert_equal_outside_pieces(new, base, check=False)
+                rows.append({'scene': name, 'fx': 'off', **d, 'identical': d['differingPixels'] == 0})
         # The switch off at the last heart too
         new = hp_frame(fx.harness(), 1, fx_on=False)
         base = hp_frame(fx.harness(self.parent), 1, fx_on=False)
-        d = fx.max_delta(new, base)
-        rows.append({'scene': f'momentum-{SCENE}-hp1-1280x720', 'fx': 'off', 'maxDelta': d, 'identical': d == 0})
+        name = f'momentum-{SCENE}-hp1-1280x720'
+        pairs[name] = (new, base)
+        d = fx.assert_equal_outside_pieces(new, base, check=False)
+        rows.append({'scene': name, 'fx': 'off', **d, 'identical': d['differingPixels'] == 0})
         tree = fx.harness()
         parent = fx.harness(self.parent)
         new = gallery_frames(tree.browser, tree.url, ['classic', 'bad'])
@@ -312,7 +319,11 @@ class MomentumLowHpFxTests(unittest.TestCase):
         self.assertEqual(len(rows), 17)
         for row in rows:
             with self.subTest(scene=row['scene']):
-                self.assertEqual(row['maxDelta'], 0)
+                if row['scene'] in pairs:
+                    # TASK-122 crystal pieces: momentum scenes equal outside the blue pieces
+                    fx.assert_equal_outside_pieces(*pairs[row['scene']])
+                else:
+                    self.assertEqual(row['maxDelta'], 0)
 
     def test_5_shots(self):
         shots = EVIDENCE_DIR / 'shots'

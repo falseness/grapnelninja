@@ -297,13 +297,16 @@ class MomentumNinjaLightTests(unittest.TestCase):
 
     def test_2_switch_off_and_other_modes_equal_parent(self):
         rows = []
+        pairs = {}
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
                 # The tree as served, without the LATER_EFFECTS_OFF override
-                d = fx.max_delta(fx.capture(scene, viewport, fx_on=False), base)
-                rows.append({'scene': f'momentum-{scene}-{viewport[0]}x{viewport[1]}', 'fx': 'off',
-                             'maxDelta': d, 'identical': d == 0})
+                new = fx.capture(scene, viewport, fx_on=False)
+                name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
+                pairs[name] = (new, base)
+                d = fx.assert_equal_outside_pieces(new, base, check=False)
+                rows.append({'scene': name, 'fx': 'off', **d, 'identical': d['differingPixels'] == 0})
         tree = fx.harness()
         parent = fx.harness(self.parent)
         new = gallery_frames(tree.browser, tree.url, ['classic', 'bad'])
@@ -320,7 +323,11 @@ class MomentumNinjaLightTests(unittest.TestCase):
         self.assertEqual(len(rows), 16)
         for row in rows:
             with self.subTest(scene=row['scene']):
-                self.assertEqual(row['maxDelta'], 0)
+                if row['scene'] in pairs:
+                    # TASK-122 crystal pieces: momentum scenes equal outside the blue pieces
+                    fx.assert_equal_outside_pieces(*pairs[row['scene']])
+                else:
+                    self.assertEqual(row['maxDelta'], 0)
 
     def test_3_shots(self):
         shots = EVIDENCE_DIR / 'shots'
