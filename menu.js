@@ -229,7 +229,8 @@ class Button
         LAYOUT_PROBE.rect('button', this.text.text || 'icon', this.background.x, this.background.y,
             this.background.width, this.background.height)
 
-        ctx.globalAlpha = 0.58
+        // fade: the Grapple Over HUD yield (CLIMB_UI.drawHud) scales the inset too
+        ctx.globalAlpha = 0.58 * (this.fade || 1)
         ctx.strokeRect(
             this.background.x + inset,
             this.background.y + inset,
@@ -959,7 +960,24 @@ const CLIMB_UI = {
     text(text, x, y, size, alignX = 'center') {
         new Text({text, x, y, fontSize:size, alignX, fill:STYLE.colors.ui.hudText}).draw()
     },
-    drawHud() {
+    yieldAlpha: 0.4,
+    hudYield: {text: false, button: false},
+    // Whether the player, a world element or a drag zone overlaps the view rect grown by pad (game units)
+    yields(left, top, right, bottom, pad) {
+        const hit = (l, t, r, b) => l + screen.x < right + pad && r + screen.x > left - pad &&
+            t + screen.y < bottom + pad && b + screen.y > top - pad
+        const r = ninja.radius, out = this.bounds
+        if (hit(ninja.x - r, ninja.y - r, ninja.x + r, ninja.y + r)) return true
+        for (const list of [floors[0].elements, floors[0].dragZones || []])
+            for (const e of list)
+            {
+                elementBounds(e, out)
+                if (hit(out.left, out.top, out.right, out.bottom)) return true
+            }
+        return false
+    },
+    bounds: {left: 0, right: 0, top: 0, bottom: 0},
+    drawHud(button) {
         const stats = floors[0].climbStats, h = height / scale[version]
         const size = Math.max(h * 0.025, 12 * h / getCanvasCssRect().height)
         const section = floors[0].level.sections.find(s => s.encounters.some(id =>
@@ -971,7 +989,24 @@ const CLIMB_UI = {
             I18N.t('climb.max', {value:Math.floor(stats.maxHeight)}),
             I18N.t('climb.section', {value:I18N.t('climb.section.' + section.id)}),
             I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)})]
+        // Terrain or the player behind a HUD block fades it so targets stay readable
+        ctx.save()
+        ctx.font = size + 'px ' + STYLE.ui.fontFamily
+        const textRight = size + Math.max(...rows.map(text => ctx.measureText(text).width))
+        ctx.restore()
+        this.hudYield.text = this.yields(size, size * 0.6, textRight, size * (1.5 + 3 * 1.6 + 0.6), size * 0.5)
+        ctx.save()
+        if (this.hudYield.text) ctx.globalAlpha = this.yieldAlpha
         rows.forEach((text, i) => this.text(text, size, size * (1.5 + i * 1.6), size, 'left'))
+        ctx.restore()
+        const b = button.background
+        this.hudYield.button = this.yields(b.x, b.y, b.x + b.width, b.y + b.height, size * 0.5)
+        ctx.save()
+        button.fade = this.hudYield.button ? this.yieldAlpha : 1
+        ctx.globalAlpha = button.fade
+        button.draw()
+        button.fade = 1
+        ctx.restore()
         if (floors[0].rangeNoticeMs > 0)
             this.text(I18N.t('climb.rangeUpgrade'), width / scale[version] / 2, h * 0.2, size * 1.6)
     },

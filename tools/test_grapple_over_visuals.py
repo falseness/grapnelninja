@@ -2367,7 +2367,7 @@ VIEW_493 = '''([pose, upgraded, ids, target]) => {
         ninja_css: [Math.round(n.x), Math.round(n.y)], css: [css.width, css.height],
         radius: grappleOverAcquisitionRadius(), hud: hud.map(b => ({name: b.name, kind: b.kind,
             rect: [b.x, b.y, b.x + b.width, b.y + b.height].map(v => Math.round(v))})),
-        elements, target: tgt,
+        elements, target: tgt, hud_yield: {...CLIMB_UI.hudYield},
         landmarks: (LANDMARKS.frame && LANDMARKS.frame.drawn || []).map(d => ({id: d.id, weight: Math.round(d.weight * 100) / 100}))};
 }'''
 # Real play from a pose: unpaused physics() (which runs the eased camera
@@ -2422,6 +2422,7 @@ OVERVIEW_493 = '''([mapScale, markers]) => {
     return {png: map.toDataURL('image/png'), width: map.width, height: map.height, tiles, top, bounds: b};
 }'''
 RIM_DE_493 = 20
+HUD_NEEDED_493 = 0.05
 OVERVIEW_SCALE_493 = 0.12
 # A rest pose on a support element: centre x, on its top surface
 REST_POSE_493 = '''([id, x]) => {
@@ -2446,6 +2447,27 @@ LANDMARK_PIXELS_493 = '''rect => {
     const top = px.slice(0, Math.max(1, Math.round(px.length / 50)));
     const mean = o => [0, 1, 2].map(c => Math.round(top.reduce((s, p) => s + p[c + o], 0) / top.length));
     return {count: px.length, rim: mean(0), behind: mean(3)};
+}'''
+# The HUD's ink over an element's CSS rect (+2 px): mean |dRGB| per pixel between the frame and the
+# same frame without the UI layer, with the HUD yield as drawn and with the faded alpha forced back
+# to 1; noise = two frames without the UI layer (animation clock frozen)
+HUD_PIXELS_493 = '''rect => {
+    const css = getCanvasCssRect(), sx = canvas.width / css.width, sy = canvas.height / css.height;
+    const x0 = Math.max(0, Math.floor(rect[0] * sx) - 2), y0 = Math.max(0, Math.floor(rect[1] * sy) - 2);
+    const x1 = Math.min(canvas.width, Math.ceil(rect[2] * sx) + 2), y1 = Math.min(canvas.height, Math.ceil(rect[3] * sy) + 2);
+    if (x1 <= x0 || y1 <= y0) return null;
+    const grab = () => ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+    const diff = (a, b) => {let s = 0; for (let p = 0; p < a.length; p += 4)
+        s += Math.abs(a[p] - b[p]) + Math.abs(a[p + 1] - b[p + 1]) + Math.abs(a[p + 2] - b[p + 2]);
+        return Math.round(s / (a.length / 4) * 100) / 100};
+    const now = performance.now(); performance.now = () => now;
+    const ui = drawUILayer, alpha = CLIMB_UI.yieldAlpha;
+    try {
+        drawUILayer = () => {}; draw(); const bare = grab(); draw(); const bare2 = grab();
+        drawUILayer = ui; draw(); const faded = grab(), yieldNow = {...CLIMB_UI.hudYield};
+        CLIMB_UI.yieldAlpha = 1; draw(); const full = grab();
+        return {faded: diff(faded, bare), full: diff(full, bare), noise: diff(bare2, bare), hud_yield: yieldNow};
+    } finally {drawUILayer = ui; CLIMB_UI.yieldAlpha = alpha; delete performance.now; draw()}
 }'''
 # Filled silhouette masks of the 8 landmark shapes and their pairwise IoU
 SHAPE_IOU_493 = '''() => {
@@ -2721,3 +2743,115 @@ class Task493Tests(unittest.TestCase):
         print(f'PASS overview: {overview["width"]}x{overview["height"]} map from {overview["tiles"]} real frames with '
               f'32 approaches, 8 landmarks and {len(pockets)} recovery pockets marked; roles {sorted(strokes)} use '
               f'disjoint stroke colours', flush=True)
+
+    def test_05_mandatory_surfaces_when_needed(self):
+        # Every element an encounter's action uses, checked at the poses where the player needs it:
+        # the approach pose, the last trusted input before its first contact in the archived
+        # TASK-529/530 climbs (commitment) and that contact itself
+        needed = []
+        for task in ('TASK-529', 'TASK-530'):
+            t = json.loads((ROOT / f'artifacts/{task}/trace.json').read_text())
+            rows = {r[0]: r for r in t['trace']['rows']}
+            fields = t['trace']['fields']
+            inputs = sorted(e['tick'] for e in t['trace']['inputs'])
+            mech = t['trace']['mechanics']
+            prev = 0
+            for enc, exit_tick in zip(t['encounters'], t['encounter_exit_ticks']):
+                needed.append(dict(encounter=enc['id'], source=task, window=[prev, exit_tick], rows=rows,
+                                   fields=fields, inputs=inputs, mechanics=mech))
+                prev = exit_tick
+        out, fade_share = [], {}
+        for config in VIEWPORTS_493:
+            page = self.open(config['viewport'], config['touch'])
+            # How often each HUD block yields along the archived climbs (every 30th tick)
+            samples = [[r[2], r[3], r[6]] for n in needed[::16] for r in sorted(n['rows'].values())[::30]]
+            share = page.evaluate('''ps => {let text = 0, button = 0; for (const [x, y, u] of ps) {
+                floors[0].rangeUpgraded = !!u; ninja.x = x; ninja.y = y; screen.trackGrappleOver(true); draw();
+                text += CLIMB_UI.hudYield.text; button += CLIMB_UI.hudYield.button}
+                return {frames: ps.length, text, button}}''', samples)
+            fade_share[config['name']] = share
+            mountain = {e['id']: e for e in page.evaluate(
+                'GRAPPLE_OVER_MOUNTAIN.encounters.map(e => ({id: e.id, section: e.section, '
+                'start: e.start ? {x: e.start.x, y: e.start.y} : {x: e.x, y: e.y}, elements: e.elements}))')}
+            for n in needed:
+                e = mountain[n['encounter']]
+                lo, hi = n['window']
+                for eid in e['elements']:
+                    poses = [('approach', None, e['start'], e['section'] >= 'S05')]
+                    contact = next((m for m in n['mechanics'] if m['element'] == eid and lo < m['tick'] <= hi), None)
+                    if contact:
+                        commit = max([i for i in n['inputs'] if lo <= i <= contact['tick']], default=contact['tick'])
+                        ticks = (('commit', commit), ('contact', contact['tick']))
+                    else:
+                        # No contact event (drag zones, exit ledges reached at the exit): the encounter exit
+                        ticks = (('exit', hi),)
+                    for kind, tick in ticks:
+                        r = dict(zip(n['fields'], n['rows'][tick]))
+                        poses.append((kind, tick, dict(x=r['x'], y=r['y']), bool(r['rangeUpgraded'])))
+                    for kind, tick, pose, upgraded in poses:
+                        view = page.evaluate(VIEW_493, [pose, upgraded, [eid], None])
+                        el = view['elements'][0]
+                        out.append(dict(encounter=n['encounter'], element=eid, viewport=config['name'], pose_kind=kind,
+                                        tick=tick, source=n['source'] if tick is not None else None,
+                                        contact=contact['type'] if contact else None,
+                                        pose=[round(pose['x'], 1), round(pose['y'], 1)], camera=view['camera'],
+                                        visible=el.get('visible'), hud_overlap=el.get('hud_overlap'), rect=el.get('rect'),
+                                        hud=[dict(name=h['name'], kind=h['kind']) for h in view['hud']
+                                             if el.get('rect') and h['rect'][0] - 12 < el['rect'][2] and el['rect'][0] < h['rect'][2] + 12
+                                             and h['rect'][1] - 12 < el['rect'][3] and el['rect'][1] < h['rect'][3] + 12],
+                                        hud_yield=view['hud_yield']))
+                        r = out[-1]
+                        # Readable: at most 5% of its box under HUD boxes, or every HUD block over it faded
+                        r['hud_faded'] = bool(r['hud']) and all(
+                            r['hud_yield']['button' if h['kind'] == 'button' else 'text'] for h in r['hud'])
+                        r['readable'] = r['hud_overlap'] <= HUD_NEEDED_493 or r['hud_faded']
+                        if r['hud_overlap'] > 0:
+                            # HUD ink over the surface, faded vs at full alpha
+                            r['hud_ink'] = page.evaluate(HUD_PIXELS_493, el['rect'])
+                            r['image'] = self.shot(page, f'hud/{n["encounter"]}-{eid}-{kind}-{config["name"]}.jpg')
+            page.close()
+        # Per element and viewport, at the poses where it is needed (commitment and contact
+        # when the climbs touch it, else the encounter exit): readable at every one of them
+        verdict = {}
+        for r in out:
+            key = (r['encounter'], r['element'], r['viewport'])
+            v = verdict.setdefault(key, dict(encounter=r['encounter'], element=r['element'], viewport=r['viewport'],
+                                             approach_overlap=0, approach_faded=False, needed=[]))
+            if r['pose_kind'] == 'approach':
+                v['approach_overlap'], v['approach_faded'] = r['hud_overlap'], r['hud_faded']
+            else:
+                v['needed'].append([r['pose_kind'], r['tick'], r['hud_overlap'], r['hud_faded'], r['visible']])
+        for v in verdict.values():
+            v['needed_overlap'] = max(p[2] for p in v['needed'])
+            v['readable_when_needed'] = all(p[2] <= HUD_NEEDED_493 or p[3] for p in v['needed'])
+        rows = sorted(verdict.values(), key=lambda v: (v['encounter'], v['element'], v['viewport']))
+        approach_overlaps = [v for v in rows if v['approach_overlap'] > 0]
+        blocked = [v for v in rows if not v['readable_when_needed']]
+        approach_blocked = [v for v in rows if v['approach_overlap'] > HUD_NEEDED_493 and not v['approach_faded']]
+        self.__class__.gallery['mandatory_surfaces'] = dict(
+            method='each element of each encounter; poses: approach (encounter start), commit (last trusted input '
+                   'tick at or before the first archived contact with the element within the encounter window of '
+                   'the TASK-529/530 climbs), contact (that tick), else exit (the encounter exit tick); player placed '
+                   'at the recorded position, real snapped Grapple Over camera, one draw(), HUD boxes +12 css px; '
+                   'readable = hud_overlap <= limit or every HUD block over it drawn faded (CLIMB_UI.hudYield)',
+            limit=HUD_NEEDED_493, poses=out, verdicts=rows, approach_overlaps=approach_overlaps,
+            faded_poses=[[r['encounter'], r['element'], r['viewport'], r['pose_kind'], r['hud_overlap']]
+                         for r in out if r['hud_faded']],
+            blocked=blocked, approach_blocked=approach_blocked,
+            climb_fade_share=dict(fade_share, method='TASK-529/530 climb rows every 30th tick, player placed, snapped '
+                                  'camera, one draw(); counts of frames with the HUD text / menu button faded'))
+        self.assertEqual(len({v['encounter'] for v in rows}), 32)
+        # Where the HUD at full alpha inks the surface's box (above twice the frame noise), the faded HUD inks it less
+        pixels = [[r['encounter'], r['element'], r['viewport'], r['pose_kind'], r['hud_ink']['faded'],
+                   r['hud_ink']['full'], r['hud_ink']['noise']] for r in out if r['hud_faded']]
+        self.gallery['mandatory_surfaces']['faded_hud_ink'] = dict(
+            fields=['encounter', 'element', 'viewport', 'pose', 'faded', 'full', 'noise'], rows=pixels)
+        self.assertTrue(all(v['needed'] for v in rows))
+        self.assertTrue(all(p[5] <= 2 * p[6] + 0.5 or p[4] < p[5] for p in pixels), pixels)
+        self.assertEqual(blocked, [])
+        self.assertEqual(approach_blocked, [])
+        faded = self.gallery['mandatory_surfaces']['faded_poses']
+        print(f'PASS mandatory surfaces: {len(rows) // 2} encounter elements x 2 viewports at {len(out)} poses '
+              f'(approach + commit/contact or exit); every one at most {HUD_NEEDED_493} under the HUD or with the HUD '
+              f'over it faded ({len(faded)} faded poses, {len(approach_overlaps)} element frames partly under the HUD '
+              f'at the approach pose)', flush=True)

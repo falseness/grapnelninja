@@ -2405,9 +2405,13 @@ class UIStylingHooks
         if (!this.shouldDraw())
             return
 
-        if (version === 'grapple_over') CLIMB_UI.drawHud()
-        else gameState.scoreText.draw()
-        gameState.menu.button.draw()
+        if (version === 'grapple_over')
+            CLIMB_UI.drawHud(gameState.menu.button)
+        else
+        {
+            gameState.scoreText.draw()
+            gameState.menu.button.draw()
+        }
     }
 }
 
