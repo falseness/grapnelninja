@@ -160,7 +160,7 @@ class PersistentWorld extends Floor
             if (model.role === 'solid')
             {
                 element.fill = '#182028'
-                element.stroke = '#a3adb8'
+                element.stroke = '#6a5296'
             }
             // Authored movers never invoke procedural/random constructors or warm-up.
             if (this.level.movers.some(m => m.element === model.id) && model.role !== 'hazard')

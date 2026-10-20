@@ -107,6 +107,8 @@ function drawWorldLayer()
     }
     floors[0].draw()
     floors[floors.length - 1].draw()
+    if (version === 'grapple_over')
+        drawGrappleOverRoleDetail(floors[0])
 
     if (screen.leftWall) screen.leftWall.draw()
     screen.draw()

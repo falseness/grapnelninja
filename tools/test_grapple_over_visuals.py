@@ -800,3 +800,486 @@ class Task539Tests(unittest.TestCase):
                     'draw-layer means'))
         print(f'PASS cost A/B: layers on/off median ratio {median:.3f} (background layer), '
               f'{sorted(p["all_layers_ratio"] for p in pairs)[2]:.3f} (all draw layers) over 5 matched pairs (relative, headless)')
+
+
+BASELINE_540 = '7f6af93'
+ROLES_540 = ('bounce', 'solid', 'mover', 'hazard', 'drag')
+# Role-vs-role and role-vs-background separation thresholds (contrast.json)
+ROLE_HUE_540 = 30
+ROLE_L_540 = 4
+BACKGROUND_L_540 = 12
+BACKGROUND_DE_540 = 20
+# A test-only level holding one element per role side by side at height y0
+# (the game level is not touched: floors is replaced in this page only).
+# Returns the frame pixels and each element's device-pixel bounds.
+SHEET_540 = '''([roleDetail, y0, pixels]) => {
+    const rect = (w, h) => [{x: 0, y: 0}, {x: w, y: 0}, {x: w, y: h}, {x: 0, y: h}]
+    const level = {version: 1, bounds: {left: -400, top: y0 - 2000, right: 3000, bottom: y0 + 400},
+        spawn: {x: 0, y: y0 - 1000},
+        sections: [{id: GRAPPLE_OVER_LEVEL.sections[0].id, encounters: ['sheet-roles']}],
+        encounters: [{id: 'sheet-roles', elements: ['sheet-bounce']}], elements: [
+            {id: 'sheet-bounce', x: 60, y: y0, role: 'bounce', grapplable: true, points: rect(240, 60)},
+            {id: 'sheet-solid', x: 400, y: y0, role: 'solid', grapplable: true,
+                points: [{x: 0, y: 0}, {x: 200, y: 0}, {x: 200, y: -30}, {x: 240, y: -30}, {x: 240, y: 70}, {x: 0, y: 70}]},
+            {id: 'sheet-mover', x: 760, y: y0, role: 'solid', grapplable: true, points: rect(220, 50)},
+            {id: 'sheet-hazard', x: 1080, y: y0, role: 'hazard', grapplable: false, points: rect(240, 70)},
+            {id: 'sheet-drag', x: 1420, y: y0 - 90, role: 'drag', grapplable: false, points: rect(260, 240)}],
+        movers: [{id: 'sheet-mover-x', element: 'sheet-mover', axis: 'x', min: 700, max: 820, periodMs: 4000, phase: 0.25}]}
+    performance.now = () => 4321
+    floors = [loadFixedLevel(level)]
+    ROLE_DETAIL.enabled = roleDetail
+    for (let i = 0; i < 40; i++) floors[0].moveElements()
+    screen.x = width / scale[version] / 2 - 840
+    screen.y = height / scale[version] / 2 - (y0 + 30)
+    ninja.x = -10000
+    draw()
+    const s = canvas.width / (width / scale[version])
+    const boxes = Object.fromEntries([...floors[0].elements, ...floors[0].dragZones].map(e => {
+        const b = e.writeBounds({})
+        return [e.id.slice(6), [Math.floor((b.left + screen.x) * s), Math.floor((b.top + screen.y) * s),
+            Math.ceil((b.right + screen.x) * s), Math.ceil((b.bottom + screen.y) * s)]]
+    }))
+    const frame = ROLE_DETAIL.frame
+    // The detail alone: the same production call, world transform, into a
+    // transparent canvas; count its painted pixels inside each element's
+    // bounds and outside all of them
+    let layer = null
+    if (roleDetail) {
+        const probe = document.createElement('canvas')
+        probe.width = canvas.width; probe.height = canvas.height
+        const probeCtx = probe.getContext('2d'), main = ctx
+        // The world layer's transform (draw() scales by the world scale)
+        probeCtx.setTransform(s, 0, 0, s, 0, 0)
+        ctx = probeCtx
+        try { drawGrappleOverRoleDetail(floors[0]) } finally { ctx = main }
+        const alpha = probeCtx.getImageData(0, 0, probe.width, probe.height).data
+        const inside = Object.fromEntries(Object.keys(boxes).map(k => [k, 0]))
+        let outside = 0
+        for (let y = 0; y < probe.height; y++) for (let x = 0; x < probe.width; x++) {
+            if (!alpha[(y * probe.width + x) * 4 + 3]) continue
+            const hit = Object.entries(boxes).find(([, b]) => x >= b[0] && x < b[2] && y >= b[1] && y < b[3])
+            if (hit) inside[hit[0]]++; else outside++
+        }
+        layer = {inside, outside}
+    }
+    return {boxes, width: canvas.width, height: canvas.height, frame, layer,
+        pixels: pixels ? Array.from(ctx.getImageData(0, 0, canvas.width, canvas.height).data,
+            v => String.fromCharCode(v)).join('') : ''}
+}'''
+
+
+def _lstar(rgb):
+    import numpy as np
+    c = np.asarray(rgb, float) / 255
+    c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    y = c @ np.array([0.2126, 0.7152, 0.0722])
+    return np.where(y > 0.008856, 116 * np.cbrt(y) - 16, 903.3 * y)
+
+
+def _lab(rgb):
+    import numpy as np
+    c = np.asarray(rgb, float) / 255
+    c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    xyz = np.array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]]) @ c
+    xyz /= np.array([0.95047, 1.0, 1.08883])
+    f = np.where(xyz > 0.008856, np.cbrt(xyz), 7.787 * xyz + 16 / 116)
+    return [116 * f[1] - 16, 500 * (f[0] - f[1]), 200 * (f[1] - f[2])]
+
+
+def _hue(rgb):
+    import colorsys
+    return colorsys.rgb_to_hls(*[v / 255 for v in rgb])[0] * 360
+
+
+def _hue_sep(a, b):
+    d = abs(a - b) % 360
+    return min(d, 360 - d)
+
+
+class Task540Tests(unittest.TestCase):
+    """Grapple Over per-role surface detail; classic/bad and geometry unchanged."""
+
+    @classmethod
+    def setUpClass(cls):
+        from functools import partial
+        from http.server import ThreadingHTTPServer
+        from threading import Thread
+        from browser_test_support import QuietHandler
+        from perf_mobile import export_rev
+        cls.evidence = EvidenceWriter('TASK-540')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        root, sha = export_rev(BASELINE_540, cls.addClassCleanup)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(root)))
+        cls.addClassCleanup(server.server_close)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cls.addClassCleanup(thread.join)
+        cls.addClassCleanup(server.shutdown)
+        cls.baseline_url = f'http://127.0.0.1:{server.server_port}/'
+        hashes = source_hashes()
+        for name in ('tools/test_grapple_over_visuals.py', 'render/roledetail.js'):
+            hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.config = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            dirty=bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'],
+                                                cwd=ROOT, text=True).strip()),
+            baseline_revision=sha, source_hashes=hashes, browser=cls.browser.version,
+            viewports=VIEWPORTS_538, device_scale_factor=1, seed=1)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.config, sort_keys=True))
+
+    def open(self, url, viewport, mode='grapple_over', query=''):
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=1)
+        self.addCleanup(context.close)
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
+            test=self.id(), url='baseline' if url == self.baseline_url else 'worktree',
+            viewport=viewport, dpr=1, mode=mode, query=query), sort_keys=True))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(url + query)
+        wait_for_boot(page)
+        page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
+        page.wait_for_function('!unTouch')
+        return page
+
+    def sheet(self, page, on, y0, pixels=True):
+        import numpy as np
+        r = page.evaluate(SHEET_540, [on, y0, pixels])
+        if pixels:
+            r['rgb'] = np.frombuffer(r.pop('pixels').encode('latin-1'), np.uint8).reshape(
+                r['height'], r['width'], 4)[..., :3].astype(float)
+        return r
+
+    def test_01_geometry_hash_unchanged(self):
+        row = {}
+        for label, url in (('before', self.baseline_url), ('after', self.url)):
+            page = self.open(url, VIEWPORTS_538[0])
+            geometry = page.evaluate(GEOMETRY_538)
+            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
+                              elements=len(json.loads(geometry)['elements']),
+                              movers=len(json.loads(geometry)['movers']))
+        row.update(baseline_revision=self.config['baseline_revision'],
+                   fields='elements: id, role, grapplable, x, y, points; movers: full',
+                   equal=row['before'] == row['after'])
+        self.evidence.write('geometry-hash.json', row)
+        self.assertEqual(row['before'], row['after'])
+        self.assertGreater(row['after']['elements'], 0)
+        print(f'PASS geometry: hash {row["after"]["sha256"][:16]} before == after '
+              f'({row["after"]["elements"]} elements, {row["after"]["movers"]} movers)')
+
+    def test_02_roles_sheet_and_contrast(self):
+        import numpy as np
+        from PIL import Image, ImageDraw
+        rows, sheet_rows, inside = [], [], []
+        for viewport in VIEWPORTS_538:
+            page = self.open(self.url, viewport)
+            for band in range(BANDS_538):
+                y0 = -(band * BAND_538 + BAND_538 // 2)
+                on = self.sheet(page, True, y0)
+                self.assertEqual(on['frame']['counts'], {r: 1 for r in ROLES_540})
+                # The detail stays inside each element's silhouette: every
+                # pixel it paints lies inside an element's bounds
+                mask = np.zeros(on['rgb'].shape[:2], bool)
+                for l, t, r, b in on['boxes'].values():
+                    mask[max(0, t):b, max(0, l):r] = True
+                inside.append(dict(viewport=viewport, band=band, painted_outside_elements=on['layer']['outside'],
+                                   painted_inside=on['layer']['inside']))
+                self.assertEqual(on['layer']['outside'], 0)
+                for k, v in on['layer']['inside'].items():
+                    self.assertGreater(v, 0, k)
+                roles = {}
+                for k, (l, t, r, b) in on['boxes'].items():
+                    region = on['rgb'][t:b, l:r].reshape(-1, 3)
+                    lum = _lstar(region)
+                    # Emissive signature: the brightest quarter of the element's pixels
+                    emissive = region[lum >= np.percentile(lum, 75)].mean(0)
+                    roles[k] = dict(rgb=[round(v, 1) for v in emissive], hue=round(_hue(emissive), 1),
+                                    L=round(float(_lstar(emissive)), 2), lab=[round(float(v), 2) for v in _lab(emissive)])
+                bg_mask = ~mask
+                for l, t, r, b in on['boxes'].values():
+                    bg_mask[max(0, t - 40):b + 40, max(0, l - 40):r + 40] = False
+                hud = on['height'] // 5
+                bg_mask[:hud, :on['width'] // 4] = False
+                bg_mask[:hud, -on['width'] // 8:] = False
+                bg = on['rgb'][bg_mask].mean(0)
+                background = dict(rgb=[round(v, 1) for v in bg], hue=round(_hue(bg), 1), L=round(float(_lstar(bg)), 2),
+                                  lab=[round(float(v), 2) for v in _lab(bg)], pixels=int(bg_mask.sum()))
+                pairs = []
+                for i, a in enumerate(ROLES_540):
+                    for b in ROLES_540[i + 1:]:
+                        hue = _hue_sep(roles[a]['hue'], roles[b]['hue'])
+                        dl = abs(roles[a]['L'] - roles[b]['L'])
+                        pairs.append(dict(a=a, b=b, hue_sep=round(hue, 1), L_sep=round(dl, 2),
+                                          ok=hue >= ROLE_HUE_540 and dl >= ROLE_L_540))
+                versus = []
+                for a in ROLES_540:
+                    de = float(np.linalg.norm(np.subtract(roles[a]['lab'], background['lab'])))
+                    dl = roles[a]['L'] - background['L']
+                    versus.append(dict(role=a, hue_sep=round(_hue_sep(roles[a]['hue'], background['hue']), 1),
+                                       L_sep=round(dl, 2), delta_e76=round(de, 2),
+                                       ok=dl >= BACKGROUND_L_540 and de >= BACKGROUND_DE_540))
+                rows.append(dict(viewport=viewport, band=band, palette=GRAPPLE_OVER_PALETTE_NAMES_540[band],
+                                 roles=roles, background=background, role_pairs=pairs, versus_background=versus))
+                for p in pairs + versus:
+                    self.assertTrue(p['ok'], (viewport, band, p))
+                if band == 0:
+                    # Sheet crop: the role row with a margin, zoomed 2x
+                    boxes = list(on['boxes'].values())
+                    l = max(0, min(b[0] for b in boxes) - 30)
+                    t = max(0, min(b[1] for b in boxes) - 30)
+                    r = min(on['width'], max(b[2] for b in boxes) + 30)
+                    b = min(on['height'], max(b[3] for b in boxes) + 30)
+                    full = f'sheet-{viewport["width"]}x{viewport["height"]}.png'
+                    page.screenshot(path=str(self.evidence.path(full)))
+                    crop = Image.fromarray(on['rgb'][t:b, l:r].astype(np.uint8)).resize(((r - l) * 2, (b - t) * 2), Image.NEAREST)
+                    labels = {k: ((v[0] + v[2]) / 2 - l, v[3] - t) for k, v in on['boxes'].items()}
+                    sheet_rows.append((viewport, crop, labels, full))
+        # roles-sheet.png: both viewports' role rows stacked, 2x zoom, labelled
+        width_px = max(c.width for _, c, _, _ in sheet_rows)
+        height_px = sum(c.height + 40 for _, c, _, _ in sheet_rows)
+        canvas = Image.new('RGB', (width_px, height_px), (12, 12, 16))
+        draw = ImageDraw.Draw(canvas)
+        y = 0
+        for viewport, crop, labels, _ in sheet_rows:
+            draw.text((8, y + 6), f'{viewport["width"]}x{viewport["height"]} (2x zoom of the in-game frame, band 0)',
+                      fill=(230, 230, 230))
+            canvas.paste(crop, (0, y + 24))
+            for k, (cx, by) in labels.items():
+                draw.text((cx * 2 - 18, y + 24 + by * 2 + 8), k, fill=(255, 255, 255))
+            y += crop.height + 40
+        canvas.save(self.evidence.path('roles-sheet.png'))
+        min_pair = min(p['hue_sep'] for r in rows for p in r['role_pairs'])
+        min_l = min(p['L_sep'] for r in rows for p in r['role_pairs'])
+        min_bg_l = min(v['L_sep'] for r in rows for v in r['versus_background'])
+        min_bg_de = min(v['delta_e76'] for r in rows for v in r['versus_background'])
+        self.evidence.write('contrast.json', dict(
+            method='Each role element is rendered in-game (test-only one-element-per-role level) at all 8 band '
+                   'heights at 1280x720 and 844x390; role signature = mean colour of the brightest quarter (CIE L*) '
+                   'of its pixels (outline + new detail); background = mean colour of the frame outside the '
+                   'elements (+40 px) and HUD, i.e. the palette wash, parallax layers, crystals and motes. Hue: HLS '
+                   'degrees (circular separation); luminance: CIE L* (0-100); delta_e76: CIELAB distance.',
+            thresholds=dict(role_vs_role=dict(hue_sep_min_deg=ROLE_HUE_540, L_sep_min=ROLE_L_540),
+                            role_vs_background=dict(L_sep_min=BACKGROUND_L_540, delta_e76_min=BACKGROUND_DE_540,
+                                                    hue_note='hue separation is recorded for every role/background pair; '
+                                                             'it is not thresholded because the TASK-538 backdrop sweeps the '
+                                                             'whole hue circle by design (e.g. the dusk band is pink like '
+                                                             'hazards); roles stand apart from it by lightness and '
+                                                             'CIELAB distance')),
+            minima=dict(role_hue_sep=min_pair, role_L_sep=min_l, background_L_sep=min_bg_l,
+                        background_delta_e76=min_bg_de),
+            all_pass=all(p['ok'] for r in rows for p in r['role_pairs'] + r['versus_background']),
+            frames=rows))
+        self.evidence.write('silhouette.json', dict(
+            note='the production drawGrappleOverRoleDetail re-run alone (same transform) into a transparent '
+                 'canvas: painted pixels per role element bounds; painted_outside_elements must be 0', frames=inside))
+        print(f'PASS roles sheet: 5 roles x 8 bands x 2 viewports; role pairs hue >= {min_pair} deg (min {ROLE_HUE_540}), '
+              f'L* >= {min_l} (min {ROLE_L_540}); vs background L* >= {min_bg_l} (min {BACKGROUND_L_540}), '
+              f'dE76 >= {min_bg_de} (min {BACKGROUND_DE_540}); 0 detail pixels outside the elements')
+
+    def test_03_contact_pulse_real_input(self):
+        from PIL import Image, ImageDraw
+        page = self.open(self.url, VIEWPORTS_538[0])
+        page.evaluate('menu.unPause()')
+        tick = '''() => {physics(); draw();
+            const pad = floors[0].byId.get('S01-floor'), contact = ROLE_DETAIL.contacts.get(pad);
+            const pulse = ROLE_DETAIL.frame.pulses.find(p => p.id === 'S01-floor');
+            return {x: ninja.x, y: ninja.y, speedY: ninja.speedY, grappled: grapnel.isGrappled(),
+                steps: floors[0].elapsedSteps, contactStep: contact ? contact.step : null,
+                strength: contact ? contact.strength : 0, pulse: pulse ? pulse.intensity : 0,
+                drawnPulses: ROLE_DETAIL.frame.pulses.length}}'''
+        target = page.evaluate("()=>{const e=floors[0].byId.get('S01-hoist');return [e.x+60,e.y+15]}")
+        point = page.evaluate('''([x,y])=>canvasCoordsToViewportCoords({
+            x:(x+screen.x)*scale[version],y:(y+screen.y)*scale[version]})''', target)
+        # Real input: a mouse press aimed at the S01 hoist, held 30 ticks, released
+        page.mouse.move(point['x'], point['y'])
+        page.mouse.down()
+        rows, events = [], [dict(tick=0, event='mousedown', client=point, aim=target)]
+        for i in range(30):
+            rows.append(page.evaluate(tick))
+        page.mouse.up()
+        events.append(dict(tick=30, event='mouseup'))
+        shots, contact_tick = {}, None
+        for i in range(30, 320):
+            row = page.evaluate(tick)
+            rows.append(row)
+            if contact_tick is None and row['contactStep'] is not None and row['strength'] > 0:
+                contact_tick = i
+            if contact_tick is not None and i - contact_tick in (0, 2, 5, 9, 14, 20, 27) or (
+                    contact_tick is None and row['y'] > 40 and 'pre' not in shots):
+                key = 'pre' if contact_tick is None else i - contact_tick
+                box = page.evaluate('''() => {const r = getCanvasCssRect(), s = r.width / (width / scale[version]);
+                    return [r.left + (ninja.x + screen.x) * s, r.top + (ninja.y + screen.y) * s]}''')
+                path = self.evidence.path(f'pulse-frames/{key}.png')
+                page.screenshot(path=str(path), clip=dict(x=box[0] - 90, y=box[1] - 60, width=180, height=100))
+                shots[key] = path
+            if contact_tick is not None and i - contact_tick > 30:
+                break
+        self.assertIsNotNone(contact_tick)
+        self.assertTrue(any(r['grappled'] for r in rows[:30]))
+        c = contact_tick
+        before, at = rows[c - 1], rows[c]
+        # The pulse starts on the contact tick: dark before, brightest on it,
+        # then non-increasing and back to 0 within pulseMs (450 ms = 27 ticks)
+        self.assertEqual(before['pulse'], 0)
+        self.assertGreater(before['speedY'], 0)
+        self.assertLess(at['speedY'], 0)
+        self.assertGreater(at['pulse'], 0)
+        after = [r['pulse'] for r in rows[c:c + 31]]
+        self.assertEqual(max(after), after[0])
+        self.assertTrue(all(b <= a for a, b in zip(after, after[1:])), after)
+        self.assertEqual(after[28], 0)
+        ticks = [dict(tick=i, y=round(r['y'], 3), speedY=round(r['speedY'], 4), grappled=r['grappled'],
+                      pulse=round(r['pulse'], 5), contact_step=r['contactStep'])
+                 for i, r in enumerate(rows) if i >= c - 5]
+        self.evidence.write('pulse.json', dict(
+            input='real Playwright mouse events (press at the S01-hoist, hold 30 physics ticks, release); '
+                  'physics stepped one tick per evaluate, draw() after each tick',
+            element='S01-floor (bounce)', events=events, contact_tick=c,
+            impact_strength=round(at['strength'], 4), pulse_ms=450, ticks_per_second=60,
+            pulse_before_contact=before['pulse'], pulse_on_contact=round(at['pulse'], 5),
+            pulse_zero_at_tick=c + after.index(0), monotonic_fade=True,
+            samples=[dict(tick=i, y=round(r['y'], 2)) for i, r in enumerate(rows[:c - 5]) if i % 10 == 0],
+            ticks=ticks, filmstrip_ticks_after_contact=[k for k in shots if k != 'pre']))
+        # Filmstrip: the pre-contact frame then the pulse fading
+        frames = [('pre', 'before contact')] + [(k, f'contact +{k}') for k in (0, 2, 5, 9, 14, 20, 27)]
+        images = [Image.open(shots[k]).convert('RGB') for k, _ in frames]
+        strip = Image.new('RGB', (sum(i.width for i in images), images[0].height + 18), (0, 0, 0))
+        draw = ImageDraw.Draw(strip)
+        x = 0
+        for (k, label), image in zip(frames, images):
+            strip.paste(image, (x, 18))
+            draw.text((x + 4, 3), label, fill=(255, 255, 255))
+            x += image.width
+        strip.save(self.evidence.path('pulse-filmstrip.jpg'), quality=90)
+        print(f'PASS pulse: real mouse grapple+release; bounce on S01-floor at tick {c}; pulse 0 before, '
+              f'{at["pulse"]:.3f} on the contact tick, non-increasing, 0 at tick {c + after.index(0)}')
+
+    def test_04_level_detail_fast_backdrop_and_sprites(self):
+        page = self.open(self.url, VIEWPORTS_538[0])
+        result = page.evaluate('''() => {
+            const counts = {bounce: 0, solid: 0, mover: 0, hazard: 0, drag: 0};
+            const ys = [0, -700, -1500, -3000, -4600, -6400, -8000, -9900, -11500, -13000];
+            for (const y of ys) {
+                screen.y = height / scale[version] / 2 - y;
+                draw();
+                for (const k in counts) counts[k] += ROLE_DETAIL.frame.counts[k];
+            }
+            // Fast backdrop: the role detail is still drawn (world layer, full resolution)
+            const original = drawGrappleOverRoleDetail, seen = [];
+            drawGrappleOverRoleDetail = function(world) {
+                const r = original.apply(this, arguments);
+                seen.push({backdropActive: BACKDROP.active, scale: BACKDROP.scale,
+                           counts: Object.values(ROLE_DETAIL.frame.counts).reduce((a, b) => a + b, 0)});
+                return r};
+            const scale0 = BACKDROP.scale;
+            screen.y = height / scale[version] / 2;
+            BACKDROP.scale = 0.5; draw(); BACKDROP.scale = scale0; draw();
+            drawGrappleOverRoleDetail = original;
+            const build = buildGlowSprite; let builds = 0;
+            buildGlowSprite = function() {builds++; return build.apply(this, arguments)};
+            let blurDraws = 0, blurStrokes = 0;
+            const P = CanvasRenderingContext2D.prototype, di = P.drawImage, st = P.stroke, fi = P.fill;
+            P.drawImage = function() {if (this.shadowBlur) blurDraws++; return di.apply(this, arguments)};
+            P.stroke = function() {if (this.shadowBlur) blurStrokes++; return st.apply(this, arguments)};
+            P.fill = function() {if (this.shadowBlur) blurStrokes++; return fi.apply(this, arguments)};
+            for (let r = 0; r < 2; r++) for (const y of ys) {screen.y = height / scale[version] / 2 - y; draw();}
+            const warm = builds;
+            P.drawImage = di; P.stroke = st; P.fill = fi;
+            buildGlowSprite = build;
+            const sprites = [...GLOW_SPRITES.cache.keys()].filter(k => k.startsWith('roledetail|'));
+            return {counts, seen, builds_in_warm_frames: warm, shadow_blur_draw_calls: blurDraws + blurStrokes,
+                    roledetail_sprites: sprites};
+        }''')
+        for role in ('bounce', 'solid', 'mover', 'drag'):
+            self.assertGreater(result['counts'][role], 0, role)
+        self.assertTrue(result['seen'][0]['backdropActive'] or result['seen'][0]['scale'] == 0.5, result['seen'])
+        self.assertTrue(all(s['counts'] > 0 for s in result['seen']), result['seen'])
+        self.assertEqual(result['builds_in_warm_frames'], 0)
+        self.assertEqual(result['shadow_blur_draw_calls'], 0)
+        self.assertGreater(len(result['roledetail_sprites']), 0)
+        self.evidence.write('level-detail.json', dict(note='real level, 10 camera heights; fast backdrop forced '
+                                                           'with BACKDROP.scale = 0.5', **result))
+        print(f'PASS level/fast backdrop: per-role detail drawn on the real level {result["counts"]} (no hazards '
+              f'in the level); drawn with the fast backdrop forced; 0 glow sprite builds '
+              f'and 0 shadowBlur draws in 20 warm frames')
+
+    def test_05_classic_bad_pixels_unchanged(self):
+        from collections import Counter
+        rows = []
+        for mode in ('classic', 'bad'):
+            for ticks in (0, 90):
+                frames = {}
+                for label, url in (('before', self.baseline_url), ('after', self.url)):
+                    captures = []
+                    for _ in range(3):
+                        page = self.open(url, VIEWPORTS_538[0], mode=mode)
+                        page.evaluate(SEED_SCRIPT % 1)
+                        frame = page.evaluate(FRAME_538, [mode, ticks])
+                        self.assertEqual(frame['mode'], mode)
+                        captures.append(f"{frame['width']}x{frame['height']}:" +
+                                        hashlib.sha256(frame['pixels'].encode('latin-1')).hexdigest())
+                        page.close()
+                    frames[label] = captures
+                common = {k: Counter(v).most_common(1)[0][0] for k, v in frames.items()}
+                row = dict(mode=mode, seed=1, ticks=ticks, before=frames['before'], after=frames['after'],
+                           most_common=common, after_subset_of_before=set(frames['after']) <= set(frames['before']),
+                           equal=common['before'] == common['after'] and set(frames['after']) <= set(frames['before']))
+                rows.append(row)
+                self.assertTrue(row['equal'], row)
+        self.evidence.write('classic-bad.json', dict(baseline_revision=self.config['baseline_revision'],
+            viewport=VIEWPORTS_538[0], dpr=1, captures_per_revision=3,
+            clock='performance.now frozen at 4321 before startGame; particle system emptied; Math.random re-seeded',
+            frames=rows, all_equal=all(r['equal'] for r in rows)))
+        print(f'PASS classic/bad: {len(rows)} frames x 3 captures per revision; every worktree pixel hash is a '
+              f'{BASELINE_540} hash and the most frequent hashes are equal (seed 1, ticks 0/90)')
+
+    def test_06_render_cost_ab(self):
+        # Matched A/B: before = BASELINE_540 (git archive), after = worktree;
+        # same browser, seed and 480 scripted frames over the real level,
+        # pairs alternated. PERF_PROFILE (render/perfprofile.js) world-layer
+        # mean and the sum of all draw-layer means. Relative only: headless
+        # timings are not device FPS.
+        script = '''() => {
+            const world = [], totals = [];
+            for (const y of [-300, -3000, -6400, -12400]) {
+                for (let i = 0; i < 120; i++) {screen.y = height / scale[version] / 2 - y - i * 2; draw();}
+                const entries = PERF_PROFILE.snapshot().entries;
+                world.push(entries.find(e => e.name === 'world').meanMs);
+                totals.push(entries.filter(e => e.name !== 'update' && e.name !== 'backdrop')
+                    .reduce((s, e) => s + (e.meanMs || 0), 0));
+            }
+            return {world, totals, detail: typeof ROLE_DETAIL !== 'undefined'};
+        }'''
+        pairs = []
+        for rep in range(5):
+            pair = {}
+            order = (('before', self.baseline_url), ('after', self.url))
+            for label, url in (order if rep % 2 == 0 else order[::-1]):
+                page = self.open(url, VIEWPORTS_538[0], query='?perf=1')
+                result = page.evaluate(script)
+                self.assertEqual(result['detail'], label == 'after')
+                pair[label] = sum(result['world'])
+                pair[label + '_all_layers'] = sum(result['totals'])
+                page.close()
+            pair['ratio'] = pair['after'] / pair['before']
+            pair['all_layers_ratio'] = pair['after_all_layers'] / pair['before_all_layers']
+            pairs.append(pair)
+        ratios = sorted(p['ratio'] for p in pairs)
+        all_ratios = sorted(p['all_layers_ratio'] for p in pairs)
+        self.evidence.write('cost.json', dict(
+            note='relative A/B only (matched headless pages, same browser, seed 1, same 480 scripted frames); '
+                 'not device FPS', before=f'{BASELINE_540} (git archive, no role detail)', after='worktree',
+            layer='world (PERF_PROFILE)', browser=self.browser.version, viewport=VIEWPORTS_538[0], dpr=1, seed=1,
+            frames_per_run=480, camera_y=[-300, -3000, -6400, -12400], query='?perf=1',
+            pairs=[{k: round(v, 5) for k, v in p.items()} for p in pairs],
+            median_after_over_before=round(ratios[2], 4), median_all_layers_after_over_before=round(all_ratios[2], 4),
+            columns='before/after: sum of the world-layer means at the 4 camera ys (ms); *_all_layers: sum of all '
+                    'draw-layer means'))
+        print(f'PASS cost A/B: after/before median ratio {ratios[2]:.3f} (world layer), {all_ratios[2]:.3f} '
+              f'(all draw layers) over 5 matched pairs (relative, headless)')
+
+
+GRAPPLE_OVER_PALETTE_NAMES_540 = ('dusk quarry', 'ember works', 'magenta haze', 'violet ridge', 'indigo cliffs',
+                                  'cyan frost', 'teal aurora', 'night sky')

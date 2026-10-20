@@ -200,11 +200,15 @@ class Ninja
     {
         if (contact.approaching)
         {
+            // Normal approach speed, for the Grapple Over contact pulse
+            const impact = -(this.speedX * contact.nx + this.speedY * contact.ny)
             bounceSpeed(this, contact.line)
             if (visualEffects && visualEffects.particles)
                 visualEffects.particles.emitTrampolineSplash(this, contact.element)
             if (visualEffects && visualEffects.screenEffects)
                 visualEffects.screenEffects.triggerLanding(contact)
+            if (version === 'grapple_over')
+                ROLE_DETAIL.markContact(contact.element, impact)
         }
         const out = this.radius + GAMEPLAY.cubeContactEpsilon
         this.x = contact.x + contact.nx * out

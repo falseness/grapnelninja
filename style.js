@@ -764,3 +764,24 @@ const GRAPPLE_OVER_PARALLAX = Object.freeze({
             motifs: Object.freeze(['cranes', 'chimneys', 'domes', 'pylons', 'towers', 'pylons', 'domes', 'antennas'])})
     ])
 })
+
+// Grapple Over per-role surface detail (render/roledetail.js), drawn inside
+// each element's own silhouette. Every role keeps its hue family and its
+// detail colour sits at its own lightness, so roles stay apart from one
+// another and from the dark backdrop. Sizes are screen pixels (divided by the
+// world scale); pulseMs is simulated time (physics steps), so a pause freezes
+// it; drag particle speed is screen px per simulated second.
+const GRAPPLE_OVER_ROLE_DETAIL = Object.freeze({
+    bounce: Object.freeze({strip: '#8dff96', stripWidth: 3, stripAlpha: 0.75,
+        pulseMs: 450, pulseFill: '#3dff4a', pulseFillAlpha: 0.45,
+        // Normal approach speed (world units per physics cycle): no pulse at or
+        // below min (resting hops), full pulse from full
+        pulseMinImpact: 0.25, pulseFullImpact: 0.75}),
+    solid: Object.freeze({rivet: '#9a5cff', rivetRadius: 1.6, rivetSpacing: 22, rivetInset: 5,
+        bevel: 2.5, light: '#8f6bff', lightAlpha: 0.5, shade: '#000000', shadeAlpha: 0.45}),
+    mover: Object.freeze({light: '#4f9dff', lightRadius: 1.8, spacing: 9, inset: 5,
+        periodMs: 700, dim: 0.3}),
+    hazard: Object.freeze({chevron: '#a3163c', width: 2, spacing: 10, alpha: 0.8}),
+    drag: Object.freeze({particle: '#ffe680', radius: 2.2, density: 1 / 500, min: 4, max: 60,
+        speed: 5, alpha: 1})
+})
