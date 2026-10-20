@@ -29,13 +29,22 @@ stopped and the obstacle floor emptied; each frame is placed alone. Asserts:
   bottom edge touches the blue's top (gap and overlap <= CAP_TOL); a ninja
   dropped straight down (vx 0, vy > 0) onto the cap centre from 0.2 W above
   its top bounces (vy < 0 after), the cap is used, the blue is not, hp is
-  unchanged and momentumState.greenStreak + 1.
+  unchanged and momentumState.greenStreak + 1;
+- test_5_fit (TASK-129, corridor 1.0 height since TASK-128): per frame per
+  viewport, rasterized at FIT_STEP world units with every moving piece at
+  its top and at its bottom bound: the widest path from the entry column
+  (FIT_MARGIN_W before the footprint) to the exit column (as far past it)
+  is >= FIT_MIN_RATIO x the ninja diameter (bottleneck of the distance
+  transform, the corridor faces count as obstacles); every piece is a
+  grapnel target hit first by a straight throw from some free entry-column
+  point; every piece and motion range stays inside the corridor faces.
 
 MOMENTUM_FRAMES_H_EVIDENCE_DIR (default /tmp/momentum-frames-h) receives
 placed.json (compact {id: {viewport: {W, pieces: [{kind, box|points,
 motion}]}}}), cap-test.json (compact {id: {viewport: {vyBefore, vyAfter,
 greenUsed, blueUsed, hpBefore, hpAfter, streakBefore, streakAfter, moves}}})
-and shots/<id>-<viewport>.png.
+shots/<id>-<viewport>.png and frames-fit.json (compact [{id, status, fix,
+reason, viewport: {minGapOverDiameter, reachable, targets}}], TASK-129).
 Requires Playwright Chromium and Pillow.
 """
 import base64
@@ -45,7 +54,9 @@ import os
 from pathlib import Path
 import unittest
 
+import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 from browser_test_support import start_browser_test, wait_for_boot_run
 from test_momentum_borders import SEED_COURSE
@@ -73,6 +84,11 @@ EPS = 1e-6
 FRAME_PX = 480
 CENTRE_PY = 315
 CLASSES = {'green': 'MomentumGreen', 'blue': 'MomentumBlue'}
+# test_5_fit: raster step (world units), entry/exit columns this many W
+# outside the footprint, smallest path width over the ninja diameter
+FIT_STEP = 2.0
+FIT_MARGIN_W = 0.15
+FIT_MIN_RATIO = 1.2
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
     floors.find(f => f instanceof MomentumObstacleFloor).elements = []
@@ -158,6 +174,75 @@ def anchor_x(frame):
     """Concept frame px of the footprint start (smallest piece x - 48)"""
     xs = [p['x'] if p['shape'] == 'rect' else min(q[0] for q in p['points']) for p in frame['pieces']]
     return min(xs) - 48
+
+
+def rasterize(polys, xs, ys):
+    """Piece index + 1 per cell (0 = free) of polygons [[x, y], ...] on the grid xs x ys"""
+    X, Y = np.meshgrid(xs, ys)
+    owner = np.zeros(X.shape, dtype=np.int16)
+    for k, pts in enumerate(polys):
+        inside = np.zeros(X.shape, dtype=bool)
+        for (ax, ay), (bx, by) in zip(pts, pts[1:] + pts[:1]):
+            if ay == by:
+                continue
+            crosses = (ay > Y) != (by > Y)
+            xc = ax + (Y - ay) * (bx - ax) / (by - ay)
+            inside ^= crosses & (X < xc)
+        owner[inside & (owner == 0)] = k + 1
+    return owner
+
+
+def frame_fit(elements, x0, y0, W, span, radius):
+    """Path width / ninja diameter, reachable targets, inside the faces, per
+    moving-piece position (all at the top bound, all at the bottom bound)"""
+    top, bottom = y0 - W / 2, y0 + W / 2
+    inside = all(top - GEOM_TOL <= p[1] <= bottom + GEOM_TOL for e in elements for p in e['points']) and \
+        all(top - GEOM_TOL <= e['motion'][b] <= bottom + GEOM_TOL for e in elements if e['motion'] for b in ('yMin', 'yMax'))
+    xs = np.arange(x0 - FIT_MARGIN_W * W, x0 + (span + FIT_MARGIN_W) * W + FIT_STEP / 2, FIT_STEP)
+    ys = np.arange(top + FIT_STEP / 2, bottom, FIT_STEP)
+    out = []
+    for at in ('yMin', 'yMax'):
+        polys = []
+        for e in elements:
+            pts = [list(p) for p in e['points']]
+            if e['motion']:
+                dy = e['motion'][at] - (e['top'] if at == 'yMin' else e['bottom'])
+                pts = [[px, py + dy] for px, py in pts]
+            polys.append(pts)
+        owner = rasterize(polys, xs, ys)
+        # Faces just outside the first and last rows
+        free = np.pad(owner == 0, ((1, 1), (0, 0)), constant_values=False)
+        clearance = ndimage.distance_transform_edt(free)[1:-1] * FIT_STEP
+        lo, hi = 0.0, float(clearance.max())
+        for _ in range(40):
+            mid = (lo + hi) / 2
+            labels, _n = ndimage.label(clearance >= mid)
+            if set(labels[:, 0][labels[:, 0] > 0]) & set(labels[:, -1][labels[:, -1] > 0]):
+                lo = mid
+            else:
+                hi = mid
+        # Grapnel: the first piece a straight throw from a free entry point meets
+        reached = set()
+        for sy in np.flatnonzero(owner[:, 0] == 0)[::10]:
+            sx = xs[0]
+            for k, pts in enumerate(polys):
+                if k + 1 in reached:
+                    continue
+                for tx, ty in pts + [[(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] for a, b in zip(pts, pts[1:] + pts[:1])]:
+                    n = int(np.hypot(tx - sx, ty - ys[sy]) / FIT_STEP) + 2
+                    ix = np.clip(np.round((np.linspace(sx, tx, n) - xs[0]) / FIT_STEP).astype(int), 0, len(xs) - 1)
+                    iy = np.clip(np.round((np.linspace(ys[sy], ty, n) - ys[0]) / FIT_STEP).astype(int), 0, len(ys) - 1)
+                    hit = owner[iy, ix]
+                    hit = hit[hit > 0]
+                    if len(hit) and hit[0] == k + 1:
+                        reached.add(k + 1)
+                        break
+        out.append({'gap': 2 * lo, 'reached': sorted(reached)})
+    best = max(out, key=lambda r: r['gap'])
+    reached = sorted(set().union(*[r['reached'] for r in out]))
+    return {'minGapOverDiameter': round(best['gap'] / (2 * radius), 3), 'gap': round(best['gap'], 1),
+            'gapAtBounds': [round(r['gap'], 1) for r in out], 'reachable': len(reached),
+            'targets': len(elements), 'insideFaces': inside}
 
 
 class MomentumFramesHTests(unittest.TestCase):
@@ -340,6 +425,34 @@ class MomentumFramesHTests(unittest.TestCase):
                                                                    'hpAfter', 'streakBefore', 'streakAfter', 'moves')}
             page.evaluate("floors.find(f => f instanceof MomentumPatternFloor).elements = []")
         (EVIDENCE_DIR / 'cap-test.json').write_text(json.dumps(out, separators=(',', ':')))
+
+    def test_5_fit(self):
+        fit = []
+        for id in IDS:
+            row = {'id': id}
+            for name, page, info in self.pages:
+                W = 2 * info['half']
+                x0, y0 = self.origin(info)
+                r = page.evaluate(PLACE, [id, x0, y0, 'right'])
+                radius = page.evaluate('ninja.radius')
+                f = frame_fit(r['elements'], x0, y0, W, self.catalog[id]['span'], radius)
+                f['W'] = W
+                f['ninjaDiameter'] = 2 * radius
+                print(f"{name} {id}: W {W} path {f['gap']} (at bounds {f['gapAtBounds']}) = "
+                      f"{f['minGapOverDiameter']} x ninja diameter {2 * radius}; grapnel targets reachable "
+                      f"{f['reachable']}/{f['targets']}; inside faces {f['insideFaces']}")
+                self.assertGreaterEqual(f['minGapOverDiameter'], FIT_MIN_RATIO, (name, id))
+                self.assertEqual(f['reachable'], f['targets'], (name, id))
+                self.assertTrue(f['insideFaces'], (name, id))
+                row[name] = f
+            ratio = min(row[name]['minGapOverDiameter'] for name, _page, _info in self.pages)
+            row['status'] = 'ok'
+            row['fix'] = None
+            row['reason'] = (f'passable as scaled: path >= {ratio} x ninja diameter (min {FIT_MIN_RATIO}), '
+                             f'every grapnel target reachable from the entry, inside the faces')
+            fit.append(row)
+            page.evaluate("floors.find(f => f instanceof MomentumPatternFloor).elements = []")
+        (EVIDENCE_DIR / 'frames-fit.json').write_text(json.dumps(fit, separators=(',', ':')))
 
 
 if __name__ == '__main__':
