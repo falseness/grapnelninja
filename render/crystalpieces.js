@@ -36,6 +36,9 @@ const CRYSTAL_PIECES = (function()
     const NUB_AREA = 2500
     const NUB_GLOW = 4
     const LIP_WIDTH = 4
+    // A lip is at most this share of the piece's thickness inside the
+    // outline: a thin ledge (or a zoomed-out view) keeps its jade body
+    const LIP_SHARE = 0.25
     // A corridor wall face or another piece's edge closer than this (in W,
     // as momentumSnapWallFace) is in contact
     const CONTACT_TOLERANCE = 1e-5
@@ -114,6 +117,23 @@ const CRYSTAL_PIECES = (function()
             area += a[0] * b[1] - b[0] * a[1]
         }
         return area / 2
+    }
+    // Width of the convex polygon: its smallest extent across an edge
+    function polygonWidth(points)
+    {
+        let width = Infinity
+        for (let i = 0; i < points.length; ++i)
+        {
+            const a = points[i], b = points[(i + 1) % points.length]
+            const length = Math.hypot(b[0] - a[0], b[1] - a[1])
+            if (!length)
+                continue
+            let reach = 0
+            for (const p of points)
+                reach = Math.max(reach, Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / length)
+            width = Math.min(width, reach)
+        }
+        return width
     }
     // Inside the convex polygon (either winding)
     function insidePolygon(points, x, y)
@@ -399,7 +419,8 @@ const CRYSTAL_PIECES = (function()
             }
             // Lip: a band just inside the outline along each free edge,
             // kept off the other edges' outlines
-            const lip = LIP_WIDTH * Math.max(1, unit)
+            const lip = Math.min(LIP_WIDTH * Math.max(1, unit),
+                LIP_SHARE * Math.max(0, polygonWidth(points) - 2 * outlineHalf))
             const inner = insetPolygon(points, outlineHalf)
             const lipped = free.some(f => f)
             if (lipped && Math.min(x1 - x0, y1 - y0) > 2 * outlineHalf + 1)
@@ -436,11 +457,27 @@ const CRYSTAL_PIECES = (function()
             c.shadowBlur = NUB_GLOW * unit
             // An inset past the middle turns the polygon inside out: no room
             const fits = polygonArea(room) * polygonArea(points) > 0
+            // A thin piece's room is narrower than a nub: the nubs shrink to
+            // fit it and are placed within its box
+            const roomWidth = fits ? polygonWidth(room) : 0
+            const thin = roomWidth < NUB_SIZE[1] * unit
+            let rx0 = Infinity, ry0 = Infinity, rx1 = -Infinity, ry1 = -Infinity
+            for (const [x, y] of room)
+            {
+                rx0 = Math.min(rx0, x); ry0 = Math.min(ry0, y)
+                rx1 = Math.max(rx1, x); ry1 = Math.max(ry1, y)
+            }
             const nubCentres = []
             for (let n = 0, tries = 0; fits && n < nubs && tries < 50 * nubs; ++tries)
             {
-                const size = range(...NUB_SIZE) * unit
-                const x = range(x0, x1), y = range(y0, y1)
+                let size = range(...NUB_SIZE) * unit
+                let x = range(x0, x1), y = range(y0, y1)
+                if (thin)
+                {
+                    size = Math.min(size, 0.9 * roomWidth)
+                    x = rx0 + (x - x0) / (x1 - x0) * (rx1 - rx0)
+                    y = ry0 + (y - y0) / (y1 - y0) * (ry1 - ry0)
+                }
                 const r = size / 2, s = r * 0.6
                 const rhombus = [[x, y - r], [x + s, y], [x, y + r], [x - s, y]]
                 if (!rhombus.every(([px, py]) => insidePolygon(room, px, py) && insidePolygon(points, px, py)))
