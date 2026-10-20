@@ -64,6 +64,11 @@ neonPulse is pinned to 1 before the draw. --rev R captures git rev R
         (4x crop round that glint), each the first draw of a fresh page with
         the render clock held at t0 except in drawGlints; writes
         twinkle-times.json (differing pixels outside the glint boxes vs dim)
+    python3 momentum_crystal_check.py optdiff <out.json> --rev R [--shots dir]
+        M04, M23, M66 at 1280x720 (frozen clock) on this checkout vs rev R
+        (the tree before an optimisation): decoded-pixel maxDelta and mean
+        |delta| per frame; pass = maxDelta <= 2 and mean <= 0.2. --shots
+        saves this checkout's frames as <id>-1280x720.png
 --rev BASE is the parent of the TASK-122 game commit 4c9ba46.
 Every JSON is compact. Exit status 1 when a pass condition fails.
 Requires Playwright Chromium, numpy and Pillow.
@@ -108,6 +113,9 @@ GLINT_BOX_RADIUS = 9
 GLINT_DIFF_MS = 400
 GLINT_COUNT = (2, 4)
 SHIFT_PX = 37
+OPTDIFF_IDS = ['M04', 'M23', 'M66']
+OPTDIFF_MAX = 2
+OPTDIFF_MEAN = 0.2
 PIN = 'updateNeonPulse = () => { neonPulse = 1 }; neonPulse = 1'
 
 # Places M frame id alone; centres the camera on its pieces. Returns the
@@ -768,6 +776,26 @@ def cmd_fade(args):
     return 0 if result['pass'] else 1
 
 
+def cmd_optdiff(args):
+    rows = []
+    for id in OPTDIFF_IDS:
+        a, _, _ = capture_frame('worktree', id, (1280, 720))
+        b, _, _ = capture_frame(args.rev, id, (1280, 720))
+        diff = np.abs(a.astype(np.int16) - b.astype(np.int16))
+        row = {'frame': id, 'viewport': '1280x720', 'maxDelta': int(diff.max()),
+               'meanAbsDelta': round(float(diff.mean()), 5), 'differingPixels': int((diff.max(axis=2) > 0).sum())}
+        row['pass'] = row['maxDelta'] <= OPTDIFF_MAX and row['meanAbsDelta'] <= OPTDIFF_MEAN
+        rows.append(row)
+        print(row, flush=True)
+        if args.shots:
+            Path(args.shots).mkdir(parents=True, exist_ok=True)
+            Image.fromarray(a).save(Path(args.shots) / f'{id}-1280x720.png')
+    ok = all(r['pass'] for r in rows)
+    write(args.out, {'rev': fxs.harness('worktree').rev, 'before': sha(args.rev), 'maxDeltaLimit': OPTDIFF_MAX,
+                     'meanLimit': OPTDIFF_MEAN, 'rows': rows, 'pass': ok})
+    return 0 if ok else 1
+
+
 def cmd_texture(args):
     if args.kind == 'green':
         return cmd_texture_green(args)
@@ -940,13 +968,14 @@ def cmd_shots(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=['geometry', 'outside', 'texture', 'determinism', 'cache', 'shots',
-                                            'lips', 'fade', 'twinkle', 'glintdiff'])
+                                            'lips', 'fade', 'twinkle', 'glintdiff', 'optdiff'])
     parser.add_argument('out')
     parser.add_argument('--rev')
     parser.add_argument('--kind', default='blue')
     parser.add_argument('--frames', default='M04,M24,M66')
+    parser.add_argument('--shots')
     args = parser.parse_args()
-    if args.command in ('outside', 'texture') and not args.rev:
+    if args.command in ('outside', 'texture', 'optdiff') and not args.rev:
         parser.error('--rev is required')
     if args.rev in REVS:
         args.rev = sha(REVS[args.rev])
