@@ -2425,5 +2425,590 @@ class Task491Tests(unittest.TestCase):
             self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, path)
         print('PASS source hashes: runtime, level, routes and harness match the tested worktree', flush=True)
 
+
+# TASK-492: every grapple attachment (tick, element, attachable, boundary, occluder, hit, reach); T531.run stops at completion
+# (the completion screen leaves the climb).
+T492_JS = """() => {
+    if (Grapnel.prototype.attachAt.t492) return
+    const attach = Grapnel.prototype.attachAt
+    Grapnel.prototype.attachAt = function(hit, element) {
+        const r = T531.rec
+        if (r && r.attaches) {
+            const p = {x: ninja.x, y: ninja.y}
+            let occluder = null
+            // Any other surface crossed by the straight line from the player to the hit point, short of the hit.
+            for (const e of floors[0].elements) {
+                if (e === element || e.role === 'drag') continue
+                for (const line of e.getLines()) {
+                    const h = this.shotIntersection(p, [hit.x, hit.y], line)
+                    if (h && h.t < 1 - 1e-6 && Math.hypot(h.x - hit.x, h.y - hit.y) > 0.5) {occluder = e.id; break}
+                }
+                if (occluder) break
+            }
+            r.attaches.push([r.tick, element.id, element.grapplable !== false && element.surfaceRole !== 'hazard',
+                             /^mountain-(left|right)$/.test(element.id), occluder, Math.round(hit.x*10)/10, Math.round(hit.y*10)/10,
+                             Math.round(Math.hypot(hit.x - p.x, hit.y - p.y))])
+        }
+        return attach.call(this, hit, element)
+    }
+    Grapnel.prototype.attachAt.t492 = true
+    T531.run = function(n, rec) {
+        this.rec = rec
+        for (let i = 0; i < n && !rec.completed; i++) {
+            physics(); TUTORIAL_HINT.advance(physicsStepMs); rec.tick++
+            const x = ninja.x, y = ninja.y
+            if (y < rec.minY) {rec.minY = y; rec.minYTick = rec.tick}
+            for (const e of this.exits)
+                if (!(e.id in rec.exits) && x >= e.left && x <= e.right && y >= e.top && y <= e.bottom) rec.exits[e.id] = rec.tick
+            const g = grapnel.isGrappled()
+            if (g && !rec.grappled) {
+                const a = grapnel.pos[0] && grapnel.pos[0][2]
+                rec.acquisitions.push([rec.tick, a && a.id || null, Math.round(grapnel.traveled*10)/10])
+            }
+            rec.grappled = g
+            if (floors[0].climbStats.completed) {rec.completed = true; rec.completedTick = rec.tick; rec.completedAt = [x, y]}
+        }
+        this.rec = null
+        return rec
+    }
+}"""
+
+
+class Task492Tests(unittest.TestCase):
+    """Bounded audit of unintended bypasses and the two optional skill shortcuts on layout v3 (after TASK-491).
+
+    Every probe starts from a labeled real state (the section start poses of the section-proof chains, or a real nominal-run
+    pose at an encounter start), drives trusted mouse input only and logs inputs, budget and outcome. A failed search is not
+    an impossibility claim. test_01 replays the two fixed finish bypasses at the current geometry and in a labeled pre-fix
+    control (the TASK-492 elements removed at runtime after the restore). test_02 runs the five probe families plus a
+    two-press search around the folded S05/S07/S08 column and writes bypass.json. test_03 proves the normal and shortcut
+    routes of S03 and S07 (inputs/, shortcuts.json). test_04 checks the source hashes.
+    """
+    task_id = 'TASK-492'
+    BASE_TICKS, START_POSES = Task531Tests.BASE_TICKS, Task531Tests.START_POSES
+    section_starts = Task531Tests.__dict__['section_starts']
+    FIX_ELEMENTS = ('S08-summit-rail', 'S08-summit-brake')
+    OBSERVE, SETTLE_LIMIT = 700, 1500
+    # Probe budgets (attempt caps; each attempt is one restored start, its presses and OBSERVE ticks after the last release).
+    HOLD_SKY = (('up', 0, -1), ('up-left', -.7071, -.7071), ('up-right', .7071, -.7071))
+    NEAREST_POLICIES, NEAREST_HOLDS, NEAREST_PRESSES = ('highest', 'closest'), (60, 150), 8
+    SIDE_EDGE, SIDE_HOLDS = 300, (60, 160, 400)
+    LONG_FRACTION, LONG_HOLDS = .8, (200, 500)
+    PER_START = dict(hold=24, side=24, occluded=8, long=8)
+    TWO_H1, TWO_H2, TWO_TOP, TWO_PER_START = (60, 150, 220), (40, 90), 4, 450
+    TWO_STARTS = ('S03', 'S05', 'S07', 'S08')
+    BYPASS_SKIP = 2
+    # The two bypasses that reached the summit finish before the TASK-492 rail and brake (world-space trusted presses:
+    # tick after the restored start, hold, aim).
+    FIXED = [dict(id='S05-hoist-mast-finish', start='S05', source='TASK-531 findings/README.md item 1 (handed to TASK-492)',
+                  presses=[(180, 160, (2560.000000000001, -12440)), (400, 240, (2123.76037818735, -13300))],
+                  how='long S05-hoist hold from the S05 start, S08-mast-trolley pull, drift east off the trolley into the finish from the west'),
+             dict(id='S07-trolley-gable-finish', start='S07', source='TASK-492 two-press search from the S07 start (before the brake)',
+                  presses=[(5, 220, (480.0, -11930)), (235, 90, (1435, -12940))],
+                  how='long S07-trolley hold, S07-gable-hook swing up the corridor west of the finish, roof rebound down into the finish')]
+    # The layout v3 fold (not fixed, needs a design decision): the S05-01 hoist and canopy hang over the S07 exit pocket, which
+    # is the S08 start and the column the S08-01 rise climbs; one or two presses from the S05 start settle in it (skips S05-02..
+    # S07-04, 11 of 32 encounters; S08 must still be climbed). F1 also works at the base range.
+    FOLD = [dict(id='F1-S05-canopy-to-S08-start', start='S05', presses=[(5, 100, (2060, -12895))],
+                 how='one press aimed at the S07 carriage from the S05 start; the line catches the green S05 canopy first, held 100: a high arc '
+                     'east sinks through S07-exit-drag onto the S07 exit ledge (the S08 start)'),
+            dict(id='F2-S05-hoist-to-S08-start', start='S05', presses=[(5, 220, (2560.0000000000005, -12440)), (235, 140, (2835, -12005))],
+                 how='S05 hoist held 220 (normal 160 then the deflector), then a press on the green S07 crown ledge: the swing drops west '
+                     'into S07-exit-drag onto the S07 exit ledge')]
+    FOLD_DISPOSITION = ('needs-design-decision (layout v3 fold, not fixed): an S05 start settles at the S07 start or in the S07 exit pocket '
+                        '(the S08 start) under the S05 hoist; skips at most 11 of 32 encounters, so not a most-of-the-mountain bypass, and '
+                        'every local fix tried kills the S08-01 rise that leaves the same pocket (findings/README.md); needs relayout of '
+                        'S05-01 or S07-04/S08-01')
+    MOST = 16
+    # Shortcut routes (trusted presses from the labeled section start: tick, hold, aim).
+    SHORTCUTS = dict(
+        S03=dict(id='S03-shortcut', skipped=('S03-lift', 'S03-crest-hook'), goal='S03-04',
+                 presses=[(5, 220, (5580, -5723.666666666667)), (235, 90, (5745, -6730)), (548, 50, (5460, -7950))],
+                 launch=0, launch_holds=range(190, 251, 5),
+                 how='hold the S03 hoist about twice as long (220 vs 115): the launch carries past the lift line; pull the blue shutter on '
+                     'the way up, rise along the right map edge and pull the green exit hook at the apex onto the exit ledge'),
+        S07=dict(id='S07-shortcut', skipped=('S07-carriage', 'S07-gable-hook'), goal='S07-04',
+                 presses=[(5, 220, (479.99999999999886, -11930)), (265, 50, (2520, -11945))],
+                 launch=0, launch_holds=range(180, 261, 5),
+                 how='release the S07 trolley earlier than the normal pull (220 vs 240): the flight crosses under the carriage line '
+                     'straight to the Crown exit pocket; catch the green exit ledge on the way and settle on it'))
+
+    @classmethod
+    def setUpClass(cls):
+        from grapple_over_verify import hashes
+        import test_grapple_over_sections as sections
+        cls.S = sections
+        cls.evidence = EvidenceWriter(cls.task_id)
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        page = cls.browser.new_page(viewport=VIEWPORT); page.goto(cls.url); wait_for_boot(page)
+        cls.mountain = page.evaluate("""() => {const box = e => ({id:e.id, role:e.role, grapplable:e.grapplable!==false,
+                left:e.x+Math.min(...e.points.map(p=>p.x)), right:e.x+Math.max(...e.points.map(p=>p.x)),
+                top:e.y+Math.min(...e.points.map(p=>p.y)), bottom:e.y+Math.max(...e.points.map(p=>p.y))});
+            return {sections:GRAPPLE_OVER_MOUNTAIN.sections.map(s=>({id:s.id, band:s.band})),
+                encounters:GRAPPLE_OVER_MOUNTAIN.encounters.slice(0,32).map(e=>({id:e.id, section:e.section, start:e.start, exit:e.exit, elements:e.elements})),
+                shortcuts:GRAPPLE_OVER_MOUNTAIN.shortcuts, finish:GRAPPLE_OVER_MOUNTAIN.finish, bounds:GRAPPLE_OVER_MOUNTAIN.bounds,
+                elements:GRAPPLE_OVER_MOUNTAIN.geometry.elements.map(box),
+                radius:{base:MODE_DEFINITIONS.grapple_over.acquisitionRadius, upgraded:MODE_DEFINITIONS.grapple_over.upgradedAcquisitionRadius}}}""")
+        page.close()
+        cls.exits = [dict(id=e['id'], index=i, **{k: v for k, v in exit_box(e['exit']).items() if k in ('left', 'right', 'top', 'bottom')})
+                     for i, e in enumerate(cls.mountain['encounters'])]
+        cls.index = {e['id']: e['index'] for e in cls.exits}
+        cls.hashes = hashes()
+        cls.hashes['tools/test_grapple_over_integration.py'] = hashlib.sha256((ROOT/'tools/test_grapple_over_integration.py').read_bytes()).hexdigest()
+        cls.proof = dict(browser=cls.browser.version, viewport=VIEWPORT, device_scale_factor=1,
+            hz=60, seed=1, revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
+            dirty_paths=subprocess.check_output(['git','status','--porcelain','--','.',':!artifacts'],cwd=ROOT,text=True).splitlines(),
+            source_hashes=cls.hashes)
+        cls.evidence.log('CONFIG '+json.dumps(cls.proof, sort_keys=True))
+        cls.lite = LitePage(cls.browser, cls.url, cls.exits)
+        cls.addClassCleanup(cls.lite.context.close)
+        cls.lite.page.evaluate(T492_JS)
+        cls.starts, cls.start_proof = cls.section_starts()
+        cls.lite.page.evaluate('CLIMB_UI.restart()')
+        cls.starts['S01'] = cls.lite.page.evaluate('captureClimbState()')
+        cls.hud_buttons = cls.lite.page.evaluate("""() => {LAYOUT_PROBE.boxes=[]; draw(); const b=LAYOUT_PROBE.boxes;
+            LAYOUT_PROBE.boxes=null; return b.filter(x=>x.kind==='button')}""")
+        cls.attaches = []
+
+    # ---- runner ---------------------------------------------------------------------------------
+    def client_ok(self, w):
+        """On screen and off the HUD buttons at the current camera (a HUD press would pause instead of throwing)."""
+        c = self.lite.page.evaluate('p=>GRAPPLE_OVER_TEST.client(p)', dict(x=w[0], y=w[1]))
+        return 0 < c['x'] < VIEWPORT['width'] and 0 < c['y'] < VIEWPORT['height'] and not any(
+            b['x']-4 <= c['x'] <= b['x']+b['width']+4 and b['y']-4 <= c['y'] <= b['y']+b['height']+4 for b in self.hud_buttons)
+
+    def targets(self):
+        return self.lite.page.evaluate('r=>T531.targets(r)', self.lite.page.evaluate('grappleOverAcquisitionRadius()'))
+
+    def restore(self, state, without=()):
+        self.lite.restore(state)
+        if without:
+            n = self.lite.page.evaluate('''ids=>{const f=floors[0], had=new Set([...f.elements, ...f.dragZones].filter(e=>ids.includes(e.id)).map(e=>e.id))
+                f.elements=f.elements.filter(e=>!ids.includes(e.id)); f.dragZones=f.dragZones.filter(e=>!ids.includes(e.id)); return had.size}''', list(without))
+            self.assertEqual(n, len(without))
+
+    def run_presses(self, state, presses, observe=None, settle=True, without=(), record=True):
+        """presses [(tick, hold, (x, y))] from a restored state; returns the compact outcome."""
+        lite = self.lite
+        self.restore(state, without)
+        plan = [q for t, h, w in presses for q in ((t, 'mousedown', *w), (t+h, 'mouseup', *w))]
+        end = (max(t+h for t, h, _ in presses) if presses else 0) + (self.OBSERVE if observe is None else observe)
+        rec = lite.new_rec(); rec['attaches'] = []
+        rec, _, clients = lite.play(plan, end, rec=rec)
+        if rec['completed']:
+            final = dict(x=rec['completedAt'][0], y=rec['completedAt'][1]); rec['settled'] = True
+            lite.reset(); lite.page.evaluate(T492_JS)
+        else:
+            if settle: rec = lite.page.evaluate('([n,r])=>T531.settle(n,r)', [self.SETTLE_LIMIT, rec])
+            else: rec['settled'] = False
+            final = lite.page.evaluate('T531.state()')
+        self.assertEqual(lite.page.evaluate('[version, menu.gamePaused]'), ['grapple_over', False], presses)
+        if record: type(self).attaches += [a for a in rec['attaches']]
+        return self.outcome(presses, rec, final, clients)
+
+    def rest_index(self, x, y, settled):
+        if not settled: return -1
+        encs = self.mountain['encounters']
+        hits = [e['index'] for e in self.exits if e['left']-15 <= x <= e['right']+15 and e['top']-15 <= y <= e['bottom']+15]
+        hits += [j-1 for j in range(1, 32) if math.hypot(x-encs[j]['start']['x'], y-encs[j]['start']['y']) < 40]
+        return max(hits, default=-1)
+
+    def outcome(self, presses, rec, final, clients):
+        rest = 32 if rec['completed'] else self.rest_index(final['x'], final['y'], rec['settled'])
+        return dict(presses=[[t, h, [round(w[0], 2), round(w[1], 2)]] for t, h, w in presses], acquisitions=rec['acquisitions'],
+                    exits=dict(sorted(rec['exits'].items(), key=lambda kv: kv[1])), rest=[round(final['x'], 1), round(final['y'], 1)],
+                    settled=rec['settled'], rest_index=rest, completed=rec['completed'], completed_tick=rec.get('completedTick'),
+                    min_y=round(rec['minY'], 1), apex_tick=rec['minYTick'], ticks=rec['tick'],
+                    on_screen=all(c['onscreen'] for c in clients if c['event'] == 'mousedown'),
+                    attach_violations=[a for a in rec['attaches'] if not a[2] or a[3] or a[4]])
+
+    def skipped(self, start, o):
+        """Encounters skipped beyond one per press: rest progress (32 = finish) - (start encounter - 1) - presses."""
+        n = len(o['presses'])
+        return max(0, o['rest_index'] - (start['encounter'] - 1) - n)
+
+    # ---- labeled starts -------------------------------------------------------------------------
+    def section_plans(self):
+        S = self.S
+        base = Task529Tests.nominal.__func__(type('Lower', (), dict(S=S, SECTION_STARTS=Task529Tests.SECTION_STARTS)))
+        return base, dict(S05=S.GalleriesV3CompleteChecks.S05_ROUTE_V3, S06=S.LiftworksV3CompleteChecks.S06_ROUTE_V3,
+                          S07=S.CrownV3CompleteChecks.S07_ROUTE_V3, S08=S.SummitV3CompleteChecks.S08_ROUTE_V3)
+
+    def encounter_starts(self):
+        """The real nominal-run pose at the start of every encounter (first tick at or after the previous encounter's exit with
+        no rope out and no press held): S01..S04 from one base-start run, S05..S08 from their labeled section start restored once."""
+        cls = type(self)
+        if hasattr(cls, '_enc'): return cls._enc
+        lite, base, plans = self.lite, *self.section_plans()
+        out = []
+        def walk(state, plan, first, count, label, tick0=0):
+            lite.restore(state)
+            rec, tick = lite.new_rec(), 0
+            rec['attaches'] = []
+            for k in range(first, first+count):
+                if k > first:
+                    at = None
+                    while at is None:
+                        rec, _, _ = lite.play([(t-tick, e, x, y) for t, e, x, y in plan if tick <= t < tick+10], 10, rec=rec); tick += 10
+                        at = rec['exits'].get(self.exits[k-1]['id'])
+                        self.assertLess(tick, 7000)
+                    if tick < at: pass
+                while True:
+                    s = lite.page.evaluate('T531.state()')
+                    if not s['throwed'] and not s['pressHeld'] and not any(t == tick for t, *_ in plan): break
+                    rec, _, _ = lite.play([(t-tick, e, x, y) for t, e, x, y in plan if t == tick], 1, rec=rec); tick += 1
+                st = lite.page.evaluate('captureClimbState()')
+                out.append(dict(encounter=k, id=self.exits[k]['id'], state=st, label='%s, tick %d' % (label, tick0+tick),
+                                pose=[round(st['player']['x'], 1), round(st['player']['y'], 1)], range=st['upgrades']['range']))
+        walk(self.starts['S01'], base, 0, 16, 'base-start nominal run (TASK-529 route)')
+        for i, sec in enumerate(('S05', 'S06', 'S07', 'S08')):
+            walk(self.starts[sec], plans[sec], 16+4*i, 4, 'nominal %s route from the labeled %s start' % (sec, sec))
+        cls._enc = out
+        return out
+
+    def section_start(self, sec):
+        return dict(encounter=self.index[sec+'-01'], id=sec+'-01', state=self.starts[sec], label='labeled %s section start' % sec)
+
+    # ---- probes ---------------------------------------------------------------------------------
+    def aims(self, state, filt=lambda t, kind: True):
+        """Every grappleable element within the active range at tick 5, centre and nearest point, on screen and off the HUD."""
+        self.restore(state); self.lite.play([], 5)
+        out = []
+        for t in self.targets():
+            for kind in ('center', 'nearest'):
+                if kind == 'nearest' and t['nearest'] == t['center']: continue
+                w = (t[kind]['x'], t[kind]['y'])
+                if filt(t, kind) and self.client_ok(w): out.append((t['id'], kind, w, t['distance']))
+        return out
+
+    def probe_hold(self, start):
+        """Continuous hold: press at tick 5 and never release within the window; every target, plus three sky aims at the range
+        edge (a held miss parks and its whole line keeps acquiring)."""
+        log, aims = [], self.aims(start['state'])
+        rng = self.lite.page.evaluate('grappleOverAcquisitionRadius()')
+        p = start['state']['player']
+        for name, dx, dy in self.HOLD_SKY:
+            w = (p['x']+dx*rng*.9, p['y']+dy*rng*.9)
+            self.restore(start['state']); self.lite.play([], 5)
+            if self.client_ok(w): aims.append(('sky-'+name, 'direction', w, None))
+        for tid, kind, w, _ in aims[:self.PER_START['hold']]:
+            o = self.run_presses(start['state'], [(5, 900, w)], observe=0)
+            log.append(dict(target=tid, aim=kind, **o))
+        return log
+
+    def probe_nearest(self, start):
+        """Repeated nearest-anchor acquisition: up to NEAREST_PRESSES presses, each on the highest (or closest) in-range target's
+        nearest point, held h, the next pressed at the post-release apex (or 40 ticks later)."""
+        lite, log = self.lite, []
+        for policy in self.NEAREST_POLICIES:
+            for h in self.NEAREST_HOLDS:
+                self.restore(start['state']); presses, tick = [], 5
+                rec = lite.new_rec(); rec['attaches'] = []
+                lite.play([], 5, rec=rec)
+                for _ in range(self.NEAREST_PRESSES):
+                    if rec['completed']: break
+                    ts = [t for t in self.targets() if self.client_ok((t['nearest']['x'], t['nearest']['y']))]
+                    if not ts: break
+                    t = min(ts, key=lambda t: t['nearest']['y'] if policy == 'highest' else t['distance'])
+                    w = (t['nearest']['x'], t['nearest']['y'])
+                    presses.append((tick, h, w))
+                    rec, _, _ = lite.play([(0, 'mousedown', *w), (h, 'mouseup', *w)], h+1, rec=rec); tick += h+1
+                    y0, wait = lite.page.evaluate('ninja.y'), 0
+                    while wait < 40 and not rec['completed']:
+                        rec, _, _ = lite.play([], 2, rec=rec); tick += 2; wait += 2
+                        y = lite.page.evaluate('ninja.y')
+                        if y > y0: break
+                        y0 = y
+                # Replay the logged presses from the restored start: the logged outcome is that replay.
+                o = self.run_presses(start['state'], presses)
+                log.append(dict(policy=policy, hold=h, **o))
+        return log
+
+    def probe_side(self, start):
+        """Side-boundary climbing: aims on the non-attachable map edge walls (at the player's height and 300 above/below) and on
+        every grappleable target whose nearest point is within 60 of an edge, held 60/160/400."""
+        b, p = self.mountain['bounds'], start['state']['player']
+        edge = b['left'] if p['x']-b['left'] < b['right']-p['x'] else b['right']
+        wall = [('mountain-left' if edge == b['left'] else 'mountain-right', 'wall', (edge + (-5 if edge == b['left'] else 5), p['y']+dy), None)
+                for dy in (-300, 0, 300)]
+        self.restore(start['state']); self.lite.play([], 5)
+        wall = [a for a in wall if self.client_ok(a[2])]
+        near = self.aims(start['state'], lambda t, kind: kind == 'nearest' and min(abs(t['nearest']['x']-b['left']), abs(t['nearest']['x']-b['right'])) <= 60)
+        log = []
+        for tid, kind, w, _ in (wall+near)[:self.PER_START['side']//len(self.SIDE_HOLDS)+1]:
+            for h in self.SIDE_HOLDS:
+                o = self.run_presses(start['state'], [(5, h, w)])
+                log.append(dict(target=tid, aim=kind, hold=h, **o))
+        return log[:self.PER_START['side']]
+
+    def occluded_aims(self, state):
+        """Targets whose centre line from the player first crosses another surface (occluded), and undersides (the player
+        below the element, nearest point on its bottom face)."""
+        self.restore(state); self.lite.play([], 5)
+        rows = self.lite.page.evaluate("""r => T531.targets(r).map(t => {
+            const p = {x: ninja.x, y: ninja.y}, c = t.center
+            let first = null
+            for (const e of floors[0].elements) { if (e.role === 'drag') continue
+                for (const line of e.getLines()) { const h = grapnel.shotIntersection(p, [c.x, c.y], line)
+                    if (h && (!first || h.t < first.t)) first = {t: h.t, id: e.id} } }
+            const el = floors[0].elements.find(e => e.id === t.id), ys = el.getPoints().map(q => q.y)
+            return {...t, first: first && first.id, underside: p.y > Math.max(...ys) && Math.abs(t.nearest.y - Math.max(...ys)) < 1e-6}})""",
+            self.lite.page.evaluate('grappleOverAcquisitionRadius()'))
+        out = []
+        for t in rows:
+            if t['first'] and t['first'] != t['id'] and self.client_ok((t['center']['x'], t['center']['y'])):
+                out.append((t['id'], 'occluded-center', (t['center']['x'], t['center']['y']), t['first']))
+            if t['underside'] and self.client_ok((t['nearest']['x'], t['nearest']['y'])):
+                out.append((t['id'], 'underside-nearest', (t['nearest']['x'], t['nearest']['y']), None))
+        return out
+
+    def probe_occluded(self, start):
+        log = []
+        for tid, kind, w, occ in self.occluded_aims(start['state'])[:self.PER_START['occluded']]:
+            o = self.run_presses(start['state'], [(5, 120, w)])
+            first = o['acquisitions'][0][1] if o['acquisitions'] else None
+            log.append(dict(target=tid, aim=kind, occluder=occ, first_acquired=first,
+                            acquired_occluded_target=kind == 'occluded-center' and first == tid and o['acquisitions'][0][0] <= 30, **o))
+        return log
+
+    def probe_long(self, start):
+        """Long rope: targets whose nearest point is at >= 80% of the active range, nearest point and centre, held 200/500."""
+        rng = self.lite.page.evaluate('grappleOverAcquisitionRadius()')
+        log = []
+        for tid, kind, w, d in self.aims(start['state'], lambda t, kind: t['distance'] >= self.LONG_FRACTION*rng)[:self.PER_START['long']//2]:
+            for h in self.LONG_HOLDS:
+                o = self.run_presses(start['state'], [(5, h, w)])
+                log.append(dict(target=tid, aim=kind, distance=round(d, 1), hold=h, **o))
+        return log
+
+    def probe_two(self, start):
+        """Two-press search: first press at tick 5 on every aim x TWO_H1; the TWO_TOP furthest get a second press at release+10,
+        the apex and release+40 on every aim then in range x TWO_H2; at most TWO_PER_START attempts."""
+        log = []
+        for tid, kind, w, _ in self.aims(start['state']):
+            for h in self.TWO_H1:
+                log.append(dict(targets=[tid], **self.run_presses(start['state'], [(5, h, w)], observe=420, settle=False)))
+        top = sorted([o for o in log if o['acquisitions']], key=lambda o: (max([self.index[k] for k in o['exits']], default=-1),
+                     o['completed'], -o['min_y']), reverse=True)[:self.TWO_TOP]
+        for o in top:
+            t0, h0, w0 = o['presses'][0]; rel = t0+h0
+            for at in sorted({rel+10, max(rel+10, o['apex_tick']), rel+40}):
+                self.restore(start['state']); self.lite.play([(t0, 'mousedown', *w0), (rel, 'mouseup', *w0)], at)
+                for tid, kind, w, _ in [(t['id'], k, (t[k]['x'], t[k]['y']), None) for t in self.targets() for k in ('center', 'nearest')
+                                        if not (k == 'nearest' and t['nearest'] == t['center'])]:
+                    if not self.client_ok(w): continue
+                    for h in self.TWO_H2:
+                        if len(log) >= self.TWO_PER_START: break
+                        log.append(dict(targets=o['targets']+[tid], **self.run_presses(start['state'], [(t0, h0, w0), (at, h, w)], observe=420, settle=False)))
+        # Settle every attempt that ended in a later section than it started (its rest is what counts as progress).
+        for o in log:
+            if not o['completed'] and max([self.index[k] for k in o['exits']], default=-1) > start['encounter']+1:
+                o.update({k: v for k, v in self.run_presses(start['state'], [(t, h, w) for t, h, w in o['presses']]).items() if k != 'presses'})
+        return log
+
+    # ---- tests ----------------------------------------------------------------------------------
+    def test_01_fixed_finish_bypasses(self):
+        out = []
+        for f in self.FIXED:
+            start = self.section_start(f['start'])
+            now = self.run_presses(start['state'], f['presses'])
+            pre = self.run_presses(start['state'], f['presses'], without=self.FIX_ELEMENTS, record=False)
+            self.assertTrue(pre['completed'], (f['id'], pre['rest']))
+            self.assertTrue(pre['on_screen'] and now['on_screen'])
+            self.assertFalse(now['completed'], f['id'])
+            self.assertLessEqual(self.skipped(start, now), 1, now)
+            out.append(dict(id=f['id'], start=start['label'], source=f['source'], how=f['how'],
+                            pre_fix_control=dict(label='same restored start and trusted inputs with %s removed at runtime after the restore' % list(self.FIX_ELEMENTS),
+                                                 completed=pre['completed'], completed_tick=pre['completed_tick'], at=pre['rest'], skipped=self.skipped(start, pre), acquisitions=pre['acquisitions']),
+                            current=dict(completed=now['completed'], rest=now['rest'], rest_index=now['rest_index'], skipped=self.skipped(start, now),
+                                         acquisitions=now['acquisitions'], settled=now['settled'])))
+        # The fold routes: replayed at the 1620 range and with the range upgrade off; recorded, not fixed.
+        fold = []
+        for f in self.FOLD:
+            start = self.section_start(f['start'])
+            runs = {}
+            for up in (True, False):
+                st = json.loads(json.dumps(start['state'])); st['upgrades']['range'] = up
+                o = self.run_presses(st, f['presses'])
+                runs['1620' if up else '1080'] = dict(rest=o['rest'], rest_index=o['rest_index'], rest_exit=self.exits[o['rest_index']]['id'] if 0 <= o['rest_index'] < 32 else None,
+                                                      skipped=self.skipped(start, o), settled=o['settled'], completed=o['completed'], acquisitions=o['acquisitions'], on_screen=o['on_screen'])
+                self.assertFalse(o['completed'])
+            self.assertGreaterEqual(runs['1620']['skipped'], 2, runs)
+            self.assertLess(runs['1620']['skipped'], self.MOST, runs)
+            fold.append(dict(id=f['id'], start=start['label'], how=f['how'], presses=[[t, h, list(w)] for t, h, w in f['presses']], runs=runs,
+                             disposition=self.FOLD_DISPOSITION))
+        # The nominal S08 route still finishes, at the TASK-527 tick (S08 start + 809).
+        s8 = self.run_presses(self.starts['S08'], [(t, h, w) for t, h, w in self.press_list(self.section_plans()[1]['S08'])])
+        self.assertTrue(s8['completed'], s8); self.assertEqual(s8['completed_tick'], 809)
+        self.evidence.write('parts/fixed.json', dict(fixed=out, fold=fold, s08_nominal=dict(completed=s8['completed'], completed_tick=s8['completed_tick'],
+                            exits=s8['exits'], acquisitions=s8['acquisitions'])))
+        print('PASS fixed bypasses: %s complete in the pre-fix control and not now; S08 nominal still finishes at 809' % [f['id'] for f in self.FIXED], flush=True)
+
+    @staticmethod
+    def press_list(plan):
+        downs = [(t, x, y) for t, e, x, y in plan if e == 'mousedown']
+        ups = [t for t, e, *_ in plan if e == 'mouseup']
+        # A final press the plan never releases (the S08 roof pull held into the finish) is held 300 ticks.
+        ups += [downs[-1][0]+300] * (len(downs)-len(ups))
+        return [(t, u-t, (x, y)) for (t, x, y), u in zip(downs, ups)]
+
+    def test_02_bypass_probes(self):
+        import time
+        began = time.time()
+        encs = self.encounter_starts()
+        sections = [self.section_start('S0%d' % i) for i in range(1, 9)]
+        b = self.mountain['bounds']
+        side_starts = [s for s in encs if min(s['pose'][0]-b['left'], b['right']-s['pose'][0]) <= self.SIDE_EDGE]
+        families = [('continuous-hold', self.probe_hold, sections, 'press at tick 5 held 900 ticks (never released in the window) on every in-range '
+                     'target (centre and nearest point) and three sky aims at 0.9 x range (a held miss parks and keeps acquiring); <= %d per start' % self.PER_START['hold']),
+                    ('repeated-nearest-anchor', self.probe_nearest, sections, 'up to %d presses, each on the nearest point of the highest / closest in-range target, '
+                     'held %s, next press at the post-release apex (<= 40 ticks); replayed from the restored start' % (self.NEAREST_PRESSES, list(self.NEAREST_HOLDS))),
+                    ('side-boundary-climbing', self.probe_side, side_starts, 'starts within %d of a map edge; aims on the non-attachable edge wall at the player '
+                     'height and +-300, and on every target whose nearest point is within 60 of an edge, held %s; <= %d per start' % (self.SIDE_EDGE, list(self.SIDE_HOLDS), self.PER_START['side'])),
+                    ('underside-occluded-acquisition', self.probe_occluded, encs, 'every in-range target whose centre line first crosses another surface (aim the '
+                     'centre) and every underside (player below, aim the nearest point on the bottom face), held 120; <= %d per start' % self.PER_START['occluded']),
+                    ('long-rope', self.probe_long, encs, 'targets whose nearest point is at >= %.0f%% of the active range, nearest point and centre, held %s; <= %d per start'
+                     % (self.LONG_FRACTION*100, list(self.LONG_HOLDS), self.PER_START['long'])),
+                    ('two-press-fold', self.probe_two, [self.section_start(s) for s in self.TWO_STARTS], 'first press on every aim x holds %s at tick 5, the %d '
+                     'furthest get a second press at release+10 / apex / release+40 on every aim x holds %s; <= %d per start; starts S03 and S07 (shortcut sections) '
+                     'and S05, S07, S08 (the folded column under the summit)' % (list(self.TWO_H1), self.TWO_TOP, list(self.TWO_H2), self.TWO_PER_START))]
+        shortcut_ids = {k: v['id'] for k, v in self.SHORTCUTS.items() if v}
+        probes, total, found = [], 0, []
+        for name, fn, starts, space in families:
+            t = time.time(); rows = []
+            for st in starts:
+                log = fn(st)
+                for o in log:
+                    o['skipped'] = self.skipped(st, o)
+                    if o['skipped'] >= self.BYPASS_SKIP:
+                        found.append(dict(probe=name, start=st['label'], start_encounter=st['id'], inputs=o['presses'], acquisitions=o['acquisitions'],
+                                          rest=o['rest'], rest_exit=self.exits[o['rest_index']]['id'] if 0 <= o['rest_index'] < 32 else ('finish' if o['rest_index'] == 32 else None),
+                                          skipped=o['skipped'], completed=o['completed']))
+                best = max(log, key=lambda o: (o['rest_index'], -o['min_y']), default=None)
+                rows.append(dict(start=st['label'], start_encounter=st['id'], pose=[round(st['state']['player']['x'], 1), round(st['state']['player']['y'], 1)],
+                                 range=st['state']['upgrades']['range'], attempts=len(log),
+                                 best=best and dict(rest_index=best['rest_index'], rest_exit=self.exits[best['rest_index']]['id'] if 0 <= best['rest_index'] < 32 else
+                                                    ('finish' if best['rest_index'] == 32 else None), skipped=best['skipped'], min_y=best['min_y'], presses=best['presses']),
+                                 max_skipped=max((o['skipped'] for o in log), default=0), completed=sum(o['completed'] for o in log),
+                                 attach_violations=sum(len(o['attach_violations']) for o in log),
+                                 log=[{k: o[k] for k in ('presses', 'acquisitions', 'rest', 'settled', 'rest_index', 'skipped', 'completed', 'min_y', 'on_screen')}
+                                      | {k: o[k] for k in ('target', 'aim', 'hold', 'policy', 'targets', 'occluder', 'first_acquired', 'acquired_occluded_target') if k in o}
+                                      for o in log]))
+            n = sum(r['attempts'] for r in rows); total += n
+            probes.append(dict(probe=name, search_space=space, starts=len(starts), attempts=n, seconds=round(time.time()-t, 1),
+                               best_reached=max(((r['best']['rest_index'], r['best']['rest_exit'], r['start_encounter'], r['best']['min_y']) for r in rows if r['best']), default=None),
+                               highest_point=min((r['best']['min_y'] for r in rows if r['best']), default=None),
+                               max_skipped=max((r['max_skipped'] for r in rows), default=0), completions=sum(r['completed'] for r in rows),
+                               bypasses=[f for f in found if f['probe'] == name], per_start=rows))
+            print('PROBE %s: %d starts, %d attempts, max skipped %d, completions %d (%.0f s)' % (name, len(starts), n, probes[-1]['max_skipped'],
+                  probes[-1]['completions'], time.time()-t), flush=True)
+        fixed = json.loads(self.evidence.path('parts/fixed.json').read_text())
+        violations = [a for a in self.attaches if not a[2] or a[3] or a[4]]
+        for f in found: f['disposition'] = self.disposition(f)
+        self.evidence.write('bypass.json', dict(
+            scope='layout v3, whole mountain; bounded searches from labeled real starts with trusted mouse input; not a universal impossibility claim',
+            skip_rule='skipped = rest progress (furthest encounter whose exit box (+15) or next start (within 40) holds the settled rest; 32 = summit finish) '
+                      '- (start encounter - 1) - presses; a probe outcome with skipped >= %d is listed as a found bypass' % self.BYPASS_SKIP,
+            budget=dict(attempts=total, seconds=round(time.time()-began, 1), observe_ticks=self.OBSERVE, settle_limit=self.SETTLE_LIMIT, per_start=self.PER_START,
+                        two_press=dict(h1=list(self.TWO_H1), h2=list(self.TWO_H2), top=self.TWO_TOP, per_start=self.TWO_PER_START)),
+            attachment_audit=dict(attachments=len(self.attaches), boundary=sum(1 for a in self.attaches if a[3]),
+                                  non_attachable=sum(1 for a in self.attaches if not a[2]), through_wall=sum(1 for a in self.attaches if a[4]), violations=violations,
+                                  rule='every attachment in every probe: the element is attachable (grapplable, not a hazard), not a map edge wall, and the straight line from '
+                                       'the player to the hit crosses no other surface'),
+            fixed_bypasses=fixed['fixed'], known_fold=fixed['fold'], s08_nominal_after_fix=fixed['s08_nominal'],
+            found_bypasses=found, probes=probes, encounter_starts=[dict(id=s['id'], label=s['label'], pose=s['pose'], range=s['range']) for s in encs],
+            start_proof=self.start_proof, proof=self.proof))
+        self.assertEqual(violations, [])
+        self.assertEqual([f for f in found if f['disposition'].startswith('bypass')], [])
+        self.assertLessEqual(total, 4000)
+        print('PASS bypass probes: %d attempts in %d families; %d attachments, 0 boundary/through-wall/non-attachable; found skips >= %d: %s' % (
+              total, len(probes), len(self.attaches), self.BYPASS_SKIP, [(f['probe'], f['start_encounter'], f['skipped'], f['disposition'][:30]) for f in found]), flush=True)
+
+    def disposition(self, f):
+        sc = {v['id']: v for v in self.SHORTCUTS.values() if v}
+        sec = f['start_encounter'][:3]
+        if f['completed'] or f['skipped'] >= self.MOST:
+            return 'bypass: must be fixed (reaches the finish or skips most of the mountain)'
+        i, rest = self.index[f['start_encounter']], self.index.get(f['rest_exit'], -1)
+        first = f['acquisitions'][0][1] if f['acquisitions'] else None
+        for k in ('S03', 'S07'):
+            if self.index[k+'-01'] <= i and rest <= self.index[k+'-04']:
+                return ('inside the intended optional shortcut span %s-01 -> %s-04 (rest at the %s-04 exit or before it): a creative '
+                        'preserved route, see shortcuts.json' % (k, k, k))
+        if f['start_encounter'] == 'S06-04' and f['rest_exit'] == 'S07-04' and first == 'S07-trolley':
+            return ('the S07 trolley shortcut launched one encounter early: the S07-01 trolley is already in range from the S06-04 '
+                    'start pose; preserved (skips S06-04 plus the shortcut span)')
+        if sec == 'S05' and f['rest_exit'] in ('S06-04', 'S07-04'):
+            return self.FOLD_DISPOSITION
+        return 'bypass: must be fixed'
+
+    def route_entry(self, sec, kind, presses, o):
+        start = self.section_start(sec)
+        doc = dict(section=sec, kind=kind, start=start['label'], start_pose=[round(self.starts[sec]['player'][k], 1) for k in ('x', 'y')],
+                   start_simulation_tick=self.starts[sec]['simulationTick'], input='trusted Playwright mouse events at world points (client point '
+                   'from the camera at the press tick); tick = ticks after the restored start',
+                   presses=[dict(tick=t, hold=h, world=[round(w[0], 2), round(w[1], 2)]) for t, h, w in presses],
+                   outcome={k: o[k] for k in ('acquisitions', 'exits', 'rest', 'settled', 'on_screen')})
+        self.evidence.write('inputs/%s-%s.json' % (sec, kind), doc)
+        return doc
+
+    def test_03_shortcuts_and_normal_routes(self):
+        plans = dict(S03=self.S.ViaductV3CompleteChecks.S03_ROUTE_V3, S07=self.S.CrownV3CompleteChecks.S07_ROUTE_V3)
+        manifest = {s['id']: s for s in self.mountain['shortcuts']}
+        out = {}
+        for sec in ('S03', 'S07'):
+            sc, start = self.SHORTCUTS[sec], self.section_start(sec)
+            goal = sc['goal']; gi = self.index[goal]
+            normal_presses = self.press_list(plans[sec])
+            routes = {}
+            for kind, presses in (('normal', normal_presses), ('shortcut', sc['presses'])):
+                a = self.run_presses(start['state'], presses)
+                b = self.run_presses(start['state'], presses)
+                self.assertEqual((a['exits'], a['rest'], a['acquisitions']), (b['exits'], b['rest'], b['acquisitions']), (sec, kind))
+                self.assertTrue(a['on_screen'], (sec, kind))
+                self.assertIn(goal, a['exits'], (sec, kind))
+                self.assertTrue(a['settled'] and a['rest_index'] == gi, (sec, kind, a['rest'], a['rest_index']))
+                self.assertFalse(a['completed'])
+                self.assertEqual(a['attach_violations'], [])
+                routes[kind] = dict(goal_exit_tick=a['exits'][goal], presses=len(presses), acquired=[q[1] for q in a['acquisitions']],
+                                    exits=a['exits'], rest=a['rest'], settled=a['settled'], replay_identical=True, on_screen=a['on_screen'],
+                                    inputs='inputs/%s-%s.json' % (sec, kind))
+                self.route_entry(sec, kind, presses, a)
+            n, c = routes['normal'], routes['shortcut']
+            # The shortcut is faster, skips the two middle encounters' anchors and lands where the normal route does.
+            self.assertLess(c['goal_exit_tick'], n['goal_exit_tick'])
+            self.assertTrue(all(x in n['acquired'] for x in sc['skipped']))
+            self.assertFalse(any(x in c['acquired'] for x in sc['skipped']), c['acquired'])
+            self.assertLess(len(c['acquired']), len(n['acquired']))
+            # Skill window: the launch press held for each of launch_holds (later presses shifted with it); misses fall physically.
+            window = []
+            for h in sc['launch_holds']:
+                t0, h0, w0 = sc['presses'][sc['launch']]
+                presses = [(t0, h, w0)] + [(t + h - h0, hh, w) for t, hh, w in sc['presses'][1:]]
+                o = self.run_presses(start['state'], presses)
+                window.append(dict(launch_hold=h, reached=goal in o['exits'] and o['rest_index'] == gi, goal_exit_tick=o['exits'].get(goal),
+                                   rest=o['rest'], rest_index=o['rest_index'], settled=o['settled'], completed=o['completed'], acquired=[q[1] for q in o['acquisitions']]))
+            hits = [w['launch_hold'] for w in window if w['reached']]
+            misses = [w for w in window if not w['reached']]
+            self.assertIn(sc['presses'][sc['launch']][1], hits)
+            self.assertTrue(misses and not any(w['completed'] for w in window))
+            m = manifest[sc['id']]
+            self.assertEqual((m['from'], m['to'], m['optional'], m['status']), (sec+'-01', sec+'-04', True, 'built'))
+            out[sec] = dict(shortcut=dict(id=sc['id'], manifest={k: m.get(k) for k in ('from', 'to', 'optional', 'status', 'intent', 'route', 'risk', 'elements')},
+                            how=sc['how'], skipped_anchors=list(sc['skipped'])), normal=n, shortcut_route=c,
+                            faster_by_ticks=n['goal_exit_tick']-c['goal_exit_tick'],
+                            launch_window=dict(holds=list(sc['launch_holds']), reached=hits, misses=len(misses), sweep=window,
+                                               miss_rests=sorted({(round(w['rest'][0]), round(w['rest'][1])) for w in misses})))
+            print('PASS %s: normal %s exit at %d (%d presses), shortcut at %d (%d presses, skips %s); launch holds reaching it %s of %d; misses fall'
+                  % (sec, goal, n['goal_exit_tick'], n['presses'], c['goal_exit_tick'], c['presses'], list(sc['skipped']), hits, len(window)), flush=True)
+        self.evidence.write('shortcuts.json', dict(sections=out, label='both optional shortcuts (manifest status built) and both ordinary section '
+                            'routes, each from the labeled section start restored once, replayed twice with identical results, trusted mouse input',
+                            fixes_rechecked='S03 and S07 routes run on the final TASK-492 geometry (summit rail, brake, roof trim, crest jamb)', proof=self.proof))
+
+    def test_04_source_hashes(self):
+        for path, digest in self.proof['source_hashes'].items():
+            self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(), digest, path)
+        print('PASS source hashes: runtime, level and harness match the tested worktree', flush=True)
+
 if __name__ == '__main__':
     unittest.main()

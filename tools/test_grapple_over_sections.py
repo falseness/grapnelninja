@@ -2448,7 +2448,8 @@ class ViaductV3Checks:
         self.assertNotIn('solidExceptions', s03)
         self.assertEqual((s03['band']['top'], s03['band']['bottom']), (-6480, -3240))
         sc = m['shortcuts'][0]
-        self.assertEqual((sc['from'], sc['to'], sc['optional'], sc['status']), ('S03-01', 'S03-04', True, 'planned'))
+        # TASK-492 built the optional S03-01 -> S03-04 shortcut (a long hoist launch; Task492Tests shortcuts.json).
+        self.assertEqual((sc['from'], sc['to'], sc['optional'], sc['status']), ('S03-01', 'S03-04', True, 'built'))
         self.assertEqual(r['runtime']['elements'], elements)
         colliders = [e for e in elements if e['role'] != 'drag']
         self.assertEqual(len(r['colliders']), len(colliders))
@@ -6996,7 +6997,8 @@ class CrownV3Checks:
         self.assertEqual((rec['status'], rec['from'], rec['to'], rec['rejoin']), ('built', 'S07-04', 'S05-01', 'S07-01'))
         self.assertTrue(all(x in {e['id'] for e in elements} for x in rec['elements']))
         sc = m['shortcuts'][1]
-        self.assertEqual((sc['id'], sc['from'], sc['to'], sc['optional'], sc['status']), ('S07-shortcut', 'S07-01', 'S07-04', True, 'planned'))
+        # TASK-492 built the optional shortcut (a short trolley launch; Task492Tests shortcuts.json).
+        self.assertEqual((sc['id'], sc['from'], sc['to'], sc['optional'], sc['status']), ('S07-shortcut', 'S07-01', 'S07-04', True, 'built'))
         self.assertNotIn('solidExceptions', s07)
         self.assertEqual((s07['band']['top'], s07['band']['bottom']), (-12960, -9720))
         self.assertEqual(r['runtime']['elements'], elements)
@@ -7829,6 +7831,8 @@ V1_S08_REVISION = '17a3d89'
 V3_S08_ADDED = ('S08-mast-trolley','S08-roof','S08-beacon-trolley','S08-west-wall','S08-glide-cap','S08-glide-drag')
 # TASK-527: S08-03/04 and the summit finish.
 V3_S08_ADDED_34 = ('S08-east-wall','S08-summit-floor','S08-crest-drag')
+# TASK-492: the finish-bypass fixes (roof skid over the finish, summit rail and brake west of the finish, crest jamb).
+V3_S08_TASK492 = ('S08-roof-skid','S08-summit-rail','S08-crest-jamb','S08-summit-brake')
 
 
 class SummitV3Checks(CrownV3CompleteChecks):
@@ -7869,8 +7873,11 @@ class SummitV3Checks(CrownV3CompleteChecks):
     S08_V3_ROUTE_ELEMENTS = V3_S08_ADDED+V3_S08_ADDED_34
     S08_V3_FALLS = {'S08-01-short':(['S07-exit-drag'],'S07-exit-ledge'), 'S08-02-missed':(['S08-glide-drag'],'S08-glide-cap'),
                     'S08-03-short':(['S07-crown-drag','S08-crest-drag'],'S07-crown-ledge'),
-                    'S08-04-missed':(['S07-crown-drag','S08-crest-drag'],'S07-crown-ledge')}
-    S08_V3_FALL_POINTS = {'S08-01-short':(2587,-12300), 'S08-02-missed':(1560,-13150), 'S08-03-short':(2830,-13050), 'S08-04-missed':(2803,-13150)}
+                    'S08-04-missed':(['S07-crown-drag','S08-crest-drag'],'S07-crown-ledge'),
+                    # TASK-492: an S08-01 overflight up the corridor west of the finish sinks through the summit brake.
+                    'S08-01-overflight':(['S08-summit-brake'],'S08-summit-rail')}
+    S08_V3_FALL_POINTS = {'S08-01-short':(2587,-12300), 'S08-02-missed':(1560,-13150), 'S08-03-short':(2830,-13050), 'S08-04-missed':(2803,-13150),
+                          'S08-01-overflight':(2325,-13450)}
     S08_03_EXIT = dict(x=[2780,2840], y=[-13290,-13230], speedX=[-.3,.05], speedY=[-.1,.25])
     FINISH = dict(left=2380, right=2735, top=-13300, bottom=-13121)
     # The crest drag sits by design right over S07-crown-drag (the S07 route stays under y -12645 there): its clearance bound
@@ -8096,12 +8103,13 @@ class SummitV3Checks(CrownV3CompleteChecks):
         # The S08-03/04 misses land on an S07 route bouncer (the green crown ledge) inside S07-crown-drag.
         self.assertTrue(all(f['firstBouncer'] == 'S07-crown-ledge' for f in falls if f['id'] in ('S08-03-short','S08-04-missed')))
         self.assertEqual(sec['rules']['strayDrag']['measured']['dragZones'], [dict(id='S08-glide-drag', fallPoints=['S08-02-missed']),
-                                                                              dict(id='S08-crest-drag', fallPoints=['S08-03-short','S08-04-missed'])])
+                                                                              dict(id='S08-crest-drag', fallPoints=['S08-03-short','S08-04-missed']),
+                                                                              dict(id='S08-summit-brake', fallPoints=['S08-01-overflight'])])
         # Every v1 S08 element and mover is deleted (layout v3 supersedes the v1 Summit Array; no v1 piece is reused).
         own_ids = {e['id'] for e in own}
         v1_ids = sorted(e['id'] for e in v1['elements'])
         self.assertEqual(sorted(own_ids & set(v1_ids)), [])
-        self.assertEqual(sorted(own_ids), sorted(V3_S08_ADDED+V3_S08_ADDED_34))
+        self.assertEqual(sorted(own_ids), sorted(V3_S08_ADDED+V3_S08_ADDED_34+V3_S08_TASK492))
         self.assertFalse(set(v1['movers']) & {v['id'] for v in m['geometry']['movers']})
         mapping = [dict(id=e['id'], v1_role='mover (%s)' % e['role'] if e['id'] in v1['moverElements'] else e['role'], disposition='deleted',
                         reason='v1 Summit Array piece; layout v3 rebuilds S08 in the open strip above the Crown (TASK-526 S08-01/02, '
@@ -8483,7 +8491,10 @@ class SummitV3CompleteChecks(SummitV3Checks):
         crawl = [players[t]['speedX'] for t in range(acq['tick']+5, leave)]
         self.assertTrue(crawl and max(abs(v) for v in crawl) < .2 and players[leave]['x'] < drag['left'], (crawl[:3], players[leave]))
         self.assertTrue(self.FINISH['top'] < players[leave]['y'] < self.FINISH['bottom'], players[leave])
-        self.assertTrue(all(len(s['state']['rope']) <= 2 for s in trace['snapshots'][acq['tick']:c+1]))
+        # TASK-492: while the player crawls into the finish, the roof rope may also bend over the summit rail's top corner (2370,-13300).
+        ropes = [s['state']['rope'] for s in trace['snapshots'][acq['tick']:c+1]]
+        self.assertTrue(all(len(r) <= 2 or (len(r) == 3 and (round(r[2]['x']), round(r[2]['y'])) == (2370, -13300)) for r in ropes),
+                        [r for r in ropes if len(r) > 2][:2])
         self.assertFalse([e for e in trace['events'] if e['type'] in ('contact','bounce') and self.ROOF_PRESS <= e['tick'] <= c])
         pad = min(self.box_gap(self.SUMMIT_PAD, players[t]['x'], players[t]['y']) for t in range(acq['tick'], c+1)) - players[c]['radius']
         self.assertGreater(pad, 20)
@@ -9260,7 +9271,9 @@ class Task546Tests(unittest.TestCase):
         self.assertEqual(fall['firstBouncer'], 'S08-glide-cap')
         # TASK-527 completed S08: the crest drag zone sits under the S08-03/04 miss points.
         self.assertEqual(rules['strayDrag']['measured']['dragZones'], [dict(id='S08-glide-drag', fallPoints=['S08-02-missed']),
-                                                                       dict(id='S08-crest-drag', fallPoints=['S08-03-short','S08-04-missed'])])
+                                                                       dict(id='S08-crest-drag', fallPoints=['S08-03-short','S08-04-missed']),
+                                                                       # TASK-492: the summit brake west of the finish.
+                                                                       dict(id='S08-summit-brake', fallPoints=['S08-01-overflight'])])
         self.assertEqual(rules['extent']['measured']['bandHeight'], 3240)
         self.assertEqual(rules['moverCoverage']['measured']['count'], 2)
         self.assertEqual(rules['direction']['measured']['actual'], 'left')

@@ -391,7 +391,11 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     for (let i=9;i<12;i++) connectors[i].status='built';
     Object.assign(recoveries[2], {status:'built',elements:['S03-fall-drag','S03-lower-bridge','S02-exit-drag','S02-exit-ledge'],
         rejoin:'S03-01',sideRoute:'Every declared S03 miss falls through a drag zone onto the green S02 exit ledge or the green lower bridge and settles; from the S02 exit ledge a blue hoist pull rejoins the route at S03-01'});
-    Object.assign(shortcuts[0], {intent:'Optional faster high-risk launch from S03-01 to S03-04; kept planned for layout v3'});
+    // TASK-492: the optional shortcut found by the bounded bypass audit (shortcuts.json): a long hoist launch past the lift.
+    Object.assign(shortcuts[0], {status:'built', elements:['S03-hoist','S03-shutter','S03-exit-hook','S03-exit-ledge'],
+        intent:'Optional faster high-risk launch from S03-01 to S03-04',
+        route:'Hold the blue S03 hoist about twice as long as the normal pull: the launch carries past the lift line; pull the blue shutter on the way up, rise along the right map edge and pull the green exit hook at the apex onto the exit ledge (skips the S03-02 lift and the S03-03 crest hook)',
+        risk:'A launch held a little short or long misses the shutter line and falls back to the S03 start or into the S02 band'});
     // Deflector Works v3 (layout v3, TASK-556): no gray pads. Travelling left from the green S03
     // exit ledge (inside S03-exit-drag) at the doubled 1080-range distances, across the open west
     // half of the map above the legacy Cable Galleries. The legacy S06 loading floor caps the S03
@@ -791,8 +795,11 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     Object.assign(connectors[25], {status:'built'});
     Object.assign(connectors[26], {status:'built'});
     Object.assign(connectors[27], {status:'built'});
-    // The optional shortcut stays planned (as the S03 one does for layout v3).
-    Object.assign(shortcuts[1], {intent:'Optional exposed skill shortcut from S07-01 to S07-04; kept planned for layout v3'});
+    // TASK-492: the optional shortcut found by the bounded bypass audit (shortcuts.json): a short trolley launch.
+    Object.assign(shortcuts[1], {status:'built', elements:['S07-trolley','S07-exit-ledge'],
+        intent:'Optional exposed skill shortcut from S07-01 to S07-04',
+        route:'Release the blue S07 trolley earlier than the normal pull: the flight crosses the open strip under the carriage line straight to the Crown exit pocket; catch the green exit ledge on the way and settle on it (skips the S07-02 carriage and the S07-03 gable hook)',
+        risk:'Exposed: a release a few ticks off misses the pocket and falls to the Galleries entrance shelf or much lower'});
     Object.assign(recoveries[6], {status:'built',elements:['S04-fall-drag','S04-catch-basin','S07-crown-drag','S07-crown-ledge','S07-short-drag','S06-drop-drag','S06-drop-ledge','S07-exit-drag','S07-exit-ledge'],
         rejoin:'S07-01',intent:'Crown misses fall through drag zones onto green catches',
         sideRoute:'Every declared S07 miss falls through a drag zone onto a green bouncer and settles: a short trolley hold down the left map edge onto the green S04 catch basin; a missed carriage or exit-ledge catch on the green crown ledge; an early gable-hook release straight down onto the green S06 drop ledge, from which the S06 climb and exit hooks return to the S06 exit ledge and the S07-01 trolley; an exit-ledge pull held too long on the green exit ledge'});
@@ -816,8 +823,12 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
     const summit = [
         // Up-left of the S07 exit pocket, between the S05 hoist's and the S07 carriage's travel lines.
         rectangle('S08-mast-trolley',2000,-13330,120,30,true),
-        // At the top of the map, over the mast trolley; its far west end is the S08-04 anchor.
-        bouncer('S08-roof',1350,-13495,1250,25),
+        // At the top of the map, over the mast trolley; its far west end is the S08-04 anchor. TASK-492: it ends over the
+        // summit rail (it reached x 2600, over the finish, and a pull on that part dropped the player straight into the finish).
+        bouncer('S08-roof',1350,-13495,1020,25),
+        // TASK-492: bounce only (not grappleable), the roof's former east part over the finish: it still caps the S08-03 flight
+        // east under the roof (the touch S08-03 route rebounds off it) but offers no anchor to drop into the finish from.
+        {...bouncer('S08-roof-skid',2370,-13495,230,25), grapplable:false},
         rectangle('S08-beacon-trolley',370,-13360,120,30,true),
         // Against the left map edge, high above the S07-03 map-edge climb. It reaches down to the S08 band bottom
         // (TASK-528), so an early beacon release flying west at the band bottom still rebounds off it, not the map edge.
@@ -828,13 +839,31 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         {id:'S08-east-wall',x:4150,y:-13470,role:'bounce',grapplable:true,
             points:[{x:42,y:0},{x:72,y:0},{x:30,y:320},{x:0,y:320}]},
         // Under the summit finish region, west of the crest pocket.
-        bouncer('S08-summit-floor',2370,-13110,380,30)
+        bouncer('S08-summit-floor',2370,-13110,380,30),
+        // TASK-492: west rail of the finish region, from its top down to the summit floor. Without it, a long S05-hoist hold
+        // from the S05 start reaches the mast trolley, and drifting east off it enters the finish from the west (S05-02..S08-04
+        // bypassed). The S08-01 rise passes under its foot, which ends at the summit floor's top (a foot at the floor's
+        // bottom clipped the aim-right/early S08-01 rises). Its top slopes down to the west, so nothing settles on it next to
+        // the finish; the S08-04 roof rope bends over its top corner while the player crawls into the finish.
+        {id:'S08-summit-rail',x:2340,y:-13300,role:'bounce',grapplable:true,
+            points:[{x:0,y:25},{x:30,y:0},{x:30,y:190},{x:0,y:190}]},
+        // TASK-492: west jamb of the crest pocket's drag column, under the summit floor's east end. A long rope caught in a
+        // fast flight east (the mast trolley at full range from an S07-trolley launch) swung up into the column from the
+        // west and rose into the crest pocket, one roof pull from the finish (S07-02..S08-03 bypassed). The S08-03 rebound
+        // enters the pocket from the east above the crown wall and the S08-04 crawl leaves above the jamb; the S07-02 swing
+        // turns about 70 below it.
+        bouncer('S08-crest-jamb',2720,-13080,30,360)
     ];
     const summitDrags = [{id:'S08-glide-drag',x:1400,y:-13140,role:'drag',grapplable:false,
         points:[{x:0,y:0},{x:160,y:0},{x:160,y:110},{x:0,y:110}]},
         // The crest pocket: over S07-crown-drag and the crown ledge, under the S08-03 pull's outbound flight.
         {id:'S08-crest-drag',x:2750,y:-13350,role:'drag',grapplable:false,
-            points:[{x:0,y:0},{x:180,y:0},{x:180,y:550},{x:0,y:550}]}];
+            points:[{x:0,y:0},{x:180,y:0},{x:180,y:550},{x:0,y:550}]},
+        // TASK-492: a curtain over the summit rail, east of the S08-01 rise and under the S08-03 flight along the roof: a
+        // flight up the corridor west of the finish (off the S05 hoist, the S07 gable hook or the S08 glide cap) loses its speed
+        // here and sinks down the rail's west face instead of rebounding over the rail into the finish.
+        {id:'S08-summit-brake',x:2280,y:-13435,role:'drag',grapplable:false,
+            points:[{x:0,y:0},{x:90,y:0},{x:90,y:210},{x:0,y:210}]}];
     liftMovers.push({id:'S08-mast-trolley-travel',element:'S08-mast-trolley',axis:'x',min:2000,max:2120,periodMs:4000,phase:0,velocity:60},
         {id:'S08-beacon-trolley-travel',element:'S08-beacon-trolley',axis:'x',min:370,max:490,periodMs:4000,phase:0,velocity:60});
     Object.assign(sections[7], {status:'built', designVersion:3, landmark:{id:'S08-landmark',
@@ -857,7 +886,10 @@ const GRAPPLE_OVER_MOUNTAIN = (() => {
         fallPoints:[{id:'S08-01-short',encounter:'S08-01',x:2587,y:-12300},
             {id:'S08-02-missed',encounter:'S08-02',x:1560,y:-13150},
             {id:'S08-03-short',encounter:'S08-03',x:2830,y:-13050},
-            {id:'S08-04-missed',encounter:'S08-04',x:2803,y:-13150}]});
+            {id:'S08-04-missed',encounter:'S08-04',x:2803,y:-13150},
+            // TASK-492: an S08-01 overflight (a flight up the corridor west of the summit rail, off the roof) sinks
+            // through S08-summit-brake down the rail's west face back to the S07 exit pocket.
+            {id:'S08-01-overflight',encounter:'S08-01',x:2325,y:-13450}]});
     Object.assign(encounters[28], {status:'built',x:2609,y:-11971,
         elements:['S07-exit-ledge','S08-mast-trolley','S08-roof'],
         start:{x:2608.9,y:-11971.5,from:'S07-04'},target:{x:2060,y:-13300},
