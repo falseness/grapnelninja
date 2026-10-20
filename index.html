@@ -666,6 +666,18 @@
                 clearTimeout(resizeTimer)
                 resizeTimer = setTimeout(onViewportResize, 100)
             })
+            // A DPR-only change (monitor move, zoom) fires no resize; re-armed
+            // for the new DPR after each change.
+            function watchResolution()
+            {
+                const query = matchMedia('(resolution: ' + window.devicePixelRatio + 'dppx)')
+                query.addEventListener('change', function() {
+                    watchResolution()
+                    clearTimeout(resizeTimer)
+                    resizeTimer = setTimeout(onViewportResize, 100)
+                }, {once: true})
+            }
+            watchResolution()
 
             // Focus loss during an ad is reconciled when restarting.
             function pauseRun()

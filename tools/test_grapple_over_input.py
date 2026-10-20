@@ -432,6 +432,7 @@ class Task494Tests(unittest.TestCase):
             const css=getCanvasCssRect(), k=css.width/width*scale[version];
             return {boxes, canvas:{x:css.left??css.x, y:css.top??css.y, width:css.width, height:css.height},
                 viewport:[innerWidth,innerHeight], dpr:devicePixelRatio, backing:[canvas.width,canvas.height],
+                resolution:typeof BACKDROP!='undefined'?BACKDROP.resolution:1,
                 logical:[width,height], rotated:isViewRotated(), paused:menu.gamePaused, touchFirst:isTouchFirstDevice(),
                 ring:{x:(ninja.x+screen.x)*css.width/width*scale[version], y:(ninja.y+screen.y)*css.height/height*scale[version],
                       r:grappleOverAcquisitionRadius()*k}}}''')
@@ -478,6 +479,11 @@ class Task494Tests(unittest.TestCase):
 
     def test_04_viewports_resize_portrait(self):
         rows, worlds = [], set()
+        def check_backing(row):
+            # The backing store follows the live DPR (capped at 2 on touch), also after DPR-only changes.
+            dpr = (min(row['dpr'], 2) if row['touchFirst'] else row['dpr']) * row['resolution']
+            row['expected_backing'] = [max(1, math.floor(row['canvas'][k]*dpr + 0.5)) for k in ('width', 'height')]
+            self.assertEqual(row['backing'], row['expected_backing'], row['name'])
         def check(row, world, touch):
             worlds.add(world)
             self.assertEqual(row['clipped'], [], row['name'])
@@ -485,6 +491,7 @@ class Task494Tests(unittest.TestCase):
             self.assertGreaterEqual(row['ring_visible_fraction'], 0.25, row['name'])
             self.assertTrue(row['hud_text'], row['name'])
             if touch: self.assertGreaterEqual(round(row['min_button_css'], 3), 44, row['name'])
+            check_backing(row)
             rows.append(row)
             self.evidence.log('VIEW %s viewport=%s dpr=%s touch=%s backing=%s logical=%s' % (row['name'], row['viewport'], row['dpr'],
                               touch, row['backing'], row['logical']))
@@ -516,6 +523,7 @@ class Task494Tests(unittest.TestCase):
         page.wait_for_timeout(250)
         row, world = self.snapshot_view(page, cdp, 'phone-portrait-390x844-dpr2')
         self.assertTrue(row['rotated']); self.assertTrue(row['paused'])
+        check_backing(row)
         worlds.add(world); rows.append(row)
         page.wait_for_function('!unTouch')
         row['resume_tap_client'] = tap('resume')
@@ -525,6 +533,7 @@ class Task494Tests(unittest.TestCase):
         page.wait_for_timeout(250)
         row, world = self.snapshot_view(page, cdp, 'phone-landscape-return-844x390-dpr2-paused')
         self.assertFalse(row['rotated']); self.assertTrue(row['paused'])
+        check_backing(row)
         worlds.add(world); rows.append(row)
         page.wait_for_function('!unTouch')
         row['resume_tap_client'] = tap('resume')
