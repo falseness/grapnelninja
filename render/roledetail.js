@@ -19,6 +19,12 @@ const ROLE_DETAIL =
     contacts: new WeakMap(),
     // Element -> local detail layout (points never change after construction)
     layouts: new WeakMap(),
+    // Side (device px) of the element cells whose rivets share one sprite
+    rivetCellPx: 256,
+    // Drag motes: the clock step between repaints of a zone's mote layer,
+    // and the largest layer (device px); bigger zones draw each mote
+    particleStepMs: 100,
+    maxLayerPx: 1 << 20,
     // What the last frame drew, for the proofs: counts per role and pulses
     frame: null,
     // impact: normal approach speed per physics cycle. Resting micro-hops
@@ -51,19 +57,40 @@ function drawGrappleOverRoleDetail(world)
     const movers = world.moverByElement || (world.moverByElement = new Map(world.level.movers.map(m => [m.element, m])))
     const frame = {clockMs, counts: {bounce: 0, solid: 0, mover: 0, hazard: 0, drag: 0}, pulses: [], dots: 0}
 
-    ctx.save()
-    ctx.shadowBlur = 0
-    ctx.globalCompositeOperation = 'source-over'
+    // One clip per role (the union of that role's visible silhouettes)
+    // instead of a save/clip/restore per element: each element's detail still
+    // stays inside its role's shapes, at a fraction of the clip cost
+    const groups = {drag: [], bounce: [], solid: [], mover: [], hazard: []}
     for (const zone of world.dragZones)
         if (isCullBoxVisible(getElementCullBox(zone), cullRect))
-            drawRoleDetail(zone, 'drag', null, clockMs, world, frame)
+            groups.drag.push([zone, null])
     for (const element of world.elements)
     {
         if (!isCullBoxVisible(getElementCullBox(element), cullRect))
             continue
         const mover = movers.get(element.id)
         const role = element.surfaceRole === 'hazard' ? 'hazard' : mover ? 'mover' : element.surfaceRole
-        drawRoleDetail(element, role, mover, clockMs, world, frame)
+        if (groups[role])
+            groups[role].push([element, mover])
+    }
+    ctx.save()
+    ctx.shadowBlur = 0
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.lineJoin = 'miter'
+    ctx.lineCap = 'butt'
+    for (const role in groups)
+    {
+        const items = groups[role]
+        if (!items.length)
+            continue
+        ctx.save()
+        ctx.beginPath()
+        for (const [element] of items)
+            traceRoleDetailPath(element)
+        ctx.clip()
+        for (const [element, mover] of items)
+            drawRoleDetail(element, role, mover, clockMs, world, frame)
+        ctx.restore()
     }
     ctx.restore()
     ROLE_DETAIL.frame = frame
@@ -97,10 +124,10 @@ function roleDetailLayout(element)
     return layout
 }
 
+// Adds element's outline to the current path as one closed subpath
 function traceRoleDetailPath(element)
 {
     const points = element.getPoints()
-    ctx.beginPath()
     ctx.moveTo(points[0].x + screen.x, points[0].y + screen.y)
     for (let i = 1; i < points.length; ++i)
         ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
@@ -115,15 +142,13 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
     // Screen px to world units
     const u = 1 / scale[version]
     const dots = []
-    ctx.save()
-    traceRoleDetailPath(element)
-    ctx.clip()
-    ctx.lineJoin = 'miter'
-    ctx.lineCap = 'butt'
+    // Inside its role's clip (drawGrappleOverRoleDetail)
     if (role === 'bounce')
     {
         const config = style.bounce
         const pulse = ROLE_DETAIL.pulse(element, world)
+        ctx.beginPath()
+        traceRoleDetailPath(element)
         if (pulse > 0)
         {
             ctx.globalAlpha = config.pulseFillAlpha * pulse
@@ -175,7 +200,7 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
         for (const r of layout.rivets)
             dots.push([r.x + ox, r.y + oy, 1])
         if (dots.length)
-            drawRoleDetailDots(config.rivet, config.rivetRadius * u, dots)
+            drawRoleDetailRivets(layout, config.rivet, config.rivetRadius * u, ox, oy)
     }
     else if (role === 'mover')
     {
@@ -233,10 +258,16 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
         const box = layout.box
         const w = box.right - box.left, h = box.bottom - box.top
         const count = Math.max(config.min, Math.min(config.max, Math.round(layout.area / (u * u) * config.density)))
-        const seconds = clockMs / 1000
         let seed = 0
         for (let i = 0; i < element.id.length; ++i)
             seed = (seed * 31 + element.id.charCodeAt(i)) >>> 0
+        // The motes drift about a pixel per second: they are painted into the
+        // zone's layer once per particleStepMs of the clock (the steps of the
+        // zones staggered) and the layer is copied in between
+        const step = ROLE_DETAIL.particleStepMs
+        const phase = roleDetailHash(seed, 4 * config.max) * step
+        const stamp = Math.floor((clockMs + phase) / step)
+        const seconds = (stamp * step - phase) / 1000
         for (let i = 0; i < count; ++i)
         {
             const u = roleDetailHash(seed, i * 4), v = roleDetailHash(seed, i * 4 + 1)
@@ -244,11 +275,10 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
             const vy = -(0.4 + 0.6 * roleDetailHash(seed, i * 4 + 3)) * config.speed * u
             const x = box.left + ((u * w + vx * seconds) % w + w) % w
             const y = box.top + ((v * h + vy * seconds) % h + h) % h
-            dots.push([x + ox, y + oy, 0.55 + 0.45 * Math.sin(seconds * 1.3 + i * 2.1)])
+            dots.push([x, y, 0.55 + 0.45 * Math.sin(seconds * 1.3 + i * 2.1)])
         }
-        drawRoleDetailDots(config.particle, config.radius * u, dots, config.alpha)
+        drawRoleDetailDotLayer(layout, stamp, config.particle, config.radius * u, dots, config.alpha, ox, oy)
     }
-    ctx.restore()
     frame.counts[role]++
     frame.dots += dots.length
 }
@@ -262,16 +292,62 @@ function roleDetailHash(seed, index)
     return ((h ^ (h >>> 16)) >>> 0) / 4294967296
 }
 
-// Copies one cached glow dot per [x, y, level] (logical screen coordinates)
-// at globalAlpha alpha * level, centred on whole device pixels
-function drawRoleDetailDots(color, radius, dots, alpha = 1)
+// Draws dots ([x, y, level] in element units) through the element's layer
+// canvas (its box in device px): the dots are painted into it with the cached
+// glow dot only when stamp or the canvas scale changes, and every frame copies
+// the layer once
+function drawRoleDetailDotLayer(layout, stamp, color, radius, dots, alpha, ox, oy)
 {
     const m = ctx.getTransform()
-    const sx = glowSpriteScale(m.a)
+    const sx = glowSpriteScale(m.a), sy = glowSpriteScale(m.d)
+    const dot = getRoleDetailDotSprite(color, radius, sx)
+    const half = dot.width / 2
+    const box = layout.box
+    const left = Math.floor(box.left * sx - half), top = Math.floor(box.top * sy - half)
+    const width = Math.ceil(box.right * sx + half) - left + 1
+    const height = Math.ceil(box.bottom * sy + half) - top + 1
+    if (width * height > ROLE_DETAIL.maxLayerPx)
+        return drawRoleDetailDots(color, radius, dots.map(([x, y, level]) => [x + ox, y + oy, level]), alpha)
+    const key = stamp + '|' + color + '|' + radius + '|' + sx + '|' + sy
+    let layer = layout.dotLayer
+    if (!layer)
+        layer = layout.dotLayer = {canvas: document.createElement('canvas'), key: null}
+    if (layer.key !== key)
+    {
+        const canvas = layer.canvas
+        if (canvas.width !== width || canvas.height !== height)
+        {
+            canvas.width = width
+            canvas.height = height
+        }
+        const context = canvas.getContext('2d')
+        context.clearRect(0, 0, width, height)
+        for (const [x, y, level] of dots)
+        {
+            context.globalAlpha = alpha * level
+            context.drawImage(dot, Math.round(x * sx - half) - left, Math.round(y * sy - half) - top)
+        }
+        layer.key = key
+    }
+    const x = Math.round(m.a * ox + m.e) + left, y = Math.round(m.d * oy + m.f) + top
+    if (x >= ctx.canvas.width || y >= ctx.canvas.height || x + width <= 0 || y + height <= 0)
+        return
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.globalAlpha = 1
+    ctx.drawImage(layer.canvas, x, y)
+    ctx.restore()
+}
+
+// Copies one cached glow dot per [x, y, level] (logical screen coordinates)
+// at globalAlpha alpha * level, centred on whole device pixels
+// The glow dot of color and radius (logical units) at canvas scale sx
+function getRoleDetailDotSprite(color, radius, sx)
+{
     const blur = radius * 2.5 * sx
     const pad = glowSpritePad(blur, radius, sx)
     const size = Math.ceil(radius * 2 * sx) + pad * 2
-    const sprite = getGlowSprite('roledetail|dot|' + color + '|' + radius + '|' + sx,
+    return getGlowSprite('roledetail|dot|' + color + '|' + radius + '|' + sx,
         () => buildGlowSprite(size, size, pad, sx, sx, -radius, -radius, 1, () =>
         {
             ctx.fillStyle = color
@@ -287,6 +363,63 @@ function drawRoleDetailDots(color, radius, dots, alpha = 1)
             ctx.arc(0, 0, radius * 0.45, 0, Math.PI * 2)
             ctx.fill()
         }))
+}
+
+// Rivets never move on their element, and every drawImage has a fixed cost
+// that dominates a small dot: they are copied from a few cell sprites per
+// element (ROLE_DETAIL.rivetCellPx device px squares of the element), each
+// composited once from the cached glow dot, instead of one copy per rivet.
+// Every rivet lands within a device pixel of where its own copy would.
+function drawRoleDetailRivets(layout, color, radius, ox, oy)
+{
+    const m = ctx.getTransform()
+    const sx = glowSpriteScale(m.a), sy = glowSpriteScale(m.d)
+    const key = color + '|' + radius + '|' + sx + '|' + sy
+    if (layout.rivetCellsKey !== key)
+    {
+        const dot = getRoleDetailDotSprite(color, radius, sx)
+        const half = dot.width / 2, cell = ROLE_DETAIL.rivetCellPx
+        const groups = new Map()
+        for (const r of layout.rivets)
+        {
+            const x = Math.round(r.x * sx - half), y = Math.round(r.y * sy - half)
+            const id = Math.floor(x / cell) + ',' + Math.floor(y / cell)
+            if (!groups.has(id))
+                groups.set(id, [])
+            groups.get(id).push([x, y])
+        }
+        layout.rivetCells = []
+        for (const points of groups.values())
+        {
+            const left = Math.min(...points.map(p => p[0])), top = Math.min(...points.map(p => p[1]))
+            const sprite = document.createElement('canvas')
+            sprite.width = Math.max(...points.map(p => p[0])) - left + dot.width
+            sprite.height = Math.max(...points.map(p => p[1])) - top + dot.height
+            const context = sprite.getContext('2d')
+            for (const [x, y] of points)
+                context.drawImage(dot, x - left, y - top)
+            layout.rivetCells.push({sprite, left, top})
+        }
+        layout.rivetCellsKey = key
+    }
+    const baseX = Math.round(m.a * ox + m.e), baseY = Math.round(m.d * oy + m.f)
+    const width = ctx.canvas.width, height = ctx.canvas.height
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.globalAlpha = 1
+    for (const {sprite, left, top} of layout.rivetCells)
+    {
+        const x = baseX + left, y = baseY + top
+        if (x < width && y < height && x + sprite.width > 0 && y + sprite.height > 0)
+            ctx.drawImage(sprite, x, y)
+    }
+    ctx.restore()
+}
+
+function drawRoleDetailDots(color, radius, dots, alpha = 1)
+{
+    const m = ctx.getTransform()
+    const sprite = getRoleDetailDotSprite(color, radius, glowSpriteScale(m.a))
     const half = sprite.width / 2
     const right = ctx.canvas.width + half, bottom = ctx.canvas.height + half
     ctx.save()
@@ -302,3 +435,4 @@ function drawRoleDetailDots(color, radius, dots, alpha = 1)
     }
     ctx.restore()
 }
+

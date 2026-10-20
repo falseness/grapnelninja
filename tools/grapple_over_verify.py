@@ -101,7 +101,8 @@ def output_writer(out):
     return evidence, path.relative_to(evidence.root).as_posix()
 
 
-def execute(manifest, browser, url, out, clip=False, filmstrip=False):
+def execute(manifest, browser, url, out, clip=False, filmstrip=False, on_frame=None):
+    """on_frame(page, tick): called after every physics step (tick = snapshot index); display only."""
     validate(manifest)
     evidence, prefix = output_writer(out)
     viewport = manifest['metadata']['viewport']
@@ -131,7 +132,7 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False):
         cdp = context.new_cdp_session(page)
         boundaries = {0, manifest['ticks']}
         boundaries.update(e['tick'] for e in manifest['inputs'])
-        if clip:
+        if clip or on_frame:
             boundaries.update(range(manifest['ticks']))
         elif filmstrip:
             frames = set(range(0, manifest['ticks'], 60)) | {manifest['ticks']-1}
@@ -174,6 +175,8 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False):
                 else:
                     page.evaluate('draw()')
                 page.screenshot(path=str(evidence.path(prefix + f'/frame-{tick:04d}.png')))
+            if on_frame:
+                on_frame(page, next_tick)
             if clip:
                 page.evaluate('draw()')
                 page.wait_for_timeout(1000 / 60)

@@ -1640,3 +1640,666 @@ class Task541Tests(unittest.TestCase):
             pairs=[{k: round(v, 5) for k, v in p.items()} for p in pairs], median_after_over_before=round(ratios[1], 4)))
         print(f'PASS cost A/B: background layer after/before median ratio {ratios[1]:.3f} over 3 matched pairs '
               f'(relative, headless)')
+
+
+BASELINE_542 = '1e2ad62'
+# The revision before TASK-538: no Grapple Over art (palettes, parallax,
+# role detail, landmarks)
+PRE_ART_542 = '530d25b'
+VIEWPORT_542 = {'width': 1280, 'height': 720}
+# Frame-to-frame change of the mean background colour (Euclidean RGB
+# distance, 0..255 channels). A seam or pop is an isolated step: a frame whose
+# change exceeds the larger of its two neighbours' changes by more than
+# SPIKE_LIMIT_542 (a smooth cross-fade rises and falls over many frames; a
+# hard palette cut steps by ~45, a whole layer appearing by several units).
+# Any change above JUMP_LIMIT_542 also fails: the fastest smooth cross-fade is
+# the band change (~45) x the smoothstep's peak slope (1.5 / 800 world units)
+# x the fastest camera motion (~44 world units per frame) = ~3.7.
+JUMP_LIMIT_542 = 4.0
+SPIKE_LIMIT_542 = 1.0
+# Negative control: camera-centre sweep across the y -3240 boundary at the
+# fall's camera speed, production vs a hard palette cut at the boundary vs the
+# parallax layers switched on at once in the band core (y -2700)
+CONTROL_542 = '''([frameSource, mode]) => {
+    const frame = (0, eval)(frameSource), rows = [];
+    const palette = grappleOverBackdropPalette;
+    if (mode === 'hard-cut')
+        grappleOverBackdropPalette = y => {const p = palette(y), i = p.t < 0.5 ? p.from : p.to; return {from: i, to: i, t: 0}};
+    try {
+        for (let i = 0, y = -2640; y >= -3840; y -= 30, i++) {
+            if (mode === 'parallax-pop') visualEffects.background.parallaxEnabled = y < -2700;
+            ninja.x = 3240; ninja.y = y; ninja.speedX = ninja.speedY = 0;
+            screen.y = height / scale[version] / 2 - y;
+            rows.push([i + 1, ...frame([i + 1, 1000, -1, false]).row]);
+        }
+    } finally {
+        grappleOverBackdropPalette = palette;
+        visualEffects.background.parallaxEnabled = true;
+    }
+    return rows;
+}'''
+# Frames for the video and filmstrips: every CAPTURE_EVERY_542th tick while
+# the camera centre is within CAPTURE_NEAR_542 world units of a band boundary
+# (every FALL_EVERY_542th tick of the fall)
+CAPTURE_NEAR_542 = 150
+CAPTURE_EVERY_542 = 4
+FALL_EVERY_542 = 3
+COST_RUNS_542 = 5
+COST_POSES_542 = 40
+COST_LIMIT_542 = 1.15
+# The TASK-530 S04-exit fixture (the TASK-529 run at tick 5787) and its S05 route,
+# then the S06-01 carriage, the TASK-530 press at tick 2163, released after FALL_HOLD_542
+# ticks instead of 120: the player drops from the S06 entrance (y about -9019) through
+# five band boundaries to the base and comes to rest there
+FALL_PRESS_542 = 2163
+FALL_HOLD_542 = 110
+FALL_TICKS_542 = 2163 + 110 + 2600
+FALL_REST_542 = dict(y=[0, 200])
+# One replayed frame: draw() with the production renderer, then the frame's
+# background layer painted again by the production background renderer
+# (visualEffects.background.paint: cave layers, palette wash, parallax,
+# landmarks, with this frame's camera and palette) into a 1/8-resolution CPU
+# probe canvas, the way the fast backdrop swaps its target, and its mean
+# colour. A full-resolution frame raster here costs ~130 ms per readback, so
+# the full frame's background is read only every FULL_EVERY_542th tick, to
+# record how closely the probe follows it. Also the camera-centre y, the
+# palette, and a 480x270 JPEG of the finished frame when asked.
+FULL_EVERY_542 = 60
+FRAME_542 = '''([tick, every, near, full]) => {
+    const mean = d => {
+        let r = 0, g = 0, b = 0;
+        for (let i = 0; i < d.length; i += 4) {r += d[i]; g += d[i + 1]; b += d[i + 2]}
+        const n = d.length / 4;
+        return [r / n, g / n, b / n];
+    };
+    if (!window.__t542) {
+        const original = drawBackgroundLayer;
+        const thumb = document.createElement('canvas'), probe = document.createElement('canvas');
+        thumb.width = 480; thumb.height = 270;
+        probe.width = Math.round(LOGICAL_VIEWPORT.width / 8); probe.height = Math.round(LOGICAL_VIEWPORT.height / 8);
+        window.__t542 = {full: false, fullMean: null, thumb, probe,
+            probeCtx: probe.getContext('2d', {willReadFrequently: true})};
+        drawBackgroundLayer = function() {
+            const result = original.apply(this, arguments);
+            if (__t542.full && !BACKDROP.active)
+                __t542.fullMean = mean(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+            return result;
+        };
+    }
+    const T = __t542;
+    T.full = full; T.fullMean = null;
+    draw();
+    const bg = visualEffects.background, saved = [bg.ctx, bg.canvas, bg.parallaxFrame, LANDMARKS.frame];
+    T.probeCtx.setTransform(T.probe.width / LOGICAL_VIEWPORT.width, 0, 0, T.probe.height / LOGICAL_VIEWPORT.height, 0, 0);
+    bg.ctx = T.probeCtx; bg.canvas = T.probe;
+    try { bg.paint() } finally { [bg.ctx, bg.canvas, bg.parallaxFrame, LANDMARKS.frame] = saved }
+    const probeMean = mean(T.probeCtx.getImageData(0, 0, T.probe.width, T.probe.height).data);
+    const theme = GRAPPLE_OVER_THEME, camY = height / scale[version] / 2 - screen.y;
+    const p = bg.palette, k = Math.round(-camY / theme.bandHeight);
+    const nearBoundary = k >= 1 && k < theme.palettes.length && Math.abs(-camY - k * theme.bandHeight) <= near;
+    let jpeg = null;
+    if (tick % every === 0 && (near < 0 || nearBoundary)) {
+        T.thumb.getContext('2d').drawImage(canvas, 0, 0, 480, 270);
+        jpeg = T.thumb.toDataURL('image/jpeg', 0.8);
+    }
+    const r3 = v => Math.round(v * 1000) / 1000;
+    return {row: [Math.round(camY * 100) / 100, p.from, p.to, Math.round(p.t * 1e4) / 1e4, ...probeMean.map(r3)],
+        full: T.fullMean && T.fullMean.map(r3), jpeg};
+}'''
+# Per-frame draw() time (ms) at each pose (player x, y; snapped camera)
+COST_CHUNK_542 = '''ps => {
+    const out = [];
+    for (const [x, y] of ps) {
+        ninja.x = x; ninja.y = y; ninja.speedX = ninja.speedY = 0;
+        screen.trackGrappleOver(true);
+        const a = performance.now(); draw(); out.push(performance.now() - a);
+    }
+    return out;
+}'''
+# Which context each new layer drew into, with the fast backdrop forced
+FAST_542 = '''() => {
+    const poses = GRAPPLE_OVER_MOUNTAIN.sections.map(s => {
+        const e = GRAPPLE_OVER_MOUNTAIN.encounters.find(e => e.id === s.encounters[0]);
+        return {section: s.id, ...(e.start || e)}});
+    const seen = {}, wrap = (name, target) => {
+        const original = window[name];
+        window[name] = function() {
+            const result = original.apply(this, arguments);
+            seen[name].push(target(arguments, result));
+            return result};
+        return () => {window[name] = original}};
+    const unwrap = [
+        wrap('drawGrappleOverPalette', a => ({backdrop: a[0] === BACKDROP.ctx})),
+        wrap('drawGrappleOverParallax', (a, r) => ({backdrop: a[0].ctx === BACKDROP.ctx, layers: r.length})),
+        wrap('drawGrappleOverLandmarks', (a, r) => ({backdrop: a[0].ctx === BACKDROP.ctx, drawn: r ? r.length : 0})),
+        wrap('drawGrappleOverRoleDetail', () => ({backdrop: ctx === BACKDROP.ctx, backdropActive: BACKDROP.active,
+            counts: Object.values(ROLE_DETAIL.frame.counts).reduce((a, b) => a + b, 0)}))];
+    const rows = [];
+    for (const p of poses) {
+        for (const k of ['drawGrappleOverPalette', 'drawGrappleOverParallax', 'drawGrappleOverLandmarks',
+                         'drawGrappleOverRoleDetail']) seen[k] = [];
+        ninja.x = p.x; ninja.y = p.y; screen.trackGrappleOver(true); draw();
+        rows.push({section: p.section, pose: [p.x, p.y], scale: BACKDROP.scale,
+            backdrop: [BACKDROP.canvas.width, BACKDROP.canvas.height], ...structuredClone(seen)});
+    }
+    unwrap.forEach(f => f());
+    return rows;
+}'''
+
+
+class Task542Tests(unittest.TestCase):
+    """Smooth band transitions over the archived continuous climbs and a long fall, and the render cost of the
+    whole Grapple Over art (TASK-538..541) against the pre-art revision; geometry and classic/bad unchanged."""
+
+    @classmethod
+    def setUpClass(cls):
+        from functools import partial
+        from http.server import ThreadingHTTPServer
+        from threading import Thread
+        from browser_test_support import QuietHandler
+        from grapple_over_verify import hashes
+        from perf_mobile import export_rev
+        cls.evidence = EvidenceWriter('TASK-542')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.urls, cls.revisions = {}, {}
+        for label, rev in (('before', BASELINE_542), ('pre_art', PRE_ART_542)):
+            root, sha = export_rev(rev, cls.addClassCleanup)
+            server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(root)))
+            cls.addClassCleanup(server.server_close)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            cls.addClassCleanup(thread.join)
+            cls.addClassCleanup(server.shutdown)
+            cls.urls[label], cls.revisions[label] = f'http://127.0.0.1:{server.server_port}/', sha
+        cls.urls['final'] = cls.url
+        files = hashes()
+        for name in ('tools/test_grapple_over_visuals.py', 'tools/test_grapple_over_integration.py'):
+            files[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.config = dict(revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            dirty_paths=subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no', '--', '.',
+                                                 ':!artifacts'], cwd=ROOT, text=True).splitlines(),
+            baseline_revision=cls.revisions['before'], pre_art_revision=cls.revisions['pre_art'], source_hashes=files,
+            browser=cls.browser.version, viewport=VIEWPORT_542, device_scale_factor=1, seed=1, hz=60)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.config, sort_keys=True))
+
+    def open(self, label, query='', mode='grapple_over'):
+        context = self.browser.new_context(viewport=VIEWPORT_542, device_scale_factor=1)
+        self.addCleanup(context.close)
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(test=self.id(), revision=label, viewport=VIEWPORT_542,
+                                                               dpr=1, mode=mode, query=query), sort_keys=True))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(self.urls[label] + query)
+        wait_for_boot(page)
+        page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
+        page.wait_for_function('!unTouch')
+        return page
+
+    def test_01_geometry_hash_unchanged(self):
+        row = {}
+        for label in ('before', 'final', 'pre_art'):
+            page = self.open(label)
+            geometry = page.evaluate(GEOMETRY_538)
+            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
+                              elements=len(json.loads(geometry)['elements']), movers=len(json.loads(geometry)['movers']))
+            page.close()
+        after = row.pop('final')
+        row = dict(before=row['before'], after=after, pre_art=row['pre_art'],
+                   baseline_revision=self.revisions['before'], pre_art_revision=self.revisions['pre_art'],
+                   fields='elements: id, role, grapplable, x, y, points; movers: full',
+                   equal=row['before'] == after, equal_to_pre_art=row['pre_art'] == after)
+        self.evidence.write('geometry-hash.json', row)
+        self.assertEqual(row['before'], row['after'])
+        self.assertEqual(row['pre_art'], row['after'])
+        self.assertGreater(after['elements'], 0)
+        print(f'PASS geometry: hash {after["sha256"][:16]} before ({BASELINE_542}) == after == pre-art '
+              f'({PRE_ART_542}) ({after["elements"]} elements, {after["movers"]} movers)', flush=True)
+
+    # ---- replays --------------------------------------------------------------------------------
+    def archived(self, task):
+        return (json.loads((ROOT / f'artifacts/{task}/inputs.json').read_text()),
+                json.loads((ROOT / f'artifacts/{task}/trace.json').read_text()))
+
+    def manifest(self, kind, ticks, inputs, expected_exit, required_events, snapshot=None):
+        from grapple_over_verify import metadata, validate
+        m = dict(metadata=metadata(kind), ticks=ticks, inputs=inputs, expected_exit=expected_exit,
+                 required_events=required_events)
+        if snapshot is not None:
+            m['initial_snapshot'] = snapshot
+        m['metadata']['compact_contacts'] = True
+        validate(m)
+        return m
+
+    def replay(self, name, manifest, every, near, start=1):
+        """Every tick from start on drawn by the production renderer; the raw recording is deleted after use."""
+        import base64
+        import shutil
+        from grapple_over_verify import execute, check_trace
+        rows, frames = [], []
+        self.fidelity = getattr(self, 'fidelity', {})
+        fidelity = self.fidelity.setdefault(name, [])
+
+        def on_frame(page, tick):
+            if tick < start:
+                return
+            frame = page.evaluate(FRAME_542, [tick, every, near, tick % FULL_EVERY_542 == 0])
+            rows.append([tick] + frame['row'])
+            if frame['full']:
+                fidelity.append([tick] + frame['row'][4:] + frame['full'])
+            if frame['jpeg']:
+                frames.append(dict(run=name, tick=tick, camera_y=frame['row'][0],
+                                   jpeg=base64.b64decode(frame['jpeg'].split(',', 1)[1])))
+        trace = execute(manifest, self.browser, self.url, str(self.evidence.path('runs/' + name)), on_frame=on_frame)
+        check_trace(manifest, trace)
+        shutil.rmtree(self.evidence.path('runs/' + name))
+        self.assertEqual([r[0] for r in rows], list(range(start, manifest['ticks'] + 1)))
+        return trace, rows, frames
+
+    @staticmethod
+    def physics_rows(trace):
+        # The archived TASK-529/530 compact rows (Task529Tests.compact)
+        rows = []
+        for r in trace['snapshots']:
+            s = r['state']['simulation']; p = s['player']
+            rows.append([r['tick'], s['simulationTick'], p['x'], p['y'], p['speedX'], p['speedY'], int(s['upgrades']['range']),
+                         s['stats']['maxHeight'], int(bool(s['grapple'].get('grappled')))])
+        return rows
+
+    def compare(self, task, trace, archived):
+        from test_grapple_over_integration import Task529Tests
+        old = archived['trace']
+        rows = self.physics_rows(trace)
+        inputs = [{k: e[k] for k in ('tick', 'event', 'world', 'client', 'trusted')} for e in trace['events'] if e['type'] == 'input']
+        mechanics = Task529Tests.mechanics(trace)
+        row = dict(task=task, archived=f'artifacts/{task}/trace.json', fields=old['fields'], ticks=len(rows) - 1,
+                   rows_compared=len(rows), archived_rows=len(old['rows']),
+                   rows_differing=sum(a != b for a, b in zip(rows, old['rows'])),
+                   rows_identical=rows == old['rows'], inputs_identical=inputs == old['inputs'], trusted_inputs=len(inputs),
+                   mechanics_identical=json.loads(json.dumps(mechanics)) == old['mechanics'], mechanic_events=len(mechanics),
+                   full_snapshot_sha256_equal=sum(r['sha256'] == h for r, h in zip(trace['snapshots'], old['snapshot_sha256'])),
+                   full_snapshot_note='full per-tick snapshot hashes include the level element list, which TASK-531 '
+                                      'changed after these recordings (S05-transfer-canopy deleted); the archived '
+                                      'trace keeps the per-tick physics rows, compared here exactly (float equality)')
+        self.assertTrue(row['rows_identical'] and row['inputs_identical'] and row['mechanics_identical'],
+                        {k: v for k, v in row.items() if k != 'fields'})
+        return row
+
+    def test_02_replays_and_transitions(self):
+        from grapple_over_support import state_hash
+        lower_in, lower_old = self.archived('TASK-529')
+        upper_in, upper_old = self.archived('TASK-530')
+        runs, frames, traces = {}, [], {}
+        # TASK-529: base start, the archived trusted inputs
+        m = self.manifest('base-start', lower_in['ticks'], lower_in['inputs'], lower_in['expected_exit'],
+                          lower_in['required_events'])
+        self.assertNotIn('initial_snapshot', m)
+        trace, rows, shots = self.replay('climb-lower', m, CAPTURE_EVERY_542, CAPTURE_NEAR_542)
+        traces['climb-lower'] = self.compare('TASK-529', trace, lower_old)
+        runs['climb-lower'], frames = rows, frames + shots
+        # TASK-530: its S04-exit fixture is the TASK-529 run's real state at tick 5787 (the archived
+        # snapshot predates TASK-531's element list); it equals the archived one but for that list
+        from test_grapple_over_integration import Task530Tests
+        fixture = trace['snapshots'][Task530Tests.FIXTURE_TICK]['state']['simulation']
+        del trace
+        old = upper_in['initial_snapshot']
+        ids = {e['id'] for e in fixture['elements']}
+        same = {k: fixture[k] == old[k] for k in fixture}
+        kept = [e for e in old['elements'] if e['id'] in ids]
+        fixture_row = dict(tick=Task530Tests.FIXTURE_TICK, equal_fields=[k for k, v in same.items() if v],
+                           differing_fields=[k for k, v in same.items() if not v],
+                           archived_elements=len(old['elements']), elements=len(fixture['elements']),
+                           archived_elements_not_in_level=[e['id'] for e in old['elements'] if e['id'] not in ids],
+                           elements_equal_after_dropping_those=kept == fixture['elements'])
+        self.assertTrue(fixture_row['elements_equal_after_dropping_those'] and
+                        fixture_row['differing_fields'] in ([], ['elements']), fixture_row)
+        m = self.manifest('isolated', upper_in['ticks'], upper_in['inputs'], upper_in['expected_exit'],
+                          upper_in['required_events'], fixture)
+        trace, rows, shots = self.replay('climb-upper', m, CAPTURE_EVERY_542, CAPTURE_NEAR_542)
+        traces['climb-upper'] = dict(self.compare('TASK-530', trace, upper_old), fixture=fixture_row)
+        runs['climb-upper'], frames = rows, frames + shots
+        del trace
+        # The long fall: recorded with every frame drawn, then replayed without frames (identical trace)
+        from grapple_over_verify import execute, check_trace
+        press = next(e for e in upper_in['inputs'] if e['tick'] == FALL_PRESS_542)
+        inputs = [e for e in upper_in['inputs'] if e['tick'] < FALL_PRESS_542] + \
+                 [press, dict(tick=FALL_PRESS_542 + FALL_HOLD_542, event='mouseup', world=press['world'])]
+        m = self.manifest('isolated', FALL_TICKS_542, inputs, FALL_REST_542, ['acquisition', 'release', 'bounce'], fixture)
+        self.evidence.write('fall-inputs.json', dict(m, initial_snapshot=dict(
+            source='TASK-529 archived inputs replayed from the base start, state at tick %d (the TASK-530 fixture)'
+                   % Task530Tests.FIXTURE_TICK, sha256=state_hash(fixture)),
+            scope='TASK-530 S05 route and the S06-01 carriage press at tick %d released after %d ticks (nominal 120); '
+                  'trusted mouse input only; no placement after the fixture, no checkpoint or reset'
+                  % (FALL_PRESS_542, FALL_HOLD_542)))
+        # Its frames from 30 ticks before the release (the ticks before replay the TASK-530 climb, drawn above)
+        release = FALL_PRESS_542 + FALL_HOLD_542
+        trace, rows, shots = self.replay('fall', m, FALL_EVERY_542, -1, start=release - 30)
+        replay = execute(m, self.browser, self.url, str(self.evidence.path('runs/fall-replay')))
+        check_trace(m, replay)
+        import shutil
+        shutil.rmtree(self.evidence.path('runs/fall-replay'))
+        self.assertEqual(trace, replay)
+        fall_rows = self.physics_rows(trace)
+        mech = [x for x in __import__('test_grapple_over_integration').Task529Tests.mechanics(trace)]
+        after = [x for x in mech if x['tick'] > release and x['type'] == 'acquisition']
+        self.assertEqual(after, [], 'no rope after the release: a free fall')
+        top = min(fall_rows[release:], key=lambda r: r[3])
+        traces['fall'] = dict(recorded_sha256=state_hash(trace), replayed_sha256=state_hash(replay), identical=True,
+            ticks=FALL_TICKS_542, release_tick=release, apex=dict(tick=top[0], y=top[3]),
+            final=dict(x=fall_rows[-1][2], y=fall_rows[-1][3], speedX=fall_rows[-1][4], speedY=fall_rows[-1][5]),
+            acquisitions_after_release=0, inputs='fall-inputs.json',
+            rows=dict(fields=['tick', 'simulationTick', 'x', 'y', 'speedX', 'speedY', 'rangeUpgraded', 'maxHeight', 'grappled'],
+                      every=5, rows=[r for r in fall_rows if r[0] % 5 == 0 or r[0] >= release - 1 and r[0] <= release + 1]))
+        del trace, replay
+        runs['fall'], frames = [r for r in rows if r[0] >= release - 1], frames + shots
+        self.evidence.write('traces.json', traces)
+        self.transitions(runs, frames, release)
+
+    @staticmethod
+    def add_deltas(rows):
+        # Appends delta (to the previous frame) and spike (delta minus the larger neighbouring delta)
+        deltas = [0] + [round(sum((a[i] - b[i]) ** 2 for i in (5, 6, 7)) ** 0.5, 4) for a, b in zip(rows, rows[1:])]
+        for i, r in enumerate(rows):
+            near = [deltas[j] for j in (i - 1, i + 1) if 0 < j < len(rows)]
+            r += [deltas[i], round(deltas[i] - max(near), 4) if i and near else 0]
+
+    def control(self):
+        page = self.open('final')
+        result = {}
+        for mode in ('production', 'hard-cut', 'parallax-pop'):
+            rows = page.evaluate(CONTROL_542, [FRAME_542, mode])
+            self.add_deltas(rows)
+            top = max(rows, key=lambda r: r[-1])
+            result[mode] = dict(frames=len(rows), max_delta=max(r[-2] for r in rows), max_spike=top[-1], at_camera_y=top[1],
+                                detected=top[-1] > SPIKE_LIMIT_542 or max(r[-2] for r in rows) > JUMP_LIMIT_542)
+        page.close()
+        self.assertFalse(result['production']['detected'], result)
+        self.assertTrue(result['hard-cut']['detected'] and result['parallax-pop']['detected'], result)
+        return dict(method='camera centre swept -2640..-3840 in 30-unit frames (the fall\'s camera speed) across the y -3240 '
+                           'boundary, ninja at the camera centre, the same per-frame probe; hard-cut: the palette switches at '
+                           'the boundary instead of blending; parallax-pop: the parallax layers appear at once at y -2700 (band core)', **result)
+
+    def transitions(self, runs, frames, release):
+        theme = self.theme()
+        control = self.control()
+        band, half, count = theme['bandHeight'], theme['blendHalfSpan'], len(theme['palettes'])
+        boundaries = [-k * band for k in range(1, count)]
+        analysis, worst = {}, {}
+        for name, rows in runs.items():
+            self.add_deltas(rows)
+            crossings = [dict(boundary=b, tick=r[0]) for a, r in zip(rows, rows[1:]) for b in boundaries
+                         if (a[1] - b) * (r[1] - b) < 0 or (r[1] == b)]
+            per = []
+            for b in boundaries:
+                window = [r for r in rows[1:] if abs(r[1] - b) <= half]
+                if not window:
+                    continue
+                biggest = max(window, key=lambda r: r[-2])
+                spike = max(window, key=lambda r: r[-1])
+                per.append(dict(boundary=b, frames_in_blend_span=len(window), max_spike=spike[-1], spike_tick=spike[0],
+                                crossings=[c['tick'] for c in crossings if c['boundary'] == b],
+                                max_delta=biggest[-2], at_tick=biggest[0], camera_y=biggest[1],
+                                palette_t_range=[min(r[4] for r in window if r[2] != r[3] or r[4]),
+                                                 max(r[4] for r in window)] if any(r[2] != r[3] for r in window) else None))
+            biggest = max(rows[1:], key=lambda r: r[-2])
+            spike = max(rows[1:], key=lambda r: r[-1])
+            analysis[name] = dict(frames=len(rows), camera_y_range=[min(r[1] for r in rows), max(r[1] for r in rows)],
+                                  boundaries=per, crossings=crossings,
+                                  max_delta_any_frame=dict(delta=biggest[-2], tick=biggest[0], camera_y=biggest[1]),
+                                  max_spike_any_frame=dict(spike=spike[-1], tick=spike[0], camera_y=spike[1]))
+            worst[name] = dict(delta=max(p['max_delta'] for p in per), spike=max(p['max_spike'] for p in per)) if per else None
+        # The probe against the full-resolution frame background: absolute difference of the means, and of
+        # their changes between consecutive samples (FULL_EVERY_542 ticks apart)
+        fidelity = {}
+        for name, samples in self.fidelity.items():
+            dist = lambda a, b: sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+            change = [abs(dist(a[1:4], b[1:4]) - dist(a[4:7], b[4:7])) for a, b in zip(samples, samples[1:])]
+            fidelity[name] = dict(samples=len(samples), columns=['tick', 'probe_r', 'probe_g', 'probe_b', 'full_r', 'full_g', 'full_b'],
+                                  max_mean_distance=round(max(dist(r[1:4], r[4:7]) for r in samples), 3),
+                                  max_change_difference=round(max(change), 3) if change else None,
+                                  full_change_max=round(max((dist(a[4:7], b[4:7]) for a, b in zip(samples, samples[1:])), default=0), 3),
+                                  rows=samples)
+        climbed = sorted({c['boundary'] for n in ('climb-lower', 'climb-upper') for c in analysis[n]['crossings']})
+        fallen = sorted({c['boundary'] for c in analysis['fall']['crossings'] if c['tick'] > release})
+        result = dict(
+            method='every replay tick drawn by the production draw(); mean background colour = mean RGB of that '
+                   'frame\'s background layer, painted by the production background renderer (visualEffects.background.'
+                   'paint: cave layers, palette wash, parallax, landmarks; this frame\'s camera and palette) into a '
+                   '1/8-resolution probe canvas; every %dth tick the full-resolution background as drawn into the frame '
+                   '(read right after drawBackgroundLayer) is also read (probe_fidelity); delta = Euclidean RGB distance '
+                   'between consecutive frames of the same run (0..255 channels); a boundary frame is one whose '
+                   'camera-centre y is within the palette blend span (+/-%d) of the boundary' % (FULL_EVERY_542, half),
+            probe_fidelity=fidelity,
+            threshold=dict(max_frame_delta=JUMP_LIMIT_542, max_spike=SPIKE_LIMIT_542,
+                           unit='Euclidean RGB distance of the frame mean, 0..255 channels',
+                           spike='delta of a frame minus the larger delta of its two neighbouring frames (an isolated step)',
+                           meaning='a seam or pop is a frame whose spike exceeds max_spike, or any delta above '
+                                   'max_frame_delta; derivation of both in the JUMP_LIMIT_542 comment of the test file: the '
+                                   'fastest smooth cross-fade (band change ~45 x smoothstep peak slope 1.5/800 per world unit '
+                                   'x ~44 world units of camera motion per frame) is ~3.7 per frame; a hard palette cut is '
+                                   '~45 in one frame (control)'),
+            control=control,
+            boundaries=boundaries, blend_half_span=half, viewport=VIEWPORT_542, dpr=1,
+            climb_boundaries_crossed=climbed, fall_boundaries_crossed=fallen, worst_boundary_delta=worst,
+            runs=analysis,
+            columns=['tick', 'camera_y', 'palette_from', 'palette_to', 'palette_t', 'mean_r', 'mean_g', 'mean_b', 'delta', 'spike'],
+            frames={name: rows for name, rows in runs.items()},
+            fall_note='the fall frames start one tick before the carriage release (tick %d); the climb run frames start at tick 1' % release)
+        self.evidence.write('transitions.json', result)
+        self.assertEqual(climbed, sorted(boundaries))
+        self.assertGreaterEqual(len(fallen), 2)
+        for name, value in worst.items():
+            self.assertIsNotNone(value, name)
+            self.assertLessEqual(value['delta'], JUMP_LIMIT_542, (name, analysis[name]['boundaries']))
+            self.assertLessEqual(value['spike'], SPIKE_LIMIT_542, (name, analysis[name]['boundaries']))
+        self.media(frames, analysis, boundaries, release)
+        print(f'PASS transitions: climbs (TASK-529/530 replays, rows identical to the archived traces) cross all '
+              f'{len(boundaries)} boundaries, the fall crosses {fallen}; worst boundary frame delta/spike {worst} '
+              f'(limits {JUMP_LIMIT_542}/{SPIKE_LIMIT_542}); control: hard palette cut spike '
+              f'{control["hard-cut"]["max_spike"]}, parallax pop spike {control["parallax-pop"]["max_spike"]} detected; '
+              f'{len(frames)} captured frames', flush=True)
+
+    def theme(self):
+        page = self.open('final')
+        theme = page.evaluate('() => ({bandHeight: GRAPPLE_OVER_THEME.bandHeight, blendHalfSpan: GRAPPLE_OVER_THEME.blendHalfSpan, '
+                              'palettes: GRAPPLE_OVER_THEME.palettes.map(p => p.name)})')
+        page.close()
+        return theme
+
+    def media(self, frames, analysis, boundaries, release):
+        """transitions.webm (every captured frame, labelled), one filmstrip per boundary crossing and the fall."""
+        import io
+        from PIL import Image, ImageDraw
+        strips = []
+
+        def strip(name, chosen, title):
+            w, h = 240, 135
+            sheet = Image.new('RGB', (w * len(chosen), h + 18), (0, 0, 0))
+            draw = ImageDraw.Draw(sheet)
+            for i, f in enumerate(chosen):
+                with Image.open(io.BytesIO(f['jpeg'])) as img:
+                    sheet.paste(img.convert('RGB').resize((w, h)), (i * w, 18))
+                draw.text((i * w + 4, 3), f'{f["run"]} t{f["tick"]} y{f["camera_y"]:.0f}', fill=(255, 255, 255))
+            path = f'transitions/{name}.jpg'
+            sheet.save(self.evidence.path(path), quality=82)
+            strips.append(dict(name=name, file=path, title=title, ticks=[f['tick'] for f in chosen]))
+
+        for k, b in enumerate(boundaries, 1):
+            for run in ('climb-lower', 'climb-upper', 'fall'):
+                ticks = [c['tick'] for c in analysis[run]['crossings'] if c['boundary'] == b and (run != 'fall' or c['tick'] > release)]
+                if not ticks:
+                    continue
+                around = [f for f in frames if f['run'] == run and abs(f['tick'] - ticks[0]) <= 600
+                          and abs(f['camera_y'] - b) <= CAPTURE_NEAR_542 + 1]
+                if len(around) < 2:
+                    continue
+                chosen = [around[round(i * (len(around) - 1) / 7)] for i in range(8)] if len(around) >= 8 else around
+                strip(f'boundary{k}-{run}', chosen, f'boundary {k} (y {b}) first crossing in {run} at tick {ticks[0]}')
+        fall = [f for f in frames if f['run'] == 'fall' and f['tick'] >= release]
+        strip('fall', [fall[round(i * (len(fall) - 1) / 9)] for i in range(10)], 'the whole fall from the release')
+        covered = {s['name'].split('-')[0] for s in strips if 'climb' in s['name']}
+        self.assertEqual(covered, {f'boundary{k}' for k in range(1, len(boundaries) + 1)}, strips)
+        # The video: every captured frame, in run order, with its run, tick and camera y
+        video_frames = frames
+        context = self.browser.new_context(viewport={'width': 480, 'height': 290}, device_scale_factor=1,
+                                           record_video_dir=str(self.evidence.path('video/.keep').parent),
+                                           record_video_size={'width': 480, 'height': 290})
+        page = context.new_page()
+        page.set_content('<body style="margin:0;background:#000;color:#fff;font:13px monospace">'
+                         '<img id="f" width="480" height="270" style="display:block"><div id="c"></div></body>')
+        import base64
+        for f in video_frames:
+            label = f'{f["run"]}  tick {f["tick"]}  camera y {f["camera_y"]:.0f}'
+            page.evaluate('async ([s, l]) => {const i = document.getElementById("f"); i.src = s; await i.decode(); '
+                          'document.getElementById("c").textContent = l}',
+                          ['data:image/jpeg;base64,' + base64.b64encode(f['jpeg']).decode(), label])
+            page.wait_for_timeout(1000 / 30)
+        video = page.video
+        context.close()
+        video.save_as(str(self.evidence.path('transitions.webm')))
+        video.delete()
+        import shutil
+        shutil.rmtree(self.evidence.path('video'), ignore_errors=True)
+        self.assertGreater(self.evidence.path('transitions.webm').stat().st_size, 0)
+        rows = []
+        for name in ('climb-lower', 'climb-upper', 'fall'):
+            for p in analysis[name]['boundaries']:
+                rows.append(f'| {name} | {p["boundary"]} | {p["crossings"][:3]} | {p["frames_in_blend_span"]} | '
+                            f'{p["max_delta"]} (tick {p["at_tick"]}) | {p["max_spike"]} (tick {p["spike_tick"]}) |')
+        lines = ['# TASK-542 transitions review', '',
+                 'Generated by Task542Tests.test_02 from this run; frames are the production renderer at 1280x720 '
+                 '(thumbnails 480x270).', '',
+                 f'- transitions.webm: {len(video_frames)} labelled frames (camera within {CAPTURE_NEAR_542} world units of a '
+                 f'band boundary, every {CAPTURE_EVERY_542}th tick of the climbs; every {FALL_EVERY_542}rd tick of the fall '
+                 f'from 30 ticks before the release at tick {release}).',
+                 f'- Mean background colour per frame: frame-to-frame delta limit {JUMP_LIMIT_542}, isolated spike limit '
+                 f'{SPIKE_LIMIT_542} (transitions.json threshold).', '',
+                 '| run | boundary y | crossing ticks | frames in blend span | max delta | max spike |',
+                 '|---|---|---|---|---|---|', *rows, '',
+                 '## Filmstrips', '', *[f'- {s["file"]}: {s["title"]}, ticks {s["ticks"]}' for s in strips], '']
+        self.evidence.path('review.md').write_text('\n'.join(lines))
+
+    # ---- cost -----------------------------------------------------------------------------------
+    def test_03_render_cost_ab(self):
+        import statistics
+        poses = {}
+        for task in ('TASK-529', 'TASK-530'):
+            inputs, trace = self.archived(task)
+            rows = trace['trace']['rows']
+            for s in inputs['segments']:
+                n = s['end'] - s['start']
+                poses[s['section']] = [rows[s['start'] + k * n // COST_POSES_542][2:4] for k in range(COST_POSES_542)]
+        labels = ('pre_art', 'before', 'final')
+        runs = []
+        for run in range(COST_RUNS_542):
+            pages = {}
+            for label in labels:
+                page = self.open(label, query='?perf=1')
+                page.evaluate('() => Object.assign(TUTORIAL_HINT, {pressed: true, done: true, visible: false, alpha: 0})')
+                for ps in poses.values():
+                    page.evaluate(COST_CHUNK_542, ps)
+                pages[label] = page
+            sections = {}
+            for section, ps in poses.items():
+                # Frame by frame: each pose drawn once by each revision in turn (order rotated), twice over,
+                # so load changes on the machine hit the three revisions alike
+                times = {label: [] for label in labels}
+                for k, pose in enumerate(ps * 2):
+                    order = labels[(k + run) % 3:] + labels[:(k + run) % 3]
+                    for label in order:
+                        times[label] += pages[label].evaluate(COST_CHUNK_542, [pose])
+                layers = {label: {e['name']: round(e['meanMs'], 4) for e in pages[label].evaluate('PERF_PROFILE.snapshot().entries')
+                                  if e['name'] in ('background', 'world')} for label in labels}
+                median = {label: statistics.median(v) for label, v in times.items()}
+                sections[section] = dict(median_frame_ms={k: round(v, 4) for k, v in median.items()}, frames=len(times['final']),
+                                         final_over_pre_art=round(median['final'] / median['pre_art'], 4),
+                                         before_over_pre_art=round(median['before'] / median['pre_art'], 4), layers_mean_ms=layers)
+            for page in pages.values():
+                page.context.close()
+            runs.append(sections)
+            print(f'cost run {run + 1}: final/pre-art ' + json.dumps({s: v['final_over_pre_art'] for s, v in sections.items()}), flush=True)
+        summary = {s: dict(final_over_pre_art_median=round(statistics.median(r[s]['final_over_pre_art'] for r in runs), 4),
+                           before_over_pre_art_median=round(statistics.median(r[s]['before_over_pre_art'] for r in runs), 4),
+                           runs=COST_RUNS_542) for s in poses}
+        fast = self.fast_backdrop()
+        self.evidence.write('cost.json', dict(
+            note='relative A/B only (matched headless pages in one browser, seed 1, 1280x720, dpr 1); not device FPS',
+            method='per section 40 poses = the player position every 1/40 of the section in the TASK-529/530 continuous '
+                   'replays (same ticks for every revision), camera snapped; three revisions open side by side, each pose '
+                   'drawn by each revision in turn (order rotated per frame), all poses twice = 80 frames per section; '
+                   'cost = median draw() ms per frame (performance.now around draw: the main-thread render work; '
+                   '?perf=1 so render/perfprofile.js times the layers: its background/world means over the last 120 frames are kept per section)',
+            limit=COST_LIMIT_542, revisions=dict(pre_art=f'{self.revisions["pre_art"]} (before TASK-538, no art)',
+                before=f'{self.revisions["before"]} (TASK-541 HEAD, before this ticket)', final='worktree'),
+            sections=summary, runs=runs, fast_backdrop=fast,
+            all_sections_within_limit=all(v['final_over_pre_art_median'] <= COST_LIMIT_542 for v in summary.values())))
+        for s, v in summary.items():
+            self.assertLessEqual(v['final_over_pre_art_median'], COST_LIMIT_542, s)
+        print('PASS cost A/B: final/pre-art median per section ' +
+              json.dumps({s: v['final_over_pre_art_median'] for s, v in summary.items()}) +
+              f' (limit {COST_LIMIT_542}, {COST_RUNS_542} runs; before this ticket ' +
+              json.dumps({s: v['before_over_pre_art_median'] for s, v in summary.items()}) + '); fast backdrop draws all new layers',
+              flush=True)
+
+    def fast_backdrop(self):
+        page = self.open('final', query='?backdrop=0.5')
+        rows = page.evaluate(FAST_542)
+        for row in rows:
+            self.assertEqual(row['scale'], 0.5)
+            self.assertEqual(row['backdrop'], [640, 360])
+            self.assertTrue(row['drawGrappleOverPalette'] and all(x['backdrop'] for x in row['drawGrappleOverPalette']), row)
+            self.assertTrue(row['drawGrappleOverParallax'] and all(x['backdrop'] and x['layers'] == 2
+                                                                   for x in row['drawGrappleOverParallax']), row)
+            self.assertTrue(any(x['backdrop'] and x['drawn'] > 0 for x in row['drawGrappleOverLandmarks']), row)
+            self.assertTrue(row['drawGrappleOverRoleDetail'] and all(not x['backdrop'] and x['counts'] > 0
+                                                                     for x in row['drawGrappleOverRoleDetail']), row)
+        # Pixels: the reduced backdrop with and without the parallax and landmark layers
+        changed = page.evaluate('''() => {
+            const read = () => Array.from(BACKDROP.ctx.getImageData(0, 0, BACKDROP.canvas.width, BACKDROP.canvas.height).data);
+            const e = GRAPPLE_OVER_MOUNTAIN.encounters.find(e => e.id === GRAPPLE_OVER_MOUNTAIN.sections[0].encounters[0]);
+            ninja.x = (e.start || e).x; ninja.y = (e.start || e).y; screen.trackGrappleOver(true);
+            draw(); const on = read();
+            visualEffects.background.parallaxEnabled = false; LANDMARKS.enabled = false;
+            draw(); const off = read();
+            visualEffects.background.parallaxEnabled = true; LANDMARKS.enabled = true;
+            let n = 0;
+            for (let i = 0; i < on.length; i += 4) if (Math.abs(on[i] - off[i]) + Math.abs(on[i + 1] - off[i + 1]) + Math.abs(on[i + 2] - off[i + 2]) > 24) n++;
+            return {changed: n, total: on.length / 4};
+        }''')
+        self.assertGreater(changed['changed'] / changed['total'], 0.05, changed)
+        page.screenshot(path=str(self.evidence.path('fast-backdrop-S01.jpg')), type='jpeg', quality=80)
+        return dict(query='?backdrop=0.5', sections=rows, s01_backdrop_pixels_changed_by_parallax_and_landmarks=changed,
+                    screenshot='fast-backdrop-S01.jpg')
+
+    def test_04_classic_bad_pixels_unchanged(self):
+        from collections import Counter
+        rows = []
+        for mode in ('classic', 'bad'):
+            for ticks in (0, 90):
+                frames = {}
+                for label in ('before', 'final'):
+                    captures = []
+                    for _ in range(5):
+                        page = self.open(label, mode=mode)
+                        page.evaluate(SEED_SCRIPT % 1)
+                        frame = page.evaluate(FRAME_538, [mode, ticks])
+                        self.assertEqual(frame['mode'], mode)
+                        captures.append(f"{frame['width']}x{frame['height']}:" +
+                                        hashlib.sha256(frame['pixels'].encode('latin-1')).hexdigest())
+                        page.close()
+                    frames[label] = captures
+                common = {k: Counter(v).most_common(1)[0][0] for k, v in frames.items()}
+                # A rare odd title-screen capture occurs in either revision (TASK-539/541 notes): the
+                # majority pixel hash of each revision is compared, the odd captures are kept
+                majority = {k: Counter(v).most_common(1)[0][1] for k, v in frames.items()}
+                row = dict(mode=mode, seed=1, ticks=ticks, before=frames['before'], after=frames['final'],
+                           most_common=common, majority_counts=majority,
+                           odd_captures={k: [h for h in v if h != common[k]] for k, v in frames.items()},
+                           equal=common['before'] == common['final'] and min(majority.values()) >= 3)
+                rows.append(row)
+                self.assertTrue(row['equal'], row)
+        self.evidence.write('classic-bad.json', dict(baseline_revision=self.revisions['before'], viewport=VIEWPORT_542, dpr=1,
+            captures_per_revision=5, comparison='majority pixel hash per revision equal (each a majority of 5)', frames=rows, all_equal=all(r['equal'] for r in rows)))
+        print(f'PASS classic/bad: {len(rows)} frames x 5 captures per revision; majority pixel hashes equal to {BASELINE_542}', flush=True)
