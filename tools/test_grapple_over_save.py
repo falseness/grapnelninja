@@ -671,3 +671,514 @@ class Task502Tests(unittest.TestCase):
                 second_entry_notice_boxes=again, second_entry_noticeMs=second['noticeMs']))
         self.evidence.write('notice.json', dict(self.proof, notices=rows, once_pass=True))
         print('PASS notice: EN/RU one-time HUD notice on first S05 entry; none on second entry')
+
+
+# TASK-495: whole-mountain persistence and mode isolation on the real layout v3.
+# Fixtures use real runtime paths (physics(), page.mouse shots, applyHazardContact,
+# the finish box); placeAt() is a labeled test-only placement like placeInUpgradeBand().
+CLIMB_KEY = 'grapnelninja.grappleOver'
+LEGACY_495 = {'grapnelninja.records': '{"classic":123,"bad":456}', 'grapnelninja.lang': 'ru',
+              'grapnelninja.time': '90', 'grapnelninja.tutorialDone': 'true'}
+# Found by an in-page search over the live mountain: free starting points whose real
+# shot attaches to the S02-hoist mover / wraps the mountain-catch rope.
+MOVER_SHOT_495 = dict(spot={'x': 5740, 'y': -3530.6666666666665}, id='S02-hoist', live_aim=True)
+WRAP_SHOT_495 = dict(spot={'x': -240, 'y': 330}, aim={'x': 20, 'y': 180}, id='mountain-catch')
+FREE_POINT_495 = {'x': 4344, 'y': -8970}  # free air in S06, used for falls
+LIFECYCLE_495 = '''() => {
+    window.lifecycle=window.lifecycle||[];
+    if(!PLATFORM.sendLifecycle.wrapped495){const send=PLATFORM.sendLifecycle;
+        // Only run start/completion events; pause/resume events are not counted.
+        PLATFORM.sendLifecycle=function(name,...rest){if(/^level_(started|completed)$/.test(name))lifecycle.push(name);return send.call(this,name,...rest)};
+        PLATFORM.sendLifecycle.wrapped495=true}
+}'''
+RUN_495 = '''n=>{const t=[];for(let i=1;i<=n;i++){physics();if(i%25===0||i===n)t.push(captureClimbState())}return t}'''
+CONTINUATION_TICKS = 300
+
+
+def leaf_errors(test, a, b, path='', skip=()):
+    """Max numeric difference; every non-numeric leaf, key set and length must be equal."""
+    worst = 0.0
+    if isinstance(a, dict):
+        test.assertEqual(set(a) - set(skip), set(b) - set(skip), path)
+        for k in a:
+            if k not in skip:
+                worst = max(worst, leaf_errors(test, a[k], b[k], path + '.' + k))
+    elif isinstance(a, list):
+        test.assertEqual(len(a), len(b), path)
+        for i, (x, y) in enumerate(zip(a, b)):
+            worst = max(worst, leaf_errors(test, x, y, f'{path}[{i}]'))
+    elif isinstance(a, (int, float)) and not isinstance(a, bool):
+        test.assertIsInstance(b, (int, float), path)
+        worst = abs(a - b)
+    else:
+        test.assertEqual(a, b, path)
+    return worst
+
+
+def brief(state):
+    """Assertion fields of a snapshot without the 91-element list (hashed instead)."""
+    return dict(tick=state['simulationTick'], player=state['player'], grapple=state['grapple'], input=state['input'],
+                stats=state['stats'], upgrades=state['upgrades'],
+                elements_sha256=hashlib.sha256(json.dumps(state['elements'], sort_keys=True).encode()).hexdigest())
+
+
+class Task495Tests(unittest.TestCase):
+    task_id = 'TASK-495'
+    setUpClass = classmethod(Task456Tests.setUpClass.__func__)
+
+    def page(self, seed=None, delayed=False, unavailable=False, start=True):
+        from browser_test_support import wait_for_boot
+        from perf_mobile import SEED_SCRIPT
+        context = self.browser.new_context(viewport={'width': 1280, 'height': 720}, device_scale_factor=1)
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        # Boot awaits animation frames, so only the game loop is held back: physics
+        # advances solely through explicit physics() calls, as in the other suites.
+        page.add_init_script('''(() => {
+            const raf=window.requestAnimationFrame.bind(window);
+            window.requestAnimationFrame=cb=>cb&&cb.name==='gameLoop'?0:raf(cb);
+            window.climbWrites=[];
+            const set=Storage.prototype.setItem;
+            Storage.prototype.setItem=function(key,value) {
+                if(key==='%s') {try{const s=JSON.parse(value);climbWrites.push({at:performance.now(),tick:s.simulationTick,y:s.player.y})}catch(_){}}
+                return set.call(this,key,value);
+            };
+        })()''' % CLIMB_KEY)
+        if seed:
+            page.add_init_script('if(!sessionStorage.seeded495){sessionStorage.seeded495=1;for(const [k,v] of Object.entries('
+                                 + json.dumps(seed) + ')) localStorage.setItem(k,v)}')
+        if unavailable:
+            page.add_init_script("Object.defineProperty(window,'localStorage',{get(){throw Error('blocked storage')}})")
+        if delayed:
+            source = (ROOT/'platform.js').read_text().replace('get remoteKnown() { return true }', 'get remoteKnown() { return false }').replace(
+                'onRecovery() {},', 'onRecovery(fn) { window.recoverStorage = fn },')
+            page.route('**/platform.js', lambda r: r.fulfill(body=source, content_type='application/javascript'))
+        page.goto(self.url)
+        wait_for_boot(page)
+        page.evaluate(SEED_SCRIPT % 1)
+        page.evaluate(LIFECYCLE_495)
+        page.wait_for_function('!unTouch')
+        if start:
+            self.play(page)
+        return page
+
+    def enter(self, page, play=True):
+        page.evaluate("startGame('grapple_over');cancelAnimationFrame(game)")
+        page.wait_for_function('!unTouch')
+        if play:
+            self.play(page)
+
+    @staticmethod
+    def play(page):
+        page.evaluate('menu.unPause();cancelAnimationFrame(game);window.requestAnimationFrame=()=>0')
+        page.evaluate(RANGE_HELPERS)
+        page.evaluate(LIFECYCLE_495)
+
+    def reload(self, page, play=True):
+        """A real reload: boot itself restores the stored climb (startGame('grapple_over'))."""
+        from browser_test_support import wait_for_boot
+        page.reload()
+        wait_for_boot(page)
+        page.evaluate(LIFECYCLE_495)
+        page.wait_for_function('!unTouch')
+        if play:
+            self.play(page)
+
+    def shoot(self, page, shot, until, limit):
+        """Labeled placement at a free point, then a real held page.mouse shot toward the anchor."""
+        page.evaluate('s=>placeAt(s.x,s.y)', shot['spot'])
+        if shot.get('live_aim'):  # a mover: aim at its current centroid
+            shot = dict(shot, aim=page.evaluate('''id=>{const P=floors[0].byId.get(id).getPoints();
+                return {x:P.reduce((a,p)=>a+p.x,0)/P.length,y:P.reduce((a,p)=>a+p.y,0)/P.length}}''', shot['id']))
+        aim = page.evaluate('''([s,a])=>{const d=Math.hypot(a.x-s.x,a.y-s.y),x=s.x+(a.x-s.x)/d*150,y=s.y+(a.y-s.y)/d*150;
+            return canvasCoordsToViewportCoords({x:(x+screen.x)*scale[version],y:(y+screen.y)*scale[version]})}''',
+                            [shot['spot'], shot['aim']])
+        page.mouse.move(aim['x'], aim['y'])
+        page.mouse.down()
+        ticks = page.evaluate('''([until,limit])=>{for(let i=1;i<=limit;i++){physics();if(eval(until))return i}return -1}''',
+                              [until, limit])
+        self.assertGreater(ticks, 0, until)
+        return ticks
+
+    def build(self, page, kind):
+        """A deterministic mountain state; the same calls in a fresh page give the same state."""
+        info = {}
+        if kind == 'free-fall':
+            page.evaluate('p=>{placeAt(p.x,p.y);ninja.speedX=.4;for(let i=0;i<20;i++)physics()}', FREE_POINT_495)
+            info['label'] = 'TEST-ONLY placeAt free S06 point, then 20 physics ticks of free fall'
+        elif kind in ('at-rest', 'hazard-cooldown'):
+            # The spawn pad is a bounce surface (never at rest); the S04 exit ledge settles.
+            self.long_pose(page)
+            info['rest_motion'] = page.evaluate('''()=>{for(let i=0;i<900;i++)physics();const x=ninja.x,y=ninja.y;let speed=0;
+                for(let i=0;i<60;i++){physics();speed=Math.max(speed,Math.hypot(ninja.speedX,ninja.speedY))}
+                return {dx:Math.abs(ninja.x-x),dy:Math.abs(ninja.y-y),max_speed_last_60_ticks:speed,grappled:grapnel.grappled}}''')
+            self.assertLess(info['rest_motion']['dy'], 0.5)
+            self.assertLess(info['rest_motion']['dx'], 1e-9)
+            self.assertLess(info['rest_motion']['max_speed_last_60_ticks'], 0.1)
+            self.assertFalse(info['rest_motion']['grappled'])
+            info['label'] = ('TEST-ONLY restore of the TASK-530 archived S04-exit pose (a real climb state), then 960 '
+                             'physics ticks settling on the S04 exit ledge')
+            if kind == 'hazard-cooldown':
+                # Layout v3 has no hazard-role element; the runtime knockback is applied
+                # against the real floor contact the player rests on.
+                info['knockback'] = page.evaluate('''()=>{
+                    const best=floors[0].elements.map(e=>({e,c:ninja.contactWith(nearestLine(e.getLines(),ninja.x,ninja.y),e.getPoints())}))
+                        .reduce((a,b)=>a.c.depth>=b.c.depth?a:b);
+                    ninja.applyHazardContact(best.c);const after=ninja.hazardCooldownMs;
+                    for(let i=0;i<4;i++)physics();
+                    return {element:best.e.id,cooldown_after_contact:after,cooldown_after_4_ticks:ninja.hazardCooldownMs}}''')
+                self.assertEqual(info['knockback']['cooldown_after_contact'], 350)
+                self.assertTrue(0 < info['knockback']['cooldown_after_4_ticks'] < 350)
+                info['label'] += '; runtime applyHazardContact on that floor contact, then 4 ticks'
+        elif kind == 'moving-anchor':
+            info['attach_tick'] = self.shoot(page, MOVER_SHOT_495, "grapnel.grappled&&grapnel.pos[0][2].id==='S02-hoist'", 80)
+            info['mover_y'] = page.evaluate("()=>{const e=floors[0].byId.get('S02-hoist'),y=[e.y];for(let i=0;i<30;i++){physics();y.push(e.y)}return y}")
+            self.assertGreater(max(info['mover_y']) - min(info['mover_y']), 1)  # S02-hoist is a vertical mover
+            self.assertTrue(page.evaluate("grapnel.grappled&&grapnel.pos[0][2].id==='S02-hoist'"))
+            info['label'] = 'TEST-ONLY placeAt below S02-hoist, real page.mouse shot held, 30 ticks riding the mover'
+        elif kind == 'wrapped-rope':
+            info['wrap_tick'] = self.shoot(page, WRAP_SHOT_495, 'grapnel.grappled&&grapnel.pos.length>=2', 300)
+            page.evaluate('for(let i=0;i<3;i++)physics()')
+            self.assertTrue(page.evaluate('grapnel.grappled&&grapnel.pos.length>=2'))
+            info['label'] = 'TEST-ONLY placeAt beside mountain-catch, real page.mouse shot held until the rope wraps, +3 ticks'
+        elif kind == 'completed':
+            info['completion'] = page.evaluate('''()=>{const f=floors[0].level.finish;placeAt((f.left+f.right)/2,(f.top+f.bottom)/2);
+                physics();return {completed:floors[0].climbStats.completed,events:lifecycle.filter(n=>n==='level_completed').length}}''')
+            self.assertEqual(info['completion'], {'completed': True, 'events': 1})
+            info['label'] = 'TEST-ONLY placeAt the summit finish box; physics() completes the climb'
+        info['state'] = page.evaluate('captureClimbState()')
+        return info
+
+    @staticmethod
+    def long_pose(page):
+        """The TASK-530 archived S04-exit pose (46296 ticks of a real base-start climb); elements merged by id."""
+        archived = json.loads((ROOT/'artifacts/TASK-530/inputs.json').read_text())['initial_snapshot']
+        return page.evaluate('''a=>{const s=captureClimbState(),old=new Map(a.elements.map(e=>[e.id,e]));
+            restoreClimbState({...a,elements:s.elements.map(e=>old.get(e.id)||e)});return captureClimbState()}''', archived)
+
+    def stored(self, page):
+        return page.evaluate("k=>localStorage.getItem(k)", CLIMB_KEY)
+
+    def wait_saved(self, page, state):
+        page.wait_for_function('([k,t])=>{const v=localStorage.getItem(k);return v&&JSON.parse(v).simulationTick===t}',
+                               arg=[CLIMB_KEY, state['simulationTick']])
+
+    def test_01_save_restore_continuations(self):
+        rows = []
+        for kind, lifecycle in (('free-fall', 'periodic-write+cold-start'), ('at-rest', 'pause+reload'),
+                                ('moving-anchor', 'mode-exit-bad+return'), ('wrapped-rope', 'pagehide-by-reload'),
+                                ('hazard-cooldown', 'delayed-read'), ('completed', 'completion-save+reload')):
+            page = self.page()
+            built = self.build(page, kind)
+            live = built['state']
+            extra = {}
+            if lifecycle == 'periodic-write+cold-start':
+                t0 = page.evaluate('performance.now()')
+                for _ in range(12):
+                    page.evaluate('for(let i=0;i<5;i++)physics()')
+                    page.wait_for_timeout(300)
+                writes = page.evaluate('t=>climbWrites.filter(w=>w.at>t)', t0)
+                self.assertGreaterEqual(len(writes), 2)
+                self.assertTrue(all(b['at'] - a['at'] >= 990 for a, b in zip(writes, writes[1:])), writes)
+                self.assertTrue(all(b['y'] > a['y'] for a, b in zip(writes, writes[1:])))  # falling
+                raw = self.stored(page)
+                extra['periodic_writes'] = writes
+                page = self.page(seed={CLIMB_KEY: raw}, start=False)  # boot restores it
+            elif lifecycle == 'pause+reload':
+                page.evaluate('menu.startPause()')
+                self.wait_saved(page, live)
+                raw = self.stored(page)
+                self.reload(page, play=False)
+            elif lifecycle == 'mode-exit-bad+return':
+                page.evaluate("startGame('bad');cancelAnimationFrame(game)")
+                extra['intermediate_mode'] = page.evaluate('version')
+                self.wait_saved(page, live)
+                raw = self.stored(page)
+                self.enter(page, play=False)
+            elif lifecycle == 'pagehide-by-reload':
+                self.reload(page, play=False)  # the real reload's pagehide writes the save
+                raw = self.stored(page)
+            elif lifecycle == 'delayed-read':
+                page.evaluate('PROGRESS.flushClimb()')
+                self.wait_saved(page, live)
+                raw = self.stored(page)
+                page = self.page(delayed=True, start=False)
+                extra['before_late_read'] = brief(page.evaluate('captureClimbState()'))
+                page.evaluate('r=>recoverStorage({[r[0]]:r[1]})', [CLIMB_KEY, raw])
+            else:
+                self.wait_saved(page, live)
+                raw = self.stored(page)
+                self.reload(page, play=False)
+            saved = json.loads(raw)
+            restored = page.evaluate('captureClimbState()')
+            paused = page.evaluate('menu.gamePaused')
+            self.assertTrue(paused)
+            self.assertEqual(restored, json.loads(json.dumps(dict(saved, input={'pressHeld': False, 'stalePress': False}))))
+            self.play(page)
+            # restoring after the stored state: in-page restore and the reloaded page agree
+            continued = page.evaluate(RUN_495, CONTINUATION_TICKS)
+            ref = self.page()
+            again = self.build(ref, kind)['state']
+            self.assertEqual(leaf_errors(self, again, live), 0.0)
+            ref.evaluate('t=>{while(floors[0].elapsedSteps<t)physics()}', saved['simulationTick'])
+            ref.evaluate('pressHeld=stalePress=gameplayPressOwned=false')  # what a restore does to input
+            at_save = ref.evaluate('captureClimbState()')
+            save_error = leaf_errors(self, at_save, restored)
+            reference = ref.evaluate(RUN_495, CONTINUATION_TICKS)
+            errors = [leaf_errors(self, a, b) for a, b in zip(reference, continued)]
+            self.assertLessEqual(save_error, 1e-6)
+            self.assertLessEqual(max(errors), 1e-6)
+            if kind == 'completed':
+                self.assertEqual(continued[-1]['simulationTick'], saved['simulationTick'])
+                self.assertEqual(page.evaluate("lifecycle.filter(n=>n==='level_completed').length"), 0)
+            if kind == 'hazard-cooldown':
+                self.assertTrue(0 < saved['player']['hazardCooldownMs'] < 350)
+                self.assertEqual(continued[-1]['player']['hazardCooldownMs'], 0)
+            if kind in ('moving-anchor', 'wrapped-rope'):
+                self.assertTrue(restored['grapple']['grappled'])
+                self.assertEqual(restored['grapple']['segments'], saved['grapple']['segments'])
+                ids = [g['id'] for g in restored['grapple']['segments']]
+                self.assertTrue(ids == ['S02-hoist'] if kind == 'moving-anchor' else len(ids) >= 2, ids)
+            rows.append(dict(kind=kind, lifecycle=lifecycle, fixture=dict((k, v) for k, v in built.items() if k != 'state'),
+                             raw_saved_snapshot=saved, restored_paused=paused, restored_equals_saved=True,
+                             restored_input=restored['input'], live_at_build=brief(live),
+                             reference_at_saved_tick_max_error=save_error,
+                             paired_trace=dict(ticks=CONTINUATION_TICKS, sample_every=25,
+                                               restored=[brief(s) for s in continued], uninterrupted=[brief(s) for s in reference],
+                                               max_error_per_sample=errors, max_error=max(errors)),
+                             within_1e_6=True, **extra))
+            print(f'PASS {kind} via {lifecycle}: saved tick {saved["simulationTick"]}, restored paused and equal; '
+                  f'{CONTINUATION_TICKS}-tick continuation max error {max(errors):.3g}', flush=True)
+        self.persistence['continuations'] = rows
+
+    def test_02_corrupt_unavailable_failing_storage(self):
+        page = self.page()
+        good = page.evaluate('captureClimbState()')
+        good_raw = json.dumps(good)
+        corrupt = {
+            'unparseable': '{broken',
+            'truncated': good_raw[:len(good_raw)//2],
+            'future-save-version': json.dumps(dict(good, version=2)),
+            'unknown-version-only': '{"version":999}',
+            'other-level-version': json.dumps(dict(good, levelVersion=99)),
+            'missing-element': json.dumps(dict(good, elements=good['elements'][:-1])),
+            'non-finite-player': good_raw.replace('"x": %s' % json.dumps(good['player']['x']), '"x": null', 1),
+            'empty-object': '{}',
+        }
+        self.assertNotEqual(corrupt['non-finite-player'], good_raw)
+        rows = []
+        for name, raw in corrupt.items():
+            page = self.page(seed={CLIMB_KEY: raw, **LEGACY_495}, start=False)
+            text = page.evaluate("document.getElementById('climb-save-notice')?.textContent ?? null")
+            self.assertIsNotNone(text, name)
+            base = page.evaluate('({x:ninja.x,y:ninja.y,spawn:floors[0].level.spawn,tick:floors[0].elapsedSteps,'
+                                 'completed:floors[0].climbStats.completed,grappled:grapnel.grappled})')
+            self.assertEqual((base['x'], base['tick'], base['completed'], base['grappled']), (base['spawn']['x'], 0, False, False))
+            self.play(page)
+            page.evaluate('for(let i=0;i<30;i++)physics();PROGRESS.flushClimb()')
+            self.wait_saved(page, page.evaluate('captureClimbState()'))
+            rows.append(dict(name=name, raw_prefix=raw[:60], notice=text, start=base, started_at_base=True,
+                             ticks_after=30, replaced_by_valid_save=True))
+        self.assertTrue(all(r['notice'] == 'Сохранение недоступно. Начинаем у подножия.' for r in rows))
+        print(f'PASS corrupt saves: {len(rows)} variants -> localized notice, start at base tick 0, playable, valid save written', flush=True)
+        # Unavailable storage: boot, play, save, mode exit/return keep the in-memory climb.
+        page = self.page(unavailable=True)
+        unavailable = page.evaluate('''()=>{for(let i=0;i<40;i++)physics();PROGRESS.flushClimb();
+            const before=captureClimbState();startGame('bad');cancelAnimationFrame(game);startGame('grapple_over');cancelAnimationFrame(game);
+            const back=captureClimbState();menu.unPause();for(let i=0;i<20;i++)physics();
+            return {before:before.simulationTick,back_equal:JSON.stringify(back)===JSON.stringify({...before,input:{pressHeld:false,stalePress:false}}),
+                    after:floors[0].elapsedSteps}}''')
+        self.assertTrue(unavailable['back_equal'])
+        self.assertGreater(unavailable['after'], unavailable['before'])
+        print('PASS unavailable storage: playable, in-memory save survives mode exit/return', flush=True)
+        # Failing writes (false and thrown): play continues, latest state lands once writes recover.
+        page = self.page()
+        page.evaluate('''()=>{const set=PLATFORM.storage.setMany;window.writeResults=[];
+            PLATFORM.storage.setMany=async v=>{writeResults.push(window.failWrites||'ok');if(failWrites==='throw')throw Error('write failed');
+                if(failWrites)return false;return set(v)};window.failWrites='throw'}''')
+        page.evaluate('for(let i=0;i<10;i++)physics();PROGRESS.flushClimb()')
+        page.wait_for_timeout(50)
+        page.evaluate("failWrites=true;for(let i=0;i<10;i++)physics();PROGRESS.flushClimb()")
+        page.wait_for_timeout(50)
+        self.assertIsNone(self.stored(page))
+        page.evaluate("failWrites=false;for(let i=0;i<10;i++)physics()")
+        latest = page.evaluate('captureClimbState()')
+        page.wait_for_function('([k,t])=>{const v=localStorage.getItem(k);return v&&JSON.parse(v).simulationTick===t}',
+                               arg=[CLIMB_KEY, latest['simulationTick']], timeout=5000)
+        failing = dict(write_results=page.evaluate('writeResults'), latest_tick=latest['simulationTick'],
+                       stored_equals_latest=json.loads(self.stored(page)) == latest)
+        self.assertTrue(failing['stored_equals_latest'])
+        self.assertIn('throw', failing['write_results'])
+        self.assertIn(True, failing['write_results'])
+        print('PASS failing writes: thrown/false writes keep play going; retry stores the latest state', flush=True)
+        self.persistence.update(corrupt_saves=rows, unavailable_storage=unavailable, failing_writes=failing)
+
+    # ---- mode isolation ----------------------------------------------------------------------
+    def tap(self, page, key):
+        page.wait_for_function('!unTouch')
+        boxes = page.evaluate('''() => {LAYOUT_PROBE.boxes=[]; menu.drawPauseScreen();
+            const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;return b}''')
+        label = page.evaluate('k=>I18N.t(k)', key)
+        box = next(b for b in boxes if b['kind'] == 'button' and b['name'] == label)
+        rect = page.locator('#canvas').bounding_box()
+        page.mouse.click(rect['x']+box['x']+box['width']/2, rect['y']+box['y']+box['height']/2)
+        page.evaluate('cancelAnimationFrame(game)')
+
+    def legacy(self, page):
+        return page.evaluate('keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]))', list(LEGACY_495))
+
+    def test_03_mode_isolation(self):
+        out = {}
+        page = self.page(seed=LEGACY_495)
+        self.assertEqual(page.evaluate('I18N.language'), 'ru')
+        # High position, then a physical fall: each save tracks the current, lower state.
+        page.evaluate('p=>{placeAt(p.x,p.y);ninja.speedX=.4;physics();PROGRESS.flushClimb()}', FREE_POINT_495)
+        high = page.evaluate('captureClimbState()')
+        self.wait_saved(page, high)
+        t0 = page.evaluate('performance.now()')
+        for _ in range(5):
+            page.evaluate('for(let i=0;i<40;i++)physics()')
+            page.wait_for_timeout(1050)
+        writes = page.evaluate('t=>climbWrites.filter(w=>w.at>t)', t0)
+        self.assertGreaterEqual(len(writes), 3)
+        fallen = page.evaluate('captureClimbState()')
+        stored = json.loads(self.stored(page))
+        self.assertGreater(stored['player']['y'], high['player']['y'] + 200)
+        self.assertTrue(all(b['y'] >= a['y'] for a, b in zip(writes, writes[1:])))
+        self.assertAlmostEqual(stored['stats']['maxHeight'], max(high['stats']['maxHeight'], stored['stats']['maxHeight']))
+        # Every route back into the climb gives the current state, never the high one.
+        routes = {}
+        page.evaluate("startGame('bad');cancelAnimationFrame(game)")
+        self.enter(page, play=False)
+        routes['mode-exit-return'] = page.evaluate('ninja.y')
+        page.evaluate("window.dispatchEvent(new Event('pagehide'))")
+        self.reload(page, play=False)
+        routes['pagehide-reload'] = page.evaluate('ninja.y')
+        page.evaluate('menu.unPause();menu.startPause()')
+        routes['pause-resume'] = page.evaluate('ninja.y')
+        late = self.page(delayed=True, start=False)
+        late.evaluate('r=>recoverStorage({[r[0]]:r[1]})', [CLIMB_KEY, json.dumps(fallen)])
+        self.play(late)
+        late.evaluate('physics()')
+        late.evaluate('r=>recoverStorage({[r[0]]:r[1]})', [CLIMB_KEY, json.dumps(high)])  # stale higher save arrives late
+        routes['delayed-stale-high-read'] = late.evaluate('ninja.y')
+        self.assertGreater(routes['delayed-stale-high-read'], fallen['player']['y'] - 1)
+        for name, y in routes.items():
+            self.assertGreater(y, high['player']['y'] + 200, name)
+        save_keys = sorted(stored.keys())
+        forbidden = [k for k in json.dumps(stored).split('"') if any(w in k.lower() for w in ('checkpoint', 'respawn', 'highest'))]
+        self.assertEqual(forbidden, [])
+        self.assertEqual(page.evaluate('PROGRESS.keys').count(CLIMB_KEY), 1)
+        out['no_checkpoint'] = dict(high=brief(high), fallen=brief(fallen), stored_after_fall=brief(stored),
+                                    periodic_writes=writes, restore_routes_y=routes, save_keys=save_keys,
+                                    checkpoint_like_fields=forbidden, max_height_is_stat_only=True,
+                                    falling_overwrote_high_save=True, no_checkpoint_restored=True)
+        print(f'PASS falls overwrite the high save (y {high["player"]["y"]:.0f} -> {stored["player"]["y"]:.0f}); '
+              f'{len(routes)} restore routes give the current state, none the high one', flush=True)
+        # Long climb: the TASK-530 archived S04-exit pose (46296 ticks), then Restart -> Cancel and Restart -> Yes.
+        self.play(page)
+        self.long_pose(page)
+        page.evaluate('physics();PROGRESS.flushClimb()')
+        climbed = page.evaluate('captureClimbState()')
+        self.wait_saved(page, climbed)
+        page.evaluate('lifecycle.length=0;menu.startPause()')
+        self.tap(page, 'climb.restart')
+        self.assertTrue(page.evaluate('CLIMB_UI.confirming'))
+        self.tap(page, 'climb.cancel')
+        cancelled = dict(confirming=page.evaluate('CLIMB_UI.confirming'), paused=page.evaluate('menu.gamePaused'),
+                         state_equal=page.evaluate('captureClimbState()') == climbed,
+                         stored_equal=json.loads(self.stored(page)) == climbed, events=page.evaluate('lifecycle.slice()'))
+        self.assertEqual(cancelled, dict(confirming=False, paused=True, state_equal=True, stored_equal=True, events=[]))
+        self.tap(page, 'climb.restart')
+        self.tap(page, 'climb.yes')
+        self.wait_saved(page, {'simulationTick': 0})
+        reset = page.evaluate('captureClimbState()')
+        confirmed = dict(state=brief(reset), stored=brief(json.loads(self.stored(page))), events=page.evaluate('lifecycle.slice()'),
+                         paused=page.evaluate('menu.gamePaused'), spawn=page.evaluate('floors[0].level.spawn'))
+        self.assertEqual((reset['simulationTick'], reset['player']['x'], reset['upgrades']['range'], reset['grapple']['throwed']),
+                         (0, confirmed['spawn']['x'], False, False))
+        self.assertEqual(reset['stats']['elapsedActiveMs'], 0)
+        self.assertEqual(reset['stats']['maxHeight'], 0)
+        self.assertEqual(confirmed['stored']['tick'], 0)
+        self.assertEqual(confirmed['events'].count('level_started'), 1)
+        self.assertNotIn('level_completed', confirmed['events'])
+        self.assertFalse(confirmed['paused'])
+        out['restart_after_long_climb'] = dict(label='TASK-530 archived S04-exit pose (artifacts/TASK-530/inputs.json '
+                                               'initial_snapshot), element list merged by id with the current level',
+                                               climbed=brief(climbed), cancelled=cancelled, confirmed=confirmed,
+                                               input='real page.mouse clicks on the pause-menu buttons')
+        print(f'PASS long climb (tick {climbed["simulationTick"]}, height {climbed["stats"]["currentHeight"]:.0f}): '
+              'Restart->Cancel keeps state and save; Restart->Yes resets to base tick 0 with one level_started', flush=True)
+        # Completion: exactly one level_completed across pause, mode exit/return, reload and replay.
+        page.evaluate('''()=>{lifecycle.length=0;menu.unPause();const f=floors[0].level.finish;placeAt((f.left+f.right)/2,(f.top+f.bottom)/2);
+            for(let i=0;i<20;i++)physics();menu.unPause();for(let i=0;i<20;i++)physics()}''')
+        done = page.evaluate('captureClimbState()')
+        self.assertTrue(done['stats']['completed'])
+        completed = "lifecycle.filter(n=>n==='level_completed').length"
+        counts = {'first page: completion + 40 ticks': page.evaluate(completed)}
+        self.wait_saved(page, done)
+        page.evaluate("startGame('classic');cancelAnimationFrame(game)")
+        self.enter(page)
+        page.evaluate('for(let i=0;i<20;i++)physics()')
+        counts['first page: + classic exit/return + 20 ticks'] = page.evaluate(completed)
+        self.reload(page)
+        page.evaluate('for(let i=0;i<20;i++)physics();menu.startPause();menu.unPause();for(let i=0;i<20;i++)physics()')
+        after_reload = page.evaluate('captureClimbState()')
+        counts['reloaded page: 40 ticks + pause/resume'] = page.evaluate(completed)
+        self.assertEqual(after_reload, dict(done, input={'pressHeld': False, 'stalePress': False}))
+        self.assertEqual(list(counts.values()), [1, 1, 0])
+        page.evaluate('menu.startPause()')
+        self.tap(page, 'climb.replay')
+        replay = dict(events=page.evaluate('lifecycle.slice()'), state=brief(page.evaluate('captureClimbState()')))
+        self.assertEqual(replay['events'], ['level_started'])
+        self.assertEqual(replay['state']['tick'], 0)
+        out['completion'] = dict(completed=brief(done), level_completed_counts=counts, total_level_completed=counts['first page: + classic exit/return + 20 ticks'] + counts['reloaded page: 40 ticks + pause/resume'],
+                                 restored_completed_after_reload=True, replay=replay)
+        print('PASS completion: one level_completed across 40 ticks, mode exit/return and reload; Replay restarts explicitly', flush=True)
+        # Old modes: records, language, tutorial and play time survive; climb save untouched by classic/bad play.
+        page.evaluate('for(let i=0;i<30;i++)physics();PROGRESS.flushClimb()')
+        climb = page.evaluate('captureClimbState()')
+        self.wait_saved(page, climb)
+        before_raw = self.stored(page)
+        modes = {}
+        for mode in ('classic', 'bad'):
+            modes[mode] = page.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);menu.unPause();for(let i=0;i<120;i++)physics();
+                let climbError=null;try{captureClimbState()}catch(e){climbError=e.message}
+                PROGRESS.save();return {version,record:scoreText.record[m],climbError,floors:floors.length}}''', mode)
+            self.assertEqual(modes[mode]['climbError'], 'ClimbModeRequired')
+        page.wait_for_timeout(1200)
+        page.evaluate('PROGRESS.flush()')
+        page.wait_for_timeout(100)
+        legacy_after = self.legacy(page)
+        self.assertEqual(self.stored(page), before_raw)
+        self.enter(page, play=False)
+        back = page.evaluate('captureClimbState()')
+        self.assertEqual(back, dict(climb, input={'pressHeld': False, 'stalePress': False}))
+        records = json.loads(legacy_after['grapnelninja.records'])
+        self.assertEqual(records, {'classic': 123, 'bad': 456})
+        self.assertEqual((modes['classic']['record'], modes['bad']['record']), (123, 456))
+        self.assertEqual(legacy_after['grapnelninja.lang'], 'ru')
+        self.assertEqual(legacy_after['grapnelninja.tutorialDone'], 'true')
+        self.assertGreaterEqual(int(legacy_after['grapnelninja.time']), 90)
+        self.reload(page, play=False)
+        legacy_reloaded = dict(self.legacy(page), language=page.evaluate('I18N.language'),
+                               records=page.evaluate('({...scoreText.record})'))
+        self.assertEqual({k: legacy_reloaded['records'][k] for k in ('classic', 'bad')}, {'classic': 123, 'bad': 456})
+        self.assertEqual(legacy_reloaded['language'], 'ru')
+        out['old_modes'] = dict(seeded=LEGACY_495, after_classic_bad_play=legacy_after, after_reload=legacy_reloaded,
+                                modes=modes, climb_save_unchanged_by_old_modes=True, climb_restored_after_old_modes=True,
+                                records_intact=True, language_intact=True, tutorial_intact=True)
+        print('PASS old modes: classic/bad play keeps records 123/456, ru language, tutorialDone and the climb save', flush=True)
+        self.evidence.write('mode-isolation.json', dict(self.proof, **out, mode_isolation_pass=True))
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.persistence.get('continuations') and cls.persistence.get('corrupt_saves'):
+            cls.evidence.write('persistence.json', dict(cls.proof, **cls.persistence, persistence_pass=True))
+
+
+Task495Tests.persistence = {}
