@@ -14,8 +14,8 @@
 // (performance.now(), as ScreenEffects.drawBluePops), drawn every frame on
 // top of the piece from one cached star sprite per backing scale, clipped to
 // the piece polygon. Positions, periods and phases are fixed per sprite.
-// TASK-126: a blue's sprite, outline and glints share one clip, and glints
-// that lie well inside the polygon are drawn without one.
+// TASK-126: glints that lie well inside the polygon are drawn without a
+// clip.
 const CRYSTAL_PIECES = (function()
 {
     const CACHE_LIMIT = 128
@@ -523,11 +523,10 @@ const CRYSTAL_PIECES = (function()
             return sprite
         },
         // Draws the blue crystal inside piece with globalAlpha alpha, clipped
-        // to its polygon, then inside(sprite) under that clip; returns its
-        // sprite (for drawGlints)
-        drawBlue(piece, alpha, inside)
+        // to its polygon; returns its sprite (for drawGlints)
+        drawBlue(piece, alpha)
         {
-            return this.draw(piece, 'blue', alpha, inside)
+            return this.draw(piece, 'blue', alpha)
         },
         // Draws the green jade (and its lip) inside piece with globalAlpha
         // alpha, clipped to its polygon; returns its sprite
@@ -611,10 +610,9 @@ const CRYSTAL_PIECES = (function()
             return true
         },
         // Draws the glints of piece at piece alpha alpha on the render clock,
-        // clipped to its polygon (on top of the piece and its outline).
-        // clipped: the caller's clip is that polygon already; without it the
-        // clip is skipped too when every star lies well inside the polygon
-        drawGlints(piece, sprite, alpha, clipped)
+        // clipped to its polygon (on top of the piece and its outline); the
+        // clip is skipped when every star lies well inside the polygon
+        drawGlints(piece, sprite, alpha)
         {
             if (!this.glints || !sprite || !sprite.glints.length)
                 return
@@ -623,7 +621,7 @@ const CRYSTAL_PIECES = (function()
             const glints = this.glintPoints(piece, sprite)
             const points = piece.getPoints()
             ctx.save()
-            if (!clipped && !this.glintsInside(points, glints, star.half))
+            if (!this.glintsInside(points, glints, star.half))
             {
                 ctx.beginPath()
                 ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
@@ -640,9 +638,7 @@ const CRYSTAL_PIECES = (function()
             }
             ctx.restore()
         },
-        // inside(sprite): drawn after the blit under the same clip, with the
-        // caller's transform and alpha (and the polygon as the current path)
-        draw(piece, kind, alpha, inside)
+        draw(piece, kind, alpha)
         {
             const points = piece.getPoints()
             const m = ctx.getTransform()
@@ -663,7 +659,6 @@ const CRYSTAL_PIECES = (function()
                 ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
             ctx.closePath()
             ctx.clip()
-            const callerAlpha = ctx.globalAlpha
             ctx.globalAlpha = alpha
             const x = points[0].x + screen.x + sprite.dx, y = points[0].y + screen.y + sprite.dy
             if (m.b == 0 && m.c == 0)
@@ -674,12 +669,6 @@ const CRYSTAL_PIECES = (function()
             }
             else
                 ctx.drawImage(sprite.image, x, y, sprite.image.width / k, sprite.image.height / k)
-            if (inside)
-            {
-                ctx.setTransform(m)
-                ctx.globalAlpha = callerAlpha
-                inside(sprite)
-            }
             ctx.restore()
             return sprite
         }

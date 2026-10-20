@@ -27,9 +27,43 @@ class MomentumBlue extends MomentumOneTime
     {
         return true
     }
+    // Crystal at full alpha: the opaque sapphire covers the interior, so the
+    // base fills and the first outline's inner glow under it are skipped
+    // (TASK-126); the outline's tube and core strokes (strokeNeonPath without
+    // the glow) stay, the inner shell strokes it again
+    draw()
+    {
+        const alpha = this.getAlpha()
+        if (bloomPassActive || !CRYSTAL_PIECES.enabled || alpha < 1)
+        {
+            super.draw()
+            return
+        }
+        const neon = STYLE.strokes.neonOutline
+        const unit = 1 / scale[version]
+        const points = this.getPoints()
+        ctx.save()
+        ctx.globalAlpha = alpha
+        ctx.beginPath()
+        ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
+        for (let i = 0; i < points.length; ++i)
+            ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+        ctx.closePath()
+        ctx.shadowBlur = 0
+        ctx.strokeStyle = this.stroke
+        ctx.lineJoin = 'miter'
+        ctx.lineWidth = neon.width * unit
+        ctx.stroke()
+        ctx.strokeStyle = neon.coreColors[this.stroke] || neon.coreColor
+        ctx.globalAlpha = alpha * neon.coreAlpha * neonPulse
+        ctx.lineWidth = neon.width * neon.coreWidthRatio * unit
+        ctx.stroke()
+        ctx.restore()
+        this.drawInnerShell(alpha)
+    }
     // Faceted sapphire (render/crystalpieces.js) instead of the inset copy,
     // under the piece's own neon outline (stroked again, inside the piece),
-    // its twinkling glints on top; all three under the sprite's clip
+    // its twinkling glints on top
     drawInnerShell(alpha)
     {
         if (bloomPassActive || !CRYSTAL_PIECES.enabled)
@@ -37,11 +71,18 @@ class MomentumBlue extends MomentumOneTime
             super.drawInnerShell(alpha)
             return
         }
-        CRYSTAL_PIECES.drawBlue(this, alpha, sprite =>
-        {
-            strokeNeonPath(this.stroke, alpha)
-            CRYSTAL_PIECES.drawGlints(this, sprite, alpha, true)
-        })
+        const sprite = CRYSTAL_PIECES.drawBlue(this, alpha)
+        const points = this.getPoints()
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
+        for (let i = 0; i < points.length; ++i)
+            ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+        ctx.closePath()
+        ctx.clip()
+        strokeNeonPath(this.stroke, alpha)
+        ctx.restore()
+        CRYSTAL_PIECES.drawGlints(this, sprite, alpha)
     }
     vanishesOnUse()
     {

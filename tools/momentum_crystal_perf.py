@@ -17,9 +17,12 @@ tool also times, with the real clock:
                the readback, not in the JS spans)
   worldFlushed drawWorldLayer bracketed by 1 px readbacks (the world layer's
                JS plus its raster; the readback before it is not counted)
-and takes their medians over the TIMED draws. The control region is the same
-on the same page with the pattern and obstacle floors emptied (no crystal
-pieces: HEAD and BASE draw the same thing, so its ratio is the VM noise).
+and takes their medians over the TIMED draws. Two control regions follow on
+the same page: the workload-matched control (matched*) draws the same pieces
+with CRYSTAL_PIECES.enabled = false, i.e. the BASE drawing on the HEAD page
+(BASE has no CRYSTAL_PIECES: its matched region repeats its main one), so
+its HEAD/BASE ratio is the noise on the piece workload itself; then the
+pattern and obstacle floors are emptied (control*: no pieces at all).
 
 HEAD and BASE alternate, RUNS each per scene (H B B H H B ...), a fresh page
 each. Ratios are median(HEAD runs) / median(BASE runs). pass = every scene's
@@ -144,6 +147,9 @@ EMPTY = r'''() => {
         }
 }'''
 
+# Workload-matched control: the BASE drawing of the same pieces (no-op on BASE)
+PLAIN = '''() => { if (typeof CRYSTAL_PIECES != 'undefined') CRYSTAL_PIECES.enabled = false }'''
+
 COUNT = '''() => floors.filter(f => f instanceof MomentumObstacleFloor || f instanceof MomentumPatternFloor)
     .reduce((n, f) => n + f.elements.length, 0)'''
 
@@ -201,6 +207,8 @@ def run(fx, scene, viewport):
             pieces = page.evaluate(COUNT)
         page.evaluate(SETUP)
         main = region(page)
+        page.evaluate(PLAIN)
+        matched = region(page)
         page.evaluate(EMPTY)
         if page.evaluate(COUNT) != 0:
             raise RuntimeError('control floors not empty')
@@ -209,7 +217,7 @@ def run(fx, scene, viewport):
             raise RuntimeError(f'page errors {fx.rev} {scene} {viewport}: {page.errors}')
     finally:
         context.close()
-    return pieces, main, control
+    return pieces, main, matched, control
 
 
 def r4(v):
@@ -231,32 +239,42 @@ def main():
     try:
         for scene, viewport in SCENES:
             raw = {side: {'world': [], 'frame': [], 'worldFlushed': [],
+                          'matchedWorld': [], 'matchedFrame': [], 'matchedWorldFlushed': [],
                           'controlWorld': [], 'controlFrame': [], 'controlWorldFlushed': []} for side in sides}
             pieces = {}
             for i in range(RUNS):
                 # H B, B H, H B, ...: neither side always goes first
                 order = ['head', 'base'] if i % 2 == 0 else ['base', 'head']
                 for side in order:
-                    n, m, c = run(sides[side], scene, viewport)
+                    n, m, mc, c = run(sides[side], scene, viewport)
                     pieces[side] = n
                     for key in ('world', 'frame', 'worldFlushed'):
                         raw[side][key].append(r4(m[key]))
+                        raw[side]['matched' + key[0].upper() + key[1:]].append(r4(mc[key]))
                         raw[side]['control' + key[0].upper() + key[1:]].append(r4(c[key]))
                     print(f'{scene} {viewport[0]}x{viewport[1]} run {i + 1} {side}: world {m["world"]:.3f} '
-                          f'frame {m["frame"]:.3f} worldFlushed {m["worldFlushed"]:.3f} | control world '
+                          f'frame {m["frame"]:.3f} worldFlushed {m["worldFlushed"]:.3f} | matched world '
+                          f'{mc["world"]:.3f} frame {mc["frame"]:.3f} worldFlushed {mc["worldFlushed"]:.3f} | control world '
                           f'{c["world"]:.3f} frame {c["frame"]:.3f} worldFlushed {c["worldFlushed"]:.3f}', flush=True)
             med = {side: {key: r4(median(v)) for key, v in raw[side].items()} for side in sides}
             ratio = {key: r4(med['head'][key] / med['base'][key]) for key in med['head']}
             row = {'scene': scene, 'viewport': f'{viewport[0]}x{viewport[1]}', 'pieces': pieces,
                    'head': raw['head'], 'base': raw['base'], 'medians': med,
                    'worldRatio': ratio['world'], 'frameRatio': ratio['frame'],
-                   'worldFlushedRatio': ratio['worldFlushed'], 'controlWorldRatio': ratio['controlWorld'],
+                   'worldFlushedRatio': ratio['worldFlushed'], 'matchedWorldRatio': ratio['matchedWorld'],
+                   'matchedFrameRatio': ratio['matchedFrame'],
+                   'matchedWorldFlushedRatio': ratio['matchedWorldFlushed'],
+                   'headCrystalCost': {key: r4(med['head'][key] / med['head']['matched' + key[0].upper() + key[1:]])
+                                       for key in ('world', 'frame', 'worldFlushed')},
+                   'controlWorldRatio': ratio['controlWorld'],
                    'controlFrameRatio': ratio['controlFrame'],
                    'controlWorldFlushedRatio': ratio['controlWorldFlushed']}
             row['pass'] = row['worldRatio'] <= MAX_RATIO and row['frameRatio'] <= MAX_RATIO
             rows.append(row)
             print(f'{scene} {row["viewport"]} pieces {pieces["head"]}/{pieces["base"]}: worldRatio {row["worldRatio"]} '
-                  f'frameRatio {row["frameRatio"]} worldFlushedRatio {row["worldFlushedRatio"]} | control '
+                  f'frameRatio {row["frameRatio"]} worldFlushedRatio {row["worldFlushedRatio"]} | matched world '
+                  f'{row["matchedWorldRatio"]} frame {row["matchedFrameRatio"]} worldFlushed '
+                  f'{row["matchedWorldFlushedRatio"]} | HEAD crystal/plain world {row["headCrystalCost"]["world"]} | control '
                   f'world {row["controlWorldRatio"]} frame {row["controlFrameRatio"]} worldFlushed '
                   f'{row["controlWorldFlushedRatio"]} -> {"PASS" if row["pass"] else "FAIL"}', flush=True)
     finally:
@@ -268,6 +286,8 @@ def main():
               'units': 'ms', 'world': 'PERF_PROFILE world meanMs, median of the in-region 120-frame snapshots',
               'frame': 'draw() + 1 px getImageData, median of the timed draws',
               'worldFlushed': 'drawWorldLayer between 1 px readbacks, median of the timed draws',
+              'matched': 'workload-matched control: same page, CRYSTAL_PIECES.enabled = false (BASE: its main drawing again)',
+              'headCrystalCost': 'HEAD main / HEAD matched medians (crystal drawing over the BASE drawing, same pages)',
               'control': 'same page, pattern/obstacle floors emptied',
               'seconds': round(time.time() - started, 1), 'rows': rows, 'pass': ok}
     out = Path(args.out)
