@@ -19,7 +19,8 @@ class MomentumGreen extends MomentumOneTime
     }
     // Jade rock (render/crystalpieces.js) under the piece's own neon outline.
     // The opaque jade replaces the base fills (hidden under it anyway), so
-    // a fading green is the jade and outline at the fade alpha alone
+    // a fading green is the jade and outline at the fade alpha alone; its
+    // twinkling glints go on top
     draw()
     {
         const alpha = this.getAlpha()
@@ -30,7 +31,7 @@ class MomentumGreen extends MomentumOneTime
             super.draw()
             return
         }
-        CRYSTAL_PIECES.drawGreen(this, alpha)
+        const sprite = CRYSTAL_PIECES.drawGreen(this, alpha)
         const points = this.getPoints()
         ctx.save()
         ctx.beginPath()
@@ -40,6 +41,7 @@ class MomentumGreen extends MomentumOneTime
         ctx.closePath()
         strokeNeonPath(this.stroke, alpha)
         ctx.restore()
+        CRYSTAL_PIECES.drawGlints(this, sprite, alpha)
     }
     onNinjaBounce()
     {

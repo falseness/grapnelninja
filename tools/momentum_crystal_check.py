@@ -47,6 +47,23 @@ neonPulse is pinned to 1 before the draw. --rev R captures git rev R
     python3 momentum_crystal_check.py shots <dir> --kind green
         M23/M46/M24-1280x720.png, M134-390x844.png, crop4x-M23-lip.png (the
         ramp slope) and tutorial-legend.png (the momentum hint legend, 3x)
+    python3 momentum_crystal_check.py twinkle <out.json>
+        M04 at 1280x720, frozen clock, 16 frames at now = t0 + k * 200 ms:
+        per glint (canvas px, from CRYSTAL_PIECES.drawGlints) the luminance
+        contribution at its centre (glints on minus CRYSTAL_PIECES.glints =
+        false, same now); pass = per glint min <= 30% and max >= 90% of its
+        own max over the 16 frames, 2..4 glints per piece
+    python3 momentum_crystal_check.py glintdiff <out.json>
+        M04 at 1280x720: two fresh loads at the same now (maxDelta), and now
+        vs now + 400 ms (a third fresh load; each frame is its page's first
+        draw): differing pixels outside / inside the union of the glint boxes
+        (radius 9 px x stage / 1080 + 1 px)
+    python3 momentum_crystal_check.py shots <dir> --kind twinkle
+        M04-dim/mid/peak.png (the twinkle times where the first blue corner
+        glint is dimmest / halfway / brightest) and crop4x-glint-dim/peak.png
+        (4x crop round that glint), each the first draw of a fresh page with
+        the render clock held at t0 except in drawGlints; writes
+        twinkle-times.json (differing pixels outside the glint boxes vs dim)
 --rev BASE is the parent of the TASK-122 game commit 4c9ba46.
 Every JSON is compact. Exit status 1 when a pass condition fails.
 Requires Playwright Chromium, numpy and Pillow.
@@ -83,6 +100,13 @@ LIP_FREE_MIN = 0.8
 LIP_CONTACT_MAX = 0.1
 FADE_TOLERANCE = 0.05
 REVS = {'BASE': '4c9ba46~1'}
+TWINKLE_FRAMES = 16
+TWINKLE_STEP_MS = 200
+TWINKLE_DIM_MAX = 0.3
+TWINKLE_PEAK_MIN = 0.9
+GLINT_BOX_RADIUS = 9
+GLINT_DIFF_MS = 400
+GLINT_COUNT = (2, 4)
 SHIFT_PX = 37
 PIN = 'updateNeonPulse = () => { neonPulse = 1 }; neonPulse = 1'
 
@@ -227,6 +251,222 @@ def erode(mask, n):
 
 def luminance255(img):
     return np.asarray(img, dtype=np.float64)[..., :3] @ np.array([0.2126, 0.7152, 0.0722])
+
+
+# Frame at now (ms; null keeps the clock) with glints on or off: the glints
+# drawn (CRYSTAL_PIECES.drawGlints calls) with their alpha at now. Like
+# neonPulse, the ambient motes' drift and twinkle are pinned (to the clock
+# at the first call), so only the glints follow now. pinAll (the shots) holds
+# the whole render clock there too, except inside CRYSTAL_PIECES.drawGlints
+GLINT_DRAW = r'''([now, on, pinAll]) => {
+    const particles = visualEffects.particles
+    if (window.__motesPinnedAt === undefined) {
+        const pinned = window.__motesPinnedAt = performance.now()
+        const layout = particles.layoutAmbientMotes
+        particles.layoutAmbientMotes = function(...args) {
+            const real = performance.now
+            performance.now = () => pinned
+            try { return layout.apply(this, args) } finally { performance.now = real }
+        }
+    }
+    if (now !== null) __snap.now = now
+    updateNeonPulse = () => { neonPulse = 1 }
+    neonPulse = 1
+    const drawn = []
+    const original = CRYSTAL_PIECES.drawGlints
+    CRYSTAL_PIECES.glints = on
+    CRYSTAL_PIECES.drawGlints = function(piece, sprite, alpha) {
+        const pinned = performance.now
+        performance.now = real
+        const floor = floors.find(f => f instanceof MomentumPatternFloor)
+        drawn.push({piece: floor.elements.indexOf(piece), kind: piece instanceof MomentumBlue ? 'blue' : 'green',
+            glints: this.glintPoints(piece, sprite).map(g => ({x: g.x, y: g.y, period: g.period, phase: g.phase,
+                alpha: alpha * this.glintAlpha([0, 0, g.period, g.phase], performance.now())}))})
+        try { return original.call(this, piece, sprite, alpha) } finally { performance.now = pinned }
+    }
+    const real = performance.now
+    if (pinAll) performance.now = () => window.__motesPinnedAt
+    try { draw() } finally {
+        performance.now = real; CRYSTAL_PIECES.drawGlints = original; CRYSTAL_PIECES.glints = true
+    }
+    return {now: performance.now(), motesPinnedAt: window.__motesPinnedAt, drawn: drawn, stage: Math.min(canvas.width, canvas.height),
+        canvas: [canvas.width, canvas.height]}
+}'''
+
+
+def open_m04():
+    context, page = fxs.harness('worktree').open((1280, 720))
+    page.evaluate(PLACE, ['M04', 0])
+    return context, page
+
+
+def glint_frame(page, now, on=True, pin_all=False):
+    info = page.evaluate(GLINT_DRAW, [now, on, pin_all])
+    return snap(page), info
+
+
+def twinkle_series(page, pin_all=False):
+    """t0, per frame (now, on image, off image, info)"""
+    t0 = page.evaluate('() => performance.now()')
+    frames = []
+    for k in range(TWINKLE_FRAMES):
+        now = t0 + k * TWINKLE_STEP_MS
+        on, info = glint_frame(page, now, True, pin_all)
+        off, _ = glint_frame(page, now, False, pin_all)
+        frames.append((now, on, off, info))
+    return t0, frames
+
+
+def glint_rows(frames):
+    """Per glint: piece, kind, position, contributions and alphas over frames"""
+    rows = []
+    first = frames[0][3]['drawn']
+    for d, piece in enumerate(first):
+        for g, glint in enumerate(piece['glints']):
+            x, y = int(round(glint['x'])), int(round(glint['y']))
+            contrib, alphas = [], []
+            for now, on, off, info in frames:
+                same = info['drawn'][d]['glints'][g]
+                assert (round(same['x'], 3), round(same['y'], 3)) == (round(glint['x'], 3), round(glint['y'], 3))
+                contrib.append(round(float(luminance255(on[y, x]) - luminance255(off[y, x])), 3))
+                alphas.append(round(same['alpha'], 4))
+            rows.append({'piece': piece['piece'], 'kind': piece['kind'], 'glint': g, 'x': x, 'y': y,
+                         'period': round(glint['period'], 2), 'phase': round(glint['phase'], 4),
+                         'contribution': contrib, 'alpha': alphas})
+    return rows
+
+
+def cmd_twinkle(args):
+    context, page = open_m04()
+    try:
+        t0, frames = twinkle_series(page)
+        if page.errors:
+            raise RuntimeError(page.errors)
+    finally:
+        context.close()
+    rows = glint_rows(frames)
+    ok = len(rows) > 0
+    for row in rows:
+        c = row['contribution']
+        top = max(c)
+        row.update(max=top, minFraction=round(min(c) / top, 4) if top > 0 else None,
+                   dimFrame=int(np.argmin(c)), peakFrame=int(np.argmax(c)))
+        row['pass'] = top > 0 and min(c) <= TWINKLE_DIM_MAX * top and \
+            any(v >= TWINKLE_PEAK_MIN * top for i, v in enumerate(c) if i != row['dimFrame'])
+        ok = ok and row['pass']
+    counts = {}
+    for row in rows:
+        counts[row['piece']] = counts.get(row['piece'], 0) + 1
+    count_ok = all(GLINT_COUNT[0] <= n <= GLINT_COUNT[1] for n in counts.values())
+    ok = ok and count_ok and len(counts) == len(frames[0][3]['drawn'])
+    write(args.out, {'rev': fxs.harness('worktree').rev, 'frame': 'M04', 'viewport': '1280x720', 't0': t0,
+                     'stepMs': TWINKLE_STEP_MS, 'nows': [f[0] for f in frames],
+                     'criterion': 'per glint: contribution = lum(glints on) - lum(CRYSTAL_PIECES.glints = false) at '
+                                  'its centre pixel, same now; min <= %s x max and another frame >= %s x max, max = '
+                                  'the glint\'s own max over the %s frames; %s..%s glints per piece'
+                                  % (TWINKLE_DIM_MAX, TWINKLE_PEAK_MIN, TWINKLE_FRAMES, *GLINT_COUNT),
+                     'glintsPerPiece': {str(k): v for k, v in counts.items()}, 'glintCountPass': count_ok,
+                     'glints': len(rows), 'rows': rows, 'pass': ok})
+    return 0 if ok else 1
+
+
+def fresh_glint_frame(later_ms=0):
+    """(image, info) of the first draw of a fresh M04 page at its t0 + later_ms
+    (each frame its first draw: the backdrop's own per-draw state is equal)"""
+    context, page = open_m04()
+    try:
+        now = page.evaluate('() => performance.now()')
+        img, info = glint_frame(page, now + later_ms)
+        if page.errors:
+            raise RuntimeError(page.errors)
+    finally:
+        context.close()
+    return img, info
+
+
+def cmd_glintdiff(args):
+    a, info = fresh_glint_frame()
+    again, _ = fresh_glint_frame()
+    later, info_later = fresh_glint_frame(GLINT_DIFF_MS)
+    reload_delta = fxs.max_delta(a, again)
+    radius = GLINT_BOX_RADIUS * info['stage'] / 1080 + 1
+    boxes = np.zeros(a.shape[:2], dtype=bool)
+    listed = []
+    for d in info['drawn'] + info_later['drawn']:
+        for g in d['glints']:
+            x0, y0 = int(np.floor(g['x'] - radius)), int(np.floor(g['y'] - radius))
+            x1, y1 = int(np.ceil(g['x'] + radius)), int(np.ceil(g['y'] + radius))
+            boxes[max(0, y0):max(0, y1 + 1), max(0, x0):max(0, x1 + 1)] = True
+            listed.append([round(g['x'], 2), round(g['y'], 2)])
+    diff = np.abs(a.astype(np.int16) - later.astype(np.int16)).max(axis=2) > 0
+    result = {'rev': fxs.harness('worktree').rev, 'frame': 'M04', 'viewport': '1280x720', 'now': info['now'],
+              'later': info_later['now'], 'reloadMaxDelta': reload_delta, 'boxRadiusPx': round(radius, 3),
+              'glintCentres': listed[:len(listed) // 2], 'boxPixels': int(boxes.sum()),
+              'differingPixelsOutsideGlintBoxes': int((diff & ~boxes).sum()),
+              'differingPixelsInside': int((diff & boxes).sum()),
+              'criterion': 'reloadMaxDelta == 0 (two loads, same now); now vs now + %s ms: differing pixels outside '
+                           'the glint boxes (radius %s px x stage / 1080 + 1 px) == 0, inside > 0'
+                           % (GLINT_DIFF_MS, GLINT_BOX_RADIUS),
+              'pinned': 'neonPulse = 1 and the ambient motes\' clock (layoutAmbientMotes) at the first frame\'s '
+                        'now (pre-existing background animation, also on BASE); the glints follow now'}
+    result['pass'] = reload_delta == 0 and result['differingPixelsOutsideGlintBoxes'] == 0 and \
+        result['differingPixelsInside'] > 0
+    write(args.out, result)
+    return 0 if result['pass'] else 1
+
+
+def cmd_shots_twinkle(args):
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    context, page = open_m04()
+    try:
+        # Only the glints change between the shots (the rest of the render
+        # clock is held at t0: the backdrop's own time animation stays put)
+        t0, frames = twinkle_series(page, pin_all=True)
+        if page.errors:
+            raise RuntimeError(page.errors)
+    finally:
+        context.close()
+    rows = glint_rows(frames)
+    # The first blue corner glint (glints 0 and 1 of a blue are its corners)
+    row = next(r for r in rows if r['kind'] == 'blue' and r['glint'] == 0)
+    c = np.array(row['contribution'])
+    # mid: the frame closest to halfway between the dimmest and the brightest
+    picks = {'dim': int(np.argmin(c)), 'mid': int(np.argmin(np.abs(c - (c.min() + c.max()) / 2))),
+             'peak': int(np.argmax(c))}
+    # Each shot is the first draw of a fresh page (the series' frames carry
+    # the backdrop's own per-draw state, which changes with the draw count)
+    images = {}
+    for name, k in picks.items():
+        context, page = open_m04()
+        try:
+            images[name], _ = glint_frame(page, frames[k][0], True, True)
+            if page.errors:
+                raise RuntimeError(page.errors)
+        finally:
+            context.close()
+        fxs.save_png(images[name], out / f'M04-{name}.png')
+    half = 20
+    for name in ('dim', 'peak'):
+        img = images[name]
+        crop = Image.fromarray(img[row['y'] - half:row['y'] + half + 1, row['x'] - half:row['x'] + half + 1])
+        crop.resize((crop.width * 4, crop.height * 4), Image.NEAREST).save(out / f'crop4x-glint-{name}.png')
+    times = {name: {'frame': k, 'now': frames[k][0], 'contribution': row['contribution'][k], 'alpha': row['alpha'][k]}
+             for name, k in picks.items()}
+    shots = [images[name] for name in picks]
+    boxes = np.zeros(shots[0].shape[:2], dtype=bool)
+    radius = GLINT_BOX_RADIUS * frames[0][3]['stage'] / 1080 + 1
+    for d in frames[0][3]['drawn']:
+        for g in d['glints']:
+            boxes[int(np.floor(g['y'] - radius)):int(np.ceil(g['y'] + radius)) + 1,
+                  int(np.floor(g['x'] - radius)):int(np.ceil(g['x'] + radius)) + 1] = True
+    outside = [int((np.abs(shots[0].astype(np.int16) - s.astype(np.int16)).max(axis=2)[~boxes] > 0).sum())
+               for s in shots[1:]]
+    write(out.parent / 'twinkle-times.json', {'rev': fxs.harness('worktree').rev, 't0': t0, 'glint': row, 'picks': times,
+                                              'cropHalfPx': half, 'pinAll': True,
+                                              'differingOutsideGlintBoxesVsDim': dict(zip(['mid', 'peak'], outside))})
+    print(sorted(p.name for p in out.glob('*.png')))
+    return 0
 
 
 def cmd_geometry(args):
@@ -674,6 +914,8 @@ def cmd_shots_green(args):
 def cmd_shots(args):
     if args.kind == 'green':
         return cmd_shots_green(args)
+    if args.kind == 'twinkle':
+        return cmd_shots_twinkle(args)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for id, vp in [('M04', (1280, 720)), ('M24', (1280, 720)), ('M66', (1280, 720)), ('M66', (390, 844))]:
@@ -698,7 +940,7 @@ def cmd_shots(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=['geometry', 'outside', 'texture', 'determinism', 'cache', 'shots',
-                                            'lips', 'fade'])
+                                            'lips', 'fade', 'twinkle', 'glintdiff'])
     parser.add_argument('out')
     parser.add_argument('--rev')
     parser.add_argument('--kind', default='blue')

@@ -10,6 +10,10 @@
 // (rounded to 0.01 world units), so a moving piece keeps its look and every
 // run and device draws the same crystal. Visual only; the only randomness is
 // the seeded generator below.
+// Glints (TASK-125): 2-4 seeded points per piece twinkle on the render clock
+// (performance.now(), as ScreenEffects.drawBluePops), drawn every frame on
+// top of the piece from one cached star sprite per backing scale, clipped to
+// the piece polygon. Positions, periods and phases are fixed per sprite.
 const CRYSTAL_PIECES = (function()
 {
     const CACHE_LIMIT = 128
@@ -33,6 +37,13 @@ const CRYSTAL_PIECES = (function()
     // A corridor wall face or another piece's edge closer than this (in W,
     // as momentumSnapWallFace) is in contact
     const CONTACT_TOLERANCE = 1e-5
+    // Glints: star radius, blue corner inset, green edge inset, period range (ms)
+    const GLINT_RADIUS = 8
+    const GLINT_CORNER_INSET = 3
+    const GLINT_EDGE_INSET = 2
+    const GLINT_PERIOD = [1600, 3200]
+    const GLINT_MAX = 4
+    const GLINT_SALT = 0x6a7e11
 
     // mulberry32 (render/wallveins.js): the same crystal on every run and device
     function generator(seed)
@@ -163,6 +174,13 @@ const CRYSTAL_PIECES = (function()
         }
         return false
     }
+    // Seeded period and phase of each glint position
+    function timeGlints(positions, seed)
+    {
+        const random = generator(hash(seed, GLINT_SALT, positions.length))
+        return positions.slice(0, GLINT_MAX).map(([x, y]) =>
+            [x, y, GLINT_PERIOD[0] + (GLINT_PERIOD[1] - GLINT_PERIOD[0]) * random(), random()])
+    }
     function tracePolygon(c, points)
     {
         c.beginPath()
@@ -189,10 +207,12 @@ const CRYSTAL_PIECES = (function()
     }
 
     return {
-        // Test hook: draw the crystal at all
+        // Test hooks: draw the crystal at all, draw its glints
         enabled: true,
+        glints: true,
         stats: {builds: 0, hits: 0, size: 0},
         sprites: new Map(),
+        glintSprites: new Map(),
 
         // Per edge i (points[i] -> points[i + 1]) of a piece: 'wall' (on a
         // corridor wall face), 'piece' (overlapping an edge of another piece
@@ -308,6 +328,21 @@ const CRYSTAL_PIECES = (function()
                 }
                 c.stroke()
             }
+            // Glints: two opposite corners of the polygon inset 3 px, then
+            // up to 2 facet vertices (the core, a rim point 3 px towards it)
+            const pick = generator(hash(seed, GLINT_SALT, 1))
+            const corners = insetPolygon(points, GLINT_CORNER_INSET * unit)
+            const first = Math.floor(pick() * points.length)
+            const glints = [corners[first], corners[(first + Math.floor(points.length / 2)) % points.length]]
+            const facets = 1 + Math.floor(pick() * 2)
+            glints.push(core)
+            if (facets > 1)
+            {
+                const p = rim[Math.floor(pick() * FACETS)]
+                const d = Math.hypot(core[0] - p[0], core[1] - p[1]) || 1
+                const t = Math.min(1, GLINT_CORNER_INSET * unit / d)
+                glints.push([p[0] + (core[0] - p[0]) * t, p[1] + (core[1] - p[1]) * t])
+            }
             // Inner bevel
             const inset = BEVEL_INSET * unit
             if (Math.min(bw, bh) > 2 * inset + 1)
@@ -318,6 +353,7 @@ const CRYSTAL_PIECES = (function()
                 c.stroke()
             }
             c.restore()
+            return timeGlints(glints, seed)
         },
         // Paints the green sprite: jade gradient, diagonal strata, emerald
         // nubs and the lip along the free edges (free[i]: edge i is free),
@@ -398,6 +434,7 @@ const CRYSTAL_PIECES = (function()
             c.shadowBlur = NUB_GLOW * unit
             // An inset past the middle turns the polygon inside out: no room
             const fits = polygonArea(room) * polygonArea(points) > 0
+            const nubCentres = []
             for (let n = 0, tries = 0; fits && n < nubs && tries < 50 * nubs; ++tries)
             {
                 const size = range(...NUB_SIZE) * unit
@@ -408,9 +445,35 @@ const CRYSTAL_PIECES = (function()
                     continue
                 tracePolygon(c, rhombus)
                 c.fill()
+                nubCentres.push([x, y])
                 ++n
             }
             c.restore()
+            // Glints: 0.3 along the longest free edge (any edge if none is
+            // free) 2 px inside, then one seeded nub (the centre without one)
+            const winding = polygonArea(points) > 0 ? 1 : -1
+            let longest = -1, best = 0
+            for (let pass = 0; pass < 2 && longest < 0; ++pass)
+                for (let i = 0; i < points.length; ++i)
+                {
+                    const a = points[i], b = points[(i + 1) % points.length]
+                    const length = Math.hypot(b[0] - a[0], b[1] - a[1])
+                    if ((pass || free[i]) && length > best)
+                    {
+                        longest = i
+                        best = length
+                    }
+                }
+            const a = points[longest], b = points[(longest + 1) % points.length]
+            const ux = (b[0] - a[0]) / best, uy = (b[1] - a[1]) / best
+            const inset = GLINT_EDGE_INSET * unit
+            const glints = [[a[0] + (b[0] - a[0]) * 0.3 - uy * winding * inset, a[1] + (b[1] - a[1]) * 0.3 + ux * winding * inset]]
+            const pick = generator(hash(seed, GLINT_SALT, 2))
+            if (nubCentres.length)
+                glints.push(nubCentres[Math.floor(pick() * nubCentres.length)])
+            else
+                glints.push([(x0 + x1) / 2, (y0 + y1) / 2])
+            return timeGlints(glints, seed)
         },
         // Cached sprite of piece at canvas scale k (canvas px per world unit);
         // a green also keys on its free edges and the outline width
@@ -440,13 +503,16 @@ const CRYSTAL_PIECES = (function()
             const image = document.createElement('canvas')
             image.width = Math.max(1, w)
             image.height = Math.max(1, h)
+            let glints
             if (kind == 'green')
-                this.paintGreen(image.getContext('2d'), points, w, h, stage / REFERENCE_HEIGHT, this.seed(piece, kind),
-                    free, outlineHalf)
+                glints = this.paintGreen(image.getContext('2d'), points, w, h, stage / REFERENCE_HEIGHT,
+                    this.seed(piece, kind), free, outlineHalf)
             else
-                this.paintBlue(image.getContext('2d'), points, w, h, stage / REFERENCE_HEIGHT, this.seed(piece, kind))
-            // Sprite origin relative to the first point, in world units
-            sprite = {image: image, dx: minX / 100 - PAD / k, dy: minY / 100 - PAD / k, k: k}
+                glints = this.paintBlue(image.getContext('2d'), points, w, h, stage / REFERENCE_HEIGHT,
+                    this.seed(piece, kind))
+            // Sprite origin relative to the first point, in world units;
+            // glints: [x, y (sprite px), period ms, phase]
+            sprite = {image: image, dx: minX / 100 - PAD / k, dy: minY / 100 - PAD / k, k: k, glints: glints}
             this.sprites.set(key, sprite)
             if (this.sprites.size > CACHE_LIMIT)
                 this.sprites.delete(this.sprites.keys().next().value)
@@ -455,16 +521,96 @@ const CRYSTAL_PIECES = (function()
             return sprite
         },
         // Draws the blue crystal inside piece with globalAlpha alpha, clipped
-        // to its polygon
+        // to its polygon; returns its sprite (for drawGlints)
         drawBlue(piece, alpha)
         {
-            this.draw(piece, 'blue', alpha)
+            return this.draw(piece, 'blue', alpha)
         },
         // Draws the green jade (and its lip) inside piece with globalAlpha
-        // alpha, clipped to its polygon
+        // alpha, clipped to its polygon; returns its sprite
         drawGreen(piece, alpha)
         {
-            this.draw(piece, 'green', alpha)
+            return this.draw(piece, 'green', alpha)
+        },
+        // Glint alpha (0.2 .. 1) of a [x, y, period, phase] glint at now ms
+        glintAlpha(glint, now)
+        {
+            const wave = Math.max(0, Math.sin(2 * Math.PI * (now / glint[2] + glint[3])))
+            return 0.2 + 0.8 * wave * wave
+        },
+        // The 4-point star of the backing scale (canvas px per 1080-stage px):
+        // a soft core and four tapered rays within GLINT_RADIUS
+        glintSprite(unit)
+        {
+            const key = unit.toFixed(4)
+            let sprite = this.glintSprites.get(key)
+            if (sprite)
+                return sprite
+            const r = GLINT_RADIUS * unit
+            // Odd: the star is centred on a canvas pixel
+            const size = 2 * Math.ceil(r) + 1
+            const image = document.createElement('canvas')
+            image.width = image.height = size
+            const c = image.getContext('2d')
+            const m = size / 2
+            const halo = c.createRadialGradient(m, m, 0, m, m, r * 0.45)
+            halo.addColorStop(0, 'rgba(240,252,255,0.95)')
+            halo.addColorStop(0.35, 'rgba(200,240,255,0.55)')
+            halo.addColorStop(1, 'rgba(160,220,255,0)')
+            c.fillStyle = halo
+            c.fillRect(0, 0, size, size)
+            const ray = Math.max(0.6, 0.9 * unit)
+            c.fillStyle = 'rgba(240,252,255,0.95)'
+            c.beginPath()
+            c.moveTo(m, m - r); c.lineTo(m + ray, m - ray); c.lineTo(m + r, m); c.lineTo(m + ray, m + ray)
+            c.lineTo(m, m + r); c.lineTo(m - ray, m + ray); c.lineTo(m - r, m); c.lineTo(m - ray, m - ray)
+            c.closePath()
+            c.fill()
+            sprite = {image: image, half: Math.floor(size / 2)}
+            this.glintSprites.set(key, sprite)
+            return sprite
+        },
+        // Glints of piece (its sprite from drawBlue/drawGreen) in canvas px
+        // under the current transform: [{x, y, period, phase}]
+        glintPoints(piece, sprite)
+        {
+            const points = piece.getPoints()
+            const m = ctx.getTransform()
+            const x = points[0].x + screen.x + sprite.dx, y = points[0].y + screen.y + sprite.dy
+            const axis = m.b == 0 && m.c == 0
+            const ox = Math.round(m.a * x + m.e), oy = Math.round(m.d * y + m.f)
+            return sprite.glints.map(([gx, gy, period, phase]) =>
+            {
+                if (axis)
+                    return {x: ox + gx, y: oy + gy, period: period, phase: phase}
+                const wx = x + gx / sprite.k, wy = y + gy / sprite.k
+                return {x: m.a * wx + m.c * wy + m.e, y: m.b * wx + m.d * wy + m.f, period: period, phase: phase}
+            })
+        },
+        // Draws the glints of piece at piece alpha alpha on the render clock,
+        // clipped to its polygon (on top of the piece and its outline)
+        drawGlints(piece, sprite, alpha)
+        {
+            if (!this.glints || !sprite || !sprite.glints.length)
+                return
+            const now = performance.now()
+            const star = this.glintSprite(Math.min(canvas.width, canvas.height) / REFERENCE_HEIGHT)
+            const glints = this.glintPoints(piece, sprite)
+            const points = piece.getPoints()
+            ctx.save()
+            ctx.beginPath()
+            ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
+            for (let i = 0; i < points.length; ++i)
+                ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
+            ctx.closePath()
+            ctx.clip()
+            ctx.setTransform(1, 0, 0, 1, 0, 0)
+            for (const glint of glints)
+            {
+                ctx.globalAlpha = alpha * this.glintAlpha([0, 0, glint.period, glint.phase], now)
+                ctx.drawImage(star.image, Math.round(glint.x) - star.half, Math.round(glint.y) - star.half)
+            }
+            ctx.restore()
         },
         draw(piece, kind, alpha)
         {
@@ -498,6 +644,7 @@ const CRYSTAL_PIECES = (function()
             else
                 ctx.drawImage(sprite.image, x, y, sprite.image.width / k, sprite.image.height / k)
             ctx.restore()
+            return sprite
         }
     }
 })()
