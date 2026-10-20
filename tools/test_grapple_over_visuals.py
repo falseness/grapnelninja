@@ -2303,3 +2303,421 @@ class Task542Tests(unittest.TestCase):
         self.evidence.write('classic-bad.json', dict(baseline_revision=self.revisions['before'], viewport=VIEWPORT_542, dpr=1,
             captures_per_revision=5, comparison='majority pixel hash per revision equal (each a majority of 5)', frames=rows, all_equal=all(r['equal'] for r in rows)))
         print(f'PASS classic/bad: {len(rows)} frames x 5 captures per revision; majority pixel hashes equal to {BASELINE_542}', flush=True)
+
+
+VIEWPORTS_493 = VIEWPORTS_541
+MARGIN_493 = 24
+# Approach pose of an encounter: its start (else its anchor point); the range
+# upgrade is on from S05 (the real state once the S05 upgrade zone is entered)
+# View of one pose: the real snapped Grapple Over camera, one draw() with the
+# HUD layout probe on; world points/rects mapped to CSS px of the viewport
+VIEW_493 = '''([pose, upgraded, ids, target]) => {
+    const k = scale[version], world = floors[0];
+    world.rangeUpgraded = upgraded;
+    grapnel.reset && grapnel.reset();
+    ninja.x = pose.x; ninja.y = pose.y; ninja.speedX = ninja.speedY = 0;
+    screen.trackGrappleOver(true);
+    LAYOUT_PROBE.boxes = []; draw();
+    const hud = LAYOUT_PROBE.boxes; LAYOUT_PROBE.boxes = null;
+    const css = getCanvasCssRect();
+    const toCss = (wx, wy) => {const c = canvasCoordsToViewportCoords({x: (wx + screen.x) * k, y: (wy + screen.y) * k});
+        return {x: c.x - css.left, y: c.y - css.top}};
+    const view = {left: 0, top: 0, right: css.width, bottom: css.height};
+    const inter = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) *
+        Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+    const hudRects = hud.map(b => ({name: b.name, left: b.x - 12, top: b.y - 12, right: b.x + b.width + 12, bottom: b.y + b.height + 12}));
+    const movers = world.moverByElement || new Map(world.level.movers.map(m => [m.element, m]));
+    const all = [...world.elements, ...world.dragZones];
+    const role = e => e.surfaceRole === 'hazard' ? 'hazard' : movers.get(e.id) ? 'mover' : (e.surfaceRole || 'drag');
+    const rectOf = e => {const b = elementBounds(e, {left: 0, right: 0, top: 0, bottom: 0});
+        const a = toCss(b.left, b.top), c = toCss(b.right, b.bottom);
+        return {left: a.x, top: a.y, right: c.x, bottom: c.y}};
+    const elements = ids.map(id => {
+        const e = all.find(x => x.id === id);
+        if (!e) return {id, missing: true};
+        const r = rectOf(e), area = Math.max(1, (r.right - r.left) * (r.bottom - r.top));
+        const shown = inter(r, view);
+        return {id, role: role(e), grapplable: !!e.grapplable, stroke: e.stroke,
+            visible: Math.round(shown / area * 1000) / 1000,
+            hud_overlap: Math.round(hudRects.reduce((s, h) => s + inter(r, h), 0) / area * 1000) / 1000,
+            rect: [r.left, r.top, r.right, r.bottom].map(v => Math.round(v))};
+    });
+    let tgt = null;
+    if (target) {
+        const p = toCss(target.x, target.y);
+        tgt = {world: [target.x, target.y], css: [Math.round(p.x), Math.round(p.y)],
+            inside: p.x >= 8 && p.y >= 8 && p.x <= css.width - 8 && p.y <= css.height - 8,
+            under_hud: hudRects.filter(h => p.x >= h.left && p.x <= h.right && p.y >= h.top && p.y <= h.bottom).map(h => h.name),
+            distance: Math.round(Math.hypot(target.x - pose.x, target.y - pose.y)),
+            radius: grappleOverAcquisitionRadius()};
+        tgt.in_range = tgt.distance <= tgt.radius;
+        tgt.margin = Math.round(Math.min(p.x, p.y, css.width - p.x, css.height - p.y));
+        // The surface the target point marks: nearest element bounds
+        const gap = e => {const b = elementBounds(e, {left: 0, right: 0, top: 0, bottom: 0});
+            return Math.hypot(Math.max(b.left - target.x, 0, target.x - b.right), Math.max(b.top - target.y, 0, target.y - b.bottom))};
+        const anchor = all.filter(e => e.id !== 'mountain-catch').reduce((a, e) => gap(e) < gap(a) ? e : a);
+        const r = rectOf(anchor), area = Math.max(1, (r.right - r.left) * (r.bottom - r.top));
+        tgt.anchor = {id: anchor.id, role: role(anchor), grapplable: !!anchor.grapplable, gap: Math.round(gap(anchor)),
+            visible: Math.round(inter(r, view) / area * 1000) / 1000,
+            hud_overlap: Math.round(hudRects.reduce((s, h) => s + inter(r, h), 0) / area * 1000) / 1000};
+    }
+    const n = toCss(ninja.x, ninja.y);
+    return {camera: {x: Math.round(screen.x * 10) / 10, y: Math.round(screen.y * 10) / 10},
+        ninja: [Math.round(ninja.x * 10) / 10, Math.round(ninja.y * 10) / 10],
+        ninja_css: [Math.round(n.x), Math.round(n.y)], css: [css.width, css.height],
+        radius: grappleOverAcquisitionRadius(), hud: hud.map(b => ({name: b.name, kind: b.kind,
+            rect: [b.x, b.y, b.x + b.width, b.y + b.height].map(v => Math.round(v))})),
+        elements, target: tgt,
+        landmarks: (LANDMARKS.frame && LANDMARKS.frame.drawn || []).map(d => ({id: d.id, weight: Math.round(d.weight * 100) / 100}))};
+}'''
+# Real play from a pose: unpaused physics() (which runs the eased camera
+# tracker), no input; per tick the player's CSS position and camera step
+SETTLE_493 = '''ticks => {
+    menu.unPause();
+    const k = scale[version], css = getCanvasCssRect(), out = [];
+    let prev = {x: screen.x, y: screen.y};
+    for (let i = 0; i < ticks; i++) {
+        physics();
+        const r = ninja.radius * k * css.width / width;
+        const c = canvasCoordsToViewportCoords({x: (ninja.x + screen.x) * k, y: (ninja.y + screen.y) * k});
+        const x = c.x - css.left, y = c.y - css.top;
+        out.push({step: Math.hypot(screen.x - prev.x, screen.y - prev.y) * k * css.width / width,
+            inside: x - r >= 0 && y - r >= 0 && x + r <= css.width && y + r <= css.height});
+        prev = {x: screen.x, y: screen.y};
+    }
+    menu.startPause && menu.startPause();
+    return {ticks, max_camera_step_css: Math.round(Math.max(...out.map(o => o.step)) * 10) / 10,
+        out_of_view_ticks: out.filter(o => !o.inside).length};
+}'''
+# Full-level overview: real draws tiled over the level bounds (camera set
+# directly, the player parked outside the tile), each frame scaled into one
+# map canvas; then markers for approaches, targets, landmarks and recovery points
+OVERVIEW_493 = '''([mapScale, markers]) => {
+    const k = scale[version], b = floors[0].level.bounds, vw = width / k, vh = height / k;
+    const top = b.top - 1200, map = document.createElement('canvas');
+    map.width = Math.ceil((b.right - b.left) * mapScale); map.height = Math.ceil((b.bottom - top) * mapScale);
+    const m = map.getContext('2d');
+    m.fillStyle = '#000'; m.fillRect(0, 0, map.width, map.height);
+    const saved = [ninja.x, ninja.y], ui = [drawUILayer, drawFpsCounterLayer, drawAcquisitionCircle];
+    // The map shows the world only: the HUD and range circle stay out of the tiles
+    drawUILayer = drawFpsCounterLayer = drawAcquisitionCircle = () => {};
+    let tiles = 0;
+    for (let y = top; y < b.bottom; y += vh) for (let x = b.left; x < b.right; x += vw) {
+        screen.x = -x; screen.y = -y;
+        ninja.x = x + vw / 2; ninja.y = y - 4 * vh;
+        draw(); tiles++;
+        m.drawImage(canvas, 0, 0, canvas.width, canvas.height, (x - b.left) * mapScale, (y - top) * mapScale, vw * mapScale, vh * mapScale);
+    }
+    [ninja.x, ninja.y] = saved;
+    [drawUILayer, drawFpsCounterLayer, drawAcquisitionCircle] = ui;
+    const at = (x, y) => [(x - b.left) * mapScale, (y - top) * mapScale];
+    m.font = 'bold 11px sans-serif'; m.textBaseline = 'middle';
+    for (const mk of markers) {
+        const [x, y] = at(mk.x, mk.y);
+        m.strokeStyle = m.fillStyle = mk.color; m.lineWidth = 2;
+        if (mk.to) {const [tx, ty] = at(mk.to.x, mk.to.y); m.setLineDash([4, 3]); m.beginPath(); m.moveTo(x, y); m.lineTo(tx, ty); m.stroke(); m.setLineDash([]);}
+        m.beginPath(); m.arc(x, y, mk.r || 5, 0, Math.PI * 2); mk.fill ? m.fill() : m.stroke();
+        if (mk.label) {m.fillStyle = '#fff'; m.fillText(mk.label, x + 7, y);}
+    }
+    return {png: map.toDataURL('image/png'), width: map.width, height: map.height, tiles, top, bounds: b};
+}'''
+RIM_DE_493 = 20
+OVERVIEW_SCALE_493 = 0.12
+# A rest pose on a support element: centre x, on its top surface
+REST_POSE_493 = '''([id, x]) => {
+    const e = [...floors[0].elements, ...floors[0].dragZones].find(e => e.id === id);
+    const b = elementBounds(e, {left: 0, right: 0, top: 0, bottom: 0});
+    return {x, y: Math.round((b.top - ninja.radius - 1) * 10) / 10};
+}'''
+# Pixels the landmark changes in this frame (landmarks off vs on, current
+# camera); rim = mean colour of their brightest 2% (the glowing rim lines)
+LANDMARK_PIXELS_493 = '''rect => {
+    const grab = () => ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    LANDMARKS.enabled = false; draw(); const off = grab();
+    LANDMARKS.enabled = true; draw(); const on = grab();
+    const sx = canvas.width / width, sy = canvas.height / height, px = [];
+    for (let y = Math.max(0, Math.floor(rect[1] * sy)); y < Math.min(canvas.height, rect[3] * sy); y += 2)
+        for (let x = Math.max(0, Math.floor(rect[0] * sx)); x < Math.min(canvas.width, rect[2] * sx); x += 2) {
+            const p = (y * canvas.width + x) * 4;
+            if (Math.abs(on[p] - off[p]) + Math.abs(on[p + 1] - off[p + 1]) + Math.abs(on[p + 2] - off[p + 2]) > 24)
+                px.push([on[p], on[p + 1], on[p + 2], off[p], off[p + 1], off[p + 2]]);
+        }
+    px.sort((a, b) => (b[0] + b[1] + b[2]) - (a[0] + a[1] + a[2]));
+    const top = px.slice(0, Math.max(1, Math.round(px.length / 50)));
+    const mean = o => [0, 1, 2].map(c => Math.round(top.reduce((s, p) => s + p[c + o], 0) / top.length));
+    return {count: px.length, rim: mean(0), behind: mean(3)};
+}'''
+# Filled silhouette masks of the 8 landmark shapes and their pairwise IoU
+SHAPE_IOU_493 = '''() => {
+    const c = GRAPPLE_OVER_LANDMARKS, f = 0.2, w = Math.round(c.width * f), h = Math.round(c.height * f);
+    const masks = GRAPPLE_OVER_LANDMARK_SHAPES.map(shape => {
+        const s = shape(c.width, c.height), cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const g = cv.getContext('2d');
+        g.scale(f, f); g.fillStyle = '#fff'; g.strokeStyle = '#fff'; g.lineWidth = 8;
+        for (const part of s.parts || []) {g.beginPath(); part.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fill();}
+        for (const [x, y, r] of s.circles || s.wheels || []) {g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();}
+        for (const line of s.lines || []) {g.beginPath(); line.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke();}
+        const d = g.getImageData(0, 0, w, h).data, m = new Uint8Array(w * h);
+        for (let i = 0; i < m.length; i++) m[i] = d[i * 4 + 3] > 127;
+        return m;
+    });
+    const pairs = [];
+    for (let a = 0; a < 8; a++) for (let b = a + 1; b < 8; b++) {
+        let i = 0, u = 0;
+        for (let p = 0; p < masks[a].length; p++) {i += masks[a][p] & masks[b][p]; u += masks[a][p] | masks[b][p];}
+        pairs.push({a: 'S0' + (a + 1), b: 'S0' + (b + 1), iou: Math.round(i / u * 1000) / 1000});
+    }
+    return {fill: masks.map(m => Math.round(m.reduce((s, v) => s + v, 0) / m.length * 1000) / 1000), pairs};
+}'''
+
+
+def _hex_rgb(value):
+    value = value.strip().lstrip('#')[:6]
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+class Task493Tests(unittest.TestCase):
+    """Grapple Over readability/camera review: approaches, landmarks, recovery points, overview map."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-493')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        hashes = source_hashes()
+        for name in ('tools/test_grapple_over_visuals.py', 'tools/grapple_over_recovery_routes.json'):
+            hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+        cls.config = dict(revision=subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+            dirty=bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'],
+                                                cwd=ROOT, text=True).strip()),
+            source_hashes=hashes, browser=cls.browser.version, viewports=VIEWPORTS_493,
+            device_scale_factor=1, seed=1)
+        cls.evidence.log('CONFIG ' + json.dumps(cls.config, sort_keys=True))
+        cls.gallery = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.gallery:
+            cls.evidence.write('gallery.json', dict(config={k: v for k, v in cls.config.items() if k != 'source_hashes'},
+                                                    **cls.gallery))
+
+    def open(self, viewport, touch=False):
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=1,
+                                           is_mobile=touch, has_touch=touch)
+        self.addCleanup(context.close)
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(
+            test=self.id(), viewport=viewport, dpr=1, is_mobile=touch, has_touch=touch,
+            mode='grapple_over'), sort_keys=True))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(self.url)
+        wait_for_boot(page)
+        page.evaluate("m => {startGame(m); cancelAnimationFrame(game)}", 'grapple_over')
+        page.wait_for_function('!unTouch')
+        return page
+
+    def shot(self, page, name):
+        page.screenshot(path=str(self.evidence.path(name)), type='jpeg', quality=72)
+        return name
+
+    def test_01_encounter_approaches(self):
+        rows = []
+        for config in VIEWPORTS_493:
+            viewport, touch = config['viewport'], config['touch']
+            page = self.open(viewport, touch)
+            mountain = page.evaluate('GRAPPLE_OVER_MOUNTAIN.encounters.map(e => ({id: e.id, section: e.section, '
+                                     'start: e.start ? {x: e.start.x, y: e.start.y} : {x: e.x, y: e.y}, target: e.target, '
+                                     'elements: e.elements, action: e.action}))')
+            self.assertEqual(len(mountain), 32)
+            for e in mountain:
+                upgraded = e['section'] >= 'S05'
+                view = page.evaluate(VIEW_493, [e['start'], upgraded, e['elements'], e['target']])
+                image = self.shot(page, f'approaches/{e["id"]}-{config["name"]}.jpg')
+                settle = page.evaluate(SETTLE_493, 90)
+                row = dict(encounter=e['id'], viewport=config['name'], pose=e['start'], range_upgraded=upgraded,
+                           action=e['action'], image=image, settle=settle, **view)
+                # Readable before commitment: the target and the surface it marks
+                # on screen at the approach pose, clear of the viewport edge and the HUD
+                t = view['target']
+                row['target_readable'] = (t['margin'] >= 0 and not t['under_hud'] and
+                                          t['anchor']['visible'] >= 0.99 and t['anchor']['hud_overlap'] <= 0.05)
+                row['tight_margin'] = t['margin'] < MARGIN_493
+                rows.append(row)
+            page.close()
+        self.assertEqual(len(rows), 64)
+        problems = [(r['encounter'], r['viewport']) for r in rows
+                    if not r['target_readable']]
+        jumps = [(r['encounter'], r['viewport'], r['settle']) for r in rows
+                 if r['settle']['out_of_view_ticks'] or r['settle']['max_camera_step_css'] > 60]
+        self.__class__.gallery['approaches'] = rows
+        self.__class__.gallery['approach_summary'] = dict(
+            encounters=len({r['encounter'] for r in rows}), frames=len(rows), unreadable=problems,
+            tight_margins=[(r['encounter'], r['viewport'], r['target']['margin'], r['target']['anchor']['id'])
+                           for r in rows if r['tight_margin']],
+            anchor_roles=sorted({r['target']['anchor']['role'] for r in rows}))
+        self.assertEqual(problems, [])
+        self.assertEqual(jumps, [])
+        print(f'PASS approaches: 32 encounters x 2 viewports; every target point inside the viewport and off the '
+              f'HUD, the surface it marks wholly on screen and off the HUD at the approach pose '
+              f'({len(self.gallery["approach_summary"]["tight_margins"])} frames within {MARGIN_493} css px of an edge); 90 idle ticks keep the player in view, max camera step '
+              f'{max(r["settle"]["max_camera_step_css"] for r in rows)} css px', flush=True)
+
+    def test_02_landmarks(self):
+        rows = []
+        for config in VIEWPORTS_493:
+            viewport, touch = config['viewport'], config['touch']
+            page = self.open(viewport, touch)
+            for i in range(8):
+                row = page.evaluate(ENTRY_541, i)
+                sid = row['section']
+                self.assertIsNotNone(row['rect'], row)
+                # The landmark's own drawn pixels (changed by it): their brightest
+                # 2% are its rim lines, the colour a player could mistake for a surface
+                pixels = page.evaluate(LANDMARK_PIXELS_493, row['rect'])
+                image = self.shot(page, f'landmarks/{sid}-{config["name"]}.jpg')
+                row.update(viewport=config['name'], image=image, rim_rgb=pixels['rim'], behind_rgb=pixels['behind'], landmark_pixels=pixels['count'],
+                           camera_state=dict(camera=row['camera'], ninja=row['entry']),
+                           changed_fraction=round(row['changed'] / row['total'], 4))
+                del row['changed'], row['total']
+                rows.append(row)
+            if config['name'] == 'desktop':
+                masks = page.evaluate(SHAPE_IOU_493)
+            page.close()
+        roles = {'bounce': '#3dff4a', 'mover': '#2f86ff', 'solid': '#6a5296', 'drag': '#ffc400'}
+        for row in rows:
+            rim = _lab(row['rim_rgb'])
+            row['rim_delta_e'] = {k: round(float(sum((a - b) ** 2 for a, b in zip(rim, _lab(_hex_rgb(v)))) ** 0.5), 1)
+                                  for k, v in roles.items()}
+            row['nearest_role'] = min(row['rim_delta_e'], key=row['rim_delta_e'].get)
+            # Depth: the decoration's rim stands out from the backdrop behind it
+            # less than any surface outline would there (terrain pops, decoration recedes)
+            de = lambda a, b: float(sum((x - y) ** 2 for x, y in zip(_lab(a), _lab(b))) ** 0.5)
+            row['rim_contrast'] = round(de(row['rim_rgb'], row['behind_rgb']), 1)
+            row['role_contrast'] = {k: round(de(_hex_rgb(v), row['behind_rgb']), 1) for k, v in roles.items()}
+            row['recedes'] = row['rim_contrast'] < min(row['role_contrast'].values())
+        names = {r['landmark']['name'] for r in rows}
+        worst = max(masks['pairs'], key=lambda p: p['iou'])
+        self.__class__.gallery['landmarks'] = rows
+        self.__class__.gallery['landmark_summary'] = dict(
+            distinct_names=sorted(names), silhouette_iou=masks, role_strokes=roles,
+            min_rim_delta_e=min(min(r['rim_delta_e'].values()) for r in rows),
+            colliders=sum(r['colliders'] for r in rows), method='ENTRY_541 frame per section; rim = mean RGB of '
+            'the brightest 2% of pixels the landmark changes (>24 RGB sum vs LANDMARKS.enabled off); delta E = CIE76 '
+            'to each role stroke colour; silhouette IoU = filled GRAPPLE_OVER_LANDMARK_SHAPES masks at 1/5 scale')
+        self.assertEqual(len(rows), 16)
+        self.assertEqual(len(names), 8)
+        self.assertTrue(all(r['weight'] == 1 and r['changed_fraction'] > 0.05 for r in rows), rows)
+        self.assertEqual(sum(r['colliders'] for r in rows), 0)
+        self.assertLess(worst['iou'], 0.6, worst)
+        self.assertGreaterEqual(self.gallery['landmark_summary']['min_rim_delta_e'], RIM_DE_493,
+                                [(r['section'], r['viewport'], r['nearest_role'], r['rim_delta_e']) for r in rows])
+        print(f'PASS landmarks: 8 distinct named landmarks x 2 viewports at full strength in their entry frames; '
+              f'0 colliders; silhouette IoU max {worst["iou"]} ({worst["a"]}/{worst["b"]}); rim colour delta E to '
+              f'every role stroke >= {self.gallery["landmark_summary"]["min_rim_delta_e"]}', flush=True)
+
+    def test_03_recovery_points(self):
+        routes = json.loads((ROOT / 'tools/grapple_over_recovery_routes.json').read_text())['routes']
+        rows = []
+        for config in VIEWPORTS_493:
+            viewport, touch = config['viewport'], config['touch']
+            page = self.open(viewport, touch)
+            for key, route in sorted(routes.items()):
+                pocket, rng = key.split('|')
+                support, span = pocket.split('@')
+                x0, x1 = (float(v) for v in span.split('-'))
+                pose = page.evaluate(REST_POSE_493, [support, (x0 + x1) / 2])
+                first = route['presses'][0]
+                view = page.evaluate(VIEW_493, [pose, rng == '1', route['targets'], dict(x=first[2], y=first[3])])
+                image = None
+                if rng == '0' or f'{pocket}|0' not in routes:
+                    image = self.shot(page, f'recovery/{pocket}-{config["name"]}.jpg')
+                t = view['target']
+                named = view['elements'][0]
+                row = dict(route=key, pocket=pocket, viewport=config['name'], range=1620 if rng == '1' else 1080,
+                           pose=pose, first_press=first, escape_anchor=route['targets'][0], image=image, **view)
+                # The escape anchor a resting player must find: on screen, its aim
+                # point off the HUD and at most a quarter of its box under HUD text
+                row['anchor_readable'] = (named.get('visible', 0) > 0 and named.get('hud_overlap', 1) <= 0.25 and
+                                          not t['under_hud'])
+                row['aim_on_screen'] = t['margin'] >= 0
+                rows.append(row)
+            page.close()
+        desktop = [r for r in rows if r['viewport'] == 'desktop']
+        self.assertEqual(len(desktop), len(routes))
+        self.assertEqual(len({r['pocket'] for r in desktop}), 44)
+        problems = [(r['route'], r['viewport'], r['escape_anchor'], r['elements'][0], r['target']['margin'])
+                    for r in rows if not r['anchor_readable'] or (r['viewport'] == 'desktop' and not r['aim_on_screen'])]
+        self.__class__.gallery['recovery'] = rows
+        self.__class__.gallery['recovery_summary'] = dict(
+            pockets=len({r['pocket'] for r in desktop}), routes=len(routes), frames=len(rows),
+            images=sum(r['image'] is not None for r in rows), unreadable=problems,
+            partial_hud_overlap=[(r['route'], r['viewport'], r['escape_anchor'], r['elements'][0]['hud_overlap'],
+                                  r['target']['margin']) for r in rows if r['elements'][0].get('hud_overlap', 0) > 0],
+            touch_aim_off_screen=[r['route'] for r in rows if r['viewport'] == 'touch' and not r['aim_on_screen']],
+            method='every off-climb rest pocket of tools/grapple_over_recovery_routes.json (TASK-491): the player '
+                   'placed at rest on the pocket support (centre x, on its top), real snapped camera, one draw(); the '
+                   'first escape press aim point and its named anchor element mapped to CSS px; desktop is the '
+                   'viewport the routes were recorded with')
+        self.assertEqual(problems, [])
+        print(f'PASS recovery points: {len(routes)} escape routes from 44 exposed rest pockets x 2 viewports; the '
+              f'named escape anchor on screen, its aim point off the HUD and <= 25% of its box under HUD text in every frame, desktop aim points on screen; '
+              f'{self.gallery["recovery_summary"]["images"]} screenshots', flush=True)
+
+    def test_04_overview_and_roles(self):
+        import base64
+        page = self.open(VIEWPORTS_493[0]['viewport'])
+        data = page.evaluate('''() => ({
+            encounters: GRAPPLE_OVER_MOUNTAIN.encounters.map(e => ({id: e.id, start: e.start || {x: e.x, y: e.y}, target: e.target})),
+            landmarks: grappleOverLandmarkAnchors().map(a => ({id: a.id, name: a.name,
+                x: Math.round(a.x / scale[version] - a.camera.x), y: Math.round(a.y / scale[version] - a.camera.y)})),
+            roles: (() => {const w = floors[0], mv = w.moverByElement || new Map(w.level.movers.map(m => [m.element, m]));
+                const out = {};
+                for (const e of [...w.elements, ...w.dragZones]) {
+                    const r = e.surfaceRole === 'hazard' ? 'hazard' : mv.get(e.id) ? 'mover' : (e.surfaceRole || 'drag');
+                    (out[r] = out[r] || {count: 0, strokes: [], grapplable: 0}).count++;
+                    if (!out[r].strokes.includes(e.stroke)) out[r].strokes.push(e.stroke);
+                    out[r].grapplable += !!e.grapplable;
+                }
+                return out})()})''')
+        routes = json.loads((ROOT / 'tools/grapple_over_recovery_routes.json').read_text())['routes']
+        pockets = {}
+        for key in routes:
+            pocket = key.split('|')[0]
+            support, span = pocket.split('@')
+            x0, x1 = (float(v) for v in span.split('-'))
+            pockets[pocket] = page.evaluate(REST_POSE_493, [support, (x0 + x1) / 2])
+        markers = []
+        for e in data['encounters']:
+            markers.append(dict(x=e['start']['x'], y=e['start']['y'], to=e['target'], color='#00ffff', r=6, label=e['id']))
+            markers.append(dict(x=e['target']['x'], y=e['target']['y'], color='#ffffff', r=4, fill=True))
+        for i, lm in enumerate(data['landmarks']):
+            markers.append(dict(x=lm['x'], y=lm['y'], color='#ffd84d', r=9, fill=True, label=f'{lm["id"]} {lm["name"]}'))
+        for p in pockets.values():
+            markers.append(dict(x=p['x'], y=p['y'], color='#ff6bff', r=4))
+        overview = page.evaluate(OVERVIEW_493, [OVERVIEW_SCALE_493, markers])
+        self.evidence.path('overview.png').write_bytes(base64.b64decode(overview['png'].split(',', 1)[1]))
+        # Roles: one stroke colour per role, no colour shared across roles
+        strokes = {r: v['strokes'] for r, v in data['roles'].items()}
+        shared = [(a, b) for a in strokes for b in strokes if a < b and set(strokes[a]) & set(strokes[b])]
+        self.__class__.gallery['overview'] = dict(
+            image='overview.png', width=overview['width'], height=overview['height'], tiles=overview['tiles'],
+            map_scale=OVERVIEW_SCALE_493, map_top=overview['top'], bounds=overview['bounds'],
+            legend=dict(cyan_ring='encounter approach pose (start) with id, dashed to its target (white dot)',
+                        gold_dot='section landmark centre as drawn from its entry camera (it moves at 0.4 parallax in play; the tiles show landmarks relative to each tile camera)',
+                        magenta_ring='exposed recovery rest pocket (TASK-491 routes)'),
+            approaches=len(data['encounters']), landmarks=len(data['landmarks']), recovery_pockets=len(pockets),
+            method='real draw() frames tiled over the level bounds (camera set per tile, player parked out of the '
+                   'tile), each scaled into one map, markers drawn on top')
+        self.__class__.gallery['roles'] = dict(roles=data['roles'], shared_strokes=shared)
+        self.assertEqual(overview['width'], round(6480 * OVERVIEW_SCALE_493))
+        self.assertEqual(len(data['encounters']), 32)
+        self.assertEqual(len({lm['name'] for lm in data['landmarks']}), 8)
+        self.assertEqual(shared, [])
+        self.assertGreaterEqual(len(strokes), 4)
+        print(f'PASS overview: {overview["width"]}x{overview["height"]} map from {overview["tiles"]} real frames with '
+              f'32 approaches, 8 landmarks and {len(pockets)} recovery pockets marked; roles {sorted(strokes)} use '
+              f'disjoint stroke colours', flush=True)
