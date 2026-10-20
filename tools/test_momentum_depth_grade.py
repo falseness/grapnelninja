@@ -187,7 +187,9 @@ class MomentumDepthGradeTests(unittest.TestCase):
             parent_hue = hue_deg(mean_rgb(parent0, mask))
             result.update(parent=fx.harness(self.parent).rev, parentHue=round(parent_hue, 2),
                           hue0VsParent=round(abs(hue_shift(parent_hue, hue0)), 2),
-                          score0MaxDeltaVsParent=fx.max_delta(frames[0], parent0))
+                          score0MaxDeltaVsParent=fx.max_delta(frames[0], parent0),
+                          # TASK-124 green crystal pieces: equal outside the blue/green pieces
+                          score0VsParentOutsidePieces=fx.assert_equal_outside_pieces(frames[0], parent0, check=False))
         self.result['depth'] = result
         print('score 0', {k: v for k, v in result.items() if k != 'scores'})
         self.assertGreater(mask.sum(), 50000)
@@ -195,7 +197,7 @@ class MomentumDepthGradeTests(unittest.TestCase):
         self.assertEqual(result['score0MaxDeltaVsGradeOff'], 0)
         if parent0 is not None:
             self.assertLessEqual(result['hue0VsParent'], HUE_TOL)
-            self.assertEqual(result['score0MaxDeltaVsParent'], 0)
+            self.assertEqual(result['score0VsParentOutsidePieces']['differingPixels'], 0)
         for row in rows:
             with self.subTest(score=row['score']):
                 self.assertLessEqual(row['shiftError'], HUE_TOL)
