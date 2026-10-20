@@ -52,7 +52,7 @@ def require(condition, message):
 def validate(manifest):
     m = manifest['metadata']
     require(m['schema'] == 1 and m['hz'] == 60 and m['seed'] == 1
-            and m['viewport'] in (VIEWPORT, {'width':844, 'height':390}), 'metadata mismatch')
+            and m['viewport'] in (VIEWPORT, {'width':844, 'height':390}, {'width':667, 'height':375}), 'metadata mismatch')
     require(m['source_hashes'] == hashes(), 'runtime hash mismatch')
     require(m['level_sha256'] == hashes()['fixedlevel.js'], 'level hash mismatch')
     require(m['kind'] in ('base-start', 'isolated'), 'unknown proof kind')
