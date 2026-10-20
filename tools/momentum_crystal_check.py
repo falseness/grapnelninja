@@ -75,7 +75,8 @@ DILATE = 2
 ERODE = 6
 TEXTURE_FLAT_MAX = 1.0
 TEXTURE_HEAD_MIN = 15
-GREEN_TEXTURE_RATIO = 3.0
+GREEN_TEXTURE_HEAD_MIN = 12
+GREEN_TEXTURE_RATIO = 1.5
 LIT = 200
 LIP_DEPTH = 2
 LIP_FREE_MIN = 0.8
@@ -352,13 +353,13 @@ def cmd_texture_green(args):
             head, parent = round(float(la[m].std()), 3), round(float(lb[m].std()), 3)
             row = {'frame': id, 'piece': i, 'pixels': int(m.sum()), 'head': head, 'parent': parent,
                    'ratio': round(head / parent, 3) if parent else 'inf'}
-            row['pass'] = head >= GREEN_TEXTURE_RATIO * parent and head > 0
+            row['pass'] = head >= GREEN_TEXTURE_HEAD_MIN and head >= GREEN_TEXTURE_RATIO * parent
             ok = ok and row['pass']
             rows.append(row)
     ok = ok and len(rows) > 0
     write(args.out, {'kind': 'green', 'viewport': '1280x720', 'erodePx': ERODE,
                      'region': 'the piece eroded erodePx minus the lip bands of its free edges (dilated 1 px), same mask on both sides',
-                     'criterion': 'per row: head >= %s x parent' % GREEN_TEXTURE_RATIO,
+                     'criterion': 'per row: head >= %s and head >= %s x parent' % (GREEN_TEXTURE_HEAD_MIN, GREEN_TEXTURE_RATIO),
                      'rev': fxs.harness('worktree').rev, 'parent': sha(args.rev), 'rows': rows, 'pass': ok})
     return 0 if ok else 1
 
