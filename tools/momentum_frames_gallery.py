@@ -5,6 +5,7 @@ write to <evidence dir>/shots/<id>-<viewport>.png (concept left, the frame
 placed in the game right, no annotations on the game half) into contact
 sheets, one per group (right / shaft / corner) and viewport:
     python3 momentum_frames_gallery.py sheets <out dir> <shots dir> ...
+(an evidence dir with a shots/ subdirectory may be given instead of it).
 Writes <out dir>/sheet-<group>-<viewport>.png and prints the ids per sheet.
 Fails when one of the 22 ids x 2 viewports has no montage.
 
@@ -41,6 +42,8 @@ SHOT_SECONDS = [15, 30, 45, 60]
 
 def sheets(out, dirs):
     from PIL import Image
+    # An evidence dir stands for its shots/ (where the frame suites write)
+    dirs = [d / 'shots' if (d / 'shots').is_dir() else d for d in dirs]
     out.mkdir(parents=True, exist_ok=True)
     missing = []
     for group, ids in GROUPS.items():

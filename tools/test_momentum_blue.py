@@ -234,8 +234,10 @@ TOUCH_INIT = r'''() => {
     // The camera stays on the built scene: the rail camera's first move
     // would put the view back on the course from the trigger point
     screen.shouldStartMove = () => false
-    const draw = blue.drawBadVersionPolygon
-    blue.drawBadVersionPolygon = function() { ++t.drawn; return draw.apply(this, arguments) }
+    // Every drawn blue runs its inner shell (the crystal draw of TASK-126
+    // skips drawBadVersionPolygon at full alpha); none once it is faded
+    const draw = blue.drawInnerShell
+    blue.drawInnerShell = function() { ++t.drawn; return draw.apply(this, arguments) }
     const pass = blue.onNinjaPass
     blue.onNinjaPass = function(who) {
         const v0 = Math.hypot(who.speedX, who.speedY), used = this.passThrough

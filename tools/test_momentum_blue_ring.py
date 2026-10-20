@@ -71,6 +71,9 @@ INIT = r'''([frameMs, hp]) => {
     const fxs = visualEffects.screenEffects
     momentumState.hp = hp
     ninja.invulnerableMs = 0
+    // The camera stays on the built scene (as in test_momentum_blue): the
+    // rail camera's first move would take the view off the touch (TASK-086 N2)
+    screen.shouldStartMove = () => false
     const t = window.__t = {fl, blue, touch: null, frame: 0, arcs: [], frameMs,
         steps: Math.max(1, Math.round(frameMs / physicsStepMs))}
     const pass = blue.onNinjaPass

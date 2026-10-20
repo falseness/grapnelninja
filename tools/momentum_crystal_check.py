@@ -64,6 +64,11 @@ neonPulse is pinned to 1 before the draw. --rev R captures git rev R
         (4x crop round that glint), each the first draw of a fresh page with
         the render clock held at t0 except in drawGlints; writes
         twinkle-times.json (differing pixels outside the glint boxes vs dim)
+    python3 momentum_crystal_check.py shots <dir> --kind final
+        blue-pop.png (M04's blue before its touch | 90 ms into its pop, 3x
+        crops) and concept-vs-game.png (concept A | one 1280x720 frame: M46's
+        floor ramp and green-capped blue pad, M24's hanging blue pillar and
+        ceiling ramp, M04's floating blue cube); writes final-shots.json
     python3 momentum_crystal_check.py optdiff <out.json> --rev R [--shots dir]
         M04, M23, M66 at 1280x720 (frozen clock) on this checkout vs rev R
         (the tree before an optimisation): decoded-pixel maxDelta and mean
@@ -939,11 +944,119 @@ def cmd_shots_green(args):
     return 0
 
 
+# One 1280x720 frame in the style of concept A: M46 (floor ramp, green-capped
+# blue pad), M24 placed 0.25 W earlier (ceiling ramp, hanging blue pillar) and
+# M04's blue cube 0.75 W later (its two green bars dropped), the camera
+# centred on the pieces. A screenshot composition only, never spawned so
+FINAL_PLACE = r'''() => {
+    const s = momentumCourse.segment(screen.segmentIndex)
+    const W = momentumPatternFactories['M46'].getLength(momentumShaftHalfWidth()) / 1.095833
+    const floor = floors.find(f => f instanceof MomentumPatternFloor)
+    const x0 = floor.elements.reduce((m, e) => Math.min(m, getElementBounds(e).left), Infinity)
+    const xM46 = x0 - (0.308333 - 0.208333) * W
+    floor.elements = []
+    if (floor.groups) floor.groups = []
+    if (!momentumPlacePattern('M46', xM46, s.y0, 'right') || !momentumPlacePattern('M24', xM46 - 0.25 * W, s.y0, 'right'))
+        throw new Error('final place')
+    const n = floor.elements.length
+    if (!momentumPlacePattern('M04', xM46 + 0.75 * W, s.y0, 'right'))
+        throw new Error('final place M04')
+    floor.elements = floor.elements.filter((e, i) => i < n || e instanceof MomentumBlue)
+    let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity
+    for (const e of floor.elements) {
+        const b = getElementBounds(e)
+        bx0 = Math.min(bx0, b.left); by0 = Math.min(by0, b.top); bx1 = Math.max(bx1, b.right); by1 = Math.max(by1, b.bottom)
+    }
+    const vw = width / scale[version], vh = height / scale[version]
+    screen.x = -((bx0 + bx1) / 2 - vw / 2); screen.y = -((by0 + by1) / 2 - vh / 2)
+    screen.leftWall.update(screen)
+    for (const f of floors)
+        if (f instanceof MomentumBorderFloor)
+            f.replenishElements()
+    ninja.x = (bx0 + bx1) / 2; ninja.y = (by0 + by1) / 2 - 1e5
+    return floor.elements.map(e => e.constructor.name)
+}'''
+
+# Touch M04's blue (pop + vanish, visual path of MomentumBlue.onNinjaPass)
+# and move the frozen render clock ms into its pop
+POP = r'''(ms) => {
+    const floor = floors.find(f => f instanceof MomentumPatternFloor)
+    const blue = floor.elements.find(e => e instanceof MomentumBlue)
+    blue.use()
+    visualEffects.screenEffects.triggerBlueTouch(blue)
+    __snap.now += ms
+    return {popMs: STYLE.momentum.bluePopMs, progress: visualEffects.screenEffects.getBluePopProgress(
+        visualEffects.screenEffects.bluePops[0], performance.now())}
+}'''
+POP_MS = 90
+
+
+def cmd_shots_final(args):
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    # blue-pop.png: M04's blue before the touch | POP_MS into its pop (3x crops)
+    context, page = fxs.harness('worktree').open((1280, 720))
+    try:
+        page.evaluate(PLACE, ['M04', 0])
+        info = page.evaluate(DRAW)
+        before = snap(page)
+        pop = page.evaluate(POP, POP_MS)
+        page.evaluate(DRAW)
+        during = snap(page)
+        if page.errors:
+            raise RuntimeError(page.errors)
+    finally:
+        context.close()
+    poly = np.array(next(p['poly'] for p in info['pieces'] if p['kind'] == 'blue'))
+    c, r = poly.mean(axis=0), (poly.max(axis=0) - poly.min(axis=0)).max() * 0.5 * 1.3 + 24
+    x0, y0 = np.floor(c - r).astype(int)
+    x1, y1 = np.ceil(c + r).astype(int)
+    crops = [Image.fromarray(im[max(0, y0):y1, max(0, x0):x1]) for im in (before, during)]
+    crops = [im.resize((im.width * 3, im.height * 3), Image.NEAREST) for im in crops]
+    gap, bar = 8, 22
+    sheet = Image.new('RGB', (2 * crops[0].width + gap, crops[0].height + bar), (24, 24, 24))
+    draw = ImageDraw.Draw(sheet)
+    for i, (im, label) in enumerate(zip(crops, ['M04 blue before the touch (3x)',
+                                                f'+{POP_MS} ms of bluePopMs {pop["popMs"]} (3x)'])):
+        sheet.paste(im, (i * (im.width + gap), bar))
+        draw.text((i * (im.width + gap) + 6, 5), label, fill=(255, 255, 255))
+    sheet.save(out / 'blue-pop.png')
+    # The pop ring lies outside the piece, the body inside it is gone
+    mask = polygon_mask(before.shape, [poly])
+    diff = np.abs(before.astype(np.int16) - during.astype(np.int16)).max(axis=2)
+    ring = dilate(polygon_mask(before.shape, [c + (poly - c) * 1.3]), 3) & ~dilate(mask, 3)
+    # concept-vs-game.png: concept A | the FINAL_PLACE frame
+    context, page = fxs.harness('worktree').open((1280, 720))
+    try:
+        page.evaluate(PLACE, ['M46', 0])
+        names = page.evaluate(FINAL_PLACE)
+        page.evaluate(DRAW)
+        game = snap(page)
+        if page.errors:
+            raise RuntimeError(page.errors)
+    finally:
+        context.close()
+    fxs.save_png(game, '/tmp/crystal-final-game-1280x720.png')
+    concept = Image.open(ROOT / 'artifacts/concepts/concept-a-cave-crystal.png').convert('RGB')
+    concept = concept.resize((round(concept.width * game.shape[0] / concept.height), game.shape[0]), Image.LANCZOS)
+    fxs.compare_png(np.asarray(concept), '/tmp/crystal-final-game-1280x720.png', out / 'concept-vs-game.png',
+                    labels=('concept A (artifacts/concepts/concept-a-cave-crystal.png)', 'game HEAD 1280x720'))
+    write(out.parent / 'final-shots.json', {'rev': fxs.harness('worktree').rev, 'pop': pop,
+                                            'popDifferingInsidePiece': int((diff[mask] > 0).sum()),
+                                            'piecePixels': int(mask.sum()),
+                                            'popRingBandDiffering': int((diff[ring] > 0).sum()),
+                                            'gamePieces': names})
+    print(sorted(p.name for p in out.glob('*.png')))
+    return 0
+
+
 def cmd_shots(args):
     if args.kind == 'green':
         return cmd_shots_green(args)
     if args.kind == 'twinkle':
         return cmd_shots_twinkle(args)
+    if args.kind == 'final':
+        return cmd_shots_final(args)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for id, vp in [('M04', (1280, 720)), ('M24', (1280, 720)), ('M66', (1280, 720)), ('M66', (390, 844))]:

@@ -13,8 +13,9 @@ GAMEPLAY.momentumFadeMs, 1280x720):
   or occluding); a second run gives maxDelta 0 (deterministic); the used
   green still fades (alpha 1 - f);
 - switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports and the classic and bad test_visual_gallery frames with the
-  switch on equal the parent commit (decoded maxDelta 0). (The TASK-061
+  viewports equal the parent commit outside the crystal pieces
+  (fx.assert_equal_outside_pieces, TASK-127), the classic and bad
+  test_visual_gallery frames with the switch on whole (decoded maxDelta 0). (The TASK-061
   usedBlueSwitchOff frames are retired: a used blue no longer fades with
   either switch.)
 
@@ -135,14 +136,16 @@ class MomentumBlueShardsTests(unittest.TestCase):
 
     def test_1_switch_off_and_other_modes_equal_parent(self):
         rows = []
+        pairs = {}
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
                 base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
                 self.assertFalse(new.info['fx'])
-                d = fx.max_delta(new, base)
-                rows.append({'scene': f'momentum-{scene}-{viewport[0]}x{viewport[1]}', 'fx': 'off',
-                             'maxDelta': d, 'identical': d == 0})
+                name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
+                pairs[name] = (new, base)
+                d = fx.assert_equal_outside_pieces(new, base, check=False)
+                rows.append({'scene': name, 'fx': 'off', **d, 'identical': d['differingPixels'] == 0})
         tree = fx.harness()
         parent = fx.harness(self.parent)
         new = gallery_frames(tree.browser, tree.url, ['classic', 'bad'])
@@ -159,7 +162,11 @@ class MomentumBlueShardsTests(unittest.TestCase):
         self.assertEqual(len(rows), 16)
         for row in rows:
             with self.subTest(scene=row['scene']):
-                self.assertEqual(row['maxDelta'], 0)
+                if row['scene'] in pairs:
+                    # TASK-122/124 crystal pieces: momentum scenes equal outside the blue/green pieces
+                    fx.assert_equal_outside_pieces(*pairs[row['scene']])
+                else:
+                    self.assertEqual(row['maxDelta'], 0)
 
 if __name__ == '__main__':
     unittest.main()
