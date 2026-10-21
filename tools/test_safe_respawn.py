@@ -15,6 +15,8 @@ e882a5e (TASK-370) freezes a death on the offer only when a game over ad is
 due (PLATFORM.isInterstitialDue()); otherwise it restarts at once. rs.die
 makes the ad due for its one physics tick so the respawn cases still start
 from a frozen death; fast_restart_case covers the no-ad path.
+c232782 (master: drop the Playgama Bridge) makes PLATFORM the local adapter,
+environment 'local' (was 'disabled'), so boot() waits for that.
 
 Env: RESPAWN_EVIDENCE_DIR receives frames/<case>/t*.png, contact.png,
 respawn-cases.json, replenish-check.json and console/page-errors.log.
@@ -286,7 +288,7 @@ class SafeRespawnTests(unittest.TestCase):
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual((errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "disabled" && bootComplete && runInProgress'
+        page.wait_for_function('PLATFORM.environment === "local" && bootComplete && runInProgress'
                                ' && document.getElementById("loading").hidden')
         page.evaluate(SETUP)
         return page

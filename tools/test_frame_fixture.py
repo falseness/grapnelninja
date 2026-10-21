@@ -9,10 +9,11 @@ from verification_support import assert_near, baseline_route, load_baseline_sour
 
 
 ROOT = Path(__file__).resolve().parents[1]
-# d9b7129 is the last intentional frame geometry change (the user's Frame 1-14
-# obstacle edits after 2201dd3, ending with the axis-aligned Frame 5/14
-# segments). Every current template exists there, so all are compared.
-BASELINE = 'd9b7129'
+# b398d65 (TASK-413: Frame 10 lower danger block reaches the ground top) is
+# the last intentional frame geometry change, after fb42019 (TASK-412: Frame
+# 14 right pillar likewise) and d9b7129 (the user's Frame 1-14 obstacle
+# edits). Every current template exists there, so all are compared.
+BASELINE = 'b398d65'
 BASELINE_FRAMES = list(frames)
 
 

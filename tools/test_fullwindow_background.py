@@ -164,16 +164,20 @@ class FullWindowBackgroundTests(unittest.TestCase):
         }''')
         for scene, ops in records.items():
             gradients = [op for op in ops if op['op'].startswith('create')]
-            self.assertEqual([op['op'] for op in gradients],
-                             ['createLinearGradient', 'createLinearGradient', 'createRadialGradient'])
-            for op in gradients:
-                self.assertIn('buildGradients', op['caller'])
+            # 2553aba (Firefox: fewer full-frame passes) bakes the base
+            # gradient and haze into the far crystal tile, so the tile makes
+            # its own pair besides buildGradients' gradient, haze and vignette
+            main = [op['op'] for op in gradients if 'buildGradients' in op['caller']]
+            tile = [op['op'] for op in gradients if 'getFarBakedTile' in op['caller']]
+            self.assertEqual(main, ['createLinearGradient', 'createLinearGradient', 'createRadialGradient'])
+            self.assertEqual(tile, ['createLinearGradient', 'createLinearGradient'])
+            self.assertEqual(len(gradients), len(main) + len(tile))
             self.assertTrue(any(op['op'] == 'lineTo' for op in ops))
             self.assertTrue(any(op['op'] == 'drawImage' for op in ops))
             self.assertFalse(any(op['op'] == 'strokeRect' for op in ops))
             for op in ops:
                 self.assertNotRegex(op['caller'], 'Wash|Hexagon|Flash|Triangle|RectangleAccent|PolygonAccent')
-            print(f'{scene}: cave ops PASS; gradients=3; legacy decoration ops=0')
+            print(f'{scene}: cave ops PASS; gradients=5 (buildGradients 3, far tile 2); legacy decoration ops=0')
         if self.evidence:
             (self.out() / 'ops.json').write_text(json.dumps(records, indent=2) + '\n')
 
