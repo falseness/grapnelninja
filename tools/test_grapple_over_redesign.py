@@ -946,3 +946,159 @@ class Task563Tests(unittest.TestCase):
         self.assertEqual(frames,100);self.assertGreater(seconds,13)
         self.write('capture.json',dict(frames=frames,seconds=seconds,replayMatches=True,final=r['rows'][-1]))
         print('PASS hazard.webm: decoded %d frames %.3f seconds; capture replay exactly matches measured early contact and recovery' % (frames,seconds))
+
+
+class Task564Tests(unittest.TestCase):
+    """Reservation design checks plus representative isolated production input."""
+    @classmethod
+    def setUpClass(cls):
+        from grapple_over_blueprint import export
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task564Tests')
+        Task558Tests.setUpClass.__func__(cls)
+        cls.blueprint, cls.graph = export(cls.out)
+        for name in ['docs/grapple-over-blueprint.json','docs/grapple-over-blueprint.md',
+                     'tools/grapple_over_blueprint.py','tools/grapple_over_metrics.js']:
+            cls.config['source_hashes'][name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK564_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+    page = Task559Tests.page
+
+    def test_01_complete_calibrated_blueprint(self):
+        import math
+        b = self.blueprint
+        p = self.page()
+        m = p.evaluate('({movement:GRAPPLE_OVER_MOVEMENT,movers:GRAPPLE_OVER_MOVERS,yellow:GRAPPLE_OVER_YELLOW})')
+        sections = b['sections']
+        self.assertEqual([s['name'] for s in sections], ['Loading Yard','Terraced Quarry','Freight Crossing','Broken Viaduct','Cable Galleries','Counterweight Tower','Exposed Crown','Summit Array'])
+        self.assertEqual(b['firstUse'],dict(green='S01',blue='S03',yellow='S04',**{'540':'S05'},corner='S05',red='S07'))
+        red=json.loads((ROOT/'artifacts/TASK-563/swept-clearance.json').read_text())
+        red_face=next(e for e in red['manifest']['elements'] if e['id']=='red')
+        red_mover=red['manifest']['movers'][0]
+        observation=next(e for e in red['manifest']['elements'] if e['id']=='observation')
+        checked=[]
+        for i,s in enumerate(sections):
+            self.assertEqual(len(s['encounters']),4)
+            self.assertFalse(s['landmark']['collidable']); self.assertFalse(s['landmark']['grapplable'])
+            self.assertEqual([e['phase'] for e in s['encounters']],['introduction','practice','variation','combination'])
+            for e in s['encounters']:
+                g=e['geometry']; pattern=next(c for c in m['movement']['patterns'] if c['name']==g['pattern'])
+                for key in ['gap','dx','dy']: self.assertEqual(g[key],pattern[key])
+                self.assertEqual(g['releaseTicks'],pattern['release'])
+                self.assertEqual(g['landingLength'],pattern['width'])
+                self.assertEqual(e['rangeStage'],pattern['radius'])
+                self.assertEqual(g['panelThickness'],m['movement']['panelThickness'])
+                self.assertEqual(g['anchorFace'],[m['movement']['anchorFace']['width'],m['movement']['anchorFace']['height']])
+                self.assertLess(math.hypot(g['dx']+80,g['dy']-40),e['rangeStage'])
+                self.assertEqual(e['planningLanding'][2:],[540,60])
+                self.assertTrue(e['intendedJumpRelease']); self.assertTrue(e['landmark'])
+                self.assertTrue(all(c['purpose'] for c in e['colliderPurposes']))
+                if i<2: self.assertEqual(e['mechanics'],['green'])
+                if i<6: self.assertNotIn('red',e['mechanics'])
+                if i>=2:
+                    for key in ['displacement','periodMs']: self.assertEqual(e['moverEnvelope'][key],m['movers'][key])
+                    self.assertEqual(e['moverEnvelope']['face'],[m['movers']['width'],m['movers']['height']])
+                if i>=3:
+                    z=e['yellowReservation']; self.assertEqual(z['band'][2:],[m['yellow']['band']['width'],m['yellow']['band']['height']])
+                    self.assertEqual(z['clearance'],m['yellow']['clearance'])
+                    self.assertEqual(z['catch'][1]-sum(z['band'][1::2]),600)
+                    self.assertEqual(z['catch'][2:],m['yellow']['landing'][2:])
+                    self.assertLess(z['band'][0]+z['band'][2],e['corridors']['ascent'][0])
+                if i>=6:
+                    env=e['redEnvelope']
+                    self.assertEqual(env['size'],[red_face['points'][1]['x'],red_face['points'][2]['y']])
+                    self.assertEqual(env['travel'],red_mover['max']-red_mover['min'])
+                    self.assertEqual(env['periodMs'],red['periodMs'])
+                    self.assertEqual(env['minimumSweptClearance'],min(o['clearance'] for o in red['obstacles']))
+                    self.assertEqual(env['observationLandingLength'],observation['points'][1]['x'])
+                    self.assertEqual(e['redEnvelope'],dict(size=[80,80],travel=700,periodMs=6000,minimumSweptClearance=150,observationLandingLength=500,status='isolated calibration; transformed sweep must be checked before building'))
+                checked.append(dict(id=e['id'],reach=math.hypot(g['dx']+80,g['dy']-40),range=e['rangeStage']))
+        self.assertEqual(len(checked),32)
+        self.write('measurements.json',dict(checked=checked,productionEnvelopes=m,scope='dimensions calibrated; placements planned'))
+        print('PASS 8 sections / 32 encounters; calibrated numeric envelopes; S01/S02 green-only; first red S07')
+
+    def test_02_production_input_and_unchanged_runtime(self):
+        p=self.page(); p.add_script_tag(path=str(ROOT/'tools/grapple_over_metrics.js'))
+        results=[]
+        for c in p.evaluate('GRAPPLE_OVER_MOVEMENT.patterns'):
+            setup=p.evaluate('c=>METRICS.setup(c)',c)
+            xy=p.evaluate('p=>METRICS.client(p)',setup)
+            p.mouse.move(**xy);p.mouse.down()
+            p.evaluate('n=>METRICS.step(n)',c['release']);p.mouse.up()
+            p.evaluate('n=>METRICS.step(n)',150-c['release'])
+            r=p.evaluate('METRICS.result()')
+            self.assertTrue(r['acquired']);self.assertTrue(r['landed']);self.assertGreaterEqual(r['landingAir'],6)
+            self.assertFalse(r['anchorTopContact']);self.assertEqual(len(r['inputs']),2)
+            self.assertTrue(all(x['trusted'] for x in r['inputs']))
+            results.append(dict(pattern=c,acquired=r['acquired'],landed=r['landed'],landingAir=r['landingAir'],inputs=r['inputs']))
+        legacy=self.page(preview=False)
+        self.assertEqual(legacy.evaluate('[grappleOverAcquisitionRadius(),scale[version]]'),[1080,.375])
+        archived=[]
+        for task in [560,561,562,563]:
+            log=(ROOT/f'artifacts/TASK-{task}/tests.log').read_text()
+            self.assertIn('\nOK\n',log);self.assertRegex(log,r'Ran [1-9][0-9]* tests')
+            archived.append(dict(path=f'artifacts/TASK-{task}/tests.log',result=log[log.rfind('\nRan '):].strip()))
+        # No runtime source changed since the immediate prerequisite's tested run.
+        lines=(ROOT/'artifacts/TASK-563/commands.log').read_text().splitlines()
+        cfg=json.loads(next(l.split(' ',1)[1] for l in lines if l.startswith('TASK563_CONFIG ')))
+        runtime={k:v for k,v in cfg['source_hashes'].items() if not k.startswith('tools/')}
+        self.assertGreater(len(runtime),20)
+        for name,digest in runtime.items(): self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+        self.write('production-check.json',dict(cases=results,archived=archived,unchangedRuntimeHashes=runtime,scope='isolated fixture; not continuous gameplay'))
+        print('PASS 3 isolated production transfers with trusted input; legacy 1080 camera .375; archived 560-563 pass; runtime hashes unchanged')
+
+    def test_03_graph_clearances_and_decoded_map(self):
+        import xml.etree.ElementTree as ET
+        b=self.blueprint;g=self.graph
+        ids=g['nodes']; self.assertEqual(len(set(ids)),33)
+        for edge in g['edges']:
+            self.assertLess(ids.index(edge['to']),ids.index(edge['from']))
+            self.assertEqual(edge['status'],'planned')
+            node=edge['from']; visited=set()
+            while node!='base':
+                self.assertNotIn(node,visited);visited.add(node)
+                node=next(e['to'] for e in g['edges'] if e['from']==node)
+        for s in b['sections']:
+            for e in s['encounters']:
+                c=list(e['corridors'].values())
+                self.assertEqual([r[2] for r in c],[2600,1600,1400])
+                self.assertEqual([c[k+1][0]-c[k][0]-c[k][2] for k in [0,1]],[200,200])
+                self.assertEqual(e['reservation'][2:],[6000,3200])
+                self.assertGreaterEqual(e['reservation'][1],s['band'][1])
+                self.assertLessEqual(e['reservation'][1]+3200,s['band'][1]+s['band'][3])
+        for lower,upper in zip(b['sections'],b['sections'][1:]):
+            self.assertLessEqual(upper['band'][1]+upper['band'][3],lower['band'][1])
+        self.assertEqual(len(b['shortcuts']),2)
+        for s in b['shortcuts']:
+            self.assertIn(s['from'][:3],['S05','S07']);self.assertEqual(s['from'][:3],s['to'][:3]);self.assertEqual(len(s['skips']),1)
+            self.assertEqual(ids.index(s['to'])-ids.index(s['from']),2)
+        ET.parse(self.out/'route-map.svg')
+        p=self.browser.new_page(viewport={'width':1200,'height':2900},device_scale_factor=1)
+        self.addCleanup(p.close)
+        p.set_content((self.out/'route-map.svg').read_text())
+        p.locator('svg').screenshot(path=str(self.out/'silhouette.png'))
+        with Image.open(self.out/'silhouette.png') as im:
+            im.load();self.assertEqual(im.size,(1200,2900));self.assertGreater(len(im.getcolors(im.width*im.height)),100)
+        self.write('map-check.json',dict(nodes=33,recoveries=32,allReachBase=True,planned=True,shortcuts=2,skipsEach=1,sectionBands=[s['band'] for s in b['sections']],image=[1200,2900],capture='Chromium SVG screenshot, device scale 1'))
+        print('PASS 32 planned recovery edges reach base; 2 shortcuts skip 1 each; 200-unit separators; no S05/S08 fold; decoded silhouette 1200x2900')
+
+    def test_04_evidence_index(self):
+        assertions={'commands.log':'exact invocation, exit status and source/browser configuration; outer runner appends exit',
+                    'tests.log':'four Task564Tests identifiers and runner summary; outer runner completes log',
+                    'blueprint.json':'eight sections and 32 phased briefs with mechanics and purpose',
+                    'route-map.svg':'labelled ascent/fall/recovery reservations',
+                    'silhouette.png':'decoded rendered reservation map',
+                    'recovery-graph.json':'planned recovery connectivity to base',
+                    'review.md':'identity, pacing, numeric ledger, limitations and subsystem dependencies',
+                    'measurements.json':'32 envelope comparisons and production constants',
+                    'production-check.json':'trusted production input and unchanged runtime hashes with archived pass logs',
+                    'map-check.json':'connectivity, bounds and image decode',
+                    'evidence-index.json':'artifact inventory and scope'}
+        self.write('evidence-index.json',dict(artifacts=assertions,dependencies=['docs/grapple-over-blueprint.json','docs/grapple-over-blueprint.md','tools/grapple_over_blueprint.py','tools/test_grapple_over_redesign.py'],scope='planned design, not proof of fun; HEAD changes alone do not invalidate identical hashes'))
+        for name in assertions:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200*1024**2)
+        print('PASS evidence-index: all 11 artifacts exist; JSON parses; retained evidence below 200 MB')
