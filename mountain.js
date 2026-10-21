@@ -1203,14 +1203,14 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix: Loading Yard and the first Terraced Quarry encounter. Planned terrain stays noncollidable.
+// Replacement built prefix: Loading Yard and the first two Terraced Quarry encounters. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 6480, top: -3000, bottom: 280},
     spawn: {x: 2160, y: 0}, finish: null,
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
-        {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01']},
+        {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02']},
         {id: 'S05', status: 'planned', encounters: ['preview-future'],
             band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
     ],
@@ -1220,6 +1220,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S01-03', name: 'Loading Yard return terrace', elements: ['yard-second-landing', 'yard-third-anchor', 'yard-third-landing', 'yard-catch']},
         {id: 'S01-04', name: 'Loading Yard section exit', elements: ['yard-third-landing', 'yard-fourth-anchor', 'yard-fourth-landing']},
         {id: 'S02-01', name: 'Terraced Quarry', elements: ['yard-fourth-landing', 'quarry-anchor', 'quarry-landing', 'quarry-catch']},
+        {id: 'S02-02', name: 'Terraced Quarry return', elements: ['quarry-landing', 'quarry-second-anchor', 'quarry-second-landing', 'quarry-catch']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1236,6 +1237,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['yard-fourth-landing', 1700, -348.2, 540, 60, 'Broad Loading Yard section exit; ordinary green terrain with local recovery via the third terrace'],
         ['quarry-anchor', 1440, -539, 160, 80, 'Quarry launch face reachable from the shared Loading Yard exit; not a landing'],
         ['quarry-landing', 872, -408.2, 540, 60, 'First broad quarry terrace; safe planning exit after the wider 288-unit release gap'],
+        ['quarry-second-anchor', 1452, -779, 160, 80, 'Upper quarry launch face reverses the previous leftward transfer; reachable from the first terrace, not a landing'],
+        ['quarry-second-landing', 1664, -648.2, 540, 60, 'Broad upper quarry planning terrace after the deliberate rightward release; first terrace catches short attempts'],
         ['quarry-catch', 820, -128.2, 880, 60, 'Broad lower quarry step catches early releases; grapple back to the shared entry'],
         ['yard-catch', 0, 220, 6480, 60, 'Lower recovery floor; return via the entry or landing shelf'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
