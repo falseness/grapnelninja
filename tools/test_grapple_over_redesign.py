@@ -1557,3 +1557,122 @@ class Task567Tests(unittest.TestCase):
               'TASK-564 blueprint and TASK-560 calibrated opening envelope'],
             superseded='TASK-558/566 minimal preview-catch and preview-anchor geometry fixtures are historical; their input/save contracts are unchanged. Legacy v3 tests remain legacy-only.',
             scope='Only S01-01. No full mountain proof. Identical source hashes survive a HEAD-only change.'))
+
+
+class Task568Tests(unittest.TestCase):
+    """Continuous actual-base traversal through the second Loading Yard bay."""
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task568Tests')
+        Task558Tests.setUpClass.__func__(cls)
+        for name in ['tools/grapple_over_yard.js', 'render/landmarks.js',
+                     'tools/browser_test_support.py', 'docs/grapple-over-blueprint.json']:
+            cls.config['source_hashes'][name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.config['simulation'] = 'actual preview base; unchanged production physics and trusted mouse input'
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK568_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task567Tests.write
+    page = Task567Tests.page
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    capture = Task567Tests.capture
+    target = dict(x=3152,y=-199)
+
+    def approach(self):
+        p=self.page()
+        self.press(p);self.step(p,30);p.mouse.up();self.step(p,75)
+        self.assertEqual(self.landings(self.result(p))[0]['tick'],105)
+        # Reposition on the broad shared shelf through ordinary grapple input.
+        self.press(p,dict(x=2900,y=30));self.step(p,26);p.mouse.up()
+        self.assertEqual(self.landings(self.result(p))[-1]['tick'],131)
+        return p
+
+    def test_01_connected_geometry_and_release(self):
+        p=self.approach()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            movers:floors[0].level.movers,range:grappleOverAcquisitionRadius(),scale:scale[version],
+            target,reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),entry:{x:ninja.x,y:ninja.y},
+            calibrated:GRAPPLE_OVER_MOVEMENT,dragCount:floors[0].dragZones.length})''',self.target)
+        self.assertEqual(g['sections'][0]['encounters'],['S01-01','S01-02'])
+        self.assertEqual(len(g['elements']),6);self.assertEqual(g['movers'],[])
+        self.assertEqual(g['dragCount'],0);self.assertEqual(g['range'],360);self.assertEqual(g['scale'],.375)
+        self.assertLess(g['reach'],360)
+        for e in g['elements']:
+            self.assertEqual(e['role'],'bounce');self.assertTrue(e['purpose'])
+            e['width']=max(v['x'] for v in e['points'])
+            if 'anchor' not in e['id']:self.assertGreaterEqual(e['width'],540)
+        es={e['id']:e for e in g['elements']}
+        g['gap']=es['yard-second-landing']['x']-es['yard-landing']['x']-es['yard-landing']['width']
+        g['rise']=es['yard-landing']['y']-es['yard-second-landing']['y']
+        self.assertEqual(g['gap'],252);self.assertEqual(g['rise'],60)
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.press(p,self.target);self.step(p,18);p.mouse.up();self.step(p,48)
+        r=self.result(p);lands=self.landings(r,'yard-second-landing');self.assertTrue(lands)
+        landing=lands[0]['tick'];streak=0
+        for s in r['rows'][149:landing-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0
+        self.assertGreaterEqual(streak,6)
+        self.assertTrue(any(s['attached'] for s in r['rows'][131:149]))
+        r.update(takeoffTick=132,releaseTick=149,landingTick=landing,landingAir=streak,
+                 entryTick=131,entryToExit=True,resets=0,poseInjections=0,
+                 scope='Continuous actual base through S01-01 to S01-02 only; no summit claim')
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        self.capture(p,'landing.jpg')
+        print(f'PASS geometry: six green purposeful colliders; landing 540 catch 6480 gap 252 rise 60 reach {g["reach"]:.3f} < 360; planned excluded')
+        print(f'PASS route: base -> S01-01 105 -> planning contact 131 -> release 149 -> S01-02 {landing}; unattached airborne {streak}; trusted inputs; images decoded')
+
+    def test_02_late_miss_and_recovery(self):
+        p=self.approach();self.press(p,self.target);self.step(p,45);p.mouse.up();self.step(p,38)
+        before=self.result(p);catch=self.landings(before,'yard-catch')
+        self.assertTrue(catch);self.assertFalse(self.landings(before,'yard-second-landing'))
+        self.press(p,dict(x=3294,y=-30));self.step(p,24);p.mouse.up();self.step(p,499)
+        r=self.result(p);returned=self.landings(r,'yard-second-landing');self.assertTrue(returned)
+        r.update(lateReleaseTick=176,catchTick=catch[0]['tick'],recoveryPressTick=214,
+                 recoveryReleaseTick=238,returnTick=returned[0]['tick'],recoveryTarget='yard-second-landing',
+                 resets=0,poseInjections=0,scope='Uninterrupted base, late miss, catch and normal-control return')
+        self.write('miss.json',r)
+        print(f'PASS miss: late release 176 catch {catch[0]["tick"]} recovery press 214 release 238 return {returned[0]["tick"]}; no reset or injection')
+
+    def test_03_hold_nearest_and_tolerance(self):
+        cases=[]
+        p=self.approach();self.press(p,self.target);self.step(p,300)
+        r=self.result(p);r.update(probe='continuous hold',successfulAlternative=bool(self.landings(r,'yard-second-landing')))
+        cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.approach();targets=[]
+            for i in range(300//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'yard-second-landing')))
+            cases.append(r)
+        self.write('controls.json',dict(cases=cases,inspection='Every top-facing second-landing contact inspected, including all successful alternatives',bound='300 ticks after actual shared-shelf approach'))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        tolerance=[]
+        for hold in [12,24]:
+            p=self.approach();self.press(p,self.target);self.step(p,hold);p.mouse.up();self.step(p,150)
+            r=self.result(p);land=self.landings(r,'yard-second-landing');self.assertTrue(land)
+            tolerance.append(dict(hold=hold,landingTick=land[0]['tick'],inputs=r['inputs'],rows=r['rows']))
+        self.write('tolerance.json',tolerance)
+        print('PASS controls: four bounded trusted probes, zero exit contacts; release tolerance 12/18/24 succeeds')
+        required={'commands.log':'exact commands, exit status, revision, hashes and browser configuration',
+            'tests.log':'three exact Task568Tests identifiers, no skips, OK',
+            'geometry.json':'six live green colliders, widths, purposes, gap 252 rise 60 reachable target',
+            'route.json':'continuous base through shared planning contact to second landing, airborne streak',
+            'inputs.json':'trusted production mouse events matching route ticks',
+            'miss.json':'late miss, catch and return without reset or injection',
+            'approach.jpg':'shared planning shelf, green target and Loading Yard gantry',
+            'landing.jpg':'second raised bay landing and Loading Yard structure',
+            'controls.json':'four bounded hold/nearest probes with all contact traces inspected',
+            'tolerance.json':'12/24-tick release successes surrounding nominal 18'}
+        self.write('evidence-index.json',dict(config=self.config,artifacts=required,
+            dependencies=['mountain.js built preview -> fixedlevel.js colliders',
+                'tools/grapple_over_yard.js observations -> unchanged physics.js/events.js/sprites/ninja.js',
+                'TASK-564 blueprint opening pattern -> 252 gap/540 shelves; TASK-560 calibration',
+                'render/landmarks.js unchanged Loading Yard art'],
+            superseded='Task567 exact four-collider inventory is historical; its first route remains asserted here. Legacy v3 coverage is unchanged.',
+            scope='S01-02 only plus physical connection; identical tested hashes remain valid after HEAD-only commit'))
