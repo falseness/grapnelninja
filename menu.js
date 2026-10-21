@@ -987,7 +987,7 @@ const CLIMB_UI = {
             }))) || floors[0].level.sections[0]
         const rows = [I18N.t('climb.height', {value:Math.floor(stats.currentHeight)}),
             I18N.t('climb.max', {value:Math.floor(stats.maxHeight)}),
-            I18N.t('climb.section', {value:I18N.t('climb.section.' + section.id)}),
+            I18N.t('climb.section', {value:I18N.t(section.labelKey || 'climb.section.' + section.id)}),
             I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)})]
         // Terrain or the player behind a HUD block fades it so targets stay readable
         ctx.save()

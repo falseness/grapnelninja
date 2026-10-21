@@ -1203,25 +1203,29 @@ function validateMountainManifest(m)
     return level
 }
 
-// Versioned, deliberately minimal preview. Planned geometry is never collidable.
+// Replacement built prefix: Loading Yard opening only. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
-    bounds: {left: 0, right: 6480, top: -3000, bottom: 120},
+    bounds: {left: 0, right: 6480, top: -3000, bottom: 280},
     spawn: {x: 2160, y: 0}, finish: null,
     sections: [
-        {id: 'S01', status: 'built', encounters: ['preview-opening']},
+        {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01']},
         {id: 'S05', status: 'planned', encounters: ['preview-future'],
             band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
     ],
     encounters: [
-        {id: 'preview-opening', elements: ['preview-catch', 'preview-anchor']},
+        {id: 'S01-01', name: 'Loading Yard', elements: ['yard-entry', 'yard-landing', 'yard-anchor', 'yard-catch']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
+    // TASK-564 opening envelope, translated to the actual preview spawn.
+    // Green shelves bounce; planning surfaces do not promise static standing.
     elements: [
-        ['preview-catch', 0, 120, 6480, 60],
-        ['preview-anchor', 2520, -100, 40, 200],
-        ['preview-unbuilt', 2160, -2200, 200, 40]
-    ].map(([id, x, y, w, h]) => ({id, x, y, role: 'bounce', grapplable: true,
+        ['yard-entry', 1700, 11.8, 540, 60, 'Broad base entry and takeoff planning shelf'],
+        ['yard-landing', 2492, 11.8, 540, 60, 'Broad safe exit for the first release jump'],
+        ['yard-anchor', 2340, -179, 160, 80, 'Reachable launch face; not a designated landing'],
+        ['yard-catch', 0, 220, 6480, 60, 'Lower recovery floor; return via the entry or landing shelf'],
+        ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
+    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: 'bounce', grapplable: true,
         points: [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
     movers: []
 }

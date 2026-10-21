@@ -1420,3 +1420,140 @@ class Task566Tests(unittest.TestCase):
                    scope='Isolated minimal preview; moving-anchor is a test-only mover, not continuous gameplay',
                    persisted=saved, reloaded=restored, continued=continued))
         print('PASS preview-save: same-layout roundtrip; in-air/moving-anchor 60-tick exact continuation; upgrade range=540; reload preserves current position, maxHeight=9000 is statistics only')
+
+
+class Task567Tests(unittest.TestCase):
+    """Actual preview-base traversal. No pose/velocity fixtures or physics changes."""
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task567Tests')
+        Task558Tests.setUpClass.__func__(cls)
+        for name in ['tools/grapple_over_yard.js', 'render/landmarks.js',
+                     'tools/browser_test_support.py', 'docs/grapple-over-blueprint.json']:
+            cls.config['source_hashes'][name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.config['simulation'] = 'actual preview spawn, production handlers/physics, trusted mouse'
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK567_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+
+    def page(self):
+        ctx=self.browser.new_context(viewport=VIEWPORT,device_scale_factor=1)
+        self.addCleanup(ctx.close)
+        p=ctx.new_page(); errors=[]
+        p.on('pageerror',lambda e:errors.append(str(e)))
+        self.addCleanup(lambda:self.assertEqual(errors,[]))
+        p.add_init_script(SEED_SCRIPT % 1)
+        p.add_init_script("const raf567=window.requestAnimationFrame;window.requestAnimationFrame=fn=>fn.name==='gameLoop'?0:raf567.call(window,fn)")
+        p.goto(self.url+'?grapplePreview=replacement-v1');wait_for_boot(p)
+        p.evaluate('cancelAnimationFrame(game);window.requestAnimationFrame=()=>0')
+        p.wait_for_function('!unTouch')
+        self.assertEqual(p.evaluate('({x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY})'),dict(x=2160,y=0,vx=0,vy=0))
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_yard.js'))
+        return p
+
+    def press(self,p,target=None):
+        xy=p.evaluate('p=>YARD.client(p)',target or dict(x=2420,y=-139))
+        p.mouse.move(xy['x'],xy['y']);p.mouse.down()
+
+    def step(self,p,n):
+        p.evaluate('n=>YARD.step(n)',n)
+
+    def result(self,p):
+        r=p.evaluate('YARD.result()')
+        self.assertTrue(r['inputs']);self.assertTrue(all(i['trusted'] for i in r['inputs']))
+        return r
+
+    @staticmethod
+    def landings(r,id='yard-landing'):
+        return [s for s in r['rows'] if any(c['id']==id and c['ny']<-.9 for c in s['contacts'])]
+
+    def capture(self,p,name):
+        p.evaluate('TUTORIAL_HINT.visible=false;draw()')
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        with Image.open(self.out/name) as im:
+            im.load();self.assertEqual(im.size,(1280,720))
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'loading-yard')
+
+    def test_01_live_geometry_and_release(self):
+        p=self.page()
+        g=p.evaluate('''() => ({elements:floors[0].level.elements,sections:floors[0].level.sections,
+          movers:floors[0].level.movers,range:grappleOverAcquisitionRadius(),scale:scale[version],
+          spawn:floors[0].level.spawn,calibrated:GRAPPLE_OVER_MOVEMENT.patterns[0],
+          target:{x:2420,y:-139},reach:Math.hypot(2420-ninja.x,-139-ninja.y)})''')
+        self.assertEqual([e['id'] for e in g['elements']],['yard-entry','yard-landing','yard-anchor','yard-catch'])
+        self.assertEqual(g['movers'],[]);self.assertEqual(g['range'],360);self.assertEqual(g['scale'],.375)
+        self.assertLess(g['reach'],g['range'])
+        for e in g['elements']:
+            self.assertEqual(e['role'],'bounce');self.assertTrue(e['purpose'])
+            e['width']=max(v['x'] for v in e['points'])
+            if e['id']!='yard-anchor':self.assertGreaterEqual(e['width'],540)
+        g['gap']=g['elements'][1]['x']-g['elements'][0]['x']-g['elements'][0]['width']
+        self.assertEqual(g['gap'],g['calibrated']['gap'])
+        self.assertEqual(g['sections'][0]['labelKey'],'climb.section.loadingYard')
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.press(p);self.step(p,30);p.mouse.up();self.step(p,75)
+        r=self.result(p);land=self.landings(r);self.assertTrue(land)
+        self.assertTrue(any(s['attached'] for s in r['rows'][:30]))
+        streak=0;best=0
+        for s in r['rows'][:land[0]['tick']-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0
+            best=max(best,streak)
+        self.assertGreaterEqual(streak,6)
+        self.assertFalse(self.landings(r,'yard-anchor'))
+        r.update(takeoffTick=next(s['tick'] for s in r['rows'] if s['vy']<0),releaseTick=30,landingTick=land[0]['tick'],landingAir=streak,
+                 entryToExit=True,scope='Actual base to S01-01 exit only; not base-to-summit')
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        self.capture(p,'landing.jpg')
+        print(f"PASS geometry: 4 green colliders; shelves 540/540 catch 6480; gap 252; reach {g['reach']:.3f} < 360; planned terrain excluded")
+        print(f"PASS route: trusted base entry -> exit; release 30 landing {land[0]['tick']}; consecutive unattached airborne ticks {streak}; images decoded 1280x720 with Loading Yard")
+
+    def test_02_miss_and_normal_recovery(self):
+        p=self.page();self.press(p);self.step(p,6);p.mouse.up();self.step(p,174)
+        before=self.result(p);catch=self.landings(before,'yard-catch')
+        self.assertTrue(catch);self.assertFalse(self.landings(before))
+        self.press(p,dict(x=2230,y=30));self.step(p,24);p.mouse.up();self.step(p,36)
+        r=self.result(p);returned=[s for s in self.landings(r,'yard-entry') if s['tick']>180]
+        self.assertTrue(returned)
+        r.update(earlyReleaseTick=6,catchTick=catch[0]['tick'],returnTick=returned[0]['tick'],
+                 recoveryTarget='yard-entry',recoveryPressTick=180,recoveryReleaseTick=204,
+                 resets=0,poseInjections=0,scope='One uninterrupted attempt from actual base through miss and return')
+        self.write('miss.json',r)
+        print(f"PASS miss: early release 6 -> catch {catch[0]['tick']} -> entry {returned[0]['tick']}; 4 trusted inputs; no reset or pose injection")
+
+    def test_03_hold_and_repeated_nearest(self):
+        cases=[]
+        p=self.page();self.press(p);self.step(p,300)
+        r=self.result(p);r['probe']='continuous hold';r['successfulAlternative']=bool(self.landings(r))
+        cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(300//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                  successfulAlternative=bool(self.landings(r)))
+            cases.append(r)
+        self.write('controls.json',dict(cases=cases,inspection='Every landing contact inspected; success means top-facing exit contact, same definition as nominal',
+                   bound='300 ticks continuous hold; repeated nearest 6/12/24 held ticks plus one release tick'))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: 4 bounded trusted probes; continuous hold 300 ticks and repeated nearest 6/12/24; zero exit top contacts, no successful alternatives')
+        required=['commands.log','tests.log','geometry.json','route.json','inputs.json','miss.json','approach.jpg','landing.jpg','controls.json']
+        self.write('evidence-index.json',dict(config=self.config,artifacts={n:{
+            'commands.log':'exact invocation, exit status and source/browser configuration',
+            'tests.log':'three Task567Tests executed, no skips, OK',
+            'geometry.json':'four live green colliders, purposes, widths, calibrated gap and reachable launch',
+            'route.json':'production base-to-exit contacts and airborne streak',
+            'inputs.json':'trusted nominal mouse events with release tick',
+            'miss.json':'uninterrupted early-release catch and return to entry',
+            'approach.jpg':'decoded actual base with broad targets and loading gantry',
+            'landing.jpg':'decoded actual exit contact at tick 105',
+            'controls.json':'all four bounded alternative traces and contact inspections'}[n] for n in required},
+            dependencies=['mountain.js built preview prefix -> fixedlevel.js production colliders',
+              'render/landmarks.js -> existing Loading Yard sprite; no collider',
+              'mountain.js section labelKey -> menu.js HUD -> i18n.js Loading Yard translation',
+              'tools/grapple_over_yard.js -> observes unchanged physics.js/events.js/sprites/ninja.js',
+              'TASK-564 blueprint and TASK-560 calibrated opening envelope'],
+            superseded='TASK-558/566 minimal preview-catch and preview-anchor geometry fixtures are historical; their input/save contracts are unchanged. Legacy v3 tests remain legacy-only.',
+            scope='Only S01-01. No full mountain proof. Identical source hashes survive a HEAD-only change.'))

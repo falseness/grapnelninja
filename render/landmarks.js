@@ -65,7 +65,9 @@ function grappleOverLandmarkAnchors()
 // from it; invisible ones are skipped.
 function drawGrappleOverLandmarks(renderer)
 {
-    if (GRAPPLE_OVER_PREVIEW || !LANDMARKS.enabled || version !== 'grapple_over' || !floors[0] || !floors[0].level)
+    if (GRAPPLE_OVER_PREVIEW)
+        return drawLoadingYardLandmark(renderer)
+    if (!LANDMARKS.enabled || version !== 'grapple_over' || !floors[0] || !floors[0].level)
         return null
     const config = GRAPPLE_OVER_LANDMARKS
     const context = renderer.ctx
@@ -313,3 +315,26 @@ const GRAPPLE_OVER_LANDMARK_SHAPES = [
         lights: [[210, 42, 2.4], [210, 160, 0.7], [210, 260, 0.7], [210, 360, 0.7]]
     })
 ]
+
+// The built preview has its own world-anchored loading gantry silhouette.
+// Reuse the Loading Yard artwork, without importing legacy encounter positions.
+function drawLoadingYardLandmark(renderer)
+{
+    if (!LANDMARKS.enabled || version !== 'grapple_over' || !floors[0]?.byId.has('yard-entry'))
+        return null
+    const config = GRAPPLE_OVER_LANDMARKS, k = scale[version]
+    const context = renderer.ctx
+    const sprite = getGlowSprite('replacement-loading-yard', () =>
+        buildGlowSprite(config.width + 2 * config.pad, config.height + 2 * config.pad,
+            config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, [0]))
+    const left = (2366 + screen.x) * k - config.width / 2
+    const top = (-150 + screen.y) * k - config.height
+    context.save()
+    context.globalAlpha = config.alpha
+    context.drawImage(sprite, left - config.pad, top - config.pad,
+        config.width + 2 * config.pad, config.height + 2 * config.pad)
+    context.restore()
+    const drawn = [{id:'loading-yard', rect:[left,top,left+config.width,top+config.height], weight:1}]
+    if (!renderer.bounds) LANDMARKS.frame = {drawn, camera:{x:screen.x,y:screen.y}}
+    return drawn
+}
