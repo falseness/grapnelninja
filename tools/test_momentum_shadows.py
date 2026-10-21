@@ -75,8 +75,8 @@ PERF_FRAMES = 300
 # Later effects that are not the shadowed ninja light: the TASK-058 lit
 # motes take light unshadowed (behind a wall too), so the wall-leak frames
 # of the tree are taken with them off (style.js served with moteGain 0)
-LEAK_LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'), ('show: true,\n            parallax', 'show: false,\n            parallax'),
-                     ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
+LEAK_LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'),
+                          ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
 PERF_BATCH = 50
 # TASK-054's parent, before every lighting effect: the cumulative lighting
 # cost is reported against it, not asserted
@@ -300,13 +300,12 @@ class MomentumShadowsTests(unittest.TestCase):
 
     def test_1_no_light_through_walls(self):
         tree = fx.harness()
-        later_off = [patch for patch in LEAK_LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
-        leak_harness = fx.FxHarness('worktree', tree.browser, style_patch=later_off) if later_off else tree
+        later_off = fx.style_patches(LEAK_LATER_EFFECTS_OFF)
+        leak_harness = fx.FxHarness('worktree', tree.browser, style_patch=later_off)
         try:
             self.check_leaks(leak_harness, [patch[1] for patch in later_off])
         finally:
-            if leak_harness is not tree:
-                leak_harness.close()
+            leak_harness.close()
 
     def check_leaks(self, harness, later_off):
         rows = []

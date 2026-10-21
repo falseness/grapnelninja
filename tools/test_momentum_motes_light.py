@@ -28,9 +28,12 @@ TASK-128's and its scenes put other motes over other cave (TASK-142):
   edge and no trail: motes more than FAR_PX from every light have maxDelta
   <= MAX_FAR_DELTA vs the baseline over their halo box. The mote layout of
   both is the same (deterministic);
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports and the classic and bad test_visual_gallery frames with the switch
-  on equal the parent commit (decoded maxDelta 0);
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit (decoded maxDelta 0); the 4
+  harness scenes with MOMENTUM_FX off at both viewports equal the same tree
+  with the motes unlit (MOTES_UNLIT) (TASK-148: the parent's corridors and camera
+  predate TASK-128/133; MOMENTUM_MOTES_LIGHT_PARENT set: that revision
+  instead), outside the pieces;
 - shots/: run-right and blue-corner at 1280x720, a 2x zoom crop round the
   ninja (run-right), compare-run-right.png (vs concept 5-rim-slow.png).
 
@@ -72,7 +75,7 @@ BLUE_LIGHT = '#2f86ff'
 HIDE_MOTES = '() => { QUALITY.ambient = false }'
 # Later effects (the TASK-059 speed light) are switched off in the tree by a
 # STYLE override, so only the lit motes are compared with the baseline
-LATER_EFFECTS_OFF = [('speedLight: true', 'speedLight: false'), ('show: true,\n            parallax', 'show: false,\n            parallax'),
+LATER_EFFECTS_OFF = [('speedLight: true', 'speedLight: false'),
                      ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
 # The motes unlit (the TASK-057 look): baseline of the brightness and far
 # checks. The TASK-058 parent's corridors are twice as tall as TASK-128's
@@ -113,12 +116,11 @@ _TREE_HARNESS = {}
 
 
 def tree_harness(lit=True):
-    """The worktree harness with LATER_EFFECTS_OFF served (those its style.js has), and MOTES_UNLIT unless lit."""
+    """The worktree harness with LATER_EFFECTS_OFF served, and MOTES_UNLIT unless lit (each must match once)."""
     if lit not in _TREE_HARNESS:
         tree = fx.harness()
-        later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
         _TREE_HARNESS[lit] = fx.FxHarness('worktree', tree.browser,
-                                          style_patch=(later_off + ([] if lit else MOTES_UNLIT)) or None)
+                                          style_patch=fx.style_patches(LATER_EFFECTS_OFF, [] if lit else MOTES_UNLIT))
     return _TREE_HARNESS[lit]
 
 
@@ -234,6 +236,8 @@ class MomentumMotesLightTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with MOTES_UNLIT (TASK-148)
+        cls.momentum_parent = os.environ.get('MOMENTUM_MOTES_LIGHT_PARENT') or None
         cls.result = {'parent': cls.parent, 'baseline': 'worktree moteGain 0', 'viewport': list(VIEWPORT),
                       'brightness': 'peak of the mote excess luminance (frame - motes hidden) box-filtered at the '
                                     'unlit halo size', 'hue': 'hue of the mean frame colour of the mote pixels (excess >= 1/4 of its max)',
@@ -300,7 +304,7 @@ class MomentumMotesLightTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, MOTES_UNLIT, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -317,7 +321,8 @@ class MomentumMotesLightTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'parent': parent.rev, 'tree': tree.rev,
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': MOTES_UNLIT}, 'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:

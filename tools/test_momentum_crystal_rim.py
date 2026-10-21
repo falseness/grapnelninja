@@ -22,9 +22,12 @@ momentumLight.rimStrength. Checks (tools/momentum_fx_support.py scenes,
 - cache.json: FRAMES frames with the camera swinging (screen.x/y, ninja with
   it) at both harness viewports: farEdges/nearEdges built exactly once,
   0 CanvasGradient created after frame 1, the rim drawn every frame;
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports and the classic and bad test_visual_gallery frames with the switch
-  on equal the parent commit (decoded maxDelta 0);
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit (decoded maxDelta 0); the 4
+  harness scenes with MOMENTUM_FX off at both viewports equal the same tree
+  with the rim off (RIM_OFF) (TASK-148: the parent's corridors and camera
+  predate TASK-128/133; MOMENTUM_CRYSTAL_RIM_PARENT set: that revision
+  instead), outside the pieces;
 - shots/: run-right and mid-shaft at 1280x720, a 2x zoom crop round the
   ninja (run-right), compare-run-right.png (vs concept 5-rim-slow.png).
 
@@ -66,7 +69,6 @@ CONCEPT = fx.CONCEPT_DIR / '5-rim-slow.png'
 # Later effects (the TASK-058 lit motes) switched off by a STYLE override in
 # the rim and far checks, so only the rim is compared with the parent
 LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'), ('speedLight: true', 'speedLight: false'),
-                     ('show: true,\n            parallax', 'show: false,\n            parallax'),
                      ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
 # The rim switched off: baseline of the near and far checks
 RIM_OFF = [('rimStrength: 1,', 'rimStrength: 0,')]
@@ -143,12 +145,11 @@ _RIM_HARNESS = {}
 
 
 def rim_harness(rim=True):
-    """The worktree harness with LATER_EFFECTS_OFF served (those its style.js has), and RIM_OFF unless rim."""
+    """The worktree harness with LATER_EFFECTS_OFF served, and RIM_OFF unless rim (each must match once)."""
     if rim not in _RIM_HARNESS:
         tree = fx.harness()
-        later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
         _RIM_HARNESS[rim] = fx.FxHarness('worktree', tree.browser,
-                                         style_patch=(later_off + ([] if rim else RIM_OFF)) or None)
+                                         style_patch=fx.style_patches(LATER_EFFECTS_OFF, [] if rim else RIM_OFF))
     return _RIM_HARNESS[rim]
 
 
@@ -198,6 +199,8 @@ class MomentumCrystalRimTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with RIM_OFF (TASK-148)
+        cls.momentum_parent = os.environ.get('MOMENTUM_CRYSTAL_RIM_PARENT') or None
         cls.result = {'parent': cls.parent, 'baseline': 'worktree rimStrength 0', 'viewport': list(VIEWPORT),
                       'edgeAlpha': EDGE_ALPHA}
 
@@ -289,7 +292,7 @@ class MomentumCrystalRimTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, RIM_OFF, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -306,7 +309,8 @@ class MomentumCrystalRimTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'parent': parent.rev, 'tree': tree.rev,
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': RIM_OFF}, 'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:

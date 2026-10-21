@@ -22,9 +22,12 @@ along +x, then SETTLE_FRAMES draws 1/60 s apart):
 - smoothing.json: settled at s 0.2, the speed steps to 1.0 and STEP_FRAMES
   frames follow at 60 fps: the lit radius grows over >= 3 frames, no single
   frame jump > 50% of the settled change radius(1.0) - radius(0.2);
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports and the classic and bad test_visual_gallery frames with the switch
-  on equal the parent commit (decoded maxDelta 0);
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit (decoded maxDelta 0); the 4
+  harness scenes with MOMENTUM_FX off at both viewports equal the same tree
+  with the speed light off (SPEED_LIGHT_OFF) (TASK-148: the parent's corridors and camera
+  predate TASK-128/133; MOMENTUM_SPEED_LIGHT_PARENT set: that revision
+  instead), outside the pieces;
 - shots/: run-right (its trail kept) at s 0.2 and 1.0 at 1280x720, s 1.0 at
   390x844, compare-slow.png / compare-fast.png (vs concepts 5-rim-slow.png and
   6-rim-fast.png).
@@ -73,6 +76,9 @@ BEHIND_PX = 320
 BEHIND_HALF = 90
 STREAK_DELTA = 6
 STREAKS_OFF = [('streakAlpha: 0.9', 'streakAlpha: 0')]
+# The speed light off (ninjaRadius / lightAlpha, no streaks): baseline of
+# the switch-off scenes (TASK-148)
+SPEED_LIGHT_OFF = [('speedLight: true', 'speedLight: false')]
 LIGHT_OFF = STREAKS_OFF + [('alpha: 0.6, trailGain', 'alpha: 0, trailGain'),
                            ('alpha: 1, trailGain', 'alpha: 0, trailGain'),
                            ('hazeAlpha: 0.4', 'hazeAlpha: 0')]
@@ -166,6 +172,8 @@ class MomentumSpeedLightTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with SPEED_LIGHT_OFF (TASK-148)
+        cls.momentum_parent = os.environ.get('MOMENTUM_SPEED_LIGHT_PARENT') or None
         tree = fx.harness()
         cls.streaks_off = fx.FxHarness('worktree', tree.browser, style_patch=STREAKS_OFF)
         cls.light_off = fx.FxHarness('worktree', tree.browser, style_patch=LIGHT_OFF)
@@ -251,7 +259,7 @@ class MomentumSpeedLightTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, SPEED_LIGHT_OFF, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -268,7 +276,8 @@ class MomentumSpeedLightTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'parent': parent.rev, 'tree': tree.rev,
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': SPEED_LIGHT_OFF}, 'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:

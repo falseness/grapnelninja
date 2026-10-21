@@ -337,6 +337,18 @@ def harness(rev='worktree'):
     return _HARNESSES[rev]
 
 
+def style_patches(*patches, root=ROOT):
+    """patches (style_patch lists) concatenated; AssertionError unless every
+    old text occurs exactly once in root's style.js (TASK-148: a stale tuple
+    fails here instead of being dropped and changing the baseline)."""
+    style = (Path(root) / 'style.js').read_text()
+    merged = [patch for group in patches for patch in group]
+    for old, _ in merged:
+        if style.count(old) != 1:
+            raise AssertionError(f'style patch {old!r} occurs {style.count(old)} times in style.js')
+    return merged
+
+
 _PATCHED_HARNESSES = {}
 
 

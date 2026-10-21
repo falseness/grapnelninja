@@ -26,9 +26,13 @@ Also:
 - allocations: 120 frames with the ninja moving create no CanvasGradient
   inside the lightmap (clear/draw/composite) or the background after the
   first frame;
-- switch off: the 4 scenes with MOMENTUM_FX off at both viewports, and the
-  classic and bad frames of test_visual_gallery (same viewports and frozen
-  ticks) with the switch on, equal the parent commit (decoded maxDelta 0).
+- switch off: the classic and bad frames of test_visual_gallery (same
+  viewports and frozen ticks) with the switch on equal the parent commit
+  (decoded maxDelta 0); the 4 scenes with MOMENTUM_FX off at both viewports
+  equal the same tree with the ambient, ninja light and haze off
+  (NINJA_LIGHT_OFF) (TASK-148: the parent's corridors and camera predate
+  TASK-128/133; MOMENTUM_NINJA_LIGHT_PARENT set: that revision instead),
+  outside the pieces.
 
 MOMENTUM_NINJA_LIGHT_EVIDENCE_DIR (default /tmp/momentum-ninja-light)
 receives ninja-light.json, allocations.json, switch-off-identical.json
@@ -66,8 +70,11 @@ MAX_FAR_RATIO = 0.60
 MIN_NEAR_RATIO = 1.25
 MAX_EMISSIVE_DELTA = 3
 LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'), ('speedLight: true', 'speedLight: false'),
-                     ('show: true,\n            parallax', 'show: false,\n            parallax'),
                      ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
+# The dimmed ambient, the ninja's light and its haze off (and the speed light,
+# which replaces lightAlpha): baseline of the switch-off scenes (TASK-148)
+NINJA_LIGHT_OFF = [('ambient: 0.42,', 'ambient: 1,'), ('lightAlpha: 0.8,', 'lightAlpha: 0,'),
+                   ('hazeAlpha: 0.4,', 'hazeAlpha: 0,'), ('speedLight: true', 'speedLight: false')]
 ALLOC_FRAMES = 120
 # Opaque art: black- and white-background captures differ by at most this
 OPAQUE_TOLERANCE = 2
@@ -229,14 +236,15 @@ class MomentumNinjaLightTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with NINJA_LIGHT_OFF (TASK-148)
+        cls.momentum_parent = os.environ.get('MOMENTUM_NINJA_LIGHT_PARENT') or None
         cls.frames = {}
         # Later effects that change emissive art on purpose (the TASK-058 lit
         # motes) are switched off by a STYLE override, so only the ninja
         # light is compared
         tree = fx.harness()
-        later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
-        cls.light_harness = fx.FxHarness('worktree', tree.browser, style_patch=later_off) if later_off else None
-        light = cls.light_harness or tree
+        cls.light_harness = fx.FxHarness('worktree', tree.browser, style_patch=fx.style_patches(LATER_EFFECTS_OFF))
+        light = cls.light_harness
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 for on in (True, False):
@@ -300,7 +308,7 @@ class MomentumNinjaLightTests(unittest.TestCase):
         pairs = {}
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, NINJA_LIGHT_OFF, self.momentum_parent)
                 # The tree as served, without the LATER_EFFECTS_OFF override
                 new = fx.capture(scene, viewport, fx_on=False)
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
@@ -318,7 +326,8 @@ class MomentumNinjaLightTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'ticks': vg.TICKS, 'count': len(rows),
+            'parent': parent.rev, 'tree': tree.rev,
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': NINJA_LIGHT_OFF}, 'ticks': vg.TICKS, 'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:
