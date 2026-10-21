@@ -9,13 +9,16 @@ momentumLight.rimStrength. Checks (tools/momentum_fx_support.py scenes,
 1280x720), the parent commit being the TASK-056 look:
 - rim.json (later effects off, LATER_EFFECTS_OFF): the edge mask is drawLayerEdges into a blank canvas of the
   frame (alpha >= EDGE_ALPHA), restricted to the background mask of both
-  frames. run-right and mid-shaft: edge pixels within NEAR_PX of the ninja
+  frames. The baseline is the same tree with momentumLight.rimStrength 0
+  (RIM_OFF, the TASK-056 look): the TASK-057 parent's corridors are twice as
+  tall as TASK-128's, so a parent run-right puts open cave where the tree
+  has its floor (TASK-141). run-right and mid-shaft: edge pixels within NEAR_PX of the ninja
   are on average >= MIN_EDGE_RATIO x the parent's luminance; background
   pixels at least NON_EDGE_GAP px off every edge within NEAR_PX change by
   <= MAX_NON_EDGE_CHANGE (mean relative luminance change). far: run-right
   with the ninja moved to the left of the view and no trail; edge pixels more
   than FAR_PX from every light (ninja, trail, blue lights) have maxDelta <=
-  MAX_FAR_DELTA vs the parent;
+  MAX_FAR_DELTA vs the baseline;
 - cache.json: FRAMES frames with the camera swinging (screen.x/y, ninja with
   it) at both harness viewports: farEdges/nearEdges built exactly once,
   0 CanvasGradient created after frame 1, the rim drawn every frame;
@@ -27,7 +30,7 @@ momentumLight.rimStrength. Checks (tools/momentum_fx_support.py scenes,
 
 MOMENTUM_CRYSTAL_RIM_EVIDENCE_DIR (default /tmp/momentum-crystal-rim)
 receives the json files (compact) and shots/. MOMENTUM_CRYSTAL_RIM_PARENT is
-the parent revision (default: the parent of the commit that added this file,
+the parent revision of the switch-off check (default: the parent of the commit that added this file,
 or HEAD while uncommitted). Requires Playwright Chromium. No remote requests.
 """
 import base64
@@ -65,6 +68,8 @@ CONCEPT = fx.CONCEPT_DIR / '5-rim-slow.png'
 LATER_EFFECTS_OFF = [('moteGain: 5', 'moteGain: 0'), ('speedLight: true', 'speedLight: false'),
                      ('show: true,\n            parallax', 'show: false,\n            parallax'),
                      ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
+# The rim switched off: baseline of the near and far checks
+RIM_OFF = [('rimStrength: 1,', 'rimStrength: 0,')]
 # Ninja to the left edge of the view, no trail: most of the view is far
 NINJA_LEFT = '''() => { ninja.x = -screen.x + 60 * width / scale[version] / 1280; ninja.track.pos = [] }'''
 
@@ -134,18 +139,17 @@ def parent_rev():
                                    cwd=ROOT, text=True).strip()
 
 
-_RIM_HARNESS = []
+_RIM_HARNESS = {}
 
 
-def rim_harness():
-    """The worktree harness, with LATER_EFFECTS_OFF served when its style.js has them."""
-    tree = fx.harness()
-    later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
-    if not later_off:
-        return tree
-    if not _RIM_HARNESS:
-        _RIM_HARNESS.append(fx.FxHarness('worktree', tree.browser, style_patch=later_off))
-    return _RIM_HARNESS[0]
+def rim_harness(rim=True):
+    """The worktree harness with LATER_EFFECTS_OFF served (those its style.js has), and RIM_OFF unless rim."""
+    if rim not in _RIM_HARNESS:
+        tree = fx.harness()
+        later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
+        _RIM_HARNESS[rim] = fx.FxHarness('worktree', tree.browser,
+                                         style_patch=(later_off + ([] if rim else RIM_OFF)) or None)
+    return _RIM_HARNESS[rim]
 
 
 def capture_with_edges(scene, extra_js=None):
@@ -194,20 +198,21 @@ class MomentumCrystalRimTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
-        cls.result = {'parent': cls.parent, 'viewport': list(VIEWPORT), 'edgeAlpha': EDGE_ALPHA}
+        cls.result = {'parent': cls.parent, 'baseline': 'worktree rimStrength 0', 'viewport': list(VIEWPORT),
+                      'edgeAlpha': EDGE_ALPHA}
 
     @classmethod
     def tearDownClass(cls):
         (EVIDENCE_DIR / 'rim.json').write_text(compact(cls.result))
         while _RIM_HARNESS:
-            _RIM_HARNESS.pop().close()
+            _RIM_HARNESS.popitem()[1].close()
         fx.close()
 
     def test_0_near_edges_lit_rest_kept(self):
         rows = []
         for scene in NEAR_SCENES:
             new, alpha, lights = capture_with_edges(scene)
-            old = fx.capture(scene, VIEWPORT, fx_on=True, rev=self.parent)
+            old = rim_harness(rim=False).capture(scene, VIEWPORT, fx_on=True)
             background = fx.background_mask(new) & fx.background_mask(old)
             near = distance_map(alpha.shape, [new.info['ninja']]) <= NEAR_PX
             edge = (alpha >= EDGE_ALPHA) & background & near
@@ -235,7 +240,7 @@ class MomentumCrystalRimTests(unittest.TestCase):
 
     def test_1_far_edges_unchanged(self):
         new, alpha, lights = capture_with_edges('run-right', NINJA_LEFT)
-        old = fx.capture('run-right', VIEWPORT, fx_on=True, extra_js=NINJA_LEFT, rev=self.parent)
+        old = rim_harness(rim=False).capture('run-right', VIEWPORT, fx_on=True, extra_js=NINJA_LEFT)
         background = fx.background_mask(new) & fx.background_mask(old)
         far = distance_map(alpha.shape, lights) > FAR_PX
         edge = (alpha >= EDGE_ALPHA) & background & far
