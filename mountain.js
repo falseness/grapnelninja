@@ -1203,13 +1203,13 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix: first three Loading Yard encounters only. Planned terrain stays noncollidable.
+// Replacement built prefix: four Loading Yard encounters only. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 6480, top: -3000, bottom: 280},
     spawn: {x: 2160, y: 0}, finish: null,
     sections: [
-        {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03']},
+        {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
         {id: 'S05', status: 'planned', encounters: ['preview-future'],
             band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
     ],
@@ -1217,6 +1217,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S01-01', name: 'Loading Yard', elements: ['yard-entry', 'yard-landing', 'yard-anchor', 'yard-catch']},
         {id: 'S01-02', name: 'Loading Yard raised bay', elements: ['yard-landing', 'yard-second-anchor', 'yard-second-landing', 'yard-catch']},
         {id: 'S01-03', name: 'Loading Yard return terrace', elements: ['yard-second-landing', 'yard-third-anchor', 'yard-third-landing', 'yard-catch']},
+        {id: 'S01-04', name: 'Loading Yard section exit', elements: ['yard-third-landing', 'yard-fourth-anchor', 'yard-fourth-landing']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1229,6 +1230,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['yard-second-landing', 3284, -48.2, 540, 60, 'Raised second bay landing, planning area and local catch for the return jump; 60 units above entry'],
         ['yard-third-anchor', 3080, -419, 160, 80, 'Upper return launch face; leftward pull from the raised bay, not a landing'],
         ['yard-third-landing', 2492, -288.2, 540, 60, 'Broad upper return terrace; reverses travel above the first bay'],
+        ['yard-fourth-anchor', 2700, -659, 160, 80, 'Final bay launch face; combines the leftward release with the upper terrace approach'],
+        ['yard-fourth-landing', 1700, -528.2, 540, 60, 'Broad Loading Yard section exit; ordinary green terrain with local recovery via the third terrace'],
         ['yard-catch', 0, 220, 6480, 60, 'Lower recovery floor; return via the entry or landing shelf'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: 'bounce', grapplable: true,
@@ -1252,7 +1255,7 @@ function replacementMountainLevel(manifest)
     return {...manifest, sections, encounters,
         elements: manifest.elements.filter(e => elementIds.has(e.id)),
         movers: manifest.movers.filter(m => elementIds.has(m.element)),
-        finish: planned ? null : manifest.finish, profile: REPLACEMENT_PROFILE}
+        finish: !planned && sections.some(s => s.id === 'S08') ? manifest.finish : null, profile: REPLACEMENT_PROFILE}
 }
 
 function loadMountainLevel(manifest = GRAPPLE_OVER_PREVIEW ? GRAPPLE_OVER_REPLACEMENT : GRAPPLE_OVER_MOUNTAIN)

@@ -1799,3 +1799,135 @@ class Task569Tests(unittest.TestCase):
                 'render/landmarks.js unchanged Loading Yard art'],
             superseded='Task567/568 exact four/six-collider inventories are historical; their earlier routes remain asserted here. Legacy v3 coverage is unchanged.',
             scope='S01-03 only plus physical connection; identical tested hashes remain valid after HEAD-only commit'))
+
+
+class Task570Tests(unittest.TestCase):
+    """Actual-base four-encounter run; summit gating is a separate labelled fixture."""
+    @classmethod
+    def setUpClass(cls):
+        Task569Tests.setUpClass.__func__(cls)
+
+    write = Task567Tests.write
+    page = Task567Tests.page
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    capture = Task567Tests.capture
+    target = dict(x=2780,y=-590)
+
+    def approach(self):
+        p=Task569Tests.approach(self)
+        self.press(p,Task569Tests.target);self.step(p,45);p.mouse.up();self.step(p,208)
+        self.assertEqual(self.landings(self.result(p),'yard-third-landing')[0]['tick'],450)
+        return p
+
+    def test_01_geometry_and_continuous_section(self):
+        p=self.approach()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            movers:floors[0].level.movers,range:grappleOverAcquisitionRadius(),scale:scale[version],
+            target,reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),entry:{x:ninja.x,y:ninja.y},
+            calibrated:GRAPPLE_OVER_MOVEMENT,dragCount:floors[0].dragZones.length,finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][0]['encounters'],['S01-01','S01-02','S01-03','S01-04'])
+        self.assertEqual(len(g['elements']),10);self.assertEqual(g['movers'],[])
+        self.assertEqual(g['dragCount'],0);self.assertEqual(g['range'],360);self.assertEqual(g['scale'],.375)
+        self.assertIsNone(g['finish']);self.assertLess(g['reach'],360)
+        for e in g['elements']:
+            self.assertEqual(e['role'],'bounce');self.assertTrue(e['purpose'])
+            e['width']=max(v['x'] for v in e['points'])
+            if 'anchor' not in e['id']:self.assertGreaterEqual(e['width'],540)
+        es={e['id']:e for e in g['elements']}
+        g['gap']=es['yard-third-landing']['x']-es['yard-fourth-landing']['x']-es['yard-fourth-landing']['width']
+        g['rise']=es['yard-third-landing']['y']-es['yard-fourth-landing']['y']
+        g.update(localCatch='yard-third-landing',calibrationNote='TASK-564 widths/gap; fresh production proof for 240 rise, upper launch and leftward release')
+        self.assertEqual(g['gap'],252);self.assertAlmostEqual(g['rise'],240)
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.press(p,self.target);self.step(p,75);p.mouse.up();self.step(p,147)
+        r=self.result(p);lands=self.landings(r,'yard-fourth-landing');self.assertTrue(lands)
+        landing=lands[0]['tick'];streak=0
+        for s in r['rows'][525:landing-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0
+        self.assertGreaterEqual(streak,6)
+        self.assertTrue(any(s['attached'] for s in r['rows'][450:525]))
+        r.update(entryTick=450,takeoffTick=451,releaseTick=525,landingTick=landing,landingAir=streak,
+                 entryToExit=True,resets=0,poseInjections=0,scope='Continuous actual preview base through S01-04; no summit claim')
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        exits=[dict(encounter=f'S01-0{i+1}',collider=id,tick=self.landings(r,id)[0]['tick'])
+               for i,id in enumerate(['yard-landing','yard-second-landing','yard-third-landing','yard-fourth-landing'])]
+        self.assertEqual([e['tick'] for e in exits],[105,197,450,672])
+        self.assertFalse(p.evaluate('floors[0].climbStats.completed'))
+        self.write('section-route.json',dict(entry='actual preview base, not fixture',exits=exits,resets=0,
+            handoffs='same page and physics state throughout; route.json holds every tick',completionEvents=0))
+        self.capture(p,'landing.jpg')
+        print(f'PASS geometry: 10 purposeful green colliders; shelves >=540 gap 252 rise 240 reach {g["reach"]:.3f} < 360; no planned terrain')
+        print(f'PASS section: actual base exits 105/197/450/672; release 525; airborne unattached {streak}; zero resets/injections/completions; trusted inputs; images decoded')
+
+    def test_02_late_miss_and_recovery(self):
+        p=self.approach();self.press(p,self.target);self.step(p,90);p.mouse.up();self.step(p,240)
+        before=self.result(p);catch=[s for s in self.landings(before,'yard-third-landing') if s['tick']>540]
+        self.assertTrue(catch);self.assertFalse(self.landings(before,'yard-fourth-landing'))
+        self.press(p,dict(x=3000,y=-270));self.step(p,48);p.mouse.up()
+        self.press(p,self.target);self.step(p,75);p.mouse.up();self.step(p,400)
+        r=self.result(p);returned=self.landings(r,'yard-fourth-landing');self.assertTrue(returned)
+        r.update(lateReleaseTick=540,catchTick=catch[0]['tick'],catchTarget='yard-third-landing',
+                 recoveryPressTick=780,repositionReleaseTick=828,recoveryReleaseTick=903,returnTick=returned[0]['tick'],
+                 recoveryTarget='yard-fourth-landing',resets=0,poseInjections=0)
+        self.write('miss.json',r)
+        print(f'PASS miss: late release 540 local catch {catch[0]["tick"]}; normal-control return {returned[0]["tick"]}; zero resets/injections')
+
+    def test_03_hold_and_nearest(self):
+        cases=[]
+        p=self.approach();self.press(p,self.target);self.step(p,600)
+        r=self.result(p);r.update(probe='continuous hold',successfulAlternative=bool(self.landings(r,'yard-fourth-landing')))
+        cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.approach();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'yard-fourth-landing')))
+            cases.append(r)
+        self.write('controls.json',dict(cases=cases,inspection='All top-facing exit contacts inspected using same nominal success definition',bound='600 ticks from actual third landing'))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four trusted 600-tick bounded hold/nearest probes; zero successful alternatives')
+
+    def test_04_summit_gate_fixture_and_index(self):
+        p=self.page()
+        gate=p.evaluate('''() => {
+            const m=JSON.parse(JSON.stringify(GRAPPLE_OVER_REPLACEMENT));
+            m.sections=m.sections.filter(s=>s.status==='built');
+            m.finish={left:2000,right:2300,top:-100,bottom:100};
+            const s01=replacementMountainLevel(m).finish;
+            m.sections.push({id:'S08',status:'built',encounters:[]});
+            const s08=replacementMountainLevel(m).finish;
+            // Isolated finish contract fixture, never part of the section route.
+            floors[0].level.finish=s08;
+            let events=0;const original=PLATFORM.sendLifecycle;
+            PLATFORM.sendLifecycle=function(name,...args){if(name==='level_completed')events++;return original.call(this,name,...args)};
+            YARD.step(3);CLIMB_UI.complete();
+            return {s01,s08,events,completed:floors[0].climbStats.completed};
+        }''')
+        self.assertIsNone(gate['s01']);self.assertTrue(gate['s08'])
+        self.assertEqual(gate['events'],1);self.assertTrue(gate['completed'])
+        gate['scope']='Isolated S08 finish contract fixture at base, not authored S08 or continuous summit gameplay'
+        self.write('summit-gate.json',gate)
+        required={'commands.log':'exact invocation, exit status, browser, viewport, revision and hashes',
+            'tests.log':'four exact Task570Tests identifiers with OK and no skips',
+            'geometry.json':'10 green purposeful colliders; broad shelves, calibrated gap and reachable target',
+            'route.json':'continuous production trace, release and airborne streak to exit',
+            'inputs.json':'trusted production mouse events',
+            'miss.json':'late release, third-terrace catch and normal-control return',
+            'approach.jpg':'clear upper launch and Loading Yard structure',
+            'landing.jpg':'broad section exit and Loading Yard structure',
+            'controls.json':'four bounded alternative traces with all exit contacts inspected',
+            'section-route.json':'all four exits in order from actual base without resets; zero completion',
+            'summit-gate.json':'isolated S01 disabled/S08 enabled exactly-once completion contract'}
+        self.write('evidence-index.json',dict(config=self.config,artifacts=required,
+            dependencies=['mountain.js preview geometry and S08 finish gating -> fixedlevel.js -> physics.js',
+                'tools/grapple_over_yard.js observes unchanged production handlers/physics',
+                'TASK-564 blueprint and TASK-560 calibration referenced in place',
+                'render/landmarks.js unchanged Loading Yard artwork'],
+            superseded='Task567/568/569 exact geometry inventories are historical; all earlier nominal routes asserted continuously here. Legacy v3 tests unchanged.',
+            scope='S01-04 only; identical tested source hashes remain valid across HEAD-only commit'))
+        print('PASS summit: isolated fixture S01 finish disabled; S08 completion exactly once; section itself never finishes')
