@@ -65,7 +65,7 @@ function grappleOverLandmarkAnchors()
 // from it; invisible ones are skipped.
 function drawGrappleOverLandmarks(renderer)
 {
-    if (!LANDMARKS.enabled || version !== 'grapple_over' || !floors[0] || !floors[0].level)
+    if (GRAPPLE_OVER_PREVIEW || !LANDMARKS.enabled || version !== 'grapple_over' || !floors[0] || !floors[0].level)
         return null
     const config = GRAPPLE_OVER_LANDMARKS
     const context = renderer.ctx

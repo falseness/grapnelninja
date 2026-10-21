@@ -1203,7 +1203,52 @@ function validateMountainManifest(m)
     return level
 }
 
-function loadMountainLevel(manifest = GRAPPLE_OVER_MOUNTAIN)
+// Versioned, deliberately minimal preview. Planned geometry is never collidable.
+const GRAPPLE_OVER_REPLACEMENT = {
+    layoutId: 'grapple-over-replacement-v1', version: 1,
+    bounds: {left: 0, right: 6480, top: -3000, bottom: 120},
+    spawn: {x: 2160, y: 0}, finish: null,
+    sections: [
+        {id: 'S01', status: 'built', encounters: ['preview-opening']},
+        {id: 'S05', status: 'planned', encounters: ['preview-future'],
+            band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
+    ],
+    encounters: [
+        {id: 'preview-opening', elements: ['preview-catch', 'preview-anchor']},
+        {id: 'preview-future', elements: ['preview-unbuilt']}
+    ],
+    elements: [
+        ['preview-catch', 0, 120, 6480, 60],
+        ['preview-anchor', 2520, -100, 40, 200],
+        ['preview-unbuilt', 2160, -2200, 200, 40]
+    ].map(([id, x, y, w, h]) => ({id, x, y, role: 'bounce', grapplable: true,
+        points: [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
+    movers: []
+}
+
+function replacementMountainLevel(manifest)
 {
-    return loadFixedLevel(validateMountainManifest(manifest))
+    validateFixedLevel(manifest)
+    let planned = false
+    for (const section of manifest.sections) {
+        if (!['built', 'planned'].includes(section.status) || (planned && section.status === 'built'))
+            throw new Error('InvalidBuiltPrefix: ' + section.id)
+        planned ||= section.status === 'planned'
+    }
+    const sections = manifest.sections.filter(s => s.status === 'built')
+    const encounterIds = new Set(sections.flatMap(s => s.encounters))
+    const encounters = manifest.encounters.filter(e => encounterIds.has(e.id))
+    const elementIds = new Set(encounters.flatMap(e => e.elements))
+    return {...manifest, sections, encounters,
+        elements: manifest.elements.filter(e => elementIds.has(e.id)),
+        movers: manifest.movers.filter(m => elementIds.has(m.element)),
+        finish: planned ? null : manifest.finish, profile: REPLACEMENT_PROFILE}
+}
+
+function loadMountainLevel(manifest = GRAPPLE_OVER_PREVIEW ? GRAPPLE_OVER_REPLACEMENT : GRAPPLE_OVER_MOUNTAIN)
+{
+    if (manifest.layoutId === GRAPPLE_OVER_REPLACEMENT.layoutId)
+        return loadFixedLevel(replacementMountainLevel(manifest))
+    return loadFixedLevel({...validateMountainManifest(manifest),
+        layoutId: 'grapple-over-legacy-v3', profile: MODE_DEFINITIONS.grapple_over})
 }

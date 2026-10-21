@@ -214,10 +214,20 @@ const MODE_DEFINITIONS = Object.freeze({
         upgradedAcquisitionRadius: 1620, rangeUpgradeSection: 'S05', hudStyle: 'classic'})
 })
 
+// Explicit local development selector. It never adds a player-facing mode.
+const GRAPPLE_OVER_PREVIEW = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) &&
+    new URLSearchParams(location.search).get('grapplePreview') === 'replacement-v1'
+const REPLACEMENT_PROFILE = Object.freeze({...MODE_DEFINITIONS.grapple_over,
+    acquisitionRadius: 360, upgradedAcquisitionRadius: 540})
+function grappleOverProfile()
+{
+    return floors[0]?.level?.profile ?? MODE_DEFINITIONS.grapple_over
+}
+
 // The climb's current grapnel range: shot travel, acquisition and the range circle.
 function grappleOverAcquisitionRadius()
 {
-    const definition = MODE_DEFINITIONS.grapple_over
+    const definition = grappleOverProfile()
     return floors[0]?.rangeUpgraded ? definition.upgradedAcquisitionRadius : definition.acquisitionRadius
 }
 const scale = Object.fromEntries(Object.entries(MODE_DEFINITIONS)

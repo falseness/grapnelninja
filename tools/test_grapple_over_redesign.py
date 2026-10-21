@@ -153,3 +153,163 @@ class Task557Tests(unittest.TestCase):
         self.write('baseline-perf.json',dict(config=self.config,warmup_ticks=120,measured_ticks=180,repeats=2,runs=rows,
             limitations='Short headless shared-host component timings, not device FPS or a difficulty estimate. No A/B speedup claim. Future comparison must match browser, viewport, seed, warmup, ticks, host and scene.'))
         print('PASS warmed matched baseline: 3 modes x 2 seeded runs x 180 measured ticks; warmup=120')
+
+
+class Task558Tests(unittest.TestCase):
+    """Isolated development fixtures; these are not continuous gameplay proof."""
+    @classmethod
+    def setUpClass(cls):
+        cls.out = Path(os.environ.get('GRAPPLE_OVER_EVIDENCE_DIR', ROOT / 'artifacts/TASK-558')).resolve()
+        if not cls.out.is_relative_to((ROOT / 'artifacts').resolve()):
+            raise ValueError('Evidence must be under artifacts/')
+        cls.out.mkdir(parents=True, exist_ok=True)
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        hashes = source_hashes()
+        hashes['tools/test_grapple_over_redesign.py'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        cls.config = dict(revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                          source_hashes=hashes, browser=cls.browser.version, viewport=VIEWPORT,
+                          device_scale_factor=1, seed=1, simulation='isolated fixtures, production physics and trusted mouse input')
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+
+    def page(self, preview=True):
+        context = self.browser.new_context(viewport=VIEWPORT, device_scale_factor=1)
+        self.addCleanup(context.close)
+        p = context.new_page()
+        errors = []
+        p.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        p.add_init_script(SEED_SCRIPT % 1)
+        if preview:
+            p.add_init_script("localStorage.setItem('grapnelninja.grappleOver', 'legacy-save-sentinel')")
+        p.goto(self.url + ('?grapplePreview=replacement-v1' if preview else ''))
+        wait_for_boot(p)
+        p.evaluate('cancelAnimationFrame(game); window.requestAnimationFrame=()=>0')
+        p.wait_for_function('!unTouch')
+        return p
+
+    def press(self, p, x, y):
+        xy = p.evaluate('p=>canvasCoordsToViewportCoords({x:(p.x+screen.x)*scale[version],y:(p.y+screen.y)*scale[version]})',dict(x=x,y=y))
+        p.mouse.move(xy['x'],xy['y']); p.mouse.down()
+        self.assertTrue(p.evaluate('grapnel.throwed'))
+
+    def test_01_profiles_and_save_isolation(self):
+        rows = []
+        for preview in [False, True, False]:
+            p = self.page(preview)
+            for mode in ['boot','classic','bad','grapple_over']:
+                if mode != 'boot':
+                    p.evaluate('m=>{startGame(m);cancelAnimationFrame(game)}',mode)
+                row = p.evaluate('''() => ({mode:version, layoutId:floors[0].level?.layoutId ?? null,
+                    persistent:floors[0] instanceof PersistentWorld, camera:scale[version],
+                    range:version==='grapple_over' ? grappleOverAcquisitionRadius():null,
+                    profile:version==='grapple_over' ? grappleOverProfile():MODE_DEFINITIONS[version],
+                    gravity:GRAVITY,pull:grappleSpeed})''')
+                row['preview'] = preview; rows.append(row)
+                climb = mode in ['boot','grapple_over']
+                self.assertEqual(row['persistent'],climb)
+                self.assertEqual(row['camera'],.375 if climb else 1 if mode=='classic' else 1/2.2)
+                self.assertEqual(row['range'],(360 if preview else 1080) if climb else None)
+                self.assertEqual(row['layoutId'],('grapple-over-replacement-v1' if preview else 'grapple-over-legacy-v3') if climb else None)
+                if climb:
+                    self.assertEqual(row['profile']['upgradedAcquisitionRadius'],540 if preview else 1620)
+            if preview:
+                p.evaluate('PROGRESS.resetClimb();physics();PROGRESS.flushClimb()')
+                p.wait_for_timeout(1200)
+                saved = p.evaluate("localStorage.getItem('grapnelninja.grappleOver')")
+                self.assertEqual(saved,'legacy-save-sentinel')
+                self.assertFalse(p.evaluate("!!document.getElementById('climb-save-notice')"))
+        self.assertEqual(len(set((r['gravity'],r['pull']) for r in rows)),1)
+        self.write('profiles.json',dict(config=self.config,rows=rows,saved=saved))
+        self.write('preview-contract.json',dict(invocation='http://127.0.0.1:<port>/?grapplePreview=replacement-v1',
+            allowedHosts=['localhost','127.0.0.1','[::1]'],mode='grapple_over',layoutId='grapple-over-replacement-v1',
+            persistence='preview never restores or writes the legacy climb save',loader='loadMountainLevel -> replacementMountainLevel -> loadFixedLevel',
+            prefix='Only built sections and their referenced encounters/elements/movers load; built after planned is rejected; unfinished prefix has null finish.',
+            fixture='S01 green catch and anchor only; S05 planned and noncolliding; not continuous gameplay',
+            ranges=[360,540],camera=.375,
+            dependencies=['gameoptions.js profile and local selector','mountain.js loader and preview manifest','physics.js upgrade profile','progress.js save isolation','render/landmarks.js legacy landmark exclusion','tools/test_grapple_over_redesign.py'],
+            historicalCoverage='TASK-557 and earlier v3 geometry evidence remains legacy-only; no historical tests removed or rerun.'))
+        print('PASS profiles: 12 boot/mode observations, legacy 1080/1620, preview 360/540, classic/bad unchanged; saved=legacy-save-sentinel')
+
+    def test_02_built_prefix_and_real_input(self):
+        p = self.page()
+        result = p.evaluate('''() => {
+            startGame('grapple_over');cancelAnimationFrame(game);
+            const m=structuredClone(GRAPPLE_OVER_REPLACEMENT);
+            m.finish={left:2000,right:2300,top:-100,bottom:100};
+            const filtered=loadMountainLevel(m).level;
+            let invalid; m.sections.reverse();
+            try{loadMountainLevel(m)}catch(e){invalid=e.message}
+            return {layoutId:floors[0].level.layoutId,spawn:{x:ninja.x,y:ninja.y},
+                declaredBuilt:GRAPPLE_OVER_REPLACEMENT.encounters[0].elements,
+                colliders:floors[0].elements.map(e=>({id:e.id,role:e.surfaceRole})),
+                sections:floors[0].level.sections.map(s=>s.id),finish:filtered.finish,invalid};
+        }''')
+        self.assertEqual([e['id'] for e in result['colliders']],result['declaredBuilt'])
+        self.assertTrue(all(e['role']=='bounce' for e in result['colliders']))
+        self.assertEqual(result['sections'],['S01']);self.assertIsNone(result['finish'])
+        self.assertIn('InvalidBuiltPrefix',result['invalid'])
+        self.press(p,2520,0)
+        trace = p.evaluate('''() => {const rows=[];for(let i=0;i<6;i++){physics();rows.push({tick:i+1,x:ninja.x,y:ninja.y,
+            attached:grapnel.isGrappled(),target:grapnel.pos[0]?.[2]?.id ?? null,traveled:grapnel.traveled,
+            range:grappleOverAcquisitionRadius(),completed:floors[0].climbStats.completed})}return rows}''')
+        self.assertTrue(any(r['attached'] and r['target']=='preview-anchor' for r in trace))
+        self.assertTrue(all(r['traveled']<=360 and r['range']==360 and not r['completed'] for r in trace))
+        p.evaluate('screen.x=width/scale[version]/2-ninja.x;screen.y=height/scale[version]/2-ninja.y;TUTORIAL_HINT.visible=false;draw()');p.screenshot(path=str(self.out/'preview.png'))
+        p.mouse.up()
+        # Probe the legacy summit and the unbuilt upgrade band with production ticks.
+        probes = p.evaluate('''() => [{x:2400,y:-13200},{x:2160,y:-2200}].map(p=>{
+            Object.assign(ninja,{...p,speedX:0,speedY:0});physics();
+            return {pose:p,completed:floors[0].climbStats.completed,range:grappleOverAcquisitionRadius()}})''')
+        self.assertTrue(all(not r['completed'] and r['range']==360 for r in probes))
+        with Image.open(self.out/'preview.png') as im:
+            im.load();self.assertEqual(im.size,(1280,720))
+        self.write('preview.json',dict(**result,trace=trace,probes=probes,fixture='Production spawn and trusted mouse grapple; capture centers camera and hides tutorial only; later poses are isolated completion probes'))
+        print('PASS preview: only preview-catch/preview-anchor, real-input grapple at range 360, planned S05 excluded, null finish, no summit completion; preview.png decoded 1280x720')
+
+    def test_03_range_consumers_and_attached_rope(self):
+        p = self.page()
+        rows=[]
+        for upgraded,radius in [(False,360),(True,540)]:
+            p.evaluate('''upgraded=>{startGame('grapple_over');cancelAnimationFrame(game);
+                floors[0].rangeUpgraded=upgraded;Object.assign(ninja,{x:2160,y:-600,speedX:0,speedY:0});screen.trackGrappleOver(true)}''',upgraded)
+            self.press(p,3000,-600)
+            row=p.evaluate('''() => {for(let i=0;i<8;i++)physics();
+                const arcs=[],original=ctx.arc;ctx.arc=function(...a){arcs.push(a[2]);return original.apply(this,a)};
+                try{drawAcquisitionCircle()}finally{ctx.arc=original}
+                return {range:grappleOverAcquisitionRadius(),traveled:grapnel.traveled,parked:grapnel.isParked(),
+                    attached:grapnel.isGrappled(),heldReach:Math.hypot(grapnel.pos[0][0]-ninja.x,grapnel.pos[0][1]-ninja.y),arcs};}''')
+            self.assertEqual(row['range'],radius);self.assertEqual(row['traveled'],radius)
+            self.assertAlmostEqual(row['heldReach'],radius);self.assertTrue(row['parked']);self.assertFalse(row['attached'])
+            self.assertEqual(row['arcs'],[radius]);p.mouse.up()
+            # Acquisition boundary from real input; one unit outside remains unacquired.
+            row['boundary'] = []
+            for distance in [radius+1,radius]:
+                p.evaluate('''d=>{Object.assign(ninja,{x:2520-d,y:0,speedX:0,speedY:0});screen.trackGrappleOver(true)}''',distance)
+                self.press(p,2520,0)
+                attached=p.evaluate('''() => {for(let i=0;i<4;i++)physics();return grapnel.isGrappled()}''')
+                row['boundary'].append(dict(distance=distance,attached=attached))
+                self.assertEqual(attached,distance==radius)
+                if attached:
+                    rope=p.evaluate('''() => {ninja.x-=800;physics();return {attached:grapnel.isGrappled(),length:Math.hypot(grapnel.pos[0][0]-ninja.x,grapnel.pos[0][1]-ninja.y)}}''')
+                    self.assertTrue(rope['attached']);self.assertGreater(rope['length'],radius)
+                    row['attachedBeyondRange']=rope
+                p.mouse.up()
+            rows.append(row)
+        upgrade=p.evaluate("""() => {
+            const manifest=structuredClone(GRAPPLE_OVER_REPLACEMENT);
+            manifest.sections[1].status='built';
+            floors=[loadMountainLevel(manifest)];
+            Object.assign(ninja,{x:2160,y:-2300,speedX:0,speedY:0});
+            const before=grappleOverAcquisitionRadius();physics();
+            const after=grappleOverAcquisitionRadius();
+            ninja.y=0;physics();
+            return {before,after,retained:grappleOverAcquisitionRadius(),noticeMs:floors[0].rangeNoticeMs,
+                fixture:'Isolated future S05 built flag to exercise production upgrade trigger, not authored gameplay'};
+        }""")
+        self.assertEqual([upgrade['before'],upgrade['after'],upgrade['retained']],[360,540,540])
+        self.assertGreater(upgrade['noticeMs'],0)
+        self.write('ranges.json',dict(consumers=rows,upgrade=upgrade))
+        print('PASS ranges: 360/540 acquisition boundary, shot travel, held reach, drawn circle; attached rope remains attached beyond range')

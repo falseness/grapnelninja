@@ -62,7 +62,7 @@ function calcPhysics()
         stats.currentHeight = world.level.spawn.y - ninja.y
         stats.maxHeight = Math.max(stats.maxHeight, stats.currentHeight)
         world.rangeNoticeMs = Math.max(0, world.rangeNoticeMs - physicsStepMs / cyclesPerTick)
-        const upgrade = world.level.sections.find(s => s.id === MODE_DEFINITIONS.grapple_over.rangeUpgradeSection)
+        const upgrade = world.level.sections.find(s => s.id === grappleOverProfile().rangeUpgradeSection)
         const band = upgrade?.rangeUpgradeZone ?? upgrade?.band
         if (!world.rangeUpgraded && band && ninja.x >= band.left && ninja.x <= band.right &&
             ninja.y >= band.top && ninja.y <= band.bottom)

@@ -160,6 +160,7 @@ const PROGRESS = (function()
         },
         resetClimb()
         {
+            if (GRAPPLE_OVER_PREVIEW) { startGrappleOverVersion(); return }
             climbJson = null
             climbChanged = true
             startGrappleOverVersion()
@@ -167,6 +168,8 @@ const PROGRESS = (function()
         },
         enterClimb()
         {
+            // The local preview neither restores nor overwrites the shipped save.
+            if (GRAPPLE_OVER_PREVIEW) return
             climbActive = true
             restoreClimb()
         },
