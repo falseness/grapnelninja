@@ -246,13 +246,31 @@ def check_trace(manifest, trace):
     require(set(manifest['required_events']) <= {e['type'] for e in events}, 'missing mechanic event')
 
 
+def load_trace(manifest):
+    """A long run's recorded trace may be stored beside the manifest as trace_file {name, sha256}: a gzip-compressed
+    trace JSON in the evidence directory, checked against the sha256 of its decompressed bytes."""
+    if 'trace_file' not in manifest:
+        return manifest
+    manifest = dict(manifest)
+    ref = manifest.pop('trace_file')
+    require(set(ref) == {'name', 'sha256'} and ref['name'].endswith('.json.gz') and 'trace' not in manifest, 'invalid trace_file')
+    raw = gzip.decompress(EvidenceWriter('TASK-462').path(ref['name']).read_bytes())
+    require(hashlib.sha256(raw).hexdigest() == ref['sha256'], 'trace_file hash mismatch')
+    manifest['trace'] = json.loads(raw)
+    return manifest
+
+
 def verify(manifest, browser, url, out, clip=False):
+    packed = 'trace_file' in manifest
+    manifest = load_trace(manifest)
     validate(manifest)
     check_trace(manifest, manifest['trace'])
     replayed = execute(manifest, browser, url, out, clip)
     check_trace(manifest, replayed)
     require(manifest['trace'] == replayed, 'recorded/replayed trace mismatch (state mutation or inputs)')
     evidence, prefix = output_writer(out)
+    if packed:
+        compress_replay(evidence, prefix)
     result = dict(matching_traces=True, kind=manifest['metadata']['kind'],
                   ticks=manifest['ticks'], recorded_sha256=state_hash(manifest['trace']),
                   replayed_sha256=state_hash(replayed))
@@ -894,8 +912,8 @@ def main():
     args = parser.parse_args()
     try:
         manifest = json.loads(Path(args.input).read_text())
-        if 'encounters' in manifest:
-            os.environ.setdefault('GRAPPLE_OVER_EVIDENCE_DIR', str(Path(args.input).resolve().parent))
+        # Evidence (suite inputs, replay output) lives beside the manifest unless GRAPPLE_OVER_EVIDENCE_DIR says otherwise.
+        os.environ.setdefault('GRAPPLE_OVER_EVIDENCE_DIR', str(Path(args.input).resolve().parent))
         with ExitStack() as stack:
             url, browser = start_browser_test(ROOT, stack.callback)
             result = audit_suite(manifest, browser, url, args.out) if 'encounters' in manifest else verify(manifest, browser, url, args.out, args.clip)
