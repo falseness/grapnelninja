@@ -32,9 +32,11 @@ blues); no-piece frames drop the piece. Checks:
   behind it): background grid samples whose rays to the blue's centre (and
   from LEAK_MARGIN px round them) cross a wall stay within 2 % of the
   light-off frame; unshadowedRise is what the light adds there uncut;
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports and the classic and bad test_visual_gallery frames with the switch
-  on equal the parent commit (decoded maxDelta 0);
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit (decoded maxDelta 0); the 4
+  harness scenes with MOMENTUM_FX off at both viewports equal the same tree
+  with the blue light off (BLUE_LIGHT_OFF) (TASK-147: the parent's corridors and camera predate TASK-128/133;
+  MOMENTUM_BLUE_LIGHT_PARENT set: that revision instead), outside the pieces;
 - shots/: blue-corner, blue-hit, a blue triangle and a rotated blue polygon
   (each with a green beside it) at 1280x720, compare-blue-corner.png and
   compare-blue-hit.png.
@@ -129,6 +131,9 @@ LIGHT_OFF = '''() => { const l = visualEffects.lightmap, collect = l.collectEmit
     l.collectEmitters = function(s) { const e = collect.call(this, s)
         for (let i = e.length - 1; i >= 0; --i) if (e[i].element) e.splice(i, 1)
         return e } }'''
+# The blue area light disabled (style), the baseline of the switch-off scenes;
+# drawn with MOMENTUM_FX off only (blueAlpha 0 would divide the haze by 0)
+BLUE_LIGHT_OFF = [('blueAlpha: 0.9,', 'blueAlpha: 0,'), ('blueHazeAlpha: 0.25,', 'blueHazeAlpha: 0,')]
 LIGHTMAP_OFF = '() => { visualEffects.lightmap.enabled = false }'
 
 
@@ -238,6 +243,8 @@ class MomentumBlueLightTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with BLUE_LIGHT_OFF (TASK-147)
+        cls.momentum_parent = os.environ.get('MOMENTUM_BLUE_LIGHT_PARENT') or None
 
     @classmethod
     def tearDownClass(cls):
@@ -410,7 +417,7 @@ class MomentumBlueLightTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, BLUE_LIGHT_OFF, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -428,6 +435,7 @@ class MomentumBlueLightTests(unittest.TestCase):
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
             'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': BLUE_LIGHT_OFF},
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:

@@ -26,9 +26,13 @@ foreground" = the same frame with the FOREGROUND.enabled test hook off):
   each strip built once, 0 shadowBlur / filter assignments inside
   FOREGROUND.draw over all frames, 0 gradients and 0 canvases created in it
   after frame 1, drawn every frame;
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  harness viewports and the classic and bad test_visual_gallery frames with
-  the switch on equal the parent commit (decoded maxDelta 0);
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit (decoded maxDelta 0); the 4
+  harness scenes with MOMENTUM_FX off at both harness viewports, silhouettes
+  shown (FOREGROUND_ON), equal the default tree (show false) (TASK-147: the
+  parent's corridors and camera predate TASK-128/133;
+  MOMENTUM_FOREGROUND_PARENT set: the default tree vs that revision), outside
+  the pieces;
 - shots/: mid-shaft at 1280x720, 844x390, 390x844, at 1280x720 after a 200 px
   camera move, compare-mid-shaft.png (vs concept 7-foreground.png);
 - default-off.json: STYLE.momentumFx.foreground.show is false by default
@@ -234,6 +238,8 @@ class MomentumForegroundTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree, show false (TASK-147)
+        cls.momentum_parent = os.environ.get('MOMENTUM_FOREGROUND_PARENT') or None
         cls.result = {}
 
     @classmethod
@@ -382,8 +388,10 @@ class MomentumForegroundTests(unittest.TestCase):
         pairs = {}
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
-                new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                # the silhouettes shown (FOREGROUND_ON) with the switch off vs the default
+                # tree (show false, the effect off); MOMENTUM_FOREGROUND_PARENT: default vs that revision
+                new = (fx.harness() if self.momentum_parent else on_harness()).capture(scene, viewport, fx_on=False)
+                base = fx.switch_off_baseline(scene, viewport, None, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -401,6 +409,7 @@ class MomentumForegroundTests(unittest.TestCase):
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
             'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'new': {'stylePatch': FOREGROUND_ON}},
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:

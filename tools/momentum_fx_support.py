@@ -337,7 +337,40 @@ def harness(rev='worktree'):
     return _HARNESSES[rev]
 
 
+_PATCHED_HARNESSES = {}
+
+
+def patched_harness(style_patch):
+    """Worktree harness serving style_patch (cached per patch, the shared browser)."""
+    key = tuple(style_patch or ())
+    if not key:
+        return harness()
+    if key not in _PATCHED_HARNESSES:
+        _PATCHED_HARNESSES[key] = FxHarness('worktree', harness().browser, style_patch=list(key))
+    return _PATCHED_HARNESSES[key]
+
+
+def switch_off_harness(effect_off, parent=None):
+    """Harness of the baseline frames of a momentum switch-off check (TASK-147).
+
+    The same tree with effect_off served (a style patch disabling the suite's
+    effect; patch_context raises unless each old text occurs exactly once):
+    a frame with MOMENTUM_FX off must equal it, i.e. the switch hides the
+    effect completely, on today's corridors and camera (a parent before
+    TASK-128/133 has other geometry). parent (a suite's MOMENTUM_*_PARENT
+    env): the old baseline, that revision unpatched.
+    """
+    return harness(parent) if parent else patched_harness(effect_off)
+
+
+def switch_off_baseline(scene, viewport, effect_off, parent=None, extra_js=None):
+    """scene at viewport with MOMENTUM_FX off from switch_off_harness(effect_off, parent)."""
+    return switch_off_harness(effect_off, parent).capture(scene, viewport, fx_on=False, extra_js=extra_js)
+
+
 def close():
+    for key in list(_PATCHED_HARNESSES):
+        _PATCHED_HARNESSES.pop(key).close()
     # The browser owner (the first) last
     for rev in list(_HARNESSES)[::-1]:
         _HARNESSES.pop(rev).close()

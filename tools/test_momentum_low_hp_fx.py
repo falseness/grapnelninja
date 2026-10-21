@@ -25,21 +25,26 @@ TASK-099):
   1/4, 1/2, 3/4 of lowHpPulseMs the ninja light (mean luminance in the
   background px (of the dark frame) LIGHT_RING from the ninja minus the same frame with the ninja
   light and haze alpha 0) max/min >= PULSE_RATIO, and each phase one period
-  later equals it (maxDelta 0). hp 2 and hp 5 equal the parent commit (TASK-064)
-  at maxDelta 0, and the same tree with the last-heart style
-  neutralised (LOW_HP_OFF) too, so hp >= 2 is checked on any later tree.
+  later equals it (maxDelta 0). hp 2 and hp 5 equal the same tree with the
+  last-heart style neutralised (LOW_HP_OFF) at maxDelta 0, so hp >= 2 is
+  checked on any later tree (TASK-147: the TASK-064 parent's corridors and
+  camera predate TASK-128/133; MOMENTUM_LOW_HP_FX_PARENT set: that revision,
+  outside the pieces).
   HUD boxes (fx.hud_mask) maxDelta 0 vs the hp 1 frame without
   the vignette (lowHpVignette 0). Blend: hp 2 drawn at T0, hp 1 at T0 + 150,
   T0 + 300 gives blend 0.5, 1; back to hp 2 at + 450 gives 0.5.
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at
-  both viewports and the classic and bad test_visual_gallery frames with the
-  switch on equal the parent commit (decoded maxDelta 0);
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit (decoded maxDelta 0); the 4
+  harness scenes with MOMENTUM_FX off at both viewports and blue-corner at hp
+  1 equal the same tree with LOW_HP_OFF (TASK-147: the parent's corridors and
+  camera predate TASK-128/133; MOMENTUM_LOW_HP_FX_PARENT set: that revision
+  instead), outside the pieces;
 - shots/: blue-corner hp 1 at pulse phases 0 and 1/2 and hp 2 (1280x720), hp
   1 at 390x844, compare-hp1.png (vs concept 10-low-hp.png).
 
 MOMENTUM_LOW_HP_FX_EVIDENCE_DIR (default /tmp/momentum-low-hp-fx) receives
 the json files (compact) and shots/. MOMENTUM_LOW_HP_FX_PARENT is the parent
-revision (default DEFAULT_PARENT d7d96c0: after the slow motion 9174492,
+revision of the classic/bad frames and, when set, the momentum baselines (default DEFAULT_PARENT d7d96c0: after the slow motion 9174492,
 which moved the speed light's cap, the TASK-084 phone boot RNG shift and the
 TASK-092 crystal rim edge tiles, the last change of the lit hp 2 frame; the
 file's own parent d3ce2fc predates all three). Requires Playwright Chromium. No remote requests.
@@ -163,6 +168,8 @@ class MomentumLowHpFxTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum baseline of tests 2 and 4: None = the same tree with LOW_HP_OFF (TASK-147)
+        cls.momentum_parent = os.environ.get('MOMENTUM_LOW_HP_FX_PARENT') or None
         tree = fx.harness()
         cls.light_off = fx.FxHarness('worktree', tree.browser, style_patch=NINJA_LIGHT_OFF)
         cls.vignette_off = fx.FxHarness('worktree', tree.browser, style_patch=VIGNETTE_OFF)
@@ -255,12 +262,14 @@ class MomentumLowHpFxTests(unittest.TestCase):
         for hp in (2, 5):
             new = hp_frame(fx.harness(), hp)
             off = hp_frame(self.low_hp_off, hp)
-            # the parent's own pulse hook is irrelevant at hp >= 2 (gain 1)
-            old = hp_frame(fx.harness(self.parent), hp)
-            # TASK-122 crystal pieces: the blue-corner scene equals the parent outside the blue pieces
+            # the same tree with LOW_HP_OFF (TASK-147); MOMENTUM_LOW_HP_FX_PARENT set: that revision
+            # (its own pulse hook is irrelevant at hp >= 2, gain 1)
+            base = fx.switch_off_harness(LOW_HP_OFF, self.momentum_parent)
+            old = hp_frame(base, hp)
+            # TASK-122 crystal pieces: the blue-corner scene equals the baseline outside the blue pieces
             d, d_off = fx.assert_equal_outside_pieces(new, old, check=False), fx.max_delta(new, off)
             pairs.append((new, old))
-            rows.append({'hp': hp, 'parent': fx.harness(self.parent).rev, **d,
+            rows.append({'hp': hp, 'baseline': self.momentum_parent and base.rev or 'LOW_HP_OFF', **d,
                          'identical': d['differingPixels'] == 0, 'maxDeltaVsLowHpOff': d_off})
         # the forced-off tree does change hp 1 (else the check proves nothing)
         hp1_off = fx.max_delta(hp_frame(fx.harness(), 1), hp_frame(self.low_hp_off, 1))
@@ -290,7 +299,7 @@ class MomentumLowHpFxTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, LOW_HP_OFF, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -298,7 +307,7 @@ class MomentumLowHpFxTests(unittest.TestCase):
                 rows.append({'scene': name, 'fx': 'off', **d, 'identical': d['differingPixels'] == 0})
         # The switch off at the last heart too
         new = hp_frame(fx.harness(), 1, fx_on=False)
-        base = hp_frame(fx.harness(self.parent), 1, fx_on=False)
+        base = hp_frame(fx.switch_off_harness(LOW_HP_OFF, self.momentum_parent), 1, fx_on=False)
         name = f'momentum-{SCENE}-hp1-1280x720'
         pairs[name] = (new, base)
         d = fx.assert_equal_outside_pieces(new, base, check=False)
@@ -315,6 +324,7 @@ class MomentumLowHpFxTests(unittest.TestCase):
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
             'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': LOW_HP_OFF},
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 17)
         for row in rows:

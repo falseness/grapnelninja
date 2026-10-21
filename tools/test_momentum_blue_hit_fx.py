@@ -15,9 +15,11 @@ retired; what is left (tools/momentum_fx_support.py blue-hit scene):
   tall blues across the corridor ahead of the ninja, MOMENTUM_FX on and off:
   per physics cycle ninja x/y/speedX/speedY, hp and score identical, 2 blue
   touches;
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports and the classic and bad test_visual_gallery frames with the switch
-  on equal the parent commit (decoded maxDelta 0).
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit (decoded maxDelta 0); the 4
+  harness scenes with MOMENTUM_FX off at both viewports equal the same tree
+  with the blue pop off (BLUE_POP_OFF) (TASK-147: the parent's corridors and camera predate TASK-128/133;
+  MOMENTUM_BLUE_HIT_FX_PARENT set: that revision instead), outside the pieces.
 
 MOMENTUM_BLUE_HIT_FX_EVIDENCE_DIR (default /tmp/momentum-blue-hit-fx)
 receives the json files (compact). MOMENTUM_BLUE_HIT_FX_PARENT is
@@ -42,6 +44,9 @@ VIEWPORT = (1280, 720)
 SCENE = 'blue-hit'
 TICKS = 600
 
+# The blue pop (what is left of the blue-hit effect) disabled (style), the
+# baseline of the switch-off scenes
+BLUE_POP_OFF = [('bluePopMs: 180,', 'bluePopMs: 0,')]
 # A momentum run: pieces cleared, two tall blues across the corridor ahead
 # of the ninja, the ninja sent right; every ninja.move() recorded
 RUN = r'''([fxOn, ticks]) => {
@@ -105,6 +110,8 @@ class MomentumBlueHitFxTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with BLUE_POP_OFF (TASK-147)
+        cls.momentum_parent = os.environ.get('MOMENTUM_BLUE_HIT_FX_PARENT') or None
         cls.result = {}
 
     @classmethod
@@ -154,7 +161,7 @@ class MomentumBlueHitFxTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, BLUE_POP_OFF, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -172,6 +179,7 @@ class MomentumBlueHitFxTests(unittest.TestCase):
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
             'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': BLUE_POP_OFF},
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:
