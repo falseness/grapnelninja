@@ -218,7 +218,7 @@ class BackgroundGradientCacheTest(unittest.TestCase):
     def test_first_frame_builds_all(self):
         self.assertEqual(self.r['load'], 3)
         # The 7 legacy creations, the 3 momentum lighting caches and the 8
-        # crystal sprite gradients of the tutorial legend
+        # crystal sprite gradients (5 first-frame world obstacles, 3 tutorial legend)
         self.assertEqual(self.r['load_callers'], {**LEGACY_CALLERS, **LIGHTING_CALLERS, **CRYSTAL_CALLERS})
         self.assertEqual(self.r['load_all'], 10 + CRYSTAL_COUNT)
 
