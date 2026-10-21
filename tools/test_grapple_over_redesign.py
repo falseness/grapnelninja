@@ -722,3 +722,112 @@ class Task561Tests(unittest.TestCase):
         self.assertGreater(seconds,10);self.assertGreater(frames,150)
         self.write('capture.json',dict(frames=frames,seconds=seconds,simulationHz=60,captureHz=15,sourceCase='x phase 0',releaseTick=r['releaseTicks']))
         print('PASS cycle.webm: decoded %d frames %.2f seconds; complete 10-second cycle and transfer' % (frames,seconds))
+
+
+class Task562Tests(unittest.TestCase):
+    """Isolated yellow envelope; setup poses are not continuous mountain play."""
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task562Tests')
+        Task558Tests.setUpClass.__func__(cls)
+        cls.config['source_hashes']['tools/grapple_over_yellow.js']=hashlib.sha256((ROOT/'tools/grapple_over_yellow.js').read_bytes()).hexdigest()
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK562_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write=Task557Tests.write
+
+    def page(self):
+        p=Task559Tests.page(self)
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_yellow.js'))
+        return p
+
+    def test_01_geometry(self):
+        p=self.page()
+        r=p.evaluate('''()=>{const m=YELLOW.setup(),c=GRAPPLE_OVER_YELLOW,b=c.band;
+          const obstacles=m.elements.filter(e=>e.role!=='drag').map(e=>{
+            const mover=m.movers.find(v=>v.element===e.id),left=mover?mover.min:e.x,right=(mover?mover.max:e.x)+e.points[1].x,top=e.y,bottom=e.y+e.points[2].y;
+            const dx=Math.max(left-b.left-b.width,b.left-right,0),dy=Math.max(top-b.top-b.height,b.top-bottom,0);
+            return {id:e.id,swept:!!mover,left,right,top,bottom,clearance:Math.hypot(dx,dy)};});
+          return {band:b,range:grappleOverAcquisitionRadius(),widthRatio:b.width/b.height,rangeRatio:b.width/grappleOverAcquisitionRadius(),obstacles,
+            corridor:{left:-1100,right:1100},lateralAscent:{left:1220,right:1780,top:-1000,bottom:1200},
+            manifest:m,physics:{horizontal:DRAG_ZONE_HORIZONTAL_DAMPING,vertical:DRAG_ZONE_VERTICAL_DAMPING,gravity:GRAVITY,pull:grappleSpeed,camera:scale[version]}};}''')
+        self.assertGreaterEqual(r['widthRatio'],4);self.assertGreaterEqual(r['rangeRatio'],3)
+        self.assertEqual(r['physics']['horizontal'],.8);self.assertEqual(r['physics']['vertical'],.985)
+        self.assertEqual(r['physics']['camera'],.375)
+        for o in r['obstacles']:self.assertGreaterEqual(o['clearance'],540,o)
+        self.assertTrue(any(o['swept'] for o in r['obstacles']))
+        self.assertLessEqual(r['band']['left'],r['corridor']['left'])
+        self.assertGreaterEqual(r['band']['left']+r['band']['width'],r['corridor']['right'])
+        self.assertGreater(r['lateralAscent']['left'],r['band']['left']+r['band']['width'])
+        r['minimumClearance']=min(o['clearance'] for o in r['obstacles'])
+        self.write('yellow-geometry.json',r)
+        print('PASS geometry: width=2400 height=600 aspect=4 range=540 coverage=2200 minimumClearance=%.6f; full swept mover bounds; lateral ascent x=1220..1780' % r['minimumClearance'])
+
+    def test_02_fall_control(self):
+        p=self.page()
+        cases=p.evaluate('''()=>[0,...GRAPPLE_OVER_YELLOW.thicknessCandidates].map(h=>{
+          YELLOW.setup({band:!!h,height:h||600});YELLOW.step(1000);const r=YELLOW.result(),landing=r.bounces[0],second=r.bounces[1];
+          const rebound=r.rows.filter(s=>s.tick>landing.tick&&s.tick<second.tick),apex=rebound.reduce((a,b)=>a.y<b.y?a:b);
+          const entry=r.rows.find(s=>s.inDrag),exit=entry&&r.rows.find(s=>s.tick>entry.tick&&!s.inDrag);
+          return {height:h,initial:r.rows[0],entry,exit,landing,apex,secondLanding:second,
+            drop:landing.after.y-r.rows[0].y,reboundHeight:landing.after.y-apex.y,
+            trace:r.rows.filter(s=>s.tick%5===0||[entry?.tick,exit?.tick,landing.tick,apex.tick].includes(s.tick))};})''')
+        self.assertEqual(len(cases),5)
+        base=cases[0];chosen=cases[-1]
+        for c in cases:
+            self.assertEqual(c['initial'],base['initial'])
+            self.assertGreater(c['apex']['tick'],c['landing']['tick'])
+            self.assertGreaterEqual(c['apex']['tick']-c['landing']['tick'],30)
+        self.assertLessEqual(chosen['reboundHeight'],chosen['drop']*.5)
+        self.assertGreater(chosen['apex']['y'],-2400)
+        self.assertGreater(base['reboundHeight'],base['drop']*.9)
+        self.assertLess(chosen['exit']['vy'],chosen['entry']['vy'])
+        self.write('fall-control.json',dict(config=self.config,candidateBounds=[150,600],candidates=cases,selectedHeight=600,abandonedRouteY=-2400,
+            rationale='600 maximizes braking within the tested finite thickness interval; width 2400 preserves aspect 4 and clearance simultaneously.'))
+        print('PASS fall: 5 same-state production runs; selected rebound=%.6f <= half drop=%.6f; apex=%.6f below abandoned route=-2400; entry vy=%.6f exit vy=%.6f' % (chosen['reboundHeight'],chosen['drop']*.5,chosen['apex']['y'],chosen['entry']['vy'],chosen['exit']['vy']))
+
+    def test_03_recovery_and_capture(self):
+        import imageio_ffmpeg
+        p=self.page();p.evaluate('YELLOW.setup()')
+        actions=[]
+        def press(target):
+            xy=p.evaluate('p=>YELLOW.client(p)',target)
+            p.mouse.move(**xy);p.mouse.down();actions.append(dict(tick=p.evaluate('YELLOW.result().tick'),target=target))
+        # Production input from the first lower bounce, never a setup/reset mid-run.
+        p.evaluate('YELLOW.step(352)');press(dict(x=1480,y=1140))
+        p.evaluate('YELLOW.step(40)');p.mouse.up();p.evaluate('YELLOW.step(10)')
+        for _ in range(2):
+            y=p.evaluate('ninja.y');press(dict(x=1800,y=y-350))
+            p.evaluate('YELLOW.step(60)');p.mouse.up()
+        r=p.evaluate('YELLOW.result()')
+        self.assertEqual(len(r['bounces']),1)
+        self.assertEqual(len(r['inputs']),6);self.assertTrue(all(e['trusted'] for e in r['inputs']))
+        self.assertFalse(any(s['inDrag'] for s in r['rows'] if s['tick']>=352))
+        self.assertGreater(r['rows'][-1]['x'],1200+r['radius']);self.assertLess(r['rows'][-1]['y'],-r['radius'])
+        self.assertTrue(any(s['attached'] for s in r['rows']))
+        self.assertAlmostEqual(r['stats']['elapsedActiveMs'],522*1000/60,places=5)
+        self.assertFalse(r['stats']['completed'])
+        self.write('recovery.json',dict(config=self.config,actions=actions,**r))
+        # Replay the verified controls for capture, independent of simulation search.
+        p.evaluate('YELLOW.setup()')
+        ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()
+        with (self.out/'encoder.log').open('wb') as log:
+            encoder=subprocess.Popen([ffmpeg,'-y','-loglevel','error','-threads','1','-filter_threads','1','-f','image2pipe','-vcodec','png','-r','7.5','-i','-','-c:v','libvpx-vp9','-threads','1','-cpu-used','6','-pix_fmt','yuv420p','-crf','35','-b:v','0',str(self.out/'fall.webm')],stdin=subprocess.PIPE,stderr=log)
+            shots={a['tick']:a['target'] for a in actions};releases={392,462,522}
+            for tick in range(0,523,2):
+                if tick in releases:p.mouse.up()
+                if tick in shots:
+                    xy=p.evaluate('p=>YELLOW.client(p)',shots[tick]);p.mouse.move(**xy);p.mouse.down()
+                if tick%8==0:
+                    p.evaluate("TUTORIAL_HINT.visible=false;draw();ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='white';ctx.font='20px sans-serif';ctx.fillText('TASK-562 isolated fall and lateral recovery | '+(YELLOW.result().tick/60).toFixed(2)+' s',20,100);ctx.restore()")
+                    encoder.stdin.write(p.screenshot())
+                if tick<522:p.evaluate('YELLOW.step(2)')
+            encoder.stdin.close();self.assertEqual(encoder.wait(),0)
+        replay=p.evaluate('YELLOW.result()')
+        self.assertAlmostEqual(replay['rows'][-1]['x'],r['rows'][-1]['x'],places=5)
+        self.assertAlmostEqual(replay['rows'][-1]['y'],r['rows'][-1]['y'],places=5)
+        frames,seconds=imageio_ffmpeg.count_frames_and_secs(str(self.out/'fall.webm'))
+        self.assertGreaterEqual(frames,65);self.assertGreater(seconds,8)
+        self.write('capture.json',dict(frames=frames,seconds=seconds,simulationHz=60,captureHz=7.5,replayFinal=replay['rows'][-1]))
+        print('PASS recovery: 6 trusted inputs; one lower bounce; no drag reentry; escape x=%.6f y=%.6f; 522 uninterrupted ticks; fall.webm decoded %d frames %.2f seconds' % (r['rows'][-1]['x'],r['rows'][-1]['y'],frames,seconds))

@@ -1280,3 +1280,15 @@ const GRAPPLE_OVER_MOVERS = Object.freeze({
             takeoff:[800,1040,540,60],blue:[600,80,160,80],landing:[785,400,540,60]})
     ])
 });
+
+// TASK-562 isolated fall-braking envelope, consumed by the replacement playground.
+// No legacy pad geometry or damping coefficients change. Recovery goes around
+// the east edge; nominal ascent uses that clear lateral corridor.
+const GRAPPLE_OVER_YELLOW = Object.freeze({
+    band: Object.freeze({left:-1200,top:0,width:2400,height:600}),
+    thicknessCandidates: Object.freeze([150,300,450,600]),
+    clearance:600, range:540, fall: Object.freeze({x:1100,y:-2400}),
+    landing: Object.freeze([-1400,1200,3800,60]),
+    returnHook: Object.freeze([1400,1140,160,60]),
+    returnWall: Object.freeze([1800,-1000,80,1900])
+});
