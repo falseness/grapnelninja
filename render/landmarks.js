@@ -355,13 +355,14 @@ function drawReplacementLandmark(renderer)
         return null
     const config = GRAPPLE_OVER_LANDMARKS, k = scale[version]
     const context = renderer.ctx
-    const quarry = replacementSection().id === 'S02'
-    const id = quarry ? 'terraced-quarry' : 'loading-yard'
+    const section = replacementSection().id
+    const quarry = section === 'S02', freight = section === 'S03'
+    const id = freight ? 'freight-crossing' : quarry ? 'terraced-quarry' : 'loading-yard'
     const sprite = getGlowSprite('replacement-' + id, () =>
         buildGlowSprite(config.width + 2 * config.pad, config.height + 2 * config.pad,
-            config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, quarry ? [1, replacementQuarryShape(config.width, config.height)] : [0]))
-    const left = (2366 + screen.x) * k - config.width / 2
-    const top = ((quarry ? -610 : -150) + screen.y) * k - config.height
+            config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, freight ? [2, replacementFreightShape(config.width, config.height)] : quarry ? [1, replacementQuarryShape(config.width, config.height)] : [0]))
+    const left = ((freight ? 4320 : 2366) + screen.x) * k - config.width / 2
+    const top = ((freight ? -800 : quarry ? -610 : -150) + screen.y) * k - config.height
     context.save()
     context.globalAlpha = config.alpha
     context.drawImage(sprite, left - config.pad, top - config.pad,
@@ -370,4 +371,14 @@ function drawReplacementLandmark(renderer)
     const drawn = [{id, rect:[left,top,left+config.width,top+config.height], weight:1}]
     if (!renderer.bounds) LANDMARKS.frame = {drawn, camera:{x:screen.x,y:screen.y}}
     return drawn
+}
+
+// Freight signal mast and overhead rail, presentation only: no collision panels.
+function replacementFreightShape(W, H)
+{
+    return {parts: [[[W*.12,0],[W*.17,0],[W*.17,H],[W*.12,H]],
+        [[0,H*.18],[W,H*.18],[W,H*.23],[0,H*.23]],
+        [[W*.05,H*.32],[W*.25,H*.32],[W*.25,H*.52],[W*.05,H*.52]]],
+        lines: [[[W*.17,H*.8],[W*.65,H*.23]],[[W*.8,H*.23],[W*.8,H*.6]]],
+        lights: [[W*.15,H*.37,1.5],[W*.15,H*.47],[W*.8,H*.6]]}
 }
