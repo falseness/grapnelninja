@@ -302,7 +302,11 @@ const CRYSTAL_PIECES = (function()
             const start = random()
             const rim = []
             for (let i = 0; i < FACETS; ++i)
-                rim.push(perimeterPoint(points, lengths, total, (start + (i + range(-0.3, 0.3)) / FACETS) % 1))
+            {
+                // JS % keeps the sign: wrap a negative fraction into 0..1
+                const f = (start + (i + range(-0.3, 0.3)) / FACETS) % 1
+                rim.push(perimeterPoint(points, lengths, total, f < 0 ? f + 1 : f))
+            }
             for (let i = 0; i < FACETS; ++i)
             {
                 const a = rim[i], b = rim[(i + 1) % FACETS]
