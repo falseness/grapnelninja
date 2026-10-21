@@ -2520,7 +2520,21 @@ class Task575Tests(unittest.TestCase):
     step = Task567Tests.step
     result = Task567Tests.result
     landings = staticmethod(Task567Tests.landings)
-    capture = Task567Tests.capture
+    def capture(self,p,name):
+        p.evaluate('TUTORIAL_HINT.visible=false;draw()')
+        observation=p.evaluate("""() => ({section:replacementSection().id,
+            label:I18N.t(replacementSection().labelKey),drawn:LANDMARKS.frame.drawn,
+            shape:replacementQuarryShape(GRAPPLE_OVER_LANDMARKS.width,GRAPPLE_OVER_LANDMARKS.height)})""")
+        self.assertEqual(observation['section'],'S02')
+        self.assertEqual(observation['label'],'Terraced Quarry')
+        self.assertEqual([d['id'] for d in observation['drawn']],['terraced-quarry'])
+        left,top,right,bottom=observation['drawn'][0]['rect']
+        self.assertGreater(right,0);self.assertLess(left,1280)
+        self.assertGreater(bottom,0);self.assertLess(top,720)
+        self.assertEqual(len(observation['shape']['parts'][0]),12)
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        self.write(name+'.json',observation)
+        print(f'PASS {name}: S02 / Terraced Quarry; visible terraced-quarry stepped-cut silhouette')
     target = dict(x=2384,y=-785)
 
     def page(self):
@@ -2614,6 +2628,11 @@ class Task575Tests(unittest.TestCase):
         rows=[]
         for preview in [True,False]:
             q=Task558Tests.page(self,preview)
+            if preview:
+                q.evaluate('draw()')
+                self.assertEqual(q.evaluate('replacementSection().id'),'S01')
+                self.assertEqual(q.evaluate('LANDMARKS.frame.drawn[0].id'),'loading-yard')
+                print('PASS preview base: S01 loading-yard artwork preserved')
             for mode in ['grapple_over','classic','bad']:
                 row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,
                     range:version==='grapple_over'?grappleOverAcquisitionRadius():null,
@@ -2625,7 +2644,7 @@ class Task575Tests(unittest.TestCase):
                     self.assertEqual(row['upgraded'],540 if preview else 1620)
                     self.assertEqual(row['scale'],.375)
         self.assertEqual(len({(r['gravity'],r['pull']) for r in rows}),1)
-        self.write('dependencies.json',dict(rows=rows,changed=['mountain.js preview built prefix -> fixedlevel.js colliders'],
+        self.write('dependencies.json',dict(rows=rows,changed=['render/landmarks.js preview quarry silhouette and nearest built section', 'menu.js preview section label', 'tools/test_grapple_over_redesign.py capture assertions'],
             unchanged=['physics.js','events.js','sprites/ninja.js','gameoptions.js'],
             superseded='Earlier exact S01/S02-01/S02-02 inventories remain historical; no historical tests modified. TASK-572 S01 run archived in place (119.924s, 3 tests OK; unchanged S01 geometry and physics); no base-to-summit claim.',
             hashes=self.config['source_hashes']))
@@ -2634,6 +2653,8 @@ class Task575Tests(unittest.TestCase):
             'route.json':'production entry-to-exit release and consecutive unattached airborne ticks',
             'inputs.json':'trusted production mouse events','miss.json':'late miss catch and normal-control return',
             'approach.jpg':'broad shared entry and terraced quarry target','landing.jpg':'upper quarry landing and lower catch',
+            'approach.jpg.json':'S02 label and visible stepped-cut landmark bounds',
+            'landing.jpg.json':'S02 label and visible stepped-cut landmark bounds',
             'controls.json':'bounded hold and nearest probes with all successes inspected','dependencies.json':'changed subsystem and unchanged mode/range/physics contracts',
             'evidence-index.json':'required artifact map and tested provenance'}
         self.write('evidence-index.json',dict(artifacts=required,config=self.config,

@@ -980,7 +980,7 @@ const CLIMB_UI = {
     drawHud(button) {
         const stats = floors[0].climbStats, h = height / scale[version]
         const size = Math.max(h * 0.025, 12 * h / getCanvasCssRect().height)
-        const section = floors[0].level.sections.find(s => s.encounters.some(id =>
+        const section = GRAPPLE_OVER_PREVIEW ? replacementSection() : floors[0].level.sections.find(s => s.encounters.some(id =>
             floors[0].level.encounters.find(e => e.id === id)?.elements.some(id => {
                 const e = floors[0].byId.get(id)
                 return e && Math.abs(e.y - ninja.y) < 300

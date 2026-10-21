@@ -66,7 +66,7 @@ function grappleOverLandmarkAnchors()
 function drawGrappleOverLandmarks(renderer)
 {
     if (GRAPPLE_OVER_PREVIEW)
-        return drawLoadingYardLandmark(renderer)
+        return drawReplacementLandmark(renderer)
     if (!LANDMARKS.enabled || version !== 'grapple_over' || !floors[0] || !floors[0].level)
         return null
     const config = GRAPPLE_OVER_LANDMARKS
@@ -111,12 +111,12 @@ function drawGrappleOverLandmarks(renderer)
 // Paints one landmark with the global ctx (the sprite canvas) in its own
 // units (0..width x 0..height, base at the bottom): a soft halo, the body
 // fading into the ground haze, a glowing rim and a few lights.
-function paintGrappleOverLandmark(band)
+function paintGrappleOverLandmark(band, replacementShape)
 {
     const config = GRAPPLE_OVER_LANDMARKS
     const palette = GRAPPLE_OVER_THEME.palettes[band]
     const W = config.width, H = config.height
-    const shape = GRAPPLE_OVER_LANDMARK_SHAPES[band](W, H)
+    const shape = replacementShape || GRAPPLE_OVER_LANDMARK_SHAPES[band](W, H)
 
     const halo = ctx.createRadialGradient(W / 2, H * 0.45, 0, W / 2, H * 0.45, W * 0.62)
     halo.addColorStop(0, palette.glow + '88')
@@ -316,25 +316,58 @@ const GRAPPLE_OVER_LANDMARK_SHAPES = [
     })
 ]
 
-// The built preview has its own world-anchored loading gantry silhouette.
-// Reuse the Loading Yard artwork, without importing legacy encounter positions.
-function drawLoadingYardLandmark(renderer)
+// Presentation follows built preview terrain, without legacy encounter positions.
+function replacementSection()
+{
+    // Pick the closest built terrain in two dimensions, not the first section
+    // with any surface within a broad altitude band. Shared shelves belong to
+    // the later section at the boundary. This is presentation only.
+    let nearest = Infinity, selected = floors[0].level.sections[0]
+    for (const section of floors[0].level.sections)
+        for (const encounter of floors[0].level.encounters.filter(e => section.encounters.includes(e.id)))
+            for (const id of encounter.elements)
+            {
+                const e = floors[0].byId.get(id)
+                if (!e) continue
+                const b = {}; elementBounds(e, b)
+                const d = Math.hypot(Math.max(b.left - ninja.x, 0, ninja.x - b.right),
+                    Math.max(b.top - ninja.y, 0, ninja.y - b.bottom))
+                if (d <= nearest) { nearest = d; selected = section }
+            }
+    return selected
+}
+
+// Broad stepped excavation walls: a visual silhouette, never collision terrain.
+function replacementQuarryShape(W, H)
+{
+    return {
+        parts: [[[0,H],[0,H*.15],[W*.18,H*.15],[W*.18,H*.34],
+            [W*.38,H*.34],[W*.38,H*.54],[W*.62,H*.54],
+            [W*.62,H*.34],[W*.82,H*.34],[W*.82,H*.15],[W,H*.15],[W,H]]],
+        lines: [.68,.82].map(y => [[0,H*y],[W,H*y]]),
+        lights: [[W*.18,H*.34],[W*.38,H*.54],[W*.62,H*.54],[W*.82,H*.34]]
+    }
+}
+
+function drawReplacementLandmark(renderer)
 {
     if (!LANDMARKS.enabled || version !== 'grapple_over' || !floors[0]?.byId.has('yard-entry'))
         return null
     const config = GRAPPLE_OVER_LANDMARKS, k = scale[version]
     const context = renderer.ctx
-    const sprite = getGlowSprite('replacement-loading-yard', () =>
+    const quarry = replacementSection().id === 'S02'
+    const id = quarry ? 'terraced-quarry' : 'loading-yard'
+    const sprite = getGlowSprite('replacement-' + id, () =>
         buildGlowSprite(config.width + 2 * config.pad, config.height + 2 * config.pad,
-            config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, [0]))
+            config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, quarry ? [1, replacementQuarryShape(config.width, config.height)] : [0]))
     const left = (2366 + screen.x) * k - config.width / 2
-    const top = (-150 + screen.y) * k - config.height
+    const top = ((quarry ? -610 : -150) + screen.y) * k - config.height
     context.save()
     context.globalAlpha = config.alpha
     context.drawImage(sprite, left - config.pad, top - config.pad,
         config.width + 2 * config.pad, config.height + 2 * config.pad)
     context.restore()
-    const drawn = [{id:'loading-yard', rect:[left,top,left+config.width,top+config.height], weight:1}]
+    const drawn = [{id, rect:[left,top,left+config.width,top+config.height], weight:1}]
     if (!renderer.bounds) LANDMARKS.frame = {drawn, camera:{x:screen.x,y:screen.y}}
     return drawn
 }
