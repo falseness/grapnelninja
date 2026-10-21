@@ -94,7 +94,12 @@ LIFECYCLE = r'''async (due) => {
     ninja.x = old.x + 10 * ninja.radius; ninja.speedX = ninja.speedY = 0;
     grapnel.throwed = true; grapnel.speedX = -1; grapnel.speedY = 0;
     grapnel.pos = [[old.x - 1, ninja.y, new Empty()]];
+    // Anchor on the wall alone, as PROBE does: a random procedural element between
+    // the hook and the face would otherwise catch it first (an intermittent miss)
+    const kept = floors.map(f => f.elements);
+    for (const f of floors) if (!(f instanceof SideFloor)) f.elements = [];
     grapnel.collision();
+    floors.forEach((f, i) => {f.elements = kept[i]});
     const anchoredBeforeDeath = grapnel.isGrappled() && grapnel.pos[0][2] === old;
     const isDue = PLATFORM.isInterstitialDue;
     PLATFORM.isInterstitialDue = () => due;
@@ -211,7 +216,12 @@ class LeftWallTests(unittest.TestCase):
                             ninja.y = resizeWall.y + height * 0.5;
                             grapnel.throwed = true;
                             grapnel.pos = [[resizeWall.x - 1, ninja.y, new Empty()]];
+                            // Anchor on the wall alone, as PROBE does: a random procedural element between
+                            // the hook and the face would otherwise catch it first (an intermittent miss)
+                            const kept = floors.map(f => f.elements);
+                            for (const f of floors) if (!(f instanceof SideFloor)) f.elements = [];
                             grapnel.collision();
+                            floors.forEach((f, i) => {f.elements = kept[i]});
                             window.resizeAnchor = grapnel.pos[0].slice(0, 2);
                         }''')
                         page.set_viewport_size({'width': w - 123, 'height': h - 31})

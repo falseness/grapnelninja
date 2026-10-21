@@ -2,8 +2,10 @@
 
 With no ads (PLATFORM.isInterstitialDue() is always false) every death
 fast-restarts the same mode: no death screen, no interstitial. The pause
-screen's switch (menu.backToMenu) abandons the live run: one level_failed,
-no interstitial, then level_started in the other mode. Lifecycle events are
+screen's mode selector (menu.modeButtons: Grapple Over, main/bad, chill/classic;
+TASK-445 replaced the two-mode backToMenu toggle) abandons the live run: one
+level_failed, no interstitial, then level_started in the selected mode. Boot
+starts Grapple Over, so the classic/bad cases select their mode explicitly. Lifecycle events are
 read from a spy on PLATFORM.sendLifecycle.
 
 Requires Playwright Chromium. No remote requests.
@@ -42,6 +44,7 @@ CENTER = '''rect => {
             y: r.y + (rect.y + rect.height / 2) * r.height / height}
 }'''
 LANGUAGE = '(r => ({x: r.x, y: r.y, width: r.width, height: r.height}))(LANGUAGE_BUTTON.rect())'
+MODE_BUTTON = {'grapple_over': 0, 'bad': 1, 'classic': 2}
 PAUSE_BUTTON = '''(b => ({x: b.x * scale[version], y: b.y * scale[version],
     width: b.width * scale[version], height: b.height * scale[version]}))(menu.button.background)'''
 
@@ -105,9 +108,15 @@ class ModeSwitchTests(unittest.TestCase):
     def messages(self, page):
         return page.evaluate('lifecycle.slice()')
 
+    def start(self, page, mode):
+        page.evaluate('mode => startGame(mode)', mode)
+        page.wait_for_function('mode => version === mode && runInProgress', arg=mode)
+        page.wait_for_timeout(300)
+
     def test_death_fast_restart(self):
         page = self.open({'width': 1280, 'height': 720})
-        self.assertEqual(page.evaluate('version'), 'bad')
+        self.assertEqual(page.evaluate('version'), 'grapple_over')
+        self.start(page, 'bad')
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
         fast = self.die_fast_restart(page)
         self.assertEqual(fast, [['level_failed', {'world': 'bad'}], ['level_started', {'world': 'bad'}]])
@@ -139,9 +148,10 @@ class ModeSwitchTests(unittest.TestCase):
         before = len(self.messages(page))
 
         self.pause(page)
-        self.assertEqual(page.evaluate('menu.backToMenu.text.text'), 'main version')
+        self.assertEqual(page.evaluate('menu.modeButtons.map(b => b.text.text)'),
+                         ['Grapple Over', 'main version', 'chill version'])
         page.screenshot(path=str(self.out / 'pause-classic.png'))
-        self.click(page, page.evaluate(self.pause_rect('backToMenu')))
+        self.click(page, page.evaluate(self.pause_rect(f'modeButtons[{MODE_BUTTON["bad"]}]')))
         page.wait_for_function("version === 'bad' && !menu.gamePaused")
         page.wait_for_timeout(300)
         after = self.messages(page)[before:]
@@ -153,7 +163,7 @@ class ModeSwitchTests(unittest.TestCase):
         # Resume keeps the same run going
         before = len(self.messages(page))
         self.pause(page)
-        self.assertEqual(page.evaluate('menu.backToMenu.text.text'), 'chill version')
+        self.assertEqual(page.evaluate(f'menu.modeButtons[{MODE_BUTTON["classic"]}].text.text'), 'chill version')
         page.screenshot(path=str(self.out / 'pause-bad.png'))
         self.click(page, page.evaluate(self.pause_rect('resume')))
         page.wait_for_function('!menu.gamePaused')
@@ -165,19 +175,21 @@ class ModeSwitchTests(unittest.TestCase):
 
     def test_language_on_pause(self):
         page = self.open({'width': 1280, 'height': 720})
-        self.assertEqual(page.evaluate('[version, I18N.language]'), ['bad', 'en'])
+        self.assertEqual(page.evaluate('[version, I18N.language]'), ['grapple_over', 'en'])
+        self.start(page, 'bad')
         chill_ru = '\u0441\u043f\u043e\u043a\u043e\u0439\u043d\u044b\u0439 \u0440\u0435\u0436\u0438\u043c'
 
         # Pause: a real click on the language button relabels the screen in place
         self.pause(page)
-        self.assertEqual(page.evaluate('menu.backToMenu.text.text'), 'chill version')
+        self.assertEqual(page.evaluate('menu.modeButtons[2].text.text'), 'chill version')
         page.wait_for_function('!unTouch')
         self.click(page, page.evaluate(LANGUAGE))
         self.assertEqual(page.evaluate('I18N.language'), 'ru')
-        labels = page.evaluate('[menu.backToMenu.text.text, menu.resume.text.text]')
+        labels = page.evaluate('[menu.modeButtons[2].text.text, menu.resume.text.text]')
         self.assertEqual(labels, [chill_ru, '\u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c'])
         self.assertTrue(page.evaluate('menu.gamePaused'))
-        boxes = {k: page.evaluate(self.pause_rect(k)) for k in ('resume', 'backToMenu')}
+        boxes = {k: page.evaluate(self.pause_rect(k)) for k in
+                 ('resume', 'modeButtons[0]', 'modeButtons[1]', 'modeButtons[2]')}
         boxes['fps'] = page.evaluate('menu.pauseFpsCounterCheckbox.hitRect()')
         boxes['language'] = page.evaluate(LANGUAGE)
         self.assert_apart(boxes)
@@ -189,7 +201,7 @@ class ModeSwitchTests(unittest.TestCase):
         page.wait_for_function('!unTouch')
         self.click(page, page.evaluate(LANGUAGE))
         self.assertEqual(page.evaluate('I18N.language'), 'en')
-        labels = page.evaluate('[menu.backToMenu.text.text, menu.resume.text.text]')
+        labels = page.evaluate('[menu.modeButtons[2].text.text, menu.resume.text.text]')
         self.assertEqual(labels, ['chill version', page.evaluate("I18N.t('pause.resume')")])
         self.log('PASS pause language ru -> en:', json.dumps(labels))
 

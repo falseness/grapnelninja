@@ -132,9 +132,10 @@ class ResizeTests(unittest.TestCase):
             (out / name).write_text(json.dumps(data, indent=1) + '\n')
 
     def start_run(self, page, mode):
-        page.evaluate(INSTRUMENT_RUN)
-        # Boot runs 'bad'; classic comes from the pause-screen mode switch
+        # Boot runs Grapple Over (TASK-445; formerly 'bad'): select the mode through the
+        # pause selector first, so the pin is taken from the selected mode's run
         switch_mode(page, mode)
+        page.evaluate(INSTRUMENT_RUN)
 
     def check_live_resize(self, mode):
         page = self.boot(START_VIEWPORT)
@@ -217,8 +218,9 @@ class ResizeTests(unittest.TestCase):
             measure(f'hud-{mode}', '() => draw()')
             page.keyboard.press('p')
             measure(f'pause-{mode}', '() => menu.drawPauseScreen()')
-            # The pause switch (formerly back-to-menu) starts the other mode
-            page.evaluate('() => { fpsCounter.enabled = false; menu.backToMenu.click() }')
+            # The pause selector's other old-mode button (formerly the two-mode switch) starts the other mode
+            other = 2 if mode == 'bad' else 1
+            page.evaluate(f'() => {{ fpsCounter.enabled = false; menu.modeButtons[{other}].click() }}')
             page.wait_for_function('!menu.gamePaused && runInProgress')
         fonts = page.evaluate('window.__fonts')
         # The title menu group is gone with the menu (TASK-364)

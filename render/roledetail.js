@@ -66,7 +66,9 @@ function drawGrappleOverRoleDetail(world)
             groups.drag.push([zone, null])
     for (const element of world.elements)
     {
-        if (!isCullBoxVisible(getElementCullBox(element), cullRect))
+        // The detail layout is built from local polygon points; an element
+        // without them (a Rect or Triangle placed by a test) keeps its base look
+        if (!element.points || !isCullBoxVisible(getElementCullBox(element), cullRect))
             continue
         const mover = movers.get(element.id)
         const role = element.surfaceRole === 'hazard' ? 'hazard' : mover ? 'mover' : element.surfaceRole

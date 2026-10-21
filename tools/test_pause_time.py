@@ -5,6 +5,8 @@ The pause screen now draws it: in en and ru, at desktop and phone sizes, a
 fillText spy must see I18N.t('menu.timeInGame', ...) and its LAYOUT_PROBE box
 must pass layout_matrix's checks (no overlap with the title, buttons, fps
 checkbox or language button, inside the canvas, >= 12 CSS px).
+Boot runs Grapple Over since TASK-445, whose pause screen shows the climb time
+instead; the main version ('bad', the former boot mode) is selected explicitly.
 
 Env: PAUSE_TIME_SHOTS receives pause-<lang>.png (1920x1080) captures.
 """
@@ -15,6 +17,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import start_browser_test
+from game_harness import switch_mode
 import layout_matrix as lm
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +47,7 @@ class PauseTimeTests(unittest.TestCase):
         context, page, errors = lm.open_page(self.browser, self.url, size, touch, lm.LANGS[lang])
         try:
             self.assertEqual(page.evaluate('I18N.language'), lang)
+            switch_mode(page, 'bad')
             drawn = page.evaluate(PAUSE, MINUTES)
             expected = drawn['expected']
             self.assertIn(str(MINUTES), expected)

@@ -1,4 +1,7 @@
-"""Launch boots straight into a main-version ('bad') run, not the title menu.
+"""Launch boots straight into a Grapple Over run, not the title menu.
+
+TASK-445 made Grapple Over the startup mode (it was the main version, 'bad');
+classic/bad stay reachable through the pause mode selector (test_mode_switch).
 
 Spies on the local PLATFORM adapter's gameReady/sendLifecycle/startup calls.
 Requires Playwright Chromium. No remote requests.
@@ -58,7 +61,7 @@ class BootMainModeTests(unittest.TestCase):
     def calls(self, page):
         return page.evaluate('probe.calls.map(c => [c.name, c.data ?? null])')
 
-    def test_boot_starts_bad_run_after_game_ready(self):
+    def test_boot_starts_grapple_over_run_after_game_ready(self):
         page = self.open()
         # game_ready is sent after the first gameplay frame was painted
         page.screenshot(path=str(self.out / 'boot.png'))
@@ -66,20 +69,20 @@ class BootMainModeTests(unittest.TestCase):
             tutorial: TUTORIAL_HINT.visible && TUTORIAL_HINT.alpha === 1,
             loading: !document.getElementById('loading').hidden, ninja: !!ninja})''')
         self.assertEqual(page.evaluate('[PLATFORM.environment, PLATFORM.isInterstitialDue()]'), ['local', False])
-        self.assertEqual(state, {'version': 'bad', 'titleMenu': False, 'paused': False,
+        self.assertEqual(state, {'version': 'grapple_over', 'titleMenu': False, 'paused': False,
                                  'tutorial': True, 'loading': False, 'ninja': True})
         # The adapter has no queue: level_started precedes game_ready
         page.wait_for_function("probe.calls.some(c => c.name === 'startup_funnel' && c.data.stage === 'first_gameplay_frame')")
         calls = self.calls(page)
         messages = [c for c in calls if c[0] == 'game_ready' or c[0].startswith('level_')]
-        self.assertEqual(messages[:2], [['level_started', {'world': 'bad'}], ['game_ready', None]])
+        self.assertEqual(messages[:2], [['level_started', {'world': 'grapple_over'}], ['game_ready', None]])
         self.assertEqual([c[0] for c in calls].count('level_started'), 1)
         self.assertEqual([c[0] for c in calls].count('game_ready'), 1)
         stages = [c[1]['stage'] for c in calls if c[0] == 'startup_funnel']
         self.assertNotIn('menu_interactive', stages)
         self.assertEqual(stages[:3], ['mode_selected', 'run_initialized', 'first_gameplay_frame'])
-        self.assertTrue(all(c[1].get('mode') == 'bad' for c in calls if c[0] == 'startup_funnel'))
-        print('PASS boot: version=bad no title menu, tutorial shown; order', [m[0] for m in messages],
+        self.assertTrue(all(c[1].get('mode') == 'grapple_over' for c in calls if c[0] == 'startup_funnel'))
+        print('PASS boot: version=grapple_over no title menu, tutorial shown; order', [m[0] for m in messages],
               'stages', stages[:3], flush=True)
 
     def lifecycle_after_boot(self, page):
@@ -91,7 +94,7 @@ class BootMainModeTests(unittest.TestCase):
         page = self.open(viewport={'width': 390, 'height': 844}, has_touch=True, is_mobile=True)
         page.wait_for_function("probe.calls.some(c => c.name === 'level_paused')")
         state = page.evaluate('({version, rotated: isViewRotated(), paused: menu.gamePaused, inert: document.getElementById("stage").inert})')
-        self.assertEqual(state, {'version': 'bad', 'rotated': True, 'paused': True, 'inert': True})
+        self.assertEqual(state, {'version': 'grapple_over', 'rotated': True, 'paused': True, 'inert': True})
         levels = self.lifecycle_after_boot(page)
         self.assertEqual(levels, ['level_started', 'level_paused'])
         print('PASS portrait boot:', state, levels, flush=True)
@@ -99,7 +102,7 @@ class BootMainModeTests(unittest.TestCase):
     def test_landscape_touch_boot_only_starts(self):
         page = self.open(viewport={'width': 844, 'height': 390}, has_touch=True, is_mobile=True)
         state = page.evaluate('({version, rotated: isViewRotated(), paused: menu.gamePaused})')
-        self.assertEqual(state, {'version': 'bad', 'rotated': False, 'paused': False})
+        self.assertEqual(state, {'version': 'grapple_over', 'rotated': False, 'paused': False})
         levels = self.lifecycle_after_boot(page)
         self.assertEqual(levels, ['level_started'])
         print('PASS landscape boot:', state, levels, flush=True)

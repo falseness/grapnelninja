@@ -6,9 +6,11 @@ getItem/setItem calls into one storage.get/storage.set record, so one
 PLATFORM.storage.getMany/setMany shows up as one call.
 """
 import json
+import math
 import os
 from pathlib import Path
 import sys
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -20,8 +22,12 @@ VIEWPORT = {'width': 1280, 'height': 720}
 RECORDS_KEY = 'grapnelninja.records'
 TIME_KEY = 'grapnelninja.time'
 # PROGRESS.keys order (one get). A set carries the same keys in snapshot()
-# order (progress.js), so sets are compared as key sets.
-KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang', 'grapnelninja.tutorialDone']
+# order (progress.js), so sets are compared as key sets. TASK-457 added the
+# Grapple Over climb save to the one boot get; it is written on its own
+# (climb-only sets) beside the untouched classic/bad snapshot keys.
+CLIMB_KEY = 'grapnelninja.grappleOver'
+SAVE_KEYS = [RECORDS_KEY, TIME_KEY, 'grapnelninja.lang', 'grapnelninja.tutorialDone']
+KEYS = SAVE_KEYS + [CLIMB_KEY]
 READY = ('PLATFORM.environment !== "pending" && bootComplete && runInProgress'
          ' && document.getElementById("loading").hidden')
 FREEZE = '''() => {
@@ -37,6 +43,11 @@ def log(message):
 
 def storage_calls(page, name):
     return [c for c in all_storage_calls(page) if c['name'] == name]
+
+
+def progress_sets(page):
+    """Sets of the classic/bad snapshot keys, without the climb's own saves."""
+    return [c for c in storage_calls(page, 'storage.set') if c['args'][0] != [CLIMB_KEY]]
 
 
 class ProgressTests(unittest.TestCase):
@@ -93,6 +104,13 @@ class ProgressTests(unittest.TestCase):
     def wait_throttle(self, page):
         page.wait_for_timeout(1100)
 
+    def start_classic(self, page):
+        # Boot runs Grapple Over (TASK-445); leaving it flushes the climb save once.
+        # Count classic's own sets from after that flush and its throttle window.
+        page.evaluate('startGame("classic")')
+        self.wait_throttle(page)
+        return len(storage_calls(page, 'storage.set'))
+
     def menu_texts(self, page):
         # The title menu's record labels are gone (TASK-364); the loaded
         # records are the HUD's scoreText.record, shown as 'record: N'
@@ -100,14 +118,16 @@ class ProgressTests(unittest.TestCase):
             bad: 'record: ' + scoreText.record.bad, time: menu.timeInGame.text})''')
 
     def test_boot_reads_all_keys_with_one_get(self):
-        """One storage.get at boot carries every PROGRESS key; no set at boot."""
+        """One storage.get at boot carries every PROGRESS key; no snapshot set at boot."""
         page = self.boot()
         gets = storage_calls(page, 'storage.get')
         log(f'boot gets={[c["args"] for c in gets]}')
         self.assertEqual(len(gets), 1)
         self.assertEqual(gets[0]['args'][0], KEYS)
         self.assertEqual(page.evaluate('PROGRESS.keys'), KEYS)
-        self.assertEqual(storage_calls(page, 'storage.set'), [])
+        # The Grapple Over boot run may save its climb (only CLIMB_KEY); nothing else is written
+        self.assertEqual(progress_sets(page), [])
+        self.assertTrue(all(c['args'][0] == [CLIMB_KEY] for c in storage_calls(page, 'storage.set')))
 
     def test_records_survive_reload(self):
         """Classic and bad records come back from localStorage after reload."""
@@ -141,10 +161,16 @@ class ProgressTests(unittest.TestCase):
             PROGRESS.setLang('en')
             PROGRESS.save()
         }''')
+        started = time.time()
         self.reload(page)
         state = page.evaluate('[PROGRESS.getTime(), PROGRESS.getLang()]')
         log(f'after save+reload state={state}')
-        self.assertEqual(state, [185, 'en'])
+        # The reload boots into the saved Grapple Over climb and restores it
+        # paused (TASK-459), which adds the whole seconds played between boot
+        # and that pause: at most the reload's own duration.
+        self.assertEqual(state[1], 'en')
+        self.assertGreaterEqual(state[0], 185)
+        self.assertLessEqual(state[0], 185 + math.ceil(time.time() - started))
         self.assertIn('3 minutes', self.menu_texts(page)['time'])
 
     def test_corrupt_values_fall_back_to_defaults(self):
@@ -191,47 +217,47 @@ class ProgressTests(unittest.TestCase):
     def test_saves_only_on_meaningful_change(self):
         """No set per point or per frame; one set (all keys) on pause and run end."""
         page = self.boot()
-        page.evaluate('startGame("classic")')
+        base = self.start_classic(page)
         for _ in range(10):
             page.evaluate('changeScoreText()')
             page.wait_for_timeout(50)
         page.wait_for_timeout(500)
-        during = len(storage_calls(page, 'storage.set'))
+        during = len(storage_calls(page, 'storage.set')) - base
         page.keyboard.press('Escape')
         self.assertTrue(page.evaluate('menu.gamePaused'))
-        after_pause = storage_calls(page, 'storage.set')
+        after_pause = storage_calls(page, 'storage.set')[base:]
         log(f'sets during 10 points={during} after pause={len(after_pause)}')
         self.assertEqual(during, 0)
         self.assertEqual(len(after_pause), 1)
-        self.assertEqual(sorted(after_pause[0]['args'][0]), sorted(KEYS))
+        self.assertEqual(sorted(after_pause[0]['args'][0]), sorted(SAVE_KEYS))
 
         page.keyboard.press('Escape')
         self.wait_throttle(page)
         for _ in range(15):
             page.evaluate('changeScoreText()')
         page.evaluate('reStart()')
-        sets = storage_calls(page, 'storage.set')
+        sets = storage_calls(page, 'storage.set')[base:]
         log(f'sets after run end={len(sets)}')
         self.assertEqual(len(sets), 2)
-        self.assertEqual(sorted(sets[1]['args'][0]), sorted(KEYS))
+        self.assertEqual(sorted(sets[1]['args'][0]), sorted(SAVE_KEYS))
         # Nothing changed: a further run end writes nothing
         self.wait_throttle(page)
         page.evaluate('reStart()')
         page.wait_for_timeout(300)
-        self.assertEqual(len(storage_calls(page, 'storage.set')), 2)
+        self.assertEqual(len(storage_calls(page, 'storage.set')) - base, 2)
 
     def test_throttle_one_set_per_second(self):
         """Rapid saves collapse into one trailing set, >= 1 s after the last."""
         page = self.boot()
+        base = self.start_classic(page)
         page.evaluate('''() => {
-            startGame("classic")
             for (let i = 0; i < 5; ++i) {
                 changeScoreText()
                 PROGRESS.save()
             }
         }''')
         page.wait_for_timeout(1500)
-        sets = storage_calls(page, 'storage.set')
+        sets = storage_calls(page, 'storage.set')[base:]
         gaps = [b['t'] - a['t'] for a, b in zip(sets, sets[1:])]
         log(f'sets={len(sets)} gaps={gaps} values={[c["args"][1] for c in sets]}')
         self.assertEqual(len(sets), 2)
@@ -263,17 +289,18 @@ class ProgressTests(unittest.TestCase):
 
         snap('boot')
         for run, points in ((1, 4), (2, 9)):
-            before = len(storage_calls(page, 'storage.set'))
+            before = len(progress_sets(page))
             self.score(page, 'classic', points)
             page.evaluate('reStart()')
-            after = len(storage_calls(page, 'storage.set'))
+            after = len(progress_sets(page))
             session['steps'].append({'step': f'run {run} end', 'record': points,
                                      'setsThisRunEnd': after - before})
             self.assertLessEqual(after - before, 1)
             self.wait_throttle(page)
-        page.evaluate('menu.startPause(); menu.backToMenu.click()')
+        # The pause selector's main-version button (TASK-445; formerly the two-mode
+        # switch): classic -> a bad run
+        page.evaluate('menu.startPause(); menu.modeButtons[1].click()')
         self.wait_throttle(page)
-        # The pause switch replaced back-to-menu: classic -> a bad run
         self.assertTrue(page.evaluate('version === "bad" && runInProgress && !menu.gamePaused'))
         boots.append(snap('switch'))
         self.reload(page)
@@ -285,14 +312,15 @@ class ProgressTests(unittest.TestCase):
             sets = [c for c in calls if c['name'] == 'storage.set']
             self.assertEqual(len(gets), 1, f'boot {i}')
             for c in sets:
-                self.assertEqual(sorted(c['args'][0]), sorted(KEYS))
-                self.assertEqual(len(c['args'][1]), len(KEYS))
+                keys = [CLIMB_KEY] if c['args'][0] == [CLIMB_KEY] else SAVE_KEYS
+                self.assertEqual(sorted(c['args'][0]), sorted(keys))
+                self.assertEqual(len(c['args'][1]), len(keys))
         session['boots'] = [{
             'boot': i + 1,
             'storageGetCount': sum(c['name'] == 'storage.get' for c in calls),
             'storageSetCount': sum(c['name'] == 'storage.set' for c in calls),
-            'everySetHasAllKeys': all(sorted(c['args'][0]) == sorted(KEYS) for c in calls
-                                      if c['name'] == 'storage.set'),
+            'everySetHasAllKeys': all(sorted(c['args'][0]) in (sorted(SAVE_KEYS), [CLIMB_KEY])
+                                      for c in calls if c['name'] == 'storage.set'),
             'calls': calls,
         } for i, calls in enumerate(boots)]
         session['keys'] = KEYS
