@@ -24,6 +24,8 @@ class MomentumOneTime extends Trampoline
         this.passThrough = false
         this.faded = false
         this.innerCache = null
+        // CRYSTAL_PIECES sprite key memo (render/crystalpieces.js)
+        this.crystalSprite = null
         this.measureShape()
         this.motion = null
         if (object.motion && object.motion.axis == 'x')

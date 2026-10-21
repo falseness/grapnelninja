@@ -260,11 +260,12 @@ const CRYSTAL_PIECES = (function()
             piece.crystalFreeEdges = piece.crystalEdges.map((kind, i) => kind == 'free' ? i : -1).filter(i => i >= 0)
             return piece.crystalEdges
         },
-        // 32-bit seed of the piece kind and its relative points
-        seed(piece, kind)
+        // 32-bit seed of the piece kind and its relative points (rel, when
+        // the caller has them)
+        seed(piece, kind, rel = relativePoints(piece.getPoints()))
         {
             let h = hash(KINDS[kind || 'blue'] || 0, piece.getPoints().length, 0x51ed27)
-            for (const [x, y] of relativePoints(piece.getPoints()))
+            for (const [x, y] of rel)
                 h = hash(h, x, y)
             return h
         },
@@ -519,17 +520,33 @@ const CRYSTAL_PIECES = (function()
             return timeGlints(glints, seed)
         },
         // Cached sprite of piece at canvas scale k (canvas px per world unit);
-        // a green also keys on its free edges and the outline width
-        sprite(piece, kind, k, free, outlineHalf)
+        // a green also keys on its free edges and the outline width. Pieces
+        // only translate, so the key is kept on the piece (crystalSprite) and
+        // rebuilt only when k, the stage or the outline width changes (as
+        // rounded in the key: k drifts by a few ULPs from frame to frame) or
+        // its sprite left the cache
+        sprite(piece, kind, k, outlineHalf)
         {
-            const rel = relativePoints(piece.getPoints())
             const stage = Math.min(canvas.width, canvas.height)
+            const scaleKey = k.toFixed(4) + ':' + stage + (kind == 'green' ? ':' + outlineHalf.toFixed(3) : '')
+            const memo = piece.crystalSprite
+            if (memo && memo.kind == kind && memo.scaleKey == scaleKey && this.sprites.get(memo.key) === memo.sprite)
+            {
+                ++this.stats.hits
+                return memo.sprite
+            }
+            const rel = relativePoints(piece.getPoints())
             let key = kind + ':' + k.toFixed(4) + ':' + stage + ':' + rel.join(';')
+            let free
             if (kind == 'green')
+            {
+                free = this.edges(piece).map(edge => edge == 'free')
                 key += ':' + free.map(f => f ? 1 : 0).join('') + ':' + outlineHalf.toFixed(3)
+            }
             let sprite = this.sprites.get(key)
             if (sprite)
             {
+                piece.crystalSprite = {kind: kind, scaleKey: scaleKey, key: key, sprite: sprite}
                 ++this.stats.hits
                 return sprite
             }
@@ -549,14 +566,15 @@ const CRYSTAL_PIECES = (function()
             let glints
             if (kind == 'green')
                 glints = this.paintGreen(image.getContext('2d'), points, w, h, stage / REFERENCE_HEIGHT,
-                    this.seed(piece, kind), free, outlineHalf)
+                    this.seed(piece, kind, rel), free, outlineHalf)
             else
                 glints = this.paintBlue(image.getContext('2d'), points, w, h, stage / REFERENCE_HEIGHT,
-                    this.seed(piece, kind))
+                    this.seed(piece, kind, rel))
             // Sprite origin relative to the first point, in world units;
             // glints: [x, y (sprite px), period ms, phase]
             sprite = {image: image, dx: minX / 100 - PAD / k, dy: minY / 100 - PAD / k, k: k, glints: glints}
             this.sprites.set(key, sprite)
+            piece.crystalSprite = {kind: kind, scaleKey: scaleKey, key: key, sprite: sprite}
             if (this.sprites.size > CACHE_LIMIT)
                 this.sprites.delete(this.sprites.keys().next().value)
             ++this.stats.builds
@@ -684,15 +702,8 @@ const CRYSTAL_PIECES = (function()
             const points = piece.getPoints()
             const m = ctx.getTransform()
             const k = Math.hypot(m.a, m.b)
-            let sprite
-            if (kind == 'green')
-            {
-                const free = this.edges(piece).map(edge => edge == 'free')
-                const outlineHalf = STYLE.strokes.neonOutline.width / scale[version] * k / 2
-                sprite = this.sprite(piece, kind, k, free, outlineHalf)
-            }
-            else
-                sprite = this.sprite(piece, kind, k)
+            const outlineHalf = kind == 'green' ? STYLE.strokes.neonOutline.width / scale[version] * k / 2 : undefined
+            const sprite = this.sprite(piece, kind, k, outlineHalf)
             ctx.save()
             ctx.beginPath()
             ctx.moveTo(points[points.length - 1].x + screen.x, points[points.length - 1].y + screen.y)
