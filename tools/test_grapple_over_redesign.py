@@ -1116,3 +1116,150 @@ class Task564Tests(unittest.TestCase):
             if name.endswith('.json'):json.loads((self.out/name).read_text())
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200*1024**2)
         print('PASS evidence-index: all 11 artifacts exist; JSON parses; retained evidence below 200 MB')
+
+
+class Task565Tests(unittest.TestCase):
+    """Reusable bounded collection in isolated fixtures, not continuous gameplay."""
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task565Tests')
+        Task558Tests.setUpClass.__func__(cls)
+        for name in ['tools/grapple_over_collection.py', 'tools/grapple_over_collector.js',
+                     'tools/grapple_over_metrics.js', 'docs/grapple-over-blueprint.json']:
+            cls.config['source_hashes'][name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK565_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+    page = Task559Tests.page
+
+    def test_01_exact_selection_and_child_paths(self):
+        import sys
+        import types
+        from grapple_over_collection import exact_suite
+        from grapple_over_test_support import EvidenceWriter
+        suite, ids = exact_suite(sys.modules[__name__], 'Task565Tests')
+        self.assertEqual(len(ids), 4)
+        lines = ['SELECTED '+i for i in ids] + ['COLLECTED 4 exact Task565Tests']
+        for label, module, name in [
+            ('substring', sys.modules[__name__], 'Task565'),
+            ('duplicate', types.SimpleNamespace(a=Task565Tests,b=Task565Tests), 'Task565Tests'),
+            ('missing', types.SimpleNamespace(), 'Task999999Tests'),
+            ('empty', types.SimpleNamespace(a=type('Task999Tests',(unittest.TestCase,),{})), 'Task999Tests')]:
+            with self.assertRaises(ValueError): exact_suite(module, name)
+            lines.append('REJECTED '+label)
+        writer=EvidenceWriter()
+        with self.assertRaises(ValueError): writer.path('../escape.json')
+        command=[sys.executable,'tools/grapple_over_collection.py','--class','Task565Tests','--export','S01','S01-E01']
+        child=subprocess.run(command,cwd=ROOT,env=os.environ.copy(),text=True,capture_output=True)
+        lines += ['COMMAND '+ ' '.join(command), child.stdout, child.stderr, 'EXIT '+str(child.returncode)]
+        self.assertEqual(child.returncode,0)
+        exported=self.out/'encounter.json'
+        self.assertEqual(json.loads(exported.read_text())['encounter']['id'],'S01-E01')
+        self.assertIn(str(exported),child.stdout)
+        self.assertEqual(len([l for l in child.stdout.splitlines() if '.Task565Tests.test_' in l]),4)
+        (self.out/'selection.log').write_text('\n'.join(lines)+'\n')
+        print('PASS exact selection: 4 identifiers; rejected substring duplicate missing empty; child export confined')
+
+    def test_02_bounded_collectors(self):
+        import time
+        start=time.monotonic()
+        p=self.page()
+        for name in ['grapple_over_metrics.js','grapple_over_collector.js']:
+            p.add_script_tag(path=str(ROOT/'tools'/name))
+        pattern=p.evaluate('GRAPPLE_OVER_MOVEMENT.patterns[0]')
+        batch=p.evaluate('''c=>REDESIGN_COLLECTOR.collect(c,[
+          {label:'nominal'},{label:'early',offset:-6},{label:'late',offset:6},
+          {label:'aim-minus',aim:-12},{label:'aim-plus',aim:12},{label:'held-control',held:true}])''',pattern)
+        for row in batch[:5]:
+            self.assertTrue(row['success'], row['label'])
+            self.assertGreaterEqual(row['landingAir'],6)
+            self.assertTrue(any(c['id']=='landing' and c['ny']<-.9 for e in row['events'] for c in e['contacts']))
+        self.assertTrue(batch[-1]['acquired']);self.assertFalse(batch[-1]['success']);self.assertFalse(batch[-1]['landed'])
+        setup=p.evaluate('c=>METRICS.setup(c)',pattern)
+        xy=p.evaluate('s=>METRICS.client(s)',setup)
+        p.mouse.move(**xy);p.mouse.down()
+        p.evaluate('n=>METRICS.step(n)',pattern['release']);p.mouse.up()
+        p.evaluate('n=>METRICS.step(n)',150-pattern['release'])
+        trusted=p.evaluate('s=>REDESIGN_COLLECTOR.compact(METRICS.result(),s,"trusted")',setup)
+        self.assertTrue(trusted['success'])
+        self.assertEqual([i['type'] for i in trusted['inputs']],['mousedown','mouseup'])
+        self.assertTrue(all(i['trusted'] for i in trusted['inputs']))
+        self.assertEqual(trusted['inputs'][1]['tick'],pattern['release'])
+        for row in batch+[trusted]:
+            self.assertEqual(row['ticks'],150)
+            self.assertLess(len(row['events']),150)
+            self.assertTrue(row['clearance']['passes'])
+            self.assertEqual(row['clearance']['measured'],pattern['dy']-80+setup['diameter']/2)
+            self.assertTrue(any(e['attached'] for e in row['events']))
+            self.assertTrue(all(set(e)=={'tick','x','y','attached','throwed','contacts'} for e in row['events']))
+        for variants in [[], [{}]*17, [{'offset':-999}], [{'offset':999}]]:
+            result=p.evaluate('a=>{try{REDESIGN_COLLECTOR.collect(a.c,a.v);return false}catch(e){return true}}',dict(c=pattern,v=variants))
+            self.assertTrue(result)
+        data=dict(scope='isolated fixtures; synthetic batch and trusted mouse confirmation, not continuous gameplay',
+                  pattern=pattern,cases=batch,trusted=trusted,childEvidencePaths=[str(self.out/'encounter.json')],
+                  geometryCopiesPerTrace=0,bounds=dict(maxVariants=16,maxTicks=300),rejectedInvalidBatches=4)
+        self.write('collector-check.json',data)
+        elapsed=time.monotonic()-start
+        self.assertLess(elapsed,60)
+        size=(self.out/'collector-check.json').stat().st_size
+        self.assertLess(size,100000)
+        self.write('timings.json',dict(seconds=elapsed,limitSeconds=60,simulationTicks=1050,
+            cases=7,batchEvaluateCalls=1,perTickRoundtrips=0,capturedFrames=0,
+            collectorBytes=size,byteLimit=100000,traceRows=sum(len(r['events']) for r in batch+[trusted])))
+        print('PASS collectors: 5 tolerance passes, held control fails, trusted input/contact events; 1050 ticks; bounded clearance and traces')
+
+    def test_03_coverage_and_archived_dependencies(self):
+        import importlib
+        replaced=[
+            dict(legacy='test_grapple_over_redesign.Task557Tests.test_01_runtime_measurements',
+                 expectation='legacy v3 coordinates and 1080/1620 range',
+                 replacement=['test_grapple_over_redesign.Task558Tests.test_03_range_consumers_and_attached_rope',
+                              'test_grapple_over_redesign.Task564Tests.test_01_complete_calibrated_blueprint']),
+            dict(legacy='test_grapple_over_level.Task464Tests.test_manifest_and_full_map',
+                 expectation='legacy full mountain manifest; replacement currently partial preview',
+                 replacement=['test_grapple_over_redesign.Task558Tests.test_02_built_prefix_and_real_input',
+                              'test_grapple_over_redesign.Task564Tests.test_03_graph_clearances_and_decoded_map'])]
+        preserved=['test_grapple_over_input.Task450Tests.test_input_touch_mouse_cancel_camera_ui',
+                   'test_grapple_over_physics.Task447Tests.test_green_reflection_and_old_modes',
+                   'test_grapple_over_save.Task456Tests.test_invalid_atomic_rejection',
+                   'test_grapple_over_grapple.Task452Tests.test_multiple_segments_beyond_range']
+        for identifier in preserved+[r['legacy'] for r in replaced]+[v for r in replaced for v in r['replacement']]:
+            module,cls,method=identifier.split('.')
+            self.assertTrue(callable(getattr(getattr(importlib.import_module(module),cls),method)))
+        config=json.loads(next(l.split(' ',1)[1] for l in (ROOT/'artifacts/TASK-564/commands.log').read_text().splitlines() if l.startswith('TASK564_CONFIG ')))
+        runtime={n:h for n,h in config['source_hashes'].items() if not n.startswith(('tools/','docs/'))}
+        self.assertGreater(len(runtime),20)
+        for name,digest in runtime.items(): self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+        archived=[]
+        for task in range(560,565):
+            path=f'artifacts/TASK-{task}/tests.log';log=(ROOT/path).read_text()
+            self.assertIn('\nOK\n',log);self.assertRegex(log,r'Ran [1-9][0-9]* tests')
+            archived.append(dict(path=path,summary=log[log.rfind('\nRan '):].strip()))
+        self.write('coverage-map.json',dict(replacedGeometry=replaced,preservedBehavior=preserved,
+            policy='Historical geometry stays runnable for legacy; no blanket skips or expected failures. Planned blueprint assertions are not full mountain gameplay proof.',
+            broaderLegacyGeometry='test_grapple_over_sections v3 coordinate/tolerance fixtures remain legacy-only; replacement encounter assertions must be added as encounters are built',
+            unchangedRuntimeHashes=runtime,archived=archived,
+            changedDependencies=['tools/test_grapple_over_redesign.py','tools/grapple_over_collection.py','tools/grapple_over_collector.js'],
+            reuse='Compare source hashes, not moving HEAD; historical calibration needs no regeneration'))
+        print('PASS coverage: named legacy/replacement assertions resolve; input physics save rope preserved; runtime hashes match TASK-564; archived 560-564 OK')
+
+    def test_04_evidence_inventory(self):
+        assertions={'commands.log':'exact command, exit and browser/viewport/revision/source hashes',
+            'tests.log':'four executed Task565Tests identifiers, nonzero count and OK',
+            'selection.log':'COLLECTED 4 and rejection of substring/duplicate/missing/empty classes; child EXIT 0',
+            'encounter.json':'only S01-E01 planned encounter exported by child',
+            'collector-check.json':'five passing tolerance cases, failing held control, trusted inputs, compact contacts/route/clearance',
+            'coverage-map.json':'named geometry replacements and preserved behavior; archived runtime hash identity',
+            'timings.json':'bounded seconds, 1050 ticks and measured collector bytes',
+            'evidence-index.json':'inventory and dependencies'}
+        self.write('evidence-index.json',dict(artifacts=assertions,source_hashes=self.config['source_hashes'],
+            scope='isolated fixture tooling; no capture needed; final runner audits completed logs',
+            dependencies='collector -> existing METRICS -> production input/physics; exporter -> blueprint; no runtime changes'))
+        for name in assertions:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'): json.loads((self.out/name).read_text())
+        total=sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file())
+        self.assertLess(total,200_000_000)
+        print('PASS inventory: 8 artifacts exist; JSON parses; evidence below 200 MB')
