@@ -1230,8 +1230,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['yard-second-landing', 3284, -48.2, 540, 60, 'Raised second bay landing, planning area and local catch for the return jump; 60 units above entry'],
         ['yard-third-anchor', 3080, -419, 160, 80, 'Upper return launch face; leftward pull from the raised bay, not a landing'],
         ['yard-third-landing', 2492, -288.2, 540, 60, 'Broad upper return terrace; reverses travel above the first bay'],
-        ['yard-fourth-anchor', 2700, -659, 160, 80, 'Final bay launch face; combines the leftward release with the upper terrace approach'],
-        ['yard-fourth-landing', 1700, -528.2, 540, 60, 'Broad Loading Yard section exit; ordinary green terrain with local recovery via the third terrace'],
+        ['yard-fourth-anchor', 2292, -539, 160, 80, 'Final bay launch face; combines the leftward release with the upper terrace approach'],
+        ['yard-fourth-landing', 1700, -348.2, 540, 60, 'Broad Loading Yard section exit; ordinary green terrain with local recovery via the third terrace'],
         ['yard-catch', 0, 220, 6480, 60, 'Lower recovery floor; return via the entry or landing shelf'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: 'bounce', grapplable: true,
