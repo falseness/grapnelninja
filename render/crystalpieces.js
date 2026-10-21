@@ -151,6 +151,40 @@ const CRYSTAL_PIECES = (function()
         }
         return true
     }
+    // Vertex mean of the polygon: inside a convex one
+    function centroid(points)
+    {
+        let x = 0, y = 0
+        for (const p of points)
+        {
+            x += p[0]
+            y += p[1]
+        }
+        return [x / points.length, y / points.length]
+    }
+    // [x, y] when strictly inside the convex polygon, else the offset of
+    // [x, y] from the box centre [cx, cy] applied to the centroid, halved
+    // up to 4 times until strictly inside, else the centroid
+    function seededCore(points, x, y, cx, cy)
+    {
+        if (insidePolygon(points, x, y) && !onEdge(points, x, y))
+            return [x, y]
+        const [mx, my] = centroid(points)
+        let dx = x - cx, dy = y - cy
+        for (let i = 0; i < 5; ++i, dx /= 2, dy /= 2)
+            if (insidePolygon(points, mx + dx, my + dy) && !onEdge(points, mx + dx, my + dy))
+                return [mx + dx, my + dy]
+        return [mx, my]
+    }
+    // On the line of an edge of the polygon (cross product 0)
+    function onEdge(points, x, y)
+    {
+        return points.some((a, i) =>
+        {
+            const b = points[(i + 1) % points.length]
+            return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) == 0
+        })
+    }
     // Edge i (points[i] -> points[i + 1]) lies on a face of a built corridor
     // segment of momentumCourse
     function onWallFace(a, b)
@@ -292,8 +326,12 @@ const CRYSTAL_PIECES = (function()
             body.addColorStop(1, '#173fb8')
             c.fillStyle = body
             c.fillRect(0, 0, w, h)
-            // Facets: a fan from a seeded core to points round the perimeter
-            const core = [x0 + bw * range(0.35, 0.65), y0 + bh * range(0.35, 0.65)]
+            // Facets: a fan from a seeded core to points round the perimeter.
+            // The core is seeded at 0.35..0.65 of the box; off the piece (a
+            // right triangle's empty half) the same offset is taken from the
+            // centroid, halved until inside, else the centroid (no extra draw)
+            const core = seededCore(points, x0 + bw * range(0.35, 0.65), y0 + bh * range(0.35, 0.65),
+                (x0 + x1) / 2, (y0 + y1) / 2)
             const lengths = points.map((a, i) =>
             {
                 const b = points[(i + 1) % points.length]
@@ -516,7 +554,7 @@ const CRYSTAL_PIECES = (function()
             if (nubCentres.length)
                 glints.push(nubCentres[Math.floor(pick() * nubCentres.length)])
             else
-                glints.push([(x0 + x1) / 2, (y0 + y1) / 2])
+                glints.push(centroid(points))
             return timeGlints(glints, seed)
         },
         // Cached sprite of piece at canvas scale k (canvas px per world unit);
