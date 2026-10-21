@@ -1,7 +1,9 @@
 """Mobile performance harness: one seeded, CPU-throttled phone run of the game.
 
 Emulates a phone (844x390 landscape, DPR 3, is_mobile, has_touch), applies the
-CDP CPU throttle, seeds Math.random, starts startGame(mode) and replays a
+CDP CPU throttle, seeds Math.random, selects the mode (startGame(mode) on trees
+that boot to the title menu; on menu-less boot trees the boot Grapple Over run,
+or menu.selectMode(mode) for classic/bad, as the pause menu does) and replays a
 seeded touch script as real TouchEvents (the touchstart/touchend events
 events.js listens to), scheduled in the page against performance.now() so the
 input timing does not depend on how fast the revision renders. The window is
@@ -27,7 +29,7 @@ points lie fully outside the visible view. <key>_per_frame_after_warmup holds
 the same counters for the frames that start --warmup seconds after t0. --cpuprofile FILE saves a CDP
 Profiler (.cpuprofile) of the window.
 
-Usage: python3 tools/perf_mobile.py --rev worktree|<git rev> --mode bad|classic
+Usage: python3 tools/perf_mobile.py --rev worktree|<git rev> --mode bad|classic|grapple_over
        [--seconds 20] [--seed 1] [--warmup 3] [--no-trace] [--layers] [--cpuprofile F]
        [--heapprofile F] --out perf.json
 """
@@ -178,7 +180,18 @@ LAYERS_SCRIPT = '''([layers]) => {
 # t0 + t_ms on the page clock. Each dispatch records its actual offset.
 START_SCRIPT = '''([mode, script, windowMs]) => {
     const perf = window.__perf
-    startGame(mode)
+    // Trees with the menu-less boot already run Grapple Over: another mode is
+    // selected the way the pause menu does it. Older trees call startGame().
+    const viaMenu = typeof bootComplete !== 'undefined' && typeof menu.selectMode === 'function'
+    if (!viaMenu)
+        startGame(mode)
+    else if (version !== mode) {
+        if (!menu.gamePaused) menu.startPause()
+        menu.selectMode(mode)
+    } else if (menu.gamePaused)
+        menu.unPause()
+    perf.selected = {mode: version, paused: menu.gamePaused,
+                     flow: viaMenu ? 'boot run + menu.selectMode' : 'startGame'}
     perf.windowMs = windowMs
     perf.t0 = performance.now()
     performance.mark('perf-mobile-t0')
@@ -436,6 +449,7 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
         'rev': rev_id, 'mode': mode, 'seed': seed, 'seconds': seconds,
         'emulation': {'viewport': VIEWPORT, 'device_scale_factor': DEVICE_SCALE_FACTOR,
                       'is_mobile': True, 'has_touch': True, 'cpu_throttle_rate': CPU_THROTTLE_RATE},
+        'selected': perf['selected'],
         'input_events': len(script), 'input_dispatched': len(perf['dispatched']),
         'input_lag_ms': {**percentiles(lags), 'max': round(max(lags), 1) if lags else None},
         'input_dispatch': perf['dispatched'], 'max_frame_gap_ms': round(max_gap, 1),
@@ -493,7 +507,7 @@ def run(rev, mode, seconds, seed, log=print, trace=True, layers=False, cpuprofil
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--rev', default='worktree')
-    parser.add_argument('--mode', choices=['bad', 'classic'], default='bad')
+    parser.add_argument('--mode', choices=['bad', 'classic', 'grapple_over'], default='bad')
     parser.add_argument('--seconds', type=float, default=20)
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no-trace', dest='trace', action='store_false',
