@@ -52,8 +52,9 @@ class Ninja
                             contact = this.hitLine(element, lines[j], contact)
                             collision = lines[j]
                             hit = true
-                            // A lethal hit restarted the run: this pass is over
-                            if (ninja !== this)
+                            // A lethal hit restarted a momentum run: this pass is over
+                            // (classic/bad keep master's pass, bounce included)
+                            if (ninja !== this && version == 'momentum')
                                 return collision
                         }
                     }
@@ -62,7 +63,7 @@ class Ninja
                     {
                         collision = nearestLine(lines, this.x, this.y)
                         contact = this.hitLine(element, collision, contact)
-                        if (ninja !== this)
+                        if (ninja !== this && version == 'momentum')
                             return collision
                     }
                     if (contact && (!this.bounce || this.deeperContact(contact, this.bounce)))
