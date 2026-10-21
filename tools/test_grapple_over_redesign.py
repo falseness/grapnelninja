@@ -313,3 +313,181 @@ class Task558Tests(unittest.TestCase):
         self.assertGreater(upgrade['noticeMs'],0)
         self.write('ranges.json',dict(consumers=rows,upgrade=upgrade))
         print('PASS ranges: 360/540 acquisition boundary, shot travel, held reach, drawn circle; attached rope remains attached beyond range')
+
+
+class Task559Tests(unittest.TestCase):
+    """Reduced-range isolated fixtures, not continuous mountain gameplay.
+
+    Historical v3 geometry remains covered by its archived tests. These tests
+    exercise the replacement profile without activating it or building S05.
+    """
+    @classmethod
+    def setUpClass(cls):
+        # Share lifetime/configuration only, never inherit historical test cases.
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task559Tests')
+        Task558Tests.setUpClass.__func__(cls)
+
+    write = Task557Tests.write
+    press = Task558Tests.press
+
+    def page(self, preview=True, touch=False):
+        if isinstance(preview, str):
+            return Task557Tests.page(self, preview)
+        viewport = {'width':844,'height':390} if touch else VIEWPORT
+        ctx = self.browser.new_context(viewport=viewport, device_scale_factor=1, has_touch=touch)
+        self.addCleanup(ctx.close)
+        p = ctx.new_page()
+        errors = []
+        p.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        p.add_init_script(SEED_SCRIPT % 1)
+        p.goto(self.url + ('?grapplePreview=replacement-v1' if preview else ''))
+        wait_for_boot(p)
+        p.evaluate("cancelAnimationFrame(game);window.requestAnimationFrame=()=>0;startGame('grapple_over');menu.unPause()")
+        p.wait_for_function('!unTouch')
+        return p
+
+    def earn(self, p):
+        return p.evaluate('''() => {
+            const m=structuredClone(GRAPPLE_OVER_REPLACEMENT);
+            m.sections[1].status='built';
+            // A declared isolated zone, independent of final S05 geometry.
+            m.sections[1].rangeUpgradeZone={left:2100,right:2300,top:-2300,bottom:-2200};
+            floors=[loadMountainLevel(m)];
+            Object.assign(ninja,{x:2200,y:-2301,speedX:0,speedY:2});
+            const trace=[];
+            for(let i=0;i<4;i++){const before={y:ninja.y,range:grappleOverAcquisitionRadius()};
+                calcPhysics();trace.push({before,y:ninja.y,range:grappleOverAcquisitionRadius(),notice:floors[0].rangeNoticeMs})}
+            return {zone:m.sections[1].rangeUpgradeZone,trace};
+        }''')
+
+    def test_01_range_and_rendered_circle(self):
+        rows=[]
+        for touch in [False,True]:
+            p=self.page(touch=touch)
+            for radius in [360,540]:
+                earned=self.earn(p) if radius==540 else None
+                for name,targets,expected in [
+                    ('inside',[dict(distance=radius-1,id='inside')],'inside'),
+                    ('outside',[dict(distance=radius+1,id='outside')],None),
+                    ('nearest',[dict(distance=200,id='far'),dict(distance=100,id='near')],'near'),
+                    ('blocker',[dict(distance=200,id='far'),dict(distance=100,id='blocker',grapplable=False)],None)]:
+                    p.evaluate('''targets=>{
+                        for(const f of floors)f.elements=[];screen.leftWall=null;
+                        Object.assign(ninja,{x:1000,y:1000,speedX:0,speedY:0});screen.trackGrappleOver(true);
+                        floors[0].elements=targets.map(t=>{const e=new Rect({x:1000+t.distance,y:900,width:.1,height:200});
+                            e.id=t.id;e.grapplable=t.grapplable!==false;return e});
+                    }''',targets)
+                    if touch:
+                        xy=p.evaluate('canvasCoordsToViewportCoords({x:(1500+screen.x)*scale[version],y:(1000+screen.y)*scale[version]})')
+                        session=p.context.new_cdp_session(p)
+                        session.send('Input.dispatchTouchEvent',dict(type='touchStart',touchPoints=[xy]))
+                    else:
+                        self.press(p,1500,1000)
+                    row=p.evaluate('''() => {
+                        let steps=0;for(;steps<120&&!grapnel.grappled&&!grapnel.isParked();steps++){grapnel.move();grapnel.collision()}
+                        for(let i=0;i<3;i++){grapnel.move();grapnel.collision()}
+                        return {steps,range:grappleOverAcquisitionRadius(),target:grapnel.grappled?grapnel.pos[0][2].id:null,
+                            traveled:grapnel.traveled,parked:grapnel.isParked(),heldReach:Math.hypot(grapnel.pos[0][0]-ninja.x,grapnel.pos[0][1]-ninja.y),clip:grapnel.clip};
+                    }''')
+                    self.assertGreater(row['steps'],0);self.assertEqual(row['target'],expected)
+                    self.assertLessEqual(row['traveled'],radius)
+                    if expected is None:
+                        self.assertTrue(row['parked']);self.assertAlmostEqual(row['heldReach'],radius)
+                        self.assertEqual(row['traveled'],radius)
+                    if name=='blocker': self.assertAlmostEqual(row['clip']['x'],1100)
+                    if touch:
+                        session.send('Input.dispatchTouchEvent',dict(type='touchEnd',touchPoints=[]));session.detach()
+                    else: p.mouse.up()
+                    row.update(name=name,targets=targets,touch=touch,earned=earned)
+                    rows.append(row)
+                circle=p.evaluate('''() => {
+                    const original=ctx,c=document.createElement('canvas');c.width=canvas.width;c.height=canvas.height;
+                    ctx=c.getContext('2d');const k=canvas.width/width*scale[version];ctx.scale(k,k);
+                    ninja.x=1000;ninja.y=1000;screen.x=width/scale[version]/2-1000;screen.y=height/scale[version]/2-1000;
+                    drawAcquisitionCircle();const pixels=ctx.getImageData(0,0,c.width,c.height).data;
+                    const y=Math.floor(c.height/2),xs=[];
+                    for(let x=0;x<c.width;x++)if(pixels[(y*c.width+x)*4+3])xs.push(x);
+                    ctx=original;return {range:grappleOverAcquisitionRadius(),camera:scale[version],
+                        canvasWidth:c.width,cssWidth:getCanvasCssRect().width,viewport:[innerWidth,innerHeight],
+                        expectedPixels:grappleOverAcquisitionRadius()*k,measuredPixels:(xs.at(-1)-xs[0])/2,
+                        edgePixels:xs.length,centerAlpha:pixels[(y*c.width+Math.floor(c.width/2))*4+3]};
+                }''')
+                self.assertGreater(circle['edgePixels'],0);self.assertEqual(circle['centerAlpha'],0)
+                self.assertEqual(circle['camera'],.375)
+                self.assertLessEqual(abs(circle['measuredPixels']-circle['expectedPixels']),1)
+                rows[-1]['circle']=circle
+        self.write('range.json',dict(config=self.config,observations=rows))
+        print('PASS range: 16 desktop/touch cases; inside/outside 360/540, nearest, blockers, parked travel/reach; 4 raster circle radii within 1 pixel')
+
+    def test_02_upgrade_lifecycle(self):
+        p=self.page();earned=self.earn(p)
+        self.assertEqual(earned['trace'][0]['before']['range'],360)
+        self.assertEqual(earned['trace'][-1]['range'],540)
+        self.assertLess(earned['trace'][0]['before']['y'],earned['zone']['top'])
+        self.assertGreaterEqual(earned['trace'][0]['y'],earned['zone']['top'])
+        row=p.evaluate('''() => {
+            ninja.speedY=-5;for(let i=0;i<100;i++)calcPhysics();
+            const persisted={y:ninja.y,range:grappleOverAcquisitionRadius(),flag:floors[0].rangeUpgraded};
+            const saved=captureClimbState();restoreClimbState(saved);
+            const restored={range:grappleOverAcquisitionRadius(),flag:floors[0].rangeUpgraded,exact:JSON.stringify(saved)===JSON.stringify(captureClimbState())};
+            startGame('grapple_over');const restart=grappleOverAcquisitionRadius();
+            return {persisted,restored,restart};
+        }''')
+        self.assertEqual(row['persisted']['range'],540);self.assertTrue(row['restored']['exact'])
+        self.assertTrue(row['restored']['flag']);self.assertEqual(row['restored']['range'],540);self.assertEqual(row['restart'],360)
+        modes=[]
+        for mode in ['classic','bad']:
+            self.earn(p)
+            modes.append(p.evaluate('''m=>{startGame(m);const during=version;startGame('grapple_over');
+                return {during,range:grappleOverAcquisitionRadius(),flag:floors[0].rangeUpgraded}}''',mode))
+        self.assertTrue(all(r['range']==360 and not r['flag'] for r in modes))
+        self.write('upgrade.json',dict(earned=earned,**row,modeChanges=modes))
+        print('PASS upgrade: physical entry 360 -> 540, retained 100 steps, exact current-state restore, restart and classic/bad roundtrip -> 360')
+
+    def test_03_classic_bad_baseline(self):
+        Task557Tests.test_03_seeded_old_modes(self)
+        path=self.out/'old-modes.json'
+        actual=json.loads(path.read_text())
+        baseline=ROOT/'artifacts/TASK-557/old-modes.json'
+        expected=json.loads(baseline.read_text())
+        self.assertEqual(actual['modes'],expected['modes'])
+        actual.update(baseline=str(baseline.relative_to(ROOT)),baseline_sha256=hashlib.sha256(baseline.read_bytes()).hexdigest(),equal=True)
+        self.write('old-mode-check.json',actual)
+        path.unlink()
+        print('PASS classic/bad: exact TASK-557 baseline movement, shot, bounce and physics constants')
+
+    def test_04_attached_and_wrapped_profile_comparison(self):
+        traces=[]
+        for preview in [False,True]:
+            p=self.page(preview)
+            p.evaluate('''() => {
+                floors[0].elements=[];screen.leftWall=null;
+                Object.assign(ninja,{x:800,y:700,speedX:0,speedY:0});screen.trackGrappleOver(true);
+                for(const [id,x,y,w,h] of [['anchor',1100,680,30,40],['corner',900,800,80,50]]){
+                    const e=new Rect({x,y,width:w,height:h});e.id=id;e.surfaceRole='solid';floors[0].elements.push(e)}
+            }''')
+            self.press(p,1100,700)
+            row=p.evaluate('''() => {
+                for(let i=0;i<100&&!grapnel.grappled;i++){grapnel.move();grapnel.collision()}
+                const snapshot=()=>({x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,attached:grapnel.grappled,
+                    rope:grapnel.pos.map(p=>[p[0],p[1],p[2].id])});
+                const acquired=snapshot();ninja.speedY=3;const trace=[];
+                for(let i=0;i<200;i++){calcPhysics();trace.push(snapshot());if(grapnel.pos.length>=2)break}
+                // Identical attached starting state outside both acquisition profiles.
+                ninja.x=-1000;ninja.y=700;
+                const long=[];for(let i=0;i<12;i++){calcPhysics();long.push(snapshot())}
+                return {range:grappleOverAcquisitionRadius(),acquired,trace,long};
+            }''')
+            self.assertTrue(row['acquired']['attached']);self.assertGreaterEqual(len(row['trace'][-1]['rope']),2)
+            self.assertTrue(all(r['attached'] for r in row['long']))
+            self.assertTrue(all(abs(r['rope'][0][0]-r['x'])>1080 for r in row['long']))
+            before=p.evaluate('[ninja.speedX,ninja.speedY]');p.mouse.up()
+            after=p.evaluate('({velocity:[ninja.speedX,ninja.speedY],attached:grapnel.grappled})')
+            self.assertEqual(before,after['velocity']);self.assertFalse(after['attached'])
+            row['release']=after;traces.append(row)
+        self.assertEqual(traces[0]['range'],1080);self.assertEqual(traces[1]['range'],360)
+        self.assertEqual({k:v for k,v in traces[0].items() if k!='range'},{k:v for k,v in traces[1].items() if k!='range'})
+        self.write('attached-rope.json',dict(profiles=traces,equal_except_range=True))
+        print('PASS attached rope: legacy/replacement identical acquired, physical wrap, 12 attached steps beyond 1080, release velocity; no new automatic snap')
