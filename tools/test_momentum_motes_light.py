@@ -6,11 +6,13 @@ falloff of STYLE.lights.falloff, a blue from its outline, reach
 momentumLight.moteReach, unshadowed) at every mote of moteLayout; a lit mote
 grows and brightens by up to momentumLight.moteBoost and takes the brightest
 light's colour. Checks (tools/momentum_fx_support.py scenes, 1280x720), the
-parent commit being the TASK-057 look:
+baseline being the same tree with momentumLight.moteGain 0 (MOTES_UNLIT, the
+TASK-057 look): the TASK-058 parent's corridors are twice as tall as
+TASK-128's and its scenes put other motes over other cave (TASK-142):
 - motes.json: per mote of moteLayout in view whose (lit) halo box is clear of
   walls, pieces and HUD: distance to the ninja, to the nearest light (a blue
   measured from its outline, its circumscribed circle) and to the nearest
-  blue; its brightness on (this tree) and on the parent; its hue. A mote's
+  blue; its brightness lit (this tree) and unlit (the baseline); its hue. A mote's
   emitted light is the frame minus the same tree's frame with the motes
   hidden (QUALITY.ambient off), so the cave, the lights and nearby neon do
   not count; its pixels are where that excess is >= 1/4 of its max. brightness = peak of that excess luminance after a box filter
@@ -24,8 +26,8 @@ parent commit being the TASK-057 look:
   more than LONE_PX from the ninja and every trail light: hue within
   MAX_HUE_DEG of momentum.blueStroke. run-right with the ninja at the left
   edge and no trail: motes more than FAR_PX from every light have maxDelta
-  <= MAX_FAR_DELTA vs the parent over their halo box. The mote layout of
-  both trees is the same (deterministic);
+  <= MAX_FAR_DELTA vs the baseline over their halo box. The mote layout of
+  both is the same (deterministic);
 - switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
   viewports and the classic and bad test_visual_gallery frames with the switch
   on equal the parent commit (decoded maxDelta 0);
@@ -34,7 +36,7 @@ parent commit being the TASK-057 look:
 
 MOMENTUM_MOTES_LIGHT_EVIDENCE_DIR (default /tmp/momentum-motes-light)
 receives the json files (compact) and shots/. MOMENTUM_MOTES_LIGHT_PARENT is
-the parent revision (default: the parent of the commit that added this file,
+the parent revision of the switch-off check (default: the parent of the commit that added this file,
 or HEAD while uncommitted). Requires Playwright Chromium. No remote requests.
 """
 import colorsys
@@ -69,9 +71,13 @@ NINJA_LIGHT = '#22c8ff'
 BLUE_LIGHT = '#2f86ff'
 HIDE_MOTES = '() => { QUALITY.ambient = false }'
 # Later effects (the TASK-059 speed light) are switched off in the tree by a
-# STYLE override, so only the lit motes are compared with the parent
+# STYLE override, so only the lit motes are compared with the baseline
 LATER_EFFECTS_OFF = [('speedLight: true', 'speedLight: false'), ('show: true,\n            parallax', 'show: false,\n            parallax'),
                      ('show: true,\n            veinCount', 'show: false,\n            veinCount')]
+# The motes unlit (the TASK-057 look): baseline of the brightness and far
+# checks. The TASK-058 parent's corridors are twice as tall as TASK-128's
+# and its scenes put other motes over other cave (TASK-142)
+MOTES_UNLIT = [('moteGain: 5,', 'moteGain: 0,')]
 # Ninja to the left edge of the view, no trail: most of the view is far
 NINJA_LEFT = '''() => { ninja.x = -screen.x + 60 * width / scale[version] / 1280; ninja.track.pos = [] }'''
 
@@ -103,23 +109,22 @@ def parent_rev():
                                    cwd=ROOT, text=True).strip()
 
 
-_TREE_HARNESS = []
+_TREE_HARNESS = {}
 
 
-def tree_harness():
-    """The worktree harness, with LATER_EFFECTS_OFF served when its style.js has them."""
-    tree = fx.harness()
-    later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
-    if not later_off:
-        return tree
-    if not _TREE_HARNESS:
-        _TREE_HARNESS.append(fx.FxHarness('worktree', tree.browser, style_patch=later_off))
-    return _TREE_HARNESS[0]
+def tree_harness(lit=True):
+    """The worktree harness with LATER_EFFECTS_OFF served (those its style.js has), and MOTES_UNLIT unless lit."""
+    if lit not in _TREE_HARNESS:
+        tree = fx.harness()
+        later_off = [patch for patch in LATER_EFFECTS_OFF if patch[0] in (tree.root / 'style.js').read_text()]
+        _TREE_HARNESS[lit] = fx.FxHarness('worktree', tree.browser,
+                                          style_patch=(later_off + ([] if lit else MOTES_UNLIT)) or None)
+    return _TREE_HARNESS[lit]
 
 
-def capture_with_motes(scene, rev='worktree', extra_js=None):
-    """(frame, motes data) of scene at VIEWPORT with MOMENTUM_FX on."""
-    context, page = (tree_harness() if rev == 'worktree' else fx.harness(rev)).open(VIEWPORT)
+def capture_with_motes(scene, lit=True, extra_js=None):
+    """(frame, motes data) of scene at VIEWPORT with MOMENTUM_FX on, the motes lit or not."""
+    context, page = tree_harness(lit).open(VIEWPORT)
     try:
         page.evaluate(fx.BUILD, [fx.SCENE_SPECS[scene], True])
         if extra_js:
@@ -131,7 +136,7 @@ def capture_with_motes(scene, rev='worktree', extra_js=None):
             raise RuntimeError(f'page errors in {scene}: {page.errors}')
     finally:
         context.close()
-    info.update(scene=scene, viewport=list(VIEWPORT), rev=rev)
+    info.update(scene=scene, viewport=list(VIEWPORT), lit=lit)
     fx._HUD_BOXES[VIEWPORT] = (info['canvas'], info['hud'])
     return fx.Frame(np.asarray(Image.open(io.BytesIO(png)).convert('RGB')), info), data
 
@@ -180,13 +185,13 @@ def light_distances(x, y, lights):
     return out
 
 
-def measure_motes(scene, parent, extra_js=None):
+def measure_motes(scene, extra_js=None):
     """Rows per mote in view and clear of walls, pieces and HUD."""
     new, data = capture_with_motes(scene, extra_js=extra_js)
-    old, old_data = capture_with_motes(scene, parent, extra_js=extra_js)
+    old, old_data = capture_with_motes(scene, False, extra_js=extra_js)
     hide = HIDE_MOTES if not extra_js else f'() => {{ ({extra_js})(); ({HIDE_MOTES})() }}'
     bare_new, _ = capture_with_motes(scene, extra_js=hide)
-    bare_old, _ = capture_with_motes(scene, parent, extra_js=hide)
+    bare_old, _ = capture_with_motes(scene, False, extra_js=hide)
     same_layout = np.allclose(np.asarray(data['motes']), np.asarray(old_data['motes']))
     free = ~(fx.hud_mask(VIEWPORT, new.shape) | fx.piece_mask(new) | fx.wall_mask(new))
     excess_new = np.clip(np.asarray(new, np.float64) - np.asarray(bare_new, np.float64), 0, None)
@@ -214,9 +219,9 @@ def measure_motes(scene, parent, extra_js=None):
                      'nearestLight': min(dist, key=dist.get) if dist else None,
                      'bluePx': round(dist['blue'], 1) if 'blue' in dist else None,
                      'trailPx': round(dist['trail'], 1) if 'trail' in dist else None,
-                     'brightness': round(b_new, 4), 'brightnessParent': round(b_old, 4),
+                     'brightness': round(b_new, 4), 'brightnessUnlit': round(b_old, 4),
                      'ratio': round(b_new / b_old, 3) if b_old > 0 else None,
-                     'pixelPeak': round(float(lum_new.max()), 4), 'pixelPeakParent': round(float(lum_old.max()), 4),
+                     'pixelPeak': round(float(lum_new.max()), 4), 'pixelPeakUnlit': round(float(lum_old.max()), 4),
                      'hue': hue[0] if hue else None, 'sat': hue[1] if hue else None,
                      'maxDelta': fx.max_delta(new[box], old[box])})
     return {'scene': scene, 'ninja': [round(v, 1) for v in new.info['ninja']], 'sameLayout': bool(same_layout),
@@ -229,7 +234,7 @@ class MomentumMotesLightTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
-        cls.result = {'parent': cls.parent, 'viewport': list(VIEWPORT),
+        cls.result = {'parent': cls.parent, 'baseline': 'worktree moteGain 0', 'viewport': list(VIEWPORT),
                       'brightness': 'peak of the mote excess luminance (frame - motes hidden) box-filtered at the '
                                     'unlit halo size', 'hue': 'hue of the mean frame colour of the mote pixels (excess >= 1/4 of its max)',
                       'ninjaPx': NINJA_PX, 'minRatio': MIN_RATIO, 'maxHueDeg': MAX_HUE_DEG, 'bluePx': BLUE_PX,
@@ -240,11 +245,11 @@ class MomentumMotesLightTests(unittest.TestCase):
     def tearDownClass(cls):
         (EVIDENCE_DIR / 'motes.json').write_text(compact(cls.result))
         while _TREE_HARNESS:
-            _TREE_HARNESS.pop().close()
+            _TREE_HARNESS.popitem()[1].close()
         fx.close()
 
     def test_0_motes_near_ninja_brighter_and_cyan(self):
-        scene = measure_motes('run-right', self.parent)
+        scene = measure_motes('run-right')
         near = [r for r in scene['motes'] if r['ninjaPx'] <= NINJA_PX]
         for r in near:
             r['hueOff'] = round(hue_distance(r['hue'], hex_hue(NINJA_LIGHT)), 1)
@@ -260,7 +265,7 @@ class MomentumMotesLightTests(unittest.TestCase):
                 self.assertLessEqual(r['hueOff'], MAX_HUE_DEG)
 
     def test_1_motes_near_lone_blue_blue(self):
-        scene = measure_motes('blue-corner', self.parent)
+        scene = measure_motes('blue-corner')
         near = [r for r in scene['motes'] if r['bluePx'] is not None and r['bluePx'] <= BLUE_PX
                 and r['ninjaPx'] > LONE_PX and (r['trailPx'] is None or r['trailPx'] > LONE_PX)]
         for r in near:
@@ -276,7 +281,7 @@ class MomentumMotesLightTests(unittest.TestCase):
                 self.assertLessEqual(r['hueOff'], MAX_HUE_DEG)
 
     def test_2_far_motes_unchanged(self):
-        scene = measure_motes('run-right', self.parent, NINJA_LEFT)
+        scene = measure_motes('run-right', NINJA_LEFT)
         far = [r for r in scene['motes'] if r['nearestLightPx'] is None or r['nearestLightPx'] > FAR_PX]
         for r in far:
             r['pass'] = r['maxDelta'] <= MAX_FAR_DELTA
