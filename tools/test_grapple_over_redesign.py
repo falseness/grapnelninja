@@ -2112,3 +2112,139 @@ class Task571Tests(unittest.TestCase):
             im.load();self.assertEqual(im.size,(1688,1560))
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
         print('PASS index: all required paths exist; JSON parses; touch-strip decodes 1688x1560; retained evidence <200 MB')
+
+
+class Task572Tests(unittest.TestCase):
+    """Current built S01 composition and continuous production route review."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+
+    write = Task557Tests.write
+    page = Task567Tests.page
+    press = Task567Tests.press
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+
+    def test_01_objects_and_dependencies(self):
+        p=self.page()
+        g=p.evaluate('''() => ({elements:floors[0].level.elements,encounters:floors[0].level.encounters,
+            movers:floors[0].level.movers,dragCount:floors[0].dragZones.length,
+            range:grappleOverAcquisitionRadius(),scale:scale[version],calibration:GRAPPLE_OVER_MOVEMENT})''')
+        self.assertEqual(len(g['elements']),10)
+        self.assertEqual(g['movers'],[]);self.assertEqual(g['dragCount'],0)
+        self.assertEqual(g['range'],360);self.assertEqual(g['scale'],.375)
+        for e in g['elements']:
+            self.assertEqual(e['role'],'bounce');self.assertTrue(e['purpose'])
+            e['encounters']=[c['id'] for c in g['encounters'] if e['id'] in c['elements']]
+            self.assertTrue(e['encounters'])
+            e['width']=max(v['x'] for v in e['points'])
+            if 'anchor' not in e['id']:self.assertGreaterEqual(e['width'],540)
+        self.assertEqual([c['id'] for c in g['encounters']],['S01-01','S01-02','S01-03','S01-04'])
+        es={e['id']:e for e in g['elements']}
+        gaps=[es[b]['x']-es[a]['x']-es[a]['width'] for a,b in [('yard-entry','yard-landing'),('yard-landing','yard-second-landing'),('yard-third-landing','yard-second-landing'),('yard-fourth-landing','yard-third-landing')]]
+        self.assertEqual(gaps,[252]*4)
+        g.update(firstUseOrder=['green'],yellow='absent: suppression/clearance not applicable',
+            blue='absent: swept bounds/period/acquisition window not applicable',hazards='absent: contact recovery not applicable',
+            deliberateGaps=gaps,removedClutter='none: every emitted collider has a route or recovery purpose; planned preview-unbuilt is excluded')
+        self.write('objects.json',g)
+        old=json.loads((ROOT/'artifacts/TASK-571/evidence-index.json').read_text())['config']['source_hashes']
+        unchanged={n:h for n,h in old.items() if n!='tools/test_grapple_over_redesign.py'}
+        for n,h in unchanged.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        self.write('dependency.json',dict(unchanged=unchanged,changed=['tools/test_grapple_over_redesign.py: additive Task572Tests only'],
+            reused=[dict(path='artifacts/TASK-571/tolerance.json',sha256=hashlib.sha256((ROOT/'artifacts/TASK-571/tolerance.json').read_bytes()).hexdigest(),supports='40 input tolerance variants'),
+                    dict(path='artifacts/TASK-571/recovery.json',sha256=hashlib.sha256((ROOT/'artifacts/TASK-571/recovery.json').read_bytes()).hexdigest(),supports='8 nonlethal misses and ordinary-control returns')],
+            refreshed='Current continuous four-bay route and composition captures; TASK-570 fourth-bay geometry/route superseded by TASK-571',
+            dependencies='mountain -> fixedlevel -> production physics/events -> yard observer; render/landmarks -> draw; source hashes survive HEAD-only changes'))
+        print('PASS objects: 10 purposeful green colliders; 4 ordered encounters; shelves >=540; gaps 252; movers=0 drag=0 hazards=0; 49 unchanged dependencies')
+
+    def test_02_continuous_route_and_captures(self):
+        p=self.page()
+        p.evaluate("""() => {TUTORIAL_HINT.visible=false;window.frames572=[];window.capture572=()=>{
+            draw();frames572.push({image:canvas.toDataURL('image/jpeg',.85),tick:YARD.result().tick});};capture572()}""")
+        approaches=[]
+        def capture(label):
+            p.evaluate('draw()')
+            im=Image.open(io.BytesIO(p.screenshot())).convert('RGB')
+            ImageDraw.Draw(im).text((12,690),label,fill='white');approaches.append(im)
+        def step(n):
+            p.evaluate('n=>{for(let i=0;i<n;i++){YARD.step(1);if(YARD.result().tick%3===0)capture572()}}',n)
+        capture('S01-01 actual base approach / Loading Yard gantry')
+        # A composition camera only: preserve the live route camera and player.
+        p.evaluate('window.cam572={x:screen.x,y:screen.y};screen.x=width/.375/2-2762;screen.y=height/.375/2+0;draw()')
+        p.screenshot(path=str(self.out/'overview.png'))
+        flat=p.evaluate("""() => ({elements:floors[0].elements.map(e=>e.getPoints()),
+            shape:GRAPPLE_OVER_LANDMARK_SHAPES[0](GRAPPLE_OVER_LANDMARKS.width,GRAPPLE_OVER_LANDMARKS.height),
+            landmark:{x:(2366+screen.x)*.375-GRAPPLE_OVER_LANDMARKS.width/2,
+                      y:(-150+screen.y)*.375-GRAPPLE_OVER_LANDMARKS.height},
+            camera:{x:screen.x,y:screen.y},factor:1280/width})""")
+        im=Image.new('RGB',(1280,720),'white');pen=ImageDraw.Draw(im);f=flat['factor']
+        for part in flat['shape']['parts']:
+            pen.polygon([((x+flat['landmark']['x'])*f,(y+flat['landmark']['y'])*f) for x,y in part],fill='#777777')
+        for points in flat['elements']:
+            pen.polygon([((v['x']+flat['camera']['x'])*.375*f,(v['y']+flat['camera']['y'])*.375*f) for v in points],fill='black')
+        pen.text((12,16),'Loading Yard / gantry silhouette (gray), gameplay colliders (black)',fill='black')
+        im.save(self.out/'silhouette.png')
+        p.evaluate('screen.x=cam572.x;screen.y=cam572.y;draw()')
+        actions=[(dict(x=2420,y=-139),30,75),(dict(x=2900,y=30),26,0),
+                 (Task568Tests.target,18,48),(Task569Tests.target,45,208),
+                 (dict(x=2550,y=-270),12,0),(dict(x=2372,y=-499),12,155)]
+        for i,(target,hold,coast) in enumerate(actions):
+            if i in [2,3,5]:capture(f'S01-0{[2,3,5].index(i)+2} actual continuous approach / green destination')
+            self.press(p,target);step(hold);p.mouse.up();step(coast)
+        p.evaluate('capture572()')  # Include the final landing even off the three-tick cadence.
+        r=self.result(p)
+        exits=[]
+        for i,id in enumerate(Task571Tests.exits):
+            landed=self.landings(r,id);self.assertTrue(landed,id)
+            exits.append(dict(encounter=f'S01-0{i+1}',collider=id,tick=landed[0]['tick']))
+        self.assertEqual([e['tick'] for e in exits],[105,197,450,629])
+        r.update(exits=exits,scope='Continuous actual preview spawn; trusted input; unchanged production physics',resets=0,poseInjections=0)
+        self.write('route.json',r)
+        sheet=Image.new('RGB',(2560,1440))
+        for i,im in enumerate(approaches):sheet.paste(im,((i%2)*1280,(i//2)*720))
+        sheet.save(self.out/'approaches.jpg',quality=88)
+        # Render-only replay of sampled continuous simulation; no fixture is presented as gameplay.
+        clip=p.evaluate('''async () => {
+            const stream=canvas.captureStream(0),track=stream.getVideoTracks()[0],chunks=[];
+            const rec=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9',videoBitsPerSecond:1800000});
+            rec.ondataavailable=e=>chunks.push(e.data);const ended=new Promise(r=>rec.onstop=r);rec.start();
+            for(const f of frames572){const image=new Image();image.src=f.image;await image.decode();
+                ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(image,0,0);ctx.restore();
+                ctx.fillStyle='white';ctx.font='14px sans-serif';ctx.fillText('Continuous S01 production trace replay / tick '+f.tick,12,24);
+                track.requestFrame();await new Promise(r=>setTimeout(r,50));}
+            await new Promise(r=>setTimeout(r,200));
+            rec.stop();await ended;stream.getTracks().forEach(t=>t.stop());
+            const blob=new Blob(chunks,{type:'video/webm'});
+            return await new Promise(r=>{const reader=new FileReader();reader.onload=()=>r(reader.result.split(',')[1]);reader.readAsDataURL(blob)});
+        }''')
+        (self.out/'section.webm').write_bytes(base64.b64decode(clip))
+        # Decode the full retained clip in the browser, not just its container header.
+        decoded=p.evaluate('''async b64=>{const v=document.createElement('video');v.muted=true;
+            v.src='data:video/webm;base64,'+b64;let frames=0;
+            const count=()=>{frames++;v.requestVideoFrameCallback(count)};v.requestVideoFrameCallback(count);
+            await v.play();await new Promise((resolve,reject)=>{v.onended=resolve;v.onerror=reject});
+            return {frames,width:v.videoWidth,height:v.videoHeight}}''',clip)
+        self.assertGreater(decoded['frames'],100);self.assertEqual(decoded['width'],1280)
+        self.write('clip-decode.json',decoded)
+        print(f'PASS continuous route: four exits 105/197/450/629; trusted inputs; zero resets/injections; clip decoded {decoded}')
+
+    def test_03_evidence_index(self):
+        required={'commands.log':'exact command, exit status, collected identifiers, revision, hashes and browser configuration',
+            'tests.log':'3 exact Task572Tests cases, no skips, OK','overview.png':'all four built bays and Loading Yard gantry',
+            'silhouette.png':'plain monochrome structure and open gaps','approaches.jpg':'four actual continuous approach views',
+            'objects.json':'all ten purposes, green-only role order and absent conditional obstacles',
+            'section.webm':'continuous representative production traversal replay',
+            'route.json':'trusted inputs and four ordered landing contacts; no resets or injections',
+            'clip-decode.json':'full clip browser decode and frame count',
+            'dependency.json':'exact unchanged dependencies and referenced prior proof',
+            'review.md':'independent visual observations and pacing assessment',
+            'evidence-index.json':'artifact assertions and provenance'}
+        self.write('evidence-index.json',dict(config=self.config,artifacts=required))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith(('.png','.jpg')):
+                with Image.open(self.out/name) as im:im.load();self.assertGreater(im.width,1000)
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: JSON parses; three images decode; clip fully decoded; retained evidence <200 MB; visual review follows')
