@@ -211,3 +211,30 @@ geometry proofs remain historical; these examples do not require obsolete v3
 coordinates. No carrying, attachment, range, bounce, camera or input behavior
 changes. Earlier range and old-mode proof remains at TASK-559/560; no full-suite
 rerun is needed for new inert authoring constants and test-only fixtures.
+
+TASK-563 adds a test-only late-game red introduction in
+`tools/grapple_over_hazard.js`; no runtime entry point loads it. A 500-unit solid
+observation surface exposes the entire 700-unit vertical hazard sweep over a
+six-second cycle. The existing 80×80 red hazard moves between y=-500 and 200;
+its swept bottom remains 320 units above the 3000-unit broad catch. Every other
+terrain/yellow rectangle is separated from the swept hazard volume by more
+than the player's diameter. Only the red hazard moves in this fixture.
+A remote yellow band is included in the clearance calculation, not in the
+recovery route. The normal-input return uses a low hook and a tall right wall.
+
+The focused `Task563Tests` observe one full safe cycle, traverse at phase zero,
+and miss on either side of that window (phases .3 and .5). Both misses exercise
+production knockback, rope release, cooldown and catch-to-wall recovery using
+trusted mouse controls without resetting the scenario. The clip replays the
+early contact case and must match all 801 measured states. These are isolated
+fixtures, not continuous mountain gameplay or opening-section placement.
+Run with `GRAPPLE_OVER_EVIDENCE_DIR=artifacts/TASK-563 python3 -m unittest
+discover -s tools -p test_grapple_over_redesign.py -k Task563Tests -v`.
+
+Changed dependencies: the test-only fixture, focused test class and this guide.
+Runtime geometry/physics, input bindings, camera .375, preview range 360/540,
+attached ropes, legacy mountain and classic/bad modes are unchanged. Existing
+range and mode proof remains in TASK-559/560; yellow calibration is TASK-562.
+Earlier geometry evidence remains historical rather than required coverage
+for these isolated coordinates. Relevant source hashes accompany the focused
+proof; moving HEAD alone does not invalidate identical tested sources.

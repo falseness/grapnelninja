@@ -831,3 +831,118 @@ class Task562Tests(unittest.TestCase):
         self.assertGreaterEqual(frames,65);self.assertGreater(seconds,8)
         self.write('capture.json',dict(frames=frames,seconds=seconds,simulationHz=60,captureHz=7.5,replayFinal=replay['rows'][-1]))
         print('PASS recovery: 6 trusted inputs; one lower bounce; no drag reentry; escape x=%.6f y=%.6f; 522 uninterrupted ticks; fall.webm decoded %d frames %.2f seconds' % (r['rows'][-1]['x'],r['rows'][-1]['y'],frames,seconds))
+
+
+class Task563Tests(unittest.TestCase):
+    """Late-game hazard calibration only; independent setup poses are not a run."""
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task563Tests')
+        Task558Tests.setUpClass.__func__(cls)
+        cls.config['source_hashes']['tools/grapple_over_hazard.js'] = hashlib.sha256((ROOT/'tools/grapple_over_hazard.js').read_bytes()).hexdigest()
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK563_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+
+    def page(self):
+        p = Task559Tests.page(self)
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_hazard.js'))
+        return p
+
+    def press(self, p, target):
+        xy = p.evaluate('p=>HAZARD.client(p)', target)
+        p.mouse.move(**xy); p.mouse.down()
+
+    def test_01_observation_and_swept_clearance(self):
+        p = self.page()
+        r = p.evaluate('''()=>{
+          const m=HAZARD.setup(),r=ninja.radius,k=scale[version];
+          const warning={left:(650+screen.x)*k,right:(730+screen.x)*k,
+            top:(-500+screen.y)*k,bottom:(280+screen.y)*k,canvasWidth:width,canvasHeight:height};
+          HAZARD.step(360);const observation=HAZARD.result();
+          const obstacles=m.elements.filter(e=>e.id!=='red').map(e=>{
+            const left=e.x,right=e.x+e.points[1].x,top=e.y,bottom=e.y+e.points[2].y;
+            return {id:e.id,role:e.role,left,right,top,bottom,
+              clearance:Math.hypot(Math.max(left-730,650-right,0),Math.max(top-280,-500-bottom,0))};});
+          return {manifest:m,warning,observation,obstacles,radius:r,camera:k,range:grappleOverAcquisitionRadius(),
+            sweep:{left:650,right:730,top:-500,bottom:280},periodMs:6000};}''')
+        w=r['warning']; self.assertGreater(w['left'],0); self.assertLess(w['right'],w['canvasWidth'])
+        self.assertGreater(w['top'],0); self.assertLess(w['bottom'],w['canvasHeight'])
+        self.assertGreater(w['right']-w['left'],25)
+        self.assertEqual(r['camera'],.375); self.assertEqual(r['range'],540)
+        rows=r['observation']['rows']
+        self.assertEqual(r['observation']['contacts'],[])
+        self.assertLess(max(s['x'] for s in rows)-min(s['x'] for s in rows),.01)
+        self.assertLess(max(s['y'] for s in rows)-min(s['y'] for s in rows),.1)
+        self.assertAlmostEqual(min(s['redY'] for s in rows),-500,places=5)
+        self.assertAlmostEqual(max(s['redY'] for s in rows),200,places=5)
+        for o in r['obstacles']: self.assertGreater(o['clearance'],2*r['radius'],o)
+        self.assertEqual(len(r['manifest']['movers']),1)
+        self.write('swept-clearance.json',r)
+        print('PASS observation: 360 ticks / full 6000 ms cycle; warning 30 canvas pixels wide and entire sweep visible; safe stationary surface')
+        print('PASS swept clearance: all terrain and yellow bounds separated from full red mover sweep by > player diameter; broad catch width=3000')
+
+    def scenario(self, p, phase, recover=False, capture=None):
+        p.evaluate('phase=>HAZARD.setup(phase)',phase)
+        actions=[]
+        def press(target):
+            actions.append(dict(tick=p.evaluate('HAZARD.result().tick'),target=target))
+            self.press(p,target)
+        def step(n):
+            if capture is None:p.evaluate('n=>HAZARD.step(n)',n)
+            else:
+                for _ in range(n//4):
+                    p.evaluate('HAZARD.step(4)')
+                    if p.evaluate('HAZARD.result().tick%8===0'):
+                        p.evaluate("TUTORIAL_HINT.visible=false;draw();ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='white';ctx.font='20px sans-serif';ctx.fillText('TASK-563 isolated late-game hazard | '+(HAZARD.result().tick/60).toFixed(2)+' s | observe, contact, recover',20,100);ctx.restore()")
+                        capture.stdin.write(p.screenshot())
+        # Observe from the actual safe surface for one complete cycle before committing.
+        step(360);press(dict(x=900,y=40));step(100 if recover else 60);p.mouse.up()
+        if recover:
+            step(100);press(dict(x=850,y=440));step(60);p.mouse.up()
+            for _ in range(3):
+                y=p.evaluate('Math.max(10,ninja.y-250)');press(dict(x=1100,y=y));step(60);p.mouse.up()
+        result=p.evaluate('HAZARD.result()');result.update(phase=phase,actions=actions)
+        return result
+
+    def test_02_timing_contact_and_recovery(self):
+        p=self.page();safe=self.scenario(p,0)
+        self.assertEqual(safe['contacts'],[]);self.assertGreater(safe['rows'][-1]['x'],730+safe['radius'])
+        self.assertLess(safe['rows'][-1]['y'],150)
+        cases=[]
+        for label,phase in [('early',.3),('late',.5)]:
+            r=self.scenario(p,phase,True);r['timing']=label;cases.append(r)
+            self.assertGreater(len(r['contacts']),0)
+            c=r['contacts'][0];self.assertEqual(c['before']['cooldown'],0);self.assertEqual(c['after']['cooldown'],350)
+            self.assertGreater((c['after']['vx']-c['before']['vx'])*c['nx']+(c['after']['vy']-c['before']['vy'])*c['ny'],0)
+            self.assertFalse(c['after']['attached'])
+            self.assertTrue(any(0<s['cooldown']<350 for s in r['rows']))
+            self.assertEqual(r['rows'][-1]['cooldown'],0)
+            self.assertTrue(any(s['y']>580 for s in r['rows']))
+            self.assertGreater(r['rows'][-1]['x'],1000);self.assertLess(r['rows'][-1]['y'],200)
+            self.assertEqual(len(r['inputs']),10);self.assertTrue(all(e['trusted'] for e in r['inputs']))
+            for s in r['rows']:
+                self.assertTrue(s['sameWorld']);self.assertTrue(s['run']);self.assertFalse(s['continueOffer'])
+            self.assertLess(max(((b['x']-a['x'])**2+(b['y']-a['y'])**2)**.5 for a,b in zip(r['rows'],r['rows'][1:])),30)
+            self.assertAlmostEqual(r['stats']['elapsedActiveMs'],800*1000/60,places=4)
+            print('PASS %s contact/recovery: contacts=%d cooldown=350->0 trusted inputs=10 catch y>580 escape x=%.3f y=%.3f; 800 continuous ticks no restart/death/teleport' % (label,len(r['contacts']),r['rows'][-1]['x'],r['rows'][-1]['y']))
+        self.write('hazard.json',dict(config=self.config,warning=json.loads((self.out/'swept-clearance.json').read_text())['warning'],warningEvidence='swept-clearance.json',timedTraversal=safe,contacts=[r['contacts'] for r in cases]))
+        self.write('recovery.json',dict(config=self.config,cases=cases))
+        print('PASS timed traversal: phase=0, 360 observation ticks then 60 traversal ticks, beyond red sweep without contact')
+
+    def test_03_readable_introduction_capture(self):
+        import imageio_ffmpeg
+        p=self.page();ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()
+        with (self.out/'encoder.log').open('wb') as log:
+            encoder=subprocess.Popen([ffmpeg,'-y','-loglevel','error','-threads','1','-filter_threads','1','-f','image2pipe','-vcodec','png','-r','7.5','-i','-','-c:v','libvpx-vp9','-threads','1','-cpu-used','6','-pix_fmt','yuv420p','-crf','35','-b:v','0',str(self.out/'hazard.webm')],stdin=subprocess.PIPE,stderr=log)
+            try:r=self.scenario(p,.3,True,encoder)
+            finally:encoder.stdin.close()
+            self.assertEqual(encoder.wait(),0)
+        expected=json.loads((self.out/'recovery.json').read_text())['cases'][0]
+        self.assertEqual(r['rows'],expected['rows'])
+        frames,seconds=imageio_ffmpeg.count_frames_and_secs(str(self.out/'hazard.webm'))
+        self.assertEqual(frames,100);self.assertGreater(seconds,13)
+        self.write('capture.json',dict(frames=frames,seconds=seconds,replayMatches=True,final=r['rows'][-1]))
+        print('PASS hazard.webm: decoded %d frames %.3f seconds; capture replay exactly matches measured early contact and recovery' % (frames,seconds))
