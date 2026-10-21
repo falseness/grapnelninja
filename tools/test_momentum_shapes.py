@@ -94,6 +94,10 @@ CASE = '''([kind, shape, speed, maxMoves]) => {
             ninja.move()
             if (!used && piece.passThrough)
                 return {moves, before, speedX: ninja.speedX, speedY: ninja.speedY}
+            // a used piece: done once the ninja is past it (before the
+            // corridor floor, 0.4 height below the start since TASK-128)
+            if (used && (fall ? ninja.y - r > box.bottom : ninja.x - r > box.right))
+                return {moves, before: null, speedX: ninja.speedX, speedY: ninja.speedY}
         }
         return {moves: maxMoves, before: null, speedX: ninja.speedX, speedY: ninja.speedY}
     }

@@ -55,8 +55,10 @@ CLEAN_MS = 200
 HUD_TIMES = (0, 50, 100)
 SIDE_MIN = 3
 CENTRE_MAX = 1
-# Measurement pieces: canvas px centre x, top, bottom, width
-EDGE_PIECES = {'side': (110, 430, 610, 24), 'centre': (652, 470, 610, 24)}
+# Measurement pieces: canvas px centre x, top, bottom, width; inside the
+# blue-hit corridor (ceiling y 60, floor y 386 since TASK-128's 1.0-height
+# corridor)
+EDGE_PIECES = {'side': (110, 167, 347, 24), 'centre': (652, 207, 347, 24)}
 MAX_SHIFT = 8
 WINDOW = 14
 

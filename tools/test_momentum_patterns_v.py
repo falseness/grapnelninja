@@ -69,7 +69,10 @@ INSIDE = {}
 
 START = '''() => { startGame('momentum'); cancelAnimationFrame(game)
     floors.find(f => f instanceof MomentumObstacleFloor).elements = [] }'''
-COURSE = '''() => ({base: GAMEPLAY.momentumBorders.halfWidth,
+# base: the shaft half width the vertical ports are scaled from
+# (MomentumPortVerticalPatternFactory.getScale; the right corridors' half width
+# before TASK-128)
+COURSE = '''() => ({base: GAMEPLAY.momentumBorders.shaftReferenceHalfWidth,
     margin: GAMEPLAY.momentumSpawn.joinMarginHalfWidths * GAMEPLAY.momentumBorders.halfWidth,
     shafts: Object.fromEntries(['up', 'down'].map(dir => {
         const i = dir == 'up' ? 1 : 3, s = momentumCourse.segment(i)

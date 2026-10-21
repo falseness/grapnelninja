@@ -75,25 +75,27 @@ MAX_SHADOW_RATIO = 0.45
 BLUE_STROKE = '#2f86ff'
 # Ninja far right in the corridor (canvas px); the pieces sit round x 300
 NINJA_PX = (1100, 200)
-# Lone pieces in canvas px of the 1280x720 run-right frame
+# Lone pieces in canvas px of the 1280x720 run-right frame (the corridor
+# runs from the ceiling at y 70 to the floor at y 397 at x < 599 since
+# TASK-128's 1.0-height corridor; the pieces sit round its centre line)
 SHAPES = {
-    'rect': {'shape': 'rect', 'x': 300, 'y': 360, 'w': 140, 'h': 100},
-    'triangle': {'shape': 'triangle', 'x': 300, 'y': 360, 'radius': 90},
-    'polygon': {'shape': 'polygon', 'x': 300, 'y': 360, 'angle': 0.6,
+    'rect': {'shape': 'rect', 'x': 300, 'y': 234, 'w': 140, 'h': 100},
+    'triangle': {'shape': 'triangle', 'x': 300, 'y': 234, 'radius': 90},
+    'polygon': {'shape': 'polygon', 'x': 300, 'y': 234, 'angle': 0.6,
                 'points': [[-80, -40], [10, -75], [85, -10], [40, 60], [-60, 50]]},
 }
-# Green between a blue and the floor (y 659 at x < 599)
-SHADOW_PIECES = [('blue', {'shape': 'rect', 'x': 300, 'y': 420, 'w': 140, 'h': 50}),
-                 ('green', {'shape': 'rect', 'x': 300, 'y': 480, 'w': 160, 'h': 24})]
+# Green between a blue and the floor (y 397 at x < 599)
+SHADOW_PIECES = [('blue', {'shape': 'rect', 'x': 300, 'y': 250, 'w': 140, 'h': 50}),
+                 ('green', {'shape': 'rect', 'x': 300, 'y': 300, 'w': 160, 'h': 24})]
 SHOT_PIECES = {
-    'triangle': [('blue', {'shape': 'triangle', 'x': 330, 'y': 380, 'radius': 110}),
-                 ('green', {'shape': 'rect', 'x': 600, 'y': 300, 'w': 60, 'h': 150})],
-    'rotated': [('blue', {'shape': 'rect', 'x': 330, 'y': 380, 'w': 200, 'h': 70, 'angle': 0.45}),
-                ('green', {'shape': 'polygon', 'x': 640, 'y': 330, 'angle': -0.3,
+    'triangle': [('blue', {'shape': 'triangle', 'x': 330, 'y': 250, 'radius': 110}),
+                 ('green', {'shape': 'rect', 'x': 600, 'y': 234, 'w': 60, 'h': 150})],
+    'rotated': [('blue', {'shape': 'rect', 'x': 330, 'y': 250, 'w': 200, 'h': 70, 'angle': 0.45}),
+                ('green', {'shape': 'polygon', 'x': 640, 'y': 234, 'angle': -0.3,
                            'points': [[-60, -40], [60, -40], [70, 40], [-50, 50]]})],
 }
-# Blue left of the floor's corner (599, 659): the down shaft lies behind it
-LEAK_PIECES = [('blue', {'shape': 'rect', 'x': 530, 'y': 610, 'w': 60, 'h': 30})]
+# Blue left of the floor's corner (599, 397): the down shaft lies behind it
+LEAK_PIECES = [('blue', {'shape': 'rect', 'x': 530, 'y': 348, 'w': 60, 'h': 30})]
 LEAK_GRID = 12
 LEAK_MARGIN = 12
 LEAK_TOLERANCE = 0.02
