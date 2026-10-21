@@ -137,3 +137,53 @@ All new terrain uses the existing solid gray surface and deterministic polygons.
 staggered acquisition and a deliberate local miss followed by lower-anchor
 recovery, plus trusted touch acquisition and lift from the recovery balcony. The overview is an annotated map of the actual runtime collision
 vertices. All evidence honors `GRAPPLE_OVER_EVIDENCE_DIR`.
+
+### Replacement movement envelopes (TASK-560)
+
+`GRAPPLE_OVER_MOVEMENT` in `mountain.js` freezes the measured authoring
+constants. `tools/grapple_over_metrics.js` is a test-only playground loaded
+explicitly by `Task560Tests`; it does not activate replacement geometry.
+The legacy mountain, its range, classic/bad, input bindings, camera scale
+0.375, gravity, pull and bounce remain unchanged.
+
+Each isolated fixture starts at rest, 80 units before the takeoff panel's
+right edge and one unit above player-radius clearance. Both panel tops are
+at y=1000, with thickness 60. Opening/recovery panels are 540 units long;
+other landing panels are at least 360. The small 160 × 80 anchor face is
+not an intended landing: tests reject any top contact with it. Side/underside
+launch contact is permitted. There are no intervening stepping stones.
+
+| Pattern | Range | Panel length | Edge gap | Anchor left offset from start x | Anchor top above start resting center | Release tick |
+| --- | --- | --- | --- | --- | --- | --- |
+| Opening | 360 | 540 | 252 | 180 | 180 | 30 |
+| Base | 360 | 360 | 216 | 120 | 180 | 24 |
+| Upgraded | 540 | 360 | 324 | 180 | 180 | 30 |
+
+Aim at the anchor center (left +80, top +40). Anchor underside clearance
+above the panels is 100 + player radius. Player diameter and exact measured
+reach are recorded in `artifacts/TASK-560/metrics.json`. Release times use
+60 Hz physics ticks, including shot travel. These are measured successful
+examples, not maximum jumps or a claim that upgrade range is necessary for
+every upgraded encounter. The bounded 450-candidate grid samples opening
+gaps 144/198/252, base 216/324/432 and upgraded 324/432/540/648, anchor
+horizontal offsets 120/180/240, heights 180/240/300 and releases
+12/18/24/30/36 ticks. Unsuccessful candidates remain in the metrics.
+
+Every selected transfer must acquire its anchor and reach the landing's top
+after at least six consecutive detached, contact-free physics ticks. Separate
+release perturbations are ±100 ms for opening, ±50 ms later; separate
+horizontal aim perturbations are ±12 CSS px opening, ±8 CSS px later.
+Both desktop mouse (1280×720) and genuine CDP touch events (844×390) run
+nominal and each perturbation. This measures horizontal aim tolerance,
+not a two-dimensional error disk. Holding the original shot is observed for
+150 ticks (2500 ms) and must fail the intended top landing.
+
+The proof covers isolated launch/release/flight fixtures, not a continuous
+mountain run. Historical v3 geometry suites and their evidence remain intact;
+their old coordinates do not describe this preview playground. No checkpoint,
+restore, death, teleport, activation, or publishing is part of these transfers.
+Changed dependencies are the authoring constants, test-only playground,
+focused test class and this documentation. Existing range/rope/input regression
+proof is `artifacts/TASK-559/`; unchanged physics is also covered there.
+Source hashes in the new proof identify the tested inputs independently of a
+subsequent commit moving HEAD.

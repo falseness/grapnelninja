@@ -1252,3 +1252,18 @@ function loadMountainLevel(manifest = GRAPPLE_OVER_PREVIEW ? GRAPPLE_OVER_REPLAC
     return loadFixedLevel({...validateMountainManifest(manifest),
         layoutId: 'grapple-over-legacy-v3', profile: MODE_DEFINITIONS.grapple_over})
 }
+
+// Measured replacement authoring envelopes (TASK-560). Test-only playground
+// consumes these; activation and full-mountain placement are separate work.
+const GRAPPLE_OVER_MOVEMENT = Object.freeze({
+    panelThickness: 60,
+    minimumLandingLength: 360,
+    openingRecoveryLength: 540,
+    anchorFace: Object.freeze({width: 160, height: 80, landingSurface: false}),
+    observationTicks: 150,
+    patterns: Object.freeze([
+        Object.freeze({name:'opening',radius:360,width:540,gap:252,dx:180,dy:180,release:30}),
+        Object.freeze({name:'base',radius:360,width:360,gap:216,dx:120,dy:180,release:24}),
+        Object.freeze({name:'upgraded',radius:540,width:360,gap:324,dx:180,dy:180,release:30})
+    ])
+});

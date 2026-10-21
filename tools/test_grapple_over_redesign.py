@@ -491,3 +491,120 @@ class Task559Tests(unittest.TestCase):
         self.assertEqual({k:v for k,v in traces[0].items() if k!='range'},{k:v for k,v in traces[1].items() if k!='range'})
         self.write('attached-rope.json',dict(profiles=traces,equal_except_range=True))
         print('PASS attached rope: legacy/replacement identical acquired, physical wrap, 12 attached steps beyond 1080, release velocity; no new automatic snap')
+
+
+class Task560Tests(unittest.TestCase):
+    """Bounded isolated movement measurements; not continuous gameplay."""
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task560Tests')
+        Task558Tests.setUpClass.__func__(cls)
+        cls.config['source_hashes']['tools/grapple_over_metrics.js'] = hashlib.sha256(
+            (ROOT/'tools/grapple_over_metrics.js').read_bytes()).hexdigest()
+        cls.config['touch_viewport'] = {'width':844,'height':390}
+        cls.config['simulation'] = 'isolated fixtures; production physics; synthetic bounded search, trusted final inputs'
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK560_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+
+    def page(self, touch=False):
+        p=Task559Tests.page(self,touch=touch)
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_metrics.js'))
+        return p
+
+    def check_transfer(self,r):
+        self.assertTrue(r['acquired'])
+        self.assertTrue(r['landed'])
+        self.assertGreaterEqual(r['landingAir'],6)
+        self.assertFalse(r['anchorTopContact'])
+        landings=[s for s in r['rows'] if any(c['id']=='landing' and c['ny']<-.9 for c in s['contacts'])]
+        self.assertTrue(landings)
+
+    def test_01_bounded_grid_metrics(self):
+        p=self.page()
+        data=p.evaluate('''() => {
+          const trials=[];
+          for(const [name,radius,width,gaps] of [['opening',360,540,[144,198,252]],['base',360,360,[216,324,432]],['upgraded',540,360,[324,432,540,648]]])
+          for(const gap of gaps)for(const dx of [120,180,240])for(const dy of [180,240,300])for(const release of [12,18,24,30,36]) {
+            const c={name,radius,width,gap,dx,dy,release},r=METRICS.run(c);
+            trials.push({...c,acquired:r.acquired,landed:r.landed,landingAir:r.landingAir,anchorTopContact:r.anchorTopContact,
+              success:r.acquired&&r.landed&&r.landingAir>=6&&!r.anchorTopContact});
+          }
+          const selected=GRAPPLE_OVER_MOVEMENT.patterns.map(c=>({pattern:c,setup:METRICS.setup(c),result:METRICS.run(c)}));
+          return {trials,selected,dimensions:GRAPPLE_OVER_MOVEMENT,cameraScale:scale[version],
+            physics:{gravity:GRAVITY,pull:grappleSpeed,stepMs:physicsStepMs,cyclesPerTick},scope:'isolated fixtures, no continuous gameplay claim'};
+        }''')
+        self.assertEqual(len(data['trials']),450)
+        self.assertTrue(any(r['success'] for r in data['trials']))
+        self.assertTrue(any(not r['success'] for r in data['trials']))
+        self.assertEqual(data['cameraScale'],.375)
+        for s in data['selected']:
+            self.check_transfer(s['result'])
+            self.assertLessEqual(s['setup']['reach'],s['pattern']['radius'])
+            self.assertGreaterEqual(s['pattern']['width'],540 if s['pattern']['name']=='opening' else 360)
+        data.update(self.config)
+        self.write('metrics.json',data)
+        print('PASS metrics: 450 candidates; 3 selected; reachable anchors; landingAir>=6; no anchor-top landing; widths 540/360/360')
+
+    def real_run(self,p,c,touch,dt=0,aim=0,held=False):
+        setup=p.evaluate('c=>METRICS.setup(c)',c)
+        xy=p.evaluate('p=>METRICS.client(p)',setup);xy['x']+=aim
+        session=p.context.new_cdp_session(p) if touch else None
+        if touch: session.send('Input.dispatchTouchEvent',dict(type='touchStart',touchPoints=[xy]))
+        else: p.mouse.move(xy['x'],xy['y']);p.mouse.down()
+        release=c['release']+dt
+        p.evaluate('n=>METRICS.step(n)',release)
+        if not held:
+            if touch: session.send('Input.dispatchTouchEvent',dict(type='touchEnd',touchPoints=[]))
+            else: p.mouse.up()
+        p.evaluate('n=>METRICS.step(n)',150-release)
+        result=p.evaluate('METRICS.result()')
+        if held:
+            if touch: session.send('Input.dispatchTouchEvent',dict(type='touchEnd',touchPoints=[]))
+            else: p.mouse.up()
+        if session: session.detach()
+        self.assertTrue(result['inputs'])
+        self.assertTrue(all(i['trusted'] for i in result['inputs']))
+        self.assertEqual(result['inputs'][0]['type'],'touchstart' if touch else 'mousedown')
+        self.assertAlmostEqual(result['inputs'][0]['x'],xy['x'],delta=1)
+        if not held:self.assertEqual(result['inputs'][1]['tick'],release)
+        return dict(pattern=c,device='touch' if touch else 'mouse',viewport=p.viewport_size,
+                    releaseOffsetMs=dt*setup['stepMs'],aimOffsetCSSpx=aim,aimAxis='x',
+                    requestedClient=xy,setup=setup,result=result)
+
+    def test_02_release_aim_tolerance(self):
+        rows=[]
+        for touch in [False,True]:
+            p=self.page(touch)
+            for c in p.evaluate('GRAPPLE_OVER_MOVEMENT.patterns'):
+                ticks,px=(6,12) if c['name']=='opening' else (3,8)
+                for label,dt,aim in [('nominal',0,0),('early',-ticks,0),('late',ticks,0),('aim-minus',0,-px),('aim-plus',0,px)]:
+                    r=self.real_run(p,c,touch,dt,aim);r['case']=label
+                    self.write('tolerance.json',dict(cases=rows+[r],source_hashes=self.config['source_hashes']))
+                    with self.subTest(device=r['device'],pattern=c['name'],case=label): self.check_transfer(r['result'])
+                    rows.append(r)
+        self.assertEqual(len(rows),30)
+        self.write('tolerance.json',dict(cases=rows,source_hashes=self.config['source_hashes']))
+        print('PASS tolerance: 30 trusted mouse/touch cases; opening +/-100 ms and +/-12 CSS px; later +/-50 ms and +/-8 CSS px')
+
+    def test_03_held_controls_and_capture(self):
+        rows=[];images=[]
+        for touch in [False,True]:
+            p=self.page(touch)
+            for c in p.evaluate('GRAPPLE_OVER_MOVEMENT.patterns'):
+                r=self.real_run(p,c,touch,held=True)
+                self.assertTrue(r['result']['acquired']);self.assertFalse(r['result']['landed'])
+                self.assertEqual(r['result']['ticks'],150);rows.append(r)
+                if not touch:
+                    p.evaluate('''c=>{METRICS.setup(c);screen.x=250;screen.y=-200;TUTORIAL_HINT.visible=false;draw()}''',c)
+                    im=Image.open(io.BytesIO(p.screenshot())).convert('RGB')
+                    ImageDraw.Draw(im).text((30,100),f"{c['name']}: panels {c['width']} x 60; edge gap {c['gap']}; range {c['radius']}",fill='white')
+                    images.append(im)
+        sheet=Image.new('RGB',(1280,720*3))
+        for i,im in enumerate(images):sheet.paste(im,(0,720*i))
+        sheet.save(self.out/'metrics-sheet.jpg',quality=85)
+        with Image.open(self.out/'metrics-sheet.jpg') as im: im.load();self.assertEqual(im.size,(1280,2160))
+        self.write('controls.json',dict(observationTicks=150,observationMs=2500,cases=rows,source_hashes=self.config['source_hashes']))
+        print('PASS controls: 6 acquired held-grapple controls fail top landing within 150 ticks / 2500 ms; metrics-sheet.jpg decoded 1280x2160')
