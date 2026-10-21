@@ -14,7 +14,10 @@ Y re-centres by the ninja's last step.
 Scripted drives (rAF loop stopped, obstacle floor emptied, invulnerable
 ninja, one calcPhysics() a cycle, the ninja's velocity set every cycle with
 gravity cancelled) on scripted courses right -> right -> right, right -> up
--> right and right -> down -> right, in segment 1; 'enter' (right course: the
+-> right and right -> down -> right, in segment 1; 'noLeftUp' / 'noLeftDown'
+drive on through the shaft into the right segment after it (the corridor X
+target never goes right of the view centred on the next shaft, so the camera
+never moves left); 'enter' (right course: the
 ninja put at fracX 0.7 moving right at the speed cap) and 'upOffset' (up
 course: the view put 600 world units right of the shaft centre line, the
 ninja moving straight up) time the catch-up. Per cycle the drive keeps
@@ -44,7 +47,9 @@ COURSES = {'right': [0.99, 0.0, 0.99, 0.0, 0.99],
            'down': [0.99, 0.9, 0.9, 0.99, 0.5]}
 COURSES['enter'] = COURSES['right']
 COURSES['upOffset'] = COURSES['up']
-DIRS = {'enter': 'right', 'upOffset': 'up'}
+COURSES['noLeftUp'] = COURSES['up']
+COURSES['noLeftDown'] = COURSES['down']
+DIRS = {'enter': 'right', 'upOffset': 'up', 'noLeftUp': 'up', 'noLeftDown': 'down'}
 EPS = 1e-6
 
 DRIVE = '''(kind) => {
@@ -69,7 +74,8 @@ DRIVE = '''(kind) => {
         if (!free) { ninja.speedX = vx; ninja.speedY = vy - g }
         const row = [phase, fx(), fy()], cam = [-screen.x, -screen.y], vel = [ninja.speedX, ninja.speedY + g]
         calcPhysics()
-        rows.push(row.concat([fx(), fy(), -screen.x - cam[0], -screen.y - cam[1], screen.holdY, vel[0], vel[1]]))
+        rows.push(row.concat([fx(), fy(), -screen.x - cam[0], -screen.y - cam[1], screen.holdY, vel[0], vel[1],
+                              screen.ninjaSegment, -screen.x + W / 2]))
     }
     // approach: the centre line through segment 0, then 0.6 view heights
     // into segment 1
@@ -84,7 +90,19 @@ DRIVE = '''(kind) => {
     }
     const segmentAtApproach = screen.segmentIndex
     let startCentreOff = null
-    if (kind == 'enter') {
+    if (kind == 'noLeftUp' || kind == 'noLeftDown') {
+        // on along the centre line: the rest of the shaft, then 0.6 view
+        // heights into the right segment after it
+        const rest = [[ninja.x, ninja.y], [seg.x1, seg.y1], [segs[2].x0 + 0.6 * H, segs[2].y0]]
+        for (let k = 0; k + 1 < rest.length; ++k) {
+            const [x0, y0] = rest[k], [x1, y1] = rest[k + 1]
+            const len = Math.hypot(x1 - x0, y1 - y0), ux = (x1 - x0) / len, uy = (y1 - y0) / len
+            for (let s = 0; s < len; s += v) {
+                ninja.x = x0 + ux * s; ninja.y = y0 + uy * s
+                cycle('through', ux * v, uy * v)
+            }
+        }
+    } else if (kind == 'enter') {
         ninja.x = -screen.x + 0.7 * W
         for (let n = 0; n < Math.ceil(0.35 * W / catchUp) + 60; ++n) cycle('chase', v, 0)
     } else if (kind == 'upOffset') {
@@ -125,11 +143,11 @@ DRIVE = '''(kind) => {
     }
     return {dir: seg.dir, segX: seg.x0, W, H, v, catchUp, second, borderX: screen.borderX / W, segmentAtApproach,
             segmentIndex: screen.segmentIndex, viewCentreX: -screen.x + W / 2, startCentreOff,
-            backTravel: screen.backTravel,
+            backTravel: screen.backTravel, shaftHalfWidth: momentumSegmentHalfWidth(seg),
             ninjaRadius: ninja.radius, sameNinja: ninja === n0, deaths: lethalDeaths - deaths0, rows}
 }'''
 
-PHASE, FX0, FY0, FX1, FY1, MX, MY, HOLD, VX, VY = range(10)
+PHASE, FX0, FY0, FX1, FY1, MX, MY, HOLD, VX, VY, SEG, VCX = range(12)
 
 
 class MomentumViewTriggerTests(unittest.TestCase):
@@ -292,6 +310,32 @@ class MomentumViewTriggerTests(unittest.TestCase):
 
     def test_right_no_jump(self):
         self.check_no_jump('right')
+
+    # Driving right -> shaft -> right along the centre line at the speed cap:
+    # the corridor X target is capped at the view centred on the shaft, so
+    # the camera never moves left and the view is centred on the shaft's
+    # first cycle
+    def check_no_left(self, kind):
+        d = self.drive(kind)
+        rows = d['rows']
+        first = next(k for k, r in enumerate(rows) if r[SEG] == 1)
+        corridor = [r for r in rows[:first] if r[SEG] == 0]
+        limit = 0.5 + d['shaftHalfWidth'] / d['W']
+        self.note(f'{kind}.noLeft', {'cycles': len(rows), 'minCamStepX': min(r[MX] for r in rows),
+                                     'firstShaftCycle': first, 'firstShaftCentreOff': rows[first][VCX] - d['segX'],
+                                     'corridorMaxFracX': max(r[FX1] for r in corridor), 'fracXLimit': limit,
+                                     'endSegment': d['segmentIndex']})
+        self.assertGreaterEqual(min(r[MX] for r in rows), -1e-9)
+        self.assertLessEqual(abs(rows[first][VCX] - d['segX']), EPS)
+        self.assertTrue(corridor)
+        self.assertLessEqual(max(r[FX1] for r in corridor), limit)
+        self.assertEqual(d['segmentIndex'], 2)
+
+    def test_no_left_right_up_right(self):
+        self.check_no_left('noLeftUp')
+
+    def test_no_left_right_down_right(self):
+        self.check_no_left('noLeftDown')
 
     # Shafts
     # The view slides toward the shaft centre line while the ninja moves

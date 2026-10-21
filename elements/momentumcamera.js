@@ -8,8 +8,10 @@
 // closes even while the ninja keeps moving or moves straight along a shaft:
 // in a right corridor the ninja on the borderX line
 // (GAMEPLAY.cameraBorderWidthPercent, like bad mode; only while the ninja is
-// past it, never left), in a shaft the shaft's centre line in the view
-// centre. Y re-centres the ninja by its last step. What leaves the view
+// past it, never left) but never right of the view centred on the next shaft,
+// so the ninja runs on from that line toward the shaft centre and enters the
+// shaft with the view already centred; in a shaft the shaft's centre line in
+// the view centre (with the corridor cap it only ever moves right there). Y re-centres the ninja by its last step. What leaves the view
 // behind the travel direction is deleted.
 // Unit direction of a course segment (tests drive the ninja with it)
 function segmentDirection(dir)
@@ -114,10 +116,21 @@ class MomentumScreen extends Screen
         // X slides toward its target at most at the ninja's x speed plus the
         // catch-up step (the lag closes while the ninja keeps moving): in a
         // right corridor the ninja on the borderX line, only while it is past
-        // it (never left); in a shaft the shaft's centre line in the view centre
+        // it (never left) and capped at the next shaft centred; in a shaft
+        // the shaft's centre line in the view centre
         const step = Math.abs(ninja.speedX) + GAMEPLAY.momentumCamera.catchUpHeightRatio * H
         if (segment.dir == 'right')
-            this.speedX = Math.max(-step, Math.min(0, this.borderX - ninja.x - this.x))
+        {
+            // Never right of the view centred on the next shaft (past
+            // right->right joins), so the view waits there for the ninja
+            // instead of sliding back left inside the shaft
+            let next = this.ninjaSegment + 1
+            while (this.course.segment(next).dir == 'right')
+                ++next
+            const toTarget = Math.max(this.borderX - ninja.x - this.x,
+                                      width / scale[version] / 2 - this.course.segment(next).x0 - this.x)
+            this.speedX = Math.max(-step, Math.min(0, toTarget))
+        }
         else
             this.speedX = Math.max(-step, Math.min(step, width / scale[version] / 2 - segment.x0 - this.x))
         // Up shaft: the view only goes up (this.y grows), down shaft: only

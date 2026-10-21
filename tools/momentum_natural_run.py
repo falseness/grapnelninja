@@ -26,7 +26,8 @@ the ninja's y step / H outside hold frames) and framesOffCentre (> 1e-6);
 framesCamJump (camStep > the larger ninja step of this and the last frame +
 one unit plus the X catch-up step (GAMEPLAY.momentumCamera.catchUpHeightRatio
 x H) a cycle + 0.01); framesHold; framesShaftWallOut (in a shaft, one of
-its wall faces is out of view). The worst off-centre frame and the
+its wall faces is out of view); framesCamLeft (the camera x moved left by
+more than 1e-6 over the frame). The worst off-centre frame and the
 max fracX frame are replayed from the recorded actions, drawn and saved with
 the X line and the middle line as shots/offcentre-seed<n>.png and
 shots/maxfracx-seed<n>.png.
@@ -91,7 +92,7 @@ STEP = '''([n, replay]) => {
         out.push([__mb.tick, c.dir, r4(c.fx), r4(c.fy), r4(Math.hypot(nx, ny)), r4(Math.hypot(cx, cy)),
                   c.hold ? 1 : 0, c.out ? 1 : 0,
                   // not in trace.json: exact values for the counts
-                  c.fx, c.fy, Math.abs(nx), Math.abs(ny), Math.hypot(nx, ny), Math.hypot(cx, cy), c.wall ? 1 : 0])
+                  c.fx, c.fy, Math.abs(nx), Math.abs(ny), Math.hypot(nx, ny), Math.hypot(cx, cy), c.wall ? 1 : 0, cx])
         rec.prev = c
     }
     return {rows: out, dead: __mb.deathTick, sameNinja: ninja === rec.ninja0, hp: momentumState.hp,
@@ -191,6 +192,7 @@ def summarise(rows, setup):
             'framesCamJump': len(jumps), 'firstCamJump': jumps[0] if jumps else None,
             'framesHold': sum(1 for r in rows if r[6]),
             'framesShaftWallOut': sum(1 for r in rows if r[14]),
+            'framesCamLeft': sum(1 for r in rows if r[15] < -1e-6),
             'framesByDir': {d: sum(1 for r in rows if r[1] == d) for d in 'rud'}}
 
 
@@ -252,11 +254,11 @@ def main(seed, out):
     path.write_text(json.dumps(data, separators=SEP))
     print('seed %d head %s viewport %dx%d frames %d out of view %d maxFracX %s beyondX %d maxBeyondXRun %d (start %s) '
           'maxOffCentre %.6f '
-          'offCentre %d camJump %d hold %d shaftWallOut %d byDir %s death %s' % (
+          'offCentre %d camJump %d (first %s) camLeft %d hold %d shaftWallOut %d byDir %s death %s' % (
               seed, head[:7], VIEWPORT[0], VIEWPORT[1], summary['frames'], summary['framesOutOfView'],
               summary['maxFracX'], summary['framesBeyondX'], summary['maxBeyondXRun'], summary['maxBeyondXRunStart'],
               summary['maxOffCentre'], summary['framesOffCentre'],
-              summary['framesCamJump'], summary['framesHold'], summary['framesShaftWallOut'], summary['framesByDir'],
+              summary['framesCamJump'], summary['firstCamJump'], summary['framesCamLeft'], summary['framesHold'], summary['framesShaftWallOut'], summary['framesByDir'],
               summary['death']), flush=True)
 
 if __name__ == '__main__':
