@@ -12,7 +12,8 @@
 // past it, never left) but never right of the view centred on the next shaft,
 // so the ninja runs on from that line toward the shaft centre and enters the
 // shaft with the view already centred; in a shaft the shaft's centre line in
-// the view centre (with the corridor cap it only ever moves right there). Y re-centres the ninja by its last step. What leaves the view
+// the view centre (it can move left there too, after the ninja drops back from
+// the corridor into the shaft it came from, hasLeftBack). Y re-centres the ninja by its last step. What leaves the view
 // behind the travel direction is deleted.
 // Unit direction of a course segment (tests drive the ninja with it)
 function segmentDirection(dir)

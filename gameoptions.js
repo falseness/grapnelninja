@@ -131,11 +131,13 @@ const GAMEPLAY = Object.freeze({
     }),
     // Momentum camera (elements/momentumcamera.js), lengths in view heights:
     // how far past the view edge left behind elements are deleted; the gap
-    // kept between the ninja start and the first shaft's left wall body, and
+    // kept between the ninja start and the first shaft's left wall line plus
+    // the wall thickness (not the backing), and
     // how far right of the start view centre the first shaft's centre line
     // is at least (index.html firstMinLen); how much faster than the ninja's
-    // x speed the camera's X may close its lag a physics cycle (a 0.35 view
-    // width lag closes in about 1.3 s at 16:9).
+    // x speed the camera's X may close its lag a physics cycle (0.002 H x 480
+    // cycles/s = 0.96 H/s, so a 0.35 view width lag, 0.62 H at 16:9, closes in
+    // about 0.65 s).
     momentumCamera: Object.freeze({
         deletionMarginHeightRatio: 0.1,
         shaftMarginHeightRatio: 0.02,

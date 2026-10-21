@@ -528,7 +528,7 @@
                 ]
             }
             // Momentum: course-driven borders (elements/momentumborders.js)
-            // around the bad-mode obstacles until momentum obstacles replace them.
+            // around the momentum obstacles (MomentumObstacleFloor).
             let momentumCourse = null
             function startMomentumVersion()
             {
@@ -540,8 +540,8 @@
                     visualEffects.background.prepareDepthGrade()
                 // The first join (the first shaft's centre line) at least
                 // firstShaftGapHeightRatio right of the start view centre, and
-                // the shaft's left wall body shaftMarginHeightRatio right of
-                // the ninja start.
+                // the shaft's left wall line plus the wall thickness (not the
+                // backing) shaftMarginHeightRatio right of the ninja start.
                 const ninjaStartX = 0.2 * width
                 const shaftHalfWidth = momentumShaftHalfWidth()
                 const startCentreX = width / scale.momentum / 2

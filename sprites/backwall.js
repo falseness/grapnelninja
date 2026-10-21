@@ -60,8 +60,8 @@ class BackWall extends LeftWall
         ctx.rect(screen.x + this.x + this.points[0].x, screen.y + top,
                  this.points[1].x - this.points[0].x, Math.abs(this.points[2].y))
         ctx.clip()
-        this.drawBadVersionPolygon(isBadLikeVersion(version) ? this.wallFill : this.fill,
-                                   this.stroke, {baseFillStyle: this.fill, coreColor: this.wallCore})
+        this.drawBadVersionPolygon(this.wallFill, this.stroke,
+                                   {baseFillStyle: this.fill, coreColor: this.wallCore})
         ctx.restore()
     }
 }
