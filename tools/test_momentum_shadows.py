@@ -32,9 +32,12 @@ tools/momentum_fx_support.py this suite checks:
   decision (artifacts/TASK-067/perf-ablation.json). With
   MOMENTUM_SHADOWS_PARENT set, that parent is measured as well and the
   tree median <= 1.25x its median;
-- switch off: the 4 scenes with MOMENTUM_FX off at both viewports and the
-  classic and bad frames of test_visual_gallery with the switch on equal the
-  parent commit (decoded maxDelta 0).
+- switch off: the classic and bad frames of test_visual_gallery with the
+  switch on equal the parent commit (decoded maxDelta 0); the 4 scenes with
+  MOMENTUM_FX off at both viewports equal the same tree with the deep
+  shadows off (SHADOWS_OFF) (TASK-149: the parent's corridors and camera
+  predate TASK-128/133; MOMENTUM_SHADOWS_PARENT set: that revision
+  instead), outside the pieces.
 
 MOMENTUM_SHADOWS_EVIDENCE_DIR (default /tmp/momentum-shadows) receives
 shadows.json, wall-leak.json, perf.json, switch-off-identical.json
@@ -119,6 +122,10 @@ PERF_SCRIPT = r'''frames => {
 }'''
 SHOTS = [('mid-shaft', (1280, 720)), ('blue-corner', (1280, 720)), ('run-right', (1280, 720)),
          ('mid-shaft', (390, 844))]
+
+# The deep shadows off (momentumLight.shadowDepth 0; the hard cuts have no
+# style value): baseline of the switch-off scenes (TASK-149)
+SHADOWS_OFF = [('shadowDepth: 0.92', 'shadowDepth: 0')]
 
 
 def compact(data):
@@ -273,6 +280,8 @@ class MomentumShadowsTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with SHADOWS_OFF (TASK-149)
+        cls.momentum_parent = os.environ.get('MOMENTUM_SHADOWS_PARENT') or None
 
     @classmethod
     def tearDownClass(cls):
@@ -393,7 +402,7 @@ class MomentumShadowsTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, SHADOWS_OFF, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -410,7 +419,8 @@ class MomentumShadowsTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'parent': parent.rev, 'tree': tree.rev,
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': SHADOWS_OFF}, 'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:

@@ -12,10 +12,13 @@ GAMEPLAY.momentumFadeMs, 1280x720):
   with the blue taken off its floor (maxDelta 0: nothing of it is drawn, lit
   or occluding); a second run gives maxDelta 0 (deterministic); the used
   green still fades (alpha 1 - f);
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports equal the parent commit outside the crystal pieces
-  (fx.assert_equal_outside_pieces, TASK-127), the classic and bad
-  test_visual_gallery frames with the switch on whole (decoded maxDelta 0). (The TASK-061
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit whole (decoded maxDelta 0); the
+  4 harness scenes with MOMENTUM_FX off at both viewports equal the same tree
+  (SHARDS_OFF: nothing left to patch, the shards are retired) outside the
+  crystal pieces (fx.assert_equal_outside_pieces, TASK-127) (TASK-149: the
+  parent's corridors and camera predate TASK-128/133;
+  MOMENTUM_BLUE_SHARDS_PARENT set: that revision instead). (The TASK-061
   usedBlueSwitchOff frames are retired: a used blue no longer fades with
   either switch.)
 
@@ -69,6 +72,11 @@ USE = r'''([f, drop]) => {
             greenAlpha: green.getAlpha()}
 }'''
 
+# The suite's effect off: nothing to patch, the TASK-061 shards are retired
+# (TASK-076) and have no style value; baseline of the switch-off scenes
+# (TASK-149): the same tree unpatched
+SHARDS_OFF = []
+
 
 def compact(data):
     return json.dumps(data, separators=(',', ':'))
@@ -105,6 +113,8 @@ class MomentumBlueShardsTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with SHARDS_OFF (TASK-149)
+        cls.momentum_parent = os.environ.get('MOMENTUM_BLUE_SHARDS_PARENT') or None
         cls.result = {}
 
     @classmethod
@@ -140,7 +150,7 @@ class MomentumBlueShardsTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, SHARDS_OFF, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -157,7 +167,8 @@ class MomentumBlueShardsTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'parent': parent.rev, 'tree': tree.rev,
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': SHARDS_OFF}, 'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:

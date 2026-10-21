@@ -17,9 +17,12 @@ lights are reused objects. Checks (tools/momentum_fx_support.py scenes,
   has other corridors and other later effects); the sample/light objects are the same after a second
   draw (no per-frame allocation); with the tail sample off screen on an
   empty pool the later samples still get lights (no hole, TASK-071);
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports and the classic and bad test_visual_gallery frames with the switch
-  on equal the parent commit (decoded maxDelta 0);
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit (decoded maxDelta 0); the 4
+  harness scenes with MOMENTUM_FX off at both viewports equal the same tree
+  with the trail light off (TRAIL_OFF) (TASK-149: the parent's corridors and camera
+  predate TASK-128/133; MOMENTUM_TRAIL_LIGHT_PARENT set: that revision
+  instead), outside the pieces;
 - shots/: run-right and blue-hit at 1280x720, compare-run-right.png and
   compare-blue-hit.png (vs the concepts).
 
@@ -101,6 +104,8 @@ class MomentumTrailLightTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with TRAIL_OFF (TASK-149)
+        cls.momentum_parent = os.environ.get('MOMENTUM_TRAIL_LIGHT_PARENT') or None
         cls.result = {}
 
     @classmethod
@@ -191,7 +196,7 @@ class MomentumTrailLightTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, TRAIL_OFF, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -208,7 +213,8 @@ class MomentumTrailLightTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'parent': parent.rev, 'tree': tree.rev,
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': TRAIL_OFF}, 'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:

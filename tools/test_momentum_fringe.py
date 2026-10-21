@@ -18,9 +18,12 @@ measurement: one near the left screen side, one at the screen centre):
 - allocations.json: canvases created (document.createElement('canvas'),
   OffscreenCanvas) during the draws at T0 + 10..140 ms after the first fringe
   draw at T0: 0;
-- switch-off-identical.json: the 4 harness scenes with MOMENTUM_FX off at both
-  viewports and the classic and bad test_visual_gallery frames with the switch
-  on equal the parent commit (decoded maxDelta 0);
+- switch-off-identical.json: the classic and bad test_visual_gallery frames
+  with the switch on equal the parent commit (decoded maxDelta 0); the 4
+  harness scenes with MOMENTUM_FX off at both viewports equal the same tree
+  with the fringe off (FRINGE_OFF) (TASK-149: the parent's corridors and camera
+  predate TASK-128/133; MOMENTUM_FRINGE_PARENT set: that revision
+  instead), outside the pieces;
 - shots/: the blue-hit scene at 50 and 200 ms (1280x720), a 3x crop of the
   left screen side at 50 ms (fringe | no fringe) and compare-50ms.png against
   artifacts/lighting-concept/8-blue-hit-fx.png.
@@ -187,6 +190,8 @@ class MomentumFringeTests(unittest.TestCase):
     def setUpClass(cls):
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         cls.parent = parent_rev()
+        # momentum switch-off baseline: None = the same tree with FRINGE_OFF (TASK-149)
+        cls.momentum_parent = os.environ.get('MOMENTUM_FRINGE_PARENT') or None
         cls.no_fringe = fx.FxHarness('worktree', fx.harness().browser, style_patch=FRINGE_OFF)
         cls.result = {}
 
@@ -254,7 +259,7 @@ class MomentumFringeTests(unittest.TestCase):
         for scene in fx.SCENES:
             for viewport in fx.VIEWPORTS:
                 new = fx.capture(scene, viewport, fx_on=False)
-                base = fx.capture(scene, viewport, fx_on=False, rev=self.parent)
+                base = fx.switch_off_baseline(scene, viewport, FRINGE_OFF, self.momentum_parent)
                 self.assertFalse(new.info['fx'])
                 name = f'momentum-{scene}-{viewport[0]}x{viewport[1]}'
                 pairs[name] = (new, base)
@@ -271,7 +276,8 @@ class MomentumFringeTests(unittest.TestCase):
         for row in rows:
             print(row['scene'], 'fx', row['fx'], 'maxDelta', row['maxDelta'])
         (EVIDENCE_DIR / 'switch-off-identical.json').write_text(compact({
-            'parent': parent.rev, 'tree': tree.rev, 'count': len(rows),
+            'parent': parent.rev, 'tree': tree.rev,
+            'momentumBaseline': self.momentum_parent or {'tree': tree.rev, 'stylePatch': FRINGE_OFF}, 'count': len(rows),
             'allIdentical': all(r['identical'] for r in rows), 'frames': rows}))
         self.assertEqual(len(rows), 16)
         for row in rows:
