@@ -1267,3 +1267,16 @@ const GRAPPLE_OVER_MOVEMENT = Object.freeze({
         Object.freeze({name:'upgraded',radius:540,width:360,gap:324,dx:180,dy:180,release:30})
     ])
 });
+
+// Isolated replacement teaching examples; not placed in the live mountain.
+// Slowest tested cycle in the 6..10 s calibration range. Blue faces are anchors,
+// not landing pads. The broad solid fixtures permit waiting without bouncing.
+const GRAPPLE_OVER_MOVERS = Object.freeze({
+    width:160, height:80, displacement:720, periodMs:10000,
+    examples:Object.freeze([
+        Object.freeze({axis:'x',min:600,max:1320,startPhase:0,spawnX:500,
+            takeoff:[0,1040,540,60],blue:[600,800,160,80],landing:[1200,1100,540,60]}),
+        Object.freeze({axis:'y',min:80,max:800,startPhase:.5,spawnX:850,
+            takeoff:[800,1040,540,60],blue:[600,80,160,80],landing:[785,400,540,60]})
+    ])
+});

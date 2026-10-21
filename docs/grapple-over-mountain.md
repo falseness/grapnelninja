@@ -187,3 +187,27 @@ focused test class and this documentation. Existing range/rope/input regression
 proof is `artifacts/TASK-559/`; unchanged physics is also covered there.
 Source hashes in the new proof identify the tested inputs independently of a
 subsequent commit moving HEAD.
+
+TASK-561 adds `GRAPPLE_OVER_MOVERS`, two isolated replacement teaching examples
+consumed by `tools/grapple_over_movers.js`. They are not inserted into either
+mountain. Blue anchor faces use the calibrated 160×80 kit, broad waiting and
+landing fixtures are 540×60, and each mover travels 720 units each way. The
+horizontal anchor bridges the gap to a distant landing; the vertical anchor
+raises the player to a landing 640 units above the takeoff. Holding through a
+reversal and releasing near the destination tests transport, not decorative
+motion. The isolated solid waiting/landing fixtures deliberately remove bounce
+scheduling from this mover calibration; they do not prescribe later mountain
+surface roles. Both use the slowest successful tested period, 10 seconds, from
+6/8/10-second trials. Four starting phases permit waiting for the near endpoint
+for less than one cycle, with no pose changes after fixture setup.
+
+Focused verification: `GRAPPLE_OVER_EVIDENCE_DIR=artifacts/TASK-561 python3 -m
+unittest discover -s tools -p test_grapple_over_redesign.py -k Task561Tests -v`.
+The helper calls production `calcPhysics` eight times per tick, observes contact
+and clearance after every substep, and uses trusted mouse input for final
+transfers. Capture replays a proved case separately at 15 fps / 60 simulation Hz.
+It is an isolated scenario, not continuous mountain gameplay. Existing v3
+geometry proofs remain historical; these examples do not require obsolete v3
+coordinates. No carrying, attachment, range, bounce, camera or input behavior
+changes. Earlier range and old-mode proof remains at TASK-559/560; no full-suite
+rerun is needed for new inert authoring constants and test-only fixtures.

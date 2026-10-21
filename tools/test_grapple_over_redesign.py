@@ -608,3 +608,117 @@ class Task560Tests(unittest.TestCase):
         with Image.open(self.out/'metrics-sheet.jpg') as im: im.load();self.assertEqual(im.size,(1280,2160))
         self.write('controls.json',dict(observationTicks=150,observationMs=2500,cases=rows,source_hashes=self.config['source_hashes']))
         print('PASS controls: 6 acquired held-grapple controls fail top landing within 150 ticks / 2500 ms; metrics-sheet.jpg decoded 1280x2160')
+
+
+class Task561Tests(unittest.TestCase):
+    """Isolated mover fixtures only; no continuous mountain gameplay claim."""
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task561Tests')
+        Task558Tests.setUpClass.__func__(cls)
+        cls.config['source_hashes']['tools/grapple_over_movers.js']=hashlib.sha256((ROOT/'tools/grapple_over_movers.js').read_bytes()).hexdigest()
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK561_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write=Task557Tests.write
+
+    def page(self):
+        p=Task559Tests.page(self)
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_movers.js'))
+        return p
+
+    def test_01_dimensions_and_swept_clearance(self):
+        p=self.page()
+        data=p.evaluate('''() => GRAPPLE_OVER_MOVERS.examples.map(spec=>{
+          const m=MOVERS.setup({axis:spec.axis,phase:spec.startPhase}),w=floors[0],positions=[],windows=[];
+          for(let i=0;i<600;i++){w.applyMovers(i*10000/600);const e=w.byId.get('blue');
+            positions.push({ms:i*10000/600,x:e.x,y:e.y});
+            const q=MOVERS.target();windows.push(Math.hypot(q.x-ninja.x,q.y-ninja.y)<=360);}
+          let longest=0,streak=0;for(const yes of [...windows,...windows]){streak=yes?streak+1:0;longest=Math.max(longest,streak)}
+          const blue=spec.blue,bounds={left:spec.axis==='x'?spec.min:blue[0],right:(spec.axis==='x'?spec.max:blue[0])+160,
+            top:spec.axis==='y'?spec.min:blue[1],bottom:(spec.axis==='y'?spec.max:blue[1])+80};
+          const obstacles=m.elements.filter(e=>e.id!=='blue').map(e=>({id:e.id,role:e.role,left:e.x,right:e.x+e.points[1].x,top:e.y,bottom:e.y+e.points[2].y}));
+          return {axis:spec.axis,dimensions:[160,80],endpoints:[spec.min,spec.max],displacement:720,fullCycleDistance:1440,
+            periodMs:10000,speed:144,acquisitionWindowMs:Math.min(600,longest)*10000/600,bounds,positions,obstacles};
+        })''')
+        for r in data:
+            self.assertGreaterEqual(r['displacement'],max(360,2*r['dimensions'][0 if r['axis']=='x' else 1]))
+            self.assertGreaterEqual(r['acquisitionWindowMs'],1000)
+            b=r['bounds']
+            for o in r['obstacles']:
+                self.assertTrue(b['right']<=o['left'] or b['left']>=o['right'] or b['bottom']<=o['top'] or b['top']>=o['bottom'])
+            self.assertEqual(len(r['positions']),600)
+        for r in data:
+            r['acquisitionProbes']=[]
+            for delay in [0,15,30,45,60]:
+                p.evaluate('c=>MOVERS.setup(c)',dict(axis=r['axis'],phase=0 if r['axis']=='x' else .5))
+                p.evaluate('n=>MOVERS.step(n)',delay)
+                xy=p.evaluate('MOVERS.client(MOVERS.target())');p.mouse.move(**xy);p.mouse.down()
+                p.evaluate('MOVERS.step(30)');probe=p.evaluate('MOVERS.result()');p.mouse.up()
+                acquired=[s for s in probe['rows'] if s['attached']]
+                self.assertTrue(acquired,(r['axis'],delay))
+                self.assertTrue(probe['inputs'][0]['trusted'])
+                r['acquisitionProbes'].append(dict(delayTicks=delay,firstAttached=acquired[0],input=probe['inputs'][0]))
+        self.write('movers.json',dict(config=self.config,movers=data))
+        self.write('swept-clearance.json',dict(method='Exact union AABB of axis-aligned translating rectangle, includes every intermediate position',checks=[dict(axis=r['axis'],swept=r['bounds'],obstacles=r['obstacles']) for r in data]))
+        print('PASS dimensions: 2 axes; displacement=720; fullCycleDistance=1440; periodMs=10000; acquisitionWindowMs>=1000; complete swept bounds clear terrain and yellow')
+
+    def test_02_four_phases_and_cycles(self):
+        p=self.page();rows=[];trials=[]
+        for axis in ['x','y']:
+            # Bounded production-physics calibration; retain measurements, not full search traces.
+            candidates=p.evaluate('''axis=>{const out=[];for(const periodMs of [6000,8000,10000]){
+              for(let release=Math.round(periodMs/1000*60*1.35);release<=periodMs/1000*60*1.6;release+=5){
+                MOVERS.setup({axis,periodMs,phase:axis==='x'?0:.5});MOVERS.shot();MOVERS.step(release);MOVERS.release();MOVERS.step(180);
+                const r=MOVERS.result(),height=axis==='x'?1100:400;
+                out.push({periodMs,release,landed:r.rows.some(s=>s.tick>release&&s.contacts.some(c=>c.ny<-.9&&Math.abs(c.y-height)<.01)),minClearance:r.minClearance});
+              }}return out}''',axis)
+            trials.extend(dict(axis=axis,**r) for r in candidates)
+            valid=[r for r in candidates if r['landed'] and r['minClearance']>=-1e-5]
+            self.assertTrue(valid)
+            period=max(r['periodMs'] for r in valid);self.assertEqual(period,10000)
+            release=next(r['release'] for r in valid if r['periodMs']==period)
+            for phase in [0,.25,.5,.75]:
+                m=p.evaluate('c=>MOVERS.setup(c)',dict(axis=axis,periodMs=period,phase=phase))
+                wait=round((((0 if axis=='x' else .5)-phase)%1)*period/1000*60)
+                p.evaluate('n=>MOVERS.step(n)',wait)
+                xy=p.evaluate('MOVERS.client(MOVERS.target())');p.mouse.move(**xy);p.mouse.down()
+                p.evaluate('n=>MOVERS.step(n)',release);p.mouse.up();p.evaluate('MOVERS.step(180)')
+                r=p.evaluate('MOVERS.result()');height=1100 if axis=='x' else 400
+                landed=[s for s in r['rows'] if s['tick']>wait+release and any(c['ny']<-.9 and abs(c['y']-height)<.01 for c in s['contacts'])]
+                attached=[s for s in r['rows'] if s['attached']]
+                self.assertTrue(landed,(axis,phase,release));self.assertTrue(attached)
+                self.assertLessEqual(wait,period/1000*60);self.assertGreaterEqual(r['minClearance'],-1e-5)
+                self.assertTrue(all(i['trusted'] for i in r['inputs']));self.assertEqual(len(r['inputs']),2)
+                self.assertTrue(all(not s['attached'] for s in r['rows'] if s['tick']>wait+release))
+                values=[s['mx' if axis=='x' else 'my'] for s in attached]
+                self.assertAlmostEqual(max(values)-min(values),720,delta=3)
+                self.assertTrue(any(values[i]>values[i-1] for i in range(1,len(values))))
+                self.assertTrue(any(values[i]<values[i-1] for i in range(1,len(values))))
+                rows.append(dict(axis=axis,phase=phase,periodMs=period,waitTicks=wait,releaseTicks=release,landing=landed[0],manifest=m,**r))
+        self.write('phase-tests.json',dict(config=self.config,trials=trials,cases=rows))
+        print('PASS phases: 8 trusted-input transfers; phases 0/0.25/0.5/0.75; attach travel reversal release; waits<one cycle; no penetration/crush/stuck attachment/restart; slowest successful tested cycle=10000 ms')
+
+    def test_03_cycle_capture(self):
+        import imageio_ffmpeg
+        data=json.loads((self.out/'phase-tests.json').read_text())
+        p=self.page();r=next(r for r in data['cases'] if r['axis']=='x' and r['phase']==0)
+        p.evaluate("MOVERS.setup({axis:'x'})")
+        xy=p.evaluate('MOVERS.client(MOVERS.target())');p.mouse.move(**xy);p.mouse.down()
+        ffmpeg=imageio_ffmpeg.get_ffmpeg_exe()
+        encoder_log=(self.out/'encoder.log').open('wb')
+        self.addCleanup(encoder_log.close)
+        encoder=subprocess.Popen([ffmpeg,'-y','-loglevel','error','-threads','1','-filter_threads','1','-f','image2pipe','-vcodec','png','-r','15','-i','-','-c:v','libvpx-vp9','-threads','1','-cpu-used','6','-pix_fmt','yuv420p','-crf','35','-b:v','0',str(self.out/'cycle.webm')],stdin=subprocess.PIPE,stderr=encoder_log)
+        total=r['releaseTicks']+180
+        for tick in range(1,total+1):
+            p.evaluate('MOVERS.step(1)')
+            if tick==r['releaseTicks']:p.mouse.up()
+            if tick%4==0:
+                p.evaluate("screen.x=300;screen.y=-250;TUTORIAL_HINT.visible=false;draw();ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='white';ctx.font='20px sans-serif';ctx.fillText('TASK-561 isolated horizontal mover | '+(MOVERS.result().tick/60).toFixed(2)+' s',30,100);ctx.restore()")
+                encoder.stdin.write(p.screenshot())
+        encoder.stdin.close();code=encoder.wait();encoder_log.close();self.assertEqual(code,0,(self.out/'encoder.log').read_text())
+        frames,seconds=imageio_ffmpeg.count_frames_and_secs(str(self.out/'cycle.webm'))
+        self.assertGreater(seconds,10);self.assertGreater(frames,150)
+        self.write('capture.json',dict(frames=frames,seconds=seconds,simulationHz=60,captureHz=15,sourceCase='x phase 0',releaseTick=r['releaseTicks']))
+        print('PASS cycle.webm: decoded %d frames %.2f seconds; complete 10-second cycle and transfer' % (frames,seconds))
