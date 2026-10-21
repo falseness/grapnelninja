@@ -140,7 +140,7 @@ const GAMEPLAY = Object.freeze({
         deletionMarginHeightRatio: 0.1,
         shaftMarginHeightRatio: 0.02,
         firstShaftGapHeightRatio: 0.5,
-        catchUpHeightRatio: 0.001
+        catchUpHeightRatio: 0.002
     }),
     // Momentum HP (elements/momentumstate.js): hp at every run start (no upper
     // cap) and how many green touches in a row give one hp.
