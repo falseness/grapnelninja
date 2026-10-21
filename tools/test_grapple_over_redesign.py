@@ -1263,3 +1263,160 @@ class Task565Tests(unittest.TestCase):
         total=sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file())
         self.assertLess(total,200_000_000)
         print('PASS inventory: 8 artifacts exist; JSON parses; evidence below 200 MB')
+
+
+class Task566Tests(unittest.TestCase):
+    """Isolated minimal-preview save fixtures, not continuous gameplay."""
+    key = 'grapnelninja.grappleOver.preview.replacement-v1'
+    legacy = {'grapnelninja.records': '{"classic":123,"bad":456}',
+              'grapnelninja.lang': 'en', 'grapnelninja.tutorialDone': 'true',
+              'grapnelninja.time': '90', 'grapnelninja.grappleOver': 'legacy-save-sentinel'}
+
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task566Tests')
+        Task557Tests.setUpClass.__func__(cls)
+
+    write = Task557Tests.write
+
+    def page(self, seed=None, preview=True):
+        ctx = self.browser.new_context(viewport=VIEWPORT, device_scale_factor=1)
+        self.addCleanup(ctx.close)
+        p = ctx.new_page()
+        errors = []
+        p.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        p.add_init_script(SEED_SCRIPT % 1)
+        p.add_init_script("const raf566=window.requestAnimationFrame;window.requestAnimationFrame=fn=>fn.name==='gameLoop'?0:raf566.call(window,fn)")
+        # Seed only once, so reload actually consumes production-written storage.
+        p.add_init_script('if (!sessionStorage.seeded566) { for (const [k,v] of Object.entries(' +
+                          json.dumps({**self.legacy, **(seed or {})}) +
+                          ')) localStorage.setItem(k,v); sessionStorage.seeded566="yes"; }')
+        p.goto(self.url + ('?grapplePreview=replacement-v1' if preview else ''))
+        self.enter(p)
+        return p
+
+    def enter(self, p):
+        wait_for_boot(p)
+        p.evaluate("cancelAnimationFrame(game);window.requestAnimationFrame=()=>0;if(version!=='grapple_over')startGame('grapple_over');cancelAnimationFrame(game)")
+        p.wait_for_function('!unTouch')
+
+    def flush(self, p):
+        p.evaluate('PROGRESS.flushClimb()')
+        p.wait_for_function('k=>localStorage.getItem(k)===JSON.stringify(captureClimbState())', arg=self.key)
+        return json.loads(p.evaluate('k=>localStorage.getItem(k)', self.key))
+
+    def test_01_layout_validation_and_safe_fallback(self):
+        p = self.page()
+        rows = p.evaluate('''() => {
+            const before=captureClimbState(), rows=[];
+            for (const identity of [null,'grapple-over-legacy-v3','wrong-layout']) {
+                const s=structuredClone(before);s.player.x=987654;s.player.y=-987654;
+                if(identity===null)delete s.layoutId;else s.layoutId=identity;
+                const objects=[ninja,grapnel,floors[0]];let error=null;
+                try{restoreClimbState(s)}catch(e){error=e.message}
+                rows.push({identity,payload:s,error,before,after:captureClimbState(),
+                    sameObjects:objects[0]===ninja&&objects[1]===grapnel&&objects[2]===floors[0]});
+            }return rows;
+        }''')
+        fallback = []
+        for row in rows:
+            self.assertEqual(row['error'], 'InvalidClimbState')
+            self.assertEqual(row['before'], row['after'])
+            self.assertTrue(row['sameObjects'])
+            q = self.page({self.key: json.dumps(row['payload'])})
+            result = q.evaluate('''() => ({state:captureClimbState(),spawn:floors[0].level.spawn,
+                range:grappleOverAcquisitionRadius(),notice:document.getElementById('climb-save-notice')?.textContent})''')
+            self.assertIn('Starting at the replacement base.', result['notice'])
+            self.assertEqual(result['state']['player']['x'], result['spawn']['x'])
+            self.assertEqual(result['state']['player']['y'], result['spawn']['y'])
+            self.assertEqual(result['state']['simulationTick'], 0)
+            self.assertEqual(result['range'], 360)
+            self.assertEqual(result['state']['stats']['maxHeight'], 0)
+            fallback.append(result)
+        reset = p.evaluate('''() => {floors[0].rangeUpgraded=true;ninja.y=-400;PROGRESS.resetClimb();
+            return {state:captureClimbState(),spawn:floors[0].level.spawn,range:grappleOverAcquisitionRadius()}}''')
+        self.assertEqual(reset['range'], 360)
+        self.assertFalse(reset['state']['upgrades']['range'])
+        self.assertEqual(reset['state']['simulationTick'], 0)
+        self.assertEqual(reset['state']['player']['x'], reset['spawn']['x'])
+        saved = self.flush(p)
+        modes = []
+        for mode in ['classic', 'bad']:
+            modes.append(p.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);menu.unPause();
+                for(let i=0;i<8;i++)physics();PROGRESS.flush();
+                return {mode:version,record:scoreText.record[m],scale:scale[version]}}''', mode))
+        p.evaluate("startGame('grapple_over');cancelAnimationFrame(game)")
+        self.assertEqual(p.evaluate('captureClimbState()'), saved)
+        storage = p.evaluate('keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]))', list(self.legacy))
+        self.assertGreaterEqual(int(storage['grapnelninja.time']), 90)
+        for key in self.legacy:
+            if key != 'grapnelninja.time':
+                self.assertEqual(storage[key], self.legacy[key])
+        self.assertEqual([r['record'] for r in modes], [123,456])
+        # Legacy serialization version 1 without an identity remains playable
+        # in the original layout, but cannot be imported into the preview.
+        old = self.page({'grapnelninja.grappleOver': ''}, preview=False)
+        legacy = old.evaluate('''() => {const s=captureClimbState();delete s.layoutId;
+            restoreClimbState(s);return {state:captureClimbState(),range:grappleOverAcquisitionRadius()}}''')
+        self.assertEqual(legacy['range'], 1080)
+        self.write('save-compat.json', dict(config=self.config, atomic=rows, fallback=fallback,
+                   reset=reset, sameLayout=saved, storageBefore=self.legacy, storageAfter=storage,
+                   modes=modes, legacy=legacy))
+        print('PASS save-compat: 3 layout identities rejected atomically; replacement-base notice; reset range=360; classic/bad records=123/456 and settings preserved; legacy range=1080')
+
+    def test_02_current_state_continuation(self):
+        p = self.page()
+        rows = []
+        for kind in ['in-air', 'moving-anchor']:
+            initial = p.evaluate('''kind => {
+                const level=structuredClone(replacementMountainLevel(GRAPPLE_OVER_REPLACEMENT));
+                if(kind==='moving-anchor')level.movers=[{id:'fixture-motion',element:'preview-anchor',axis:'x',min:2490,max:2550,periodMs:1700,phase:.25}];
+                floors=[loadFixedLevel(level)];
+                ninja.x=2400;ninja.y=-250;ninja.speedX=.3;ninja.speedY=1;
+                grapnel=new Grapnel({stroke:STYLE.colors.player.cyan});
+                pressHeld=stalePress=gameplayPressOwned=false;
+                floors[0].rangeUpgraded=true;
+                floors[0].climbStats.maxHeight=9000;
+                if(kind==='moving-anchor'){
+                    const e=floors[0].byId.get('preview-anchor');
+                    grapnel.throwed=grapnel.grappled=true;grapnel.pos=[[e.x,e.y,e]];
+                }
+                menu.unPause();for(let i=0;i<7;i++)physics();return captureClimbState();
+            }''', kind)
+            replay = '''() => {const trace=[];for(let i=0;i<60;i++){physics();if(i%10===9)trace.push(captureClimbState())}return trace}'''
+            first = p.evaluate(replay)
+            restored = p.evaluate('s=>{restoreClimbState(s);return captureClimbState()}', initial)
+            second = p.evaluate(replay)
+            self.assertEqual(restored, initial)
+            self.assertEqual(first, second)
+            self.assertTrue(restored['upgrades']['range'])
+            self.assertEqual(p.evaluate('grappleOverAcquisitionRadius()'), 540)
+            self.assertNotEqual(restored['player']['y'], -restored['stats']['maxHeight'])
+            self.assertNotEqual(first[-1]['player']['y'], initial['player']['y'])
+            if kind == 'moving-anchor':
+                self.assertEqual(restored['grapple']['segments'][0]['id'], 'preview-anchor')
+                self.assertNotEqual(first[0]['elements'][1]['x'], first[-1]['elements'][1]['x'])
+            rows.append(dict(kind=kind, initial=initial, restored=restored,
+                             uninterrupted=first, resumed=second, range=540))
+        # Persist/reload the actual minimal fixture (no custom mover injection).
+        q = self.page()
+        q.evaluate('''menu.unPause();ninja.x=2350;ninja.y=-300;ninja.speedY=1;
+            floors[0].rangeUpgraded=true;floors[0].climbStats.maxHeight=9000;
+            for(let i=0;i<15;i++)physics()''')
+        saved = self.flush(q)
+        q.reload();self.enter(q)
+        restored = q.evaluate('captureClimbState()')
+        self.assertEqual(saved, restored)
+        self.assertTrue(q.evaluate('menu.gamePaused'))
+        self.assertEqual(q.evaluate('grappleOverAcquisitionRadius()'), 540)
+        # Trusted release through the existing input path, then resume physics.
+        q.mouse.up()
+        q.evaluate('menu.unPause();for(let i=0;i<20;i++)physics()')
+        continued = q.evaluate('captureClimbState()')
+        self.assertGreater(continued['player']['y'], restored['player']['y'])
+        self.write('preview-save.json', dict(config=self.config, fixtures=rows,
+                   scope='Isolated minimal preview; moving-anchor is a test-only mover, not continuous gameplay',
+                   persisted=saved, reloaded=restored, continued=continued))
+        print('PASS preview-save: same-layout roundtrip; in-air/moving-anchor 60-tick exact continuation; upgrade range=540; reload preserves current position, maxHeight=9000 is statistics only')

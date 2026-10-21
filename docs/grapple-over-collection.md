@@ -36,3 +36,21 @@ future playable encounter proofs. No skip or expected-failure wrapper is added.
 Reuse archived successful calibration logs when relevant source hashes match;
 a new HEAD alone does not invalidate evidence. Retain compact task-local logs
 and JSON, with no repeated full geometry or unnecessary screenshots.
+
+### Preview save compatibility (TASK-566)
+
+The local `?grapplePreview=replacement-v1` fixture persists to
+`grapnelninja.grappleOver.preview.replacement-v1`. The shipped mountain continues
+using `grapnelninja.grappleOver`. Save serialization remains version 1; `layoutId`
+separately identifies geometry. Replacement restores require an exact identity
+before any coordinates or live objects are changed. Historical saves without an
+identity remain accepted only by the original legacy layout (or the historical
+identity-less fixed-level fixtures). Incompatible preview saves show a localized
+explanation and leave the fresh replacement base intact. Reset clears the upgrade
+and restores range 360; valid saves preserve current state and range 540 upgrades.
+
+`Task566Tests` covers the minimal preview, including a test-only mover on its
+existing anchor. These are isolated continuation fixtures, not earned gameplay.
+TASK-558's historical statement that preview persistence is disabled is superseded
+by this isolated storage key; its legacy-save isolation remains required. No full
+mountain geometry, old coordinate coverage, or historical capture is regenerated.

@@ -241,6 +241,7 @@ function captureClimbState()
     const world = floors[0]
     return {
         version: 1, levelVersion: world.level.version,
+        ...(world.level.layoutId ? {layoutId: world.level.layoutId} : {}),
         simulationTick: world.elapsedSteps,
         stats: {...world.climbStats},
         player: climbFields(ninja, CLIMB_PLAYER_FIELDS),
@@ -275,6 +276,11 @@ function restoreClimbState(save)
         }
     }
     if (!save || save.version !== 1 || save.levelVersion !== floors[0].level.version) fail()
+    // Serialization version is not geometry identity. Only the shipped legacy
+    // layout accepts historical saves that predate explicit layout IDs.
+    const layoutId = floors[0].level.layoutId
+    if (save.layoutId !== layoutId &&
+        !(save.layoutId === undefined && layoutId === 'grapple-over-legacy-v3')) fail()
     const s = structuredClone(save), world = floors[0]
     if (!Number.isSafeInteger(s.simulationTick) || s.simulationTick < 0) fail()
     shape(s.player, climbFields(ninja, CLIMB_PLAYER_FIELDS))
