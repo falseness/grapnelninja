@@ -1,20 +1,23 @@
 """TASK-102: the W-unit momentum frame catalog matches the concept frames.
 
 Pure Python, no browser. Env MOMENTUM_FRAMES_CATALOG = the converted
-catalog (default artifacts/TASK-102/catalog-m.json); the source is
-artifacts/momentum-frames/catalog.json. Run from tools/:
+catalog (default tools/data/momentum-catalog-m.json, the TASK-120 catalog the
+game inlines in elements/momentumpatterns.js); the source is
+tools/data/momentum-frames-catalog.json (a copy of
+artifacts/momentum-frames/catalog.json). Run from tools/:
 python3 -m unittest -v test_momentum_frames_catalog
 """
 import json
 import os
+import sys
 from pathlib import Path
 import unittest
 
 from momentum_frames_catalog import CYCLES_PER_PASS
 
 ROOT = Path(__file__).resolve().parents[1]
-CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'artifacts' / 'TASK-102' / 'catalog-m.json'))
-SOURCE = ROOT / 'artifacts' / 'momentum-frames' / 'catalog.json'
+CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'tools' / 'data' / 'momentum-catalog-m.json'))
+SOURCE = ROOT / 'tools' / 'data' / 'momentum-frames-catalog.json'
 UNIT = 480.0
 EPS = 1e-6
 
@@ -194,6 +197,11 @@ class MomentumFramesCatalogTest(unittest.TestCase):
         self.assertEqual(axes('M30'), ['x'])
         self.assertEqual(axes('M39'), ['y'])
         self.assertEqual(axes('M40'), ['y'])
+
+
+def tearDownModule():
+    # Flush the per-test prints before unittest's summary, so `| tail -1` shows OK
+    sys.stdout.flush()
 
 
 if __name__ == '__main__':

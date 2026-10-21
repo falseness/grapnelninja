@@ -3,7 +3,7 @@ mirrors in the shafts (TASK-106, TASK-107).
 
 elements/momentumpatterns.js MOMENTUM_FRAMES_V holds the user's picked shaft
 concept frames copied from the TASK-102 catalog (MOMENTUM_FRAMES_CATALOG,
-default artifacts/TASK-102/catalog-m.json), every size in W = the shaft's
+default tools/data/momentum-catalog-m.json), every size in W = the shaft's
 interior width; MomentumFrameVerticalFactory places them scaled by the live
 shaft W (2 x momentumSegmentHalfWidth); the M11/M30 blue bar is an axis-x
 sweeper (MomentumOneTime {axis: 'x', speedX = speed x W, xMin/xMax = shaft
@@ -65,7 +65,7 @@ from test_momentum_borders import SEED_COURSE
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_FRAMES_V_EVIDENCE_DIR', '/tmp/momentum-frames-v'))
-CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'artifacts/TASK-102/catalog-m.json'))
+CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'tools/data/momentum-catalog-m.json'))
 CONCEPTS = ROOT / 'artifacts/momentum-frames'
 IDS = ['M93', 'M110', 'M11', 'M30', 'M93-up', 'M110-up', 'M11-up', 'M30-up']
 SWEEPERS = ['M11', 'M30', 'M11-up', 'M30-up']

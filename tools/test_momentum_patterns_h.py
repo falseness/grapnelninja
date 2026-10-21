@@ -2,7 +2,7 @@
 
 Since TASK-038 the right segments spawn the ported bad frames only: the
 TASK-036 port catalog (MOMENTUM_PORT_CATALOG, default
-artifacts/TASK-036/catalog-bad-port.json), its first MOMENTUM_PORT_COUNT
+tools/data/momentum-catalog-bad-port.json), its first MOMENTUM_PORT_COUNT
 entries (default all 12). The TASK-012 horizontal types are retired.
 Starts momentum on a course whose first right segment is long (scripted
 MomentumCourse.generate, as in test_momentum_borders), stops the rAF loop,
@@ -12,7 +12,7 @@ window.momentumPlacePattern on that segment. Asserts: the 'right' registry
 the TASK-111 concept frames (FRAMES_H), no port id is in any spawn registry
 (momentumPatternsByDir, momentumTurnsByJoin; they stay placeable) and no
 retired TASK-012 id is registered
-(MOMENTUM_CATALOG_H, default artifacts/TASK-012/catalog-h.json); the frames
+(MOMENTUM_CATALOG_H, default tools/data/momentum-catalog-h.json); the frames
 are refused outside a right segment; every built piece matches the catalog
 piece in order: class (colour), shape (polygon points), box within GEOM_TOL
 world units, speedY and motion bounds; nothing lethal. The catalog is in world
@@ -48,9 +48,9 @@ from test_momentum_borders import SEED_COURSE
 from verification_scenarios import setup as BAD_FRAME_SETUP
 
 ROOT = Path(__file__).resolve().parents[1]
-CATALOG = Path(os.environ.get('MOMENTUM_CATALOG_H', ROOT / 'artifacts/TASK-012/catalog-h.json'))
+CATALOG = Path(os.environ.get('MOMENTUM_CATALOG_H', ROOT / 'tools/data/momentum-catalog-h.json'))
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_PATTERNS_H_EVIDENCE_DIR', ROOT / 'artifacts/TASK-038'))
-PORT_CATALOG = Path(os.environ.get('MOMENTUM_PORT_CATALOG', ROOT / 'artifacts/TASK-036/catalog-bad-port.json'))
+PORT_CATALOG = Path(os.environ.get('MOMENTUM_PORT_CATALOG', ROOT / 'tools/data/momentum-catalog-bad-port.json'))
 PORT_COUNT = int(os.environ.get('MOMENTUM_PORT_COUNT', 12))
 SHOTS_FROM = int(os.environ.get('MOMENTUM_PORT_SHOTS_FROM', 7))
 GEOM_TOL = 1.0

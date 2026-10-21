@@ -1,7 +1,7 @@
 """Momentum vertical ports of the bad frames (elements/momentumpatterns.js).
 
 Reads the TASK-036 port catalog (MOMENTUM_PORT_CATALOG, default
-artifacts/TASK-036/catalog-bad-port.json) and checks every entry with a
+tools/data/momentum-catalog-bad-port.json) and checks every entry with a
 `vertical` variant: MOMENTUM_PATTERNS_PORT_V, id <entry id>-v, the bad frame
 rotated 90 deg and scaled uniformly by the shaft's half width over the base
 one (TASK-030 wide shafts), so the pieces span the shaft wall to wall as the
@@ -32,7 +32,10 @@ variants: {id/dir: {pieces, outside, inWall, acrossFill, badFill, length,
 spawnable}}}}; spawnable = the footprint clears both join margins of a
 shaft this long) and shots/port-<id>-<dir>.png (1280x720: the game view,
 zoomed out to the whole footprint when it is taller than the view, left;
-the bad frame of the TASK-036 montage rotated the same way, right).
+the bad frame of the TASK-036 montage rotated the same way, right; the
+montage is read from MOMENTUM_PORT_MONTAGE_DIR, default
+artifacts/TASK-036/shots, and the shot is the game view alone when it is
+missing, e.g. in a clean checkout).
 
 Requires Playwright Chromium and Pillow. No remote requests.
 """
@@ -48,8 +51,8 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 from test_momentum_borders import SEED_COURSE
 
 ROOT = Path(__file__).resolve().parents[1]
-CATALOG = Path(os.environ.get('MOMENTUM_PORT_CATALOG', ROOT / 'artifacts/TASK-036/catalog-bad-port.json'))
-MONTAGE_DIR = CATALOG.parent / 'shots'
+CATALOG = Path(os.environ.get('MOMENTUM_PORT_CATALOG', ROOT / 'tools/data/momentum-catalog-bad-port.json'))
+MONTAGE_DIR = Path(os.environ.get('MOMENTUM_PORT_MONTAGE_DIR', ROOT / 'artifacts/TASK-036/shots'))
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_PATTERNS_V_EVIDENCE_DIR', ROOT / 'artifacts/TASK-039'))
 # Segments: right (short), up (~5 heights), right (short), down (~5 heights)
 # Segment 2 long (0.9) so the down shaft stays clear of the up one
@@ -269,7 +272,8 @@ class MomentumPatternsVLandscapeTests(PortVBase, unittest.TestCase):
         view_h = self.page.evaluate('height / scale[version]')
         n = 0
         for e in self.entries:
-            montage = Image.open(MONTAGE_DIR / f"{e['id']}.png").convert('RGB').crop(MONTAGE_BAD)
+            source = MONTAGE_DIR / f"{e['id']}.png"
+            montage = Image.open(source).convert('RGB').crop(MONTAGE_BAD) if source.is_file() else None
             for d in variant_dirs(e):
                 with self.subTest(id=e['id'], dir=d):
                     shaft = self.course['shafts'][d]
@@ -278,12 +282,14 @@ class MomentumPatternsVLandscapeTests(PortVBase, unittest.TestCase):
                     zoom = min(1, view_h / (length + 0.3 * shaft['half']))
                     self.page.evaluate(SHOOT, [x0, top + length / 2, zoom, 1 if d == 'up' else 3])
                     game = Image.open(io.BytesIO(self.page.screenshot())).convert('RGB')
-                    # Up: the bad frame's right (travel) points up; down: it points down
-                    bad = montage.rotate(90 if d == 'up' else -90, expand=True)
-                    bad = bad.resize((round(bad.width * game.height / bad.height), game.height))
-                    out = Image.new('RGB', (game.width + bad.width + 8, game.height), (255, 255, 255))
-                    out.paste(game, (0, 0))
-                    out.paste(bad, (game.width + 8, 0))
+                    out = game
+                    if montage:
+                        # Up: the bad frame's right (travel) points up; down: it points down
+                        bad = montage.rotate(90 if d == 'up' else -90, expand=True)
+                        bad = bad.resize((round(bad.width * game.height / bad.height), game.height))
+                        out = Image.new('RGB', (game.width + bad.width + 8, game.height), (255, 255, 255))
+                        out.paste(game, (0, 0))
+                        out.paste(bad, (game.width + 8, 0))
                     path = shots / f"port-{e['id']}-v-{d}.png"
                     out.save(path)
                     n += 1

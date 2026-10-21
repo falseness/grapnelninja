@@ -3,7 +3,7 @@
 
 elements/momentumpatterns.js MOMENTUM_FRAMES_H holds the user's picked
 right-corridor concept frames copied from the TASK-102 catalog
-(MOMENTUM_FRAMES_CATALOG, default artifacts/TASK-102/catalog-m.json), every
+(MOMENTUM_FRAMES_CATALOG, default tools/data/momentum-catalog-m.json), every
 size in W = the corridor's interior width; MomentumFrameFactory places them
 scaled by the live W. They are placeable (momentumPlacePattern) and, since
 TASK-111, the only right-corridor frames spawned: momentumPatternsByDir.right
@@ -63,7 +63,7 @@ from test_momentum_borders import SEED_COURSE
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_FRAMES_H_EVIDENCE_DIR', '/tmp/momentum-frames-h'))
-CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'artifacts/TASK-102/catalog-m.json'))
+CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'tools/data/momentum-catalog-m.json'))
 CONCEPTS = ROOT / 'artifacts/momentum-frames'
 IDS = ['M04', 'M23', 'M24', 'M46', 'M47', 'M66']
 # Frames with a green cap on a blue block: catalog piece index of the blue and the cap

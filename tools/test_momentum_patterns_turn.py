@@ -2,7 +2,7 @@
 
 Since TASK-040 the turn types are the turn candidates of the TASK-036 port
 catalog (MOMENTUM_PORT_CATALOG, default
-artifacts/TASK-036/catalog-bad-port.json; entries with turnJoins): each is
+tools/data/momentum-catalog-bad-port.json; entries with turnJoins): each is
 the ported bad frame (MOMENTUM_PATTERNS_PORT_H) placed whole in the right
 corridor at the join, before the corner box on right->up/down and after it
 on up/down->right, with turnClearanceHalfWidths base half widths between.
@@ -53,7 +53,7 @@ from browser_test_support import start_browser_test, wait_for_boot_run
 from test_momentum_borders import SEED_COURSE
 
 ROOT = Path(__file__).resolve().parents[1]
-CATALOG = Path(os.environ.get('MOMENTUM_PORT_CATALOG', ROOT / 'artifacts/TASK-036/catalog-bad-port.json'))
+CATALOG = Path(os.environ.get('MOMENTUM_PORT_CATALOG', ROOT / 'tools/data/momentum-catalog-bad-port.json'))
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_PATTERNS_TURN_EVIDENCE_DIR', ROOT / 'artifacts/TASK-040'))
 # Segments: right, up, right, down, right, all ~5 heights long (>= 1.5 band)
 SCRIPT = [0.99, 0.99, 0.1, 0.99, 0.99, 0.99, 0.9, 0.99, 0.99]

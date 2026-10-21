@@ -26,7 +26,7 @@ the ninja just moved with) and after physics() (after the grapple pull).
   0.375 * 0.006867 * height (TASK-029 halved the 1.5x cap, TASK-047 halved
   it again) times GAMEPLAY.momentumTimeScale 0.75 (TASK-073 slow motion 0.5,
   sped up 1.5x by TASK-081), and / the bad cruise median
-  (BAD_CRUISE_JSON, default artifacts/TASK-007/bad-cruise.json) is in
+  (BAD_CRUISE_JSON, default tools/data/bad-cruise.json) is in
   TASK-047's [0.325, 0.425] x momentumTimeScale ([0.24375, 0.31875]);
 - control: the momentum forcing with Ninja.limitMomentumSpeed stubbed out
   goes past 1.2x the limit (the forcing does push past the cap).
@@ -186,7 +186,7 @@ class MomentumSpeedTests(unittest.TestCase):
 
     def test_limit_vs_bad_cruise(self):
         cruise = json.loads(Path(os.environ.get('BAD_CRUISE_JSON',
-                                                ROOT / 'artifacts/TASK-007/bad-cruise.json')).read_text())
+                                                ROOT / 'tools/data/bad-cruise.json')).read_text())
         ratio = self.limit / cruise['median']
         s = self.runs['momentum']['timeScale']
         print(f'effective cap {self.limit!r} / bad cruise median {cruise["median"]!r} = {ratio!r}, '

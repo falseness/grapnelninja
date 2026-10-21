@@ -5,7 +5,7 @@ M136 Deflect Two Windows (up->right, TASK-110) at the course vertex.
 
 elements/momentumpatterns.js MOMENTUM_FRAMES_TURN holds the user's picked
 corner frames copied from the TASK-102 catalog (MOMENTUM_FRAMES_CATALOG,
-default artifacts/TASK-102/catalog-m.json); MomentumCornerFrameFactory places
+default tools/data/momentum-catalog-m.json); MomentumCornerFrameFactory places
 a piece at vertex + catalog * (shaft W across x, corridor W across y), the
 M60 bar an axis-x sweeper between the shaft wall faces, the M39 and M40
 elevators axis-y movers between the exit corridor's faces. momentumPlaceTurn(id,
@@ -78,7 +78,7 @@ from test_momentum_frames_h import rasterize
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_FRAMES_TURN_EVIDENCE_DIR', '/tmp/momentum-frames-turn'))
-CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'artifacts/TASK-102/catalog-m.json'))
+CATALOG = Path(os.environ.get('MOMENTUM_FRAMES_CATALOG', ROOT / 'tools/data/momentum-catalog-m.json'))
 CONCEPTS = ROOT / 'artifacts/momentum-frames'
 IDS = ['M18', 'M60', 'M39', 'M117', 'M134', 'M40', 'M98', 'M136']
 VIEWPORTS = [{'width': 1280, 'height': 720, 'touch': False}, {'width': 390, 'height': 844, 'touch': True}]
