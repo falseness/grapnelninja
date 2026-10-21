@@ -36,7 +36,9 @@ from game_harness import switch_mode
 from render_snapshot import CLOCK_SCRIPT
 
 ROOT = Path(__file__).resolve().parents[1]
-CONCEPT = ROOT / 'artifacts/tutorial-concept'
+# Concept-B references for compare.png: TUTORIAL_CONCEPT_DIR, default the
+# versioned copy in tools/data (byte-identical to the concept artifacts)
+CONCEPT = Path(os.environ.get('TUTORIAL_CONCEPT_DIR') or ROOT / 'tools/data/tutorial-concept')
 BOOT_DONE = "PLATFORM.environment === 'local' && bootComplete && runInProgress"
 # Stops the game loop and freezes the clock and randomness, so draw() can be
 # repeated on identical frames
