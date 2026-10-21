@@ -1635,16 +1635,21 @@ class LightmapRenderer
         const w = box.right - box.left, h = box.bottom - box.top
         // Translation is deliberately absent from the key: moving hazards reuse
         // their sprite. Quantization removes floating point translation noise.
-        // An element whose points, colour and scale did not change keeps its key.
+        // An element whose points, colour and scale did not change keeps its key,
+        // one per spread (a momentum blue asks for two a frame: shape and area light).
         const worldPoints = element.getPoints()
-        let lightKey = element.lightKey
+        const lightKeys = element.lightKeys || (element.lightKeys = new Map())
+        let lightKey = lightKeys.get(spread)
         if (!lightKey || lightKey.points !== worldPoints || lightKey.color !== color ||
-            lightKey.spread !== spread || lightKey.toLight !== toLight)
+            lightKey.toLight !== toLight)
         {
             const relative = worldPoints.map(p => ({x: p.x - box.left, y: p.y - box.top}))
-            lightKey = element.lightKey = {points: worldPoints, color, spread, toLight, relative,
+            lightKey = {points: worldPoints, color, spread, toLight, relative,
                 key: JSON.stringify([relative.map(p => [p.x.toFixed(3), p.y.toFixed(3)]),
                     color, spread.toFixed(3), toLight])}
+            // Resizes change both spreads: drop the stale ones
+            if (!lightKeys.has(spread) && lightKeys.size >= 2) lightKeys.clear()
+            lightKeys.set(spread, lightKey)
         }
         const points = lightKey.relative
         const key = lightKey.key

@@ -73,9 +73,9 @@ class Element
         this.speedX = 0
         this.speedY = 0
         // getPoints() memo of Rect/Triangle/Trampoline, and the lightmap's
-        // sprite key; set here so every element keeps one object shape
+        // sprite keys (by spread); set here so every element keeps one object shape
         this.pointsCache = null
-        this.lightKey = null
+        this.lightKeys = null
         // Displacement applied by the last move(); tethered grapnel points follow it.
         this.dx = 0
         this.dy = 0

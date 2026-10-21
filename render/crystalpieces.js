@@ -19,6 +19,8 @@
 const CRYSTAL_PIECES = (function()
 {
     const CACHE_LIMIT = 128
+    // Glint stars kept (one per backing scale); resizes evict the oldest
+    const GLINT_CACHE_LIMIT = 4
     // Sizes below are canvas px at a 1080 px tall stage
     const REFERENCE_HEIGHT = 1080
     const FACETS = 10
@@ -667,6 +669,8 @@ const CRYSTAL_PIECES = (function()
             c.fill()
             sprite = {image: image, half: Math.floor(size / 2)}
             this.glintSprites.set(key, sprite)
+            if (this.glintSprites.size > GLINT_CACHE_LIMIT)
+                this.glintSprites.delete(this.glintSprites.keys().next().value)
             return sprite
         },
         // Glints of piece (its sprite from drawBlue/drawGreen) in canvas px
