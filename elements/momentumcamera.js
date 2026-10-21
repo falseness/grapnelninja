@@ -1,5 +1,6 @@
 // Momentum camera: Screen keeping the ninja in the vertical middle of the
-// view. Y follows the ninja every cycle, except that in an up shaft it never
+// view. Y follows the ninja every cycle (at most at its y speed plus the
+// catch-up step, like X), except that in an up shaft it never
 // moves down and in a down shaft never up: a ninja dropping back sees the
 // BackWall (sprites/backwall.js) on that side, and the camera follows again
 // once the ninja is back in the middle. X slides toward its target, at most
@@ -41,6 +42,8 @@ class MomentumScreen extends Screen
         this.backTravel = 0
         // The shaft rule held Y in the last cycle (tests and tools)
         this.holdY = false
+        // The catch-up step limited Y in the last cycle (tests and tools)
+        this.catchUpY = false
         // Bouncy boundary on that side (sprites/backwall.js)
         this.backWall = new BackWall(this)
         this.deletedBehind = 0
@@ -134,10 +137,16 @@ class MomentumScreen extends Screen
         else
             this.speedX = Math.max(-step, Math.min(step, width / scale[version] / 2 - segment.x0 - this.x))
         // Up shaft: the view only goes up (this.y grows), down shaft: only
-        // down; holdY: the ninja is not re-centred (tests and tools)
+        // down; holdY: the ninja is not re-centred (tests and tools). Like X
+        // at most the ninja's y speed plus the catch-up step a cycle, so a
+        // hold released by a sideways exit into the next corridor closes
+        // over a few frames instead of in one cycle; catchUpY: the step
+        // limited Y this cycle (tests and tools)
         const speedY = H / 2 - ninja.y - this.y
         this.holdY = segment.dir == 'up' && speedY < 0 || segment.dir == 'down' && speedY > 0
-        this.speedY = this.holdY ? 0 : speedY
+        const stepY = Math.abs(ninja.speedY) + GAMEPLAY.momentumCamera.catchUpHeightRatio * H
+        this.catchUpY = !this.holdY && Math.abs(speedY) > stepY
+        this.speedY = this.holdY ? 0 : Math.max(-stepY, Math.min(stepY, speedY))
         return this.speedX != 0 || this.speedY != 0
     }
     // A box (world coordinates) fully out of view on the vertical side left

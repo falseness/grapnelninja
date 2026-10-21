@@ -20,7 +20,9 @@ target never goes right of the view centred on the next shaft, so the camera
 never moves left); 'enter' (right course: the
 ninja put at fracX 0.7 moving right at the speed cap) and 'upOffset' (up
 course: the view put 600 world units right of the shaft centre line, the
-ninja moving straight up) time the catch-up. Per cycle the drive keeps
+ninja moving straight up) time the catch-up; 'exitUp' / 'exitDown' go to the
+shaft's end, back while the camera holds Y, then sideways out into the next
+corridor (the released hold closes at the Y step cap). Per cycle the drive keeps
 [phase, fracX before, fracY before, fracX after, fracY after, camera move x,
 camera move y, holdY, ninja velocity x, y] (fracX / fracY: the ninja's
 position in the view as a share of its width / height; camera moves in world
@@ -49,7 +51,10 @@ COURSES['enter'] = COURSES['right']
 COURSES['upOffset'] = COURSES['up']
 COURSES['noLeftUp'] = COURSES['up']
 COURSES['noLeftDown'] = COURSES['down']
-DIRS = {'enter': 'right', 'upOffset': 'up', 'noLeftUp': 'up', 'noLeftDown': 'down'}
+COURSES['exitUp'] = COURSES['up']
+COURSES['exitDown'] = COURSES['down']
+DIRS = {'enter': 'right', 'upOffset': 'up', 'noLeftUp': 'up', 'noLeftDown': 'down', 'exitUp': 'up',
+        'exitDown': 'down'}
 EPS = 1e-6
 
 DRIVE = '''(kind) => {
@@ -102,6 +107,20 @@ DRIVE = '''(kind) => {
                 cycle('through', ux * v, uy * v)
             }
         }
+    } else if (kind == 'exitUp' || kind == 'exitDown') {
+        // on along the centre line to 10 units before the shaft's end, back
+        // (the camera holds) to 0.95 of the next corridor's half width
+        // before it, then sideways out into that corridor for 2 s
+        const fwd = d.y, back = 0.95 * momentumSegmentHalfWidth(segs[2])
+        for (let y = ninja.y; (seg.y1 - fwd * 10 - y) * fwd > 0; y += fwd * v) {
+            ninja.x = seg.x0; ninja.y = y
+            cycle('deep', 0, fwd * v)
+        }
+        for (let y = ninja.y; (y - (seg.y1 - fwd * back)) * fwd > 0; y -= fwd * v) {
+            ninja.x = seg.x0; ninja.y = y
+            cycle('back', 0, -fwd * v)
+        }
+        for (let n = 0; n < 2 * second; ++n) cycle('exit', v, 0)
     } else if (kind == 'enter') {
         ninja.x = -screen.x + 0.7 * W
         for (let n = 0; n < Math.ceil(0.35 * W / catchUp) + 60; ++n) cycle('chase', v, 0)
@@ -413,6 +432,40 @@ class MomentumViewTriggerTests(unittest.TestCase):
 
     def test_down_no_jump(self):
         self.check_no_jump('down')
+
+    # Sideways exit (TASK-145 D2): the ninja goes back up a down shaft (down
+    # a up shaft) while the camera holds, then leaves sideways into the next
+    # corridor. The released hold closes at most at the ninja's y speed plus
+    # the catch-up step a cycle (never one-cycle snap) and the ninja is back
+    # in the vertical middle within 2 s.
+    def check_sideways_exit(self, kind):
+        d = self.drive(kind)
+        rows = d['rows']
+        exit_rows = [r for r in rows if r[PHASE] == 'exit']
+        back = [r for r in rows if r[PHASE] == 'back'][1:]
+        excess = [abs(r[MY]) - abs(r[VY]) - d['catchUp'] for r in rows]
+        worst = max(range(len(rows)), key=lambda k: abs(rows[k][MY]))
+        reached = next((k for k, r in enumerate(exit_rows) if all(
+            abs(q[FY1] - 0.5) <= abs(q[VY]) / d['H'] + EPS for q in exit_rows[k:])), None)
+        numbers = {'heldCycles': sum(1 for r in back if r[HOLD]), 'exitStartFracY': exit_rows[0][FY0],
+                   'maxCamStepY': abs(rows[worst][MY]), 'maxCamStepYFracH': abs(rows[worst][MY]) / d['H'],
+                   'maxCamStepYPhase': rows[worst][PHASE], 'worstExcess': max(excess), 'catchUp': d['catchUp'],
+                   'cyclesToCentre': reached, 'secondsToCentre': reached and reached / d['second'],
+                   'endSegment': d['segmentIndex'], 'H': d['H']}
+        self.note(f'{kind}.sidewaysExit', numbers)
+        self.assertTrue(back and all(r[HOLD] for r in back))
+        self.assertGreater(abs(exit_rows[0][FY0] - 0.5), 0.2)
+        self.assertEqual(d['segmentIndex'], 2)
+        self.assertLessEqual(max(excess), EPS, 'one-cycle camera Y move %.1f units = %.1f%% of H' % (
+            numbers['maxCamStepY'], 100 * numbers['maxCamStepYFracH']))
+        self.assertIsNotNone(reached)
+        self.assertLessEqual(reached, 2 * d['second'] - 1)
+
+    def test_sideways_exit_down_shaft(self):
+        self.check_sideways_exit('exitDown')
+
+    def test_sideways_exit_up_shaft(self):
+        self.check_sideways_exit('exitUp')
 
 
 if __name__ == '__main__':

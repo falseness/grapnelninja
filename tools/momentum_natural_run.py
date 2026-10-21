@@ -22,7 +22,10 @@ Per frame (trace.json rows):
 Per seed: framesOutOfView; maxFracX and framesBeyondX (right frames with
 fracX > X + the ninja's x step / W), maxBeyondXRun (the longest run of
 consecutive such frames) and maxBeyondXRunStart (its first frame); maxOffCentre (max |fracY - 0.5| minus
-the ninja's y step / H outside hold frames) and framesOffCentre (> 1e-6);
+the ninja's y step / H outside hold and Y catch-up frames) and
+framesOffCentre (> 1e-6); framesCatchUpY (the Y step cap limited the
+frame's last cycle: a released shaft hold closing) and framesOffCentreCatchUp
+(those of them off centre, counted apart from framesOffCentre);
 framesCamJump (camStep > the larger ninja step of this and the last frame +
 one unit plus the X catch-up step (GAMEPLAY.momentumCamera.catchUpHeightRatio
 x H) a cycle + 0.01); framesHold; framesShaftWallOut (in a shaft, one of
@@ -68,7 +71,7 @@ SETUP = '''(seed) => {
         return seg.x0 - hw + screen.x < 0 || seg.x0 + hw + screen.x > W
     }
     rec.sample = () => ({dir: screen.getSegment().dir[0], cam: [-screen.x, -screen.y], pos: [ninja.x, ninja.y],
-        fx: (ninja.x + screen.x) / W, fy: (ninja.y + screen.y) / H, hold: screen.holdY, wall: wallOut(screen.getSegment()),
+        fx: (ninja.x + screen.x) / W, fy: (ninja.y + screen.y) / H, hold: screen.holdY, catchUpY: screen.catchUpY, wall: wallOut(screen.getSegment()),
         out: ninja.x + screen.x < 0 || ninja.x + screen.x > W || ninja.y + screen.y < 0 || ninja.y + screen.y > H})
     rec.prev = rec.sample()
     rec.ninja0 = ninja
@@ -92,7 +95,8 @@ STEP = '''([n, replay]) => {
         out.push([__mb.tick, c.dir, r4(c.fx), r4(c.fy), r4(Math.hypot(nx, ny)), r4(Math.hypot(cx, cy)),
                   c.hold ? 1 : 0, c.out ? 1 : 0,
                   // not in trace.json: exact values for the counts
-                  c.fx, c.fy, Math.abs(nx), Math.abs(ny), Math.hypot(nx, ny), Math.hypot(cx, cy), c.wall ? 1 : 0, cx])
+                  c.fx, c.fy, Math.abs(nx), Math.abs(ny), Math.hypot(nx, ny), Math.hypot(cx, cy), c.wall ? 1 : 0, cx,
+                  c.catchUpY ? 1 : 0])
         rec.prev = c
     }
     return {rows: out, dead: __mb.deathTick, sameNinja: ninja === rec.ninja0, hp: momentumState.hp,
@@ -180,8 +184,9 @@ def summarise(rows, setup):
                 run_len, run_start = cur, start
         else:
             cur = 0
-    off = {k: abs(r[9] - 0.5) - r[11] / H for k, r in enumerate(rows) if not r[6]}
+    off = {k: abs(r[9] - 0.5) - r[11] / H for k, r in enumerate(rows) if not r[6] and not r[16]}
     worst = max(off, key=off.get)
+    off_catch_up = [abs(r[9] - 0.5) - r[11] / H for r in rows if not r[6] and r[16]]
     jumps = [k for k, r in enumerate(rows)
              if r[13] > max(r[12], rows[k - 1][12] if k else 0) + cycles * (1 + catch_up) + 0.01]
     return {'frames': len(rows), 'framesOutOfView': sum(1 for r in rows if r[7]),
@@ -189,6 +194,8 @@ def summarise(rows, setup):
             'framesBeyondX': len(beyond), 'maxBeyondXRun': run_len, 'maxBeyondXRunStart': run_start,
             'maxOffCentre': round(off[worst], 6), 'offCentreFrame': worst,
             'framesOffCentre': sum(1 for v in off.values() if v > 1e-6),
+            'framesCatchUpY': len(off_catch_up),
+            'framesOffCentreCatchUp': sum(1 for v in off_catch_up if v > 1e-6),
             'framesCamJump': len(jumps), 'firstCamJump': jumps[0] if jumps else None,
             'framesHold': sum(1 for r in rows if r[6]),
             'framesShaftWallOut': sum(1 for r in rows if r[14]),
@@ -254,10 +261,11 @@ def main(seed, out):
     path.write_text(json.dumps(data, separators=SEP))
     print('seed %d head %s viewport %dx%d frames %d out of view %d maxFracX %s beyondX %d maxBeyondXRun %d (start %s) '
           'maxOffCentre %.6f '
-          'offCentre %d camJump %d (first %s) camLeft %d hold %d shaftWallOut %d byDir %s death %s' % (
+          'offCentre %d (catch-up window %d of %d) camJump %d (first %s) camLeft %d hold %d shaftWallOut %d byDir %s death %s' % (
               seed, head[:7], VIEWPORT[0], VIEWPORT[1], summary['frames'], summary['framesOutOfView'],
               summary['maxFracX'], summary['framesBeyondX'], summary['maxBeyondXRun'], summary['maxBeyondXRunStart'],
-              summary['maxOffCentre'], summary['framesOffCentre'],
+              summary['maxOffCentre'], summary['framesOffCentre'], summary['framesOffCentreCatchUp'],
+              summary['framesCatchUpY'],
               summary['framesCamJump'], summary['firstCamJump'], summary['framesCamLeft'], summary['framesHold'], summary['framesShaftWallOut'], summary['framesByDir'],
               summary['death']), flush=True)
 
