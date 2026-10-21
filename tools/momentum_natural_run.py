@@ -20,7 +20,8 @@ Per frame (trace.json rows):
   height; ninjaStep / camStep: how far the ninja / the camera moved over the
   frame; hold: the shaft rule held Y on the frame's last cycle.
 Per seed: framesOutOfView; maxFracX and framesBeyondX (right frames with
-fracX > X + the ninja's x step / W); maxOffCentre (max |fracY - 0.5| minus
+fracX > X + the ninja's x step / W), maxBeyondXRun (the longest run of
+consecutive such frames) and maxBeyondXRunStart (its first frame); maxOffCentre (max |fracY - 0.5| minus
 the ninja's y step / H outside hold frames) and framesOffCentre (> 1e-6);
 framesCamJump (camStep > the larger ninja step of this and the last frame +
 one unit plus the X catch-up step (GAMEPLAY.momentumCamera.catchUpHeightRatio
@@ -168,13 +169,23 @@ def summarise(rows, setup):
     right = [k for k, r in enumerate(rows) if r[1] == 'r']
     beyond = [k for k in right if rows[k][8] > trigger + rows[k][10] / W + 1e-6]
     max_x = max(right, key=lambda k: rows[k][8]) if right else None
+    # longest run of consecutive frames that are all right frames beyond the line
+    run_len, run_start, cur, start = 0, None, 0, None
+    beyond_set = set(beyond)
+    for k in range(len(rows)):
+        if k in beyond_set:
+            cur, start = cur + 1, start if cur else k
+            if cur > run_len:
+                run_len, run_start = cur, start
+        else:
+            cur = 0
     off = {k: abs(r[9] - 0.5) - r[11] / H for k, r in enumerate(rows) if not r[6]}
     worst = max(off, key=off.get)
     jumps = [k for k, r in enumerate(rows)
              if r[13] > max(r[12], rows[k - 1][12] if k else 0) + cycles * (1 + catch_up) + 0.01]
     return {'frames': len(rows), 'framesOutOfView': sum(1 for r in rows if r[7]),
             'maxFracX': round(rows[max_x][8], 4) if max_x is not None else None, 'maxFracXFrame': max_x,
-            'framesBeyondX': len(beyond),
+            'framesBeyondX': len(beyond), 'maxBeyondXRun': run_len, 'maxBeyondXRunStart': run_start,
             'maxOffCentre': round(off[worst], 6), 'offCentreFrame': worst,
             'framesOffCentre': sum(1 for v in off.values() if v > 1e-6),
             'framesCamJump': len(jumps), 'firstCamJump': jumps[0] if jumps else None,
@@ -239,10 +250,12 @@ def main(seed, out):
         data = {'head': head, 'seeds': {}}
     data['seeds'][str(seed)] = summary
     path.write_text(json.dumps(data, separators=SEP))
-    print('seed %d head %s viewport %dx%d frames %d out of view %d maxFracX %s beyondX %d maxOffCentre %.6f '
+    print('seed %d head %s viewport %dx%d frames %d out of view %d maxFracX %s beyondX %d maxBeyondXRun %d (start %s) '
+          'maxOffCentre %.6f '
           'offCentre %d camJump %d hold %d shaftWallOut %d byDir %s death %s' % (
               seed, head[:7], VIEWPORT[0], VIEWPORT[1], summary['frames'], summary['framesOutOfView'],
-              summary['maxFracX'], summary['framesBeyondX'], summary['maxOffCentre'], summary['framesOffCentre'],
+              summary['maxFracX'], summary['framesBeyondX'], summary['maxBeyondXRun'], summary['maxBeyondXRunStart'],
+              summary['maxOffCentre'], summary['framesOffCentre'],
               summary['framesCamJump'], summary['framesHold'], summary['framesShaftWallOut'], summary['framesByDir'],
               summary['death']), flush=True)
 
