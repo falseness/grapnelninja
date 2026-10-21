@@ -181,6 +181,9 @@ def switch_mode(page, mode):
         if target['rotated']:
             page.evaluate('p => menu.click(p)', target)
         else:
+            # A real press within STYLE.timing.inputUntouchMs of the last
+            # menu click (e.g. a pause checkbox) is dropped by events.js
+            page.wait_for_function('!unTouch')
             click_canvas(page, target['x'], target['y'])
     # A rotated (portrait touch) view starts the new run paused (TASK-403);
     # resume it as the switch did before, so callers get a live run
