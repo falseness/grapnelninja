@@ -7,6 +7,9 @@ and MomentumPortPatternFactory copies those bounds from the ported bad frames
 (MOMENTUM_PATTERNS_PORT_H, also reused by the turn types), where some sit on
 a sibling green's face. Once that green is used the bound stays.
 
+The catalog is read scaled as MomentumPortPatternFactory builds it (live
+corridor half width over shaftReferenceHalfWidth, TASK-137), BAND likewise.
+
 1) Static classification (catalog read via page.evaluate): for every moving
    piece of every MOMENTUM_PATTERNS_PORT_H pattern, per side, the bound is a
    'support' (sibling index) when it equals a sibling's facing edge (its top
@@ -47,8 +50,8 @@ shots/ (bad-frame7 at 1280x720: the blue on the green before the use, the
 blue falling through the gap after it, the blue turning at the corridor
 floor limit, and the same after-use frame at 390x844; bad-frame4 at
 1280x720: the polygon blue rising past the used green).
-MOMENTUM_BLUE_SUPPORT_BASELINE (default artifacts/TASK-081/baseline-trace.json,
-regenerated for momentumTimeScale 0.75; TASK-078's is the 0.5 one) is the trace the baseline compares against. Requires Playwright Chromium.
+MOMENTUM_BLUE_SUPPORT_BASELINE (default artifacts/TASK-137/blue_support/baseline-trace.json,
+regenerated for the scaled ports; TASK-081's is the unscaled 0.75 one, TASK-078's the 0.5 one) is the trace the baseline compares against. Requires Playwright Chromium.
 """
 import io
 import json
@@ -64,12 +67,13 @@ from test_momentum_borders import SEED_COURSE
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = Path(os.environ.get('MOMENTUM_BLUE_SUPPORT_EVIDENCE_DIR', '/tmp/momentum-blue-support'))
 BASELINE = Path(os.environ.get('MOMENTUM_BLUE_SUPPORT_BASELINE',
-                               ROOT / 'artifacts' / 'TASK-081' / 'baseline-trace.json'))
+                               ROOT / 'artifacts' / 'TASK-137' / 'blue_support' / 'baseline-trace.json'))
 # First segment right with a length draw of 0.99 (~5 heights), then the LCG
 SCRIPT = [0.99]
 # The bad frames leave 0.01 * height gaps between a bound and its support
 SUPPORT_TOL_RATIO = 0.02
-# Right corridor half width (catalog corridor bound of a rect)
+# Right corridor half width (catalog corridor bound of a rect), the old
+# corridor's; scaled with the catalog in setUpClass
 BAND = 972
 # 2 world units at momentumTimeScale 0.5
 LIMIT_TOL_PER_SCALE = 4
@@ -84,15 +88,17 @@ PERIOD_CYCLES = 40000
 # Support cases the catalog must hold (the test methods below)
 EXPECTED_SUPPORTS = {('bad-frame4', 1, 'yMax'), ('bad-frame4', 2, 'yMin'), ('bad-frame7', 1, 'yMax')}
 
-SETUP = '''() => {
+SETUP = '''(band) => {
     startGame('momentum')
     cancelAnimationFrame(game)
     floors.find(f => f instanceof MomentumObstacleFloor).elements = []
     TUTORIAL_HINT.visible = false; TUTORIAL_HINT.done = true
     ninja.invulnerableMs = 1e9
+    const k = momentumPatternFactories[MOMENTUM_PATTERNS_PORT_H[0].id].getScale()
     return {height: height, segment: momentumCourse.segment(0),
-            half: GAMEPLAY.momentumBorders.halfWidth,
-            patterns: MOMENTUM_PATTERNS_PORT_H,
+            half: GAMEPLAY.momentumBorders.halfWidth, band: band * k,
+            patterns: MOMENTUM_PATTERNS_PORT_H.map(p =>
+                ({...p, span: p.span * k, pieces: MomentumPortPatternFactory.scalePieces(p.pieces, k)})),
             turns: MOMENTUM_PATTERNS_TURN.map(turn => ({id: turn.id, source: turn.source}))}
 }'''
 # Places pattern id at (x, y) alone on its floor with the ninja parked far
@@ -170,7 +176,7 @@ BOUNDS = '''([x, y]) => {
                        ...MOMENTUM_PATTERNS_TURN.map(p => [p.id, momentumTurnFactories[p.id].frame])]
     for (const [id, factory] of factories) {
         const els = factory.create(x, y)
-        factory.pattern.pieces.forEach((piece, i) => {
+        MomentumPortPatternFactory.scalePieces(factory.pattern.pieces, factory.getScale()).forEach((piece, i) => {
             if (!piece.motion) return
             const e = els[i]
             ;(out[id] = out[id] || {})[i] = {
@@ -323,7 +329,9 @@ class MomentumBlueSupportTests(unittest.TestCase):
         cls.page.goto(cls.url)
         wait_for_boot_run(cls.page)
         cls.page.evaluate(SEED_COURSE, SCRIPT)
-        info = cls.page.evaluate(SETUP)
+        info = cls.page.evaluate(SETUP, 972)
+        global BAND
+        BAND = info['band']
         cls.height = info['height']
         cls.limit_tol = LIMIT_TOL_PER_SCALE * cls.page.evaluate('GAMEPLAY.momentumTimeScale')
         cls.patterns = {p['id']: p for p in info['patterns']}
@@ -513,7 +521,7 @@ class MomentumBlueSupportTests(unittest.TestCase):
             page.goto(self.url)
             wait_for_boot_run(page)
             page.evaluate(SEED_COURSE, SCRIPT)
-            page.evaluate(SETUP)
+            page.evaluate(SETUP, 972)
             page.evaluate(DRIVE, [pattern, x0, y0, [1], [], -1, turns[1] + 1, 1, 0])
             narrow = page.evaluate(FALL_THROUGH, faces)
             print('390x844 after use', narrow)

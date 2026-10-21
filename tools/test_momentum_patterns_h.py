@@ -15,9 +15,13 @@ retired TASK-012 id is registered
 (MOMENTUM_CATALOG_H, default artifacts/TASK-012/catalog-h.json); the frames
 are refused outside a right segment; every built piece matches the catalog
 piece in order: class (colour), shape (polygon points), box within GEOM_TOL
-world units, speedY and motion bounds; nothing lethal. A catalog rect that pokes past the
-corridor band (BAND, by the catalog's 0.05 rounding: bad-frame6/10/14) is
-expected flush with the band edge instead (TASK-043). Also: bad mode has no
+world units, speedY and motion bounds; nothing lethal. The catalog is in world
+units of the old 0.9 height corridor: every frame is expected scaled by
+GAMEPLAY.momentumBorders.halfWidth / shaftReferenceHalfWidth (TASK-137, as the
+turn types since TASK-130): span, offsets, sizes, points, speedY and motion
+bounds. A catalog rect that pokes past the corridor band (BAND, by the
+catalog's 0.05 rounding: bad-frame6/10/14) is expected flush with the band
+edge instead (TASK-043). Also: bad mode has no
 pattern floor (momentumPlacePattern returns null).
 
 Writes to MOMENTUM_PATTERNS_H_EVIDENCE_DIR (default artifacts/TASK-038):
@@ -25,7 +29,7 @@ registry-ids.txt (the 'right' ids, one per line), geometry-diff.json
 (compact {portId: max box diff}) and shots/port-<portId>.png for the entries
 from MOMENTUM_PORT_SHOTS_FROM (1-based, default 7) on (1280x720: momentum
 left, the same frame in bad mode right, the same view placement relative to
-the band).
+the band, momentum's offsets scaled by the frame scale).
 
 Requires Playwright Chromium and Pillow. No remote requests.
 """
@@ -39,6 +43,7 @@ import unittest
 from PIL import Image, ImageDraw
 
 from browser_test_support import start_browser_test, wait_for_boot, wait_for_boot_run
+from test_momentum_patterns_turn import scaled
 from test_momentum_borders import SEED_COURSE
 from verification_scenarios import setup as BAD_FRAME_SETUP
 
@@ -104,6 +109,7 @@ class MomentumPatternsHTests(unittest.TestCase):
             floors.find(f => f instanceof MomentumObstacleFloor).elements = [] }''')
         cls.half = cls.page.evaluate('GAMEPLAY.momentumBorders.halfWidth')
         cls.segment = cls.page.evaluate('momentumCourse.segment(0)')
+        cls.k = cls.page.evaluate('GAMEPLAY.momentumBorders.halfWidth / GAMEPLAY.momentumBorders.shaftReferenceHalfWidth')
         cls.port = json.loads(PORT_CATALOG.read_text())[:PORT_COUNT]
 
     def tearDown(self):
@@ -155,8 +161,12 @@ class MomentumPatternsHTests(unittest.TestCase):
         # Catalog motion speeds are full speed; the pieces move at the TASK-073
         # slow motion (speedY x momentumMotionScale(1))
         motion_scale = self.page.evaluate("momentumMotionScale(1)")
+        k = self.k
+        band = BAND * k
+        print('frame scale k', k, 'band', band)
         diffs = {}
         for t in self.port:
+            t = scaled(t, k)
             with self.subTest(id=t['id']):
                 x, y, r = self.place(t)
                 self.assertIsNotNone(r)
@@ -168,7 +178,7 @@ class MomentumPatternsHTests(unittest.TestCase):
                 for i, (p, e) in enumerate(zip(t['pieces'], els)):
                     self.assertEqual(e['className'], CLASSES[p['kind']])
                     self.assertFalse(e['lethal'])
-                    b = p['box']
+                    b = {side: v * k for side, v in p['box'].items()}
                     want = [x + b['left'], y + b['top'], x + b['right'], y + b['bottom']]
                     got = [e['left'], e['top'], e['right'], e['bottom']]
                     box_diff = max(abs(a - c) for a, c in zip(got, want))
@@ -178,13 +188,13 @@ class MomentumPatternsHTests(unittest.TestCase):
                     else:
                         local = p['points']
                     py = p['y']
-                    if p['shape'] == 'rect' and abs(py) + p['h'] / 2 > BAND:
-                        py = math.copysign(BAND - p['h'] / 2, py)
+                    if p['shape'] == 'rect' and abs(py) + p['h'] / 2 > band:
+                        py = math.copysign(band - p['h'] / 2, py)
                     shape = [[x + p['x'] + a, y + py + c] for a, c in local]
                     self.assertEqual(len(e['points']), len(shape))
                     shape_diff = max(max(abs(a[0] - c[0]), abs(a[1] - c[1])) for a, c in zip(e['points'], shape))
                     m = p.get('motion')
-                    speed = m['speedY'] * motion_scale if m else 0
+                    speed = m['speedY'] * k * motion_scale if m else 0
                     print(f"{t['id']} piece {i}: {e['className']} {p['shape']} box diff {box_diff:.3f}"
                           f" shape diff {shape_diff:.2e} speedY {e['speedY']}/{speed}"
                           f" motion {e['motion']}")
@@ -192,8 +202,8 @@ class MomentumPatternsHTests(unittest.TestCase):
                     self.assertLess(shape_diff, 1e-6)
                     self.assertAlmostEqual(e['speedY'], speed, delta=EPS)
                     if m:
-                        self.assertAlmostEqual(e['motion']['yMin'], y + m['yMin'], delta=EPS)
-                        self.assertAlmostEqual(e['motion']['yMax'], y + m['yMax'], delta=EPS)
+                        self.assertAlmostEqual(e['motion']['yMin'], y + m['yMin'] * k, delta=EPS)
+                        self.assertAlmostEqual(e['motion']['yMax'], y + m['yMax'] * k, delta=EPS)
                         self.assertEqual(e['motion']['gravity'], m['gravity'])
                     else:
                         self.assertIsNone(e['motion'])
@@ -220,16 +230,17 @@ class MomentumPatternsHTests(unittest.TestCase):
                 bad_view = bad_page.evaluate(SHOOT_PORT, [(frame['left'] + frame['right']) / 2, None])
                 bad = Image.open(io.BytesIO(bad_page.screenshot())).convert('RGB')
                 x, y, _ = self.place(t)
-                view = self.page.evaluate(SHOOT_PORT, [x + (frame['right'] - frame['left']) / 2,
-                                                       y + bad_view['y'] - BAD_CENTRE_Y])
+                k = self.k
+                view = self.page.evaluate(SHOOT_PORT, [x + k * (frame['right'] - frame['left']) / 2,
+                                                       y + k * (bad_view['y'] - BAD_CENTRE_Y)])
                 game = Image.open(io.BytesIO(self.page.screenshot())).convert('RGB')
                 print(f"{t['id']}: bad view centre {bad_view} momentum view centre {view}"
                       f" (frame centre offset bad {bad_view['x'] - frame['left']:.1f}"
                       f" momentum {view['x'] - x:.1f}, band offset bad {bad_view['y'] - BAD_CENTRE_Y:.1f}"
                       f" momentum {view['y'] - y:.1f})")
                 self.assertAlmostEqual(view['scale'], bad_view['scale'], delta=1e-9)
-                self.assertAlmostEqual(view['x'] - x, bad_view['x'] - frame['left'], delta=GEOM_TOL)
-                self.assertAlmostEqual(view['y'] - y, bad_view['y'] - BAD_CENTRE_Y, delta=GEOM_TOL)
+                self.assertAlmostEqual(view['x'] - x, k * (bad_view['x'] - frame['left']), delta=GEOM_TOL)
+                self.assertAlmostEqual(view['y'] - y, k * (bad_view['y'] - BAD_CENTRE_Y), delta=GEOM_TOL)
                 out = Image.new('RGB', (1280, 720), (255, 255, 255))
                 out.paste(game.resize((636, 358)), (0, 181))
                 out.paste(bad.resize((636, 358)), (644, 181))

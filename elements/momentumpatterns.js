@@ -1,19 +1,24 @@
-// Momentum obstacle patterns: the bad frames ported to momentum (TASK-036
-// port catalog) for the right segments, rotated for the up/down shafts and
-// placed at a join as turn types, built from one-time MomentumGreen /
+// Momentum obstacle patterns, built from one-time MomentumGreen /
 // MomentumBlue pieces, nothing lethal, and their spawning along the course
-// (MomentumObstacleFloor). The TASK-012 horizontal and TASK-013 vertical and
-// turn types are retired (TASK-038..040): the ported frames replace them.
+// (MomentumObstacleFloor). Spawned since TASK-111: the user's concept frames
+// only (MOMENTUM_FRAMES_H in the right corridors, MOMENTUM_FRAMES_V in the
+// shafts, MOMENTUM_FRAMES_TURN at the joins), sized in W = the corridor's
+// or shaft's interior width. The bad frames ported to momentum (TASK-036
+// port catalog: right, vertical and turn types) stay placeable only
+// (momentumPlacePattern, momentumPlaceTurn), scaled from their old 0.9
+// height band to the live half width (0.5 height since TASK-128).
 
 // Bad frames ported to momentum (the TASK-036 port catalog,
-// artifacts/TASK-036/catalog-bad-port.json): the right corridor band is the
-// bad floor..ceiling band, so the pieces keep their bad world sizes. span =
-// footprint length in world units; a piece is a MomentumGreen/MomentumBlue
-// .shape spec centred on (x, y): x along from the footprint start, y across
-// from the corridor centre line (+ = floor side), motion yMin/yMax across
-// as well. Right segments only: the motion is vertical. The wall-flush rects
-// of bad-frame6/10/14 sit 0.05 off the catalog centre so they end at the
-// band edge (972) instead of 0.05 inside the wall (TASK-043).
+// artifacts/TASK-036/catalog-bad-port.json), in world units of the old
+// right corridor (half width GAMEPLAY.momentumBorders.shaftReferenceHalfWidth,
+// the bad floor..ceiling band): MomentumPortPatternFactory scales them by
+// the live halfWidth over it. span = footprint length; a piece is a
+// MomentumGreen/MomentumBlue .shape spec centred on (x, y): x along from
+// the footprint start, y across from the corridor centre line (+ = floor
+// side), motion yMin/yMax across as well. Right segments only: the motion
+// is vertical. The wall-flush rects of bad-frame6/10/14 sit 0.05 off the
+// catalog centre so they end at the band edge (972, scaled: halfWidth)
+// instead of 0.05 inside the wall (TASK-043).
 const MOMENTUM_PATTERNS_PORT_H = Object.freeze([
     {id: 'bad-frame1', difficulty: 3, span: 2813.5, pieces: [
         {kind: 'green', x: 98.1, y: 38.2, shape: 'rect', w: 196.1, h: 1415.1},
@@ -162,22 +167,32 @@ const MOMENTUM_PATTERNS_PORT_V = Object.freeze([
     }}
 ].map(pattern => Object.freeze(pattern)))
 
-// Builds one ported bad frame (MOMENTUM_PATTERNS_PORT_H) in a right segment
+// Builds one ported bad frame (MOMENTUM_PATTERNS_PORT_H) in a right segment,
+// scaled by scale (default: the live corridor half width over
+// shaftReferenceHalfWidth, so it fits the corridor as it did the old one;
+// 1 for pieces already in world units of the live corridor)
 class MomentumPortPatternFactory
 {
-    constructor(pattern)
+    constructor(pattern, scale = null)
     {
         this.pattern = pattern
+        this.scale = scale
         this.dirs = ['right']
+    }
+    getScale()
+    {
+        return this.scale !== null ? this.scale :
+            GAMEPLAY.momentumBorders.halfWidth / GAMEPLAY.momentumBorders.shaftReferenceHalfWidth
     }
     getLength()
     {
-        return this.pattern.span
+        return this.pattern.span * this.getScale()
     }
     // (x, y): the footprint start on the corridor centre line
     create(x, y)
     {
-        const pieces = this.pattern.pieces
+        const k = this.getScale()
+        const pieces = k == 1 ? this.pattern.pieces : MomentumPortPatternFactory.scalePieces(this.pattern.pieces, k)
         const elements = pieces.map(piece =>
         {
             const spec = {shape: piece.shape, x: x + piece.x, y: y + piece.y, w: piece.w, h: piece.h}
@@ -204,6 +219,25 @@ class MomentumPortPatternFactory
             }
         })
         return elements
+    }
+    // The pieces with positions, sizes, points and motion speed/bounds x k
+    static scalePieces(pieces, k)
+    {
+        return pieces.map(piece =>
+        {
+            const scaled = {...piece, x: piece.x * k, y: piece.y * k}
+            if (piece.shape == 'rect')
+            {
+                scaled.w = piece.w * k
+                scaled.h = piece.h * k
+            }
+            if (piece.points)
+                scaled.points = piece.points.map(([px, py]) => [px * k, py * k])
+            if (piece.motion)
+                scaled.motion = {...piece.motion, speedY: piece.motion.speedY * k, yMin: piece.motion.yMin * k,
+                                 yMax: piece.motion.yMax * k}
+            return scaled
+        })
     }
     // Catalog box of a piece: {left, right, top, bottom} around (0, 0)
     static pieceBox(piece)
@@ -334,7 +368,7 @@ class MomentumFrameFactory
                                  yMax: piece.motion.max * W, gravity: false}
             return scaled
         })
-        return new MomentumPortPatternFactory({span: this.getLength(), pieces: pieces}).create(x, y)
+        return new MomentumPortPatternFactory({span: this.getLength(), pieces: pieces}, 1).create(x, y)
     }
 }
 
@@ -499,21 +533,8 @@ class MomentumTurnPatternFactory
         this.pattern = pattern
         const k = this.getScale()
         this.span = pattern.span * k
-        this.frame = new MomentumPortPatternFactory({span: this.span, pieces: pattern.pieces.map(piece =>
-        {
-            const scaled = {...piece, x: piece.x * k, y: piece.y * k}
-            if (piece.shape == 'rect')
-            {
-                scaled.w = piece.w * k
-                scaled.h = piece.h * k
-            }
-            if (piece.points)
-                scaled.points = piece.points.map(([px, py]) => [px * k, py * k])
-            if (piece.motion)
-                scaled.motion = {...piece.motion, speedY: piece.motion.speedY * k, yMin: piece.motion.yMin * k,
-                                 yMax: piece.motion.yMax * k}
-            return scaled
-        })})
+        this.frame = new MomentumPortPatternFactory({span: this.span,
+            pieces: MomentumPortPatternFactory.scalePieces(pattern.pieces, k)}, 1)
     }
     getScale()
     {
@@ -527,13 +548,6 @@ class MomentumTurnPatternFactory
         const clear = shaftHalfWidth +
             GAMEPLAY.momentumSpawn.turnClearanceHalfWidths * GAMEPLAY.momentumBorders.halfWidth
         return join.startsWith('right->') ? -clear - this.span : clear
-    }
-    // How far the pieces reach from the course vertex of join, world units:
-    // back along the incoming segment and ahead along the outgoing one
-    getReach(join, shaftHalfWidth)
-    {
-        const offset = this.getOffset(join, shaftHalfWidth)
-        return join.startsWith('right->') ? {back: -offset, ahead: 0} : {back: 0, ahead: offset + this.span}
     }
     // (x, y): the course vertex of the join; join: 'right->up' etc.;
     // shaftHalfWidth: the half width of the join's vertical segment
