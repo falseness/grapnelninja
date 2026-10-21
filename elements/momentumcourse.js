@@ -5,18 +5,22 @@
 // firstMinLen lengthens a shorter first segment (same draws, so a seeded
 // course only changes there) to keep the first join clear of the start view.
 // A vertical segment the other way from the previous vertical one, less than
-// oppositeShaftGap() (world units, read when it is generated) right of it,
-// goes the same way instead (same draws): the two shafts would overlap.
+// oppositeShaftGap(previous vertical one) (world units, read when it is
+// generated) right of it, goes the same way instead (same draws): the two
+// shafts would overlap. measureShaft(segment) runs on each new vertical
+// segment as it is generated (the borders store its half width then, the one
+// the gap check assumed).
 class MomentumCourse
 {
     constructor(x0 = 0, y0 = 0, options = GAMEPLAY.momentumCourse, firstMinLen = 0,
-                oppositeShaftGap = () => 0)
+                oppositeShaftGap = () => 0, measureShaft = () => {})
     {
         this.options = options
         this.x0 = x0
         this.y0 = y0
         this.firstMinLen = firstMinLen
         this.oppositeShaftGap = oppositeShaftGap
+        this.measureShaft = measureShaft
         this.segments = []
     }
 
@@ -50,7 +54,7 @@ class MomentumCourse
             while (i >= 0 && this.segments[i].dir == 'right')
                 --i
             const shaft = this.segments[i]
-            if (shaft !== undefined && shaft.dir != dir && last.x1 - shaft.x0 < this.oppositeShaftGap())
+            if (shaft !== undefined && shaft.dir != dir && last.x1 - shaft.x0 < this.oppositeShaftGap(shaft))
                 dir = shaft.dir
         }
         let length = options.minLen + Math.random() * (options.maxLen - options.minLen)
@@ -69,6 +73,8 @@ class MomentumCourse
             y1: dir == 'up' ? y0 - length : dir == 'down' ? y0 + length : y0
         }
         this.segments.push(segment)
+        if (dir != 'right')
+            this.measureShaft(segment)
         return segment
     }
 }

@@ -549,11 +549,12 @@
                     GAMEPLAY.momentumCamera.shaftMarginHeightRatio * height / scale.momentum,
                     width + startCentreX + GAMEPLAY.momentumCamera.firstShaftGapHeightRatio * height / scale.momentum)
                 // Shafts up and down side by side: neither one's border body
-                // reaches into the other
-                const oppositeShaftGap = () =>
-                    2 * momentumShaftHalfWidth() + borders.thickness + borders.backing
+                // reaches into the other. The earlier shaft keeps the half
+                // width it was built with; the new one is measured now.
+                const oppositeShaftGap = shaft =>
+                    momentumSegmentHalfWidth(shaft) + momentumShaftHalfWidth() + borders.thickness + borders.backing
                 momentumCourse = new MomentumCourse(-width, borders.originY, GAMEPLAY.momentumCourse,
-                                                    firstMinLen, oppositeShaftGap)
+                                                    firstMinLen, oppositeShaftGap, momentumSegmentHalfWidth)
                 screen = new MomentumScreen(momentumCourse)
 
                 elementsFactory = new ElementsFactory
