@@ -994,6 +994,16 @@ class Task564Tests(unittest.TestCase):
                 self.assertLess(math.hypot(g['dx']+80,g['dy']-40),e['rangeStage'])
                 self.assertEqual(e['planningLanding'][2:],[540,60])
                 self.assertTrue(e['intendedJumpRelease']); self.assertTrue(e['landmark'])
+                # Teaching briefs must agree with their structured actions and axes.
+                brief = e['brief'].lower()
+                self.assertIsInstance(e['intendedJumpRelease']['jump'], bool)
+                if 'jump' in brief:
+                    self.assertTrue(e['intendedJumpRelease']['jump'], e['id'])
+                if 'moverEnvelope' in e:
+                    self.assertIn(e['moverEnvelope']['axis'], ['x', 'y'], e['id'])
+                    for direction, axis in [('horizontal', 'x'), ('vertical', 'y')]:
+                        if direction in brief:
+                            self.assertEqual(e['moverEnvelope']['axis'], axis, e['id'])
                 self.assertTrue(all(c['purpose'] for c in e['colliderPurposes']))
                 if i<2: self.assertEqual(e['mechanics'],['green'])
                 if i<6: self.assertNotIn('red',e['mechanics'])
@@ -1016,6 +1026,10 @@ class Task564Tests(unittest.TestCase):
                     self.assertEqual(e['redEnvelope'],dict(size=[80,80],travel=700,periodMs=6000,minimumSweptClearance=150,observationLandingLength=500,status='isolated calibration; transformed sweep must be checked before building'))
                 checked.append(dict(id=e['id'],reach=math.hypot(g['dx']+80,g['dy']-40),range=e['rangeStage']))
         self.assertEqual(len(checked),32)
+        encounters = {e['id']: e for s in sections for e in s['encounters']}
+        self.assertEqual(encounters['S06-E02']['moverEnvelope']['axis'], 'x')
+        self.assertIs(encounters['S08-E02']['intendedJumpRelease']['jump'], True)
+        print('PASS brief consistency: S06-E02 horizontal axis=x; S08-E02 jump=true; all jump/directional briefs checked')
         self.write('measurements.json',dict(checked=checked,productionEnvelopes=m,scope='dimensions calibrated; placements planned'))
         print('PASS 8 sections / 32 encounters; calibrated numeric envelopes; S01/S02 green-only; first red S07')
 
