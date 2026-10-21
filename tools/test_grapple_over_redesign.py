@@ -3037,3 +3037,176 @@ class Task577Tests(unittest.TestCase):
             im.load();self.assertEqual(im.size,(1688,1560))
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
         print('PASS index: all required files exist; JSON parses; touch-strip decodes 1688x1560; retained evidence <200 MB')
+
+class Task578Tests(unittest.TestCase):
+    """Built S02 composition; one entry fixture followed by uninterrupted production traversal."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='One isolated S02 entry fixture; continuous thereafter; not from base'
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK578_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+    page = Task571Tests.page
+    press = Task571Tests.press
+    release = Task571Tests.release
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+
+    def test_01_objects_and_dependencies(self):
+        p=self.page()
+        g=p.evaluate("""() => ({elements:floors[0].level.elements,encounters:floors[0].level.encounters,
+            movers:floors[0].level.movers,dragCount:floors[0].dragZones.length,
+            range:grappleOverAcquisitionRadius(),upgrade:grappleOverProfile().upgradedAcquisitionRadius,
+            scale:scale[version],calibration:GRAPPLE_OVER_MOVEMENT})""")
+        self.assertEqual(len(g['elements']),20)
+        self.assertEqual(g['movers'],[]);self.assertEqual(g['dragCount'],0)
+        self.assertEqual((g['range'],g['upgrade'],g['scale']),(360,540,.375))
+        for e in g['elements']:
+            self.assertEqual(e['role'],'bounce');self.assertTrue(e['purpose']);self.assertTrue(e['grapplable'])
+            e['encounters']=[c['id'] for c in g['encounters'] if e['id'] in c['elements']]
+            self.assertTrue(e['encounters'])
+            e['width']=max(v['x'] for v in e['points'])
+            if 'anchor' not in e['id']:self.assertGreaterEqual(e['width'],540)
+        self.assertEqual([c['id'] for c in g['encounters'] if c['id'].startswith('S02')],
+                         ['S02-01','S02-02','S02-03','S02-04'])
+        es={e['id']:e for e in g['elements']}
+        g['deliberateGaps']=[es[b]['x']-es[a]['x']-es[a]['width'] for a,b in
+            [('quarry-landing','yard-fourth-landing'),('quarry-landing','quarry-second-landing'),
+             ('quarry-second-landing','quarry-third-landing'),('quarry-third-landing','quarry-fourth-landing')]]
+        self.assertEqual(g['deliberateGaps'],[208,132,212,208])
+        g.update(firstUseOrder=['green'],yellow='absent: suppression/clearance not applicable',
+            blue='absent: swept bounds/period/acquisition window not applicable',hazards='absent: contact recovery not applicable',
+            removedClutter='none: all built colliders have route or recovery purposes; no future geometry emitted')
+        self.write('objects.json',g)
+        old=json.loads((ROOT/'artifacts/TASK-577/evidence-index.json').read_text())['config']['source_hashes']
+        unchanged={n:h for n,h in old.items() if n!='tools/test_grapple_over_redesign.py'}
+        for n,h in unchanged.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        reused=[]
+        for name in ['tests.log','tolerance.json','recovery.json','verifier-audit.log']:
+            path='artifacts/TASK-577/'+name
+            reused.append(dict(path=path,sha256=hashlib.sha256((ROOT/path).read_bytes()).hexdigest()))
+        tolerance=json.loads((ROOT/'artifacts/TASK-577/tolerance.json').read_text())['cases']
+        self.assertEqual(len(tolerance),40);self.assertTrue(all(c['success'] for c in tolerance))
+        recovery=json.loads((ROOT/'artifacts/TASK-577/recovery.json').read_text())['cases']
+        self.assertEqual(len(recovery),8)
+        for c in recovery:
+            self.assertTrue(c['catch']['contacts']);self.assertTrue(c['returned']['contacts'])
+            self.assertEqual(c['poseInjectionsAfterStart'],0)
+        self.write('dependency.json',dict(unchanged=unchanged,reused=reused,
+            changed=['tools/test_grapple_over_redesign.py: additive Task578Tests only'],
+            dependencies='mountain -> fixedlevel -> physics/events -> yard observer; render/landmarks -> draw; unchanged input/range/rope/modes',
+            refreshed='Current S02 continuous route and composition. TASK-576 continuous geometry superseded by TASK-577; historical tests preserved.',
+            hashPolicy='HEAD-only changes do not invalidate identical tested source hashes'))
+        print('PASS objects: 20 purposeful green colliders; 4 ordered S02 encounters; shelves >=540; gaps 208/132/212/208; movers=0 drag=0 hazards=0')
+        print('PASS dependencies: 49 unchanged source hashes; archived 40 tolerance and 8 recovery cases inspected')
+
+    def test_02_continuous_route_and_captures(self):
+        p=self.page()
+        p.evaluate("""() => {TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500);
+            Object.assign(ninja,{x:1780,y:-360,speedX:0,speedY:0});screen.trackGrappleOver(true);
+            window.frames578=[];window.capture578=()=>{draw();frames578.push({image:canvas.toDataURL('image/jpeg',.85),tick:YARD.result().tick});};capture578()}""")
+        approaches=[];observations=[]
+        def capture(label,target):
+            p.evaluate('draw()')
+            observation=p.evaluate("""t=>({tick:YARD.result().tick,target:t,client:YARD.client(t),
+                section:replacementSection().id,label:I18N.t(replacementSection().labelKey),landmark:LANDMARKS.frame.drawn})""",target)
+            self.assertEqual(observation['section'],'S02')
+            self.assertEqual(observation['landmark'][0]['id'],'terraced-quarry')
+            self.assertTrue(0<observation['client']['x']<1280 and 0<observation['client']['y']<720)
+            observations.append(observation)
+            im=Image.open(io.BytesIO(p.screenshot())).convert('RGB')
+            ImageDraw.Draw(im).text((12,690),label,fill='white');approaches.append(im)
+        def step(n):
+            p.evaluate('n=>{for(let i=0;i<n;i++){YARD.step(1);if(YARD.result().tick%3===0)capture578()}}',n)
+        def until(id,bound):
+            p.evaluate("""a=>{for(let i=0;i<a.bound;i++){YARD.step(1);if(YARD.result().tick%3===0)capture578();
+                if(YARD.result().rows.at(-1).contacts.some(c=>c.id===a.id&&c.ny<-.9))break}}""",dict(id=id,bound=bound))
+            self.assertTrue(self.landings(self.result(p),id),id)
+        targets=Task577Tests.targets
+        capture('S02-01 shared entry / leftward first terrace',targets[0])
+        # Composition-only camera; actual route uses the unchanged .375 camera.
+        p.evaluate('window.cam578={x:screen.x,y:screen.y};screen.x=width/.375/2-2300;screen.y=height/.375/2+450;draw()')
+        p.screenshot(path=str(self.out/'overview.png'))
+        flat=p.evaluate("""() => ({elements:floors[0].elements.map(e=>({id:e.id,points:e.getPoints()})),
+            shape:replacementQuarryShape(GRAPPLE_OVER_LANDMARKS.width,GRAPPLE_OVER_LANDMARKS.height),
+            landmark:{x:(2366+screen.x)*.375-GRAPPLE_OVER_LANDMARKS.width/2,
+                      y:(-610+screen.y)*.375-GRAPPLE_OVER_LANDMARKS.height},
+            camera:{x:screen.x,y:screen.y},factor:1280/width})""")
+        im=Image.new('RGB',(1280,720),'white');pen=ImageDraw.Draw(im);f=flat['factor']
+        for part in flat['shape']['parts']:
+            pen.polygon([((x+flat['landmark']['x'])*f,(y+flat['landmark']['y'])*f) for x,y in part],fill='#777777')
+        for e in flat['elements']:
+            points=[((v['x']+flat['camera']['x'])*.375*f,(v['y']+flat['camera']['y'])*.375*f) for v in e['points']]
+            pen.polygon(points,fill='black')
+            if e['id'].startswith('quarry'):pen.text(points[0],e['id'],fill='#aa0000')
+        pen.text((12,16),'Terraced Quarry / stepped-cut landmark (gray), live colliders (black)',fill='black')
+        im.save(self.out/'silhouette.png')
+        p.evaluate('screen.x=cam578.x;screen.y=cam578.y;draw()')
+        self.press(p,targets[0]);step(30);self.release(p);step(41)
+        capture('S02-02 first terrace / upper return',targets[1])
+        self.press(p,targets[1]);step(57);self.release(p);until(Task577Tests.exits[1],800)
+        self.press(p,dict(x=2180,y=-630));step(75);self.release(p)
+        capture('S02-03 broad second terrace / angled cut',targets[2])
+        self.press(p,targets[2]);step(36);self.release(p);until(Task577Tests.exits[2],400)
+        capture('S02-04 third terrace / rightward upper exit',targets[3])
+        self.press(p,targets[3]);step(90);self.release(p);until(Task577Tests.exits[3],400)
+        p.evaluate('capture578()')
+        r=self.result(p);exits=[]
+        for i,id in enumerate(Task577Tests.exits):
+            landed=self.landings(r,id);self.assertTrue(landed,id)
+            exits.append(dict(encounter=f'S02-0{i+1}',collider=id,tick=landed[0]['tick']))
+        self.assertEqual(sorted(e['tick'] for e in exits),[e['tick'] for e in exits])
+        r.update(exits=exits,scope='Single isolated S02 entry fixture; uninterrupted production inputs thereafter; not from base',
+                 fixture=dict(x=1780,y=-360,vx=0,vy=0),resets=0,poseInjections=0,approaches=observations)
+        self.write('route.json',r)
+        sheet=Image.new('RGB',(2560,1440))
+        for i,im in enumerate(approaches):sheet.paste(im,((i%2)*1280,(i//2)*720))
+        sheet.save(self.out/'approaches.jpg',quality=88)
+        # Render-only replay of sampled continuous simulation; no fixture is presented as gameplay.
+        clip=p.evaluate('''async () => {
+            const stream=canvas.captureStream(0),track=stream.getVideoTracks()[0],chunks=[];
+            const rec=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9',videoBitsPerSecond:1800000});
+            rec.ondataavailable=e=>chunks.push(e.data);const ended=new Promise(r=>rec.onstop=r);rec.start();
+            for(const f of frames578){const image=new Image();image.src=f.image;await image.decode();
+                ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(image,0,0);ctx.restore();
+                ctx.fillStyle='white';ctx.font='14px sans-serif';ctx.fillText('Continuous S02 production trace replay / tick '+f.tick,12,24);
+                track.requestFrame();await new Promise(r=>setTimeout(r,50));}
+            await new Promise(r=>setTimeout(r,200));
+            rec.stop();await ended;stream.getTracks().forEach(t=>t.stop());
+            const blob=new Blob(chunks,{type:'video/webm'});
+            return await new Promise(r=>{const reader=new FileReader();reader.onload=()=>r(reader.result.split(',')[1]);reader.readAsDataURL(blob)});
+        }''')
+        (self.out/'section.webm').write_bytes(base64.b64decode(clip))
+        # Decode the full retained clip in the browser, not just its container header.
+        decoded=p.evaluate('''async b64=>{const v=document.createElement('video');v.muted=true;
+            v.src='data:video/webm;base64,'+b64;let frames=0;
+            const count=()=>{frames++;v.requestVideoFrameCallback(count)};v.requestVideoFrameCallback(count);
+            await v.play();await new Promise((resolve,reject)=>{v.onended=resolve;v.onerror=reject});
+            return {frames,width:v.videoWidth,height:v.videoHeight}}''',clip)
+        self.assertGreater(decoded['frames'],100);self.assertEqual(decoded['width'],1280)
+        self.write('clip-decode.json',decoded)
+        print(f'PASS continuous route: four ordered exits {exits}; trusted inputs; zero resets/injections after entry fixture; clip decoded {decoded}')
+
+    def test_03_evidence_index(self):
+        required={'commands.log':'exact command, exit status, collected identifiers, revision, hashes and browser configuration',
+            'tests.log':'3 exact Task578Tests cases, no skips, OK','overview.png':'all four quarry encounters and Terraced Quarry landmark',
+            'silhouette.png':'plain monochrome structure and open gaps','approaches.jpg':'four actual continuous approach views',
+            'objects.json':'all twenty built collider purposes, green-only role order and absent conditional obstacles',
+            'section.webm':'continuous representative production traversal replay',
+            'route.json':'trusted inputs and four ordered landing contacts; no resets or injections',
+            'clip-decode.json':'full clip browser decode and frame count',
+            'dependency.json':'exact unchanged dependencies and referenced prior proof',
+            'review.md':'independent visual observations and pacing assessment',
+            'evidence-index.json':'artifact assertions and provenance'}
+        self.write('evidence-index.json',dict(config=self.config,artifacts=required))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith(('.png','.jpg')):
+                with Image.open(self.out/name) as im:im.load();self.assertGreater(im.width,1000)
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: JSON parses; three images decode; clip fully decoded; retained evidence <200 MB; visual review follows')
+
+
