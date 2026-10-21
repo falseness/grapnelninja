@@ -5,8 +5,8 @@
 // applied to the real run through synthetic mousedown/mouseup events (the
 // game's own input handlers). The real run is never edited: no teleports,
 // no invulnerability. Score: no hp loss / death first, then progress along
-// the camera rail (extrapolated a little along the velocity), then staying
-// near the rail. Used by tools/momentum_natural_run.py.
+// the course centre line (extrapolated a little along the velocity), then
+// staying near it. Used by tools/momentum_natural_run.py.
 (function()
 {
     'use strict'
@@ -111,10 +111,47 @@
             }
         }
     }
-    function railS()
+    // The ninja's nearest point on the course centre line (segments around
+    // the camera's): its distance s along the course and how far off it is
+    function courseAt()
     {
-        const view = height / scale[version]
-        return screen.rail.project(ninja.x, ninja.y, screen.railS - screen.lead() - view, 2 * view + width / scale[version])
+        const course = screen.course
+        let best = null, start = 0
+        for (let i = 0; i <= screen.segmentIndex + 2; ++i)
+        {
+            const seg = course.segment(i), d = segmentDirection(seg.dir)
+            if (i >= screen.segmentIndex - 1)
+            {
+                const along = Math.min(seg.length, Math.max(0, (ninja.x - seg.x0) * d.x + (ninja.y - seg.y0) * d.y))
+                const off = Math.hypot(ninja.x - seg.x0 - d.x * along, ninja.y - seg.y0 - d.y * along)
+                if (!best || off < best.off)
+                    best = {s: start + along, off}
+            }
+            start += seg.length
+        }
+        return best
+    }
+    // The course centre line point at distance s
+    function coursePoint(s)
+    {
+        const course = screen.course
+        for (let i = 0; ; ++i)
+        {
+            const seg = course.segment(i)
+            if (s <= seg.length)
+            {
+                const d = segmentDirection(seg.dir)
+                return {x: seg.x0 + d.x * s, y: seg.y0 + d.y * s}
+            }
+            s -= seg.length
+        }
+    }
+    // Unit direction from the ninja to the course half a view height ahead
+    function aheadDirection(s)
+    {
+        const p = coursePoint(s + 0.5 * height / scale[version])
+        const len = Math.hypot(p.x - ninja.x, p.y - ninja.y) || 1
+        return {x: (p.x - ninja.x) / len, y: (p.y - ninja.y) / len}
     }
     function throwAt(degrees)
     {
@@ -164,7 +201,7 @@
         ap.gameRng.state = base.rngState
         ap.simDead = false
         simApply(action)
-        const s0 = railS()
+        const s0 = courseAt().s
         let t = 0
         for (; t < HORIZON && !ap.simDead; ++t)
         {
@@ -177,10 +214,9 @@
             return t * 1000 - 1e6
         const ext = EXTRAPOLATE_TICKS * cyclesPerTick
         const view = height / scale[version]
-        const sNow = railS()
-        const p = screen.rail.pointAt(sNow), tg = screen.rail.tangentAt(sNow)
+        const at = courseAt(), sNow = at.s, tg = aheadDirection(sNow)
         const along = (ninja.speedX * tg.x + ninja.speedY * tg.y) * ext
-        const off = Math.hypot(ninja.x - p.x, ninja.y - p.y) / view
+        const off = at.off / view
         return -lost * 50000 + (sNow + Math.max(-0.3 * view, Math.min(0.5 * view, along)) - s0) / view * 1000 - off * 300
     }
     function evaluate(plans)
@@ -228,7 +264,7 @@
             plans.push({action: {type: 'none'}, releaseAfter})
         if (grapnel.throwed)
             plans.push({action: {type: 'release'}, releaseAfter: Infinity})
-        const tg = screen.rail.tangentAt(railS())
+        const tg = aheadDirection(courseAt().s)
         const base = Math.atan2(tg.y, tg.x) * 180 / Math.PI
         const angles = REL_ANGLES.map(a => base + a).concat(ABS_ANGLES)
         for (const a of angles)

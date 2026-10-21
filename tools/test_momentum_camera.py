@@ -6,12 +6,11 @@ course centre line: every frame sets ninja position/speed through
 page.evaluate, then runs one physics() frame (cyclesPerTick physics steps).
 Asserts, with the camera's own segment (screen.getSegment()):
 - screen.y grows monotonically in the up segment (camera moves up) and
-  shrinks monotonically in the down segment; in right segments it stays put
-  while the camera has not turned toward a shaft yet, and otherwise moves
-  only toward its last vertical direction (MomentumScreen.verticalTravel: the
-  sign of the rail tangent's y, since TASK-084 the camera rides the rail and
-  turns toward a shaft from the start of the arc before it, TASK-085);
-- the camera never scrolls back in x: screen.x (= -camera left) never grows;
+  shrinks monotonically in the down segment; in right segments the ninja
+  stays in the vertical middle of the view;
+- in right segments the camera never scrolls back in x: screen.x (= -camera
+  left) never grows; in a shaft it only slides toward the shaft centre line
+  (the X catch-up, GAMEPLAY.momentumCamera.catchUpHeightRatio);
 - borders and obstacles left behind below/above the view are deleted
   (screen.deletedBehind > 0);
 - a ninja pushed out of view behind the travel direction (below the view in
@@ -86,7 +85,8 @@ DRIVE = '''([points, step, first]) => {
         const frame = first + k
         if (frame % 10 == 0) draw()
         frames.push([frame, screen.getSegment().dir, screen.x, screen.y, ninja.x, ninja.y,
-                     screen.hasLeftBehind(ninja), screen.segmentIndex, screen.verticalTravel])
+                     screen.hasLeftBehind(ninja), screen.segmentIndex, screen.verticalTravel,
+                     screen.getSegment().x0])
     })
     return frames
 }'''
@@ -134,7 +134,7 @@ class MomentumCameraTests(unittest.TestCase):
                 shot_frame = cls.frames[-1][0]
         cls.state = page.evaluate('''({deletedBehind: screen.deletedBehind, lethalDeaths,
             segments: momentumCourse.segments.slice(0, 6).map(s => s.dir),
-            viewHeight: height / scale[version], runInProgress, version})''')
+            viewHeight: height / scale[version], viewWidth: width / scale[version], runInProgress, version})''')
         trace = [f[:6] for f in cls.frames if f[0] % 10 == 0]
         (cls.out / 'camera-trace.json').write_text(json.dumps(
             {'fields': ['frame', 'segDir', 'screen.x', 'screen.y', 'ninja.x', 'ninja.y'],
@@ -180,40 +180,36 @@ class MomentumCameraTests(unittest.TestCase):
         segment_length = self.page.evaluate(f'momentumCourse.segment({course_index("down")}).length')
         self.assertGreater(ys[0] - ys[-1], 0.5 * segment_length)
 
-    def test_screen_y_still_before_first_vertical(self):
-        # Still until the camera turns toward the first shaft (up) on the
-        # rail arc before it, then only up (TASK-085: was the TASK-069
-        # pre-turn preview; there may be no still frame)
-        frames = self.frames_in(0)
-        ys = {f[3] for f in frames if f[8] == 0}
-        print('segment 0 (right) screen.y values before the turn:', sorted(ys),
-              'turning frames:', sum(1 for f in frames if f[8] != 0), 'of', len(frames))
-        self.assertLessEqual(ys, {0})
-        self.assertTrue(all(f[8] == -1 for f in frames if f[8] != 0))
-        self.assert_monotone('segment 0 turning up: screen.y non-decreasing', [f[3] for f in frames if f[8] == -1], 1)
-
-    def test_right_segments_settle_towards_previous_vertical(self):
-        # Right segments after a shaft: the camera moves only toward the last
-        # vertical direction, the up shaft's until it turns toward the down
-        # shaft after them on the rail arc (verticalTravel +1), then only down
-        up, down = course_index('up'), course_index('down')
-        after_up = [f for f in self.frames if up < f[7] < down]
-        self.assert_monotone('right segments after up: screen.y non-decreasing',
-                             [f[3] for f in after_up if f[8] == -1], 1)
-        self.assert_monotone('right segments after up, turning down: screen.y non-increasing',
-                             [f[3] for f in after_up if f[8] == 1], -1)
-        # No turn back up once it turned down
-        travel = [f[8] for f in after_up]
-        self.assertEqual(travel, sorted(travel), 'verticalTravel after up: -1 then +1')
-        ys = [f[3] for f in self.frames if f[7] > down]
-        self.assert_monotone('right segment after down: screen.y non-increasing', ys, -1)
+    def test_right_segments_ninja_in_vertical_middle(self):
+        # Right segments: the camera keeps the ninja in the vertical middle
+        # of the view (within the ninja's last step)
+        H = self.state['viewHeight']
+        offsets = [abs(f[5] + f[3] - H / 2) for f in self.frames if f[1] == 'right']
+        print('right segments: |ninja screen y - H/2| max', max(offsets), 'over', len(offsets), 'frames')
+        self.assertLessEqual(max(offsets), self.step + 1e-6)
 
     def test_screen_x_never_scrolls_back(self):
         # screen.x is the world -> view offset (= -camera left): a camera
-        # moving right lowers it, so never scrolling back means it never grows
-        xs = [f[2] for f in self.frames]
-        self.assert_monotone('screen.x non-increasing (camera x non-decreasing)', xs, -1)
-        self.assertLess(xs[-1], xs[0])
+        # moving right lowers it, so never scrolling back in a right segment
+        # means it never grows there; in a shaft the view centre only
+        # approaches the shaft centre line (it may go left to reach it)
+        W = self.state['viewWidth']
+        back, away, shaft_left = [], [], 0
+        for a, b in zip(self.frames, self.frames[1:]):
+            if b[1] == 'right':
+                if b[2] > a[2] + 1e-6:
+                    back.append(b[0])
+            elif a[1] == b[1] and a[7] == b[7]:
+                off = lambda f: abs(-f[2] + W / 2 - f[9])
+                if off(b) > off(a) + 1e-6:
+                    away.append(b[0])
+                shaft_left += b[2] > a[2] + 1e-6
+        print(f'screen.x: {len(self.frames)} frames, first {self.frames[0][2]:.1f}, last {self.frames[-1][2]:.1f}, '
+              f'right-segment steps back {len(back)}, shaft steps away from the centre line {len(away)}, '
+              f'shaft steps left (toward the centre) {shaft_left}')
+        self.assertEqual(back, [])
+        self.assertEqual(away, [])
+        self.assertLess(self.frames[-1][2], self.frames[0][2])
 
     def test_left_behind_vertically_deleted(self):
         print('elements deleted behind vertically:', self.state['deletedBehind'])

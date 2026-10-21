@@ -1,34 +1,34 @@
 """Momentum natural run against the camera rule (ported from TASK-086).
 
 60 s (3600 ticks at 60 fps) of momentum played by tools/momentum_natural_bot.js
-through real mousedown/mouseup events, 1280x720, rAF loop stopped (one
-physics() a frame, like 60 fps). No scripted ninja positions, no
-invulnerability, the obstacle floor is live.
+through real mousedown/mouseup events, 1280x720 (MOMENTUM_NATURAL_VIEWPORT=WxH
+for another), rAF loop stopped (one physics() a frame, like 60 fps). No
+scripted ninja positions, no invulnerability, the obstacle floor is live.
 
-The camera rule (the user's spec, like bad mode moveScreen.js
-shouldStartMoveX with X = GAMEPLAY.cameraBorderWidthPercent): the camera has
-a direction of movement and moves only while the ninja moves in that
-direction and is past X % of the view along it.
+The camera rule (elements/momentumcamera.js, user rule 2026-10-20): the ninja
+stays in the vertical middle (an up shaft's camera never moves down, a down
+shaft's never up: holdY); in a right corridor X keeps the ninja on the
+GAMEPLAY.cameraBorderWidthPercent line while it is past it (never left); in a
+shaft the view slides to the shaft's centre line; X closes its lag at up to
+the ninja's x speed plus GAMEPLAY.momentumCamera.catchUpHeightRatio x H a
+cycle.
 
 Per frame (trace.json rows):
-[tick, dir, tx, ty, fwdFrac, ninjaVel, ninjaMove, camMove, outOfView]
-- dir: 'r' / 'u' / 'd' on a straight rail piece, 'a' on an arc; (tx, ty) the
-  rail tangent at the view centre (the camera's direction).
-- fwdFrac: the ninja's position along (tx, ty) as a share of the view extent
-  along it (W |tx| + H |ty|), from the trailing edge (right: x share of the
-  width from the left edge; down: y share from the top; up: from the bottom).
-- ninjaVel: the ninja's velocity along the direction (a physics cycle) at
-  the end of the frame; ninjaMove / camMove: the ninja's / the camera's
-  motion along it over the frame.
-- outOfView: the ninja's centre is outside the view.
-Per seed: maxFwdFrac, framesBeyondTrigger (fwdFrac > X + max(0, ninjaMove) /
-extent + 1e-6: further ahead than one frame of its own motion),
-framesMovedWithoutRule (camMove > 1e-9 while ninjaVel <= 0 or the frame's
-starting fwdFrac < X - 1e-6; the camera decides on the state before it
-moves), framesOutOfView. The worst (max fwdFrac) frame is replayed from the
-recorded actions (the replay must give the recorded fwdFrac back), drawn and
-saved with the X line as shots/worst-seed<n>.png (and the worst in-view frame
-as shots/worst-inview-seed<n>.png when the worst one is out of view).
+[tick, dir, fracX, fracY, ninjaStep, camStep, hold, outOfView]
+- dir: the camera's segment 'r' / 'u' / 'd'.
+- fracX / fracY: the ninja's position in the view as a share of its width /
+  height; ninjaStep / camStep: how far the ninja / the camera moved over the
+  frame; hold: the shaft rule held Y on the frame's last cycle.
+Per seed: framesOutOfView; maxFracX and framesBeyondX (right frames with
+fracX > X + the ninja's x step / W); maxOffCentre (max |fracY - 0.5| minus
+the ninja's y step / H outside hold frames) and framesOffCentre (> 1e-6);
+framesCamJump (camStep > the larger ninja step of this and the last frame +
+one unit plus the X catch-up step (GAMEPLAY.momentumCamera.catchUpHeightRatio
+x H) a cycle + 0.01); framesHold; framesShaftWallOut (in a shaft, one of
+its wall faces is out of view). The worst off-centre frame and the
+max fracX frame are replayed from the recorded actions, drawn and saved with
+the X line and the middle line as shots/offcentre-seed<n>.png and
+shots/maxfracx-seed<n>.png.
 
 usage (from tools/): python3 momentum_natural_run.py <seed> [out dir]
 (out dir also from MOMENTUM_NATURAL_OUT; default /tmp/momentum-natural).
@@ -49,6 +49,7 @@ from browser_test_support import start_browser_test, wait_for_boot_run  # noqa: 
 
 BOT = (TOOLS / 'momentum_natural_bot.js').read_text()
 FRAMES = int(os.environ.get('MOMENTUM_NATURAL_FRAMES', 3600))
+VIEWPORT = [int(v) for v in os.environ.get('MOMENTUM_NATURAL_VIEWPORT', '1280x720').split('x')]
 SEP = (',', ':')
 
 SETUP = '''(seed) => {
@@ -57,23 +58,19 @@ SETUP = '''(seed) => {
     cancelAnimationFrame(game)
     TUTORIAL_HINT.visible = false
     const W = width / scale[version], H = height / scale[version]
-    const rec = window.__rec = {W, H, trigger: GAMEPLAY.cameraBorderWidthPercent / 100}
-    rec.sample = () => {
-        const s = screen.railS === null ? -screen.x - screen.course.x0 + W / 2 : screen.railS
-        const t = screen.rail.tangentAt(s)
-        const piece = screen.rail.pieces[screen.rail.pieceAt(s)]
-        const dir = piece.type == 'arc' ? 'a' : Math.abs(t.x) > 0.5 ? 'r' : t.y < 0 ? 'u' : 'd'
-        const extent = W * Math.abs(t.x) + H * Math.abs(t.y)
-        const cx = -screen.x + W / 2, cy = -screen.y + H / 2
-        const along = (x, y) => x * t.x + y * t.y
-        return {dir, t, extent, cam: [-screen.x, -screen.y], pos: [ninja.x, ninja.y],
-                frac: 0.5 + along(ninja.x - cx, ninja.y - cy) / extent,
-                vel: along(ninja.speedX, ninja.speedY),
-                out: ninja.x + screen.x < 0 || ninja.x + screen.x > W || ninja.y + screen.y < 0 || ninja.y + screen.y > H}
+    const rec = window.__rec = {W, H, trigger: screen.borderX / W}
+    // wallOut: in a shaft, a wall face of it is out of view
+    const wallOut = (seg) => {
+        if (seg.dir == 'right') return false
+        const hw = momentumSegmentHalfWidth(seg)
+        return seg.x0 - hw + screen.x < 0 || seg.x0 + hw + screen.x > W
     }
+    rec.sample = () => ({dir: screen.getSegment().dir[0], cam: [-screen.x, -screen.y], pos: [ninja.x, ninja.y],
+        fx: (ninja.x + screen.x) / W, fy: (ninja.y + screen.y) / H, hold: screen.holdY, wall: wallOut(screen.getSegment()),
+        out: ninja.x + screen.x < 0 || ninja.x + screen.x > W || ninja.y + screen.y < 0 || ninja.y + screen.y > H})
     rec.prev = rec.sample()
     rec.ninja0 = ninja
-    return {W, H, trigger: rec.trigger, cyclesPerTick}
+    return {W, H, trigger: rec.trigger, cyclesPerTick, catchUp: GAMEPLAY.momentumCamera.catchUpHeightRatio * H}
 }'''
 
 # n ticks; replay: dispatch the recorded actions instead of searching
@@ -87,12 +84,13 @@ STEP = '''([n, replay]) => {
             physics(); __mb.tick++
         } else
             __mb.step()
-        const p = rec.prev, c = rec.sample(), t = c.t
-        const ninjaMove = (c.pos[0] - p.pos[0]) * t.x + (c.pos[1] - p.pos[1]) * t.y
-        const camMove = (c.cam[0] - p.cam[0]) * t.x + (c.cam[1] - p.cam[1]) * t.y
-        out.push([__mb.tick, c.dir, r4(t.x), r4(t.y), r4(c.frac), r4(c.vel), r4(ninjaMove), r4(camMove), c.out ? 1 : 0,
+        const p = rec.prev, c = rec.sample()
+        const nx = c.pos[0] - p.pos[0], ny = c.pos[1] - p.pos[1]
+        const cx = c.cam[0] - p.cam[0], cy = c.cam[1] - p.cam[1]
+        out.push([__mb.tick, c.dir, r4(c.fx), r4(c.fy), r4(Math.hypot(nx, ny)), r4(Math.hypot(cx, cy)),
+                  c.hold ? 1 : 0, c.out ? 1 : 0,
                   // not in trace.json: exact values for the counts
-                  c.frac, ninjaMove, camMove, c.vel, p.frac, c.extent])
+                  c.fx, c.fy, Math.abs(nx), Math.abs(ny), Math.hypot(nx, ny), Math.hypot(cx, cy), c.wall ? 1 : 0])
         rec.prev = c
     }
     return {rows: out, dead: __mb.deathTick, sameNinja: ninja === rec.ninja0, hp: momentumState.hp,
@@ -107,29 +105,24 @@ DRAW = '''() => {
     __mb.fxRng.state = st
 }'''
 
-# the trigger line (fwdFrac = X across the view), the ninja ring (or an
-# arrow toward it when it is out of view) and a caption: DOM overlay, screenshot only
+# the X line, the vertical middle line, the ninja ring and a caption: DOM
+# overlay, screenshot only
 OVERLAY = '''([caption]) => {
-    const rec = __rec, c = rec.sample(), t = c.t
+    const rec = __rec, c = rec.sample()
     const rect = canvas.getBoundingClientRect(), k = rect.width / rec.W
-    const cx = rect.width / 2, cy = rect.height / 2
-    const off = (rec.trigger - 0.5) * c.extent * k
-    const lx = cx + t.x * off, ly = cy + t.y * off, L = 2 * Math.hypot(rect.width, rect.height)
-    const nx = (ninja.x + screen.x) * k, ny = (ninja.y + screen.y) * k
-    const f = Math.min(1, Math.abs((cx - 30) / (nx - cx || 1e-9)), Math.abs((cy - 70) / (ny - cy || 1e-9)))
-    const ex = cx + (nx - cx) * f, ey = cy + (ny - cy) * f
+    const lx = rec.trigger * rect.width, my = rect.height / 2
+    const nx = c.fx * rect.width, ny = c.fy * rect.height
     const div = document.createElement('div')
     div.id = 'natural-overlay'
     div.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:99999'
     div.innerHTML = `<svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-      <line x1="${lx - t.y * L}" y1="${ly + t.x * L}" x2="${lx + t.y * L}" y2="${ly - t.x * L}" stroke="#ff00ff" stroke-width="3" stroke-dasharray="12 6"/>
-      <line x1="${lx}" y1="${ly}" x2="${lx + t.x * 60}" y2="${ly + t.y * 60}" stroke="#ff00ff" stroke-width="4"/>
-      ${c.out ? `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="#ffd400" stroke-width="4"/><circle cx="${ex}" cy="${ey}" r="12" fill="#ffd400"/>` : ''}
+      <line x1="${lx}" y1="0" x2="${lx}" y2="${rect.height}" stroke="#ff00ff" stroke-width="3" stroke-dasharray="12 6"/>
+      <line x1="0" y1="${my}" x2="${rect.width}" y2="${my}" stroke="#ffd400" stroke-width="2" stroke-dasharray="12 6"/>
       <circle cx="${nx}" cy="${ny}" r="18" fill="none" stroke="#00ffff" stroke-width="3"/>
       <rect x="8" y="${rect.height - 44}" width="${rect.width - 16}" height="36" fill="rgba(0,0,0,0.8)"/>
       <text x="16" y="${rect.height - 20}" fill="#fff" font-family="monospace" font-size="15">${caption}</text></svg>`
     document.body.appendChild(div)
-    return {frac: c.frac, out: c.out}
+    return {fx: c.fx, fy: c.fy, out: c.out}
 }'''
 
 APPLY = '''() => { __mb.applyAction = (a) => {
@@ -142,7 +135,7 @@ APPLY = '''() => { __mb.applyAction = (a) => {
 
 
 def open_page(browser):
-    context = browser.new_context(viewport={'width': 1280, 'height': 720})
+    context = browser.new_context(viewport={'width': VIEWPORT[0], 'height': VIEWPORT[1]})
     page = context.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
@@ -169,28 +162,25 @@ def run(page, seed, actions=None, stop=FRAMES):
     return setup, rows, state
 
 
-def summarise(rows, trigger):
-    beyond = [k for k, r in enumerate(rows) if r[9] > trigger + max(0, r[10]) / r[14] + 1e-6]
-    no_vel = [k for k, r in enumerate(rows) if r[11] > 1e-9 and r[12] <= 0]
-    no_frac = [k for k, r in enumerate(rows) if r[11] > 1e-9 and r[13] < trigger - 1e-6]
-    without = sorted(set(no_vel) | set(no_frac))
-    worst = max(range(len(rows)), key=lambda k: rows[k][9])
-    in_view = [k for k, r in enumerate(rows) if not r[8]]
-    worst_in = max(in_view, key=lambda k: rows[k][9]) if in_view else None
-    by_dir = {}
-    for k in beyond:
-        by_dir[rows[k][1]] = by_dir.get(rows[k][1], 0) + 1
-    return {'frames': len(rows), 'maxFwdFrac': round(rows[worst][9], 4), 'worstFrame': worst,
-            'worstOutOfView': rows[worst][8],
-            'maxFwdFracInView': round(rows[worst_in][9], 4) if worst_in is not None else None,
-            'worstInViewFrame': worst_in,
-            'framesBeyondTrigger': len(beyond), 'beyondByDir': by_dir,
-            'firstBeyondTrigger': beyond[0] if beyond else None,
-            'framesMovedWithoutRule': len(without),
-            'movedWhileNinjaVelNotForward': len(no_vel), 'movedWhileBehindTrigger': len(no_frac),
-            'framesCameraMovedForward': sum(1 for r in rows if r[11] > 1e-9),
-            'framesOutOfView': sum(1 for r in rows if r[8]),
-            'framesByDir': {d: sum(1 for r in rows if r[1] == d) for d in 'ruda'}}
+def summarise(rows, setup):
+    W, H, trigger, cycles = setup['W'], setup['H'], setup['trigger'], setup['cyclesPerTick']
+    catch_up = setup['catchUp']
+    right = [k for k, r in enumerate(rows) if r[1] == 'r']
+    beyond = [k for k in right if rows[k][8] > trigger + rows[k][10] / W + 1e-6]
+    max_x = max(right, key=lambda k: rows[k][8]) if right else None
+    off = {k: abs(r[9] - 0.5) - r[11] / H for k, r in enumerate(rows) if not r[6]}
+    worst = max(off, key=off.get)
+    jumps = [k for k, r in enumerate(rows)
+             if r[13] > max(r[12], rows[k - 1][12] if k else 0) + cycles * (1 + catch_up) + 0.01]
+    return {'frames': len(rows), 'framesOutOfView': sum(1 for r in rows if r[7]),
+            'maxFracX': round(rows[max_x][8], 4) if max_x is not None else None, 'maxFracXFrame': max_x,
+            'framesBeyondX': len(beyond),
+            'maxOffCentre': round(off[worst], 6), 'offCentreFrame': worst,
+            'framesOffCentre': sum(1 for v in off.values() if v > 1e-6),
+            'framesCamJump': len(jumps), 'firstCamJump': jumps[0] if jumps else None,
+            'framesHold': sum(1 for r in rows if r[6]),
+            'framesShaftWallOut': sum(1 for r in rows if r[14]),
+            'framesByDir': {d: sum(1 for r in rows if r[1] == d) for d in 'rud'}}
 
 
 def shoot(browser, url, seed, actions, frame, recorded, path, caption):
@@ -199,13 +189,14 @@ def shoot(browser, url, seed, actions, frame, recorded, path, caption):
     try:
         boot(page, url)
         _, rows, _ = run(page, seed, actions, frame + 1)
-        if len(rows) != frame + 1 or abs(rows[frame][9] - recorded) > 1e-9:
+        if len(rows) != frame + 1 or rows[frame][8:10] != recorded:
             raise AssertionError('replay of seed %d differs at frame %d: %r vs %r' % (
-                seed, frame, rows[frame][9] if len(rows) > frame else None, recorded))
+                seed, frame, rows[frame][8:10] if len(rows) > frame else None, recorded))
         page.evaluate(DRAW)
         got = page.evaluate(OVERLAY, [caption])
         page.screenshot(path=str(path))
-        return {'frame': frame, 'replayFwdFrac': round(got['frac'], 4), 'outOfView': got['out'], 'pageErrors': errors}
+        return {'frame': frame, 'fracX': round(got['fx'], 4), 'fracY': round(got['fy'], 4), 'outOfView': got['out'],
+                'pageErrors': errors}
     finally:
         context.close()
 
@@ -223,22 +214,23 @@ def main(seed, out):
         setup, rows, state = run(page, seed)
         actions = page.evaluate('__mb.actions')
         context.close()
-        summary = summarise(rows, setup['trigger'])
-        summary.update({'trigger': setup['trigger'], 'view': [setup['W'], setup['H']],
+        summary = summarise(rows, setup)
+        summary.update({'trigger': setup['trigger'], 'view': [setup['W'], setup['H']], 'viewport': VIEWPORT,
                         'death': state['dead'], 'sameNinja': state['sameNinja'], 'hpEnd': state['hp'],
                         'pauseHits': state['pauseHits'], 'throws': sum(1 for a in actions if a['type'] == 'throw'),
                         'pageErrors': errors})
-        (sdir / 'trace.json').write_text(json.dumps([r[:9] for r in rows], separators=SEP))
+        (sdir / 'trace.json').write_text(json.dumps([r[:8] for r in rows], separators=SEP))
         (sdir / 'actions.json').write_text(json.dumps(actions, separators=SEP))
         shots = {}
-        targets = [('worst-seed%d.png' % seed, summary['worstFrame'])]
-        if summary['worstOutOfView'] and summary['worstInViewFrame'] is not None:
-            targets.append(('worst-inview-seed%d.png' % seed, summary['worstInViewFrame']))
+        targets = [('offcentre-seed%d.png' % seed, summary['offCentreFrame'])]
+        if summary['maxFracXFrame'] is not None:
+            targets.append(('maxfracx-seed%d.png' % seed, summary['maxFracXFrame']))
         for name, frame in targets:
             r = rows[frame]
-            caption = ('seed %d frame %d (t=%.2fs) dir %s: ninja fwdFrac %.3f vs trigger %.2f (magenta line)%s' % (
-                seed, frame, frame / 60, r[1], r[9], setup['trigger'], ', OUT OF VIEW (yellow arrow)' if r[8] else ''))
-            shots[name] = shoot(browser, url, seed, actions, frame, r[9], out / 'shots' / name, caption)
+            caption = ('seed %d frame %d (t=%.2fs) dir %s: ninja fracX %.3f (X line %.2f) fracY %.3f (middle line)%s%s' % (
+                seed, frame, frame / 60, r[1], r[8], setup['trigger'], r[9], ' HOLD' if r[6] else '',
+                ', OUT OF VIEW' if r[7] else ''))
+            shots[name] = shoot(browser, url, seed, actions, frame, r[8:10], out / 'shots' / name, caption)
         summary['shots'] = shots
     summary['head'] = head
     path = out / 'baseline.json'
@@ -247,13 +239,12 @@ def main(seed, out):
         data = {'head': head, 'seeds': {}}
     data['seeds'][str(seed)] = summary
     path.write_text(json.dumps(data, separators=SEP))
-    print('seed %d head %s frames %d maxFwdFrac %.4f (frame %d%s) framesBeyondTrigger %d framesMovedWithoutRule %d '
-          '(vel %d, behind %d) framesOutOfView %d death %s' % (
-              seed, head[:7], summary['frames'], summary['maxFwdFrac'], summary['worstFrame'],
-              ', out of view' if summary['worstOutOfView'] else '', summary['framesBeyondTrigger'],
-              summary['framesMovedWithoutRule'], summary['movedWhileNinjaVelNotForward'],
-              summary['movedWhileBehindTrigger'], summary['framesOutOfView'], summary['death']), flush=True)
-
+    print('seed %d head %s viewport %dx%d frames %d out of view %d maxFracX %s beyondX %d maxOffCentre %.6f '
+          'offCentre %d camJump %d hold %d shaftWallOut %d byDir %s death %s' % (
+              seed, head[:7], VIEWPORT[0], VIEWPORT[1], summary['frames'], summary['framesOutOfView'],
+              summary['maxFracX'], summary['framesBeyondX'], summary['maxOffCentre'], summary['framesOffCentre'],
+              summary['framesCamJump'], summary['framesHold'], summary['framesShaftWallOut'], summary['framesByDir'],
+              summary['death']), flush=True)
 
 if __name__ == '__main__':
     main(int(sys.argv[1]), Path(sys.argv[2] if len(sys.argv) > 2 else

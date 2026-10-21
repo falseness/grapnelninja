@@ -139,7 +139,6 @@
         <script src = "respawn.js"></script>
         
         <script src = "moveScreen.js"></script>
-        <script src = "elements/momentumcamerarail.js"></script>
         <script src = "elements/momentumcamera.js"></script>
         <script src = "elements/momentumpatterns.js"></script>
         
@@ -539,20 +538,16 @@
                     visualEffects.screenEffects.clearMomentumRun()
                 if (visualEffects && visualEffects.background)
                     visualEffects.background.prepareDepthGrade()
-                // The first join (the first shaft's centre line) at least a
-                // rail radius right of the start view centre: the view is centred
-                // on the camera rail (elements/momentumcamerarail.js), so the
-                // start view is the rail's and the first arc starts at or past
-                // it; once through the arc the view is centred on the shaft
-                // (TASK-043/044: no outside mass on either side). The rail term
-                // is the binding one; the other one only keeps the shaft's left
-                // wall body shaftMarginHeightRatio right of the ninja start.
+                // The first join (the first shaft's centre line) at least
+                // firstShaftGapHeightRatio right of the start view centre, and
+                // the shaft's left wall body shaftMarginHeightRatio right of
+                // the ninja start.
                 const ninjaStartX = 0.2 * width
                 const shaftHalfWidth = momentumShaftHalfWidth()
                 const startCentreX = width / scale.momentum / 2
                 const firstMinLen = Math.max(width + ninjaStartX + shaftHalfWidth + borders.thickness +
                     GAMEPLAY.momentumCamera.shaftMarginHeightRatio * height / scale.momentum,
-                    width + startCentreX + GAMEPLAY.momentumCamera.railRadius * height / scale.momentum)
+                    width + startCentreX + GAMEPLAY.momentumCamera.firstShaftGapHeightRatio * height / scale.momentum)
                 // Shafts up and down side by side: neither one's border body
                 // reaches into the other
                 const oppositeShaftGap = () =>

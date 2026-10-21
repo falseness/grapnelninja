@@ -131,29 +131,16 @@ const GAMEPLAY = Object.freeze({
     }),
     // Momentum camera (elements/momentumcamera.js), lengths in view heights:
     // how far past the view edge left behind elements are deleted; the gap
-    // kept between the ninja start and the first shaft's left wall body
-    // (index.html firstMinLen, where railRadius past the start view centre
-    // is the larger bound: the first shaft is centred once the camera is
-    // through its arc); how far the ninja may fall behind
-    // the trigger point and still move a moving camera on, over how much of
-    // that lag the camera's speed blends from the ninja's speed into its
-    // progress along the course (averaged over that many physics cycles),
-    // and how fast (blend weight a cycle).
+    // kept between the ninja start and the first shaft's left wall body, and
+    // how far right of the start view centre the first shaft's centre line
+    // is at least (index.html firstMinLen); how much faster than the ninja's
+    // x speed the camera's X may close its lag a physics cycle (a 0.35 view
+    // width lag closes in about 1.3 s at 16:9).
     momentumCamera: Object.freeze({
         deletionMarginHeightRatio: 0.1,
         shaftMarginHeightRatio: 0.02,
-        triggerSlackHeightRatio: 0.1,
-        triggerBlendHeightRatio: 0.03,
-        triggerBlendRate: 0.01,
-        triggerProgressCycles: 40,
-        // Camera rail (elements/momentumcamerarail.js): radius of the quarter
-        // circle replacing each turn join of the course centre line, in view
-        // heights (at most half of either adjacent segment; its middle stays
-        // 0.29 radius off both centre lines, well inside both corridors)
-        railRadius: 0.5,
-        // How much slower the view turns at an arc's ends and faster in its
-        // middle (MomentumScreen.easedArcPoint, TASK-115)
-        railEase: 0.2
+        firstShaftGapHeightRatio: 0.5,
+        catchUpHeightRatio: 0.001
     }),
     // Momentum HP (elements/momentumstate.js): hp at every run start (no upper
     // cap) and how many green touches in a row give one hp.

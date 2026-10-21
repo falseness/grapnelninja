@@ -1,9 +1,8 @@
-"""Smooth momentum camera (TASK-006; TASK-085: the rail camera of TASK-084).
+"""Smooth momentum camera (TASK-006; the camera rule of 2026-10-20).
 
 Starts momentum on the scripted course R R U R R D R (the TASK-004 draws, see
 test_momentum_borders, after two long right segments), stops the rAF loop and drives the ninja along the
-course centre line at a high constant speed (0.06 height per physics tick,
-above the bad-mode run speed; there is no momentumMaxSpeed cap yet) through
+course centre line at the ninja's speed cap (GAMEPLAY.momentumMaxSpeed) through
 the turns right->up->right->down->right, to the middle of segment 6. The bad
 obstacle floor is removed: obstacles still overlap the centre line (TASK-018)
 and would hit the driven ninja, so the only lethal checks left are the
@@ -17,13 +16,13 @@ physics() twice per frame and samples the camera once per frame.
 Per frame, from camera positions (top-left world corner = -screen.x,
 -screen.y) in view heights, dt = 1/fps:
 - the camera's displacement is at most the ninja's (the driven speed along
-  the centre line) * 1.05 + 1 world unit, the rail rule of
-  test_momentum_camera_speed (no catch-up, no snap at a turn), and its rail
-  position (MomentumScreen.railS) never decreases (never backwards). TASK-085:
-  the damped follow's maxAccel / maxJerk limits and the turn step <= 1.1 x
-  straight step check were removed with the follow (TASK-084); the rail
-  camera's speed changes are bounded by test_momentum_camera_speed rules 2
-  and 5;
+  the centre line) * 1.05 + the X catch-up step
+  (GAMEPLAY.momentumCamera.catchUpHeightRatio a cycle) + 1 world unit (no
+  snap at a turn),
+  and its progress (segmentIndex, then its position along the segment's
+  direction) never decreases (never backwards). The per-axis speed rule
+  (never faster than the ninja on either axis) is
+  test_momentum_view_trigger's;
 - the ninja stays inside the view, >= 10% of the view from the edge in its
   travel direction; no lethal death, no restart;
 - the 30 fps trajectory matches the 60 fps one at the same physics ticks.
@@ -31,7 +30,7 @@ Per frame, from camera positions (top-left world corner = -screen.x,
 MOMENTUM_SMOOTH_EVIDENCE_DIR (default /tmp/momentum-camera-smooth: a bare
 run must not rewrite the TASK-006 evidence) receives
 camera-trace-60.json / camera-trace-30.json ([frame, segDir, camX, camY, vX,
-vY, ninjaX, ninjaY, railS], world units and world units per second), smoothness.json and
+vY, ninjaX, ninjaY, progress], world units and world units per second), smoothness.json and
 turn-strip.png (before / during / after the right->up turn, 60 fps run).
 
 BadCameraXTests: bad mode on a seeded Math.random with the rAF loop stopped,
@@ -52,10 +51,12 @@ from test_momentum_camera import SEED_COURSE, START
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEED_HEIGHT_RATIO = 0.06
-# MOMENTUM_SMOOTH_SPEED=cap drives at the effective cap GAMEPLAY.momentumMaxSpeed
-# * momentumMotionScale(1) per physics cycle instead (TASK-034 sweep; TASK-075:
-# the slow-motion cap is 0.0103 height per tick, under 0.06)
-AT_CAP = os.environ.get('MOMENTUM_SMOOTH_SPEED') == 'cap'
+# The drive runs at the effective cap GAMEPLAY.momentumMaxSpeed *
+# momentumMotionScale(1) per physics cycle, the fastest the ninja moves (the
+# camera follows its speed per axis, like bad mode); MOMENTUM_SMOOTH_SPEED=fast
+# drives at SPEED_HEIGHT_RATIO height per tick instead (above the cap: a
+# teleport the camera does not follow)
+AT_CAP = os.environ.get('MOMENTUM_SMOOTH_SPEED') != 'fast'
 # The TASK-004 draws after two long right segments (draws: segment 0 length,
 # right-after-right, its length): the camera cruises for more than 10 frames
 # at 30 fps before the first turn (the TASK-004 segment 0 ends 2 frames in)
@@ -90,7 +91,10 @@ DRIVE = '''([frames, step, first]) => {
             physics()
         }
         out.push([first + k, screen.getSegment().dir, -screen.x, -screen.y, ninja.x, ninja.y,
-                  screen.segmentIndex, screen.hasLeftBehind(ninja), screen.railS])
+                  screen.segmentIndex, screen.hasLeftBehind(ninja),
+                  // progress: segment, then the camera's position along it
+                  screen.segmentIndex * 1e7 + (-screen.x * segmentDirection(screen.getSegment().dir).x -
+                                               screen.y * segmentDirection(screen.getSegment().dir).y)])
     })
     return out
 }'''
@@ -186,6 +190,7 @@ class SmoothCameraTests(unittest.TestCase):
                 page.screenshot(path=str(cls.out / f'turn-{shots[len(rows)]}.png'))
         state = page.evaluate('''() => ({deaths: lethalDeaths, sameRun: ninja === startNinja && screen === startScreen,
             runInProgress, version, viewHeight: height / scale[version], viewWidth: width / scale[version],
+            catchUp: GAMEPLAY.momentumCamera.catchUpHeightRatio * cyclesPerTick,
             radius: ninja.radius, segments: momentumCourse.segments.slice(0, 7).map(s => s.dir)})''')
         state['deaths'] -= before
         print(f'{fps} fps: {len(rows)} frames, {len(points)} physics ticks, state {state}', file=sys.stderr)
@@ -202,14 +207,14 @@ class SmoothCameraTests(unittest.TestCase):
                 trace.append([r[0], r[1], r[2], r[3], (r[2] - p[2]) / dt, (r[3] - p[3]) / dt, r[4], r[5], r[8]])
             run['trace'] = trace
             (cls.out / f'camera-trace-{fps}.json').write_text(json.dumps(
-                {'fields': ['frame', 'segDir', 'camX', 'camY', 'vX', 'vY', 'ninjaX', 'ninjaY', 'railS'], 'fps': fps,
+                {'fields': ['frame', 'segDir', 'camX', 'camY', 'vX', 'vY', 'ninjaX', 'ninjaY', 'progress'], 'fps': fps,
                  'units': 'world, world/s (from camera displacement)', 'trace': trace},
                 separators=(',', ':')))
             run['metrics'] = cls.metrics(run)
             summary[fps] = {k: run['metrics'][k] for k in
                             ('maxStepRatio', 'maxStepRatioFrame', 'fasterFrames', 'backFrames',
                              'minMargin', 'minMarginFrame', 'turns')}
-        summary['limits'] = {'cameraStep': 'ninja step * 1.05 + 1 world unit', 'railS': 'non-decreasing',
+        summary['limits'] = {'cameraStep': 'ninja step * 1.05 + X catch-up + 1 world unit', 'progress': 'non-decreasing',
                              'minMargin': 0.1,
                              'units': 'steps in view heights; margin share of view; maxStepRatio: camera step / '
                                       'ninja step, the largest over frames with the camera moving'}
@@ -237,7 +242,8 @@ class SmoothCameraTests(unittest.TestCase):
         # ticks a frame (the first frame from the ninja's start)
         step = [norm(t[4], t[5]) * dt / H for t in trace]
         ninja_step = run['step'] * (60 // fps) / H
-        limit = ninja_step * 1.05 + 1 / H
+        # plus the X catch-up (view heights a physics tick)
+        limit = ninja_step * 1.05 + state['catchUp'] * (60 // fps) + 1 / H
         faster = [(rows[k][0], round(step[k] / ninja_step, 4)) for k in range(1, len(rows)) if step[k] > limit]
         ratios = [(step[k] / ninja_step, rows[k][0]) for k in range(1, len(rows))]
         back = [rows[k][0] for k in range(1, len(rows)) if rows[k][8] < rows[k - 1][8] - 1e-6]
@@ -269,12 +275,12 @@ class SmoothCameraTests(unittest.TestCase):
 
     def test_camera_not_faster_than_ninja(self):
         # TASK-085: replaces the damped follow's maxAccel / maxJerk and turn
-        # snap checks; the rail camera moves at most at the ninja's speed
+        # snap checks; the camera moves at most at the ninja's speed
         for fps, run in self.runs.items():
             with self.subTest(fps=fps):
                 m = run['metrics']
                 print(f'{fps} fps: max camera step / ninja step {m["maxStepRatio"]} at frame '
-                      f'{m["maxStepRatioFrame"]} (limit 1.05 + 1 world unit), frames over it {len(m["fasterFrames"])}; '
+                      f'{m["maxStepRatioFrame"]} (limit 1.05 + catch-up + 1 world unit), frames over it {len(m["fasterFrames"])}; '
                       'per turn (+-10 frames): ' + ', '.join(f'{c["turn"]} {c["maxStepRatio"]}' for c in m['turns']))
                 self.assertEqual(m['fasterFrames'][:5], [])
 
@@ -282,7 +288,7 @@ class SmoothCameraTests(unittest.TestCase):
         for fps, run in self.runs.items():
             with self.subTest(fps=fps):
                 m, rows = run['metrics'], run['rows']
-                print(f'{fps} fps: railS {rows[0][8]:.1f} -> {rows[-1][8]:.1f}, frames going back {len(m["backFrames"])}')
+                print(f'{fps} fps: progress {rows[0][8]:.1f} -> {rows[-1][8]:.1f}, frames going back {len(m["backFrames"])}')
                 self.assertEqual(m['backFrames'][:5], [])
                 self.assertGreater(rows[-1][8], rows[0][8])
 
