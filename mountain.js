@@ -1203,14 +1203,14 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix: Loading Yard and the first two Terraced Quarry encounters. Planned terrain stays noncollidable.
+// Replacement built prefix: Loading Yard and the first three Terraced Quarry encounters. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 6480, top: -3000, bottom: 280},
     spawn: {x: 2160, y: 0}, finish: null,
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
-        {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02']},
+        {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03']},
         {id: 'S05', status: 'planned', encounters: ['preview-future'],
             band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
     ],
@@ -1221,6 +1221,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S01-04', name: 'Loading Yard section exit', elements: ['yard-third-landing', 'yard-fourth-anchor', 'yard-fourth-landing']},
         {id: 'S02-01', name: 'Terraced Quarry', elements: ['yard-fourth-landing', 'quarry-anchor', 'quarry-landing', 'quarry-catch']},
         {id: 'S02-02', name: 'Terraced Quarry return', elements: ['quarry-landing', 'quarry-second-anchor', 'quarry-second-landing', 'quarry-catch']},
+        {id: 'S02-03', name: 'Terraced Quarry angled cut', elements: ['quarry-second-landing', 'quarry-third-anchor', 'quarry-third-landing', 'quarry-third-catch']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1239,11 +1240,16 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['quarry-landing', 872, -408.2, 540, 60, 'First broad quarry terrace; safe planning exit after the wider 288-unit release gap'],
         ['quarry-second-anchor', 1452, -779, 160, 80, 'Upper quarry launch face reverses the previous leftward transfer; reachable from the first terrace, not a landing'],
         ['quarry-second-landing', 1664, -648.2, 540, 60, 'Broad upper quarry planning terrace after the deliberate rightward release; first terrace catches short attempts'],
+        ['quarry-third-anchor', 2304, -839, 160, 80, 'Mild angled green launch face introduces a rebound; not a designated landing'],
+        ['quarry-third-landing', 2456, -648.2, 540, 60, 'Broad third quarry terrace after the angled rebound and deliberate release'],
+        ['quarry-third-catch', 2204, -408.2, 792, 60, 'Broad visible lower step catches mistimed angled transfers; grapple back to the second terrace'],
         ['quarry-catch', 820, -128.2, 880, 60, 'Broad lower quarry step catches early releases; grapple back to the shared entry'],
         ['yard-catch', 0, 220, 6480, 60, 'Lower recovery floor; return via the entry or landing shelf'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: 'bounce', grapplable: true,
-        points: [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
+        points: id === 'quarry-third-anchor'
+            ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]
+            : [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
     movers: []
 }
 
