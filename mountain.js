@@ -1203,10 +1203,10 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Cable Galleries encounter 4. Planned terrain stays noncollidable.
+// Replacement built prefix through Counterweight Tower encounter 1. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
-    bounds: {left: 0, right: 14000, top: -3000, bottom: 280},
+    bounds: {left: 0, right: 14000, top: -4200, bottom: 280},
     spawn: {x: 2160, y: 0}, finish: null,
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
@@ -1214,7 +1214,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02', 'S03-03', 'S03-04']},
         {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01', 'S04-02', 'S04-03', 'S04-04']},
         {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01', 'S05-02', 'S05-03', 'S05-04'],
-            rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}}
+            rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}},
+        {id: 'S06', labelKey: 'climb.section.counterweightTower', status: 'built', encounters: ['S06-01']}
     ],
     encounters: [
         {id: 'S01-01', name: 'Loading Yard', elements: ['yard-entry', 'yard-landing', 'yard-anchor', 'yard-catch']},
@@ -1237,6 +1238,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S05-02', name: 'Cable Galleries corner routing', elements: ['gallery-landing', 'gallery-projection', 'gallery-upper-landing', 'gallery-catch']},
         {id: 'S05-03', name: 'Cable Galleries overhang reacquisition', elements: ['gallery-upper-landing', 'gallery-overhang', 'gallery-reacquire', 'gallery-third-landing', 'gallery-third-catch']},
         {id: 'S05-04', name: 'Cable Galleries exit corner', elements: ['gallery-third-landing', 'gallery-exit-projection', 'gallery-exit', 'gallery-exit-catch', 'gallery-shortcut-anchor']},
+        {id: 'S06-01', name: 'Counterweight Tower vertical introduction', elements: ['gallery-exit', 'tower-counterweight', 'tower-observation'], recovery: ['gallery-third-landing']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1301,8 +1303,10 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['gallery-third-catch', 10400, -1768.2, 1090, 60, 'Broad catch below the overhang; normal grappling returns to the shared upper gallery'],
         ['gallery-catch', 11580, -1288.2, 1600, 60, 'Broad early-release catch; return west to the entrance using its exposed east face'],
         ['viaduct-third-catch', 9172, -1288.2, 1476, 60, 'Broad upper recovery walkway below the long carrier; grapple west to the shared second span after an early release'],
+        ['tower-counterweight', 9856, -2788.2, 360, 80, 'Wide blue vertical counterweight; observe the 720-unit sweep from the shared gallery exit, then release toward the observation landing'],
+        ['tower-observation', 10241, -3188.2, 800, 60, 'Broad upper tower observation and planning landing; safe end of encounter one'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
-    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
+    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['tower-counterweight', 'freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
         points: id === 'gallery-exit-projection'
             ? [{x:360,y:0},{x:0,y:0},{x:0,y:440},{x:230,y:440},{x:230,y:360},{x:80,y:360},{x:80,y:280},{x:360,y:280}].reverse()
             : id === 'gallery-projection'
@@ -1310,7 +1314,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
             : ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
             ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]
             : [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
-    movers: [{id:'viaduct-travel', element:'viaduct-carrier', axis:'x', min:9248, max:9968, periodMs:10000, phase:0, velocity:144},
+    movers: [{id:'tower-travel', element:'tower-counterweight', axis:'y', min:-3508.2, max:-2788.2, periodMs:10000, phase:.5, velocity:-144},
+        {id:'viaduct-travel', element:'viaduct-carrier', axis:'x', min:9248, max:9968, periodMs:10000, phase:0, velocity:144},
         {id:'freight-travel', element:'freight-carrier', axis:'x', min:3900, max:4620, periodMs:10000, phase:0, velocity:144},
         {id:'freight-second-travel', element:'freight-second-carrier', axis:'x', min:5196, max:5916, periodMs:10000, phase:0, velocity:144},
         {id:'freight-lift-travel', element:'freight-lift', axis:'y', min:-1788.2, max:-1068.2, periodMs:10000, phase:.5, velocity:-144}]
