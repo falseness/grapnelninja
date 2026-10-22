@@ -7353,21 +7353,53 @@ class Task602Tests(unittest.TestCase):
 
     def test_03_mover_phases(self):
         cases=[]
-        for index in range(4):
+        movers=['tower-counterweight','tower-shuttle','tower-rebound-carrier','tower-exit-lift']
+        for index,mover in enumerate(movers):
+            arrivals=[]
             for phase in [0,150,300,450]:
                 p=Task567Tests.page(self)
+                # Advance the world BEFORE the isolated arrival fixture. Advancing
+                # an already placed player by phase then 600-phase is one scenario.
+                self.step(p,phase)
                 p.evaluate('s=>{Object.assign(ninja,s,{speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)}',Task601Tests.fixtures[index])
-                self.step(p,phase);self.step(p,600-phase)
-                if index==2:self.step(p,12)
-                self.shot(p,Task601Tests.tolerance_targets[index],Task601Tests.nominal_holds['desktop'][index])
+                arrival=p.evaluate("""id=>{const e=floors[0].byId.get(id);return {
+                    tick:YARD.result().tick,player:{x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY},
+                    mover:{id,x:e.x,y:e.y}}}""",mover)
+                self.assertEqual(arrival['tick'],phase)
+                arrivals.append(arrival)
+                wait=600-phase+(12 if index==2 else 0)
+                waiting=p.evaluate('''({wait,mover})=>{const rows=[];for(let i=0;i<wait;i++){
+                    YARD.step(1);const r=YARD.result().rows.at(-1),e=floors[0].byId.get(mover);
+                    rows.push({tick:r.tick,x:r.x,y:r.y,contacts:r.contacts,mover:{x:e.x,y:e.y}});
+                }return rows}''',dict(wait=wait,mover=mover))
+                arrival['nextMover']=waiting[0]['mover']
+                fixture=Task601Tests.fixtures[index]
+                self.assertEqual(len(waiting),wait)
+                for row in waiting:
+                    self.assertAlmostEqual(row['x'],fixture['x'])
+                    self.assertLess(abs(row['y']-fixture['y']),40)
+                self.assertTrue(any(r['contacts'] for r in waiting))
+                if index==3:
+                    self.shot(p,Task600Tests.target,240);self.step(p,12)
+                    self.shot(p,dict(x=13572,y=-3938.2),12)
+                else:
+                    self.shot(p,Task601Tests.tolerance_targets[index],Task601Tests.nominal_holds['desktop'][index])
                 tick=self.until(p,Task601Tests.exits[index],1200);self.assertIsNotNone(tick,(index,phase))
                 r=self.result(p)
-                cases.append(dict(encounter=f'S06-0{index+1}',arrivalPhase=phase/600,waitTicks=600-phase,
-                    landing=self.landings(r,Task601Tests.exits[index])[0],inputs=r['inputs']))
+                cases.append(dict(encounter=f'S06-0{index+1}',arrivalPhase=phase/600,
+                    arrival=arrival,waitTicks=wait,waiting=waiting,
+                    landing=self.landings(r,Task601Tests.exits[index])[0],inputs=r['inputs'],
+                    poseInjectionsAfterArrival=0))
                 p.context.close()
-        self.write('phases.json',dict(scope='Separate isolated entries; quarter-cycle arrivals then safe wait to acquisition; not continuous gameplay',cases=cases))
+            # Triangle motion revisits a midpoint, so position alone can have
+            # three unique values. Position plus the next measured position
+            # distinguishes its two directions in the retained waiting samples.
+            self.assertEqual(len({a['tick'] for a in arrivals}),4)
+            self.assertEqual(len({tuple(round(a[k][axis],3) for k in ['mover','nextMover'] for axis in ['x','y']) for a in arrivals}),4)
+            self.assertGreaterEqual(len({(round(a['mover']['x'],3),round(a['mover']['y'],3)) for a in arrivals}),3)
+        self.write('phases.json',dict(scope='Separate isolated arrivals after world phase advance; production safe wait to common acquisition window; not continuous gameplay',cases=cases))
         self.assertEqual(len(cases),16)
-        print('PASS phases: 16 traversals; four quarter-cycle arrivals per blue mover, safe wait then trusted release onto useful exit')
+        print('PASS phases: 16 traversals; four measured quarter-cycle arrivals per blue mover; safe waiting positions and landing contacts retained; zero post-arrival injections')
 
     def test_04_evidence_index(self):
         (self.out/'review.md').write_text("TASK-602 Counterweight Tower composition review\n\nScope: built S06 only; one isolated entry then continuous production-input traversal. Separate labelled fall recovery. No claim of validated human enjoyment.\n\nReview locations: overview.png left panel contains the tower frame and first lift/observation deck; right panel contains the horizontal shafts, rebound shelf and final vertical lift. silhouette.png uses the same camera coordinates and plain filled gameplay geometry, showing the interrupted decks and broad planning shelves. approaches.jpg panels 1–4 are actual continuous approaches at unchanged camera scale 0.375. Target screen positions and landmark identity are in approaches.json.\n\nRemoved clutter: tower-exit-yellow was only 800 wide at 540 range, with inadequate terrain clearance. Removing this redundant fall brake preserves the broad catch and an open lateral recovery to the rebound deck. S04's original yellow introduction and suppression remain unchanged; dependency.json records exact evidence hashes and structural comparisons. Historical TASK-600/601 yellow crossing assertions are superseded, not edited or claimed revalidated.\n\nPacing: four 800-wide landing decks separate the lift, shaft, rebound and exit challenges. The continuous route uses a direct green deck release on encounter two; this is an observed alternative, not a claim that the shuttle is mandatory. The exit lift still requires deliberate release and a green edge correction. The clip includes an entire ten-second observation cycle and separately labelled fall/catch/normal-input recovery. No checkpoint, teleport, death or summit completion is introduced.\n")
