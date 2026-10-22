@@ -8293,3 +8293,216 @@ class Task607Tests(unittest.TestCase):
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
         print(f'PASS dependencies: {len(unchanged)} unchanged runtime/support hashes; geometry unchanged')
         print('PASS index: all required files exist; JSON parses; touch-strip decodes 1688x1560; retained evidence <200 MB')
+
+
+class Task608Tests(unittest.TestCase):
+    """S07 composition review; one entrance fixture, then production-only traversal."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='One isolated S07 entrance then continuous production traversal; separate labelled recovery'
+
+    write = Task557Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task605Tests.until
+    record = Task590Tests.record
+    shot = Task606Tests.shot
+
+    def test_01_inventory_and_dependencies(self):
+        p=Task603Tests.page(self)
+        g=p.evaluate("""()=>({elements:floors[0].level.elements,encounters:floors[0].level.encounters,
+            movers:floors[0].level.movers,range:grappleOverAcquisitionRadius(),scale:scale[version],
+            calibration:GRAPPLE_OVER_MOVEMENT})""")
+        self.assertEqual((g['range'],g['scale']),(540,.375))
+        es={e['id']:e for e in g['elements']}
+        for e in es.values():
+            self.assertTrue(e['purpose']);self.assertIn(e['role'],['bounce','solid','drag','hazard'])
+            e['encounters']=[c['id'] for c in g['encounters'] if e['id'] in c['elements']]
+            self.assertTrue(e['encounters'])
+            e['bounds']={k:e[a]+fn(v[a] for v in e['points']) for k,a,fn in [('left','x',min),('right','x',max),('top','y',min),('bottom','y',max)]}
+            e['width']=e['bounds']['right']-e['bounds']['left'];e['height']=e['bounds']['bottom']-e['bounds']['top']
+        local={id for c in g['encounters'] if c['id'].startswith('S07') for id in c['elements']}
+        self.assertEqual(len([c for c in g['encounters'] if c['id'].startswith('S07')]),4)
+        self.assertEqual({es[id]['role'] for id in local},{'bounce','solid','hazard'})
+        for m in g['movers']:
+            e=es[m['element']];b=dict(e['bounds']);axis=m['axis']
+            b['left' if axis=='x' else 'top']=m['min']
+            b['right' if axis=='x' else 'bottom']=m['max']+e['width' if axis=='x' else 'height']
+            m['sweptBounds']=b
+            self.assertGreaterEqual(m['max']-m['min'],max(360,2*e['width' if axis=='x' else 'height']))
+            self.assertTrue(6000<=m['periodMs']<=10000)
+        def distance(a,b):
+            return (max(a['left']-b['right'],b['left']-a['right'],0)**2+max(a['top']-b['bottom'],b['top']-a['bottom'],0)**2)**.5
+        clearances=[]
+        for z in [e for e in es.values() if e['role']=='drag']:
+            self.assertNotIn(z['id'],local)
+            self.assertGreaterEqual(z['width'],3*360);self.assertGreaterEqual(z['width']/z['height'],4)
+            for e in es.values():
+                if e['role']=='drag':continue
+                sweep=next((m['sweptBounds'] for m in g['movers'] if m['element']==e['id']),e['bounds'])
+                d=distance(z['bounds'],sweep);self.assertGreaterEqual(d+1e-8,540)
+                clearances.append(dict(zone=z['id'],collider=e['id'],clearance=d))
+        sweeps=[]
+        for m in g['movers']:
+            if m['element'] not in local:continue
+            for e in es.values():
+                if e['id']==m['element'] or e['role']=='drag':continue
+                other=next((v['sweptBounds'] for v in g['movers'] if v['element']==e['id']),e['bounds'])
+                d=distance(m['sweptBounds'],other);self.assertGreater(d,0,(m['element'],e['id']))
+                sweeps.append(dict(mover=m['element'],collider=e['id'],clearance=d))
+        g['localSweepClearances']=sweeps
+        widths=[es[n]['width'] for n in Task607Tests.exits]
+        self.assertEqual(widths,[800,720,800,800])
+        first={role:min(c['id'][:3] for c in g['encounters'] if any(es[n]['role']==role for n in c['elements'])) for role in ['bounce','solid','drag','hazard']}
+        self.assertEqual(first,dict(bounce='S01',solid='S03',drag='S04',hazard='S07'))
+        g.update(localIds=sorted(local),planningWidths=widths,clearances=clearances,firstUse=first,
+            localYellow=[],clutter='No redundant local objects identified; anchors, broad decks, catches, carrier and four red sweeps have distinct encounter roles')
+        q=Task567Tests.page(self)
+        q.evaluate('Object.assign(ninja,{x:10758,y:-3960,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        cycle=q.evaluate("""()=>{const rows=[];for(let i=0;i<600;i++){
+            YARD.step(1);const e=floors[0].byId.get('crown-lift');
+            rows.push({tick:i+1,y:e.y,px:ninja.x,py:ninja.y,distance:Math.hypot(Math.max(e.x-ninja.x,ninja.x-e.x-360,0),Math.max(e.y-ninja.y,ninja.y-e.y-80,0))});}return rows}""")
+        best=streak=0
+        for row in cycle:
+            streak=streak+1 if row['distance']<=540 else 0;best=max(best,streak)
+            self.assertEqual(row['px'],10758);self.assertLess(abs(row['py']+3960),32)
+        self.assertGreaterEqual(best,60)
+        g['acquisitionWindowMs']=best*1000/60;g['carrierCycle']=cycle
+        g['usefulEndpoints']='Lower end reachable from practice deck; upper end releases onto crown-upper-landing; phases.json proves traversal'
+        self.write('objects.json',g)
+        old=json.loads((ROOT/'artifacts/TASK-607/evidence-index.json').read_text())['config']['source_hashes']
+        unchanged={n:h for n,h in old.items() if n!='tools/test_grapple_over_redesign.py'}
+        for n,h in unchanged.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        yellow=json.loads((ROOT/'artifacts/TASK-590/objects.json').read_text())
+        for e in yellow['elements']:
+            for key in ['x','y','points','role','purpose']:self.assertEqual(e[key],es[e['id']][key])
+        proofs=['artifacts/TASK-590/suppression.json','artifacts/TASK-590/recovery.json','artifacts/TASK-607/recovery.json','artifacts/TASK-607/tests.log','artifacts/TASK-607/commands.log']
+        recovery=json.loads((ROOT/proofs[2]).read_text())
+        self.assertEqual(len(recovery['hazardProbes']),4)
+        for h in recovery['hazardProbes']:
+            self.assertGreater(h['contact']['before']['vy'],0);self.assertLess(h['contact']['after']['vy'],0)
+            self.assertGreater(h['returned']['tick'],h['contact']['tick'])
+        self.write('dependency.json',dict(unchanged=unchanged,changed=['tools/test_grapple_over_redesign.py: additive Task608Tests'],
+            reused={n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in proofs},
+            geometryComparison='All S04 coordinates/roles/purposes identical; all runtime dependencies identical to TASK-607',
+            hashPolicy='HEAD-only commits do not invalidate identical tested source hashes'))
+        print(f'PASS objects: every object has purpose/encounter; first green S01 blue S03 yellow S04 red S07; four broad landings {widths}; full swept bounds clear; yellow clearance >=540; carrier window {best*1000/60:.1f}ms >=1000')
+        print('PASS dependencies: 49 unchanged runtime/support hashes; S04 suppression/lateral recovery and four actual red contact escapes referenced by exact hashes')
+
+    def test_02_continuous_capture(self):
+        p=Task603Tests.page(self)
+        p.evaluate('TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500)')
+        self.record(p,'S07 continuous from isolated entrance / earned 540 / 4x');self.step(p,420)
+        views=[];observations=[]
+        def capture(index,target):
+            p.evaluate('draw()')
+            obs=p.evaluate('t=>({tick:YARD.result().tick,target:t,client:YARD.client(t),landmark:LANDMARKS.frame.drawn,player:{x:ninja.x,y:ninja.y}})',target)
+            self.assertTrue(0<obs['client']['x']<1280 and 0<obs['client']['y']<720,obs)
+            self.assertEqual(obs['landmark'][0]['id'],'exposed-crown')
+            observations.append(obs)
+            im=Image.open(io.BytesIO(p.screenshot())).convert('RGB')
+            ImageDraw.Draw(im).text((12,690),f'S07-0{index} actual continuous approach tick {obs["tick"]}',fill='white');views.append(im)
+        capture(1,Task603Tests.target);self.shot(p,Task603Tests.target,30)
+        self.assertEqual(self.until(p,'crown-landing',300),520)
+        self.step(p,80);capture(2,Task604Tests.target);self.shot(p,Task604Tests.target,30)
+        self.assertEqual(self.until(p,'crown-practice-landing',400),879);self.step(p,300)
+        target=dict(x=10658,y=-4318.6);capture(3,target);self.shot(p,target,240)
+        self.assertEqual(self.until(p,'crown-upper-landing',500),1627);self.step(p,120)
+        capture(4,Task606Tests.target);self.shot(p,Task606Tests.target,30)
+        self.assertEqual(self.until(p,'crown-exit',500),1856)
+        r=self.result(p)
+        exits=[dict(id=n,tick=self.landings(r,n)[0]['tick']) for n in Task607Tests.exits]
+        self.write('route.json',dict(exits=exits,inputs=r['inputs'],trace=r['rows'],resetsAfterStart=0,poseInjectionsAfterStart=0,
+            scope=self.config['simulation'],rangeBefore=540,rangeAfter=540))
+        self.write('approaches.json',dict(views=observations))
+        sheet=Image.new('RGB',(2560,1440))
+        for i,im in enumerate(views):sheet.paste(im,((i%2)*1280,(i//2)*720))
+        sheet.save(self.out/'approaches.jpg',quality=85)
+        overview=Image.new('RGB',(2560,720));sil=Image.new('RGB',(2560,720),'white')
+        for i,center in enumerate([10500,13200]):
+            p.evaluate('x=>{screen.x=width/.375/2-x;screen.y=height/.375/2+4200;draw()}',center)
+            overview.paste(Image.open(io.BytesIO(p.screenshot())).convert('RGB'),(1280*i,0))
+            f=p.evaluate("""()=>({elements:floors[0].elements.map(e=>({id:e.id,points:e.getPoints()})),
+                shape:GRAPPLE_OVER_LANDMARK_SHAPES[6](GRAPPLE_OVER_LANDMARKS.width,GRAPPLE_OVER_LANDMARKS.height),
+                landmark:{x:(12400+screen.x)*.375-GRAPPLE_OVER_LANDMARKS.width/2,y:(-3200+screen.y)*.375-GRAPPLE_OVER_LANDMARKS.height},
+                camera:{x:screen.x,y:screen.y},factor:1280/width})""")
+            tile=Image.new('RGB',(1280,720),'white');pen=ImageDraw.Draw(tile);k=f['factor']
+            def point(v):return ((v[0]+f['landmark']['x'])*k,(v[1]+f['landmark']['y'])*k)
+            for part in f['shape']['parts']:pen.polygon([point(v) for v in part],fill='#aaaaaa')
+            for line in f['shape']['lines']:pen.line([point(v) for v in line],fill='#888888',width=3)
+            for e in f['elements']:
+                pts=[((v['x']+f['camera']['x'])*.375*k,(v['y']+f['camera']['y'])*.375*k) for v in e['points']]
+                pen.polygon(pts,fill='black')
+                if e['id'].startswith('crown'):pen.text(pts[0],e['id'],fill='#555555')
+            pen.text((12,12),'Exposed Crown / stepped roof and antenna mast / plain silhouette',fill='black');sil.paste(tile,(1280*i,0))
+        overview.save(self.out/'overview.png');sil.save(self.out/'silhouette.png')
+        frames=p.evaluate('reviewFrames')
+        q=Task567Tests.page(self)
+        q.evaluate('Object.assign(ninja,{x:10758,y:-3960,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false')
+        self.record(q,'SEPARATE S07-03 full carrier cycle then fall and normal-input recovery / 4x')
+        self.step(q,600);self.shot(q,Task605Tests.target,12)
+        catch=self.until(q,'crown-lift-catch',800);self.assertIsNotNone(catch)
+        self.shot(q,dict(x=10688,y=-3938.2),60)
+        returned=self.until(q,'crown-practice-landing',800);self.assertIsNotNone(returned)
+        recovery=self.result(q)
+        self.write('recovery.json',dict(catchTick=catch,returnTick=returned,returnCollider='crown-practice-landing',
+            trace=recovery['rows'],inputs=recovery['inputs'],resetsAfterStart=0,poseInjectionsAfterStart=0))
+        frames.extend(q.evaluate('reviewFrames'));q.context.close()
+        p.evaluate('a=>window.reviewFrames=a',frames);p.bring_to_front()
+        clip=p.evaluate('''async () => {
+            const c=document.createElement('canvas');c.width=1280;c.height=720;const ctx=c.getContext('2d');
+            const stream=c.captureStream(0),track=stream.getVideoTracks()[0],chunks=[];
+            const rec=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'});
+            rec.ondataavailable=e=>chunks.push(e.data);const ended=new Promise(r=>rec.onstop=r);rec.start();
+            for(const f of reviewFrames){const im=new Image();im.src=f.image;await im.decode();ctx.drawImage(im,0,0,1280,720);
+                ctx.fillStyle='white';ctx.fillText((f.label || 'S04 continuous from isolated entry')+' / 4x / tick '+f.tick,12,24);
+                track.requestFrame();await new Promise(r=>setTimeout(r,50));}
+            await new Promise(r=>setTimeout(r,200));rec.stop();await ended;stream.getTracks().forEach(t=>t.stop());
+            const blob=new Blob(chunks,{type:'video/webm'});return await new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.readAsDataURL(blob)})}''')
+        (self.out/'section.webm').write_bytes(base64.b64decode(clip))
+        decoded=p.evaluate('''async b64=>{const v=document.createElement('video');v.muted=true;v.src='data:video/webm;base64,'+b64;let frames=0;
+            const count=()=>{frames++;v.requestVideoFrameCallback(count)};v.requestVideoFrameCallback(count);await v.play();
+            await new Promise((resolve,reject)=>{v.onended=resolve;v.onerror=reject});return {frames,width:v.videoWidth,height:v.videoHeight}}''',clip)
+        self.assertGreater(decoded['frames'],100);self.assertEqual(decoded['width'],1280)
+        self.write('clip-decode.json',decoded)
+
+        print(f'PASS continuous: exits 520/879/1627/1856; four on-screen actual approaches; earned 540; zero resets/injections; recovery {catch}->{returned}; decoded {decoded}')
+
+    def test_03_carrier_phases(self):
+        cases=[]
+        for phase in [0,150,300,450]:
+            p=Task567Tests.page(self);self.step(p,phase)
+            p.evaluate('Object.assign(ninja,{x:10758,y:-3960,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+            arrival=p.evaluate("({tick:YARD.result().tick,y:floors[0].byId.get('crown-lift').y})")
+            waiting=p.evaluate("""n=>{const rows=[];for(let i=0;i<n;i++){YARD.step(1);rows.push({tick:YARD.result().tick,x:ninja.x,y:ninja.y,moverY:floors[0].byId.get('crown-lift').y})}return rows}""",600-phase)
+            for row in waiting:self.assertEqual(row['x'],10758);self.assertLess(abs(row['y']+3960),32)
+            self.shot(p,Task605Tests.target,240)
+            tick=self.until(p,'crown-upper-landing',600);self.assertIsNotNone(tick)
+            r=self.result(p)
+            cases.append(dict(arrival=arrival,arrivalPhase=phase/600,waiting=waiting,landing=self.landings(r,'crown-upper-landing')[0],inputs=r['inputs'],resetsAfterArrival=0,poseInjectionsAfterArrival=0))
+            p.context.close()
+        self.assertEqual(len({(v['arrival']['y'],v['waiting'][0]['moverY']) for v in cases}),4)
+        self.write('phases.json',dict(scope='Four isolated phase arrivals, production waiting and traversal; not continuous gameplay',cases=cases))
+        print('PASS phases: four distinct quarter-cycle arrivals; safe production waiting; four upper-deck top contacts; zero post-arrival injections')
+
+    def test_04_evidence_index(self):
+        (self.out/'review.md').write_text('TASK-608 Exposed Crown composition review\n\nBuilt S07 only. One isolated entrance then continuous production controls; separate labelled carrier-cycle/fall recovery. No claim of validated human enjoyment.\n\noverview.png left panel shows the vertical carrier, practice and upper planning decks; right panel shows the first red lookout and Crown exit. silhouette.png uses the same camera frames: the stepped roof and antenna-mast landmark behind the east decks makes Exposed Crown recognizable; the open lower field separates the catch shelves from the main route. approaches.jpg panels 1–4 show the actual continuous approaches at scale 0.375, with the target coordinates and landmark recorded in approaches.json.\n\nPacing: 800/720/800/800-wide green landings separate four deliberate release challenges. Encounter 1 gives a safe red observation deck; encounter 2 repeats a westward transfer; encounter 3 reverses upward on the long-travel blue carrier; encounter 4 releases east across the open exit gap. The clip shows all four in one run, then a clearly separate complete ten-second carrier cycle and early-release fall with a normal-input return. Full swept bounds are checked against all other colliders, not just a single mover pose. Narrow mechanical clearances beside the carrier are not intended passages.\n\nClutter review: retained the three launch faces, four distinct red timing windows, one carrier and local catches; each has an encounter-specific purpose in objects.json. No redundant object was identified, so geometry is unchanged. Green/blue/yellow precede first red S07. No local yellow; earlier compliant S04 yellow suppression and lateral recovery are reused only with structural equality and exact dependency hashes. Four actual red-contact recoveries are referenced from TASK-607. No later section or human enjoyment claim is required.\n')
+        required={'commands.log':'exact command, exit, identifiers, browser/viewport/revision/source hashes',
+            'tests.log':'four Task608Tests; no skips; OK','objects.json':'purposes, role order, four broad decks, full swept bounds/clearances',
+            'overview.png':'all four built encounters and Exposed Crown roof-and-antenna landmark',
+            'silhouette.png':'plain structure, open gaps and broad landings','approaches.jpg':'four actual continuous approaches',
+            'approaches.json':'target screen positions and named landmark','route.json':'continuous ordered four-exit production traversal',
+            'phases.json':'four arrival phases for the Crown carrier and safe waiting', 'recovery.json':'fall and normal-input return','section.webm':'continuous representative traversal plus labelled recovery',
+            'clip-decode.json':'decoded frames/dimensions','dependency.json':'unchanged dependencies and reused proof hashes',
+            'review.md':'image-located composition/pacing review','evidence-index.json':'artifact assertions and provenance'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith(('.png','.jpg')):
+                with Image.open(self.out/name) as im:im.load();self.assertGreaterEqual(im.width,1280)
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: all required files exist; JSON parses; images/video decode; retained evidence <200 MB')
