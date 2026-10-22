@@ -224,6 +224,7 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
         ctx.globalAlpha = 1
         ctx.drawImage(sprite.image, ox + element.points[0].x + b.left,
             oy + element.points[0].y + b.top, b.right - b.left, b.bottom - b.top)
+        drawMoverAurora(sprite, ox + element.points[0].x, oy + element.points[0].y, clockMs)
         // Keep the blue neon rim above the opaque shell.
         ctx.beginPath(); traceRoleDetailPath(element)
         const neon = STYLE.strokes.neonOutline
@@ -754,8 +755,69 @@ function moverShellSprite(element, axis, sx, sy, unit)
     }
     c.globalAlpha=1; c.fillStyle=config.deck
     c.fillRect(l,t,w,config.deckWidth*unit)
-    const sprite={image,box,glass,caps,deck:{x:l,y:t,width:w,height:config.deckWidth*unit}}
+    const thickness=horizontal ? glass.bottom-glass.top : glass.right-glass.left
+    const crossScale=horizontal ? sy : sx
+    const pixel=1/crossScale, half=thickness/2
+    const inset=Math.min(half*0.4,2*pixel)
+    const start=(horizontal?glass.left:glass.top)+inset
+    const end=(horizontal?glass.right:glass.bottom)-inset
+    let seed=0
+    for(const ch of points.map(p=>p.x+','+p.y).join(';'))
+        seed=(Math.imul(seed,31)+ch.charCodeAt(0))>>>0
+    const ribbons=Array.from({length:thickness*crossScale<6?1:3},(_,i)=>({
+        amplitude:Math.min(half*0.45,Math.max(0,half-2*pixel))* (0.7+0.3*roleDetailHash(seed,i*3)),
+        frequency:2+2*roleDetailHash(seed,i*3+1),
+        speed:0.0004+0.0004*roleDetailHash(seed,i*3+2),
+        phase:2*Math.PI*roleDetailHash(seed,i*3+9)}))
+    // The glow is static material art, painted only on cache misses.
+    c.save(); c.beginPath(); c.rect(glass.left+inset,glass.top+inset,
+        Math.max(0,glass.right-glass.left-2*inset),Math.max(0,glass.bottom-glass.top-2*inset));c.clip()
+    c.translate((glass.left+glass.right)/2,(glass.top+glass.bottom)/2)
+    c.scale((glass.right-glass.left)/2,(glass.bottom-glass.top)/2)
+    const glow=c.createRadialGradient(0,0,0,0,0,0.8)
+    glow.addColorStop(0,config.auroraGlow);glow.addColorStop(1,config.auroraGlowFade)
+    c.globalAlpha=0.3;c.fillStyle=glow;c.fillRect(-1,-1,2,2);c.restore()
+    const aurora={horizontal,half,start,end,center:horizontal?(glass.top+glass.bottom)/2:(glass.left+glass.right)/2,
+        pixel,strokeScale:Math.min(1,thickness*crossScale/5),ribbons}
+    const sprite={image,box,glass,caps,aurora,deck:{x:l,y:t,width:w,height:config.deckWidth*unit}}
     cache.set(key,sprite)
     if(cache.size>128)cache.delete(cache.keys().next().value)
     return sprite
+}
+
+// Smooth sine curves with a zero-at-ends envelope. Hermite controls preserve
+// the analytic tangent; no jagged lightning, wall-clock time or world writes.
+function moverAuroraPoint(ribbon, u, clockMs)
+{
+    const a=u*ribbon.frequency*Math.PI+clockMs*ribbon.speed+ribbon.phase
+    const envelope=Math.sin(Math.PI*u)
+    return {offset:ribbon.amplitude*Math.sin(a)*envelope,
+        slope:ribbon.amplitude*Math.PI*(ribbon.frequency*Math.cos(a)*envelope+Math.sin(a)*Math.cos(Math.PI*u))}
+}
+
+function drawMoverAurora(sprite, x, y, clockMs)
+{
+    const a=sprite.aurora, g=sprite.glass, config=GRAPPLE_OVER_ROLE_DETAIL.mover
+    if(a.end<=a.start || a.half<=0)return
+    ctx.save();ctx.translate(x,y)
+    ctx.beginPath();ctx.rect(g.left,g.top,g.right-g.left,g.bottom-g.top);ctx.clip()
+    ctx.lineCap=ctx.lineJoin='round'
+    const point=(u,p)=>a.horizontal?[a.start+u*(a.end-a.start),a.center+p.offset]:
+        [a.center+p.offset,a.start+u*(a.end-a.start)]
+    a.ribbons.forEach((r,i)=>{
+        ctx.beginPath()
+        let p=moverAuroraPoint(r,0,clockMs),v=point(0,p);ctx.moveTo(...v)
+        const n=64,du=1/n
+        for(let j=1;j<=n;j++){
+            const q=moverAuroraPoint(r,j/n,clockMs),w=point(j/n,q)
+            const along=(a.end-a.start)*du/3
+            const c1=a.horizontal?[v[0]+along,v[1]+p.slope*du/3]:[v[0]+p.slope*du/3,v[1]+along]
+            const c2=a.horizontal?[w[0]-along,w[1]-q.slope*du/3]:[w[0]-q.slope*du/3,w[1]-along]
+            ctx.bezierCurveTo(...c1,...c2,...w);p=q;v=w
+        }
+        ctx.strokeStyle=config.auroraColors[i]
+        ctx.globalAlpha=0.25;ctx.lineWidth=3*a.pixel*a.strokeScale;ctx.stroke()
+        ctx.globalAlpha=0.8;ctx.lineWidth=a.pixel*a.strokeScale;ctx.stroke()
+    })
+    ctx.restore()
 }

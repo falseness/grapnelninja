@@ -787,7 +787,9 @@ const GRAPPLE_OVER_ROLE_DETAIL = Object.freeze({
         highlightAlpha: 0.3, reflectionAlpha: 0.12, capWidth: 4,
         steelLight: '#c8d4f0', steelDark: '#3a4670', band: '#18243d',
         ring: '#dffbff', ringRadius: 1.2, ringAlpha: 0.8,
-        deck: '#c8fbff', deckWidth: 1.2}),
+        deck: '#c8fbff', deckWidth: 1.2,
+        auroraColors: Object.freeze(['#7ff0e6', '#bff8ff', '#4fc8ff']),
+        auroraGlow: '#7ff0e6', auroraGlowFade: '#7ff0e600'}),
     hazard: Object.freeze({chevron: '#a3163c', width: 2, spacing: 10, alpha: 0.8}),
     drag: Object.freeze({particle: '#ffe680', radius: 2.2, density: 1 / 500, min: 4, max: 60,
         speed: 5, alpha: 1})

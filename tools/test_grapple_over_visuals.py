@@ -3428,3 +3428,83 @@ class Task642Tests(unittest.TestCase):
         self.assertEqual(page.evaluate('''()=>{let n=0;moverShellSprite=()=>{n++};
             drawGrappleOverRoleDetail(floors[0]);return n}'''),0)
         print('PASS classic/bad pixel-identical; roledetail=0 disables shell')
+
+
+class Task643Tests(unittest.TestCase):
+    open = Task642Tests.open
+    fixture = Task642Tests.fixture
+    test_03_isolation_and_disabled = Task642Tests.test_03_isolation_and_disabled
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-643')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.evidence.log('CONFIG ' + json.dumps(dict(browser=cls.browser.version,
+            revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+            files={n: hashlib.sha256((ROOT / n).read_bytes()).hexdigest() for n in
+                   ['render/roledetail.js', 'style.js', 'tools/test_grapple_over_visuals.py']})))
+
+    def test_01_ribbons_clock_bounds_and_pause(self):
+        page=self.open();page.evaluate(self.fixture)
+        result=page.evaluate('''()=>{
+            const w=floors[0];ctx.setTransform(1,0,0,1,0,0);
+            const snapshot=()=>JSON.stringify({level:w.level,elements:w.elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole,grapplable:e.grapplable,speedX:e.speedX,speedY:e.speedY,dx:e.dx,dy:e.dy}))});
+            const run=()=>{
+                BOUNCE_MATERIAL.sprites.clear();const rows=[];
+                for(let tick=0;tick<120;tick++){
+                    w.elapsedSteps=tick*cyclesPerTick;const before=snapshot();
+                    drawGrappleOverRoleDetail(w);
+                    rows.push({tick,clockMs:ROLE_DETAIL.frame.clockMs,unchanged:before===snapshot(),
+                        movers:w.level.movers.map(m=>{
+                            const a=moverShellSprite(w.byId.get(m.element),m.axis,1,1,1).aurora;
+                            return {axis:m.axis,half:a.half,ribbons:a.ribbons.map(r=>({...r,
+                                offsets:Array.from({length:65},(_,i)=>moverAuroraPoint(r,i/64,ROLE_DETAIL.frame.clockMs).offset)}))};
+                        })});
+                }return rows;
+            };
+            const first=run(),second=run();menu.gamePaused=true;
+            const before=w.elapsedSteps,paused=[];
+            for(let i=0;i<3;i++){physics();drawGrappleOverRoleDetail(w);paused.push({steps:w.elapsedSteps,clock:ROLE_DETAIL.frame.clockMs,png:canvas.toDataURL()})}
+            const e=w.elements[0],s=moverShellSprite(e,'x',1,1,1);
+            const translated={points:e.points.map(p=>({x:p.x+37,y:p.y-19}))};
+            const thin={points:[{x:0,y:0},{x:220,y:0},{x:220,y:5},{x:0,y:5}]};
+            return {samples:first,identical:JSON.stringify(first)===JSON.stringify(second),
+                pausedClock:paused.every(p=>p.steps===before&&p.clock===paused[0].clock),
+                pausedPoints:s.aurora.ribbons.map(r=>[moverAuroraPoint(r,0.4,paused[0].clock),moverAuroraPoint(r,0.4,paused[2].clock)]),
+                translationSeed:JSON.stringify(s.aurora)===JSON.stringify(moverShellSprite(translated,'x',1,1,1).aurora),
+                thinCount:moverShellSprite(thin,'x',1,1,1).aurora.ribbons.length};
+        }''')
+        import math
+        self.assertEqual(len(result['samples']),120)
+        self.assertTrue(result['identical'], 'seeded runs differ');self.assertTrue(result['pausedClock'], 'paused clock advanced')
+        self.assertTrue(result['translationSeed']);self.assertEqual(result['thinCount'],1)
+        for pair in result['pausedPoints']: self.assertEqual(*pair)
+        for row in result['samples']:
+            self.assertTrue(row['unchanged'])
+            self.assertEqual([m['axis'] for m in row['movers']],['x','y'])
+            for mover in row['movers']:
+                self.assertEqual(len(mover['ribbons']),3)
+                for ribbon in mover['ribbons']:
+                    self.assertLessEqual(ribbon['amplitude'],0.45*mover['half'])
+                    self.assertTrue(2<=ribbon['frequency']<=4)
+                    self.assertTrue(0.0004<=ribbon['speed']<=0.0008)
+                    self.assertLess(ribbon['speed']*1000/(2*math.pi),0.5)
+                    self.assertLess(max(map(abs,ribbon['offsets']))+1.5,mover['half'])
+        result['pass']='PASS 120 consecutive ticks x 2 axes x 3 ribbons; offset and frequency bounds; identical seeded runs; paused clock and points; thin=1; no world writes'
+        self.evidence.write('ribbons.json',result);print(result['pass'])
+
+    def test_02_production_strip(self):
+        import base64
+        page=self.open();page.evaluate(self.fixture)
+        png=page.evaluate('''()=>{
+            canvas.width=1500;canvas.height=300;
+            ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#080e18';ctx.fillRect(0,0,1500,300);
+            for(let i=0;i<3;i++){
+                ctx.setTransform(1,0,0,1,i*500,0);
+                floors[0].elapsedSteps=i*500*cyclesPerTick/physicsStepMs;
+                floors[0].draw();drawGrappleOverRoleDetail(floors[0]);
+                ctx.fillStyle='#ffffff';ctx.font='16px sans-serif';ctx.fillText((i*0.5)+' s',80,260);
+            }return canvas.toDataURL();
+        }''')
+        self.evidence.path('aurora-strip.png').write_bytes(base64.b64decode(png.split(',')[1]))
+        print('PASS aurora-strip.png production render: both axes at 0, 500, 1000 ms')
