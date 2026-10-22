@@ -13993,3 +13993,242 @@ class Task637Tests(unittest.TestCase):
         with Image.open(self.out/'boot.jpg') as im:im.load();self.assertEqual(im.size,(1280,720))
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS desktop TASK-634 and touch TASK-635 source comparisons: geometry/physics/profile/input/rope unchanged; only exact dispatch/text edits; archived suites OK; all 7 artifacts exist, JSON/image decode, storage <200 MB')
+
+
+class Task638Tests(unittest.TestCase):
+    """Read-only delivery audit; only the short boot/input observation is newly simulated."""
+    write = Task557Tests.write
+    page = Task637Tests.page
+    records = Task637Tests.records
+
+    @classmethod
+    def setUpClass(cls):
+        if Path(os.environ['GRAPPLE_OVER_EVIDENCE_DIR']).resolve() != (ROOT/'artifacts/TASK-638').resolve():
+            raise ValueError('Task638 evidence must stay task-local')
+        Task557Tests.setUpClass.__func__(cls)
+        ids = [t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
+        assert len(ids) == 4 and all('.Task638Tests.' in i for i in ids)
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('SELECTED '+json.dumps(ids)+' COUNT 4\n')
+
+    def read(self, task, name):
+        return json.loads((ROOT/f'artifacts/TASK-{task}'/name).read_text())
+
+    def test_01_prerequisite_evidence(self):
+        import re
+        tasks = {}
+        for name in ['artifacts/old_tasks_do_not_touch/tasks.json', 'artifacts/tasks.json']:
+            tasks.update({t['id']: (t, name) for t in json.loads((ROOT/name).read_text())})
+        rows = []
+        for n in range(557, 638):
+            tid = f'TASK-{n}'; task, origin = tasks[tid]
+            self.assertEqual(task['status'], 'done', tid)
+            directory = ROOT/'artifacts'/tid
+            index = self.read(n, 'evidence-index.json')
+            inventory = index.get('artifacts', index)
+            # Early indices use direct filename keys; later ones use an artifacts map.
+            names = [k for k in inventory if Path(k).suffix in
+                     ['.json', '.jsonl', '.log', '.md', '.py', '.txt', '.png', '.jpg', '.svg', '.webm', '.mp4']]
+            self.assertTrue(names, tid)
+            # Include every explicitly named task-local acceptance/test artifact as well.
+            for criterion in task['acceptance_criteria'] + task['test_steps']:
+                names += re.findall(r'artifacts/'+tid+r'/([\w./-]+\.(?:json|log|md|png|jpg|webm|mp4|txt))', criterion)
+            proofs = []
+            for name in sorted(set(names)):
+                path = directory/name
+                self.assertTrue(path.is_file(), str(path))
+                self.assertTrue(path.resolve().is_relative_to((ROOT/'artifacts').resolve()), str(path))
+                data = path.read_bytes()
+                if path.suffix == '.json': json.loads(data)
+                if path.suffix in ['.jpg', '.png']:
+                    with Image.open(path) as im: im.load(); self.assertGreater(im.width, 0)
+                proofs.append(dict(path=str(path.relative_to(ROOT)), bytes=len(data),
+                    sha256=hashlib.sha256(data).hexdigest(), supports=inventory.get(name, 'explicit ticket criterion')))
+            log = (directory/'tests.log').read_text()
+            counts = re.findall(r'Ran (\d+) tests?', log)
+            self.assertTrue(counts, tid); self.assertGreater(int(counts[-1]), 0)
+            self.assertRegex(log, r'(?m)^OK\s*$')
+            self.assertNotRegex(log, r'(?m)^(FAILED|ERROR:|FAIL:)')
+            commands = (directory/'commands.log').read_text()
+            self.assertRegex(commands, r'(?i)(exit[_ ]?(?:status|code)?[\s:=]+0|"returncode":\s*0)', tid)
+            identifiers = re.findall(r'^test_.*', log, re.M)
+            self.assertTrue(identifiers, tid)
+            def find_hashes(value):
+                if isinstance(value,dict):
+                    for key,item in value.items():
+                        if key in ['source_hashes','sourceHashes'] and isinstance(item,dict):return item
+                        found=find_hashes(item)
+                        if found:return found
+                return {}
+            hashes=find_hashes(index)
+            if not hashes:
+                for proof in proofs:
+                    if proof['path'].endswith('.json'):
+                        hashes=find_hashes(json.loads((ROOT/proof['path']).read_text()))
+                        if hashes:break
+            if not hashes:
+                for line in commands.splitlines():
+                    if 'CONFIG ' in line:
+                        hashes=find_hashes(json.loads(line.split('CONFIG ',1)[1]))
+                        if hashes:break
+            self.assertTrue(hashes, tid+' source hashes')
+            changed=[name for name,h in hashes.items() if (ROOT/name).is_file() and hashlib.sha256((ROOT/name).read_bytes()).hexdigest()!=h]
+            rows.append(dict(id=tid, status=task['status'], statusSource=origin,
+                recordedSourceHashes=hashes,changedSinceHistoricalProof=changed,
+                tests=int(counts[-1]), identifiers=identifiers, proofs=proofs,
+                requirements=[dict(requirement=c, proof=[p['path'] for p in proofs]) for c in task['acceptance_criteria']],
+                validity=('historical baseline/calibration or incremental geometry; superseded by final layout and continuous routes'
+                          if n < 622 else 'final layout observations; activation-only differences checked against TASK-637 dependencies')))
+        self.assertEqual(len(rows), 81)
+        requirements = [
+            ('Grapple Over isolation, classic/bad, preview and explicit activation', [558,559,632,637]),
+            ('360/540 acquisition, travel, held shot, range circle; unchanged attached rope, .375 camera, gravity, pull, bounce and bindings', [559,632,637]),
+            ('Green-only opening, broad calibrated landing panels and deliberate release/airborne jumps', [560,567,568,569,570,571,577,634,635]),
+            ('Blue first S03, long useful transport, cycles/reversal/release', [578,579,580,581,582,583,636]),
+            ('Horizontal yellow first S04, separated resting surfaces and swept collider volumes', [584,585,586,587,588,589,627]),
+            ('Nonlethal red first S07, physical recovery', [602,603,604,605,606,607,627,636]),
+            ('Eight coherent sections, 32 encounters, connected progression, no premature summit', [618,619,620,621,624,628,634,635]),
+            ('Two optional S05/S07 shortcuts each skipping <=1 encounter; no unapproved multi-section bypass', [622,623,624,625]),
+            ('No checkpoints, deaths, teleports or highest-altitude restore; resolved recovery and substantial falls', [626,627,631,634,635]),
+            ('Current-state persistence, earned upgrade/reset and mode isolation', [630,631,637]),
+            ('Desktop/touch continuous completion and viewport/input ownership', [630,634,635]),
+            ('Neon visual language, player-eye readability and matched warmed performance', [628,629,633,636]),
+            ('Human enjoyment and difficulty unvalidated; no publishing/upload/push or future completion dependency', [638])]
+        self.write('audit.json', dict(prerequisiteCount=81, tickets=rows,
+            designRequirements=[dict(requirement=r, tasks=ns,
+                proof=[f'artifacts/TASK-{n}/evidence-index.json' for n in ns]) for r,ns in requirements],
+            scope='TASK-557 through TASK-638 only; no later task required',
+            sourcePolicy='Historical geometry remains historical; final runtime hashes checked by test_03. HEAD alone is not a dependency.',
+            changedSubsystems=['additive Task638Tests only; runtime and previous test bodies unchanged']))
+        print('PASS audit: 81 done prerequisites; nonzero passing logs, named artifacts, JSON and images checked; 13 design requirement groups mapped')
+
+    def test_02_delivery_measurements(self):
+        p = self.page()
+        measured = p.evaluate('''()=>({level:floors[0].level,scale:scale[version],range:grappleOverAcquisitionRadius(),
+          profile:grappleOverProfile(),elements:[...floors[0].elements,...floors[0].dragZones].map(e=>({id:e.id,role:e.surfaceRole,...elementBounds(e,{})}))})''')
+        level = measured['level']; elements = {e['id']:e for e in measured['elements']}
+        self.assertEqual(len(level['sections']), 8);self.assertEqual(len(level['encounters']),32)
+        self.assertEqual(measured['range'],360);self.assertEqual(measured['scale'],.375)
+        self.assertEqual(level, self.read(628,'geometry.json')['level'])
+        roles = {}
+        for encounter in level['encounters']:
+            section = encounter['id'][:3]
+            roles.setdefault(section,set()).update(elements[i]['role'] for i in encounter['elements'] if i in elements)
+        self.assertEqual(roles['S01'], {'bounce'});self.assertEqual(roles['S02'], {'bounce'})
+        first = {role:min(s for s,rs in roles.items() if role in rs) for role in ['solid','drag','hazard']}
+        self.assertEqual(first,dict(solid='S03',drag='S04',hazard='S07'))
+        movers = [dict(id=m['element'],travel=m['max']-m['min']) for m in level['movers'] if elements[m['element']]['role']=='solid']
+        self.assertTrue(movers);self.assertGreaterEqual(min(m['travel'] for m in movers),360)
+        landings=[]
+        for name in Task634Tests.exits:
+            e=elements[name];width=e['right']-e['left'];self.assertGreaterEqual(width,360,name)
+            landings.append(dict(id=name,width=width))
+        yellow=[e for e in elements.values() if e['role']=='drag']
+        clearances=self.read(627,'falls.json')['yellowClearances']
+        self.assertTrue(clearances)
+        self.assertGreater(min(r['clearance'] for r in clearances),0)
+        self.assertTrue(yellow)
+        for e in yellow:self.assertGreater(e['right']-e['left'],e['bottom']-e['top'])
+        shortcuts=self.read(625,'shortcuts.json')['cases']
+        self.assertEqual({r['section'] for r in shortcuts},{5,7})
+        for r in shortcuts:self.assertLessEqual(r['skipCount'],1);self.assertLess(r['shortcutTicks'],r['normalTicks'])
+        recovery=[]
+        for n in [626,627]:
+            data=self.read(n,'pockets.json');self.assertEqual(data['unresolved'],[])
+            cases=data.get('inventory',data.get('cases'));self.assertTrue(cases)
+            for c in cases:
+                if 'escapes' in c:
+                    for escape in c['escapes']:self.assertTrue(escape['returned'])
+                else:self.assertTrue(c.get('returned') or c.get('terminal'), c['id'])
+            recovery.append(dict(proof=f'artifacts/TASK-{n}/pockets.json',count=len(cases),unresolved=[]))
+        for n in [622,623]:self.assertEqual(self.read(n,'search.json')['unapproved'],[])
+        # A short real input/physics check, explicitly not a continuous completion.
+        p.evaluate('menu.unPause()');p.mouse.move(700,300);p.mouse.down()
+        before=p.evaluate('captureClimbState().simulationTick')
+        p.evaluate('for(let i=0;i<32;i++)physics()');p.mouse.up()
+        after=p.evaluate('captureClimbState().simulationTick');self.assertGreater(after,before)
+        self.write('delivery.json',dict(sections=8,encounters=32,range=[360,540],cameraScale=.375,
+            firstRoles=first,greenOnly=['S01','S02'],movers=movers,landings=landings,
+            yellow=yellow,minimumSweptClearance=min(r['clearance'] for r in clearances),yellowSweptClearanceProof='artifacts/TASK-627/falls.json',
+            shortcuts=[{k:r[k] for k in ['section','mode','skipCount','normalTicks','shortcutTicks']} for r in shortcuts],
+            recovery=recovery,bypassProof=['artifacts/TASK-622/search.json','artifacts/TASK-623/search.json'],
+            nonlethalRedProof='artifacts/TASK-636/browser-smoke.json',
+            continuousCompletions=['artifacts/TASK-634/completion.json','artifacts/TASK-635/completion.json'],
+            liveInputFixture=dict(before=before,after=after,continuousGameplay=False),config=self.config))
+        print('PASS delivery: 8 sections/32 encounters; 360/540; green S01/S02; blue S03; yellow S04; red S07; broad landings; two <=1-encounter shortcuts; recovery unresolved=0')
+
+    def test_03_continuity_dependencies_and_media(self):
+        dependency=self.read(637,'source-dependency.json')
+        for name,h in dependency['sourceHashes'].items():
+            if name=='tools/test_grapple_over_redesign.py':continue
+            self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),h,name)
+        baseline=subprocess.check_output(['git','show','HEAD:tools/test_grapple_over_redesign.py'],cwd=ROOT).decode()
+        self.assertTrue(Path(__file__).read_text().startswith(baseline.rstrip()))
+        results=[]
+        for n in [634,635]:
+            proof=self.read(n,'completion.json')
+            self.assertTrue(proof['complete']);self.assertEqual(proof['missingExits'],[])
+            self.assertEqual(len(proof['observedExits']),32)
+            self.assertEqual([e['id'] for e in proof['observedExits']],proof['expectedExits'])
+            self.assertEqual(proof['initial']['simulationTick'],0);self.assertEqual(proof['initial']['range'],360)
+            self.assertEqual(len(proof['summitEvents']),1);self.assertEqual(len(proof['upgrades']),1)
+            self.assertEqual(proof['postSpawnInjections'],0)
+            self.assertEqual(proof['rangeValues'],[360,540])
+            replay=self.read(n,'replay.json')
+            self.assertEqual(replay['traceSha256'],proof['traceSha256'])
+            self.assertTrue(replay['inputEventsEqual'] and replay['summitEventsEqual'])
+            trace=proof['trace'];self.assertTrue(trace)
+            if n==635:
+                self.assertEqual(len(trace),proof['ticks'])
+                self.assertEqual(hashlib.sha256(json.dumps(trace,separators=(',',':')).encode()).hexdigest(),proof['traceSha256'])
+            for row in trace:
+                self.assertTrue(row['sameWorld'] and row['samePlayer']);self.assertFalse(row.get('deathOffer',False))
+                self.assertEqual(row['simulationTick'],row['tick']*8) if not row['completed'] else self.assertTrue((row['tick']-1)*8 < row['simulationTick'] <= row['tick']*8)
+            for a,b in zip(trace,trace[1:]):self.assertGreater(b['tick'],a['tick'])
+            inputs=self.read(n,'inputs.json' if n==634 else 'touch-inputs.json')
+            events=inputs['events'];self.assertTrue(events)
+            self.assertTrue(all(e['trusted'] for e in events))
+            results.append(dict(task=n,ticks=proof['ticks'],exits=32,traceRows=len(trace),trustedEvents=len(events),
+                source=f'artifacts/TASK-{n}/completion.json',traceSha256=proof['traceSha256']))
+        import imageio_ffmpeg
+        media=[]
+        for clip in self.read(636,'media-index.json')['clips']:
+            path=ROOT/clip['path'];self.assertTrue(path.is_file())
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),clip['sha256'])
+            command=[imageio_ffmpeg.get_ffmpeg_exe(),'-v','error','-i',str(path),'-f','null','-']
+            r=subprocess.run(command,capture_output=True,text=True)
+            self.assertEqual(r.returncode,0,r.stderr)
+            with (self.out/'commands.log').open('a') as f:
+                import shlex
+                f.write('COMMAND '+shlex.join(command)+' EXIT_STATUS '+str(r.returncode)+'\n')
+            media.append(dict(path=clip['path'],decodedFrames=clip['decodedFrames'],exitStatus=r.returncode))
+        self.write('dependencies.json',dict(completions=results,media=media,sourceHashes=self.hashes,
+            activationProof='artifacts/TASK-637/source-dependency.json',
+            changedSubsystems=['additive audit tests only'],historicalTests='all previous test bodies preserved',
+            validity='identical final runtime; reviewed activation dispatch/text transformation bridges completion proofs; HEAD alone does not invalidate hashes'))
+        print('PASS continuity: desktop/touch 32 ordered exits from tick 0; same player/world; trusted events; unchanged runtime dependencies; three clips fully decoded')
+
+    def test_04_hygiene_and_inventory(self):
+        staged=subprocess.check_output(['git','diff','--cached','--name-only'],cwd=ROOT,text=True)
+        status=subprocess.check_output(['git','status','--short'],cwd=ROOT,text=True)
+        tracked=subprocess.check_output(['git','ls-files','artifacts','screenshots'],cwd=ROOT,text=True)
+        self.assertFalse(any(p.startswith(('artifacts/','screenshots/')) for p in staged.splitlines()))
+        self.assertFalse(any(p.startswith('artifacts/') for p in tracked.splitlines()))
+        (self.out/'git-hygiene.log').write_text('COMMAND git diff --cached --name-only\n'+staged+'EXIT_STATUS 0\nCOMMAND git status --short\n'+status+
+            'EXIT_STATUS 0\nCOMMAND git ls-files artifacts screenshots\n'+tracked+'EXIT_STATUS 0\nPASS no new staged/tracked artifacts or screenshots; historical tracked screenshots listed above and preserved\n')
+        names={'commands.log':'exact commands, real exit, 4 identifiers, browser/viewport/revision/SHA256',
+               'tests.log':'4 focused tests, no skips, OK','audit.json':'81 done prerequisites and all design requirements mapped to inspected evidence',
+               'delivery.json':'live geometry, 8/32, first roles, landing widths, shortcuts and resolved recovery',
+               'dependencies.json':'continuous trace assertions, final source hashes, fully decoded clips',
+               'review.md':'independent visual findings and unvalidated human enjoyment/difficulty',
+               'git-hygiene.log':'no new staged/tracked artifacts/screenshots; historical list',
+               'evidence-index.json':'required inventory and observations'}
+        self.write('evidence-index.json',dict(artifacts=names,changedSubsystems=['additive Task638Tests only'],
+            references=['artifacts/TASK-637/source-dependency.json','artifacts/TASK-636/media-index.json',
+                        'artifacts/TASK-628/full-map.png','artifacts/TASK-629/contact-sheet.jpg'],sourceHashes=self.hashes))
+        for name in names:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        size=sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file())
+        self.assertLess(size,200_000_000)
+        print('PASS hygiene/inventory: all 8 required artifacts exist; JSON parses; task bytes='+str(size)+' <200 MB; no artifacts/screenshots staged')
