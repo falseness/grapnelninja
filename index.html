@@ -584,6 +584,9 @@
                 {
                     floors[i].generatePrimaryElements()
                 }
+                // Placed now, not on the first cycle: the paused boot and
+                // restart draw before any cycle
+                screen.place()
             }
             function start()
             {

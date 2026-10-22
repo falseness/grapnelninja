@@ -27,7 +27,8 @@ class MomentumScreen extends Screen
     {
         super(true, 0)
         this.course = course
-        // Set on the first cycle (the view is centred on the ninja then)
+        // Set on the first cycle, which places the view again (the ninja
+        // has not moved since the build in a run; tests may move it first)
         this.placed = false
         // The furthest course segment the ninja has reached (updateSegment);
         // never goes back: spawning and deletion follow it
@@ -106,13 +107,20 @@ class MomentumScreen extends Screen
         this.verticalTravel = this.shaftTravel(this.segmentIndex)
         this.backTravel = this.shaftTravel(this.ninjaSegment)
     }
+    // Centres the ninja vertically: startMomentumVersion calls it once the
+    // ninja exists, so a paused boot or restart draws the placed view before
+    // any cycle, and the first cycle again
+    place()
+    {
+        this.y = this.getViewHeight() / 2 - ninja.y
+    }
     // One physics cycle (before the ninja moves): sets speedX / speedY.
     shouldStartMove()
     {
         const H = this.getViewHeight()
         if (!this.placed)
         {
-            this.y = H / 2 - ninja.y
+            this.place()
             this.placed = true
         }
         this.updateSegment()
