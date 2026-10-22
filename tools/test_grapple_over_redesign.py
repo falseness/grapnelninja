@@ -13032,3 +13032,151 @@ class Task633Tests(unittest.TestCase):
         size=sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file())
         self.assertLess(size,200_000_000)
         print('PASS inventory: all six required files exist; JSON parses; source hashes match; bytes='+str(size))
+
+
+class Task634Tests(unittest.TestCase):
+    """Fresh-base composition regression. Currently fails at the fourth S01 exit.
+
+    Never relax the 32-exit assertion to turn an incomplete prefix into completion.
+    No archived poses, state restores, geometry edits or production overrides.
+    """
+    write = Task557Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    exits = (Task571Tests.exits + Task577Tests.exits + Task583Tests.exits +
+             Task589Tests.exits + Task595Tests.exits + Task601Tests.exits +
+             Task607Tests.exits + Task613Tests.exits)
+
+    @classmethod
+    def setUpClass(cls):
+        if Path(os.environ['GRAPPLE_OVER_EVIDENCE_DIR']).resolve() != (ROOT/'artifacts/TASK-634').resolve():
+            raise ValueError('Task634 evidence must stay task-local')
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation'] = 'Fresh production spawn, trusted desktop input, batched production ticks; incomplete route prefix'
+        ids=[t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
+        assert len(ids)==2 and all('.Task634Tests.' in i for i in ids)
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK634_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+            f.write('SELECTED '+json.dumps(ids)+' COUNT '+str(len(ids))+'\n')
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('''()=>{
+          const world=floors[0],player=ninja,step=YARD.step,lifecycle=PLATFORM.sendLifecycle;
+          window.run634={initial:{x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,
+            range:grappleOverAcquisitionRadius(),simulationTick:world.elapsedSteps},events:[],rows:[]};
+          PLATFORM.sendLifecycle=function(name,...args){
+            run634.events.push({name,tick:YARD.result().tick+1});return lifecycle.call(this,name,...args)};
+          YARD.step=n=>{for(let i=0;i<n;i++){
+            step(1);const row=YARD.result().rows.at(-1);
+            run634.rows.push({...row,range:grappleOverAcquisitionRadius(),
+              simulationTick:world.elapsedSteps,sameWorld:floors[0]===world,samePlayer:ninja===player,
+              completed:world.climbStats.completed});
+          }};
+        }''')
+        return p
+
+    def shot(self,p,t,n):
+        self.press(p,t);self.step(p,n);p.mouse.up()
+
+    def until(self,p,id,n=800):
+        return p.evaluate('''a=>{for(let i=0;i<a.n;i++){YARD.step(1);
+          const r=YARD.result().rows.at(-1);
+          if(r.contacts.some(c=>c.id===a.id&&c.ny<-.9))return true;}return false}''',dict(id=id,n=n))
+
+    def observation(self,p):
+        r=p.evaluate('({...run634,inputs:YARD.result().inputs,stepMs:physicsStepMs,cycles:cyclesPerTick})')
+        self.assertEqual(r['initial'],dict(x=2160,y=0,vx=0,vy=0,range=360,simulationTick=0))
+        self.assertTrue(r['inputs']);self.assertTrue(all(i['trusted'] for i in r['inputs']))
+        self.assertEqual([v['tick'] for v in r['rows']],list(range(1,len(r['rows'])+1)))
+        self.assertTrue(all(v['sameWorld'] and v['samePlayer'] for v in r['rows']))
+        self.assertEqual([v['simulationTick'] for v in r['rows']],
+                         [i*r['cycles'] for i in range(1,len(r['rows'])+1)])
+        return r
+
+    def test_01_completion(self):
+        import time
+        start=time.monotonic();p=self.page();frames=[]
+        def capture(label):
+            p.evaluate('draw()')
+            im=Image.open(io.BytesIO(p.screenshot())).convert('RGB');im.thumbnail((640,360))
+            ImageDraw.Draw(im).text((10,10),'INCOMPLETE: '+label,fill='white');frames.append(im)
+        capture('actual base / S01')
+        # TASK-572's first two exits remain reproducible on the full layout.
+        # Its third aim/45-tick hold hits later quarry terrain. This current-input
+        # variation reaches the third yard exit before any later encounter exit.
+        for target,hold,coast in [(dict(x=2420,y=-139),30,75),(dict(x=2900,y=30),26,0),
+                                  (Task568Tests.target,18,48),(dict(x=3090,y=-350),54,0)]:
+            self.shot(p,target,hold);self.step(p,coast)
+        self.assertTrue(self.until(p,'yard-third-landing'))
+        capture('S01-03 contact at tick 315')
+        self.shot(p,dict(x=2800,y=-280),24)
+        p.evaluate('''()=>{for(let i=0;i<400;i++){
+          if(Math.hypot(ninja.x-2235,ninja.y+345)<350)break;YARD.step(1)}}''')
+        capture('attempted S01-04 transfer')
+        self.shot(p,dict(x=2235,y=-345),36)
+        # Stop this failed attempt at its actual recovery contact; do not splice
+        # a fixture or another attempt into the run to continue climbing.
+        self.until(p,'quarry-catch',200)
+        capture('miss: quarry-catch, not S01-04')
+        r=self.observation(p);rows=r['rows'];seen=[]
+        for row in rows:
+            for c in row['contacts']:
+                if c['ny']<-.9 and c['id'] in self.exits and c['id'] not in [e['id'] for e in seen]:
+                    seen.append(dict(id=c['id'],tick=row['tick'],contact=c,range=row['range']))
+        events=[e for e in r['events'] if e['name']=='level_completed']
+        digest=hashlib.sha256(json.dumps(rows,separators=(',',':')).encode()).hexdigest()
+        self.write('inputs.json',dict(config=self.config,events=r['inputs'],ticks=len(rows),
+            ownership='All MouseEvents are browser-trusted, dispatched by Playwright mouse to production handlers'))
+        self.write('completion.json',dict(config=self.config,complete=False,initial=r['initial'],
+            expectedExits=self.exits,observedExits=seen,missingExits=self.exits[len(seen):],
+            summitEvents=events,simulationSeconds=len(rows)*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
+            ticks=len(rows),traceSha256=digest,trace=[v for v in rows if v['contacts'] or v['tick']%120==0],
+            rangeValues=sorted(set(v['range'] for v in rows)),postSpawnInjections=0,
+            limitation='Only three exits; no S05 upgrade or summit reached. Simulation duration is not novice completion time.'))
+        sheet=Image.new('RGB',(1280,720))
+        for i,im in enumerate(frames):sheet.paste(im,((i%2)*640,(i//2)*360))
+        sheet.save(self.out/'completion-strip.jpg',quality=85)
+        print('OBSERVED ordered exits='+str(len(seen))+'/32; summit events='+str(len(events))+'; range=360; trusted inputs='+str(len(r['inputs'])))
+        print('FAIL continuity: next required exit yard-fourth-landing; actual recovery contact quarry-catch')
+        self.assertEqual([e['id'] for e in seen],self.exits,'Continuous 32-exit proof incomplete')
+        self.assertEqual(len(events),1)
+
+    def test_02_replay_and_inventory(self):
+        import time
+        start=time.monotonic()
+        inputs=json.loads((self.out/'inputs.json').read_text())
+        completion=json.loads((self.out/'completion.json').read_text())
+        self.assertEqual(inputs['config']['source_hashes'],self.config['source_hashes'])
+        p=self.page();tick=0
+        for event in inputs['events']:
+            self.step(p,event['tick']-tick);tick=event['tick']
+            p.mouse.move(event['x'],event['y'])
+            if event['type']=='mousedown':p.mouse.down()
+            else:p.mouse.up()
+        self.step(p,inputs['ticks']-tick);r=self.observation(p)
+        digest=hashlib.sha256(json.dumps(r['rows'],separators=(',',':')).encode()).hexdigest()
+        self.assertEqual(digest,completion['traceSha256']);self.assertEqual(r['inputs'],inputs['events'])
+        self.write('replay.json',dict(config=self.config,traceSha256=digest,inputEventsEqual=True,
+            ticks=len(r['rows']),simulationSeconds=len(r['rows'])*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
+            scope='Deterministic replay of FAILED prefix only; not completion'))
+        names={'commands.log':'exact command/status, IDs, browser, viewport, revision and hashes',
+               'tests.log':'two exact focused cases; completion currently FAILS',
+               'completion.json':'measured failed prefix; only 3/32 exits and zero summit events',
+               'inputs.json':'trusted production mouse events at simulation ticks',
+               'replay.json':'identical failed-prefix trace and inputs under identical source hashes',
+               'completion-strip.jpg':'four live frames of S01 attempt only; does NOT show eight sections',
+               'evidence-index.json':'honest artifact inventory and dependencies'}
+        self.write('evidence-index.json',dict(artifacts=names,config=self.config,readyForVerification=False,
+            changedSubsystems=['Additive Task634Tests -> browser_test_support + YARD -> production events/physics/camera; no runtime changes'],
+            superseded='TASK-572 third-exit historical input sequence is not full-layout continuity evidence. Original evidence remains untouched.',
+            hashPolicy='A HEAD-only commit does not invalidate identical tested source hashes'))
+        for name in names:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        with Image.open(self.out/'completion-strip.jpg') as im:im.load();self.assertEqual(im.size,(1280,720))
+        for name,digest in self.config['source_hashes'].items():
+            self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+        self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
+        print('PASS deterministic FAILED-prefix replay: equal tick-by-tick trace and trusted input events')
+        print('PASS inventory: seven required files exist; JSON parses; image decodes; source hashes match; <200 MB')
