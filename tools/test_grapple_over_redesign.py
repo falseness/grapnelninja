@@ -6631,3 +6631,168 @@ class Task598Tests(unittest.TestCase):
                 with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS dependencies/index: preview 360/540 legacy 1080/1620 camera=.375 gravity/pull unchanged; all required files parse/decode; below 200 MB')
+
+
+class Task599Tests(unittest.TestCase):
+    """Green rebound into a single horizontal carrier from the shared shaft deck."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Isolated S06-02 shaft deck -> S06-03; production controls; not a base-to-summit run'
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task597Tests.until
+    target = dict(x=12451,y=-3488.2)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:12281,y:-3260,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        return p
+
+    def rebound(self,p):
+        self.step(p,12)
+        rows=p.evaluate('YARD.result().rows')
+        bounce=next(s for s in rows if any(c['id']=='tower-shaft-landing' and c['ny']<-.9 for c in s['contacts']))
+        self.assertEqual(bounce['tick'],6)
+        self.assertGreater(rows[4]['vy'],0);self.assertLess(bounce['vy'],0)
+        self.assertFalse(any(s['attached'] or s['shot'] for s in rows))
+
+    def capture(self,p,name):
+        p.evaluate('screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw()')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'counterweight-tower')
+        p.evaluate("() => {const d=document.createElement('div');d.id='proof-label';d.textContent='S06-03 isolated shaft deck / earned 540 / production controls';d.style='position:fixed;bottom:12px;left:12px;background:#111;color:white;padding:8px';document.body.appendChild(d)}")
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        p.evaluate("document.getElementById('proof-label').remove()")
+
+    def test_01_geometry_and_release(self):
+        p=self.page()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S06-03'),movers:floors[0].level.movers,
+            range:grappleOverAcquisitionRadius(),scale:scale[version],target,
+            reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),
+            calibrated:{movement:GRAPPLE_OVER_MOVEMENT,movers:GRAPPLE_OVER_MOVERS},finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][-1]['encounters'],['S06-01','S06-02','S06-03'])
+        self.assertIsNone(g['finish']);self.assertEqual(g['range'],540);self.assertEqual(g['scale'],.375)
+        self.assertLess(g['reach'],540)
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+            self.assertTrue(e['purpose']);self.assertIn(e['role'],['bounce','solid','drag'])
+        es={e['id']:e for e in g['elements']}
+        self.assertTrue(all(e['role']=='bounce' for e in g['elements'] if e['id'].startswith('yard-')))
+        self.assertNotIn('preview-unbuilt',es)
+        self.assertEqual(es['tower-shaft-landing']['role'],'bounce')
+        self.assertEqual(es['tower-rebound-landing']['role'],'bounce')
+        self.assertEqual(es['tower-rebound-carrier']['role'],'solid')
+        g.update(gap=es['tower-rebound-landing']['x']-es['tower-shaft-landing']['x']-es['tower-shaft-landing']['width'],
+            landingWidths=[es[n]['width'] for n in ['tower-shaft-landing','tower-rebound-landing']],
+            recoveryWidth=es['tower-rebound-catch']['width'],localCatch='tower-rebound-catch',
+            connection='Same live tower-shaft-landing collider as S06-02 exit',
+            rise=es['tower-shaft-landing']['y']-es['tower-rebound-landing']['y'],
+            calibrationNote='TASK-599 brief specializes TASK-564 to green rebound then one carrier; fixed exit 60 below entry avoids simultaneous timing. TASK-564/561 horizontal axis=x, displacement 720, period 10000ms; 360-wide blue carrier, broad 800 fixed decks, 540 shaft, 1340 recovery')
+        self.assertEqual(g['gap'],540);self.assertEqual(g['landingWidths'],[800,800]);self.assertGreaterEqual(g['recoveryWidth'],540)
+        sweep=dict(left=12441,right=13521,top=-3528.2,bottom=-3448.2)
+        g['sweptBounds']=sweep;g['sweepClearances']=[]
+        for e in g['elements']:
+            if e['id']=='tower-rebound-carrier':continue
+            dx=max(e['x']-sweep['right'],sweep['left']-e['x']-e['width'],0)
+            dy=max(e['y']-sweep['bottom'],sweep['top']-e['y']-max(v['y'] for v in e['points']),0)
+            self.assertGreater(max(dx,dy),0,e['id'])
+            g['sweepClearances'].append(dict(id=e['id'],clearance=(dx*dx+dy*dy)**.5))
+        self.capture(p,'approach.jpg')
+        self.rebound(p)
+        g['postReboundReach']=p.evaluate('t=>Math.hypot(t.x-ninja.x,t.y-ninja.y)',self.target)
+        self.assertLess(g['postReboundReach'],540)
+        self.press(p,self.target);self.step(p,30);p.mouse.up()
+        landing=self.until(p,'tower-rebound-landing');self.assertIsNotNone(landing)
+        r=self.result(p);best=streak=0
+        for s in r['rows'][42:landing-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0
+            best=max(best,streak)
+        self.assertGreaterEqual(best,6);self.assertTrue(any(s['attached'] for s in r['rows'][12:42]))
+        self.assertFalse(self.landings(r,'tower-rebound-catch'))
+        r.update(entryTick=0,takeoffTick=next(s['tick'] for s in r['rows'] if s['vy']<0),reboundTick=6,pressTick=12,releaseTick=42,
+            landingTick=landing,landingAir=best,entryToExit=True,resets=0,poseInjections=0,
+            fixture=dict(x=12281,y=-3260,vx=0,vy=0),scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']));self.capture(p,'landing.jpg')
+        # Observe a separate full production cycle; never modify mover time/state.
+        q=self.page()
+        g['cycle']=q.evaluate('''()=>{const out=[];for(let i=0;i<600;i++){
+            YARD.step(1);out.push({tick:i+1,x:floors[0].byId.get('tower-rebound-carrier').x});}return out}''')
+        self.assertAlmostEqual(max(v['x'] for v in g['cycle'])-min(v['x'] for v in g['cycle']),720)
+        self.write('geometry.json',g)
+        print(f'PASS geometry S06-03: axis=x travel=720 period=10000 widths=800/800 catch=1340 gap=540 reach={g["reach"]:.3f} range=540; purposeful materials; sweep clear; no future terrain')
+        print(f'PASS route: takeoff={r["takeoffTick"]} rebound=6 press=12 release=42 landing={landing} unattached-airborne={best}; trusted inputs; no resets/injections')
+
+    def test_02_late_miss_and_recovery(self):
+        p=self.page();self.rebound(p);self.press(p,self.target);self.step(p,60);p.mouse.up()
+        catch=self.until(p,'tower-rebound-catch',800);self.assertIsNotNone(catch)
+        self.assertFalse(self.landings(self.result(p),'tower-rebound-landing'))
+        self.press(p,dict(x=12371,y=-3218.2));self.step(p,12);p.mouse.up()
+        returned=self.until(p,'tower-shaft-landing',800);self.assertIsNotNone(returned)
+        r=self.result(p);r.update(lateReleaseTick=72,catchTick=catch,catchTarget='tower-rebound-catch',
+            recoveryPressTick=catch,recoveryReleaseTick=catch+12,returnTick=returned,recoveryTarget='tower-shaft-landing',
+            resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('miss.json',r)
+        print(f'PASS miss: late release=72 catch={catch} tower-rebound-catch return={returned} tower-shaft-landing; trusted controls; no restart/checkpoint/injection')
+
+    def test_03_hold_and_nearest(self):
+        cases=[];p=self.page();self.rebound(p);self.press(p,self.target);self.step(p,1200)
+        r=self.result(p);r.update(probe='continuous hold for two cycles',successfulAlternative=bool(self.landings(r,'tower-rebound-landing')))
+        cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.page();self.rebound(p);targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'tower-rebound-landing')))
+            cases.append(r)
+        self.write('controls.json',dict(cases=cases,bound='1200 continuous hold; 600 each repeated-nearest 6/12/24',
+            inspection='Every exit top contact inspected using nominal success definition; no successful alternatives'))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded trusted probes; continuous-hold and nearest 6/12/24; successful alternatives=0')
+
+    def test_04_connection_dependencies_and_index(self):
+        p=Task598Tests.page(self);self.press(p,Task598Tests.target);self.step(p,30);p.mouse.up()
+        arrival=self.until(p,'tower-shaft-landing');self.assertIsNotNone(arrival)
+        r=self.result(p);r.update(sharedCollider='tower-shaft-landing',arrivalTick=arrival,
+            fixtureScope='Separate S06-02 fixture -> shared S06-03 entry; not spliced into route',resets=0,poseInjections=0)
+        self.write('connection.json',r)
+        print(f'PASS connection: previous S06-02 reaches shared tower-shaft-landing at {arrival}; no handoff injection')
+        rows=[]
+        for preview in [True,False]:
+            q=Task558Tests.page(self,preview)
+            for mode in ['grapple_over','classic','bad']:
+                row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,
+                    range:version==='grapple_over'?grappleOverAcquisitionRadius():null,
+                    upgraded:version==='grapple_over'?grappleOverProfile().upgradedAcquisitionRadius:null,
+                    scale:scale[version],gravity:GRAVITY,pull:grappleSpeed}}''',mode)
+                row['preview']=preview;rows.append(row)
+                if mode=='grapple_over':
+                    self.assertEqual(row['range'],360 if preview else 1080)
+                    self.assertEqual(row['upgraded'],540 if preview else 1620);self.assertEqual(row['scale'],.375)
+        self.assertEqual(len({(r['gravity'],r['pull']) for r in rows}),1)
+        self.write('dependencies.json',dict(rows=rows,changed=['mountain.js preview geometry -> fixedlevel.js mover/collision',
+            'tools/test_grapple_over_redesign.py additive Task599Tests'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','gameoptions.js','fixedlevel.js','render/landmarks.js'],
+            superseded='Historical exact preview inventories end at S06-02; retained TASK-598 proof is referenced in place. No legacy tests edited or earlier expensive suites claimed revalidated.',hashes=self.config['source_hashes']))
+        required={'commands.log':'exact command, exit status, identifiers/count, revision, browser/viewport, SHA256',
+            'tests.log':'four exact Task599Tests; no skips; OK','geometry.json':'live purposes/widths, 540 gap, range/reach, horizontal full cycle and swept clearance',
+            'route.json':'production entry-to-exit with >=6 unattached airborne ticks','inputs.json':'trusted production input events',
+            'miss.json':'late release into declared catch and return through controls','approach.jpg':'clear blue target, broad decks, tower structure',
+            'landing.jpg':'fixed broad exit and tower structure','controls.json':'bounded hold/nearest probes, inspected alternatives',
+            'connection.json':'previous encounter flight onto shared shaft deck','dependencies.json':'changed subsystem dependencies and hashes',
+            'evidence-index.json':'artifact assertions and provenance'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation'],
+            hashPolicy='A HEAD-only commit does not invalidate identical tested source hashes'))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith('.jpg'):
+                with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS dependencies/index: preview 360/540 legacy 1080/1620 camera=.375 gravity/pull unchanged; all required files parse/decode; below 200 MB')
