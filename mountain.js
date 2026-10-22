@@ -1203,7 +1203,7 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Freight Crossing encounter 1. Planned terrain stays noncollidable.
+// Replacement built prefix through Freight Crossing encounter 2. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 6480, top: -3000, bottom: 280},
@@ -1211,7 +1211,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
         {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03', 'S02-04']},
-        {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01']},
+        {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02']},
         {id: 'S05', status: 'planned', encounters: ['preview-future'],
             band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
     ],
@@ -1225,6 +1225,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S02-03', name: 'Terraced Quarry angled cut', elements: ['quarry-second-landing', 'quarry-third-anchor', 'quarry-third-landing', 'quarry-third-catch']},
         {id: 'S02-04', name: 'Terraced Quarry upper return', elements: ['quarry-third-landing', 'quarry-fourth-anchor', 'quarry-fourth-landing', 'quarry-third-catch']},
         {id: 'S03-01', name: 'Freight Crossing', elements: ['quarry-fourth-landing', 'freight-carrier', 'freight-landing', 'freight-catch']},
+        {id: 'S03-02', name: 'Freight Crossing carrier practice', elements: ['freight-landing', 'freight-second-carrier', 'freight-second-landing', 'freight-second-catch']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1253,12 +1254,16 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['freight-carrier', 3900, -950, 360, 80, 'Wide blue horizontal freight carrier; observe its full ten-second cycle from the quarry exit, then release deliberately'],
         ['freight-landing', 4500, -708.2, 620, 60, 'Broad safe Freight Crossing exit and planning shelf'],
         ['freight-catch', 3824, -468.2, 1476, 60, 'Forgiving green recovery apron below the carrier; grapple back to the quarry exit or retry the carrier'],
+        ['freight-second-carrier', 5196, -950, 360, 80, 'Second blue freight carrier; practice attaching and releasing at the useful outbound phase'],
+        ['freight-second-landing', 5796, -708.2, 620, 60, 'Broad stationary green practice exit and planning shelf'],
+        ['freight-second-catch', 5120, -468.2, 1360, 60, 'Broad green recovery apron; early releases return to the shared first freight landing with normal grappling'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
-    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: id === 'freight-carrier' ? 'solid' : 'bounce', grapplable: true,
+    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['freight-carrier', 'freight-second-carrier'].includes(id) ? 'solid' : 'bounce', grapplable: true,
         points: ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
             ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]
             : [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
-    movers: [{id:'freight-travel', element:'freight-carrier', axis:'x', min:3900, max:4620, periodMs:10000, phase:0, velocity:144}]
+    movers: [{id:'freight-travel', element:'freight-carrier', axis:'x', min:3900, max:4620, periodMs:10000, phase:0, velocity:144},
+        {id:'freight-second-travel', element:'freight-second-carrier', axis:'x', min:5196, max:5916, periodMs:10000, phase:0, velocity:144}]
 }
 
 function replacementMountainLevel(manifest)
