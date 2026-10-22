@@ -10795,3 +10795,121 @@ class Task621Tests(unittest.TestCase):
         with Image.open(self.out/'boundary.jpg') as im:im.load();self.assertEqual(im.size,(1280,720))
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS index: all eight required artifacts exist; JSON parses; boundary.jpg decoded 1280x720; retained evidence <200 MB')
+
+
+class Task622Tests(unittest.TestCase):
+    """Bounded local lower-route searches, never a continuous-from-base claim."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Isolated entry/archived released poses; synthetic production mouse handlers and physics; 1200 ticks per attempt'
+        cls.config['source_hashes']['tools/grapple_over_bypass.js']=hashlib.sha256((ROOT/'tools/grapple_over_bypass.js').read_bytes()).hexdigest()
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK622_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write=Task557Tests.write
+    exits=['yard-landing','yard-second-landing','yard-third-landing','yard-fourth-landing',
+           'quarry-landing','quarry-second-landing','quarry-third-landing','quarry-fourth-landing',
+           'freight-landing','freight-second-landing','freight-lift-landing','freight-exit',
+           'viaduct-landing','viaduct-second-landing','viaduct-third-landing','viaduct-exit']
+    policies=[dict(name='continuous-hold-nearest-anchor',interval=0,anchorsOnly=True),
+              dict(name='nearest-anchor-12',interval=12,anchorsOnly=True),
+              dict(name='nearest-anchor-48',interval=48,anchorsOnly=True),
+              dict(name='nearest-visible-surface-24',interval=24,anchorsOnly=False)]
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_bypass.js'))
+        return p
+
+    def starts(self):
+        starts=[]
+        for section,task,xy in [(1,572,(2160,0)),(2,578,(1780,-360)),(3,584,(3740,-720)),(4,590,(7228,-1540))]:
+            path=f'artifacts/TASK-{task}/route.json';d=json.loads((ROOT/path).read_text())
+            rows=d.get('rows',d.get('trace'));by_tick={r['tick']:r for r in rows}
+            starts.append(dict(id=f'S0{section}-entry',section=f'S0{section}',completed=(section-1)*4-1,
+                pose=dict(x=xy[0],y=xy[1],vx=0,vy=0),phaseTick=0,
+                provenance=dict(path=path,kind='original local section-entry fixture; S01 is actual spawn',sha256=hashlib.sha256((ROOT/path).read_bytes()).hexdigest())))
+            for tick in sorted({e['tick'] for e in d['inputs'] if e['type']=='mousedown' and e['tick']>0}):
+                row=by_tick[tick]
+                # Mouseup at the same tick releases the preceding shot. Each is a
+                # local released fixture; pose and mover phase are preserved.
+                completed=(section-1)*4-1
+                for r in rows:
+                    if r['tick']>tick:break
+                    for c in r['contacts']:
+                        if c['ny']<-.9 and c['id'] in self.exits:completed=max(completed,self.exits.index(c['id']))
+                starts.append(dict(id=f'S0{section}-approach-{tick}',section=f'S0{section}',completed=completed,
+                    pose={k:row[k] for k in ['x','y','vx','vy']},phaseTick=tick,
+                    provenance=dict(path=path,tick=tick,kind='recorded pre-press pose; released rope fixture, not state restoration',sha256=hashlib.sha256((ROOT/path).read_bytes()).hexdigest())))
+        return starts
+
+    def test_01_detector_negative_controls(self):
+        p=self.page();start=self.starts()[0];cases=[]
+        for target in ['yard-fourth-landing','quarry-landing']:
+            r=p.evaluate('(a)=>BYPASS.run(a.s,360,a.p,120,a.control)',dict(s=start,p=self.policies[0],control=target))
+            self.assertTrue(any(v['unapproved'] for v in r['skips']))
+            self.assertEqual(r['completions'][0]['id'],target)
+            self.assertLess(r['completions'][0]['contact']['ny'],-.9)
+            cases.append(dict(geometry='Only named landing retained, moved to x=2050 y=50 beneath actual spawn; real fall/contact',target=target,result=r))
+        self.write('negative-controls.json',cases)
+        print('PASS detector: production contacts detect close S01-04 skip=3 and S02-01 cross-section skip=4')
+
+    def test_02_bounded_lower_route(self):
+        p=self.page();starts=self.starts()
+        cases=p.evaluate('a=>a.starts.flatMap(s=>[360,540].flatMap(r=>a.policies.map(p=>BYPASS.run(s,r,p))))',dict(starts=starts,policies=self.policies))
+        violations=[dict(start=c['start'],range=c['range'],policy=c['policy'],skip=v) for c in cases for v in c['skips'] if v['unapproved']]
+        self.write('search.json',dict(config=self.config,scope='Bounded evidence only, not universal impossibility; isolated fixtures, not continuous gameplay',
+            starts=starts,policies=self.policies,budgets=dict(attempts=len(starts)*8,ticksPerAttempt=1200,totalTicks=len(cases)*1200),
+            detector='First upward-surface contact on designated encounter exit; monotonic progress; >1 omitted encounters or any omitted encounter across section boundary is unapproved; adjacent normal handoff is allowed',
+            negativeControls='negative-controls.json',cases=cases,unapproved=violations))
+        self.assertEqual(len(cases),len(starts)*8)
+        self.assertTrue(all(c['ticks']==1200 and c['postSetupInjections']==0 for c in cases))
+        self.assertTrue(all(any(c['shots'] for c in cases if c['start']==s['id']) for s in starts))
+        self.assertEqual(violations,[],str(violations)[:3000])
+        print(f'PASS search: {len(starts)} starts S01-S04; {len(cases)} attempts; {len(cases)*1200} production ticks; ranges 360/540; unapproved=0')
+
+    def test_03_dependencies_and_fixes(self):
+        search=json.loads((self.out/'search.json').read_text());self.assertEqual(search['unapproved'],[])
+        old=json.loads((ROOT/'artifacts/TASK-621/evidence-index.json').read_text())['config']['source_hashes']
+        unchanged={n:h for n,h in old.items() if n!='tools/test_grapple_over_redesign.py'}
+        for n,h in unchanged.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        archives=[]
+        for task in [572,578,584,590,615,616,619,620,621]:
+            path=f'artifacts/TASK-{task}/tests.log';log=(ROOT/path).read_text()
+            self.assertIn('\nOK\n',log);self.assertRegex(log,r'Ran [1-9][0-9]* tests')
+            archives.append(dict(path=path,sha256=hashlib.sha256((ROOT/path).read_bytes()).hexdigest(),summary=next(l for l in log.splitlines() if l.startswith('Ran '))))
+        self.write('fixes.json',dict(reproducedUnapprovedRoutes=[],geometryChanges=[],affectedReplays=[],
+            reason='No unapproved route observed in bounded search; no geometry fix or affected nominal/recovery rerun necessary',
+            observedLocalSkips=[dict(start=c['start'],range=c['range'],policy=c['policy'],skips=c['skips']) for c in search['cases'] if c['skips']],
+            dependencies=dict(unchangedHashes=unchanged,changed=['tools/test_grapple_over_redesign.py: Task622Tests','tools/grapple_over_bypass.js: test-only probe'],
+                chain='preview mountain -> fixedlevel -> physics/input -> camera; production unchanged',
+                historical='Archived nominal/recovery logs referenced only; obsolete v3 geometry not rerun or suppressed'),archives=archives))
+        print('PASS fixes: no reproduced unapproved routes; geometryChanges=0; unchanged production hashes; 9 archived regression logs have nonzero tests and OK')
+
+    def test_04_trusted_input_confirmation(self):
+        p=self.page();s=self.starts()[0]
+        p.evaluate('s=>BYPASS.setup(s,360,null)',s)
+        target=p.evaluate('BYPASS.candidates(true)[0]');self.assertIsNotNone(target)
+        Task567Tests.press(self,p,target);p.evaluate('YARD.step(1200)');p.mouse.up()
+        actual=p.evaluate('YARD.result()')
+        synthetic=json.loads((self.out/'search.json').read_text())['cases'][0]
+        for k in ['x','y','vx','vy']:self.assertAlmostEqual(actual['rows'][-1][k],synthetic['final'][k],places=7)
+        self.assertTrue(all(i['trusted'] for i in actual['inputs']))
+        self.assertTrue(any(r['attached'] for r in actual['rows']))
+        self.write('trusted-input.json',dict(inputs=actual['inputs'],ticks=actual['tick'],final=actual['rows'][-1],syntheticFinal=synthetic['final'],attachedTicks=sum(r['attached'] for r in actual['rows']),target=target))
+        print('PASS trusted: 1200-tick real mouse hold matches synthetic production-handler final pose/velocity to 7 decimals')
+
+    def test_05_evidence_index(self):
+        required={'commands.log':'exact invocation, exit, exact test identifiers, hashes and browser/viewport',
+            'tests.log':'five Task622Tests executed without skips', 'search.json':'start provenance, finite budgets, every completion and skip',
+            'negative-controls.json':'actual close-geometry contacts flag multi-encounter and cross-section bypass',
+            'fixes.json':'route/fix/replay mapping; unchanged runtime dependency hashes and archived tests',
+            'trusted-input.json':'trusted mouse versus batched production input equivalence',
+            'evidence-index.json':'artifact map and source provenance'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,hashPolicy='HEAD-only commit does not invalidate identical tested file hashes'))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: 7 required files exist; JSON parses; retained evidence <200 MB; no required images/clips')
