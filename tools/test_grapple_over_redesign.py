@@ -13035,7 +13035,7 @@ class Task633Tests(unittest.TestCase):
 
 
 class Task634Tests(unittest.TestCase):
-    """Fresh-base composition regression. Tracks twenty ordered exits through S05.
+    """Fresh-base composition regression. Tracks all 32 ordered exits from base to summit.
 
     Never relax the 32-exit assertion to turn an incomplete prefix into completion.
     No archived poses, state restores, geometry edits or production overrides.
@@ -13052,7 +13052,7 @@ class Task634Tests(unittest.TestCase):
         if Path(os.environ['GRAPPLE_OVER_EVIDENCE_DIR']).resolve() != (ROOT/'artifacts/TASK-634').resolve():
             raise ValueError('Task634 evidence must stay task-local')
         Task567Tests.setUpClass.__func__(cls)
-        cls.config['simulation'] = 'Fresh production spawn, trusted desktop input, batched production ticks; incomplete route prefix'
+        cls.config['simulation'] = 'Fresh production spawn, trusted desktop input, batched production ticks; continuous base-to-summit run'
         ids=[t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
         assert len(ids)==2 and all('.Task634Tests.' in i for i in ids)
         with (cls.out/'commands.log').open('a') as f:
@@ -13064,7 +13064,11 @@ class Task634Tests(unittest.TestCase):
         p.evaluate('''()=>{
           const world=floors[0],player=ninja,step=YARD.step,lifecycle=PLATFORM.sendLifecycle;
           window.run634={initial:{x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,
-            range:grappleOverAcquisitionRadius(),simulationTick:world.elapsedSteps},events:[],rows:[],upgrades:[]};
+            range:grappleOverAcquisitionRadius(),simulationTick:world.elapsedSteps},events:[],rows:[],upgrades:[],ownership:[]};
+          for(const type of ['mousedown','mouseup'])document.addEventListener(type,e=>{
+            run634.ownership.push({tick:YARD.result().tick,type,trusted:e.isTrusted,
+              held:pressHeld,owned:gameplayPressOwned,stale:stalePress,shot:grapnel.throwed});
+          });
           const upgradeSection=world.level.sections.find(s=>s.id===grappleOverProfile().rangeUpgradeSection);
           run634.upgradeZone=upgradeSection.rangeUpgradeZone || upgradeSection.band;
           let upgraded=world.rangeUpgraded;
@@ -13095,11 +13099,17 @@ class Task634Tests(unittest.TestCase):
     def observation(self,p):
         r=p.evaluate('({...run634,inputs:YARD.result().inputs,stepMs:physicsStepMs,cycles:cyclesPerTick})')
         self.assertEqual(r['initial'],dict(x=2160,y=0,vx=0,vy=0,range=360,simulationTick=0))
+        self.assertEqual(len(r['ownership']),len(r['inputs']))
+        self.assertTrue(any(e['owned'] for e in r['ownership']))
+        self.assertTrue(all(e['trusted'] for e in r['ownership']))
         self.assertTrue(r['inputs']);self.assertTrue(all(i['trusted'] for i in r['inputs']))
         self.assertEqual([v['tick'] for v in r['rows']],list(range(1,len(r['rows'])+1)))
         self.assertTrue(all(v['sameWorld'] and v['samePlayer'] for v in r['rows']))
-        self.assertEqual([v['simulationTick'] for v in r['rows']],
-                         [i*r['cycles'] for i in range(1,len(r['rows'])+1)])
+        for i,row in enumerate(r['rows'],1):
+            if row['completed']:
+                self.assertEqual(i,len(r['rows']),'Stop at the real completion tick')
+                self.assertTrue((i-1)*r['cycles']<row['simulationTick']<=i*r['cycles'])
+            else:self.assertEqual(row['simulationTick'],i*r['cycles'])
         self.assertTrue(all(v['range']==(540 if v['upgraded'] else 360) for v in r['rows']))
         for upgrade in r['upgrades']:
             self.assertFalse(upgrade['from']);self.assertTrue(upgrade['to'])
@@ -13115,7 +13125,7 @@ class Task634Tests(unittest.TestCase):
             p.evaluate('draw()')
             im=Image.open(io.BytesIO(p.screenshot())).convert('RGB');im.thumbnail((640,360))
             pen=ImageDraw.Draw(im);pen.rectangle((0,338,640,360),fill='black')
-            pen.text((10,343),'INCOMPLETE: '+label,fill='white');frames.append(im)
+            pen.text((10,343),label,fill='white');frames.append(im)
         # Frozen inputs discovered on one continuous fresh-base run. Each test
         # starts from production spawn and executes this entire sequence afresh.
         # Values are viewport mouse coordinates, not player poses or checkpoints.
@@ -13184,10 +13194,46 @@ class Task634Tests(unittest.TestCase):
             (3765, False, 556, 345),
             (3765, True, 446, 247),
             (3798, False, 446, 247),
+            (4003, True, 727, 366),
+            (4102, False, 727, 366),
+            (4102, True, 652, 227),
+            (4552, False, 652, 227),
+            (4920, True, 568, 304),
+            (4980, False, 568, 304),
+            (5143, True, 608, 304),
+            (5323, False, 608, 304),
+            (5323, True, 707, 245),
+            (5371, False, 707, 245),
+            (5584, True, 877, 338),
+            (5824, False, 877, 338),
+            (5824, True, 806, 149),
+            (6244, False, 806, 149),
+            (6351, True, 511, 273),
+            (6381, False, 511, 273),
+            (6441, True, 365, 202),
+            (6471, False, 365, 202),
+            (6731, True, 442, 276),
+            (6941, False, 442, 276),
+            (6996, True, 587, 345),
+            (7026, False, 587, 345),
+            (7091, True, 705, 234),
+            (7121, False, 705, 234),
+            (7332, True, 859, 265),
+            (7333, False, 859, 265),
+            (7333, True, 859, 265),
+            (7363, False, 859, 265),
+            (7417, True, 951, 162),
+            (7480, False, 951, 162),
+            (7480, True, 817, 185),
+            (7558, False, 817, 185),
+            (8115, True, 705, 185),
+            (8145, False, 705, 185),
+            (8217, True, 574, 75),
+            (8223, False, 574, 75),
+            (8355, True, 363, 75),
+            (8375, False, 363, 75),
         ]
-        captures = {0:'S01 base',776:'S01 exit / S02 transition',
-                    1096:'S02 exit / S03 transition',2247:'S03 exit / S04 transition',
-                    2921:'S04 exit / S05 transition',4003:'S05 exit / S06 transition'}
+        captures = {0: 'S01 base', 776: 'S01 exit / S02 transition', 1096: 'S02 exit / S03 transition', 2247: 'S03 exit / S04 transition', 2921: 'S04 exit / S05 transition', 4003: 'S05 exit / S06 transition', 6300: 'S06 exit / S07 transition', 7322: 'S07 exit / S08 transition', 8451: 'S08 exit / summit completion'}
         tick=0
         for target_tick in sorted(set(captures) | {e[0] for e in actions}):
             self.step(p,target_tick-tick);tick=target_tick
@@ -13203,24 +13249,28 @@ class Task634Tests(unittest.TestCase):
                 if c['ny']<-.9 and c['id'] in self.exits and c['id'] not in [e['id'] for e in seen]:
                     seen.append(dict(id=c['id'],tick=row['tick'],contact=c,range=row['range']))
         events=[e for e in r['events'] if e['name']=='level_completed']
-        self.assertEqual(len(r['upgrades']),1,'Exactly one earned S05 upgrade in this prefix')
+        self.assertEqual(len(r['upgrades']),1,'Exactly one earned S05 upgrade')
         digest=hashlib.sha256(json.dumps(rows,separators=(',',':')).encode()).hexdigest()
-        self.write('inputs.json',dict(config=self.config,events=r['inputs'],ticks=len(rows),
+        self.write('inputs.json',dict(config=self.config,events=r['inputs'],handlerOwnership=r['ownership'],ticks=len(rows),
             ownership='All MouseEvents are browser-trusted, dispatched by Playwright mouse to production handlers'))
-        self.write('completion.json',dict(config=self.config,complete=False,initial=r['initial'],
+        self.write('completion.json',dict(config=self.config,complete=([e['id'] for e in seen]==self.exits and len(events)==1),initial=r['initial'],
             expectedExits=self.exits,observedExits=seen,missingExits=self.exits[len(seen):],
             summitEvents=events,upgrades=r['upgrades'],upgradeZone=r['upgradeZone'],
             captures=[dict(tick=t,label=label) for t,label in captures.items()],simulationSeconds=len(rows)*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
             ticks=len(rows),traceSha256=digest,trace=[v for v in rows if v['contacts'] or v['tick']%120==0],
             rangeValues=sorted(set(v['range'] for v in rows)),postSpawnInjections=0,
-            limitation='Incomplete prefix; summit not reached. Simulation duration is not novice completion time.'))
-        sheet=Image.new('RGB',(1280,1080))
-        for i,im in enumerate(frames):sheet.paste(im,((i%2)*640,(i//2)*360))
+            limitation='Simulation duration is not novice completion time.'))
+        sheet=Image.new('RGB',(1920,1080))
+        for i,im in enumerate(frames):sheet.paste(im,((i%3)*640,(i//3)*360))
         sheet.save(self.out/'completion-strip.jpg',quality=85)
         print('OBSERVED ordered exits='+str(len(seen))+'/32; summit events='+str(len(events))+'; ranges='+str(sorted(set(v['range'] for v in rows)))+'; trusted inputs='+str(len(r['inputs'])))
-        print('FAIL continuity: next required exit '+self.exits[len(seen)]+'; last observed exit '+seen[-1]['id'])
+        if len(seen)<32:print('FAIL continuity: next required exit '+self.exits[len(seen)])
         self.assertEqual([e['id'] for e in seen],self.exits,'Continuous 32-exit proof incomplete')
         self.assertEqual(len(events),1)
+        self.assertTrue(rows[-1]['completed'])
+        self.assertEqual(events[0]['tick'],seen[-1]['tick'])
+        print('PASS continuous completion: 32 ordered exits; exactly one summit event; zero post-spawn injections')
+        print('PASS capture: nine live frames covering base and all eight section exits')
 
     def test_02_replay_and_inventory(self):
         import time
@@ -13238,26 +13288,28 @@ class Task634Tests(unittest.TestCase):
         digest=hashlib.sha256(json.dumps(r['rows'],separators=(',',':')).encode()).hexdigest()
         self.assertEqual(digest,completion['traceSha256']);self.assertEqual(r['inputs'],inputs['events'])
         self.assertEqual(r['upgrades'],completion['upgrades'])
+        self.assertEqual(r['ownership'],inputs['handlerOwnership'])
+        self.assertEqual([e for e in r['events'] if e['name']=='level_completed'],completion['summitEvents'])
         self.write('replay.json',dict(config=self.config,traceSha256=digest,inputEventsEqual=True,
-            upgradesEqual=True,ticks=len(r['rows']),simulationSeconds=len(r['rows'])*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
-            scope='Deterministic replay of FAILED prefix only; not completion'))
+            upgradesEqual=True,handlerOwnershipEqual=True,summitEventsEqual=True,ticks=len(r['rows']),simulationSeconds=len(r['rows'])*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
+            scope='Deterministic replay of complete fresh-base input sequence'))
         names={'commands.log':'exact command/status, IDs, browser, viewport, revision and hashes',
-               'tests.log':'two exact focused cases; completion currently FAILS',
-               'completion.json':'measured failed prefix; ordered route prefix and zero summit events',
+               'tests.log':'two exact focused cases; continuous completion and deterministic replay',
+               'completion.json':'32 measured ordered exits, earned range upgrade, exactly one summit event',
                'inputs.json':'trusted production mouse events at simulation ticks',
-               'replay.json':'identical failed-prefix trace and inputs under identical source hashes',
-               'completion-strip.jpg':'six live frames through the S05 exit; does NOT show eight sections',
+               'replay.json':'identical complete trace and inputs under identical source hashes',
+               'completion-strip.jpg':'nine live frames: base and all eight section exits',
                'evidence-index.json':'honest artifact inventory and dependencies'}
-        self.write('evidence-index.json',dict(artifacts=names,config=self.config,readyForVerification=False,
+        self.write('evidence-index.json',dict(artifacts=names,config=self.config,readyForVerification=completion['complete'],
             changedSubsystems=['Additive Task634Tests -> browser_test_support + YARD -> production events/physics/camera; no runtime changes'],
             superseded='TASK-572 third-exit historical input sequence is not full-layout continuity evidence. Original evidence remains untouched.',
             hashPolicy='A HEAD-only commit does not invalidate identical tested source hashes'))
         for name in names:
             self.assertTrue((self.out/name).is_file(),name)
             if name.endswith('.json'):json.loads((self.out/name).read_text())
-        with Image.open(self.out/'completion-strip.jpg') as im:im.load();self.assertEqual(im.size,(1280,1080))
+        with Image.open(self.out/'completion-strip.jpg') as im:im.load();self.assertEqual(im.size,(1920,1080))
         for name,digest in self.config['source_hashes'].items():
             self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
-        print('PASS deterministic FAILED-prefix replay: equal tick-by-tick trace and trusted input events')
+        print('PASS deterministic complete replay: equal tick-by-tick trace and trusted input events')
         print('PASS inventory: seven required files exist; JSON parses; image decodes; source hashes match; <200 MB')
