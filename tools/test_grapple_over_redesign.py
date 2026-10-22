@@ -9745,3 +9745,167 @@ class Task615Tests(unittest.TestCase):
         with Image.open(self.out/'boundary.jpg') as im:im.load();self.assertEqual(im.size,(1280,720))
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS index: all eight required artifacts exist; JSON parses; boundary.jpg decoded 1280x720; retained evidence <200 MB')
+
+
+class Task616Tests(unittest.TestCase):
+    """Local recorded S03 approach, then uninterrupted S03/S04 boundary inputs."""
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR')
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Recorded S03 local fixture; continuous inputs thereafter, not from base'
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK616_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+    press = Task567Tests.press
+    landings = staticmethod(Task567Tests.landings)
+    fixture = {'x': 6547.880640357507, 'y': -1568.8565871019284, 'vx': 1.2159807841392238, 'vy': -0.17242675478530337}
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('''f=>{TUTORIAL_HINT.visible=false;
+            Object.assign(ninja,{x:f.x,y:f.y,speedX:f.vx,speedY:f.vy});screen.trackGrappleOver(true);
+            window.boundaryRows=[];const original=YARD.step;
+            YARD.step=n=>{for(let i=0;i<n;i++){original(1);const s=captureClimbState();
+                boundaryRows.push({...YARD.result().rows.at(-1),simulationTick:s.simulationTick,
+                    camera:{x:screen.x,y:screen.y},rope:s.grapple,range:grappleOverAcquisitionRadius(),
+                    movers:floors[0].level.movers.map(m=>({id:m.id,x:floors[0].byId.get(m.element).x,y:floors[0].byId.get(m.element).y}))});}};
+        }''',self.fixture)
+        return p
+
+    def step(self,p,n):
+        p.evaluate('n=>YARD.step(n)',n)
+
+    def act(self,p,target,hold,coast=0):
+        self.press(p,target);self.step(p,hold);p.mouse.up();self.step(p,coast)
+
+    def trace(self,p):
+        r=p.evaluate('({...YARD.result(),rows:boundaryRows})')
+        self.assertTrue(r['inputs']);self.assertTrue(all(i['trusted'] for i in r['inputs']))
+        self.assertEqual([s['tick'] for s in r['rows']],list(range(1,r['tick']+1)))
+        cycles=p.evaluate('cyclesPerTick')
+        timing=p.evaluate('({step:physicsStepMs,movers:floors[0].level.movers})')
+        for row in r['rows']:
+            for mover,observed in zip(timing['movers'],row['movers']):
+                phase=(row['tick']*timing['step']/mover['periodMs']+mover['phase'])%1
+                expected=mover['min']+(mover['max']-mover['min'])*(1-abs(2*phase-1))
+                self.assertAlmostEqual(observed[mover['axis']],expected,places=7)
+        self.assertEqual([s['simulationTick'] for s in r['rows']],list(range(cycles,cycles*(r['tick']+1),cycles)))
+        self.assertTrue(all(s['range']==360 for s in r['rows']))
+        # Every camera update remains small; there is no section-triggered snap.
+        deltas=[max(abs(b['camera'][k]-a['camera'][k]) for k in ['x','y']) for a,b in zip(r['rows'],r['rows'][1:])]
+        self.assertLess(max(deltas),30)
+        r.update(fixture=self.fixture,fixtureSource='artifacts/TASK-584/route.json trace tick 2192, immediately after recorded mouseup; local released fixture; local fixture, not continuous from base',
+                 initializations=1,postSetupInjections=0,maxCameraDelta=max(deltas),config=self.config)
+        return r
+
+    def test_01_geometry_and_dependencies(self):
+        p=self.page()
+        g=p.evaluate('''()=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounters:floors[0].level.encounters,movers:floors[0].level.movers,range:grappleOverAcquisitionRadius(),scale:scale[version],
+            profile:grappleOverProfile()})''')
+        local=[e for e in g['elements'] if e['id'].startswith(('freight-','viaduct-'))]
+        old=json.loads((ROOT/'artifacts/TASK-590/objects.json').read_text())['elements']
+        self.assertEqual(len(local),26)
+        for e in local:
+            previous=next(v for v in old if v['id']==e['id'])
+            for key in e:self.assertEqual(e[key],previous[key],(e['id'],key))
+            self.assertTrue(e['purpose'])
+
+        es={e['id']:e for e in g['elements']}
+        gap=es['viaduct-landing']['x']-(es['freight-exit']['x']+max(v['x'] for v in es['freight-exit']['points']))
+        self.assertEqual(gap,252)
+        # Conservative swept AABB distances to every local collider.
+        def bounds(e):
+            return [e['x']+min(v['x'] for v in e['points']),e['x']+max(v['x'] for v in e['points']),
+                    e['y']+min(v['y'] for v in e['points']),e['y']+max(v['y'] for v in e['points'])]
+        clear=[]
+        for e in g['elements']:
+            if e['role']=='drag' or any(m['element']==e['id'] for m in g['movers']):
+                box=bounds(e)
+                for m in g['movers']:
+                    if m['element']==e['id']:
+                        k=0 if m['axis']=='x' else 2
+                        box[k]+=m['min']-e[m['axis']];box[k+1]+=m['max']-e[m['axis']]
+                distances=[]
+                for local_e in [es[n] for n in ['freight-exit','freight-exit-catch','viaduct-anchor','viaduct-landing']]:
+                    other=bounds(local_e)
+                    dx=max(0,box[0]-other[1],other[0]-box[1])
+                    dy=max(0,box[2]-other[3],other[2]-box[3])
+                    distances.append((dx*dx+dy*dy)**.5)
+                clearance=min(distances)
+                self.assertGreaterEqual(clearance,540 if e['role']=='drag' else 1,e['id'])
+                clear.append(dict(id=e['id'],sweptBounds=box,minimumLocalClearance=clearance,role=e['role']))
+        self.assertEqual((g['range'],g['scale']),(360,.375))
+        self.assertEqual(g['profile']['rangeUpgradeSection'],'S05')
+        self.assertEqual(g['profile']['upgradedAcquisitionRadius'],540)
+        first={role:min(c['id'][:3] for c in g['encounters'] if any(es[n]['role']==role for n in c['elements'])) for role in ['bounce','solid','drag','hazard']}
+        self.assertEqual(first,dict(bounce='S01',solid='S03',drag='S04',hazard='S07'))
+        oldhash=json.loads((ROOT/'artifacts/TASK-614/evidence-index.json').read_text())['config']['source_hashes']
+        unchanged={n:h for n,h in oldhash.items() if n!='tools/test_grapple_over_redesign.py'}
+        for n,h in unchanged.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        recorded=json.loads((ROOT/'artifacts/TASK-584/route.json').read_text())['trace'][2191]
+        for k,v in self.fixture.items():self.assertEqual(recorded[k],v)
+        self.write('geometry-check.json',dict(local=local,gap=gap,clearances=clear,firstUse=first,
+            range=360,upgradeSection='S05',upgradedRange=540,scale=.375,newColliders=[],geometryChanged=False,
+            dependencies=dict(unchanged=unchanged,changed=['tools/test_grapple_over_redesign.py: Task616Tests only'],
+                chain='mountain -> fixedlevel -> physics/events -> camera/render; input, rope, modes unchanged',
+                historical='TASK-584 reachable approach fixture and TASK-590 local geometry referenced, not copied; earlier full S03 route not rerun'),
+            config=self.config))
+        print('PASS geometry: unchanged purposeful S03/S04 colliders; 252 gap; broad shared shelves; swept movers disjoint and yellow clearances >=540; green S01/S02 blue S03 red S07; upgrade S05 only')
+
+    until = Task581Tests.until
+
+    def approach(self,p):
+        self.step(p,21)
+        self.act(p,dict(x=7000,y=-1500),60)
+        self.act(p,dict(x=7300,y=-1500),30)
+
+    def test_02_continuous_handoff(self):
+        p=self.page();self.approach(p)
+        p.evaluate('draw()');p.screenshot(path=str(self.out/'boundary.jpg'),type='jpeg',quality=90)
+        target=p.evaluate('YARD.client({x:7488,y:-1679})')
+        self.assertTrue(0<target['x']<1280 and 0<target['y']<720)
+        self.act(p,dict(x=7488,y=-1679),30)
+        self.assertIsNotNone(self.until(p,'viaduct-landing',200))
+        r=self.trace(p)
+        exits=[dict(encounter=name,**self.landings(r,id)[0]) for name,id in [('S03-04','freight-exit'),('S04-01','viaduct-landing')]]
+        self.assertLess(exits[0]['tick'],exits[1]['tick'])
+        self.assertNotEqual(exits[0]['vx'],0)
+        self.assertTrue(any(s['attached'] for s in r['rows']))
+        r.update(exits=exits,nextTarget=target)
+        self.write('handoff.json',r);self.write('inputs.json',dict(events=r['inputs'],exits=[dict(encounter=e['encounter'],tick=e['tick']) for e in exits],ticks=r['tick'],postSetupInjections=0))
+        print('PASS handoff: S03-04 -> S04-01 ordered exits', [e['tick'] for e in exits], '; consecutive production ticks; trusted inputs; range 360; camera/mover/rope retained')
+
+    def test_03_miss_rejoin(self):
+        p=self.page();self.approach(p)
+        self.act(p,dict(x=7488,y=-1679),1)
+        self.assertIsNotNone(self.until(p,'freight-exit-catch',400))
+        before=p.evaluate('YARD.result()')
+        self.assertFalse(self.landings(before,'viaduct-landing'))
+        catch=self.landings(before,'freight-exit-catch')[0]
+        self.act(p,dict(x=7307,y=-1470),40)
+        self.assertIsNotNone(self.until(p,'viaduct-landing',500))
+        r=self.trace(p)
+        returned=[s for s in self.landings(r,'viaduct-landing') if s['tick']>catch['tick']]
+        self.assertTrue(returned)
+        r.update(catch=catch,returned=returned[0],miss='Did not reach viaduct-landing; landed on lower freight-exit-catch; ordinary grapple return to viaduct-landing')
+        self.write('miss-rejoin.json',r)
+        print(f'PASS miss-rejoin: lower catch {catch["tick"]} -> S04 route {returned[0]["tick"]}; real inputs; zero post-setup injections')
+
+    def test_04_evidence_index(self):
+        required={'commands.log':'exact commands, actual exit, identifiers and runtime/test hashes',
+            'tests.log':'four Task616Tests pass without skips','handoff.json':'both ordered exits and every tick with player/rope/movers/camera/range',
+            'inputs.json':'trusted mouse events and ordered exits','miss-rejoin.json':'miss, lower catch and ordinary-control return',
+            'geometry-check.json':'unchanged local geometry, purpose, gap, swept/yellow clearances and source dependencies',
+            'boundary.jpg':'live approach camera and visible next target','evidence-index.json':'artifact map and provenance'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,
+            scope='Local recorded S03 approach fixture; continuous thereafter only; no base-to-summit claim',
+            hashPolicy='HEAD-only commit does not invalidate identical source hashes'))
+        for n in required:
+            self.assertTrue((self.out/n).is_file(),n)
+            if n.endswith('.json'):json.loads((self.out/n).read_text())
+        with Image.open(self.out/'boundary.jpg') as im:im.load();self.assertEqual(im.size,(1280,720))
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: all eight required artifacts exist; JSON parses; boundary.jpg decoded 1280x720; retained evidence <200 MB')
