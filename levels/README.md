@@ -11,6 +11,14 @@ Regenerate the runtime JSON after editing the SVG (run from the repo root):
 
     python3 tools/import_level_svg.py --input levels/extended-mountain.svg --output levels/extended-mountain.level.json
 
+Also regenerate the classic-script copy used when opening `index.html` directly
+with a `file://` URL (browsers prohibit fetching local JSON):
+
+    python3 tools/import_level_svg.py --input levels/extended-mountain.svg --output levels/extended-mountain.level.js --format javascript
+
+Both outputs contain the same level data and pass the same runtime validator.
+HTTP startup continues to use JSON.
+
 Then check it:
 
     python3 tools/check_level_geometry.py --svg levels/extended-mountain.svg --level levels/extended-mountain.level.json --report /tmp/geometry.json

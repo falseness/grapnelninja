@@ -1416,9 +1416,26 @@ let GRAPPLE_OVER_IMPORTED = null
 async function loadGrappleOverLevelAsset()
 {
     if (!GRAPPLE_OVER_IMPORTED_ACTIVE || GRAPPLE_OVER_IMPORTED) return
-    const response = await fetch(GRAPPLE_OVER_IMPORTED_URL, {cache: 'no-cache'})
-    if (!response.ok) throw new Error('LevelAssetUnavailable: ' + response.status)
-    const level = validateFixedLevel(await response.json())
+    let data
+    if (location.protocol === 'file:')
+    {
+        // Browsers block fetch(file://), but permit local classic scripts.
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script')
+            script.src = 'levels/extended-mountain.level.js'
+            script.onload = resolve
+            script.onerror = () => reject(new Error('LevelAssetUnavailable: ' + script.src))
+            document.head.appendChild(script)
+        })
+        data = window.GRAPPLE_OVER_BUNDLED_LEVEL
+    }
+    else
+    {
+        const response = await fetch(GRAPPLE_OVER_IMPORTED_URL, {cache: 'no-cache'})
+        if (!response.ok) throw new Error('LevelAssetUnavailable: ' + response.status)
+        data = await response.json()
+    }
+    const level = validateFixedLevel(data)
     if (level.layoutId !== GRAPPLE_OVER_IMPORTED_LAYOUT_ID) throw new Error('UnexpectedLayoutId: ' + level.layoutId)
     GRAPPLE_OVER_IMPORTED = level
 }

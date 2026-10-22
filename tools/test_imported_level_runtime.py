@@ -177,6 +177,31 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(page.errors, [])
         self.record('restart', page, snap, coordinatesMatchSource=True, elementsCompared=len(snap['live']))
 
+    def test_local_file_start(self):
+        # Windows double-click / file:// startup cannot fetch the JSON asset.
+        context = self.browser.new_context(viewport={'width': 1280, 'height': 720})
+        self.addCleanup(context.close)
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
+        page.goto((ROOT / 'index.html').as_uri())
+        wait_for_boot_run(page)
+        self.assert_imported(page.evaluate(SNAPSHOT))
+        self.assertEqual(errors, [])
+        self.assertFalse(page.locator('#boot-retry').is_visible())
+        self.assertEqual(page.evaluate('window.GRAPPLE_OVER_BUNDLED_LEVEL'), self.level)
+
+    def test_local_script_regeneration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'level.js'
+            result = subprocess.run([
+                'python3', str(ROOT / 'tools/import_level_svg.py'),
+                '--input', str(SVG), '--output', str(output), '--format', 'javascript'
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output.read_bytes(), (ROOT / 'levels/extended-mountain.level.js').read_bytes())
+
     def test_03_incompatible_old_save(self):
         # A real save from the previous normal layout (replacement-v1), plus a
         # legacy save without a layout id.
