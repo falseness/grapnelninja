@@ -11205,3 +11205,191 @@ class Task624Tests(unittest.TestCase):
             if n.endswith('.json'):json.loads((self.out/n).read_text())
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS index: all 6 required files exist; JSON parses; no required media; retained bytes <200 MB')
+
+
+class Task625Tests(unittest.TestCase):
+    """Integrated shortcut comparisons from isolated, reproducible section entries."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config.update(touch_viewport=VIEWPORT,
+            simulation='Isolated section entrance fixtures; continuous inputs thereafter, not base-to-summit')
+        cls.config['source_hashes']['tools/test_grapple_over_redesign.py']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK625_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write=Task557Tests.write
+    def page(self,touch=False):
+        p=Task567Tests.page(self)
+        p.touch_session=p.context.new_cdp_session(p) if touch else None
+        if touch:
+            p.touch_session.send('Emulation.setTouchEmulationEnabled',dict(enabled=True,maxTouchPoints=1))
+            p.evaluate("""()=>{for(const type of ['touchstart','touchend'])document.addEventListener(type,e=>{
+                const t=e.changedTouches[0];YARD.result().inputs.push({tick:YARD.result().tick,type,
+                    trusted:e.isTrusted,x:t.clientX,y:t.clientY});});}""")
+        return p
+
+    def press(self,p,target):
+        xy=p.evaluate('p=>YARD.client(p)',target)
+        xy={k:int(v) for k,v in xy.items()}  # Match desktop integer CSS coordinates.
+        self.assertTrue(0<xy['x']<1280 and 0<xy['y']<720,xy)
+        if p.touch_session:p.touch_session.send('Input.dispatchTouchEvent',dict(type='touchStart',touchPoints=[xy]))
+        else:p.mouse.move(**xy);p.mouse.down()
+    release=Task571Tests.release
+    step=Task567Tests.step
+    result=Task567Tests.result
+    landings=staticmethod(Task567Tests.landings)
+    until=Task605Tests.until
+    frame=Task571Tests.frame
+    exits={5:['gallery-landing','gallery-upper-landing','gallery-third-landing','gallery-exit'],
+           7:['crown-landing','crown-practice-landing','crown-upper-landing','crown-exit']}
+
+    def shot(self,p,target,hold):
+        if p.section==7:p.evaluate('screen.trackGrappleOver(true)')
+        self.press(p,target);self.step(p,hold);self.release(p)
+
+    def entry(self,section,touch):
+        p=self.page(touch) if touch else Task567Tests.page(self)
+        if not touch:p.touch_session=None
+        p.section=section
+        pose=dict(x=11500,y=-1540) if section==5 else dict(x=12862,y=-3960)
+        p.evaluate('a=>{Object.assign(ninja,a.pose,{speedX:0,speedY:0});floors[0].rangeUpgraded=a.upgraded;screen.trackGrappleOver(true)}',dict(pose=pose,upgraded=section==7))
+        if section==5:
+            self.step(p,1)  # Earn the S05 upgrade before the first acquisition.
+            self.shot(p,Task591Tests.target,42);self.assertIsNotNone(self.until(p,self.exits[5][0],500))
+            self.step(p,60);self.shot(p,dict(x=12990,y=-2030),60)
+            self.assertIsNotNone(self.until(p,self.exits[5][1],500))
+        else:
+            self.step(p,420);self.shot(p,Task603Tests.target,30)
+            self.assertIsNotNone(self.until(p,self.exits[7][0],300))
+            self.step(p,80);self.shot(p,Task604Tests.target,30)
+            self.assertIsNotNone(self.until(p,self.exits[7][1],400));self.step(p,300)
+        return p
+
+    def route(self,section,touch,shortcut,offset=0):
+        p=self.entry(section,touch)
+        shared=p.evaluate('({tick:YARD.result().tick,x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,world:floors[0].elapsedSteps})')
+        start=shared['tick']
+        if section==5:
+            if shortcut:self.shot(p,dict(x=11520,y=-2319),160+offset)
+            else:
+                self.shot(p,Task593Tests.target,25);self.step(p,50);self.shot(p,Task593Tests.next_target,28)
+                self.assertIsNotNone(self.until(p,self.exits[5][2],500));self.step(p,75)
+                self.shot(p,Task594Tests.target,75+offset)
+        else:
+            self.shot(p,dict(x=10658,y=-4318.6),(270 if shortcut else 240))
+            if shortcut:
+                tick=p.evaluate('''()=>{for(let i=0;i<500;i++){YARD.step(1);
+                    if(Math.hypot(ninja.x-11673,ninja.y+5140)<500)return YARD.result().tick;}return null}''')
+                self.assertIsNotNone(tick)
+            else:
+                self.assertIsNotNone(self.until(p,self.exits[7][2],500));self.step(p,120)
+            self.shot(p,Task606Tests.target,30+offset)
+        # Stop at either success or the documented missed-shortcut catch.
+        catch='gallery-third-landing' if section==5 else 'crown-exit-catch'
+        outcome=p.evaluate('''a=>{for(let i=0;i<700;i++){YARD.step(1);const r=YARD.result().rows.at(-1);
+            const hit=r.contacts.find(c=>c.ny<-.9&&(c.id===a.exit||(a.shortcut&&c.id===a.catch)));
+            if(hit)return {id:hit.id,tick:r.tick,y:r.y};}return null}''',dict(exit=self.exits[section][-1],catch=catch,shortcut=shortcut))
+        r=self.result(p)
+        visited=[dict(encounter=f'S0{section}-0{i+1}',collider=id,tick=self.landings(r,id)[0]['tick'])
+                 for i,id in enumerate(self.exits[section]) if self.landings(r,id)]
+        inputs=r['inputs'];expected='touchstart' if touch else 'mousedown'
+        self.assertTrue(any(i['type']==expected for i in inputs));self.assertTrue(all(i['trusted'] for i in inputs))
+        row=dict(section=section,mode='touch' if touch else 'desktop',shortcut=shortcut,offset=offset,
+                 shared=shared,startTick=start,outcome=outcome,visited=visited,inputs=inputs,
+                 trace=Task613Tests.compact(r['rows']),
+                 postSetupInjections=0,resets=0)
+        peak=r['rows'][start-1]['y'];drop=0
+        for point in r['rows'][start:]:
+            peak=min(peak,point['y']);drop=max(drop,point['y']-peak)
+        row['maximumFall']=drop
+        if not shortcut and offset==0:
+            row['geometry']=p.evaluate("prefix=>floors[0].elements.filter(e=>e.id.startsWith(prefix)).map(e=>({id:e.id,points:e.getPoints()}))",'gallery-' if section==5 else 'crown-')
+        return p,row,[]
+
+    def test_01_routes_and_windows(self):
+        cases=[];misses=[]
+        for section in [5,7]:
+            for touch in [False,True]:
+                paths={}
+                for shortcut in [False,True]:
+                    samples=[]
+                    for offset in ([0,-10,-40] if shortcut and section==5 else [0,-10] if section==5 else [0,-12]):
+                        p,row,_=self.route(section,touch,shortcut,offset)
+                        samples.append(row)
+                        print(f'CASE S0{section} {row["mode"]} shortcut={shortcut} offset={offset} outcome={row["outcome"]}',flush=True)
+                        if shortcut and offset==(-10 if section==5 else -12):
+                            self.assertEqual(row['outcome']['id'],'gallery-third-landing' if section==5 else 'crown-exit-catch')
+                            self.assertNotIn(self.exits[section][-1],[v['collider'] for v in row['visited']])
+                            self.shot(p,Task594Tests.target if section==5 else dict(x=12043,y=-4698),25 if section==5 else 120)
+                            returned=self.until(p,self.exits[section][-1],700);self.assertIsNotNone(returned)
+                            rr=self.result(p)
+                            misses.append(dict(section=section,mode=row['mode'],catch=row['outcome'],returnTick=returned,
+                                recoveryInputs=[i for i in rr['inputs'] if i['tick']>=row['outcome']['tick']],
+                                trace=Task613Tests.compact(rr['rows']),resets=0,postSetupInjections=0))
+                        p.context.close()
+                    paths['shortcut' if shortcut else 'normal']=samples
+                normal,short=paths['normal'][0],paths['shortcut'][0]
+                self.assertEqual(normal['shared'],short['shared'])
+                self.assertEqual(normal['outcome']['id'],self.exits[section][-1]);self.assertEqual(short['outcome']['id'],self.exits[section][-1])
+                self.assertLess(short['outcome']['tick'],normal['outcome']['tick'])
+                self.assertEqual([v['encounter'] for v in normal['visited']],[f'S0{section}-0{i}' for i in [1,2,3,4]])
+                self.assertEqual([v['encounter'] for v in short['visited']],[f'S0{section}-0{i}' for i in [1,2,4]])
+                topContacts=sorted({c['id'] for r in short['trace'] if r['tick']>short['startTick'] for c in r['contacts'] if c['ny']<-.9})
+                self.assertTrue(topContacts)
+                self.assertTrue(all(n.startswith('gallery-' if section==5 else 'crown-') for n in topContacts),topContacts)
+                # Samples are observations, not an exhaustive timing interval.
+                risk=dict(normalFall=normal['maximumFall'],recoverableMissFall=paths['shortcut'][1]['maximumFall'],
+                    largestSampledShortcutFall=max(r['maximumFall'] for r in paths['shortcut']))
+                self.assertGreater(risk['largestSampledShortcutFall'],risk['normalFall'])
+                print('PASS RISK',section,normal['mode'],risk,flush=True)
+                cases.append(dict(section=section,mode=normal['mode'],normalTicks=normal['outcome']['tick'],
+                    shortcutTicks=short['outcome']['tick'],sameSectionTopContacts=topContacts,skipCount=1,skipped=[f'S0{section}-03'],paths=paths,
+                    inputWindows=dict(scope='Finite release-duration samples, not exhaustive interval boundaries',
+                        normalHoldTicks=[(75 if section==5 else 30)+r['offset'] for r in paths['normal']],
+                        shortcutHoldTicks=[(160 if section==5 else 30)+r['offset'] for r in paths['shortcut']],
+                        normalOffsets=[r['offset'] for r in paths['normal']],shortcutOffsets=[r['offset'] for r in paths['shortcut']],normalSuccessCount=sum(bool(r['outcome'] and r['outcome']['id']==self.exits[section][-1]) for r in paths['normal']),shortcutSuccessCount=1),
+                    risk=risk))
+                self.write('shortcuts.json',dict(cases=cases,scope=self.config['simulation']))
+                self.write('misses.json',dict(cases=misses))
+        # Separate visualization from simulation: measured paths over live geometry.
+        strip=Image.new('RGB',(2560,1440),'#111827');draw=ImageDraw.Draw(strip)
+        for case in cases:
+            sec=case['section'];ox=0 if case['mode']=='desktop' else 1280;oy=0 if sec==5 else 720
+            left,right,top,bottom=(8800,14000,-3000,-1400) if sec==5 else (10200,13300,-5400,-3800)
+            factor=min(1200/(right-left),580/(bottom-top))
+            def point(x,y):return (ox+40+(x-left)*factor,oy+100+(y-top)*factor)
+            draw.text((ox+30,oy+20),f"S0{sec} {case['mode']} | measured production trajectories | isolated section fixture",fill='white')
+            draw.text((ox+30,oy+42),'GOLD normal / CYAN shortcut / RED recoverable miss. Circles: shared choice, exit or catch.',fill='white')
+            for e in case['paths']['normal'][0]['geometry']:
+                pts=[point(v['x'],v['y']) for v in e['points']]
+                draw.polygon(pts,outline='#64748b')
+                if e['id'] in self.exits[sec] or 'shortcut' in e['id']:
+                    draw.text(pts[0],e['id'],fill='#cbd5e1')
+            for row,color in [(case['paths']['normal'][0],'#fbbf24'),(case['paths']['shortcut'][0],'#22d3ee'),(case['paths']['shortcut'][1],'#f87171')]:
+                pts=[point(r['x'],r['y']) for r in row['trace'] if r['tick']>=row['startTick']]
+                draw.line(pts,fill=color,width=3)
+                for x,y in [pts[0],pts[-1]]:draw.ellipse((x-5,y-5,x+5,y+5),outline=color,width=2)
+            draw.text((ox+30,oy+680),f"Normal {case['normalTicks']} ticks; shortcut {case['shortcutTicks']} ticks; skipped only S0{sec}-03",fill='white')
+        strip.save(self.out/'shortcut-strip.jpg',quality=90)
+        print('PASS routes: four desktop/touch comparisons; eight nominal routes succeed; each shortcut faster and skips only encounter 03; sampled release outcomes recorded')
+        print('PASS misses: four lower catches return through trusted controls; no reset or post-setup injection')
+
+    def test_02_index(self):
+        required={'commands.log':'exact command, exit status, collected identifiers, browser, viewport, revision and hashes',
+            'tests.log':'two Task625Tests without skips','shortcuts.json':'four same-state normal/shortcut comparisons and release-window samples',
+            'misses.json':'four lower catches and ordinary-control returns','shortcut-strip.jpg':'measured normal/shortcut/miss trajectories over production geometry; labelled choice and exits',
+            'evidence-index.json':'assertion map and dependencies'}
+        previous=json.loads((ROOT/'artifacts/TASK-624/evidence-index.json').read_text())['config']['source_hashes']
+        for n,h in previous.items():
+            if n!='tools/test_grapple_over_redesign.py':self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,
+            changedSubsystems=['tools/test_grapple_over_redesign.py: additive Task625Tests; browser_test_support -> trusted production input -> unchanged physics/geometry'],
+            priorEvidence='artifacts/TASK-624/evidence-index.json',hashPolicy='Identical source hashes survive HEAD-only movement',
+            historicalCoverage='Old v3 geometry and earlier prefix inventory assertions are historical; retained unchanged'))
+        for n in required:
+            self.assertTrue((self.out/n).is_file(),n)
+            if n.endswith('.json'):json.loads((self.out/n).read_text())
+        with Image.open(self.out/'shortcut-strip.jpg') as im:im.load();self.assertEqual(im.size,(2560,1440))
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: six required artifacts exist; JSON parses; strip decodes 2560x1440; unchanged runtime hashes; bytes <200 MB')
