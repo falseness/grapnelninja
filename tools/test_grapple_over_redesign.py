@@ -11634,3 +11634,194 @@ class Task627Tests(unittest.TestCase):
             if n.endswith('.json'):json.loads((self.out/n).read_text())
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS dependencies unchanged; required artifacts exist and JSON parses; storage below 200 MB')
+
+
+class Task628Tests(unittest.TestCase):
+    """Whole replacement composition review; maps are measured plans, not gameplay."""
+    tasks = [572, 578, 584, 590, 596, 602, 608, 614]
+    prefixes = ['yard', 'quarry', 'freight', 'viaduct', 'gallery', 'tower', 'crown', 'summit']
+    names = ['Loading Yard', 'Terraced Quarry', 'Freight Crossing', 'Broken Viaduct',
+             'Cable Galleries', 'Counterweight Tower', 'Exposed Crown', 'Summit Array']
+    write = Task557Tests.write
+    page = Task626Tests.page
+
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        for name in ['tools/grapple_over_bypass.js', 'tools/grapple_over_recovery.js', 'docs/grapple-over-composition-review.md']:
+            cls.config['source_hashes'][name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.config['simulation'] = 'Live geometry plans; isolated section camera placements; one actual-base production input smoke test. Archived routes are separate local runs, never a continuous mountain climb.'
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK628_CONFIG '+json.dumps(cls.config, separators=(',', ':'))+'\n')
+
+    def archive(self, task, name):
+        path = ROOT/f'artifacts/TASK-{task}/{name}'
+        return json.loads(path.read_text()), dict(path=str(path.relative_to(ROOT)), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+
+    def test_01_structure_and_maps(self):
+        (self.out/'review.md').write_text((ROOT/'docs/grapple-over-composition-review.md').read_text())
+        p = self.page()
+        g = p.evaluate('''()=>({level:floors[0].level,
+          surfaces:[...RECOVERY.geometry().surfaces,...RECOVERY.geometry(true).surfaces],
+          yellow:RECOVERY.geometry().yellow,scale:scale[version],range:grappleOverAcquisitionRadius()})''')
+        self.assertEqual((g['scale'], g['range']), (.375, 360))
+        self.assertEqual(len(g['level']['sections']), 8)
+        surfaces = {e['id']:e for e in g['surfaces']}
+        manifests = {e['id']:e for e in g['level']['elements']}
+        self.assertEqual(len(surfaces), 98)
+        lower, lp = self.archive(626, 'pockets.json')
+        recovery, rp = self.archive(626, 'recovery.json')
+        upper, up = self.archive(627, 'pockets.json')
+        self.assertEqual(lower['unresolved'], [])
+        self.assertEqual(upper['unresolved'], [])
+        cases = recovery['cases'] + upper['cases']
+        audit = []
+        for id, e in surfaces.items():
+            purpose = manifests[id]['purpose']
+            self.assertGreater(len(purpose), 20, id)
+            refs = [c for c in cases if c['id']==id]
+            self.assertTrue(refs, id)
+            self.assertTrue(all(c['returned'] or c.get('terminal') for c in refs), id)
+            audit.append(dict(id=id, purpose=purpose, section='S0'+str(self.prefixes.index(id.split('-')[0])+1),
+                role=e['role'], bounds={k:e[k] for k in ['left','right','top','bottom']},
+                encounters=[v['id'] for v in g['level']['encounters'] if id in v['elements']],
+                recovery=[dict(range=c['range'], destination=c['returned'], terminal=c.get('terminal')) for c in refs]))
+        self.write('object-audit.json', dict(colliders=audit, removedClutter=[],
+            rationale='No redundant collider found: every live object has an encounter, recovery, timing or separator purpose. Preserve open air rather than add decorative collision.',
+            priorFix='TASK-623 tower-west-separator prevents folded upper bypasses; TASK-602 removed redundant tower-exit-yellow. Neither is a new TASK-628 edit.',
+            recoverySources=[lp,rp,up], yellow=[dict(id=e['id'],purpose=manifests[e['id']]['purpose']) for e in g['yellow']]))
+        routes=[]; connections=[]; previous='yard-entry'
+        updated, updated_ref = self.archive(623, 'normal-routes.json')
+        for i, task in enumerate(self.tasks):
+            d, ref = self.archive(task, 'route.json')
+            trace = d.get('trace',d.get('rows'))
+            exits = d['exits'] if i not in [4,5,6] else updated[i-4]['exits']
+            ids = [e.get('id',e.get('collider')) for e in exits]
+            self.assertEqual(len(ids),4)
+            first = g['level']['encounters'][i*4]
+            self.assertIn(previous, first['elements'])
+            start=trace[0]; support=surfaces[previous]
+            self.assertTrue(support['left']<=start['x']<=support['right'])
+            self.assertLess(abs(start['y']-(support['top']-10.8)),2)
+            for id in ids:self.assertIn(id,surfaces)
+            connections.append(dict(section=f'S0{i+1}',entrySupport=previous,exit=ids[-1],orderedExits=ids,
+                source=updated_ref if i in [4,5,6] else ref))
+            routes.append(dict(section=f'S0{i+1}',trace=trace,source=ref,exits=ids))
+            previous=ids[-1]
+        self.assertEqual(previous,'summit-final-landing')
+        self.write('geometry.json',g)
+        self.write('connections.json',dict(sections=connections,
+            scope='Shared physical entry/exit surfaces join eight separately verified local routes; no continuous-from-base claim. Historical traces used only for spatial context; updated S05-S07 contact proof comes from TASK-623.'))
+        # True world-coordinate plans; no rearranging sections to imply separation.
+        colors=['#059669','#65a30d','#0284c7','#d97706','#9333ea','#db2777','#e11d48','#475569']
+        for mono, name in [(False,'full-map.png'),(True,'silhouette.png')]:
+            im=Image.new('RGB',(2400,1200),'white');draw=ImageDraw.Draw(im)
+            factor=.145
+            def pt(x,y):return (40+x*factor,100+(y+6200)*factor)
+            draw.text((30,20),'TASK-628 | actual world-coordinate '+('collision silhouette' if mono else 'composition plan'),fill='black')
+            draw.text((30,42),'Eight local structures, same world positions. Numbers = ordered route decks. Thin gray = movers swept bounds.',fill='black')
+            draw.text((30,62),'Open air is intentional. Cyan = measured high-fall / recovery paths; local archived routes are NOT one continuous run.',fill='black')
+            for e in g['surfaces']+g['yellow']:
+                section=self.prefixes.index(e['id'].split('-')[0])
+                color='black' if mono else colors[section]
+                if e['role']=='drag':color='#bbbbbb' if mono else '#eab308'
+                draw.polygon([pt(v['x'],v['y']) for v in e['points']],fill=color)
+                mover=next((m for m in g['level']['movers'] if m['element']==e['id']),None)
+                if mover:
+                    axis=mover['axis'];base=manifests[e['id']][axis]
+                    a,b=(e['left'],e['right']) if axis=='x' else (e['top'],e['bottom'])
+                    lo,hi=a+mover['min']-base,b+mover['max']-base
+                    box=(lo,e['top'],hi,e['bottom']) if axis=='x' else (e['left'],lo,e['right'],hi)
+                    draw.rectangle((*pt(box[0],box[1]),*pt(box[2],box[3])),outline='#999999')
+            for i,r in enumerate(routes):
+                if not mono:draw.line([pt(v['x'],v['y']) for v in r['trace']],fill=colors[i],width=1)
+                for j,id in enumerate(r['exits']):
+                    e=surfaces[id];q=pt((e['left']+e['right'])/2,e['top'])
+                    draw.text((q[0],q[1]-14),f'{i+1}.{j+1}',fill='black')
+            falls,_=self.archive(627,'falls.json')
+            for c in falls['cases']:
+                for rows in [c['trace'],c['recovery']['trace']]:
+                    draw.line([pt(v['x'],v['y']) for v in rows],fill='#999999' if mono else '#06b6d4',width=2)
+            for i,n in enumerate(self.names):
+                draw.text((40+(i%4)*590,1090+(i//4)*35),f'S0{i+1} {n}',fill='black' if mono else colors[i])
+            im.save(self.out/name)
+        # Actual section-scale canvas captures keep the production camera scale.
+        sheet=Image.new('RGB',(2560,2880),'white'); cameras=[]
+        for i,r in enumerate(routes):
+            start=r['trace'][0]
+            camera=p.evaluate('''s=>{ninja.x=s.x;ninja.y=s.y;ninja.speedX=ninja.speedY=0;
+              screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw();
+              return {x:screen.x,y:screen.y,scale:scale[version],landmark:LANDMARKS.frame.drawn}}''',start)
+            raw=p.locator('#canvas').screenshot()
+            tile=Image.open(io.BytesIO(raw)).convert('RGB');self.assertEqual(tile.size,(1280,720))
+            pen=ImageDraw.Draw(tile);pen.rectangle((0,0,1280,30),fill='black')
+            pen.text((12,8),f'S0{i+1} {self.names[i]} | isolated camera observation | scale 0.375',fill='white')
+            sheet.paste(tile,((i%2)*1280,(i//2)*720));cameras.append(camera)
+        self.assertEqual(len({c['landmark'][0]['id'] for c in cameras}),8)
+        self.assertTrue(all(c['scale']==.375 for c in cameras))
+        sheet.save(self.out/'sections.png');self.write('cameras.json',cameras)
+        print('PASS composition: 8 structures; 32 ordered decks; 7 shared section connections; 98 purposeful colliders with recovery mappings; removedClutter=[]')
+        print('PASS images: world-coordinate full-map and silhouette 2400x1200; eight actual section cameras 2560x2880 at scale 0.375')
+
+    def test_02_input_and_dependencies(self):
+        p=self.page();Task567Tests.press(self,p);Task567Tests.step(self,p,30);p.mouse.up();Task567Tests.step(self,p,75)
+        result=Task567Tests.result(self,p)
+        self.assertTrue(Task567Tests.landings(result,'yard-landing'))
+        self.write('smoke.json',dict(inputs=result['inputs'],contacts=[r for r in result['rows'] if r['contacts']],
+            scope='Actual-base trusted mouse launch, release and production landing; no fixture pose injection'))
+        old,_=self.archive(627,'evidence-index.json')
+        hashes={n:h for n,h in old['config']['source_hashes'].items() if n!='tools/test_grapple_over_redesign.py'}
+        for n,h in hashes.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        archives=[]
+        for task in [622,623,624,625,626,627]:
+            path=ROOT/f'artifacts/TASK-{task}/tests.log';raw=path.read_text()
+            self.assertIn('\nOK\n',raw);self.assertRegex(raw,r'Ran [1-9][0-9]* tests? in ')
+            archives.append(dict(path=str(path.relative_to(ROOT)),sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                results=[v for v in raw.splitlines() if v.startswith(('Ran ','PASS ')) or v=='OK']))
+        # Examine search results themselves, not just their PASS strings.
+        searches=[]
+        for task in [622,623]:
+            data,ref=self.archive(task,'search.json')
+            self.assertEqual(data['unapproved'],[])
+            self.assertEqual(len(data['cases']),184 if task==622 else 229)
+            skips=[s for c in data['cases'] for s in c['skips'] if s['unapproved']]
+            self.assertEqual(skips,[])
+            self.assertTrue(all(c['ticks']>0 for c in data['cases']))
+            searches.append(dict(source=ref,attempts=len(data['cases']),unapproved=len(skips)))
+        self.write('affected.json',dict(runtimeChanges=[],geometryChanges=[],affectedLocalRoutes=[],
+            localProof='smoke.json: current trusted base launch/release/landing; no changed geometry requires replay',
+            unchangedSourceHashes=hashes,archives=archives,searches=searches,
+            dependencies=['Additive Task628Tests -> browser_test_support -> existing YARD/RECOVERY observation helpers -> unchanged renderer, geometry, input, physics'],
+            historical='TASK-623 separator supersedes pre-separator S05-S07 route coverage; use its normal-routes.json. Historical v3 tests/evidence remain untouched. HEAD-only changes do not invalidate identical tested source hashes.'))
+        print('PASS archived separation: 184 lower and 229 upper attempts; independently counted unapproved skips=0; finite search scope')
+        print(f'PASS input: trusted base launch/release lands on yard-landing; {len(hashes)} unchanged dependency hashes; six archived nonzero successful suites')
+
+    def test_03_index(self):
+        identifiers=[t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(Task628Tests)]
+        self.assertEqual(len(identifiers),3);self.assertTrue(all('.Task628Tests.' in n for n in identifiers))
+        (self.out/'collected-tests.log').write_text('\n'.join(identifiers)+'\nCOLLECTED 3\n')
+        required={'commands.log':'exact command and real exit, browser/viewport, revision and source hashes',
+            'tests.log':'three Task628Tests with no skipped required cases',
+            'full-map.png':'world-coordinate grouped geometry, route decks, high-fall/recovery corridors',
+            'silhouette.png':'unrearranged plain collision structure and open gaps',
+            'sections.png':'eight actual section-scale camera observations',
+            'cameras.json':'production camera coordinates, scale and landmark identities',
+            'geometry.json':'live collider polygons, movers and manifest',
+            'connections.json':'eight ordered local routes joined by seven shared physical surfaces',
+            'object-audit.json':'all 98 collider purposes and recovery destinations; explicit clutter decision',
+            'review.md':'image-located architectural and pacing review; scope and limitations',
+            'affected.json':'no runtime edits, source identity and archived successful regression evidence',
+            'smoke.json':'trusted production input and actual landing contacts',
+            'collected-tests.log':'exact three class/method identifiers',
+            'evidence-index.json':'assertion map and source dependencies'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,
+            changedSubsystems=['tools/test_grapple_over_redesign.py: additive composition review tests only'],
+            hashPolicy='HEAD movement alone does not invalidate identical source hashes'))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith('.png'):
+                with Image.open(self.out/name) as im:im.load();self.assertGreater(im.width,1000)
+        size=sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file())
+        self.assertLess(size,200_000_000)
+        print(f'PASS index: {len(required)} artifacts exist; JSON parses; three PNGs decode; retained bytes={size} <200 MB')
