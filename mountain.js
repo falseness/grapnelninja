@@ -1206,7 +1206,7 @@ function validateMountainManifest(m)
 // Replacement built prefix through Freight Crossing encounter 4. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
-    bounds: {left: 0, right: 6480, top: -3000, bottom: 280},
+    bounds: {left: 0, right: 7600, top: -3000, bottom: 280},
     spawn: {x: 2160, y: 0}, finish: null,
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
@@ -1261,9 +1261,9 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['freight-second-catch', 5120, -468.2, 1360, 60, 'Broad green recovery apron; early releases return to the shared first freight landing with normal grappling'],
         ['freight-lift', 5550, -1068.2, 360, 80, 'Wide vertical blue lift; same ten-second cycle, deliberate release onto the upper fixed shelf'],
         ['freight-lift-landing', 5935, -1468.2, 540, 60, 'Broad fixed upper freight landing; 760 units above the shared entry, clear of the lift sweep'],
-        ['freight-exit-anchor', 5675, -1879, 160, 80, 'Green upper launch face above the lift sweep; deliberate release into the crossing exit, not a landing'],
-        ['freight-exit', 5010, -1748.2, 540, 60, 'Broad ordinary green crossing exit after the moving-to-fixed transfer and green jump'],
-        ['freight-exit-catch', 5010, -1428.2, 540, 60, 'Stationary green recovery alternative below the exit gap; clears the lift sweep and supports a normal-control retry'],
+        ['freight-exit-anchor', 6580, -1659, 160, 80, 'Green launch face right of the lift sweep; deliberate release across the exit gap, not a landing'],
+        ['freight-exit', 6628, -1528.2, 680, 60, 'Broad ordinary green crossing exit after the moving-to-fixed transfer and green jump'],
+        ['freight-exit-catch', 6480, -1248.2, 880, 60, 'Stationary green recovery alternative below the exit gap; clears the lift sweep and supports a normal-control retry'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['freight-carrier', 'freight-second-carrier', 'freight-lift'].includes(id) ? 'solid' : 'bounce', grapplable: true,
         points: ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
