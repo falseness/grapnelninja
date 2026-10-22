@@ -12037,3 +12037,227 @@ class Task629Tests(unittest.TestCase):
         size=sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file())
         self.assertLess(size,200_000_000)
         print(f'PASS index: {len(required)} artifacts exist; JSON parses; 3 JPEGs decode; retained bytes={size} <200 MB')
+
+
+class Task630Tests(unittest.TestCase):
+    """Focused real-input viewport probes; isolated fixtures, not continuous gameplay."""
+    write = Task557Tests.write
+    step = Task567Tests.step
+    release = Task571Tests.release
+    helpers = [Task571Tests, Task577Tests, Task583Tests, Task589Tests,
+               Task595Tests, Task601Tests, Task607Tests, Task613Tests]
+    # Multi-shot/reacquisition or moving-carrier encounters are the hardest
+    # targeting tasks; S02-02 has the longest fixed-platform transfer.
+    indices = [2, 1, 2, 2, 2, 0, 2, 1]
+
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config.update(viewports=[[844,390,1,True],[844,390,2,True],
+                                    [667,375,2,True],[960,720,1,False]],
+                          simulation=cls.__doc__)
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK630_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    def page(self, w=844, h=390, dpr=1, touch=True):
+        ctx=self.browser.new_context(viewport=dict(width=w,height=h),device_scale_factor=dpr,has_touch=touch)
+        self.addCleanup(ctx.close)
+        p=ctx.new_page(); errors=[]
+        p.on('pageerror',lambda e:errors.append(str(e)))
+        self.addCleanup(lambda:self.assertEqual(errors,[]))
+        p.add_init_script(SEED_SCRIPT % 1)
+        p.add_init_script("const raf630=requestAnimationFrame;window.requestAnimationFrame=fn=>fn.name==='gameLoop'?0:raf630.call(window,fn)")
+        p.goto(self.url+'?grapplePreview=replacement-v1');wait_for_boot(p)
+        p.evaluate('cancelAnimationFrame(game);window.requestAnimationFrame=()=>0')
+        p.wait_for_function('!unTouch')
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_yard.js'))
+        p.cdp=ctx.new_cdp_session(p);p.touch_session=p.cdp if touch else None
+        p.evaluate('''()=>{window.events630=[];for(const type of ['touchstart','touchmove','touchend','touchcancel','mousedown','mouseup'])
+          document.addEventListener(type,e=>{const t=e.changedTouches?e.changedTouches[0]:e;
+          const row={type,trusted:e.isTrusted,x:t.clientX,y:t.clientY,tick:YARD.result().tick};events630.push(row);if(type.startsWith('touch'))YARD.result().inputs.push(row)})}''')
+        return p
+
+    def press(self,p,target,offset=0):
+        q=p.evaluate('p=>{const c=YARD.client(p),l=viewportCoordsToCanvasCoords(c);return {client:c,logical:l,world:{x:l.x/scale[version]-screen.x,y:l.y/scale[version]-screen.y},device:{x:c.x*devicePixelRatio,y:c.y*devicePixelRatio},pose:{x:ninja.x,y:ninja.y}}}',target)
+        for k in ['x','y']:self.assertAlmostEqual(q['world'][k],target[k],places=7)
+        xy=Task571Tests.press(self,p,target,offset)
+        aim=p.evaluate('grapnel.aim')
+        self.assertIsNotNone(aim)
+        import math
+        dx=q['world']['x']-q['pose']['x'];dy=q['world']['y']-q['pose']['y']
+        # Chromium mouse coordinates are integer CSS pixels; touch is subpixel.
+        error=math.hypot(aim['x']-dx/math.hypot(dx,dy),aim['y']-dy/math.hypot(dx,dy))
+        self.assertLess(error,.04)
+        q.update(target=target,actualClient=xy,aim=aim,aimError=error)
+        return q
+
+    def entry(self,p,section):
+        helper=self.helpers[section]();index=self.indices[section]
+        if section==0:
+            d=json.loads((ROOT/'artifacts/TASK-571/tolerance.json').read_text())
+            p.evaluate('s=>{Object.assign(ninja,s);screen.trackGrappleOver(true)}',d['entryFixtures'][index])
+            self.step(p,6)
+        else:
+            helper.setup_entry(p,index)
+        if section==4:
+            self.press(p,helper.targets[index]);self.step(p,40);self.release(p);self.step(p,50)
+        touch=p.touch_session is not None
+        if section==0:target=dict(x=3130,y=-404);hold=51
+        elif section==4:target=Task593Tests.next_target;hold=52
+        elif section==5:target=dict(x=10126 if touch else 10106,y=-3008.2);hold=222
+        elif section in [6,7]:target=helper.aim(index,touch);hold=helper.nominal_holds['touch' if touch else 'desktop'][index]
+        else:target=helper.targets[index];hold=helper.holds[index]
+        if section==3 and not touch:hold=256
+        return target,hold,helper.exits[index]
+
+    def test_01_hardest_encounters(self):
+        cases=[]
+        for config in self.config['viewports']:
+            for section in range(8):
+                p=self.page(*config);target,hold,exit=self.entry(p,section)
+                start=p.evaluate('YARD.result().tick');transform=self.press(p,target)
+                circle=p.evaluate('()=>{let radius=null;const original=ctx.arc;ctx.arc=function(x,y,r,...rest){radius=r;return original.call(this,x,y,r,...rest)};try{drawAcquisitionCircle()}finally{ctx.arc=original}return radius}')
+                self.assertEqual(circle,360 if section<4 else 540)
+                attachment=p.evaluate('n=>{let first=null;for(let i=0;i<n;i++){YARD.step(1);if(!first&&grapnel.isGrappled())first={tick:YARD.result().tick,id:grapnel.pos[0][2].id,x:grapnel.pos[0][0],y:grapnel.pos[0][1],distance:Math.hypot(grapnel.pos[0][0]-ninja.x,grapnel.pos[0][1]-ninja.y)};}return first}',hold)
+                self.release(p)
+                self.step(p,10)
+                r=p.evaluate('YARD.result()');rows=r['rows'][start:]
+                lands=[v for v in rows if v['tick']>start+hold and any(c['id']==exit and c['ny']<-.9 for c in v['contacts'])]
+                events=p.evaluate('events630');self.assertTrue(events);self.assertTrue(all(e['trusted'] for e in events))
+                self.assertEqual(sum(e['type']=='mousedown' for e in events),0 if config[3] else len(r['inputs'])//2)
+                case=dict(encounter=f'S0{section+1}-0{self.indices[section]+1}',config=config,transform=transform,
+                    startTick=start,hold=hold,exit=exit,landing=lands[0] if lands else None,events=events,
+                    circleWorldRadius=circle,attachment=attachment,attachedTicks=sum(v['attached'] for v in rows),range=r['range'],
+                    trace=[v for i,v in enumerate(rows) if i==0 or i==len(rows)-1 or v['contacts'] or (i and v['attached']!=rows[i-1]['attached'])])
+                cases.append(case);self.write('viewport.json',dict(cases=cases,scope=self.__doc__))
+                self.assertEqual(r['range'],360 if section<4 else 540)
+                self.assertTrue(any(v['attached'] for v in rows[:-10]),(case['encounter'],config))
+                self.assertGreater(case['attachedTicks'],0)
+                self.assertIn(attachment['id'],p.evaluate('id=>floors[0].level.encounters.find(e=>e.id===id).elements',case['encounter']))
+                self.assertLessEqual(attachment['distance'],r['range']+2)
+                self.assertFalse(p.evaluate('pressHeld || gameplayPressOwned || grapnel.throwed'))
+                print('CASE '+case['encounter']+' '+str(config)+' attachedTicks='+str(case['attachedTicks'])+' released=true')
+                p.context.close()
+        self.assertEqual(len(cases),32)
+        for one,two in zip(cases[:8],cases[8:16]):
+            self.assertEqual(one['trace'],two['trace'],'DPR-only trajectory drift')
+        print('PASS targeting: 32 hardest-encounter runs; 8 sections; trusted input; device/client/world transforms; ranges 360/540')
+
+    def snapshot(self,p):
+        return p.evaluate('''()=>{draw();if(menu.gamePaused)menu.drawPauseScreen();const r=getCanvasCssRect(),k=r.height/height;
+          const boxes=menu.gamePaused?[...CLIMB_UI.buttons.map((b,i)=>['climb-'+i,b.background,1]),['language',LANGUAGE_BUTTON.rect(),1],['fps',menu.pauseFpsCounterCheckbox.hitRect(),1]]:[['menu',menu.button.background,scale[version]]];
+          return {viewport:[innerWidth,innerHeight],dpr:devicePixelRatio,logical:[width,height],css:r,
+            backing:[canvas.width,canvas.height],resolution:BACKDROP.resolution,scale:scale[version],range:grappleOverAcquisitionRadius(),
+            paused:menu.gamePaused,rotated:isViewRotated(),inert:document.getElementById('stage').inert,
+            state:{x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,elapsed:floors[0].elapsedSteps,
+              rope:grapnel.pos.map(p=>[p[0],p[1],p[2]?.id]),attached:grapnel.isGrappled(),shot:grapnel.throwed,aim:grapnel.aim},
+            controls:boxes.map(([name,b,s])=>({name,x:b.x*s*k,y:b.y*s*k,width:b.width*s*k,height:b.height*s*k})),
+            constants:{gravity:GRAVITY,pull:grappleSpeed},held:pressHeld,owned:gameplayPressOwned}}
+        ''')
+
+    def metrics(self,p,w,h,dpr):
+        p.cdp.send('Emulation.setDeviceMetricsOverride',dict(width=w,height=h,deviceScaleFactor=dpr,mobile=False))
+        p.wait_for_timeout(220)
+        r=self.snapshot(p)
+        self.assertEqual(r['viewport'],[w,h]);self.assertEqual(r['dpr'],dpr)
+        for i,k in enumerate(['width','height']):
+            self.assertAlmostEqual(r['backing'][i],r['css'][k]*min(dpr,2)*r['resolution'],delta=.51)
+        for b in r['controls']:
+            self.assertGreaterEqual(b['width'],44-1e-6);self.assertGreaterEqual(b['height'],44-1e-6)
+            self.assertGreaterEqual(b['x'],0);self.assertGreaterEqual(b['y'],0)
+            self.assertLessEqual(b['x']+b['width'],r['css']['width']+.01)
+            self.assertLessEqual(b['y']+b['height'],r['css']['height']+.01)
+        self.assertEqual(r['scale'],.375)
+        return r
+
+    def tap_resume(self,p):
+        p.wait_for_function('!unTouch')
+        xy=p.evaluate('()=>{const b=CLIMB_UI.buttons[0].background;return canvasCoordsToViewportCoords({x:b.x+b.width/2,y:b.y+b.height/2})}')
+        p.cdp.send('Input.dispatchTouchEvent',dict(type='touchStart',touchPoints=[xy]))
+        p.cdp.send('Input.dispatchTouchEvent',dict(type='touchEnd',touchPoints=[]))
+
+    def test_02_live_transitions(self):
+        results=[]
+        for scenario in ['jump','mover','recovery']:
+            p=self.page()
+            if scenario=='mover':
+                target,hold,exit=self.entry(p,2);self.press(p,target);self.step(p,100)
+                self.assertTrue(p.evaluate('grapnel.isGrappled()'))
+            else:
+                self.press(p,dict(x=2420,y=-139));self.step(p,30 if scenario=='jump' else 6);self.release(p)
+                self.step(p,10 if scenario=='jump' else 174)
+                if scenario=='recovery':
+                    self.assertTrue(Task567Tests.landings(p.evaluate('YARD.result()'),'yard-catch'))
+            baseline=self.snapshot(p);views=[]
+            for w,h,d in [(667,375,1),(667,375,2),(844,390,2)]:
+                row=self.metrics(p,w,h,d);self.assertEqual(row['state'],baseline['state']);views.append(row)
+            portrait=self.metrics(p,390,844,2)
+            self.assertTrue(portrait['paused'] and portrait['rotated'] and portrait['inert'])
+            self.assertEqual(portrait['state'],baseline['state'])
+            self.step(p,25);self.assertEqual(self.snapshot(p)['state'],baseline['state'])
+            # Release the old owning touch while paused, then try the blocked Resume.
+            if scenario=='mover':self.release(p)
+            self.tap_resume(p)
+            self.assertTrue(p.evaluate('menu.gamePaused'))
+            self.assertEqual(self.snapshot(p)['state'],baseline['state'])
+            returned=self.metrics(p,844,390,2);self.assertTrue(returned['paused']);self.assertFalse(returned['inert'])
+            self.tap_resume(p);resumed=self.snapshot(p)
+            self.assertFalse(resumed['paused']);self.assertEqual(resumed['state'],baseline['state'])
+            self.assertFalse(resumed['held'] or resumed['owned'])
+            # Resume has preserved the rope; a fresh real press reclaims controls.
+            if scenario=='recovery':target=dict(x=2230,y=30);hold=24;exit='yard-entry'
+            elif scenario=='jump':target=dict(x=2420,y=-139);hold=5;exit=None
+            else:target=p.evaluate('YARD.nearest()');hold=5;exit=None
+            fresh=self.press(p,target);self.step(p,hold);self.release(p)
+            self.step(p,550 if scenario=='recovery' else 10)
+            after=self.snapshot(p);self.assertNotEqual(after['state'],baseline['state'])
+            self.assertEqual(after['constants'],baseline['constants'])
+            recovery=Task567Tests.landings(p.evaluate('YARD.result()'),'yard-entry') if exit else []
+            if exit:self.assertTrue(recovery)
+            results.append(dict(scenario=scenario,baseline=baseline,views=views,portrait=portrait,returned=returned,
+                resumed=resumed,after=after,fresh=fresh,recoveryLanding=recovery[-1] if recovery else None,events=p.evaluate('events630')))
+            self.write('resize.json',dict(scenarios=results))
+            print('PASS transition '+scenario+': resize, DPR-only, portrait freeze, blocked upright Resume, explicit landscape Resume, fresh input, >=44 CSS px')
+            p.context.close()
+
+    def test_03_dependencies_and_index(self):
+        d=json.loads((ROOT/'artifacts/TASK-629/geometry-dependency.json').read_text())
+        # Compare all recorded runtime hashes; additive test changes do not invalidate runtime proof.
+        hashes=d.get('source_hashes',d.get('config',{}).get('source_hashes',{}))
+        if not hashes:
+            hashes=json.loads((ROOT/'artifacts/TASK-629/evidence-index.json').read_text())['config']['source_hashes']
+        runtime={k:v for k,v in hashes.items() if not k.startswith('tools/test_')}
+        self.assertGreater(len(runtime),20)
+        for k,v in runtime.items():self.assertEqual(hashlib.sha256((ROOT/k).read_bytes()).hexdigest(),v,k)
+        approach_path=ROOT/'artifacts/TASK-629/approaches.json'
+        approaches=json.loads(approach_path.read_text())['views']
+        nominal=[v for v in approaches if v['viewport']=='touch-844x390']
+        self.assertEqual(len(nominal),32)
+        self.assertTrue(all(not v['hudOverlaps'] and v['camera']['scale']==.375 for v in nominal))
+        reused=dict(path=str(approach_path.relative_to(ROOT)),sha256=hashlib.sha256(approach_path.read_bytes()).hexdigest(),
+            observations=len(nominal),scope='Nominal 844x390 section visibility/aim bounds only; historical local-prefix route landings are not reasserted.')
+        archives=[]
+        for task,count in [(627,3),(629,4)]:
+            path=ROOT/f'artifacts/TASK-{task}/tests.log';log=path.read_text()
+            self.assertIn(f'Ran {count} tests',log);self.assertIn('\nOK\n',log)
+            archives.append(dict(path=str(path.relative_to(ROOT)),sha256=hashlib.sha256(path.read_bytes()).hexdigest(),tests=count))
+        self.write('failures-and-fixes.json',dict(reusedNominal=reused,archivedRuns=archives,retunedGeometry=[],runtimeChanges=[],fixtureCorrections=['S01-03 historical landing is intercepted by later quarry-third-catch; test current aiming/attachment/release without asserting obsolete local-prefix landing. Harness corrections: production constant names; register trusted touch in YARD inputs; inspect CLIMB_UI controls rather than inactive classic Resume; end only an active CDP touch.'],
+            dependencies=runtime,changedSubsystems=['Additive Task630Tests only; existing browser_test_support and YARD observations'],
+            priorProof='artifacts/TASK-629/evidence-index.json',
+            scope='New focused hardest encounters; unchanged runtime/geometry supports prior nominal section proof. Historical v3 coordinates remain superseded by replacement geometry. HEAD-only moves do not invalidate identical source hashes.'))
+        ids=[t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(Task630Tests)]
+        self.assertEqual(len(ids),3);self.assertTrue(all('.Task630Tests.' in i for i in ids))
+        (self.out/'collected-tests.log').write_text('\n'.join(ids)+'\nCOLLECTED 3\n')
+        required={'commands.log':'exact commands, actual exit, configuration, source SHA256 and revision',
+            'tests.log':'3 Task630Tests; 32 encounter cases and 3 transition scenarios; no skips',
+            'viewport.json':'trusted input, transforms, attachment and release for all 32 cases; 360/540 ranges',
+            'resize.json':'preserved state at resize/DPR/portrait; real Resume and fresh press; 44px controls; recovery',
+            'failures-and-fixes.json':'unchanged runtime hash comparison, geometry changes and provenance',
+            'collected-tests.log':'3 exact Task630Tests identifiers','evidence-index.json':'artifact assertion map'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        size=sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file())
+        self.assertLess(size,200_000_000)
+        print(f'PASS dependencies/index: {len(runtime)} matching source hashes; 7 required files parse/exist; {size} bytes <200 MB')
