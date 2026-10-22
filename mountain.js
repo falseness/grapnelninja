@@ -1407,7 +1407,7 @@ function replacementMountainLevel(manifest)
         finish: !planned && sections.some(s => s.id === 'S08' && s.encounters.includes('S08-04')) ? manifest.finish : null, profile: REPLACEMENT_PROFILE}
 }
 
-function loadMountainLevel(manifest = GRAPPLE_OVER_PREVIEW ? GRAPPLE_OVER_REPLACEMENT : GRAPPLE_OVER_MOUNTAIN)
+function loadMountainLevel(manifest = GRAPPLE_OVER_REPLACEMENT_ACTIVE ? GRAPPLE_OVER_REPLACEMENT : GRAPPLE_OVER_MOUNTAIN)
 {
     if (manifest.layoutId === GRAPPLE_OVER_REPLACEMENT.layoutId)
         return loadFixedLevel(replacementMountainLevel(manifest))

@@ -214,9 +214,11 @@ const MODE_DEFINITIONS = Object.freeze({
         upgradedAcquisitionRadius: 1620, rangeUpgradeSection: 'S05', hudStyle: 'classic'})
 })
 
-// Explicit local development selector. It never adds a player-facing mode.
+// Explicit local fixture selectors; normal boot uses the completed replacement.
 const GRAPPLE_OVER_PREVIEW = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) &&
     new URLSearchParams(location.search).get('grapplePreview') === 'replacement-v1'
+const GRAPPLE_OVER_REPLACEMENT_ACTIVE = !(['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) &&
+    new URLSearchParams(location.search).get('grappleFixture') === 'legacy-v3')
 const REPLACEMENT_PROFILE = Object.freeze({...MODE_DEFINITIONS.grapple_over,
     acquisitionRadius: 360, upgradedAcquisitionRadius: 540})
 function grappleOverProfile()

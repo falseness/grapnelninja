@@ -13825,3 +13825,171 @@ class Task636Tests(unittest.TestCase):
             hashPolicy='HEAD movement alone does not invalidate identical source hashes',references=['artifacts/TASK-635/completion.json','artifacts/TASK-635/touch-inputs.json','artifacts/TASK-627/evidence-index.json','artifacts/TASK-627/falls.webm','artifacts/TASK-627/clip-contact-sheet.png']))
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS media: 3 clips fully decoded; source provenance checked; images decoded; task storage <200 MB')
+
+
+class Task637Tests(unittest.TestCase):
+    """Activation checks with isolated save/upgrade fixtures, not continuous gameplay."""
+    write = Task557Tests.write
+    flush = Task566Tests.flush
+    click = Task631Tests.click
+    key = 'grapnelninja.grappleOver'
+    records = {'grapnelninja.records': '{"classic":123,"bad":456}',
+               'grapnelninja.lang': 'en', 'grapnelninja.tutorialDone': 'true'}
+
+    @classmethod
+    def setUpClass(cls):
+        if Path(os.environ['GRAPPLE_OVER_EVIDENCE_DIR']).resolve() != (ROOT/'artifacts/TASK-637').resolve():
+            raise ValueError('Task637 evidence must stay task-local')
+        Task557Tests.setUpClass.__func__(cls)
+        ids = [t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
+        assert len(ids) == 3 and all('.Task637Tests.' in i for i in ids)
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('SELECTED '+json.dumps(ids)+' COUNT 3\n')
+
+    def page(self, seed=None, query=''):
+        p = self.browser.new_page(viewport=VIEWPORT, device_scale_factor=1)
+        self.addCleanup(p.context.close)
+        errors = []
+        p.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        p.add_init_script(SEED_SCRIPT % 1)
+        p.add_init_script("const raf637=requestAnimationFrame;window.requestAnimationFrame=f=>f.name==='gameLoop'?0:raf637.call(window,f)")
+        p.add_init_script('if(!sessionStorage.seeded637){for(const [k,v] of Object.entries('+json.dumps({**self.records, **(seed or {})})+'))localStorage.setItem(k,v);sessionStorage.seeded637="yes"}')
+        p.goto(self.url+query)
+        wait_for_boot(p)
+        p.wait_for_function('!unTouch')
+        # Observe boot's own mode; do not select it in this helper.
+        self.assertEqual(p.evaluate('version'), 'grapple_over')
+        return p
+
+    def observation(self, p):
+        return p.evaluate('''()=>({layout:floors[0].level.layoutId,range:grappleOverAcquisitionRadius(),
+            scale:scale[version],profile:grappleOverProfile(),state:captureClimbState(),
+            spawn:floors[0].level.spawn,notice:document.getElementById('climb-save-notice')?.textContent||null})''')
+
+    def test_01_default_activation_upgrade_restart(self):
+        p = self.page(); boot = self.observation(p)
+        self.assertEqual(boot['layout'], 'grapple-over-replacement-v1')
+        self.assertEqual(boot['range'], 360); self.assertEqual(boot['scale'], .375)
+        self.assertIsNone(boot['notice'])
+        p.evaluate('draw()');p.screenshot(path=str(self.out/'boot.jpg'), type='jpeg')
+        opening = p.evaluate('''()=>floors[0].elements.filter(e=>{
+            const b=elementBounds(e,{});return b.left+screen.x<width/scale[version] && b.right+screen.x>0 &&
+            b.top+screen.y<height/scale[version] && b.bottom+screen.y>0;
+        }).map(e=>({id:e.id,role:e.surfaceRole}))''')
+        green_opening = p.evaluate('''()=>{const w=floors[0], ids=new Set(w.level.encounters
+            .filter(e=>e.id.startsWith('S01-')||e.id.startsWith('S02-')).flatMap(e=>e.elements));
+            return [...ids].map(id=>({id,role:w.byId.get(id).surfaceRole}))}''')
+        self.assertTrue(green_opening); self.assertEqual({e['role'] for e in green_opening}, {'bounce'})
+        preview = self.page(query='?grapplePreview=replacement-v1')
+        self.assertEqual(self.observation(preview)['profile'], boot['profile'])
+        self.assertEqual(self.observation(preview)['state'], boot['state'])
+        legacy = self.page(query='?grappleFixture=legacy-v3')
+        old = self.observation(legacy)
+        self.assertEqual(old['layout'], 'grapple-over-legacy-v3');self.assertEqual(old['range'],1080)
+        # Isolated placement inside the real upgrade zone, then production physics grants it.
+        zone = p.evaluate('''()=>{menu.unPause();const s=floors[0].level.sections.find(s=>s.id===grappleOverProfile().rangeUpgradeSection);
+            const b=s.rangeUpgradeZone||s.band;ninja.x=(b.left+b.right)/2;ninja.y=(b.top+b.bottom)/2;
+            ninja.speedX=ninja.speedY=0;physics();return b}''')
+        upgraded = self.observation(p);self.assertEqual(upgraded['range'],540)
+        p.evaluate('menu.startPause();draw()');self.click(p,1)
+        self.assertTrue(p.evaluate('CLIMB_UI.confirming'));self.click(p,0)
+        reset = self.observation(p)
+        self.assertEqual(reset['range'],360);self.assertEqual(reset['state']['simulationTick'],0)
+        self.assertEqual(reset['state']['player'],boot['state']['player'])
+        self.write('activation.json',dict(boot=boot,visibleElements=opening,greenOpening=green_opening,preview=self.observation(preview),
+            legacyFixture=old,upgradeFixtureZone=zone,upgraded=upgraded,restart=reset,config=self.config))
+        print('PASS normal boot replacement 360 scale=0.375; preview state/profile identical; green-only bounce opening; physics upgrade 540; trusted restart 360; explicit legacy fixture 1080')
+
+    def test_02_saves_and_modes(self):
+        legacy = self.page(query='?grappleFixture=legacy-v3')
+        stale = legacy.evaluate('captureClimbState()')
+        cases=[]
+        for versioned in [True,False]:
+            old=json.loads(json.dumps(stale))
+            if not versioned:del old['layoutId']
+            p=self.page({self.key:json.dumps(old)})
+            row=self.observation(p)
+            self.assertIn('Save incompatible with this mountain layout.',row['notice'])
+            self.assertIn('Starting at the replacement base.',row['notice'])
+            self.assertEqual([row['state']['player'][k] for k in ['x','y']], [row['spawn'][k] for k in ['x','y']])
+            self.assertEqual(row['state']['simulationTick'],0);self.assertEqual(row['range'],360)
+            cases.append(dict(versioned=versioned,oldLayout=old.get('layoutId'),result=row))
+        p=self.page();p.evaluate('menu.unPause();for(let i=0;i<24;i++)physics()')
+        saved=self.flush(p);p.reload();wait_for_boot(p)
+        restored=p.evaluate('captureClimbState()');self.assertEqual(restored,saved)
+        self.assertGreater(restored['simulationTick'],0)
+        self.assertTrue(p.evaluate('menu.gamePaused'))
+        p.evaluate('menu.unPause();for(let i=0;i<16;i++)physics()')
+        continued=self.flush(p);self.assertGreater(continued['simulationTick'],restored['simulationTick'])
+        modes=[]
+        for mode,record in [('classic',123),('bad',456)]:
+            p.evaluate('m=>{menu.startPause();menu.selectMode(m);menu.unPause();for(let i=0;i<10;i++)physics()}',mode)
+            row=p.evaluate('({mode:version,record:scoreText.record[version],scale:scale[version],definition:MODE_DEFINITIONS[version]})')
+            self.assertEqual(row['record'],record)
+            self.assertEqual(row['scale'],1 if mode=='classic' else 1/2.2)
+            self.assertEqual(json.loads(p.evaluate('k=>localStorage.getItem(k)',self.key)),continued)
+            p.evaluate("menu.startPause();menu.selectMode('grapple_over')")
+            row['returned']=p.evaluate('captureClimbState()');self.assertEqual(row['returned'],continued)
+            modes.append(row)
+        records=p.evaluate('keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]))',list(self.records))
+        self.assertEqual(records,self.records)
+        self.write('save-and-modes.json',dict(rejected=cases,saved=saved,restored=restored,continued=continued,
+            modes=modes,records=records,scope=self.__doc__))
+        print('PASS versioned and unversioned legacy saves rejected with explanation and fresh 360 base; new save exact reload and forward simulation; classic=123 bad=456 records preserved; mode return exact')
+
+    def test_03_source_dependencies(self):
+        # Compare whole historical runtime files, allowing only the reviewed dispatch/text edits.
+        refs=[]
+        for task in ['634','635']:
+            path=ROOT/f'artifacts/TASK-{task}/completion.json'
+            proof=json.loads(path.read_text());config=proof['config'];rows=[]
+            for name,h in config['source_hashes'].items():
+                if name.startswith('tools/'):continue
+                current=(ROOT/name).read_bytes()
+                if hashlib.sha256(current).hexdigest()==h:
+                    rows.append(dict(path=name,sha256=h,comparison='identical'));continue
+                baseline=subprocess.check_output(['git','show',config['revision']+':'+name],cwd=ROOT)
+                self.assertEqual(hashlib.sha256(baseline).hexdigest(),h,name)
+                expected=baseline.decode()
+                if name=='gameoptions.js':
+                    expected=expected.replace('// Explicit local development selector. It never adds a player-facing mode.',
+                        '// Explicit local fixture selectors; normal boot uses the completed replacement.')
+                    expected=expected.replace('const REPLACEMENT_PROFILE =',
+                        "const GRAPPLE_OVER_REPLACEMENT_ACTIVE = !(['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) &&\n    new URLSearchParams(location.search).get('grappleFixture') === 'legacy-v3')\nconst REPLACEMENT_PROFILE =")
+                elif name in ['mountain.js','menu.js']:
+                    expected=expected.replace('GRAPPLE_OVER_PREVIEW ?', 'GRAPPLE_OVER_REPLACEMENT_ACTIVE ?')
+                elif name=='progress.js':
+                    expected=expected.replace("I18N.t(GRAPPLE_OVER_PREVIEW ? 'climb.previewSaveInvalid' : 'climb.saveInvalid')",
+                        "I18N.t(GRAPPLE_OVER_REPLACEMENT_ACTIVE ? 'climb.replacementSaveInvalid' : 'climb.saveInvalid')")
+                elif name=='i18n.js':
+                    lines=expected.splitlines(keepends=True)
+                    expected=''.join(("            'climb.replacementSaveInvalid': "+
+                        ("'Save incompatible with this mountain layout. Starting at the replacement base.',\n" if 'Save incompatible' in line else
+                         "'Сохранение несовместимо с новой горой. Начинаем у её подножия.',\n") if "'climb.previewSaveInvalid':" in line else '')+line for line in lines)
+                else:self.fail('Unexpected runtime change: '+name)
+                self.assertEqual(current,expected.encode(),name)
+                rows.append(dict(path=name,baselineSha256=h,sha256=hashlib.sha256(current).hexdigest(),comparison='exact dispatch/text-only transformation'))
+            log=(ROOT/f'artifacts/TASK-{task}/tests.log').read_text()
+            self.assertIn('\nOK',log)
+            refs.append(dict(proof=str(path.relative_to(ROOT)),revision=config['revision'],files=rows,
+                tests=f'artifacts/TASK-{task}/tests.log',archivedResult=log[log.rfind('Ran '):].strip()))
+        self.write('source-dependency.json',dict(references=refs,sourceHashes=self.hashes,
+            assertion='Geometry, profiles, physics, input bindings and attached-rope behavior unchanged from desktop/touch completion proofs',
+            changedSubsystems=['gameoptions.js local fixture/default dispatch','mountain.js default manifest dispatch',
+                'menu.js replacement HUD dispatch','progress.js incompatible save notice dispatch','i18n.js replacement notice text',
+                'tools/test_grapple_over_redesign.py additive Task637Tests'],
+            superseded='Historical normal-boot legacy expectations now require ?grappleFixture=legacy-v3; old geometry proofs remain historical.',
+            hashPolicy='HEAD-only changes do not invalidate identical tested file hashes'))
+        names={'commands.log':'exact command, real exit status, 3 selected IDs, browser/viewport/revision/SHA256',
+            'tests.log':'three focused Task637Tests, no skips, OK','activation.json':'default replacement 360, physics upgrade 540, trusted restart 360',
+            'source-dependency.json':'whole-file comparison to desktop and touch proofs, only explicit dispatch/text changes',
+            'save-and-modes.json':'old-layout explanation/base fallback, valid continuation, classic/bad records and return',
+            'boot.jpg':'actual normal-boot easy green-only opening','evidence-index.json':'required inventory and dependency reference'}
+        self.write('evidence-index.json',dict(artifacts=names,dependencies='source-dependency.json'))
+        for name in names:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        with Image.open(self.out/'boot.jpg') as im:im.load();self.assertEqual(im.size,(1280,720))
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS desktop TASK-634 and touch TASK-635 source comparisons: geometry/physics/profile/input/rope unchanged; only exact dispatch/text edits; archived suites OK; all 7 artifacts exist, JSON/image decode, storage <200 MB')
