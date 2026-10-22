@@ -1,0 +1,73 @@
+[
+ {
+  "file": "valid.svg",
+  "expect": "accept",
+  "expectedOutput": "valid.expected.json"
+ },
+ {
+  "file": "invalid-transformed-gameplay.svg",
+  "expect": "reject",
+  "category": "TransformedGameplay",
+  "change": "geometry layer (ancestor of gameplay) has transform"
+ },
+ {
+  "file": "invalid-duplicate-id.svg",
+  "expect": "reject",
+  "category": "DuplicateId",
+  "change": "drag-brake renamed to existing id catch-floor"
+ },
+ {
+  "file": "invalid-missing-spawn.svg",
+  "expect": "reject",
+  "category": "MissingSpawn",
+  "change": "spawn marker removed"
+ },
+ {
+  "file": "invalid-unknown-role.svg",
+  "expect": "reject",
+  "category": "InvalidSurfaceRole",
+  "change": "bounce-pad role is \"spring\""
+ },
+ {
+  "file": "invalid-unsupported-version.svg",
+  "expect": "reject",
+  "category": "UnsupportedVersion",
+  "change": "data-level-version=\"2\""
+ },
+ {
+  "file": "invalid-unsupported-shape.svg",
+  "expect": "reject",
+  "category": "UnsupportedShape",
+  "change": "circle in geometry layer"
+ },
+ {
+  "file": "invalid-missing-reference.svg",
+  "expect": "reject",
+  "category": "MissingReference",
+  "change": "encounter E02 lists unknown element \"ghost\""
+ },
+ {
+  "file": "invalid-nonfinite-geometry.svg",
+  "expect": "reject",
+  "category": "NonFiniteGeometry",
+  "change": "ceiling-hold width=\"NaN\""
+ },
+ {
+  "file": "invalid-drag-grapplable.svg",
+  "expect": "reject",
+  "category": "InvalidDragZone",
+  "change": "drag-brake data-grapplable=\"true\""
+ },
+ {
+  "file": "invalid-missing-bounds.svg",
+  "expect": "reject",
+  "category": "MissingMetadata",
+  "change": "data-bounds attribute removed"
+ },
+ {
+  "file": "invalid-malformed-polygon.svg",
+  "expect": "reject",
+  "category": "MalformedPolygon",
+  "change": "P0-post has only two vertices"
+ }
+]
