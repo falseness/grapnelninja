@@ -356,6 +356,17 @@ def check(level, svg_data, reference):
                       'clearance': r(d), 'clearanceMinusDiameter': r(margin), 'referenceGap': r(ref_gap),
                       'referenceError': r(ref_err, 9), 'pass': ok and (ref_err is None or ref_err <= COORD_TOL)})
 
+    # Counts and order follow the reference, never a fixed level size.
+    n_frag = len(reference['fragments'])
+    if len(fragments) != n_frag or len(pairs) != n_frag * (n_frag - 1) // 2:
+        fail('%d fragments / %d pairs, reference implies %d / %d' % (
+            len(fragments), len(pairs), n_frag, n_frag * (n_frag - 1) // 2))
+    if len(fmt['transfers']) != len(reference['encounters']):
+        fail('%d transfers, reference has %d encounters' % (len(fmt['transfers']), len(reference['encounters'])))
+    chain = [(t['from'], t['to']) for t in fmt['transfers']]
+    if any(chain[i][1] != chain[i + 1][0] for i in range(len(chain) - 1)):
+        fail('transfers are not one connected ordered route')
+
     # Drag zones.
     ref_bands = {b['id'] + '-drag': b for b in reference.get('yellowBands', [])}
     solid = [(eid, poly) for eid, (e, poly) in polys.items() if e['role'] != 'drag']
@@ -416,6 +427,7 @@ def check(level, svg_data, reference):
                                           if t['percentErrors'][k] is not None), default=None), 9),
         'maxTransferDistanceError': r(max((t['percentErrors']['referenceDistance'] for t in transfers
                                            if t['percentErrors']['referenceDistance'] is not None), default=None), 9),
+        'expectedFragmentPairs': len(reference['fragments']) * (len(reference['fragments']) - 1) // 2,
         'fragmentPairs': len(pairs), 'pairsPass': sum(p['pass'] for p in pairs),
         'minPairClearanceMinusDiameter': r(min((p['clearanceMinusDiameter'] for p in pairs), default=None)),
         'yellowPairs': len(drag_pairs), 'yellowPairsPass': sum(p['pass'] for p in drag_pairs),

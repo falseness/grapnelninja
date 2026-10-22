@@ -24,6 +24,7 @@ R = 540.0
 PLAYER_RADIUS = 10.8
 CANVAS_W, CANVAS_H = 2600, 4300
 LAYOUT_ID = 'extended-mountain-v1'
+COUNT_WORDS = {1: 'ONE', 2: 'TWO', 3: 'THREE', 4: 'FOUR', 5: 'FIVE', 6: 'SIX'}
 COMBO_TEXT = 'Ceiling hold → downward jump → rebound'
 SPAWN = (500.0, -30.0)          # on P0's top edge (y=0), right of the post
 FINISH_PAD = (60.0, 300.0)      # finish box: summit width + pad, height above top
@@ -171,7 +172,14 @@ def build(meas, guides=False):
     bands = meas['yellowBands']
     falls = meas['fallIllustrations']
     combos = [tuple(c) for c in meas['combinations']]
-    assert len(frags) == 25 and len(rows) == 24 and len(bands) > 0 and len(combos) == 4
+    # Counts follow the measurements: one transfer per consecutive fragment pair.
+    assert len(frags) >= 2 and len(rows) == len(frags) - 1 and len(bands) > 0 and len(combos) > 0
+    assert [r['number'] for r in rows] == list(range(1, len(rows) + 1))
+    jumps = len(rows)
+    # The preserved concept baseline ends at original jump 10, wherever insertions moved it.
+    baseline_end = next((r['number'] for r in rows if r.get('originalNumber') == 10), 10)
+    pitch = 99 if jumps <= 24 else (2850 - 443) / jumps
+    combo_word = COUNT_WORDS.get(len(combos), str(len(combos)))
     assert float(meas['grappleRange']) == R
 
     allb = [p for m in frags for p in bodies(m)]
@@ -196,7 +204,7 @@ def build(meas, guides=False):
            f' data-layout-id="{LAYOUT_ID}" data-grapple-range="540"'
            f' data-bounds="{" ".join(num(v) for v in bounds)}"'
            f' viewBox="{" ".join(num(v) for v in view)}" width="{CANVAS_W}" height="{CANVAS_H}">',
-           '<title>Extended mountain: 24 jumps, ceiling holds, descending rebounds and yellow fall brakes (level SVG v1)</title>',
+           f'<title>Extended mountain: {jumps} jumps, ceiling holds, descending rebounds and yellow fall brakes (level SVG v1)</title>',
            '<defs><marker id="route" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#eaf3ed"/></marker>'
            '<marker id="drop" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#e8b477"/></marker></defs>']
 
@@ -205,7 +213,7 @@ def build(meas, guides=False):
     back.rect(0, 0, CANVAS_W, CANVAS_H, '#09141e')
     back.text(70, 62, 'GRAPPLE OVER / EXTENDED ROUTE / BASELINE PRESERVED', 21, '#8ad3b7', 700)
     back.text(70, 125, 'Hold the ceiling. Drop. Bounce back up.', 45, '#edf4f5', 700)
-    back.text(70, 170, '24 jumps · original 01–10 unchanged · four compound ceiling / descent / rebound sequences · yellow braking bands', 21)
+    back.text(70, 170, f'{jumps} jumps · original 01–10 unchanged · {combo_word.lower()} compound ceiling / descent / rebound sequences · yellow braking bands', 21)
     back.rect(70, 202, 2460, 65, '#29283a', rx=8)
     back.text(92, 232, 'GRAPPLE RANGE 540u · percentages show minimum open gaps · every illustrated flight remains unverified with production physics', 20, '#e8c493', 700)
     back.text(92, 255, 'Yellow rectangles slow falls without providing a foothold, grapple target, checkpoint or automatic return.', 17, '#c5b6a1')
@@ -246,20 +254,20 @@ def build(meas, guides=False):
         draw_fragment_labels(front, m, T, s)
     for r in rows:
         draw_route(front, r, frags, T)
-    x, y = T(contact(frags[10]))
+    x, y = T(contact(frags[baseline_end]))
     front.text(x - 35, y - 40, 'BASELINE ENDS / EXTENSION STARTS', 16, '#d4d6ba', 700, 'end')
     front.rect(1980, 315, 550, 3480, '#11222d', rx=12)
-    front.text(2010, 362, '24-JUMP ROUTE', 24, '#e7f0f3', 700)
+    front.text(2010, 362, f'{jumps}-JUMP ROUTE', 24, '#e7f0f3', 700)
     front.text(2010, 396, '01–10: preserved baseline geometry', 19, '#92aebb')
     for i, r in enumerate(rows):
-        y = 443 + i * 99
+        y = 443 + i * pitch
         front.text(2010, y, f"{r['number']:02d}  {r['fromFragment']} → {r['toFragment']}", 19, '#d9e7eb', 700)
         front.text(2495, y, str(r['percent']) + '%', 24, '#aae0bd', 700, 'end')
         action = r['action'] if not r['baseline'] else r['direction']
         front.text(2010, y + 29, action, 16, '#a6c1cb')
         front.text(2010, y + 53, f"{r['distance']:.0f} world units", 16, '#7f9ba9')
         front.line((2010, y + 71), (2495, y + 71), '#29434f', '', 1)
-    front.text(2010, 2890, 'FOUR COMBINATIONS', 22, '#dcebe7', 700)
+    front.text(2010, 2890, f'{combo_word} COMBINATIONS', 22, '#dcebe7', 700)
     for i, (a, b, c) in enumerate(combos):
         y = 2937 + i * 86
         front.text(2010, y, f'{a:02d} → {b:02d} → {c:02d}', 24, '#9ae3e4', 700)
@@ -292,9 +300,9 @@ def build(meas, guides=False):
     out.append('<metadata id="level-route">')
     by_num = {r['number']: r for r in rows}
     in_combo = {n: k for k, combo in enumerate(combos, 1) for n in combo}
-    sections = [('SEC-baseline', [n for n in range(1, 11)])]
-    n = 11
-    while n <= 24:
+    sections = [('SEC-baseline', [n for n in range(1, baseline_end + 1)])]
+    n = baseline_end + 1
+    while n <= jumps:
         if n in in_combo:
             k = in_combo[n]
             sections.append((f'SEC-chain{k}', list(combos[k - 1])))

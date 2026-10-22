@@ -10,6 +10,17 @@ import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
+EXTENDED_LAYOUT = 'extended-mountain-v6'
+# Opening lengthened threefold: four rightward panels before the upward turn and
+# two leftward panels after it. share splits the added rightward span (the last
+# panel lands exactly on the 3x span) and the leftward span after the first gap.
+OPENING = dict(factor=3,
+               right=[dict(width=200, height=130, share=.34, rise=360),
+                      dict(width=280, height=160, share=.22, rise=520),
+                      dict(width=200, height=120, share=.22, rise=360),
+                      dict(width=300, height=180, share=.22, rise=480)],
+               left=[dict(width=900, height=240, drop=0),
+                     dict(width=1100, height=260, share=.52, drop=-160)])
 GUIDELINES = Path(__file__).resolve().parent.parent / 'artifacts/levels/level-guidelines.md'
 YELLOW_CLEARANCE = 1080
 YELLOW_PAIR_CLEARANCE = 540
@@ -61,7 +72,153 @@ def gap(a, b):
     return union_distance(svg.bodies(a), svg.bodies(b))
 
 
-def tune(source, reposition=True, guards=True):
+def opening_sections(points):
+    """Split the route start into rightward, upward and leftward runs.
+
+    points are contact points in route order; returns (right_end, left_start,
+    left_end) fragment indices: rightward 0..right_end, upward right_end ->
+    left_start, leftward left_start..left_end. Runs follow horizontal direction
+    between consecutive contacts, so a section is measured between its own
+    departure and arrival contacts.
+    """
+    def kind(i):
+        dx = points[i+1][0]-points[i][0]; dy = points[i+1][1]-points[i][1]
+        return 'up' if abs(dy) > abs(dx) and dy < 0 else 'right' if dx > 0 else 'left'
+    i = 0
+    while kind(i) == 'right':
+        i += 1
+    if i == 0 or kind(i) != 'up':
+        raise ValueError('Route does not open rightward then upward')
+    left = i+1
+    j = left
+    while j+1 < len(points) and kind(j) == 'left':
+        j += 1
+    if j == left:
+        raise ValueError('Route does not turn leftward after the first upward transfer')
+    return i, left, j
+
+
+def section_spans(points):
+    right_end, left_start, left_end = opening_sections(points)
+    return dict(rightward=points[right_end][0]-points[0][0],
+                leftward=points[left_start][0]-points[left_end][0],
+                sections=dict(rightward=[0, right_end], upward=[right_end, left_start], leftward=[left_start, left_end]))
+
+
+def panel(name, width, height, x, y):
+    """A new green trapezoid panel; its contact is the top-edge centre."""
+    inset = round(width*.12, 3)
+    return dict(id=None, name=name, x=x, y=y, width=width, height=height, kind='platform', bounceSign=0,
+                surfaceRole='bounce', polys=[[[0, 0], [width, 0], [width-inset, height], [inset, height]]])
+
+
+def moved(fragment, dx, dy):
+    return dict(fragment, x=fragment['x']+dx, y=fragment['y']+dy)
+
+
+def place_along(anchor, fragment, ux, uy, target, origin=None):
+    """Translate fragment from origin (anchor's origin by default) along (ux, uy) until its gap to anchor is target."""
+    ox, oy = origin or (anchor['x'], anchor['y'])
+    lo, hi = 0., 30000.
+    for _ in range(80):
+        mid = (lo+hi)/2
+        if gap(anchor, dict(fragment, x=ox+ux*mid, y=oy+uy*mid))[0] < target: lo = mid
+        else: hi = mid
+    return dict(fragment, x=ox+ux*hi, y=oy+uy*hi)
+
+
+def extend_opening(fs, rows, spec):
+    """Lengthen the first rightward and leftward runs by spec['factor'].
+
+    The first rightward transfers keep their fragments; new panels follow them
+    before the upward turn, which keeps its original direction and gap target
+    from the last new panel. The leftward departure keeps its original gap
+    target to the first new leftward panel. The arrival and all later terrain
+    are translated rigidly, so their mutual gaps are unchanged. Returns
+    fragments renumbered in route order (originalId/semanticId kept), rows
+    renumbered with originalNumber/originalId, and an original-to-new route map.
+    """
+    factor = spec['factor']
+    right_end, up_to, left_end = opening_sections([svg.contact(f) for f in fs])
+    if left_end != up_to+1:
+        raise ValueError('Expected a single original leftward transfer')
+    by_pair = {(r['fromFragment'], r['toFragment']): r for r in rows}
+    up_row = by_pair[(fs[right_end]['id'], fs[up_to]['id'])]
+    left_row = by_pair[(fs[up_to]['id'], fs[left_end]['id'])]
+    cx = lambda f: svg.contact(f)[0]
+    span_r, span_l = cx(fs[right_end])-cx(fs[0]), cx(fs[up_to])-cx(fs[left_end])
+    # Rightward: contacts advance by weighted shares of the added span while rising.
+    added, prev = [], fs[right_end]
+    total = sum(p['share'] for p in spec['right'])
+    x = cx(prev)
+    for k, p in enumerate(spec['right'], 1):
+        x = cx(fs[0])+factor*span_r if k == len(spec['right']) else x+(factor-1)*span_r*p['share']/total
+        prev = dict(panel('Rightward ledge %d' % k, p['width'], p['height'], x-p['width']/2, prev['y']-p['rise']),
+                    semanticId='R%d' % k)
+        added.append(prev)
+    # Upward: the original turn direction and gap target, now from the last new panel.
+    dx, dy = fs[up_to]['x']-fs[right_end]['x'], fs[up_to]['y']-fs[right_end]['y']
+    norm = math.hypot(dx, dy)
+    turn = place_along(prev, fs[up_to], dx/norm, dy/norm, TARGETS.get(up_row['number'], up_row['percent'])*5.4)
+    # Leftward: the original departure gap to the first new panel, then shares of the rest.
+    p = spec['left'][0]
+    ledge = dict(panel('Leftward ledge 1', p['width'], p['height'], 0, 0), semanticId='L1')
+    ledge = place_along(turn, ledge, -1, 0, left_row['percent']*5.4,
+                        origin=(turn['x']-p['width'], turn['y']+p['drop']))
+    left = [ledge]
+    arrival_x = cx(turn)-factor*span_l
+    rest = cx(ledge)-arrival_x
+    for k, p in enumerate(spec['left'][1:], 2):
+        x = cx(left[-1])-rest*p['share']
+        left.append(dict(panel('Leftward ledge %d' % k, p['width'], p['height'], x-p['width']/2, turn['y']+p['drop']),
+                         semanticId='L%d' % k))
+    arrival = fs[left_end]
+    shift = (arrival_x-cx(arrival), turn['y']-fs[up_to]['y'])
+    route = fs[:right_end+1]+added+[turn]+left+[moved(f, *shift) for f in fs[left_end:]]
+    # Renumber in route order; map every original fragment and encounter to its successor.
+    out, fragment_ids = [], {}
+    for n, f in enumerate(route):
+        original = None if 'semanticId' in f else f['id']
+        f = dict(f, id='P%d' % n, originalId=original, semanticId=f.get('semanticId', original))
+        if original:
+            fragment_ids[original] = f['id']
+        out.append(f)
+    out_rows, numbers, ids = [], {}, {}
+    for n in range(1, len(out)):
+        a, b = out[n-1], out[n]
+        old = by_pair.get((a['originalId'], b['originalId']))
+        if old is None and b['originalId'] == fs[up_to]['id']:
+            old = up_row
+        if old is None and a['originalId'] == fs[up_to]['id']:
+            old = left_row
+        if old is not None:
+            row = dict(old, number=n, fromFragment=a['id'], toFragment=b['id'], originalNumber=old['number'],
+                       originalId=old['id'], originalFrom=old['fromFragment'], originalTo=old['toFragment'])
+            numbers[str(old['number'])], ids[str(old['number'])] = n, old['id']
+        else:
+            row = dict(number=n, id='OPEN-%s-%s' % (a['semanticId'], b['semanticId']), fromFragment=a['id'],
+                       toFragment=b['id'], direction='RIGHT + UP' if b['semanticId'].startswith('R') else 'LEFT',
+                       percent=None, action='Added opening release jump', baseline=False,
+                       originalNumber=None, originalId=None)
+        out_rows.append(row)
+    route_map = dict(factor=factor, fragmentIds=fragment_ids, encounterNumbers=numbers, encounterIds=ids,
+                     addedFragments={f['semanticId']: f['id'] for f in out if f['originalId'] is None},
+                     addedEncounters=[r['id'] for r in out_rows if r['originalId'] is None],
+                     baselineSpans=dict(rightward=span_r, leftward=span_l))
+    return out, out_rows, route_map
+
+
+def band_ends(m, number):
+    """Fragment indices of an original jump's endpoints in the current route."""
+    route = m.get('routeMap')
+    if not route:
+        return number-1, number
+    row = next(r for r in m['encounters'] if r.get('originalNumber') == number)
+    index = {f['id']: i for i, f in enumerate(m['fragments'])}
+    return index[route['fragmentIds'][row['originalFrom']]], index[route['fragmentIds'][row['originalTo']]]
+
+
+def tune(source, reposition=True, guards=True, opening=None):
     source = copy.deepcopy(source)
     # The extra second polygon is the unwanted rectangular bump, not the shelf.
     for n, fragment in enumerate(source['fragments']):
@@ -115,10 +272,16 @@ def tune(source, reposition=True, guards=True):
                 break
         else:
             raise ValueError('Cannot place P%d without a shortcut' % n)
+    if opening:
+        fs[:], m['encounters'], m['routeMap'] = extend_opening(fs, m['encounters'], opening)
+        m['combinations'] = [[m['routeMap']['encounterNumbers'][str(n)] for n in combo] for combo in m['combinations']]
     for row in m['encounters']:
         n = row['number']; a,b = fs[n-1:n+1]
         d,w,_,_ = gap(a,b)
-        row.update(percent=TARGETS.get(n,row['percent']), distance=d, witness=w,
+        # Gap targets stay keyed by the original concept numbering; new transfers record their measured gap.
+        old = row.get('originalNumber', n)
+        percent = TARGETS.get(old, row['percent']) if old else round(d/5.4, 2)
+        row.update(percent=percent, distance=d, witness=w,
                    flight=[svg.contact(a),svg.contact(b)], baseline=False)
     m['pairChecks'] = []
     for i,a in enumerate(fs):
@@ -127,7 +290,11 @@ def tune(source, reposition=True, guards=True):
             m['pairChecks'].append(dict(source=a['id'],target=b['id'],minimumGap=d,passOutsideRange=d-21.6>540))
     placed_bands = []
     for band in m['yellowBands']:
-        n = band['belowJump']; a,b=fs[n-1:n+1]
+        # A split original jump keeps its band centred between its original endpoints.
+        a,b = [fs[i] for i in band_ends(m, band['belowJump'])]
+        if opening:
+            band.update(belowEncounter=m['routeMap']['encounterIds'][str(band['belowJump'])],
+                        belowJump=m['routeMap']['encounterNumbers'][str(band['belowJump'])])
         x=(svg.contact(a)[0]+svg.contact(b)[0])/2-band['width']/2
         y=max(svg.contact(a)[1],svg.contact(b)[1])+900
         for step in range(200):
@@ -145,8 +312,11 @@ def tune(source, reposition=True, guards=True):
     m['fallIllustrations'] = [dict(id='F'+str(i+1),band=z['id'],start=[z['x']+z['width']/2,z['y']-500],
         end=[z['x']+z['width']/2,z['y']+1000],meaning='Illustrative fall only') for i,z in enumerate(m['yellowBands'])]
     m['bluntedCorners']=dict(minimumAngle=MIN_INTERIOR_ANGLE, face=BLUNT_FACE, changed=blunted)
-    m['layoutId']=LAYOUT
+    m['layoutId']=EXTENDED_LAYOUT if opening else LAYOUT
     m['allowedGrapplePairs']=[['P0','P1'],['P1','P2']]
+    if opening:
+        new=m['routeMap']['fragmentIds']
+        m['allowedGrapplePairs']=[[new[a],new[b]] for a,b in m['allowedGrapplePairs']]
     m['checks']={'geometryOnly':True}
     m['limitations']=['Jump playability remains unverified. Opening transfers intentionally allow direct grappling.']
     return m
@@ -225,14 +395,19 @@ def main():
     ap.add_argument('--source',required=True)
     ap.add_argument('--output-dir',required=True)
     ap.add_argument('--guidelines', default=str(GUIDELINES), help='Required current design guidelines')
+    ap.add_argument('--opening', choices=('extended', 'original'), default='extended',
+                    help='extended: threefold rightward/leftward opening (guidelines); original: the v5 layout')
     args=ap.parse_args()
     guidelines=Path(args.guidelines).read_bytes()
     if b'200% R = 1,080 units' not in guidelines or b'100% R = 540 units' not in guidelines:
         raise ValueError('Guidelines must specify the supported 200% panel and 100% yellow-pair clearances')
+    opening = OPENING if args.opening == 'extended' else None
+    if opening and b'3x the pre-change' not in guidelines:
+        raise ValueError('Guidelines must specify the threefold opening rule')
     dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
-    m=tune(json.loads(Path(args.source).read_text()))
+    m=tune(json.loads(Path(args.source).read_text()), opening=opening)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':200,'yellowPairMinimumPercent':100}
-    svg.LAYOUT_ID=LAYOUT
+    svg.LAYOUT_ID=m['layoutId']
     text=svg.build(m)
     text=text.replace('01–10: preserved baseline geometry', 'Opening 80% · vertical transfers 150%')
     text=text.replace('BASELINE PRESERVED', 'EASIER OPENING / SHORTER CLIMBS')
@@ -243,6 +418,6 @@ def main():
     lines=text.splitlines(True)
     (dest/'extended-mountain.svg').write_text(''.join(lines))
     (dest/'extended-mountain-measurements.json').write_text(json.dumps(m,separators=(',',':'))+'\n')
-    print('Wrote',dest,'layout',LAYOUT,'targets',TARGETS)
+    print('Wrote',dest,'layout',m['layoutId'],'fragments',len(m['fragments']),'transfers',len(m['encounters']),'targets',TARGETS)
 
 if __name__=='__main__':main()
