@@ -3010,3 +3010,135 @@ class Task639Tests(unittest.TestCase):
         self.assertEqual(result,dict(frozenIdentical=True,animated=True))
         self.evidence.write('isolation.json',dict(modes=rows,clock=result))
         print('PASS isolation: classic/bad baseline pixels identical; frozen simulated clock identical; advancing clock changes glints')
+
+
+class Task640Tests(unittest.TestCase):
+    def open(self, viewport=None, query='', mode='grapple_over', baseline=False):
+        viewport = viewport or dict(width=1280, height=720)
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=1)
+        self.addCleanup(context.close)
+        if baseline:
+            for name in ('render/roledetail.js', 'style.js'):
+                body = subprocess.check_output(['git', 'show', 'b21743795ed36f965f06da3549cc60511740ad32:' + name], text=True)
+                context.route('**/' + name, lambda route, request, body=body: route.fulfill(body=body, content_type='application/javascript'))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.add_init_script('performance.now=()=>1000')
+        page.goto(self.url + query)
+        wait_for_boot(page)
+        page.evaluate(SEED_SCRIPT % 1)
+        page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
+        page.wait_for_function('!unTouch')
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(test=self.id(), viewport=viewport,
+            dpr=1, mode=mode, query=query, baseline=baseline)))
+        return page
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-640')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.evidence.log('CONFIG ' + json.dumps(dict(browser=cls.browser.version,
+            revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+            files={n: hashlib.sha256((ROOT / n).read_bytes()).hexdigest() for n in
+                   ['render/roledetail.js', 'style.js', 'tools/test_grapple_over_visuals.py']})))
+
+    fixture = '''() => {
+        window.boards640 = [
+            [[0,0],[240,0],[240,65],[0,65]],
+            [[0,0],[50,0],[50,160],[0,160]],
+            [[0,0],[230,0],[230,8],[0,8]],
+            [[0,100],[140,0],[140,100]]
+        ].map((ps,i)=>({id:'board-'+i,x:[35,310,35,420][i],y:[55,55,180,75][i],
+            surfaceRole:'bounce',stroke:'#3dff4a',points:ps.map(([x,y])=>({x,y})),
+            getPoints(){return this.points.map(p=>({x:p.x+this.x,y:p.y+this.y}))}}));
+        window.boardWorld640={elements:boards640,dragZones:[],level:{movers:[]},elapsedSteps:120};
+    }'''
+
+    def check_geometry(self, rows):
+        import math
+        for row in rows:
+            board, polygon, unit = row['board'], row['polygon'], row['unit']
+            def inside(p):
+                crosses = [(b['x']-a['x'])*(p['y']-a['y'])-(b['y']-a['y'])*(p['x']-a['x'])
+                           for a,b in zip(polygon,polygon[1:]+polygon[:1])]
+                return all(v >= -1e-7 for v in crosses) or all(v <= 1e-7 for v in crosses)
+            self.assertIn(len(board['traces']), range(2,4) if board['thin'] else range(10,21))
+            for trace in board['traces']:
+                self.assertIn(len(trace['points'])-1,range(3,7))
+                self.assertEqual(trace['vias'],[trace['points'][0],trace['points'][-1]])
+                for p in trace['points']+trace['vias']:
+                    self.assertTrue(inside(p))
+                    for value in p.values():
+                        self.assertAlmostEqual(value/(3*unit),round(value/(3*unit)))
+                for a,b in zip(trace['points'],trace['points'][1:]):
+                    dx,dy=(b['x']-a['x'])/unit,(b['y']-a['y'])/unit
+                    self.assertTrue(dx == 0 or dy == 0 or abs(dx) == abs(dy))
+                    self.assertGreaterEqual(math.hypot(dx,dy),4)
+                    self.assertLessEqual(math.hypot(dx,dy),16)
+                    if board['thin']:
+                        self.assertEqual(dy,0)
+            width=(max(p['x'] for p in polygon)-min(p['x'] for p in polygon))/unit
+            self.assertEqual(board['label'] is not None, width > 60 and not board['thin'])
+            self.assertIn(len(board['pads']), [0] if board['thin'] else range(2,6))
+            if board['thin']:
+                self.assertEqual(row['glints'],0)
+
+    def test_01_geometry_and_determinism(self):
+        runs=[]
+        for run in range(2):
+            page=self.open();page.evaluate(self.fixture)
+            rows=page.evaluate('''() => {
+                BOUNCE_MATERIAL.sprites.clear();
+                return [1,2].flatMap(unit=>boards640.map((e,i)=>{
+                    const before=JSON.stringify(e), s=bounceMaterialSprite(e,boardWorld640,1/unit,1/unit,unit);
+                    const origin=e.points[0];
+                    return {shape:['thick pad','tall block','thin bar','triangle'][i],unit,
+                        polygon:e.points.map(p=>({x:p.x-origin.x,y:p.y-origin.y})),board:s.board,
+                        glints:s.glints.length,untouched:before===JSON.stringify(e),
+                        cached:s===bounceMaterialSprite(e,boardWorld640,1/unit,1/unit,unit),
+                        pixels:Array.from(s.image.getContext('2d').getImageData(0,0,s.image.width,s.image.height).data)};
+                }));
+            }''')
+            for row in rows:
+                row['sha256']=hashlib.sha256(bytes(row.pop('pixels'))).hexdigest()
+                self.assertTrue(row['untouched']);self.assertTrue(row['cached'])
+            self.check_geometry(rows)
+            runs.append(rows);page.close()
+        self.assertEqual(runs[0],runs[1])
+        self.evidence.write('traces.json',runs[0])
+        digest=hashlib.sha256(json.dumps(runs[0],separators=(',',':')).encode()).hexdigest()
+        self.evidence.write('determinism.json',dict(identical=True,tracesSha256=[digest,digest],
+            spriteSha256=[[r['sha256'] for r in rows] for rows in runs]))
+        print('PASS geometry: 8 shapes/scales; 8 directions; all points inside; grid=3; segments=3..6 lengths=4..16; thick=10..20 thin=2..3; pads=2..5; labels only width>60; immutable and cached')
+        print('PASS determinism: two seeded runs identical sprite SHA256 and traces.json content')
+
+    def test_02_palette_gallery(self):
+        for w,h,band,suffix in ((1280,720,0,'-bandA'),(1280,720,3,'-bandB'),(844,390,0,'')):
+            page=self.open(dict(width=w,height=h));page.evaluate(self.fixture)
+            page.evaluate('''({w,h,band})=>{
+                canvas.width=w;canvas.height=h;screen.x=screen.y=0;scale[version]=1;
+                ctx.setTransform(1,0,0,1,0,0);
+                const p=GRAPPLE_OVER_THEME.palettes[band],g=ctx.createLinearGradient(0,0,0,h);
+                g.addColorStop(0,p.top);g.addColorStop(1,p.bottom);ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+                drawGrappleOverRoleDetail(boardWorld640);
+            }''',dict(w=w,h=h,band=band))
+            page.screenshot(path=str(self.evidence.path(f'board-{w}x{h}{suffix}.png')))
+            page.close()
+        print('PASS gallery: board-1280x720-bandA.png palette=0; board-1280x720-bandB.png palette=3; board-844x390.png viewport=844x390 DPR=1')
+
+    def test_03_isolation_and_disabled(self):
+        # Earlier immutable baseline covers these unchanged modes; no broad suite.
+        import base64
+        for mode in ('classic','bad'):
+            hashes=[]
+            for baseline in (True,False):
+                page=self.open(mode=mode,baseline=baseline)
+                png=page.evaluate('()=>{draw();return canvas.toDataURL()}')
+                hashes.append(hashlib.sha256(base64.b64decode(png.split(',')[1])).hexdigest());page.close()
+            self.assertEqual(*hashes)
+        page=self.open(query='?roledetail=0')
+        self.assertEqual(page.evaluate('''()=>{let n=0;bounceMaterialSprite=()=>{n++;throw Error('disabled sprite')};draw();return n}'''),0)
+        print('PASS isolation: classic/bad pixel-identical; roledetail=0 no sprites')

@@ -773,6 +773,8 @@ const GRAPPLE_OVER_PARALLAX = Object.freeze({
 // it; drag particle speed is screen px per simulated second.
 const GRAPPLE_OVER_ROLE_DETAIL = Object.freeze({
     bounce: Object.freeze({baseLight: '#0f4a24', baseDark: '#052010',
+        trace: '#7dffa0', traceAlpha: 0.3, via: '#b8ffc8', viaAlpha: 0.5,
+        pad: '#c9a35a', padAlpha: 0.5, label: '#e8ffe8', labelAlpha: 0.5,
         lip: '#8dff96', lipFade: '#8dff9600', lipWidth: 4, lipShare: 0.25,
         glint: '#effff2', glintRadius: 6,
         pulseMs: 450, pulseFill: '#3dff4a', pulseFillAlpha: 0.45,

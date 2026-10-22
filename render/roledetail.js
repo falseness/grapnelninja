@@ -468,6 +468,84 @@ function bounceFreeEdges(element, world)
     })
 }
 
+// Coordinates are local to the shape's first point, like the sprite itself.
+// Rejection keeps whole walks inside the convex collision polygon without
+// changing it; grid steps are 6..15 px axial or 4.24..12.73 px diagonal.
+function bounceBoardDetail(points, box, seed, unit)
+{
+    const width = (box.right - box.left) / unit, height = (box.bottom - box.top) / unit
+    const thin = Math.min(width, height) < 10, horizontal = width >= height
+    let index = 100
+    const random = () => roleDetailHash(seed, index++)
+    const grid = 3 * unit
+    const inside = p => pointInPolygon(points, p.x, p.y)
+    const sample = () => ({x: Math.round((box.left + random() * (box.right - box.left)) / grid) * grid,
+        y: Math.round((box.top + random() * (box.bottom - box.top)) / grid) * grid})
+    const traces = [], count = thin ? 2 + Math.floor(random() * 2) : 10 + Math.floor(random() * 11)
+    const directions = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
+    for (let attempt = 0; traces.length < count && attempt < 4000; attempt++)
+    {
+        const path = [sample()], segments = 3 + Math.floor(random() * 4)
+        if (!inside(path[0])) continue
+        for (let j = 0; j < segments; j++)
+        {
+            const d = thin ? (horizontal ? [1,0] : [0,1]) : directions[Math.floor(random() * 8)]
+            const steps = d[0] && d[1] ? 1 + Math.floor(random() * 3) : 2 + Math.floor(random() * 4)
+            const last = path[path.length - 1]
+            const next = {x: last.x + d[0] * steps * grid, y: last.y + d[1] * steps * grid}
+            if (!inside(next)) break
+            path.push(next)
+        }
+        if (path.length === segments + 1)
+            traces.push({points: path, vias: [path[0], path[path.length - 1]]})
+    }
+    const pads = []
+    if (!thin)
+        for (let attempt = 0, count = 2 + Math.floor(random() * 4); pads.length < count && attempt < 1000; attempt++)
+        {
+            const p = sample()
+            if ([[-3,-1],[3,-1],[-3,1],[3,1]].every(([x,y]) => inside({x:p.x+x*unit,y:p.y+y*unit})))
+                pads.push(p)
+        }
+    let label = null
+    if (!thin && width > 60)
+        for (let attempt = 0; !label && attempt < 1000; attempt++)
+        {
+            const p = sample()
+            if ([[0,-3],[6,-3],[0,1],[6,1]].every(([x,y]) => inside({x:p.x+x*unit,y:p.y+y*unit})))
+                label = {...p, text: 'R12'}
+        }
+    return {thin, traces, pads, label}
+}
+
+function paintBounceBoard(c, board, unit, config)
+{
+    c.save(); c.lineJoin = c.lineCap = 'round'
+    c.strokeStyle = config.trace; c.globalAlpha = config.traceAlpha; c.lineWidth = 0.8 * unit
+    for (const trace of board.traces)
+    {
+        c.beginPath()
+        trace.points.forEach((p,i) => i ? c.lineTo(p.x,p.y) : c.moveTo(p.x,p.y))
+        c.stroke()
+    }
+    c.strokeStyle = config.via; c.fillStyle = config.baseDark; c.lineWidth = 0.5 * unit
+    for (const trace of board.traces)
+        for (const p of trace.vias)
+        {
+            c.beginPath(); c.arc(p.x,p.y,1.2*unit,0,2*Math.PI)
+            c.globalAlpha = 1; c.fill(); c.globalAlpha = config.viaAlpha; c.stroke()
+        }
+    c.fillStyle = config.pad; c.globalAlpha = config.padAlpha
+    for (const p of board.pads)
+        for (const x of [-3,1]) c.fillRect(p.x+x*unit,p.y-unit,2*unit,2*unit)
+    if (board.label)
+    {
+        c.fillStyle = config.label; c.globalAlpha = config.labelAlpha
+        c.font = 3*unit + 'px monospace'; c.fillText(board.label.text,board.label.x,board.label.y)
+    }
+    c.restore()
+}
+
 function bounceMaterialSprite(element, world, sx, sy, unit)
 {
     const origin = element.points[0]
@@ -520,7 +598,9 @@ function bounceMaterialSprite(element, world, sx, sy, unit)
             y: center.y * 0.35 + (e.a.y + (e.b.y - e.a.y) * t) * 0.65,
             period: 2400 + 1600 * roleDetailHash(seed, i * 3 + 2), phase: roleDetailHash(seed, i * 3 + 3)}
     })
-    const sprite = {image, box, glints, free}
+    const board = bounceBoardDetail(points, box, seed, unit)
+    paintBounceBoard(c, board, unit, config)
+    const sprite = {image, box, glints: board.thin ? [] : glints, free, board}
     cache.set(key, sprite)
     if (cache.size > 128) cache.delete(cache.keys().next().value)
     return sprite
