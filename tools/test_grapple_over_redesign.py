@@ -12478,3 +12478,210 @@ class Task631Tests(unittest.TestCase):
         size=sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file())
         self.assertLess(size,200_000_000)
         print('PASS inventory six required files exist; JSON parsed; source hashes recorded; bytes='+str(size))
+
+
+class Task632Tests(unittest.TestCase):
+    """Focused serial regressions; isolated fixtures, never continuous gameplay."""
+    write = Task557Tests.write
+    page = Task557Tests.page
+
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task632Tests')
+        out=Path(os.environ['GRAPPLE_OVER_EVIDENCE_DIR']).resolve()
+        if not out.is_relative_to((ROOT/'artifacts/TASK-632').resolve()):
+            raise ValueError('Task632 evidence must stay task-local')
+        Task557Tests.setUpClass.__func__(cls)
+        for name in ['tools/test_grapple_over_input.py','tools/test_grapple_over_save.py',
+                     'tools/test_grapple_over_physics.py','tools/test_grapple_over_grapple.py',
+                     'tools/grapple_over_collection.py','tools/test_input.py','tools/test_resize.py','tools/game_harness.py']:
+            cls.hashes[name]=hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.results=[]
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK632_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    def test_01_serial_current_behavior(self):
+        import sys
+        import shlex
+        # Current shared-system cases plus replacement-specific live transitions.
+        groups=[('input',[
+            'test_input.InputTests.test_one_tap_one_throw',
+            'test_input.InputTests.test_p_toggles_pause',
+            'test_input.InputTests.test_visibility_hidden_pauses'],False,
+            'trusted touch, keyboard pause and visibility pause'),
+            ('resize',['test_resize.ResizeTests.test_live_resize_classic',
+                       'test_resize.ResizeTests.test_live_resize_bad'],False,'classic/bad live resize'),
+            ('preview',['test_grapple_over_redesign.Task630Tests.test_02_live_transitions'],False,
+             'replacement resize, DPR, portrait pause, Resume and fresh input'),
+            ('physics',['test_grapple_over_physics.Task447Tests.test_green_reflection_and_old_modes'],False,
+             'green reflection and classic/bad physics'),
+            ('save',['test_grapple_over_save.Task456Tests.test_invalid_atomic_rejection'],False,
+             '15 invalid saves rejected atomically'),
+            ('rope',['test_grapple_over_grapple.Task452Tests.test_multiple_segments_beyond_range'],False,
+             'attached rope wraps and pulls beyond acquisition range without snapping')]
+        code='''import importlib,json,sys,unittest
+ids=json.loads(sys.argv[1]); preview=json.loads(sys.argv[2])
+suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromName(i) for i in ids)
+assert suite.countTestCases()==len(ids)>0
+print('EXACT_COLLECTED '+json.dumps(ids),flush=True)
+r=unittest.TextTestRunner(verbosity=2).run(suite)
+print('EXECUTED',r.testsRun,'SKIPPED',len(r.skipped),flush=True)
+sys.exit(0 if r.wasSuccessful() and r.testsRun==len(ids) and not r.skipped else 1)
+'''
+        for name,ids,preview,behavior in groups:
+            directory=self.out/name;directory.mkdir(exist_ok=True)
+            env=os.environ.copy();env['GRAPPLE_OVER_EVIDENCE_DIR']=str(directory)
+            env['PYTHONPATH']=str(ROOT/'tools')
+            for key in ['INPUT_EVIDENCE_DIR','RESIZE_EVIDENCE_DIR']:env[key]=str(directory)
+            env.pop('RESIZE_SCREENS_DIR',None)
+            command=[sys.executable,'-c',code,json.dumps(ids),json.dumps(preview)]
+            with (self.out/'commands.log').open('a') as f:
+                f.write('COMMAND '+shlex.join(['env','-u','RESIZE_SCREENS_DIR']+[k+'='+env[k] for k in ['GRAPPLE_OVER_EVIDENCE_DIR','INPUT_EVIDENCE_DIR','RESIZE_EVIDENCE_DIR','PYTHONPATH']]+command)+'\n')
+            with (directory/'tests.log').open('w') as log:
+                result=subprocess.run(command,cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT)
+            output=(directory/'tests.log').read_text()
+            print(output,flush=True)
+            with (self.out/'commands.log').open('a') as f:
+                f.write('CHILD '+name+' EXIT_STATUS '+str(result.returncode)+'\n')
+            self.results.append(dict(ids=ids,count=len(ids),exitCode=result.returncode,behavior=behavior,
+                                     preview=preview,log=str((directory/'tests.log').relative_to(ROOT))))
+            self.write('regression-summary.json',dict(runs=self.results))
+            self.assertEqual(result.returncode,0,output)
+            self.assertIn('EXECUTED '+str(len(ids))+' SKIPPED 0',output)
+            # Retain compact measurements in logs, not successful child captures.
+            with (directory/'tests.log').open('a') as log:
+                for path in sorted(directory.rglob('*.json')):
+                    value=json.loads(path.read_text())
+                    if isinstance(value,dict):
+                        for key in ['source_hashes','revision','browser']:value.pop(key,None)
+                    log.write('MEASUREMENTS '+path.name+' '+json.dumps(value,separators=(',',':'))+'\n')
+                    path.unlink()
+            for path in directory.rglob('*.png'):
+                with Image.open(path) as im:im.load();self.assertGreater(im.width,0)
+                path.unlink()
+            self.assertTrue(all(p.suffix=='.log' for p in directory.rglob('*') if p.is_file()))
+        print('PASS serial regressions: 9 exact existing tests, zero skips, task-local child logs')
+
+    def test_02_seeded_old_modes(self):
+        Task557Tests.test_03_seeded_old_modes(self)
+        path=self.out/'old-modes.json';actual=json.loads(path.read_text())
+        baseline=ROOT/'artifacts/TASK-557/old-modes.json'
+        expected=json.loads(baseline.read_text())
+        self.assertEqual(actual['modes'],expected['modes'])
+        self.assertEqual(actual['config']['viewport'],expected['config']['viewport'])
+        self.assertEqual(actual['config']['browser'],expected['config']['browser'])
+        actual.update(baseline=str(baseline.relative_to(ROOT)),baselineSHA256=hashlib.sha256(baseline.read_bytes()).hexdigest(),
+                      comparison='exact equality of all movement, shot, bounce and constants fields',equal=True)
+        self.write('old-modes.json',actual)
+        print('PASS TASK-557 matched classic/bad: all 12 movement states, shot, flat/sloped bounce, constants equal')
+
+    def test_03_archived_persistence_and_coverage(self):
+        import re
+        archive=ROOT/'artifacts/TASK-631'
+        index=json.loads((archive/'evidence-index.json').read_text())
+        checked={}
+        for name,digest in index['sourceHashes'].items():
+            if name=='tools/test_grapple_over_redesign.py':continue
+            self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+            checked[name]=digest
+        # The historical test methods must also be byte-for-byte unchanged.
+        old=subprocess.check_output(['git','show','HEAD:tools/test_grapple_over_redesign.py'],cwd=ROOT,text=True)
+        current=Path(__file__).read_text()
+        historical=old[old.index('class Task631Tests'):].split('class Task632Tests',1)[0].rstrip()
+        self.assertEqual(current[current.index('class Task631Tests'):current.index('class Task632Tests')].rstrip(),historical)
+        log=(archive/'tests.log').read_text();commands=(archive/'commands.log').read_text()
+        self.assertRegex(log,r'Ran 4 tests in [0-9.]+s\s+OK')
+        self.assertIn('EXIT_STATUS 0',commands)
+        persistence=json.loads((archive/'persistence.json').read_text())
+        self.assertEqual(len(persistence['cases']),8)
+        for row in persistence['cases']:
+            self.assertEqual(row['uninterruptedHash'],row['resumedHash'])
+            self.assertEqual(row['initial'],row['restored'])
+            self.assertEqual(row['uninterrupted'],row['resumed'])
+            self.assertTrue(row['control']['sameObjects'])
+        isolation=json.loads((archive/'mode-isolation.json').read_text())
+        self.assertEqual([m['mode'] for m in isolation['modes']],['classic','bad'])
+        for m in isolation['modes']:self.assertEqual(m['returned'],isolation['saved'])
+        self.assertEqual(isolation['legacy']['range'],1080)
+        self.assertEqual(isolation['cancelled'],isolation['saved'])
+        self.assertEqual(isolation['confirmedReset']['simulationTick'],0)
+        compatibility=json.loads((archive/'compatibility.json').read_text())
+        self.assertEqual([r['kind'] for r in compatibility['cases']],['old-layout','corrupt','unavailable'])
+        for row in compatibility['cases']:
+            if row['kind']=='unavailable':self.assertEqual(row['storageError'],'SecurityError')
+            else:self.assertIn('Starting at the replacement base.',row['notice'])
+        original=json.loads((ROOT/'artifacts/TASK-565/coverage-map.json').read_text())
+        p=Task558Tests.page(self)
+        manifest=p.evaluate('''()=>({layout:floors[0].level.layoutId,sections:floors[0].level.sections.map(s=>s.id),
+            encounters:GRAPPLE_OVER_REPLACEMENT.sections.filter(s=>s.status==='built').flatMap(s=>s.encounters),bounds:floors[0].level.bounds,
+            finish:floors[0].level.finish,colliders:floors[0].elements.length,
+            range:grappleOverAcquisitionRadius(),scale:scale[version]})''')
+        self.assertEqual(manifest['layout'],'grapple-over-replacement-v1')
+        self.assertEqual(len(manifest['sections']),8)
+        self.assertEqual(len(manifest['encounters']),32)
+        self.assertTrue(manifest['finish']);self.assertGreater(manifest['colliders'],32)
+        self.assertEqual((manifest['range'],manifest['scale']),(360,.375))
+        replacements=[]
+        for row in original['replacedGeometry']:
+            replacements.append(dict(**row,disposition='superseded geometry only; historical assertions retained',
+                concreteProof=['artifacts/TASK-632/coverage.json#manifest','artifacts/TASK-630/viewport.json','artifacts/TASK-631/persistence.json'],
+                observations='TASK-630 eight hardest encounters at four viewports (32 input/range observations); TASK-631 full-layout upgrade and completion continuation'))
+        viewport=json.loads((ROOT/'artifacts/TASK-630/viewport.json').read_text())
+        self.assertEqual(len(viewport['cases']),32)
+        self.assertEqual(len({r['encounter'] for r in viewport['cases']}),8)
+        self.assertEqual({r['range'] for r in viewport['cases']},{360,540})
+        for row in viewport['cases']:
+            self.assertEqual(row['circleWorldRadius'],row['range'])
+            self.assertLessEqual(row['attachment']['distance'],row['range'])
+            self.assertTrue(all(e['trusted'] for e in row['events']))
+        index630=json.loads((ROOT/'artifacts/TASK-630/evidence-index.json').read_text())
+        for name,digest in index630['config']['source_hashes'].items():
+            if not name.startswith('tools/'):
+                self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+        references=['artifacts/TASK-565/coverage-map.json','artifacts/TASK-630/viewport.json',
+                    'artifacts/TASK-631/tests.log','artifacts/TASK-631/commands.log',
+                    'artifacts/TASK-631/persistence.json','artifacts/TASK-631/compatibility.json',
+                    'artifacts/TASK-631/mode-isolation.json','artifacts/TASK-631/evidence-index.json']
+        proofs={n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in references}
+        self.write('coverage.json',dict(manifest=manifest,superseded=replacements,preserved=original['preservedBehavior'],
+            executed=[i for r in self.results for i in r['ids']],references=proofs,
+            broaderLegacyGeometry=dict(original=original['broaderLegacyGeometry'],scope='eight hardest encounters at four viewports; not a full tolerance collection',replacement='artifacts/TASK-630/viewport.json',observedEncounters=[r['encounter'] for r in viewport['cases']]),
+            historicalInput=dict(test='Task450Tests',attempts=['artifacts/TASK-632/attempt-1.log','artifacts/TASK-632/attempt-2.log'],reason='Historical fixed-camera aim is offscreen at replacement spawn; exact subpixel mouse equality fails Chromium integer coordinates; synthetic blur no longer invokes pause. Current test_input uses visibilitychange and Task630 measures quantized real input.',replacement=['test_input.InputTests','test_grapple_over_redesign.Task630Tests.test_02_live_transitions','artifacts/TASK-630/viewport.json']),
+            archivedPersistence=dict(count=4,exitCode=0,log='artifacts/TASK-631/tests.log',
+                continuations=[r['kind'] for r in persistence['cases']],sourceHashes=checked,
+                testClassSHA256=hashlib.sha256(historical.encode()).hexdigest()),
+            policy='No unrelated failures suppressed. Expensive unchanged persistence run audited, not repeated. HEAD movement alone does not invalidate source hashes.'))
+        print('PASS coverage: 2 superseded geometry assertions mapped; 4 preserved behavioral cases; 8 archived continuations and mode-switch/storage measurements checked')
+
+    def test_04_inventory_and_summary(self):
+        import sys
+        from grapple_over_collection import exact_suite
+        _,ids=exact_suite(sys.modules[__name__],'Task632Tests')
+        self.assertEqual(len(ids),4)
+        for identifier in ids:print('SELECTED '+identifier)
+        summary=json.loads((self.out/'regression-summary.json').read_text())
+        summary.update(collected=ids,count=4,childCount=sum(r['count'] for r in self.results),
+                       archivedCount=4,archivedExitCode=0,
+                       behaviors=['input','pause','resize','mode-switch','persistence','seeded classic/bad movement and bounce'])
+        self.assertEqual(summary['childCount'],9)
+        self.write('regression-summary.json',summary)
+        names={'commands.log':'exact commands, real exits, revision, browser, viewport and source hashes',
+            'tests.log':'four Task632 tests plus nine serial existing cases; no required skips',
+            'regression-summary.json':'exact collected identifiers, counts, actual child exit codes and behaviors',
+            'coverage.json':'all TASK-565 superseded assertions linked to concrete proofs; preserved behavior; unchanged archived dependencies',
+            'old-modes.json':'matched seed=1 classic/bad traces equal TASK-557',
+            'evidence-index.json':'inventory and changed subsystem dependencies'}
+        for run in self.results:names[str(Path(run['log']).relative_to('artifacts/TASK-632'))]=run['behavior']
+        self.write('evidence-index.json',dict(artifacts=names,sourceHashes=self.hashes,
+            changedSubsystems=['tools/test_grapple_over_redesign.py: Task632Tests only'],
+            dependencies=['events.js input/pause','gameoptions.js preview/resize','menu.js mode switch',
+                          'progress.js and fixedlevel.js persistence','physics.js and sprites/grapnel.js movement/rope','mountain.js layout'],
+            scope=self.__doc__,mediaRequired=False))
+        for name in names:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        for name,digest in self.hashes.items():self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+        size=sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file())
+        self.assertLess(size,200_000_000)
+        print('PASS inventory: required files exist, JSON parses, source hashes match; retained bytes='+str(size))
