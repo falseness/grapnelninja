@@ -1203,7 +1203,7 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Cable Galleries encounter 3. Planned terrain stays noncollidable.
+// Replacement built prefix through Cable Galleries encounter 4. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 14000, top: -3000, bottom: 280},
@@ -1213,7 +1213,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03', 'S02-04']},
         {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02', 'S03-03', 'S03-04']},
         {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01', 'S04-02', 'S04-03', 'S04-04']},
-        {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01', 'S05-02', 'S05-03'],
+        {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01', 'S05-02', 'S05-03', 'S05-04'],
             rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}}
     ],
     encounters: [
@@ -1236,6 +1236,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S05-01', name: 'Cable Galleries range introduction', elements: ['viaduct-exit', 'gallery-anchor', 'gallery-landing', 'gallery-catch']},
         {id: 'S05-02', name: 'Cable Galleries corner routing', elements: ['gallery-landing', 'gallery-projection', 'gallery-upper-landing', 'gallery-catch']},
         {id: 'S05-03', name: 'Cable Galleries overhang reacquisition', elements: ['gallery-upper-landing', 'gallery-overhang', 'gallery-reacquire', 'gallery-third-landing', 'gallery-third-catch']},
+        {id: 'S05-04', name: 'Cable Galleries exit corner', elements: ['gallery-third-landing', 'gallery-exit-projection', 'gallery-exit', 'gallery-exit-catch', 'gallery-shortcut-anchor']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1293,12 +1294,18 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['gallery-overhang', 11050, -2099, 360, 80, 'Broad overhead lip: launch left, release to clear its west edge, then reacquire the visible upper face; not a designated landing'],
         ['gallery-reacquire', 10550, -2339, 160, 80, 'Visible upper green reacquisition face beyond the overhang; not a landing'],
         ['gallery-third-landing', 9400, -2108.2, 800, 60, 'Broad third gallery exit and planning shelf after airborne reacquisition'],
+        ['gallery-exit-projection', 9060, -2659, 360, 440, 'Gallery return corner: wrap the recessed lip and release across the long opening to the exit'],
+        ['gallery-shortcut-anchor', 11440, -2359, 160, 80, 'Optional high aerial shot from the second exit; release left above the overhang to skip only the third encounter; shared gallery decks recover misses'],
+        ['gallery-exit-catch', 8600, -1908.2, 800, 60, 'Broad early corner-release catch; grapple east back onto the third planning shelf'],
+        ['gallery-exit', 10102, -2428.2, 800, 60, 'Broad ordinary gallery exit; optional aerial approach from encounter two skips only encounter three'],
         ['gallery-third-catch', 10400, -1768.2, 1090, 60, 'Broad catch below the overhang; normal grappling returns to the shared upper gallery'],
         ['gallery-catch', 11580, -1288.2, 1600, 60, 'Broad early-release catch; return west to the entrance using its exposed east face'],
         ['viaduct-third-catch', 9172, -1288.2, 1476, 60, 'Broad upper recovery walkway below the long carrier; grapple west to the shared second span after an early release'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
-        points: id === 'gallery-projection'
+        points: id === 'gallery-exit-projection'
+            ? [{x:360,y:0},{x:0,y:0},{x:0,y:440},{x:230,y:440},{x:230,y:360},{x:80,y:360},{x:80,y:280},{x:360,y:280}].reverse()
+            : id === 'gallery-projection'
             ? [{x:0,y:0},{x:360,y:0},{x:360,y:440},{x:130,y:440},{x:130,y:360},{x:280,y:360},{x:280,y:280},{x:0,y:280}]
             : ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
             ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]

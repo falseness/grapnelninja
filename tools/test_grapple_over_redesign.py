@@ -5772,3 +5772,216 @@ class Task593Tests(unittest.TestCase):
         self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation']))
         print(f'PASS connection: earned entrance 360->540; shared deck landing {landing}; no mid-attempt injections')
         print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; physics/input unchanged; index written')
+
+
+class Task594Tests(unittest.TestCase):
+    """S05 exit and continuous section proof from an explicitly isolated entrance."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Isolated S05 fixture; production controls/physics; no base-to-summit claim'
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task581Tests.until
+    target = dict(x=9160,y=-2480)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:9480,y:-2120,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        self.observe(p)
+        return p
+
+    def observe(self,p):
+        p.evaluate('''() => {const step=YARD.step;YARD.step=n=>{for(let i=0;i<n;i++){
+            step(1);YARD.result().rows.at(-1).rope=grapnel.pos.map(v=>({x:v[0],y:v[1],id:v[2]?.id}));}}}''')
+
+    def shot(self,p,target,ticks):
+        self.press(p,target);self.step(p,ticks);p.mouse.up()
+
+    def capture(self,p,name):
+        p.evaluate('screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw()')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'cable-galleries')
+        p.evaluate("() => {const d=document.createElement('div');d.id='proof-label';d.textContent='S05-04 isolated entry fixture / production physics / earned 540';d.style='position:fixed;bottom:12px;left:12px;background:#111;color:white;padding:8px';document.body.appendChild(d)}")
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        p.evaluate("document.getElementById('proof-label').remove()")
+        with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+
+    def test_01_geometry_and_corner_route(self):
+        p=self.page()
+        g=p.evaluate('''t=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S05-04'),range:grappleOverAcquisitionRadius(),
+            scale:scale[version],reach:Math.hypot(t.x-ninja.x,t.y-ninja.y),target:t,
+            calibrated:GRAPPLE_OVER_MOVEMENT,finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][-1]['encounters'],['S05-01','S05-02','S05-03','S05-04'])
+        self.assertEqual(g['range'],540);self.assertEqual(g['scale'],.375)
+        self.assertLess(g['reach'],540);self.assertIsNone(g['finish'])
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+            self.assertTrue(e['purpose']);self.assertIn(e['role'],['bounce','solid','drag'])
+        es={e['id']:e for e in g['elements']}
+        self.assertNotIn('preview-unbuilt',es)
+        self.assertTrue(all(e['role']=='bounce' for e in g['elements'] if e['id'].startswith('yard-')))
+        for id in g['encounter']['elements']:
+            self.assertEqual(es[id]['role'],'bounce')
+            self.assertGreaterEqual(es[id]['width'],160 if id=='gallery-shortcut-anchor' else 360 if id=='gallery-exit-projection' else 540)
+        g.update(gap=es['gallery-exit']['x']-es['gallery-exit-projection']['x']-360,
+            landingWidths=[800,800],recoveryWidth=800,localColliderIds=g['encounter']['elements'],
+            calibrationNote='TASK-564 broad cable gallery; TASK-560 360 landing/540 recovery minima; production-validated corner variant',
+            connection='Live third landing is the shared S05-03 exit; section-route.json proves continuous handoff')
+        self.assertGreaterEqual(g['gap'],540)
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.shot(p,self.target,45);landing=self.until(p,'gallery-exit');self.assertIsNotNone(landing)
+        r=self.result(p);best=streak=0
+        for row in r['rows'][45:landing-1]:
+            streak=streak+1 if not row['contacts'] and not row['attached'] and not row['shot'] else 0
+            best=max(best,streak)
+        wraps=[s['tick'] for s in r['rows'][:45] if len(s['rope'])>=2]
+        self.assertTrue(wraps);self.assertGreaterEqual(best,6)
+        r.update(entryTick=0,takeoffTick=next(s['tick'] for s in r['rows'] if s['vy']<0),releaseTick=45,
+            landingTick=landing,landingAir=best,cornerTicks=wraps,entryToExit=True,resets=0,poseInjections=0,
+            scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        self.capture(p,'landing.jpg')
+        print(f'PASS geometry S05-04: gap {g["gap"]}; landings 800/800 catch 800; reach {g["reach"]:.3f} < 540; no red/planned terrain')
+        print(f'PASS route: corner ticks {wraps}; release 45 landing {landing}; airborne unattached {best}; trusted inputs; resets=0 poseInjections=0; images decoded')
+
+    def test_02_miss_and_recovery(self):
+        p=self.page();self.shot(p,self.target,6)
+        catch=self.until(p,'gallery-exit-catch');self.assertIsNotNone(catch)
+        self.assertFalse(self.landings(self.result(p),'gallery-exit'))
+        self.shot(p,dict(x=9420,y=-2090),24)
+        returned=self.until(p,'gallery-third-landing');self.assertIsNotNone(returned)
+        r=self.result(p);r.update(earlyReleaseTick=6,catchTick=catch,catchTarget='gallery-exit-catch',
+            returnTick=returned,recoveryTarget='gallery-third-landing',resets=0,poseInjections=0)
+        self.write('miss.json',r)
+        print(f'PASS miss: early release 6 catch {catch}; normal controls return {returned}; no resets/injections')
+
+    def test_03_controls(self):
+        cases=[]
+        p=self.page();self.press(p,self.target);self.step(p,600)
+        r=self.result(p);r.update(probe='continuous hold 600 ticks',successfulAlternative=bool(self.landings(r,'gallery-exit')))
+        cases.append(r);p.mouse.up();p.context.close()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.shot(p,target,interval);self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'gallery-exit')))
+            cases.append(r);p.context.close()
+        self.write('controls.json',dict(cases=cases,bound='600 ticks hold; <=600 each nearest 6/12/24',
+            inspection='Every top-facing gallery-exit contact inspected using nominal success criterion'))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded hold/nearest probes; zero successful alternatives')
+
+    def entrance_to_second(self):
+        p=Task591Tests.page(self);self.observe(p)
+        self.shot(p,Task591Tests.target,42)
+        self.assertEqual(self.until(p,'gallery-landing'),92);self.step(p,60)
+        self.shot(p,dict(x=12990,y=-2030),60)
+        self.assertEqual(self.until(p,'gallery-upper-landing'),418)
+        return p
+
+    def test_04_continuous_section(self):
+        p=self.entrance_to_second()
+        self.shot(p,Task593Tests.target,25);self.step(p,50)
+        self.shot(p,Task593Tests.next_target,28)
+        self.assertEqual(self.until(p,'gallery-third-landing'),554);self.step(p,75)
+        self.shot(p,self.target,75)
+        self.assertEqual(self.until(p,'gallery-exit',650),1216)
+        r=self.result(p)
+        exits=[dict(encounter=f'S05-0{i+1}',collider=id,tick=self.landings(r,id)[0]['tick'])
+            for i,id in enumerate(['gallery-landing','gallery-upper-landing','gallery-third-landing','gallery-exit'])]
+        self.assertEqual([e['tick'] for e in exits],[92,418,554,1216])
+        self.assertFalse(p.evaluate('floors[0].climbStats.completed'))
+        r.update(exits=exits,fixture=dict(x=11500,y=-1540,vx=0,vy=0),resets=0,poseInjections=0,
+            completed=False,rangeBefore=360,rangeAfter=540,
+            scope='One isolated S05 entrance fixture; continuous four-encounter section run; no handoff resets; not base-to-summit',
+            alternativeInspection='Momentum and the third deck bounce produce a higher final approach; deliberate 75-tick corner shot reverses westward motion before the long released flight. Local corner route independently proven.')
+        self.write('section-route.json',r)
+        print('PASS section: ordered exits 92/418/554/1216; one labelled entrance fixture; earned 360->540; zero handoff resets/injections; S05 completion false')
+
+    def test_05_shortcut_and_missed_shortcut(self):
+        normal=json.loads((self.out/'section-route.json').read_text())
+        p=self.entrance_to_second();target=dict(x=11520,y=-2319)
+        reach=p.evaluate('t=>Math.hypot(t.x-ninja.x,t.y-ninja.y)',target)
+        self.assertLess(reach,540)
+        self.shot(p,target,160)
+        self.assertEqual(self.until(p,'gallery-exit',500),960)
+        short=self.result(p)
+        self.assertFalse(self.landings(short,'gallery-third-landing'))
+        for id in ['gallery-landing','gallery-upper-landing','gallery-exit']:
+            self.assertTrue(self.landings(short,id))
+        q=self.entrance_to_second();self.shot(q,target,120)
+        catch=self.until(q,'gallery-third-landing',500);self.assertEqual(catch,894)
+        self.assertFalse(self.landings(self.result(q),'gallery-exit'))
+        self.shot(q,self.target,70)
+        returned=self.until(q,'gallery-exit',650);self.assertEqual(returned,1239)
+        miss=self.result(q);miss.update(earlyReleaseTick=538,catchTick=catch,
+            catchTarget='gallery-third-landing',returnTick=returned,recoveryTarget='gallery-exit',
+            resets=0,poseInjections=0)
+        self.write('shortcut.json',dict(normal=dict(path='section-route.json',inputs=normal['inputs'],
+            exits=normal['exits'],exitTick=normal['exits'][-1]['tick']),shortcut=short,miss=miss,
+            shortcutTarget=target,shortcutReach=reach,shortcutReleaseTick=578,shortcutExitTick=960,
+            ticksSaved=1216-960,skipped=['S05-03'],skippedCount=1,resets=0,poseInjections=0,
+            harderAction='Aerial high-face acquisition and 160-tick release after the swing; releasing at 120 instead misses the exit and falls to the third deck. That miss then returns to the exit with a 70-tick normal corner shot.',
+            scope='Both routes run continuously from the same isolated S05 entrance fixture, earn 540 and visit encounters one/two; only the third exit is omitted by the shortcut'))
+        print(f'PASS shortcut: normal exit 1216 vs shortcut 960; saved 256 ticks; skipped only S05-03; target reach {reach:.3f} < 540; trusted inputs')
+        print('PASS missed shortcut: early release 538 catches third deck 894; normal corner controls recover to exit 1239; resets=0 poseInjections=0')
+
+    def test_06_dependencies_gate_and_index(self):
+        p=Task567Tests.page(self)
+        gate=p.evaluate('''() => {
+            const m=JSON.parse(JSON.stringify(GRAPPLE_OVER_REPLACEMENT));
+            m.sections=m.sections.filter(s=>s.status==='built');
+            m.finish={left:2000,right:2300,top:-100,bottom:100};
+            const s05=replacementMountainLevel(m).finish;
+            m.sections.push({id:'S08',status:'built',encounters:[]});
+            const s08=replacementMountainLevel(m).finish;
+            floors[0].level.finish=s08;
+            let events=0;const original=PLATFORM.sendLifecycle;
+            PLATFORM.sendLifecycle=function(name,...args){if(name==='level_completed')events++;return original.call(this,name,...args)};
+            YARD.step(3);CLIMB_UI.complete();
+            return {s05,s08,events,completed:floors[0].climbStats.completed};
+        }''')
+        self.assertIsNone(gate['s05']);self.assertTrue(gate['s08']);self.assertEqual(gate['events'],1)
+        gate['scope']='Separate isolated S08 finish contract fixture, not continuous section gameplay'
+        self.write('summit-gate.json',gate)
+        rows=[]
+        for preview in [True,False]:
+            q=Task558Tests.page(self,preview)
+            for mode in ['grapple_over','classic','bad']:
+                row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,
+                    range:version==='grapple_over'?grappleOverAcquisitionRadius():null,
+                    upgraded:version==='grapple_over'?grappleOverProfile().upgradedAcquisitionRadius:null,
+                    scale:scale[version],gravity:GRAVITY,pull:grappleSpeed}}''',mode)
+                row['preview']=preview;rows.append(row)
+                if mode=='grapple_over':
+                    self.assertEqual(row['range'],360 if preview else 1080)
+                    self.assertEqual(row['upgraded'],540 if preview else 1620);self.assertEqual(row['scale'],.375)
+            q.context.close()
+        self.assertEqual(len({(r['gravity'],r['pull']) for r in rows}),1)
+        self.write('dependencies.json',dict(rows=rows,hashes=self.config['source_hashes'],
+            changed=['mountain.js S05-04 preview terrain -> fixedlevel.js collision geometry','tools/test_grapple_over_redesign.py additive Task594Tests'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','fixedlevel.js','gameoptions.js','sprites/grapnel.js'],
+            superseded='Earlier exact built-prefix inventory assertions are historical; earlier proof remains in its original TASK directories. No earlier tests modified.',
+            hashPolicy='HEAD-only changes do not invalidate identical tested source hashes'))
+        required={'commands.log':'exact commands, actual exit, six identifiers, browser/viewport/revision/hashes',
+            'tests.log':'six Task594Tests; no skips; OK','geometry.json':'live roles/purposes widths gap calibrated limits reach range',
+            'route.json':'production corner routing, deliberate release and >=6 unattached airborne ticks',
+            'inputs.json':'trusted production mouse events','miss.json':'early release catch and normal-control return',
+            'approach.jpg':'broad entry, corner, visible exit and Cable Galleries',
+            'landing.jpg':'broad ordinary gallery exit and Cable Galleries',
+            'controls.json':'bounded hold/nearest probes and inspection of every exit contact',
+            'section-route.json':'four exits in order from one labelled entrance fixture, no handoff resets',
+            'shortcut.json':'same-section comparison, only S05-03 skipped, harder aerial shot and missed shortcut recovery',
+            'summit-gate.json':'separate S08 fixture emits completion exactly once; S05 finish null',
+            'dependencies.json':'changed subsystems, preserved modes/physics/input, source hashes',
+            'evidence-index.json':'artifact assertion map and run configuration'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation']))
+        print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; physics/input unchanged')
+        print('PASS summit gate: S05 finish null; separate S08 fixture completion events=1; evidence index written')
