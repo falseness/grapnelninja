@@ -13313,3 +13313,315 @@ class Task634Tests(unittest.TestCase):
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
         print('PASS deterministic complete replay: equal tick-by-tick trace and trusted input events')
         print('PASS inventory: seven required files exist; JSON parses; image decodes; source hashes match; <200 MB')
+
+
+class Task635Tests(unittest.TestCase):
+    """Fresh-base composition regression. Tracks all 32 ordered exits from base to summit.
+
+    Never relax the 32-exit assertion to turn an incomplete prefix into completion.
+    No archived poses, state restores, geometry edits or production overrides.
+    """
+    write = Task557Tests.write
+    step = Task567Tests.step
+    exits = (Task571Tests.exits + Task577Tests.exits + Task583Tests.exits +
+             Task589Tests.exits + Task595Tests.exits + Task601Tests.exits +
+             Task607Tests.exits + Task613Tests.exits)
+
+    @classmethod
+    def setUpClass(cls):
+        if Path(os.environ['GRAPPLE_OVER_EVIDENCE_DIR']).resolve() != (ROOT/'artifacts/TASK-635').resolve():
+            raise ValueError('Task635 evidence must stay task-local')
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['has_touch'] = True
+        cls.config['simulation'] = 'Fresh production spawn, trusted touch input, batched production ticks; continuous base-to-summit run'
+        ids=[t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
+        assert len(ids)==2 and all('.Task635Tests.' in i for i in ids)
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK635_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+            f.write('SELECTED '+json.dumps(ids)+' COUNT '+str(len(ids))+'\n')
+
+    def page(self):
+        ctx=self.browser.new_context(viewport=VIEWPORT,device_scale_factor=1,has_touch=True)
+        self.addCleanup(ctx.close)
+        p=ctx.new_page();errors=[]
+        p.on('pageerror',lambda e:errors.append(str(e)))
+        self.addCleanup(lambda:self.assertEqual(errors,[]))
+        p.add_init_script(SEED_SCRIPT % 1)
+        p.add_init_script("const raf635=window.requestAnimationFrame;window.requestAnimationFrame=fn=>fn.name==='gameLoop'?0:raf635.call(window,fn)")
+        p.goto(self.url+'?grapplePreview=replacement-v1');wait_for_boot(p)
+        p.evaluate('cancelAnimationFrame(game);window.requestAnimationFrame=()=>0')
+        p.wait_for_function('!unTouch')
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_yard.js'))
+        p.touch_session=ctx.new_cdp_session(p)
+        p.evaluate('''()=>{
+          const world=floors[0],player=ninja,step=YARD.step,lifecycle=PLATFORM.sendLifecycle;
+          window.run635={initial:{x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,
+            range:grappleOverAcquisitionRadius(),simulationTick:world.elapsedSteps},events:[],rows:[],upgrades:[],ownership:[],dispatches:[]};
+          for(const type of ['touchstart','touchend'])document.addEventListener(type,e=>{
+            const t=e.changedTouches[0];
+            YARD.result().inputs.push({tick:YARD.result().tick,type,trusted:e.isTrusted,x:t.clientX,y:t.clientY});
+            run635.ownership.push({tick:YARD.result().tick,type,trusted:e.isTrusted,
+              held:pressHeld,owned:gameplayPressOwned,stale:stalePress,shot:grapnel.throwed});
+          });
+          const upgradeSection=world.level.sections.find(s=>s.id===grappleOverProfile().rangeUpgradeSection);
+          run635.upgradeZone=upgradeSection.rangeUpgradeZone || upgradeSection.band;
+          let upgraded=world.rangeUpgraded;
+          Object.defineProperty(world,'rangeUpgraded',{configurable:true,enumerable:true,
+            get(){return upgraded},set(value){
+              run635.upgrades.push({tick:YARD.result().tick+1,from:upgraded,to:value,
+                x:ninja.x,y:ninja.y,simulationTick:world.elapsedSteps});upgraded=value;
+            }});
+          PLATFORM.sendLifecycle=function(name,...args){
+            run635.events.push({name,tick:YARD.result().tick+1});return lifecycle.call(this,name,...args)};
+          YARD.step=n=>{for(let i=0;i<n;i++){
+            step(1);const row=YARD.result().rows.at(-1);
+            run635.rows.push({...row,range:grappleOverAcquisitionRadius(),
+              simulationTick:world.elapsedSteps,sameWorld:floors[0]===world,samePlayer:ninja===player,
+              completed:world.climbStats.completed,upgraded:world.rangeUpgraded,
+              deathOffer:continueOffer.visible,held:pressHeld,owned:gameplayPressOwned,stale:stalePress});
+          }};
+        }''')
+        return p
+
+    def dispatch(self,p,down,x,y):
+        # The frozen route is a viewport aim template. Resolve its world target
+        # using the live camera, then map back through the production transform.
+        # Success is established by the touch run, never desktop equivalence.
+        d=p.evaluate("""a=>{
+          const c=viewportCoordsToCanvasCoords(a),s=scale[version];
+          const world={x:c.x/s-screen.x,y:c.y/s-screen.y};
+          const client=YARD.client(world);
+          const d={tick:YARD.result().tick,down:a.down,world,client,
+            camera:{x:screen.x,y:screen.y},scale:s,canvas:{width,height},rect:getCanvasCssRect()};
+          run635.dispatches.push(d);return d;
+        }""",dict(down=down,x=x,y=y))
+        self.assertEqual(d['scale'],.375)
+        self.assertAlmostEqual(d['client']['x'],x,places=6)
+        self.assertAlmostEqual(d['client']['y'],y,places=6)
+        p.touch_session.send('Input.dispatchTouchEvent',dict(
+            type='touchStart' if down else 'touchEnd',
+            touchPoints=[dict(x=d['client']['x'],y=d['client']['y'],id=1)] if down else []))
+
+    def observation(self,p):
+        r=p.evaluate('({...run635,inputs:YARD.result().inputs,stepMs:physicsStepMs,cycles:cyclesPerTick})')
+        self.assertEqual(r['initial'],dict(x=2160,y=0,vx=0,vy=0,range=360,simulationTick=0))
+        self.assertEqual(len(r['ownership']),len(r['inputs']))
+        self.assertEqual(len(r['dispatches']),len(r['inputs']))
+        self.assertEqual([e['type'] for e in r['inputs']],['touchstart','touchend']*(len(r['inputs'])//2))
+        for d,e in zip(r['dispatches'],r['inputs']):
+            self.assertEqual(d['tick'],e['tick'])
+            self.assertAlmostEqual(d['client']['x'],e['x'],places=3)
+            self.assertAlmostEqual(d['client']['y'],e['y'],places=3)
+        self.assertTrue(any(e['owned'] for e in r['ownership']))
+        self.assertTrue(all(e['trusted'] for e in r['ownership']))
+        self.assertTrue(r['inputs']);self.assertTrue(all(i['trusted'] for i in r['inputs']))
+        self.assertEqual([v['tick'] for v in r['rows']],list(range(1,len(r['rows'])+1)))
+        self.assertTrue(all(v['sameWorld'] and v['samePlayer'] and not v['deathOffer'] for v in r['rows']))
+        for i,row in enumerate(r['rows'],1):
+            if row['completed']:
+                self.assertEqual(i,len(r['rows']),'Stop at the real completion tick')
+                self.assertTrue((i-1)*r['cycles']<row['simulationTick']<=i*r['cycles'])
+            else:self.assertEqual(row['simulationTick'],i*r['cycles'])
+        self.assertTrue(all(v['range']==(540 if v['upgraded'] else 360) for v in r['rows']))
+        for upgrade in r['upgrades']:
+            self.assertFalse(upgrade['from']);self.assertTrue(upgrade['to'])
+            zone=r['upgradeZone']
+            self.assertTrue(zone['left']<=upgrade['x']<=zone['right'])
+            self.assertTrue(zone['top']<=upgrade['y']<=zone['bottom'])
+        return r
+
+    def test_01_completion(self):
+        import time
+        start=time.monotonic();p=self.page();frames=[]
+        def capture(label):
+            p.evaluate('draw()')
+            im=Image.open(io.BytesIO(p.screenshot())).convert('RGB');im.thumbnail((640,360))
+            pen=ImageDraw.Draw(im);pen.rectangle((0,338,640,360),fill='black')
+            pen.text((10,343),label,fill='white');frames.append(im)
+        # Frozen inputs discovered on one continuous fresh-base run. Each test
+        # starts from production spawn and executes this entire sequence afresh.
+        # Viewport aim templates are resolved through live camera/client transforms.
+        # No touch route adjustments: measured below, not assumed from desktop pixels.
+        actions = [
+            (0, True, 605, 615),
+            (30, False, 605, 615),
+            (105, True, 725, 657),
+            (131, False, 725, 657),
+            (131, True, 788, 600),
+            (149, False, 788, 600),
+            (197, True, 756, 562),
+            (251, False, 756, 562),
+            (315, True, 656, 580),
+            (339, False, 656, 580),
+            (369, True, 515, 563),
+            (405, False, 515, 563),
+            (425, True, 407, 565),
+            (449, False, 407, 565),
+            (449, True, 380, 525),
+            (509, False, 380, 525),
+            (776, True, 380, 525),
+            (806, False, 380, 525),
+            (873, True, 365, 472),
+            (933, False, 365, 472),
+            (976, True, 545, 492),
+            (1006, False, 545, 492),
+            (1006, True, 596, 453),
+            (1024, False, 596, 453),
+            (1059, True, 596, 453),
+            (1059, False, 596, 453),
+            (1128, True, 1020, 422),
+            (1248, False, 1020, 422),
+            (1542, True, 1086, 422),
+            (1662, False, 1086, 422),
+            (1713, True, 775, 475),
+            (1749, False, 775, 475),
+            (1749, True, 733, 362),
+            (2049, False, 733, 362),
+            (2169, True, 833, 343),
+            (2205, False, 833, 343),
+            (2205, True, 923, 301),
+            (2241, False, 923, 301),
+            (2279, True, 921, 289),
+            (2309, False, 921, 289),
+            (2424, True, 930, 296),
+            (2466, False, 930, 296),
+            (2604, True, 1047, 284),
+            (2679, False, 1047, 284),
+            (2768, True, 900, 342),
+            (2792, False, 900, 342),
+            (2792, True, 963, 342),
+            (2828, False, 963, 342),
+            (2828, True, 970, 300),
+            (2858, False, 970, 300),
+            (2969, True, 960, 300),
+            (3011, False, 960, 300),
+            (3058, True, 968, 245),
+            (3148, False, 968, 245),
+            (3233, True, 518, 336),
+            (3269, False, 518, 336),
+            (3269, True, 375, 278),
+            (3309, False, 375, 278),
+            (3381, True, 338, 218),
+            (3433, False, 338, 218),
+            (3632, True, 556, 345),
+            (3765, False, 556, 345),
+            (3765, True, 446, 247),
+            (3798, False, 446, 247),
+            (4003, True, 727, 366),
+            (4102, False, 727, 366),
+            (4102, True, 652, 227),
+            (4552, False, 652, 227),
+            (4920, True, 568, 304),
+            (4980, False, 568, 304),
+            (5143, True, 608, 304),
+            (5323, False, 608, 304),
+            (5323, True, 707, 245),
+            (5371, False, 707, 245),
+            (5584, True, 877, 338),
+            (5824, False, 877, 338),
+            (5824, True, 806, 149),
+            (6244, False, 806, 149),
+            (6351, True, 511, 273),
+            (6381, False, 511, 273),
+            (6441, True, 365, 202),
+            (6471, False, 365, 202),
+            (6731, True, 442, 276),
+            (6941, False, 442, 276),
+            (6996, True, 587, 345),
+            (7026, False, 587, 345),
+            (7091, True, 705, 234),
+            (7121, False, 705, 234),
+            (7332, True, 859, 265),
+            (7333, False, 859, 265),
+            (7333, True, 859, 265),
+            (7363, False, 859, 265),
+            (7417, True, 951, 162),
+            (7480, False, 951, 162),
+            (7480, True, 817, 185),
+            (7558, False, 817, 185),
+            (8115, True, 705, 185),
+            (8145, False, 705, 185),
+            (8217, True, 574, 75),
+            (8223, False, 574, 75),
+            (8355, True, 363, 75),
+            (8375, False, 363, 75),
+        ]
+        captures = {0: 'S01 base', 776: 'S01 exit / S02 transition', 1096: 'S02 exit / S03 transition', 2247: 'S03 exit / S04 transition', 2921: 'S04 exit / S05 transition', 4003: 'S05 exit / S06 transition', 6300: 'S06 exit / S07 transition', 7322: 'S07 exit / S08 transition', 8451: 'S08 exit / summit completion'}
+        tick=0
+        for target_tick in sorted(set(captures) | {e[0] for e in actions}):
+            self.step(p,target_tick-tick);tick=target_tick
+            if tick in captures:capture(captures[tick])
+            for event_tick,down,x,y in actions:
+                if event_tick==tick:
+                    self.dispatch(p,down,x,y)
+        r=self.observation(p);rows=r['rows'];seen=[]
+        for row in rows:
+            for c in row['contacts']:
+                if c['ny']<-.9 and c['id'] in self.exits and c['id'] not in [e['id'] for e in seen]:
+                    seen.append(dict(id=c['id'],tick=row['tick'],contact=c,range=row['range']))
+        events=[e for e in r['events'] if e['name']=='level_completed']
+        self.assertEqual(len(r['upgrades']),1,'Exactly one earned S05 upgrade')
+        digest=hashlib.sha256(json.dumps(rows,separators=(',',':')).encode()).hexdigest()
+        self.write('touch-inputs.json',dict(config=self.config,events=r['inputs'],handlerOwnership=r['ownership'],ticks=len(rows),
+            dispatches=r['dispatches'],routeAdjustments=[],
+            ownership='All TouchEvents are browser-trusted CDP touchStart/touchEnd delivered to production handlers; no mouse substitution'))
+        self.write('completion.json',dict(config=self.config,complete=([e['id'] for e in seen]==self.exits and len(events)==1),initial=r['initial'],
+            expectedExits=self.exits,observedExits=seen,missingExits=self.exits[len(seen):],
+            summitEvents=events,upgrades=r['upgrades'],upgradeZone=r['upgradeZone'],
+            captures=[dict(tick=t,label=label) for t,label in captures.items()],simulationSeconds=len(rows)*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
+            ticks=len(rows),traceSha256=digest,trace=rows,
+            rangeValues=sorted(set(v['range'] for v in rows)),postSpawnInjections=0,
+            limitation='Simulation duration is not novice completion time.'))
+        sheet=Image.new('RGB',(1920,1080))
+        for i,im in enumerate(frames):sheet.paste(im,((i%3)*640,(i//3)*360))
+        sheet.save(self.out/'touch-strip.jpg',quality=85)
+        print('OBSERVED ordered exits='+str(len(seen))+'/32; summit events='+str(len(events))+'; ranges='+str(sorted(set(v['range'] for v in rows)))+'; trusted inputs='+str(len(r['inputs'])))
+        if len(seen)<32:print('FAIL continuity: next required exit '+self.exits[len(seen)])
+        self.assertEqual([e['id'] for e in seen],self.exits,'Continuous 32-exit proof incomplete')
+        self.assertEqual(len(events),1)
+        self.assertTrue(rows[-1]['completed'])
+        self.assertEqual(events[0]['tick'],seen[-1]['tick'])
+        print('PASS touch provenance: 102 alternating trusted touch events; live transforms; no mouse events; no route adjustments')
+        print('PASS continuous completion: 32 ordered exits; exactly one summit event; zero post-spawn injections')
+        print('PASS capture: nine live frames covering base and all eight section exits')
+
+    def test_02_replay_and_inventory(self):
+        import time
+        start=time.monotonic()
+        inputs=json.loads((self.out/'touch-inputs.json').read_text())
+        completion=json.loads((self.out/'completion.json').read_text())
+        self.assertEqual(inputs['config']['source_hashes'],self.config['source_hashes'])
+        p=self.page();tick=0
+        for event in inputs['events']:
+            self.step(p,event['tick']-tick);tick=event['tick']
+            self.dispatch(p,event['type']=='touchstart',event['x'],event['y'])
+        self.step(p,inputs['ticks']-tick);r=self.observation(p)
+        digest=hashlib.sha256(json.dumps(r['rows'],separators=(',',':')).encode()).hexdigest()
+        self.assertEqual(digest,completion['traceSha256']);self.assertEqual(r['inputs'],inputs['events'])
+        self.assertEqual(r['upgrades'],completion['upgrades'])
+        self.assertEqual(r['ownership'],inputs['handlerOwnership'])
+        self.assertEqual(r['dispatches'],inputs['dispatches'])
+        self.assertEqual([e for e in r['events'] if e['name']=='level_completed'],completion['summitEvents'])
+        self.write('replay.json',dict(config=self.config,traceSha256=digest,inputEventsEqual=True,dispatchTransformsEqual=True,mode="touch",
+            upgradesEqual=True,handlerOwnershipEqual=True,summitEventsEqual=True,ticks=len(r['rows']),simulationSeconds=len(r['rows'])*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
+            scope='Deterministic replay of complete fresh-base input sequence'))
+        names={'commands.log':'exact command/status, IDs, browser, viewport, revision and hashes',
+               'tests.log':'two exact focused cases; continuous completion and deterministic replay',
+               'completion.json':'32 measured ordered exits, earned range upgrade, exactly one summit event; compact full physics/state trace including every held/owned/attached transition',
+               'touch-inputs.json':'trusted production touch events and live dispatch transforms at simulation ticks',
+               'replay.json':'identical complete trace and inputs under identical source hashes',
+               'touch-strip.jpg':'nine live frames: base and all eight section exits',
+               'evidence-index.json':'honest artifact inventory and dependencies'}
+        self.write('evidence-index.json',dict(artifacts=names,config=self.config,readyForVerification=completion['complete'],
+            changedSubsystems=['Additive Task635Tests -> browser_test_support + YARD -> production events/physics/camera; no runtime changes'],
+            superseded='TASK-572 third-exit historical input sequence is not full-layout continuity evidence. Original evidence remains untouched.',
+            hashPolicy='A HEAD-only commit does not invalidate identical tested source hashes'))
+        for name in names:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        with Image.open(self.out/'touch-strip.jpg') as im:im.load();self.assertEqual(im.size,(1920,1080))
+        for name,digest in self.config['source_hashes'].items():
+            self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+        self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
+        print('PASS deterministic complete replay: equal tick-by-tick trace and trusted input events')
+        print('PASS inventory: seven required files exist; JSON parses; image decodes; source hashes match; <200 MB')
