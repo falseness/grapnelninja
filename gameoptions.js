@@ -219,6 +219,11 @@ const GRAPPLE_OVER_PREVIEW = ['localhost', '127.0.0.1', '[::1]'].includes(locati
     new URLSearchParams(location.search).get('grapplePreview') === 'replacement-v1'
 const GRAPPLE_OVER_REPLACEMENT_ACTIVE = !(['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) &&
     new URLSearchParams(location.search).get('grappleFixture') === 'legacy-v3')
+// Normal boot plays the imported SVG level (levels/README.md); the local
+// replacement-v1 selector and the preview keep the hand-authored replacement.
+const GRAPPLE_OVER_IMPORTED_ACTIVE = GRAPPLE_OVER_REPLACEMENT_ACTIVE && !GRAPPLE_OVER_PREVIEW &&
+    !(['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) &&
+    new URLSearchParams(location.search).get('grappleFixture') === 'replacement-v1')
 const REPLACEMENT_PROFILE = Object.freeze({...MODE_DEFINITIONS.grapple_over,
     acquisitionRadius: 360, upgradedAcquisitionRadius: 540})
 function grappleOverProfile()

@@ -216,6 +216,7 @@
                 I18N.language = I18N.pick(PROGRESS.getLang(), PLATFORM.language)
                 applyLanguage()
                 setLoadingProgress(I18N.t('loading.starting'))
+                await loadGrappleOverLevelAsset()
                 await nextFrame()
                 start()
                 document.getElementById('loading').hidden = true

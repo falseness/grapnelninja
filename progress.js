@@ -38,7 +38,7 @@ const PROGRESS = (function()
                 const notice = document.createElement('div')
                 notice.id = 'climb-save-notice'
                 notice.setAttribute('role', 'status')
-                notice.textContent = I18N.t(GRAPPLE_OVER_REPLACEMENT_ACTIVE ? 'climb.replacementSaveInvalid' : 'climb.saveInvalid')
+                notice.textContent = I18N.t(GRAPPLE_OVER_REPLACEMENT_ACTIVE && !GRAPPLE_OVER_IMPORTED_ACTIVE ? 'climb.replacementSaveInvalid' : 'climb.saveInvalid')
                 notice.style.cssText = 'position:fixed;top:15%;left:15%;right:15%;text-align:center;color:#fff;background:#162337;padding:12px;pointer-events:none;z-index:20'
                 document.getElementById(notice.id)?.remove()
                 document.body.appendChild(notice)
