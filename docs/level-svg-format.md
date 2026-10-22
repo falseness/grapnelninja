@@ -206,6 +206,15 @@ examples). Their document order is significant and is preserved.
   is 1, so they are displayed pixels. The dashed full route curves stay
   unchanged. The importer ignores the arrows, so collision data is identical
   with or without them (`tools/test_level_route_arrows.py`).
+
+  In the game, `render/routearrows.js` draws the same arrow from each loaded
+  `svgFormat.transfers[].guide`: the same t=0..0.25 sub-cubic and tangent
+  head, with the same colour and opacity. The 1.5px stroke and 6px head are
+  screen (CSS) pixels at every camera zoom. Arrows are drawn in the world
+  layer under the range circle, grapnel, terrain and player. Each one is
+  culled by the box of its own curve, not by its source panel. Transfers
+  without a guide draw nothing. The arrows add no physics, input or save
+  data (`tools/test_runtime_route_arrows.py`).
 - At least one section, one encounter and one transfer. An empty kind is
   `MissingMetadata`.
 - Any unresolved reference is `MissingReference`. An encounter that no

@@ -303,13 +303,18 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(page.errors, [])
         # Physics, collision, bounce and level-loader sources match the pre-task tree,
         # and index.html only gained the boot fetch.
-        diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED, cwd=ROOT,
-                              capture_output=True, text=True, check=True).stdout
+        # The only later change is TASK-659's display-only guide arrows: a new render file, its
+        # script tag and the call in drawWorldLayer().
+        diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js'],
+                              cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
-        index = subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', 'index.html'], cwd=ROOT,
-                               capture_output=True, text=True, check=True).stdout
-        changed = [l for l in index.splitlines() if l[:1] in '+-' and not l.startswith(('+++', '---'))]
-        self.assertEqual(changed, ['+                await loadGrappleOverLevelAsset()'])
+        lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
+                              text=True, check=True).stdout.splitlines() if l[:1] in '+-' and not l.startswith(('+++', '---'))]
+        self.assertEqual(lines('render/draw.js'), ['+    // Transfer guide arrows under the range circle, grapnel, terrain and player',
+                                                   '+    drawRouteArrows(floors[0])'])
+        changed = lines('index.html')
+        self.assertEqual(changed, ['+        <script src = "render/routearrows.js"></script>',
+                                   '+                await loadGrappleOverLevelAsset()'])
         self.evidence['cases']['modes'] = dict(seen, browserErrors=page.errors, unchangedSources=UNCHANGED,
                                                baseRev=BASE_REV, unchangedDiff=diff, indexHtmlChanges=changed)
 

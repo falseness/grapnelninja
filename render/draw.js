@@ -91,6 +91,8 @@ function drawLightsLayer(gameState)
 
 function drawWorldLayer()
 {
+    // Transfer guide arrows under the range circle, grapnel, terrain and player
+    drawRouteArrows(floors[0])
     drawAcquisitionCircle()
     grapnel.draw()
 
