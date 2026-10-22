@@ -8,10 +8,10 @@
  const pose=()=>({x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY});
  const nodes=[...BYPASS.exits,'yard-entry'];
  const bounds=e=>{const p=e.getPoints();return {id:e.id,role:e.surfaceRole,points:p,left:Math.min(...p.map(v=>v.x)),right:Math.max(...p.map(v=>v.x)),top:Math.min(...p.map(v=>v.y)),bottom:Math.max(...p.map(v=>v.y))}};
- function geometry(){return {surfaces:floors[0].elements.filter(e=>/^(yard|quarry|freight|viaduct)-/.test(e.id)).map(bounds),yellow:floors[0].dragZones.map(bounds),bounds:floors[0].level.bounds,sideWall:screen.leftWall?true:false};}
+ function geometry(upper=false){return {surfaces:floors[0].elements.filter(e=>(upper?/^(gallery|tower|crown|summit)-/:/^(yard|quarry|freight|viaduct)-/).test(e.id)).map(bounds),yellow:floors[0].dragZones.map(bounds),bounds:floors[0].level.bounds,sideWall:screen.leftWall?true:false};}
  function event(type,p=ninja){const q=YARD.client(p);document.dispatchEvent(new MouseEvent(type,{clientX:q.x,clientY:q.y,bubbles:true,button:0}));}
  function run(start,range,options={}){
-  BYPASS.setup(start,range,null);
+  if(!options.continue)BYPASS.setup(start,range,null);
   const budget=options.budget||5000,hold=options.hold||60,period=hold+30;
   const trace=[],inputs=[];let firstContact=null,returned=null,rest=0,maxRest=0,yellowRest=0,waiting=180;
   const initial=pose();
@@ -64,6 +64,7 @@
     const lower=s.contacts.find(c=>c.ny<-.9&&['viaduct-catch','viaduct-exit-catch'].includes(c.id));
     if(lower){special=true;east=lower.id==='viaduct-exit-catch';}
    }
+   if(options.onStep)options.onStep(s);
    if(tick<=waiting||tick%30===0||s.contacts.length)trace.push(s);
    const node=s.contacts.find(c=>c.ny<-.9&&nodes.includes(c.id));
    if(node&&tick>waiting){returned={tick,id:node.id,...pose()};break;}

@@ -11489,3 +11489,115 @@ class Task626Tests(unittest.TestCase):
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS dependencies: runtime hashes unchanged; archived successful nominal/tolerance runs referenced; no fixes required')
         print('PASS index: six required artifacts exist, JSON parses, retained evidence below 200 MB')
+
+
+# Bounded probes expose unmet high-fall requirements; TASK-627 stays pending.
+TASK627_FALL_SPECS = [(596,493,0,119),(596,493,0,193)]
+
+
+class Task627Tests(unittest.TestCase):
+    """Upper inventory and uninterrupted input-driven high falls from archived fixtures."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        for n in ['tools/grapple_over_bypass.js','tools/grapple_over_recovery.js','tools/grapple_over_high_falls.js']:
+            cls.config['source_hashes'][n]=hashlib.sha256((ROOT/n).read_bytes()).hexdigest()
+        cls.config['simulation']='Isolated archived reachable starting poses; uninterrupted production physics and mouse handlers thereafter; not continuous gameplay from base'
+        with (cls.out/'commands.log').open('a') as f:f.write('TASK627_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write=Task557Tests.write
+    def page(self):
+        p=Task626Tests.page(self)
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_high_falls.js'))
+        return p
+
+    def test_01_upper_inventory(self):
+        p=self.page();g=p.evaluate('RECOVERY.geometry(true)')
+        starts=[dict(id=e['id'],phaseTick=0,pose=dict(x=(e['left']+e['right'])/2,y=e['top']-24,vx=0,vy=0),
+            provenance='Isolated collider inventory placement, not a gameplay reachability claim') for e in g['surfaces']]
+        cases=p.evaluate('ss=>ss.map(s=>RECOVERY.recover(s,540))',starts)
+        for c in cases:
+            if c['id']=='summit-final-landing':
+                self.assertIsNotNone(c['firstContact'])
+                self.assertEqual(c['firstContact']['contacts'][0]['id'],'summit-final-landing')
+                c['terminal']='Final summit contact completes level; physics intentionally stops. Already on designated destination, no escape required.'
+        unresolved=[c['id'] for c in cases if not c['returned'] and not c.get('terminal')]
+        self.write('pockets.json',dict(geometry=g,cases=cases,unresolved=unresolved,scope='Every S05-S08 collider including catches, walls, movers and hazards; center/top inventory samples, not exhaustive state-space proof'))
+        self.assertEqual(unresolved,[])
+        self.assertTrue(all(c['range']==540 and c['yellowRest']<60 for c in cases))
+        self.assertTrue(all(c['inputs'] for c in cases if not c.get('terminal')))
+        print(f'PASS upper inventory: {len(cases)} colliders; zero unresolved; 540 normal-input recovery; final summit terminal contact')
+
+    def test_02_high_falls(self):
+        p=self.page();cases=[]
+        # Archived released route states are fixtures only. All subsequent launch,
+        # release, fall, rebound and lateral return are one uninterrupted run.
+        specs=TASK627_FALL_SPECS
+        p.evaluate('window.fallFrames=[]')
+        for task,tick,rank,hold in specs:
+            path=f'artifacts/TASK-{task}/route.json';raw=(ROOT/path).read_bytes();d=json.loads(raw)
+            row=next(r for r in d['trace'] if r['tick']==tick)
+            self.assertFalse(row['attached']);self.assertFalse(row['shot'])
+            start=dict(id=f'{task}-{tick}',phaseTick=tick,pose={k:row[k] for k in ['x','y','vx','vy']},
+                provenance=dict(path=path,tick=tick,sha256=hashlib.sha256(raw).hexdigest(),kind='isolated reachable released route fixture'))
+            p.evaluate('s=>HIGH_FALL.begin(s)',dict(start=start,rank=rank,hold=hold))
+            c=p.evaluate('''()=>{
+              const capture=(phase,tick)=>{if(tick%12)return;draw();fallFrames.push({phase,tick,id:highFall.spec.start.id,image:document.querySelector('canvas').toDataURL('image/jpeg',.65)})};
+              for(let i=0;i<1600;i++){const done=HIGH_FALL.step();capture('launch / fall / first rebound',i+1);if(done)break;}
+              if(!highFall.rebound)return highFall;
+              return HIGH_FALL.finish(s=>capture('continuous lateral re-ascent',s.tick));}''')
+            cases.append(c)
+        self.write('falls.json',dict(cases=cases,config=self.config))
+        self.write('inputs.json',dict(cases=[dict(start=c['spec']['start'],launch=c['inputs'],release=c['released'],zones=c['zones'],landing=c['landing'],firstRebound=c['rebound'],recovery=c.get('recovery')) for c in cases]))
+        for c in cases:
+            self.assertIsNotNone(c['landing']);self.assertIsNotNone(c['rebound'])
+            boundaries=p.evaluate('()=>["viaduct-exit","gallery-exit","tower-exit","crown-exit"].map(id=>({id,y:floors[0].byId.get(id).y}))')
+            c['crossedBoundaries']=[b for b in boundaries if c['released']['y']<b['y']<c['landing']['y']]
+            c['drop']=c['landing']['y']-c['released']['y']
+            c['reboundHeight']=c['landing']['y']-c['rebound']['y']
+            print(f"MEASURED fall hold={c['spec']['hold']}: boundaries={len(c['crossedBoundaries'])} drop={c['drop']:.2f} rebound={c['reboundHeight']:.2f} rejoin={c['recovery']['returned']}",flush=True)
+        clearances=p.evaluate('''()=>{const box=e=>{let ps=e.getPoints();let b={left:Math.min(...ps.map(p=>p.x)),right:Math.max(...ps.map(p=>p.x)),top:Math.min(...ps.map(p=>p.y)),bottom:Math.max(...ps.map(p=>p.y))};const m=floors[0].level.movers.find(m=>m.element===e.id);if(m){if(m.axis==='x'){b.left+=m.min-e.x;b.right+=m.max-e.x}else{b.top+=m.min-e.y;b.bottom+=m.max-e.y}}return b};return floors[0].dragZones.flatMap(z=>{const a=box(z);return floors[0].elements.map(e=>{const b=box(e);return {zone:z.id,collider:e.id,clearance:Math.hypot(Math.max(0,a.left-b.right,b.left-a.right),Math.max(0,a.top-b.bottom,b.top-a.bottom))}})})}''')
+        self.assertTrue(all(c['clearance']>=540-1e-6 for c in clearances))
+        self.write('falls.json',dict(cases=cases,yellowClearances=clearances,config=self.config))
+        clip=p.evaluate('''async()=>{const c=document.createElement('canvas');c.width=1280;c.height=720;const ctx=c.getContext('2d'),stream=c.captureStream(0),track=stream.getVideoTracks()[0],chunks=[];
+          const rec=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'});rec.ondataavailable=e=>chunks.push(e.data);const end=new Promise(r=>rec.onstop=r);rec.start();
+          for(const f of fallFrames){const im=new Image();im.src=f.image;await im.decode();ctx.drawImage(im,0,0);ctx.fillStyle='#000';ctx.fillRect(0,0,1280,28);ctx.fillStyle='white';ctx.fillText(f.id+' | isolated fixture then uninterrupted '+f.phase+' | tick '+f.tick+' | 4x',12,20);track.requestFrame();await new Promise(r=>setTimeout(r,50))}
+          await new Promise(r=>setTimeout(r,100));rec.stop();await end;stream.getTracks().forEach(t=>t.stop());const blob=new Blob(chunks,{type:'video/webm'});return await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(blob)})}''')
+        (self.out/'falls.webm').write_bytes(base64.b64decode(clip))
+        decoded=p.evaluate("""async b64=>{const v=document.createElement('video');v.muted=true;v.src='data:video/webm;base64,'+b64;let frames=0;
+            const count=()=>{frames++;v.requestVideoFrameCallback(count)};v.requestVideoFrameCallback(count);await v.play();
+            await new Promise((resolve,reject)=>{v.onended=resolve;v.onerror=reject});return {frames,width:v.videoWidth,height:v.videoHeight,ended:v.ended}}""",clip)
+        self.write('clip-decode.json',decoded)
+        self.assertTrue(decoded['ended']);self.assertGreater(decoded['frames'],20);self.assertEqual(decoded['width'],1280)
+        print(f'PASS yellow clearances: {len(clearances)} swept collider comparisons >=540; falls.webm decoded')
+
+        for c in cases:
+            with self.subTest(hold=c['spec']['hold'],requirement='high fall loses two boundaries'):
+                self.assertGreaterEqual(len(c['crossedBoundaries']),2)
+            with self.subTest(hold=c['spec']['hold'],requirement='first rebound <=half drop'):
+                self.assertLessEqual(c['reboundHeight'],c['drop']/2)
+            with self.subTest(hold=c['spec']['hold'],requirement='input-only lateral return'):
+                self.assertGreater(c['attachedTicks'],0)
+                self.assertGreater(c['rebound']['y'],c['initial']['y'])
+                self.assertGreaterEqual(len(c['zones']),2)
+                self.assertIsNotNone(c['recovery']['returned'])
+                self.assertEqual(c['recovery']['postSetupInjections'],0)
+                self.assertGreater(abs(c['recovery']['returned']['x']-c['landing']['x']),100)
+
+    def test_03_dependencies_and_index(self):
+        old=json.loads((ROOT/'artifacts/TASK-626/evidence-index.json').read_text())['config']['source_hashes']
+        changed=['tools/test_grapple_over_redesign.py','tools/grapple_over_recovery.js']
+        for n,h in old.items():
+            if n not in changed:self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        required={'commands.log':'exact commands, exit, test identifiers/count, browser/viewport/revision and hashes','tests.log':'three Task627Tests, no skips, OK',
+            'pockets.json':'all upper colliders mapped to input recovery or terminal summit contact; unresolved empty',
+            'falls.json':'measured candidate falls and unmet boundary/rebound requirements; yellow velocities, landing, lateral rejoin and all swept clearances',
+            'inputs.json':'launch/release inputs and continuous recovery input/trace provenance','falls.webm':'both full trajectories and lateral returns; fixture boundaries labelled',
+            'clip-decode.json':'successful full browser decode and nonzero decoded frames','evidence-index.json':'artifact assertions and dependencies'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,changedSubsystems=changed+['tools/grapple_over_high_falls.js: observation/control harness -> unchanged production mouse input/physics/geometry'],
+            historical='TASK-626/tests.log and TASK-614/tests.log retain previous successful runtime checks; no production edits; historical geometry coverage preserved',hashPolicy='HEAD movement alone does not invalidate identical source hashes'))
+        for n in required:
+            self.assertTrue((self.out/n).is_file(),n)
+            if n.endswith('.json'):json.loads((self.out/n).read_text())
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS dependencies unchanged; required artifacts exist and JSON parses; storage below 200 MB')
