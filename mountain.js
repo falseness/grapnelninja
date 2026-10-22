@@ -1216,7 +1216,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01', 'S05-02', 'S05-03', 'S05-04'],
             rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}},
         {id: 'S06', labelKey: 'climb.section.counterweightTower', status: 'built', encounters: ['S06-01', 'S06-02', 'S06-03', 'S06-04']},
-        {id: 'S07', labelKey: 'climb.section.S07', status: 'built', encounters: ['S07-01']}
+        {id: 'S07', labelKey: 'climb.section.S07', status: 'built', encounters: ['S07-01', 'S07-02']}
     ],
     encounters: [
         {id: 'S01-01', name: 'Loading Yard', elements: ['yard-entry', 'yard-landing', 'yard-anchor', 'yard-catch']},
@@ -1244,6 +1244,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S06-03', name: 'Counterweight Tower rebound transfer', elements: ['tower-shaft-landing', 'tower-rebound-carrier', 'tower-rebound-landing', 'tower-rebound-catch'], recovery: ['tower-rebound-catch', 'tower-shaft-landing']},
         {id: 'S06-04', name: 'Counterweight Tower lift exit', elements: ['tower-rebound-landing', 'tower-exit-lift', 'tower-exit', 'tower-exit-catch'], recovery: ['tower-exit-catch', 'tower-rebound-landing']},
         {id: 'S07-01', name: 'Exposed Crown first red lookout', elements: ['tower-exit', 'crown-anchor', 'crown-landing', 'crown-catch', 'crown-red'], recovery: ['crown-catch', 'tower-exit']},
+        {id: 'S07-02', name: 'Exposed Crown timed green transfer', elements: ['crown-landing', 'crown-practice-anchor', 'crown-practice-landing', 'crown-practice-catch', 'crown-practice-red'], recovery: ['crown-practice-catch', 'crown-landing']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1325,8 +1326,12 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['crown-landing', 11730, -3948.2, 800, 60, 'Broad first Crown landing below the visible red sweep; release into the open lower escape'],
         ['crown-catch', 11900, -3678.2, 882, 60, 'Broad lower catch beneath the release gap; hook the tower exit eastward to return'],
         ['crown-red', 11750, -4400, 80, 80, 'First visible nonlethal red sweep above the transfer; observe from the tower deck and escape below'],
+        ['crown-practice-anchor', 11470, -4420, 160, 80, 'Reachable west launch face from the shared Crown landing; deliberate release past the red sweep, not a landing'],
+        ['crown-practice-landing', 10678, -3948.2, 720, 60, 'Stationary broad green practice landing beyond the red timing window'],
+        ['crown-practice-catch', 10848, -3678.2, 882, 60, 'Lower broad catch for short releases; hook the shared Crown landing to return normally'],
+        ['crown-practice-red', 10698, -4190, 80, 80, 'One visible nonlethal practice sweep above the transfer; wait on the shared deck, release below it and recover on green'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
-    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: id === 'crown-red' ? 'hazard' : ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['tower-exit-lift', 'tower-rebound-carrier', 'tower-shuttle', 'tower-counterweight', 'freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['crown-red', 'viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
+    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['crown-red', 'crown-practice-red'].includes(id) ? 'hazard' : ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['tower-exit-lift', 'tower-rebound-carrier', 'tower-shuttle', 'tower-counterweight', 'freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['crown-red', 'crown-practice-red', 'viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
         points: id === 'gallery-exit-projection'
             ? [{x:360,y:0},{x:0,y:0},{x:0,y:440},{x:230,y:440},{x:230,y:360},{x:80,y:360},{x:80,y:280},{x:360,y:280}].reverse()
             : id === 'gallery-projection'
@@ -1334,7 +1339,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
             : ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
             ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]
             : [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
-    movers: [{id:'crown-red-travel', element:'crown-red', axis:'x', min:11750, max:12450, periodMs:6000, phase:0, velocity:233.33333333333334},
+    movers: [{id:'crown-practice-red-travel', element:'crown-practice-red', axis:'x', min:10698, max:11398, periodMs:6000, phase:0, velocity:233.33333333333334},
+        {id:'crown-red-travel', element:'crown-red', axis:'x', min:11750, max:12450, periodMs:6000, phase:0, velocity:233.33333333333334},
         {id:'tower-exit-travel', element:'tower-exit-lift', axis:'y', min:-4268.2, max:-3548.2, periodMs:10000, phase:.5, velocity:-144},
         {id:'tower-rebound-travel', element:'tower-rebound-carrier', axis:'x', min:12441, max:13161, periodMs:10000, phase:0, velocity:144},
         {id:'tower-shuttle-travel', element:'tower-shuttle', axis:'x', min:11101, max:11821, periodMs:10000, phase:0, velocity:144},

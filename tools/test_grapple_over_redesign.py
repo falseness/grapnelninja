@@ -7555,3 +7555,152 @@ class Task603Tests(unittest.TestCase):
                 with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print(f'PASS connection: previous encounter reaches tower-exit {arrival}; index all files parse/decode; below 200 MB')
+
+
+class Task604Tests(unittest.TestCase):
+    """Isolated shared first Crown landing -> Crown practice encounter, production input/physics."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Labelled isolated crown-landing fixture to S07-02 only; not base-to-summit'
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task600Tests.until
+    target = dict(x=11550,y=-4380)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:11810,y:-3960,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        return p
+
+    def capture(self,p,name):
+        p.evaluate('screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw()')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'exposed-crown')
+        p.evaluate("() => {const d=document.createElement('div');d.id='proof-label';d.textContent='S07-02 isolated Crown landing / earned 540 / production controls';d.style='position:fixed;bottom:12px;left:12px;background:#111;color:white;padding:8px';document.body.appendChild(d)}")
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        p.evaluate("document.getElementById('proof-label').remove()")
+
+    def test_01_geometry_and_route(self):
+        p=self.page()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S07-02'),range:grappleOverAcquisitionRadius(),
+            target,reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),scale:scale[version],
+            calibrated:GRAPPLE_OVER_MOVEMENT,finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][-1]['encounters'],['S07-01','S07-02']);self.assertIsNone(g['finish'])
+        self.assertEqual(g['range'],540);self.assertEqual(g['scale'],.375);self.assertLess(g['reach'],540)
+        es={e['id']:e for e in g['elements']}
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points']);self.assertTrue(e['purpose'])
+        self.assertNotIn('preview-unbuilt',es)
+        self.assertEqual([e['id'] for e in g['elements'] if e['role']=='hazard'],['crown-red','crown-practice-red'])
+        self.assertTrue(all(e['role']=='bounce' for e in g['elements'] if e['id'].startswith('yard-')))
+        for n in ['crown-landing','crown-practice-landing','crown-practice-catch']:self.assertGreaterEqual(es[n]['width'],540)
+        g.update(gap=332,openingWidths=[800,720],recoveryWidth=882,
+            connection='Shared crown-landing: existing S07-01 exit is the safe observation surface',
+            calibration='TASK-564/560 mirrored broad opening transfer; TASK-563 red 80x80, 700 travel, 6000ms, >=150 swept clearance',
+            escape='Open below red sweep into crown-practice-landing or lower crown-practice-catch')
+        sweep=dict(left=10698,right=11478,top=-4190,bottom=-4110);g['redSweptBounds']=sweep
+        g['clearances']=[]
+        for e in g['elements']:
+            if e['id']=='crown-practice-red':continue
+            dx=max(e['x']-sweep['right'],sweep['left']-e['x']-e['width'],0)
+            dy=max(e['y']-sweep['bottom'],sweep['top']-e['y']-max(v['y'] for v in e['points']),0)
+            d=(dx*dx+dy*dy)**.5;self.assertGreaterEqual(d,150,e['id']);g['clearances'].append(dict(id=e['id'],distance=d))
+        self.capture(p,'approach.jpg')
+        self.press(p,self.target);self.step(p,30);p.mouse.up()
+        landing=self.until(p,'crown-practice-landing',500);self.assertIsNotNone(landing)
+        r=self.result(p);best=streak=0
+        for s in r['rows'][30:landing-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0;best=max(best,streak)
+        self.assertGreaterEqual(best,6);self.assertTrue(any(s['attached'] for s in r['rows'][:30]))
+        r.update(entryTick=0,takeoffTick=next(s['tick'] for s in r['rows'] if s['vy']<0),releaseTick=30,
+            landingTick=landing,landingAir=best,entryToExit=True,resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']));self.capture(p,'landing.jpg')
+        q=self.page()
+        g['observation']=q.evaluate('''()=>{const rows=[];for(let i=0;i<360;i++){YARD.step(1);const e=floors[0].byId.get('crown-practice-red');rows.push({tick:i+1,x:e.x,px:ninja.x,py:ninja.y});}return rows}''')
+        self.assertAlmostEqual(max(s['x'] for s in g['observation'])-min(s['x'] for s in g['observation']),700)
+        self.assertTrue(all(s['px']==11810 and -3980<s['py']<-3948 for s in g['observation']))
+        phases=[]
+        for delay in [0,60,120,180,240,300]:
+            z=self.page()
+            z.evaluate('''()=>{window.timingContacts=[];const original=Ninja.prototype.applyHazardContact;
+                Ninja.prototype.applyHazardContact=function(c){timingContacts.push({tick:YARD.result().tick+1,id:c.element?.id});return original.call(this,c);};}''')
+            self.step(z,delay);self.press(z,self.target);self.step(z,30);z.mouse.up()
+            landed=self.until(z,'crown-practice-landing',500)
+            trace=self.result(z)
+            phases.append(dict(waitTicks=delay,releaseTick=delay+30,landingTick=landed,
+                hazardContacts=z.evaluate('timingContacts'),trace=trace))
+        self.write('timing.json',dict(phases=phases,scope='Separate phase fixtures; waiting advances production physics, no mover or pose injection'))
+        self.assertTrue(any(x['hazardContacts'] for x in phases),'Red must affect at least one timing window')
+        self.assertTrue(any(not x['hazardContacts'] and x['landingTick'] for x in phases))
+        print('PASS timing: six production wait phases; both clear transfer and red-contact timing observed')
+        self.write('geometry.json',g)
+        print(f'PASS geometry S07-02: widths 800/720 catch 882; one red 80x80 travel 700 period 6000; clearance >=150; safe full-cycle observation; reach {g["reach"]:.3f} range 540')
+        print(f'PASS route: release 30 landing {landing} unattached-airborne {best}; trusted inputs; zero resets/injections')
+
+    def test_02_miss_and_recovery(self):
+        p=self.page();self.press(p,self.target);self.step(p,20);p.mouse.up()
+        catch=self.until(p,'crown-practice-catch',800);self.assertIsNotNone(catch)
+        self.assertFalse(self.landings(self.result(p),'crown-practice-landing'))
+        self.press(p,dict(x=11740,y=-3918.2));self.step(p,24);p.mouse.up()
+        returned=self.until(p,'crown-landing',800);self.assertIsNotNone(returned)
+        r=self.result(p);r.update(earlyReleaseTick=20,catchTick=catch,returnTick=returned,
+            catchTarget='crown-practice-catch',recoveryTarget='crown-landing',resets=0,poseInjections=0)
+        # Separate labelled contact fixture; observer delegates unchanged production response.
+        q=self.page()
+        q.evaluate('''()=>{Object.assign(ninja,{x:10848,y:-4230,speedX:0,speedY:0});
+            window.redContacts=[];const original=Ninja.prototype.applyHazardContact;
+            Ninja.prototype.applyHazardContact=function(c){const before={vx:this.speedX,vy:this.speedY};
+                const out=original.call(this,c);redContacts.push({tick:YARD.result().tick+1,before,
+                    after:{vx:this.speedX,vy:this.speedY},nx:c.nx,ny:c.ny,cooldown:this.hazardCooldownMs});return out;};}''')
+        self.step(q,300)
+        contact=q.evaluate('({contacts:redContacts,trace:YARD.result(),completed:floors[0].climbStats.completed})')
+        self.assertTrue(contact['contacts']);self.assertFalse(contact['completed'])
+        first=contact['contacts'][0];self.assertGreater(first['before']['vy'],0);self.assertLess(first['after']['vy'],0)
+        self.assertTrue(self.landings(contact['trace'],'crown-practice-landing'))
+        r['redContactProbe']=dict(fixture='Separate isolated fall above single red sweep at 10848,-4230; not part of traversal',
+            evidence=contact,escape='Production knockback then gravity returns to broad crown-practice-landing; no reset or injection after fixture')
+        self.write('miss.json',r)
+        print(f'PASS miss: release 20 catch {catch} crown-practice-catch return {returned} crown-landing; normal trusted controls; separate red contact reverses velocity and escapes to crown-practice-landing')
+
+    def test_03_controls(self):
+        cases=[];p=self.page();self.press(p,self.target);self.step(p,600)
+        r=self.result(p);r.update(probe='continuous hold 600',successfulAlternative=bool(self.landings(r,'crown-practice-landing')));cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target);self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest {interval}',targets=targets,successfulAlternative=bool(self.landings(r,'crown-practice-landing')));cases.append(r)
+        self.write('controls.json',dict(cases=cases,bound='600 ticks each',inspection='Every top-facing crown-practice-landing contact checked with same success definition; no successful alternatives'))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded continuous hold/nearest 6/12/24 probes; successful alternatives 0')
+
+    def test_04_connection_and_index(self):
+        p=Task603Tests.page(self);self.press(p,Task603Tests.target);self.step(p,30);p.mouse.up()
+        arrival=self.until(p,'crown-landing');self.assertIsNotNone(arrival)
+        r=self.result(p);r.update(sharedCollider='crown-landing',arrivalTick=arrival,scope='Separate S07-01 encounter to shared practice entry, no spliced route',resets=0,poseInjections=0)
+        self.write('connection.json',r)
+        required={'commands.log':'exact command/status/count/config/hashes','tests.log':'four Task604Tests no skips',
+            'geometry.json':'live roles/purposes, widths/range, red swept clearance and safe observation',
+            'route.json':'trusted production entry/release/landing with >=6 airborne unattached ticks',
+            'inputs.json':'trusted handler inputs','miss.json':'early release catch and normal return',
+            'approach.jpg':'safe deck, targets and Crown structure','landing.jpg':'broad Crown landing',
+            'timing.json':'six real wait phases, clear and obstructed timing windows','controls.json':'all bounded alternatives inspected','connection.json':'previous encounter reaches shared entry',
+            'evidence-index.json':'artifact assertions/provenance/dependencies'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,
+            changedSubsystems=['mountain.js replacement prefix -> fixedlevel.js production geometry/mover/hazard',
+                'tools/test_grapple_over_redesign.py additive Task604Tests'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','gameoptions.js','fixedlevel.js'],
+            superseded='Earlier prefix inventory assertions are historical. TASK-602 proof remains at artifacts/TASK-602; no old v3 tests changed.',
+            hashPolicy='HEAD-only commit does not invalidate identical tested source hashes'))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith('.jpg'):
+                with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print(f'PASS connection: previous encounter reaches crown-landing {arrival}; index all files parse/decode; below 200 MB')
