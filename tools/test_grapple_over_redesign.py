@@ -11533,6 +11533,8 @@ class Task627Tests(unittest.TestCase):
         # Archived released route states are fixtures only. All subsequent launch,
         # release, fall, rebound and lateral return are one uninterrupted run.
         specs=TASK627_FALL_SPECS
+        self.assertEqual(len(specs),2)
+        self.assertEqual(len(set(specs)),2,'Falls must use distinct release scenarios')
         p.evaluate('window.fallFrames=[]')
         for task,tick,rank,hold in specs:
             path=f'artifacts/TASK-{task}/route.json';raw=(ROOT/path).read_bytes();d=json.loads(raw)
@@ -11555,6 +11557,8 @@ class Task627Tests(unittest.TestCase):
             c['crossedBoundaries']=[b for b in boundaries if c['released']['y']<b['y']<c['landing']['y']]
             c['drop']=c['landing']['y']-c['released']['y']
             c['reboundHeight']=c['landing']['y']-c['rebound']['y']
+            c['yellowDescentTicks']=sum(bool(r['yellow']) and r['vy']>0
+                for r in c['trace'] if c['released']['tick']<=r['tick']<=c['landing']['tick'])
             print(f"MEASURED fall hold={c['spec']['hold']}: boundaries={len(c['crossedBoundaries'])} drop={c['drop']:.2f} rebound={c['reboundHeight']:.2f} rejoin={c['recovery']['returned']}",flush=True)
         clearances=p.evaluate('''()=>{const box=e=>{let ps=e.getPoints();let b={left:Math.min(...ps.map(p=>p.x)),right:Math.max(...ps.map(p=>p.x)),top:Math.min(...ps.map(p=>p.y)),bottom:Math.max(...ps.map(p=>p.y))};const m=floors[0].level.movers.find(m=>m.element===e.id);if(m){if(m.axis==='x'){b.left+=m.min-e.x;b.right+=m.max-e.x}else{b.top+=m.min-e.y;b.bottom+=m.max-e.y}}return b};return floors[0].dragZones.flatMap(z=>{const a=box(z);return floors[0].elements.map(e=>{const b=box(e);return {zone:z.id,collider:e.id,clearance:Math.hypot(Math.max(0,a.left-b.right,b.left-a.right),Math.max(0,a.top-b.bottom,b.top-a.bottom))}})})}''')
         self.assertTrue(all(c['clearance']>=540-1e-6 for c in clearances))
@@ -11580,6 +11584,10 @@ class Task627Tests(unittest.TestCase):
                 self.assertGreater(c['attachedTicks'],0)
                 self.assertGreater(c['rebound']['y'],c['initial']['y'])
                 self.assertGreaterEqual(len(c['zones']),2)
+                self.assertGreaterEqual(c['yellowDescentTicks'],8,'Sustained yellow passage before landing')
+                self.assertLess(c['released']['tick'],c['landing']['tick'])
+                self.assertLess(c['landing']['tick'],c['rebound']['tick'])
+                self.assertEqual(c['inputs'][-1]['type'],'mouseup')
                 self.assertIsNotNone(c['recovery']['returned'])
                 self.assertEqual(c['recovery']['postSetupInjections'],0)
                 self.assertGreater(abs(c['recovery']['returned']['x']-c['landing']['x']),100)
