@@ -9349,3 +9349,246 @@ class Task613Tests(unittest.TestCase):
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
         print(f'PASS dependencies: {len(unchanged)} unchanged runtime/support hashes; geometry unchanged')
         print('PASS index: all required files exist; JSON parses; touch-strip decodes 1688x1560; retained evidence <200 MB')
+
+
+class Task614Tests(unittest.TestCase):
+    """S08 composition review; one entrance fixture, then production-only traversal."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='One isolated S08 entrance then continuous production traversal; separate labelled recovery'
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK614_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task605Tests.until
+    record = Task590Tests.record
+    shot = Task606Tests.shot
+
+    def test_01_inventory_and_dependencies(self):
+        p=Task609Tests.page(self)
+        g=p.evaluate("""()=>({elements:floors[0].level.elements,encounters:floors[0].level.encounters,
+            movers:floors[0].level.movers,range:grappleOverAcquisitionRadius(),scale:scale[version],
+            calibration:GRAPPLE_OVER_MOVEMENT})""")
+        self.assertEqual((g['range'],g['scale']),(540,.375))
+        es={e['id']:e for e in g['elements']}
+        for e in es.values():
+            self.assertTrue(e['purpose']);self.assertIn(e['role'],['bounce','solid','drag','hazard'])
+            e['encounters']=[c['id'] for c in g['encounters'] if e['id'] in c['elements']]
+            self.assertTrue(e['encounters'])
+            e['bounds']={k:e[a]+fn(v[a] for v in e['points']) for k,a,fn in [('left','x',min),('right','x',max),('top','y',min),('bottom','y',max)]}
+            e['width']=e['bounds']['right']-e['bounds']['left'];e['height']=e['bounds']['bottom']-e['bounds']['top']
+        local={id for c in g['encounters'] if c['id'].startswith('S08') for id in c['elements']}
+        self.assertEqual(len([c for c in g['encounters'] if c['id'].startswith('S08')]),4)
+        self.assertEqual({es[id]['role'] for id in local},{'bounce','solid','hazard'})
+        for m in g['movers']:
+            e=es[m['element']];b=dict(e['bounds']);axis=m['axis']
+            b['left' if axis=='x' else 'top']=m['min']
+            b['right' if axis=='x' else 'bottom']=m['max']+e['width' if axis=='x' else 'height']
+            m['sweptBounds']=b
+            self.assertGreaterEqual(m['max']-m['min'],max(360,2*e['width' if axis=='x' else 'height']))
+            self.assertTrue(6000<=m['periodMs']<=10000)
+        def distance(a,b):
+            return (max(a['left']-b['right'],b['left']-a['right'],0)**2+max(a['top']-b['bottom'],b['top']-a['bottom'],0)**2)**.5
+        clearances=[]
+        for z in [e for e in es.values() if e['role']=='drag']:
+            self.assertNotIn(z['id'],local)
+            self.assertGreaterEqual(z['width'],3*360);self.assertGreaterEqual(z['width']/z['height'],4)
+            for e in es.values():
+                if e['role']=='drag':continue
+                sweep=next((m['sweptBounds'] for m in g['movers'] if m['element']==e['id']),e['bounds'])
+                d=distance(z['bounds'],sweep);self.assertGreaterEqual(d+1e-8,540)
+                clearances.append(dict(zone=z['id'],collider=e['id'],clearance=d))
+        sweeps=[]
+        for m in g['movers']:
+            if m['element'] not in local:continue
+            for e in es.values():
+                if e['id']==m['element'] or e['role']=='drag':continue
+                other=next((v['sweptBounds'] for v in g['movers'] if v['element']==e['id']),e['bounds'])
+                d=distance(m['sweptBounds'],other);self.assertGreater(d,0,(m['element'],e['id']))
+                sweeps.append(dict(mover=m['element'],collider=e['id'],clearance=d))
+        g['localSweepClearances']=sweeps
+        widths=[es[n]['width'] for n in Task613Tests.exits]
+        self.assertEqual(widths,[800,800,720,800])
+        first={role:min(c['id'][:3] for c in g['encounters'] if any(es[n]['role']==role for n in c['elements'])) for role in ['bounce','solid','drag','hazard']}
+        self.assertEqual(first,dict(bounce='S01',solid='S03',drag='S04',hazard='S07'))
+        g.update(localIds=sorted(local),planningWidths=widths,clearances=clearances,firstUse=first,
+            localYellow=[],clutter='No redundant local objects identified; anchors, broad decks, catches, carrier and one red sweep have distinct encounter roles')
+        q=Task567Tests.page(self)
+        q.evaluate('Object.assign(ninja,{x:14093,y:-4720,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        cycle=q.evaluate("""()=>{const rows=[];for(let i=0;i<600;i++){
+            YARD.step(1);const e=floors[0].byId.get('summit-lift');
+            rows.push({tick:i+1,y:e.y,px:ninja.x,py:ninja.y,distance:Math.hypot(Math.max(e.x-ninja.x,ninja.x-e.x-360,0),Math.max(e.y-ninja.y,ninja.y-e.y-80,0))});}return rows}""")
+        best=streak=0
+        for row in cycle:
+            streak=streak+1 if row['distance']<=540 else 0;best=max(best,streak)
+            self.assertEqual(row['px'],14093);self.assertLess(abs(row['py']+4720),32)
+        self.assertGreaterEqual(best,60)
+        g['acquisitionWindowMs']=best*1000/60;g['carrierCycle']=cycle
+        g['usefulEndpoints']='Lower end reachable from practice deck; upper end releases onto summit-upper-landing; phases.json proves traversal'
+        self.write('objects.json',g)
+        old=json.loads((ROOT/'artifacts/TASK-613/evidence-index.json').read_text())['config']['source_hashes']
+        unchanged={n:h for n,h in old.items() if n!='tools/test_grapple_over_redesign.py'}
+        for n,h in unchanged.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        yellow=json.loads((ROOT/'artifacts/TASK-590/objects.json').read_text())
+        for e in yellow['elements']:
+            for key in ['x','y','points','role','purpose']:self.assertEqual(e[key],es[e['id']][key])
+        proofs=['artifacts/TASK-590/suppression.json','artifacts/TASK-590/recovery.json','artifacts/TASK-613/recovery.json','artifacts/TASK-613/tests.log','artifacts/TASK-613/commands.log']
+        recovery=json.loads((ROOT/proofs[2]).read_text())
+        self.assertEqual(len(recovery['hazardProbes']),6)
+        self.assertTrue(any(h['hazardContacts'] for h in recovery['hazardProbes']))
+        for h in recovery['hazardProbes']:
+            for hit in h['hazardContacts']:
+                self.assertNotEqual(hit['before'],hit['after'])
+                self.assertGreater(h['returned']['tick'],hit['tick'])
+        yellow_runtime=json.loads((ROOT/'artifacts/TASK-590/evidence-index.json').read_text())['config']['source_hashes']
+        yellow_dependencies={n:yellow_runtime[n] for n in ['physics.js','events.js','fixedlevel.js','sprites/ninja.js','gameoptions.js','tools/grapple_over_yard.js']}
+        for n,h in yellow_dependencies.items():
+            self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        proofs.extend(['artifacts/TASK-590/evidence-index.json','artifacts/TASK-590/objects.json'])
+        suppression=json.loads((ROOT/proofs[0]).read_text())
+        for case in suppression['cases']:
+            self.assertGreater(case['drop'],case['rebound'])
+            self.assertLessEqual(case['rebound'],.75*case['controlRebound'])
+        lateral=json.loads((ROOT/proofs[1]).read_text())
+        self.assertEqual(len(lateral['cases']),2)
+        for case in lateral['cases']:
+            self.assertGreater(case['returned']['tick'],case['catchTick'])
+            self.assertTrue(any(c['id']==case['returnCollider'] and c['ny']<-.9 for c in case['returned']['contacts']))
+        self.write('dependency.json',dict(unchanged=unchanged,yellowRuntime=yellow_dependencies,changed=['tools/test_grapple_over_redesign.py: additive Task614Tests'],
+            reused={n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in proofs},
+            geometryComparison='All S04 coordinates/roles/purposes identical; all runtime dependencies identical to TASK-613',
+            hashPolicy='HEAD-only commits do not invalidate identical tested source hashes'))
+        print(f'PASS objects: every object has purpose/encounter; first green S01 blue S03 yellow S04 red S07; four broad landings {widths}; full swept bounds clear; yellow clearance >=540; carrier window {best*1000/60:.1f}ms >=1000')
+        print('PASS dependencies: unchanged runtime/support hashes; S04 suppression/lateral recovery and six red phase escapes referenced by exact hashes')
+
+    def test_02_continuous_capture(self):
+        p=Task609Tests.page(self)
+        p.evaluate('TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500)')
+        p.evaluate('CLIMB_UI.drawMenu=()=>{}')
+        self.record(p,'S08 continuous from isolated entrance / earned 540 / 4x');self.step(p,240)
+        views=[];observations=[]
+        def capture(index,target):
+            p.evaluate('draw()')
+            obs=p.evaluate('t=>({tick:YARD.result().tick,target:t,client:YARD.client(t),landmark:LANDMARKS.frame.drawn,player:{x:ninja.x,y:ninja.y}})',target)
+            self.assertTrue(0<obs['client']['x']<1280 and 0<obs['client']['y']<720,obs)
+            self.assertEqual(obs['landmark'][0]['id'],'summit-array')
+            observations.append(obs)
+            im=Image.open(io.BytesIO(p.screenshot())).convert('RGB')
+            ImageDraw.Draw(im).text((12,690),f'S08-0{index} actual continuous approach tick {obs["tick"]}',fill='white');views.append(im)
+        capture(1,Task609Tests.target);self.shot(p,Task609Tests.target,32)
+        self.assertEqual(self.until(p,'summit-landing',500),446)
+        self.step(p,130)
+        target=p.evaluate('({x:14193,y:floors[0].byId.get("summit-lift").y+40})')
+        capture(2,target);self.shot(p,target,240)
+        self.assertEqual(self.until(p,'summit-upper-landing',600),881)
+        self.step(p,400);capture(3,Task611Tests.target);self.shot(p,Task611Tests.target,30)
+        self.assertEqual(self.until(p,'summit-timing-landing',700),1481)
+        capture(4,Task612Tests.target);self.shot(p,Task612Tests.target,20)
+        self.assertEqual(self.until(p,'summit-final-landing',700),1580)
+        r=self.result(p)
+        exits=[dict(id=n,tick=self.landings(r,n)[0]['tick']) for n in Task613Tests.exits]
+        self.write('route.json',dict(exits=exits,inputs=r['inputs'],trace=r['rows'],resetsAfterStart=0,poseInjectionsAfterStart=0,
+            scope=self.config['simulation'],rangeBefore=540,rangeAfter=540))
+        self.write('approaches.json',dict(views=observations))
+        sheet=Image.new('RGB',(2560,1440))
+        for i,im in enumerate(views):sheet.paste(im,((i%2)*1280,(i//2)*720))
+        sheet.save(self.out/'approaches.jpg',quality=85)
+        overview=Image.new('RGB',(2560,720));sil=Image.new('RGB',(2560,720),'white')
+        for i,center in enumerate([11700,14300]):
+            p.evaluate('x=>{screen.x=width/.375/2-x;screen.y=height/.375/2+5200;draw()}',center)
+            overview.paste(Image.open(io.BytesIO(p.screenshot())).convert('RGB'),(1280*i,0))
+            f=p.evaluate("""()=>({elements:floors[0].elements.map(e=>({id:e.id,points:e.getPoints()})),
+                shape:GRAPPLE_OVER_LANDMARK_SHAPES[7](GRAPPLE_OVER_LANDMARKS.width,GRAPPLE_OVER_LANDMARKS.height),
+                landmark:{x:(13400+screen.x)*.375-GRAPPLE_OVER_LANDMARKS.width/2,y:(-3900+screen.y)*.375-GRAPPLE_OVER_LANDMARKS.height},
+                camera:{x:screen.x,y:screen.y},factor:1280/width})""")
+            tile=Image.new('RGB',(1280,720),'white');pen=ImageDraw.Draw(tile);k=f['factor']
+            def point(v):return ((v[0]+f['landmark']['x'])*k,(v[1]+f['landmark']['y'])*k)
+            for part in f['shape']['parts']:pen.polygon([point(v) for v in part],fill='#aaaaaa')
+            for line in f['shape']['lines']:pen.line([point(v) for v in line],fill='#888888',width=3)
+            for e in f['elements']:
+                pts=[((v['x']+f['camera']['x'])*.375*k,(v['y']+f['camera']['y'])*.375*k) for v in e['points']]
+                pen.polygon(pts,fill='black')
+                if e['id'].startswith('summit'):pen.text(pts[0],e['id'],fill='#555555')
+            pen.text((12,12),'Summit Array / antenna array and base / plain silhouette',fill='black');sil.paste(tile,(1280*i,0))
+        overview.save(self.out/'overview.png');sil.save(self.out/'silhouette.png')
+        frames=p.evaluate('reviewFrames')
+        q=Task567Tests.page(self)
+        q.evaluate('Object.assign(ninja,{x:14093,y:-4720,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false')
+        self.record(q,'SEPARATE S08-02 full carrier cycle then fall and normal-input recovery / 4x')
+        self.step(q,600);self.shot(q,Task610Tests.target,12)
+        catch=self.until(q,'summit-lift-catch',800);self.assertIsNotNone(catch)
+        self.shot(q,dict(x=14163,y=-4698.2),24)
+        returned=self.until(q,'summit-landing',800);self.assertIsNotNone(returned)
+        recovery=self.result(q)
+        self.write('recovery.json',dict(catchTick=catch,returnTick=returned,returnCollider='summit-landing',
+            trace=recovery['rows'],inputs=recovery['inputs'],resetsAfterStart=0,poseInjectionsAfterStart=0))
+        frames.extend(q.evaluate('reviewFrames'));q.context.close()
+        p.evaluate('a=>window.reviewFrames=a',frames);p.bring_to_front()
+        clip=p.evaluate('''async () => {
+            const c=document.createElement('canvas');c.width=1280;c.height=720;const ctx=c.getContext('2d');
+            const stream=c.captureStream(0),track=stream.getVideoTracks()[0],chunks=[];
+            const rec=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'});
+            rec.ondataavailable=e=>chunks.push(e.data);const ended=new Promise(r=>rec.onstop=r);rec.start();
+            for(const f of reviewFrames){const im=new Image();im.src=f.image;await im.decode();ctx.drawImage(im,0,0,1280,720);
+                ctx.fillStyle='white';ctx.fillText((f.label || 'S08 continuous from isolated entry')+' / 4x / tick '+f.tick,12,24);
+                track.requestFrame();await new Promise(r=>setTimeout(r,50));}
+            await new Promise(r=>setTimeout(r,200));rec.stop();await ended;stream.getTracks().forEach(t=>t.stop());
+            const blob=new Blob(chunks,{type:'video/webm'});return await new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.readAsDataURL(blob)})}''')
+        (self.out/'section.webm').write_bytes(base64.b64decode(clip))
+        decoded=p.evaluate('''async b64=>{const v=document.createElement('video');v.muted=true;v.src='data:video/webm;base64,'+b64;let frames=0;
+            const count=()=>{frames++;v.requestVideoFrameCallback(count)};v.requestVideoFrameCallback(count);await v.play();
+            await new Promise((resolve,reject)=>{v.onended=resolve;v.onerror=reject});return {frames,width:v.videoWidth,height:v.videoHeight}}''',clip)
+        self.assertGreater(decoded['frames'],100);self.assertEqual(decoded['width'],1280)
+        self.write('clip-decode.json',decoded)
+
+        print(f'PASS continuous: exits 446/881/1481/1580; four on-screen actual approaches; earned 540; zero resets/injections; recovery {catch}->{returned}; decoded {decoded}')
+
+    def test_03_carrier_phases(self):
+        cases=[]
+        for phase in [0,150,300,450]:
+            p=Task567Tests.page(self);self.step(p,phase)
+            p.evaluate('Object.assign(ninja,{x:14093,y:-4720,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+            arrival=p.evaluate("({tick:YARD.result().tick,y:floors[0].byId.get('summit-lift').y})")
+            waiting=p.evaluate("""n=>{const rows=[];for(let i=0;i<n;i++){YARD.step(1);rows.push({tick:YARD.result().tick,x:ninja.x,y:ninja.y,moverY:floors[0].byId.get('summit-lift').y})}return rows}""",600-phase)
+            for row in waiting:self.assertEqual(row['x'],14093);self.assertLess(abs(row['y']+4720),32)
+            self.shot(p,Task610Tests.target,240)
+            tick=self.until(p,'summit-upper-landing',600);self.assertIsNotNone(tick)
+            r=self.result(p)
+            cases.append(dict(arrival=arrival,arrivalPhase=phase/600,waiting=waiting,landing=self.landings(r,'summit-upper-landing')[0],inputs=r['inputs'],resetsAfterArrival=0,poseInjectionsAfterArrival=0))
+            p.context.close()
+        self.assertEqual(len({(v['arrival']['y'],v['waiting'][0]['moverY']) for v in cases}),4)
+        self.write('phases.json',dict(scope='Four isolated phase arrivals, production waiting and traversal; not continuous gameplay',cases=cases))
+        print('PASS phases: four distinct quarter-cycle arrivals; safe production waiting; four upper-deck top contacts; zero post-arrival injections')
+
+    def test_04_evidence_index(self):
+        (self.out/'review.md').write_text("""TASK-614 Summit Array composition review
+
+Built S08 only. One isolated Crown exit then continuous production controls; separate labelled carrier-cycle/fall recovery. No claim of validated human enjoyment.
+
+overview.png left panel shows the last two westward challenges and final broad deck; right panel shows the first arrival, vertical carrier and antenna-array landmark. silhouette.png uses the same frames with plain filled colliders and gray architecture. approaches.jpg panels 1–4 show actual continuous approaches at scale 0.375; approaches.json records visible target positions and summit-array identity.
+
+Pacing: 800/800/720/800-wide green planning decks separate the familiar arrival, blue lift release, red timing transfer and final green jump. Open 540-unit horizontal gaps separate the westward decks; the lift links decks 760 units apart vertically. Full swept bounds are compared against every collider. Mechanical slits beside the lift are not intended passages. section.webm includes all four encounters continuously, followed by a separately labelled ten-second mover cycle, early-release fall and normal-control recovery.
+
+Clutter: all retained launch faces, four destinations, local catches, carrier and red sweep have distinct purposes in objects.json. No redundant object identified; no geometry edit. Established green/blue/yellow/red order is retained, with no new mechanic. No local yellow; the earlier S04 suppression and lateral recovery proof is referenced with exact hashes and structural equality. Six S08 hazard phases include actual contact and safe green escapes in TASK-613. Dependencies record unchanged runtime hashes; historical prefix/v3 coverage is preserved and not claimed rerun. Original mountain remains playable; no activation or publishing.
+""")
+        required={'commands.log':'exact command, exit, identifiers, browser/viewport/revision/source hashes',
+            'tests.log':'four Task614Tests; no skips; OK','objects.json':'purposes, role order, four broad decks, full swept bounds/clearances',
+            'overview.png':'all four built encounters and Summit Array antenna-array landmark',
+            'silhouette.png':'plain structure, open gaps and broad landings','approaches.jpg':'four actual continuous approaches',
+            'approaches.json':'target screen positions and named landmark','route.json':'continuous ordered four-exit production traversal',
+            'phases.json':'four arrival phases for the Summit carrier and safe waiting', 'recovery.json':'fall and normal-input return','section.webm':'continuous representative traversal plus labelled recovery',
+            'clip-decode.json':'decoded frames/dimensions','dependency.json':'unchanged dependencies and reused proof hashes',
+            'review.md':'image-located composition/pacing review','evidence-index.json':'artifact assertions and provenance'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith(('.png','.jpg')):
+                with Image.open(self.out/name) as im:im.load();self.assertGreaterEqual(im.width,1280)
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: all required files exist; JSON parses; images/video decode; retained evidence <200 MB')
