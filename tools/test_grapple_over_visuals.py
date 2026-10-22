@@ -3370,7 +3370,7 @@ class Task642Tests(unittest.TestCase):
             }
             const e=w.elements[0],s=moverShellSprite(e,'x',4,4,1);
             const translated={points:e.points.map(p=>({x:p.x+37,y:p.y-19}))};
-            return {samples,relativeShapeShared:moverShellSprite(translated,'x',4,4,1)===s,
+            return {samples,tokens:GRAPPLE_OVER_ROLE_DETAIL.mover,relativeShapeShared:moverShellSprite(translated,'x',4,4,1)===s,
                 backingScaleDistinct:moverShellSprite(e,'x',2,2,1)!==s};
         }''')
         for sample in result['samples']:
@@ -3383,7 +3383,11 @@ class Task642Tests(unittest.TestCase):
                 self.assertEqual(frame['direction'],-1 if sample['time']==2500 else 1)
                 self.assertEqual(mover['deck']['y'],mover['box']['top'])
                 self.assertEqual(mover['deckPixel'],[200,251,255,255])
-                self.assertEqual(mover['glassPixel'],[7,26,58,255])
+                # TASK-643 paints a static 0.3-alpha aurora glow over the glass centre.
+                glass,glow=_hex_rgb(result['tokens']['glass']),_hex_rgb(result['tokens']['auroraGlow'])
+                expected=[round(0.7*a+0.3*b) for a,b in zip(glass,glow)]
+                self.assertEqual(mover['glassPixel'][3],255)
+                for got,want in zip(mover['glassPixel'],expected):self.assertLessEqual(abs(got-want),2)
                 self.assertTrue(all(p!=mover['glassPixel'] for p in mover['capPixels']))
                 a,b=mover['caps'];box=mover['box']
                 if mover['axis']=='x':
@@ -3508,3 +3512,184 @@ class Task643Tests(unittest.TestCase):
         }''')
         self.evidence.path('aurora-strip.png').write_bytes(base64.b64decode(png.split(',')[1]))
         print('PASS aurora-strip.png production render: both axes at 0, 500, 1000 ms')
+
+
+class Task644Tests(unittest.TestCase):
+    BASE = '5850cbe9742793e93e8b1659a66023b3c9fcacb8'
+    RUNTIME = ('render/roledetail.js', 'style.js', 'sprites/ninja.js')
+    PLATE = ROOT / 'artifacts/obstacle-concepts/s-board-aurora-tube.png'
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-644')
+        cls.revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+        cls.evidence.log('CONFIG ' + json.dumps(dict(revision=cls.revision, base_rev=cls.BASE,
+            files={n: hashlib.sha256((ROOT / n).read_bytes()).hexdigest() for n in
+                   ['render/roledetail.js', 'style.js', 'sprites/ninja.js', 'tools/test_grapple_over_visuals.py']})))
+
+    def start(self, name='chromium'):
+        from contextlib import ExitStack
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        url, browser = start_browser_test(ROOT, stack.callback, name)
+        return url, browser, stack
+
+    def open(self, url, browser, name, viewport=None, query='', baseline=False, errors=None):
+        viewport = viewport or dict(width=1280, height=720)
+        context = browser.new_context(viewport=viewport, device_scale_factor=1)
+        if baseline:
+            for path in self.RUNTIME:
+                body = subprocess.check_output(['git', 'show', self.BASE + ':' + path], text=True)
+                context.route('**/' + path, lambda route, request, body=body:
+                              route.fulfill(body=body, content_type='application/javascript'))
+        page = context.new_page()
+        errors = [] if errors is None else errors
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.add_init_script('''performance.now=()=>1000;
+            const raf=requestAnimationFrame;requestAnimationFrame=cb=>cb.name==='gameLoop'?0:raf(cb);''')
+        page.goto(url + query)
+        wait_for_boot(page)
+        page.evaluate(SEED_SCRIPT % 1)
+        page.evaluate('() => {startGame("grapple_over"); cancelAnimationFrame(game)}')
+        page.wait_for_function('!unTouch')
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(test=self.id(), browser=name,
+            version=browser.version, viewport=viewport, dpr=1, mode='grapple_over', query=query,
+            baseline=baseline and self.BASE)))
+        return context, page, errors
+
+    # Thick pad, thin bar and triangle (bounce) plus a horizontal and a vertical mover.
+    fixture = '''() => {
+        const rect=(w,h)=>[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}];
+        const level={version:1,bounds:{left:-400,top:-2000,right:3000,bottom:1000},
+            spawn:{x:0,y:-1000},sections:[{id:GRAPPLE_OVER_LEVEL.sections[0].id,encounters:['scene']}],
+            encounters:[{id:'scene',elements:['pad','bar','tri','horizontal','vertical']}],
+            elements:[{id:'pad',x:60,y:60,role:'bounce',points:rect(420,96)},
+                {id:'bar',x:60,y:250,role:'bounce',points:rect(420,18)},
+                {id:'tri',x:120,y:360,role:'bounce',points:[{x:0,y:200},{x:300,y:0},{x:300,y:200}]},
+                {id:'horizontal',x:600,y:120,role:'solid',grapplable:true,points:rect(300,64)},
+                {id:'vertical',x:1000,y:80,role:'solid',grapplable:true,points:rect(64,220)}],
+            movers:[{id:'horizontal-travel',element:'horizontal',axis:'x',min:560,max:660,periodMs:4000,phase:0},
+                {id:'vertical-travel',element:'vertical',axis:'y',min:60,max:180,periodMs:4000,phase:0}]};
+        floors=[loadFixedLevel(level)];scale[version]=1;screen.x=screen.y=0;
+    }'''
+
+    render = '''async t => {
+        const w=floors[0];canvas.width=1280;canvas.height=720;
+        ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#080e18';ctx.fillRect(0,0,1280,720);
+        w.applyMovers(t);w.elapsedSteps=t*cyclesPerTick/physicsStepMs;
+        ctx.setTransform(1,0,0,1,40,40);w.draw();drawGrappleOverRoleDetail(w);
+        ctx.setTransform(1,0,0,1,0,0);
+        const data=ctx.getImageData(40,40,1180,640).data, colors=new Set();
+        for(let i=0;i<data.length;i+=4096)colors.add(data[i]<<16|data[i+1]<<8|data[i+2]);
+        const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',data));
+        return {sha256:Array.from(digest,b=>b.toString(16).padStart(2,'0')).join(''),colors:colors.size};
+    }'''
+
+    def test_01_roledetail_off_matches_base(self):
+        changed = subprocess.check_output(['git', 'diff', '--name-only', self.BASE, 'HEAD', '--',
+                                           '*.js', 'index.html', ':!tools'], text=True).split()
+        self.assertEqual(sorted(changed), sorted(self.RUNTIME))
+        url, browser, _ = self.start()
+        rows = {}
+        for query in ('?roledetail=0', ''):
+            for baseline in (True, False):
+                context, page, errors = self.open(url, browser, 'chromium', query=query, baseline=baseline)
+                page.evaluate(self.fixture)
+                shas = [page.evaluate(self.render, t)['sha256'] for t in (0, 1000, 2500)]
+                rows[('off' if query else 'on') + ('-base' if baseline else '-worktree')] = dict(
+                    query=query, rev=self.BASE if baseline else 'worktree@' + self.revision,
+                    enabled=page.evaluate('ROLE_DETAIL.enabled'), sha256=shas, page_errors=errors)
+                self.assertEqual(errors, [])
+                context.close()
+        self.assertEqual(rows['off-base']['sha256'], rows['off-worktree']['sha256'])
+        self.assertFalse(rows['off-worktree']['enabled'])
+        self.assertNotEqual(rows['on-base']['sha256'], rows['on-worktree']['sha256'])
+        self.assertNotEqual(rows['off-worktree']['sha256'], rows['on-worktree']['sha256'])
+        result = dict(base_rev=self.BASE, revision=self.revision, base_runtime_routed=list(self.RUNTIME),
+                      region=dict(x=40, y=40, width=1180, height=640, viewport='1280x720', dpr=1),
+                      elements=['pad(thick bounce)', 'bar(thin bounce)', 'tri(bounce)',
+                                'horizontal mover', 'vertical mover'],
+                      mover_times_ms=[0, 1000, 2500], runs=rows,
+                      off_equal=rows['off-base']['sha256'] == rows['off-worktree']['sha256'],
+                      result='PASS ?roledetail=0 bounce/mover region SHA256 equal at base_rev and worktree '
+                           '(3 mover times); roledetail on differs (new look is active)')
+        self.evidence.write('roledetail-off.json', result)
+        print(result['result'])
+
+    def test_02_firefox_webkit_smoke(self):
+        import base64
+        out = dict(scenarios=['bounce landing on yard-entry via production physics()+draw()',
+                              'level mover travel via production physics()+draw()',
+                              'fixture bounce/mover role detail render'], browsers={})
+        for name in ('firefox', 'webkit'):
+            url, browser, stack = self.start(name)
+            errors = []
+            context, page, errors = self.open(url, browser, name, errors=errors)
+            page.evaluate('menu.unPause()')
+            landing = page.evaluate('''()=>{
+                const world=floors[0], e=world.byId.get('yard-entry');
+                ninja.x=e.x+270;ninja.y=e.y-ninja.radius-50;ninja.speedX=0;ninja.speedY=2;
+                for(let i=0;i<320;i++){
+                    const before=ninja.speedY;physics();draw();
+                    const contact=ROLE_DETAIL.contacts.get(e), pulse=ROLE_DETAIL.frame.pulses.find(p=>p.id===e.id);
+                    if(contact&&pulse)return {element:e.id,step:i,beforeSpeedY:before,afterSpeedY:ninja.speedY,
+                        strength:contact.strength,intensity:pulse.intensity};
+                }
+                return null;
+            }''')
+            self.assertIsNotNone(landing, name)
+            self.assertGreater(landing['strength'], 0)
+            self.assertLess(landing['afterSpeedY'], 0)
+            page.screenshot(path=str(self.evidence.path(f'browsers/{name}-bounce.png')))
+            mover = page.evaluate('''()=>{
+                const w=floors[0], m=w.level.movers.find(m=>w.byId.get(m.element).surfaceRole!=='hazard')||w.level.movers[0];
+                const e=w.byId.get(m.element), start=e[m.axis], steps0=w.elapsedSteps;
+                ninja.x=e.x+40;ninja.y=e.y-400;ninja.speedX=ninja.speedY=0;
+                const positions=[];
+                for(let i=0;i<90;i++){physics();draw();positions.push(e[m.axis])}
+                return {id:m.id,element:e.id,role:e.surfaceRole,axis:m.axis,start,end:positions.at(-1),
+                    distinct:new Set(positions).size,steps:w.elapsedSteps-steps0,
+                    framedMovers:ROLE_DETAIL.frame.movers.length};
+            }''')
+            self.assertGreater(mover['distinct'], 1, name)
+            self.assertGreater(mover['steps'], 0)
+            page.screenshot(path=str(self.evidence.path(f'browsers/{name}-mover.png')))
+            page.evaluate(self.fixture)
+            self.assertGreater(page.evaluate(self.render, 1000)['colors'], 20)
+            png = page.evaluate('()=>canvas.toDataURL()')
+            self.evidence.path(f'browsers/{name}-fixture.png').write_bytes(base64.b64decode(png.split(',')[1]))
+            self.assertEqual(errors, [], name)
+            out['browsers'][name] = dict(version=browser.version, viewport='1280x720', dpr=1,
+                                         landing=landing, mover=mover, page_errors=len(errors),
+                                         page_error_messages=errors,
+                                         screenshots=[f'browsers/{name}-{s}.png' for s in ('bounce', 'mover', 'fixture')])
+            context.close()
+            stack.close()
+        out['pass'] = 'PASS Firefox and WebKit: bounce landing pulse, moving mover, fixture render, 0 page errors'
+        self.evidence.write('browsers.json', out)
+        print(out['pass'], {n: b['version'] for n, b in out['browsers'].items()})
+
+    def test_03_side_by_side(self):
+        import base64, io
+        from PIL import Image, ImageDraw
+        url, browser, _ = self.start()
+        context, page, errors = self.open(url, browser, 'chromium')
+        page.evaluate(self.fixture)
+        page.evaluate(self.render, 1000)
+        png = page.evaluate('()=>canvas.toDataURL()')
+        game = Image.open(io.BytesIO(base64.b64decode(png.split(',')[1]))).convert('RGB')
+        self.assertEqual(game.size, (1280, 720))
+        self.assertEqual(errors, [])
+        plate = Image.open(self.PLATE).convert('RGB')
+        plate = plate.resize((round(plate.width * 720 / plate.height), 720))
+        sheet = Image.new('RGB', (1280 + 20 + plate.width, 760), '#000000')
+        sheet.paste(game, (0, 40))
+        sheet.paste(plate, (1300, 40))
+        draw = ImageDraw.Draw(sheet)
+        draw.text((10, 12), 'Game 1280x720 (worktree %s): thick pad, thin bar, triangle, horizontal + vertical mover'
+                  % self.revision[:7], fill='#ffffff')
+        draw.text((1310, 12), 'Concept S plate: s-board-aurora-tube.png', fill='#ffffff')
+        sheet.save(self.evidence.path('side-by-side.png'))
+        Image.open(self.evidence.path('side-by-side.png')).verify()
+        print('PASS side-by-side.png game frame %s next to concept S plate %s' % (game.size, plate.size))
