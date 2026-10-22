@@ -1,7 +1,7 @@
 // Grapple Over surface detail per role (GRAPPLE_OVER_ROLE_DETAIL), drawn over
 // the world's elements and clipped to each element's own polygon, so nothing
 // leaves the visible silhouette:
-//   bounce  lit edge strip, and a fading pulse after a real bounce contact
+//   bounce  cached solder-mask material, and a fading pulse after a real bounce contact
 //   solid   rivets along the edges and an edge bevel (lit up-left, shaded down-right)
 //   mover   running lights along the travel axis, chasing the travel direction
 //   hazard  warning chevrons
@@ -54,8 +54,8 @@ function drawGrappleOverRoleDetail(world)
         return
     const cullRect = getCullRect()
     const clockMs = world.elapsedSteps * physicsStepMs / cyclesPerTick
-    const movers = world.moverByElement || (world.moverByElement = new Map(world.level.movers.map(m => [m.element, m])))
-    const frame = {clockMs, counts: {bounce: 0, solid: 0, mover: 0, hazard: 0, drag: 0}, pulses: [], dots: 0}
+    const movers = world.moverByElement || new Map(world.level.movers.map(m => [m.element, m]))
+    const frame = {clockMs, counts: {bounce: 0, solid: 0, mover: 0, hazard: 0, drag: 0}, pulses: [], dots: 0, bounceSprites: 0}
 
     // One clip per role (the union of that role's visible silhouettes)
     // instead of a save/clip/restore per element: each element's detail still
@@ -148,6 +148,8 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
     if (role === 'bounce')
     {
         const config = style.bounce
+        drawBounceMaterial(element, world, clockMs)
+        frame.bounceSprites++
         const pulse = ROLE_DETAIL.pulse(element, world)
         ctx.beginPath()
         traceRoleDetailPath(element)
@@ -158,10 +160,15 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
             ctx.fill()
             frame.pulses.push({id: element.id, intensity: pulse})
         }
-        // The path stroke is centred on the edge: the clip keeps its inner half
-        ctx.globalAlpha = Math.min(1, config.stripAlpha * (1 + pulse))
-        ctx.strokeStyle = config.strip
-        ctx.lineWidth = config.stripWidth * 2 * (1 + pulse) * u
+        // Restore the existing crisp neon rim above material and contact fill.
+        const neon = STYLE.strokes.neonOutline
+        ctx.globalAlpha = 1
+        ctx.lineWidth = neon.width * u
+        ctx.strokeStyle = element.stroke
+        ctx.stroke()
+        ctx.lineWidth *= neon.coreWidthRatio
+        ctx.globalAlpha = neon.coreAlpha * neonPulse
+        ctx.strokeStyle = neon.coreColors[element.stroke] || neon.coreColor
         ctx.stroke()
     }
     else if (role === 'solid')
@@ -438,3 +445,112 @@ function drawRoleDetailDots(color, radius, dots, alpha = 1)
     ctx.restore()
 }
 
+
+// Material-owned state only: no cache or render fields are added to colliders.
+const BOUNCE_MATERIAL = {sprites: new Map(), star: null}
+
+function bounceFreeEdges(element, world)
+{
+    const points = element.getPoints()
+    return points.map((a, i) =>
+    {
+        const b = points[(i + 1) % points.length]
+        return !world.elements.some(other => other !== element && other.getPoints().some((c, j, ps) =>
+        {
+            const d = ps[(j + 1) % ps.length]
+            const dx = d.x - c.x, dy = d.y - c.y, length = Math.hypot(dx, dy)
+            if (length < 1e-6) return false
+            const on = p => Math.abs(dx * (p.y - c.y) - dy * (p.x - c.x)) / length < 1e-5 &&
+                (p.x - c.x) * dx + (p.y - c.y) * dy >= -1e-5 &&
+                (p.x - d.x) * dx + (p.y - d.y) * dy <= 1e-5
+            return on(a) && on(b)
+        }))
+    })
+}
+
+function bounceMaterialSprite(element, world, sx, sy, unit)
+{
+    const origin = element.points[0]
+    const points = element.points.map(p => ({x: Math.round((p.x - origin.x) * 100) / 100,
+        y: Math.round((p.y - origin.y) * 100) / 100}))
+    const free = bounceFreeEdges(element, world)
+    const shape = 'bounce|' + points.map(p => p.x + ',' + p.y).join(';')
+    const key = shape + '|' + [sx, sy, unit].join(',') + '|' + free.join(',')
+    const cache = BOUNCE_MATERIAL.sprites
+    if (cache.has(key))
+    {
+        const sprite = cache.get(key)
+        cache.delete(key); cache.set(key, sprite)
+        return sprite
+    }
+    let seed = 0
+    for (const ch of shape) seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) >>> 0
+    const layout = roleDetailLayout({points})
+    const box = layout.box, config = GRAPPLE_OVER_ROLE_DETAIL.bounce
+    const image = document.createElement('canvas')
+    image.width = Math.max(1, Math.ceil((box.right - box.left) * sx))
+    image.height = Math.max(1, Math.ceil((box.bottom - box.top) * sy))
+    const c = image.getContext('2d')
+    c.setTransform(sx, 0, 0, sy, -box.left * sx, -box.top * sy)
+    c.beginPath()
+    points.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))
+    c.closePath(); c.clip()
+    const base = c.createLinearGradient(box.left, box.top, box.right, box.bottom)
+    base.addColorStop(0, config.baseLight); base.addColorStop(1, config.baseDark)
+    c.fillStyle = base
+    c.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top)
+    layout.edges.forEach((e, i) =>
+    {
+        if (!free[i]) return
+        const thickness = Math.max(...points.map(p => -(p.x - e.a.x) * e.nx - (p.y - e.a.y) * e.ny))
+        const lip = Math.min(config.lipWidth * unit, thickness * config.lipShare)
+        if (lip <= 0) return
+        const gradient = c.createLinearGradient(e.a.x, e.a.y, e.a.x - e.nx * lip, e.a.y - e.ny * lip)
+        gradient.addColorStop(0, config.lip); gradient.addColorStop(1, config.lipFade)
+        c.fillStyle = gradient; c.beginPath(); c.moveTo(e.a.x, e.a.y); c.lineTo(e.b.x, e.b.y)
+        c.lineTo(e.b.x - e.nx * lip, e.b.y - e.ny * lip)
+        c.lineTo(e.a.x - e.nx * lip, e.a.y - e.ny * lip); c.closePath(); c.fill()
+    })
+    // Convex combinations stay inside these convex surface polygons, even bars.
+    const center = points.reduce((a, p) => ({x: a.x + p.x / points.length, y: a.y + p.y / points.length}), {x: 0, y: 0})
+    const glints = Array.from({length: 2 + Math.floor(roleDetailHash(seed, 0) * 3)}, (_, i) =>
+    {
+        const e = layout.edges[i % layout.edges.length], t = 0.2 + 0.6 * roleDetailHash(seed, i * 3 + 1)
+        return {x: center.x * 0.35 + (e.a.x + (e.b.x - e.a.x) * t) * 0.65,
+            y: center.y * 0.35 + (e.a.y + (e.b.y - e.a.y) * t) * 0.65,
+            period: 2400 + 1600 * roleDetailHash(seed, i * 3 + 2), phase: roleDetailHash(seed, i * 3 + 3)}
+    })
+    const sprite = {image, box, glints, free}
+    cache.set(key, sprite)
+    if (cache.size > 128) cache.delete(cache.keys().next().value)
+    return sprite
+}
+
+function drawBounceMaterial(element, world, clockMs)
+{
+    const m = ctx.getTransform(), unit = 1 / scale[version]
+    const sprite = bounceMaterialSprite(element, world, glowSpriteScale(m.a), glowSpriteScale(m.d), unit)
+    const config = GRAPPLE_OVER_ROLE_DETAIL.bounce
+    if (!BOUNCE_MATERIAL.star)
+    {
+        const star = document.createElement('canvas'); star.width = star.height = 33
+        const c = star.getContext('2d'); c.fillStyle = config.glint; c.beginPath()
+        for (let i = 0; i < 8; i++)
+        {
+            const a = i * Math.PI / 4, r = i % 2 ? 3 : 16
+            c.lineTo(16.5 + Math.cos(a) * r, 16.5 + Math.sin(a) * r)
+        }
+        c.closePath(); c.fill(); BOUNCE_MATERIAL.star = star
+    }
+    const ox = element.x + element.points[0].x + screen.x, oy = element.y + element.points[0].y + screen.y
+    ctx.save(); ctx.beginPath(); traceRoleDetailPath(element); ctx.clip(); ctx.globalAlpha = 1
+    const b = sprite.box
+    ctx.drawImage(sprite.image, ox + b.left, oy + b.top, b.right - b.left, b.bottom - b.top)
+    const r = config.glintRadius * unit
+    for (const g of sprite.glints)
+    {
+        ctx.globalAlpha = 0.2 + 0.8 * Math.pow(0.5 + 0.5 * Math.sin(2 * Math.PI * (clockMs / g.period + g.phase)), 2)
+        ctx.drawImage(BOUNCE_MATERIAL.star, ox + g.x - r, oy + g.y - r, 2 * r, 2 * r)
+    }
+    ctx.restore()
+}

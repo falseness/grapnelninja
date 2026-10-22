@@ -772,7 +772,9 @@ const GRAPPLE_OVER_PARALLAX = Object.freeze({
 // world scale); pulseMs is simulated time (physics steps), so a pause freezes
 // it; drag particle speed is screen px per simulated second.
 const GRAPPLE_OVER_ROLE_DETAIL = Object.freeze({
-    bounce: Object.freeze({strip: '#8dff96', stripWidth: 3, stripAlpha: 0.75,
+    bounce: Object.freeze({baseLight: '#0f4a24', baseDark: '#052010',
+        lip: '#8dff96', lipFade: '#8dff9600', lipWidth: 4, lipShare: 0.25,
+        glint: '#effff2', glintRadius: 6,
         pulseMs: 450, pulseFill: '#3dff4a', pulseFillAlpha: 0.45,
         // Normal approach speed (world units per physics cycle): no pulse at or
         // below min (resting hops), full pulse from full

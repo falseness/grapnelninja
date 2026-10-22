@@ -2855,3 +2855,158 @@ class Task493Tests(unittest.TestCase):
               f'(approach + commit/contact or exit); every one at most {HUD_NEEDED_493} under the HUD or with the HUD '
               f'over it faded ({len(faded)} faded poses, {len(approach_overlaps)} element frames partly under the HUD '
               f'at the approach pose)', flush=True)
+
+
+class Task639Tests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-639')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.evidence.log('CONFIG ' + json.dumps(dict(browser=cls.browser.version,
+            revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+            files={n: hashlib.sha256((ROOT / n).read_bytes()).hexdigest() for n in
+                   ['render/roledetail.js', 'style.js', 'tools/test_grapple_over_visuals.py']})))
+
+    def open(self, viewport=None, query='', mode='grapple_over', baseline=False):
+        viewport = viewport or dict(width=1280, height=720)
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=1)
+        self.addCleanup(context.close)
+        if baseline:
+            for name in ('render/roledetail.js', 'style.js'):
+                body = subprocess.check_output(['git', 'show', '5850cbe9742793e93e8b1659a66023b3c9fcacb8' + ':' + name], text=True)
+                context.route('**/' + name, lambda route, request, body=body: route.fulfill(body=body, content_type='application/javascript'))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.goto(self.url + query)
+        wait_for_boot(page)
+        page.evaluate(SEED_SCRIPT % 1)
+        page.evaluate('m => {performance.now=()=>1000; startGame(m); cancelAnimationFrame(game)}', mode)
+        page.wait_for_function('!unTouch')
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(test=self.id(), viewport=viewport,
+            dpr=1, mode=mode, query=query, baseline=baseline)))
+        return page
+
+    fixture = '''() => {
+        window.pads639 = [
+            [[0,0],[560,0],[560,110],[0,110]],
+            [[0,0],[520,0],[520,18],[0,18]],
+            [[0,180],[340,0],[340,180]]
+        ].map((ps,i)=>({id:'probe-'+i, x:160+i*40,y:150+i*220,
+            surfaceRole:'bounce',stroke:'#3dff4a',
+            points:ps.map(([x,y])=>({x,y})),
+            getPoints(){return this.points.map(p=>({x:p.x+this.x,y:p.y+this.y}))}}));
+        window.world639={elements:pads639,dragZones:[],level:{movers:[]},elapsedSteps:120};
+    }'''
+
+    def test_01_sprites_and_gallery(self):
+        rows = []
+        for run in range(2):
+            page = self.open()
+            page.evaluate(self.fixture)
+            data = page.evaluate('''() => {
+                const pixels=s=>Array.from(s.image.getContext('2d').getImageData(0,0,s.image.width,s.image.height).data);
+                const rows=pads639.map(e=>{
+                    const before=JSON.stringify(e), a=bounceMaterialSprite(e,world639,1,1,1);
+                    const untouched=before===JSON.stringify(e);
+                    e.x+=1700;e.y-=900;
+                    const b=bounceMaterialSprite(e,world639,1,1,1);
+                    return {pixels:pixels(a),translated:pixels(b),glints:a.glints.length,untouched};
+                });
+                const e=pads639[0];
+                const neighbor={getPoints:()=>[{x:e.x,y:e.y},{x:e.x+560,y:e.y},{x:e.x+560,y:e.y-30},{x:e.x,y:e.y-30}]};
+                const free=bounceFreeEdges(e,{elements:[e,neighbor]});
+                BOUNCE_MATERIAL.sprites.clear();
+                let first;
+                for(let i=0;i<200;i++){
+                    const p={...e,points:[{x:0,y:0},{x:30+i,y:0},{x:30+i,y:20},{x:0,y:20}]};
+                    p.getPoints=function(){return this.points.map(q=>({x:q.x+this.x,y:q.y+this.y}))};
+                    const s=bounceMaterialSprite(p,{elements:[p]},1,1,1);
+                    if(i===0)first=s;
+                    if(i===127)bounceMaterialSprite(e,world639,1,1,1);
+                }
+                return {rows,free,cacheSize:BOUNCE_MATERIAL.sprites.size};
+            }''')
+            for row in data['rows']:
+                row['sha256'] = hashlib.sha256(bytes(row.pop('pixels'))).hexdigest()
+                row['translatedSha256'] = hashlib.sha256(bytes(row.pop('translated'))).hexdigest()
+                self.assertEqual(row['sha256'], row['translatedSha256'])
+                self.assertTrue(row['untouched'])
+                self.assertIn(row['glints'], (2, 3, 4))
+            self.assertEqual(data['free'], [False, True, True, True])
+            self.assertEqual(data['cacheSize'], 128)
+            rows.append(data)
+            page.close()
+        self.assertEqual(rows[0], rows[1])
+        self.evidence.write('sprite-check.json', dict(shapes=['thick pad','thin bar','triangle'],runs=rows))
+        for w,h in ((1280,720),(844,390)):
+            page = self.open(dict(width=w,height=h))
+            page.evaluate(self.fixture)
+            page.evaluate('''() => {
+                screen.x=screen.y=0;scale[version]=1;
+                ctx.setTransform(canvas.width/1100,0,0,canvas.height/1000,0,0);
+                ctx.fillStyle='#080e18';ctx.fillRect(0,0,1100,1000);
+                pads639[0].x=120;pads639[0].y=150;
+                pads639[1].x=120;pads639[1].y=380;
+                pads639[2].x=420;pads639[2].y=570;
+                drawGrappleOverRoleDetail(world639);
+            }''')
+            page.screenshot(path=str(self.evidence.path(f'bounce-{w}x{h}.png')))
+            page.close()
+        print('PASS sprites: thick pad/thin bar/triangle hashes match two runs and positions; cacheSize=128 after 200 shapes; free=[false,true,true,true]; glints=2..4')
+
+    def test_02_real_landing_and_disabled(self):
+        page = self.open()
+        page.evaluate('menu.unPause()')
+        # Drop onto an actual level pad and let production physics resolve contact.
+        page.evaluate('''()=>{const e=floors[0].byId.get('yard-entry');
+            ninja.x=e.x+270;ninja.y=e.y-ninja.radius-50;ninja.speedX=0;ninja.speedY=2;
+            window.impact639=0;const mark=ROLE_DETAIL.markContact;
+            ROLE_DETAIL.markContact=function(e,impact){impact639=impact;return mark.call(this,e,impact)};
+        }''')
+        result = page.evaluate('''()=>{
+            const world=floors[0], e=world.byId.get('yard-entry');
+            for(let i=0;i<320;i++){
+                const before=ninja.speedY;physics();draw();
+                const contact=ROLE_DETAIL.contacts.get(e), pulse=ROLE_DETAIL.frame.pulses.find(p=>p.id===e.id);
+                if(contact&&pulse)return {element:e.id,beforeSpeedY:before,afterSpeedY:ninja.speedY,
+                    impact:impact639,strength:contact.strength,pulse,step:contact.step,min:GRAPPLE_OVER_ROLE_DETAIL.bounce.pulseMinImpact};
+            }
+            return null;
+        }''')
+        self.assertIsNotNone(result)
+        self.assertGreater(result['strength'],0)
+        self.assertGreater(result['pulse']['intensity'],0)
+        self.assertGreater(result['impact'],result['min'])
+        self.assertLess(result['afterSpeedY'],0)
+        off = self.open(query='?roledetail=0')
+        disabled = off.evaluate('''()=>{let draws=0;const old=drawBounceMaterial;
+            drawBounceMaterial=(...a)=>{draws++;return old(...a)};draw();return {enabled:ROLE_DETAIL.enabled,draws}}''')
+        self.assertEqual(disabled,dict(enabled=False,draws=0))
+        self.evidence.write('pulse.json',dict(landing=result,disabled=disabled))
+        print('PASS real landing: impact above pulseMinImpact; frame.pulses includes yard-entry; roledetail=0 bounce sprite draws=0')
+
+    def test_03_isolation_and_clock(self):
+        import base64
+        rows=[]
+        for mode in ('classic','bad'):
+            hashes=[]
+            for baseline in (True,False):
+                page=self.open(mode=mode,baseline=baseline)
+                png=page.evaluate('()=>{draw();return canvas.toDataURL()}')
+                hashes.append(hashlib.sha256(base64.b64decode(png.split(',')[1])).hexdigest())
+                page.close()
+            self.assertEqual(hashes[0],hashes[1])
+            rows.append(dict(mode=mode,sha256=hashes))
+        page=self.open();page.evaluate(self.fixture)
+        result=page.evaluate('''()=>{
+            const render=t=>{ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);
+                screen.x=screen.y=0;world639.elapsedSteps=t;drawGrappleOverRoleDetail(world639);return canvas.toDataURL()};
+            const a=render(100), b=render(100), c=render(180);
+            return {frozenIdentical:a===b,animated:a!==c};
+        }''')
+        self.assertEqual(result,dict(frozenIdentical=True,animated=True))
+        self.evidence.write('isolation.json',dict(modes=rows,clock=result))
+        print('PASS isolation: classic/bad baseline pixels identical; frozen simulated clock identical; advancing clock changes glints')
