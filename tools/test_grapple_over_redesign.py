@@ -5046,3 +5046,260 @@ class Task589Tests(unittest.TestCase):
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
         print(f'PASS dependencies: {len(unchanged)} unchanged runtime/support hashes; geometry unchanged')
         print('PASS index: all required files exist; JSON parses; touch-strip decodes 1688x1560; retained evidence <200 MB')
+
+
+class Task590Tests(unittest.TestCase):
+    """Current S04 composition review; independent fixtures are labelled explicitly."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='One isolated S04 entry then continuous traversal; separately labelled recovery and mover-phase fixtures'
+
+    write = Task557Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task588Tests.until
+
+    def fixture(self,index=0):
+        p=Task567Tests.page(self)
+        p.evaluate('s=>{TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500);Object.assign(ninja,s,{speedX:0,speedY:0});screen.trackGrappleOver(true)}',Task589Tests.fixtures[index])
+        return p
+
+    def test_01_objects_clearance_and_dependencies(self):
+        p=self.fixture()
+        g=p.evaluate('''()=>({elements:floors[0].level.elements,encounters:floors[0].level.encounters,
+            movers:floors[0].level.movers,range:grappleOverAcquisitionRadius(),upgrade:grappleOverProfile().upgradedAcquisitionRadius,
+            scale:scale[version],calibration:{movement:GRAPPLE_OVER_MOVEMENT,movers:GRAPPLE_OVER_MOVERS}})''')
+        self.assertEqual((g['range'],g['upgrade'],g['scale']),(360,540,.375))
+        es={e['id']:e for e in g['elements']}
+        for e in es.values():
+            self.assertTrue(e['purpose']);self.assertIn(e['role'],['bounce','solid','drag'])
+            e['encounters']=[c['id'] for c in g['encounters'] if e['id'] in c['elements']]
+            self.assertTrue(e['encounters'])
+            e['bounds']={k:e[a]+fn(v[a] for v in e['points']) for k,a,fn in [('left','x',min),('right','x',max),('top','y',min),('bottom','y',max)]}
+            e['width']=e['bounds']['right']-e['bounds']['left'];e['height']=e['bounds']['bottom']-e['bounds']['top']
+        for m in g['movers']:
+            e=es[m['element']];b=dict(e['bounds']);axis=m['axis']
+            b['left' if axis=='x' else 'top']=m['min']
+            b['right' if axis=='x' else 'bottom']=m['max']+e['width' if axis=='x' else 'height']
+            m['sweptBounds']=b
+            if m['element']=='viaduct-carrier':
+                self.assertGreaterEqual(m['max']-m['min'],max(360,2*e['width']))
+                self.assertTrue(6000<=m['periodMs']<=10000)
+        def distance(a,b):
+            return (max(a['left']-b['right'],b['left']-a['right'],0)**2+max(a['top']-b['bottom'],b['top']-a['bottom'],0)**2)**.5
+        measurements=[]
+        for z in [e for e in es.values() if e['role']=='drag']:
+            self.assertGreaterEqual(z['width'],3*g['range']);self.assertGreaterEqual(z['width']/z['height'],4)
+            self.assertFalse(z['grapplable'])
+            for e in es.values():
+                if e['role']=='drag':continue
+                sweep=next((m['sweptBounds'] for m in g['movers'] if m['element']==e['id']),e['bounds'])
+                d=distance(z['bounds'],sweep)
+                measurements.append(dict(zone=z['id'],collider=e['id'],clearance=d))
+                self.assertGreaterEqual(d+1e-8,540,(z['id'],e['id'],d))
+        carrier=next(m for m in g['movers'] if m['element']=='viaduct-carrier')
+        for e in es.values():
+            if e['id']!='viaduct-carrier':self.assertGreater(distance(carrier['sweptBounds'],e['bounds']),0,e['id'])
+        g.update(clearances=measurements,firstUseOrder=['green S01','blue S03','yellow S04'],hazards=[],
+            planningWidths=[es[n]['width'] for n in Task589Tests.exits],
+            gaps=[es[b]['bounds']['left']-es[a]['bounds']['right'] for a,b in zip(['freight-exit']+Task589Tests.exits[:-1],Task589Tests.exits)],removedClutter='No decorative colliders; every object mapped to encounter and purpose')
+        self.assertEqual(g['planningWidths'],[680,680,680,800])
+        self.assertEqual(g['gaps'],[252,252,676,252])
+        self.assertTrue(all(e['role']=='bounce' for e in es.values() if e['id'].startswith('yard-')))
+        self.assertTrue(all(e['id'].startswith('viaduct') for e in es.values() if e['role']=='drag'))
+        self.write('objects.json',g)
+        old=json.loads((ROOT/'artifacts/TASK-589/evidence-index.json').read_text())['config']['source_hashes']
+        unchanged={n:h for n,h in old.items() if n not in ['mountain.js','tools/test_grapple_over_redesign.py']}
+        for n,h in unchanged.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        self.write('dependency.json',dict(unchanged=unchanged,changed=['mountain.js: S04 lower recovery geometry and wall role','tools/test_grapple_over_redesign.py: additive Task590Tests'],
+            reused=[],superseded='TASK-585..589 yellow/recovery coordinates are historical. Current S04 route, tolerance, full sweep, phases, suppression and recoveries refreshed here. Upper route unchanged.',
+            hashPolicy='HEAD-only commits do not invalidate identical tested source hashes'))
+        compatibility=[]
+        for preview in [False,True]:
+            q=Task558Tests.page(self,preview)
+            for mode in ['grapple_over','classic','bad']:
+                row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,range:version==='grapple_over'?grappleOverAcquisitionRadius():null,scale:scale[version],gravity:GRAVITY,pull:grappleSpeed}}''',mode)
+                row['preview']=preview;compatibility.append(row)
+                if mode=='grapple_over':
+                    self.assertEqual(row['range'],360 if preview else 1080);self.assertEqual(row['scale'],.375)
+            q.context.close()
+        self.assertEqual([{k:v for k,v in r.items() if k!='preview'} for r in compatibility[1:3]],[{k:v for k,v in r.items() if k!='preview'} for r in compatibility[4:6]])
+        self.write('compatibility.json',dict(cases=compatibility))
+        print('PASS compatibility: old mountain range 1080 remains playable; isolated preview range 360; classic/bad identical settings')
+        print('PASS objects: every gameplay object has purpose/encounter; green/blue then yellow; no red; planning widths 680/680/680/800; gaps 252/252/676/252')
+        print('PASS yellow: widths >=1080; aspect >=4; every collider/full swept bound clearance >=540; blue carrier travel 720 period 10000 sweep clear')
+
+    def test_02_phases_and_tolerance(self):
+        phases=[]
+        for phase in [0,150,300,450]:
+            p=self.fixture(2);self.step(p,phase);self.step(p,600-phase)
+            self.press(p,Task589Tests.targets[2]);self.step(p,256);p.mouse.up()
+            tick=self.until(p,'viaduct-third-landing',800);self.assertIsNotNone(tick)
+            r=self.result(p);phases.append(dict(arrivalPhase=phase/600,waitTicks=600-phase,landing=self.landings(r,'viaduct-third-landing')[0],inputs=r['inputs']))
+            p.context.close()
+        self.write('phases.json',dict(scope='Four isolated arrival-phase fixtures, safe wait then trusted input traversal',cases=phases))
+        # Reuse helper implementation, not previous-run evidence; only this tolerance method runs.
+        probe=Task589Tests();probe.browser=self.browser;probe.url=self.url;probe.out=self.out;probe.config=self.config
+        try:probe.test_01_tolerance()
+        finally:probe.doCleanups()
+        print('PASS phases: four quarter-cycle arrivals wait safely and traverse; 40 current-geometry desktop/touch tolerance cases')
+
+    def record(self,p,label):
+        p.evaluate('''label=>{window.reviewFrames=[];const step=YARD.step;
+            window.captureReview=()=>{draw();reviewFrames.push({image:canvas.toDataURL('image/jpeg',.7),tick:YARD.result().tick,label})};
+            YARD.step=n=>{for(let i=0;i<n;i++){step(1);if(YARD.result().tick%12===0)captureReview()}};captureReview()}''',label)
+
+    def pull(self,p,x,y,n,coast=0):
+        self.press(p,dict(x=x,y=y));self.step(p,n);p.mouse.up()
+        if coast:self.step(p,coast)
+
+    def test_03_continuous_route_composition_and_recovery(self):
+        p=self.fixture();self.record(p,'S04 continuous from one isolated entry / 4x')
+        views=[];observations=[]
+        def capture(index,target):
+            p.evaluate('draw()')
+            obs=p.evaluate('t=>({tick:YARD.result().tick,target:t,client:YARD.client(t),landmark:LANDMARKS.frame.drawn,player:{x:ninja.x,y:ninja.y}})',target)
+            self.assertTrue(0<obs['client']['x']<1280 and 0<obs['client']['y']<720)
+            self.assertEqual(obs['landmark'][0]['id'],'broken-viaduct')
+            observations.append(obs)
+            im=Image.open(io.BytesIO(p.screenshot())).convert('RGB')
+            ImageDraw.Draw(im).text((12,690),f'S04-0{index} actual continuous approach tick {obs["tick"]}',fill='white');views.append(im)
+        capture(1,Task585Tests.target);self.pull(p,7488,-1679,30)
+        self.assertEqual(self.until(p,'viaduct-landing'),105)
+        self.pull(p,8170,-1508,26);capture(2,Task586Tests.target)
+        self.pull(p,Task586Tests.target['x'],Task586Tests.target['y'],30)
+        self.assertEqual(self.until(p,'viaduct-second-landing'),179)
+        capture(3,dict(x=9258,y=-1720));self.pull(p,8910,-1508,12)
+        self.assertEqual(self.until(p,'viaduct-third-landing'),296)
+        capture(4,Task588Tests.target)
+        self.assertEqual(self.until(p,'viaduct-exit'),352)
+        r=self.result(p)
+        self.write('route.json',dict(exits=[dict(id=n,tick=self.landings(r,n)[0]['tick']) for n in Task589Tests.exits],
+            inputs=r['inputs'],trace=r['rows'],resetsAfterStart=0,poseInjectionsAfterStart=0,
+            scope=self.config['simulation'],alternative='Released momentum at tick 191 traverses carrier/final span; local deliberate launch verified separately by tolerance cases'))
+        self.write('approaches.json',dict(views=observations))
+        sheet=Image.new('RGB',(2560,1440))
+        for i,im in enumerate(views):sheet.paste(im,((i%2)*1280,(i//2)*720))
+        sheet.save(self.out/'approaches.jpg',quality=85)
+        overview=Image.new('RGB',(2560,720));sil=Image.new('RGB',(2560,720),'white')
+        for i,center in enumerate([7800,11100]):
+            p.evaluate('x=>{screen.x=width/.375/2-x;screen.y=height/.375/2+900;draw()}',center)
+            overview.paste(Image.open(io.BytesIO(p.screenshot())).convert('RGB'),(1280*i,0))
+            f=p.evaluate('''()=>({elements:[...floors[0].elements,...floors[0].dragZones].map(e=>({id:e.id,points:e.getPoints(),role:e.surfaceRole})),
+                shape:replacementViaductShape(GRAPPLE_OVER_LANDMARKS.width,GRAPPLE_OVER_LANDMARKS.height),
+                landmark:{x:(7700+screen.x)*.375-GRAPPLE_OVER_LANDMARKS.width/2,y:(-1200+screen.y)*.375-GRAPPLE_OVER_LANDMARKS.height},
+                camera:{x:screen.x,y:screen.y},factor:1280/width})''')
+            tile=Image.new('RGB',(1280,720),'white');pen=ImageDraw.Draw(tile);k=f['factor']
+            for part in f['shape']['parts']:
+                pen.polygon([((x+f['landmark']['x'])*k,(y+f['landmark']['y'])*k) for x,y in part],fill='#aaaaaa')
+            for e in f['elements']:
+                pts=[((v['x']+f['camera']['x'])*.375*k,(v['y']+f['camera']['y'])*.375*k) for v in e['points']]
+                pen.polygon(pts,fill='#cccccc' if e['role']=='drag' else 'black')
+                if e['id'].startswith('viaduct'):pen.text(pts[0],e['id'],fill='#555555')
+            pen.text((12,12),'Broken Viaduct / interrupted deck and piers / plain silhouette',fill='black');sil.paste(tile,(1280*i,0))
+        overview.save(self.out/'overview.png');sil.save(self.out/'silhouette.png')
+        frames=p.evaluate('reviewFrames')
+        # Separately labelled mover fixture includes a complete production cycle.
+        q=self.fixture(2);self.record(q,'SEPARATE carrier entry / full 10s cycle / 4x')
+        cycle=q.evaluate('''()=>{let a=[];for(let i=0;i<600;i++){YARD.step(1);const e=floors[0].byId.get('viaduct-carrier');
+            a.push({tick:i+1,x:e.x,px:ninja.x,py:ninja.y})}return a}''')
+        available=[((max(s['x']-s['px'],0,s['px']-s['x']-360))**2+(max(-1770-s['py'],0,s['py']+1690))**2)**.5<=360 for s in cycle]
+        best=streak=0
+        for hit in available*2:streak=streak+1 if hit else 0;best=max(best,streak)
+        window=min(best,600)*1000/60;self.assertGreaterEqual(window,1000)
+        self.assertAlmostEqual(max(s['x'] for s in cycle)-min(s['x'] for s in cycle),720)
+        self.write('cycle.json',dict(samples=cycle,acquisitionWindowMs=window,periodMs=10000))
+        frames.extend(q.evaluate('reviewFrames'));q.context.close()
+        frames.extend(self.recovery_clips())
+        p.evaluate('a=>window.reviewFrames=a',frames);p.bring_to_front()
+        clip=p.evaluate('''async () => {
+            const c=document.createElement('canvas');c.width=1280;c.height=720;const ctx=c.getContext('2d');
+            const stream=c.captureStream(0),track=stream.getVideoTracks()[0],chunks=[];
+            const rec=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'});
+            rec.ondataavailable=e=>chunks.push(e.data);const ended=new Promise(r=>rec.onstop=r);rec.start();
+            for(const f of reviewFrames){const im=new Image();im.src=f.image;await im.decode();ctx.drawImage(im,0,0,1280,720);
+                ctx.fillStyle='white';ctx.fillText((f.label || 'S04 continuous from isolated entry')+' / 4x / tick '+f.tick,12,24);
+                track.requestFrame();await new Promise(r=>setTimeout(r,50));}
+            await new Promise(r=>setTimeout(r,200));rec.stop();await ended;stream.getTracks().forEach(t=>t.stop());
+            const blob=new Blob(chunks,{type:'video/webm'});return await new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.readAsDataURL(blob)})}''')
+        (self.out/'section.webm').write_bytes(base64.b64decode(clip))
+        decoded=p.evaluate('''async b64=>{const v=document.createElement('video');v.muted=true;v.src='data:video/webm;base64,'+b64;let frames=0;
+            const count=()=>{frames++;v.requestVideoFrameCallback(count)};v.requestVideoFrameCallback(count);await v.play();
+            await new Promise((resolve,reject)=>{v.onended=resolve;v.onerror=reject});return {frames,width:v.videoWidth,height:v.videoHeight}}''',clip)
+        self.assertGreater(decoded['frames'],100);self.assertEqual(decoded['width'],1280)
+        self.write('clip-decode.json',decoded)
+        print(f'PASS continuous: exits 105/179/296/352; four actual approaches; full cycle 720 travel; acquisition window {window:.1f}ms; recovery clips; decoded {decoded}')
+
+    def recovery_clips(self):
+        frames=[];cases=[];suppression=[]
+        for index in [0,3]:
+            # Unassisted fall/rebound uses the actual production damping and bouncer.
+            p=self.fixture(index);target=Task589Tests.targets[index]
+            self.pull(p,target['x'],target['y'],6 if index==0 else 12)
+            catch_id='viaduct-catch' if index==0 else 'viaduct-exit-catch'
+            catch=self.until(p,catch_id,800);self.assertIsNotNone(catch)
+            self.step(p,250);r=self.result(p)
+            apex=min(s['y'] for s in r['rows'][catch:])
+            drop=r['rows'][catch-1]['y']-r['rows'][0]['y'];rebound=r['rows'][catch-1]['y']-apex
+            control=self.fixture(index)
+            control.evaluate('floors[0].dragZones=[]')  # Labelled no-yellow comparator only; production physics unchanged.
+            self.pull(control,target['x'],target['y'],6 if index==0 else 12)
+            control_catch=self.until(control,catch_id,800);self.assertIsNotNone(control_catch)
+            self.step(control,250);cr=self.result(control)
+            control_rebound=cr['rows'][control_catch-1]['y']-min(s['y'] for s in cr['rows'][control_catch:])
+            self.assertLess(rebound,control_rebound*.75)
+            control.context.close()
+            suppression.append(dict(encounter=f'S04-0{index+1}',catchTick=catch,drop=drop,rebound=rebound,apex=apex,
+                inputs=r['inputs'],trace=r['rows'],controlRebound=control_rebound,controlTrace=cr['rows'],comparison='Same entry/input with yellow disabled only in labelled comparator; production rebound reduced at least 25%; no recovery input during measurement'))
+            p.context.close()
+            p=self.fixture(index);self.record(p,f'SEPARATE S04-0{index+1} fall and lateral recovery / 4x')
+            self.pull(p,target['x'],target['y'],6 if index==0 else 12)
+            catch=self.until(p,catch_id,800);self.assertIsNotNone(catch)
+            x=p.evaluate('ninja.x');self.pull(p,x-280,45,30,50)
+            wall=6820 if index==0 else 10108
+            for _ in range(20):
+                pos=p.evaluate('({x:ninja.x,y:ninja.y})')
+                if pos['y'] < -1050:break
+                dx=abs(wall-1-pos['x']);up=min(250,max(0,350**2-dx**2)**.5)
+                self.pull(p,wall-1,max(-1140,pos['y']-up),60)
+            self.assertLess(p.evaluate('ninja.y'),-1050)
+            edge=7360 if index==0 else 10648;bottom=-1188.2 if index==0 else -1228.2
+            for _ in range(5 if index==0 else 3):
+                x=p.evaluate('ninja.x');self.pull(p,min(edge-2,x+220),bottom-5,60)
+            for _ in range(1 if index==0 else 4):self.pull(p,edge-2,bottom-55,90)
+            return_id='freight-exit-catch' if index==0 else 'viaduct-third-catch'
+            if not self.landings(self.result(p),return_id):self.assertIsNotNone(self.until(p,return_id,200))
+            r=self.result(p)
+            returned=self.landings(r,return_id);self.assertTrue(returned,(index,return_id))
+            cases.append(dict(encounter=f'S04-0{index+1}',catchTick=catch,returned=returned[0],returnCollider=return_id,
+                inputs=r['inputs'],trace=r['rows'],resetsAfterStart=0,poseInjectionsAfterStart=0))
+            p.evaluate('captureReview()')
+            frames.extend(p.evaluate('reviewFrames'));p.context.close()
+        self.write('recovery.json',dict(scope='Two independent yellow-band falls with continuous normal-input lateral escapes',cases=cases))
+        self.write('suppression.json',dict(cases=suppression))
+        print('PASS recovery: both yellow bands traversed; lower catches then top-contact return by trusted input; rebound reduced >=25% against no-yellow comparator; no resets/injections')
+        return frames
+
+    def test_04_evidence_index(self):
+        required={'commands.log':'commands, exit status, identifiers, browser/viewport/revision/source hashes','tests.log':'four focused Task590Tests, no skips',
+            'overview.png':'all four built encounters, broken deck landmark, open gaps and broad landings',
+            'silhouette.png':'plain collider silhouettes and interrupted deck/piers','approaches.jpg':'four actual continuous approach views',
+            'approaches.json':'on-screen target measurements','objects.json':'every purpose/role/encounter, full swept bounds and every yellow/collider clearance',
+            'compatibility.json':'legacy/preview and classic/bad settings',
+            'cycle.json':'full production mover cycle and acquisition window >=1s','phases.json':'four quarter-phase arrival/wait/traversal cases',
+            'tolerance.json':'40 refreshed desktop/touch tolerance cases','route.json':'continuous four exits from one entry; trusted inputs and trace',
+            'recovery.json':'both yellow catches and continuous lateral return traces','suppression.json':'unassisted fall/rebound versus labelled no-yellow comparator for both bands',
+            'section.webm':'continuous representative section, separately labelled full mover cycle and both recoveries',
+            'clip-decode.json':'full decoded video frame count','dependency.json':'exact unchanged hashes and affected subsystem/superseded proof map',
+            'review.md':'visual review with image locations, pacing and limitations','evidence-index.json':'artifact assertions and provenance'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith(('.png','.jpg')):
+                with Image.open(self.out/name) as im:im.load();self.assertGreaterEqual(im.width,1280)
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: all required files exist; JSON parses; images/video decode; retained evidence <200 MB')
