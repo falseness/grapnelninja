@@ -189,7 +189,12 @@ examples). Their document order is significant and is preserved.
   `tools/convert_extended_mountain_svg.py` writes guides only when `build(meas,
   guides=True)` is called. The points come from its route `curve()`, which
   starts and ends at the encounter's `flight` contacts. The default output
-  has no guides.
+  has no guides. Guides are per transfer: in one file, some transfers may
+  have a guide and others may not, and the unguided ones import in the
+  legacy shape. The shipped `extended-mountain-v6` SVG has no guides yet.
+  `GuideTests.test_shipped_v6_roundtrip` adds `guide()` values to all 30 of
+  its transfers. Stripping `guide` from that import gives the shipped level
+  JSON byte-for-byte.
 - At least one section, one encounter and one transfer. An empty kind is
   `MissingMetadata`.
 - Any unresolved reference is `MissingReference`. An encounter that no

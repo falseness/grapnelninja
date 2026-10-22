@@ -560,7 +560,75 @@ class GuideTests(ImportCase):
                     'strippedEqualsValidWithoutGuide': self.without_transfer_guides(small) == import_svg(VALID.encode()),
                 },
             }
-            Path(EVIDENCE, 'roundtrip.json').write_text(json.dumps(record, separators=(',', ':')) + '\n')
+            path = Path(EVIDENCE, 'roundtrip.json')
+            prior = json.loads(path.read_text()) if path.exists() else {}
+            prior.update(record)
+            path.write_text(json.dumps(prior, separators=(',', ':')) + '\n')
+
+    def test_shipped_v6_roundtrip(self):
+        """The shipped level SVG gains guides from the route curve() without changing anything else."""
+        import convert_extended_mountain_svg as conv
+        svg_path = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
+        meas_path = ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json'
+        plain_svg, meas = svg_path.read_text(), json.loads(meas_path.read_text())
+        rows, frags = {'T%02d' % r['number']: r for r in meas['encounters']}, meas['fragments']
+        guided_svg = re.sub(r'(<gn:transfer id="(T\d+)"[^>]*?)/>',
+                            lambda m: '%s guide="%s"/>' % (m.group(1), conv.guide(rows[m.group(2)], frags)), plain_svg)
+        self.assertNotIn(' guide=', plain_svg)
+        self.assertEqual(guided_svg.count(' guide="'), 30)
+        plain_level = import_svg(plain_svg.encode())
+        self.assertEqual(dumps(plain_level).encode(), (ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json').read_bytes())
+        runs = [dumps(import_svg(guided_svg.encode())) for _ in range(2)]
+        self.assertEqual(runs[0], runs[1])
+        level = json.loads(runs[0])
+        self.assertEqual(level['layoutId'], 'extended-mountain-v6')
+        fragments = {f['id'] for f in level['svgFormat']['fragments']}
+        checks = []
+        for t in level['svgFormat']['transfers']:
+            r = rows[t['id']]
+            expected = [list(p) for p in conv.curve(r, frags)]
+            self.assertEqual((t['from'], t['to']), (r['fromFragment'], r['toFragment']))
+            self.assertIn(t['from'], fragments)
+            self.assertIn(t['to'], fragments)
+            self.assertEqual(t['guide'], expected)
+            self.assertEqual([t['guide'][0], t['guide'][-1]], [list(p) for p in r['flight']])
+            checks.append({'id': t['id'], 'from': t['from'], 'to': t['to'], 'encounter': t['encounter'], 'guide': t['guide'],
+                           'equal': t['guide'] == expected, 'startIsFromContact': t['guide'][0] == list(r['flight'][0]),
+                           'endIsToContact': t['guide'][-1] == list(r['flight'][1])})
+        self.assertEqual(len(checks), 30)
+        stripped = self.without_transfer_guides(level)
+        self.assertEqual(stripped, plain_level)
+        same = {k: level[k] == plain_level[k] for k in ('layoutId', 'bounds', 'spawn', 'finish', 'elements', 'movers', 'sections', 'encounters')}
+        same['fragments'] = level['svgFormat']['fragments'] == plain_level['svgFormat']['fragments']
+        same['grappleRange'] = level['svgFormat']['grappleRange'] == plain_level['svgFormat']['grappleRange']
+        self.assertTrue(all(same.values()), same)
+        annotation = [w for w in ('annotations', 'route-curve', '<path') if w in runs[0]]
+        self.assertEqual(annotation, [])
+        if EVIDENCE:
+            path = Path(EVIDENCE, 'roundtrip.json')
+            prior = json.loads(path.read_text()) if path.exists() else {}
+            prior['shippedV6'] = {
+                'svg': str(svg_path.relative_to(ROOT)), 'svgSha256': sha(plain_svg),
+                'measurements': str(meas_path.relative_to(ROOT)), 'measurementsSha256': sha(meas_path.read_bytes()),
+                'guidedSvgSha256': sha(guided_svg), 'plainImportEqualsShippedJson': True,
+                'importRun1Sha256': sha(runs[0]), 'importRun2Sha256': sha(runs[1]), 'twoImportsByteIdentical': runs[0] == runs[1],
+                'strippedGuidedEqualsPlain': stripped == plain_level, 'identicalWithAndWithoutGuides': same,
+                'roles': sorted({(e['role'], e['grapplable']) for e in level['elements']}),
+                'annotationMarkersInOutput': annotation, 'transfers': checks,
+                'allGuidesEqualCurve': all(c['equal'] for c in checks),
+                'allEndpointsAreContacts': all(c['startIsFromContact'] and c['endIsToContact'] for c in checks),
+                'allFromToResolve': all(c['from'] in fragments and c['to'] in fragments for c in checks),
+            }
+            path.write_text(json.dumps(prior, separators=(',', ':')) + '\n')
+
+    def test_mixed_guided_and_legacy_transfers(self):
+        """Guides are per transfer: unguided siblings keep the legacy shape."""
+        text = Path(ROOT, 'artifacts', 'levels', 'extended-mountain.svg').read_text()
+        text = edit(text, 'encounter="S06-04" gap-percent="80"/>', 'encounter="S06-04" gap-percent="80" guide="%s"/>' % self.GUIDE)
+        transfers = import_svg(text.encode())['svgFormat']['transfers']
+        self.assertEqual([t['id'] for t in transfers if 'guide' in t], ['T02'])
+        self.assertEqual(transfers[1]['guide'], [[300, -10], [500, -400], [700, -400], [924.5, -50]])
+        self.assertEqual(len(transfers), 30)
 
 
 class LoaderTests(unittest.TestCase):
