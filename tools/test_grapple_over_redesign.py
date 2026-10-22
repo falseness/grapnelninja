@@ -12261,3 +12261,209 @@ class Task630Tests(unittest.TestCase):
         size=sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file())
         self.assertLess(size,200_000_000)
         print(f'PASS dependencies/index: {len(runtime)} matching source hashes; 7 required files parse/exist; {size} bytes <200 MB')
+
+
+class Task631Tests(unittest.TestCase):
+    """Full-layout isolated save fixtures using production physics; not continuous gameplay."""
+    key = Task566Tests.key
+    legacy = Task566Tests.legacy
+    write = Task557Tests.write
+    enter = Task566Tests.enter
+    flush = Task566Tests.flush
+
+    @classmethod
+    def setUpClass(cls):
+        if 'GRAPPLE_OVER_EVIDENCE_DIR' not in os.environ:
+            raise ValueError('Declare GRAPPLE_OVER_EVIDENCE_DIR for Task631Tests')
+        Task557Tests.setUpClass.__func__(cls)
+        for name in ['tools/browser_test_support.py', 'tools/grapple_over_test_support.py', 'tools/perf_mobile.py']:
+            cls.hashes[name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK631_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    def page(self, seed=None, preview=True, unavailable=False):
+        ctx=self.browser.new_context(viewport=VIEWPORT,device_scale_factor=1)
+        self.addCleanup(ctx.close)
+        p=ctx.new_page();errors=[]
+        p.on('pageerror',lambda e:errors.append(str(e)))
+        self.addCleanup(lambda:self.assertEqual(errors,[]))
+        p.add_init_script(SEED_SCRIPT % 1)
+        p.add_init_script("const raf631=requestAnimationFrame;window.requestAnimationFrame=fn=>fn.name==='gameLoop'?0:raf631.call(window,fn)")
+        p.add_init_script('if(!sessionStorage.seeded631){for(const [k,v] of Object.entries('+json.dumps({**self.legacy,**(seed or {})})+'))localStorage.setItem(k,v);sessionStorage.seeded631="yes"}')
+        if unavailable:
+            p.add_init_script("Object.defineProperty(window,'localStorage',{get(){throw new DOMException('fixture unavailable','SecurityError')}})")
+        p.goto(self.url+('?grapplePreview=replacement-v1' if preview else ''))
+        self.enter(p)
+        return p
+
+    @staticmethod
+    def digest(value):
+        return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+    def test_01_full_layout_continuations(self):
+        rows=[]
+        fixture='''kind=>{
+          menu.unPause();const w=floors[0];w.climbStats.maxHeight=9000;
+          ninja.x=w.level.spawn.x;ninja.y=w.level.spawn.y-180;ninja.speedX=.1;ninja.speedY=1;
+          for(let i=0;i<7;i++)physics();
+          let feature=null;
+          if(kind==='moving-platform'||kind==='moving-anchor'||kind==='wrapped-rope'){
+            const m=w.level.movers.find(m=>w.byId.get(m.element).surfaceRole==='solid'&&w.byId.get(m.element).grapplable),e=w.byId.get(m.element),pts=e.getPoints();
+            feature={mover:m,element:e.id};
+            ninja.x=(Math.min(...pts.map(p=>p.x))+Math.max(...pts.map(p=>p.x)))/2;
+            ninja.y=Math.min(...pts.map(p=>p.y))-ninja.radius;ninja.speedX=ninja.speedY=0;
+            if(kind!=='moving-platform'){
+              ninja.y-=90;grapnel.throwed=grapnel.grappled=true;
+              grapnel.pos=[[pts[0].x,pts[0].y,e]];
+              if(kind==='wrapped-rope')grapnel.pos.push([pts[1].x,pts[1].y,e]);
+            }else {const solid=ninja.applySolidContact;feature.contacts=[];ninja.applySolidContact=function(c){feature.contacts.push({x:c.x,y:c.y,nx:c.nx,ny:c.ny,top:Math.min(...e.getPoints().map(p=>p.y))});return solid.call(this,c)};physics();delete ninja.applySolidContact;}
+          }
+          if(kind==='yellow-passage'){
+            const z=w.dragZones[0],pts=z.getPoints();
+            ninja.x=pts.reduce((s,p)=>s+p.x,0)/pts.length;ninja.y=pts.reduce((s,p)=>s+p.y,0)/pts.length;
+            ninja.speedX=1;ninja.speedY=1;
+            feature={zone:z.id,inside:pointInPolygon(pts,ninja.x,ninja.y)};physics();
+            feature.insideAfter=pointInPolygon(pts,ninja.x,ninja.y);
+          }
+          if(kind==='hazard-contact'){
+            const e=w.elements.find(e=>e.surfaceRole==='hazard'),pts=e.getPoints();
+            ninja.x=(Math.min(...pts.map(p=>p.x))+Math.max(...pts.map(p=>p.x)))/2;
+            ninja.y=Math.min(...pts.map(p=>p.y))-ninja.radius+1;ninja.speedY=2;
+            ninja.collision();feature={hazard:e.id,cooldown:ninja.hazardCooldownMs};
+          }
+          if(kind==='upgrade-540'){
+            const s=w.level.sections.find(s=>s.id===grappleOverProfile().rangeUpgradeSection),b=s.rangeUpgradeZone||s.band;
+            ninja.x=(b.left+b.right)/2;ninja.y=(b.top+b.bottom)/2;physics();
+            feature={band:b,range:grappleOverAcquisitionRadius()};
+          }
+          if(kind==='completion'){
+            const b=w.level.finish;ninja.x=(b.left+b.right)/2;ninja.y=(b.top+b.bottom)/2;physics();
+            feature={finish:b,completed:w.climbStats.completed};
+          }
+          pressHeld=stalePress=gameplayPressOwned=false;
+          return {feature,state:captureClimbState(),range:grappleOverAcquisitionRadius(),scale:scale[version]};
+        }'''
+        replay='''()=>{
+          const trace=[],events=[];
+          const solid=ninja.applySolidContact,hazard=ninja.applyHazardContact;
+          ninja.applySolidContact=function(c){events.push(['solid',trace.length,c.element?.id]);return solid.call(this,c)};
+          ninja.applyHazardContact=function(c){events.push(['hazard',trace.length,c.element?.id]);return hazard.call(this,c)};
+          for(let i=0;i<90;i++){physics();trace.push(captureClimbState())}
+          delete ninja.applySolidContact;delete ninja.applyHazardContact;
+          return {trace,events};
+        }'''
+        for kind in ['free-fall','moving-platform','moving-anchor','wrapped-rope','yellow-passage','hazard-contact','upgrade-540','completion']:
+            p=self.page();initial=p.evaluate(fixture,kind);state=initial['state'];f=initial['feature']
+            self.assertEqual(initial['scale'],.375)
+            if kind=='wrapped-rope':self.assertEqual(len(state['grapple']['segments']),2)
+            if kind=='moving-platform':self.assertTrue(any(c['ny']<-.9 and abs(c['y']-c['top'])<1e-6 for c in f['contacts']))
+            if kind=='moving-anchor':self.assertEqual(state['grapple']['segments'][0]['id'],f['element'])
+            if kind=='yellow-passage':self.assertTrue(f['inside'] and f['insideAfter'])
+            if kind=='hazard-contact':self.assertEqual(f['cooldown'],350)
+            if kind=='upgrade-540':self.assertEqual(initial['range'],540)
+            if kind=='completion':self.assertTrue(state['stats']['completed'])
+            p.evaluate("window.dispatchEvent(new Event('pagehide'))")
+            p.wait_for_function('k=>localStorage.getItem(k)===JSON.stringify(captureClimbState())',arg=self.key)
+            persisted=json.loads(p.evaluate('k=>localStorage.getItem(k)',self.key))
+            self.assertEqual(persisted,state)
+            control=self.page({self.key:json.dumps(state)})
+            if kind!='completion':control.evaluate('menu.unPause()')
+            first=control.evaluate(replay);control.context.close()
+            p.reload();self.enter(p)
+            restored=p.evaluate('captureClimbState()');self.assertEqual(restored,state)
+            paused=p.evaluate('menu.gamePaused');self.assertTrue(paused)
+            if kind!='completion':p.evaluate('menu.unPause()')
+            second=p.evaluate(replay);self.assertEqual(first,second)
+            if kind=='free-fall':
+                self.assertGreater(first['trace'][-1]['player']['y'],state['player']['y'])
+                self.assertNotEqual(state['player']['y'],-state['stats']['maxHeight'])
+            if kind.startswith('moving') or kind=='wrapped-rope':
+                id=f['element'];a=next(e for e in state['elements'] if e['id']==id);b=next(e for e in first['trace'][-1]['elements'] if e['id']==id)
+                self.assertNotEqual((a['x'],a['y']),(b['x'],b['y']))
+                f.update(before=a,after=b)
+            # Retain complete save/restore states, compact trace measurements and hashes of every simulated leaf.
+            compact=lambda run:[dict(tick=s['simulationTick'],player=s['player'],stats=s['stats'],upgrade=s['upgrades']) for s in run['trace'][::15]+run['trace'][-1:]]
+            rows.append(dict(kind=kind,feature=f,initial=state,persisted=persisted,restored=restored,paused=paused,
+                ticks=90,uninterruptedHash=self.digest(first),resumedHash=self.digest(second),
+                uninterruptedEvents=first['events'],resumedEvents=second['events'],uninterrupted=compact(first),resumed=compact(second)))
+            self.write('persistence.json',dict(scope=self.__doc__,cases=rows))
+            print('PASS continuation '+kind+' ticks=90 hash='+self.digest(first)+' pagehide/reload exact')
+            p.context.close()
+
+    def test_02_storage_compatibility(self):
+        p=self.page();base=p.evaluate('captureClimbState()');p.context.close();rows=[]
+        for kind in ['old-layout','corrupt','unavailable']:
+            stale=json.loads(json.dumps(base));stale.update(layoutId='grapple-over-legacy-v3');stale['player'].update(x=987654,y=-987654)
+            payload=json.dumps(stale) if kind=='old-layout' else '{broken'
+            p=self.page({self.key:payload},unavailable=kind=='unavailable')
+            row=p.evaluate('''()=>({state:captureClimbState(),spawn:floors[0].level.spawn,
+                notice:document.getElementById('climb-save-notice')?.textContent||null})''')
+            self.assertEqual(row['state']['player'],base['player']);self.assertEqual(row['state']['simulationTick'],0)
+            if kind!='unavailable':
+                self.assertIn('Starting at the replacement base.',row['notice'])
+                row['records']=p.evaluate('keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]))',list(self.legacy))
+                self.assertEqual(row['records'],self.legacy)
+            else:
+                row['storageError']=p.evaluate("()=>{try{localStorage.getItem('x')}catch(e){return e.name}}")
+                self.assertEqual(row['storageError'],'SecurityError')
+            p.evaluate('menu.unPause();for(let i=0;i<10;i++)physics();PROGRESS.flushClimb()')
+            row.update(kind=kind,payload=payload,after=p.evaluate('captureClimbState()'))
+            self.assertGreater(row['after']['simulationTick'],0)
+            rows.append(row);p.context.close()
+        self.write('compatibility.json',dict(cases=rows,unrelatedRecords=self.legacy))
+        print('PASS compatibility old-layout/corrupt base + explanation; unavailable playable; unrelated records preserved')
+
+    def click(self,p,index):
+        p.wait_for_function('!unTouch')
+        xy=p.evaluate('i=>{draw();const b=CLIMB_UI.buttons[i].background;return canvasCoordsToViewportCoords({x:b.x+b.width/2,y:b.y+b.height/2})}',index)
+        p.mouse.click(xy['x'],xy['y'])
+
+    def test_03_mode_isolation_and_restart(self):
+        p=self.page();p.evaluate("window.clicks631=[];document.addEventListener('mousedown',e=>clicks631.push({trusted:e.isTrusted,x:e.clientX,y:e.clientY}))");p.evaluate('menu.unPause();ninja.y-=140;floors[0].rangeUpgraded=true;for(let i=0;i<9;i++)physics()')
+        saved=self.flush(p);modes=[]
+        for mode in ['classic','bad']:
+            p.evaluate('m=>{menu.startPause();menu.selectMode(m);cancelAnimationFrame(game);menu.unPause();for(let i=0;i<10;i++)physics()}',mode)
+            row=p.evaluate('''()=>({mode:version,record:scoreText.record[version],scale:scale[version],player:{x:ninja.x,y:ninja.y},definition:MODE_DEFINITIONS[version]})''')
+            row['stored']=json.loads(p.evaluate('k=>localStorage.getItem(k)',self.key));self.assertEqual(row['stored'],saved)
+            p.evaluate("menu.startPause();menu.selectMode('grapple_over');cancelAnimationFrame(game)")
+            row['returned']=p.evaluate('captureClimbState()');self.assertEqual(row['returned'],saved);modes.append(row)
+        self.assertEqual([r['record'] for r in modes],[123,456])
+        p.evaluate('menu.startPause();draw()');self.click(p,1)
+        self.assertTrue(p.evaluate('CLIMB_UI.confirming'));self.click(p,1)
+        cancelled=p.evaluate('captureClimbState()');self.assertEqual(cancelled,saved);self.assertFalse(p.evaluate('CLIMB_UI.confirming'))
+        self.click(p,1);self.click(p,0)
+        reset=self.flush(p);spawn=p.evaluate('floors[0].level.spawn')
+        self.assertEqual(reset['simulationTick'],0);self.assertFalse(reset['upgrades']['range'])
+        self.assertEqual([reset['player']['x'],reset['player']['y']],[spawn['x'],spawn['y']])
+        clicks=p.evaluate('clicks631');self.assertEqual(len(clicks),4);self.assertTrue(all(c['trusted'] for c in clicks))
+        records=p.evaluate('keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]))',list(self.legacy))
+        for key,value in self.legacy.items():
+            if key!='grapnelninja.time':self.assertEqual(records[key],value)
+        old=self.page({'grapnelninja.grappleOver':''},preview=False)
+        legacy=old.evaluate('({range:grappleOverAcquisitionRadius(),layout:floors[0].level.layoutId})');self.assertEqual(legacy['range'],1080)
+        controls=[]
+        for mode in ['classic','bad']:
+            old.evaluate('m=>{startGame(m);cancelAnimationFrame(game)}',mode)
+            control=old.evaluate('({mode:version,scale:scale[version],definition:MODE_DEFINITIONS[version]})')
+            row=next(r for r in modes if r['mode']==mode)
+            self.assertEqual(control,{k:row[k] for k in control});controls.append(control)
+        self.write('mode-isolation.json',dict(saved=saved,modes=modes,cancelled=cancelled,confirmedReset=reset,spawn=spawn,records=records,legacy=legacy,controls=controls,trustedMouseClicks=p.evaluate('clicks631')))
+        print('PASS isolation classic/bad exit-return exact; trusted restart cancel unchanged/confirm base; legacy range=1080')
+
+    def test_04_evidence_dependencies(self):
+        names={'commands.log':'exact invocation, exit, configuration and source hashes',
+               'tests.log':'four exact Task631Tests, nonzero count, no skips',
+               'persistence.json':'eight full-layout pagehide/reload continuation comparisons and events',
+               'compatibility.json':'old-layout/corrupt explanation, safe base, unavailable storage',
+               'mode-isolation.json':'classic/bad controls, exit-return and trusted restart decisions',
+               'evidence-index.json':'artifact inventory and source dependency hashes'}
+        for name in ['persistence.json','compatibility.json','mode-isolation.json']:
+            self.assertTrue(json.loads((self.out/name).read_text()))
+        self.write('evidence-index.json',dict(artifacts=names,sourceHashes=self.hashes,
+            changedSubsystems=['tools/test_grapple_over_redesign.py: Task631Tests only'],
+            dependencies=['fixedlevel.js save validation/capture/restore','progress.js storage lifecycle','physics.js simulation/upgrade/completion','menu.js restart/mode switching','mountain.js full replacement layout','platform.js unavailable storage'],
+            superseded='TASK-566 minimal preview geometry fixtures remain historical; this suite covers current full layout without rerunning obsolete coordinates.',scope=self.__doc__))
+        for name in names:self.assertTrue((self.out/name).is_file(),name)
+        size=sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file())
+        self.assertLess(size,200_000_000)
+        print('PASS inventory six required files exist; JSON parsed; source hashes recorded; bytes='+str(size))
