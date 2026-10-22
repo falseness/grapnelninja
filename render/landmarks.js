@@ -362,7 +362,7 @@ function drawReplacementLandmark(renderer)
     const sprite = getGlowSprite('replacement-' + id, () =>
         buildGlowSprite(config.width + 2 * config.pad, config.height + 2 * config.pad,
             config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, gallery ? [4, replacementGalleryShape(config.width, config.height)] : viaduct ? [3, replacementViaductShape(config.width, config.height)] : freight ? [2, replacementFreightShape(config.width, config.height)] : quarry ? [1, replacementQuarryShape(config.width, config.height)] : [0]))
-    const left = ((gallery ? 12000 : viaduct ? 7700 : freight ? 4320 : 2366) + screen.x) * k - config.width / 2
+    const left = ((gallery ? 11000 : viaduct ? 7700 : freight ? 4320 : 2366) + screen.x) * k - config.width / 2
     const top = ((gallery ? -1200 : viaduct ? -1200 : freight ? -800 : quarry ? -610 : -150) + screen.y) * k - config.height
     context.save()
     context.globalAlpha = config.alpha

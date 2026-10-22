@@ -1203,7 +1203,7 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Cable Galleries encounter 2. Planned terrain stays noncollidable.
+// Replacement built prefix through Cable Galleries encounter 3. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 14000, top: -3000, bottom: 280},
@@ -1213,7 +1213,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03', 'S02-04']},
         {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02', 'S03-03', 'S03-04']},
         {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01', 'S04-02', 'S04-03', 'S04-04']},
-        {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01', 'S05-02'],
+        {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01', 'S05-02', 'S05-03'],
             rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}}
     ],
     encounters: [
@@ -1235,6 +1235,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S04-04', name: 'Broken Viaduct exit lookout', elements: ['viaduct-third-landing', 'viaduct-exit-anchor', 'viaduct-exit', 'viaduct-exit-yellow', 'viaduct-exit-catch', 'viaduct-exit-recovery']},
         {id: 'S05-01', name: 'Cable Galleries range introduction', elements: ['viaduct-exit', 'gallery-anchor', 'gallery-landing', 'gallery-catch']},
         {id: 'S05-02', name: 'Cable Galleries corner routing', elements: ['gallery-landing', 'gallery-projection', 'gallery-upper-landing', 'gallery-catch']},
+        {id: 'S05-03', name: 'Cable Galleries overhang reacquisition', elements: ['gallery-upper-landing', 'gallery-overhang', 'gallery-reacquire', 'gallery-third-landing', 'gallery-third-catch']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1289,6 +1290,10 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['gallery-landing', 12192, -1528.2, 800, 60, 'Broad gallery planning deck and first encounter safe exit'],
         ['gallery-projection', 12972, -2079, 360, 440, 'One deep gallery projection: acquire its upper soffit, route rope around the lower lip, release west; not a landing'],
         ['gallery-upper-landing', 11490, -1848.2, 800, 60, 'Broad upper gallery exit and planning shelf; lower shared deck catches short releases'],
+        ['gallery-overhang', 11050, -2099, 360, 80, 'Broad overhead lip: launch left, release to clear its west edge, then reacquire the visible upper face; not a designated landing'],
+        ['gallery-reacquire', 10550, -2339, 160, 80, 'Visible upper green reacquisition face beyond the overhang; not a landing'],
+        ['gallery-third-landing', 9400, -2108.2, 800, 60, 'Broad third gallery exit and planning shelf after airborne reacquisition'],
+        ['gallery-third-catch', 10400, -1768.2, 1090, 60, 'Broad catch below the overhang; normal grappling returns to the shared upper gallery'],
         ['gallery-catch', 11580, -1288.2, 1600, 60, 'Broad early-release catch; return west to the entrance using its exposed east face'],
         ['viaduct-third-catch', 9172, -1288.2, 1476, 60, 'Broad upper recovery walkway below the long carrier; grapple west to the shared second span after an early release'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']

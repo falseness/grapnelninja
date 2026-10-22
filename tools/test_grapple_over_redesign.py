@@ -5614,3 +5614,161 @@ class Task592Tests(unittest.TestCase):
         self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation']))
         print(f'PASS connection: earned entrance 360->540; shared deck landing {landing}; no mid-attempt injections')
         print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; physics/input unchanged; index written')
+
+
+class Task593Tests(unittest.TestCase):
+    """Local S05-03 proof; pre-attempt inventory/pose only, never a summit run."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Isolated S05-03 shared upper-deck fixture, previously earned 540; separate entrance and S05-02 connection; not base-to-summit'
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task581Tests.until
+    target = dict(x=11230,y=-2059)
+    next_target = dict(x=10630,y=-2299)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:11570,y:-1860,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        p.evaluate("""() => {const step=YARD.step;YARD.step=n=>{for(let i=0;i<n;i++){
+            step(1);YARD.result().rows.at(-1).rope=grapnel.pos.map(v=>({x:v[0],y:v[1],id:v[2]?.id}));}}}""")
+        return p
+
+    def capture(self,p,name):
+        p.evaluate('screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw()')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'cable-galleries')
+        p.evaluate("() => {const d=document.createElement('div');d.id='proof-label';d.textContent='S05-03 isolated shared upper-deck fixture / earned 540 / production physics';d.style='position:fixed;bottom:12px;left:12px;background:#111;color:white;padding:8px';document.body.appendChild(d)}")
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        p.evaluate("document.getElementById('proof-label').remove()")
+        with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+
+    def test_01_geometry_overhang_and_reacquisition(self):
+        p=self.page()
+        g=p.evaluate('''t=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S05-03'),range:grappleOverAcquisitionRadius(),
+            scale:scale[version],reach:Math.hypot(t.x-ninja.x,t.y-ninja.y),target:t,
+            calibrated:GRAPPLE_OVER_MOVEMENT,finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][-1]['encounters'],['S05-01','S05-02','S05-03'])
+        self.assertEqual(g['range'],540);self.assertEqual(g['scale'],.375)
+        self.assertLess(g['reach'],540);self.assertIsNone(g['finish'])
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+            self.assertTrue(e['purpose']);self.assertIn(e['role'],['bounce','solid','drag'])
+        es={e['id']:e for e in g['elements']}
+        self.assertNotIn('preview-unbuilt',es)
+        for id in g['encounter']['elements']:self.assertEqual(es[id]['role'],'bounce')
+        self.assertTrue(all(e['role']=='bounce' for e in g['elements'] if e['id'].startswith('yard-')))
+        widths=[es[id]['width'] for id in ['gallery-upper-landing','gallery-third-landing']]
+        self.assertTrue(all(w>=540 for w in widths))
+        gap=es['gallery-upper-landing']['x']-es['gallery-third-landing']['x']-es['gallery-third-landing']['width']
+        self.assertGreaterEqual(gap,540);self.assertGreaterEqual(es['gallery-third-catch']['width'],540)
+        visible=p.evaluate('t=>YARD.client(t)',self.next_target)
+        self.assertTrue(0<visible['x']<1280 and 0<visible['y']<720)
+        g.update(gap=gap,landingWidths=widths,recoveryWidth=es['gallery-third-catch']['width'],
+            nextTarget=self.next_target,nextTargetApproachViewport=visible,localColliderIds=g['encounter']['elements'],
+            connection='Shared live S05-02 upper landing; previous-connection.json traverses it',
+            calibrationNote='TASK-564 broad cable galleries; TASK-560 360 landing / 540 recovery minima. Fresh production overhang variant, no v3 coordinates.')
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.press(p,self.target);self.step(p,40);p.mouse.up();self.step(p,50)
+        before=self.result(p)
+        self.assertTrue(all(not r['attached'] and not r['shot'] and not r['contacts'] for r in before['rows'][40:90]))
+        pose=before['rows'][-1];self.assertLess(pose['x'],es['gallery-overhang']['x']-12)
+        reach=p.evaluate('t=>Math.hypot(t.x-ninja.x,t.y-ninja.y)',self.next_target);self.assertLess(reach,540)
+        self.press(p,self.next_target);self.step(p,28);p.mouse.up()
+        landing=self.until(p,'gallery-third-landing');self.assertIsNotNone(landing)
+        r=self.result(p)
+        self.assertTrue(any(s['attached'] for s in r['rows'][:40]))
+        self.assertTrue(any(s['attached'] for s in r['rows'][90:118]))
+        self.assertTrue(any(s['attached'] and any(v['id']=='gallery-overhang' for v in s['rope']) for s in r['rows'][:40]))
+        self.assertTrue(any(s['attached'] and any(v['id']=='gallery-reacquire' for v in s['rope']) for s in r['rows'][90:118]))
+        r.update(entryTick=0,takeoffTick=next(s['tick'] for s in r['rows'] if s['vy']<0),releaseTick=40,
+            reacquisitionPressTick=90,reacquisitionReach=reach,secondReleaseTick=118,landingTick=landing,
+            landingAir=50,entryToExit=True,resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        self.capture(p,'landing.jpg')
+        print(f'PASS geometry S05-03: opening {gap}; landings {widths}; catch 1090; reach {g["reach"]:.3f} < 540; next target visible; no red/planned terrain')
+        print(f'PASS route: release 40; 50 consecutive unattached airborne ticks; reacquire beyond overhang at 90 reach {reach:.3f}; release 118 landing {landing}; trusted inputs; resets=0 poseInjections=0; images decoded')
+
+    def test_02_miss_and_recovery(self):
+        p=self.page();self.press(p,self.target);self.step(p,15);p.mouse.up()
+        catch=self.until(p,'gallery-third-catch');self.assertIsNotNone(catch)
+        self.assertFalse(self.landings(self.result(p),'gallery-third-landing'))
+        self.press(p,dict(x=11400,y=-2059));self.step(p,40);p.mouse.up()
+        returned=self.until(p,'gallery-upper-landing');self.assertIsNotNone(returned)
+        r=self.result(p);r.update(earlyReleaseTick=15,catchTick=catch,catchTarget='gallery-third-catch',
+            returnTick=returned,recoveryTarget='gallery-upper-landing',resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('miss.json',r)
+        print(f'PASS miss: early release 15 catch {catch}; normal controls return {returned}; no resets/injections')
+
+    def test_03_controls(self):
+        cases=[]
+        p=self.page();self.press(p,self.target);self.step(p,600)
+        r=self.result(p);r.update(probe='continuous hold 600 ticks',successfulAlternative=bool(self.landings(r,'gallery-third-landing')))
+        cases.append(r);p.mouse.up();p.context.close()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'gallery-third-landing')))
+            cases.append(r);p.context.close()
+        self.write('controls.json',dict(cases=cases,bound='600 ticks hold; <=600 each nearest 6/12/24',
+            inspection='Every top-facing gallery-third-landing contact checked with nominal success criterion',scope=self.config['simulation']))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded hold/nearest probes; zero successful alternatives')
+
+    def test_04_connection_upgrade_and_dependencies(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:11500,y:-1540,speedX:0,speedY:0});screen.trackGrappleOver(true)')
+        self.assertEqual(p.evaluate('grappleOverAcquisitionRadius()'),360)
+        self.step(p,1);self.assertEqual(p.evaluate('grappleOverAcquisitionRadius()'),540)
+        self.press(p,Task591Tests.target);self.step(p,42);p.mouse.up()
+        landing=self.until(p,'gallery-landing');self.assertIsNotNone(landing)
+        r=self.result(p);r.update(landingTick=landing,rangeBefore=360,rangeAfter=540,
+            connection='S05-01 entrance through shared S05-02 entry; separate fixture from the corner route',poseInjections=0,resets=0)
+        self.write('connection.json',r)
+        q=Task592Tests.page(self)
+        self.press(q,Task592Tests.target);self.step(q,45);q.mouse.up()
+        prior=self.until(q,'gallery-upper-landing');self.assertIsNotNone(prior)
+        self.step(q,60)
+        reached=q.evaluate('t=>({x:ninja.x,y:ninja.y,reach:Math.hypot(t.x-ninja.x,t.y-ninja.y)})',self.target)
+        self.assertLess(reached['reach'],540)
+        self.write('previous-connection.json',dict(route=self.result(q),landingTick=prior,
+            approach=reached,sharedCollider='gallery-upper-landing',poseInjections=0,resets=0))
+        rows=[]
+        for preview in [True,False]:
+            q=Task558Tests.page(self,preview)
+            for mode in ['grapple_over','classic','bad']:
+                row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,
+                    range:version==='grapple_over'?grappleOverAcquisitionRadius():null,
+                    upgraded:version==='grapple_over'?grappleOverProfile().upgradedAcquisitionRadius:null,
+                    scale:scale[version],gravity:GRAVITY,pull:grappleSpeed}}''',mode)
+                row['preview']=preview;rows.append(row)
+                if mode=='grapple_over':
+                    self.assertEqual(row['range'],360 if preview else 1080)
+                    self.assertEqual(row['upgraded'],540 if preview else 1620);self.assertEqual(row['scale'],.375)
+            q.context.close()
+        self.assertEqual(len({(r['gravity'],r['pull']) for r in rows}),1)
+        self.write('dependencies.json',dict(rows=rows,hashes=self.config['source_hashes'],
+            changed=['mountain.js S05-03 preview geometry -> fixedlevel.js collision terrain','render/landmarks.js gallery fan centered over built span','tools/test_grapple_over_redesign.py additive Task593Tests'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','fixedlevel.js','gameoptions.js','sprites/grapnel.js'],
+            superseded='Earlier exact built-prefix inventories are historical; artifacts/TASK-591 proof remains in place. No earlier tests modified.',
+            hashPolicy='HEAD-only changes do not invalidate identical tested source hashes'))
+        required={'commands.log':'exact commands, actual exit, four identifiers, browser/viewport/revision/hashes',
+            'tests.log':'four Task593Tests, no skips, OK','geometry.json':'live roles/purposes widths gap calibrated limits reach range',
+            'route.json':'production overhang release and reacquisition and >=6 unattached airborne ticks','inputs.json':'trusted production mouse events',
+            'miss.json':'early release catch and normal-control return','approach.jpg':'broad entry, overhang, next target and cable fan',
+            'landing.jpg':'broad upper exit and Cable Galleries','controls.json':'bounded hold/nearest probes and inspection of all exit contacts',
+            'previous-connection.json':'S05-02 flight to shared upper deck and normal drift into S05-03 takeoff range',
+            'connection.json':'entrance 360-to-540 acquisition and physical flight onto shared deck',
+            'dependencies.json':'changed subsystems, preserved modes/physics/input, source hashes',
+            'evidence-index.json':'artifact assertion map and run configuration'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation']))
+        print(f'PASS connection: earned entrance 360->540; shared deck landing {landing}; no mid-attempt injections')
+        print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; physics/input unchanged; index written')
