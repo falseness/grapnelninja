@@ -1203,7 +1203,7 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Exposed Crown encounter 4. Planned terrain stays noncollidable.
+// Replacement built prefix through Summit Array encounter 1. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 15000, top: -5500, bottom: 280},
@@ -1216,7 +1216,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01', 'S05-02', 'S05-03', 'S05-04'],
             rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}},
         {id: 'S06', labelKey: 'climb.section.counterweightTower', status: 'built', encounters: ['S06-01', 'S06-02', 'S06-03', 'S06-04']},
-        {id: 'S07', labelKey: 'climb.section.S07', status: 'built', encounters: ['S07-01', 'S07-02', 'S07-03', 'S07-04']}
+        {id: 'S07', labelKey: 'climb.section.S07', status: 'built', encounters: ['S07-01', 'S07-02', 'S07-03', 'S07-04']},
+        {id: 'S08', labelKey: 'climb.section.S08', status: 'built', encounters: ['S08-01']}
     ],
     encounters: [
         {id: 'S01-01', name: 'Loading Yard', elements: ['yard-entry', 'yard-landing', 'yard-anchor', 'yard-catch']},
@@ -1247,6 +1248,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S07-02', name: 'Exposed Crown timed green transfer', elements: ['crown-landing', 'crown-practice-anchor', 'crown-practice-landing', 'crown-practice-catch', 'crown-practice-red'], recovery: ['crown-practice-catch', 'crown-landing']},
         {id: 'S07-03', name: 'Exposed Crown carrier timing', elements: ['crown-practice-landing', 'crown-lift', 'crown-upper-landing', 'crown-lift-catch', 'crown-lift-red'], recovery: ['crown-lift-catch', 'crown-practice-landing']},
         {id: 'S07-04', name: 'Exposed Crown exit combination', elements: ['crown-upper-landing', 'crown-exit-anchor', 'crown-exit', 'crown-exit-catch', 'crown-exit-red'], recovery: ['crown-exit-catch', 'crown-upper-landing'], optionalShortcut: {from: 'S07-02', to: 'S07-04', skipped: ['S07-03'], route: 'Release the carrier later and acquire the exit face in flight above the upper deck; skip only its safe landing', failureRecovery: ['crown-exit-catch', 'crown-upper-landing']}},
+        {id: 'S08-01', name: 'Summit Array familiar green arrival', elements: ['crown-exit', 'summit-anchor', 'summit-landing', 'summit-catch'], recovery: ['summit-catch', 'summit-landing']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1340,6 +1342,9 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['crown-exit', 12033, -4708.2, 800, 60, 'Broad Crown exit and ordinary green rest deck; no summit completion'],
         ['crown-exit-catch', 11565, -4558.2, 882, 60, 'Broad early-release catch below the exit gap; grapple west to the upper deck'],
         ['crown-exit-red', 11845, -4950, 80, 80, 'Nonlethal exit sweep; visible from the safe upper deck and escapable below'],
+        ['summit-anchor', 12933, -5180, 160, 80, 'Familiar reachable green launch face from Crown exit; release east, not a designated landing'],
+        ['summit-landing', 13373, -4708.2, 800, 60, 'Broad first Summit Array planning landing beneath the antenna landmark; no finish trigger'],
+        ['summit-catch', 12905, -4558.2, 882, 60, 'Broad forgiving early-release catch; normal green rebound returns to the first Summit landing'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['crown-red', 'crown-practice-red', 'crown-lift-red', 'crown-exit-red'].includes(id) ? 'hazard' : ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['crown-lift', 'tower-exit-lift', 'tower-rebound-carrier', 'tower-shuttle', 'tower-counterweight', 'freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['crown-red', 'crown-practice-red', 'crown-lift-red', 'crown-exit-red', 'viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
         points: id === 'gallery-exit-projection'

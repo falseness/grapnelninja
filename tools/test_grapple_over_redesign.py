@@ -8506,3 +8506,138 @@ class Task608Tests(unittest.TestCase):
                 with Image.open(self.out/name) as im:im.load();self.assertGreaterEqual(im.width,1280)
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS index: all required files exist; JSON parses; images/video decode; retained evidence <200 MB')
+
+
+class Task609Tests(unittest.TestCase):
+    """Summit opening from a labelled shared Crown exit fixture; production inputs and physics."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Labelled isolated Summit entry on the existing Crown exit, production controls/physics; not base-to-summit'
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task605Tests.until
+    target = dict(x=13013,y=-5140)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:12753,y:-4720,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        return p
+
+    def shot(self,p,target,hold):
+        p.mouse.up()
+        p.evaluate('screen.trackGrappleOver(true)')
+        self.press(p,target);self.step(p,hold);p.mouse.up()
+
+    def capture(self,p,name):
+        p.evaluate('screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw()')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'summit-array')
+        p.evaluate("() => {const d=document.createElement('div');d.id='proof-label';d.textContent='S08-01 isolated shared Crown exit / earned 540 / production controls';d.style='position:fixed;bottom:12px;left:12px;background:#111;color:white;padding:8px';document.body.appendChild(d)}")
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        p.evaluate("document.getElementById('proof-label').remove()")
+        with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+
+    def test_01_geometry_and_route(self):
+        p=self.page()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S08-01'),movers:floors[0].level.movers,
+            range:grappleOverAcquisitionRadius(),scale:scale[version],target,
+            reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),calibrated:GRAPPLE_OVER_MOVEMENT,
+            finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][-1]['encounters'],['S08-01'])
+        self.assertIsNone(g['finish']);self.assertEqual(g['range'],540);self.assertEqual(g['scale'],.375)
+        self.assertLess(g['reach'],540)
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+            self.assertTrue(e['purpose'])
+        es={e['id']:e for e in g['elements']}
+        self.assertNotIn('preview-unbuilt',es)
+        self.assertTrue(all(e['role']=='bounce' for e in g['elements'] if e['id'].startswith('yard-')))
+        for name in ['crown-exit','summit-landing','summit-catch']:
+            self.assertGreaterEqual(es[name]['width'],540)
+        g.update(connection='Live crown-exit shared with S07-04',
+            landingWidths=[800,800],recoveryWidth=882,gap=13373-12833,
+            escape='Green-only opening; open release gap above broad lower catch',
+            calibration='TASK-564 broad shelves; TASK-606 calibrated 420-rise launch translated east; red omitted for familiar forgiving green opening; first red remains S07')
+        self.assertGreaterEqual(g['gap'],540)
+        g['localElements']=[es[n] for n in g['encounter']['elements']]
+        self.assertTrue(all(e['role']=='bounce' for e in g['localElements']))
+        self.assertEqual([e['id'] for e in g['elements'] if e['id'].startswith('summit-')],['summit-anchor','summit-landing','summit-catch'])
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.shot(p,self.target,32);landing=self.until(p,'summit-landing',500);self.assertIsNotNone(landing)
+        r=self.result(p);best=streak=0
+        for s in r['rows'][32:landing-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0
+            best=max(best,streak)
+        self.assertGreaterEqual(best,6);self.assertTrue(any(s['attached'] for s in r['rows'][:32]))
+        r.update(entryTick=0,takeoffTick=next(s['tick'] for s in r['rows'] if s['vy']<0),releaseTick=32,
+            landingTick=landing,landingAir=best,entryToExit=True,resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']));self.capture(p,'landing.jpg')
+        print(f'PASS geometry S08-01: live purposes; landing widths 800/800 opening 540 recovery 882; reach {g["reach"]:.3f} < 540; no planned terrain; scale .375')
+        print(f'PASS route: release 32 landing {landing}; consecutive unattached airborne {best}; trusted inputs; zero resets/injections; images decoded')
+
+    def test_02_miss_and_recovery(self):
+        p=self.page();self.shot(p,self.target,24)
+        catch=self.until(p,'summit-catch');self.assertIsNotNone(catch)
+        self.assertFalse(self.landings(self.result(p),'summit-landing'))
+        returned=self.until(p,'summit-landing');self.assertIsNotNone(returned)
+        r=self.result(p);r.update(earlyReleaseTick=24,catchTick=catch,catchTarget='summit-catch',
+            returnTick=returned,recoveryTarget='summit-landing',resets=0,poseInjections=0,
+            recovery='Release lets the normal green catch rebound reach the exit deck; no additional input required')
+        self.write('miss.json',r)
+        print(f'PASS miss: early release 24 catch summit-catch {catch}; normal rebound returns summit-landing {returned}; no reset/checkpoint')
+
+    def test_03_hold_and_nearest(self):
+        cases=[]
+        p=self.page();self.press(p,self.target);self.step(p,720)
+        r=self.result(p);r.update(probe='continuous hold 720 ticks',successfulAlternative=bool(self.landings(r,'summit-landing')))
+        cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.shot(p,target,interval);self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'summit-landing')))
+            cases.append(r)
+        self.write('controls.json',dict(cases=cases,bound='720 hold; <=600 repeated nearest 6/12/24',
+            inspection='Every exit top contact tested with nominal success definition'))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded trusted probes; zero successful alternatives')
+
+    def test_04_tolerance_and_index(self):
+        tolerance=[]
+        for hold in [30,34]:
+            p=self.page();self.shot(p,self.target,hold)
+            tick=self.until(p,'summit-landing',500);self.assertIsNotNone(tick)
+            r=self.result(p);tolerance.append(dict(hold=hold,landingTick=tick,inputs=r['inputs'],rows=r['rows']))
+        self.write('tolerance.json',tolerance)
+        required={'commands.log':'exact command, actual exit, four identifiers, browser/viewport/revision/source hashes',
+            'tests.log':'four Task609Tests; no skips; OK',
+            'geometry.json':'live S08-01 green collider purposes/widths, gap, calibrated reach and shared S07-04 entry',
+            'route.json':'trusted production takeoff/release/landing and >=6 consecutive unattached airborne ticks',
+            'inputs.json':'trusted production input events matching nominal route',
+            'miss.json':'early release, declared catch and normal rebound return without resets',
+            'approach.jpg':'broad shared Crown exit, green target and Summit Array antenna',
+            'landing.jpg':'broad Summit planning landing and antenna',
+            'controls.json':'four bounded hold/nearest probes; every exit contact inspected',
+            'tolerance.json':'30 and 34 tick releases also land successfully',
+            'evidence-index.json':'artifact assertions and changed subsystem dependencies'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,
+            changedSubsystems=['mountain.js S08-01 built prefix and green geometry -> fixedlevel.js production colliders',
+                'render/landmarks.js S08 presentation -> existing band 7 antenna sprite',
+                'tools/test_grapple_over_redesign.py additive Task609Tests -> browser_test_support and production handlers'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','gameoptions.js','fixedlevel.js'],
+            superseded='Earlier prefix inventories/landmark-at-shared-exit assertions are historical; TASK-608 Crown proof remains at artifacts/TASK-608. Old v3 terrain stays playable; no later Summit terrain or completion authored.',
+            hashPolicy='HEAD-only commit does not invalidate identical tested source hashes'))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith('.jpg'):
+                with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS tolerance: 30/32/34 tick releases succeed; index files exist/parse/decode; retained evidence <200 MB; dependencies recorded')
