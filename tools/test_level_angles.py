@@ -116,6 +116,37 @@ def build_report():
             'cases': cases}
 
 
+ROOT = TOOLS.parent
+LEVELS = ROOT / 'artifacts' / 'levels'
+
+
+def spiked(poly, edge=1, half_width=10.0, height=120.0):
+    """Insert an outward isosceles spike (apex 2*atan(half/height), ~9.5 deg) mid-edge."""
+    (ax, ay), (bx, by) = poly[edge], poly[(edge + 1) % len(poly)]
+    length = math.hypot(bx - ax, by - ay)
+    ux, uy = (bx - ax) / length, (by - ay) / length
+    sign = 1.0 if sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(poly, poly[1:] + poly[:1])) > 0 else -1.0
+    nx, ny = uy * sign, -ux * sign
+    mx, my = (ax + bx) / 2, (ay + by) / 2
+    spike = [[mx - ux * half_width, my - uy * half_width], [mx + nx * height, my + ny * height],
+             [mx + ux * half_width, my + uy * half_width]]
+    return [list(p) for p in poly[:edge + 1]] + spike + [list(p) for p in poly[edge + 1:]]
+
+
+def consistent_level(reference):
+    """SVG + imported level rebuilt from one measurement dict, so they all agree."""
+    import convert_extended_mountain_svg as svg
+    from import_level_svg import import_svg
+    from retune_extended_level import LAYOUT
+    old = svg.LAYOUT_ID
+    try:
+        svg.LAYOUT_ID = LAYOUT
+        text = svg.build(reference).encode()
+    finally:
+        svg.LAYOUT_ID = old
+    return import_svg(text), text
+
+
 class InteriorAngleTests(unittest.TestCase):
     def test_tolerance_is_documented_and_small(self):
         self.assertGreater(ANGLE_TOL_DEG, 0)
@@ -192,6 +223,76 @@ class InteriorAngleTests(unittest.TestCase):
                 self.assertEqual(case['result'], case['expectedResult'])
                 for v in case.get('vertices', []):
                     self.assertLessEqual(v['error'], EXPECT_TOL)
+
+
+@unittest.skipUnless((LEVELS / 'extended-mountain-measurements.json').exists(), 'local level sources missing')
+class LevelCornerGateTests(unittest.TestCase):
+    """Final validation rejects sharp corners from level coordinates, whatever the reference says."""
+
+    def setUp(self):
+        from check_level_geometry import check
+        self.check = check
+        self.ref = json.loads((LEVELS / 'extended-mountain-measurements.json').read_text())
+
+    def angle_failures(self, report):
+        return [m for m in report['failureMessages'] if 'interior angle' in m]
+
+    def test_current_level_passes_angle_gate(self):
+        level = json.loads((LEVELS / 'extended-mountain.level.json').read_text())
+        report = self.check(level, (LEVELS / 'extended-mountain.svg').read_bytes(), self.ref)
+        self.assertTrue(report['summary']['pass'], report['failureMessages'])
+        self.assertEqual(report['summary']['anglePolygons'], len(level['elements']))
+        self.assertEqual(report['summary']['anglePolygonsPass'], len(level['elements']))
+        self.assertGreaterEqual(report['summary']['minInteriorAngle'], MIN_INTERIOR_ANGLE - ANGLE_TOL_DEG)
+        self.assertTrue(all(not a['selfIntersections'] and a['error'] is None and a['area'] > 0
+                            for a in report['angles']))
+
+    def test_sub_20_corner_rejected_independent_of_reference(self):
+        ref = json.loads(json.dumps(self.ref))
+        frag = next(f for f in ref['fragments'] if f['id'] == 'P10')
+        frag['polys'][0] = spiked(frag['polys'][0])
+        self.assertLess(min(interior_angles(frag['polys'][0])), 10)
+        level, text = consistent_level(ref)
+        # Reference metadata claiming a looser rule or blunted corners must not matter.
+        for variant in ({}, {'minInteriorAngle': 0}, {'bluntedCorners': {'minimumAngle': 0, 'changed': []}}):
+            with self.subTest(variant=sorted(variant)):
+                report = self.check(level, text, dict(ref, **variant))
+                self.assertFalse(report['summary']['pass'])
+                failures = self.angle_failures(report)
+                self.assertEqual(len(failures), 1, report['failureMessages'])
+                self.assertTrue(failures[0].startswith('P10-body0 vertex 3: interior angle 9.52'), failures)
+                row = next(a for a in report['angles'] if a['id'] == 'P10-body0')
+                self.assertFalse(row['pass'])
+
+    def test_blunted_spike_passes_angle_gate(self):
+        from retune_extended_level import blunt_polygon
+        ref = json.loads(json.dumps(self.ref))
+        frag = next(f for f in ref['fragments'] if f['id'] == 'P10')
+        frag['polys'][0] = blunt_polygon(spiked(frag['polys'][0]))
+        level, text = consistent_level(ref)
+        report = self.check(level, text, ref)
+        self.assertEqual(self.angle_failures(report), [])
+        row = next(a for a in report['angles'] if a['id'] == 'P10-body0')
+        self.assertTrue(row['pass'])
+        self.assertGreaterEqual(row['minAngle'], MIN_INTERIOR_ANGLE)
+
+    def test_self_intersection_and_degenerate_edges_rejected(self):
+        level = json.loads((LEVELS / 'extended-mountain.level.json').read_text())
+        svg_bytes = (LEVELS / 'extended-mountain.svg').read_bytes()
+        element = next(e for e in level['elements'] if e['id'] == 'P10-body0')
+        pts = element['points']
+        bowtie = json.loads(json.dumps(level))
+        bp = next(e for e in bowtie['elements'] if e['id'] == 'P10-body0')['points']
+        bp[1], bp[2] = dict(pts[2]), dict(pts[1])
+        report = self.check(bowtie, svg_bytes, self.ref)
+        self.assertTrue(any('P10-body0: self-intersecting' in m for m in report['failureMessages']),
+                        report['failureMessages'])
+        repeated = json.loads(json.dumps(level))
+        rp = next(e for e in repeated['elements'] if e['id'] == 'P10-body0')['points']
+        rp.insert(1, dict(rp[0]))
+        report = self.check(repeated, svg_bytes, self.ref)
+        self.assertTrue(any('P10-body0: degenerate polygon (zero-length edge' in m
+                            for m in report['failureMessages']), report['failureMessages'])
 
 
 def main():

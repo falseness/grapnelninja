@@ -51,6 +51,17 @@ limitation, not a claim resolved by yellow consolidation. See the local
 `/root/grapnelninja/artifacts/levels/v4-review/shortcut-sweep.json`; this output
 is not certified free of shortcuts or fully playable.
 
+Every collision polygon corner must have an interior angle of at least 20°
+(concave corners count as their reflex angle). Before platform placement the
+generator truncates any sharper tip with a symmetric cut about 40 units wide
+(each cut stays within 40% of its adjacent edges), so placement and all distances
+are measured on the blunted collision shapes. The measurements record each
+changed tip under `bluntedCorners`. `check_level_geometry.py` then rejects any
+final polygon with a sub-20° corner, a self-intersection, a zero-length edge or
+zero area, using level coordinates only. The current v5 geometry has no corner
+below 20° (sharpest: P1 at 33.02°), so blunting changes nothing. The layout id
+and the saves it accepts are unchanged.
+
 Run the focused physics regressions:
 
 ```sh

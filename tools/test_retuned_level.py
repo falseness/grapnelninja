@@ -3,7 +3,9 @@ import json
 from pathlib import Path
 import unittest
 from check_level_geometry import check
-from retune_extended_level import consolidate_yellow_bands
+import math
+from check_level_geometry import interior_angles, self_intersections, signed_area
+from retune_extended_level import blunt_fragments, blunt_polygon, consolidate_yellow_bands
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -49,5 +51,48 @@ class YellowConsolidationTests(unittest.TestCase):
         m=self.fixture(1540)
         consolidate_yellow_bands(m)
         self.assertEqual(len(m['yellowBands']),2)
+
+def tip(apex, leg=1000.0):
+    h=math.radians(apex/2)
+    return [[0.0,0.0],[leg*math.cos(h),-leg*math.sin(h)],[leg*math.cos(h),leg*math.sin(h)]]
+
+class CornerBluntingTests(unittest.TestCase):
+    def test_sharp_tip_truncated_to_two_wide_corners(self):
+        for apex in (5,10,19.9):
+            for poly in (tip(apex),tip(apex)[::-1]):
+                with self.subTest(apex=apex,reversed=poly[0]!=[0.0,0.0] or poly[1][1]>0):
+                    out=blunt_polygon(poly)
+                    self.assertEqual(len(out),4)
+                    self.assertGreaterEqual(min(interior_angles(out)),20)
+                    self.assertEqual(self_intersections(out),[])
+                    self.assertGreater(abs(signed_area(out)),0)
+                    self.assertLess(abs(signed_area(out)),abs(signed_area(poly)))
+                    self.assertEqual(blunt_polygon(poly),out)
+                    new=[p for p in out if p not in poly]
+                    face=min(40,2*0.4*1000*math.sin(math.radians(apex/2)))
+                    self.assertAlmostEqual(math.dist(*new),face,places=6)
+
+    def test_corners_at_or_above_20_are_untouched(self):
+        for poly in (tip(20),tip(33),[[0,0],[100,0],[100,100],[0,100]]):
+            self.assertEqual(blunt_polygon(poly),[list(p) for p in poly])
+
+    def test_short_edges_limit_the_cut(self):
+        out=blunt_polygon([[0,0],[100,-5],[100,5]])
+        self.assertGreaterEqual(min(interior_angles(out)),20)
+        self.assertAlmostEqual(math.dist(out[0],[0,0]),0.4*math.hypot(100,5),places=6)
+
+    def test_fragments_blunted_in_collision_polygons(self):
+        source={'fragments':[{'id':'A','polys':[tip(10)]},{'id':'B','polys':[tip(40)]}]}
+        changed=blunt_fragments(source)
+        self.assertEqual([c['fragment'] for c in changed],['A'])
+        self.assertEqual(len(source['fragments'][0]['polys'][0]),4)
+        self.assertEqual(source['fragments'][1]['polys'][0],tip(40))
+
+    def test_generated_level_has_no_sub_20_corner(self):
+        level=json.loads((ROOT/'artifacts/levels/extended-mountain.level.json').read_text())
+        for e in level['elements']:
+            poly=[(e['x']+p['x'],e['y']+p['y']) for p in e['points']]
+            self.assertGreaterEqual(min(interior_angles(poly)),20,e['id'])
+            self.assertEqual(self_intersections(poly),[],e['id'])
 
 if __name__=='__main__':unittest.main()

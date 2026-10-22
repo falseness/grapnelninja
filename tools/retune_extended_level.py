@@ -5,7 +5,7 @@ import copy
 import json
 import math
 from pathlib import Path
-from check_level_geometry import union_distance
+from check_level_geometry import MIN_INTERIOR_ANGLE, interior_angles, self_intersections, union_distance
 import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
@@ -15,6 +15,46 @@ YELLOW_CLEARANCE = 1080
 YELLOW_PAIR_CLEARANCE = 540
 DIRECTION_OFFSETS = {13: -25, 15: 30}
 NONCONSECUTIVE_CLEARANCE = 1400
+# A truncated tip leaves a flat face about this wide; each cut stays within this
+# fraction of either adjacent edge so neighbouring corners keep their angles.
+BLUNT_FACE = 40.0
+BLUNT_EDGE_FRACTION = 0.4
+
+
+def blunt_polygon(poly, minimum=MIN_INTERIOR_ANGLE):
+    """Truncate every corner sharper than minimum with a symmetric cut.
+
+    The tip vertex becomes two vertices on its adjacent edges; each new corner is
+    (180 + tip) / 2 >= 90 degrees, so a single pass suffices. Other vertices are
+    untouched, which makes the output a deterministic function of the input.
+    """
+    poly = [list(p) for p in poly]
+    angles = interior_angles(poly)
+    out = []
+    for i, (p, angle) in enumerate(zip(poly, angles)):
+        if angle >= minimum:
+            out.append(p)
+            continue
+        prev, nxt = poly[i-1], poly[(i+1) % len(poly)]
+        a, b = math.dist(p, prev), math.dist(p, nxt)
+        d = min(BLUNT_FACE / (2*math.sin(math.radians(angle)/2)), BLUNT_EDGE_FRACTION*min(a, b))
+        out.append([p[0]+(prev[0]-p[0])*d/a, p[1]+(prev[1]-p[1])*d/a])
+        out.append([p[0]+(nxt[0]-p[0])*d/b, p[1]+(nxt[1]-p[1])*d/b])
+    if min(interior_angles(out)) < minimum or self_intersections(out):
+        raise ValueError('Blunting did not produce a simple polygon with %g-degree corners' % minimum)
+    return out
+
+
+def blunt_fragments(source):
+    """Blunt every collision polygon in place; returns the changed tips."""
+    changed = []
+    for fragment in source['fragments']:
+        for k, poly in enumerate(fragment['polys']):
+            blunt = blunt_polygon(poly)
+            if blunt != [list(p) for p in poly]:
+                changed.append(dict(fragment=fragment['id'], polygon=k, before=poly, after=blunt))
+                fragment['polys'][k] = blunt
+    return changed
 
 
 def gap(a, b):
@@ -35,6 +75,8 @@ def tune(source, reposition=True, guards=True):
         scale=450 / shelf['width']
         shelf['polys']=[[[x*scale,y] for x,y in poly] for poly in shelf['polys']]
         shelf['width']=450
+    # Collision polygons, not only outlines: placement below measures blunted shapes.
+    blunted = blunt_fragments(source)
     m = copy.deepcopy(source)
     fs = m['fragments']
     for n in range(1, len(fs)):
@@ -102,6 +144,7 @@ def tune(source, reposition=True, guards=True):
     consolidate_yellow_bands(m)
     m['fallIllustrations'] = [dict(id='F'+str(i+1),band=z['id'],start=[z['x']+z['width']/2,z['y']-500],
         end=[z['x']+z['width']/2,z['y']+1000],meaning='Illustrative fall only') for i,z in enumerate(m['yellowBands'])]
+    m['bluntedCorners']=dict(minimumAngle=MIN_INTERIOR_ANGLE, face=BLUNT_FACE, changed=blunted)
     m['layoutId']=LAYOUT
     m['allowedGrapplePairs']=[['P0','P1'],['P1','P2']]
     m['checks']={'geometryOnly':True}

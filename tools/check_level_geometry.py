@@ -17,6 +17,7 @@ Checks:
   0.01 percentage point;
 - fragment pairs keep clearance - player diameter > 540, except explicitly
   authored allowedGrapplePairs, which must have a positive gap below 540;
+- every polygon is simple, non-degenerate and has interior angles >= 20 degrees;
 - drag zones are axis-aligned horizontal non-grapplable rectangles with a
   minimum solid clearance >= 1080.
 
@@ -186,6 +187,19 @@ def angle_report(poly, minimum=MIN_INTERIOR_ANGLE, tol=ANGLE_TOL_DEG):
     return {'ok': all(v['ok'] for v in vertices), 'error': None, 'vertices': vertices}
 
 
+def self_intersections(poly):
+    """Index pairs of non-adjacent edges that cross or touch; empty for a simple polygon."""
+    n, found = len(poly), []
+    for i, j in itertools.combinations(range(n), 2):
+        if j == i + 1 or (i == 0 and j == n - 1):
+            continue
+        (a, b), (c, d) = (poly[i], poly[(i + 1) % n]), (poly[j], poly[(j + 1) % n])
+        if segments_cross(a, b, c, d) or min(point_segment(a, c, d)[0], point_segment(b, c, d)[0],
+                                             point_segment(c, a, b)[0], point_segment(d, a, b)[0]) == 0:
+            found.append([i, j])
+    return found
+
+
 def max_point_error(p, q):
     if len(p) != len(q):
         return math.inf
@@ -249,6 +263,25 @@ def check(level, svg_data, reference):
         svg_max = max(svg_max, err)
         if err > COORD_TOL:
             fail('%s: level vs SVG coordinate error %.6g > %.2g' % (eid, err, COORD_TOL))
+
+    # Corners: every final polygon, computed from level coordinates alone.
+    angle_rows = []
+    for eid in sorted(polys):
+        report = angle_report(polys[eid][1])
+        crossings = self_intersections(polys[eid][1])
+        angles = [v['angle'] for v in report['vertices']]
+        row = {'id': eid, 'role': polys[eid][0]['role'], 'error': report['error'], 'selfIntersections': crossings,
+               'area': r(abs(signed_area(polys[eid][1]))), 'minAngle': r(min(angles, default=None), 9),
+               'angles': [r(a, 9) for a in angles], 'pass': report['ok'] and not crossings}
+        if report['error']:
+            fail('%s: degenerate polygon (%s)' % (eid, report['error']['reason']))
+        for v in report['vertices']:
+            if not v['ok']:
+                fail('%s vertex %d: interior angle %.6f < %.1f degrees' % (eid, v['vertex'], v['angle'],
+                                                                          MIN_INTERIOR_ANGLE))
+        if crossings:
+            fail('%s: self-intersecting edges %s' % (eid, crossings))
+        angle_rows.append(row)
 
     # Coordinates: level fragments vs reference fragments.
     ref_frags = {f['id']: f for f in reference['fragments']}
@@ -389,10 +422,19 @@ def check(level, svg_data, reference):
         'minYellowPairClearance': r(min((p['clearance'] for p in drag_pairs), default=None)),
         'dragZones': len(drags), 'dragZonesPass': sum(d['pass'] for d in drags),
         'minDragSolidClearance': r(min((d['minSolidClearance'] for d in drags), default=None)),
+        'anglePolygons': len(angle_rows), 'anglePolygonsPass': sum(a['pass'] for a in angle_rows),
+        'angleVertices': sum(len(a['angles']) for a in angle_rows),
+        'minInteriorAngle': r(min((a['minAngle'] for a in angle_rows if a['minAngle'] is not None), default=None), 9),
+        'solidElements': len(solid),
+        'solidBounceGrapplable': sum(polys[eid][0]['role'] == 'bounce' and polys[eid][0]['grapplable'] is True
+                                     for eid, _ in solid),
+        'maxBodiesPerFragment': max((len(eids) for eids in fragments.values()), default=0),
+        'yellowMergedFrom': {b['id']: b.get('mergedFrom', [b['id']]) for b in reference.get('yellowBands', [])},
         'fragments': len(frag_rows), 'maxFragmentCoordError': r(frag_max, 9), 'maxSvgCoordError': r(svg_max, 9),
     }
     return {'grappleRange': GRAPPLE_RANGE, 'playerDiameter': PLAYER_DIAMETER, 'coordTolerance': COORD_TOL,
             'percentTolerance': PERCENT_TOL, 'summary': summary, 'failureMessages': failures,
+            'minInteriorAngle': MIN_INTERIOR_ANGLE, 'angleTolerance': ANGLE_TOL_DEG, 'angles': angle_rows,
             'transfers': transfers, 'pairs': pairs, 'dragZones': drags, 'yellowPairs': drag_pairs, 'fragments': frag_rows}
 
 
@@ -417,10 +459,11 @@ def main(argv=None):
     for message in report['failureMessages']:
         print('FAIL ' + message, file=sys.stderr)
     print('GEOMETRY_RESULT %s transfers=%d/%d pairs=%d/%d drag=%d/%d fragments=%d max_percent_error=%s '
-          'min_pair_margin=%s min_drag_clearance=%s' % (
+          'min_pair_margin=%s min_drag_clearance=%s angles=%d/%d min_angle=%s' % (
               'PASS' if s['pass'] else 'FAIL', s['transfersPass'], s['transfers'], s['pairsPass'],
               s['fragmentPairs'], s['dragZonesPass'], s['dragZones'], s['fragments'], s['maxTransferPercentError'],
-              s['minPairClearanceMinusDiameter'], s['minDragSolidClearance']))
+              s['minPairClearanceMinusDiameter'], s['minDragSolidClearance'], s['anglePolygonsPass'],
+              s['anglePolygons'], s['minInteriorAngle']))
     return 0 if s['pass'] else 1
 
 
