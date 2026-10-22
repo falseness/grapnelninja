@@ -1,18 +1,23 @@
 // How long the one-time Grapple Over range upgrade notice stays on the HUD
 const CLIMB_RANGE_NOTICE_MS = 3000
 const GRAVITY = screenHeightPercent(GAMEPLAY.gravityHeightPercent) / Math.pow(cyclesPerTick, 2)
+// Grapple Over: falling strictly below this many world units under the spawn
+// returns the player to the spawn without restarting the run.
+const CLIMB_FALL_RECOVERY_DEPTH = 1500
 
 function physics()
 {
     if (version === 'grapple_over' && (menu.gamePaused || floors[0].climbStats.completed || hostPaused)) return
     firstCycleInThisTick = true
-    for (cycle = 0; cycle < cyclesPerTick - 1; ++cycle)
+    // A fall recovery ends the tick at the spawn, so the recovery step is observable.
+    let recovered = false
+    for (cycle = 0; cycle < cyclesPerTick - 1 && !recovered; ++cycle)
     {
-        calcPhysics()
+        recovered = calcPhysics()
         firstCycleInThisTick = false
     }
     firstCycleInThisTick = true
-    calcPhysics()
+    if (!recovered) calcPhysics()
     if (version === 'grapple_over' && !continueOffer.visible) floors[0].applyDragZones(ninja)
     if (version === 'grapple_over' && !continueOffer.visible) screen.trackGrappleOver()
     if (version === 'grapple_over') PROGRESS.climbTick()
@@ -61,6 +66,11 @@ function calcPhysics()
         stats.elapsedActiveMs += physicsStepMs / cyclesPerTick
         stats.currentHeight = world.level.spawn.y - ninja.y
         stats.maxHeight = Math.max(stats.maxHeight, stats.currentHeight)
+        if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)
+        {
+            recoverClimbFall()
+            return true
+        }
         world.rangeNoticeMs = Math.max(0, world.rangeNoticeMs - physicsStepMs / cyclesPerTick)
         const upgrade = world.level.sections.find(s => s.id === grappleOverProfile().rangeUpgradeSection)
         const band = upgrade?.rangeUpgradeZone ?? upgrade?.band
@@ -80,4 +90,25 @@ function calcPhysics()
         floors[i].replenishElements()
         floors[i].deleteElements()
     }
+}
+
+// Teleport a fallen Grapple Over player to the spawn. Time, best height,
+// upgrades and the world (movers included) are kept; only the player,
+// grapple, gameplay input ownership and camera are reset.
+function recoverClimbFall()
+{
+    const world = floors[0], spawn = world.level.spawn
+    ninja.x = spawn.x
+    ninja.y = spawn.y
+    ninja.speedX = ninja.speedY = 0
+    ninja.track.pos = []
+    ninja.track.addPos(ninja.x, ninja.y, true)
+    Object.assign(grapnel, {throwed: false, grappled: false, pos: [], shotStep: null,
+        aim: null, clip: null, traveled: 0, speedX: 0, speedY: 0})
+    // A press held through the fall cannot grapple again until it is released.
+    gameplayPressOwned = false
+    stalePress = pressHeld
+    world.climbStats.currentHeight = 0
+    screen.trackGrappleOver(true)
+    PROGRESS.flushClimb()
 }

@@ -43,6 +43,47 @@ CLIMB_KEY = 'grapnelninja.grappleOver'
 BASE_REV = '8b9bbf6'
 UNCHANGED = ['physics.js', 'fixedlevel.js', 'collision', 'sprites', 'elements', 'respawn.js', 'moveScreen.js', 'render']
 
+# TASK-662: the only physics.js change since BASE_REV (git diff -U0 lines).
+PHYSICS_FALL_RECOVERY_DIFF = [
+    '+// Grapple Over: falling strictly below this many world units under the spawn',
+    '+// returns the player to the spawn without restarting the run.',
+    '+const CLIMB_FALL_RECOVERY_DEPTH = 1500',
+    '-    for (cycle = 0; cycle < cyclesPerTick - 1; ++cycle)',
+    '+    // A fall recovery ends the tick at the spawn, so the recovery step is observable.',
+    '+    let recovered = false',
+    '+    for (cycle = 0; cycle < cyclesPerTick - 1 && !recovered; ++cycle)',
+    '-        calcPhysics()',
+    '+        recovered = calcPhysics()',
+    '-    calcPhysics()',
+    '+    if (!recovered) calcPhysics()',
+    '+        if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)',
+    '+        {',
+    '+            recoverClimbFall()',
+    '+            return true',
+    '+        }',
+    '+',
+    '+// Teleport a fallen Grapple Over player to the spawn. Time, best height,',
+    '+// upgrades and the world (movers included) are kept; only the player,',
+    '+// grapple, gameplay input ownership and camera are reset.',
+    '+function recoverClimbFall()',
+    '+{',
+    '+    const world = floors[0], spawn = world.level.spawn',
+    '+    ninja.x = spawn.x',
+    '+    ninja.y = spawn.y',
+    '+    ninja.speedX = ninja.speedY = 0',
+    '+    ninja.track.pos = []',
+    '+    ninja.track.addPos(ninja.x, ninja.y, true)',
+    '+    Object.assign(grapnel, {throwed: false, grappled: false, pos: [], shotStep: null,',
+    '+        aim: null, clip: null, traveled: 0, speedX: 0, speedY: 0})',
+    '+    // A press held through the fall cannot grapple again until it is released.',
+    '+    gameplayPressOwned = false',
+    '+    stalePress = pressHeld',
+    '+    world.climbStats.currentHeight = 0',
+    '+    screen.trackGrappleOver(true)',
+    '+    PROGRESS.flushClimb()',
+    '+}',
+]
+
 SNAPSHOT = '''() => {
     const w = floors[0], l = w.level
     return {
@@ -304,14 +345,16 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # Physics, collision, bounce and level-loader sources match the pre-task tree,
         # and index.html only gained the boot fetch.
         # The only later change is TASK-659's display-only guide arrows: a new render file, its
-        # script tag and the call in drawWorldLayer().
-        diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js'],
+        # script tag and the call in drawWorldLayer(). TASK-662 added only the Grapple Over
+        # fall recovery to physics.js (PHYSICS_FALL_RECOVERY_DIFF below).
+        diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
                               text=True, check=True).stdout.splitlines() if l[:1] in '+-' and not l.startswith(('+++', '---'))]
         self.assertEqual(lines('render/draw.js'), ['+    // Transfer guide arrows under the range circle, grapnel, terrain and player',
                                                    '+    drawRouteArrows(floors[0])'])
+        self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF)
         changed = lines('index.html')
         self.assertEqual(changed, ['+        <script src = "render/routearrows.js"></script>',
                                    '+                await loadGrappleOverLevelAsset()'])
