@@ -7,13 +7,28 @@ save, the boot asset fetch and unchanged classic/bad selection.
 
 TASK650_EVIDENCE_DIR=DIR writes DIR/runtime.json with the observed values.
 
+Task651Tests (TASK-651) render the default level through the production draw()
+with a fixed camera, compare it with the concept artifacts/level/extended-mountain.svg
+under the same world-to-image mapping, check the loaded objects against the
+imported data and the concept measurements, and probe the yellow drag zones.
+TASK651_EVIDENCE_DIR=DIR writes the images, runtime-fidelity.json,
+capture.json and behavior.log there (default: a temporary directory).
+
     python3 -m unittest discover -s tools -p test_imported_level_runtime.py -v
+    TASK651_EVIDENCE_DIR=artifacts/TASK-651 python3 -m unittest discover -s tools \
+        -p test_imported_level_runtime.py -k Task651Tests -v
 """
+import base64
 from contextlib import ExitStack
+import hashlib
+import io
 import json
+import math
 import os
 from pathlib import Path
+import re
 import subprocess
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -261,6 +276,452 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(changed, ['+                await loadGrappleOverLevelAsset()'])
         self.evidence['cases']['modes'] = dict(seen, browserErrors=page.errors, unchangedSources=UNCHANGED,
                                                baseRev=BASE_REV, unchangedDiff=diff, indexHtmlChanges=changed)
+
+
+CONCEPT = ROOT / 'artifacts' / 'level' / 'extended-mountain.svg'
+MEASUREMENTS = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
+TOLERANCE = 0.01
+TILE = (1280, 720)
+KIND_ROLE = {'platform': 'solid', 'ceiling': 'solid', 'summit': 'solid', 'bounce': 'bounce'}
+
+# Freeze the loop and expose a fixed-camera production draw(). The HUD, tutorial
+# hint and FPS counter are screen-space overlays: hide them so tiles stitch.
+CAPTURE_SETUP = '''() => {
+    window.requestAnimationFrame = () => 0
+    cancelAnimationFrame(game)
+    drawUILayer = () => {}
+    drawTutorialHintLayer = () => {}
+    drawFpsCounterLayer = () => {}
+    // Canvas pixel = (world + screen) * scale * canvas.width / width: k pixels per world unit.
+    window.TASK651_CAPTURE = (wx, wy, k, world) => {
+        scale[version] = k * width / canvas.width
+        screen.x = -wx
+        screen.y = -wy
+        if (!world) floors[0].draw = () => {}
+        ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0)
+        try { draw() } finally { delete floors[0].draw }
+        return canvas.toDataURL('image/png')
+    }
+    return {canvas: [canvas.width, canvas.height], logical: [width, height], dpr: devicePixelRatio}
+}'''
+
+# The loaded objects themselves, as every collision, rope and render consumer sees them.
+RUNTIME = '''() => {
+    const w = floors[0]
+    const shape = (e, collection) => ({id: e.id, role: e.surfaceRole, grapplable: e.grapplable, collection,
+        points: e.getPoints().map(p => [p.x, p.y])})
+    return {version, query: location.search, imported: GRAPPLE_OVER_IMPORTED_ACTIVE, world: w.constructor.name,
+        layoutId: w.level.layoutId, elements: w.elements.map(e => shape(e, 'elements')),
+        dragZones: w.dragZones.map(e => shape(e, 'dragZones')), byId: [...w.byId.keys()],
+        transfers: w.level.svgFormat.transfers, fragments: w.level.svgFormat.fragments}
+}'''
+
+# Yellow zones: collections, a free fall through each zone and a held shot aimed
+# into each zone through production mouse input; then a held shot at a solid top.
+BEHAVIOR = '''() => {
+    window.requestAnimationFrame = () => 0
+    cancelAnimationFrame(game)
+    const w = floors[0], drag = new Set(w.dragZones.map(z => z.id))
+    const out = {collections: {dragZones: w.dragZones.map(z => z.id),
+        elementsWithDrag: w.elements.filter(e => drag.has(e.id) || e.surfaceRole === 'drag').map(e => e.id),
+        byIdWithDrag: [...w.byId.keys()].filter(id => drag.has(id)),
+        // Grapnel shots and rope wraps walk floors[*].elements (sprites/grapnel.js).
+        grappleGroupsWithDrag: floors.flatMap(f => f.elements).filter(e => drag.has(e.id)).map(e => e.id),
+        floors: floors.length}, passThrough: [], noAttach: []}
+    let contacts = []
+    for (const method of ['applySolidContact', 'applyBounce'])
+    {
+        const original = Ninja.prototype[method]
+        Ninja.prototype[method] = function (c) { contacts.push(c.element ? c.element.id : null); return original.call(this, c) }
+    }
+    let damped = 0
+    const applyDrag = w.applyDragZones
+    w.applyDragZones = function (player) {
+        const before = [player.speedX, player.speedY]
+        applyDrag.call(this, player)
+        if (player.speedX !== before[0] || player.speedY !== before[1]) damped++
+    }
+    const reset = (x, y) => {
+        if (grapnel.throwed) grapnel.endShot()
+        grapnel.throwed = false; grapnel.grappled = false
+        ninja.x = x; ninja.y = y; ninja.speedX = 0; ninja.speedY = 0
+        contacts = []; damped = 0
+        screen.trackGrappleOver(true)
+    }
+    const client = p => canvasCoordsToViewportCoords({x: (p.x + screen.x) * scale[version], y: (p.y + screen.y) * scale[version]})
+    const mouse = (type, p) => { const q = client(p)
+        document.dispatchEvent(new MouseEvent(type, {clientX: q.x, clientY: q.y, bubbles: true, button: 0})) }
+    const box = e => { const ps = e.getPoints(), xs = ps.map(p => p.x), ys = ps.map(p => p.y)
+        return {left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys)} }
+    const shot = (from, target, ticks) => {
+        reset(from.x, from.y)
+        mouse('mousedown', target)
+        const states = [], thrown = grapnel.throwed
+        for (let i = 0; i < ticks; i++) {
+            physics()
+            states.push({grappled: grapnel.grappled, element: grapnel.grappled ? grapnel.pos[0][2].id : null})
+        }
+        mouse('mouseup', target)
+        const hit = states.find(s => s.grappled)
+        return {from, target, ticks, thrown, grappled: !!hit, element: hit ? hit.element : null,
+            firstGrappledTick: hit ? states.indexOf(hit) + 1 : null, range: grappleOverAcquisitionRadius()}
+    }
+    for (const zone of w.dragZones)
+    {
+        const b = box(zone), cx = (b.left + b.right) / 2
+        reset(cx, b.top - 150)
+        let entered = null, exited = null, inside = 0
+        for (let tick = 1; tick <= 1200 && exited === null; tick++)
+        {
+            physics()
+            const overlap = ninja.y + ninja.radius > b.top && ninja.y - ninja.radius < b.bottom
+            if (overlap) { inside++; if (entered === null) entered = tick }
+            if (ninja.y - ninja.radius > b.bottom) exited = tick
+        }
+        out.passThrough.push({id: zone.id, top: b.top, bottom: b.bottom, enteredTick: entered, exitedBelowTick: exited,
+            ticksOverlapping: inside, dampedTicks: damped, contacts: contacts.slice(), y: ninja.y, radius: ninja.radius})
+        out.noAttach.push({id: zone.id, ...shot({x: cx, y: b.top - 200}, {x: cx, y: b.top + 120}, 90)})
+    }
+    const solid = w.byId.get('P1-body0'), sb = box(solid), ps = solid.getPoints()
+    const top = {x: (ps[0].x + ps[1].x) / 2, y: (ps[0].y + ps[1].y) / 2}
+    out.control = {id: solid.id, ...shot({x: top.x, y: top.y - 200}, {x: top.x, y: top.y + 20}, 90)}
+    return out
+}'''
+
+
+def concept_mapping():
+    """Concept canvas -> world, from the annotation matrix TASK-647 wrote into the import SVG."""
+    text = SVG.read_text()
+    a, b, c, d, e, f = map(float, re.search(r'data-layer="annotations"[^>]*transform="matrix\(([^)]*)\)"', text).group(1).split())
+    assert b == c == 0 and a == d
+    return a, e, f
+
+
+def image(data_url):
+    from PIL import Image
+    return Image.open(io.BytesIO(base64.b64decode(data_url.split(',', 1)[1]))).convert('RGB')
+
+
+def poly_distance(a, b):
+    """Minimum edge-to-edge distance between two separated polygons."""
+    return min(min(boundary_distance(p, b) for p in a), min(boundary_distance(p, a) for p in b))
+
+
+def boundary_distance(p, poly):
+    best = math.inf
+    for q, r in zip(poly, poly[1:] + poly[:1]):
+        dx, dy = r[0] - q[0], r[1] - q[1]
+        t = max(0, min(1, ((p[0] - q[0]) * dx + (p[1] - q[1]) * dy) / (dx * dx + dy * dy)))
+        best = min(best, math.hypot(p[0] - q[0] - t * dx, p[1] - q[1] - t * dy))
+    return best
+
+
+def fit(points, box, pad):
+    """jump-combinations.svg panel framing (artifacts/level/generate_extended.py fit())."""
+    xmin = min(x for x, y in points) - pad
+    xmax = max(x for x, y in points) + pad
+    ymin = min(y for x, y in points) - pad
+    ymax = max(y for x, y in points) + pad
+    bx, by, bw, bh = box
+    s = min(bw / (xmax - xmin), bh / (ymax - ymin))
+    return s, bx + (bw - (xmax - xmin) * s) / 2 - xmin * s, by + (bh - (ymax - ymin) * s) / 2 - ymin * s
+
+
+class Task651Tests(unittest.TestCase):
+    """TASK-651: the default imported level as production renders and loads it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.stack = ExitStack()
+        cls.url, cls.browser = start_browser_test(ROOT, cls.stack.callback)
+        out = os.environ.get('TASK651_EVIDENCE_DIR')
+        if not out:
+            out = cls.stack.enter_context(tempfile.TemporaryDirectory())
+        cls.out = Path(out)
+        cls.out.mkdir(parents=True, exist_ok=True)
+        cls.level = json.loads(LEVEL.read_text())
+        cls.measurements = json.loads(MEASUREMENTS.read_text())
+        cls.errors = []
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.stack.close()
+
+    def open(self):
+        """Normal default-level startup: no query, no fixture, no seeded save."""
+        context = self.browser.new_context(viewport={'width': TILE[0], 'height': TILE[1]}, device_scale_factor=1)
+        self.addCleanup(context.close)
+        page = context.new_page()
+        page.on('pageerror', lambda e: self.errors.append('pageerror: %s' % e))
+        page.on('console', lambda m: m.type == 'error' and self.errors.append('console: %s' % m.text))
+        page.goto(self.url)
+        wait_for_boot_run(page)
+        state = page.evaluate('() => ({version, search: location.search, layoutId: floors[0].level.layoutId,'
+                              ' imported: GRAPPLE_OVER_IMPORTED_ACTIVE, world: floors[0].constructor.name})')
+        self.assertEqual(state, {'version': 'grapple_over', 'search': '', 'layoutId': LAYOUT_ID,
+                                 'imported': True, 'world': 'PersistentWorld'})
+        return page, state
+
+    def game(self, page, left, top, k, size, world=True):
+        """Stitch TILE-sized production frames into a size image of the world window at (left, top)."""
+        from PIL import Image
+        out = Image.new('RGB', size)
+        for ty in range(0, size[1], TILE[1]):
+            for tx in range(0, size[0], TILE[0]):
+                out.paste(image(page.evaluate('a => TASK651_CAPTURE(...a)', [left + tx / k, top + ty / k, k, world])), (tx, ty))
+        return out
+
+    def concept(self, page, viewbox, size):
+        """The concept SVG itself, rendered with its viewBox set to the same world window."""
+        from PIL import Image
+        text = CONCEPT.read_text()
+        svg = re.sub(r'<svg[^>]*?>', lambda m: re.sub(r' (width|height|viewBox)="[^"]*"', '', m.group(0))[:-1] +
+                     ' width="%d" height="%d" viewBox="%s" preserveAspectRatio="none">' % (size[0], size[1], ' '.join(repr(v) for v in viewbox)),
+                     text, count=1)
+        page.set_viewport_size({'width': size[0], 'height': size[1]})
+        page.set_content('<html><body style="margin:0;background:#000">%s</body></html>' % svg)
+        return Image.open(io.BytesIO(page.screenshot(clip={'x': 0, 'y': 0, 'width': size[0], 'height': size[1]}))).convert('RGB')
+
+    def runtime(self, page):
+        return page.evaluate(RUNTIME)
+
+    def test_01_captures(self):
+        from PIL import Image, ImageChops, ImageDraw
+        a, e, f = concept_mapping()
+        # The mapping is the concept's own: every concept fragment polygon (measurement
+        # world data) lands on a polygon drawn in extended-mountain.svg.
+        drawn = [[tuple(map(float, p.split(','))) for p in m.split()]
+                 for m in re.findall(r'<polygon points="([^"]*)"', CONCEPT.read_text())]
+        mapping_error = 0
+        for m in self.measurements['fragments']:
+            for poly in m['polys']:
+                canvas = [((m['x'] + x - e) / a, (m['y'] + y - f) / a) for x, y in poly]
+                errors = [max(max(abs(p[0] - q[0]), abs(p[1] - q[1])) for p, q in zip(canvas, d))
+                          for d in drawn if len(d) == len(canvas)]
+                mapping_error = max(mapping_error, min(errors))
+        self.assertLess(mapping_error, 0.006)
+
+        page, state = self.open()
+        setup = page.evaluate(CAPTURE_SETUP)
+        self.assertEqual(setup['canvas'], list(TILE))
+        runtime = self.runtime(page)
+        polys = runtime['elements'] + runtime['dragZones']
+        svg_page = self.browser.new_page()
+        self.addCleanup(svg_page.close)
+        views = []
+
+        def view(name, left, top, k, size):
+            game = self.game(page, left, top, k, size)
+            concept = self.concept(svg_page, ((left - e) / a, (top - f) / a, size[0] / k / a, size[1] / k / a), size)
+            px = lambda p: ((p[0] - left) * k, (p[1] - top) * k)
+            views.append({'name': name, 'worldLeft': left, 'worldTop': top, 'pixelsPerWorldUnit': k, 'sizePx': list(size),
+                          'worldRight': left + size[0] / k, 'worldBottom': top + size[1] / k,
+                          'conceptViewBox': [(left - e) / a, (top - f) / a, size[0] / k / a, size[1] / k / a]})
+            return game, concept, px
+
+        def label(img, text):
+            img = img.copy()
+            d = ImageDraw.Draw(img)
+            d.rectangle([0, 0, img.width, 26], fill=(0, 0, 0))
+            d.text((8, 7), text, fill=(255, 255, 0))
+            return img
+
+        def side(left, right, gap=16):
+            out = Image.new('RGB', (left.width + right.width + gap, max(left.height, right.height)), (255, 255, 255))
+            out.paste(left, (0, 0))
+            out.paste(right, (left.width + gap, 0))
+            return out
+
+        def outline(img, px, measured=True):
+            img = img.copy()
+            d = ImageDraw.Draw(img)
+            if measured:
+                for m in self.measurements['fragments']:
+                    for poly in m['polys']:
+                        d.polygon([px((m['x'] + x, m['y'] + y)) for x, y in poly], outline=(255, 0, 255))
+            for p in polys:
+                colour = (255, 230, 0) if p['collection'] == 'dragZones' else (0, 255, 255)
+                d.line([px(q) for q in p['points'] + p['points'][:1]], fill=colour, width=2)
+            for enc in self.measurements['encounters']:
+                (x0, y0), (x1, y1) = px(enc['witness'][0]), px(enc['witness'][1])
+                d.line([(x0, y0), (x1, y1)], fill=(255, 255, 255), width=1)
+                for x, y in ((x0, y0), (x1, y1)):
+                    d.ellipse([x - 3, y - 3, x + 3, y + 3], outline=(255, 64, 64), width=2)
+            return img
+
+        # Overview: the concept's whole 2600x4300 canvas at half size.
+        size = (1300, 2150)
+        game, concept, px = view('overview', e, f, 1 / (2 * a), size)
+        game.save(self.out / 'full-map-game.png')
+        side(label(concept, 'CONCEPT artifacts/level/extended-mountain.svg (world %.0f,%.0f; %.4f px/u)' % (e, f, 1 / (2 * a))),
+             label(game, 'GAME production draw(), default start, same world window and scale')).save(self.out / 'full-map-comparison.png')
+        side(label(outline(game, px), 'GAME + runtime polygons (cyan), runtime drag zones (yellow)'),
+             label(outline(concept, px), 'CONCEPT + same; magenta = measurements, red = transfer endpoints')).save(self.out / 'geometry-overlay.png')
+
+        # Close-ups: the jump-combinations.svg panel windows for chains 11-13, 14-16, 18-20, 22-24.
+        rows, registration = [], []
+        frags = self.measurements['fragments']
+        for i, (first, middle, last) in enumerate(self.measurements['combinations']):
+            bx, by, bw, bh = 70 + (i % 2) * 1260, 220 + (i // 2) * 1000, 1200, 930
+            pts = [(m['x'] + x, m['y'] + y) for m in frags[first - 1:last + 1] for poly in m['polys'] for x, y in poly]
+            pts += [tuple(q) for z in self.measurements['yellowBands'] if z['belowJump'] == middle for q in z['polygon']]
+            s, ox, oy = fit(pts, (bx + 40, by + 130, bw - 80, bh - 240), 650)
+            name = 'chain-%02d-%02d' % (first, last)
+            game, concept, px = view(name, (bx - ox) / s, (by - oy) / s, s, (bw, bh))
+            game.save(self.out / ('closeup-%s-game.png' % name))
+            outline(game, px, measured=False).save(self.out / ('closeup-%s-overlay.png' % name))
+            rows.append(side(label(concept, 'CONCEPT %s (%.4f px/u)' % (name, s)),
+                             label(game, 'GAME %s: same world window' % name)))
+            # Registration: pixels the world layer changes vs runtime polygons drawn at this mapping.
+            bare = self.game(page, (bx - ox) / s, (by - oy) / s, s, (bw, bh), world=False)
+            changed = ImageChops.difference(game, bare).convert('L').point(lambda v: 255 if v > 16 else 0)
+
+            # The outline strokes are bright on every role; the dark solid fill is not.
+            def coverage(dx):
+                mask = Image.new('L', (bw, bh))
+                d = ImageDraw.Draw(mask)
+                for p in polys:
+                    d.line([(x + dx, y) for x, y in map(px, p['points'] + p['points'][:1])], fill=255, width=3)
+                hit = ImageChops.multiply(mask, changed).histogram()[255]
+                return hit / max(1, mask.histogram()[255])
+            registration.append({'view': name, 'outlineCoverage': coverage(0), 'outlineCoverageShifted40px': coverage(40)})
+        combo = Image.new('RGB', (rows[0].width, sum(r.height for r in rows) + 16 * (len(rows) - 1)), (255, 255, 255))
+        y = 0
+        for r in rows:
+            combo.paste(r, (0, y))
+            y += r.height + 16
+        combo.resize((combo.width // 2, combo.height // 2), Image.LANCZOS).save(self.out / 'combinations-comparison.png')
+        browser = self.browser.version
+        capture = {'startup': state, 'setup': setup, 'browser': 'chromium ' + browser, 'viewport': list(TILE),
+                   'deviceScaleFactor': 1, 'tile': list(TILE), 'conceptToWorld': {'scale': a, 'offset': [e, f]},
+                   'conceptMappingMaxErrorPx': mapping_error, 'views': views, 'registration': registration,
+                   'hiddenOverlays': ['drawUILayer', 'drawTutorialHintLayer', 'drawFpsCounterLayer'],
+                   'inputs': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+                              for p in (CONCEPT, MEASUREMENTS, SVG, LEVEL)}}
+        (self.out / 'capture.json').write_text(json.dumps(capture, separators=(',', ':')))
+        for r in registration:
+            self.assertGreater(r['outlineCoverage'], 0.9, r)
+            self.assertLess(r['outlineCoverageShifted40px'], r['outlineCoverage'] - 0.3, r)
+        self.assertEqual(self.errors, [])
+
+    def test_02_runtime_fidelity(self):
+        page, state = self.open()
+        rt = self.runtime(page)
+        report = {'startup': state, 'tolerance': TOLERANCE, 'checks': {}}
+        source = {e['id']: e for e in self.level['elements']}
+        live = rt['elements'] + rt['dragZones']
+        self.assertEqual(sorted(e['id'] for e in live), sorted(source))
+        # Against the imported level data.
+        worst = 0
+        for e in live:
+            s = source[e['id']]
+            self.assertEqual((e['role'], e['grapplable']), (s['role'], s['grapplable']), e['id'])
+            self.assertEqual(len(e['points']), len(s['points']), e['id'])
+            for (x, y), p in zip(e['points'], s['points']):
+                worst = max(worst, abs(x - s['x'] - p['x']), abs(y - s['y'] - p['y']))
+        self.assertLessEqual(worst, TOLERANCE)
+        report['checks']['importedData'] = {'objects': len(live), 'maxError': worst, 'rolesAndGrapplableMatch': True}
+        # Against the concept measurements: fragment bodies and roles.
+        worst, kinds = 0, {}
+        by_id = {e['id']: e for e in live}
+        for m in self.measurements['fragments']:
+            for k, poly in enumerate(m['polys']):
+                e = by_id['%s-body%d' % (m['id'], k)]
+                self.assertEqual(e['role'], KIND_ROLE[m['kind']], e['id'])
+                self.assertTrue(e['grapplable'], e['id'])
+                self.assertEqual(e['collection'], 'elements')
+                self.assertEqual(len(e['points']), len(poly), e['id'])
+                for (x, y), (px, py) in zip(e['points'], poly):
+                    worst = max(worst, abs(x - m['x'] - px), abs(y - m['y'] - py))
+                kinds[m['kind']] = kinds.get(m['kind'], 0) + 1
+        self.assertLessEqual(worst, TOLERANCE)
+        self.assertEqual(len(rt['elements']), sum(kinds.values()))
+        report['checks']['conceptFragments'] = {'fragments': len(self.measurements['fragments']), 'bodies': sum(kinds.values()),
+                                                'bodiesByKind': kinds, 'maxError': worst}
+        # Transfer endpoints: on the live fragment boundaries, at the measured distance.
+        fragment = lambda fid: [e['points'] for e in rt['elements'] if e['id'].startswith(fid + '-body')]
+        transfers = {t['encounter']: t for t in rt['transfers']}
+        rows = []
+        for enc in self.measurements['encounters']:
+            src, dst = fragment(enc['fromFragment']), fragment(enc['toFragment'])
+            endpoint = [min(boundary_distance(enc['witness'][0], p) for p in src),
+                        min(boundary_distance(enc['witness'][1], p) for p in dst)]
+            gap = min(poly_distance(p, q) for p in src for q in dst)
+            t = transfers[enc['id']]
+            row = {'transfer': t['id'], 'encounter': enc['id'], 'from': enc['fromFragment'], 'to': enc['toFragment'],
+                   'endpointOffsets': endpoint, 'runtimeGap': gap, 'measuredGap': enc['distance'],
+                   'runtimePercent': gap / 540 * 100, 'gapPercent': t['gapPercent']}
+            self.assertEqual((t['from'], t['to']), (enc['fromFragment'], enc['toFragment']))
+            self.assertEqual(t['id'], 'T%02d' % enc['number'])
+            self.assertLessEqual(max(endpoint), TOLERANCE, row)
+            self.assertLessEqual(abs(gap - enc['distance']), TOLERANCE, row)
+            self.assertLessEqual(abs(gap / 540 * 100 - t['gapPercent']), TOLERANCE, row)
+            rows.append(row)
+        self.assertEqual(len(rows), 24)
+        report['checks']['transfers'] = {'count': len(rows), 'endpointsChecked': 2 * len(rows),
+                                         'maxEndpointOffset': max(max(r['endpointOffsets']) for r in rows),
+                                         'maxGapError': max(abs(r['runtimeGap'] - r['measuredGap']) for r in rows),
+                                         'rows': rows}
+        # Six yellow rectangles: live drag zones vs measurements and the SVG rects.
+        root = ET.parse(SVG).getroot()
+        svg_rects = {r.get('id'): r for r in root.iter('{http://www.w3.org/2000/svg}rect') if r.get('data-role') == 'drag'}
+        zones = {z['id']: z for z in rt['dragZones']}
+        rects = []
+        for band in self.measurements['yellowBands']:
+            z = zones['%s-drag' % band['id']]
+            xs, ys = [p[0] for p in z['points']], [p[1] for p in z['points']]
+            box = [min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)]
+            want = [band['x'], band['y'], band['width'], band['height']]
+            r = svg_rects[z['id']]
+            svg = [float(r.get(k)) for k in ('x', 'y', 'width', 'height')]
+            aligned = len(xs) == 4 and len(set(round(x, 6) for x in xs)) == 2 and len(set(round(y, 6) for y in ys)) == 2
+            err = max(max(abs(p - q) for p, q in zip(box, want)), max(abs(p - q) for p, q in zip(box, svg)))
+            self.assertTrue(aligned, z['id'])
+            self.assertLessEqual(err, TOLERANCE, z['id'])
+            self.assertEqual((z['role'], z['grapplable'], z['collection']), ('drag', False, 'dragZones'))
+            rects.append({'id': z['id'], 'band': band['id'], 'belowJump': band['belowJump'], 'runtime': box,
+                          'measured': want, 'maxError': err, 'axisAligned': aligned})
+        self.assertEqual(len(rects), 6)
+        report['checks']['yellowRectangles'] = {'count': len(rects), 'rows': rects}
+        self.assertEqual(self.errors, [])
+        report['browserErrors'] = list(self.errors)
+        report['result'] = 'PASS'
+        (self.out / 'runtime-fidelity.json').write_text(json.dumps(report, separators=(',', ':')))
+
+    def test_03_yellow_zone_behavior(self):
+        page, state = self.open()
+        out = page.evaluate(BEHAVIOR)
+        c = out['collections']
+        lines = ['STARTUP %s' % json.dumps(state, sort_keys=True),
+                 'COLLECTION dragZones=%s' % ','.join(c['dragZones']),
+                 'COLLECTION elements_with_drag=%d byId_with_drag=%d grapple_collision_groups_with_drag=%d floors=%d'
+                 % (len(c['elementsWithDrag']), len(c['byIdWithDrag']), len(c['grappleGroupsWithDrag']), c['floors'])]
+        self.assertEqual(sorted(c['dragZones']), ['Y%d-drag' % i for i in range(1, 7)])
+        self.assertEqual(c['elementsWithDrag'] + c['byIdWithDrag'] + c['grappleGroupsWithDrag'], [])
+        for p in out['passThrough']:
+            ok = (p['enteredTick'] is not None and p['exitedBelowTick'] is not None and p['contacts'] == []
+                  and p['dampedTicks'] > 0)
+            lines.append('PASS_THROUGH %s top=%.2f bottom=%.2f entered_tick=%s exited_below_tick=%s overlapping_ticks=%d '
+                         'damped_ticks=%d contacts=%d RESULT %s' % (p['id'], p['top'], p['bottom'], p['enteredTick'],
+                         p['exitedBelowTick'], p['ticksOverlapping'], p['dampedTicks'], len(p['contacts']), 'PASS' if ok else 'FAIL'))
+            self.assertTrue(ok, p)
+        for n in out['noAttach']:
+            ok = n['thrown'] and not n['grappled'] and n['element'] is None
+            lines.append('NO_ATTACH %s from=(%.2f,%.2f) aim=(%.2f,%.2f) ticks=%d range=%d thrown=%s grappled=%s element=%s RESULT %s'
+                         % (n['id'], n['from']['x'], n['from']['y'], n['target']['x'], n['target']['y'], n['ticks'],
+                            n['range'], str(n['thrown']).lower(), str(n['grappled']).lower(), n['element'], 'PASS' if ok else 'FAIL'))
+            self.assertTrue(ok, n)
+        ctl = out['control']
+        lines.append('CONTROL_ATTACH %s aim=(%.2f,%.2f) grappled=%s element=%s first_grappled_tick=%s RESULT %s'
+                     % (ctl['id'], ctl['target']['x'], ctl['target']['y'], str(ctl['grappled']).lower(), ctl['element'],
+                        ctl['firstGrappledTick'], 'PASS' if ctl['thrown'] and ctl['element'] == 'P1-body0' else 'FAIL'))
+        self.assertTrue(ctl['thrown'])
+        self.assertEqual(ctl['element'], 'P1-body0')
+        lines.append('BROWSER_PAGE_ERRORS %d' % len(self.errors))
+        lines.extend('BROWSER_ERROR %s' % e for e in self.errors)
+        self.assertEqual(self.errors, [])
+        lines.append('BEHAVIOR_RESULT PASS')
+        (self.out / 'behavior.log').write_text('\n'.join(lines) + '\n')
 
 
 if __name__ == '__main__':
