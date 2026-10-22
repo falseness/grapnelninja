@@ -1203,7 +1203,7 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Counterweight Tower encounter 4. Planned terrain stays noncollidable.
+// Replacement built prefix through Exposed Crown encounter 1. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 15000, top: -4600, bottom: 280},
@@ -1215,7 +1215,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01', 'S04-02', 'S04-03', 'S04-04']},
         {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01', 'S05-02', 'S05-03', 'S05-04'],
             rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}},
-        {id: 'S06', labelKey: 'climb.section.counterweightTower', status: 'built', encounters: ['S06-01', 'S06-02', 'S06-03', 'S06-04']}
+        {id: 'S06', labelKey: 'climb.section.counterweightTower', status: 'built', encounters: ['S06-01', 'S06-02', 'S06-03', 'S06-04']},
+        {id: 'S07', labelKey: 'climb.section.S07', status: 'built', encounters: ['S07-01']}
     ],
     encounters: [
         {id: 'S01-01', name: 'Loading Yard', elements: ['yard-entry', 'yard-landing', 'yard-anchor', 'yard-catch']},
@@ -1242,6 +1243,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S06-02', name: 'Counterweight Tower horizontal practice', elements: ['tower-observation', 'tower-shuttle', 'tower-shaft-landing', 'tower-shaft-catch'], recovery: ['tower-shaft-catch', 'tower-observation']},
         {id: 'S06-03', name: 'Counterweight Tower rebound transfer', elements: ['tower-shaft-landing', 'tower-rebound-carrier', 'tower-rebound-landing', 'tower-rebound-catch'], recovery: ['tower-rebound-catch', 'tower-shaft-landing']},
         {id: 'S06-04', name: 'Counterweight Tower lift exit', elements: ['tower-rebound-landing', 'tower-exit-lift', 'tower-exit', 'tower-exit-catch'], recovery: ['tower-exit-catch', 'tower-rebound-landing']},
+        {id: 'S07-01', name: 'Exposed Crown first red lookout', elements: ['tower-exit', 'crown-anchor', 'crown-landing', 'crown-catch', 'crown-red'], recovery: ['crown-catch', 'tower-exit']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1319,8 +1321,12 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['tower-shaft-catch', 11041, -2808.2, 1340, 60, 'Broad open shaft recovery floor; mistimed releases can hook the observation deck and return'],
         ['tower-counterweight', 9856, -2788.2, 360, 80, 'Wide blue vertical counterweight; observe the 720-unit sweep from the shared gallery exit, then release toward the observation landing'],
         ['tower-observation', 10241, -3188.2, 800, 60, 'Broad upper tower observation and planning landing; shared rest and takeoff for the horizontal shaft crossing'],
+        ['crown-anchor', 12522, -4139, 160, 80, 'Reachable westward launch face after the broad tower observation deck; not a landing'],
+        ['crown-landing', 11730, -3948.2, 800, 60, 'Broad first Crown landing below the visible red sweep; release into the open lower escape'],
+        ['crown-catch', 11900, -3678.2, 882, 60, 'Broad lower catch beneath the release gap; hook the tower exit eastward to return'],
+        ['crown-red', 11750, -4400, 80, 80, 'First visible nonlethal red sweep above the transfer; observe from the tower deck and escape below'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
-    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['tower-exit-lift', 'tower-rebound-carrier', 'tower-shuttle', 'tower-counterweight', 'freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
+    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: id === 'crown-red' ? 'hazard' : ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['tower-exit-lift', 'tower-rebound-carrier', 'tower-shuttle', 'tower-counterweight', 'freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['crown-red', 'viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
         points: id === 'gallery-exit-projection'
             ? [{x:360,y:0},{x:0,y:0},{x:0,y:440},{x:230,y:440},{x:230,y:360},{x:80,y:360},{x:80,y:280},{x:360,y:280}].reverse()
             : id === 'gallery-projection'
@@ -1328,7 +1334,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
             : ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
             ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]
             : [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
-    movers: [{id:'tower-exit-travel', element:'tower-exit-lift', axis:'y', min:-4268.2, max:-3548.2, periodMs:10000, phase:.5, velocity:-144},
+    movers: [{id:'crown-red-travel', element:'crown-red', axis:'x', min:11750, max:12450, periodMs:6000, phase:0, velocity:233.33333333333334},
+        {id:'tower-exit-travel', element:'tower-exit-lift', axis:'y', min:-4268.2, max:-3548.2, periodMs:10000, phase:.5, velocity:-144},
         {id:'tower-rebound-travel', element:'tower-rebound-carrier', axis:'x', min:12441, max:13161, periodMs:10000, phase:0, velocity:144},
         {id:'tower-shuttle-travel', element:'tower-shuttle', axis:'x', min:11101, max:11821, periodMs:10000, phase:0, velocity:144},
         {id:'tower-travel', element:'tower-counterweight', axis:'y', min:-3508.2, max:-2788.2, periodMs:10000, phase:.5, velocity:-144},
