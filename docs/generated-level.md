@@ -15,6 +15,10 @@ python3 tools/import_level_svg.py --input artifacts/levels/extended-mountain.svg
 cp artifacts/levels/extended-mountain.level.js leveldata.js
 ```
 
+The generated SVG carries a display-only `guide` and a short direction arrow
+on every transfer (docs/level-svg-format.md §4.6), so the game draws the same
+arrows from `leveldata.js` (`render/routearrows.js`).
+
 For manual authoring edits, run only the two importer commands and copy step.
 Never edit the runtime bundle by hand. Commit the updated runtime bundle with
 code changes; keep artifacts local. A fresh checkout can play the bundled level

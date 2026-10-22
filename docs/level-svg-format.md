@@ -191,10 +191,13 @@ examples). Their document order is significant and is preserved.
   starts and ends at the encounter's `flight` contacts. The default output
   has no guides. Guides are per transfer: in one file, some transfers may
   have a guide and others may not, and the unguided ones import in the
-  legacy shape. The shipped `extended-mountain-v6` SVG has no guides yet.
-  `GuideTests.test_shipped_v6_roundtrip` adds `guide()` values to all 30 of
-  its transfers. Stripping `guide` from that import gives the shipped level
-  JSON byte-for-byte.
+  legacy shape. Since TASK-660 `tools/retune_extended_level.py` (default
+  extended opening) builds with guides and arrows, so the shipped
+  `extended-mountain-v6` SVG and `leveldata.js` carry a guide on all 30
+  transfers (`--opening original` still reproduces the unguided v5 file).
+  `GuideTests.test_shipped_v6_roundtrip` strips the shipped guides, adds
+  `guide()` values back and gets the shipped SVG byte-for-byte; stripping
+  `guide` from the import changes nothing else.
 
   Short direction arrows: `build(meas, guides=True, arrows=True)` (CLI
   `--arrows`) also draws one `<g class="transfer-arrow" data-transfer=…

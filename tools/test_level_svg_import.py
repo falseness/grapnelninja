@@ -566,19 +566,22 @@ class GuideTests(ImportCase):
             path.write_text(json.dumps(prior, separators=(',', ':')) + '\n')
 
     def test_shipped_v6_roundtrip(self):
-        """The shipped level SVG gains guides from the route curve() without changing anything else."""
+        """The shipped level SVG carries guides equal to the route curve() and nothing else differs from the unguided level."""
         import convert_extended_mountain_svg as conv
         svg_path = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
         meas_path = ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json'
-        plain_svg, meas = svg_path.read_text(), json.loads(meas_path.read_text())
+        shipped_svg, meas = svg_path.read_text(), json.loads(meas_path.read_text())
         rows, frags = {'T%02d' % r['number']: r for r in meas['encounters']}, meas['fragments']
+        # Since TASK-660 the shipped SVG carries the guides; strip them for the legacy shape.
+        plain_svg = re.sub(r'(<gn:transfer id="T\d+"[^>]*?) guide="[^"]*"', r'\1', shipped_svg)
         guided_svg = re.sub(r'(<gn:transfer id="(T\d+)"[^>]*?)/>',
                             lambda m: '%s guide="%s"/>' % (m.group(1), conv.guide(rows[m.group(2)], frags)), plain_svg)
         self.assertNotIn(' guide=', plain_svg)
         self.assertEqual(guided_svg.count(' guide="'), 30)
+        self.assertEqual(guided_svg, shipped_svg)
         plain_level = import_svg(plain_svg.encode())
-        self.assertEqual(dumps(plain_level).encode(), (ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json').read_bytes())
         runs = [dumps(import_svg(guided_svg.encode())) for _ in range(2)]
+        self.assertEqual(runs[0].encode(), (ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json').read_bytes())
         self.assertEqual(runs[0], runs[1])
         level = json.loads(runs[0])
         self.assertEqual(level['layoutId'], 'extended-mountain-v6')
@@ -624,6 +627,7 @@ class GuideTests(ImportCase):
     def test_mixed_guided_and_legacy_transfers(self):
         """Guides are per transfer: unguided siblings keep the legacy shape."""
         text = Path(ROOT, 'artifacts', 'levels', 'extended-mountain.svg').read_text()
+        text = re.sub(r'(<gn:transfer id="T\d+"[^>]*?) guide="[^"]*"', r'\1', text)  # shipped guides (TASK-660) off
         text = edit(text, 'encounter="S06-04" gap-percent="80"/>', 'encounter="S06-04" gap-percent="80" guide="%s"/>' % self.GUIDE)
         transfers = import_svg(text.encode())['svgFormat']['transfers']
         self.assertEqual([t['id'] for t in transfers if 'guide' in t], ['T02'])

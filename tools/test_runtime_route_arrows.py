@@ -2,8 +2,9 @@
 
 Boots the real index.html. The guided cases serve leveldata.js as the shipped
 extended-mountain-v6 SVG imported with a `guide` on every gn:transfer (the
-TASK-657 injection of convert_extended_mountain_svg.guide()); the unguided
-cases use the shipped leveldata.js as is. Draw calls are recorded from the
+TASK-657 injection of convert_extended_mountain_svg.guide()), which since
+TASK-660 is byte-identical to the shipped leveldata.js; the unguided cases
+serve the same SVG with every guide stripped. Draw calls are recorded from the
 production drawRouteArrows() through the canvas transform and compared with
 the SVG arrow geometry (head_of / bezier_tangent at t = 0.25).
 
@@ -153,13 +154,18 @@ def sha(data):
     return hashlib.sha256(data if isinstance(data, bytes) else data.encode()).hexdigest()
 
 
+def unguided_svg():
+    """Shipped v6 SVG with every gn:transfer guide removed (the pre-TASK-660 legacy shape)."""
+    return re.sub(r'(<gn:transfer id="T\d+"[^>]*?) guide="[^"]*"', r'\1', SVG.read_text())
+
+
 def guided_svg(only=None):
     """Shipped v6 SVG with guides on every (or only the listed) gn:transfer."""
     meas = json.loads(MEASUREMENTS.read_text())
     rows, frags = {'T%02d' % r['number']: r for r in meas['encounters']}, meas['fragments']
     return re.sub(r'(<gn:transfer id="(T\d+)"[^>]*?)/>',
                   lambda m: m.group(0) if only and m.group(2) not in only else
-                  '%s guide="%s"/>' % (m.group(1), conv.guide(rows[m.group(2)], frags)), SVG.read_text())
+                  '%s guide="%s"/>' % (m.group(1), conv.guide(rows[m.group(2)], frags)), unguided_svg())
 
 
 def leveldata(level):
@@ -200,13 +206,15 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         cls.svg_text = guided_svg()
         cls.level = import_svg(cls.svg_text.encode())
         cls.js = leveldata(cls.level)
-        cls.plain_js = LEVELDATA.read_text()
+        cls.shipped_js = LEVELDATA.read_text()
+        cls.plain_js = leveldata(import_svg(unguided_svg().encode()))
         cls.guides = {t['id']: t['guide'] for t in cls.level['svgFormat']['transfers']}
         cls.transfers = {t['id']: t for t in cls.level['svgFormat']['transfers']}
         cls.errors = []
         cls.evidence = {'inputs': {'svg': str(SVG.relative_to(ROOT)), 'svgSha256': sha(SVG.read_bytes()),
                                    'measurementsSha256': sha(MEASUREMENTS.read_bytes()), 'guidedSvgSha256': sha(cls.svg_text),
-                                   'guidedLeveldataSha256': sha(cls.js), 'shippedLeveldataSha256': sha(cls.plain_js),
+                                   'guidedLeveldataSha256': sha(cls.js), 'shippedLeveldataSha256': sha(cls.shipped_js),
+                                   'unguidedLeveldataSha256': sha(cls.plain_js),
                                    'routearrowsJsSha256': sha((ROOT / 'render/routearrows.js').read_bytes()),
                                    'drawJsSha256': sha((ROOT / 'render/draw.js').read_bytes())},
                         'style': {'t': T, 'color': COLOR, 'opacity': OPACITY, 'strokePx': STROKE_PX, 'headPx': HEAD_PX},
@@ -494,7 +502,9 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                             'coreMaxChannelDeltaWithoutPlayer': away_delta, 'drawOrder': order}}
 
     def test_04_absent_and_partial_metadata(self):
-        page = self.open()  # shipped leveldata.js: no guides
+        # TASK-660 ships the guides: the shipped leveldata.js is exactly the all-guided level.
+        self.assertEqual(self.shipped_js, self.js)
+        page = self.open(self.plain_js)  # the same level with every guide removed
         info = self.setup(page)
         wx, wy, k = self.overview(info)
         state = page.evaluate('() => ({layoutId: floors[0].level.layoutId, guides: floors[0].level.svgFormat.transfers.filter(t => t.guide).length,'
@@ -517,7 +527,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                                                    'noSvgFormatArrows': legacy}
 
     def test_05_collections_save_state_and_physics_unchanged(self):
-        guided, plain = self.open(self.js), self.open()
+        guided, plain = self.open(self.js), self.open(self.plain_js)
         for p in (guided, plain):
             p.evaluate(FREEZE_RESTART)
         worlds = [p.evaluate(WORLD) for p in (guided, plain)]

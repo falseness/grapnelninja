@@ -413,7 +413,9 @@ def main():
     m=tune(json.loads(Path(args.source).read_text()), opening=opening, yellow_clearance=clearance)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
-    text=svg.build(m)
+    # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);
+    # the original opening stays the frozen v5 reproduction without them.
+    text=svg.build(m, guides=bool(opening), arrows=bool(opening))
     text=text.replace('01–10: preserved baseline geometry', 'Opening 80% · vertical transfers 150%')
     text=text.replace('BASELINE PRESERVED', 'EASIER OPENING / SHORTER CLIMBS')
     text=text.replace('original 01–10 unchanged','opening gaps 80%; vertical gaps 150%')
