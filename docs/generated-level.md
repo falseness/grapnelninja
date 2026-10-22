@@ -20,10 +20,14 @@ Never edit the runtime bundle by hand. Commit the updated runtime bundle with
 code changes; keep artifacts local. A fresh checkout can play the bundled level
 without authoring files; authoring and comparison tests need the local sources.
 
-Layout `extended-mountain-v5` uses 80% grapple-range opening gaps and 150%
-straight-up gaps. All 25 panels, including ceilings, are green bounce surfaces; the ten separate
-rectangular top bumps are removed. Incompatible older saves restart
-at the spawn. Physics playability is not established by geometry checks.
+Layout `extended-mountain-v6` uses 80% grapple-range opening gaps and 150%
+straight-up gaps. Its opening runs rightward, turns upward, then runs leftward;
+both horizontal spans are 3x the v5 layout. Four rightward panels and two
+leftward panels were added, so the route has 31 panels and 30 transfers. The
+measurements' `routeMap` maps v5 panel ids and encounter numbers to v6 ids and
+numbers; tests refer to old encounters through it. All panels, including
+ceilings, are green bounce surfaces; the ten separate rectangular top bumps are
+removed. Incompatible older saves (including v5) restart at the spawn. Physics playability is not established by geometry checks.
 
 Verify locally:
 
@@ -36,8 +40,9 @@ python3 -m unittest discover -s tools -p test_imported_level_runtime.py -v
 The current design requirements are in
 `/root/grapnelninja/artifacts/levels/level-guidelines.md` (local design requirements; the commit hook forbids artifacts in Git).
 The generator requires this file and records its SHA-256 in the measurements.
-The v5 layout enforces at least 200% grapple length (1,080 world units)
-from every yellow rectangle to every green panel. The independent checker
+The v6 layout enforces at least 300% grapple length (1,620 world units)
+from every yellow rectangle to every green panel (v5 and `--opening original`
+used 200%, 1,080 units); six yellow zones remain, nearest clearance about 1,672. The independent checker
 cannot lower that threshold through reference metadata. Every yellow pair also
 has at least 100% grapple length (540 units) of edge-to-edge clearance. Nearby
 yellow rectangles merge into one longer rectangle when its entire area remains

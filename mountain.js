@@ -1410,7 +1410,7 @@ function replacementMountainLevel(manifest)
 // Generated runtime bundle: leveldata.js. Local authoring files live in
 // artifacts/levels/; regeneration instructions are in docs/generated-level.md.
 const GRAPPLE_OVER_IMPORTED_URL = 'leveldata.js'
-const GRAPPLE_OVER_IMPORTED_LAYOUT_ID = 'extended-mountain-v5'
+const GRAPPLE_OVER_IMPORTED_LAYOUT_ID = 'extended-mountain-v6'
 let GRAPPLE_OVER_IMPORTED = null
 
 async function loadGrappleOverLevelAsset()

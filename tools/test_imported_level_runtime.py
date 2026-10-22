@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v5'
+LAYOUT_ID = 'extended-mountain-v6'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -136,9 +136,9 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(snap['world'], 'PersistentWorld')
         self.assertEqual(snap['layoutId'], LAYOUT_ID)
         self.assertEqual(snap['layoutId'], self.svg['layoutId'])
-        self.assertEqual(snap['fragments'], 25)
+        self.assertEqual(snap['fragments'], 31)
         self.assertEqual(snap['fragments'], self.svg['fragments'])
-        self.assertEqual(snap['transfers'], 24)
+        self.assertEqual(snap['transfers'], 30)
         self.assertEqual(len(snap['dragZones']), len(self.svg['drag']))
         self.assertEqual(sorted(snap['dragZones']), self.svg['drag'])
         self.assertEqual(snap['spawn'], self.svg['spawn'])
@@ -226,7 +226,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         del legacy['layoutId']
         results = {}
         for name, raw in (('replacement-v1', saved['save']), ('no-layout-id', json.dumps(legacy)),
-                          ('imported-v2', json.dumps(dict(legacy, layoutId='extended-mountain-v2')))):
+                          ('imported-v2', json.dumps(dict(legacy, layoutId='extended-mountain-v2'))),
+                          ('imported-v5', json.dumps(dict(legacy, layoutId='extended-mountain-v5')))):
             page = self.open(seed={CLIMB_KEY: raw})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
@@ -241,7 +242,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.record('incompatible_save_' + name, page, snap, seededLayoutId=json.loads(raw).get('layoutId'),
                         rewrittenLayoutId=LAYOUT_ID)
             results[name] = snap['notice']
-        self.assertEqual(len(results), 3)
+        self.assertEqual(len(results), 4)
 
     def test_04_current_layout_save(self):
         first = self.open()
@@ -696,7 +697,7 @@ class Task651Tests(unittest.TestCase):
             self.assertLessEqual(abs(gap - enc['distance']), TOLERANCE, row)
             self.assertLessEqual(abs(gap / 540 * 100 - t['gapPercent']), TOLERANCE, row)
             rows.append(row)
-        self.assertEqual(len(rows), 24)
+        self.assertEqual(len(rows), 30)
         report['checks']['transfers'] = {'count': len(rows), 'endpointsChecked': 2 * len(rows),
                                          'maxEndpointOffset': max(max(r['endpointOffsets']) for r in rows),
                                          'maxGapError': max(abs(r['runtimeGap'] - r['measuredGap']) for r in rows),

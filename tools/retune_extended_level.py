@@ -22,7 +22,10 @@ OPENING = dict(factor=3,
                left=[dict(width=900, height=240, drop=0),
                      dict(width=1100, height=260, share=.52, drop=-160)])
 GUIDELINES = Path(__file__).resolve().parent.parent / 'artifacts/levels/level-guidelines.md'
-YELLOW_CLEARANCE = 1080
+# Yellow-to-green clearance: 300% R in the current guidelines. The frozen v5
+# layout (--opening original) was generated under the earlier 200% R rule.
+YELLOW_CLEARANCE = 1620
+LEGACY_YELLOW_CLEARANCE = 1080
 YELLOW_PAIR_CLEARANCE = 540
 DIRECTION_OFFSETS = {13: -25, 15: 30}
 NONCONSECUTIVE_CLEARANCE = 1400
@@ -218,7 +221,7 @@ def band_ends(m, number):
     return index[route['fragmentIds'][row['originalFrom']]], index[route['fragmentIds'][row['originalTo']]]
 
 
-def tune(source, reposition=True, guards=True, opening=None):
+def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE):
     source = copy.deepcopy(source)
     # The extra second polygon is the unwanted rectangular bump, not the shelf.
     for n, fragment in enumerate(source['fragments']):
@@ -301,14 +304,14 @@ def tune(source, reposition=True, guards=True, opening=None):
             by=y+step*120
             poly=[[x,by],[x+band['width'],by],[x+band['width'],by+band['height']],[x,by+band['height']]]
             nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs)
-            if nearest>=YELLOW_CLEARANCE and all(union_distance([poly],[other])[0]>=120 for other in placed_bands):break
+            if nearest>=yellow_clearance and all(union_distance([poly],[other])[0]>=120 for other in placed_bands):break
         else: raise ValueError('Cannot place '+band['id'])
         placed_bands.append(poly)
-        band.update(x=x,y=by,polygon=poly,nearestSolidClearance=nearest,minimumSolidClearance=YELLOW_CLEARANCE)
+        band.update(x=x,y=by,polygon=poly,nearestSolidClearance=nearest,minimumSolidClearance=yellow_clearance)
         band.pop('nominalRouteSampleCheck',None)
     if guards:
-        add_shortcut_guards(m)
-    consolidate_yellow_bands(m)
+        add_shortcut_guards(m, yellow_clearance)
+    consolidate_yellow_bands(m, yellow_clearance)
     m['fallIllustrations'] = [dict(id='F'+str(i+1),band=z['id'],start=[z['x']+z['width']/2,z['y']-500],
         end=[z['x']+z['width']/2,z['y']+1000],meaning='Illustrative fall only') for i,z in enumerate(m['yellowBands'])]
     m['bluntedCorners']=dict(minimumAngle=MIN_INTERIOR_ANGLE, face=BLUNT_FACE, changed=blunted)
@@ -327,7 +330,7 @@ def box(fragment):
     return min(x for x,y in points), min(y for x,y in points), max(x for x,y in points), max(y for x,y in points)
 
 
-def add_shortcut_guards(m):
+def add_shortcut_guards(m, clearance=LEGACY_YELLOW_CLEARANCE):
     fs=m['fragments']; guards=[]
     candidates=[(0, None)]
     for i,a in enumerate(fs):
@@ -352,21 +355,21 @@ def add_shortcut_guards(m):
         # Cap the launch above a shelf; skip candidates whose intended next
         # platform occupies this corridor. Exact outcomes require physics probes.
         for height, offset in ((h, offset) for offset in range(0, 4001, 120) for h in ([600,400,240] if i == 0 else [800,600,400,240])):
-            y=ay-YELLOW_CLEARANCE-height-offset
+            y=ay-clearance-height-offset
             poly=[[x,y],[x+width,y],[x+width,y+height],[x,y+height]]
             nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs)
-            if nearest<YELLOW_CLEARANCE or width<=height: continue
+            if nearest<clearance or width<=height: continue
             if any(union_distance([poly],[g['polygon']])[0]<30 for g in guards):continue
             guards.append(dict(id='G'+str(len(guards)+1),belowJump=i+1,source=a['id'],
                 target=None if j is None else fs[j]['id'],purpose='upward shortcut brake',
                 x=x,y=y,width=width,height=height,polygon=poly,nearestSolidClearance=nearest,
-                minimumSolidClearance=YELLOW_CLEARANCE,role='non-solid, non-grappleable, pass-through braking'))
+                minimumSolidClearance=clearance,role='non-solid, non-grappleable, pass-through braking'))
             break
     m['yellowBands']+=guards
     m['shortcutCandidates']=[{'from':fs[i]['id'],'to':None if j is None else fs[j]['id']} for i,j in candidates]
 
 
-def consolidate_yellow_bands(m):
+def consolidate_yellow_bands(m, clearance=LEGACY_YELLOW_CLEARANCE):
     """Prefer one long rectangle; never bridge a green panel to merge zones."""
     bands=m['yellowBands']
     while True:
@@ -380,9 +383,9 @@ def consolidate_yellow_bands(m):
         bottom=max(a['y']+a['height'],b['y']+b['height'])
         poly=[[x,y],[right,y],[right,bottom],[x,bottom]]
         nearest=min(union_distance([poly],svg.bodies(f))[0] for f in m['fragments'])
-        if right-x > bottom-y and nearest>=YELLOW_CLEARANCE:
+        if right-x > bottom-y and nearest>=clearance:
             a.update(x=x,y=y,width=right-x,height=bottom-y,polygon=poly,
-                     nearestSolidClearance=nearest,minimumSolidClearance=YELLOW_CLEARANCE)
+                     nearestSolidClearance=nearest,minimumSolidClearance=clearance)
             a['mergedFrom']=a.get('mergedFrom',[a['id']])+b.get('mergedFrom',[b['id']])
             del bands[j]
         else:
@@ -399,14 +402,16 @@ def main():
                     help='extended: threefold rightward/leftward opening (guidelines); original: the v5 layout')
     args=ap.parse_args()
     guidelines=Path(args.guidelines).read_bytes()
-    if b'200% R = 1,080 units' not in guidelines or b'100% R = 540 units' not in guidelines:
-        raise ValueError('Guidelines must specify the supported 200% panel and 100% yellow-pair clearances')
     opening = OPENING if args.opening == 'extended' else None
+    # The extended layout follows the current 300% rule; original reproduces v5 (200%).
+    clearance, rule = (YELLOW_CLEARANCE, b'300% R = 1,620 units') if opening else (LEGACY_YELLOW_CLEARANCE, b'')
+    if (rule and rule not in guidelines) or b'100% R = 540 units' not in guidelines:
+        raise ValueError('Guidelines must specify the supported 300% panel and 100% yellow-pair clearances')
     if opening and b'3x the pre-change' not in guidelines:
         raise ValueError('Guidelines must specify the threefold opening rule')
     dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
-    m=tune(json.loads(Path(args.source).read_text()), opening=opening)
-    m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':200,'yellowPairMinimumPercent':100}
+    m=tune(json.loads(Path(args.source).read_text()), opening=opening, yellow_clearance=clearance)
+    m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     text=svg.build(m)
     text=text.replace('01–10: preserved baseline geometry', 'Opening 80% · vertical transfers 150%')
