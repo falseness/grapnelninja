@@ -127,6 +127,65 @@ def axis_rect(poly):
     return xs[0], ys[0], xs[1] - xs[0], ys[1] - ys[0]
 
 
+MIN_INTERIOR_ANGLE = 20.0
+# Exactly 20 degrees must pass despite float noise from world-space coordinates.
+ANGLE_TOL_DEG = 1e-9
+
+
+class AngleError(ValueError):
+    """A polygon corner whose interior angle is undefined (vertex index in .vertex)."""
+
+    def __init__(self, vertex, reason):
+        super().__init__('vertex %s: %s' % (vertex, reason))
+        self.vertex, self.reason = vertex, reason
+
+
+def signed_area(poly):
+    return sum(a[0] * b[1] - b[0] * a[1] for a, b in edges(poly)) / 2.0
+
+
+def interior_angles(poly):
+    """Interior angle in degrees at every vertex of a simple polygon, either winding.
+
+    Concave vertices get their reflex angle (> 180). Raises AngleError on fewer than
+    three vertices, zero-length edges (repeated adjacent vertices, including a
+    closing vertex equal to the first), zero area, or a corner whose edges fold
+    back onto each other.
+    """
+    n = len(poly)
+    if n < 3:
+        raise AngleError(None, 'fewer than 3 vertices')
+    for i, (a, b) in enumerate(edges(poly)):
+        if a[0] == b[0] and a[1] == b[1]:
+            raise AngleError(i, 'zero-length edge to vertex %d' % ((i + 1) % n))
+    area = signed_area(poly)
+    if area == 0:
+        raise AngleError(None, 'zero area: winding undefined')
+    orientation = 1.0 if area > 0 else -1.0
+    angles = []
+    for i in range(n):
+        prev, cur, nxt = poly[i - 1], poly[i], poly[(i + 1) % n]
+        ux, uy = cur[0] - prev[0], cur[1] - prev[1]
+        vx, vy = nxt[0] - cur[0], nxt[1] - cur[1]
+        turn_cross, turn_dot = ux * vy - uy * vx, ux * vx + uy * vy
+        if turn_cross == 0 and turn_dot < 0:
+            raise AngleError(i, 'edges fold back (0 or 360 degree spike)')
+        turn = math.degrees(math.atan2(turn_cross, turn_dot))
+        angles.append(180.0 - orientation * turn)
+    return angles
+
+
+def angle_report(poly, minimum=MIN_INTERIOR_ANGLE, tol=ANGLE_TOL_DEG):
+    """Per-vertex angle results; ok is False on any too-sharp or undefined corner."""
+    try:
+        angles = interior_angles(poly)
+    except AngleError as e:
+        return {'ok': False, 'error': {'vertex': e.vertex, 'reason': e.reason}, 'vertices': []}
+    vertices = [{'vertex': i, 'angle': a, 'kind': 'reflex' if a > 180 else ('straight' if a == 180 else 'convex'),
+                 'ok': a >= minimum - tol} for i, a in enumerate(angles)]
+    return {'ok': all(v['ok'] for v in vertices), 'error': None, 'vertices': vertices}
+
+
 def max_point_error(p, q):
     if len(p) != len(q):
         return math.inf
