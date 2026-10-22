@@ -123,19 +123,27 @@ const BACKDROP = (function()
             const logical = LOGICAL_VIEWPORT.width * LOGICAL_VIEWPORT.height
             return Math.min(1, Math.sqrt(MAX_LIT_PX_PER_TILE_PX * logical / (canvas.width * canvas.height)))
         },
+        // The backdrop canvas width the next frame draws the backdrop
+        // renderers into (0: full quality, the frame's own canvas)
+        frameWidth()
+        {
+            const scale = Math.min(this.scale, this.sizeCap())
+            return scale >= 1 ? 0 : Math.max(1, Math.round(canvas.width * scale))
+        },
         // Frame start, in the frame's base transform: points the backdrop
         // renderers at the offscreen canvas. False at full quality.
         begin()
         {
-            const scale = Math.min(this.scale, this.sizeCap())
-            if (scale >= 1)
+            const width = this.frameWidth()
+            if (!width)
                 return false
             if (!this.canvas)
             {
                 this.canvas = document.createElement('canvas')
                 this.ctx = this.canvas.getContext('2d', {alpha: false})
             }
-            const w = Math.max(1, Math.round(canvas.width * scale))
+            const scale = Math.min(this.scale, this.sizeCap())
+            const w = width
             const h = Math.max(1, Math.round(canvas.height * scale))
             if (this.canvas.width != w || this.canvas.height != h)
             {

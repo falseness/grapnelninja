@@ -80,6 +80,8 @@ class BackgroundRenderer
         // tiles 'farEdges', 'nearEdges') and how often each was built
         this.layerCache = {}
         this.layerBuilds = {}
+        // Backdrop canvas width the tiles are built for (prepareDepthGrade; 0: this.canvas)
+        this.tileTargetWidth = 0
         // The game canvas transform the layers were last painted in
         this.paintTransform = null
         // Momentum depth grade (getDepthGrade): the hue (degrees) the graded
@@ -453,7 +455,8 @@ class BackgroundRenderer
     // (a resize builds a new one)
     getLayerTile(name, width, height, config, paint)
     {
-        const pixelScale = Math.max(0.25, Math.min(config.maxPixelScale, this.canvas.width / width || 1))
+        const target = this.tileTargetWidth || this.canvas.width
+        const pixelScale = Math.max(0.25, Math.min(config.maxPixelScale, target / width || 1))
         const key = [width, height, pixelScale].join('|')
         const cached = this.layerCache[name]
 
@@ -477,14 +480,25 @@ class BackgroundRenderer
         return layer
     }
     // Momentum run start: the tiles the depth grade rotates and the
-    // canvases it rotates them into, before the run's frames
+    // canvases it rotates them into, before the run's frames, at the pixel
+    // scale those frames draw them (the backdrop canvas when the adaptive
+    // backdrop or the lit size cap is on, else this renderer's canvas)
     prepareDepthGrade()
     {
         if (version != 'momentum' || !MOMENTUM_FX.enabled || !STYLE.momentumFx.depthStages)
             return
         const width = LOGICAL_VIEWPORT.width, height = LOGICAL_VIEWPORT.height
-        this.allocateDepthGradeCanvases(0, this.getFarBakedTile(width, height).canvas)
-        this.allocateDepthGradeCanvases(1, this.getNearTile(width, height).canvas)
+        const backdrop = typeof BACKDROP != 'undefined' && this.canvas === canvas && !BACKDROP.active
+        this.tileTargetWidth = backdrop ? BACKDROP.frameWidth() : 0
+        try
+        {
+            this.allocateDepthGradeCanvases(0, this.getFarBakedTile(width, height).canvas)
+            this.allocateDepthGradeCanvases(1, this.getNearTile(width, height).canvas)
+        }
+        finally
+        {
+            this.tileTargetWidth = 0
+        }
     }
     // DEPTH_GRADE_CANVASES canvases of source's size for depth grade tile
     // i (0 far, 1 near), drawn, being rotated or free (momentum depth grade
@@ -1139,7 +1153,9 @@ class HueRotateJob
             const id = this.remote = ++LAYER_TILE_WORKER.nextJob
             LAYER_TILE_WORKER.jobs.set(id, this)
             const message = {type: 'rotate', job: id, ids: colors.map(c => c.workerId), matrix: this.matrix}
-            Promise.all(colors.map(c => c.posted)).then(() => LAYER_TILE_WORKER.worker &&
+            // Not once the job was rotated here or discarded meanwhile (its
+            // answer would be thrown away)
+            Promise.all(colors.map(c => c.posted)).then(() => this.remote === id && LAYER_TILE_WORKER.worker &&
                 LAYER_TILE_WORKER.worker.postMessage(message))
         }
     }
