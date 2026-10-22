@@ -1203,7 +1203,7 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Cable Galleries encounter 1. Planned terrain stays noncollidable.
+// Replacement built prefix through Cable Galleries encounter 2. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 14000, top: -3000, bottom: 280},
@@ -1213,7 +1213,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03', 'S02-04']},
         {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02', 'S03-03', 'S03-04']},
         {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01', 'S04-02', 'S04-03', 'S04-04']},
-        {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01'],
+        {id: 'S05', labelKey: 'climb.section.cableGalleries', status: 'built', encounters: ['S05-01', 'S05-02'],
             rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}}
     ],
     encounters: [
@@ -1234,6 +1234,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S04-03', name: 'Broken Viaduct long carrier', elements: ['viaduct-second-landing', 'viaduct-carrier', 'viaduct-third-landing', 'viaduct-third-catch', 'viaduct-yellow']},
         {id: 'S04-04', name: 'Broken Viaduct exit lookout', elements: ['viaduct-third-landing', 'viaduct-exit-anchor', 'viaduct-exit', 'viaduct-exit-yellow', 'viaduct-exit-catch', 'viaduct-exit-recovery']},
         {id: 'S05-01', name: 'Cable Galleries range introduction', elements: ['viaduct-exit', 'gallery-anchor', 'gallery-landing', 'gallery-catch']},
+        {id: 'S05-02', name: 'Cable Galleries corner routing', elements: ['gallery-landing', 'gallery-projection', 'gallery-upper-landing', 'gallery-catch']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1286,11 +1287,15 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['viaduct-exit-recovery', 10028, -1148.2, 80, 1190, 'West recovery face outside yellow; climb to the existing upper bridge catch by normal grappling'],
         ['gallery-anchor', 11870, -1719, 160, 80, 'Long-range green acquisition face beyond the old 360 circle; release toward the gallery'],
         ['gallery-landing', 12192, -1528.2, 800, 60, 'Broad gallery planning deck and first encounter safe exit'],
+        ['gallery-projection', 12972, -2079, 360, 440, 'One deep gallery projection: acquire its upper soffit, route rope around the lower lip, release west; not a landing'],
+        ['gallery-upper-landing', 11490, -1848.2, 800, 60, 'Broad upper gallery exit and planning shelf; lower shared deck catches short releases'],
         ['gallery-catch', 11580, -1288.2, 1600, 60, 'Broad early-release catch; return west to the entrance using its exposed east face'],
         ['viaduct-third-catch', 9172, -1288.2, 1476, 60, 'Broad upper recovery walkway below the long carrier; grapple west to the shared second span after an early release'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
-        points: ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
+        points: id === 'gallery-projection'
+            ? [{x:0,y:0},{x:360,y:0},{x:360,y:440},{x:130,y:440},{x:130,y:360},{x:280,y:360},{x:280,y:280},{x:0,y:280}]
+            : ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
             ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]
             : [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
     movers: [{id:'viaduct-travel', element:'viaduct-carrier', axis:'x', min:9248, max:9968, periodMs:10000, phase:0, velocity:144},
