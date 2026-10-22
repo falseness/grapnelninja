@@ -407,24 +407,13 @@ class FpsCounter
 
         const viewWidth = width / scale[version]
         const viewHeight = height / scale[version]
-        // Never below the CSS px floor when the iframe is small.
-        const cssPerView = getCanvasCssRect().height / viewHeight
-        const fontSize = Math.max(viewHeight * STYLE.ui.fpsFontRatio, minCssFontPx / cssPerView)
-        const padding = viewHeight * STYLE.ui.fpsPaddingRatio
-        const text = I18N.t('hud.fps', {value: this.value})
+        const {text, fontSize, padding, x, y, panelX, panelY, panelWidth, panelHeight} =
+            this.getLayout(viewWidth, viewHeight)
 
         ctx.save()
         ctx.font = fontSize + 'px ' + STYLE.ui.fontFamily
         ctx.textAlign = 'start'
         ctx.textBaseline = 'middle'
-
-        const metrics = ctx.measureText(text)
-        const panelWidth = metrics.width + padding * 2
-        const panelHeight = fontSize + padding * 1.4
-        const y = getHudCenterY(viewHeight, version)
-        const x = this.getTextX(viewWidth, viewHeight, text, panelWidth, padding)
-        const panelX = x - padding
-        const panelY = y - panelHeight / 2
 
         drawGlowRect('fps-panel', panelX, panelY, panelWidth, panelHeight, STYLE.ui.fpsPanelLineWidth,
             STYLE.ui.textShadowBlur, (x, y, w, h) =>
@@ -444,6 +433,27 @@ class FpsCounter
         drawGlowText(text, x, y, STYLE.colors.ui.hudGlow, STYLE.ui.textShadowBlur, true)
         LAYOUT_PROBE.text(text, x, y)
         ctx.restore()
+    }
+    // Text and panel placement in view units (the momentum HUD fits
+    // itself right of the panel)
+    getLayout(viewWidth, viewHeight)
+    {
+        // Never below the CSS px floor when the iframe is small.
+        const cssPerView = getCanvasCssRect().height / viewHeight
+        const fontSize = Math.max(viewHeight * STYLE.ui.fpsFontRatio, minCssFontPx / cssPerView)
+        const padding = viewHeight * STYLE.ui.fpsPaddingRatio
+        const text = I18N.t('hud.fps', {value: this.value})
+
+        ctx.save()
+        ctx.font = fontSize + 'px ' + STYLE.ui.fontFamily
+        const panelWidth = ctx.measureText(text).width + padding * 2
+        ctx.restore()
+
+        const panelHeight = fontSize + padding * 1.4
+        const y = getHudCenterY(viewHeight, version)
+        const x = this.getTextX(viewWidth, viewHeight, text, panelWidth, padding)
+        return {text: text, fontSize: fontSize, padding: padding, x: x, y: y,
+            panelX: x - padding, panelY: y - panelHeight / 2, panelWidth: panelWidth, panelHeight: panelHeight}
     }
     getTextX(viewWidth, viewHeight, text, panelWidth, padding)
     {

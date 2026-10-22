@@ -50,7 +50,18 @@ let scoreText =
         this.drawHudText(recordText, recordX, recordY, 'end')
 
         if (version == 'momentum')
-            this.drawMomentumHud(viewWidth, topY, fontSize)
+        {
+            // Free band: right of the score (or the fps panel), left of the record
+            const recordLeft = recordX - measureGlowText(recordText).width
+            ctx.font = fontSize + 'px ' + this.fontFamily
+            let bandLeft = scoreX + measureGlowText(scoreTextValue).width
+            if (typeof fpsCounter != 'undefined' && fpsCounter.enabled)
+            {
+                const panel = fpsCounter.getLayout(viewWidth, viewHeight)
+                bandLeft = Math.max(bandLeft, panel.panelX + panel.panelWidth)
+            }
+            this.drawMomentumHud(viewWidth, topY, fontSize, bandLeft, recordLeft)
+        }
 
         ctx.restore()
     },
@@ -66,10 +77,9 @@ let scoreText =
             streakText: momentumState.greenStreak + '/' + GAMEPLAY.momentumHp.greenStreakForHp
         }
     },
-    // Centred in the HUD band between the score and the record
-    drawMomentumHud: function(viewWidth, topY, fontSize)
+    // Widths of the hearts, '×N' and streak parts at a HUD font size
+    measureMomentumHud: function(state, fontSize)
     {
-        const state = this.getMomentumHudState()
         const size = fontSize * 0.8
         const step = size * 1.2
         const gap = fontSize * 0.6
@@ -77,7 +87,36 @@ let scoreText =
         const heartsWidth = state.hearts > 0 ? (state.hearts - 1) * step + size : 0
         const hpWidth = state.hpText ? gap / 2 + measureGlowText(state.hpText).width : 0
         const streakWidth = measureGlowText(state.streakText).width
-        let x = viewWidth / 2 - (heartsWidth + hpWidth + gap + streakWidth) / 2
+        return {fontSize: fontSize, heartsWidth: heartsWidth, hpWidth: hpWidth,
+            width: heartsWidth + hpWidth + gap + streakWidth}
+    },
+    // Centred on the view between the score (or fps panel) and the record,
+    // a margin clear of both: when the row does not fit it turns to a heart
+    // and '×N', then shrinks; else shifted into the band
+    drawMomentumHud: function(viewWidth, topY, hudFontSize, bandLeft, bandRight)
+    {
+        let state = this.getMomentumHudState()
+        const margin = hudFontSize * 0.6
+        const room = bandRight - bandLeft - 2 * margin
+        let layout = this.measureMomentumHud(state, hudFontSize)
+        if (layout.width > room && state.hearts > 1)
+        {
+            state = Object.assign({}, state, {hearts: 1, hpText: '\u00d7' + state.hp})
+            layout = this.measureMomentumHud(state, hudFontSize)
+        }
+        // Text widths are not exactly linear in the font size: refit once more
+        for (let i = 0; i < 2 && layout.width > room; ++i)
+            layout = this.measureMomentumHud(state, layout.fontSize * Math.max(0, room) / layout.width)
+
+        const fontSize = layout.fontSize
+        const size = fontSize * 0.8
+        const step = size * 1.2
+        const gap = fontSize * 0.6
+        const heartsWidth = layout.heartsWidth
+        const hpWidth = layout.hpWidth
+        let x = viewWidth / 2 - layout.width / 2
+        if (x < bandLeft + margin || x + layout.width > bandRight - margin)
+            x = Math.max(bandLeft + margin, Math.min(x, bandRight - margin - layout.width))
 
         LAYOUT_PROBE.rect('momentum-hearts', 'hp:' + state.hp, x, topY - size / 2, heartsWidth, size)
         for (let i = 0; i < state.hearts; ++i)
