@@ -356,13 +356,14 @@ function drawReplacementLandmark(renderer)
     const config = GRAPPLE_OVER_LANDMARKS, k = scale[version]
     const context = renderer.ctx
     const section = replacementSection().id
+    const gallery = section === 'S05'
     const quarry = section === 'S02', freight = section === 'S03', viaduct = section === 'S04'
-    const id = viaduct ? 'broken-viaduct' : freight ? 'freight-crossing' : quarry ? 'terraced-quarry' : 'loading-yard'
+    const id = gallery ? 'cable-galleries' : viaduct ? 'broken-viaduct' : freight ? 'freight-crossing' : quarry ? 'terraced-quarry' : 'loading-yard'
     const sprite = getGlowSprite('replacement-' + id, () =>
         buildGlowSprite(config.width + 2 * config.pad, config.height + 2 * config.pad,
-            config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, viaduct ? [3, replacementViaductShape(config.width, config.height)] : freight ? [2, replacementFreightShape(config.width, config.height)] : quarry ? [1, replacementQuarryShape(config.width, config.height)] : [0]))
-    const left = ((viaduct ? 7700 : freight ? 4320 : 2366) + screen.x) * k - config.width / 2
-    const top = ((viaduct ? -1200 : freight ? -800 : quarry ? -610 : -150) + screen.y) * k - config.height
+            config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, gallery ? [4, replacementGalleryShape(config.width, config.height)] : viaduct ? [3, replacementViaductShape(config.width, config.height)] : freight ? [2, replacementFreightShape(config.width, config.height)] : quarry ? [1, replacementQuarryShape(config.width, config.height)] : [0]))
+    const left = ((gallery ? 12000 : viaduct ? 7700 : freight ? 4320 : 2366) + screen.x) * k - config.width / 2
+    const top = ((gallery ? -1200 : viaduct ? -1200 : freight ? -800 : quarry ? -610 : -150) + screen.y) * k - config.height
     context.save()
     context.globalAlpha = config.alpha
     context.drawImage(sprite, left - config.pad, top - config.pad,
@@ -392,4 +393,13 @@ function replacementViaductShape(W, H)
         [[W*.8,H*.3],[W*.9,H*.3],[W*.9,H],[W*.8,H]]],
         lines: [[[0,H*.12],[W*.35,H*.12]],[[W*.7,H*.12],[W,H*.12]]],
         lights: [[W*.35,H*.2],[W*.7,H*.2]]}
+}
+
+// Cable fan and deep gallery slab: presentation only, never grapple targets.
+function replacementGalleryShape(W, H)
+{
+    return {parts: [[[0,0],[W,0],[W,H*.12],[0,H*.12]],
+        [[W*.08,0],[W*.15,0],[W*.15,H],[W*.08,H]]],
+        lines: [.32,.52,.72,.92].map(x => [[W*.12,H*.12],[W*x,H*.85]]),
+        lights: [.32,.52,.72,.92].map(x => [W*x,H*.85])}
 }

@@ -5303,3 +5303,165 @@ class Task590Tests(unittest.TestCase):
                 with Image.open(self.out/name) as im:im.load();self.assertGreaterEqual(im.width,1280)
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS index: all required files exist; JSON parses; images/video decode; retained evidence <200 MB')
+
+
+class Task591Tests(unittest.TestCase):
+    """S05-01 only; labelled isolated S04 exit fixture, never a summit run."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Isolated fixture on shared S04 exit; production inputs/physics; no base-to-summit claim'
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task581Tests.until
+    target = dict(x=11950,y=-1679)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:11500,y:-1540,speedX:0,speedY:0});screen.trackGrappleOver(true)')
+        self.assertEqual(p.evaluate('grappleOverAcquisitionRadius()'),360)
+        self.step(p,1)
+        self.assertEqual(p.evaluate('grappleOverAcquisitionRadius()'),540)
+        return p
+
+    def capture(self,p,name):
+        p.evaluate('screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw()')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'cable-galleries')
+        self.assertEqual(p.evaluate('I18N.t(replacementSection().labelKey)'),'Cable Galleries')
+        p.evaluate("() => {const d=document.createElement('div');d.id='proof-label';d.textContent='S05-01 isolated entrance fixture / production physics';d.style='position:fixed;bottom:12px;left:12px;background:#111;color:white;padding:8px';document.body.appendChild(d)}")
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        p.evaluate("document.getElementById('proof-label').remove()")
+        with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+
+    def test_01_geometry_and_route(self):
+        p=self.page()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S05-01'),range:grappleOverAcquisitionRadius(),
+            scale:scale[version],reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),target,
+            calibrated:GRAPPLE_OVER_MOVEMENT,finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][-1]['encounters'],['S05-01'])
+        self.assertEqual(g['range'],540);self.assertEqual(g['scale'],.375)
+        self.assertGreater(g['reach'],360);self.assertLess(g['reach'],540);self.assertIsNone(g['finish'])
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+            self.assertTrue(e['purpose']);self.assertIn(e['role'],['bounce','solid','drag'])
+        es={e['id']:e for e in g['elements']}
+        self.assertNotIn('preview-unbuilt',es)
+        for id in g['encounter']['elements']:
+            self.assertEqual(es[id]['role'],'bounce')
+            if id!='gallery-anchor':self.assertGreaterEqual(es[id]['width'],540)
+        self.assertTrue(all(e['role']=='bounce' for e in g['elements'] if e['id'].startswith('yard-')))
+        g.update(gap=es['gallery-landing']['x']-es['viaduct-exit']['x']-es['viaduct-exit']['width'],
+            connection='Shared live viaduct-exit; no handoff teleport',recovery=['gallery-catch','viaduct-exit'],
+            calibrationNote='TASK-564 broad gallery/cable fan; TASK-560 upgraded gap envelope up to 648, translated and production-validated here; no old v3 coordinates',
+            landingWidths=[es[n]['width'] for n in ['viaduct-exit','gallery-landing']],
+            recoveryWidth=es['gallery-catch']['width'])
+        g['nearestAnchorReach']=p.evaluate('''() => {const b={};elementBounds(floors[0].byId.get('gallery-anchor'),b);
+            return Math.hypot(Math.max(b.left-ninja.x,0,ninja.x-b.right),Math.max(b.top-ninja.y,0,ninja.y-b.bottom))}''')
+        self.assertGreater(g['nearestAnchorReach'],360);self.assertLess(g['nearestAnchorReach'],540)
+        self.assertEqual(g['gap'],612)
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.press(p,self.target);self.step(p,42);p.mouse.up()
+        landing=self.until(p,'gallery-landing');self.assertIsNotNone(landing)
+        r=self.result(p);best=streak=0
+        for row in r['rows'][43:landing-1]:
+            streak=streak+1 if not row['contacts'] and not row['attached'] and not row['shot'] else 0
+            best=max(best,streak)
+        self.assertGreaterEqual(best,6)
+        r.update(entryTick=0,takeoffTick=next(s['tick'] for s in r['rows'] if s['vy']<0),releaseTick=43,
+            landingTick=landing,landingAir=best,entryToExit=True,resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        self.capture(p,'landing.jpg')
+        print(f'PASS geometry S05-01: gap 612; landings 800/800; catch 1600; reach {g["reach"]:.3f} in (360,540); no red/planned terrain')
+        print(f'PASS route: release 43 landing {landing}; airborne unattached {best}; trusted inputs; resets=0 poseInjections=0; Cable Galleries images decoded')
+
+    def test_02_miss_and_recovery(self):
+        p=self.page();self.press(p,self.target);self.step(p,6);p.mouse.up()
+        catch=self.until(p,'gallery-catch');self.assertIsNotNone(catch)
+        self.assertFalse(self.landings(self.result(p),'gallery-landing'))
+        self.press(p,dict(x=11570,y=-1500));self.step(p,12);p.mouse.up()
+        returned=self.until(p,'viaduct-exit');self.assertIsNotNone(returned)
+        r=self.result(p);r.update(earlyReleaseTick=7,catchTick=catch,catchTarget='gallery-catch',
+            returnTick=returned,recoveryTarget='viaduct-exit',resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('miss.json',r)
+        print(f'PASS miss: early release 7 catch {catch}; normal controls return {returned}; no resets/injections')
+
+    def test_03_controls(self):
+        cases=[]
+        p=self.page();self.press(p,self.target);self.step(p,600)
+        r=self.result(p);r.update(probe='continuous hold 600 ticks',successfulAlternative=bool(self.landings(r,'gallery-landing')))
+        cases.append(r);p.mouse.up();p.context.close()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'gallery-landing')))
+            cases.append(r);p.context.close()
+        self.write('controls.json',dict(cases=cases,bound='600 ticks hold; <=600 each nearest 6/12/24',
+            inspection='Every top-facing gallery-landing contact checked with the nominal success criterion',scope=self.config['simulation']))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded hold/nearest probes; zero successful alternatives')
+
+    def test_04_upgrade_and_dependencies(self):
+        # Separate local fixture before the previous encounter: acquisition follows real flight onto the entrance.
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:10448,y:-1540,speedX:0,speedY:0});screen.trackGrappleOver(true)')
+        self.press(p,Task588Tests.target)
+        samples=[]
+        for tick in range(1,181):
+            self.step(p,1)
+            if tick==30:p.mouse.up()
+            samples.append(p.evaluate('''() => ({tick:YARD.result().tick,x:ninja.x,y:ninja.y,
+                range:grappleOverAcquisitionRadius(),notice:floors[0].rangeNoticeMs})'''))
+        transitions=[s for a,s in zip([dict(range=360)]+samples,samples) if a['range']!=s['range']]
+        self.assertEqual(len(transitions),1);self.assertEqual(transitions[0]['range'],540)
+        self.assertTrue(self.landings(self.result(p),'viaduct-exit'))
+        self.assertGreater(transitions[0]['notice'],0)
+        traversal=self.result(p)
+        reset=p.evaluate('''() => {CLIMB_UI.restart();cancelAnimationFrame(game);return {
+            range:grappleOverAcquisitionRadius(),upgraded:floors[0].rangeUpgraded,x:ninja.x,y:ninja.y}}''')
+        self.assertEqual(reset['range'],360);self.assertFalse(reset['upgraded'])
+        adjacent=[]
+        for x,y in [(12050,-1540),(11920,-1700),(11500,-1280),(10448,-1540)]:
+            q=Task567Tests.page(self)
+            q.evaluate('s=>Object.assign(ninja,s,{speedX:0,speedY:0})',dict(x=x,y=y));self.step(q,1)
+            row=q.evaluate('({x:ninja.x,y:ninja.y,range:grappleOverAcquisitionRadius()})')
+            self.assertEqual(row['range'],360);adjacent.append(row);q.context.close()
+        self.write('upgrade.json',dict(samples=samples,transitions=transitions,traversal=traversal,reset=reset,
+            adjacentFixtures=adjacent,fixtureScope='Independent unupgraded later/nearby fixtures; no mid-attempt injection',
+            cue='Grapnel range 360 → 540; existing acquisition circle follows current radius'))
+        rows=[]
+        for preview in [True,False]:
+            q=Task558Tests.page(self,preview)
+            for mode in ['grapple_over','classic','bad']:
+                row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,
+                    range:version==='grapple_over'?grappleOverAcquisitionRadius():null,
+                    upgraded:version==='grapple_over'?grappleOverProfile().upgradedAcquisitionRadius:null,
+                    scale:scale[version],gravity:GRAVITY,pull:grappleSpeed}}''',mode)
+                row['preview']=preview;rows.append(row)
+                if mode=='grapple_over':
+                    self.assertEqual(row['range'],360 if preview else 1080)
+                    self.assertEqual(row['upgraded'],540 if preview else 1620);self.assertEqual(row['scale'],.375)
+            q.context.close()
+        self.assertEqual(len({(r['gravity'],r['pull']) for r in rows}),1)
+        self.write('dependencies.json',dict(rows=rows,hashes=self.config['source_hashes'],
+            changed=['mountain.js S05-01 preview geometry and entrance zone','render/landmarks.js cable fan','menu.js preview-only numeric upgrade cue','i18n.js labels','tools/test_grapple_over_redesign.py additive Task591Tests'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','fixedlevel.js','gameoptions.js'],
+            superseded='Earlier exact built-prefix/landmark inventories are historical; earlier proof referenced in artifacts/TASK-590, not copied. No full earlier-suite rerun.',
+            hashPolicy='HEAD-only changes do not invalidate identical tested source hashes'))
+        required={'commands.log':'exact commands, actual exit, four identifiers, browser/viewport/revision/hashes',
+            'tests.log':'four Task591Tests, no skips, OK','geometry.json':'live roles/purposes widths gap calibrated limits reach range',
+            'route.json':'production trusted entry-to-exit and >=6 unattached airborne ticks','inputs.json':'trusted production mouse events',
+            'miss.json':'early release catch and normal-control entrance return','approach.jpg':'broad entrance/target, numeric upgrade cue, cable fan',
+            'landing.jpg':'broad exit and Cable Galleries','controls.json':'bounded hold/nearest probes and inspection of all exit contacts',
+            'upgrade.json':'one 360-to-540 transition through normal traversal, reset and adjacent exclusions',
+            'dependencies.json':'changed subsystems, preserved modes/physics/input, source hashes'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation']))
+        print(f'PASS upgrade: 360->540 exactly once at tick {transitions[0]["tick"]}; restart 360; four adjacent fixtures remain 360')
+        print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; physics/input unchanged; index written')

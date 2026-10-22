@@ -1008,7 +1008,7 @@ const CLIMB_UI = {
         button.fade = 1
         ctx.restore()
         if (floors[0].rangeNoticeMs > 0)
-            this.text(I18N.t('climb.rangeUpgrade'), width / scale[version] / 2, h * 0.2, size * 1.6)
+            this.text(I18N.t(GRAPPLE_OVER_PREVIEW ? 'climb.previewRangeUpgrade' : 'climb.rangeUpgrade'), width / scale[version] / 2, h * 0.2, size * 1.6)
     },
     complete() {
         const stats = floors[0].climbStats
