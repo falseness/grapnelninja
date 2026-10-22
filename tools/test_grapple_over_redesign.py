@@ -12480,6 +12480,104 @@ class Task631Tests(unittest.TestCase):
         print('PASS inventory six required files exist; JSON parsed; source hashes recorded; bytes='+str(size))
 
 
+class CurrentInputTests(unittest.TestCase):
+    """TASK-632 equivalent input coverage against the current pause/UI contract."""
+    from test_grapple_over_input import Task450Tests as _historical
+    setUpClass = classmethod(_historical.setUpClass.__func__)
+    open = _historical.open
+
+    def test_input_touch_mouse_cancel_camera_ui(self):
+        page = self.open(touch=True)
+        cdp = page.context.new_cdp_session(page)
+        page.evaluate('menu.unPause();screen.x=canvas.width/scale[version]/2-ninja.x;screen.y=canvas.height/scale[version]/2-ninja.y')
+        point = page.evaluate('aimPoint().client')
+        def touch(kind):
+            cdp.send('Input.dispatchTouchEvent',{'type':kind,'touchPoints':
+                [] if kind in ('touchEnd','touchCancel') else [dict(x=point['x'],y=point['y'],id=1)]})
+        rows = {}
+        touch('touchStart')
+        rows['touch_start'] = page.evaluate('inputState()')
+        self.assertEqual(rows['touch_start']['shots'],1)
+        self.assertTrue(rows['touch_start']['throwed'])
+        rows['camera_motion'] = page.evaluate('''() => {
+            const before={vector:[grapnel.speedX,grapnel.speedY],tip:grapnel.pos[0].slice(0,2),camera:[screen.x,screen.y]};
+            screen.x+=280;screen.y-=170;grapnel.move();
+            return {before,after:{vector:[grapnel.speedX,grapnel.speedY],tip:grapnel.pos[0].slice(0,2),camera:[screen.x,screen.y]}};
+        }''')
+        motion = rows['camera_motion']
+        self.assertEqual(motion['before']['vector'],motion['after']['vector'])
+        for a,b,v in zip(motion['after']['tip'],motion['before']['tip'],motion['before']['vector']):
+            self.assertAlmostEqual(a-b,v)
+        touch('touchMove')
+        touch('touchEnd')
+        page.wait_for_timeout(100)
+        rows['touch_release'] = page.evaluate('inputState()')
+        self.assertEqual(rows['touch_release']['shots'],1)  # No compatibility mouse throw.
+        self.assertFalse(rows['touch_release']['throwed'])
+        touch('touchStart')
+        page.evaluate('grapnel.setGrappled(true)')
+        touch('touchCancel')
+        rows['touch_cancel'] = page.evaluate('inputState()')
+        self.assertEqual(rows['touch_cancel']['shots'],2)
+        self.assertFalse(rows['touch_cancel']['grappled'])
+        self.assertFalse(rows['touch_cancel']['throwed'])
+        page.mouse.move(point['x'],point['y'])
+        page.mouse.down()
+        page.mouse.up()
+        rows['mouse_release'] = page.evaluate('inputState()')
+        self.assertEqual(rows['mouse_release']['shots'],3)
+        self.assertFalse(rows['mouse_release']['throwed'])
+        page.mouse.down()
+        page.evaluate("window.dispatchEvent(new Event('blur'))")
+        rows['mouse_blur'] = page.evaluate('inputState()')
+        self.assertTrue(rows['mouse_blur']['throwed'])
+        self.assertTrue(rows['mouse_blur']['stale'])
+        self.assertFalse(page.evaluate('gameplayPressOwned'))
+        frozen = page.evaluate('worldState()')
+        page.wait_for_timeout(100)
+        self.assertEqual(page.evaluate('worldState()'), frozen)
+        rows['blur_frozen_world'] = True
+        print('PASS blur: paused, shot preserved, ownership cleared, stale guard set, world frozen')
+        self.assertTrue(rows['mouse_blur']['paused'])
+        page.mouse.up()
+        page.evaluate('menu.unPause()')
+        self.assertTrue(page.evaluate('grapnel.throwed'))
+        # A fresh gameplay press owns the next shot; its release detaches it.
+        page.mouse.down()
+        page.mouse.up()
+        self.assertFalse(page.evaluate('grapnel.throwed'))
+        # Hit actual rendered HUD / pause button geometry through browser events.
+        for button in ('hud','language','resume'):
+            page.wait_for_function('!unTouch')
+            pos = page.evaluate('''name=>{
+                const r=name==='language'?LANGUAGE_BUTTON.rect():
+                    (name==='hud'?menu.button:CLIMB_UI.buttons[0]).background;
+                const s=name==='hud'?scale[version]:1;
+                return canvasCoordsToViewportCoords({x:(r.x+r.width/2)*s,y:(r.y+r.height/2)*s});
+            }''',button)
+            page.mouse.click(pos['x'],pos['y'])
+            rows[button] = page.evaluate('inputState()')
+            self.assertEqual(rows[button]['shots'],5)
+            self.assertFalse(rows[button]['throwed'])
+        self.assertFalse(rows['resume']['paused'])
+        # Existing stale-input guard requires a release before the next shot.
+        page.wait_for_function('!unTouch')
+        page.evaluate('stalePress=true')
+        page.mouse.move(point['x'],point['y'])
+        page.mouse.down()
+        rows['stale_press'] = page.evaluate('inputState()')
+        self.assertEqual(rows['stale_press']['shots'],5)
+        page.mouse.up()
+        page.mouse.down()
+        rows['fresh_press'] = page.evaluate('inputState()')
+        self.assertEqual(rows['fresh_press']['shots'],6)
+        page.mouse.up()
+        self.evidence.write('input.json',dict(self.proof,observations=rows,
+            one_touch_one_throw=True,release_cancel_detaches=True,blur_preserves_frozen_shot=True,
+            camera_cannot_redirect=True,ui_presses_do_not_fire=True,fresh_input_guard=True))
+        print('PASS input: one touch one throw; release/cancel detach; camera cannot redirect; UI presses do not fire; fresh-input guard')
+
+
 class Task632Tests(unittest.TestCase):
     """Focused serial regressions; isolated fixtures, never continuous gameplay."""
     write = Task557Tests.write
@@ -12497,6 +12595,16 @@ class Task632Tests(unittest.TestCase):
                      'tools/test_grapple_over_physics.py','tools/test_grapple_over_grapple.py',
                      'tools/grapple_over_collection.py','tools/test_input.py','tools/test_resize.py','tools/game_harness.py']:
             cls.hashes[name]=hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.cached=[]
+        if (cls.out/'regression-summary.json').exists():
+            prior=json.loads((cls.out/'evidence-index.json').read_text())
+            for name,digest in prior['sourceHashes'].items():
+                if name != 'tools/test_grapple_over_redesign.py':
+                    if hashlib.sha256((ROOT/name).read_bytes()).hexdigest()!=digest:
+                        raise AssertionError('Cached dependency changed: '+name)
+            old=subprocess.check_output(['git','show','HEAD:tools/test_grapple_over_redesign.py'],cwd=ROOT,text=True)
+            assert old.split('class CurrentInputTests')[0].split('class Task632Tests')[0].rstrip()==Path(__file__).read_text().split('class CurrentInputTests')[0].rstrip()
+            cls.cached=json.loads((cls.out/'regression-summary.json').read_text())['runs']
         cls.results=[]
         with (cls.out/'commands.log').open('a') as f:
             f.write('TASK632_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
@@ -12506,10 +12614,11 @@ class Task632Tests(unittest.TestCase):
         import shlex
         # Current shared-system cases plus replacement-specific live transitions.
         groups=[('input',[
+            'test_grapple_over_redesign.CurrentInputTests.test_input_touch_mouse_cancel_camera_ui',
             'test_input.InputTests.test_one_tap_one_throw',
             'test_input.InputTests.test_p_toggles_pause',
             'test_input.InputTests.test_visibility_hidden_pauses'],False,
-            'trusted touch, keyboard pause and visibility pause'),
+            'touch release/cancel, camera motion, blur preservation, HUD/language/Resume, stale/fresh guard, keyboard and visibility pause'),
             ('resize',['test_resize.ResizeTests.test_live_resize_classic',
                        'test_resize.ResizeTests.test_live_resize_bad'],False,'classic/bad live resize'),
             ('preview',['test_grapple_over_redesign.Task630Tests.test_02_live_transitions'],False,
@@ -12530,6 +12639,19 @@ print('EXECUTED',r.testsRun,'SKIPPED',len(r.skipped),flush=True)
 sys.exit(0 if r.wasSuccessful() and r.testsRun==len(ids) and not r.skipped else 1)
 '''
         for name,ids,preview,behavior in groups:
+            cached=next((r for r in self.cached if r['ids']==ids and r['exitCode']==0),None)
+            if name!='input' and cached:
+                log=ROOT/cached['log'];output=log.read_text()
+                self.assertIn('EXECUTED '+str(len(ids))+' SKIPPED 0',output)
+                self.assertIn('\nOK\n',output)
+                for identifier in ids:self.assertIn(identifier,output)
+                cached.update(reused=True,logSHA256=hashlib.sha256(log.read_bytes()).hexdigest())
+                self.results.append(cached)
+                print('REUSED unchanged dependency hashes '+cached['log']+'\n'+output,flush=True)
+                with (self.out/'commands.log').open('a') as f:
+                    f.write('REUSED '+name+' archived EXIT_STATUS 0 SHA256 '+cached['logSHA256']+'\n')
+                self.write('regression-summary.json',dict(runs=self.results))
+                continue
             directory=self.out/name;directory.mkdir(exist_ok=True)
             env=os.environ.copy();env['GRAPPLE_OVER_EVIDENCE_DIR']=str(directory)
             env['PYTHONPATH']=str(ROOT/'tools')
@@ -12561,7 +12683,7 @@ sys.exit(0 if r.wasSuccessful() and r.testsRun==len(ids) and not r.skipped else 
                 with Image.open(path) as im:im.load();self.assertGreater(im.width,0)
                 path.unlink()
             self.assertTrue(all(p.suffix=='.log' for p in directory.rglob('*') if p.is_file()))
-        print('PASS serial regressions: 9 exact existing tests, zero skips, task-local child logs')
+        print('PASS serial regressions: 10 exact behavioral tests, zero skips, task-local child logs')
 
     def test_02_seeded_old_modes(self):
         Task557Tests.test_03_seeded_old_modes(self)
@@ -12588,8 +12710,8 @@ sys.exit(0 if r.wasSuccessful() and r.testsRun==len(ids) and not r.skipped else 
         # The historical test methods must also be byte-for-byte unchanged.
         old=subprocess.check_output(['git','show','HEAD:tools/test_grapple_over_redesign.py'],cwd=ROOT,text=True)
         current=Path(__file__).read_text()
-        historical=old[old.index('class Task631Tests'):].split('class Task632Tests',1)[0].rstrip()
-        self.assertEqual(current[current.index('class Task631Tests'):current.index('class Task632Tests')].rstrip(),historical)
+        historical=old[old.index('class Task631Tests'):].split('class CurrentInputTests',1)[0].split('class Task632Tests',1)[0].rstrip()
+        self.assertEqual(current[current.index('class Task631Tests'):current.index('class CurrentInputTests')].rstrip(),historical)
         log=(archive/'tests.log').read_text();commands=(archive/'commands.log').read_text()
         self.assertRegex(log,r'Ran 4 tests in [0-9.]+s\s+OK')
         self.assertIn('EXIT_STATUS 0',commands)
@@ -12647,7 +12769,13 @@ sys.exit(0 if r.wasSuccessful() and r.testsRun==len(ids) and not r.skipped else 
         self.write('coverage.json',dict(manifest=manifest,superseded=replacements,preserved=original['preservedBehavior'],
             executed=[i for r in self.results for i in r['ids']],references=proofs,
             broaderLegacyGeometry=dict(original=original['broaderLegacyGeometry'],scope='eight hardest encounters at four viewports; not a full tolerance collection',replacement='artifacts/TASK-630/viewport.json',observedEncounters=[r['encounter'] for r in viewport['cases']]),
-            historicalInput=dict(test='Task450Tests',attempts=['artifacts/TASK-632/attempt-1.log','artifacts/TASK-632/attempt-2.log'],reason='Historical fixed-camera aim is offscreen at replacement spawn; exact subpixel mouse equality fails Chromium integer coordinates; synthetic blur no longer invokes pause. Current test_input uses visibilitychange and Task630 measures quantized real input.',replacement=['test_input.InputTests','test_grapple_over_redesign.Task630Tests.test_02_live_transitions','artifacts/TASK-630/viewport.json']),
+            historicalInput=dict(test='Task450Tests.test_input_touch_mouse_cancel_camera_ui',
+                reason='Current Grapple Over pause intentionally preserves shot state (index.html pauseRun and menu.startPause); blur still pauses. Current HUD Resume is CLIMB_UI.buttons[0]. Fixture centers the camera on the replacement spawn and explicitly resumes the restored save.',
+                replacement=['test_grapple_over_redesign.CurrentInputTests.test_input_touch_mouse_cancel_camera_ui'],
+                proof='artifacts/TASK-632/input/tests.log',
+                assertions=['touch release and touchCancel detach','camera motion preserves shot vector and tip delta',
+                            'blur pauses with frozen world and preserved shot, clears ownership and sets stale guard',
+                            'HUD/language/Resume do not fire','stale press blocked; fresh press fires']),
             archivedPersistence=dict(count=4,exitCode=0,log='artifacts/TASK-631/tests.log',
                 continuations=[r['kind'] for r in persistence['cases']],sourceHashes=checked,
                 testClassSHA256=hashlib.sha256(historical.encode()).hexdigest()),
@@ -12664,17 +12792,17 @@ sys.exit(0 if r.wasSuccessful() and r.testsRun==len(ids) and not r.skipped else 
         summary.update(collected=ids,count=4,childCount=sum(r['count'] for r in self.results),
                        archivedCount=4,archivedExitCode=0,
                        behaviors=['input','pause','resize','mode-switch','persistence','seeded classic/bad movement and bounce'])
-        self.assertEqual(summary['childCount'],9)
+        self.assertEqual(summary['childCount'],10)
         self.write('regression-summary.json',summary)
         names={'commands.log':'exact commands, real exits, revision, browser, viewport and source hashes',
-            'tests.log':'four Task632 tests plus nine serial existing cases; no required skips',
+            'tests.log':'four Task632 tests plus ten serial behavioral cases; no required skips',
             'regression-summary.json':'exact collected identifiers, counts, actual child exit codes and behaviors',
             'coverage.json':'all TASK-565 superseded assertions linked to concrete proofs; preserved behavior; unchanged archived dependencies',
             'old-modes.json':'matched seed=1 classic/bad traces equal TASK-557',
             'evidence-index.json':'inventory and changed subsystem dependencies'}
         for run in self.results:names[str(Path(run['log']).relative_to('artifacts/TASK-632'))]=run['behavior']
         self.write('evidence-index.json',dict(artifacts=names,sourceHashes=self.hashes,
-            changedSubsystems=['tools/test_grapple_over_redesign.py: Task632Tests only'],
+            changedSubsystems=['tools/test_grapple_over_redesign.py: Task632Tests and CurrentInputTests only; runtime unchanged'],
             dependencies=['events.js input/pause','gameoptions.js preview/resize','menu.js mode switch',
                           'progress.js and fixedlevel.js persistence','physics.js and sprites/grapnel.js movement/rope','mountain.js layout'],
             scope=self.__doc__,mediaRequired=False))
