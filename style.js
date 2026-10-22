@@ -135,6 +135,7 @@ const STYLE = Object.freeze({
             grappleCore: '#bfffff',
             score: '#5dff6a',
             scoreCore: '#e8ffe9',
+            legendText: '#f2fff4',
             vignette: 'rgba(6, 2, 30, 0.5)',
             vignetteEdge: 'rgba(6, 2, 30, 0)'
         })

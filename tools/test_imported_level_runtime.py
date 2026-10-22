@@ -346,8 +346,10 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # and index.html only gained the boot fetch.
         # The only later change is TASK-659's display-only guide arrows: a new render file, its
         # script tag and the call in drawWorldLayer(). TASK-662 added only the Grapple Over
-        # fall recovery to physics.js (PHYSICS_FALL_RECOVERY_DIFF below).
-        diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js'],
+        # fall recovery to physics.js (PHYSICS_FALL_RECOVERY_DIFF below). TASK-663 changed only
+        # the tutorial sprite (render/tutorialhint.js), which builds no world objects.
+        diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
+                                                                                      ':!render/tutorialhint.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,

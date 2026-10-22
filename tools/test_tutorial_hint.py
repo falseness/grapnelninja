@@ -339,7 +339,7 @@ class TutorialHintTests(unittest.TestCase):
         after = page.evaluate('({builds: TUTORIAL_HINT.buildCount, lines: TUTORIAL_HINT.lines})')
         self.assertEqual(after['builds'] - before['builds'], 1, (before, after))
         self.assertEqual(after['lines'], ['ДЕРЖИ', '— ЗАЦЕПИШЬСЯ', 'ДВИГАЙСЯ ВПРАВО  →'])
-        self.assertTrue(state['key'].startswith('ru|mouse|'), state['key'])
+        self.assertTrue(state['key'].startswith('ru|bad|mouse|'), state['key'])
         print('PASS language: builds', before['builds'], '->', after['builds'],
               json.dumps(after['lines'], ensure_ascii=False), flush=True)
 
@@ -347,7 +347,7 @@ class TutorialHintTests(unittest.TestCase):
         page = self.open((844, 390), dpr=3, touch=True)
         state = self.capture(page, 'hint-mobile.png')
         self.assertEqual(state['lines'][0], 'TOUCH & HOLD')
-        self.assertTrue(state['key'].startswith('en|touch|'), state['key'])
+        self.assertTrue(state['key'].startswith('en|bad|touch|'), state['key'])
 
     def test_zz_compare_sheet(self):
         """compare.png: each capture beside its concept-B reference."""

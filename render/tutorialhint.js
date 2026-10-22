@@ -1,6 +1,9 @@
 // First-run control hint over the play field (tutorial concept B): an
 // outlined neon-tube main word, 'TO GRAPPLE' and the green score line on a
-// soft dark vignette. The glow is baked once into an offscreen sprite in
+// soft dark vignette. Grapple Over shows 'CLIMB TO THE TOP' instead of the
+// score line, over a legend of small drawings of its green (bounce) and
+// yellow (drag) obstacles; the drawings are sprite pixels only, not world
+// objects. The glow is baked once into an offscreen sprite in
 // device pixels; draw() only blits it, so a frame does no blur work.
 const TUTORIAL_HINT = {
     visible: false,
@@ -17,6 +20,8 @@ const TUTORIAL_HINT = {
     // Strings baked into the current sprite, and how many sprites were built
     lines: null,
     buildCount: 0,
+    // Grapple Over legend icon/label boxes in sprite pixels (last build)
+    legendBoxes: [],
 
     // Every run start until the first press shows the hint at full strength
     runStarted()
@@ -59,7 +64,7 @@ const TUTORIAL_HINT = {
     {
         const cssWidth = parseFloat(canvas.style.width) || canvas.width
         const dpr = Math.round(canvas.width / cssWidth * 1000) / 1000
-        return [I18N.language, isTouchFirstDevice() ? 'touch' : 'mouse',
+        return [I18N.language, version, isTouchFirstDevice() ? 'touch' : 'mouse',
                 canvas.width + 'x' + canvas.height, dpr].join('|')
     },
 
@@ -77,6 +82,7 @@ const TUTORIAL_HINT = {
         sprite.width = canvas.width
         sprite.height = canvas.height
         const c = sprite.getContext('2d')
+        this.legendBoxes = []
         c.setTransform(1, 0, 0, 1, 0, 0)
         c.clearRect(0, 0, sprite.width, sprite.height)
 
@@ -86,7 +92,8 @@ const TUTORIAL_HINT = {
         const colors = STYLE.colors.tutorial
         const hold = I18N.t(isTouchFirstDevice() ? 'tutorial.hold.touch' : 'tutorial.hold.desktop')
         const grapple = I18N.t('tutorial.grapple')
-        const right = I18N.t('tutorial.right') + '  →'
+        const climb = version === 'grapple_over'
+        const objective = climb ? I18N.t('tutorial.climb') : I18N.t('tutorial.right') + '  →'
 
         const vignette = c.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.45)
         vignette.addColorStop(0, colors.vignette)
@@ -145,13 +152,106 @@ const TUTORIAL_HINT = {
         setFont(s2, 'normal', 0.18)
         neonText(grapple, cy + 7 * u, s2, colors.glow, colors.grappleCore, 0.7)
 
-        const s3 = fit(right, 3.6 * u, W * 0.6, 'normal', 0.25)
+        const s3 = fit(objective, 3.6 * u, W * 0.6, 'normal', 0.25)
         setFont(s3, 'normal', 0.25)
-        neonText(right, cy + 13 * u, s3, colors.score, colors.scoreCore, 0.6)
+        neonText(objective, cy + 13 * u, s3, colors.score, colors.scoreCore, 0.6)
 
+        this.lines = [hold, grapple, objective]
+        if (climb)
+            this.lines.push(...this.buildLegend(c, cx, cy + 20.5 * u, u, W, font))
         this.spriteKey = key
-        this.lines = [hold, grapple, right]
         ++this.buildCount
+    },
+
+    // One row centred at (cx, y): a green block '= BOUNCE', then a wide
+    // yellow strip '= LOSE SPEED', in the game's obstacle colours. Returns
+    // the two label strings
+    buildLegend(c, cx, y, u, W, font)
+    {
+        const items = [{label: I18N.t('tutorial.legend.bounce'), w: 3.2, h: 3.2, draw: this.drawBounce},
+                       {label: I18N.t('tutorial.legend.drag'), w: 6.4, h: 2, draw: this.drawDrag}]
+        const gap = 1.2, spacing = 4
+        let size = 2.6 * u
+        const measure = () =>
+        {
+            c.font = 'normal ' + size + 'px ' + font
+            c.letterSpacing = size * 0.12 + 'px'
+            const k = size / (2.6 * u)
+            let total = 0
+            for (const item of items)
+            {
+                item.text = '= ' + item.label
+                item.tw = c.measureText(item.text).width
+                total += item.w * u * k + gap * u * k + item.tw
+            }
+            return total + spacing * u * k
+        }
+        const total = measure()
+        if (total > W * 0.8)
+        {
+            size *= W * 0.8 / total
+            measure()
+        }
+        const k = size / (2.6 * u)
+        let x = cx - measure() / 2
+        c.textAlign = 'left'
+        for (const item of items)
+        {
+            const w = item.w * u * k, h = item.h * u * k
+            item.draw(c, x, y - h / 2, w, h, u * k)
+            x += w + gap * u * k
+            c.shadowColor = 'rgba(0, 0, 0, 0.8)'
+            c.shadowBlur = size * 0.3
+            c.fillStyle = STYLE.colors.tutorial.legendText
+            c.fillText(item.text, x, y)
+            c.shadowBlur = 0
+            this.legendBoxes.push({label: item.label, icon: {x: x - w - gap * u * k, y: y - h / 2, w, h},
+                                   text: {x, width: item.tw}})
+            x += item.tw + spacing * u * k
+        }
+        c.textAlign = 'center'
+        c.letterSpacing = '0px'
+        return items.map(item => item.label)
+    },
+
+    // Bounce block: dark green body, bright green neon edge and lip
+    drawBounce(c, x, y, w, h, s)
+    {
+        const detail = GRAPPLE_OVER_ROLE_DETAIL.bounce
+        const body = c.createLinearGradient(x, y, x, y + h)
+        body.addColorStop(0, detail.baseLight)
+        body.addColorStop(1, detail.baseDark)
+        c.fillStyle = body
+        c.fillRect(x, y, w, h)
+        c.shadowColor = STYLE.colors.cube.greenStroke
+        c.shadowBlur = s * 1.2
+        c.strokeStyle = STYLE.colors.cube.greenStroke
+        c.lineWidth = s * 0.3
+        c.strokeRect(x, y, w, h)
+        c.shadowBlur = 0
+        c.fillStyle = detail.lip
+        c.fillRect(x, y, w, s * 0.4)
+    },
+
+    // Drag zone: translucent amber strip with its edge and drifting motes
+    drawDrag(c, x, y, w, h, s)
+    {
+        const drag = STYLE.colors.drag
+        c.fillStyle = drag.fill
+        c.fillRect(x, y, w, h)
+        c.shadowColor = drag.stroke
+        c.shadowBlur = s * 1.2
+        c.strokeStyle = drag.stroke
+        c.lineWidth = s * 0.25
+        c.strokeRect(x, y, w, h)
+        c.shadowBlur = 0
+        c.fillStyle = GRAPPLE_OVER_ROLE_DETAIL.drag.particle
+        for (const [fx, fy] of [[0.15, 0.6], [0.35, 0.3], [0.55, 0.7], [0.75, 0.35], [0.9, 0.62]])
+        {
+            c.beginPath()
+            c.arc(x + w * fx, y + h * fy, s * 0.22, 0, Math.PI * 2)
+            c.fill()
+        }
     },
 
     // Blits the sprite over the whole canvas, drifting up 1.2% of the view
