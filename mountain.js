@@ -1203,15 +1203,16 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Freight Crossing encounter 4. Planned terrain stays noncollidable.
+// Replacement built prefix through Broken Viaduct encounter 1. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
-    bounds: {left: 0, right: 7600, top: -3000, bottom: 280},
+    bounds: {left: 0, right: 9600, top: -3000, bottom: 280},
     spawn: {x: 2160, y: 0}, finish: null,
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
         {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03', 'S02-04']},
         {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02', 'S03-03', 'S03-04']},
+        {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01']},
         {id: 'S05', status: 'planned', encounters: ['preview-future'],
             band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
     ],
@@ -1228,6 +1229,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S03-02', name: 'Freight Crossing carrier practice', elements: ['freight-landing', 'freight-second-carrier', 'freight-second-landing', 'freight-second-catch']},
         {id: 'S03-03', name: 'Freight Crossing vertical lift', elements: ['freight-second-landing', 'freight-lift', 'freight-lift-landing', 'freight-second-catch']},
         {id: 'S03-04', name: 'Freight Crossing exit combination', elements: ['freight-lift', 'freight-lift-landing', 'freight-exit-anchor', 'freight-exit', 'freight-exit-catch']},
+        {id: 'S04-01', name: 'Broken Viaduct exposed bridge', elements: ['freight-exit', 'viaduct-anchor', 'viaduct-landing', 'viaduct-catch', 'viaduct-yellow']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1264,8 +1266,12 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['freight-exit-anchor', 6580, -1659, 160, 80, 'Green launch face right of the lift sweep; deliberate release across the exit gap, not a landing'],
         ['freight-exit', 6628, -1528.2, 680, 60, 'Broad ordinary green crossing exit after the moving-to-fixed transfer and green jump'],
         ['freight-exit-catch', 6480, -1248.2, 880, 60, 'Stationary green recovery alternative below the exit gap; clears the lift sweep and supports a normal-control retry'],
+        ['viaduct-anchor', 7408, -1719, 160, 80, 'Reachable green bridge launch face; deliberate release, not a landing'],
+        ['viaduct-landing', 7560, -1528.2, 680, 60, 'Broad green bridge remnant and safe first encounter exit'],
+        ['viaduct-catch', 7360, -900, 1600, 60, 'Lower recovery walkway beneath the yellow band; return west via the freight recovery shelf'],
+        ['viaduct-yellow', 7360, -1150, 1600, 150, 'Long visible pass-through yellow fall brake far below the exposed bridge; west edge leaves recovery ascent clear'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
-    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['freight-carrier', 'freight-second-carrier', 'freight-lift'].includes(id) ? 'solid' : 'bounce', grapplable: true,
+    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: id === 'viaduct-yellow' ? 'drag' : ['freight-carrier', 'freight-second-carrier', 'freight-lift'].includes(id) ? 'solid' : 'bounce', grapplable: id !== 'viaduct-yellow',
         points: ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
             ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]
             : [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
