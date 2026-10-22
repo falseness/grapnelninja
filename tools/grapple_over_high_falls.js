@@ -27,7 +27,7 @@
   return !!s.rebound;
  }
  function finish(onStep){const s=window.highFall;input('mouseup');
-  s.recovery=RECOVERY.run({id:s.landing.contacts.find(c=>c.ny<-.9).id},540,{continue:true,budget:9000,onStep});
+  s.recovery=RECOVERY.run({id:s.landing.contacts.find(c=>c.ny<-.9).id},540,{continue:true,budget:9000,hold:s.spec.recoveryHold||60,onStep});
   return s;
  }
  window.HIGH_FALL={begin,step,finish};

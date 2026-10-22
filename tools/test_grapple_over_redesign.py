@@ -11491,8 +11491,9 @@ class Task626Tests(unittest.TestCase):
         print('PASS index: six required artifacts exist, JSON parses, retained evidence below 200 MB')
 
 
-# Bounded probes expose unmet high-fall requirements; TASK-627 stays pending.
-TASK627_FALL_SPECS = [(596,493,0,119),(596,493,0,193)]
+# Distinct archived gallery approaches, aimed at the exit projection. Each
+# fixture continues through a real press/release, yellow fall and lateral return.
+TASK627_FALL_SPECS = [(596,765,(9300,-2658),75,90),(596,780,(9300,-2658),81,60)]
 
 
 class Task627Tests(unittest.TestCase):
@@ -11536,15 +11537,22 @@ class Task627Tests(unittest.TestCase):
         self.assertEqual(len(specs),2)
         self.assertEqual(len(set(specs)),2,'Falls must use distinct release scenarios')
         p.evaluate('window.fallFrames=[]')
-        for task,tick,rank,hold in specs:
+        for task,tick,aim,hold,recovery_hold in specs:
             path=f'artifacts/TASK-{task}/route.json';raw=(ROOT/path).read_bytes();d=json.loads(raw)
             row=next(r for r in d['trace'] if r['tick']==tick)
             self.assertFalse(row['attached']);self.assertFalse(row['shot'])
             start=dict(id=f'{task}-{tick}',phaseTick=tick,pose={k:row[k] for k in ['x','y','vx','vy']},
                 provenance=dict(path=path,tick=tick,sha256=hashlib.sha256(raw).hexdigest(),kind='isolated reachable released route fixture'))
-            p.evaluate('s=>HIGH_FALL.begin(s)',dict(start=start,rank=rank,hold=hold))
+            launch=dict(start=start,hold=hold,recoveryHold=recovery_hold)
+            if isinstance(aim,tuple):
+                launch['target']=dict(x=aim[0],y=aim[1])
+            else:
+                launch['rank']=aim
+            p.evaluate('s=>HIGH_FALL.begin(s)',launch)
             c=p.evaluate('''()=>{
-              const capture=(phase,tick)=>{if(tick%12)return;draw();fallFrames.push({phase,tick,id:highFall.spec.start.id,image:document.querySelector('canvas').toDataURL('image/jpeg',.65)})};
+              const capture=(phase,tick)=>{if(tick%12)return;draw();const gameCanvas=document.getElementById('canvas');
+                if(gameCanvas.hidden||gameCanvas.width<640||gameCanvas.height<360)throw Error('Game canvas unavailable for trajectory capture');
+                fallFrames.push({phase,tick,id:highFall.spec.start.id+' hold '+highFall.spec.hold,image:gameCanvas.toDataURL('image/jpeg',.65)})};
               for(let i=0;i<1600;i++){const done=HIGH_FALL.step();capture('launch / fall / first rebound',i+1);if(done)break;}
               if(!highFall.rebound)return highFall;
               return HIGH_FALL.finish(s=>capture('continuous lateral re-ascent',s.tick));}''')
@@ -11590,18 +11598,35 @@ class Task627Tests(unittest.TestCase):
                 self.assertEqual(c['inputs'][-1]['type'],'mouseup')
                 self.assertIsNotNone(c['recovery']['returned'])
                 self.assertEqual(c['recovery']['postSetupInjections'],0)
+                self.assertEqual(c['recovery']['resets'],0)
                 self.assertGreater(abs(c['recovery']['returned']['x']-c['landing']['x']),100)
+                self.assertLess(c['recovery']['returned']['y'],c['landing']['y'])
 
     def test_03_dependencies_and_index(self):
         old=json.loads((ROOT/'artifacts/TASK-626/evidence-index.json').read_text())['config']['source_hashes']
         changed=['tools/test_grapple_over_redesign.py','tools/grapple_over_recovery.js']
         for n,h in old.items():
             if n not in changed:self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        identifiers=[t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(Task627Tests)]
+        self.assertEqual(len(identifiers),3)
+        self.assertTrue(all('.Task627Tests.' in n for n in identifiers))
+        (self.out/'collected-tests.log').write_text('\n'.join(identifiers)+'\nCOLLECTED 3\n')
+        archived=['PASS unchanged runtime dependencies match TASK-626 source hashes']
+        for task in [614,626]:
+            path=ROOT/f'artifacts/TASK-{task}/tests.log';raw=path.read_text()
+            self.assertIn('\nOK\n',raw)
+            self.assertRegex(raw,r'Ran [1-9][0-9]* tests? in ')
+            archived.append(f'{path.relative_to(ROOT)} SHA256 {hashlib.sha256(path.read_bytes()).hexdigest()}')
+            archived.extend(line for line in raw.splitlines() if line.startswith('Ran ') or line=='OK')
+        (self.out/'archived-checks.log').write_text('\n'.join(archived)+'\n')
         required={'commands.log':'exact commands, exit, test identifiers/count, browser/viewport/revision and hashes','tests.log':'three Task627Tests, no skips, OK',
             'pockets.json':'all upper colliders mapped to input recovery or terminal summit contact; unresolved empty',
-            'falls.json':'measured candidate falls and unmet boundary/rebound requirements; yellow velocities, landing, lateral rejoin and all swept clearances',
+            'falls.json':'two measured >=2-boundary falls, <=half-drop first rebounds, yellow velocities, lower landing, lateral rejoin and all swept clearances',
             'inputs.json':'launch/release inputs and continuous recovery input/trace provenance','falls.webm':'both full trajectories and lateral returns; fixture boundaries labelled',
-            'clip-decode.json':'successful full browser decode and nonzero decoded frames','evidence-index.json':'artifact assertions and dependencies'}
+            'clip-decode.json':'successful full browser decode and nonzero decoded frames',
+            'collected-tests.log':'exactly three collected Task627Tests identifiers',
+            'archived-checks.log':'unchanged runtime hashes and successful prerequisite test logs',
+            'evidence-index.json':'artifact assertions and dependencies'}
         self.write('evidence-index.json',dict(artifacts=required,config=self.config,changedSubsystems=changed+['tools/grapple_over_high_falls.js: observation/control harness -> unchanged production mouse input/physics/geometry'],
             historical='TASK-626/tests.log and TASK-614/tests.log retain previous successful runtime checks; no production edits; historical geometry coverage preserved',hashPolicy='HEAD movement alone does not invalidate identical source hashes'))
         for n in required:
