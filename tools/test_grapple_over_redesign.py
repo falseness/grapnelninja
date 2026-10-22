@@ -13035,7 +13035,7 @@ class Task633Tests(unittest.TestCase):
 
 
 class Task634Tests(unittest.TestCase):
-    """Fresh-base composition regression. Currently fails at the fourth S01 exit.
+    """Fresh-base composition regression. Tracks twenty ordered exits through S05.
 
     Never relax the 32-exit assertion to turn an incomplete prefix into completion.
     No archived poses, state restores, geometry edits or production overrides.
@@ -13064,14 +13064,22 @@ class Task634Tests(unittest.TestCase):
         p.evaluate('''()=>{
           const world=floors[0],player=ninja,step=YARD.step,lifecycle=PLATFORM.sendLifecycle;
           window.run634={initial:{x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY,
-            range:grappleOverAcquisitionRadius(),simulationTick:world.elapsedSteps},events:[],rows:[]};
+            range:grappleOverAcquisitionRadius(),simulationTick:world.elapsedSteps},events:[],rows:[],upgrades:[]};
+          const upgradeSection=world.level.sections.find(s=>s.id===grappleOverProfile().rangeUpgradeSection);
+          run634.upgradeZone=upgradeSection.rangeUpgradeZone || upgradeSection.band;
+          let upgraded=world.rangeUpgraded;
+          Object.defineProperty(world,'rangeUpgraded',{configurable:true,enumerable:true,
+            get(){return upgraded},set(value){
+              run634.upgrades.push({tick:YARD.result().tick+1,from:upgraded,to:value,
+                x:ninja.x,y:ninja.y,simulationTick:world.elapsedSteps});upgraded=value;
+            }});
           PLATFORM.sendLifecycle=function(name,...args){
             run634.events.push({name,tick:YARD.result().tick+1});return lifecycle.call(this,name,...args)};
           YARD.step=n=>{for(let i=0;i<n;i++){
             step(1);const row=YARD.result().rows.at(-1);
             run634.rows.push({...row,range:grappleOverAcquisitionRadius(),
               simulationTick:world.elapsedSteps,sameWorld:floors[0]===world,samePlayer:ninja===player,
-              completed:world.climbStats.completed});
+              completed:world.climbStats.completed,upgraded:world.rangeUpgraded});
           }};
         }''')
         return p
@@ -13092,6 +13100,12 @@ class Task634Tests(unittest.TestCase):
         self.assertTrue(all(v['sameWorld'] and v['samePlayer'] for v in r['rows']))
         self.assertEqual([v['simulationTick'] for v in r['rows']],
                          [i*r['cycles'] for i in range(1,len(r['rows'])+1)])
+        self.assertTrue(all(v['range']==(540 if v['upgraded'] else 360) for v in r['rows']))
+        for upgrade in r['upgrades']:
+            self.assertFalse(upgrade['from']);self.assertTrue(upgrade['to'])
+            zone=r['upgradeZone']
+            self.assertTrue(zone['left']<=upgrade['x']<=zone['right'])
+            self.assertTrue(zone['top']<=upgrade['y']<=zone['bottom'])
         return r
 
     def test_01_completion(self):
@@ -13100,45 +13114,111 @@ class Task634Tests(unittest.TestCase):
         def capture(label):
             p.evaluate('draw()')
             im=Image.open(io.BytesIO(p.screenshot())).convert('RGB');im.thumbnail((640,360))
-            ImageDraw.Draw(im).text((10,10),'INCOMPLETE: '+label,fill='white');frames.append(im)
-        capture('actual base / S01')
-        # TASK-572's first two exits remain reproducible on the full layout.
-        # Its third aim/45-tick hold hits later quarry terrain. This current-input
-        # variation reaches the third yard exit before any later encounter exit.
-        for target,hold,coast in [(dict(x=2420,y=-139),30,75),(dict(x=2900,y=30),26,0),
-                                  (Task568Tests.target,18,48),(dict(x=3090,y=-350),54,0)]:
-            self.shot(p,target,hold);self.step(p,coast)
-        self.assertTrue(self.until(p,'yard-third-landing'))
-        capture('S01-03 contact at tick 315')
-        self.shot(p,dict(x=2800,y=-280),24)
-        p.evaluate('''()=>{for(let i=0;i<400;i++){
-          if(Math.hypot(ninja.x-2235,ninja.y+345)<350)break;YARD.step(1)}}''')
-        capture('attempted S01-04 transfer')
-        self.shot(p,dict(x=2235,y=-345),36)
-        # Stop this failed attempt at its actual recovery contact; do not splice
-        # a fixture or another attempt into the run to continue climbing.
-        self.until(p,'quarry-catch',200)
-        capture('miss: quarry-catch, not S01-04')
+            pen=ImageDraw.Draw(im);pen.rectangle((0,338,640,360),fill='black')
+            pen.text((10,343),'INCOMPLETE: '+label,fill='white');frames.append(im)
+        # Frozen inputs discovered on one continuous fresh-base run. Each test
+        # starts from production spawn and executes this entire sequence afresh.
+        # Values are viewport mouse coordinates, not player poses or checkpoints.
+        actions = [
+            (0, True, 605, 615),
+            (30, False, 605, 615),
+            (105, True, 725, 657),
+            (131, False, 725, 657),
+            (131, True, 788, 600),
+            (149, False, 788, 600),
+            (197, True, 756, 562),
+            (251, False, 756, 562),
+            (315, True, 656, 580),
+            (339, False, 656, 580),
+            (369, True, 515, 563),
+            (405, False, 515, 563),
+            (425, True, 407, 565),
+            (449, False, 407, 565),
+            (449, True, 380, 525),
+            (509, False, 380, 525),
+            (776, True, 380, 525),
+            (806, False, 380, 525),
+            (873, True, 365, 472),
+            (933, False, 365, 472),
+            (976, True, 545, 492),
+            (1006, False, 545, 492),
+            (1006, True, 596, 453),
+            (1024, False, 596, 453),
+            (1059, True, 596, 453),
+            (1059, False, 596, 453),
+            (1128, True, 1020, 422),
+            (1248, False, 1020, 422),
+            (1542, True, 1086, 422),
+            (1662, False, 1086, 422),
+            (1713, True, 775, 475),
+            (1749, False, 775, 475),
+            (1749, True, 733, 362),
+            (2049, False, 733, 362),
+            (2169, True, 833, 343),
+            (2205, False, 833, 343),
+            (2205, True, 923, 301),
+            (2241, False, 923, 301),
+            (2279, True, 921, 289),
+            (2309, False, 921, 289),
+            (2424, True, 930, 296),
+            (2466, False, 930, 296),
+            (2604, True, 1047, 284),
+            (2679, False, 1047, 284),
+            (2768, True, 900, 342),
+            (2792, False, 900, 342),
+            (2792, True, 963, 342),
+            (2828, False, 963, 342),
+            (2828, True, 970, 300),
+            (2858, False, 970, 300),
+            (2969, True, 960, 300),
+            (3011, False, 960, 300),
+            (3058, True, 968, 245),
+            (3148, False, 968, 245),
+            (3233, True, 518, 336),
+            (3269, False, 518, 336),
+            (3269, True, 375, 278),
+            (3309, False, 375, 278),
+            (3381, True, 338, 218),
+            (3433, False, 338, 218),
+            (3632, True, 556, 345),
+            (3765, False, 556, 345),
+            (3765, True, 446, 247),
+            (3798, False, 446, 247),
+        ]
+        captures = {0:'S01 base',776:'S01 exit / S02 transition',
+                    1096:'S02 exit / S03 transition',2247:'S03 exit / S04 transition',
+                    2921:'S04 exit / S05 transition',4003:'S05 exit / S06 transition'}
+        tick=0
+        for target_tick in sorted(set(captures) | {e[0] for e in actions}):
+            self.step(p,target_tick-tick);tick=target_tick
+            if tick in captures:capture(captures[tick])
+            for event_tick,down,x,y in actions:
+                if event_tick==tick:
+                    p.mouse.move(x,y)
+                    if down:p.mouse.down()
+                    else:p.mouse.up()
         r=self.observation(p);rows=r['rows'];seen=[]
         for row in rows:
             for c in row['contacts']:
                 if c['ny']<-.9 and c['id'] in self.exits and c['id'] not in [e['id'] for e in seen]:
                     seen.append(dict(id=c['id'],tick=row['tick'],contact=c,range=row['range']))
         events=[e for e in r['events'] if e['name']=='level_completed']
+        self.assertEqual(len(r['upgrades']),1,'Exactly one earned S05 upgrade in this prefix')
         digest=hashlib.sha256(json.dumps(rows,separators=(',',':')).encode()).hexdigest()
         self.write('inputs.json',dict(config=self.config,events=r['inputs'],ticks=len(rows),
             ownership='All MouseEvents are browser-trusted, dispatched by Playwright mouse to production handlers'))
         self.write('completion.json',dict(config=self.config,complete=False,initial=r['initial'],
             expectedExits=self.exits,observedExits=seen,missingExits=self.exits[len(seen):],
-            summitEvents=events,simulationSeconds=len(rows)*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
+            summitEvents=events,upgrades=r['upgrades'],upgradeZone=r['upgradeZone'],
+            captures=[dict(tick=t,label=label) for t,label in captures.items()],simulationSeconds=len(rows)*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
             ticks=len(rows),traceSha256=digest,trace=[v for v in rows if v['contacts'] or v['tick']%120==0],
             rangeValues=sorted(set(v['range'] for v in rows)),postSpawnInjections=0,
-            limitation='Only three exits; no S05 upgrade or summit reached. Simulation duration is not novice completion time.'))
-        sheet=Image.new('RGB',(1280,720))
+            limitation='Incomplete prefix; summit not reached. Simulation duration is not novice completion time.'))
+        sheet=Image.new('RGB',(1280,1080))
         for i,im in enumerate(frames):sheet.paste(im,((i%2)*640,(i//2)*360))
         sheet.save(self.out/'completion-strip.jpg',quality=85)
-        print('OBSERVED ordered exits='+str(len(seen))+'/32; summit events='+str(len(events))+'; range=360; trusted inputs='+str(len(r['inputs'])))
-        print('FAIL continuity: next required exit yard-fourth-landing; actual recovery contact quarry-catch')
+        print('OBSERVED ordered exits='+str(len(seen))+'/32; summit events='+str(len(events))+'; ranges='+str(sorted(set(v['range'] for v in rows)))+'; trusted inputs='+str(len(r['inputs'])))
+        print('FAIL continuity: next required exit '+self.exits[len(seen)]+'; last observed exit '+seen[-1]['id'])
         self.assertEqual([e['id'] for e in seen],self.exits,'Continuous 32-exit proof incomplete')
         self.assertEqual(len(events),1)
 
@@ -13157,15 +13237,16 @@ class Task634Tests(unittest.TestCase):
         self.step(p,inputs['ticks']-tick);r=self.observation(p)
         digest=hashlib.sha256(json.dumps(r['rows'],separators=(',',':')).encode()).hexdigest()
         self.assertEqual(digest,completion['traceSha256']);self.assertEqual(r['inputs'],inputs['events'])
+        self.assertEqual(r['upgrades'],completion['upgrades'])
         self.write('replay.json',dict(config=self.config,traceSha256=digest,inputEventsEqual=True,
-            ticks=len(r['rows']),simulationSeconds=len(r['rows'])*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
+            upgradesEqual=True,ticks=len(r['rows']),simulationSeconds=len(r['rows'])*r['stepMs']/1000,wallSeconds=time.monotonic()-start,
             scope='Deterministic replay of FAILED prefix only; not completion'))
         names={'commands.log':'exact command/status, IDs, browser, viewport, revision and hashes',
                'tests.log':'two exact focused cases; completion currently FAILS',
-               'completion.json':'measured failed prefix; only 3/32 exits and zero summit events',
+               'completion.json':'measured failed prefix; ordered route prefix and zero summit events',
                'inputs.json':'trusted production mouse events at simulation ticks',
                'replay.json':'identical failed-prefix trace and inputs under identical source hashes',
-               'completion-strip.jpg':'four live frames of S01 attempt only; does NOT show eight sections',
+               'completion-strip.jpg':'six live frames through the S05 exit; does NOT show eight sections',
                'evidence-index.json':'honest artifact inventory and dependencies'}
         self.write('evidence-index.json',dict(artifacts=names,config=self.config,readyForVerification=False,
             changedSubsystems=['Additive Task634Tests -> browser_test_support + YARD -> production events/physics/camera; no runtime changes'],
@@ -13174,7 +13255,7 @@ class Task634Tests(unittest.TestCase):
         for name in names:
             self.assertTrue((self.out/name).is_file(),name)
             if name.endswith('.json'):json.loads((self.out/name).read_text())
-        with Image.open(self.out/'completion-strip.jpg') as im:im.load();self.assertEqual(im.size,(1280,720))
+        with Image.open(self.out/'completion-strip.jpg') as im:im.load();self.assertEqual(im.size,(1280,1080))
         for name,digest in self.config['source_hashes'].items():
             self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
