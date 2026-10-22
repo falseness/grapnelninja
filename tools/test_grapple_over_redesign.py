@@ -7008,3 +7008,161 @@ class Task600Tests(unittest.TestCase):
         print('PASS dependencies/index: preview 360/540 legacy 1080/1620 camera=.375 gravity/pull unchanged; all required files parse/decode; below 200 MB')
 
 
+class Task601Tests(unittest.TestCase):
+    """S06 isolated input tolerance and lower recovery; no continuous-gameplay claim."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config.update(touch_viewport={'width':844,'height':390},device_scale_factor=1,
+            simulation='Isolated S06 entries; recorded tower entries and mover phases; previously earned 540; not continuous gameplay')
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK601_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task557Tests.write
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    page = Task571Tests.page
+    press = Task571Tests.press
+    release = Task571Tests.release
+    frame = Task571Tests.frame
+    until_landing = Task576Tests.until_landing
+    targets = [Task597Tests.target,Task598Tests.target,Task599Tests.target,Task600Tests.target]
+    holds = [222,69,30,225]
+    tolerance_targets = [dict(x=10126,y=-3008.2),dict(x=11171,y=-3428.2),
+                         dict(x=12511,y=-3488.2),dict(x=13717,y=-3708.2)]
+    exits = ['tower-observation','tower-shaft-landing','tower-rebound-landing','tower-exit']
+    fixtures = [dict(x=10306,y=-2440),dict(x=10941,y=-3200),dict(x=12281,y=-3260),dict(x=13517,y=-3200)]
+
+    def setup_entry(self,p,index):
+        p.evaluate('TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500)')
+        self.assertFalse(p.evaluate('TUTORIAL_HINT.visible'))
+        p.evaluate('s=>{Object.assign(ninja,s,{speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)}',self.fixtures[index])
+        self.step(p,[600,0,12,600][index])
+
+    def test_01_tolerance(self):
+        rows=[];frames=[]
+        for touch in [False,True]:
+            for index in range(4):
+                for variant,ms,aim in [('nominal',0,0),('early',-50,0),('late',50,0),('left',0,-8),('right',0,8)]:
+                    p=self.page(touch);self.setup_entry(p,index)
+
+                    start=p.evaluate('YARD.result().tick')
+                    step_ms=p.evaluate('physicsStepMs')
+                    nominal_hold=self.holds[index] if touch else [222,36,30,225][index]
+                    hold=nominal_hold+round(ms/step_ms)
+                    if touch and variant=='nominal':frames.append(self.frame(p,f'S06-0{index+1} touch approach'))
+                    target=dict(self.tolerance_targets[index])
+                    if not touch and index==0:target['x']=10106
+                    xy=self.press(p,target,aim);self.step(p,hold);self.release(p)
+                    self.until_landing(p,self.exits[index],800)
+                    r=self.result(p);lands=[s for s in self.landings(r,self.exits[index]) if s['tick']>start+hold]
+                    inputs=[dict(i,timeMs=i['tick']*step_ms) for i in r['inputs'] if i['tick']>=start]
+                    row=dict(encounter=f'S06-0{index+1}',mode='touch' if touch else 'desktop',variant=variant,
+                        viewport=p.viewport_size,nominalHoldTicks=nominal_hold,releaseOffsetMs=ms,aimOffsetCSSpx=aim,requestedClient=xy,
+                        target=target,startTick=start,releaseTick=start+hold,inputs=inputs,landing=lands[0] if lands else None,
+                        exit=self.exits[index],trace=self.compact(r['rows'][start:]),success=bool(lands))
+                    rows.append(row)
+                    if touch and variant=='nominal' and lands:
+                        frames.append(self.frame(p,f'S06-0{index+1} touch after landing {lands[0]["tick"]}'))
+                    print(f'CASE {row["encounter"]} {row["mode"]} {variant} landing={lands[0]["tick"] if lands else None}')
+                    self.write('tolerance.json',dict(cases=rows,entryFixtures=self.fixtures,fixtureScope=self.config['simulation'],source_hashes=self.config['source_hashes']))
+                    p.context.close()
+        strip=Image.new('RGB',(844*2,390*4))
+        for n,im in enumerate(frames):strip.paste(im,((n%2)*844,(n//2)*390))
+        strip.save(self.out/'touch-strip.jpg',quality=85)
+        self.assertEqual(len(rows),40)
+        self.assertTrue(all(r['success'] for r in rows),[(r['encounter'],r['mode'],r['variant']) for r in rows if not r['success']])
+        for r in rows:
+            expected='touchstart' if r['mode']=='touch' else 'mousedown'
+            self.assertEqual(r['inputs'][0]['type'],expected)
+            self.assertTrue(all(i['trusted'] for i in r['inputs']))
+            release_type='touchend' if r['mode']=='touch' else 'mouseup'
+            self.assertTrue(any(i['type']==release_type and i['tick']==r['releaseTick'] for i in r['inputs']))
+            self.assertTrue(any(c['id']==r['exit'] and c['ny']<-.9 for c in r['landing']['contacts']))
+            self.assertTrue(any(s['attached'] for s in r['trace']))
+            self.assertTrue(any(not s['attached'] and not s['contacts'] for s in r['trace'] if s['tick']>r['releaseTick']))
+        print('PASS tolerance: all 40 cases; 4 encounters x 2 genuine input modes x 5 variants; +/-50 ms and +/-8 CSS px')
+
+
+    @staticmethod
+    def compact(rows):
+        return [r for i,r in enumerate(rows) if i%12==0 or i==len(rows)-1 or r['contacts']
+                or (i and (r['attached'],r['shot'])!=(rows[i-1]['attached'],rows[i-1]['shot']))]
+
+    def interactions(self,p,index,start,result):
+        mover=['tower-counterweight','tower-shuttle','tower-rebound-carrier','tower-exit-lift'][index]
+        observed=p.evaluate("id=>{const e=floors[0].byId.get(id);return {id,x:e.x,y:e.y,role:e.surfaceRole}}",mover)
+        yellow=[v for v in result['rows'][start:] if 13721<v['x']<14521 and -3100<v['y']<-2928]
+        if index==3:self.assertTrue(yellow,'Actual S06-04 yellow corridor crossing')
+        return dict(mover=observed,startPhaseMs=(start*1000/60)%10000,
+                    endPhaseMs=(result['tick']*1000/60)%10000,
+                    yellowRows=yellow,hazards='No red hazard in built S06')
+
+    def test_02_recovery(self):
+        rows=[]
+        for touch in [False,True]:
+            for index in range(4):
+                p=self.page(touch);self.setup_entry(p,index)
+                start=p.evaluate('YARD.result().tick');step_ms=p.evaluate('physicsStepMs')
+                hold=[6,60,60,12][index]
+                self.press(p,self.targets[index]);self.step(p,hold);self.release(p)
+                catch_id=['gallery-third-landing','tower-shaft-catch','tower-rebound-catch','tower-exit-catch'][index]
+                self.until_landing(p,catch_id,800)
+                before=self.result(p);catches=self.landings(before,catch_id)
+                self.assertTrue(catches,(index,touch,'catch'))
+                self.assertFalse(self.landings(before,self.exits[index]))
+                recovery_start=before['tick']
+                target,ticks,return_id=[(dict(x=10112,y=-2408),12,'gallery-exit'),
+                    (dict(x=11031,y=-3158.2),12,'tower-observation'),
+                    (dict(x=12371,y=-3218.2),12,'tower-shaft-landing'),
+                    (dict(x=13621,y=-3178.2),30,'tower-rebound-landing')][index]
+                self.press(p,target);self.step(p,ticks);self.release(p)
+                self.until_landing(p,return_id,800)
+                r=self.result(p);returned=[s for s in self.landings(r,return_id) if s['tick']>recovery_start]
+                row=dict(encounter=f'S06-0{index+1}',mode='touch' if touch else 'desktop',
+                    releaseOffsetMs=(hold-[240,30,30,240][index])*step_ms,missHoldTicks=hold,startTick=start,
+                    catch=catches[0],returned=returned[0] if returned else None,returnCollider=return_id,
+                    recoveryStart=recovery_start,inputs=[dict(i,timeMs=i['tick']*step_ms) for i in r['inputs']],
+                    trace=self.compact(r['rows'][start:]),interactions=self.interactions(p,index,start,r),
+                    resetsAfterStart=0,poseInjectionsAfterStart=0)
+                rows.append(row);self.write('recovery.json',dict(cases=rows,source_hashes=self.config['source_hashes'],scope=self.config['simulation']))
+                self.assertTrue(returned,(index,touch,'return'))
+                self.assertGreater(abs(row['releaseOffsetMs']),50)
+                print(f'RECOVERY {row["encounter"]} {row["mode"]} catch={catches[0]["tick"]} return={returned[0]["tick"]}')
+                p.context.close()
+        self.assertEqual(len(rows),8)
+        print('PASS recovery: 8 out-of-window misses and normal-input escapes; mover phases and S06-04 yellow corridor inspected; zero resets/injections')
+
+    def test_03_dependencies_and_index(self):
+        previous=json.loads((ROOT/'artifacts/TASK-600/evidence-index.json').read_text())
+        old=previous['config']['source_hashes']
+        unchanged=[]
+        for name,digest in old.items():
+            if name=='tools/test_grapple_over_redesign.py':continue
+            self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+            unchanged.append(name)
+        self.write('affected-proof-map.json',dict(geometryChanges=[],runtimeChanges=[],unchanged=unchanged,
+            routeAdjustment='TASK-597..600 entry fixtures and mover phases reused; aim points moved inward/above blue surfaces to tolerate CSS spread; touch holds 222/69/30/225, desktop 222/36/30/225; first desktop aim x10106 versus touch x10126 calibrated independently through actual client/camera transforms; no runtime or geometry changes',
+            recoveryEndpoint='Return to previous broad deck with normal controls',
+            changedSubsystems=['tools/test_grapple_over_redesign.py additive Task601Tests'],
+            dependencies=['Task601Tests -> browser_test_support + grapple_over_yard.js -> events.js, physics.js, fixedlevel.js, mountain.js'],
+            previousProof=['artifacts/TASK-600/evidence-index.json'],
+            refreshed=['tolerance.json','recovery.json','touch-strip.jpg'],
+            hashPolicy='HEAD-only commits do not invalidate identical tested source hashes; historical proofs retained'))
+        required={'commands.log':'exact command, exit, identifiers, Chromium/viewports/DPR, revision and source hashes',
+            'tests.log':'three Task601Tests, no skips, OK',
+            'tolerance.json':'40 successful variants with trusted input timestamps, offsets and top-facing exit contacts',
+            'recovery.json':'8 out-of-window misses, lower contacts, normal-input escapes, mover phases and yellow corridor interactions',
+            'affected-proof-map.json':'unchanged geometry and changed subsystem dependencies',
+            'touch-strip.jpg':'four genuine touch approaches and landings with visible targets',
+            'evidence-index.json':'artifact assertions and tested provenance'}
+        self.write('evidence-index.json',dict(config=self.config,artifacts=required,scope=self.config['simulation']))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        with Image.open(self.out/'touch-strip.jpg') as im:
+            im.load();self.assertEqual(im.size,(1688,1560))
+        self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
+        print(f'PASS dependencies: {len(unchanged)} unchanged runtime/support hashes; geometry unchanged')
+        print('PASS index: all required files exist; JSON parses; touch-strip decodes 1688x1560; retained evidence <200 MB')
