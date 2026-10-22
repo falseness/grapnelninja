@@ -7028,7 +7028,10 @@ class Task601Tests(unittest.TestCase):
     frame = Task571Tests.frame
     until_landing = Task576Tests.until_landing
     targets = [Task597Tests.target,Task598Tests.target,Task599Tests.target,Task600Tests.target]
-    holds = [222,69,30,225]
+    nominal_holds = {
+        "desktop": [222,36,30,225],
+        "touch": [222,69,30,225],
+    }
     tolerance_targets = [dict(x=10126,y=-3008.2),dict(x=11171,y=-3428.2),
                          dict(x=12511,y=-3488.2),dict(x=13717,y=-3708.2)]
     exits = ['tower-observation','tower-shaft-landing','tower-rebound-landing','tower-exit']
@@ -7049,7 +7052,7 @@ class Task601Tests(unittest.TestCase):
 
                     start=p.evaluate('YARD.result().tick')
                     step_ms=p.evaluate('physicsStepMs')
-                    nominal_hold=self.holds[index] if touch else [222,36,30,225][index]
+                    nominal_hold=self.nominal_holds["touch" if touch else "desktop"][index]
                     hold=nominal_hold+round(ms/step_ms)
                     if touch and variant=='nominal':frames.append(self.frame(p,f'S06-0{index+1} touch approach'))
                     target=dict(self.tolerance_targets[index])
@@ -7105,6 +7108,7 @@ class Task601Tests(unittest.TestCase):
             for index in range(4):
                 p=self.page(touch);self.setup_entry(p,index)
                 start=p.evaluate('YARD.result().tick');step_ms=p.evaluate('physicsStepMs')
+                nominal_hold=self.nominal_holds["touch" if touch else "desktop"][index]
                 hold=[6,60,60,12][index]
                 self.press(p,self.targets[index]);self.step(p,hold);self.release(p)
                 catch_id=['gallery-third-landing','tower-shaft-catch','tower-rebound-catch','tower-exit-catch'][index]
@@ -7121,12 +7125,19 @@ class Task601Tests(unittest.TestCase):
                 self.until_landing(p,return_id,800)
                 r=self.result(p);returned=[s for s in self.landings(r,return_id) if s['tick']>recovery_start]
                 row=dict(encounter=f'S06-0{index+1}',mode='touch' if touch else 'desktop',
-                    releaseOffsetMs=(hold-[240,30,30,240][index])*step_ms,missHoldTicks=hold,startTick=start,
+                    releaseOffsetMs=(hold-nominal_hold)*step_ms,nominalHoldTicks=nominal_hold,
+                    physicsStepMs=step_ms,missHoldTicks=hold,startTick=start,
                     catch=catches[0],returned=returned[0] if returned else None,returnCollider=return_id,
                     recoveryStart=recovery_start,inputs=[dict(i,timeMs=i['tick']*step_ms) for i in r['inputs']],
                     trace=self.compact(r['rows'][start:]),interactions=self.interactions(p,index,start,r),
                     resetsAfterStart=0,poseInjectionsAfterStart=0)
-                rows.append(row);self.write('recovery.json',dict(cases=rows,source_hashes=self.config['source_hashes'],scope=self.config['simulation']))
+                press_type,release_type=('touchstart','touchend') if touch else ('mousedown','mouseup')
+                press=next(i for i in row['inputs'] if i['type']==press_type and i['tick']>=start)
+                release=next(i for i in row['inputs'] if i['type']==release_type and i['tick']>=press['tick'])
+                self.assertEqual(release['tick']-press['tick'],row['missHoldTicks'])
+                self.assertAlmostEqual(row['releaseOffsetMs'],
+                    release['timeMs']-press['timeMs']-nominal_hold*step_ms)
+                rows.append(row);self.write('recovery.json' ,dict(cases=rows,source_hashes=self.config['source_hashes'],scope=self.config['simulation']))
                 self.assertTrue(returned,(index,touch,'return'))
                 self.assertGreater(abs(row['releaseOffsetMs']),50)
                 print(f'RECOVERY {row["encounter"]} {row["mode"]} catch={catches[0]["tick"]} return={returned[0]["tick"]}')
@@ -7145,7 +7156,7 @@ class Task601Tests(unittest.TestCase):
         self.write('affected-proof-map.json',dict(geometryChanges=[],runtimeChanges=[],unchanged=unchanged,
             routeAdjustment='TASK-597..600 entry fixtures and mover phases reused; aim points moved inward/above blue surfaces to tolerate CSS spread; touch holds 222/69/30/225, desktop 222/36/30/225; first desktop aim x10106 versus touch x10126 calibrated independently through actual client/camera transforms; no runtime or geometry changes',
             recoveryEndpoint='Return to previous broad deck with normal controls',
-            changedSubsystems=['tools/test_grapple_over_redesign.py additive Task601Tests'],
+            changedSubsystems=['tools/test_grapple_over_redesign.py Task601Tests shared calibrated nominal holds and trace-based recovery offset assertions'],
             dependencies=['Task601Tests -> browser_test_support + grapple_over_yard.js -> events.js, physics.js, fixedlevel.js, mountain.js'],
             previousProof=['artifacts/TASK-600/evidence-index.json'],
             refreshed=['tolerance.json','recovery.json','touch-strip.jpg'],
