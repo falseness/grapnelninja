@@ -7177,3 +7177,214 @@ class Task601Tests(unittest.TestCase):
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
         print(f'PASS dependencies: {len(unchanged)} unchanged runtime/support hashes; geometry unchanged')
         print('PASS index: all required files exist; JSON parses; touch-strip decodes 1688x1560; retained evidence <200 MB')
+
+
+class Task602Tests(unittest.TestCase):
+    """S06 composition review; one entrance fixture, then production-only traversal."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='One isolated S06 entrance then continuous production traversal; separate labelled recovery'
+
+    write = Task557Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task581Tests.until
+    record = Task590Tests.record
+    shot = Task594Tests.shot
+
+    def test_01_inventory_and_dependencies(self):
+        p=Task597Tests.page(self)
+        g=p.evaluate("""()=>({elements:floors[0].level.elements,encounters:floors[0].level.encounters,
+            movers:floors[0].level.movers,range:grappleOverAcquisitionRadius(),scale:scale[version],
+            calibration:GRAPPLE_OVER_MOVEMENT})""")
+        self.assertEqual((g['range'],g['scale']),(540,.375))
+        es={e['id']:e for e in g['elements']}
+        for e in es.values():
+            self.assertTrue(e['purpose']);self.assertIn(e['role'],['bounce','solid','drag'])
+            e['encounters']=[c['id'] for c in g['encounters'] if e['id'] in c['elements']]
+            self.assertTrue(e['encounters'])
+            e['bounds']={k:e[a]+fn(v[a] for v in e['points']) for k,a,fn in [('left','x',min),('right','x',max),('top','y',min),('bottom','y',max)]}
+            e['width']=e['bounds']['right']-e['bounds']['left'];e['height']=e['bounds']['bottom']-e['bounds']['top']
+        local={id for c in g['encounters'] if c['id'].startswith('S06') for id in c['elements']}
+        self.assertEqual(len([c for c in g['encounters'] if c['id'].startswith('S06')]),4)
+        self.assertEqual({es[id]['role'] for id in local},{'bounce','solid'})
+        for m in g['movers']:
+            e=es[m['element']];b=dict(e['bounds']);axis=m['axis']
+            b['left' if axis=='x' else 'top']=m['min']
+            b['right' if axis=='x' else 'bottom']=m['max']+e['width' if axis=='x' else 'height']
+            m['sweptBounds']=b
+            self.assertGreaterEqual(m['max']-m['min'],max(360,2*e['width' if axis=='x' else 'height']))
+            self.assertTrue(6000<=m['periodMs']<=10000)
+        def distance(a,b):
+            return (max(a['left']-b['right'],b['left']-a['right'],0)**2+max(a['top']-b['bottom'],b['top']-a['bottom'],0)**2)**.5
+        clearances=[]
+        for z in [e for e in es.values() if e['role']=='drag']:
+            self.assertNotIn(z['id'],local)
+            self.assertGreaterEqual(z['width'],3*360);self.assertGreaterEqual(z['width']/z['height'],4)
+            for e in es.values():
+                if e['role']=='drag':continue
+                sweep=next((m['sweptBounds'] for m in g['movers'] if m['element']==e['id']),e['bounds'])
+                d=distance(z['bounds'],sweep);self.assertGreaterEqual(d+1e-8,540)
+                clearances.append(dict(zone=z['id'],collider=e['id'],clearance=d))
+        sweeps=[]
+        for m in g['movers']:
+            if m['element'] not in local:continue
+            for e in es.values():
+                if e['id']==m['element'] or e['role']=='drag':continue
+                other=next((v['sweptBounds'] for v in g['movers'] if v['element']==e['id']),e['bounds'])
+                d=distance(m['sweptBounds'],other);self.assertGreater(d,0,(m['element'],e['id']))
+                sweeps.append(dict(mover=m['element'],collider=e['id'],clearance=d))
+        g['localSweepClearances']=sweeps
+        widths=[es[n]['width'] for n in Task601Tests.exits]
+        self.assertEqual(widths,[800]*4)
+        self.assertTrue(all(e['role']=='bounce' for e in es.values() if e['id'].startswith('yard-')))
+        g.update(localIds=sorted(local),planningWidths=widths,clearances=clearances,
+            firstUseOrder=['green S01','blue S03','yellow S04'],localMovers=[m for m in g['movers'] if m['element'] in local],localYellow=[],hazards=[],
+            localRole='S06 green planning decks and four blue movers; earned range 540',
+            clutter='Removed undersized tower-exit-yellow; kept broad fall catch and lateral recovery')
+        cycle=p.evaluate("""()=>{const rows=[];for(let i=0;i<600;i++){
+            YARD.step(1);const e=floors[0].byId.get('tower-counterweight');
+            const dx=Math.max(e.x-ninja.x,ninja.x-e.x-360,0),dy=Math.max(e.y-ninja.y,ninja.y-e.y-80,0);
+            rows.push({tick:i+1,y:e.y,distance:Math.hypot(dx,dy)});}return rows}""")
+        streak=best=0
+        for row in cycle:
+            streak=streak+1 if row['distance']<=540 else 0;best=max(best,streak)
+        self.assertGreaterEqual(best,60)
+        g['firstTowerAcquisitionWindowMs']=best*1000/60;g['firstTowerCycle']=cycle
+        print(f'PASS acquisition: first tower mover contiguous window {best*1000/60:.1f}ms >=1000; complete 600-tick cycle')
+        self.write('objects.json',g)
+        previous=json.loads((ROOT/'artifacts/TASK-601/evidence-index.json').read_text())['config']['source_hashes']
+        unchanged={n:h for n,h in previous.items() if n not in ['mountain.js','tools/test_grapple_over_redesign.py']}
+        for n,h in unchanged.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        old=json.loads((ROOT/'artifacts/TASK-590/objects.json').read_text())
+        for e in old['elements']:
+            for key in ['x','y','points','role','purpose']:self.assertEqual(e[key],es[e['id']][key])
+        proofs=['artifacts/TASK-590/suppression.json','artifacts/TASK-590/recovery.json','artifacts/TASK-584/phases.json']
+        self.write('dependency.json',dict(unchanged=unchanged,changed=['mountain.js: remove tower-exit-yellow and update catch purpose','tools/test_grapple_over_redesign.py: additive Task602Tests'],
+            reused={n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in proofs},
+            geometryComparison='Earlier S04 objects match all coordinates, roles, purposes; S06 routes and recovery refreshed',
+            superseded='TASK-600/601 yellow crossing geometry is historical; undersized zone removed. Their traces are not claimed current.',
+            hashPolicy='HEAD-only changes do not invalidate identical tested hashes'))
+        print('PASS objects: four S06 encounters; every object purpose/role; green/blue/yellow order; no red; four 800-wide planning decks; earlier yellow clearances >=540 including full mover sweeps; S06 yellow/hazards=0')
+        print('PASS dependencies: unchanged runtime/support hashes; S04 geometry identical; suppression/recovery referenced by hash; S06 proof refreshed')
+
+    def test_02_continuous_capture(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:10306,y:-2440,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        p.evaluate('TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500)')
+        self.record(p,'S06 continuous from isolated entrance / earned 540 / 4x');self.step(p,600)
+        views=[];observations=[]
+        def capture(index,target):
+            p.evaluate('draw()')
+            obs=p.evaluate('t=>({tick:YARD.result().tick,target:t,client:YARD.client(t),landmark:LANDMARKS.frame.drawn,player:{x:ninja.x,y:ninja.y}})',target)
+            self.assertTrue(0<obs['client']['x']<1280 and 0<obs['client']['y']<720,obs)
+            self.assertEqual(obs['landmark'][0]['id'],'counterweight-tower')
+            observations.append(obs)
+            im=Image.open(io.BytesIO(p.screenshot())).convert('RGB')
+            ImageDraw.Draw(im).text((12,690),f'S06-0{index} actual continuous approach tick {obs["tick"]}',fill='white');views.append(im)
+        capture(1,Task597Tests.target);self.shot(p,Task597Tests.target,240)
+        self.assertEqual(self.until(p,'tower-observation'),925)
+        capture(2,dict(x=11031,y=-3178.2));self.shot(p,dict(x=11031,y=-3178.2),48)
+        self.assertEqual(self.until(p,'tower-shaft-landing',600),1073);self.step(p,22)
+        target=p.evaluate("()=>{const e=floors[0].byId.get('tower-rebound-carrier');return {x:e.x+10,y:e.y+40}}")
+        capture(3,target);self.shot(p,target,48)
+        self.assertEqual(self.until(p,'tower-rebound-landing',600),1308);self.step(p,1800-1308)
+        capture(4,Task600Tests.target);self.shot(p,Task600Tests.target,240);self.step(p,12)
+        self.shot(p,dict(x=13572,y=-3938.2),12)
+        self.assertEqual(self.until(p,'tower-exit',600),2139)
+        r=self.result(p)
+        exits=[dict(id=n,tick=self.landings(r,n)[0]['tick']) for n in Task601Tests.exits]
+        self.write('route.json',dict(exits=exits,inputs=r['inputs'],trace=r['rows'],resetsAfterStart=0,poseInjectionsAfterStart=0,
+            scope=self.config['simulation'],rangeBefore=540,rangeAfter=540))
+        self.write('approaches.json',dict(views=observations))
+        sheet=Image.new('RGB',(2560,1440))
+        for i,im in enumerate(views):sheet.paste(im,((i%2)*1280,(i//2)*720))
+        sheet.save(self.out/'approaches.jpg',quality=85)
+        overview=Image.new('RGB',(2560,720));sil=Image.new('RGB',(2560,720),'white')
+        for i,center in enumerate([10300,13200]):
+            p.evaluate('x=>{screen.x=width/.375/2-x;screen.y=height/.375/2+3100;draw()}',center)
+            overview.paste(Image.open(io.BytesIO(p.screenshot())).convert('RGB'),(1280*i,0))
+            f=p.evaluate("""()=>({elements:floors[0].elements.map(e=>({id:e.id,points:e.getPoints()})),
+                shape:GRAPPLE_OVER_LANDMARK_SHAPES[5](GRAPPLE_OVER_LANDMARKS.width,GRAPPLE_OVER_LANDMARKS.height),
+                landmark:{x:(10100+screen.x)*.375-GRAPPLE_OVER_LANDMARKS.width/2,y:(-2400+screen.y)*.375-GRAPPLE_OVER_LANDMARKS.height},
+                camera:{x:screen.x,y:screen.y},factor:1280/width})""")
+            tile=Image.new('RGB',(1280,720),'white');pen=ImageDraw.Draw(tile);k=f['factor']
+            def point(v):return ((v[0]+f['landmark']['x'])*k,(v[1]+f['landmark']['y'])*k)
+            for part in f['shape']['parts']:pen.polygon([point(v) for v in part],fill='#aaaaaa')
+            for line in f['shape']['lines']:pen.line([point(v) for v in line],fill='#888888',width=3)
+            for e in f['elements']:
+                pts=[((v['x']+f['camera']['x'])*.375*k,(v['y']+f['camera']['y'])*.375*k) for v in e['points']]
+                pen.polygon(pts,fill='black')
+                if e['id'].startswith('tower'):pen.text(pts[0],e['id'],fill='#555555')
+            pen.text((12,12),'Counterweight Tower / paired frame and suspended weight / plain silhouette',fill='black');sil.paste(tile,(1280*i,0))
+        overview.save(self.out/'overview.png');sil.save(self.out/'silhouette.png')
+        frames=p.evaluate('reviewFrames')
+        q=Task600Tests.page(self);self.record(q,'SEPARATE S06-04 fall and normal-input lateral recovery / 4x')
+        self.shot(q,Task600Tests.target,12)
+        catch=self.until(q,'tower-exit-catch',800);self.assertIsNotNone(catch)
+        self.shot(q,dict(x=13621,y=-3178.2),12)
+        returned=self.until(q,'tower-rebound-landing',800);self.assertIsNotNone(returned)
+        recovery=self.result(q)
+        self.write('recovery.json',dict(catchTick=catch,returnTick=returned,returnCollider='tower-rebound-landing',
+            trace=recovery['rows'],inputs=recovery['inputs'],resetsAfterStart=0,poseInjectionsAfterStart=0))
+        frames.extend(q.evaluate('reviewFrames'));q.context.close()
+        p.evaluate('a=>window.reviewFrames=a',frames);p.bring_to_front()
+        clip=p.evaluate('''async () => {
+            const c=document.createElement('canvas');c.width=1280;c.height=720;const ctx=c.getContext('2d');
+            const stream=c.captureStream(0),track=stream.getVideoTracks()[0],chunks=[];
+            const rec=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'});
+            rec.ondataavailable=e=>chunks.push(e.data);const ended=new Promise(r=>rec.onstop=r);rec.start();
+            for(const f of reviewFrames){const im=new Image();im.src=f.image;await im.decode();ctx.drawImage(im,0,0,1280,720);
+                ctx.fillStyle='white';ctx.fillText((f.label || 'S04 continuous from isolated entry')+' / 4x / tick '+f.tick,12,24);
+                track.requestFrame();await new Promise(r=>setTimeout(r,50));}
+            await new Promise(r=>setTimeout(r,200));rec.stop();await ended;stream.getTracks().forEach(t=>t.stop());
+            const blob=new Blob(chunks,{type:'video/webm'});return await new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.readAsDataURL(blob)})}''')
+        (self.out/'section.webm').write_bytes(base64.b64decode(clip))
+        decoded=p.evaluate('''async b64=>{const v=document.createElement('video');v.muted=true;v.src='data:video/webm;base64,'+b64;let frames=0;
+            const count=()=>{frames++;v.requestVideoFrameCallback(count)};v.requestVideoFrameCallback(count);await v.play();
+            await new Promise((resolve,reject)=>{v.onended=resolve;v.onerror=reject});return {frames,width:v.videoWidth,height:v.videoHeight}}''',clip)
+        self.assertGreater(decoded['frames'],100);self.assertEqual(decoded['width'],1280)
+        self.write('clip-decode.json',decoded)
+
+        print(f'PASS continuous: exits 925/1073/1308/2139; four on-screen actual approaches; earned 540; zero resets/injections; recovery {catch}->{returned}; decoded {decoded}')
+
+    def test_03_mover_phases(self):
+        cases=[]
+        for index in range(4):
+            for phase in [0,150,300,450]:
+                p=Task567Tests.page(self)
+                p.evaluate('s=>{Object.assign(ninja,s,{speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)}',Task601Tests.fixtures[index])
+                self.step(p,phase);self.step(p,600-phase)
+                if index==2:self.step(p,12)
+                self.shot(p,Task601Tests.tolerance_targets[index],Task601Tests.nominal_holds['desktop'][index])
+                tick=self.until(p,Task601Tests.exits[index],1200);self.assertIsNotNone(tick,(index,phase))
+                r=self.result(p)
+                cases.append(dict(encounter=f'S06-0{index+1}',arrivalPhase=phase/600,waitTicks=600-phase,
+                    landing=self.landings(r,Task601Tests.exits[index])[0],inputs=r['inputs']))
+                p.context.close()
+        self.write('phases.json',dict(scope='Separate isolated entries; quarter-cycle arrivals then safe wait to acquisition; not continuous gameplay',cases=cases))
+        self.assertEqual(len(cases),16)
+        print('PASS phases: 16 traversals; four quarter-cycle arrivals per blue mover, safe wait then trusted release onto useful exit')
+
+    def test_04_evidence_index(self):
+        (self.out/'review.md').write_text("TASK-602 Counterweight Tower composition review\n\nScope: built S06 only; one isolated entry then continuous production-input traversal. Separate labelled fall recovery. No claim of validated human enjoyment.\n\nReview locations: overview.png left panel contains the tower frame and first lift/observation deck; right panel contains the horizontal shafts, rebound shelf and final vertical lift. silhouette.png uses the same camera coordinates and plain filled gameplay geometry, showing the interrupted decks and broad planning shelves. approaches.jpg panels 1–4 are actual continuous approaches at unchanged camera scale 0.375. Target screen positions and landmark identity are in approaches.json.\n\nRemoved clutter: tower-exit-yellow was only 800 wide at 540 range, with inadequate terrain clearance. Removing this redundant fall brake preserves the broad catch and an open lateral recovery to the rebound deck. S04's original yellow introduction and suppression remain unchanged; dependency.json records exact evidence hashes and structural comparisons. Historical TASK-600/601 yellow crossing assertions are superseded, not edited or claimed revalidated.\n\nPacing: four 800-wide landing decks separate the lift, shaft, rebound and exit challenges. The continuous route uses a direct green deck release on encounter two; this is an observed alternative, not a claim that the shuttle is mandatory. The exit lift still requires deliberate release and a green edge correction. The clip includes an entire ten-second observation cycle and separately labelled fall/catch/normal-input recovery. No checkpoint, teleport, death or summit completion is introduced.\n")
+        required={'commands.log':'exact command, exit, identifiers, browser/viewport/revision/source hashes',
+            'tests.log':'four Task602Tests; no skips; OK','objects.json':'purposes, role order, four broad decks, full swept bounds/clearances',
+            'overview.png':'all four built encounters and Counterweight Tower suspended-weight landmark',
+            'silhouette.png':'plain structure, open gaps and broad landings','approaches.jpg':'four actual continuous approaches',
+            'approaches.json':'target screen positions and named landmark','route.json':'continuous ordered four-exit production traversal',
+            'phases.json':'four arrival phases per mover and safe waiting', 'recovery.json':'fall and normal-input return','section.webm':'continuous representative traversal plus labelled recovery',
+            'clip-decode.json':'decoded frames/dimensions','dependency.json':'unchanged dependencies and reused proof hashes',
+            'review.md':'image-located composition/pacing review','evidence-index.json':'artifact assertions and provenance'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith(('.png','.jpg')):
+                with Image.open(self.out/name) as im:im.load();self.assertGreaterEqual(im.width,1280)
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: all required files exist; JSON parses; images/video decode; retained evidence <200 MB')
+
