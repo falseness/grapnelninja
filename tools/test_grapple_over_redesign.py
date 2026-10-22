@@ -11825,3 +11825,199 @@ class Task628Tests(unittest.TestCase):
         size=sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file())
         self.assertLess(size,200_000_000)
         print(f'PASS index: {len(required)} artifacts exist; JSON parses; three PNGs decode; retained bytes={size} <200 MB')
+
+
+class Task629Tests(unittest.TestCase):
+    """Player-eye observations from archived local routes, not continuous gameplay."""
+    write = Task557Tests.write
+    archive = Task628Tests.archive
+
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        for name in ['tools/grapple_over_bypass.js', 'tools/grapple_over_readability.js']:
+            cls.config['source_hashes'][name] = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+        cls.config.update(viewports=[dict(width=1280,height=720,touch=False),dict(width=844,height=390,touch=True)],
+            simulation='Isolated recorded pre-press route poses, snapped production camera and original mover phase; not continuous gameplay. Separate actual-base input smoke.')
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK629_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    def page(self, touch=False):
+        p=Task622Tests.page(self)
+        if touch:
+            p.set_viewport_size(dict(width=844,height=390))
+            p.wait_for_timeout(100)  # Let the asynchronous resize finish before draw/capture.
+            p.context.new_cdp_session(p).send('Emulation.setTouchEmulationEnabled',dict(enabled=True,maxTouchPoints=1))
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_readability.js'))
+        return p
+
+    def specs(self):
+        specs=[];support='yard-entry'
+        for i,task in enumerate(Task628Tests.tasks):
+            data,ref=self.archive(task,'route.json')
+            rows=data.get('trace',data.get('rows'))
+            previous=0
+            for j,exit in enumerate(data['exits']):
+                # First recorded press after the preceding landing, including a
+                # same-tick press. Preserve its pose and moving-platform phase.
+                presses=[v['tick'] for v in data['inputs'] if v['type']=='mousedown' and previous<=v['tick']<exit['tick']]
+                tick=min(presses) if presses else previous
+                row=next(r for r in rows if r['tick']==max(1,tick))
+                landing=exit.get('id',exit.get('collider'))
+                specs.append(dict(id=f'S0{i+1}-0{j+1}',support=support,landing=landing,range=360 if i<4 else 540,
+                    source={**ref,'tick':tick},start=dict(phaseTick=max(1,tick),pose={k:row[k] for k in ['x','y','vx','vy']})))
+                previous=exit['tick'];support=landing
+        return specs
+
+    def assert_clear(self, row):
+        self.assertEqual(row['camera']['scale'],.375)
+        self.assertIsNotNone(row['target'],row['id'])
+        w,h=row['canvas']['width'],row['canvas']['height']
+        q=row['target']['point']
+        aim=dict(left=q['x']-4,right=q['x']+4,top=q['y']-4,bottom=q['y']+4)
+        row['mandatoryAimBounds']=aim
+        self.assertTrue(0<=aim['left']<aim['right']<=w and 0<=aim['top']<aim['bottom']<=h,row)
+        overlaps=[]
+        for box in row['hud']:
+            if (box['x']<aim['right'] and box['x']+box['width']>aim['left'] and
+                box['y']<aim['bottom'] and box['y']+box['height']>aim['top']):overlaps.append(box)
+        row['hudOverlaps']=overlaps
+        self.assertEqual(overlaps,[],row['id'])
+        b=row['landing']['bounds']
+        self.assertTrue(b['right']>0 and b['left']<w and 0<=b['top']<=h,row)
+        self.assertIn(row['target']['role'],['solid','bounce'])
+        self.assertIn(row['landing']['role'],['solid','bounce'])
+
+    def test_01_approaches_and_entries(self):
+        specs=self.specs();self.assertEqual(len(specs),32)
+        sheet=Image.new('RGB',(1280,32*200),'#111111');observations=[];entries=[]
+        entry_sheet=Image.new('RGB',(1280,8*380),'#111111')
+        for col,touch in enumerate([False,True]):
+            p=self.page(touch)
+            for i,spec in enumerate(specs):
+                row=p.evaluate('s=>READABILITY.view(s)',spec)
+                row.update(viewport='touch-844x390' if touch else 'desktop-1280x720',source=spec['source'])
+                observations.append(row)
+                self.write('approaches.json',dict(views=observations,scope=self.config['simulation']))
+                self.assert_clear(row)
+                tile=Image.open(io.BytesIO(p.locator('#canvas').screenshot())).convert('RGB')
+                self.assertGreater(max(hi-lo for lo,hi in tile.getextrema()),40,'blank gameplay capture')
+                tile.thumbnail((640,180));sheet.paste(tile,(col*640,i*200+20))
+                ImageDraw.Draw(sheet).text((col*640+8,i*200+4),spec['id']+' '+row['viewport']+' target='+row['target']['id'],fill='white')
+                if i%4==0:
+                    # Entry is the first archived row, distinct from a delayed
+                    # first press (e.g. moving freight/tower platforms).
+                    data,ref=self.archive(Task628Tests.tasks[i//4],'route.json')
+                    start=data.get('trace',data.get('rows'))[0]
+                    entry={**spec,'start':dict(phaseTick=1,pose={k:start[k] for k in ['x','y','vx','vy']})}
+                    measured=p.evaluate('s=>READABILITY.view(s)',entry)
+                    lm=measured['landmark'];b=lm['bounds'];c=measured['canvas']
+                    im=Image.open(io.BytesIO(p.locator('#canvas').screenshot())).convert('RGB')
+                    im.thumbnail((640,360));entry_sheet.paste(im,(col*640,(i//4)*380+20))
+                    ImageDraw.Draw(entry_sheet).text((col*640+8,(i//4)*380+4),spec['id'][:3]+' entry '+row['viewport'],fill='white')
+                    entries.append(dict(section=spec['id'][:3],viewport=row['viewport'],source=ref,
+                        pose=entry['start']['pose'],landmark=lm,canvas=c,
+                        useful='Distinct section silhouette identifies the structure containing the next route decks.'))
+                    self.write('landmarks.json',dict(entries=entries))
+                    self.assertTrue(0<=b['left']<b['right']<=c['width'] and 0<=b['top']<b['bottom']<=c['height'],entries[-1])
+        self.write('approaches.json',dict(views=observations,scope=self.config['simulation']))
+        self.write('landmarks.json',dict(entries=entries))
+        sheet.save(self.out/'contact-sheet.jpg',quality=90)
+        entry_sheet.save(self.out/'entry-sheet.jpg',quality=90)
+        self.assertEqual(len(entries),16)
+        self.assertEqual(len({e['landmark']['id'] for e in entries}),8)
+        print('PASS approaches: 64 actual recorded approach fixtures; target aiming bounds visible; HUD overlaps=0; landing top visible; solid/bounce roles recorded')
+        print('PASS landmarks: 16 entry views; 8 distinct section identities; complete landmark bounds in frame')
+
+    def test_02_palette_and_parallax_boundaries(self):
+        p=self.page();samples=[]
+        sheet=Image.new('RGB',(1200,14*180),'#111111')
+        # Sample all seven existing palette boundaries, including those above
+        # the replacement summit: renderer probes, not player traversal.
+        p.evaluate('''()=>{window.parallaxSamples=[];const original=drawGrappleOverParallax;
+            drawGrappleOverParallax=function(r,p){const used=original(r,p);parallaxSamples=used;return used}}''')
+        for boundary in range(1,8):
+            pair=[]
+            for col,delta in enumerate([-1,0,1]):
+                d=p.evaluate('''a=>{screen.x=-4000;screen.y=height/scale[version]/2+a.boundary*GRAPPLE_OVER_THEME.bandHeight+a.delta;
+                    draw();return {boundary:a.boundary,delta:a.delta,camera:{x:screen.x,y:screen.y},
+                        palette:visualEffects.background.palette,parallax:parallaxSamples}}''',dict(boundary=boundary,delta=delta))
+                pair.append(d)
+                im=Image.open(io.BytesIO(p.locator('#canvas').screenshot())).convert('RGB');im.thumbnail((400,160))
+                sheet.paste(im,(col*400,(boundary-1)*180+20))
+                ImageDraw.Draw(sheet).text((col*400+6,(boundary-1)*180+4),f'palette boundary {boundary} offset {delta}',fill='white')
+            self.assertEqual([d['palette']['from'] for d in pair],[boundary-1]*3)
+            self.assertEqual([d['palette']['to'] for d in pair],[boundary]*3)
+            self.assertAlmostEqual(pair[1]['palette']['t'],.5)
+            self.assertLess(pair[2]['palette']['t']-pair[0]['palette']['t'],.004)
+            for a,b in zip(pair,pair[1:]):
+                self.assertEqual(len(a['parallax']),2)
+                for x,y in zip(a['parallax'],b['parallax']):
+                    self.assertEqual(x['name'],y['name']);self.assertAlmostEqual(y['y']-x['y'],.375*x['factor'])
+                    self.assertEqual([m[0] for m in x['motifs']],[m[0] for m in y['motifs']])
+                    self.assertAlmostEqual(sum(m[1] for m in y['motifs']),1)
+            samples.extend(pair)
+        joins=[]
+        for index,task in enumerate(Task628Tests.tasks[1:]):
+            data,ref=self.archive(task,'route.json')
+            pose=data.get('trace',data.get('rows'))[0]
+            pair=[]
+            for col,delta in enumerate([-1,0,1]):
+                d=p.evaluate('''a=>{Object.assign(ninja,{x:a.x,y:a.y+a.delta,speedX:0,speedY:0});
+                    screen.trackGrappleOver(true);draw();return {delta:a.delta,camera:{x:screen.x,y:screen.y},
+                    palette:visualEffects.background.palette,parallax:parallaxSamples,landmark:LANDMARKS.frame.drawn[0].id}}''',dict(x=pose['x'],y=pose['y'],delta=delta))
+                pair.append(d)
+                im=Image.open(io.BytesIO(p.locator('#canvas').screenshot())).convert('RGB');im.thumbnail((400,160))
+                sheet.paste(im,(col*400,(index+7)*180+20))
+                ImageDraw.Draw(sheet).text((col*400+6,(index+7)*180+4),f'S0{index+1}/S0{index+2} shared entry offset {delta}',fill='white')
+            for a,b in zip(pair,pair[1:]):
+                self.assertEqual(a['palette']['from'],b['palette']['from'])
+                self.assertEqual(a['palette']['to'],b['palette']['to'])
+                self.assertLess(abs(a['palette']['t']-b['palette']['t']),.004)
+                for x,y in zip(a['parallax'],b['parallax']):
+                    self.assertLessEqual(abs(x['y']-y['y']),.375*x['factor']+1e-8)
+            joins.append(dict(boundary=f'S0{index+1}/S0{index+2}',source=ref,pose=pose,samples=pair))
+        self.write('transitions.json',dict(samples=samples,sectionJoins=joins,scope='Seven existing altitude palette boundaries and seven actual shared section entries ±1 world unit; 42 isolated renderer samples, no full climb',
+            explanation='Palette bands are altitude-based, not replacement section IDs. Landmark identities are discrete section cues; palette/parallax blends remain continuous.'))
+        sheet.save(self.out/'boundary-strip.jpg',quality=90)
+        print('PASS transitions: 7 palette boundaries and 7 section joins; 42 samples; smooth palette weights; 2 parallax layers translate by factor*0.375 per world unit; no motif discontinuity')
+
+    def test_03_physics_and_dependencies(self):
+        p=self.page();Task567Tests.press(self,p);Task567Tests.step(self,p,30);p.mouse.up();Task567Tests.step(self,p,75)
+        r=Task567Tests.result(self,p);self.assertTrue(Task567Tests.landings(r,'yard-landing'))
+        self.write('smoke.json',dict(inputs=r['inputs'],contacts=[v for v in r['rows'] if v['contacts']]))
+        old,ref=self.archive(628,'evidence-index.json')
+        hashes={n:h for n,h in old['config']['source_hashes'].items() if n!='tools/test_grapple_over_redesign.py'}
+        for n,h in hashes.items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        archives=[]
+        for task in [623,627,628]:
+            path=ROOT/f'artifacts/TASK-{task}/tests.log';raw=path.read_text()
+            self.assertIn('\nOK\n',raw);self.assertRegex(raw,r'Ran [1-9][0-9]* tests? in ')
+            archives.append(dict(path=str(path.relative_to(ROOT)),sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                results=[v for v in raw.splitlines() if v.startswith('Ran ') or v=='OK']))
+        self.write('geometry-dependency.json',dict(geometryUnchanged=True,runtimeUnchanged=True,unchangedSourceHashes=hashes,
+            baseline=ref,archives=archives,changedSubsystems=['additive Task629Tests and observation helper'],
+            historical='TASK-623 updated S05-S07 route contacts supersede older geometry coverage. Older poses used only as isolated current-geometry observations; no historical continuous-route claim.',
+            hashPolicy='HEAD movement alone does not invalidate identical tested source hashes'))
+        print(f'PASS dependencies: geometry/runtime unchanged; {len(hashes)} source hashes match; archived nonzero TASK-623/627/628 suites; production input lands on yard-landing')
+
+    def test_04_index(self):
+        ids=[t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(Task629Tests)]
+        self.assertEqual(len(ids),4);self.assertTrue(all('.Task629Tests.' in t for t in ids))
+        (self.out/'collected-tests.log').write_text('\n'.join(ids)+'\nCOLLECTED 4\n')
+        required={'commands.log':'exact invocation, exit status, browser/viewports, revision and source hashes',
+            'tests.log':'four exact Task629Tests, no skips', 'approaches.json':'64 measured target/landing/HUD views',
+            'entry-sheet.jpg':'16 actual section entry captures','contact-sheet.jpg':'64 labelled player-eye images','landmarks.json':'16 entry views, 8 in-frame identities',
+            'transitions.json':'21 boundary samples with palette and parallax measurements',
+            'boundary-strip.jpg':'visual comparison around seven palette boundaries','geometry-dependency.json':'unchanged runtime/geometry hashes and archived expensive regressions',
+            'smoke.json':'trusted production input and upward landing contacts','collected-tests.log':'exact class/method identifiers',
+            'evidence-index.json':'artifact assertion map and tested configuration'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith('.jpg'):
+                with Image.open(self.out/name) as im:im.load();self.assertGreater(im.width,1000)
+        size=sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file())
+        self.assertLess(size,200_000_000)
+        print(f'PASS index: {len(required)} artifacts exist; JSON parses; 3 JPEGs decode; retained bytes={size} <200 MB')
