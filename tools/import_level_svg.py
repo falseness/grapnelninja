@@ -42,7 +42,7 @@ FINISH_ATTRS = {'id', 'data-marker', 'x', 'y', 'width', 'height'} | DISPLAY
 ROUTE_ATTRS = {
     'section': ({'id', 'encounters'}, {'label-key'}),
     'encounter': ({'id', 'elements'}, set()),
-    'transfer': ({'id', 'from', 'to', 'encounter', 'gap-percent'}, set()),
+    'transfer': ({'id', 'from', 'to', 'encounter', 'gap-percent'}, {'guide'}),
 }
 IGNORED = (SVG + 'title', SVG + 'desc')
 
@@ -482,8 +482,24 @@ class Importer:
             if gap is None or not math.isfinite(gap) or gap < 0:
                 self.error('InvalidTransfer', t, 'gap-percent=%r must be a finite number >= 0' % raw)
                 continue
-            transfers.append({'id': t.get('id'), 'from': source, 'to': target, 'encounter': t.get('encounter'), 'gapPercent': plain(gap)})
+            transfer = {'id': t.get('id'), 'from': source, 'to': target, 'encounter': t.get('encounter'), 'gapPercent': plain(gap)}
+            if t.get('guide') is not None:
+                guide = self.guide(t)
+                if guide is None:
+                    continue
+                transfer['guide'] = guide
+            transfers.append(transfer)
         return sections, encounters, transfers
+
+    def guide(self, t):
+        """Optional display guide: 8 finite world numbers -> four [x, y] Bezier points."""
+        raw = t.get('guide')
+        values = raw.split()
+        if len(values) != 8 or not all(NUMBER.match(v) and math.isfinite(float(v)) for v in values):
+            self.error('InvalidTransfer', t, 'guide=%r must be 8 finite numbers (x0 y0 x1 y1 x2 y2 x3 y3)' % raw)
+            return None
+        nums = [plain(float(v)) for v in values]
+        return [nums[i:i + 2] for i in range(0, 8, 2)]
 
 
 def import_svg(data):

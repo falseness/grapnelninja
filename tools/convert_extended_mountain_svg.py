@@ -87,6 +87,11 @@ def curve(r, frags):
     return [a, c1, c2, b]
 
 
+def guide(r, frags):
+    """Optional gn:transfer guide value: the route curve() in world units."""
+    return ' '.join(num(v) for p in curve(r, frags) for v in p)
+
+
 class Canvas:
     """Annotation drawing in concept canvas pixels (same calls as the concept)."""
 
@@ -160,7 +165,7 @@ def draw_route(c, r, frags, T):
     c.text(mx, my + 19, f"{r['distance']:.0f}u clear gap", 13, '#96b4be', 400, 'middle')
 
 
-def build(meas):
+def build(meas, guides=False):
     frags = meas['fragments']
     rows = meas['encounters']
     bands = meas['yellowBands']
@@ -303,7 +308,8 @@ def build(meas):
         els = roles[r['fromFragment']][1] + roles[r['toFragment']][1]
         out.append(f'<gn:encounter id="{r["id"]}" elements="{" ".join(els)}"/>')
     for r in rows:
-        out.append(f'<gn:transfer id="T{r["number"]:02d}" from="{r["fromFragment"]}" to="{r["toFragment"]}" encounter="{r["id"]}" gap-percent="{num(r["percent"])}"/>')
+        extra = f' guide="{guide(r, frags)}"' if guides else ''
+        out.append(f'<gn:transfer id="T{r["number"]:02d}" from="{r["fromFragment"]}" to="{r["toFragment"]}" encounter="{r["id"]}" gap-percent="{num(r["percent"])}"{extra}/>')
     out.append('</metadata>')
     out.append('</svg>')
     return '\n'.join(out) + '\n'

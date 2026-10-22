@@ -5,6 +5,12 @@
   "expectedOutput": "valid.expected.json"
  },
  {
+  "file": "valid-guide.svg",
+  "expect": "accept",
+  "expectedOutput": "valid-guide.expected.json",
+  "change": "valid.svg plus guide on T01"
+ },
+ {
   "file": "invalid-transformed-gameplay.svg",
   "expect": "reject",
   "category": "TransformedGameplay",
@@ -69,5 +75,29 @@
   "expect": "reject",
   "category": "MalformedPolygon",
   "change": "P0-post has only two vertices"
+ },
+ {
+  "file": "invalid-guide-count.svg",
+  "expect": "reject",
+  "category": "InvalidTransfer",
+  "change": "guide has 7 numbers instead of 8"
+ },
+ {
+  "file": "invalid-guide-nonnumeric.svg",
+  "expect": "reject",
+  "category": "InvalidTransfer",
+  "change": "guide x1 is the word \"left\""
+ },
+ {
+  "file": "invalid-guide-nonfinite.svg",
+  "expect": "reject",
+  "category": "InvalidTransfer",
+  "change": "guide y2 is 1e999 (overflows to infinity)"
+ },
+ {
+  "file": "invalid-guide-unknown-fragment.svg",
+  "expect": "reject",
+  "category": "MissingReference",
+  "change": "guided transfer from P9, which is not a fragment"
  }
 ]

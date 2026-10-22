@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:gn="urn:grapnelninja:level-svg:1" data-level-format="grapnelninja-level" data-level-version="1" data-layout-id="fixture-valid-v1" data-grapple-range="540" data-bounds="-200 -1400 1600 400" viewBox="-200 -1400 1800 1800" width="900" height="900">
+  <title>Level SVG v1 valid fixture</title>
+  <g id="annotations" data-layer="annotations" font-family="Arial,sans-serif">
+    <rect id="background" x="-200" y="-1400" width="1800" height="1800" fill="#09141e"/>
+    <g id="gap-label" transform="translate(562 -60) scale(2)">
+      <text x="0" y="0" font-size="10" fill="#e8c493" text-anchor="middle">60%</text>
+      <rect id="annotation-decoy" x="-5" y="2" width="10" height="4" data-role="solid" data-grapplable="true"/>
+    </g>
+    <path id="route-curve" d="M300 -10 C500 -400 700 -400 900 -60" fill="none" stroke="#eaf3ed" stroke-dasharray="6 8"/>
+  </g>
+  <g id="geometry" data-layer="geometry">
+    <g id="P0" data-fragment="true">
+      <rect id="P0-shelf" x="0" y="0" width="400" height="60" data-role="solid" data-grapplable="true" fill="#182028"/>
+      <polygon id="P0-post" points="100,-150 160,-150 160,0 100,0" data-role="solid" data-grapplable="true"/>
+    </g>
+    <g id="P1" data-fragment="true">
+      <polygon id="P1-ramp" points="724,-40 1124,-80 1124,60 724,60" data-role="solid" data-grapplable="true" data-name="Ramp"/>
+    </g>
+    <rect id="ceiling-hold" x="300" y="-700" width="500" height="80" data-role="solid" data-grapplable="true"/>
+    <polygon id="bounce-pad" points="900,-400 1300,-300 1300,-240 900,-340" data-role="bounce" data-grapplable="true"/>
+    <rect id="hazard-spikes" x="1300" y="-900" width="200" height="40" data-role="hazard" data-grapplable="false"/>
+    <rect id="drag-brake" x="-100" y="150" width="1200" height="60" data-role="drag" data-grapplable="false" fill="#66551f"/>
+    <rect id="catch-floor" x="-200" y="340" width="1800" height="60" data-role="solid" data-grapplable="true"/>
+  </g>
+  <g id="markers" data-layer="markers">
+    <circle id="spawn" data-marker="spawn" cx="200" cy="-20" r="18" fill="#8ad3b7"/>
+    <rect id="finish" data-marker="finish" x="1200" y="-1300" width="200" height="100" fill="none" stroke="#efd571"/>
+  </g>
+  <metadata id="level-route">
+    <gn:section id="S01" encounters="E01 E02" label-key="climb.section.S01"/>
+    <gn:encounter id="E01" elements="P0-shelf P0-post P1-ramp"/>
+    <gn:encounter id="E02" elements="ceiling-hold bounce-pad hazard-spikes"/>
+    <gn:transfer id="T01" from="P0" to="P1" encounter="E01" gap-percent="60" guide="300 -10 500 -400 700 -400 924.5"/>
+  </metadata>
+</svg>

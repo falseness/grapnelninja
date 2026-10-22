@@ -2,7 +2,8 @@
 
     python3 -m unittest discover -s tools -p test_level_svg_import.py -v
 
-Set LEVEL_SVG_IMPORT_EVIDENCE_DIR to also write determinism.json there.
+Set LEVEL_SVG_IMPORT_EVIDENCE_DIR to also write determinism.json and
+roundtrip.json (transfer guides) there.
 """
 from contextlib import ExitStack
 import hashlib
@@ -56,7 +57,7 @@ class ImportCase(unittest.TestCase):
 class FixtureTests(ImportCase):
     def test_manifest_fixtures(self):
         manifest = json.loads((FIXTURES / 'manifest.json').read_text())
-        self.assertEqual(len(manifest), 12)
+        self.assertEqual(len(manifest), 17)
         for entry in manifest:
             with self.subTest(fixture=entry['file']):
                 data = (FIXTURES / entry['file']).read_bytes()
@@ -421,6 +422,145 @@ class CliTests(ImportCase):
         r = run_cli('--input', str(self.dir / 'missing.svg'), '--output', str(self.dir / 'o.json'))
         self.assertEqual(r.returncode, 1)
         self.assertIn('ERROR InputError', r.stderr)
+
+
+class GuideTests(ImportCase):
+    """Optional gn:transfer guide (docs/level-svg-format.md §4.6): display data only."""
+    GUIDE = '300 -10 500 -400 700 -400 924.5 -50'
+    TRANSFER = '<gn:transfer id="T01" from="P0" to="P1" encounter="E01" gap-percent="60"/>'
+
+    def with_guide(self, value, text=VALID):
+        return edit(text, self.TRANSFER, self.TRANSFER[:-2] + ' guide="%s"/>' % value)
+
+    @staticmethod
+    def without_transfer_guides(level):
+        out = json.loads(json.dumps(level))
+        for t in out['svgFormat']['transfers']:
+            t.pop('guide', None)
+        return out
+
+    def test_valid_guide(self):
+        level = import_svg(self.with_guide(self.GUIDE).encode())
+        self.assertEqual(level['svgFormat']['transfers'], [{'id': 'T01', 'from': 'P0', 'to': 'P1', 'encounter': 'E01',
+                                                            'gapPercent': 60, 'guide': [[300, -10], [500, -400], [700, -400], [924.5, -50]]}])
+        # Comma-free whitespace variants and exponents parse to the same world numbers.
+        spaced = import_svg(self.with_guide('  3e2\t-10 500 -4E2  700 -400\n924.50 -5e1 ').encode())
+        self.assertEqual(spaced, level)
+
+    def test_legacy_transfer_without_guide(self):
+        level = import_svg(VALID.encode())
+        self.assertNotIn('guide', level['svgFormat']['transfers'][0])
+        self.assertEqual(dumps(level).encode(), (FIXTURES / 'valid.expected.json').read_bytes())
+
+    def test_guide_changes_nothing_else(self):
+        plain_level = import_svg(VALID.encode())
+        guided = import_svg(self.with_guide(self.GUIDE).encode())
+        self.assertEqual(self.without_transfer_guides(guided), plain_level)
+        for key in ('bounds', 'spawn', 'finish', 'elements', 'movers', 'sections', 'encounters'):
+            self.assertEqual(guided[key], plain_level[key], key)
+        self.assertEqual(guided['svgFormat']['fragments'], plain_level['svgFormat']['fragments'])
+        # The route-curve annotation path is still not gameplay data.
+        self.assertNotIn('route-curve', json.dumps(guided))
+        self.assertNotIn('annotation-decoy', {e['id'] for e in guided['elements']})
+
+    def test_malformed_guides(self):
+        bad = {
+            'empty': '', 'blank': '   ', 'seven': '300 -10 500 -400 700 -400 924.5',
+            'nine': self.GUIDE + ' 1', 'word': '300 -10 left -400 700 -400 924.5 -50',
+            'commas': '300,-10 500,-400 700,-400 924.5,-50', 'nan': '300 -10 500 nan 700 -400 924.5 -50',
+            'inf': '300 -10 500 -400 inf -400 924.5 -50', 'overflow': '300 -10 500 -400 700 1e999 924.5 -50',
+            'hex': '0x1 -10 500 -400 700 -400 924.5 -50', 'unit': '300px -10 500 -400 700 -400 924.5 -50',
+        }
+        for name, value in bad.items():
+            with self.subTest(case=name):
+                err = self.assertRejects(self.with_guide(value), 'InvalidTransfer', 'T01')
+                self.assertTrue(any('guide=' in m for _, _, m in err.errors), str(err))
+
+    def test_unknown_fragment_with_guide(self):
+        text = edit(self.with_guide(self.GUIDE), 'from="P0"', 'from="P9"')
+        self.assertRejects(text, 'MissingReference', 'T01')
+        text = edit(self.with_guide(self.GUIDE), 'to="P1"', 'to="ceiling-hold"')
+        self.assertRejects(text, 'MissingReference', 'T01')
+
+    def test_guide_on_other_route_nodes_rejected(self):
+        text = edit(VALID, '<gn:encounter id="E01"', '<gn:encounter guide="%s" id="E01"' % self.GUIDE)
+        self.assertRejects(text, 'UnknownAttribute', 'E01')
+
+    def test_cli_guide_failures_keep_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp, 'level.json')
+            sentinel = b'{"pre-existing":true}\n'
+            for fixture in sorted(FIXTURES.glob('invalid-guide-*.svg')):
+                with self.subTest(fixture=fixture.name):
+                    out.write_bytes(sentinel)
+                    r = run_cli('--input', str(fixture), '--output', str(out))
+                    self.assertEqual((r.returncode, r.stdout), (1, ''))
+                    self.assertIn('ERROR ', r.stderr)
+                    self.assertEqual(out.read_bytes(), sentinel)
+                    self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ['level.json'])
+            self.assertEqual(len(list(FIXTURES.glob('invalid-guide-*.svg'))), 4)
+
+    def test_extended_roundtrip(self):
+        import convert_extended_mountain_svg as conv
+        meas_path = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
+        meas = json.loads(meas_path.read_text())
+        plain_svg, guided_svg = conv.build(meas), conv.build(meas, guides=True)
+        self.assertNotIn(' guide=', plain_svg)
+        self.assertEqual(guided_svg.count(' guide="'), 24)
+        plain_level = import_svg(plain_svg.encode())
+        runs = [dumps(import_svg(guided_svg.encode())) for _ in range(2)]
+        self.assertEqual(runs[0], runs[1])
+        level = json.loads(runs[0])
+        fragments = {f['id'] for f in level['svgFormat']['fragments']}
+        rows = {'T%02d' % r['number']: r for r in meas['encounters']}
+        frags = meas['fragments']
+        checks = []
+        for t in level['svgFormat']['transfers']:
+            r = rows[t['id']]
+            expected = [list(p) for p in conv.curve(r, frags)]
+            self.assertIn(t['from'], fragments)
+            self.assertIn(t['to'], fragments)
+            self.assertEqual((t['from'], t['to']), (r['fromFragment'], r['toFragment']))
+            self.assertEqual(t['guide'], expected)
+            # Endpoints are the measured departure / next-panel contacts (encounters[].flight).
+            self.assertEqual([t['guide'][0], t['guide'][-1]], [list(p) for p in r['flight']])
+            checks.append({'id': t['id'], 'from': t['from'], 'to': t['to'], 'guide': t['guide'],
+                           'expectedFromCurve': expected, 'equal': t['guide'] == expected,
+                           'flightContacts': r['flight'], 'startIsFromContact': t['guide'][0] == list(r['flight'][0]),
+                           'endIsToContact': t['guide'][-1] == list(r['flight'][1])})
+        self.assertEqual(len(checks), 24)
+        stripped = self.without_transfer_guides(level)
+        self.assertEqual(stripped, plain_level)
+        same = {k: level[k] == plain_level[k] for k in ('bounds', 'spawn', 'finish', 'elements', 'movers', 'sections', 'encounters')}
+        same['fragments'] = level['svgFormat']['fragments'] == plain_level['svgFormat']['fragments']
+        self.assertTrue(all(same.values()), same)
+        roles = sorted({(e['role'], e['grapplable']) for e in level['elements']})
+        annotation_paths_in_output = [w for w in ('annotations', 'route-curve', '<path') if w in runs[0]]
+        self.assertEqual(annotation_paths_in_output, [])
+        small = import_svg(self.with_guide(self.GUIDE).encode())
+        small_runs = [dumps(import_svg(self.with_guide(self.GUIDE).encode())) for _ in range(2)]
+        if EVIDENCE:
+            record = {
+                'contract': 'gn:transfer guide="x0 y0 x1 y1 x2 y2 x3 y3" -> svgFormat.transfers[].guide [[x,y]x4], world units',
+                'extended': {
+                    'measurements': str(meas_path.relative_to(ROOT)), 'measurementsSha256': sha(meas_path.read_bytes()),
+                    'guidedSvgSha256': sha(guided_svg), 'plainSvgSha256': sha(plain_svg),
+                    'importRun1Sha256': sha(runs[0]), 'importRun2Sha256': sha(runs[1]), 'twoImportsByteIdentical': runs[0] == runs[1],
+                    'plainImportSha256': sha(dumps(plain_level)), 'strippedGuidedEqualsPlain': stripped == plain_level,
+                    'identicalWithAndWithoutGuides': same, 'roles': roles,
+                    'annotationMarkersInOutput': annotation_paths_in_output,
+                    'transfers': checks, 'allGuidesEqualCurve': all(c['equal'] for c in checks),
+                    'allEndpointsAreContacts': all(c['startIsFromContact'] and c['endIsToContact'] for c in checks),
+                    'allFromToResolve': all(c['from'] in fragments and c['to'] in fragments for c in checks),
+                },
+                'fixture': {
+                    'input': 'tools/fixtures/level_svg/valid-guide.svg', 'guideAttribute': self.GUIDE,
+                    'guide': small['svgFormat']['transfers'][0]['guide'],
+                    'twoImportsByteIdentical': small_runs[0] == small_runs[1], 'importSha256': sha(small_runs[0]),
+                    'strippedEqualsValidWithoutGuide': self.without_transfer_guides(small) == import_svg(VALID.encode()),
+                },
+            }
+            Path(EVIDENCE, 'roundtrip.json').write_text(json.dumps(record, separators=(',', ':')) + '\n')
 
 
 class LoaderTests(unittest.TestCase):

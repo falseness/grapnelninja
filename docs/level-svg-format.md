@@ -167,6 +167,29 @@ examples). Their document order is significant and is preserved.
 - `gn:transfer`: `from` and `to` are required fragment IDs, `from ≠ to`.
   `encounter` is a required encounter ID. `gap-percent` is required, finite
   and `≥ 0`: the authored minimum-gap claim (§7).
+- `gn:transfer` may carry an optional `guide` (additive, still format v1):
+  a display-only cubic Bezier from the departure contact on `from` to the
+  contact on the next panel `to`. The value is exactly 8 whitespace-separated
+  finite numbers `x0 y0 x1 y1 x2 y2 x3 y3` in **world units**, in the same
+  coordinate space as the geometry layer (no transform or viewBox scaling is
+  applied). `(x0,y0)` is the start point, `(x1,y1)` and `(x2,y2)` are the
+  control points and `(x3,y3)` is the end point. Number syntax follows §2,
+  with no commas and no units. A wrong count, or any non-numeric, `nan`,
+  `inf` or overflowing value, is `InvalidTransfer`. A missing `guide` is
+  valid and means "no arrow". `guide` is allowed only on `gn:transfer`.
+  Annotation `<path>`s, including drawn route curves, are never read as
+  guides or as any other gameplay data. The guide gives no physics,
+  collision or reachability guarantee.
+
+  ```xml
+  <gn:transfer id="T01" from="P0" to="P1" encounter="E01" gap-percent="60"
+               guide="300 -10 500 -400 700 -400 924.5 -50"/>
+  ```
+
+  `tools/convert_extended_mountain_svg.py` writes guides only when `build(meas,
+  guides=True)` is called. The points come from its route `curve()`, which
+  starts and ends at the encounter's `flight` contacts. The default output
+  has no guides.
 - At least one section, one encounter and one transfer. An empty kind is
   `MissingMetadata`.
 - Any unresolved reference is `MissingReference`. An encounter that no
@@ -191,7 +214,7 @@ Output object, with keys in this order:
 | `encounters` | `gn:encounter` → `{id, elements}` | unique ID, `MissingReference` on elements |
 | `elements` | geometry shapes in document (pre-order) order → `{id, x, y, role, grapplable, points}` | unique ID, role in set, ≥ 3 finite points, no repeated consecutive vertex, no self-intersection, non-zero area |
 | `movers` | always `[]` (v1 has no movers) | collection must be an array |
-| `svgFormat` | `{version:1, grappleRange:540, fragments:[{id, elements}], transfers:[{id, from, to, encounter, gapPercent}]}` | ignored by the loader. Kept so geometry checks (TASK-649) can test transfers |
+| `svgFormat` | `{version:1, grappleRange:540, fragments:[{id, elements}], transfers:[{id, from, to, encounter, gapPercent[, guide]}]}` | ignored by the loader. Kept so geometry checks (TASK-649) can test transfers. `guide`, present only when the SVG has one, is `[[x0,y0],[x1,y1],[x2,y2],[x3,y3]]` in world units. Integral values are written as integers (`plain()`) |
 
 Element conversion:
 
@@ -304,7 +327,7 @@ gapPercent     = distance(A, B) / 540 * 100
 | `InvalidBounds` | bad world bounds or finish box |
 | `MissingSpawn` / `DuplicateSpawn` / `MissingFinish` / `DuplicateFinish` | §4.5 |
 | `MissingReference` | unresolved section/encounter/transfer reference, or an orphan encounter |
-| `InvalidTransfer` | `from = to`, or a bad `gap-percent` |
+| `InvalidTransfer` | `from = to`, a bad `gap-percent`, or a malformed `guide` |
 
 ## Fixtures
 
@@ -314,6 +337,11 @@ gapPercent     = distance(A, B) / 540 * 100
   annotation, one transfer.
 - `valid.expected.json`: the exact §5 output for `valid.svg`, accepted by
   `validateFixedLevel`.
+- `valid-guide.svg` / `valid-guide.expected.json`: `valid.svg` with a
+  `guide` on T01. The output is `valid.expected.json` plus the transfer's
+  `guide`.
+- `invalid-guide-{count,nonnumeric,nonfinite,unknown-fragment}.svg`: bad
+  guides, and a guided transfer whose `from` is not a fragment.
 - `invalid-*.svg`: each file breaks exactly one rule.
   `manifest.json` lists every fixture with its expected outcome or
   diagnostic category.
