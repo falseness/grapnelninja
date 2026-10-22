@@ -85,6 +85,10 @@ DRIVE = '''(kind) => {
     // approach: the centre line through segment 0, then 0.6 view heights
     // into segment 1
     const pts = [[ninja.x, segs[0].y0], [segs[0].x1, segs[0].y1], [seg.x0 + d.x * 0.6 * H, seg.y0 + d.y * 0.6 * H]]
+    // the run placed the view on the ninja's start (MomentumScreen.place,
+    // TASK-159): place it again where the drive puts the ninja, so the first
+    // cycle's placement is no camera move
+    ninja.x = pts[0][0]; ninja.y = pts[0][1]; screen.place()
     for (let k = 0; k + 1 < pts.length; ++k) {
         const [x0, y0] = pts[k], [x1, y1] = pts[k + 1]
         const len = Math.hypot(x1 - x0, y1 - y0), ux = (x1 - x0) / len, uy = (y1 - y0) / len

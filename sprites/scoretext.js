@@ -104,9 +104,12 @@ let scoreText =
             state = Object.assign({}, state, {hearts: 1, hpText: '\u00d7' + state.hp})
             layout = this.measureMomentumHud(state, hudFontSize)
         }
-        // Text widths are not exactly linear in the font size: refit once more
+        // Text widths are not exactly linear in the font size: refit once more.
+        // Never below half the HUD size: with no room left (a band shut by
+        // the record) a 0 px heart sprite would throw in drawImage
         for (let i = 0; i < 2 && layout.width > room; ++i)
-            layout = this.measureMomentumHud(state, layout.fontSize * Math.max(0, room) / layout.width)
+            layout = this.measureMomentumHud(state, Math.max(hudFontSize / 2,
+                layout.fontSize * room / layout.width))
 
         const fontSize = layout.fontSize
         const size = fontSize * 0.8
