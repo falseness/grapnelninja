@@ -4392,3 +4392,153 @@ class Task585Tests(unittest.TestCase):
         self.write('evidence-index.json',dict(artifacts=required,config=self.config,
             hashPolicy='Identical source hashes remain valid after HEAD-only commit',scope=self.config['simulation']))
         print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; unchanged physics/input; evidence index written')
+
+
+class Task586Tests(unittest.TestCase):
+    """S04-02 local fixture on the live first bridge landing; never a base-to-summit run."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Isolated entry on live viaduct-landing; continuous production inputs/physics through S04-02 or its recovery; no base-to-summit claim'
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task581Tests.until
+    target = dict(x=8420,y=-1679)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:8160,y:-1540,speedX:0,speedY:0});screen.trackGrappleOver(true)')
+        return p
+
+    def capture(self,p,name):
+        p.evaluate('screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw()')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'broken-viaduct')
+        self.assertEqual(p.evaluate('I18N.t(replacementSection().labelKey)'),'Broken Viaduct')
+        p.evaluate('''() => {let label=document.createElement('div');label.id='proof-label';
+            label.textContent='S04-02 isolated entry fixture / production physics / '+YARD.result().tick+' ticks';
+            label.style='position:fixed;left:12px;bottom:12px;color:white;background:#111;padding:8px;font:14px sans-serif;z-index:9999';
+            document.body.appendChild(label)}''')
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        p.evaluate("document.getElementById('proof-label').remove()")
+        with Image.open(self.out/name) as im:
+            im.load();self.assertEqual(im.size,(1280,720))
+
+    def test_01_geometry_and_release(self):
+        p=self.page()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S04-02'),range:grappleOverAcquisitionRadius(),
+            scale:scale[version],target,reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),
+            calibrated:GRAPPLE_OVER_MOVEMENT,finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][-1]['encounters'],['S04-01','S04-02'])
+        self.assertEqual([s['id'] for s in g['sections']],['S01','S02','S03','S04'])
+        self.assertEqual(g['range'],360);self.assertEqual(g['scale'],.375)
+        self.assertLess(g['reach'],360);self.assertIsNone(g['finish'])
+        for e in g['elements']:
+            self.assertTrue(e['purpose']);self.assertNotEqual(e['role'],'hazard')
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+        es={e['id']:e for e in g['elements']}
+        self.assertNotIn('preview-unbuilt',es)
+        for id in g['encounter']['elements']:
+            e=es[id]
+            if id not in ['viaduct-second-anchor','viaduct-recovery-wall']:self.assertGreaterEqual(e['width'],540)
+            self.assertEqual(e['role'],'drag' if id=='viaduct-yellow' else 'bounce')
+        self.assertEqual([e['id'] for e in g['elements'] if e['role']=='drag'],['viaduct-yellow'])
+        self.assertFalse(es['viaduct-yellow']['grapplable'])
+        g.update(gap=es['viaduct-second-landing']['x']-(es['viaduct-landing']['x']+es['viaduct-landing']['width']),
+            yellowClearance=es['viaduct-yellow']['y']-(es['viaduct-second-landing']['y']+60),
+            connection='Shared live viaduct-landing collider; no teleport or handoff reset',
+            localCatch='viaduct-catch',recovery=['viaduct-catch','viaduct-recovery-wall','freight-exit-catch','viaduct-landing'],
+            calibrationNote='TASK-564 broad exposed bridge; TASK-560 opening gap 252/release 30 translated to shared exit; first yellow only below S04 route; 150-thick band tested here')
+        self.assertEqual(g['gap'],252);self.assertGreaterEqual(g['yellowClearance'],540)
+        g['entryYellowClearance']=es['viaduct-yellow']['y']-(es['viaduct-landing']['y']+60)
+        self.assertGreaterEqual(g['entryYellowClearance'],540)
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.press(p,self.target);self.step(p,30);p.mouse.up()
+        landing=self.until(p,'viaduct-second-landing');self.assertEqual(landing,105)
+        r=self.result(p);streak=best=0
+        for s in r['rows'][30:landing-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0
+            best=max(best,streak)
+        self.assertGreaterEqual(best,6);self.assertTrue(any(s['attached'] for s in r['rows'][:30]))
+        r.update(entryTick=0,takeoffTick=next(s['tick'] for s in r['rows'] if s['vy']<0),releaseTick=30,
+            landingTick=landing,landingAir=best,entryToExit=True,resets=0,poseInjections=0,
+            fixture=dict(x=8160,y=-1540,vx=0,vy=0),scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        self.capture(p,'landing.jpg')
+        print(f'PASS geometry: S04-02 only; gap 252; entry/exit 680; recovery 2000; yellow 1600x150 clearance {g["yellowClearance"]}; reach {g["reach"]:.3f}<360; green/blue then yellow; no red/planned colliders')
+        print(f'PASS route: takeoff {r["takeoffTick"]} release 30 landing 105; consecutive unattached airborne {best}; trusted inputs; zero resets/injections; Broken Viaduct images decoded')
+
+    def test_02_miss_and_recovery(self):
+        p=self.page()
+        plan=[(8420,-1679,6,226),(8100,-650,30,60),(7600,-650,30,60),
+              (7320,-900,60,20),(7300,-1130,60,0),(7355,-1245,71,0),(7307,-1525,48,163)]
+        for x,y,hold,coast in plan:
+            self.press(p,dict(x=x,y=y));self.step(p,hold);p.mouse.up();self.step(p,coast)
+        r=self.result(p)
+        self.assertEqual(self.landings(r,'viaduct-catch')[0]['tick'],232)
+        self.assertEqual(self.landings(r,'freight-exit-catch')[0]['tick'],623)
+        self.assertEqual(self.landings(r,'viaduct-landing')[-1]['tick'],834)
+        self.assertFalse(self.landings(r,'viaduct-second-landing'))
+        yellow=[s for s in r['rows'][:232] if 7360<=s['x']<=8960 and -928.2<=s['y']<=-778.2]
+        self.assertGreater(len(yellow),6)
+        r.update(earlyReleaseTick=6,catchTick=232,catchTarget='viaduct-catch',
+            yellowTicks=[s['tick'] for s in yellow],intermediateTick=623,recoveryTarget='viaduct-landing',
+            returnTick=834,resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('miss.json',r)
+        print(f'PASS miss: early release 6; yellow transit {len(yellow)} ticks; lower catch 232; freight shelf 623; normal-control entry return 834; zero resets/injections')
+
+    def test_03_controls(self):
+        cases=[]
+        p=self.page();self.press(p,self.target);self.step(p,600)
+        r=self.result(p);r.update(probe='continuous hold 600 ticks',successfulAlternative=bool(self.landings(r,'viaduct-second-landing')))
+        cases.append(r);p.mouse.up();p.context.close()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'viaduct-second-landing')))
+            cases.append(r);p.context.close()
+        self.write('controls.json',dict(cases=cases,bound='600 ticks hold; <=600 ticks each nearest 6/12/24',
+            inspection='Every top-facing viaduct-second-landing contact checked using nominal success definition',scope=self.config['simulation']))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded trusted hold/nearest probes; zero successful alternatives using same exit contact criterion')
+
+    def test_04_dependencies_and_index(self):
+        p=Task585Tests.page(self)
+        self.press(p,Task585Tests.target);self.step(p,30);p.mouse.up()
+        self.assertEqual(self.until(p,'viaduct-landing'),105)
+        self.write('previous-span.json',self.result(p));p.context.close()
+        rows=[]
+        for preview in [True,False]:
+            q=Task558Tests.page(self,preview)
+            for mode in ['grapple_over','classic','bad']:
+                row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,
+                    range:version==='grapple_over'?grappleOverAcquisitionRadius():null,
+                    upgraded:version==='grapple_over'?grappleOverProfile().upgradedAcquisitionRadius:null,
+                    scale:scale[version],gravity:GRAVITY,pull:grappleSpeed}}''',mode)
+                row['preview']=preview;rows.append(row)
+                if mode=='grapple_over':
+                    self.assertEqual(row['range'],360 if preview else 1080)
+                    self.assertEqual(row['upgraded'],540 if preview else 1620);self.assertEqual(row['scale'],.375)
+            q.context.close()
+        self.assertEqual(len({(r['gravity'],r['pull']) for r in rows}),1)
+        self.write('dependencies.json',dict(rows=rows,changed=['mountain.js preview -> fixedlevel.js colliders/drag',
+            'S04 lowered yellow/catch and added west recovery wall; existing landmark/label unchanged','tools/test_grapple_over_redesign.py Task586Tests'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','gameoptions.js','fixedlevel.js'],
+            superseded='Earlier exact preview inventories are historical. TASK-585 first-span route remains valid and is replayed here; its exact yellow clearance and recovery timings are superseded by the deeper band and wall. TASK-584 Freight proof remains in place. No legacy or earlier tests changed; no full mountain claim.',hashes=self.config['source_hashes']))
+        required={'commands.log':'exact command, actual exit, test identifiers/count, revision, browser/viewport and hashes',
+            'tests.log':'four Task586Tests, no skips, OK','geometry.json':'live roles/purposes, widths/gap/clearance/reach/range',
+            'route.json':'trusted entry-to-exit with >=6 airborne unattached ticks','inputs.json':'trusted production events',
+            'miss.json':'yellow fall, lower catch and normal-control return','approach.jpg':'broad targets, lower yellow band and broken bridge',
+            'landing.jpg':'safe broad exit and broken viaduct silhouette','controls.json':'bounded hold/nearest and all success inspections',
+            'previous-span.json':'affected first span still lands at tick 105',
+            'dependencies.json':'changed dependencies and preserved modes/physics/range'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,
+            hashPolicy='Identical source hashes remain valid after HEAD-only commit',scope=self.config['simulation']))
+        print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; unchanged physics/input; evidence index written')

@@ -1203,7 +1203,7 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Broken Viaduct encounter 1. Planned terrain stays noncollidable.
+// Replacement built prefix through Broken Viaduct encounter 2. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 9600, top: -3000, bottom: 280},
@@ -1212,7 +1212,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
         {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03', 'S02-04']},
         {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02', 'S03-03', 'S03-04']},
-        {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01']},
+        {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01', 'S04-02']},
         {id: 'S05', status: 'planned', encounters: ['preview-future'],
             band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
     ],
@@ -1230,6 +1230,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S03-03', name: 'Freight Crossing vertical lift', elements: ['freight-second-landing', 'freight-lift', 'freight-lift-landing', 'freight-second-catch']},
         {id: 'S03-04', name: 'Freight Crossing exit combination', elements: ['freight-lift', 'freight-lift-landing', 'freight-exit-anchor', 'freight-exit', 'freight-exit-catch']},
         {id: 'S04-01', name: 'Broken Viaduct exposed bridge', elements: ['freight-exit', 'viaduct-anchor', 'viaduct-landing', 'viaduct-catch', 'viaduct-yellow']},
+        {id: 'S04-02', name: 'Broken Viaduct separated spans', elements: ['viaduct-landing', 'viaduct-second-anchor', 'viaduct-second-landing', 'viaduct-catch', 'viaduct-yellow', 'viaduct-recovery-wall']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1268,8 +1269,11 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['freight-exit-catch', 6480, -1248.2, 880, 60, 'Stationary green recovery alternative below the exit gap; clears the lift sweep and supports a normal-control retry'],
         ['viaduct-anchor', 7408, -1719, 160, 80, 'Reachable green bridge launch face; deliberate release, not a landing'],
         ['viaduct-landing', 7560, -1528.2, 680, 60, 'Broad green bridge remnant and safe first encounter exit'],
-        ['viaduct-catch', 7360, -900, 1600, 60, 'Lower recovery walkway beneath the yellow band; return west via the freight recovery shelf'],
-        ['viaduct-yellow', 7360, -1150, 1600, 150, 'Long visible pass-through yellow fall brake far below the exposed bridge; west edge leaves recovery ascent clear'],
+        ['viaduct-catch', 7360, -678.2, 2000, 60, 'Lower recovery walkway beneath the yellow band; return west via the freight recovery shelf'],
+        ['viaduct-yellow', 7360, -928.2, 1600, 150, 'Long visible pass-through yellow fall brake far below the exposed bridge; west edge leaves recovery ascent clear'],
+        ['viaduct-second-anchor', 8340, -1719, 160, 80, 'Reachable second span launch face; deliberate release across the broken deck, not a landing'],
+        ['viaduct-second-landing', 8492, -1528.2, 680, 60, 'Broad second bridge remnant and planning exit; 540 units clear above the fall band'],
+        ['viaduct-recovery-wall', 7280, -1148.2, 80, 400, 'Continuous west recovery face outside yellow; climb by normal grappling to the freight recovery shelf, not a landing'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: id === 'viaduct-yellow' ? 'drag' : ['freight-carrier', 'freight-second-carrier', 'freight-lift'].includes(id) ? 'solid' : 'bounce', grapplable: id !== 'viaduct-yellow',
         points: ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
