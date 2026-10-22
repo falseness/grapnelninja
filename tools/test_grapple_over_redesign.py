@@ -10913,3 +10913,178 @@ class Task622Tests(unittest.TestCase):
             if name.endswith('.json'):json.loads((self.out/name).read_text())
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS index: 7 required files exist; JSON parses; retained evidence <200 MB; no required images/clips')
+
+
+class Task623Tests(unittest.TestCase):
+    """Upper-route isolated fixtures; finite search, not continuous gameplay."""
+    @classmethod
+    def setUpClass(cls):
+        Task622Tests.setUpClass.__func__(cls)
+        cls.config['source_hashes']['tools/grapple_over_upper_bypass.js']=hashlib.sha256((ROOT/'tools/grapple_over_upper_bypass.js').read_bytes()).hexdigest()
+        cls.config['simulation']='Isolated archived upper-route released poses; production physics/input at 540; bounded one/two-press launches'
+        with (cls.out/'commands.log').open('a') as f:f.write('TASK623_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write=Task557Tests.write
+
+    def page(self):
+        p=Task622Tests.page(self)
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_upper_bypass.js'))
+        return p
+
+    def starts(self):
+        starts=[]
+        for section,task in [(5,596),(6,602),(7,608),(8,614)]:
+            path=f'artifacts/TASK-{task}/route.json';d=json.loads((ROOT/path).read_text());rows=d['trace']
+            for tick in sorted({i['tick'] for i in d['inputs'] if i['type']=='mousedown'}):
+                row=next(r for r in rows if r['tick']==tick)
+                completed=(section-1)*4-1
+                for e in d['exits']:
+                    if e['tick']<=tick:completed=max(completed,(section-1)*4+d['exits'].index(e))
+                starts.append(dict(id=f'S0{section}-approach-{tick}',section=f'S0{section}',completed=completed,
+                    pose={k:row[k] for k in ['x','y','vx','vy']},phaseTick=tick,
+                    provenance=dict(path=path,tick=tick,sha256=hashlib.sha256((ROOT/path).read_bytes()).hexdigest(),kind='released isolated pre-press fixture; not continuous gameplay')))
+        return starts
+
+    def test_01_geometry_and_upper_search(self):
+        p=self.page();starts=self.starts()
+        p.evaluate('s=>BYPASS.setup(s,540,null)',starts[0]);regions=p.evaluate('UPPER_BYPASS.geometry()')
+        pairs=[]
+        for i,a in enumerate(regions):
+            for b in regions[i+2:]:
+                dx=max(0,a['minX']-b['maxX'],b['minX']-a['maxX']);dy=max(0,a['minY']-b['maxY'],b['minY']-a['maxY'])
+                distance=(dx*dx+dy*dy)**.5
+                if distance<=1080:pairs.append(dict(a=a['id'],b=b['id'],aabbGap=distance))
+        policies=[dict(name=f'{n}-press-rank-{rank}-hold-{hold}',rank=rank,presses=[dict(tick=1+j*(hold+60),hold=hold) for j in range(n)])
+                  for n in [1,2] for rank in [0,2] for hold in [30,120,360]]
+        baseline_specs=[('S05-approach-629','1-press-rank-2-hold-360'),('S05-approach-629','2-press-rank-2-hold-360'),('S06-approach-925','2-press-rank-2-hold-30')]
+        baseline=[]
+        for start_id,policy_name in baseline_specs:
+            start=next(s for s in starts if s['id']==start_id);policy=next(p for p in policies if p['name']==policy_name)
+            c=p.evaluate("""a=>{
+                const m=GRAPPLE_OVER_REPLACEMENT,es=m.elements,enc=m.encounters;
+                m.elements=es.filter(e=>e.id!=='tower-west-separator');
+                m.encounters=enc.map(e=>({...e,elements:e.elements.filter(id=>id!=='tower-west-separator')}));
+                try{return UPPER_BYPASS.run(a.s,a.p)}finally{m.elements=es;m.encounters=enc}
+            }""",dict(s=start,p=policy))
+            self.assertTrue(any(v['unapproved'] for v in c['skips']))
+            baseline.append(c)
+        self.write('before-search.json',dict(config=self.config,geometryDelta='Only tower-west-separator removed to reproduce original geometry',cases=baseline,
+            unapproved=[dict(start=c['start'],policy=c['policy'],skip=v) for c in baseline for v in c['skips'] if v['unapproved']]))
+        cases=p.evaluate('a=>a.starts.flatMap(s=>a.policies.map(p=>UPPER_BYPASS.run(s,p)))',dict(starts=starts,policies=policies))
+        for c in baseline:
+            start=next(s for s in starts if s['id']==c['start'])
+            policy=dict(name='exact-original-input-'+c['policy']['name'],rank=0,presses=[dict(press,target=e['target']) for press,e in zip(c['policy']['presses'],[e for e in c['inputs'] if e['type']=='mousedown'])])
+            cases.append(p.evaluate('a=>UPPER_BYPASS.run(a.s,a.p)',dict(s=start,p=policy)))
+        # Explicit distant aim attempts test replacement of the historical S05->S08 fold,
+        # including targets outside acquisition range (the production handler rejects them).
+        fold=[dict(name='old-fold-'+target,rank=0,target=target,presses=[dict(tick=1,hold=360),dict(tick=421,hold=360)])
+              for target in ['summit-landing','summit-final-landing']]
+        cases+=p.evaluate('a=>a.starts.flatMap(s=>a.policies.map(p=>UPPER_BYPASS.run(s,p)))',dict(starts=[s for s in starts if s['section']=='S05'],policies=fold))
+        violations=[dict(start=c['start'],policy=c['policy'],skip=v) for c in cases for v in c['skips'] if v['unapproved']]
+        live=p.evaluate("""()=>floors[0].level.elements.filter(e=>e.id==='tower-west-separator'||BYPASS.exits.slice(16).includes(e.id)).map(e=>({id:e.id,x:e.x,y:e.y,width:Math.max(...e.points.map(p=>p.x))-Math.min(...e.points.map(p=>p.x)),height:Math.max(...e.points.map(p=>p.y))-Math.min(...e.points.map(p=>p.y))}))""")
+        self.assertEqual(next(e for e in live if e['id']=='tower-west-separator'),dict(id='tower-west-separator',x=9750,y=-3540,width=60,height=840))
+        self.assertTrue(all(e['width']>=720 for e in live if e['id']!='tower-west-separator'))
+        self.write('geometry.json',dict(measuredElements=live,regions=regions,closeNonadjacentPairs=pairs,threshold=1080,method='Euclidean gap between production encounter AABBs; conservative spatial inventory',geometryChanges=[dict(id="tower-west-separator",x=9750,y=-3540,width=60,height=840)]))
+        self.write('search.json',dict(config=self.config,scope=self.config['simulation'],starts=starts,policies=policies+fold,cases=cases,spatialPairs=pairs,
+            budgets=dict(attempts=len(cases),ticksPerAttempt=1200,totalTicks=1200*len(cases)),unapproved=violations,
+            limitation='Finite candidates only; region visits use conservative AABBs, completions require upward production contact on designated exits'))
+        self.assertTrue(pairs);self.assertGreater(len(cases),0);self.assertEqual(violations,[],str(violations)[:3000])
+        self.assertTrue(all(c['postSetupInjections']==0 and c['inputs'] for c in cases))
+        self.assertEqual({s['section'] for s in starts},{'S05','S06','S07','S08'})
+        print(f'PASS upper search: {len(starts)} starts; {len(cases)} attempts; {1200*len(cases)} ticks; range=540; unapproved=0; explicit S05-to-S08 fold probes')
+        print(f'PASS geometry: {len(regions)} regions; {len(pairs)} close nonadjacent pairs; geometryChanges=1')
+
+    press=Task567Tests.press
+    step=Task567Tests.step
+    until=Task605Tests.until
+    shot=Task594Tests.shot
+
+    def test_02_affected_routes(self):
+        proofs=[]
+        def save(p,section,ids):
+            r=p.evaluate('YARD.result()');exits=[]
+            for id in ids:
+                hits=[row for row in r['rows'] if row['tick']>(exits[-1]['tick'] if exits else -1) and any(c['id']==id and c['ny']<-.9 for c in row['contacts'])]
+                self.assertTrue(hits,id);exits.append(dict(id=id,tick=hits[0]['tick']))
+            self.assertEqual([e['tick'] for e in exits],sorted(e['tick'] for e in exits))
+            self.assertTrue(all(i['trusted'] for i in r['inputs']))
+            proofs.append(dict(section=section,exits=exits,inputs=r['inputs'],contacts=[dict(tick=row['tick'],contacts=row['contacts']) for row in r['rows'] if row['contacts']],ticks=r['tick']))
+        p=Task591Tests.page(self)
+        self.shot(p,Task591Tests.target,42);self.assertIsNotNone(self.until(p,'gallery-landing',500));self.step(p,60)
+        self.shot(p,dict(x=12990,y=-2030),60);self.assertIsNotNone(self.until(p,'gallery-upper-landing',500))
+        self.shot(p,Task593Tests.target,25);self.step(p,50);self.shot(p,Task593Tests.next_target,28)
+        self.assertIsNotNone(self.until(p,'gallery-third-landing',500));self.step(p,75)
+        self.shot(p,Task594Tests.target,75);self.assertIsNotNone(self.until(p,'gallery-exit',1000))
+        save(p,'S05',['gallery-landing','gallery-upper-landing','gallery-third-landing','gallery-exit'])
+        p=Task597Tests.page(self)
+        self.shot(p,Task597Tests.target,240);self.assertIsNotNone(self.until(p,'tower-observation',500))
+        self.shot(p,dict(x=11031,y=-3178.2),48);self.assertIsNotNone(self.until(p,'tower-shaft-landing',600));self.step(p,22)
+        target=p.evaluate("()=>{const e=floors[0].byId.get('tower-rebound-carrier');return {x:e.x+10,y:e.y+40}}")
+        self.shot(p,target,48);third=self.until(p,'tower-rebound-landing',600);self.assertIsNotNone(third)
+        self.step(p,1800-third);self.shot(p,Task600Tests.target,240);self.step(p,12)
+        self.shot(p,dict(x=13572,y=-3938.2),12);self.assertIsNotNone(self.until(p,'tower-exit',600))
+        save(p,'S06',['tower-observation','tower-shaft-landing','tower-rebound-landing','tower-exit'])
+        p=Task603Tests.page(self);self.step(p,420);Task606Tests.shot(self,p,Task603Tests.target,30)
+        self.assertIsNotNone(self.until(p,'crown-landing',300));self.step(p,80);Task606Tests.shot(self,p,Task604Tests.target,30)
+        self.assertIsNotNone(self.until(p,'crown-practice-landing',400));self.step(p,300)
+        Task606Tests.shot(self,p,dict(x=10658,y=-4318.6),240);self.assertIsNotNone(self.until(p,'crown-upper-landing',500))
+        self.step(p,120);Task606Tests.shot(self,p,Task606Tests.target,30);self.assertIsNotNone(self.until(p,'crown-exit',500))
+        save(p,'S07',['crown-landing','crown-practice-landing','crown-upper-landing','crown-exit'])
+        q=Task591Tests.page(self);self.shot(q,Task591Tests.target,6)
+        self.assertIsNotNone(self.until(q,'gallery-catch',500));self.shot(q,dict(x=11570,y=-1500),12)
+        self.assertIsNotNone(self.until(q,'viaduct-exit',800));save(q,'S05-recovery',['gallery-catch','viaduct-exit'])
+        q=Task567Tests.page(self)
+        q.evaluate('Object.assign(ninja,{x:10758,y:-3960,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false')
+        self.step(q,600);Task606Tests.shot(self,q,Task605Tests.target,12)
+        self.assertIsNotNone(self.until(q,'crown-lift-catch',800));Task606Tests.shot(self,q,dict(x=10688,y=-3938.2),60)
+        self.assertIsNotNone(self.until(q,'crown-practice-landing',800));save(q,'S07-recovery',['crown-lift-catch','crown-practice-landing'])
+        q=Task597Tests.page(self);self.shot(q,Task597Tests.target,6)
+        self.assertIsNotNone(self.until(q,'gallery-third-landing',800));self.shot(q,dict(x=10112,y=-2408),12)
+        self.assertIsNotNone(self.until(q,'gallery-exit',800));save(q,'S06-recovery',['gallery-third-landing','gallery-exit'])
+        self.write('normal-routes.json',proofs)
+        print('PASS affected routes: all 12 S05/S06/S07 exits ordered; gallery, tower and crown fall recovery pass with trusted input')
+
+    def test_02_dependencies_and_normal_routes(self):
+        old=json.loads((ROOT/'artifacts/TASK-622/fixes.json').read_text())['dependencies']['unchangedHashes']
+        for n,h in old.items():
+            if n!='mountain.js':self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        archives=[]
+        for task in [596,602,608,614,617,618,620,621]:
+            path=f'artifacts/TASK-{task}/tests.log';log=(ROOT/path).read_text()
+            self.assertIn('\nOK\n',log);self.assertRegex(log,r'Ran [1-9][0-9]* tests')
+            archives.append(dict(path=path,sha256=hashlib.sha256((ROOT/path).read_bytes()).hexdigest(),summary=next(l for l in log.splitlines() if l.startswith('Ran '))))
+        search=json.loads((self.out/'search.json').read_text());self.assertEqual(search['unapproved'],[])
+        self.assertEqual(len(json.loads((self.out/'normal-routes.json').read_text())),6)
+        self.write('fixes.json',dict(geometryChanges=[dict(id="tower-west-separator",x=9750,y=-3540,width=60,height=840)],reproducedUnapprovedRoutes=json.loads((self.out/'before-search.json').read_text())['unapproved'],remainingUnapprovedRoutes=[],affectedNormalRoutes=['S05','S06','S07'],replays='normal-routes.json',archives=archives,
+            dependencies=dict(unchangedHashes={n:h for n,h in old.items() if n!='mountain.js'},previousMountainHash=old['mountain.js'],changed=['mountain.js: replacement-only west tower separator','tools/test_grapple_over_redesign.py: Task623Tests only','tools/grapple_over_upper_bypass.js: observation-only harness']),
+            reason='West tower separator blocks premature acquisition from Gallery and the Tower return bounce into Crown. Full affected section routes and gallery/crown recovery rerun. Historical inventories superseded by this one collider; physics/input/camera unchanged.'))
+        print('PASS fixes: one local separator; 3 reproduced skips eliminated; unchanged physics/input/camera hashes; affected normal routes rerun; 8 archived logs OK')
+
+    def test_03_trusted_input_confirmation(self):
+        search=json.loads((self.out/'search.json').read_text());proof=[]
+        for section in ['S05','S06','S07','S08']:
+            s=next(s for s in search['starts'] if s['section']==section)
+            c=next(c for c in search['cases'] if c['start']==s['id'] and len(c['policy']['presses'])==2 and c['attachedTicks']>0)
+            p=self.page();p.evaluate('s=>BYPASS.setup(s,540,null)',s);tick=0
+            for e in c['inputs']:
+                p.evaluate('n=>YARD.step(n)',e['tick']-1-tick if e['tick']<1200 else 1200-tick)
+                tick=e['tick']-1 if e['tick']<1200 else 1200
+                if e['type']=='mousedown':Task567Tests.press(self,p,e['target'])
+                else:p.mouse.up()
+            actual=p.evaluate('YARD.result()')
+            for k in ['x','y','vx','vy']:self.assertAlmostEqual(actual['rows'][-1][k],c['final'][k],places=7)
+            self.assertTrue(all(e['trusted'] for e in actual['inputs']))
+            proof.append(dict(section=section,policy=c['policy'],inputs=actual['inputs'],final=actual['rows'][-1],syntheticFinal=c['final'],ticks=actual['tick']))
+        self.write('trusted-input.json',proof)
+        print('PASS trusted: all four upper sections; two-press real mouse launches match batch final pose/velocity to 7 decimals')
+
+    def test_04_evidence_index(self):
+        required={'commands.log':'exact commands, exit codes, test identifiers, browser, revision and hashes','tests.log':'five exact Task623Tests without skips','before-search.json':'three reproduced baseline bypasses','normal-routes.json':'12 affected exits and three recoveries',
+            'search.json':'finite starts, policies, real-handler traces, visited regions, no unapproved skips','geometry.json':'production regions and close nonadjacent pairs',
+            'fixes.json':'unchanged production dependencies and archived normal/recovery tests','trusted-input.json':'four trusted two-press confirmations','evidence-index.json':'artifact assertion map'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,hashPolicy='HEAD-only commit does not invalidate identical source hashes'))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: all 9 required files exist; JSON parses; no required images/clips; retained bytes <200 MB')
