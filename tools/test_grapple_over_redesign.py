@@ -12366,14 +12366,24 @@ class Task631Tests(unittest.TestCase):
             p.wait_for_function('k=>localStorage.getItem(k)===JSON.stringify(captureClimbState())',arg=self.key)
             persisted=json.loads(p.evaluate('k=>localStorage.getItem(k)',self.key))
             self.assertEqual(persisted,state)
-            control=self.page({self.key:json.dumps(state)})
-            if kind!='completion':control.evaluate('menu.unPause()')
-            first=control.evaluate(replay);control.context.close()
-            p.reload();self.enter(p)
-            restored=p.evaluate('captureClimbState()');self.assertEqual(restored,state)
-            paused=p.evaluate('menu.gamePaused');self.assertTrue(paused)
-            if kind!='completion':p.evaluate('menu.unPause()')
-            second=p.evaluate(replay);self.assertEqual(first,second)
+            # Advance the original live objects without any restore or re-entry.
+            # Fail immediately if the control accidentally takes the restore path.
+            p.evaluate('''()=>{
+              window.live631={player:ninja,world:floors[0],grapple:grapnel};
+              restoreClimbState=()=>{throw new Error('Live control must not restore')};
+            }''')
+            first=p.evaluate(replay)
+            same_objects=p.evaluate('live631.player===ninja&&live631.world===floors[0]&&live631.grapple===grapnel')
+            self.assertTrue(same_objects)
+            # A separate context retains the pre-continuation save, unaffected by
+            # autosaves from the live control. Reload consumes that stored snapshot.
+            resumed=self.page({self.key:json.dumps(persisted)})
+            resumed.reload();self.enter(resumed)
+            restored=resumed.evaluate('captureClimbState()');self.assertEqual(restored,state)
+            paused=resumed.evaluate('menu.gamePaused');self.assertTrue(paused)
+            if kind!='completion':resumed.evaluate('menu.unPause()')
+            second=resumed.evaluate(replay);self.assertEqual(first,second)
+            resumed.context.close()
             if kind=='free-fall':
                 self.assertGreater(first['trace'][-1]['player']['y'],state['player']['y'])
                 self.assertNotEqual(state['player']['y'],-state['stats']['maxHeight'])
@@ -12384,10 +12394,11 @@ class Task631Tests(unittest.TestCase):
             # Retain complete save/restore states, compact trace measurements and hashes of every simulated leaf.
             compact=lambda run:[dict(tick=s['simulationTick'],player=s['player'],stats=s['stats'],upgrade=s['upgrades']) for s in run['trace'][::15]+run['trace'][-1:]]
             rows.append(dict(kind=kind,feature=f,initial=state,persisted=persisted,restored=restored,paused=paused,
+                control=dict(origin='original live fixture',restoreGuard='throws on restore',sameObjects=same_objects),
                 ticks=90,uninterruptedHash=self.digest(first),resumedHash=self.digest(second),
                 uninterruptedEvents=first['events'],resumedEvents=second['events'],uninterrupted=compact(first),resumed=compact(second)))
             self.write('persistence.json',dict(scope=self.__doc__,cases=rows))
-            print('PASS continuation '+kind+' ticks=90 hash='+self.digest(first)+' pagehide/reload exact')
+            print('PASS continuation '+kind+' ticks=90 hash='+self.digest(first)+' live control (restore forbidden, same objects) vs pagehide/reload exact')
             p.context.close()
 
     def test_02_storage_compatibility(self):
