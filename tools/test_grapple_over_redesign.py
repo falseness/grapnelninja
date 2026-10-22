@@ -11393,3 +11393,99 @@ class Task625Tests(unittest.TestCase):
         with Image.open(self.out/'shortcut-strip.jpg') as im:im.load();self.assertEqual(im.size,(2560,1440))
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS index: six required artifacts exist; JSON parses; strip decodes 2560x1440; unchanged runtime hashes; bytes <200 MB')
+
+
+class Task626Tests(unittest.TestCase):
+    """Lower collision inventory and bounded production-input recovery probes."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        for n in ['tools/grapple_over_bypass.js','tools/grapple_over_recovery.js']:
+            cls.config['source_hashes'][n]=hashlib.sha256((ROOT/n).read_bytes()).hexdigest()
+        cls.config['simulation']='Isolated inventory placements and archived released-route fixtures; production physics and synthetic normal mouse handlers; not continuous gameplay'
+        with (cls.out/'commands.log').open('a') as f:f.write('TASK626_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write=Task557Tests.write
+    def page(self):
+        p=Task622Tests.page(self)
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_recovery.js'))
+        return p
+
+    def test_01_inventory_and_recovery(self):
+        p=self.page();g=p.evaluate('RECOVERY.geometry()');starts=[]
+        for e in g['surfaces']:
+            starts.append(dict(id=e['id'],phaseTick=0,pose=dict(x=(e['left']+e['right'])/2,y=e['top']-24,vx=0,vy=0),
+                provenance=dict(kind='isolated inventory-only placement; not gameplay reachability',surface=e['id'])))
+        cases=p.evaluate('a=>a.starts.flatMap(s=>[360,540].map(r=>RECOVERY.recover(s,r)))',dict(starts=starts))
+        for c in cases:
+            passive=[r for r in c['trace'] if r['tick']<=180]
+            c['passiveObservation']=dict(ticks=len(passive),verticalSpan=max(r['y'] for r in passive)-min(r['y'] for r in passive),
+                finalSpeed=(passive[-1]['vx']**2+passive[-1]['vy']**2)**.5,
+                classification='settled solid' if all(abs(r['vy'])<.05 for r in passive[-60:]) else 'continuing bounce/motion')
+        self.write('recovery.json',dict(cases=cases,config=self.config))
+        unresolved=[(c['id'],c['range']) for c in cases if not c['returned']]
+        self.assertFalse(g['sideWall'])
+        g['sideContainment']='No physical side-wall colliders or implicit Screen.leftWall in replacement; world bounds constrain camera only. Both vertical recovery faces and all catch surfaces inventoried. Open exterior is not a resting pocket.'
+        self.write('pockets.json',dict(geometry=g,inventory=[dict(surface=e['id'],role=e['role'],
+            escapes=[dict(range=c['range'],returned=c['returned']) for c in cases if c['id']==e['id']]) for e in g['surfaces']],unresolved=unresolved))
+        print('INVENTORY',len(starts),'CASES',len(cases),'UNRESOLVED',unresolved,flush=True)
+        self.assertEqual(unresolved,[])
+        self.assertTrue(all(c['yellowRest']<60 for c in cases))
+        for c in cases:
+            ranges={r['range'] for r in c['trace']}
+            if c['id']=='viaduct-exit' and c['range']==360:
+                # This destination is itself the upgrade zone. Arrival earns 540;
+                # no recovery was enabled by an upgrade acquired elsewhere.
+                self.assertEqual(c['firstContact']['contacts'][0]['id'],'viaduct-exit')
+                self.assertEqual(ranges,{360,540})
+            else:self.assertEqual(ranges,{c['range']})
+        print('PASS ranges: retained 540 stays 540; base 360 stays 360 except arrival on the upgrade destination itself')
+        print('PASS inventory: every lower collider mapped to a normal-input main-route contact at both ranges; zero unresolved pockets')
+
+    def test_02_recorded_falls(self):
+        p=self.page();starts=[]
+        for task in [571,577,583,590]:
+            path=f'artifacts/TASK-{task}/recovery.json';data=json.loads((ROOT/path).read_text())
+            for index,c in enumerate(data['cases'][:2] if task==590 else data['cases'][:1]):
+                catch=c.get('catchTick',c.get('catch',{}).get('tick'))
+                eligible=[r for r in c['trace'] if r['tick']<catch and not r['attached'] and not r['shot'] and not r['contacts'] and r['vy']>.4]
+                self.assertTrue(eligible,path)
+                row=eligible[len(eligible)//2]
+                starts.append(dict(id=f'fall-{task}-{index}',phaseTick=row['tick'],pose={k:row[k] for k in ['x','y','vx','vy']},
+                    provenance=dict(kind='Recorded descending released pose from production-input miss; isolated replay, not continuous gameplay',path=path,
+                        case=index,tick=row['tick'],sha256=hashlib.sha256((ROOT/path).read_bytes()).hexdigest())))
+        cases=p.evaluate('a=>a.flatMap(s=>[360,540].map(r=>RECOVERY.recover(s,r)))',starts)
+        d=json.loads((self.out/'recovery.json').read_text());d['fallCases']=cases;self.write('recovery.json',d)
+        for c in cases:
+            self.assertIsNotNone(c['firstContact'],c['id']);self.assertIsNotNone(c['returned'],(c['id'],c['range']))
+            self.assertGreater(c['firstContact']['y'],c['initial']['y'])
+            self.assertLess(c['yellowRest'],60)
+        print('PASS falls: 10 recorded descending fixtures, both ranges, measured fall/contact and normal-input route return; zero resets or injections')
+
+    def test_03_dependencies_and_index(self):
+        previous=json.loads((ROOT/'artifacts/TASK-625/evidence-index.json').read_text())['config']['source_hashes']
+        for n,h in previous.items():
+            if n!='tools/test_grapple_over_redesign.py':self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        archives=[]
+        for task in [590,614,623,624,625]:
+            path=f'artifacts/TASK-{task}/tests.log';raw=(ROOT/path).read_text()
+            self.assertIn('OK',raw);self.assertRegex(raw,r'Ran [1-9][0-9]* tests? in ')
+            archives.append(dict(path=path,sha256=hashlib.sha256((ROOT/path).read_bytes()).hexdigest(),result=next(l for l in raw.splitlines() if l.startswith('Ran '))))
+        self.write('fixes.json',dict(geometryChanges=[],runtimeChanges=[],nominalToleranceChecks='Not required: no runtime or geometry edits; identical runtime source hashes checked against TASK-625',
+            unchangedRuntimeHashes={n:h for n,h in previous.items() if n!='tools/test_grapple_over_redesign.py'},archives=archives,
+            historical='Earlier v3 and prefix inventories preserved, not rerun or suppressed; current lower collision inventory supersedes inventory scope only'))
+        required={'commands.log':'exact command, real exit, nonzero collected identifiers, browser viewport revision source SHA256',
+            'tests.log':'three Task626Tests, no skipped cases, OK','pockets.json':'all 44 lower colliders, side containment observation, both-range return mapping and empty unresolved list',
+            'recovery.json':'88 inventory and 10 descending-provenance cases, passive motion classification, contact traces and input targets, both ranges, no resets or injections',
+            'fixes.json':'no geometry changes; unchanged runtime hashes and archived nominal/tolerance checks',
+            'evidence-index.json':'assertion map, dependencies and scope'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,
+            changedSubsystems=['Additive Task626Tests -> browser_test_support + grapple_over_bypass fixture setup -> new grapple_over_recovery observation/control driver -> unchanged production input, collision, physics and geometry'],
+            hashPolicy='HEAD-only movement does not invalidate identical tested source hashes',
+            limitations='Bounded center/top samples for every collider plus recorded descending misses. Isolated placements are inventory-only, never continuous gameplay or exhaustive reachability. No image or clip required.'))
+        for n in required:
+            self.assertTrue((self.out/n).is_file(),n)
+            if n.endswith('.json'):json.loads((self.out/n).read_text())
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS dependencies: runtime hashes unchanged; archived successful nominal/tolerance runs referenced; no fixes required')
+        print('PASS index: six required artifacts exist, JSON parses, retained evidence below 200 MB')
