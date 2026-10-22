@@ -1,7 +1,7 @@
 """TASK-650: normal Grapple Over starts load the imported SVG level.
 
 Boots the real index.html (no fixture injection) and checks the level the game
-builds against levels/extended-mountain.level.json and the SVG it was generated
+builds against artifacts/levels/extended-mountain.level.json and the SVG it was generated
 from. Covers fresh start, restart, an incompatible old save, a current-layout
 save, the boot asset fetch and unchanged classic/bad selection.
 
@@ -35,9 +35,9 @@ import xml.etree.ElementTree as ET
 from browser_test_support import start_browser_test, wait_for_boot, wait_for_boot_run, select_mode
 
 ROOT = Path(__file__).resolve().parent.parent
-SVG = ROOT / 'levels' / 'extended-mountain.svg'
-LEVEL = ROOT / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v1'
+SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
+LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
+LAYOUT_ID = 'extended-mountain-v2'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -115,11 +115,11 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         errors, requests = [], []
         page.on('pageerror', lambda e: errors.append('pageerror: %s' % e))
         page.on('console', lambda m: m.type == 'error' and errors.append('console: %s' % m.text))
-        page.on('response', lambda r: 'levels/' in r.url and requests.append({'url': r.url.split('/', 3)[3], 'status': r.status}))
+        page.on('response', lambda r: 'leveldata.js' in r.url and requests.append({'url': r.url.split('/', 3)[3], 'status': r.status}))
         if seed is not None:
             page.add_init_script('for (const [k, v] of Object.entries(%s)) localStorage.setItem(k, v)' % json.dumps(seed))
         if route:
-            page.route('**/levels/extended-mountain.level.json', route)
+            page.route('**/leveldata.js', route)
         page.goto(self.url + query)
         if boot_run:
             wait_for_boot_run(page)
@@ -160,7 +160,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         snap = page.evaluate(SNAPSHOT)
         self.assert_imported(snap)
         self.assertIsNone(snap['notice'])
-        self.assertEqual(page.requests, [{'url': 'levels/extended-mountain.level.json', 'status': 200}])
+        self.assertEqual(page.requests, [{'url': 'leveldata.js', 'status': 200}])
         # A fresh start began at the spawn; a few gameplay frames may have run since.
         self.assertLess(abs(snap['ninja']['x'] - snap['spawn']['x']), 1)
         self.assertLess(abs(snap['ninja']['y'] - snap['spawn']['y']), 40)
@@ -176,6 +176,15 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(snap['tick'], 0)
         self.assertEqual(page.errors, [])
         self.record('restart', page, snap, coordinatesMatchSource=True, elementsCompared=len(snap['live']))
+
+    def test_starting_platform_is_green_bounce(self):
+        page = self.open()
+        roles = page.evaluate("""() => floors[0].elements
+            .filter(e => e.id.startsWith('P0-body'))
+            .map(e => ({id: e.id, role: e.surfaceRole, grapplable: e.grapplable}))""")
+        self.assertEqual(len(roles), 2)
+        self.assertTrue(all(e['role'] == 'bounce' and e['grapplable'] for e in roles))
+        self.assertEqual(page.errors, [])
 
     def test_local_file_start(self):
         # Windows double-click / file:// startup cannot fetch the JSON asset.
@@ -200,7 +209,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                 '--input', str(SVG), '--output', str(output), '--format', 'javascript'
             ], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(output.read_bytes(), (ROOT / 'levels/extended-mountain.level.js').read_bytes())
+            self.assertEqual(output.read_bytes(), (ROOT / 'leveldata.js').read_bytes())
 
     def test_03_incompatible_old_save(self):
         # A real save from the previous normal layout (replacement-v1), plus a
@@ -270,7 +279,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         failed.wait_for_selector('#boot-retry:not([hidden])')
         world = failed.evaluate('typeof floors === "undefined" ? null : (floors && floors[0] ? floors[0].constructor.name : null)')
         self.assertIsNone(world)
-        expected = [e for e in failed.errors if 'Application boot failed' in e or '404' in e]
+        expected = [e for e in failed.errors if 'Application boot failed' in e or '404' in e or 'MIME type' in e]
         self.assertTrue(expected and len(expected) == len(failed.errors), failed.errors)
         self.evidence['cases']['missing_asset'] = {'bootRetryVisible': True, 'world': world,
                                                    'expectedErrors': failed.errors, 'levelRequests': failed.requests}
@@ -303,8 +312,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                                baseRev=BASE_REV, unchangedDiff=diff, indexHtmlChanges=changed)
 
 
-CONCEPT = ROOT / 'artifacts' / 'level' / 'extended-mountain.svg'
-MEASUREMENTS = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
+CONCEPT = SVG
+MEASUREMENTS = ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json'
 TOLERANCE = 0.01
 TILE = (1280, 720)
 KIND_ROLE = {'platform': 'solid', 'ceiling': 'solid', 'summit': 'solid', 'bounce': 'bounce'}
@@ -500,6 +509,8 @@ class Task651Tests(unittest.TestCase):
         """The concept SVG itself, rendered with its viewBox set to the same world window."""
         from PIL import Image
         text = CONCEPT.read_text()
+        a, e, f = concept_mapping()
+        viewbox = (viewbox[0]*a+e, viewbox[1]*a+f, viewbox[2]*a, viewbox[3]*a)
         svg = re.sub(r'<svg[^>]*?>', lambda m: re.sub(r' (width|height|viewBox)="[^"]*"', '', m.group(0))[:-1] +
                      ' width="%d" height="%d" viewBox="%s" preserveAspectRatio="none">' % (size[0], size[1], ' '.join(repr(v) for v in viewbox)),
                      text, count=1)
@@ -516,7 +527,8 @@ class Task651Tests(unittest.TestCase):
         # The mapping is the concept's own: every concept fragment polygon (measurement
         # world data) lands on a polygon drawn in extended-mountain.svg.
         drawn = [[tuple(map(float, p.split(','))) for p in m.split()]
-                 for m in re.findall(r'<polygon points="([^"]*)"', CONCEPT.read_text())]
+                 for m in re.findall(r'<polygon id="P[^"]*" points="([^"]*)"', CONCEPT.read_text())]
+        drawn = [[((x-e)/a, (y-f)/a) for x,y in poly] for poly in drawn]
         mapping_error = 0
         for m in self.measurements['fragments']:
             for poly in m['polys']:
@@ -578,7 +590,7 @@ class Task651Tests(unittest.TestCase):
         size = (1300, 2150)
         game, concept, px = view('overview', e, f, 1 / (2 * a), size)
         game.save(self.out / 'full-map-game.png')
-        side(label(concept, 'CONCEPT artifacts/level/extended-mountain.svg (world %.0f,%.0f; %.4f px/u)' % (e, f, 1 / (2 * a))),
+        side(label(concept, 'AUTHORING artifacts/levels/extended-mountain.svg (world %.0f,%.0f; %.4f px/u)' % (e, f, 1 / (2 * a))),
              label(game, 'GAME production draw(), default start, same world window and scale')).save(self.out / 'full-map-comparison.png')
         side(label(outline(game, px), 'GAME + runtime polygons (cyan), runtime drag zones (yellow)'),
              label(outline(concept, px), 'CONCEPT + same; magenta = measurements, red = transfer endpoints')).save(self.out / 'geometry-overlay.png')
@@ -652,7 +664,7 @@ class Task651Tests(unittest.TestCase):
         for m in self.measurements['fragments']:
             for k, poly in enumerate(m['polys']):
                 e = by_id['%s-body%d' % (m['id'], k)]
-                self.assertEqual(e['role'], KIND_ROLE[m['kind']], e['id'])
+                self.assertEqual(e['role'], 'bounce' if m['id'] == 'P0' else KIND_ROLE[m['kind']], e['id'])
                 self.assertTrue(e['grapplable'], e['id'])
                 self.assertEqual(e['collection'], 'elements')
                 self.assertEqual(len(e['points']), len(poly), e['id'])

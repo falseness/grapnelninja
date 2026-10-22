@@ -15,8 +15,8 @@ Checks:
   between the two fragments' polygon unions / 540 * 100) matches the SVG
   gap-percent, the level JSON gapPercent and the reference percent within
   0.01 percentage point;
-- every pair of distinct fragments keeps clearance - player diameter > 540,
-  so no fragment can be grappled from another (no grapple shortcut);
+- fragment pairs keep clearance - player diameter > 540, except explicitly
+  authored allowedGrapplePairs, which must have a positive gap below 540;
 - drag zones are axis-aligned horizontal non-grapplable rectangles with a
   minimum solid clearance >= 540.
 
@@ -37,7 +37,7 @@ PERCENT_TOL = 0.01
 PERCENT_KEYS = ('svgGapPercent', 'levelGapPercent', 'referencePercent')
 SVG = '{http://www.w3.org/2000/svg}'
 GN = '{urn:grapnelninja:level-svg:1}'
-DEFAULT_REFERENCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'artifacts', 'level',
+DEFAULT_REFERENCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'artifacts', 'levels',
                                  'extended-mountain-measurements.json')
 
 
@@ -244,7 +244,7 @@ def check(level, svg_data, reference):
                           'witness': [rp(p) for p in witness], 'expected': expected,
                           'percentErrors': {k: r(v, 9) for k, v in errors.items()}, 'pass': ok})
 
-    # All distinct fragment pairs: no grapple shortcut.
+    # All distinct fragment pairs: explicit easy-opening exceptions only.
     ref_pairs = {frozenset((p['source'], p['target'])): p['minimumGap'] for p in reference.get('pairChecks', [])}
     transfer_pairs = {frozenset((t['from'], t['to'])) for t in fmt['transfers']}
     pairs = []
@@ -252,7 +252,8 @@ def check(level, svg_data, reference):
         d, _, relation, _ = union_distance(frag_polys[a], frag_polys[b])
         margin = d - PLAYER_DIAMETER
         ref_gap = ref_pairs.get(frozenset((a, b)))
-        ok = margin > GRAPPLE_RANGE
+        opening = frozenset((a, b)) in {frozenset(p) for p in reference.get('allowedGrapplePairs', [])}
+        ok = (d > 0 and d < GRAPPLE_RANGE) if opening else margin > GRAPPLE_RANGE
         if not ok:
             fail('pair %s/%s: clearance %.6f - %.1f = %.6f <= 540 (grapple shortcut)' % (
                 a, b, d, PLAYER_DIAMETER, margin))
