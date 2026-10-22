@@ -36,21 +36,15 @@ class ShortcutReplayTests(unittest.TestCase):
         self.assertIsNotNone(after['arrival'])
         self.assertIsNone(after['hit'])
 
-    def test_first_platform_upward_launch_is_damped(self):
-        options=dict(source='P0',target='P3',fraction=.5,pumps=5,budget=1800)
-        before=self.run_probe(**options,guard=False)
-        after=self.run_probe(**options)
-        self.assertGreater(after['dragTicks'],0)
-        self.assertGreater(after['minY'],before['minY']+300)
-        self.assertTrue(after['hit'] is None or after['hit']['id']=='P1-body0')
+    def test_first_platform_cannot_skip_opening(self):
+        for target in ('P3','P4','P5','P6'):
+            after=self.run_probe(source='P0',target=target,fraction=.5,pumps=5,budget=1800)
+            self.assertTrue(after['hit'] is None or after['hit']['id']=='P1-body0',after['hit'])
 
     def test_high_arc_cannot_skip_fifth_platform(self):
         options=dict(source='P3',target='P4',fraction=.5,pumps=1,drop=300,aimOffset=-.8,budget=1800)
-        before=self.run_probe(**options,guard=False)
         after=self.run_probe(**options)
-        self.assertEqual(before['hit']['id'],'P5-body0')
         self.assertTrue(after['hit'] is None or after['hit']['id']=='P4-body0')
-        self.assertGreater(after['dragTicks'],0)
 
     def test_high_energy_arrival_cannot_skip_fifth_platform(self):
         for fraction in (.2,.5,.8):

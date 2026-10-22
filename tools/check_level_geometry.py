@@ -18,7 +18,7 @@ Checks:
 - fragment pairs keep clearance - player diameter > 540, except explicitly
   authored allowedGrapplePairs, which must have a positive gap below 540;
 - drag zones are axis-aligned horizontal non-grapplable rectangles with a
-  minimum solid clearance >= 540.
+  minimum solid clearance >= 1080.
 
 Exit 0 when every check passes, 1 on a failed check, 2 on usage errors.
 """
@@ -294,9 +294,8 @@ def check(level, svg_data, reference):
                 problems.append('rect error %.6g > %.2g' % (row['maxRectError'], COORD_TOL))
         if rb is not None and abs(nearest[0] - rb.get('nearestSolidClearance', math.inf)) > COORD_TOL:
             problems.append('solid clearance %.6f vs reference %r' % (nearest[0], rb.get('nearestSolidClearance')))
-        minimum_clearance = rb.get('minimumSolidClearance', GRAPPLE_RANGE) if rb else GRAPPLE_RANGE
-        if minimum_clearance < 80:
-            problems.append('minimum solid clearance must be at least 80')
+        # Reference metadata may strengthen the rule, never weaken it.
+        minimum_clearance = max(2 * GRAPPLE_RANGE, rb.get('minimumSolidClearance', 0) if rb else 0)
         if nearest[0] < minimum_clearance:
             problems.append('solid clearance %.6f < %.6f (%s)' % (nearest[0], minimum_clearance, nearest[1]))
         row['pass'] = not problems

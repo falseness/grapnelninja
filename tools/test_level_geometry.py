@@ -121,16 +121,26 @@ class ExtendedLevelTests(unittest.TestCase):
     def setUpClass(cls):
         cls.report = run_check()
 
-    def test_extended_passes(self):
+    def test_historical_level_rejected_by_new_yellow_clearance(self):
         s = self.report['summary']
-        self.assertEqual(self.report['failureMessages'], [])
+        self.assertTrue(self.report['failureMessages'])
+        self.assertTrue(all('solid clearance' in m for m in self.report['failureMessages']))
         self.assertEqual((s['transfers'], s['transfersPass']), (24, 24))
         self.assertEqual((s['fragmentPairs'], s['pairsPass']), (300, 300))
-        self.assertEqual((s['dragZones'], s['dragZonesPass']), (6, 6))
+        self.assertEqual(s['dragZones'], 6)
+        self.assertLess(s['dragZonesPass'], 6)
         self.assertLessEqual(s['maxTransferPercentError'], 0.01)
         self.assertGreater(s['minPairClearanceMinusDiameter'], 540)
         self.assertGreaterEqual(s['minDragSolidClearance'], 540)
         self.assertLessEqual(s['maxFragmentCoordError'], 0.01)
+
+    def test_reference_cannot_weaken_yellow_clearance(self):
+        reference=copy.deepcopy(REFERENCE_DATA)
+        for band in reference['yellowBands']:
+            band['minimumSolidClearance']=80
+        report=run_check(reference=reference)
+        self.assertFalse(report['summary']['pass'])
+        self.assertTrue(any('< 1080' in m for m in report['failureMessages']))
 
     def test_opening_transfer_recomputed_by_hand(self):
         # T01: P0 top-right corner (720, 0) to P1's slanted left edge.
@@ -156,7 +166,7 @@ class MutationTests(unittest.TestCase):
 
     def test_gap_percent_within_tolerance_passes(self):
         svg = SVG_TEXT.replace('encounter="S07-03" gap-percent="540"', 'encounter="S07-03" gap-percent="540.005"')
-        self.assertTrue(run_check(svg)['summary']['pass'])
+        self.assertEqual(run_check(svg)['summary']['transfersPass'], 24)
 
     def test_wrong_level_gap_percent_fails(self):
         level = import_svg(SVG_TEXT.encode())
@@ -244,7 +254,7 @@ class MutationTests(unittest.TestCase):
         y1['y'] -= 300  # towards P3 above, clearance drops under 540
         report = run_check(level=level)
         self.assertTrue(messages(report, 'Y1-drag: solid clearance'), report['failureMessages'])
-        self.assertTrue(any('< 540' in m for m in messages(report, 'Y1-drag')))
+        self.assertTrue(any('< 1080' in m for m in messages(report, 'Y1-drag')))
 
 
 class CliTests(unittest.TestCase):
@@ -258,11 +268,11 @@ class CliTests(unittest.TestCase):
                                capture_output=True, text=True, timeout=120)
             return p, json.loads(rep.read_text())
 
-    def test_cli_pass_and_fail(self):
+    def test_cli_rejects_historical_clearance_and_bad_transfer(self):
         p, report = self.run_cli(SVG_TEXT, import_svg(SVG_TEXT.encode()))
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn('GEOMETRY_RESULT PASS transfers=24/24 pairs=300/300 drag=6/6', p.stdout)
-        self.assertTrue(report['summary']['pass'])
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn('GEOMETRY_RESULT FAIL transfers=24/24 pairs=300/300', p.stdout)
+        self.assertIn('< 1080', p.stderr)
         svg = SVG_TEXT.replace('encounter="S06-03" gap-percent="120"', 'encounter="S06-03" gap-percent="125"')
         p, report = self.run_cli(svg, import_svg(svg.encode()))
         self.assertEqual(p.returncode, 1)

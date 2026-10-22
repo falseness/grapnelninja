@@ -1,5 +1,6 @@
 """Retune a preserved concept measurement file; never modify the original."""
 import argparse
+import hashlib
 import copy
 import json
 import math
@@ -8,7 +9,9 @@ from check_level_geometry import union_distance
 import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
-LAYOUT = 'extended-mountain-v3'
+LAYOUT = 'extended-mountain-v4'
+GUIDELINES = Path(__file__).resolve().parent.parent / 'artifacts/levels/level-guidelines.md'
+YELLOW_CLEARANCE = 1080
 DIRECTION_OFFSETS = {13: -25, 15: 30}
 NONCONSECUTIVE_CLEARANCE = 1400
 
@@ -25,6 +28,12 @@ def tune(source, reposition=True, guards=True):
             assert len(fragment['polys']) == 2
             fragment['polys'] = fragment['polys'][:1]
         fragment['surfaceRole'] = 'bounce'
+    if reposition:
+        # Keep the upper shelf over the far end of P4, away from P3's flight arc.
+        shelf=source['fragments'][5]
+        scale=450 / shelf['width']
+        shelf['polys']=[[[x*scale,y] for x,y in poly] for poly in shelf['polys']]
+        shelf['width']=450
     m = copy.deepcopy(source)
     fs = m['fragments']
     for n in range(1, len(fs)):
@@ -41,7 +50,7 @@ def tune(source, reposition=True, guards=True):
             if dx*vx < -1e-6 or dy*vy < -1e-6:
                 continue
             def at(t):
-                return dict(original, x=a['x']+vx*t, y=a['y']+vy*t)
+                return dict(original, x=(a['x']-400 if reposition and n == 3 else a['x']+vx*t), y=a['y']+vy*t)
             lo, hi = 0., 20000.
             for _ in range(60):
                 mid = (lo+hi)/2
@@ -82,10 +91,10 @@ def tune(source, reposition=True, guards=True):
             by=y+step*120
             poly=[[x,by],[x+band['width'],by],[x+band['width'],by+band['height']],[x,by+band['height']]]
             nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs)
-            if nearest>=540 and all(union_distance([poly],[other])[0]>=120 for other in placed_bands):break
+            if nearest>=YELLOW_CLEARANCE and all(union_distance([poly],[other])[0]>=120 for other in placed_bands):break
         else: raise ValueError('Cannot place '+band['id'])
         placed_bands.append(poly)
-        band.update(x=x,y=by,polygon=poly,nearestSolidClearance=nearest)
+        band.update(x=x,y=by,polygon=poly,nearestSolidClearance=nearest,minimumSolidClearance=YELLOW_CLEARANCE)
         band.pop('nominalRouteSampleCheck',None)
     if guards:
         add_shortcut_guards(m)
@@ -124,41 +133,20 @@ def add_shortcut_guards(m):
             elif nc < ac-200:
                 right=x+width; x=max(x,nxt[2]+80); width=right-x
         if width<400:continue
+        if nxt and nxt[1]<ay-.01 and not (nxt[0]>=x+width+30 or nxt[2]<=x-30):continue
         # Cap the launch above a shelf; skip candidates whose intended next
         # platform occupies this corridor. Exact outcomes require physics probes.
-        for height in ([600,400,240] if i == 0 else [800,600,400,240]):
-            y=ay-90-height
+        for height, offset in ((h, offset) for offset in range(0, 4001, 120) for h in ([600,400,240] if i == 0 else [800,600,400,240])):
+            y=ay-YELLOW_CLEARANCE-height-offset
             poly=[[x,y],[x+width,y],[x+width,y+height],[x,y+height]]
             nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs)
-            if nearest<80 or width<=height: continue
-            nxt=box(fs[i+1]) if i+1<len(fs) else None
-            if nxt and nxt[1]<ay-.01 and not (nxt[0]>=x+width+30 or nxt[2]<=x-30):continue
+            if nearest<YELLOW_CLEARANCE or width<=height: continue
             if any(union_distance([poly],[g['polygon']])[0]<30 for g in guards):continue
             guards.append(dict(id='G'+str(len(guards)+1),belowJump=i+1,source=a['id'],
                 target=None if j is None else fs[j]['id'],purpose='upward shortcut brake',
                 x=x,y=y,width=width,height=height,polygon=poly,nearestSolidClearance=nearest,
-                minimumSolidClearance=80,role='non-solid, non-grappleable, pass-through braking'))
+                minimumSolidClearance=YELLOW_CLEARANCE,role='non-solid, non-grappleable, pass-through braking'))
             break
-    # Brake the high leftward arc from P3 that overshoots P4 into P5.
-    # The lower leftward transfer stays beneath this horizontal zone.
-    left = box(fs[4])[2] + 300
-    right = box(fs[3])[0] - 300
-    bottom = box(fs[4])[1] - 600
-    height = 800
-    poly = [[left,bottom-height],[right,bottom-height],[right,bottom],[left,bottom]]
-    nearest = min(union_distance([poly],svg.bodies(f))[0] for f in fs)
-    assert right-left > height and nearest >= 80
-    guards.append(dict(id='G'+str(len(guards)+1),belowJump=4,source='P3',target='P5',
-        purpose='high-arc bypass brake',x=left,y=bottom-height,width=right-left,height=height,
-        polygon=poly,nearestSolidClearance=nearest,minimumSolidClearance=80,
-        role='non-solid, non-grappleable, pass-through braking'))
-    upper = copy.deepcopy(guards[-1])
-    upper.update(id='G'+str(len(guards)+1),purpose='higher-arc bypass brake',y=bottom-1900)
-    upper['polygon']=[[left,upper['y']],[right,upper['y']],
-                      [right,upper['y']+height],[left,upper['y']+height]]
-    upper['nearestSolidClearance']=min(union_distance([upper['polygon']],svg.bodies(f))[0] for f in fs)
-    assert upper['nearestSolidClearance']>=80
-    guards.append(upper)
     m['yellowBands']+=guards
     m['shortcutCandidates']=[{'from':fs[i]['id'],'to':None if j is None else fs[j]['id']} for i,j in candidates]
 
@@ -167,9 +155,14 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source',required=True)
     ap.add_argument('--output-dir',required=True)
+    ap.add_argument('--guidelines', default=str(GUIDELINES), help='Required current design guidelines')
     args=ap.parse_args()
+    guidelines=Path(args.guidelines).read_bytes()
+    if b'200% R = 1,080 units' not in guidelines:
+        raise ValueError('Guidelines must specify the supported 200% yellow clearance')
     dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
     m=tune(json.loads(Path(args.source).read_text()))
+    m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':200}
     svg.LAYOUT_ID=LAYOUT
     text=svg.build(m)
     text=text.replace('01–10: preserved baseline geometry', 'Opening 80% · vertical transfers 150%')
