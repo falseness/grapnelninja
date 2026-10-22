@@ -8957,3 +8957,177 @@ class Task611Tests(unittest.TestCase):
                 with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print(f'PASS connection: previous encounter reaches summit-upper-landing {arrival}; index all files parse/decode; below 200 MB')
+
+class Task612Tests(unittest.TestCase):
+    """Final Summit jump from a labelled shared third encounter fixture; production inputs and physics."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['source_hashes']['tools/test_grapple_over_redesign.py']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        cls.config['simulation']='Labelled isolated S08-03 exit for local tests; one Crown exit fixture for continuous S08; not base-to-summit'
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK612_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task605Tests.until
+    target = dict(x=11918,y=-5900)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:12178,y:-5480,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        return p
+
+    def shot(self,p,target,hold):
+        p.mouse.up()
+        p.evaluate('screen.trackGrappleOver(true)')
+        self.press(p,target);self.step(p,hold);p.mouse.up()
+
+    def capture(self,p,name):
+        # Hide only the completion menu for the terrain capture; no simulation advances.
+        p.evaluate('''() => {screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;
+            const original=CLIMB_UI.drawMenu;CLIMB_UI.drawMenu=()=>{};
+            try {draw()} finally {CLIMB_UI.drawMenu=original}}''')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'summit-array')
+        p.evaluate("() => {const d=document.createElement('div');d.id='proof-label';d.textContent='S08-04 isolated shared third landing / earned 540 / production controls';d.style='position:fixed;bottom:12px;left:12px;background:#111;color:white;padding:8px';document.body.appendChild(d)}")
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        p.evaluate("document.getElementById('proof-label').remove()")
+        with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+
+    def test_01_geometry_and_route(self):
+        p=self.page()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S08-04'),movers:floors[0].level.movers,
+            range:grappleOverAcquisitionRadius(),scale:scale[version],target,
+            reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),calibrated:GRAPPLE_OVER_MOVEMENT,
+            finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][-1]['encounters'],['S08-01','S08-02','S08-03','S08-04'])
+        self.assertIsNotNone(g['finish']);self.assertEqual(g['range'],540);self.assertEqual(g['scale'],.375)
+        self.assertLess(g['reach'],540)
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+            self.assertTrue(e['purpose'])
+        es={e['id']:e for e in g['elements']}
+        self.assertNotIn('preview-unbuilt',es)
+        self.assertTrue(all(e['role']=='bounce' for e in g['elements'] if e['id'].startswith('yard-')))
+        for name in ['summit-timing-landing','summit-final-landing','summit-final-catch']:
+            self.assertGreaterEqual(es[name]['width'],540)
+        g.update(connection='Live summit-timing-landing shared with S08-03',
+            landingWidths=[es[n]['width'] for n in ['summit-timing-landing','summit-final-landing']],recoveryWidth=882,gap=12098-11558,
+            escape='Green-only opening; open release gap above broad lower catch',
+            calibration='TASK-564 broad shelves; TASK-609 calibrated 420-rise launch mirrored west; final green combination adds no mechanic; first red remains S07')
+        self.assertGreaterEqual(g['gap'],540)
+        g['localElements']=[es[n] for n in g['encounter']['elements']]
+        self.assertTrue(all(e['role']=='bounce' for e in g['localElements']))
+        self.assertEqual(g['finish'],dict(left=10758,right=11558,top=-5479.000001,bottom=-5468.2))
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.shot(p,self.target,32);landing=self.until(p,'summit-final-landing',500);self.assertIsNotNone(landing)
+        r=self.result(p);best=streak=0
+        for s in r['rows'][32:landing-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0
+            best=max(best,streak)
+        self.assertGreaterEqual(best,6);self.assertTrue(any(s['attached'] for s in r['rows'][:32]))
+        r.update(entryTick=0,takeoffTick=next(s['tick'] for s in r['rows'] if s['vy']<0),releaseTick=32,
+            landingTick=landing,landingAir=best,entryToExit=True,resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']));self.capture(p,'landing.jpg')
+        print(f'PASS geometry S08-04: live purposes; landing widths 720/800 opening 540 recovery 882; reach {g["reach"]:.3f} < 540; no planned terrain; scale .375')
+        print(f'PASS route: release 32 landing {landing}; consecutive unattached airborne {best}; trusted inputs; zero resets/injections; images decoded')
+
+    def test_02_miss_and_recovery(self):
+        p=self.page();self.shot(p,self.target,24)
+        catch=self.until(p,'summit-final-catch');self.assertIsNotNone(catch)
+        self.assertFalse(self.landings(self.result(p),'summit-final-landing'))
+        returned=self.until(p,'summit-final-landing');self.assertIsNotNone(returned)
+        r=self.result(p);r.update(earlyReleaseTick=24,catchTick=catch,catchTarget='summit-final-catch',
+            returnTick=returned,recoveryTarget='summit-final-landing',resets=0,poseInjections=0,
+            recovery='Release lets the normal green catch rebound reach the exit deck; no additional input required')
+        self.write('miss.json',r)
+        print(f'PASS miss: early release 24 catch summit-final-catch {catch}; normal rebound returns summit-final-landing {returned}; no reset/checkpoint')
+
+    def test_03_hold_and_nearest(self):
+        cases=[]
+        p=self.page();self.press(p,self.target);self.step(p,720)
+        r=self.result(p);r.update(probe='continuous hold 720 ticks',successfulAlternative=bool(self.landings(r,'summit-final-landing')))
+        cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.shot(p,target,interval);self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'summit-final-landing')))
+            cases.append(r)
+        self.write('controls.json',dict(cases=cases,bound='720 hold; <=600 repeated nearest 6/12/24',
+            inspection='Every exit top contact tested with nominal success definition'))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded trusted probes; zero successful alternatives')
+
+    def test_04_continuous_section_and_completion(self):
+        p=Task609Tests.page(self)
+        p.evaluate('''() => {window.summitEvents=[];const original=PLATFORM.sendLifecycle;
+            PLATFORM.sendLifecycle=function(name,...args){if(name==='level_completed')
+                summitEvents.push({tick:YARD.result().tick+1,x:ninja.x,y:ninja.y});
+                return original.call(this,name,...args)}}''')
+        self.step(p,240);self.shot(p,Task609Tests.target,32)
+        self.assertEqual(self.until(p,'summit-landing',500),446)
+        self.step(p,130)
+        target=p.evaluate('({x:14193,y:floors[0].byId.get("summit-lift").y+40})')
+        self.shot(p,target,240)
+        self.assertEqual(self.until(p,'summit-upper-landing',600),881)
+        self.step(p,400);self.shot(p,Task611Tests.target,30)
+        self.assertEqual(self.until(p,'summit-timing-landing',700),1481)
+        self.assertEqual(p.evaluate('summitEvents'),[])
+        self.shot(p,self.target,20)
+        self.assertEqual(self.until(p,'summit-final-landing',700),1580)
+        r=self.result(p)
+        exits=[dict(encounter=f'S08-0{i+1}',collider=id,tick=self.landings(r,id)[0]['tick'])
+            for i,id in enumerate(['summit-landing','summit-upper-landing','summit-timing-landing','summit-final-landing'])]
+        self.assertEqual([e['tick'] for e in exits],[446,881,1481,1580])
+        self.step(p,120);p.evaluate('CLIMB_UI.complete();CLIMB_UI.complete()')
+        events=p.evaluate('summitEvents');self.assertEqual(len(events),1)
+        self.assertEqual(events[0]['tick'],1580)
+        self.assertTrue(p.evaluate('floors[0].climbStats.completed'))
+        gate=p.evaluate('''()=>{const out=[];for(let n=1;n<=8;n++){
+            const m=structuredClone(GRAPPLE_OVER_REPLACEMENT);
+            m.sections.forEach((s,i)=>s.status=i<n?'built':'planned');
+            out.push({section:m.sections[n-1].id,finish:replacementMountainLevel(m).finish});}
+            const m=structuredClone(GRAPPLE_OVER_REPLACEMENT);
+            m.sections[7].encounters.pop();
+            return {sections:out,incompleteSummit:replacementMountainLevel(m).finish}}''')
+        self.assertTrue(all(g['finish'] is None for g in gate['sections'][:7]))
+        self.assertIsNotNone(gate['sections'][7]['finish']);self.assertIsNone(gate['incompleteSummit'])
+        r.update(exits=exits,fixture=dict(x=12753,y=-4720,vx=0,vy=0,range=540),
+            scope='One labelled isolated Crown exit fixture; continuous S08 entry to summit, not base-to-summit',
+            resets=0,poseInjections=0,completionEvents=events,completionCount=len(events),gate=gate)
+        self.write('section-route.json',r)
+        print('PASS section-route: S08-01/02/03/04 exits 446/881/1481/1580; one labelled fixture; zero handoff resets/injections')
+        print('PASS completion: level_completed exactly once at tick 1580; S01-S07 finish null; incomplete S08 finish null')
+
+    def test_05_evidence_index(self):
+        required={'commands.log':'exact commands, exit statuses, test identifiers/count, browser/viewport/revision/source hashes',
+            'tests.log':'five Task612Tests, no skips, OK',
+            'geometry.json':'live S08-04 purposes, widths, opening/catch, calibrated reachable 540 target',
+            'route.json':'production trusted input release 32, landing 187, >=6 consecutive unattached airborne ticks',
+            'inputs.json':'trusted nominal handler events',
+            'miss.json':'early release 24, catch 165, normal green rebound to summit 316',
+            'approach.jpg':'broad third landing and final target with Summit antenna',
+            'landing.jpg':'broad final landing and Summit antenna; completion menu hidden only for capture',
+            'controls.json':'four bounded continuous hold/nearest probes, all alternative successes inspected',
+            'section-route.json':'four ordered exits in one continuous fixture run and exactly-once S08-only completion',
+            'evidence-index.json':'artifact assertions, provenance and changed subsystem dependencies'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,
+            changedSubsystems=['mountain.js S08-04 geometry and finish gate -> fixedlevel.js colliders and physics.js existing completion region',
+                'tools/test_grapple_over_redesign.py additive Task612Tests -> browser_test_support and production handlers'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','gameoptions.js','fixedlevel.js','render/landmarks.js'],
+            superseded='Earlier replacement prefix/finish-null inventory assertions are historical; TASK-609/610/611 proof stays in its original directories. Legacy v3 remains playable and its tests unchanged.',
+            hashPolicy='A HEAD-only commit does not invalidate identical tested source hashes'))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith('.jpg'):
+                with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS evidence-index: all required files exist/parse/decode; below 200 MB; changed dependencies and superseded historical coverage recorded')

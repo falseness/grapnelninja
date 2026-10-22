@@ -1203,11 +1203,13 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Summit Array encounter 3. Planned terrain stays noncollidable.
+// Replacement built prefix through Summit Array encounter 4. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 16000, top: -6200, bottom: 280},
-    spawn: {x: 2160, y: 0}, finish: null,
+    // Finish begins at the top-contact center (10.8 radius plus contact epsilon),
+    // so entering the air above the summit does not complete the climb.
+    spawn: {x: 2160, y: 0}, finish: {left: 10758, right: 11558, top: -5479.000001, bottom: -5468.2},
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
         {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03', 'S02-04']},
@@ -1217,7 +1219,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
             rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}},
         {id: 'S06', labelKey: 'climb.section.counterweightTower', status: 'built', encounters: ['S06-01', 'S06-02', 'S06-03', 'S06-04']},
         {id: 'S07', labelKey: 'climb.section.S07', status: 'built', encounters: ['S07-01', 'S07-02', 'S07-03', 'S07-04']},
-        {id: 'S08', labelKey: 'climb.section.S08', status: 'built', encounters: ['S08-01', 'S08-02', 'S08-03']}
+        {id: 'S08', labelKey: 'climb.section.S08', status: 'built', encounters: ['S08-01', 'S08-02', 'S08-03', 'S08-04']}
     ],
     encounters: [
         {id: 'S01-01', name: 'Loading Yard', elements: ['yard-entry', 'yard-landing', 'yard-anchor', 'yard-catch']},
@@ -1251,6 +1253,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S08-01', name: 'Summit Array familiar green arrival', elements: ['crown-exit', 'summit-anchor', 'summit-landing', 'summit-catch'], recovery: ['summit-catch', 'summit-landing']},
         {id: 'S08-02', name: 'Summit Array carrier release', elements: ['summit-landing', 'summit-lift', 'summit-upper-landing', 'summit-lift-catch'], recovery: ['summit-lift-catch', 'summit-landing']},
         {id: 'S08-03', name: 'Summit Array timed rebound transfer', elements: ['summit-upper-landing', 'summit-timing-anchor', 'summit-timing-landing', 'summit-timing-catch', 'summit-timing-red'], recovery: ['summit-timing-catch', 'summit-upper-landing']},
+        {id: 'S08-04', name: 'Summit Array final green release', elements: ['summit-timing-landing', 'summit-final-anchor', 'summit-final-landing', 'summit-final-catch'], recovery: ['summit-final-catch', 'summit-final-landing']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1355,6 +1358,9 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['summit-timing-landing', 12098, -5468.2, 720, 60, 'Broad Summit planning deck across a 540-unit opening; safe end of encounter three'],
         ['summit-timing-catch', 12476, -5268.2, 882, 60, 'Broad lower early-release catch; hook the shared upper deck eastward to return'],
         ['summit-timing-red', 12326, -5710, 80, 80, 'Established nonlethal red sweep; observe from the upper planning deck and release below it'],
+        ['summit-final-anchor', 11838, -5940, 160, 80, 'Reachable final west launch face; deliberate release toward the summit, not a landing'],
+        ['summit-final-landing', 10758, -5468.2, 800, 60, 'Generous summit landing; the only replacement completion region sits directly above this surface'],
+        ['summit-final-catch', 11144, -5318.2, 882, 60, 'Broad early-release catch; established green rebound returns to the summit landing'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['summit-timing-red', 'crown-red', 'crown-practice-red', 'crown-lift-red', 'crown-exit-red'].includes(id) ? 'hazard' : ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['summit-lift', 'crown-lift', 'tower-exit-lift', 'tower-rebound-carrier', 'tower-shuttle', 'tower-counterweight', 'freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['summit-timing-red', 'crown-red', 'crown-practice-red', 'crown-lift-red', 'crown-exit-red', 'viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
         points: id === 'gallery-exit-projection'
@@ -1397,7 +1403,7 @@ function replacementMountainLevel(manifest)
     return {...manifest, sections, encounters,
         elements: manifest.elements.filter(e => elementIds.has(e.id)),
         movers: manifest.movers.filter(m => elementIds.has(m.element)),
-        finish: !planned && sections.some(s => s.id === 'S08') ? manifest.finish : null, profile: REPLACEMENT_PROFILE}
+        finish: !planned && sections.some(s => s.id === 'S08' && s.encounters.includes('S08-04')) ? manifest.finish : null, profile: REPLACEMENT_PROFILE}
 }
 
 function loadMountainLevel(manifest = GRAPPLE_OVER_PREVIEW ? GRAPPLE_OVER_REPLACEMENT : GRAPPLE_OVER_MOUNTAIN)
