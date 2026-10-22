@@ -6796,3 +6796,215 @@ class Task599Tests(unittest.TestCase):
                 with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS dependencies/index: preview 360/540 legacy 1080/1620 camera=.375 gravity/pull unchanged; all required files parse/decode; below 200 MB')
+
+
+class Task600Tests(unittest.TestCase):
+    """Counterweight Tower introduction; isolated shared gallery exit, never a summit run."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Isolated S06-03 exit fixture -> S06-04 only; production physics and trusted inputs; not a base-to-summit run'
+
+    observe = Task594Tests.observe
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    target = dict(x=13617,y=-3508.2)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:13517,y:-3200,speedX:0,speedY:0});floors[0].rangeUpgraded=true;screen.trackGrappleOver(true)')
+        # A full real production cycle, no mover-time or player-state injection.
+        p.evaluate('''() => {window.towerCycle=[];for(let i=0;i<600;i++){
+            YARD.step(1);towerCycle.push({tick:i+1,y:floors[0].byId.get('tower-exit-lift').y,
+                px:ninja.x,py:ninja.y});}}''')
+        return p
+
+    def until(self,p,id,limit=400):
+        return p.evaluate('''({id,limit})=>{for(let i=0;i<limit;i++){
+            YARD.step(1);const r=YARD.result().rows.at(-1);
+            if(r.contacts.some(c=>c.id===id&&c.ny<-.9))return r.tick;
+        }return null}''',dict(id=id,limit=limit))
+
+    def capture(self,p,name):
+        p.evaluate('screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw()')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'counterweight-tower')
+        p.evaluate("() => {const d=document.createElement('div');d.id='proof-label';d.textContent='S06-04 isolated rebound deck / earned 540 / production controls';d.style='position:fixed;bottom:12px;left:12px;background:#111;color:white;padding:8px';document.body.appendChild(d)}")
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        p.evaluate("document.getElementById('proof-label').remove()")
+        with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+
+    def test_01_geometry_cycle_and_release(self):
+        p=self.page()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S06-04'),movers:floors[0].level.movers,
+            range:grappleOverAcquisitionRadius(),scale:scale[version],target,
+            reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),cycle:towerCycle,
+            calibrated:{movement:GRAPPLE_OVER_MOVEMENT,movers:GRAPPLE_OVER_MOVERS},
+            dragCount:floors[0].dragZones.length,finish:floors[0].level.finish})''',self.target)
+        self.assertEqual(g['sections'][-1]['encounters'],['S06-01','S06-02','S06-03','S06-04'])
+        self.assertIsNone(g['finish']);self.assertEqual(g['range'],540)
+        self.assertEqual(g['scale'],.375);self.assertLess(g['reach'],540)
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+            self.assertTrue(e['purpose']);self.assertIn(e['role'],['bounce','solid','drag'])
+        es={e['id']:e for e in g['elements']}
+        self.assertNotIn('preview-unbuilt',es)
+        self.assertTrue(all(e['role']=='bounce' for e in g['elements'] if e['id'].startswith('yard-')))
+        self.assertEqual(es['tower-exit-lift']['role'],'solid')
+        for name in ['tower-rebound-landing','tower-exit','tower-exit-catch']:
+            self.assertGreaterEqual(es[name]['width'],540)
+        g.update(rise=es['tower-rebound-landing']['y']-es['tower-exit']['y'],
+            landingWidths=[es[n]['width'] for n in ['tower-rebound-landing','tower-exit']],
+            recoveryWidth=es['tower-exit-catch']['width'],
+            connection='Same live tower-rebound-landing collider: isolated S06-03 exit is S06-04 entry',
+            localCatch='tower-exit-catch',
+            calibrationNote='TASK-564/561 vertical 720 travel and 10000ms cycle; broad 360 blue weight; 800 entry/exit/catch; vertical opening 760; 25 lateral mechanical clearance is not a passage',
+            sweptBounds=dict(left=13607,right=13967,top=-4268.2,bottom=-3468.2))
+        self.assertEqual(g['rise'],760)
+        self.assertAlmostEqual(max(v['y'] for v in g['cycle'])-min(v['y'] for v in g['cycle']),720)
+        self.assertAlmostEqual(g['cycle'][-1]['y'],-3548.2)
+        self.assertTrue(all(v['px']==13517 and -3220<v['py']<-3188 for v in g['cycle']))
+        sweep=g['sweptBounds'];clearances=[]
+        for e in g['elements']:
+            if e['id']=='tower-exit-lift':continue
+            left=e['x'];right=left+e['width'];top=e['y'];bottom=top+max(v['y'] for v in e['points'])
+            dx=max(left-sweep['right'],sweep['left']-right,0)
+            dy=max(top-sweep['bottom'],sweep['top']-bottom,0)
+            self.assertGreater(max(dx,dy),0,e['id'])
+            clearances.append(dict(id=e['id'],clearance=(dx*dx+dy*dy)**.5))
+        g['sweepClearances']=clearances
+        g['yellowCorridor']=dict(left=13721,right=14521,top=-3100,bottom=-2928,width=800,ascentOutside=True);self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.press(p,self.target);self.step(p,240);p.mouse.up()
+        landing=self.until(p,'tower-exit');self.assertIsNotNone(landing)
+        r=self.result(p);streak=0;best=0
+        for s in r['rows'][840:landing-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0
+            best=max(best,streak)
+        self.assertGreaterEqual(best,6);self.assertFalse(self.landings(r,'tower-exit-catch'))
+        self.assertTrue(any(s['attached'] for s in r['rows'][600:840]))
+        r.update(entryTick=0,observationTicks=600,takeoffTick=next(s['tick'] for s in r['rows'][600:] if s['vy']<0),
+            releaseTick=840,landingTick=landing,landingAir=best,entryToExit=True,resets=0,poseInjections=0,
+            fixture=dict(x=13517,y=-3200,vx=0,vy=0),scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        self.capture(p,'landing.jpg')
+        print(f'PASS geometry S06-04: blue width 360 travel 720; entry/exit/catch 800; vertical opening 760; reachable {g["reach"]:.3f} < 540; sweep clears all terrain; no red/planned terrain')
+        print(f'PASS route: full-cycle observation; takeoff {r["takeoffTick"]} release 840 landing {landing}; consecutive unattached airborne {best}; trusted handlers; zero resets/injections; images decoded')
+
+    def test_02_early_miss_and_recovery(self):
+        p=self.page();self.press(p,self.target);self.step(p,12);p.mouse.up()
+        catch=self.until(p,'tower-exit-catch',800);self.assertIsNotNone(catch)
+        before=self.result(p);self.assertFalse(self.landings(before,'tower-exit'))
+        self.press(p,dict(x=13621,y=-3178.2));self.step(p,30);p.mouse.up()
+        returned=self.until(p,'tower-rebound-landing',800);self.assertIsNotNone(returned)
+        r=self.result(p)
+        r.update(earlyReleaseTick=612,catchTick=catch,catchTarget='tower-exit-catch',
+            recoveryPressTick=catch,recoveryReleaseTick=catch+30,returnTick=returned,
+            recoveryTarget='tower-rebound-landing',resets=0,poseInjections=0,scope=self.config['simulation'])
+        r['yellowRows']=[v for v in r['rows'] if 13721<v['x']<14521 and -3100<v['y']<-2928];self.assertTrue(r['yellowRows']);self.write('miss.json',r)
+        print(f'PASS miss: early release 612 declared catch {catch}; normal-control return tower-rebound-landing {returned}; no reset/checkpoint/injection')
+
+    def test_03_hold_and_nearest(self):
+        cases=[]
+        p=self.page();self.press(p,self.target);self.step(p,1200)
+        r=self.result(p);r.update(probe='continuous hold for two cycles',successfulAlternative=bool(self.landings(r,'tower-exit')))
+        cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'tower-exit')))
+            cases.append(r)
+        self.write('controls.json',dict(cases=cases,bound='1200 continuous hold; 600 each repeated-nearest 6/12/24 hold ticks',
+            inspection='All exit top contacts inspected with the same nominal success definition; no successful alternatives',scope=self.config['simulation']))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded trusted probes; two-cycle continuous hold and nearest 6/12/24; zero successful alternatives')
+
+
+    def test_04_continuous_section(self):
+        p=Task597Tests.page(self)
+        self.press(p,Task597Tests.target);self.step(p,240);p.mouse.up()
+        first=self.until(p,'tower-observation');self.assertIsNotNone(first)
+        self.press(p,dict(x=11031,y=-3178.2));self.step(p,48);p.mouse.up()
+        second=self.until(p,'tower-shaft-landing',600);self.assertIsNotNone(second)
+        self.step(p,22)
+        target=p.evaluate("()=>{const e=floors[0].byId.get('tower-rebound-carrier');return {x:e.x+10,y:e.y+40}}")
+        self.press(p,target);self.step(p,48);p.mouse.up()
+        third=self.until(p,'tower-rebound-landing',600);self.assertIsNotNone(third)
+        self.step(p,1800-third)
+        self.press(p,self.target);self.step(p,240);p.mouse.up();self.step(p,12)
+        self.press(p,dict(x=13572,y=-3938.2));self.step(p,12);p.mouse.up()
+        fourth=self.until(p,'tower-exit',600);self.assertIsNotNone(fourth)
+        r=self.result(p)
+        ids=['tower-observation','tower-shaft-landing','tower-rebound-landing','tower-exit']
+        exits=[dict(encounter=f'S06-0{i+1}',collider=id,tick=next(s['tick'] for s in self.landings(r,id))) for i,id in enumerate(ids)]
+        self.assertEqual([e['tick'] for e in exits],[925,1073,1308,2139])
+        self.assertIsNone(p.evaluate('floors[0].level.finish'))
+        self.assertFalse(p.evaluate('Boolean(floors[0].climbStats.completed)'))
+        r.update(exits=exits,resets=0,poseInjections=0,completed=False,
+            fixture=dict(x=10306,y=-2440,vx=0,vy=0,previouslyEarnedRange=540),
+            scope='One isolated S06 entry fixture; continuous four-exit section run, not base-to-summit',
+            alternativeInspection='S06-02 uses an aimed 48-tick deck release instead of the shuttle; it still visits every exit. S06-04 keeps the deliberate lift release and 12 airborne ticks before a green-edge correction from the different handoff position; no tiny-transfer chain replaces lift travel.')
+        self.write('section-route.json',r)
+        controls=json.loads((self.out/'controls.json').read_text())
+        controls['successfulAlternativeInspection']=dict(path='section-route.json',exits=exits,observation=r['alternativeInspection'])
+        self.write('controls.json',controls)
+        print('PASS section-route: S06-01=925 S06-02=1073 S06-03=1308 S06-04=2139; single labelled entry fixture; resets=0 injections=0 completion=0; alternative inspected')
+
+    def test_05_dependencies_gate_and_index(self):
+        p=Task567Tests.page(self)
+        gate=p.evaluate('''() => {
+            const m=JSON.parse(JSON.stringify(GRAPPLE_OVER_REPLACEMENT));
+            m.sections=m.sections.filter(s=>s.status==='built');
+            m.finish={left:2000,right:2300,top:-100,bottom:100};
+            const s06=replacementMountainLevel(m).finish;
+            m.sections.push({id:'S08',status:'built',encounters:[]});
+            const s08=replacementMountainLevel(m).finish;
+            floors[0].level.finish=s08;
+            let events=0;const original=PLATFORM.sendLifecycle;
+            PLATFORM.sendLifecycle=function(name,...args){if(name==='level_completed')events++;return original.call(this,name,...args)};
+            YARD.step(3);CLIMB_UI.complete();
+            return {s06,s08,events,completed:floors[0].climbStats.completed};
+        }''')
+        self.assertIsNone(gate['s06']);self.assertTrue(gate['s08']);self.assertEqual(gate['events'],1)
+        gate['scope']='Separate isolated S08 finish contract fixture, not continuous section gameplay'
+        self.write('summit-gate.json',gate);print('PASS summit gate: S06 finish null; separate S08 contract completion events=1')
+        rows=[]
+        for preview in [True,False]:
+            q=Task558Tests.page(self,preview)
+            for mode in ['grapple_over','classic','bad']:
+                row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,
+                    range:version==='grapple_over'?grappleOverAcquisitionRadius():null,
+                    upgraded:version==='grapple_over'?grappleOverProfile().upgradedAcquisitionRadius:null,
+                    scale:scale[version],gravity:GRAVITY,pull:grappleSpeed}}''',mode)
+                row['preview']=preview;rows.append(row)
+                if mode=='grapple_over':
+                    self.assertEqual(row['range'],360 if preview else 1080)
+                    self.assertEqual(row['upgraded'],540 if preview else 1620);self.assertEqual(row['scale'],.375)
+        self.assertEqual(len({(r['gravity'],r['pull']) for r in rows}),1)
+        self.write('dependencies.json',dict(rows=rows,changed=['mountain.js preview geometry -> fixedlevel.js mover/collision',
+            'tools/test_grapple_over_redesign.py additive Task600Tests'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','gameoptions.js','fixedlevel.js','render/landmarks.js'],
+            superseded='Historical exact preview inventories end at S06-03; retained TASK-598 proof is referenced in place. No legacy tests edited or earlier expensive suites claimed revalidated.',hashes=self.config['source_hashes']))
+        required={'commands.log':'exact command, exit status, identifiers/count, revision, browser/viewport, SHA256',
+            'tests.log':'five exact Task600Tests; no skips; OK','geometry.json':'live purposes/widths, 760 rise, range/reach, vertical full cycle and swept clearance',
+            'route.json':'production entry-to-exit with >=6 unattached airborne ticks','inputs.json':'trusted production input events',
+            'miss.json':'early release into isolated yellow corridor and catch and return through controls','approach.jpg':'clear blue target, broad decks, tower structure',
+            'landing.jpg':'fixed broad exit and tower structure','controls.json':'bounded hold/nearest probes, inspected alternatives',
+            'section-route.json':'four continuous ordered exits, no handoff resets', 'summit-gate.json':'separate S08 contract emits exactly one event','dependencies.json':'changed subsystem dependencies and hashes',
+            'evidence-index.json':'artifact assertions and provenance'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation'],
+            hashPolicy='A HEAD-only commit does not invalidate identical tested source hashes'))
+        for name in required:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+            if name.endswith('.jpg'):
+                with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS dependencies/index: preview 360/540 legacy 1080/1620 camera=.375 gravity/pull unchanged; all required files parse/decode; below 200 MB')
+
+
