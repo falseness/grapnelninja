@@ -11088,3 +11088,120 @@ class Task623Tests(unittest.TestCase):
             if name.endswith('.json'):json.loads((self.out/name).read_text())
         self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
         print('PASS index: all 9 required files exist; JSON parses; no required images/clips; retained bytes <200 MB')
+
+
+class Task624Tests(unittest.TestCase):
+    """Finite isolated boundary/finish probes; no continuous-from-base claim."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        for n in ['tools/test_grapple_over_redesign.py','tools/grapple_over_bypass.js','tools/grapple_over_boundary.js']:
+            cls.config['source_hashes'][n]=hashlib.sha256((ROOT/n).read_bytes()).hexdigest()
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('TASK624_CONFIG '+json.dumps(cls.config,separators=(',',':'))+'\n')
+
+    write=Task557Tests.write
+    press=Task567Tests.press
+    step=Task567Tests.step
+    until=Task605Tests.until
+    shot=Task612Tests.shot
+
+    def page(self):
+        p=Task622Tests.page(self)
+        p.add_script_tag(path=str(ROOT/'tools/grapple_over_boundary.js'))
+        return p
+
+    @staticmethod
+    def start(id,x,y,vx=0,vy=0):
+        return dict(id=id,pose=dict(x=x,y=y,vx=vx,vy=vy),phaseTick=0)
+
+    def test_01_acquisition(self):
+        p=self.page();cases=[]
+        specs=[('visible',2160,0,2420,-139),
+               ('left-edge',20,-1000,-100,-1200),('right-edge',15980,-1000,16100,-1200),
+               ('non-grapplable',12200,-5670,12360,-5670),
+               ('occluded',11100,-5550,11100,-5300),
+               ('underside',11000,-5350,11000,-5468.2)]
+        for name,x,y,tx,ty in specs:
+            for radius in [360,540]:
+                r=p.evaluate('a=>BOUNDARY.run(a.s,a.r,a.t,120,180)',dict(s=self.start(name,x,y),r=radius,t=dict(x=tx,y=ty)))
+                cases.append(r)
+        self.write('acquisition.json',dict(cases=cases,scope='Isolated real-map fixtures; production mouse handlers, nearest crossing and attached-element data'))
+        for r in cases:
+            name=r['start']['id']
+            if name=='visible':self.assertIn('yard-anchor',r['attached'])
+            if name in ['left-edge','right-edge','non-grapplable']:self.assertEqual(r['attached'],[],name)
+            if name in ['left-edge','right-edge']:
+                self.assertGreaterEqual(min(row['y'] for row in r['trace']),r['start']['pose']['y'])
+            if name=='non-grapplable':self.assertTrue(r['initialHit']['blocked'])
+            if name=='occluded':
+                self.assertEqual(r['initialHit']['id'],'summit-final-landing')
+                self.assertNotIn('summit-final-catch',r['attached'])
+            if name=='underside':self.assertEqual(r['initialHit']['id'],'summit-final-landing')
+        print('PASS acquisition: 12 cases; visible controls; map-edge/non-grapplable rejection; occluded far target blocked; underside hit; ranges 360/540')
+
+    def test_02_finish_search(self):
+        p=self.page()
+        # Enumerate every production route/recovery surface whose polygon is within
+        # upgraded acquisition distance of the final deck, then sample its top.
+        inventory=p.evaluate('''()=>{const f=floors[0].level.finish;return floors[0].elements.map(e=>{
+            const ps=e.getPoints(),left=Math.min(...ps.map(p=>p.x)),right=Math.max(...ps.map(p=>p.x)),top=Math.min(...ps.map(p=>p.y)),bottom=Math.max(...ps.map(p=>p.y));
+            const gap=Math.hypot(Math.max(0,left-f.right,f.left-right),Math.max(0,top-f.bottom,f.top-bottom));
+            return {id:e.id,left,right,top,bottom,gap};}).filter(e=>e.gap<=540)}''')
+        starts=[]
+        for e in inventory:
+            if e['id']=='summit-final-landing':continue
+            for x in [e['left']+20,(e['left']+e['right'])/2,e['right']-20]:
+                starts.append(self.start(e['id']+'-'+str(x),x,e['top']-11.8))
+        starts += [self.start('underside-'+str(x),x,-5380,0,-5) for x in [10780,11150,11530]]
+        starts += [self.start('side-'+str(x),x,-5480,v,0) for x,v in [(10690,5),(11620,-5)]]
+        # Archived released upper-route inputs also cover nearby moving approach poses.
+        archived=Task623Tests.starts(self)
+        for s in archived:
+            x,y=s['pose']['x'],s['pose']['y']
+            if ((max(0,10758-x,x-11558))**2+(y+5468.2)**2)**.5<=540:starts.append(s)
+        targets=[dict(x=10768,y=-5468.2),dict(x=11158,y=-5468.2),dict(x=11548,y=-5468.2),Task612Tests.target]
+        cases=p.evaluate('a=>a.starts.flatMap(s=>a.targets.flatMap(t=>[24,120,600].map(h=>BOUNDARY.run(s,540,t,h,720))))',dict(starts=starts,targets=targets))
+        illegal=[dict(start=c['start']['id'],event=e) for c in cases for e in c['events'] if not any(k['id']=='summit-final-landing' and k['ny']<-.9 for k in e['contacts'])]
+        self.write('finish-probes.json',dict(inventory=inventory,starts=starts,cases=cases,attempts=len(cases),totalTicks=720*len(cases),illegal=illegal,
+            scope='Finite sampled isolated fixtures, collision-preserving input after setup; not exhaustive reachability or continuous gameplay'))
+        self.assertTrue(starts);self.assertGreater(len(cases),0);self.assertEqual(illegal,[])
+        self.assertTrue(all(c['postSetupInjections']==0 for c in cases))
+        print(f'PASS finish search: {len(starts)} starts; {len(cases)} attempts; {720*len(cases)} ticks; illegal=0; every completion has summit-final-landing top contact')
+
+    def test_03_intended_and_recovery(self):
+        cases=[]
+        for hold in [32,24]:
+            p=self.page();s=self.start('S08-04 shared planning deck',12178,-5480)
+            p.evaluate('s=>BYPASS.setup(s,540,null)',s)
+            p.evaluate('''()=>{window.finalEvents=[];const old=PLATFORM.sendLifecycle;PLATFORM.sendLifecycle=function(n,...args){if(n==='level_completed')finalEvents.push({tick:YARD.result().tick+1,x:ninja.x,y:ninja.y});return old.call(this,n,...args)}}''')
+            self.shot(p,Task612Tests.target,hold);self.assertIsNotNone(self.until(p,'summit-final-landing',700));self.step(p,120)
+            r=p.evaluate('YARD.result()');events=p.evaluate('finalEvents')
+            self.assertEqual(len(events),1)
+            self.assertTrue(any(row['tick']==events[0]['tick'] and any(c['id']=='summit-final-landing' and c['ny']<-.9 for c in row['contacts']) for row in r['rows']))
+            if hold==24:self.assertTrue(any(any(c['id']=='summit-final-catch' and c['ny']<-.9 for c in row['contacts']) for row in r['rows']))
+            self.assertTrue(all(i['trusted'] for i in r['inputs']))
+            cases.append(dict(hold=hold,events=events,inputs=r['inputs'],contacts=[r for r in r['rows'] if r['contacts']]))
+        previous=json.loads((ROOT/'artifacts/TASK-623/evidence-index.json').read_text())['config']['source_hashes']
+        for n,h in previous.items():
+            if n.endswith('.js') and not n.startswith('tools/'):self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        prior=json.loads((ROOT/'artifacts/TASK-623/fixes.json').read_text())
+        for n,h in prior['dependencies']['unchangedHashes'].items():self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        archives=[]
+        for task in [614,623]:
+            path=f'artifacts/TASK-{task}/tests.log';log=(ROOT/path).read_text();self.assertIn('\nOK\n',log)
+            archives.append(dict(path=path,sha256=hashlib.sha256((ROOT/path).read_bytes()).hexdigest(),summary=next(l for l in log.splitlines() if l.startswith('Ran '))))
+        self.write('fixes.json',dict(runtimeChanges=[],affectedRouteRechecks=cases,archives=archives,dependencies=self.config['source_hashes'],
+            changedSubsystems=['additive Task624Tests and observation-only boundary harness'],remainingPrematureFinishes=[]))
+        print('PASS rechecks: intended landing completes once; early-release catch returns and completes once; trusted input; production dependencies unchanged; archived S08 and upper-route tests OK')
+
+    def test_04_index(self):
+        required={'commands.log':'exact command, exit, identifiers, browser/viewport, revision, source hashes','tests.log':'four exact Task624Tests, no skips',
+                  'acquisition.json':'12 production input/hit cases','finish-probes.json':'bounded approaches and contact-qualified completion events',
+                  'fixes.json':'intended/recovery rechecks and unchanged dependencies','evidence-index.json':'artifact assertion map'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,hashPolicy='HEAD movement alone does not invalidate identical tested hashes'))
+        for n in required:
+            self.assertTrue((self.out/n).is_file(),n)
+            if n.endswith('.json'):json.loads((self.out/n).read_text())
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS index: all 6 required files exist; JSON parses; no required media; retained bytes <200 MB')
