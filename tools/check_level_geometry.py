@@ -294,14 +294,17 @@ def check(level, svg_data, reference):
                 problems.append('rect error %.6g > %.2g' % (row['maxRectError'], COORD_TOL))
         if rb is not None and abs(nearest[0] - rb.get('nearestSolidClearance', math.inf)) > COORD_TOL:
             problems.append('solid clearance %.6f vs reference %r' % (nearest[0], rb.get('nearestSolidClearance')))
-        if nearest[0] < GRAPPLE_RANGE:
-            problems.append('solid clearance %.6f < 540 (%s)' % (nearest[0], nearest[1]))
+        minimum_clearance = rb.get('minimumSolidClearance', GRAPPLE_RANGE) if rb else GRAPPLE_RANGE
+        if minimum_clearance < 80:
+            problems.append('minimum solid clearance must be at least 80')
+        if nearest[0] < minimum_clearance:
+            problems.append('solid clearance %.6f < %.6f (%s)' % (nearest[0], minimum_clearance, nearest[1]))
         row['pass'] = not problems
         for p in problems:
             fail('%s: %s' % (eid, p))
         drags.append(row)
-    if len(drags) != 6:
-        fail('%d drag zones, expected 6' % len(drags))
+    if len(drags) != len(ref_bands):
+        fail('%d drag zones, expected %d' % (len(drags), len(ref_bands)))
     if set(d['id'] for d in drags) != set(ref_bands):
         fail('drag ids differ from reference bands: %s' % sorted(set(d['id'] for d in drags) ^ set(ref_bands)))
 

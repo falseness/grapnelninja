@@ -18,7 +18,12 @@ class RetunedLevelTests(unittest.TestCase):
             row=report['transfers'][n-1]
             self.assertAlmostEqual(row['computedPercent'],pct,places=5)
         self.assertEqual(len(report['pairs']),300)
-        self.assertEqual(len(report['dragZones']),6)
+        self.assertGreater(len(report['dragZones']),6)
+        bodies=[e for e in level['elements'] if e['role']!='drag']
+        self.assertEqual(len(bodies),25)
+        self.assertTrue(all(e['role']=='bounce' and e['grapplable'] for e in bodies))
+        self.assertTrue(all(e['id'].endswith('-body0') for e in bodies))
+        self.assertTrue(any(b.get('source')=='P0' for b in ref['yellowBands']))
         strict=copy.deepcopy(ref); strict.pop('allowedGrapplePairs')
         self.assertFalse(check(level,svg,strict)['summary']['pass'])
 

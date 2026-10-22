@@ -166,7 +166,7 @@ def build(meas):
     bands = meas['yellowBands']
     falls = meas['fallIllustrations']
     combos = [tuple(c) for c in meas['combinations']]
-    assert len(frags) == 25 and len(rows) == 24 and len(bands) == 6 and len(combos) == 4
+    assert len(frags) == 25 and len(rows) == 24 and len(bands) >= 6 and len(combos) == 4
     assert float(meas['grappleRange']) == R
 
     allb = [p for m in frags for p in bodies(m)]
@@ -200,7 +200,7 @@ def build(meas):
     back.rect(0, 0, CANVAS_W, CANVAS_H, '#09141e')
     back.text(70, 62, 'GRAPPLE OVER / EXTENDED ROUTE / BASELINE PRESERVED', 21, '#8ad3b7', 700)
     back.text(70, 125, 'Hold the ceiling. Drop. Bounce back up.', 45, '#edf4f5', 700)
-    back.text(70, 170, '24 jumps · original 01–10 unchanged · four compound ceiling / descent / rebound sequences · six yellow braking bands', 21)
+    back.text(70, 170, '24 jumps · original 01–10 unchanged · four compound ceiling / descent / rebound sequences · yellow braking bands', 21)
     back.rect(70, 202, 2460, 65, '#29283a', rx=8)
     back.text(92, 232, 'GRAPPLE RANGE 540u · percentages show minimum open gaps · every illustrated flight remains unverified with production physics', 20, '#e8c493', 700)
     back.text(92, 255, 'Yellow rectangles slow falls without providing a foothold, grapple target, checkpoint or automatic return.', 17, '#c5b6a1')
@@ -218,8 +218,8 @@ def build(meas):
                    f' data-role="drag" data-grapplable="false" data-name="{z["id"]} fall brake" fill="#66551f" stroke="#e8ce61" stroke-width="{sw}"/>')
     roles = {}
     for m in frags:
-        role = 'bounce' if m['kind'] == 'bounce' else 'solid'
-        fill, color = fragment_style(m['kind'])
+        role = m.get('surfaceRole', 'bounce' if m['kind'] == 'bounce' else 'solid')
+        fill, color = fragment_style('bounce' if role == 'bounce' else m['kind'])
         out.append(f'<g id="{m["id"]}" data-fragment="true">')
         ids = []
         for i, poly in enumerate(m['polys']):
@@ -261,9 +261,9 @@ def build(meas):
         front.text(2010, y + 30, COMBO_TEXT, 16, '#b4ccd2')
     front.text(2010, 3325, 'YELLOW BANDS', 22, '#edd575', 700)
     for i, z in enumerate(bands):
-        y = 3367 + i * 48
-        front.text(2010, y, f"{z['id']} below jump {z['belowJump']:02d} · {z['width']:.0f} × {z['height']:.0f}u", 17, '#c7b67b')
-    front.text(2010, 3710, 'All six stay ≥540u from solid geometry.', 17, '#9fb8c3')
+        y = 3367 + i * min(48, 300 / len(bands))
+        front.text(2010, y, f"{z['id']} · {z.get('purpose', 'fall brake')} · {z['width']:.0f} × {z['height']:.0f}u", 17, '#c7b67b')
+    front.text(2010, 3710, 'Fall brakes and upward-shortcut damping zones.', 17, '#9fb8c3')
     front.text(2010, 3740, 'No nominal illustrated arc enters a band.', 17, '#9fb8c3')
     front.rect(70, 3930, 2460, 270, '#12242e', rx=12)
     front.text(100, 3975, 'THE COMBINATIONS ARE THE CHALLENGE', 23, '#e4efed', 700)
