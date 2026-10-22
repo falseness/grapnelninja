@@ -1203,7 +1203,7 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Freight Crossing encounter 3. Planned terrain stays noncollidable.
+// Replacement built prefix through Freight Crossing encounter 4. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
     bounds: {left: 0, right: 6480, top: -3000, bottom: 280},
@@ -1211,7 +1211,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
         {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03', 'S02-04']},
-        {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02', 'S03-03']},
+        {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02', 'S03-03', 'S03-04']},
         {id: 'S05', status: 'planned', encounters: ['preview-future'],
             band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
     ],
@@ -1227,6 +1227,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S03-01', name: 'Freight Crossing', elements: ['quarry-fourth-landing', 'freight-carrier', 'freight-landing', 'freight-catch']},
         {id: 'S03-02', name: 'Freight Crossing carrier practice', elements: ['freight-landing', 'freight-second-carrier', 'freight-second-landing', 'freight-second-catch']},
         {id: 'S03-03', name: 'Freight Crossing vertical lift', elements: ['freight-second-landing', 'freight-lift', 'freight-lift-landing', 'freight-second-catch']},
+        {id: 'S03-04', name: 'Freight Crossing exit combination', elements: ['freight-lift', 'freight-lift-landing', 'freight-exit-anchor', 'freight-exit', 'freight-exit-catch']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1260,6 +1261,9 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['freight-second-catch', 5120, -468.2, 1360, 60, 'Broad green recovery apron; early releases return to the shared first freight landing with normal grappling'],
         ['freight-lift', 5550, -1068.2, 360, 80, 'Wide vertical blue lift; same ten-second cycle, deliberate release onto the upper fixed shelf'],
         ['freight-lift-landing', 5935, -1468.2, 540, 60, 'Broad fixed upper freight landing; 760 units above the shared entry, clear of the lift sweep'],
+        ['freight-exit-anchor', 5675, -1879, 160, 80, 'Green upper launch face above the lift sweep; deliberate release into the crossing exit, not a landing'],
+        ['freight-exit', 5010, -1748.2, 540, 60, 'Broad ordinary green crossing exit after the moving-to-fixed transfer and green jump'],
+        ['freight-exit-catch', 5010, -1428.2, 540, 60, 'Stationary green recovery alternative below the exit gap; clears the lift sweep and supports a normal-control retry'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
     ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['freight-carrier', 'freight-second-carrier', 'freight-lift'].includes(id) ? 'solid' : 'bounce', grapplable: true,
         points: ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)

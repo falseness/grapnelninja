@@ -3635,3 +3635,173 @@ class Task581Tests(unittest.TestCase):
         self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation'],
             hashPolicy='Identical tested source hashes survive a HEAD-only commit'))
         print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; gravity/pull unchanged; index written')
+
+
+class Task582Tests(unittest.TestCase):
+    """Freight exit combination; isolated entry and continuous section are explicitly separate."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Isolated S03-02 exit -> moving lift -> fixed S03-03 shelf -> green S03-04 exit; not base-to-summit'
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    until = Task581Tests.until
+    capture = Task581Tests.capture
+    target = dict(x=5833,y=-1801)
+
+    def page(self):
+        p=Task581Tests.page(self)
+        self.press(p,Task581Tests.target);self.step(p,240);p.mouse.up()
+        self.assertEqual(self.until(p,'freight-lift-landing'),925)
+        return p
+
+    def test_01_geometry_and_combination(self):
+        p=self.page()
+        g=p.evaluate('''t=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounters:floors[0].level.encounters,movers:floors[0].level.movers,
+            range:grappleOverAcquisitionRadius(),scale:scale[version],target:t,
+            reach:Math.hypot(t.x-ninja.x,t.y-ninja.y),calibrated:GRAPPLE_OVER_MOVEMENT,
+            finish:floors[0].level.finish,dragCount:floors[0].dragZones.length})''',self.target)
+        self.assertEqual(len(g['elements']),31);self.assertEqual(len(g['movers']),3)
+        self.assertEqual(g['sections'][-1]['encounters'],['S03-01','S03-02','S03-03','S03-04'])
+        self.assertEqual(g['range'],360);self.assertLess(g['reach'],360)
+        self.assertEqual(g['scale'],.375);self.assertIsNone(g['finish']);self.assertEqual(g['dragCount'],0)
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+            self.assertTrue(e['purpose']);self.assertTrue(e['grapplable'])
+            self.assertEqual(e['role'],'solid' if e['id'] in ['freight-carrier','freight-second-carrier','freight-lift'] else 'bounce')
+            if 'anchor' not in e['id']:self.assertGreaterEqual(e['width'],360 if e['role']=='solid' else 540)
+        es={e['id']:e for e in g['elements']}
+        self.assertNotIn('preview-unbuilt',es)
+        self.assertLess(es['freight-exit-anchor']['y']+80,-1788.2)
+        self.assertLessEqual(es['freight-exit-catch']['x']+540,5550)
+        self.assertLessEqual(es['freight-exit']['x']+540,5550)
+        g.update(gap=5935-(5010+540),rise=280,localCatch='freight-exit-catch',
+            movingTransfer='Existing lift -> freight-lift-landing before the green exit jump',
+            calibrationNote='TASK-564 broad 540 shelves, 160x80 launch face; TASK-561 720-unit ten-second lift; placements validated with production physics')
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.press(p,self.target);self.step(p,30);p.mouse.up()
+        landing=self.until(p,'freight-exit');self.assertIsNotNone(landing)
+        r=self.result(p);streak=best=0
+        for row in r['rows'][955:landing-1]:
+            streak=streak+1 if not row['contacts'] and not row['attached'] and not row['shot'] else 0
+            best=max(best,streak)
+        self.assertGreaterEqual(best,6)
+        self.assertTrue(any(row['attached'] for row in r['rows'][600:840]))
+        r.update(entryTick=0,takeoffTick=926,releaseTick=955,landingTick=landing,landingAir=best,
+            entryToExit=True,resets=0,poseInjections=0,fixture=dict(x=6000,y=-720,vx=0,vy=0),scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        self.capture(p,'landing.jpg')
+        print(f'PASS geometry: 31 purposeful green/blue colliders; S03-04 exit/catch 540; gap 385 rise 280; reach {g["reach"]:.3f} <360; planned absent; sweep clear')
+        print(f'PASS route: moving-to-fixed landing 925; green release 955; exit {landing}; unattached airborne {best}; trusted input; zero resets/injections')
+
+    def test_02_miss_and_stationary_return(self):
+        p=self.page();self.press(p,self.target);self.step(p,24);p.mouse.up()
+        catch=self.until(p,'freight-exit-catch');self.assertIsNotNone(catch)
+        self.assertFalse(self.landings(self.result(p),'freight-exit'))
+        self.press(p,dict(x=5548,y=-1728));self.step(p,48);p.mouse.up()
+        returned=self.until(p,'freight-exit');self.assertIsNotNone(returned)
+        r=self.result(p);r.update(earlyReleaseTick=949,catchTick=catch,catchTarget='freight-exit-catch',
+            recoveryPressTick=catch,recoveryReleaseTick=catch+48,returnTick=returned,recoveryTarget='freight-exit',
+            resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('miss.json',r)
+        print(f'PASS miss: early release 949; stationary catch {catch}; normal-control exit return {returned}; zero resets/injections')
+
+    def test_03_controls(self):
+        cases=[]
+        p=self.page();self.press(p,self.target);self.step(p,1200)
+        r=self.result(p);r.update(probe='continuous hold 1200 ticks',successfulAlternative=bool(self.landings(r,'freight-exit')))
+        cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'freight-exit')))
+            cases.append(r)
+        self.write('controls.json',dict(cases=cases,inspection='Every exit top contact inspected using nominal success definition',
+            bound='1200 hold; 600 each nearest probe',scope=self.config['simulation']))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded trusted probes; zero successful alternatives or tiny-transfer solutions')
+
+    def test_04_continuous_section_and_summit(self):
+        p=Task579Tests.page(self)
+        def pull(target,n):
+            self.press(p,target);self.step(p,n);p.mouse.up()
+        pull(Task579Tests.target,240)
+        self.assertEqual(self.until(p,'freight-landing'),920)
+        pull(dict(x=5090,y=-688),50)
+        for _ in range(200):
+            target=p.evaluate("({x:floors[0].byId.get('freight-second-carrier').x+10,y:-900})")
+            if p.evaluate('t=>Math.hypot(t.x-ninja.x,t.y-ninja.y)<350',target):break
+            self.step(p,1)
+        self.assertLess(p.evaluate('t=>Math.hypot(t.x-ninja.x,t.y-ninja.y)',target),350)
+        pull(target,(840-p.evaluate('YARD.result().tick')%600)%600)
+        self.assertEqual(self.until(p,'freight-second-landing'),1632)
+        pull(dict(x=6000,y=-688),1800-p.evaluate('YARD.result().tick'))
+        pull(Task581Tests.target,300)
+        self.assertEqual(self.until(p,'freight-lift-landing'),2211)
+        pull(dict(x=6000,y=-1448),80)
+        self.assertLess(p.evaluate('t=>Math.hypot(t.x-ninja.x,t.y-ninja.y)',self.target),360)
+        pull(self.target,39)
+        self.assertIsNotNone(self.until(p,'freight-exit'))
+        r=self.result(p);exits=[]
+        for i,id in enumerate(['freight-landing','freight-second-landing','freight-lift-landing','freight-exit'],1):
+            rows=self.landings(r,id);self.assertTrue(rows,id)
+            exits.append(dict(encounter=f'S03-0{i}',collider=id,tick=rows[0]['tick']))
+        self.assertEqual([e['tick'] for e in exits],sorted(e['tick'] for e in exits))
+        self.assertFalse(p.evaluate('floors[0].climbStats.completed'))
+        r.update(exits=exits,resets=0,poseInjections=0,fixture=dict(x=3740,y=-720,vx=0,vy=0),
+            scope='Single isolated S03 entry fixture; four exits continuously; no handoff resets; not base-to-summit',sectionCompletionEvents=0)
+        q=Task567Tests.page(self)
+        gate=q.evaluate('''() => {
+            const m=JSON.parse(JSON.stringify(GRAPPLE_OVER_REPLACEMENT));
+            m.sections=m.sections.filter(s=>s.status==='built');
+            m.finish={left:2000,right:2300,top:-100,bottom:100};
+            const s03=replacementMountainLevel(m).finish;
+            m.sections.push({id:'S08',status:'built',encounters:[]});
+            const s08=replacementMountainLevel(m).finish;floors[0].level.finish=s08;
+            let events=0;const original=PLATFORM.sendLifecycle;
+            PLATFORM.sendLifecycle=function(name,...args){if(name==='level_completed')events++;return original.call(this,name,...args)};
+            YARD.step(3);CLIMB_UI.complete();
+            return {s03,s08,events,completed:floors[0].climbStats.completed};
+        }''')
+        self.assertIsNone(gate['s03']);self.assertTrue(gate['s08']);self.assertEqual(gate['events'],1);self.assertTrue(gate['completed'])
+        gate['scope']='Separate isolated S08 finish contract fixture at base; not authored S08 gameplay'
+        r['summitGate']=gate;self.write('section-route.json',r)
+        print(f'PASS section: four ordered exits {exits}; zero resets/injections; S03 completion 0; separate S08 gate level_completed exactly once')
+    def test_05_dependencies_and_index(self):
+        rows=[]
+        for preview in [True,False]:
+            q=Task558Tests.page(self,preview)
+            for mode in ['grapple_over','classic','bad']:
+                row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,
+                    range:version==='grapple_over'?grappleOverAcquisitionRadius():null,
+                    upgraded:version==='grapple_over'?grappleOverProfile().upgradedAcquisitionRadius:null,
+                    scale:scale[version],gravity:GRAVITY,pull:grappleSpeed}}''',mode)
+                row['preview']=preview;rows.append(row)
+                if mode=='grapple_over':
+                    self.assertEqual(row['range'],360 if preview else 1080)
+                    self.assertEqual(row['upgraded'],540 if preview else 1620);self.assertEqual(row['scale'],.375)
+        self.assertEqual(len({(r['gravity'],r['pull']) for r in rows}),1)
+        self.write('dependencies.json',dict(rows=rows,changed=['mountain.js preview prefix -> fixedlevel.js production mover/collision',
+            'tools/test_grapple_over_redesign.py additive Task582Tests'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','gameoptions.js','fixedlevel.js'],
+            superseded='Earlier exact preview inventories are historical; Task581 S03-03 proof remains at artifacts/TASK-581. No old v3 tests edited or rerun.',hashes=self.config['source_hashes']))
+        required={'commands.log':'exact invocation, actual exit, exact collected identifiers, revision, browser/viewport and source SHA256',
+            'tests.log':'five Task582Tests; no skips; OK','geometry.json':'live collider purposes, widths, gap, target reach and 600-tick full cycle',
+            'route.json':'production entry-to-exit release, landing and >=6 consecutive unattached airborne ticks',
+            'inputs.json':'trusted production mouse events','miss.json':'early release into catch and normal-control return',
+            'approach.jpg':'broad shared freight entry, blue carrier, green catch and freight signal mast',
+            'landing.jpg':'safe broad green exit and Freight Crossing structure','controls.json':'bounded hold/nearest probes with every success inspected',
+            'section-route.json':'four ordered exits from isolated S03 entry with zero handoff resets and S08-only completion gate',
+            'evidence-index.json':'artifact inventory and tested hashes',
+            'dependencies.json':'changed subsystems, unchanged modes/range/physics and source hashes'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation'],
+            hashPolicy='Identical tested source hashes survive a HEAD-only commit'))
+        print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; gravity/pull unchanged; index written')
