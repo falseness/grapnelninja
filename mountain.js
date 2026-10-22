@@ -1203,16 +1203,16 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Broken Viaduct encounter 3. Planned terrain stays noncollidable.
+// Replacement built prefix through Broken Viaduct encounter 4. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
-    bounds: {left: 0, right: 11000, top: -3000, bottom: 280},
+    bounds: {left: 0, right: 12600, top: -3000, bottom: 280},
     spawn: {x: 2160, y: 0}, finish: null,
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
         {id: 'S02', labelKey: 'climb.section.terracedQuarry', status: 'built', encounters: ['S02-01', 'S02-02', 'S02-03', 'S02-04']},
         {id: 'S03', labelKey: 'climb.section.freightCrossing', status: 'built', encounters: ['S03-01', 'S03-02', 'S03-03', 'S03-04']},
-        {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01', 'S04-02', 'S04-03']},
+        {id: 'S04', labelKey: 'climb.section.brokenViaduct', status: 'built', encounters: ['S04-01', 'S04-02', 'S04-03', 'S04-04']},
         {id: 'S05', status: 'planned', encounters: ['preview-future'],
             band: {left: 0, right: 6480, top: -3000, bottom: -2000}}
     ],
@@ -1232,6 +1232,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S04-01', name: 'Broken Viaduct exposed bridge', elements: ['freight-exit', 'viaduct-anchor', 'viaduct-landing', 'viaduct-catch', 'viaduct-yellow']},
         {id: 'S04-02', name: 'Broken Viaduct separated spans', elements: ['viaduct-landing', 'viaduct-second-anchor', 'viaduct-second-landing', 'viaduct-catch', 'viaduct-yellow', 'viaduct-recovery-wall']},
         {id: 'S04-03', name: 'Broken Viaduct long carrier', elements: ['viaduct-second-landing', 'viaduct-carrier', 'viaduct-third-landing', 'viaduct-third-catch', 'viaduct-yellow']},
+        {id: 'S04-04', name: 'Broken Viaduct exit lookout', elements: ['viaduct-third-landing', 'viaduct-exit-anchor', 'viaduct-exit', 'viaduct-exit-yellow', 'viaduct-exit-catch', 'viaduct-exit-recovery']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1277,9 +1278,14 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['viaduct-recovery-wall', 7280, -1148.2, 80, 400, 'Continuous west recovery face outside yellow; climb by normal grappling to the freight recovery shelf, not a landing'],
         ['viaduct-carrier', 9248, -1770, 360, 80, 'Long-travel blue bridge carrier; observe the full cycle and release toward the far remnant; entire sweep above yellow'],
         ['viaduct-third-landing', 9848, -1528.2, 680, 60, 'Broad far viaduct remnant and safe planning exit after the long carrier transfer'],
+        ['viaduct-exit-anchor', 10628, -1719, 160, 80, 'Reachable green lookout launch face; release across the final broken span, not a landing'],
+        ['viaduct-exit', 10780, -1528.2, 800, 60, 'Wide green exit lookout and rest surface; ordinary terrain, never a summit finish'],
+        ['viaduct-exit-yellow', 10648, -928.2, 1800, 150, 'Yellow fall brake below the exposed lookout; west side leaves lateral return clear'],
+        ['viaduct-exit-catch', 10648, -678.2, 1800, 60, 'Broad high-fall catch; return west along the recovery face to the bridge'],
+        ['viaduct-exit-recovery', 10568, -1148.2, 80, 400, 'West recovery face outside yellow; climb to the existing upper bridge catch by normal grappling'],
         ['viaduct-third-catch', 9172, -1288.2, 1476, 60, 'Broad upper recovery walkway below the long carrier; grapple west to the shared second span after an early release'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
-    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: id === 'viaduct-yellow' ? 'drag' : ['freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier'].includes(id) ? 'solid' : 'bounce', grapplable: id !== 'viaduct-yellow',
+    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier'].includes(id) ? 'solid' : 'bounce', grapplable: !['viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
         points: ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
             ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]
             : [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
