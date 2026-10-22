@@ -3295,3 +3295,136 @@ class Task641Tests(unittest.TestCase):
         page=self.open(query='?roledetail=0')
         self.assertEqual(page.evaluate('''()=>{let n=0;drawBounceContact=()=>{n++};draw();return n}'''),0)
         print('PASS isolation: classic/bad pixel-identical; roledetail=0 no contact glow')
+
+
+class Task642Tests(unittest.TestCase):
+    def open(self, viewport=None, query='', mode='grapple_over', baseline=False):
+        viewport = viewport or dict(width=1280, height=720)
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=1)
+        self.addCleanup(context.close)
+        if baseline:
+            for name in ('render/roledetail.js', 'style.js', 'sprites/ninja.js'):
+                body = subprocess.check_output(['git', 'show', 'HEAD:' + name], text=True)
+                context.route('**/' + name, lambda route, request, body=body: route.fulfill(body=body, content_type='application/javascript'))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.add_init_script('''performance.now=()=>1000;
+            const raf=requestAnimationFrame;requestAnimationFrame=cb=>cb.name==='gameLoop'?0:raf(cb);''')
+        page.goto(self.url + query)
+        wait_for_boot(page)
+        page.evaluate(SEED_SCRIPT % 1)
+        page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
+        page.wait_for_function('!unTouch')
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(test=self.id(), viewport=viewport,
+            dpr=1, mode=mode, query=query, baseline=baseline)))
+        return page
+
+
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-642')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.evidence.log('CONFIG ' + json.dumps(dict(browser=cls.browser.version,
+            revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+            files={n: hashlib.sha256((ROOT / n).read_bytes()).hexdigest() for n in
+                   ['render/roledetail.js', 'style.js', 'tools/test_grapple_over_visuals.py']})))
+
+    fixture = '''() => {
+        const rect=(w,h)=>[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}];
+        const level={version:1,bounds:{left:-400,top:-2000,right:3000,bottom:1000},
+            spawn:{x:0,y:-1000},sections:[{id:GRAPPLE_OVER_LEVEL.sections[0].id,encounters:['capsules']}],
+            encounters:[{id:'capsules',elements:['horizontal']}],
+            elements:[{id:'horizontal',x:80,y:100,role:'solid',grapplable:true,points:rect(220,48)},
+                {id:'vertical',x:400,y:80,role:'solid',grapplable:true,points:rect(48,120)}],
+            movers:[{id:'horizontal-travel',element:'horizontal',axis:'x',min:80,max:120,periodMs:4000,phase:0},
+                {id:'vertical-travel',element:'vertical',axis:'y',min:80,max:120,periodMs:4000,phase:0}]};
+        floors=[loadFixedLevel(level)];scale[version]=1;screen.x=screen.y=0;
+    }'''
+
+    def test_01_shell_travel_and_pixels(self):
+        import base64
+        page=self.open();page.evaluate(self.fixture)
+        result=page.evaluate('''()=>{
+            const w=floors[0], samples=[];
+            canvas.width=1280;canvas.height=720;ctx.setTransform(1,0,0,1,0,0);
+            const originals=new Map();
+            for(const time of [0,1000,2500]){
+                w.applyMovers(time);w.elapsedSteps=time*cyclesPerTick/physicsStepMs;
+                const state=()=>JSON.stringify({level:w.level,elements:w.elements.map(e=>({id:e.id,x:e.x,y:e.y,points:e.points,role:e.surfaceRole,grapplable:e.grapplable,speedX:e.speedX,speedY:e.speedY,dx:e.dx,dy:e.dy}))});
+                const before=state();
+                drawGrappleOverRoleDetail(w);
+                samples.push({time,unchanged:before===state(),
+                    frame:ROLE_DETAIL.frame,movers:w.level.movers.map(m=>{
+                        const e=w.byId.get(m.element),s=moverShellSprite(e,m.axis,4,4,1);
+                        if(!originals.has(e.id))originals.set(e.id,s);
+                        const c=s.image.getContext('2d'),pixel=(x,y)=>Array.from(c.getImageData(x*4,y*4,1,1).data);
+                        return {id:e.id,axis:m.axis,position:e[m.axis],sameObject:originals.get(e.id)===s,
+                            png:s.image.toDataURL(),box:s.box,caps:s.caps,deck:s.deck,
+                            deckPixel:pixel(s.image.width/8,0.5),glassPixel:pixel(s.image.width/8,s.image.height/8),
+                            capPixels:s.caps.map(([x,y,cw,ch])=>pixel(x+cw*0.4,y+ch*0.3))};
+                    })});
+            }
+            const e=w.elements[0],s=moverShellSprite(e,'x',4,4,1);
+            const translated={points:e.points.map(p=>({x:p.x+37,y:p.y-19}))};
+            return {samples,relativeShapeShared:moverShellSprite(translated,'x',4,4,1)===s,
+                backingScaleDistinct:moverShellSprite(e,'x',2,2,1)!==s};
+        }''')
+        for sample in result['samples']:
+            self.assertTrue(sample['unchanged']);self.assertEqual(sample['frame']['dots'],0)
+            self.assertEqual(len(sample['frame']['movers']),2)
+            for mover,frame in zip(sample['movers'],sample['frame']['movers']):
+                mover['sha256']=hashlib.sha256(base64.b64decode(mover.pop('png').split(',')[1])).hexdigest()
+                self.assertTrue(mover['sameObject']);self.assertEqual(set(frame),{'id','axis','direction'})
+                self.assertEqual(frame['id'],mover['id']);self.assertEqual(frame['axis'],mover['axis'])
+                self.assertEqual(frame['direction'],-1 if sample['time']==2500 else 1)
+                self.assertEqual(mover['deck']['y'],mover['box']['top'])
+                self.assertEqual(mover['deckPixel'],[200,251,255,255])
+                self.assertEqual(mover['glassPixel'],[7,26,58,255])
+                self.assertTrue(all(p!=mover['glassPixel'] for p in mover['capPixels']))
+                a,b=mover['caps'];box=mover['box']
+                if mover['axis']=='x':
+                    self.assertEqual(a[0],box['left']);self.assertEqual(b[0]+b[2],box['right'])
+                    self.assertEqual(a[2],4)
+                else:
+                    self.assertEqual(a[1],box['top']);self.assertEqual(b[1]+b[3],box['bottom'])
+                    self.assertEqual(a[3],4)
+        for i in range(2):
+            self.assertEqual(len({s['movers'][i]['sha256'] for s in result['samples']}),1)
+            self.assertEqual(len({s['movers'][i]['position'] for s in result['samples']}),3)
+        self.assertTrue(result['relativeShapeShared']);self.assertTrue(result['backingScaleDistinct'])
+        result['pass']='PASS stable shell SHA256 at three travel positions; top deck pixels; axis caps; direction reversal; no chase dots; no world writes'
+        self.evidence.write('shell.json',result)
+        print(result['pass'])
+
+    def test_02_viewports(self):
+        import base64
+        for width,height in [(1280,720),(844,390)]:
+            page=self.open(viewport=dict(width=width,height=height));page.evaluate(self.fixture)
+            png=page.evaluate('''([width,height])=>{
+                canvas.width=width;canvas.height=height;
+                ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#080e18';ctx.fillRect(0,0,width,height);
+                const zoom=Math.min(width/600,height/260);
+                ctx.setTransform(zoom,0,0,zoom,(width-530*zoom)/2,(height-280*zoom)/2);
+                floors[0].draw();drawGrappleOverRoleDetail(floors[0]);return canvas.toDataURL();
+            }''',[width,height])
+            self.evidence.path(f'movers-{width}x{height}.png').write_bytes(base64.b64decode(png.split(',')[1]))
+            print(f'PASS movers-{width}x{height}.png production rendering horizontal + vertical shells')
+            page.close()
+
+    def test_03_isolation_and_disabled(self):
+        import base64
+        for mode in ('classic','bad'):
+            hashes=[]
+            for baseline in (True,False):
+                page=self.open(mode=mode,baseline=baseline)
+                png=page.evaluate('()=>{draw();return canvas.toDataURL()}')
+                hashes.append(hashlib.sha256(base64.b64decode(png.split(',')[1])).hexdigest());page.close()
+            self.assertEqual(*hashes)
+        page=self.open(query='?roledetail=0');page.evaluate(self.fixture)
+        self.assertEqual(page.evaluate('''()=>{let n=0;moverShellSprite=()=>{n++};
+            drawGrappleOverRoleDetail(floors[0]);return n}'''),0)
+        print('PASS classic/bad pixel-identical; roledetail=0 disables shell')

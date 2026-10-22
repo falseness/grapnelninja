@@ -3,7 +3,7 @@
 // leaves the visible silhouette:
 //   bounce  cached solder-mask material, and a fading pulse after a real bounce contact
 //   solid   rivets along the edges and an edge bevel (lit up-left, shaded down-right)
-//   mover   running lights along the travel axis, chasing the travel direction
+//   mover   cached glass capsule with steel caps, grapple rings and a lit deck
 //   hazard  warning chevrons
 //   drag    slow drifting particles
 // Glow dots (rivets, lights, particles) are copies of cached glow sprites
@@ -215,25 +215,21 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
     }
     else if (role === 'mover')
     {
-        const config = style.mover
-        const box = layout.box
         const horizontal = mover.axis === 'x'
         const velocity = horizontal ? element.speedX : element.speedY
         const direction = velocity < 0 ? -1 : 1
-        const from = (horizontal ? box.left : box.top) + config.inset * u
-        const to = (horizontal ? box.right : box.bottom) - config.inset * u
-        const across = horizontal ? (box.top + box.bottom) / 2 : (box.left + box.right) / 2
-        const count = Math.max(2, Math.floor((to - from) / (config.spacing * u)) + 1)
-        const head = clockMs / config.periodMs
-        for (let i = 0; i < count; ++i)
-        {
-            const along = count > 1 ? from + (to - from) * i / (count - 1) : (from + to) / 2
-            // A bright head every 4 lights moves one light per period/4 along the travel
-            const wave = 0.5 + 0.5 * Math.cos(2 * Math.PI * (i / 4 - direction * head))
-            const level = config.dim + (1 - config.dim) * Math.pow(wave, 4)
-            dots.push(horizontal ? [along + ox, across + oy, level] : [across + ox, along + oy, level])
-        }
-        drawRoleDetailDots(config.light, config.lightRadius * u, dots)
+        const m = ctx.getTransform()
+        const sprite = moverShellSprite(element, mover.axis, glowSpriteScale(m.a), glowSpriteScale(m.d), u)
+        const b = sprite.box
+        ctx.globalAlpha = 1
+        ctx.drawImage(sprite.image, ox + element.points[0].x + b.left,
+            oy + element.points[0].y + b.top, b.right - b.left, b.bottom - b.top)
+        // Keep the blue neon rim above the opaque shell.
+        ctx.beginPath(); traceRoleDetailPath(element)
+        const neon = STYLE.strokes.neonOutline
+        ctx.lineWidth = Math.min(neon.width, 0.8) * u; ctx.strokeStyle = element.stroke; ctx.stroke()
+        ctx.lineWidth *= neon.coreWidthRatio; ctx.globalAlpha = neon.coreAlpha * neonPulse
+        ctx.strokeStyle = neon.coreColors[element.stroke] || neon.coreColor; ctx.stroke()
         frame.movers = frame.movers || []
         frame.movers.push({id: element.id, axis: mover.axis, direction})
     }
@@ -708,4 +704,58 @@ function drawBounceContact(element, world)
         ctx.drawImage(sprite.bright.dot,ox+wave.point.x-r,oy+wave.point.y-r,2*r,2*r)
     }
     ctx.restore()
+}
+
+// Static capsule art shares the bounded material cache with bounce boards.
+// Relative polygon points keep translation and travel phase out of the key.
+function moverShellSprite(element, axis, sx, sy, unit)
+{
+    const origin = element.points[0]
+    const points = element.points.map(p => ({x: Math.round((p.x-origin.x)*100)/100,
+        y: Math.round((p.y-origin.y)*100)/100}))
+    const key = 'mover|' + axis + '|' + points.map(p => p.x+','+p.y).join(';') + '|' + [sx,sy,unit].join(',')
+    const cache = BOUNCE_MATERIAL.sprites
+    if (cache.has(key))
+    {
+        const sprite = cache.get(key); cache.delete(key); cache.set(key,sprite); return sprite
+    }
+    const box = roleDetailLayout({points}).box, config = GRAPPLE_OVER_ROLE_DETAIL.mover
+    const {left:l,top:t,right:r,bottom:b} = box, w=r-l, h=b-t, horizontal=axis==='x'
+    const image = document.createElement('canvas')
+    image.width=Math.max(1,Math.ceil(w*sx)); image.height=Math.max(1,Math.ceil(h*sy))
+    const c=image.getContext('2d')
+    c.setTransform(sx,0,0,sy,-l*sx,-t*sy)
+    c.beginPath(); points.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y)); c.closePath(); c.clip()
+    c.fillStyle=config.glass; c.fillRect(l,t,w,h)
+    const cap=Math.min(config.capWidth*unit,(horizontal?w:h)/2)
+    const caps=horizontal ? [[l,t,cap,h],[r-cap,t,cap,h]] : [[l,t,w,cap],[l,b-cap,w,cap]]
+    const glass={left:horizontal?l+cap:l,top:horizontal?t:t+cap,
+        right:horizontal?r-cap:r,bottom:horizontal?b:b-cap}
+    c.strokeStyle=config.highlight; c.lineWidth=config.highlightWidth*unit; c.globalAlpha=config.highlightAlpha
+    c.beginPath(); c.moveTo(glass.left,glass.top+unit); c.lineTo(glass.right,glass.top+unit); c.stroke()
+    c.globalAlpha=config.reflectionAlpha
+    c.beginPath(); c.moveTo(glass.left,glass.bottom-unit); c.lineTo(glass.right,glass.bottom-unit); c.stroke()
+    for (const [x,y,cw,ch] of caps)
+    {
+        c.globalAlpha=1
+        const g=c.createLinearGradient(x,y,x+cw,y+ch)
+        g.addColorStop(0,config.steelLight); g.addColorStop(1,config.steelDark)
+        c.fillStyle=g; c.fillRect(x,y,cw,ch)
+        c.strokeStyle=config.band; c.lineWidth=0.5*unit
+        for (const f of [0.25,0.75])
+        {
+            c.beginPath()
+            if(horizontal){c.moveTo(x+cw*f,y);c.lineTo(x+cw*f,y+ch)}
+            else {c.moveTo(x,y+ch*f);c.lineTo(x+cw,y+ch*f)}
+            c.stroke()
+        }
+        c.globalAlpha=config.ringAlpha; c.strokeStyle=config.ring; c.lineWidth=0.5*unit
+        c.beginPath(); c.arc(x+cw/2,y+ch/2,Math.min(config.ringRadius*unit,cw/2,ch/2),0,2*Math.PI); c.stroke()
+    }
+    c.globalAlpha=1; c.fillStyle=config.deck
+    c.fillRect(l,t,w,config.deckWidth*unit)
+    const sprite={image,box,glass,caps,deck:{x:l,y:t,width:w,height:config.deckWidth*unit}}
+    cache.set(key,sprite)
+    if(cache.size>128)cache.delete(cache.keys().next().value)
+    return sprite
 }
