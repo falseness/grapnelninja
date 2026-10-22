@@ -88,6 +88,29 @@ def curve(r, frags):
     return [a, c1, c2, b]
 
 
+def bezier(pts, t):
+    """Point on the cubic pts at parameter t."""
+    u = 1 - t
+    w = (u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t)
+    return tuple(sum(k * p[i] for k, p in zip(w, pts)) for i in (0, 1))
+
+
+def bezier_tangent(pts, t):
+    """Forward derivative dB/dt of the cubic pts at parameter t."""
+    u = 1 - t
+    w = (3 * u * u, 6 * u * t, 3 * t * t)
+    d = [(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) for i in range(3)]
+    return tuple(sum(k * v[i] for k, v in zip(w, d)) for i in (0, 1))
+
+
+def head_of(pts, t):
+    """The cubic pts restricted to [0, t] (de Casteljau), same parameterisation."""
+    lerp = lambda a, b: (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+    a, b, c = lerp(pts[0], pts[1]), lerp(pts[1], pts[2]), lerp(pts[2], pts[3])
+    ab, bc = lerp(a, b), lerp(b, c)
+    return [pts[0], a, ab, lerp(ab, bc)]
+
+
 def guide(r, frags):
     """Optional gn:transfer guide value: the route curve() in world units."""
     return ' '.join(num(v) for p in curve(r, frags) for v in p)
@@ -147,6 +170,36 @@ def draw_fragment_labels(c, m, T, s):
         c.text(x, y + max(24, m['height'] * s + 16), m['id'], 14, '#8dc8b2', 700, 'middle')
 
 
+ARROW_T = 0.25                  # arrows show only the first quarter of the route curve
+ARROW_COLOR = '#8bdde8'
+ARROW_OPACITY = 0.4
+ARROW_STROKE = 1.5              # displayed pixels
+ARROW_HEAD = 6.0                # displayed pixels, tip to base
+
+
+def draw_arrow(c, r, frags, T):
+    """Short direction arrow: curve() from t=0 to ARROW_T, head along its tangent there.
+
+    The annotation group maps canvas pixels to world units (scale 1/s) and the
+    root viewBox maps world back to the 2600px canvas (scale s), so canvas
+    pixel sizes here are displayed pixels."""
+    pts = [T(p) for p in curve(r, frags)]
+    a, c1, c2, tip = head_of(pts, ARROW_T)
+    dx, dy = bezier_tangent(pts, ARROW_T)
+    n = (dx * dx + dy * dy) ** .5
+    ux, uy = dx / n, dy / n
+    bx, by = tip[0] - ux * ARROW_HEAD, tip[1] - uy * ARROW_HEAD
+    w = ARROW_HEAD / 2
+    head = [tip, (bx - uy * w, by + ux * w), (bx + uy * w, by - ux * w)]
+    tid = f"T{r['number']:02d}"
+    c.add(f'<g id="arrow-{tid}" class="transfer-arrow" data-transfer="{tid}" data-from="{r["fromFragment"]}" data-to="{r["toFragment"]}"'
+          f' opacity="{ARROW_OPACITY}">')
+    c.add(f'<path d="M{a[0]:.3f} {a[1]:.3f} C{c1[0]:.3f} {c1[1]:.3f} {c2[0]:.3f} {c2[1]:.3f} {tip[0]:.3f} {tip[1]:.3f}"'
+          f' fill="none" stroke="{ARROW_COLOR}" stroke-width="{ARROW_STROKE}"/>')
+    c.add('<polygon points="' + ' '.join(f'{x:.3f},{y:.3f}' for x, y in head) + f'" fill="{ARROW_COLOR}"/>')
+    c.add('</g>')
+
+
 def draw_route(c, r, frags, T):
     pts = [T(p) for p in curve(r, frags)]
     a, b = pts[0], pts[-1]
@@ -166,7 +219,7 @@ def draw_route(c, r, frags, T):
     c.text(mx, my + 19, f"{r['distance']:.0f}u clear gap", 13, '#96b4be', 400, 'middle')
 
 
-def build(meas, guides=False):
+def build(meas, guides=False, arrows=False):
     frags = meas['fragments']
     rows = meas['encounters']
     bands = meas['yellowBands']
@@ -254,6 +307,9 @@ def build(meas, guides=False):
         draw_fragment_labels(front, m, T, s)
     for r in rows:
         draw_route(front, r, frags, T)
+    if arrows:
+        for r in rows:
+            draw_arrow(front, r, frags, T)
     x, y = T(contact(frags[baseline_end]))
     front.text(x - 35, y - 40, 'BASELINE ENDS / EXTENSION STARTS', 16, '#d4d6ba', 700, 'end')
     front.rect(1980, 315, 550, 3480, '#11222d', rx=12)
@@ -327,12 +383,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--measurements', required=True)
     ap.add_argument('--output', required=True)
+    ap.add_argument('--arrows', action='store_true',
+                    help='write transfer guide metadata and a short direction arrow per transfer')
     args = ap.parse_args()
     src = Path(args.measurements).resolve()
     dst = Path(args.output).resolve()
     if dst.name in ('extended-mountain.svg', 'jump-combinations.svg') or dst == src:
         ap.error('refusing to overwrite a concept file')
-    text = build(json.loads(src.read_text()))
+    text = build(json.loads(src.read_text()), guides=args.arrows, arrows=args.arrows)
     fd, tmp = tempfile.mkstemp(dir=dst.parent, suffix='.tmp')
     with os.fdopen(fd, 'w') as f:
         f.write(text)

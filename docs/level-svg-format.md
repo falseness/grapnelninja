@@ -195,6 +195,17 @@ examples). Their document order is significant and is preserved.
   `GuideTests.test_shipped_v6_roundtrip` adds `guide()` values to all 30 of
   its transfers. Stripping `guide` from that import gives the shipped level
   JSON byte-for-byte.
+
+  Short direction arrows: `build(meas, guides=True, arrows=True)` (CLI
+  `--arrows`) also draws one `<g class="transfer-arrow" data-transfer=…
+  data-from=… data-to=…>` per transfer in `annotations-front`. Each one has
+  only `t=0..0.25` of the same `curve()` cubic, split with de Casteljau, and
+  a 6px arrowhead along the forward derivative at `t=0.25`. It uses cyan
+  `#8bdde8` at opacity 0.4 with a 1.5px stroke. Sizes are in canvas pixels:
+  the annotation transform (scale `1/s`) times the root viewBox scale (`s`)
+  is 1, so they are displayed pixels. The dashed full route curves stay
+  unchanged. The importer ignores the arrows, so collision data is identical
+  with or without them (`tools/test_level_route_arrows.py`).
 - At least one section, one encounter and one transfer. An empty kind is
   `MissingMetadata`.
 - Any unresolved reference is `MissingReference`. An encounter that no
