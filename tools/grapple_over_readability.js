@@ -1,5 +1,11 @@
 /* TASK-629 observation helpers. Placements are isolated archived route fixtures. */
 window.READABILITY = {
+    layout() {
+        const css = getCanvasCssRect();
+        return {coarsePointer:matchMedia('(pointer: coarse)').matches,touchFirst:isTouchFirstDevice(),
+            viewport:{width:innerWidth,height:innerHeight},logical:{width,height},
+            canvas:{width:css.width,height:css.height}};
+    },
     view(spec) {
         BYPASS.setup(spec.start, spec.range, null);
         LAYOUT_PROBE.boxes = [];
@@ -37,7 +43,7 @@ window.READABILITY = {
         const rect=landmark.rect;
         const logical=p=>({x:p.x*css.width/width,y:p.y*css.height/height});
         const a=logical({x:rect[0],y:rect[1]}),b=logical({x:rect[2],y:rect[3]});
-        return {id:spec.id,pose:spec.start.pose,phaseTick:spec.start.phaseTick,canvas:{width:css.width,height:css.height},
+        return {layout:this.layout(),id:spec.id,pose:spec.start.pose,phaseTick:spec.start.phaseTick,canvas:{width:css.width,height:css.height},
             camera:{x:screen.x,y:screen.y,scale:scale[version]},
             target:target?{...target,point:project(target),bounds:bounds(floors[0].byId.get(target.id).getPoints()),
                 role:floors[0].byId.get(target.id).surfaceRole}:null,

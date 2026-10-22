@@ -11845,11 +11845,25 @@ class Task629Tests(unittest.TestCase):
     def page(self, touch=False):
         p=Task622Tests.page(self)
         if touch:
-            p.set_viewport_size(dict(width=844,height=390))
-            p.wait_for_timeout(100)  # Let the asynchronous resize finish before draw/capture.
             p.context.new_cdp_session(p).send('Emulation.setTouchEmulationEnabled',dict(enabled=True,maxTouchPoints=1))
+            p.set_viewport_size(dict(width=844,height=390))
+            # Await the production resize handler, including logical viewport layout.
+            p.wait_for_function('isTouchFirstDevice() && width === Math.floor(1080 * 844 / 390)')
         p.add_script_tag(path=str(ROOT/'tools/grapple_over_readability.js'))
+        layout=p.evaluate('READABILITY.layout()')
+        self.assert_layout(layout,touch)
+        print('PASS layout: '+json.dumps(layout,separators=(',',':')))
         return p
+
+    def assert_layout(self, layout, touch):
+        expected_width,expected_height=(844,390) if touch else (1280,720)
+        logical_width=2337 if touch else 1920
+        self.assertEqual(layout['coarsePointer'],touch)
+        self.assertEqual(layout['touchFirst'],touch)
+        self.assertEqual(layout['viewport'],dict(width=expected_width,height=expected_height))
+        self.assertEqual(layout['logical'],dict(width=logical_width,height=1080))
+        self.assertAlmostEqual(layout['canvas']['width'],logical_width*expected_height/1080,delta=.05)
+        self.assertAlmostEqual(layout['canvas']['height'],expected_height,delta=.05)
 
     def specs(self):
         specs=[];support='yard-entry'
@@ -11897,6 +11911,7 @@ class Task629Tests(unittest.TestCase):
             for i,spec in enumerate(specs):
                 row=p.evaluate('s=>READABILITY.view(s)',spec)
                 row.update(viewport='touch-844x390' if touch else 'desktop-1280x720',source=spec['source'])
+                self.assert_layout(row['layout'],touch)
                 observations.append(row)
                 self.write('approaches.json',dict(views=observations,scope=self.config['simulation']))
                 self.assert_clear(row)
@@ -11911,12 +11926,13 @@ class Task629Tests(unittest.TestCase):
                     start=data.get('trace',data.get('rows'))[0]
                     entry={**spec,'start':dict(phaseTick=1,pose={k:start[k] for k in ['x','y','vx','vy']})}
                     measured=p.evaluate('s=>READABILITY.view(s)',entry)
+                    self.assert_layout(measured['layout'],touch)
                     lm=measured['landmark'];b=lm['bounds'];c=measured['canvas']
                     im=Image.open(io.BytesIO(p.locator('#canvas').screenshot())).convert('RGB')
                     im.thumbnail((640,360));entry_sheet.paste(im,(col*640,(i//4)*380+20))
                     ImageDraw.Draw(entry_sheet).text((col*640+8,(i//4)*380+4),spec['id'][:3]+' entry '+row['viewport'],fill='white')
                     entries.append(dict(section=spec['id'][:3],viewport=row['viewport'],source=ref,
-                        pose=entry['start']['pose'],landmark=lm,canvas=c,
+                        pose=entry['start']['pose'],landmark=lm,canvas=c,layout=measured['layout'],
                         useful='Distinct section silhouette identifies the structure containing the next route decks.'))
                     self.write('landmarks.json',dict(entries=entries))
                     self.assertTrue(0<=b['left']<b['right']<=c['width'] and 0<=b['top']<b['bottom']<=c['height'],entries[-1])
@@ -11996,7 +12012,7 @@ class Task629Tests(unittest.TestCase):
             archives.append(dict(path=str(path.relative_to(ROOT)),sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
                 results=[v for v in raw.splitlines() if v.startswith('Ran ') or v=='OK']))
         self.write('geometry-dependency.json',dict(geometryUnchanged=True,runtimeUnchanged=True,unchangedSourceHashes=hashes,
-            baseline=ref,archives=archives,changedSubsystems=['additive Task629Tests and observation helper'],
+            baseline=ref,archives=archives,changedSubsystems=['Task629Tests touch emulation before production resize, asserted pointer/logical/CSS layout; observation helper layout measurements'],
             historical='TASK-623 updated S05-S07 route contacts supersede older geometry coverage. Older poses used only as isolated current-geometry observations; no historical continuous-route claim.',
             hashPolicy='HEAD movement alone does not invalidate identical tested source hashes'))
         print(f'PASS dependencies: geometry/runtime unchanged; {len(hashes)} source hashes match; archived nonzero TASK-623/627/628 suites; production input lands on yard-landing')
@@ -12008,8 +12024,8 @@ class Task629Tests(unittest.TestCase):
         required={'commands.log':'exact invocation, exit status, browser/viewports, revision and source hashes',
             'tests.log':'four exact Task629Tests, no skips', 'approaches.json':'64 measured target/landing/HUD views',
             'entry-sheet.jpg':'16 actual section entry captures','contact-sheet.jpg':'64 labelled player-eye images','landmarks.json':'16 entry views, 8 in-frame identities',
-            'transitions.json':'21 boundary samples with palette and parallax measurements',
-            'boundary-strip.jpg':'visual comparison around seven palette boundaries','geometry-dependency.json':'unchanged runtime/geometry hashes and archived expensive regressions',
+            'transitions.json':'42 samples around seven palette boundaries and seven section joins',
+            'boundary-strip.jpg':'14 triplets around seven palette boundaries and seven section joins','geometry-dependency.json':'unchanged runtime/geometry hashes and archived expensive regressions',
             'smoke.json':'trusted production input and upward landing contacts','collected-tests.log':'exact class/method identifiers',
             'evidence-index.json':'artifact assertion map and tested configuration'}
         self.write('evidence-index.json',dict(artifacts=required,config=self.config))
