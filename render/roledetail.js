@@ -14,7 +14,7 @@
 const ROLE_DETAIL =
 {
     enabled: new URLSearchParams(location.search).get('roledetail') !== '0',
-    // Bounce element -> {step: world.elapsedSteps, strength} of its last
+    // Bounce element -> {step: world.elapsedSteps, strength, point (element-local)} of its last
     // approaching contact
     contacts: new WeakMap(),
     // Element -> local detail layout (points never change after construction)
@@ -29,12 +29,17 @@ const ROLE_DETAIL =
     frame: null,
     // impact: normal approach speed per physics cycle. Resting micro-hops
     // stay dark; a real landing lights the pad fully.
-    markContact(element, impact)
+    markContact(element, impact, point)
     {
         const config = GRAPPLE_OVER_ROLE_DETAIL.bounce
         const strength = Math.max(0, Math.min(1, (impact - config.pulseMinImpact) / (config.pulseFullImpact - config.pulseMinImpact)))
         if (element && element.surfaceRole === 'bounce' && strength > 0 && floors[0] && floors[0].elapsedSteps !== undefined)
-            this.contacts.set(element, {step: floors[0].elapsedSteps, strength})
+        {
+            const local = point ? {x: point.x - element.x, y: point.y - element.y} :
+                element.points.reduce((a, p) => ({x: a.x + p.x / element.points.length,
+                    y: a.y + p.y / element.points.length}), {x: 0, y: 0})
+            this.contacts.set(element, {step: floors[0].elapsedSteps, strength, point: local})
+        }
     },
     // 0..1: strength on the contact step, easing out to 0 after pulseMs
     pulse(element, world)
@@ -147,7 +152,6 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
     // Inside its role's clip (drawGrappleOverRoleDetail)
     if (role === 'bounce')
     {
-        const config = style.bounce
         drawBounceMaterial(element, world, clockMs)
         frame.bounceSprites++
         const pulse = ROLE_DETAIL.pulse(element, world)
@@ -155,12 +159,10 @@ function drawRoleDetail(element, role, mover, clockMs, world, frame)
         traceRoleDetailPath(element)
         if (pulse > 0)
         {
-            ctx.globalAlpha = config.pulseFillAlpha * pulse
-            ctx.fillStyle = config.pulseFill
-            ctx.fill()
+            drawBounceContact(element, world)
             frame.pulses.push({id: element.id, intensity: pulse})
         }
-        // Restore the existing crisp neon rim above material and contact fill.
+        // Restore the existing crisp neon rim above material and contact glow.
         const neon = STYLE.strokes.neonOutline
         ctx.globalAlpha = 1
         ctx.lineWidth = neon.width * u
@@ -600,7 +602,8 @@ function bounceMaterialSprite(element, world, sx, sy, unit)
     })
     const board = bounceBoardDetail(points, box, seed, unit)
     paintBounceBoard(c, board, unit, config)
-    const sprite = {image, box, glints: board.thin ? [] : glints, free, board}
+    const sprite = {image, box, glints: board.thin ? [] : glints, free, board,
+        bright: cacheBounceContact(board, sx, sy, unit, config)}
     cache.set(key, sprite)
     if (cache.size > 128) cache.delete(cache.keys().next().value)
     return sprite
@@ -631,6 +634,78 @@ function drawBounceMaterial(element, world, clockMs)
     {
         ctx.globalAlpha = 0.2 + 0.8 * Math.pow(0.5 + 0.5 * Math.sin(2 * Math.PI * (clockMs / g.period + g.phase)), 2)
         ctx.drawImage(BOUNCE_MATERIAL.star, ox + g.x - r, oy + g.y - r, 2 * r, 2 * r)
+    }
+    ctx.restore()
+}
+
+// Small cached bright copies of each trace segment and via. Animation only
+// changes their alpha; rasterization and the soft contact dot happen once.
+function cacheBounceContact(board, sx, sy, unit, config)
+{
+    const parts = []
+    for (const trace of board.traces)
+    {
+        for (let i = 1; i < trace.points.length; i++)
+            parts.push({a: trace.points[i - 1], b: trace.points[i], via: false})
+        for (const p of trace.vias) parts.push({a: p, b: p, via: true})
+    }
+    for (const part of parts)
+    {
+        const {a, b} = part, pad = 2 * unit
+        const left = Math.min(a.x,b.x)-pad, top = Math.min(a.y,b.y)-pad
+        const image = document.createElement('canvas')
+        image.width = Math.ceil((Math.abs(b.x-a.x)+2*pad)*sx)
+        image.height = Math.ceil((Math.abs(b.y-a.y)+2*pad)*sy)
+        const c = image.getContext('2d')
+        c.setTransform(sx,0,0,sy,-left*sx,-top*sy)
+        c.strokeStyle = config.pulseTrace; c.lineWidth = (part.via ? 0.5 : 0.8)*unit
+        c.lineCap = 'round'; c.beginPath()
+        if (part.via) c.arc(a.x,a.y,1.2*unit,0,2*Math.PI)
+        else {c.moveTo(a.x,a.y); c.lineTo(b.x,b.y)}
+        c.stroke()
+        Object.assign(part,{image,left,top,width:image.width/sx,height:image.height/sy})
+    }
+    const dot = document.createElement('canvas'); dot.width = dot.height = 33
+    const c = dot.getContext('2d'), g = c.createRadialGradient(16.5,16.5,0,16.5,16.5,16.5)
+    g.addColorStop(0,config.pulseTrace); g.addColorStop(1,config.pulseDotFade)
+    c.fillStyle=g; c.fillRect(0,0,33,33)
+    return {parts,dot}
+}
+
+function bounceContactWave(element, world, sprite, unit)
+{
+    const contact = ROLE_DETAIL.contacts.get(element), config = GRAPPLE_OVER_ROLE_DETAIL.bounce
+    const ageMs = contact ? (world.elapsedSteps-contact.step)*physicsStepMs/cyclesPerTick : -1
+    const t = ageMs/config.pulseMs, active = contact && t >= 0 && t < 1
+    const origin = element.points[0], point = contact ?
+        {x:contact.point.x-origin.x,y:contact.point.y-origin.y} : {x:0,y:0}
+    const radius = t*Math.max(sprite.box.right-sprite.box.left,sprite.box.bottom-sprite.box.top)
+    const parts = sprite.bright.parts.map(part => {
+        const {a,b} = part, dx=b.x-a.x, dy=b.y-a.y, length2=dx*dx+dy*dy
+        const f=length2 ? Math.max(0,Math.min(1,((point.x-a.x)*dx+(point.y-a.y)*dy)/length2)) : 0
+        const distance=Math.hypot(point.x-a.x-f*dx,point.y-a.y-f*dy)
+        return {distance,glow:active ? contact.strength*Math.max(0,1-Math.abs(distance-radius)/(18*unit))*(1-t) : 0}
+    })
+    return {point,radius,ageMs,parts,dot:active ? contact.strength*Math.max(0,1-ageMs/120) : 0}
+}
+
+function drawBounceContact(element, world)
+{
+    const m=ctx.getTransform(), unit=1/scale[version]
+    const sprite=bounceMaterialSprite(element,world,glowSpriteScale(m.a),glowSpriteScale(m.d),unit)
+    const wave=bounceContactWave(element,world,sprite,unit)
+    const ox=element.x+element.points[0].x+screen.x, oy=element.y+element.points[0].y+screen.y
+    ctx.save(); ctx.globalCompositeOperation='lighter'
+    sprite.bright.parts.forEach((part,i) => {
+        if (wave.parts[i].glow <= 0) return
+        ctx.globalAlpha=wave.parts[i].glow
+        ctx.drawImage(part.image,ox+part.left,oy+part.top,part.width,part.height)
+    })
+    if (wave.dot > 0)
+    {
+        ctx.globalAlpha=wave.dot
+        const r=8*unit
+        ctx.drawImage(sprite.bright.dot,ox+wave.point.x-r,oy+wave.point.y-r,2*r,2*r)
     }
     ctx.restore()
 }

@@ -3142,3 +3142,156 @@ class Task640Tests(unittest.TestCase):
         page=self.open(query='?roledetail=0')
         self.assertEqual(page.evaluate('''()=>{let n=0;bounceMaterialSprite=()=>{n++;throw Error('disabled sprite')};draw();return n}'''),0)
         print('PASS isolation: classic/bad pixel-identical; roledetail=0 no sprites')
+
+
+class Task641Tests(unittest.TestCase):
+    def open(self, viewport=None, query='', mode='grapple_over', baseline=False):
+        viewport = viewport or dict(width=1280, height=720)
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=1)
+        self.addCleanup(context.close)
+        if baseline:
+            for name in ('render/roledetail.js', 'style.js', 'sprites/ninja.js'):
+                body = subprocess.check_output(['git', 'show', '0c39fb7ff39d5410b0ea5feb612fb5660727b219:' + name], text=True)
+                context.route('**/' + name, lambda route, request, body=body: route.fulfill(body=body, content_type='application/javascript'))
+        page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        self.addCleanup(lambda: self.assertEqual(errors, []))
+        page.add_init_script(SEED_SCRIPT % 1)
+        page.add_init_script('performance.now=()=>1000')
+        page.goto(self.url + query)
+        wait_for_boot(page)
+        page.evaluate(SEED_SCRIPT % 1)
+        page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
+        page.wait_for_function('!unTouch')
+        self.evidence.log('BROWSER_CONTEXT ' + json.dumps(dict(test=self.id(), viewport=viewport,
+            dpr=1, mode=mode, query=query, baseline=baseline)))
+        return page
+
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-641')
+        cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.evidence.log('CONFIG ' + json.dumps(dict(browser=cls.browser.version,
+            revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+            files={n: hashlib.sha256((ROOT / n).read_bytes()).hexdigest() for n in
+                   ['render/roledetail.js', 'sprites/ninja.js', 'style.js', 'tools/test_grapple_over_visuals.py']})))
+
+    fixture = '''() => {
+        window.pad641={id:'wave-pad',x:100,y:100,surfaceRole:'bounce',stroke:'#3dff4a',
+            points:[{x:10,y:20},{x:250,y:20},{x:250,y:85},{x:10,y:85}],
+            getPoints(){return this.points.map(p=>({x:p.x+this.x,y:p.y+this.y}))}};
+        window.world641={elements:[pad641],dragZones:[],level:{movers:[]},elapsedSteps:floors[0].elapsedSteps};
+    }'''
+
+    def test_01_contact_projection(self):
+        import math
+        page = self.open()
+        rows = page.evaluate('''()=>{
+            const shapes=[[[0,0],[240,0],[240,65],[0,65]],
+                [[0,0],[240,0],[240,65],[0,65]],[[0,100],[140,0],[140,100]]];
+            return shapes.map((ps,i)=>{
+                const e={id:'landing-'+i,x:100,y:200,surfaceRole:'bounce',
+                    points:ps.map(([x,y])=>({x,y})),
+                    getPoints(){return this.points.map(p=>({x:p.x+this.x,y:p.y+this.y}))}};
+                const points=e.getPoints(), a=points[i===1?1:0],b=points[i===1?2:1];
+                const dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy),nx=dy/l,ny=-dx/l;
+                ninja.x=(a.x+b.x)/2+nx*(ninja.radius-0.1);
+                ninja.y=(a.y+b.y)/2+ny*(ninja.radius-0.1);
+                ninja.speedX=-nx*2;ninja.speedY=-ny*2;
+                const centre={x:ninja.x,y:ninja.y}, line={x1:a.x,y1:a.y,x2:b.x,y2:b.y};
+                const contact=ninja.contactWith(line,points);contact.element=e;contact.line=line;
+                ninja.applyBounce(contact);
+                return {name:['pad top','pad end','triangle slope'][i],origin:{x:e.x,y:e.y},
+                    centre,a,b,projected:{x:contact.x,y:contact.y},stored:ROLE_DETAIL.contacts.get(e),
+                    approaching:contact.approaching};
+            });
+        }''')
+        for r in rows:
+            a,b,c=r['a'],r['b'],r['centre']
+            dx,dy=b['x']-a['x'],b['y']-a['y']
+            t=max(0,min(1,((c['x']-a['x'])*dx+(c['y']-a['y'])*dy)/(dx*dx+dy*dy)))
+            projected=dict(x=a['x']+t*dx,y=a['y']+t*dy)
+            error=math.hypot(*(r['stored']['point'][k]+r['origin'][k]-projected[k] for k in ('x','y')))
+            self.assertLessEqual(error,1);self.assertTrue(r['approaching'])
+            r['projectionError']=error
+        page.evaluate(self.fixture)
+        fallback=page.evaluate('''()=>{ROLE_DETAIL.markContact(pad641,2);return ROLE_DETAIL.contacts.get(pad641).point}''')
+        self.assertEqual(fallback,dict(x=130,y=52.5))
+        self.evidence.write('contact.json',dict(landings=rows,fallback=fallback,projectionPass=True))
+        print('PASS contact: pad top, pad end, triangle slope; independently recomputed projection errors <= 1 world px; polygon-centre fallback')
+
+    def test_02_wave_and_strip(self):
+        import base64
+        page=self.open();page.evaluate(self.fixture)
+        result=page.evaluate('''()=>{
+            scale[version]=1;screen.x=screen.y=0;
+            const e=pad641,w=world641;
+            // Resolve an end landing through the production contact/bounce path.
+            ninja.x=e.x+10-ninja.radius+0.1;ninja.y=e.y+52.5;ninja.speedX=2;ninja.speedY=0;
+            const line={x1:e.x+10,y1:e.y+85,x2:e.x+10,y2:e.y+20};
+            const hit=ninja.contactWith(line,e.getPoints());hit.element=e;hit.line=line;ninja.applyBounce(hit);
+            const contact=ROLE_DETAIL.contacts.get(e), before=JSON.stringify(e);
+            canvas.width=1280;canvas.height=720;ctx.setTransform(1,0,0,1,0,0);
+            ctx.fillStyle='#080e18';ctx.fillRect(0,0,1280,720);
+            const sprite=bounceMaterialSprite(e,w,2,2,1),samples=[];
+            let fills=0,additive=0;const fill=ctx.fill,drawImage=ctx.drawImage;
+            ctx.fill=function(...args){fills++;return fill.apply(this,args)};
+            ctx.drawImage=function(...args){if(this.globalCompositeOperation==='lighter')additive++;return drawImage.apply(this,args)};
+            for(const [i,t] of [0.08,0.25,0.45,0.7].entries()){
+                w.elapsedSteps=contact.step+t*450*cyclesPerTick/physicsStepMs;
+                ctx.setTransform(2,0,0,2,(i%2)*630-170,Math.floor(i/2)*340-140);
+                drawGrappleOverRoleDetail(w);
+                const wave=bounceContactWave(e,w,sprite,1);
+                samples.push({t,...wave,pulses:ROLE_DETAIL.frame.pulses});
+            }
+            ctx.fill=fill;ctx.drawImage=drawImage;
+            w.elapsedSteps=contact.step+450*cyclesPerTick/physicsStepMs;
+            const expired=bounceContactWave(e,w,sprite,1);
+            ROLE_DETAIL.contacts.delete(e);ROLE_DETAIL.markContact(e,GRAPPLE_OVER_ROLE_DETAIL.bounce.pulseMinImpact/2,
+                {x:e.x+10,y:e.y+52.5});
+            const micro=bounceContactWave(e,w,sprite,1);
+            return {samples,expired,micro,fills,additive,unchanged:before===JSON.stringify(e),
+                contact,box:sprite.box,segments:sprite.bright.parts.map(p=>({a:p.a,b:p.b,via:p.via})),
+                png:canvas.toDataURL()};
+        }''')
+        self.evidence.path('glow-strip.png').write_bytes(base64.b64decode(result.pop('png').split(',')[1]))
+        import math
+        peaks=[]
+        for sample in result['samples']:
+            radius=sample['t']*240
+            self.assertAlmostEqual(sample['radius'],radius)
+            self.assertTrue(any(p['glow']>0 for p in sample['parts']))
+            for segment,part in zip(result['segments'],sample['parts']):
+                a,b=segment['a'],segment['b'];p=sample['point']
+                dx,dy=b['x']-a['x'],b['y']-a['y'];l=dx*dx+dy*dy
+                f=max(0,min(1,((p['x']-a['x'])*dx+(p['y']-a['y'])*dy)/l)) if l else 0
+                distance=math.hypot(p['x']-a['x']-f*dx,p['y']-a['y']-f*dy)
+                self.assertAlmostEqual(part['distance'],distance)
+                expected=result['contact']['strength']*max(0,1-abs(distance-radius)/18)*(1-sample['t'])
+                self.assertAlmostEqual(part['glow'],expected)
+                if distance>=radius+18:self.assertEqual(part['glow'],0)
+            peaks.append(max(sample['parts'],key=lambda p:p['glow'])['distance'])
+            self.assertEqual(set(sample['pulses'][0]),{'id','intensity'})
+        self.assertEqual(peaks,sorted(peaks));self.assertEqual(len(set(peaks)),4)
+        for key in ('expired','micro'):
+            self.assertTrue(all(p['glow']==0 for p in result[key]['parts']))
+            self.assertEqual(result[key]['dot'],0)
+        self.assertEqual(result['fills'],0);self.assertGreater(result['additive'],0);self.assertTrue(result['unchanged'])
+        result.update(peakRadii=peaks,monotonic=True,noPrematureGlow=True,expiredDark=True,microDark=True,noFlatFill=True)
+        self.evidence.write('wave.json',result)
+        print('PASS wave: 4 increasing peak radii; exact 18 px wave envelope; no premature glow; expired and micro-hop dark; pulse shape preserved; additive cached draws; no flat fill; geometry unchanged')
+
+    def test_03_isolation_and_disabled(self):
+        import base64
+        for mode in ('classic','bad'):
+            hashes=[]
+            for baseline in (True,False):
+                page=self.open(mode=mode,baseline=baseline)
+                png=page.evaluate('()=>{draw();return canvas.toDataURL()}')
+                hashes.append(hashlib.sha256(base64.b64decode(png.split(',')[1])).hexdigest());page.close()
+            self.assertEqual(*hashes)
+        page=self.open(query='?roledetail=0')
+        self.assertEqual(page.evaluate('''()=>{let n=0;drawBounceContact=()=>{n++};draw();return n}'''),0)
+        print('PASS isolation: classic/bad pixel-identical; roledetail=0 no contact glow')

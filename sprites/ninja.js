@@ -208,7 +208,7 @@ class Ninja
             if (visualEffects && visualEffects.screenEffects)
                 visualEffects.screenEffects.triggerLanding(contact)
             if (version === 'grapple_over')
-                ROLE_DETAIL.markContact(contact.element, impact)
+                ROLE_DETAIL.markContact(contact.element, impact, {x: contact.x, y: contact.y})
         }
         const out = this.radius + GAMEPLAY.cubeContactEpsilon
         this.x = contact.x + contact.nx * out

@@ -777,7 +777,7 @@ const GRAPPLE_OVER_ROLE_DETAIL = Object.freeze({
         pad: '#c9a35a', padAlpha: 0.5, label: '#e8ffe8', labelAlpha: 0.5,
         lip: '#8dff96', lipFade: '#8dff9600', lipWidth: 4, lipShare: 0.25,
         glint: '#effff2', glintRadius: 6,
-        pulseMs: 450, pulseFill: '#3dff4a', pulseFillAlpha: 0.45,
+        pulseMs: 450, pulseTrace: '#c8ffd2', pulseDotFade: '#c8ffd200',
         // Normal approach speed (world units per physics cycle): no pulse at or
         // below min (resting hops), full pulse from full
         pulseMinImpact: 0.25, pulseFullImpact: 0.75}),
