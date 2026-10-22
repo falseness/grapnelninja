@@ -2880,6 +2880,9 @@ class Task639Tests(unittest.TestCase):
         page.on('pageerror', lambda e: errors.append(str(e)))
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.add_init_script(SEED_SCRIPT % 1)
+        # As Task642: menu gameLoop frames before startGame made bad-mode hashes flaky (also at base_rev).
+        page.add_init_script('''performance.now=()=>1000;
+            const raf=requestAnimationFrame;requestAnimationFrame=cb=>cb.name==='gameLoop'?0:raf(cb);''')
         page.goto(self.url + query)
         wait_for_boot(page)
         page.evaluate(SEED_SCRIPT % 1)
@@ -3026,7 +3029,9 @@ class Task640Tests(unittest.TestCase):
         page.on('pageerror', lambda e: errors.append(str(e)))
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.add_init_script(SEED_SCRIPT % 1)
-        page.add_init_script('performance.now=()=>1000')
+        # As Task642: blocking menu gameLoop frames keeps bad-mode hashes stable (flaky also at base_rev).
+        page.add_init_script('''performance.now=()=>1000;
+            const raf=requestAnimationFrame;requestAnimationFrame=cb=>cb.name==='gameLoop'?0:raf(cb);''')
         page.goto(self.url + query)
         wait_for_boot(page)
         page.evaluate(SEED_SCRIPT % 1)
@@ -3158,7 +3163,9 @@ class Task641Tests(unittest.TestCase):
         page.on('pageerror', lambda e: errors.append(str(e)))
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.add_init_script(SEED_SCRIPT % 1)
-        page.add_init_script('performance.now=()=>1000')
+        # As Task642: blocking menu gameLoop frames keeps bad-mode hashes stable (flaky also at base_rev).
+        page.add_init_script('''performance.now=()=>1000;
+            const raf=requestAnimationFrame;requestAnimationFrame=cb=>cb.name==='gameLoop'?0:raf(cb);''')
         page.goto(self.url + query)
         wait_for_boot(page)
         page.evaluate(SEED_SCRIPT % 1)
@@ -3693,3 +3700,327 @@ class Task644Tests(unittest.TestCase):
         sheet.save(self.evidence.path('side-by-side.png'))
         Image.open(self.evidence.path('side-by-side.png')).verify()
         print('PASS side-by-side.png game frame %s next to concept S plate %s' % (game.size, plate.size))
+
+
+class Task645Tests(unittest.TestCase):
+    """Audit of TASK-639..TASK-644: proof contents, hashes, rules and focused reruns."""
+    BASE = Task644Tests.BASE
+    TASKS = {'TASK-639': ['Task639Tests'], 'TASK-640': ['Task640Tests'], 'TASK-641': ['Task641Tests'],
+             'TASK-642': ['Task642Tests'], 'TASK-643': ['Task643Tests', 'Task642Tests'],
+             'TASK-644': ['Task644Tests']}
+    RUNTIME = Task644Tests.RUNTIME
+    TOUCHED = RUNTIME + ('tools/test_grapple_over_visuals.py',)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.evidence = EvidenceWriter('TASK-645')
+        cls.revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+        cls.evidence.log('CONFIG ' + json.dumps(dict(revision=cls.revision, base_rev=cls.BASE,
+            files={n: cls.sha(n) for n in cls.TOUCHED})))
+
+    @staticmethod
+    def sha(name):
+        return hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+
+    @staticmethod
+    def artifact(task, name=''):
+        return ROOT / 'artifacts' / task / name
+
+    @staticmethod
+    def class_source(text, names):
+        import ast
+        tree = ast.parse(text)
+        nodes = {n.name: n for n in tree.body if isinstance(n, ast.ClassDef)}
+        return hashlib.sha256('\n'.join(ast.get_source_segment(text, nodes[n]) for n in names).encode()).hexdigest()
+
+    def proof_config(self, task):
+        lines = [l for l in self.artifact(task, 'commands.log').read_text().splitlines() if l.startswith('CONFIG ')]
+        self.assertTrue(lines, task + ' commands.log has no CONFIG line')
+        return json.loads(lines[-1][7:])
+
+    def commit_of(self, task):
+        out = subprocess.check_output(['git', 'log', '--format=%H', '--grep', '^' + task + ':', self.BASE + '..HEAD'],
+                                      text=True).split()
+        self.assertEqual(len(out), 1, task)
+        return out[0]
+
+    def test_01_hashes_and_focused_reruns(self):
+        import re, os, sys
+        current_test = (ROOT / 'tools/test_grapple_over_visuals.py').read_text()
+        rows = {}
+        for task, classes in self.TASKS.items():
+            config, commit = self.proof_config(task), self.commit_of(task)
+            committed_test = subprocess.check_output(['git', 'show', commit + ':tools/test_grapple_over_visuals.py'], text=True)
+            files = {}
+            for name, recorded in config['files'].items():
+                files[name] = dict(recorded=recorded, current=self.sha(name), equal=recorded == self.sha(name))
+            runtime_changed = sorted(n for n, f in files.items() if not n.startswith('tools/') and not f['equal'])
+            class_at_commit, class_now = self.class_source(committed_test, classes), self.class_source(current_test, classes)
+            row = dict(commit=commit, proof_revision=config['revision'], files=files,
+                       runtime_changed_after_proof=runtime_changed,
+                       test_classes=classes, class_source_sha256=dict(at_commit=class_at_commit, current=class_now),
+                       class_source_changed=class_at_commit != class_now)
+            if runtime_changed or row['class_source_changed']:
+                out = self.evidence.path('reruns/' + task)
+                env = dict(os.environ, GRAPPLE_OVER_EVIDENCE_DIR=str(out))
+                command = [sys.executable, '-m', 'unittest', '-v', 'test_grapple_over_visuals.' + classes[0]]
+                proc = subprocess.run(command, cwd=ROOT / 'tools', env=env, capture_output=True, text=True, timeout=900)
+                log = 'reruns/%s.log' % task
+                self.evidence.path(log).write_text(proc.stdout + proc.stderr + 'EXIT_STATUS %d\n' % proc.returncode)
+                ran = re.search(r'^Ran (\d+) tests? in', proc.stderr, re.M)
+                ids = re.findall(r'^(test_\w+) \((test_grapple_over_visuals\.\w+)\.test_\w+\)', proc.stderr, re.M)
+                ids = ids or re.findall(r'^(test_\w+) \((test_grapple_over_visuals\.\w+)\)', proc.stderr, re.M)
+                self.evidence.log('RERUN %s cwd=tools GRAPPLE_OVER_EVIDENCE_DIR=%s %s EXIT_STATUS %d %s'
+                                  % (task, out.relative_to(ROOT), ' '.join(['python3'] + command[1:]), proc.returncode,
+                                     ran.group(0) if ran else 'NO_RAN_LINE'))
+                self.assertEqual(proc.returncode, 0, task + ' rerun failed: see ' + log)
+                self.assertIsNotNone(ran, task)
+                self.assertGreater(int(ran.group(1)), 0)
+                self.assertNotIn('skipped', proc.stderr)
+                self.assertTrue(ids and {c for _, c in ids} == {'test_grapple_over_visuals.' + classes[0]}, ids)
+                rerun_config = json.loads([l for l in (out / 'commands.log').read_text().splitlines()
+                                           if l.startswith('CONFIG ')][-1][7:])
+                self.assertEqual(rerun_config['files']['render/roledetail.js'], self.sha('render/roledetail.js'))
+                row['focused_rerun'] = dict(reason=('runtime changed: ' + ', '.join(runtime_changed)) if runtime_changed
+                                            else 'test class source changed', command=' '.join(['python3'] + command[1:]),
+                                            cwd='tools', evidence_dir=str(out.relative_to(ROOT)), log='artifacts/TASK-645/' + log,
+                                            exit_status=proc.returncode, tests_ran=int(ran.group(1)),
+                                            test_ids=sorted('%s.%s' % (c, t) for t, c in ids),
+                                            browser=rerun_config.get('browser'), revision=rerun_config['revision'])
+            else:
+                row['focused_rerun'] = None
+                row['reused_proof'] = ('runtime files and %s source unchanged since proof (test file differs only outside '
+                                       'the class); reused artifacts/%s' % (', '.join(classes), task))
+            rows[task] = row
+        self.assertIsNone(rows['TASK-644']['focused_rerun'])
+        result = dict(revision=self.revision, current=({n: self.sha(n) for n in self.TOUCHED}), tasks=rows,
+                      reruns=[t for t, r in rows.items() if r['focused_rerun']],
+                      reused=[t for t, r in rows.items() if not r['focused_rerun']])
+        self.evidence.write('hashes.json', result)
+        print('PASS hashes: reruns %s; reused %s' % (result['reruns'], result['reused']))
+
+    def test_02_live_production_rules(self):
+        """Determinism, no per-frame blur/filter, no world writes, solid/hazard/drag unchanged, roledetail=0."""
+        url, browser = start_browser_test(ROOT, self.addCleanup)
+        self.evidence.log('BROWSER ' + json.dumps(dict(name='chromium', version=browser.version,
+                                                       viewport='1280x720', dpr=1)))
+        opener = Task644Tests()
+        opener.evidence, opener.BASE = self.evidence, self.BASE
+        others = '''() => {
+            const rect=(w,h)=>[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}];
+            const level={version:1,bounds:{left:-400,top:-2000,right:3000,bottom:1000},
+                spawn:{x:0,y:-1000},sections:[{id:GRAPPLE_OVER_LEVEL.sections[0].id,encounters:['scene']}],
+                encounters:[{id:'scene',elements:['solid','hazard','drag','hazardMover']}],
+                elements:[{id:'solid',x:60,y:60,role:'solid',grapplable:true,points:rect(420,96)},
+                    {id:'hazard',x:60,y:260,role:'hazard',points:rect(300,80)},
+                    {id:'drag',x:600,y:60,role:'drag',grapplable:false,points:rect(400,200)},
+                    {id:'hazardMover',x:600,y:400,role:'hazard',points:rect(200,60)}],
+                movers:[{id:'hazard-travel',element:'hazardMover',axis:'x',min:560,max:660,periodMs:4000,phase:0}]};
+            floors=[loadFixedLevel(level)];scale[version]=1;screen.x=screen.y=0;
+        }'''
+        rows = {}
+        for baseline in (True, False):
+            context, page, errors = opener.open(url, browser, 'chromium', baseline=baseline)
+            page.evaluate(others)
+            rows['others-' + ('base' if baseline else 'worktree')] = [page.evaluate(Task644Tests.render, t)['sha256']
+                                                                     for t in (0, 1000, 2500)]
+            self.assertEqual(errors, [])
+            context.close()
+        self.assertEqual(rows['others-base'], rows['others-worktree'])
+        context, page, errors = opener.open(url, browser, 'chromium')
+        page.evaluate(Task644Tests.fixture)
+        live = page.evaluate('''async () => {
+            const w=floors[0], P=CanvasRenderingContext2D.prototype, bad=[];
+            const snapshot=()=>JSON.stringify({level:w.level,elements:w.elements.map(e=>({id:e.id,x:e.x,y:e.y,
+                points:e.points,role:e.surfaceRole,grapplable:e.grapplable,speedX:e.speedX,speedY:e.speedY}))});
+            const render=async t=>{w.applyMovers(t);w.elapsedSteps=t*cyclesPerTick/physicsStepMs;
+                ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#080e18';ctx.fillRect(0,0,1280,720);
+                w.draw();drawGrappleOverRoleDetail(w);
+                const d=new Uint8Array(await crypto.subtle.digest('SHA-256',ctx.getImageData(0,0,1280,720).data));
+                return Array.from(d,b=>b.toString(16).padStart(2,'0')).join('')};
+            await render(1000);
+            const blur=Object.getOwnPropertyDescriptor(P,'shadowBlur'), filter=Object.getOwnPropertyDescriptor(P,'filter');
+            Object.defineProperty(P,'shadowBlur',{configurable:true,get(){return blur.get.call(this)},
+                set(v){if(v>0)bad.push('shadowBlur='+v);blur.set.call(this,v)}});
+            Object.defineProperty(P,'filter',{configurable:true,get(){return filter.get.call(this)},
+                set(v){if(v!=='none')bad.push('filter='+v);filter.set.call(this,v)}});
+            const random=Math.random, now=performance.now, dateNow=Date.now;
+            Math.random=()=>{bad.push('Math.random');return random()};
+            performance.now=()=>{bad.push('performance.now');return 1000};
+            Date.now=()=>{bad.push('Date.now');return dateNow()};
+            let calls={bounce:0,mover:0,aurora:0};
+            const wrap=(name,key)=>{const f=window[name];window[name]=function(...a){calls[key]++;return f.apply(this,a)}};
+            wrap('bounceMaterialSprite','bounce');wrap('moverShellSprite','mover');wrap('drawMoverAurora','aurora');
+            const before=snapshot(), shas=[];
+            for(const t of [1000,1000,2500,1000])shas.push(await render(t));
+            const unchanged=snapshot()===before;
+            Math.random=random;performance.now=now;Date.now=dateNow;
+            Object.defineProperty(P,'shadowBlur',blur);Object.defineProperty(P,'filter',filter);
+            return {shas,sameClockSame:shas[0]===shas[1]&&shas[0]===shas[3],clockAnimates:shas[0]!==shas[2],
+                forbidden:bad,calls,unchanged,canvases:document.querySelectorAll('canvas').length};
+        }''')
+        self.assertEqual(errors, [])
+        context.close()
+        self.assertEqual(live['forbidden'], [])
+        self.assertTrue(live['sameClockSame'] and live['clockAnimates'] and live['unchanged'])
+        self.assertGreater(live['calls']['bounce'], 0)
+        self.assertGreater(live['calls']['aurora'], 0)
+        context, page, errors = opener.open(url, browser, 'chromium', query='?roledetail=0')
+        page.evaluate(Task644Tests.fixture)
+        off = page.evaluate('''() => {let calls=0;
+            for(const n of ['bounceMaterialSprite','moverShellSprite','drawMoverAurora','drawBounceContact'])
+                window[n]=()=>{calls++;throw Error('disabled '+n)};
+            floors[0].elapsedSteps=1000;floors[0].draw();drawGrappleOverRoleDetail(floors[0]);draw();
+            return {enabled:ROLE_DETAIL.enabled,calls}}''')
+        self.assertEqual(errors, [])
+        context.close()
+        self.assertEqual(off, dict(enabled=False, calls=0))
+        result = dict(revision=self.revision, browser=browser.version, viewport='1280x720', dpr=1,
+                      solid_hazard_drag=dict(elements=['solid', 'hazard', 'drag', 'hazard mover'], base_rev=self.BASE,
+                                             times_ms=[0, 1000, 2500], **rows,
+                                             equal=rows['others-base'] == rows['others-worktree']),
+                      live=live, roledetail_off=off)
+        result['pass'] = ('PASS live: solid/hazard/drag pixels equal base_rev; no Math.random/performance.now/Date.now, '
+                           'shadowBlur>0 or ctx.filter during warm frames; same clock same pixels; no world writes; '
+                           '?roledetail=0 draws no bounce/mover detail')
+        self.evidence.write('live-rules.json', result)
+        print(result['pass'])
+
+    def test_03_audit_and_index(self):
+        import re, io
+        from PIL import Image
+        listed = json.loads((ROOT / 'artifacts/tasks.json').read_text())
+        tasks = {t['id']: t for t in (listed if isinstance(listed, list) else listed['tasks'])}
+        hashes = json.loads(self.evidence.path('hashes.json').read_text())
+        live = json.loads(self.evidence.path('live-rules.json').read_text())
+        load = lambda task, name: json.loads(self.artifact(task, name).read_text())
+        audit = dict(revision=self.revision, base_rev=self.BASE, tasks={}, rules={})
+        for task in self.TASKS:
+            tests = self.artifact(task, 'tests.log').read_text()
+            commands = self.artifact(task, 'commands.log').read_text()
+            ran = re.findall(r'^Ran (\d+) tests? in', tests, re.M)
+            ok = re.search(r'^OK$', tests, re.M) is not None
+            index = load(task, 'evidence-index.json')
+            names = sorted(set(re.findall(r'"([\w./-]+\.(?:json|log|png))"', json.dumps(index))))
+            missing = [n for n in names if not (self.artifact(task, n).exists() or (ROOT / n).exists())]
+            rerun = hashes['tasks'][task]['focused_rerun']
+            row = dict(status=tasks[task]['status'], tests_log=dict(path='artifacts/%s/tests.log' % task,
+                       ran=[int(r) for r in ran], ok=ok, skipped='skipped' in tests),
+                       commands_exit_zero='EXIT_STATUS 0' in commands, index_missing=missing,
+                       proof_current=not hashes['tasks'][task]['runtime_changed_after_proof']
+                       and not hashes['tasks'][task]['class_source_changed'],
+                       focused_rerun=rerun and dict(log=rerun['log'], tests_ran=rerun['tests_ran'], exit_status=rerun['exit_status']))
+            self.assertEqual(row['status'], 'done', task)
+            self.assertTrue(ran and int(ran[-1]) > 0 and ok and not row['tests_log']['skipped'], task)
+            self.assertTrue(row['commands_exit_zero'], task)
+            self.assertEqual(missing, [], task)
+            self.assertTrue(row['proof_current'] or (rerun and rerun['exit_status'] == 0), task + ' stale and not rerun')
+            audit['tasks'][task] = row
+        # Rules, checked from proof file contents (not their PASS strings) and the current tree.
+        diff = subprocess.check_output(['git', 'diff', '--name-only', self.BASE, 'HEAD'], text=True).split()
+        added = [l[1:] for l in subprocess.check_output(['git', 'diff', '-U0', self.BASE, 'HEAD', '--', 'render/roledetail.js',
+                 'sprites/ninja.js'], text=True).splitlines() if l.startswith('+') and not l.startswith('+++')]
+        ninja = [l for l in subprocess.check_output(['git', 'diff', '-U0', self.BASE, 'HEAD', '--', 'sprites/ninja.js'],
+                 text=True).splitlines() if l[:1] in '+-' and l[:3] not in ('+++', '---')]
+        forbidden = [l.strip() for l in added if re.search(r'Math\.random|performance\.now|Date\.now|shadowBlur|shadowColor|\.filter\s*=', l)]
+        lighting = [l.strip() for l in added if re.search(r'light(?:Canvas|ing|map)|backdrop|dim|shadow', l, re.I)]
+        world_writes = [l.strip() for l in added if re.search(
+            r'\b(?:element|e|world|mover|m|ninja)\.(?:x|y|points|surfaceRole|role|grapplable|speedX|speedY|min|max|axis|periodMs|phase)\s*(?:[-+*/]?=)(?!=)', l)]
+        hex_literals = [l.strip() for l in added if re.search(r"['\"]#[0-9a-fA-F]{3,8}['\"]|rgba?\(", l)]
+        style = (ROOT / 'style.js').read_text()
+        snapshot, off = load('TASK-644', 'snapshot-compare.json'), load('TASK-644', 'roledetail-off.json')
+        wave, ribbons = load('TASK-641', 'wave.json'), load('TASK-643', 'ribbons.json')
+        iso639, shell = load('TASK-639', 'isolation.json'), load('TASK-642', 'shell.json')
+        classic_bad = [k for g in ('classic', 'bad') for k, v in snapshot[g].items() if v['sha256_a'] != v['sha256_b']]
+        max_ratio = max(abs(o) / m['half'] for s in ribbons['samples'] for m in s['movers'] for r in m['ribbons'] for o in r['offsets'])
+        max_hz = max(r['speed'] * 1000 / (2 * 3.141592653589793) for s in ribbons['samples'] for m in s['movers'] for r in m['ribbons'])
+        clear = min(m['half'] - max(abs(o) for o in r['offsets']) for s in ribbons['samples'] for m in s['movers'] for r in m['ribbons'])
+        rules = audit['rules']
+        rules['no_geometry_physics_change'] = dict(proof=['git diff %s..HEAD' % self.BASE, 'artifacts/TASK-645/live-rules.json',
+            'artifacts/TASK-643/ribbons.json', 'artifacts/TASK-642/shell.json'],
+            observed=dict(changed_files=diff, ninja_diff=ninja, world_write_lines=world_writes,
+                          live_unchanged=live['live']['unchanged'],
+                          ribbons_ticks_unchanged=all(s['unchanged'] for s in ribbons['samples']),
+                          shell_samples_unchanged=all(s['unchanged'] for s in shell['samples'])))
+        self.assertEqual(sorted(d for d in diff if not d.startswith('tools/')), sorted(self.RUNTIME))
+        self.assertEqual(len(ninja), 2)
+        self.assertIn('markContact(contact.element, impact, {x: contact.x, y: contact.y})', ninja[1])
+        self.assertEqual(world_writes, [])
+        self.assertTrue(rules['no_geometry_physics_change']['observed']['ribbons_ticks_unchanged'])
+        self.assertTrue(rules['no_geometry_physics_change']['observed']['shell_samples_unchanged'])
+        rules['classic_bad_identical'] = dict(proof=['artifacts/TASK-644/snapshot-compare.json', 'artifacts/TASK-639/isolation.json'],
+            observed=dict(captures=len(snapshot['classic']) + len(snapshot['bad']), differing=classic_bad,
+                          task639_modes_equal=[m['sha256'][0] == m['sha256'][1] for m in iso639['modes']],
+                          snapshot_runtime_hashes_current=hashes['tasks']['TASK-644']['focused_rerun'] is None))
+        self.assertEqual((rules['classic_bad_identical']['observed']['captures'], classic_bad), (16, []))
+        self.assertTrue(all(rules['classic_bad_identical']['observed']['task639_modes_equal']))
+        rules['solid_hazard_drag_unchanged'] = dict(proof=['artifacts/TASK-645/live-rules.json'],
+            observed=live['solid_hazard_drag'])
+        self.assertTrue(live['solid_hazard_drag']['equal'])
+        rules['no_lighting'] = dict(proof=['git diff -U0 %s..HEAD render/roledetail.js' % self.BASE],
+            observed=dict(lighting_lines=lighting, shadow_or_filter_lines=forbidden,
+                          live_forbidden_calls=live['live']['forbidden'], page_canvases=live['live']['canvases'],
+                          note="the only composite change is the TASK-641 'lighter' blend of cached trace sprites"))
+        self.assertEqual((lighting, forbidden, live['live']['forbidden']), ([], [], []))
+        rules['flat_flash_replaced_by_board_glow'] = dict(proof=['artifacts/TASK-641/wave.json', 'artifacts/TASK-644/browsers.json'],
+            observed=dict(flat_fills=wave['fills'], additive_draws=wave['additive'], noFlatFill=wave['noFlatFill'],
+                          monotonic=wave['monotonic'], peak_radii=wave['peakRadii'], expired_dark=wave['expiredDark']))
+        self.assertEqual(wave['fills'], 0)
+        self.assertGreater(wave['additive'], 0)
+        self.assertTrue(wave['peakRadii'] == sorted(wave['peakRadii']) and wave['expired']['dot'] == 0)
+        rules['aurora_friendliness'] = dict(proof=['artifacts/TASK-643/ribbons.json'],
+            observed=dict(ticks=len(ribbons['samples']), max_offset_over_half=round(max_ratio, 4),
+                          min_clearance_px=round(clear, 3), max_hz=round(max_hz, 4), identical=ribbons['identical'],
+                          paused=ribbons['pausedClock'], thin_ribbons=ribbons['thinCount']))
+        self.assertLessEqual(max_ratio, 0.45)
+        self.assertGreater(clear, 1.5)
+        self.assertLess(max_hz, 0.5)
+        self.assertTrue(ribbons['identical'] and ribbons['pausedClock'] and ribbons['thinCount'] == 1)
+        rules['deterministic_simulated_clock'] = dict(proof=['artifacts/TASK-645/live-rules.json', 'artifacts/TASK-640/determinism.json'],
+            observed=dict(live_same_clock_same=live['live']['sameClockSame'], live_clock_animates=live['live']['clockAnimates'],
+                          traces_equal=len(set(load('TASK-640', 'determinism.json')['tracesSha256'])) == 1,
+                          clock_source='world.elapsedSteps' if 'elapsedSteps' in (ROOT / 'render/roledetail.js').read_text() else None))
+        self.assertTrue(rules['deterministic_simulated_clock']['observed']['traces_equal'])
+        rules['roledetail_0_disables'] = dict(proof=['artifacts/TASK-644/roledetail-off.json', 'artifacts/TASK-645/live-rules.json'],
+            observed=dict(off_base=off['runs']['off-base']['sha256'], off_worktree=off['runs']['off-worktree']['sha256'],
+                          live=live['roledetail_off']))
+        self.assertEqual(off['runs']['off-base']['sha256'], off['runs']['off-worktree']['sha256'])
+        rules['colour_tokens'] = dict(proof=['style.js', 'git diff render/roledetail.js'],
+            observed=dict(colour_literals_added=hex_literals,
+                          tokens=sorted(set(re.findall(r'\b(auroraColors|auroraGlow|auroraGlowFade|glass|board\w*|trace\w*)\b',
+                                                       style[style.index('GRAPPLE_OVER_ROLE_DETAIL'):])))))
+        self.assertEqual(hex_literals, [])
+        head_test = subprocess.check_output(['git', 'show', 'HEAD:tools/test_grapple_over_visuals.py'], text=True)
+        now_test = (ROOT / 'tools/test_grapple_over_visuals.py').read_text()
+        audit['earlier_classes_edited_since_head'] = dict(
+            classes=[c for c in ('Task639Tests', 'Task640Tests', 'Task641Tests', 'Task642Tests', 'Task643Tests', 'Task644Tests')
+                     if self.class_source(head_test, [c]) != self.class_source(now_test, [c])],
+            reason='bad-mode frames were flaky (also at base_rev) while the menu gameLoop ran before startGame; '
+                   'open() now blocks gameLoop requestAnimationFrame from page start, as Task642/644 do')
+        self.evidence.write('audit.json', audit)
+        evidence = {
+            'commands.log': 'commands, exit statuses, browser/viewport, revision, SHA256 of touched files',
+            'tests.log': 'Task645Tests unittest output (Ran N tests, OK)',
+            'hashes.json': 'recorded vs current SHA256 per task; focused reruns with logs',
+            'live-rules.json': 'live production checks: solid/hazard/drag equal base, no forbidden calls, roledetail=0',
+            'audit.json': 'TASK-639..644 status/log/index checks and every rule mapped to proof + observed value'}
+        for task, row in hashes['tasks'].items():
+            if row['focused_rerun']:
+                evidence[row['focused_rerun']['log'].replace('artifacts/TASK-645/', '')] = '%s focused rerun %d tests exit %d' % (
+                    task, row['focused_rerun']['tests_ran'], row['focused_rerun']['exit_status'])
+        images = sorted(str(p.relative_to(self.evidence.root)) for p in self.evidence.root.rglob('*.png'))
+        for name in images:
+            evidence[name] = 'rerun image'
+        evidence['evidence-index.json'] = 'this index'
+        self.evidence.write('evidence-index.json', dict(revision=self.revision, artifacts=evidence))
+        for name in evidence:
+            path = self.evidence.path(name)
+            self.assertTrue(path.exists(), name)
+            if name.endswith('.json'):
+                json.loads(path.read_text())
+            if name.endswith('.png'):
+                Image.open(path).verify()
+        size = sum(p.stat().st_size for p in self.evidence.root.rglob('*') if p.is_file())
+        self.assertLess(size, 200 * 1024 * 1024)
+        self.evidence.log('INDEX %d artifacts exist; JSON parses; %d images decode; SIZE_BYTES %d' % (len(evidence), len(images), size))
+        print('PASS audit: 6 tasks done; rules %s; index %d files; %d bytes' % (sorted(rules), len(evidence), size))
