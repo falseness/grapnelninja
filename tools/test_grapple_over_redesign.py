@@ -13625,3 +13625,203 @@ class Task635Tests(unittest.TestCase):
         self.assertLess(sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file()),200_000_000)
         print('PASS deterministic complete replay: equal tick-by-tick trace and trusted input events')
         print('PASS inventory: seven required files exist; JSON parses; image decodes; source hashes match; <200 MB')
+
+
+class Task636Tests(unittest.TestCase):
+    """Cross-engine isolated fixtures and short final-input excerpts, not full climbs."""
+    write = Task557Tests.write
+
+    @classmethod
+    def setUpClass(cls):
+        cls.out = Path(os.environ['GRAPPLE_OVER_EVIDENCE_DIR']).resolve()
+        if cls.out != (ROOT/'artifacts/TASK-636').resolve():
+            raise ValueError('Task636 evidence must stay task-local')
+        cls.out.mkdir(exist_ok=True)
+        cls.hashes = source_hashes()
+        for n in ['tools/test_grapple_over_redesign.py','tools/grapple_over_yard.js',
+                  'tools/grapple_over_bypass.js','tools/grapple_over_recovery.js','tools/grapple_over_high_falls.js']:
+            cls.hashes[n] = hashlib.sha256((ROOT/n).read_bytes()).hexdigest()
+        cls.config = dict(revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                          source_hashes=cls.hashes,viewport=VIEWPORT,device_scale_factor=1,seed=1)
+        cls.results = []; cls.clips = []
+        ids=[t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
+        assert len(ids)==3 and all('.Task636Tests.' in i for i in ids)
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('CONFIG '+json.dumps(cls.config)+'\nSELECTED '+json.dumps(ids)+' COUNT 3\n')
+        cls.route=json.loads((ROOT/'artifacts/TASK-635/completion.json').read_text())
+        cls.inputs=json.loads((ROOT/'artifacts/TASK-635/touch-inputs.json').read_text())['dispatches']
+        for n,h in cls.route['config']['source_hashes'].items():
+            if not n.startswith('tools/'):
+                assert hashlib.sha256((ROOT/n).read_bytes()).hexdigest()==h,n
+
+    def page(self):
+        p=self.browser.new_page(viewport=VIEWPORT,device_scale_factor=1)
+        self.addCleanup(p.context.close)
+        p.on('pageerror',lambda e:self.errors.append(str(e)))
+        p.on('console',lambda m:self.errors.append(m.text) if m.type=='error' else None)
+        p.add_init_script(SEED_SCRIPT % 1)
+        p.add_init_script("const raf636=requestAnimationFrame;window.requestAnimationFrame=f=>f.name==='gameLoop'?0:raf636.call(window,f)")
+        p.goto(self.url+'?grapplePreview=replacement-v1');wait_for_boot(p)
+        p.wait_for_function('!unTouch');p.evaluate('menu.unPause();cancelAnimationFrame(game);window.requestAnimationFrame=()=>0')
+        for name in ['yard','bypass','recovery','high_falls']:
+            p.add_script_tag(path=str(ROOT/f'tools/grapple_over_{name}.js'))
+        return p
+
+    def record(self,name,value):
+        self.rows.append(dict(name=name,result=value))
+        print('OBSERVED '+name,flush=True)
+
+    def excerpt(self,p,start,end,capture=False):
+        if start:
+            r=self.route['trace'][start-1]
+            self.assertFalse(r['attached']);self.assertFalse(r['shot'])
+            p.evaluate('s=>BYPASS.setup(s,540,null)',dict(phaseTick=start,pose={k:r[k] for k in ['x','y','vx','vy']}))
+        return p.evaluate('''a=>{
+          const rows=[],frames=[];let completedEvents=0;
+          const send=PLATFORM.sendLifecycle;PLATFORM.sendLifecycle=function(n,...v){if(n==='level_completed')completedEvents++;return send.call(this,n,...v)};
+          const c=document.createElement('canvas');c.width=640;c.height=360;const cx=c.getContext('2d');
+          for(let tick=a.start;tick<a.end;tick++){
+            for(const e of a.inputs.filter(e=>e.tick===tick)){
+              const q=YARD.client(e.world),event=new MouseEvent(e.down?'mousedown':'mouseup',{button:0,bubbles:true});
+              // MouseEvent constructor truncates fractional coordinates; preserve the
+              // recorded world aim through the fixture camera's fractional transform.
+              Object.defineProperties(event,{clientX:{value:q.x},clientY:{value:q.y}});document.dispatchEvent(event);
+            }
+            YARD.step(1);
+            if((tick-a.start)%12===0||tick===a.end-1){
+              const r=YARD.result().rows.at(-1);rows.push({...r,absoluteTick:tick+1,rope:grapnel.pos.length,completed:floors[0].climbStats.completed,movers:floors[0].level.movers.map(m=>({id:m.element,position:floors[0].byId.get(m.element)[m.axis],periodMs:m.periodMs}))});
+              if(a.capture){draw();cx.drawImage(canvas,0,0,640,360);cx.fillStyle='black';cx.fillRect(0,340,640,20);cx.fillStyle='white';cx.fillText('TASK636 isolated excerpt '+a.start+'..'+a.end+' | tick '+(tick+1)+' | 4x',8,354);frames.push(c.toDataURL('image/jpeg',.72).split(',')[1])}
+            }
+          }PLATFORM.sendLifecycle=send;return {rows,frames,completedEvents,completed:floors[0].climbStats.completed};
+        }''',dict(start=start,end=end,inputs=[e for e in self.inputs if start<=e['tick']<end],capture=capture))
+
+    def encode(self,name,frames,provenance):
+        import imageio_ffmpeg
+        exe=imageio_ffmpeg.get_ffmpeg_exe()
+        command=[exe,'-y','-f','image2pipe','-framerate','20','-i','-','-c:v','libx264','-pix_fmt','yuv420p',str(self.out/(name+'.mp4'))]
+        result=subprocess.run(command,input=b''.join(base64.b64decode(f) for f in frames),capture_output=True)
+        with (self.out/'commands.log').open('a') as f:
+            import shlex
+            f.write('COMMAND '+shlex.join(command)+' EXIT_STATUS '+str(result.returncode)+' INPUT_FRAMES '+str(len(frames))+'\n')
+        self.assertEqual(result.returncode,0,result.stderr.decode())
+        for i in [0,len(frames)//2,len(frames)-1]:
+            (self.out/f'{name}-{i}.jpg').write_bytes(base64.b64decode(frames[i]))
+        self.clips.append(dict(path=f'artifacts/TASK-636/{name}.mp4',frames=len(frames),provenance=provenance,
+                               images=[f'artifacts/TASK-636/{name}-{i}.jpg' for i in [0,len(frames)//2,len(frames)-1]]))
+
+    def smoke(self,engine):
+        self.url,self.browser=start_browser_test(ROOT,self.addCleanup,engine)
+        self.errors=[];self.rows=[]
+        p=self.page()
+        boot=p.evaluate('({layout:floors[0].level.layoutId,range:grappleOverAcquisitionRadius(),scale:scale[version]})')
+        self.assertEqual(boot,dict(layout='grapple-over-replacement-v1',range=360,scale=.375));self.record('preview boot',boot)
+        # Isolated empty-space miss then real opening hit, both trusted input.
+        p.mouse.move(50,50);p.mouse.down();p.evaluate('YARD.step(8)')
+        miss=p.evaluate('({attached:grapnel.isGrappled(),held:pressHeld,distance:Math.hypot(grapnel.pos[0][0]-ninja.x,grapnel.pos[0][1]-ninja.y),range:grappleOverAcquisitionRadius()})')
+        self.assertFalse(miss['attached']);self.assertTrue(miss['held']);self.assertAlmostEqual(miss['distance'],360,delta=1)
+        p.mouse.up();p.context.close();p=self.page()
+        q=p.evaluate('YARD.client({x:2420,y:-139})');p.mouse.move(q['x'],q['y']);p.mouse.down();p.evaluate('YARD.step(5)')
+        hit=p.evaluate('({attached:grapnel.isGrappled(),id:grapnel.pos[0][2].id})');self.assertTrue(hit['attached']);p.mouse.up()
+        self.record('range miss/hit',dict(miss=miss,hit=hit))
+        # Actual moving collider and full period; anchor setup is explicitly a fixture.
+        mover=p.evaluate('''()=>{
+          const w=floors[0],m=w.level.movers.find(m=>w.byId.get(m.element).surfaceRole==='solid'),e=w.byId.get(m.element),ps=e.getPoints();
+          ninja.x=ps[0].x;ninja.y=ps[0].y-90;ninja.speedX=ninja.speedY=0;
+          grapnel.throwed=grapnel.grappled=true;grapnel.pos=[[ps[0].x,ps[0].y,e]];
+          const rows=[];for(let i=0;i<=Math.ceil(m.periodMs/physicsStepMs);i++){physics();
+            rows.push({tick:i,position:e[m.axis],attached:grapnel.isGrappled(),anchor:grapnel.pos[0]?.[2]?.id,local:grapnel.pos[0]?[grapnel.pos[0][0]-e.x,grapnel.pos[0][1]-e.y]:null})}
+          return {mover:m,rows};}''')
+        positions=[r['position'] for r in mover['rows']];self.assertGreater(max(positions)-min(positions),.9*(mover['mover']['max']-mover['mover']['min']))
+        self.assertTrue(any(b>a for a,b in zip(positions,positions[1:])) and any(b<a for a,b in zip(positions,positions[1:])))
+        self.assertTrue(all(r['attached'] and r['anchor']==mover['mover']['element'] for r in mover['rows']))
+        self.record('moving attachment/reversal',mover);p.context.close();p=self.page()
+        wrap=p.evaluate('''()=>{
+          floors[0].elements=[];floors[0].dragZones=[];screen.leftWall=null;
+          const rect=(id,x,y,width,height)=>{const e=new Rect({x,y,width,height});e.id=id;e.surfaceRole='solid';floors[0].elements.push(e);return e};
+          const a=rect('anchor',1100,680,30,40);rect('far-corner',900,800,80,50);rect('near-corner',600,952,40,80);
+          ninja.x=200;ninja.y=1160;grapnel.throwed=grapnel.grappled=true;grapnel.pos=[[1100,700,a]];grapnel.collision();
+          const before=grapnel.pos.map(v=>({id:v[2].id,point:v.slice(0,2)}));calcPhysics();return {before,after:grapnel.pos.map(v=>v[2].id),attached:grapnel.isGrappled(),distance:Math.hypot(1100-ninja.x,700-ninja.y)};}''')
+        self.assertEqual([r['id'] for r in wrap['before']],['anchor','far-corner','near-corner']);self.assertTrue(wrap['attached']);self.assertGreater(wrap['distance'],540)
+        self.record('wrap',wrap);p.context.close();p=self.page()
+        task,tick,aim,hold,recovery_hold=TASK627_FALL_SPECS[0]
+        data=json.loads((ROOT/f'artifacts/TASK-{task}/route.json').read_text());row=next(r for r in data['trace'] if r['tick']==tick)
+        fall=p.evaluate('''s=>{HIGH_FALL.begin(s);for(let i=0;i<1600;i++)if(HIGH_FALL.step())break;return HIGH_FALL.finish()}''',dict(start=dict(id=f'{task}-{tick}',phaseTick=tick,pose={k:row[k] for k in ['x','y','vx','vy']}),target=dict(x=aim[0],y=aim[1]),hold=hold,recoveryHold=recovery_hold))
+        self.assertTrue(fall['recovery']['returned']);self.assertGreater(sum(bool(r['yellow']) and r['vy']>0 for r in fall['trace']),8)
+        self.record('yellow fall/recovery',fall);p.context.close();p=self.page()
+        hazard=p.evaluate('''()=>{const e=floors[0].elements.find(e=>e.surfaceRole==='hazard'),ps=e.getPoints();
+          const start={id:e.id,phaseTick:0,pose:{x:ps.reduce((s,p)=>s+p.x,0)/ps.length,y:Math.min(...ps.map(p=>p.y))-ninja.radius+1,vx:0,vy:2}};
+          BYPASS.setup(start,540,null);ninja.collision();const contact={id:e.id,cooldown:ninja.hazardCooldownMs,vx:ninja.speedX,vy:ninja.speedY};
+          const recovery=RECOVERY.run(start,540,{continue:true,budget:9000});return {contact,recovery};}''')
+        self.assertEqual(hazard['contact']['cooldown'],350);self.assertTrue(hazard['recovery']['returned']);self.record('hazard recovery',hazard)
+        p.context.close();p=self.page()
+        state=p.evaluate('YARD.step(20);captureClimbState()');p.keyboard.press('p')
+        self.assertTrue(p.evaluate('menu.gamePaused'));p.set_viewport_size(dict(width=1000,height=700))
+        paused=p.evaluate('captureClimbState()');self.assertEqual(state,paused)
+        p.keyboard.press('p');self.assertFalse(p.evaluate('menu.gamePaused'))
+        restored=p.evaluate('s=>{restoreClimbState(s);return captureClimbState()}',state);self.assertEqual(state,restored)
+        self.record('pause/resize and save/restore',dict(saved=state,paused=paused,restored=restored,viewport=dict(width=1000,height=700)))
+        p.context.close();p=self.page()
+        late=self.excerpt(p,6300,8451,capture=engine=='firefox')
+        frames=late.pop('frames');self.assertTrue(late['completed']);self.assertEqual(late['completedEvents'],1)
+        for r in late['rows']:
+            expected=self.route['trace'][r['absoluteTick']-1]
+            self.assertAlmostEqual(r['x'],expected['x'],delta=.01)
+            self.assertAlmostEqual(r['y'],expected['y'],delta=.01)
+        self.record('summit from labeled late fixture',late)
+        if frames:self.encode('late-hazard-summit',frames,dict(source='artifacts/TASK-635/touch-inputs.json',start=6300,end=8451,kind='isolated late fixture; production mouse handlers with recorded world aims; NOT full completion'))
+        p.context.close()
+        self.assertEqual(self.errors,[])
+        self.results.append(dict(browser=engine,version=self.browser.version,viewport=VIEWPORT,scenarios=self.rows,consoleErrors=self.errors,requiredFailures=0,scope=self.__doc__))
+        self.write('browser-smoke.json',dict(config=self.config,browsers=self.results))
+        print('PASS '+engine+': '+str(len(self.rows))+' named scenarios; consoleErrors=0; requiredFailures=0')
+
+    def test_01_firefox(self):
+        self.smoke('firefox')
+
+    def test_02_webkit(self):
+        self.smoke('webkit')
+
+    def test_03_media_and_inventory(self):
+        import imageio_ffmpeg
+        self.url,self.browser=start_browser_test(ROOT,self.addCleanup)
+        self.errors=[];p=self.page()
+        opening=self.excerpt(p,0,2247,True)
+        self.assertTrue(any(r['attached'] for r in opening['rows']))
+        for r in opening['rows']:
+            expected=self.route['trace'][r['absoluteTick']-1]
+            self.assertAlmostEqual(r['x'],expected['x'],delta=.01)
+            self.assertAlmostEqual(r['y'],expected['y'],delta=.01)
+        self.encode('opening-mover-cycle',opening.pop('frames'),dict(source='artifacts/TASK-635/touch-inputs.json',start=0,end=2247,kind='fresh-base short excerpt; includes full freight mover period; production input/physics'))
+        self.write('opening-trace.json',opening)
+        # The high-fall capture already matches every production source hash.
+        old=json.loads((ROOT/'artifacts/TASK-627/evidence-index.json').read_text())
+        for n,h in old['config']['source_hashes'].items():
+            if not n.startswith('tools/'):self.assertEqual(hashlib.sha256((ROOT/n).read_bytes()).hexdigest(),h,n)
+        self.clips.append(dict(path='artifacts/TASK-627/falls.webm',provenance=dict(source='artifacts/TASK-627/inputs.json',hashValidation='all production sources identical',kind='two labeled isolated high falls and input recovery; original referenced, never copied'),images=['artifacts/TASK-627/clip-contact-sheet.png']))
+        for clip in self.clips:
+            path=ROOT/clip['path'];self.assertTrue(path.is_file())
+            command=[imageio_ffmpeg.get_ffmpeg_exe(),'-v','info','-i',str(path),'-f','null','-']
+            r=subprocess.run(command,capture_output=True,text=True)
+            self.assertEqual(r.returncode,0,r.stderr)
+            import re,shlex
+            counts=re.findall(r'frame=\s*(\d+)',r.stderr);self.assertTrue(counts);self.assertGreater(int(counts[-1]),20)
+            clip.update(decodedFrames=int(counts[-1]),sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+            with (self.out/'commands.log').open('a') as f:f.write('COMMAND '+shlex.join(command)+' EXIT_STATUS '+str(r.returncode)+' DECODED_FRAMES '+counts[-1]+'\n')
+            for name in clip['images']:
+                with Image.open(ROOT/name) as im:im.load();self.assertGreater(im.width,0)
+        self.write('media-index.json',dict(clips=self.clips,config=self.config,humanEnjoymentDifficulty='unvalidated'))
+        self.assertEqual(self.errors,[])
+        names={'commands.log':'exact command/status, 3 identifiers, engine/viewport/revision/hashes',
+               'tests.log':'3 required tests, no skips, OK','browser-smoke.json':'both browsers: measured named fixtures, zero errors/failures',
+               'media-index.json':'source provenance, SHA256, nonzero fully decoded frames',
+               'review.md':'independent visual observations with actual frame citations; human enjoyment unvalidated',
+               'opening-trace.json':'production input opening and complete mover-cycle excerpt',
+               'evidence-index.json':'artifact inventory and changed dependencies'}
+        names.update({str(p.relative_to(self.out)):'decodable task-local clip or sampled frame' for p in self.out.iterdir() if p.suffix in ('.jpg','.mp4')})
+        self.write('evidence-index.json',dict(artifacts=names,sourceHashes=self.hashes,
+            changedSubsystems=['browser_test_support.start_browser_test: optional Firefox/WebKit engine; Chromium default preserved',
+                               'additive Task636Tests -> existing observation helpers -> unchanged production physics/input/renderer'],
+            historicalGeometry='Older minimal/v3 geometry tests remain historical; final replacement fixtures used here.',
+            hashPolicy='HEAD movement alone does not invalidate identical source hashes',references=['artifacts/TASK-635/completion.json','artifacts/TASK-635/touch-inputs.json','artifacts/TASK-627/evidence-index.json','artifacts/TASK-627/falls.webm','artifacts/TASK-627/clip-contact-sheet.png']))
+        self.assertLess(sum(f.stat().st_size for f in self.out.rglob('*') if f.is_file()),200_000_000)
+        print('PASS media: 3 clips fully decoded; source provenance checked; images decoded; task storage <200 MB')
