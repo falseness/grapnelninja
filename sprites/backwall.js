@@ -14,8 +14,11 @@ class BackWall extends LeftWall
         const side = -Math.sign(camera.backTravel || 0)
         const x = -camera.x
         const y = side > 0 ? h - inset - camera.y : inset - camera.y
-        // A side switch jumps the face; anchors only follow the camera
+        // A side switch jumps the face; anchors only follow the camera, so a
+        // grapnel hooked on the old face is released
         const same = side == this.side
+        if (!same && this.side && grapnel)
+            grapnel.releaseElement(this)
         this.dx = x - this.x
         this.dy = same ? y - this.y : this.cameraY - camera.y
         this.cameraY = camera.y
