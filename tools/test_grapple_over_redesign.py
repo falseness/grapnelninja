@@ -3918,7 +3918,76 @@ class Task583Tests(unittest.TestCase):
         self.assertEqual(len(rows),8)
         print('PASS recovery: 8 out-of-window misses, lower catches and normal-input escapes; three production movers; zero resets/injections; no hazards/yellow')
 
-    def test_03_evidence_index(self):
+    def test_03_refreshed_controls(self):
+        cases=[]
+        for touch in [False,True]:
+            for interval in [None,6,12,24]:
+                p=self.page(touch);self.setup_entry(p,3)
+                start=p.evaluate('YARD.result().tick');targets=[]
+                if interval is None:
+                    self.press(p,self.targets[3]);self.step(p,1200);self.release(p)
+                else:
+                    for _ in range(600//(interval+1)):
+                        target=p.evaluate('YARD.nearest()');targets.append(target)
+                        self.press(p,target);self.step(p,interval);self.release(p);self.step(p,1)
+                r=self.result(p)
+                exits=[row for row in self.landings(r,'freight-exit') if row['tick']>start]
+                cases.append(dict(mode='touch' if touch else 'desktop',
+                    probe='hold 1200' if interval is None else f'nearest {interval}',
+                    startTick=start,endTick=r['tick'],inputs=r['inputs'],trace=r['rows'][start:],
+                    targets=targets,exitContacts=exits,successfulAlternative=bool(exits)))
+                p.context.close()
+        self.write('controls.json',dict(cases=cases,source_hashes=self.config['source_hashes'],
+            scope='Isolated S03-04 fixed landing; same fixture and exit top-contact definition as tolerance',
+            inspection='Every top-facing exit contact inspected; hold 1200 ticks and nearest 6/12/24 for <=600 ticks'))
+        self.assertEqual(len(cases),8)
+        for c in cases:
+            if c['probe']=='hold 1200':
+                # Holding can reach the broad exit while still attached. Retain and
+                # inspect this alternative honestly; it does not prove a release jump.
+                self.assertTrue(c['exitContacts'],c['mode'])
+                self.assertTrue(all(row['attached'] for row in c['exitContacts']),c['mode'])
+            else:
+                self.assertFalse(c['successfulAlternative'],(c['mode'],c['probe']))
+        print('PASS controls: 8 desktop/genuine-touch probes; 6 nearest fail; 2 held-rope exit alternatives inspected, all contacts attached')
+
+    def test_04_refreshed_section_tail(self):
+        cases=[]
+        for touch in [False,True]:
+            p=self.page(touch);self.setup_entry(p,2)
+            start=p.evaluate('YARD.result().tick')
+            p.evaluate('''() => {const step=YARD.step;YARD.step=n=>{for(let i=0;i<n;i++){
+                step(1);YARD.result().rows.at(-1).ropeElements=grapnel.isGrappled()?grapnel.pos.map(p=>p[2].id):[];
+            }}}''')
+            self.press(p,self.targets[2]);self.step(p,240);self.release(p)
+            fixed=Task581Tests.until(self,p,'freight-lift-landing')
+            self.assertIsNotNone(fixed)
+            # Traverse the existing broad shelf with normal grappling. No handoff fixture.
+            self.press(p,dict(x=6420,y=-1448));self.step(p,60);self.release(p)
+            self.press(p,self.targets[3]);self.step(p,36);self.release(p)
+            release=p.evaluate('YARD.result().tick')
+            exit_tick=Task581Tests.until(self,p,'freight-exit',500)
+            self.assertIsNotNone(exit_tick)
+            r=self.result(p);trace=r['rows'][start:]
+            self.assertTrue(any('freight-lift' in row['ropeElements'] for row in trace))
+            self.assertTrue(any(row['attached'] for row in trace if row['tick']<fixed))
+            streak=best=0
+            for row in trace:
+                streak=streak+1 if row['tick']>release and not row['attached'] and not row['shot'] and not row['contacts'] else 0
+                best=max(best,streak)
+            self.assertGreaterEqual(best,6)
+            self.assertFalse(p.evaluate('floors[0].climbStats.completed'))
+            cases.append(dict(mode='touch' if touch else 'desktop',startTick=start,
+                fixedLandingTick=fixed,releaseTick=release,exitTick=exit_tick,airborneTicks=best,
+                inputs=r['inputs'],trace=trace,resetsAfterStart=0,poseInjectionsAfterStart=0,
+                fixtureInitializations=1,completion=False))
+            p.context.close()
+        self.write('section-route.json',dict(cases=cases,source_hashes=self.config['source_hashes'],
+            scope='Focused continuous S03-03 moving lift -> fixed landing -> S03-04 exit; isolated S03-02 exit fixture only; not full section or base-to-summit',
+            fixture=self.fixtures[2]))
+        print('PASS section tail: desktop/genuine-touch lift -> fixed landing -> exit; zero handoff resets/injections; >=6 airborne ticks; no completion')
+
+    def test_05_evidence_index(self):
         p=self.page()
         geometry=p.evaluate('({elements:floors[0].level.elements,range:grappleOverAcquisitionRadius(),scale:scale[version],finish:floors[0].level.finish})')
         es={e['id']:e for e in geometry['elements']}
@@ -3940,16 +4009,18 @@ class Task583Tests(unittest.TestCase):
             dict(id='freight-exit',old=[5010,-1748.2,540,60],new=[6628,-1528.2,680,60]),
             dict(id='freight-exit-catch',old=[5010,-1428.2,540,60],new=[6480,-1248.2,880,60])],
             runtimeChanges=['mountain.js replacement preview S03-04 and camera right bound only'],observedGeometry=geometry,
-            superseded='TASK-582 S03-04 geometry, route, miss, controls and continuous-section end are historical; originals retained. Local tolerance/recovery refreshed here; no renewed continuous-section claim.',
+            superseded='TASK-582 S03-04 geometry, route, miss, controls and continuous-section end are historical; originals retained. Local tolerance/recovery, hold/nearest controls and continuous moving-to-fixed-to-exit tail refreshed here; no full-section claim.',
             entryChange='S03-04 isolated entry x6400 on the existing 540-wide lift landing; S03-03 separately proves the moving-to-fixed transfer',
             routeChange='First two carrier routes aim 30 world units inward and release 6 ticks later on desktop, 50 units and 10 ticks on touch; lift uses the same ray toward a farther visible aim point to reduce edge sensitivity',
-            refreshed=['tolerance.json','recovery.json','touch-strip.jpg'],
+            refreshed=['tolerance.json','recovery.json','touch-strip.jpg','controls.json','section-route.json'],
             previousProof=[f'artifacts/TASK-{n}/route.json' for n in range(579,583)],
             dependencies=['Task583Tests -> browser_test_support + grapple_over_yard.js -> events.js, physics.js, fixedlevel.js, mountain.js'],
             changedSubsystems=['S03-04 replacement preview geometry','Additive Python tests'],
             hashPolicy='Identical tested source hashes survive a HEAD-only commit; S03-04 geometry and right-edge camera composition superseded; all four local desktop/touch proofs refreshed'))
         required={'commands.log':'exact command, actual exit status, identifiers, Chromium/viewports/DPR, revision and hashes',
-            'tests.log':'three exact Task583Tests methods, no skips, OK',
+            'tests.log':'archived tolerance/recovery plus focused controls/section-tail/index methods, no skips, OK',
+            'controls.json':'8 bounded desktop/touch hold/nearest probes with all exit contacts inspected',
+            'section-route.json':'continuous moving-to-fixed-to-exit tail in both modes, zero handoff resets',
             'tolerance.json':'40 successful variants with trusted input timestamps and top-facing exit contacts',
             'recovery.json':'8 out-of-window misses, lower contacts, mover phases and normal-input escapes',
             'affected-proof-map.json':'geometry changes and subsystem dependencies',
