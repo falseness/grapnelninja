@@ -9,9 +9,10 @@ from check_level_geometry import union_distance
 import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
-LAYOUT = 'extended-mountain-v4'
+LAYOUT = 'extended-mountain-v5'
 GUIDELINES = Path(__file__).resolve().parent.parent / 'artifacts/levels/level-guidelines.md'
 YELLOW_CLEARANCE = 1080
+YELLOW_PAIR_CLEARANCE = 540
 DIRECTION_OFFSETS = {13: -25, 15: 30}
 NONCONSECUTIVE_CLEARANCE = 1400
 
@@ -98,6 +99,7 @@ def tune(source, reposition=True, guards=True):
         band.pop('nominalRouteSampleCheck',None)
     if guards:
         add_shortcut_guards(m)
+    consolidate_yellow_bands(m)
     m['fallIllustrations'] = [dict(id='F'+str(i+1),band=z['id'],start=[z['x']+z['width']/2,z['y']-500],
         end=[z['x']+z['width']/2,z['y']+1000],meaning='Illustrative fall only') for i,z in enumerate(m['yellowBands'])]
     m['layoutId']=LAYOUT
@@ -151,6 +153,30 @@ def add_shortcut_guards(m):
     m['shortcutCandidates']=[{'from':fs[i]['id'],'to':None if j is None else fs[j]['id']} for i,j in candidates]
 
 
+def consolidate_yellow_bands(m):
+    """Prefer one long rectangle; never bridge a green panel to merge zones."""
+    bands=m['yellowBands']
+    while True:
+        conflict=next(((i,j) for i,a in enumerate(bands) for j,b in enumerate(bands)
+                       if i<j and union_distance([a['polygon']],[b['polygon']])[0]<YELLOW_PAIR_CLEARANCE),None)
+        if conflict is None:
+            break
+        i,j=conflict; a,b=bands[i],bands[j]
+        x,y=min(a['x'],b['x']),min(a['y'],b['y'])
+        right=max(a['x']+a['width'],b['x']+b['width'])
+        bottom=max(a['y']+a['height'],b['y']+b['height'])
+        poly=[[x,y],[right,y],[right,bottom],[x,bottom]]
+        nearest=min(union_distance([poly],svg.bodies(f))[0] for f in m['fragments'])
+        if right-x > bottom-y and nearest>=YELLOW_CLEARANCE:
+            a.update(x=x,y=y,width=right-x,height=bottom-y,polygon=poly,
+                     nearestSolidClearance=nearest,minimumSolidClearance=YELLOW_CLEARANCE)
+            a['mergedFrom']=a.get('mergedFrom',[a['id']])+b.get('mergedFrom',[b['id']])
+            del bands[j]
+        else:
+            # Prefer the longer existing horizontal zone when a union is unsafe.
+            del bands[j if a['width']>=b['width'] else i]
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source',required=True)
@@ -158,11 +184,11 @@ def main():
     ap.add_argument('--guidelines', default=str(GUIDELINES), help='Required current design guidelines')
     args=ap.parse_args()
     guidelines=Path(args.guidelines).read_bytes()
-    if b'200% R = 1,080 units' not in guidelines:
-        raise ValueError('Guidelines must specify the supported 200% yellow clearance')
+    if b'200% R = 1,080 units' not in guidelines or b'100% R = 540 units' not in guidelines:
+        raise ValueError('Guidelines must specify the supported 200% panel and 100% yellow-pair clearances')
     dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
     m=tune(json.loads(Path(args.source).read_text()))
-    m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':200}
+    m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':200,'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=LAYOUT
     text=svg.build(m)
     text=text.replace('01–10: preserved baseline geometry', 'Opening 80% · vertical transfers 150%')

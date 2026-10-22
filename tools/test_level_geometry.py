@@ -124,7 +124,7 @@ class ExtendedLevelTests(unittest.TestCase):
     def test_historical_level_rejected_by_new_yellow_clearance(self):
         s = self.report['summary']
         self.assertTrue(self.report['failureMessages'])
-        self.assertTrue(all('solid clearance' in m for m in self.report['failureMessages']))
+        self.assertTrue(all('solid clearance' in m or 'yellow pair' in m for m in self.report['failureMessages']))
         self.assertEqual((s['transfers'], s['transfersPass']), (24, 24))
         self.assertEqual((s['fragmentPairs'], s['pairsPass']), (300, 300))
         self.assertEqual(s['dragZones'], 6)
@@ -133,6 +133,13 @@ class ExtendedLevelTests(unittest.TestCase):
         self.assertGreater(s['minPairClearanceMinusDiameter'], 540)
         self.assertGreaterEqual(s['minDragSolidClearance'], 540)
         self.assertLessEqual(s['maxFragmentCoordError'], 0.01)
+
+    def test_close_yellow_pair_rejected_independently(self):
+        level=import_svg(SVG_TEXT.encode())
+        a,b=[e for e in level['elements'] if e['role']=='drag'][:2]
+        b.update(x=a['x'],y=a['y'],points=copy.deepcopy(a['points']))
+        report=run_check(level=level)
+        self.assertTrue(any('yellow pair' in m and '< 540' in m for m in report['failureMessages']))
 
     def test_reference_cannot_weaken_yellow_clearance(self):
         reference=copy.deepcopy(REFERENCE_DATA)

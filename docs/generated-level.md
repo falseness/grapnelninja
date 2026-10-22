@@ -1,6 +1,6 @@
 # Generated level
 
-Authoring SVG, JSON, JavaScript copy and measurements live locally in
+Guidelines, authoring SVG, JSON, JavaScript copy and measurements live locally in
 `/root/grapnelninja/artifacts/levels/` (ignored by Git).
 The shipped runtime bundle is `/root/grapnelninja/leveldata.js`. Both HTTP
 and direct file:// startup load this classic script before building the world.
@@ -20,7 +20,7 @@ Never edit the runtime bundle by hand. Commit the updated runtime bundle with
 code changes; keep artifacts local. A fresh checkout can play the bundled level
 without authoring files; authoring and comparison tests need the local sources.
 
-Layout `extended-mountain-v4` uses 80% grapple-range opening gaps and 150%
+Layout `extended-mountain-v5` uses 80% grapple-range opening gaps and 150%
 straight-up gaps. All 25 panels, including ceilings, are green bounce surfaces; the ten separate
 rectangular top bumps are removed. Incompatible older saves restart
 at the spawn. Physics playability is not established by geometry checks.
@@ -34,17 +34,20 @@ python3 -m unittest discover -s tools -p test_imported_level_runtime.py -v
 ```
 
 The current design requirements are in
-`/root/grapnelninja/artifacts/levels/level-guidelines.md` (local authoring input).
+`/root/grapnelninja/artifacts/levels/level-guidelines.md` (local design requirements; the commit hook forbids artifacts in Git).
 The generator requires this file and records its SHA-256 in the measurements.
-The v4 layout enforces at least 200% grapple length (1,080 world units)
+The v5 layout enforces at least 200% grapple length (1,080 world units)
 from every yellow rectangle to every green panel. The independent checker
-cannot lower that threshold through reference metadata. Six fall brakes move
-clear of panels; twelve additional upper fall-lane zones fit the rule.
-The near-start brake and other close guards are relocated or removed. P5's shelf is
-narrowed to keep the tested P3-to-P5 bypass arc away from its attachment edge;
+cannot lower that threshold through reference metadata. Every yellow pair also
+has at least 100% grapple length (540 units) of edge-to-edge clearance. Nearby
+yellow rectangles merge into one longer rectangle when its entire area remains
+clear of green panels; otherwise the longer zone is retained and its conflicting
+neighbor removed. This reduces 18 zones to nine; all 36 yellow pairs pass, with
+minimum measured separation about 1,060 units. Green geometry is unchanged from
+v4, including the narrowed P5 shelf that avoids the tested P3-to-P5 bypass arc.
 P3 shifts left while retaining its 150% gap; P6 and later folded-section
-repositioning is retained. The early-route regression probes pass, but the
-broader sweep still finds bypasses in other folds. See the local
+repositioning is retained. The v4 sweep found bypasses in other folds; these remain an outstanding
+limitation, not a claim resolved by yellow consolidation. See the local
 `/root/grapnelninja/artifacts/levels/v4-review/shortcut-sweep.json`; this output
 is not certified free of shortcuts or fully playable.
 

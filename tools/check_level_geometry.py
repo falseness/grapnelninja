@@ -307,6 +307,16 @@ def check(level, svg_data, reference):
     if set(d['id'] for d in drags) != set(ref_bands):
         fail('drag ids differ from reference bands: %s' % sorted(set(d['id'] for d in drags) ^ set(ref_bands)))
 
+    drag_pairs=[]
+    drag_polys=[(eid,poly) for eid,(element,poly) in polys.items() if element['role']=='drag']
+    for i,(aid,apoly) in enumerate(drag_polys):
+        for bid,bpoly in drag_polys[i+1:]:
+            distance=polygon_distance(apoly,bpoly)[0]
+            passed=distance>=GRAPPLE_RANGE
+            drag_pairs.append({'source':aid,'target':bid,'clearance':r(distance),'pass':passed})
+            if not passed:
+                fail('yellow pair %s/%s: clearance %.6f < %.6f' % (aid,bid,distance,GRAPPLE_RANGE))
+
     summary = {
         'pass': not failures, 'failures': len(failures),
         'transfers': len(transfers), 'transfersPass': sum(t['pass'] for t in transfers),
@@ -316,13 +326,15 @@ def check(level, svg_data, reference):
                                            if t['percentErrors']['referenceDistance'] is not None), default=None), 9),
         'fragmentPairs': len(pairs), 'pairsPass': sum(p['pass'] for p in pairs),
         'minPairClearanceMinusDiameter': r(min((p['clearanceMinusDiameter'] for p in pairs), default=None)),
+        'yellowPairs': len(drag_pairs), 'yellowPairsPass': sum(p['pass'] for p in drag_pairs),
+        'minYellowPairClearance': r(min((p['clearance'] for p in drag_pairs), default=None)),
         'dragZones': len(drags), 'dragZonesPass': sum(d['pass'] for d in drags),
         'minDragSolidClearance': r(min((d['minSolidClearance'] for d in drags), default=None)),
         'fragments': len(frag_rows), 'maxFragmentCoordError': r(frag_max, 9), 'maxSvgCoordError': r(svg_max, 9),
     }
     return {'grappleRange': GRAPPLE_RANGE, 'playerDiameter': PLAYER_DIAMETER, 'coordTolerance': COORD_TOL,
             'percentTolerance': PERCENT_TOL, 'summary': summary, 'failureMessages': failures,
-            'transfers': transfers, 'pairs': pairs, 'dragZones': drags, 'fragments': frag_rows}
+            'transfers': transfers, 'pairs': pairs, 'dragZones': drags, 'yellowPairs': drag_pairs, 'fragments': frag_rows}
 
 
 def main(argv=None):

@@ -166,7 +166,7 @@ def build(meas):
     bands = meas['yellowBands']
     falls = meas['fallIllustrations']
     combos = [tuple(c) for c in meas['combinations']]
-    assert len(frags) == 25 and len(rows) == 24 and len(bands) >= 6 and len(combos) == 4
+    assert len(frags) == 25 and len(rows) == 24 and len(bands) > 0 and len(combos) == 4
     assert float(meas['grappleRange']) == R
 
     allb = [p for m in frags for p in bodies(m)]
