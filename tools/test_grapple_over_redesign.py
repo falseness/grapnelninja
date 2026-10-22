@@ -3491,3 +3491,147 @@ class Task580Tests(unittest.TestCase):
         self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation'],
             hashPolicy='Identical tested source hashes survive a HEAD-only commit'))
         print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; gravity/pull unchanged; index written')
+
+
+class Task581Tests(unittest.TestCase):
+    """Vertical freight variation from a labelled isolated fixture on the live S03-02 exit."""
+    @classmethod
+    def setUpClass(cls):
+        Task567Tests.setUpClass.__func__(cls)
+        cls.config['simulation']='Isolated S03-02 exit fixture -> S03-03 only; production physics and trusted inputs; not a base-to-summit run'
+
+    write = Task567Tests.write
+    press = Task567Tests.press
+    step = Task567Tests.step
+    result = Task567Tests.result
+    landings = staticmethod(Task567Tests.landings)
+    target = dict(x=5900,y=-1028.2)
+
+    def page(self):
+        p=Task567Tests.page(self)
+        p.evaluate('Object.assign(ninja,{x:6000,y:-720,speedX:0,speedY:0});screen.trackGrappleOver(true)')
+        # A full real production cycle, no mover-time or player-state injection.
+        p.evaluate('''() => {window.freightCycle=[];for(let i=0;i<600;i++){
+            YARD.step(1);freightCycle.push({tick:i+1,y:floors[0].byId.get('freight-lift').y,
+                px:ninja.x,py:ninja.y});}}''')
+        return p
+
+    def until(self,p,id,limit=400):
+        return p.evaluate('''({id,limit})=>{for(let i=0;i<limit;i++){
+            YARD.step(1);const r=YARD.result().rows.at(-1);
+            if(r.contacts.some(c=>c.id===id&&c.ny<-.9))return r.tick;
+        }return null}''',dict(id=id,limit=limit))
+
+    def capture(self,p,name):
+        p.evaluate('screen.trackGrappleOver(true);TUTORIAL_HINT.visible=false;draw()')
+        self.assertEqual(p.evaluate('LANDMARKS.frame.drawn[0].id'),'freight-crossing')
+        p.screenshot(path=str(self.out/name),type='jpeg',quality=85)
+        with Image.open(self.out/name) as im:im.load();self.assertEqual(im.size,(1280,720))
+
+    def test_01_geometry_cycle_and_release(self):
+        p=self.page()
+        g=p.evaluate('''target=>({elements:floors[0].level.elements,sections:floors[0].level.sections,
+            encounter:floors[0].level.encounters.find(e=>e.id==='S03-03'),movers:floors[0].level.movers,
+            range:grappleOverAcquisitionRadius(),scale:scale[version],target,
+            reach:Math.hypot(target.x-ninja.x,target.y-ninja.y),cycle:freightCycle,
+            calibrated:{movement:GRAPPLE_OVER_MOVEMENT,movers:GRAPPLE_OVER_MOVERS},
+            dragCount:floors[0].dragZones.length,finish:floors[0].level.finish})''',self.target)
+        self.assertEqual([s['id'] for s in g['sections']],['S01','S02','S03'])
+        self.assertEqual(g['sections'][-1]['encounters'],['S03-01','S03-02','S03-03'])
+        self.assertEqual(len(g['elements']),28);self.assertEqual(len(g['movers']),3)
+        self.assertEqual(g['dragCount'],0);self.assertIsNone(g['finish'])
+        self.assertEqual(g['range'],360);self.assertEqual(g['scale'],.375);self.assertLess(g['reach'],360)
+        for e in g['elements']:
+            e['width']=max(v['x'] for v in e['points'])-min(v['x'] for v in e['points'])
+            self.assertTrue(e['purpose']);self.assertTrue(e['grapplable'])
+            self.assertEqual(e['role'],'solid' if e['id'] in ['freight-carrier','freight-second-carrier','freight-lift'] else 'bounce')
+            if 'anchor' not in e['id']:self.assertGreaterEqual(e['width'],360 if e['id'] in ['freight-carrier','freight-second-carrier','freight-lift'] else 540)
+        es={e['id']:e for e in g['elements']}
+        g.update(gap=25,rise=760,
+            connection='S03-02 exit is S03-03 entry: same live freight-second-landing collider',
+            localCatch='freight-second-catch',calibrationNote='TASK-564/561 vertical 720 travel, 10000ms cycle; widened blue face 360; entry 620 exit 540 recovery 1360; placement validated here',
+            sweptBounds=dict(left=5550,right=5910,top=-1788.2,bottom=-988.2))
+        self.assertAlmostEqual(es['freight-lift-landing']['x']-5910,25)
+        self.assertAlmostEqual(es['freight-second-landing']['y']-es['freight-lift-landing']['y'],760)
+        self.assertAlmostEqual(max(v['y'] for v in g['cycle'])-min(v['y'] for v in g['cycle']),720)
+        self.assertAlmostEqual(g['cycle'][-1]['y'],-1068.2)
+        self.assertTrue(all(v['px']==6000 and -740<v['py']<-708 for v in g['cycle']))
+        # The new lift sweep clears both earlier carrier sweeps and the fixed exit.
+        self.assertLess(g['sweptBounds']['bottom'],-950)
+        self.assertLess(g['sweptBounds']['right'],es['freight-lift-landing']['x'])
+        self.write('geometry.json',g);self.capture(p,'approach.jpg')
+        self.press(p,self.target);self.step(p,240);p.mouse.up()
+        landing=self.until(p,'freight-lift-landing');self.assertIsNotNone(landing)
+        r=self.result(p);streak=0;best=0
+        for s in r['rows'][840:landing-1]:
+            streak=streak+1 if not s['contacts'] and not s['attached'] and not s['shot'] else 0
+            best=max(best,streak)
+        self.assertGreaterEqual(best,6);self.assertFalse(self.landings(r,'freight-second-catch'))
+        self.assertTrue(any(s['attached'] for s in r['rows'][600:840]))
+        r.update(entryTick=0,observationTicks=600,takeoffTick=next(s['tick'] for s in r['rows'][600:] if s['vy']<0),
+            releaseTick=840,landingTick=landing,landingAir=best,entryToExit=True,resets=0,poseInjections=0,
+            fixture=dict(x=6000,y=-720,vx=0,vy=0),scope=self.config['simulation'])
+        self.write('route.json',r);self.write('inputs.json',dict(nominal=r['inputs']))
+        self.capture(p,'landing.jpg')
+        print(f'PASS geometry: 28 purposeful colliders; green/blue through S03-03 only; vertical lift width 360 travel 720 cycle 600 ticks; entry 620 exit 540 catch 1360 sweep gap 25 rise 760 reach {g["reach"]:.3f} < 360; planned absent')
+        print(f'PASS route: full-cycle observation; takeoff {r["takeoffTick"]} release 840 landing {landing}; consecutive unattached airborne {best}; trusted handlers; zero resets/injections; images decoded')
+
+    def test_02_early_miss_and_recovery(self):
+        p=self.page();self.press(p,self.target);self.step(p,6);p.mouse.up()
+        catch=self.until(p,'freight-second-catch',800);self.assertIsNotNone(catch)
+        before=self.result(p);self.assertFalse(self.landings(before,'freight-lift-landing'))
+        self.press(p,dict(x=5806,y=-688));self.step(p,12);p.mouse.up()
+        returned=self.until(p,'freight-second-landing',800);self.assertIsNotNone(returned)
+        r=self.result(p)
+        r.update(earlyReleaseTick=606,catchTick=catch,catchTarget='freight-second-catch',
+            recoveryPressTick=catch,recoveryReleaseTick=catch+12,returnTick=returned,
+            recoveryTarget='freight-second-landing',resets=0,poseInjections=0,scope=self.config['simulation'])
+        self.write('miss.json',r)
+        print(f'PASS miss: early release 606 declared catch {catch}; normal-control return freight-second-landing {returned}; no reset/checkpoint/injection')
+
+    def test_03_hold_and_nearest(self):
+        cases=[]
+        p=self.page();self.press(p,self.target);self.step(p,1200)
+        r=self.result(p);r.update(probe='continuous hold for two cycles',successfulAlternative=bool(self.landings(r,'freight-lift-landing')))
+        cases.append(r);p.mouse.up()
+        for interval in [6,12,24]:
+            p=self.page();targets=[]
+            for i in range(600//(interval+1)):
+                target=p.evaluate('YARD.nearest()');targets.append(target)
+                self.press(p,target);self.step(p,interval);p.mouse.up();self.step(p,1)
+            r=self.result(p);r.update(probe=f'nearest every {interval+1} ticks',targets=targets,
+                successfulAlternative=bool(self.landings(r,'freight-lift-landing')))
+            cases.append(r)
+        self.write('controls.json',dict(cases=cases,bound='1200 continuous hold; 600 each repeated-nearest 6/12/24 hold ticks',
+            inspection='All exit top contacts inspected with the same nominal success definition; no successful alternatives',scope=self.config['simulation']))
+        for r in cases:self.assertFalse(r['successfulAlternative'],r['probe'])
+        print('PASS controls: four bounded trusted probes; two-cycle continuous hold and nearest 6/12/24; zero successful alternatives')
+
+    def test_04_dependencies_and_index(self):
+        rows=[]
+        for preview in [True,False]:
+            q=Task558Tests.page(self,preview)
+            for mode in ['grapple_over','classic','bad']:
+                row=q.evaluate('''m=>{startGame(m);cancelAnimationFrame(game);return {mode:version,
+                    range:version==='grapple_over'?grappleOverAcquisitionRadius():null,
+                    upgraded:version==='grapple_over'?grappleOverProfile().upgradedAcquisitionRadius:null,
+                    scale:scale[version],gravity:GRAVITY,pull:grappleSpeed}}''',mode)
+                row['preview']=preview;rows.append(row)
+                if mode=='grapple_over':
+                    self.assertEqual(row['range'],360 if preview else 1080)
+                    self.assertEqual(row['upgraded'],540 if preview else 1620);self.assertEqual(row['scale'],.375)
+        self.assertEqual(len({(r['gravity'],r['pull']) for r in rows}),1)
+        self.write('dependencies.json',dict(rows=rows,changed=['mountain.js preview prefix -> fixedlevel.js production mover/collision',
+            'tools/test_grapple_over_redesign.py additive Task581Tests'],
+            unchanged=['physics.js','events.js','sprites/ninja.js','gameoptions.js','fixedlevel.js'],
+            superseded='Earlier exact preview inventories are historical; Task580 S03-02 proof remains at artifacts/TASK-580. No old v3 tests edited or rerun.',hashes=self.config['source_hashes']))
+        required={'commands.log':'exact invocation, actual exit, exact collected identifiers, revision, browser/viewport and source SHA256',
+            'tests.log':'four Task581Tests; no skips; OK','geometry.json':'live collider purposes, widths, gap, target reach and 600-tick full cycle',
+            'route.json':'production entry-to-exit release, landing and >=6 consecutive unattached airborne ticks',
+            'inputs.json':'trusted production mouse events','miss.json':'early release into catch and normal-control return',
+            'approach.jpg':'broad shared freight entry, blue carrier, green catch and freight signal mast',
+            'landing.jpg':'safe broad green exit and Freight Crossing structure','controls.json':'bounded hold/nearest probes with every success inspected',
+            'dependencies.json':'changed subsystems, unchanged modes/range/physics and source hashes'}
+        self.write('evidence-index.json',dict(artifacts=required,config=self.config,scope=self.config['simulation'],
+            hashPolicy='Identical tested source hashes survive a HEAD-only commit'))
+        print('PASS dependencies: preview 360/540 legacy 1080/1620; camera .375; gravity/pull unchanged; index written')
