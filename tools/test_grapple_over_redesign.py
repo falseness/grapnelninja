@@ -12813,3 +12813,222 @@ sys.exit(0 if r.wasSuccessful() and r.testsRun==len(ids) and not r.skipped else 
         size=sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file())
         self.assertLess(size,200_000_000)
         print('PASS inventory: required files exist, JSON parses, source hashes match; retained bytes='+str(size))
+
+
+class Task633Tests(unittest.TestCase):
+    """Matched headless costs and accelerated isolated traversal/restore fixtures, not gameplay/FPS."""
+    write = Task557Tests.write
+
+    @classmethod
+    def setUpClass(cls):
+        import tarfile
+        from functools import partial
+        from http.server import ThreadingHTTPServer
+        from threading import Thread
+        from browser_test_support import QuietHandler
+        out = Path(os.environ['GRAPPLE_OVER_EVIDENCE_DIR']).resolve()
+        if out != (ROOT/'artifacts/TASK-633').resolve():
+            raise ValueError('Task633 evidence must stay task-local')
+        Task557Tests.setUpClass.__func__(cls)
+        cls.baseline = json.loads((ROOT/'artifacts/TASK-557/baseline-perf.json').read_text())['config']
+        revision = cls.baseline['revision']
+        command = ['git', 'archive', revision]
+        archive = subprocess.run(command, cwd=ROOT, capture_output=True, check=True)
+        tree = cls.out/'baseline-runtime'
+        tree.mkdir(exist_ok=True)
+        with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tar:
+            for member in tar.getmembers():
+                if member.isfile() and (member.name.endswith(('.js','.html','.css','.svg'))):
+                    tar.extract(member, tree, filter='data')
+        cls.baseline_hashes = {str(p.relative_to(tree)):hashlib.sha256(p.read_bytes()).hexdigest()
+                               for p in tree.rglob('*') if p.is_file()}
+        for name, digest in cls.baseline['source_hashes'].items():
+            if name in cls.baseline_hashes:
+                assert cls.baseline_hashes[name] == digest, name
+        server = ThreadingHTTPServer(('127.0.0.1',0),partial(QuietHandler,directory=str(tree)))
+        cls.addClassCleanup(server.server_close)
+        thread=Thread(target=server.serve_forever,daemon=True);thread.start()
+        cls.addClassCleanup(thread.join);cls.addClassCleanup(server.shutdown)
+        cls.baseline_url=f'http://127.0.0.1:{server.server_port}/'
+        with (cls.out/'commands.log').open('a') as f:
+            f.write('COMMAND '+ ' '.join(command)+' EXIT_STATUS '+str(archive.returncode)+'\n')
+        cls.config.update(simulation=cls.__doc__)
+
+    def page(self, mode='grapple_over', baseline=False):
+        ctx=self.browser.new_context(viewport=VIEWPORT,device_scale_factor=1)
+        self.addCleanup(ctx.close)
+        p=ctx.new_page();errors=[]
+        p.on('pageerror',lambda e:errors.append(str(e)))
+        self.addCleanup(lambda:self.assertEqual(errors,[]))
+        p.add_init_script(SEED_SCRIPT % 1)
+        p.add_init_script("window.raf633=requestAnimationFrame.bind(window);window.requestAnimationFrame=fn=>fn.name==='gameLoop'?0:raf633(fn)")
+        p.goto((self.baseline_url if baseline else self.url)+'?backdrop=1'+('' if baseline else '&grapplePreview=replacement-v1'))
+        wait_for_boot(p)
+        p.evaluate('m=>{startGame(m);cancelAnimationFrame(game)}',mode)
+        p.wait_for_function('!unTouch')
+        p.evaluate('menu.unPause()')
+        self.assertEqual(p.evaluate('version'),mode)
+        return p
+
+    def test_01_matched_frame_intervals(self):
+        import ast
+        proof = self.out/'performance.json'
+        if not proof.exists():
+            (self.out/'tested-suite-first.py').write_bytes(Path(__file__).read_bytes())
+            return self.measure_matched_frame_intervals()
+        archived = self.out/'tested-suite-first.py'
+        previous = json.loads(proof.read_text())
+        self.assertEqual(hashlib.sha256(archived.read_bytes()).hexdigest(),
+                         previous['config']['source_hashes']['tools/test_grapple_over_redesign.py'])
+        def methods(text):
+            cls = next(n for n in ast.parse(text).body if isinstance(n,ast.ClassDef) and n.name=='Task633Tests')
+            return {n.name:n for n in cls.body if isinstance(n,ast.FunctionDef)}
+        old,new = methods(archived.read_text()),methods(Path(__file__).read_text())
+        for before,after in [('measure_matched_frame_intervals' if 'measure_matched_frame_intervals' in old else 'test_01_matched_frame_intervals','measure_matched_frame_intervals'),
+                             ('page','page'),('setUpClass','setUpClass')]:
+            old[before].name=new[after].name
+            self.assertEqual(ast.dump(old[before]),ast.dump(new[after]))
+        for name,digest in previous['config']['source_hashes'].items():
+            if name!='tools/test_grapple_over_redesign.py':
+                self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+        self.assertEqual(len(previous['runs']),12)
+        for mode,row in previous['medians'].items():
+            self.assertLessEqual(row['ratio'],1.10)
+            print('PASS '+mode+' archived median p95 ratio='+str(row['ratio']))
+        print('PASS archived expensive frame run: identical measurement/page/setup AST and runtime hashes; first-run.log')
+
+    def measure_matched_frame_intervals(self):
+        import statistics
+        import math
+        runs=[]
+        for repeat in range(3):
+            for mode in ['classic','bad']:
+                # Alternate pair ordering to reduce systematic host/order bias.
+                for baseline in ([True,False] if repeat%2==0 else [False,True]):
+                    p=self.page(mode,baseline)
+                    row=p.evaluate('''async () => {
+                      const samples=[],costs=[];let previous=null,warmStart=null,measureStart=null;
+                      for(let i=0;i<300;i++){
+                        const t=await new Promise(raf633);
+                        if(i===0)warmStart=t;if(i===120)measureStart=t;
+                        if(i>=120)samples.push(t-previous);
+                        previous=t;const a=performance.now();physics();const b=performance.now();draw();
+                        if(i>=120)costs.push([b-a,performance.now()-b]);
+                      }
+                      return {intervalsMs:samples,componentMs:costs,warmupMs:measureStart-warmStart,
+                        measurementMs:previous-measureStart+samples[0],selectedMode:version,
+                        logical:{width,height},backdrop:BACKDROP.scale,adaptive:BACKDROP.adaptive};
+                    }''')
+                    row.update(revision='baseline' if baseline else 'current',mode=mode,repeat=repeat,
+                               p95Ms=sorted(row['intervalsMs'])[math.ceil(.95*180)-1])
+                    self.assertEqual(len(row['intervalsMs']),180)
+                    runs.append(row);p.context.close()
+        medians={mode:{rev:statistics.median(r['p95Ms'] for r in runs if r['mode']==mode and r['revision']==rev)
+                       for rev in ['baseline','current']} for mode in ['classic','bad']}
+        for value in medians.values():value['ratio']=value['current']/value['baseline']
+        self.write('performance.json',dict(config=self.config,baselineRevision=self.baseline['revision'],
+            baselineRuntimeHashes=self.baseline_hashes,runs=runs,medians=medians,warmupFrames=120,measurementFrames=180,
+            controls='Same Chromium process, host, 1280x720 DPR1, seed1, full backdrop, no adaptive quality; fresh contexts; alternating paired revision order. Native rAF intervals with one production physics/draw per frame. Headless observations, not device FPS. Historical component proof referenced at artifacts/TASK-557/baseline-perf.json.'))
+        for mode,v in medians.items():
+            self.assertLessEqual(v['ratio'],1.10,mode)
+            print('PASS '+mode+' median p95 ratio='+str(v['ratio']))
+
+    def test_02_sections_and_high_falls(self):
+        p=self.page()
+        rows=p.evaluate('''() => {
+          const rows=[],w=floors[0];
+          for(const s of w.level.sections)for(const fall of [false,true]){
+            const pose=(()=>{const encounter=w.level.encounters.find(e=>e.id===s.encounters[0]);
+                  const e=w.byId.get(encounter.elements[0]),points=e.getPoints();
+                  return {x:points.reduce((a,p)=>a+p.x,0)/points.length,
+                    y:Math.min(...points.map(p=>p.y))-ninja.radius-10,element:e.id};})();Object.assign(ninja,{x:pose.x,y:pose.y-(fall?600:0),speedX:0,speedY:fall?12:0});
+            screen.trackGrappleOver();
+            for(let i=0;i<30;i++){physics();draw()}
+            const samples=[],before={x:ninja.x,y:ninja.y,tick:w.elapsedSteps};
+            for(let i=0;i<90;i++){const a=performance.now();physics();const b=performance.now();draw();samples.push([b-a,performance.now()-b])}
+            rows.push({section:s.id,kind:fall?'high-fall':'section',pose,before,
+              after:{x:ninja.x,y:ninja.y,tick:w.elapsedSteps},componentMs:samples});
+          }return rows;
+        }''')
+        self.write('scene-cost.json',dict(config=self.config,rows=rows,warmupTicks=30,measurementTicks=90,
+            units='milliseconds per synchronous production physics/draw component; NOT frame intervals or FPS',
+            scope='16 isolated placement fixtures: eight current replacement sections and one high fall per section'))
+        self.assertEqual(len(rows),16)
+        self.assertEqual(len({r['section'] for r in rows}),8)
+        for r in rows:self.assertGreater(r['after']['tick'],r['before']['tick'])
+        p.context.close()
+        print('PASS scene-cost: 8 sections + 8 high-fall scenes; 90 raw component samples each, not FPS')
+
+    def test_03_simulated_traversal_restore_soak(self):
+        p=self.page();cdp=p.context.new_cdp_session(p)
+        p.mouse.move(900,200);p.mouse.down();self.assertTrue(p.evaluate('grapnel.throwed'));p.mouse.up()
+        rows=[];traces=[]
+        for interval in range(-1,5):
+            trace=p.evaluate('''interval=>{
+              const traces=[],start=performance.now();
+              for(let segment=0;segment<8;segment++){
+                const w=floors[0],s=w.level.sections[segment],pose=(()=>{const encounter=w.level.encounters.find(e=>e.id===s.encounters[0]);
+                  const e=w.byId.get(encounter.elements[0]),points=e.getPoints();
+                  return {x:points.reduce((a,p)=>a+p.x,0)/points.length,
+                    y:Math.min(...points.map(p=>p.y))-ninja.radius-10,element:e.id};})();
+                Object.assign(ninja,{x:pose.x,y:pose.y-300,speedX:0,speedY:8});
+                const before=w.elapsedSteps,active=w.climbStats.elapsedActiveMs;
+                const ticks=Math.round(15000/physicsStepMs);
+                for(let tick=0;tick<ticks;tick++){physics();if(tick%60===0)draw()}
+                const saved=captureClimbState();restoreClimbState(saved);
+                const same=JSON.stringify(saved)===JSON.stringify(captureClimbState());
+                traces.push({section:s.id,ticks,before,after:floors[0].elapsedSteps,
+                  activeMs:floors[0].climbStats.elapsedActiveMs-active,restoreEqual:same,
+                  player:{x:ninja.x,y:ninja.y},completed:floors[0].climbStats.completed});
+              }return {interval,wallMs:performance.now()-start,traces};
+            }''',interval)
+            if interval>=0:traces.append(trace)
+            cdp.send('HeapProfiler.collectGarbage')
+            heap=cdp.send('Runtime.getHeapUsage')
+            counts=p.evaluate('''()=>({terrain:floors[0].elements.length,drag:floors[0].dragZones.length,
+              movers:floors[0].level.movers.length,byId:floors[0].byId.size,
+              glow:GLOW_SPRITES.cache.size,glowLimit:GLOW_SPRITES.limit,text:GLOW_TEXT_METRICS.size,
+              effectCaches:Object.fromEntries(Object.entries(visualEffects).filter(([k,v])=>v.gradientCache||v.layerCache)
+                .map(([k,v])=>[k,{gradients:v.gradientCache?.size||0,layers:Object.keys(v.layerCache||{}).length}]))})''')
+            if interval<0:
+                warmup=dict(simulatedSeconds=120,heap=heap,counts=counts,trace=trace)
+            else:rows.append(dict(simulatedSeconds=(interval+1)*120,heap=heap,counts=counts))
+        growth=rows[-1]['heap']['usedSize']/rows[0]['heap']['usedSize']-1
+        self.write('soak.json',dict(config=self.config,samples=rows,traces=traces,postGcGrowth=growth,warmup=warmup,
+            controls='120 simulated seconds warmup over all sections/restore paths before the measured 600 seconds; initial cold observation retained in soak-cold.json (12.02% growth, lazy runtime warmup not excluded). 600 simulated seconds, 40 isolated 15s section traversal/fall fixtures; production physics; draw once per 60 ticks; current-state capture/restore after each segment; CDP full GC before each 120s sample. No highest-altitude restores, continuous-gameplay or device-FPS claim. Trusted press/release exercised before soak. Fixture placements are setup only.'))
+        self.assertLessEqual(growth,.10)
+        for row in rows:
+            for key in ['terrain','drag','movers','byId']:self.assertEqual(row['counts'][key],rows[0]['counts'][key])
+            self.assertLessEqual(row['counts']['glow'],row['counts']['glowLimit'])
+            self.assertEqual(row['counts']['effectCaches'],rows[0]['counts']['effectCaches'])
+            self.assertLessEqual(row['counts']['text'],128)
+        for batch in traces:
+            for trace in batch['traces']:
+                self.assertTrue(trace['restoreEqual']);self.assertFalse(trace['completed'])
+                self.assertAlmostEqual(trace['activeMs'],15000,places=3)
+                self.assertGreater(trace['after'],trace['before'])
+        p.context.close()
+        print('PASS soak: 600 simulated seconds; 40 equal current-state restores; stable terrain/movers; bounded caches; post-GC growth='+str(growth))
+
+    def test_04_inventory(self):
+        import sys
+        from grapple_over_collection import exact_suite
+        _,ids=exact_suite(sys.modules[__name__],'Task633Tests')
+        self.assertEqual(len(ids),4)
+        print('SELECTED '+json.dumps(ids))
+        names={'commands.log':'exact commands/status/configuration and source hashes',
+               'tests.log':'four exact cases, zero skips and actual unittest result',
+               'performance.json':'12 raw warmed runs, paired median p95 ratios <=1.10',
+               'scene-cost.json':'8 sections and 8 falls, synchronous component times only',
+               'soak.json':'600 simulated seconds, counts/caches and post-GC 120..600s growth <=10%',
+               'evidence-index.json':'inventory and dependency hashes'}
+        self.write('evidence-index.json',dict(artifacts=names,sourceHashes=self.hashes,selected=ids,
+            changedSubsystems=['Additive Task633Tests only -> browser_test_support -> production input, physics, draw, capture/restore; runtime unchanged'],
+            baseline='artifacts/TASK-557/baseline-perf.json',mediaRequired=False))
+        for name in names:
+            self.assertTrue((self.out/name).is_file(),name)
+            if name.endswith('.json'):json.loads((self.out/name).read_text())
+        for name,digest in self.hashes.items():self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest)
+        size=sum(p.stat().st_size for p in self.out.rglob('*') if p.is_file())
+        self.assertLess(size,200_000_000)
+        print('PASS inventory: all six required files exist; JSON parses; source hashes match; bytes='+str(size))
