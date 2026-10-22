@@ -1203,10 +1203,10 @@ function validateMountainManifest(m)
     return level
 }
 
-// Replacement built prefix through Summit Array encounter 1. Planned terrain stays noncollidable.
+// Replacement built prefix through Summit Array encounter 2. Planned terrain stays noncollidable.
 const GRAPPLE_OVER_REPLACEMENT = {
     layoutId: 'grapple-over-replacement-v1', version: 1,
-    bounds: {left: 0, right: 15000, top: -5500, bottom: 280},
+    bounds: {left: 0, right: 16000, top: -6200, bottom: 280},
     spawn: {x: 2160, y: 0}, finish: null,
     sections: [
         {id: 'S01', labelKey: 'climb.section.loadingYard', status: 'built', encounters: ['S01-01', 'S01-02', 'S01-03', 'S01-04']},
@@ -1217,7 +1217,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
             rangeUpgradeZone: {left: 10780, right: 11580, top: -1548, bottom: -1528.2}},
         {id: 'S06', labelKey: 'climb.section.counterweightTower', status: 'built', encounters: ['S06-01', 'S06-02', 'S06-03', 'S06-04']},
         {id: 'S07', labelKey: 'climb.section.S07', status: 'built', encounters: ['S07-01', 'S07-02', 'S07-03', 'S07-04']},
-        {id: 'S08', labelKey: 'climb.section.S08', status: 'built', encounters: ['S08-01']}
+        {id: 'S08', labelKey: 'climb.section.S08', status: 'built', encounters: ['S08-01', 'S08-02']}
     ],
     encounters: [
         {id: 'S01-01', name: 'Loading Yard', elements: ['yard-entry', 'yard-landing', 'yard-anchor', 'yard-catch']},
@@ -1249,6 +1249,7 @@ const GRAPPLE_OVER_REPLACEMENT = {
         {id: 'S07-03', name: 'Exposed Crown carrier timing', elements: ['crown-practice-landing', 'crown-lift', 'crown-upper-landing', 'crown-lift-catch', 'crown-lift-red'], recovery: ['crown-lift-catch', 'crown-practice-landing']},
         {id: 'S07-04', name: 'Exposed Crown exit combination', elements: ['crown-upper-landing', 'crown-exit-anchor', 'crown-exit', 'crown-exit-catch', 'crown-exit-red'], recovery: ['crown-exit-catch', 'crown-upper-landing'], optionalShortcut: {from: 'S07-02', to: 'S07-04', skipped: ['S07-03'], route: 'Release the carrier later and acquire the exit face in flight above the upper deck; skip only its safe landing', failureRecovery: ['crown-exit-catch', 'crown-upper-landing']}},
         {id: 'S08-01', name: 'Summit Array familiar green arrival', elements: ['crown-exit', 'summit-anchor', 'summit-landing', 'summit-catch'], recovery: ['summit-catch', 'summit-landing']},
+        {id: 'S08-02', name: 'Summit Array carrier release', elements: ['summit-landing', 'summit-lift', 'summit-upper-landing', 'summit-lift-catch'], recovery: ['summit-lift-catch', 'summit-landing']},
         {id: 'preview-future', elements: ['preview-unbuilt']}
     ],
     // TASK-564 opening envelope, translated to the actual preview spawn.
@@ -1345,8 +1346,11 @@ const GRAPPLE_OVER_REPLACEMENT = {
         ['summit-anchor', 12933, -5180, 160, 80, 'Familiar reachable green launch face from Crown exit; release east, not a designated landing'],
         ['summit-landing', 13373, -4708.2, 800, 60, 'Broad first Summit Array planning landing beneath the antenna landmark; no finish trigger'],
         ['summit-catch', 12905, -4558.2, 882, 60, 'Broad forgiving early-release catch; normal green rebound returns to the first Summit landing'],
+        ['summit-lift', 14183, -5068.2, 360, 80, 'Blue vertical carrier; observe its established cycle from the shared Summit deck and deliberately release west'],
+        ['summit-upper-landing', 13358, -5468.2, 800, 60, 'Broad fixed Summit planning landing above the shared entrance; open visible carrier destination'],
+        ['summit-lift-catch', 14297, -4388.2, 800, 60, 'Broad early-release catch east of the entrance; grapple back west through normal controls'],
         ['preview-unbuilt', 2160, -2200, 200, 40, 'Planned only; never emitted']
-    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['crown-red', 'crown-practice-red', 'crown-lift-red', 'crown-exit-red'].includes(id) ? 'hazard' : ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['crown-lift', 'tower-exit-lift', 'tower-rebound-carrier', 'tower-shuttle', 'tower-counterweight', 'freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['crown-red', 'crown-practice-red', 'crown-lift-red', 'crown-exit-red', 'viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
+    ].map(([id, x, y, w, h, purpose]) => ({id, x, y, purpose, role: ['crown-red', 'crown-practice-red', 'crown-lift-red', 'crown-exit-red'].includes(id) ? 'hazard' : ['viaduct-yellow', 'viaduct-exit-yellow'].includes(id) ? 'drag' : ['summit-lift', 'crown-lift', 'tower-exit-lift', 'tower-rebound-carrier', 'tower-shuttle', 'tower-counterweight', 'freight-carrier', 'freight-second-carrier', 'freight-lift', 'viaduct-carrier', 'viaduct-recovery-wall', 'viaduct-exit-recovery'].includes(id) ? 'solid' : 'bounce', grapplable: !['crown-red', 'crown-practice-red', 'crown-lift-red', 'crown-exit-red', 'viaduct-yellow', 'viaduct-exit-yellow'].includes(id),
         points: id === 'gallery-exit-projection'
             ? [{x:360,y:0},{x:0,y:0},{x:0,y:440},{x:230,y:440},{x:230,y:360},{x:80,y:360},{x:80,y:280},{x:360,y:280}].reverse()
             : id === 'gallery-projection'
@@ -1354,7 +1358,8 @@ const GRAPPLE_OVER_REPLACEMENT = {
             : ['quarry-third-anchor', 'quarry-fourth-anchor'].includes(id)
             ? [{x:0,y:0},{x:w,y:28},{x:w,y:h+28},{x:0,y:h}]
             : [{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]})),
-    movers: [{id:'crown-exit-red-travel', element:'crown-exit-red', axis:'x', min:11845, max:12545, periodMs:6000, phase:0, velocity:233.33333333333334},
+    movers: [{id:'summit-lift-travel', element:'summit-lift', axis:'y', min:-5788.2, max:-5068.2, periodMs:10000, phase:.5, velocity:-144},
+        {id:'crown-exit-red-travel', element:'crown-exit-red', axis:'x', min:11845, max:12545, periodMs:6000, phase:0, velocity:233.33333333333334},
         {id:'crown-lift-travel', element:'crown-lift', axis:'y', min:-5028.2, max:-4308.2, periodMs:10000, phase:.5, velocity:-144},
         {id:'crown-lift-red-travel', element:'crown-lift-red', axis:'x', min:10698, max:11238, periodMs:6000, phase:.7, velocity:-180},
         {id:'crown-practice-red-travel', element:'crown-practice-red', axis:'x', min:10698, max:11398, periodMs:6000, phase:0, velocity:233.33333333333334},
