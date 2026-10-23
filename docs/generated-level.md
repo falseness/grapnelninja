@@ -15,8 +15,8 @@ python3 tools/import_level_svg.py --input artifacts/levels/extended-mountain.svg
 cp artifacts/levels/extended-mountain.level.js leveldata.js
 ```
 
-The generated SVG carries a display-only `guide` and a short direction arrow
-on every transfer (docs/level-svg-format.md §4.6), so the game draws the same
+The generated SVG carries a display-only `guide` and a direction arrow
+(shaft arc length `min(0.5 * gap, guide length)`) on every transfer (docs/level-svg-format.md §4.6), so the game draws the same
 arrows from `leveldata.js` (`render/routearrows.js`).
 
 For manual authoring edits, run only the two importer commands and copy step.

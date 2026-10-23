@@ -199,11 +199,18 @@ examples). Their document order is significant and is preserved.
   `guide()` values back and gets the shipped SVG byte-for-byte; stripping
   `guide` from the import changes nothing else.
 
-  Short direction arrows: `build(meas, guides=True, arrows=True)` (CLI
+  Direction arrows: `build(meas, guides=True, arrows=True)` (CLI
   `--arrows`) also draws one `<g class="transfer-arrow" data-transfer=…
-  data-from=… data-to=…>` per transfer in `annotations-front`. Each one has
-  only `t=0..0.25` of the same `curve()` cubic, split with de Casteljau, and
-  a 6px arrowhead along the forward derivative at `t=0.25`. It uses cyan
+  data-from=… data-to=…>` per transfer in `annotations-front`. Each one is
+  the same `curve()` cubic from `t=0` to the parameter `t*` where its arc
+  length reaches `min(0.5 * G, L)` world units, split with de Casteljau
+  (`arrow_geometry`). `G` is the minimum edge-to-edge distance between the
+  transfer's complete from/to fragment polygons (0 when they touch or
+  overlap) and `L` is the guide's arc length, so short transfers get short
+  shafts and a guide shorter than `0.5 * G` is drawn whole. `t*` comes from
+  a 1024-chord arc-length table; a zero-length guide gives `t*=0`. The 6px
+  arrowhead lies along the forward derivative at `t*` (the chord, then +x,
+  when the derivative vanishes). It uses cyan
   `#8bdde8` at opacity 0.4 with a 1.5px stroke. Sizes are in canvas pixels:
   the annotation transform (scale `1/s`) times the root viewBox scale (`s`)
   is 1, so they are displayed pixels. The dashed full route curves stay
@@ -211,8 +218,9 @@ examples). Their document order is significant and is preserved.
   with or without them (`tools/test_level_route_arrows.py`).
 
   In the game, `render/routearrows.js` draws the same arrow from each loaded
-  `svgFormat.transfers[].guide`: the same t=0..0.25 sub-cubic and tangent
-  head, with the same colour and opacity. The 1.5px stroke and 6px head are
+  `svgFormat.transfers[].guide`: the same arc-length sub-cubic (computed once
+  per level from the loaded fragment polygons and cached) and tangent head,
+  with the same colour and opacity. The 1.5px stroke and 6px head are
   screen (CSS) pixels at every camera zoom. Arrows are drawn in the world
   layer under the range circle, grapnel, terrain and player. Each one is
   culled by the box of its own curve, not by its source panel. Transfers

@@ -173,34 +173,132 @@ def draw_fragment_labels(c, m, T, s):
         c.text(x, y + max(24, m['height'] * s + 16), m['id'], 14, '#8dc8b2', 700, 'middle')
 
 
-ARROW_T = 0.25                  # arrows show only the first quarter of the route curve
+ARROW_GAP_FRACTION = 0.5       # shaft arc length = min(0.5 * G, L), world units
+ARROW_ARC_SAMPLES = 1024        # chords in the arc-length table (render/routearrows.js uses the same)
 ARROW_COLOR = '#8bdde8'
 ARROW_OPACITY = 0.4
 ARROW_STROKE = 1.5              # displayed pixels
 ARROW_HEAD = 6.0                # displayed pixels, tip to base
 
 
-def draw_arrow(c, r, frags, T):
-    """Short direction arrow: curve() from t=0 to ARROW_T, head along its tangent there.
+def point_segment_distance(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    n = dx * dx + dy * dy
+    t = 0.0 if n == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / n))
+    return math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t)
 
-    The annotation group maps canvas pixels to world units (scale 1/s) and the
-    root viewBox maps world back to the 2600px canvas (scale s), so canvas
-    pixel sizes here are displayed pixels."""
-    pts = [T(p) for p in curve(r, frags)]
-    a, c1, c2, tip = head_of(pts, ARROW_T)
-    dx, dy = bezier_tangent(pts, ARROW_T)
-    n = (dx * dx + dy * dy) ** .5
-    ux, uy = dx / n, dy / n
+
+def segments_cross(p, q, a, b):
+    side = lambda o, u, v: (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0])
+    d1, d2, d3, d4 = side(a, b, p), side(a, b, q), side(p, q, a), side(p, q, b)
+    return d1 * d2 < 0 and d3 * d4 < 0
+
+
+def point_in_polygon(p, poly):
+    inside = False
+    for (x1, y1), (x2, y2) in zip(poly, poly[1:] + poly[:1]):
+        if (y1 > p[1]) != (y2 > p[1]) and p[0] < x1 + (p[1] - y1) * (x2 - x1) / (y2 - y1):
+            inside = not inside
+    return inside
+
+
+def polygon_gap(polys_a, polys_b):
+    """G: minimum edge-to-edge distance between two unions of complete filled polygons
+    (0 when they touch, cross or one contains the other)."""
+    best = math.inf
+    for a in polys_a:
+        for b in polys_b:
+            if point_in_polygon(a[0], b) or point_in_polygon(b[0], a):
+                return 0.0
+            for p, q in zip(a, a[1:] + a[:1]):
+                for u, v in zip(b, b[1:] + b[:1]):
+                    if segments_cross(p, q, u, v):
+                        return 0.0
+                    best = min(best, point_segment_distance(p, u, v), point_segment_distance(q, u, v),
+                               point_segment_distance(u, p, q), point_segment_distance(v, p, q))
+    return best
+
+
+def arc_table(pts, n=ARROW_ARC_SAMPLES):
+    """Cumulative chord lengths of the cubic at t = i / n."""
+    table, prev = [0.0], pts[0]
+    for i in range(1, n + 1):
+        p = bezier(pts, i / n)
+        table.append(table[-1] + math.dist(prev, p))
+        prev = p
+    return table
+
+
+def t_at_length(table, s):
+    """Parameter at arc length s along the table (linear within a chord)."""
+    n = len(table) - 1
+    if s <= 0 or table[-1] <= 0:
+        return 0.0
+    if s >= table[-1]:
+        return 1.0
+    lo, hi = 0, n
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if table[mid] < s:
+            lo = mid
+        else:
+            hi = mid
+    span = table[hi] - table[lo]
+    return (lo + (0.0 if span <= 0 else (s - table[lo]) / span)) / n
+
+
+def unit_tangent(pts, t):
+    """Unit dB/dt at t; the chord, then +x, when the derivative vanishes."""
+    for v in (bezier_tangent(pts, t), (pts[3][0] - pts[0][0], pts[3][1] - pts[0][1]), (1.0, 0.0)):
+        n = math.hypot(*v)
+        if n > 1e-9:
+            return (v[0] / n, v[1] / n)
+
+
+def arrow_geometry(pts, polys_from, polys_to):
+    """Distance-based arrow on the world-space guide pts: shaft arc length min(0.5 G, L)."""
+    gap = polygon_gap(polys_from, polys_to)
+    table = arc_table(pts)
+    length = table[-1]
+    target = min(ARROW_GAP_FRACTION * gap, length)
+    t = t_at_length(table, target)
+    return {'G': gap, 'L': length, 'target': target, 't': t, 'curve': head_of(pts, t),
+            'endpoint': bezier(pts, t), 'tangent': unit_tangent(pts, t), 'capped': ARROW_GAP_FRACTION * gap >= length}
+
+
+def transfer_arrow(r, frags):
+    by = {m['id']: m for m in frags}
+    return arrow_geometry(curve(r, frags), bodies(by[r['fromFragment']]), bodies(by[r['toFragment']]))
+
+
+def arrow_markup(tid, frm, to, pts, polys_from, polys_to, T):
+    """SVG for one direction arrow on the world-space guide pts: the guide from t=0 to
+    the parameter where its arc length reaches min(0.5 * G, L) (world units), head along
+    its tangent there.
+
+    T maps world to canvas pixels; in the level it is the annotation canvas, whose group
+    maps canvas pixels to world units (scale 1/s) while the root viewBox maps world back
+    to the 2600px canvas (scale s), so canvas pixel sizes here are displayed pixels. T is
+    a uniform scale plus offset, so the world parameter t is the same on the canvas curve."""
+    geo = arrow_geometry(pts, polys_from, polys_to)
+    a, c1, c2, tip = head_of([T(p) for p in pts], geo['t'])
+    ux, uy = geo['tangent']
     bx, by = tip[0] - ux * ARROW_HEAD, tip[1] - uy * ARROW_HEAD
     w = ARROW_HEAD / 2
     head = [tip, (bx - uy * w, by + ux * w), (bx + uy * w, by - ux * w)]
-    tid = f"T{r['number']:02d}"
-    c.add(f'<g id="arrow-{tid}" class="transfer-arrow" data-transfer="{tid}" data-from="{r["fromFragment"]}" data-to="{r["toFragment"]}"'
-          f' opacity="{ARROW_OPACITY}">')
-    c.add(f'<path d="M{a[0]:.3f} {a[1]:.3f} C{c1[0]:.3f} {c1[1]:.3f} {c2[0]:.3f} {c2[1]:.3f} {tip[0]:.3f} {tip[1]:.3f}"'
-          f' fill="none" stroke="{ARROW_COLOR}" stroke-width="{ARROW_STROKE}"/>')
-    c.add('<polygon points="' + ' '.join(f'{x:.3f},{y:.3f}' for x, y in head) + f'" fill="{ARROW_COLOR}"/>')
-    c.add('</g>')
+    return [f'<g id="arrow-{tid}" class="transfer-arrow" data-transfer="{tid}" data-from="{frm}" data-to="{to}"'
+            f' opacity="{ARROW_OPACITY}">',
+            f'<path d="M{a[0]:.3f} {a[1]:.3f} C{c1[0]:.3f} {c1[1]:.3f} {c2[0]:.3f} {c2[1]:.3f} {tip[0]:.3f} {tip[1]:.3f}"'
+            f' fill="none" stroke="{ARROW_COLOR}" stroke-width="{ARROW_STROKE}"/>',
+            '<polygon points="' + ' '.join(f'{x:.3f},{y:.3f}' for x, y in head) + f'" fill="{ARROW_COLOR}"/>',
+            '</g>']
+
+
+def draw_arrow(c, r, frags, T):
+    by = {m['id']: m for m in frags}
+    for s in arrow_markup(f"T{r['number']:02d}", r['fromFragment'], r['toFragment'], curve(r, frags),
+                          bodies(by[r['fromFragment']]), bodies(by[r['toFragment']]), T):
+        c.add(s)
 
 
 def draw_route(c, r, frags, T):

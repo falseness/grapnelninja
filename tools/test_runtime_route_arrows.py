@@ -6,12 +6,16 @@ TASK-657 injection of convert_extended_mountain_svg.guide()), which since
 TASK-660 is byte-identical to the shipped leveldata.js; the unguided cases
 serve the same SVG with every guide stripped. Draw calls are recorded from the
 production drawRouteArrows() through the canvas transform and compared with
-the SVG arrow geometry (head_of / bezier_tangent at t = 0.25).
+the SVG arrow geometry (convert_extended_mountain_svg.arrow_geometry: the guide
+up to the parameter where its arc length reaches min(0.5 * G, L), TASK-671).
+FIXTURES from test_level_route_arrows (short, long, curved, capped, degenerate)
+are drawn by the production drawRouteArrows() on a synthetic level object.
 
     python3 -m unittest discover -s tools -p test_runtime_route_arrows.py -v
 
 ROUTE_ARROWS_RUNTIME_EVIDENCE_DIR=DIR writes runtime-arrows.json, game-examples.png,
-examples.json and physics.json there.
+the "runtime" part of arrow-lengths.json, arrows.png and the "runtime" part of
+physics-unchanged.json there.
 """
 import base64
 from contextlib import ExitStack
@@ -32,13 +36,13 @@ sys.path.insert(0, str(TOOLS))
 from browser_test_support import start_browser_test, wait_for_boot_run  # noqa: E402
 import convert_extended_mountain_svg as conv  # noqa: E402
 from import_level_svg import dumps, import_svg  # noqa: E402
+from test_level_route_arrows import FIXTURES, WORLD_TOL, arc_length  # noqa: E402
 
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 MEASUREMENTS = ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json'
 LEVELDATA = ROOT / 'leveldata.js'
 EVIDENCE = os.environ.get('ROUTE_ARROWS_RUNTIME_EVIDENCE_DIR')
 VIEWPORT = {'width': 1280, 'height': 720}
-T = 0.25
 COLOR, OPACITY, STROKE_PX, HEAD_PX = '#8bdde8', 0.4, 1.5, 6
 # The canvas keeps its transform in float32: compare to 0.002 device pixels.
 DEVICE_EPS = 2e-3
@@ -86,6 +90,32 @@ SETUP = '''() => {
     {
         const f = object[name]
         object[name] = function() { mark(name); return f.apply(this, arguments) }
+    }
+    // A synthetic level drawn alone on a cleared canvas: its fragment polygons in grey, then the arrows
+    window.T659.fixture = (level, wx, wy, k) => {
+        scale[version] = k * width / canvas.width
+        screen.x = -wx
+        screen.y = -wy
+        T659.off = false
+        ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0)
+        ctx.save()
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.fillStyle = '#10161c'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.restore()
+        // The world scale draw() applies around drawWorldLayer()
+        ctx.save()
+        ctx.scale(scale[version], scale[version])
+        ctx.fillStyle = '#3c4a52'
+        for (const e of level.elements)
+        {
+            ctx.beginPath()
+            e.points.forEach((p, i) => ctx[i ? 'lineTo' : 'moveTo'](e.x + p.x - wx, e.y + p.y - wy))
+            ctx.fill()
+        }
+        drawRouteArrows({level})
+        ctx.restore()
+        return {rec: T659.rec, cssWidth: getCanvasCssRect().width, canvas: [canvas.width, canvas.height]}
     }
     window.T659.frame = (wx, wy, k, off = false) => {
         scale[version] = k * width / canvas.width
@@ -193,6 +223,34 @@ def overlaps(a, b):
     return not (a[2] < b[0] or a[0] > b[2] or a[3] < b[1] or a[1] > b[3])
 
 
+def fixture_level(offsets=None):
+    """FIXTURES as a runtime level object (svgFormat fragments/transfers + elements), each fixture shifted by offsets[name]."""
+    elements, fragments, transfers = [], [], []
+    for i, (name, fx) in enumerate(FIXTURES.items()):
+        ox, oy = (offsets or {}).get(name, (0, 0))
+        for side in ('from', 'to'):
+            ids = []
+            for j, poly in enumerate(fx[side]):
+                x0, y0 = poly[0][0] + ox, poly[0][1] + oy
+                ids.append('%s-%s%d' % (name, side, j))
+                elements.append({'id': ids[-1], 'x': x0, 'y': y0, 'role': 'solid', 'grapplable': True,
+                                 'points': [{'x': x + ox - x0, 'y': y + oy - y0} for x, y in poly]})
+            fragments.append({'id': '%s-%s' % (name, side), 'elements': ids})
+        transfers.append({'id': name, 'from': name + '-from', 'to': name + '-to',
+                          'guide': [[x + ox, y + oy] for x, y in fx['guide']]})
+    return {'elements': elements, 'svgFormat': {'fragments': fragments, 'transfers': transfers}}
+
+
+def level_polygons(level, fragment):
+    els = {e['id']: e for e in level['elements']}
+    frag = next(f for f in level['svgFormat']['fragments'] if f['id'] == fragment)
+    return [[(els[e]['x'] + p['x'], els[e]['y'] + p['y']) for p in els[e]['points']] for e in frag['elements']]
+
+
+def finite(values):
+    return all(isinstance(v, (int, float)) and math.isfinite(v) for v in values)
+
+
 def image(data_url):
     from PIL import Image
     return Image.open(io.BytesIO(base64.b64decode(data_url.split(',', 1)[1]))).convert('RGB')
@@ -217,7 +275,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                                    'unguidedLeveldataSha256': sha(cls.plain_js),
                                    'routearrowsJsSha256': sha((ROOT / 'render/routearrows.js').read_bytes()),
                                    'drawJsSha256': sha((ROOT / 'render/draw.js').read_bytes())},
-                        'style': {'t': T, 'color': COLOR, 'opacity': OPACITY, 'strokePx': STROKE_PX, 'headPx': HEAD_PX},
+                        'style': {'gapFraction': conv.ARROW_GAP_FRACTION, 'color': COLOR, 'opacity': OPACITY, 'strokePx': STROKE_PX, 'headPx': HEAD_PX},
                         'cases': {}}
 
     @classmethod
@@ -231,12 +289,21 @@ class RuntimeRouteArrowTests(unittest.TestCase):
             cls.evidence['cases'] = prior['cases']
             cls.evidence['browserErrors'] = cls.errors
             path.write_text(json.dumps(cls.evidence, separators=(',', ':'), sort_keys=True) + '\n')
+            for name, key in (('arrow-lengths.json', 'lengths'), ('physics-unchanged.json', 'physics')):
+                if key not in cls.evidence:
+                    continue
+                path = Path(EVIDENCE, name)
+                prior = json.loads(path.read_text()) if path.exists() else {}
+                prior['runtime'] = dict(cls.evidence[key], inputs=cls.evidence['inputs'], browserErrors=cls.errors)
+                path.write_text(json.dumps(prior, indent=1, sort_keys=True) + '\n')
 
-    def open(self, js=None):
+    def open(self, js=None, arrows_js=None):
         context = self.browser.new_context(viewport=VIEWPORT, device_scale_factor=1)
         self.addCleanup(context.close)
         if js is not None:
             context.route('**/leveldata.js', lambda route: route.fulfill(body=js, content_type='application/javascript'))
+        if arrows_js is not None:
+            context.route('**/render/routearrows.js', lambda route: route.fulfill(body=arrows_js, content_type='application/javascript'))
         page = context.new_page()
         page.on('pageerror', lambda e: self.errors.append('pageerror: %s' % e))
         page.on('console', lambda m: m.type == 'error' and self.errors.append('console: %s' % m.text))
@@ -258,15 +325,17 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         k = 0.9 * min(info['canvas'][0] / (b['right'] - b['left']), info['canvas'][1] / (b['bottom'] - b['top']))
         return b['left'] - 100, b['top'] - 100, k
 
-    def expected(self, tid):
-        g = self.guides[tid]
-        a = g[0]
-        b, c, d = lerp(g[0], g[1], T), lerp(g[1], g[2], T), lerp(g[2], g[3], T)
-        ab, bc = lerp(b, c, T), lerp(c, d, T)
-        return {'curve': [a, b, ab, lerp(ab, bc, T)], 'tangent': unit(conv.bezier_tangent(g, T)),
-                'samples': [cubic(g, T * s / 10) for s in range(11)]}
+    def expected(self, tid, level=None):
+        """The SVG side (converter arrow_geometry) for a guided transfer of the shipped or a fixture level."""
+        level = level or self.level
+        t = next(x for x in level['svgFormat']['transfers'] if x['id'] == tid)
+        g = t['guide']
+        geo = conv.arrow_geometry(g, level_polygons(level, t['from']), level_polygons(level, t['to']))
+        return {'curve': [list(p) for p in geo['curve']], 'tangent': list(geo['tangent']), 'G': geo['G'], 'L': geo['L'],
+                'target': geo['target'], 't': geo['t'], 'endpoint': list(geo['endpoint']),
+                'samples': [cubic(g, geo['t'] * s / 10) for s in range(11)]}
 
-    def arrows(self, out, wx, wy, k, info):
+    def arrows(self, out, wx, wy, k, info, level=None):
         """Decode the recorded draw calls into world-space arrows, checking each against the metadata."""
         rec = out['rec']
         paths = rec['paths']
@@ -281,7 +350,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                 self.assertEqual((p['style'], p['blur']), (COLOR, 0))
                 self.assertAlmostEqual(p['alpha'], OPACITY, places=6)
             curve = [world(p) for p in shaft['points']]
-            exp = self.expected(tid)
+            exp = self.expected(tid, level)
             point_err = max(math.dist(a, b) for a, b in zip(curve, exp['curve']))
             sample_err = max(math.dist(cubic(curve, s / 10), e) for s, e in zip(range(11), exp['samples']))
             tip, b1, b2 = head['points']
@@ -303,6 +372,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                      'stroke': max(worst['stroke'], abs(stroke - STROKE_PX)),
                      'head': max(worst['head'], abs(head_len - HEAD_PX), abs(head_width - HEAD_PX))}
             result.append({'id': tid, 'curveWorld': curve, 'tipWorld': world(tip), 'tangent': tangent,
+                           'measuredShaftLength': arc_length(curve), 'expected': exp,
                            'strokePx': stroke, 'headLengthPx': head_len, 'headWidthPx': head_width,
                            'shaftDevice': shaft['points'], 'headDevice': head['points']})
         return result, worst
@@ -311,7 +381,8 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         page = self.open(self.js)
         info = self.setup(page)
         loaded = page.evaluate('() => ({layoutId: floors[0].level.layoutId, transfers: floors[0].level.svgFormat.transfers,'
-                               ' arrows: routeArrowsFor(floors[0].level).map(a => ({id: a.id, curve: a.curve, tangent: a.tangent}))})')
+                               ' arrows: routeArrowsFor(floors[0].level).map(a => ({id: a.id, curve: a.curve, tangent: a.tangent,'
+                               ' gap: a.gap, length: a.length, target: a.target, t: a.t}))})')
         self.assertEqual(loaded['layoutId'], 'extended-mountain-v12')
         self.assertEqual(len(self.level['svgFormat']['fragments']), 39)
         self.assertEqual(loaded['transfers'], self.level['svgFormat']['transfers'])
@@ -319,18 +390,36 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         for a in loaded['arrows']:
             exp = self.expected(a['id'])
             self.assertLess(max(math.dist(p, q) for p, q in zip(a['curve'], exp['curve'])), 1e-9)
-            self.assertLess(math.dist(a['tangent'], exp['tangent']), 1e-12)
+            self.assertLess(math.dist(a['tangent'], exp['tangent']), 1e-9)
+            for key, py in (('gap', 'G'), ('length', 'L'), ('target', 'target')):
+                self.assertLess(abs(a[key] - exp[py]), 1e-6, (a['id'], key))
+            self.assertLess(abs(a['t'] - exp['t']), 1e-9)
         # Whole level in one frame: every guide drawn.
         wx, wy, k = self.overview(info)
         out = self.frame(page, wx, wy, k)
         self.assertEqual(sorted(out['rec']['drawn']), sorted(self.guides))
         overview, worst = self.arrows(out, wx, wy, k, info)
         self.assertEqual(len(overview), 38)
+        loaded_by = {a['id']: a for a in loaded['arrows']}
+        lengths = {}
+        for a in overview:
+            exp = a['expected']
+            # The drawn shaft, measured from the recorded draw calls, against the SVG-side target and endpoint.
+            self.assertLess(abs(a['measuredShaftLength'] - exp['target']), WORLD_TOL, a['id'])
+            self.assertLess(math.dist(a['tipWorld'], exp['endpoint']), WORLD_TOL, a['id'])
+            lengths[a['id']] = {'runtimeG': loaded_by[a['id']]['gap'], 'runtimeL': loaded_by[a['id']]['length'],
+                                'runtimeTarget': loaded_by[a['id']]['target'], 'runtimeT': loaded_by[a['id']]['t'],
+                                'svgG': exp['G'], 'svgL': exp['L'], 'svgTarget': exp['target'], 'svgT': exp['t'],
+                                'measuredDrawnShaftLength': a['measuredShaftLength'],
+                                'drawnLengthError': a['measuredShaftLength'] - exp['target'],
+                                'drawnEndpoint': a['tipWorld'], 'svgEndpoint': exp['endpoint'],
+                                'endpointError': math.dist(a['tipWorld'], exp['endpoint']), 'headLengthPx': a['headLengthPx']}
+        self.evidence['lengths'] = {'shipped': lengths}
         self.evidence['cases']['allGuides'] = {
             'fragments': len(self.level['svgFormat']['fragments']), 'loadedTransfers': len(loaded['transfers']),
             'loadedGuides': sum('guide' in t for t in loaded['transfers']), 'runtimeArrows': len(loaded['arrows']),
             'loadedEqualsImported': True, 'overviewCamera': {'wx': wx, 'wy': wy, 'k': k}, 'drawn': len(overview),
-            'worstError': worst, 'arrows': [{'id': a['id'], 'guide': self.guides[a['id']], 'expected': self.expected(a['id']),
+            'worstError': worst, 'arrows': [{'id': a['id'], 'guide': self.guides[a['id']], 'expected': a['expected'],
                                              'drawnCurveWorld': a['curveWorld'], 'drawnTangent': a['tangent'],
                                              'strokePx': a['strokePx'], 'headLengthPx': a['headLengthPx']} for a in overview]}
 
@@ -527,15 +616,29 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                                                    'noSvgFormatArrows': legacy}
 
     def test_05_collections_save_state_and_physics_unchanged(self):
-        guided, plain = self.open(self.js), self.open(self.plain_js)
-        for p in (guided, plain):
+        # Shipped guides with the distance-based renderer, no guides, and the shipped guides with the
+        # pre-TASK-671 t=0.25 renderer (git HEAD~ version of render/routearrows.js, recorded by hash).
+        import subprocess
+        old_js = subprocess.run(['git', 'show', 'HEAD:render/routearrows.js'], cwd=ROOT, check=True, capture_output=True, text=True).stdout
+        if 'ROUTE_ARROWS.t' not in old_js and 't: 0.25' not in old_js:
+            old_js = subprocess.run(['git', 'show', '6c7fcc0:render/routearrows.js'], cwd=ROOT, check=True, capture_output=True, text=True).stdout
+        self.assertIn('t: 0.25', old_js)
+        pages = {'guidedDistanceArrows': self.open(self.js), 'noGuides': self.open(self.plain_js),
+                 'guidedOldFixedTArrows': self.open(self.js, old_js)}
+        for p in pages.values():
             p.evaluate(FREEZE_RESTART)
-        worlds = [p.evaluate(WORLD) for p in (guided, plain)]
+        names = list(pages)
+        worlds = [pages[n].evaluate(WORLD) for n in names]
         for key in ('elements', 'dragZones', 'byId', 'grappleGroups', 'movers', 'floors', 'saveSchema', 'save',
                     'worldKeys', 'ninjaKeys', 'grapnelKeys', 'storageKeys'):
-            self.assertEqual(worlds[0][key], worlds[1][key], key)
+            for w in worlds[1:]:
+                self.assertEqual(worlds[0][key], w[key], key)
         self.assertNotIn('guide', json.dumps(worlds[0]['save']))
-        traces = [p.evaluate(TRACE) for p in (guided, plain)]
+        all_traces = [pages[n].evaluate(TRACE) for n in names]
+        for tr in all_traces[2:]:
+            self.assertEqual(all_traces[0]['trace'], tr['trace'])
+            self.assertEqual(all_traces[0]['save'], tr['save'])
+        traces = all_traces[:2]
         self.assertEqual(traces[0]['trace'], traces[1]['trace'])
         self.assertEqual(traces[0]['save'], traces[1]['save'])
         moved = math.dist(traces[0]['trace'][0][1:3], traces[0]['trace'][-1][1:3])
@@ -554,8 +657,172 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                         'identical': True, 'grappledTicks': sum(1 for t in traces[0]['trace'] if t[6]), 'playerMoved': moved,
                         'arrowsDrawnLastFrame': {'guided': traces[0]['arrowsLastFrame'], 'omitted': traces[1]['arrowsLastFrame']},
                         'finalSaveEqual': True, 'sampleEvery50': traces[0]['trace'][::50]}}
+        self.evidence['physics'] = {
+            'cases': names, 'oldRenderer': {'source': 'git show of render/routearrows.js before TASK-671', 'sha256': sha(old_js)},
+            'collectionsEqual': {k: True for k in ('elements', 'dragZones', 'byId', 'grappleGroups', 'movers', 'floors',
+                                                   'saveSchema', 'save', 'worldKeys', 'ninjaKeys', 'grapnelKeys', 'storageKeys')},
+            'collisionRoleSha256': {n: sha(json.dumps(w['elements'])) for n, w in zip(names, worlds)},
+            'dragZoneSha256': {n: sha(json.dumps(w['dragZones'])) for n, w in zip(names, worlds)},
+            'elementCount': len(worlds[0]['elements']),
+            'traceTicks': len(traces[0]['trace']), 'traceFields': self.evidence['cases']['unchanged']['physics']['fields'],
+            'traceSha256': {n: sha(json.dumps(t['trace'])) for n, t in zip(names, all_traces)},
+            'finalSaveSha256': {n: sha(json.dumps(t['save'], sort_keys=True)) for n, t in zip(names, all_traces)},
+            'tracesIdentical': True, 'grappledTicks': sum(1 for t in traces[0]['trace'] if t[6]), 'playerMovedWorld': moved,
+            'arrowsDrawnLastFrame': {n: t['arrowsLastFrame'] for n, t in zip(names, all_traces)}}
 
-    def test_06_zero_browser_errors(self):
+    def fixture_frame(self, page, level, wx, wy, k, info):
+        out = page.evaluate('a => T659.fixture(...a)', [level, wx, wy, k])
+        return out, self.arrows(out, wx, wy, k, info, level)[0]
+
+    def test_06_fixtures_match_svg_and_keep_head_size_across_zooms(self):
+        page = self.open(self.js)
+        info = self.setup(page)
+        level = fixture_level()
+        loaded = page.evaluate('l => routeArrowsFor(l).map(a => ({id: a.id, gap: a.gap, length: a.length, target: a.target,'
+                               ' t: a.t, curve: a.curve, tangent: a.tangent}))', level)
+        self.assertEqual([a['id'] for a in loaded], list(FIXTURES))
+        records = {}
+        for a in loaded:
+            exp = self.expected(a['id'], level)
+            self.assertTrue(finite([a['gap'], a['length'], a['target'], a['t'], *a['tangent'], *sum(a['curve'], [])]), a['id'])
+            self.assertLess(abs(a['gap'] - exp['G']), 1e-9, a['id'])
+            self.assertLess(abs(a['length'] - exp['L']), 1e-6, a['id'])
+            self.assertLess(abs(a['target'] - exp['target']), 1e-6, a['id'])
+            self.assertLess(abs(a['t'] - exp['t']), 1e-9, a['id'])
+            self.assertLess(math.dist(a['curve'][3], exp['endpoint']), 1e-6, a['id'])
+            records[a['id']] = {'runtimeG': a['gap'], 'runtimeL': a['length'], 'runtimeTarget': a['target'], 'runtimeT': a['t'],
+                                'runtimeEndpoint': a['curve'][3], 'runtimeTangent': a['tangent'], 'svgG': exp['G'],
+                                'svgL': exp['L'], 'svgTarget': exp['target'], 'svgT': exp['t'], 'svgEndpoint': exp['endpoint'],
+                                'finite': True, 'zooms': {}}
+        # Each fixture centred at three zooms: same world shaft, same 6 px head and 1.5 px stroke.
+        k0 = info['k0']
+        for a in loaded:
+            g = FIXTURES[a['id']]['guide']
+            cx, cy = (min(p[0] for p in g) + max(p[0] for p in g)) / 2, (min(p[1] for p in g) + max(p[1] for p in g)) / 2
+            for zoom in (0.6, 1.0, 1.6):
+                k = k0 * zoom
+                wx, wy = cx - info['canvas'][0] / k / 2, cy - info['canvas'][1] / k / 2
+                out, drawn = self.fixture_frame(page, level, wx, wy, k, info)
+                self.assertIn(a['id'], out['rec']['drawn'])
+                d = {x['id']: x for x in drawn}[a['id']]
+                self.assertLess(abs(d['measuredShaftLength'] - d['expected']['target']), WORLD_TOL, a['id'])
+                self.assertTrue(finite(sum(d['curveWorld'], []) + d['tipWorld']), a['id'])
+                records[a['id']]['zooms'][str(zoom)] = {'k': k, 'measuredDrawnShaftLength': d['measuredShaftLength'],
+                                                        'drawnEndpoint': d['tipWorld'], 'headLengthPx': d['headLengthPx'],
+                                                        'headWidthPx': d['headWidthPx'], 'strokePx': d['strokePx']}
+        self.evidence.setdefault('lengths', {})['fixtures'] = records
+        self.evidence['lengths']['toleranceWorldUnits'] = WORLD_TOL
+        heads = [z['headLengthPx'] for r in records.values() for z in r['zooms'].values()]
+        self.assertLess(max(heads) - min(heads), 2e-3)
+        self.evidence['cases']['fixtureZooms'] = {'zooms': [0.6, 1.0, 1.6], 'headLengthPxRange': [min(heads), max(heads)]}
+
+    def test_07_arrows_png_short_and_long_at_matched_zoom(self):
+        from PIL import Image, ImageDraw
+        page = self.open(self.js)
+        info = self.setup(page)
+        k0 = info['k0']
+        # Fixtures short, long, curved and capped, each in its own frame at one matched zoom k.
+        names = ['short', 'long', 'curved', 'capped']
+        k = 0.5 * k0
+        tiles, drawn_by = [], {}
+        for n in names:
+            level = fixture_level()
+            level['svgFormat']['transfers'] = [t for t in level['svgFormat']['transfers'] if t['id'] == n]
+            level['elements'] = [e for e in level['elements'] if e['id'].startswith(n + '-')]
+            pts = [p for poly in FIXTURES[n]['from'] + FIXTURES[n]['to'] for p in poly] + list(FIXTURES[n]['guide'])
+            x0, y0, x1, y1 = box(pts)
+            wx, wy = (x0 + x1) / 2 - info['canvas'][0] / k / 2, (y0 + y1) / 2 - info['canvas'][1] / k / 2
+            out, drawn = self.fixture_frame(page, level, wx, wy, k, info)
+            self.assertEqual(out['rec']['drawn'], [n])
+            drawn_by[n] = drawn[0]
+            shot = image(page.evaluate('() => canvas.toDataURL("image/png")'))
+            pad = 30
+            tiles.append((n, shot.crop((max(0, int((x0 - wx) * k) - pad), max(0, int((y0 - wy) * k) - pad),
+                                        min(shot.width, int((x1 - wx) * k) + pad), min(shot.height, int((y1 - wy) * k) + pad)))))
+        by = drawn_by
+        heads = {n: (by[n]['headLengthPx'], by[n]['headWidthPx']) for n in names}
+        self.assertLess(max(h[0] for h in heads.values()) - min(h[0] for h in heads.values()), 2e-3)
+        self.assertGreater(by['long']['measuredShaftLength'], 10 * by['short']['measuredShaftLength'])
+        # Shipped level: its shortest and longest shafts in production frames at the game zoom.
+        lengths = {a['id']: a['target'] for a in page.evaluate('() => routeArrowsFor(floors[0].level).map(a => ({id: a.id, target: a.target}))')}
+        short, long_ = min(lengths, key=lengths.get), max(lengths, key=lengths.get)
+        crops, game = [], {}
+        for tid in (short, long_):
+            exp = self.expected(tid)
+            mid = cubic(exp['curve'], .5)
+            gx, gy = mid[0] - info['canvas'][0] / k0 / 2, mid[1] - info['canvas'][1] / k0 / 2
+            shot = image(page.evaluate(SHOT, [gx, gy, k0, False]))
+            fo = self.frame(page, gx, gy, k0)
+            a = {x['id']: x for x in self.arrows(fo, gx, gy, k0, info)[0]}[tid]
+            game[tid] = {'target': exp['target'], 'measuredDrawnShaftLength': a['measuredShaftLength'],
+                         'headLengthPx': a['headLengthPx'], 'headWidthPx': a['headWidthPx'], 'k': k0}
+            x0, y0, x1, y1 = box(a['shaftDevice'] + a['headDevice'])
+            pad = 40
+            crops.append((tid, shot.crop((max(0, int(x0) - pad), max(0, int(y0) - pad),
+                                          min(shot.width, int(x1) + pad), min(shot.height, int(y1) + pad)))))
+        self.assertLess(abs(game[short]['headLengthPx'] - game[long_]['headLengthPx']), 2e-3)
+        self.assertGreater(game[long_]['target'], 2 * game[short]['target'])
+        rows = [[(n, c, '%s: G=%.0f shaft=%.0fu head %.3fpx (k=%.4f)' % (n, by[n]['expected']['G'], by[n]['measuredShaftLength'],
+                                                                         heads[n][0], k)) for n, c in tiles],
+                [(tid, c, 'game %s: %s shaft=%.0fu head %.3fpx (k=%.4f)' % ('shortest' if tid == short else 'longest', tid,
+                                                                             game[tid]['measuredDrawnShaftLength'],
+                                                                             game[tid]['headLengthPx'], k0)) for tid, c in crops]]
+        widths = [sum(max(c.width, 8 * len(t)) + 16 for _, c, t in r) for r in rows]
+        heights = [max(c.height for _, c, _ in r) + 30 for r in rows]
+        sheet = Image.new('RGB', (max(widths) + 16, sum(heights) + 40), (12, 12, 16))
+        dr = ImageDraw.Draw(sheet)
+        dr.text((8, 6), 'Distance-based arrows: shaft = min(0.5 G, L); head is a constant 6 CSS px at any zoom', fill=(240, 240, 240))
+        y = 28
+        for r, h in zip(rows, heights):
+            x = 8
+            for _, c, t in r:
+                dr.text((x, y), t, fill=(230, 230, 230))
+                sheet.paste(c, (x, y + 18))
+                x += max(c.width, 8 * len(t)) + 16
+            y += h
+        if EVIDENCE:
+            Path(EVIDENCE).mkdir(parents=True, exist_ok=True)
+            sheet.save(Path(EVIDENCE, 'arrows.png'))
+        self.evidence['cases']['arrowsPng'] = {
+            'fixtureZoomK': k, 'fixtureHeadsPx': heads,
+            'fixtureShaftLengths': {n: by[n]['measuredShaftLength'] for n in names},
+            'gameShortest': short, 'gameLongest': long_, 'game': game}
+
+    def test_08_culling_and_cache_reuse(self):
+        page = self.open(self.js)
+        info = self.setup(page)
+        before = page.evaluate('() => ({builds: ROUTE_ARROWS.builds, same: routeArrowsFor(floors[0].level) === routeArrowsFor(floors[0].level)})')
+        self.assertTrue(before['same'])
+        k0 = info['k0']
+        culled = {}
+        for zoom in (0.6, 1.0, 1.6):
+            k = k0 * zoom
+            for tid in ('T01', 'T25'):
+                exp = self.expected(tid)
+                tip = exp['curve'][3]
+                wx, wy = tip[0] - info['canvas'][0] / k / 2, tip[1] - info['canvas'][1] / k / 2
+                out = self.frame(page, wx, wy, k)
+                view = [wx, wy, wx + info['canvas'][0] / k, wy + info['canvas'][1] / k]
+                must = sorted(t for t in self.guides if overlaps(box(self.expected(t)['curve']), view))
+                far = [t for t in self.guides if not overlaps(box(self.expected(t)['curve']),
+                                                               [view[0] - 3000, view[1] - 3000, view[2] + 3000, view[3] + 3000])]
+                drawn = out['rec']['drawn']
+                self.assertIn(tid, drawn)
+                self.assertTrue(set(must) <= set(drawn), (zoom, tid))
+                self.assertFalse(set(far) & set(drawn), (zoom, tid))
+                self.assertGreater(len(far), 0)
+                culled['%s@%s' % (tid, zoom)] = {'drawn': len(drawn), 'mustDraw': len(must), 'farCulled': len(far)}
+        after = page.evaluate('() => ({builds: ROUTE_ARROWS.builds, same: routeArrowsFor(floors[0].level) === routeArrowsFor(floors[0].level)})')
+        self.assertEqual(after['builds'], before['builds'])
+        # A different level object is computed once, then reused.
+        fresh = page.evaluate('l => { const b = ROUTE_ARROWS.builds; const a = routeArrowsFor(l); routeArrowsFor(l);'
+                              ' return {added: ROUTE_ARROWS.builds - b, same: a === routeArrowsFor(l)} }', fixture_level())
+        self.assertEqual(fresh, {'added': 1, 'same': True})
+        self.evidence['cases']['cullingAndCache'] = {'frames': len(culled), 'culling': culled, 'buildsBefore': before['builds'],
+                                                    'buildsAfterFrames': after['builds'], 'cacheIdentity': True,
+                                                    'newLevelBuildsOnce': fresh}
+
+    def test_09_zero_browser_errors(self):
         page = self.open(self.js)
         page.evaluate('() => new Promise(r => setTimeout(r, 1500))')
         self.assertEqual(self.errors, [])
