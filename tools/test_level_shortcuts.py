@@ -97,7 +97,7 @@ class ShortcutReplayTests(unittest.TestCase):
         # The v5 P3->P4 leftward encounter (S07-02) is now P3' -> L1.
         source=panel('P3');target=successor(source)
         self.assertEqual(target,ROUTE_MAP['addedFragments']['L1'])
-        r=self.run_probe(source=source,target=target,fraction=.8,pumps=1,drop=300,aimOffset=-.8,budget=1800)
+        r=self.run_probe(source=source,target=target,fraction=.2,pumps=1,drop=300,lastAimOffset=-.15,budget=2400)
         self.assertIsNotNone(r['arrival'])
         self.assertEqual(r['hit']['id'],target+'-body0')
 

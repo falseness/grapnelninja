@@ -4,7 +4,7 @@
 (() => {
   window.requestAnimationFrame=()=>0; cancelAnimationFrame(game);
   const base=structuredClone(floors[0].level);
-  let events=[], tick=0;
+  let events=[], tick=0, recording=false, inputs=[];
   const original=Ninja.prototype.applyBounce;
   Ninja.prototype.applyBounce=function(c){
     original.call(this,c);
@@ -14,6 +14,7 @@
   ROLE_DETAIL.markContact=()=>{}; visualEffects=null;
   PROGRESS.climbTick=()=>{};
   function pointer(type,p){
+    if(recording)inputs.push({tick,type:{mousedown:'down',mouseup:'up',mousemove:'move'}[type],aim:[p.x,p.y]});
     const q=canvasCoordsToViewportCoords({x:(p.x+screen.x)*scale[version],y:(p.y+screen.y)*scale[version]});
     document.dispatchEvent(new MouseEvent(type,{clientX:q.x,clientY:q.y,bubbles:true,button:0}));
   }
@@ -35,12 +36,14 @@
     return {x,y:Math.min(...ys)};
   }
   function run(options){
-    const {source,target,fraction=.5,aimOffset=0,drop=30,holdTicks=0,pumps=2,budget=1800,level=base,guard=true,initialState=null}=options;
-    const model=structuredClone(level);if(!guard)model.elements=model.elements.filter(e=>!e.id.startsWith('G'));
+    recording=!!options.recordInputs;inputs=[];
+    const {source,target,fraction=.5,aimOffset=0,lastAimOffset=null,drop=30,holdTicks=0,pumps=2,budget=1800,level=base,guard=true,initialState=null}=options;
+    const model=level.svgFormat?importedMountainLevel(structuredClone(level)):structuredClone(level);if(!guard)model.elements=model.elements.filter(e=>!e.id.startsWith('G'));
     floors=[loadFixedLevel(model)];grapnel=new Grapnel({stroke:STYLE.colors.player.cyan});
     const start=floors[0].byId.get(source+'-body0'), dest=floors[0].byId.get(target+'-body0');
     const launch=top(start,fraction);
     const pumpAim=top(start,Math.max(.02,Math.min(.98,fraction+aimOffset)));
+    const lastPumpAim=lastAimOffset===null?pumpAim:top(start,Math.max(.02,Math.min(.98,fraction+lastAimOffset)));
     ninja=new Ninja({x:launch.x,y:launch.y-drop,radius:10.8,fill:STYLE.colors.player.cyan});
     ninja.speedX=ninja.speedY=0;
     pressHeld=stalePress=gameplayPressOwned=false;menu.gamePaused=false;hostPaused=false;unTouch=false;
@@ -54,9 +57,10 @@
     let arrival=null,count=0,lastBounce=-1,lastAim='',minY=ninja.y,hit=null,dragTicks=0;
     const snapshots=[];
     for(tick=0;tick<budget;tick++){
-      const q=nearest(dest);
+      let q=nearest(dest);
+      if(options.targetSurface==='underside'){const ps=dest.getPoints();q={x:Math.max(Math.min(...ps.map(p=>p.x))+2,Math.min(Math.max(...ps.map(p=>p.x))-2,ninja.x)),y:Math.max(...ps.map(p=>p.y))-2};}
       let aim=null,key='';
-      if(tick<holdTicks || (count<pumps && ninja.speedY>0)){aim=pumpAim;key='pump';}
+      if(tick<holdTicks || (count<pumps && ninja.speedY>0)){const last=count===pumps-1;aim=last?lastPumpAim:pumpAim;key=last&&lastAimOffset!==null?'last-pump':'pump';}
       else {aim=q;key='target';}
       if(key!==lastAim){pointer('mouseup',ninja);pointer('mousedown',aim);lastAim=key;}
       else pointer('mousemove',aim);
@@ -68,13 +72,14 @@
       }
       if(grapnel.grappled){const id=grapnel.pos.at(-1)?.[2]?.id;
         if(id&&Number(id.match(/^P(\d+)/)?.[1])>Number(source.slice(1)))hit={kind:'attach',tick,id,x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY};}
+      if(floors[0].climbStats.completed&&!hit)hit={kind:'finish',tick,id:model.svgFormat.fragments.at(-1).id+'-body0',x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY};
       if(floors[0].dragZones.some(z=>pointInPolygon(z.getPoints(),ninja.x,ninja.y)))dragTicks++;
       if(tick%60===0)snapshots.push({tick,x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY});
       if(hit||ninja.y>launch.y+4000||Math.abs(ninja.x-launch.x)>12000)break;
     }
     const finalState=hit?{save:captureClimbState(),owned:gameplayPressOwned,aim:grapnel.aim}:null;
     pointer('mouseup',ninja);
-    return {finalState,source,target,fraction,aimOffset,drop,holdTicks,pumps,budget,guard,setup:{x:launch.x,y:launch.y-drop,vx:0,vy:0},arrival,
+    return {inputs:recording?inputs:undefined,finalState,source,target,fraction,aimOffset,lastAimOffset,drop,holdTicks,pumps,budget,guard,setup:{x:launch.x,y:launch.y-drop,vx:0,vy:0},arrival,
       hit,bounces:count,ticks:tick,minY,dragTicks,events:events.slice(0,30),snapshots};
   }
   window.ROUTE_PROBE={run,base};

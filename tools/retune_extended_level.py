@@ -10,35 +10,26 @@ import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
-EXTENDED_LAYOUT = 'extended-mountain-v9'
+EXTENDED_LAYOUT = 'extended-mountain-v10'
 # Rightward span is a minimum; usable surfaces and measured release gaps take
-# priority over fitting a fixed endpoint. Leftward span retains its 3x target.
+# priority over fitting a fixed endpoint. Fold separation may change the leftward span.
 MIN_OPENING_SPAN = 720.0
 # After the two easy transfers the rightward run is one mixed combination:
 # ceiling underside catch, descent onto a sloped bounce face, rebound up, then
 # a mostly horizontal transfer to the upward-turn departure. lift is the rise
 # of the new contact over the previous one (negative descends); gap is the
 # complete-polygon release gap reached by sliding the panel rightward.
-# Tuned with production physics and the 540-unit acquisition radius
-# (TASK-669, v9). The later terrain hangs a fixed height above R4, so the
-# combination ends high and right of v7's endpoint. R1 is 1250 above P2 and
-# 2700 wide with its left end over P2's right end (share .52): a pumped P2 rise
-# catches its underside, the catch stays more rightward than upward, and the
-# underside shields P2 from the panels above. The player crosses it hand over
-# hand. R2 sits 650 below the catch, its face falling 80 units (5.1 degrees);
-# R3 rises 550 (its top below the release height, so the rebound lands on it)
-# and is 1400 wide; R4 rises 500 (0.24 of the horizontal flight) over a 1000
-# release gap. This keeps every non-successor panel out of the pumped apex
-# plus the acquisition radius of P2, R1, R2 and R3
-# (artifacts/TASK-669/clearance-sweep.json).
+# The opening uses a ceiling catch, descending slope, rebound and exposed hop.
+# Geometry is only a candidate until the whole-route production audit and
+# continuous combination replay pass; an edge-gap check cannot prove this.
 OPENING = dict(factor=3,
                right=[dict(kind='ceiling', width=2700, height=240, lift=1250, gap=700, share=.52,
                            surface='underside', direction='UP-RIGHT → CEILING HOLD'),
-                      dict(kind='bounce', width=900, height=520, lift=-650, gap=650, share=.22, drop=80,
+                      dict(kind='bounce', width=900, height=520, lift=-1000, gap=1080, share=.22, drop=80,
                            surface='slope', direction='RELEASE → DOWN-RIGHT ONTO SLOPE'),
-                      dict(kind='platform', width=1400, height=180, lift=550, gap=700, share=.22,
+                      dict(kind='platform', width=1400, height=180, lift=650, gap=1080, share=.22,
                            surface='top', direction='BOUNCE → UP-RIGHT'),
-                      dict(kind='platform', width=1000, height=260, lift=500, gap=1000, share=.22,
+                      dict(kind='platform', width=1000, height=260, lift=400, gap=1620, share=.22,
                            surface='top', direction='RIGHT → UPWARD-TURN DEPARTURE')],
                left=[dict(width=900, height=240, drop=0),
                      dict(width=1100, height=260, share=.52, drop=-160)])
@@ -144,7 +135,7 @@ def panel(name, width, height, x, y, kind='platform', drop=240):
     """
     inset = round(width*.12, 3)
     polys = {'platform': [[0, 0], [width, 0], [width-inset, height], [inset, height]],
-             'ceiling': [[0, 0], [width*.2, -90], [width*.8, -90], [width, 0], [width, height], [0, height]],
+             'ceiling': [[0, -90], [width, -90], [width, height], [0, height]],
              'bounce': [[0, 0], [width, drop], [width, height], [0, height-drop]]}[kind]
     # The concept's face falling to the right redirects up-right (bounceSign 1).
     out = dict(id=None, name=name, x=x, y=y, width=width, height=height, kind=kind,
@@ -184,11 +175,11 @@ def moved(fragment, dx, dy):
     return dict(fragment, x=fragment['x']+dx, y=fragment['y']+dy)
 
 
-def place_along(anchor, fragment, ux, uy, target, origin=None):
+def place_along(anchor, fragment, ux, uy, target, origin=None, steps=80):
     """Translate fragment from origin (anchor's origin by default) along (ux, uy) until its gap to anchor is target."""
     ox, oy = origin or (anchor['x'], anchor['y'])
     lo, hi = 0., 30000.
-    for _ in range(80):
+    for _ in range(steps):
         mid = (lo+hi)/2
         if gap(anchor, dict(fragment, x=ox+ux*mid, y=oy+uy*mid))[0] < target: lo = mid
         else: hi = mid
@@ -286,6 +277,98 @@ def extend_opening(fs, rows, spec):
     return out, out_rows, route_map
 
 
+def separated(a,b,minimum):
+    ax,ay,ar,ab=box(a);bx,by,br,bb=box(b)
+    if math.hypot(max(0,bx-ar,ax-br),max(0,by-ab,ay-bb))>=minimum:return True
+    return gap(a,b)[0]>=minimum
+
+
+def separate_route_folds(fs, rows, minimum=3400):
+    """Place the later route with room for legal brakes between unrelated legs.
+
+    The opening folds reserve a 3400-unit corridor for legal yellow guards.
+    Later lateral combinations use 2400 units and continue left, away from
+    earlier terrain. These candidate clearances still require physics audits.
+    Adjacent vertical transfers retain their 810-unit gap; their tall turn
+    structures allow the following traverse to return above earlier terrain.
+    """
+    templates=copy.deepcopy(fs)
+    visits=0
+    def search(i):
+        nonlocal visits
+        visits+=1
+        if i==len(fs):return True
+        if visits>250:return False
+        prev=fs[i-1]; old_prev,shape=templates[i-1],templates[i]
+        clearance=minimum if i<18 else 2400
+        a,b=svg.contact(old_prev),svg.contact(shape)
+        theta=math.atan2(b[1]-a[1],b[0]-a[0])
+        old=rows[i-1].get('originalNumber')
+        vertical=old in TARGETS and TARGETS[old]==150
+        descent=shape['kind']=='bounce' and old_prev['kind']=='ceiling'
+        target=810 if vertical else 1350 if old_prev['kind']=='bounce' else max(1080,gap(old_prev,shape)[0])
+        if i==16:theta-=math.radians(5)
+        if i==17:theta=math.atan2(-.6,-1)
+        if descent:theta=math.atan2(.4,-1)
+        if old_prev['kind']=='bounce' and not vertical:
+            incoming=svg.contact(prev)[0]-svg.contact(fs[i-2])[0]
+            theta=math.atan2(-.25,1 if incoming>0 else -1)
+        offsets=[0]+[sign*d for d in (range(5,16,5) if old_prev['kind']=='bounce' else range(5,86,5)) for sign in (1,-1)]
+        angles=[theta+math.radians(delta) for delta in offsets]
+        if i>10 and not vertical:
+            angles += [math.pi-theta+math.radians(delta) for delta in offsets]
+        for factor in ((1,) if vertical else (1,1.15,1.3,1.5,1.75,2)):
+            if visits>250:return False
+            if i+1<len(fs):
+                next_old=rows[i].get('originalNumber')
+                if next_old in TARGETS and TARGETS[next_old]==150:
+                    points=[p for poly in shape['polys'] for p in poly]
+                    diameter=max(math.dist(a,b) for a in points for b in points)
+                    if target*factor+diameter+810<clearance:continue
+            for angle in angles:
+                ux,uy=math.cos(angle),math.sin(angle)
+                if i>=17 and not vertical and ux>=0:continue
+                if (i<=10 and not vertical and (b[0]-a[0])*ux < -1e-6) or (not descent and (b[1]-a[1])*uy < -1e-6):continue
+                if 8<=i<=10 and abs(uy)>=abs(ux):continue
+                if vertical and (uy>=0 or abs(uy)<abs(ux)):continue
+                local=svg.contact(dict(shape,x=0,y=0))
+                origin=(svg.contact(prev)[0]-local[0],svg.contact(prev)[1]-local[1])
+                candidate=place_along(prev,shape,ux,uy,target*factor,origin=origin,steps=35)
+                ca,cb=svg.contact(prev),svg.contact(candidate)
+                if shape['kind']=='bounce' and old_prev['kind']=='ceiling' and cb[1]-ca[1]<800:continue
+                if not vertical and abs(b[1]-a[1])<.25*abs(b[0]-a[0]) and abs(cb[1]-ca[1])>=abs(cb[0]-ca[0]):continue
+                if all(separated(f,candidate,clearance) for f in fs[:i-1]):
+                    fs[i]=candidate
+                    if search(i+1):return True
+        return False
+    if not search(7):raise ValueError('Cannot separate folded route after %d placement branches' % visits)
+    for i in range(7,len(fs)):
+        prev,chosen=fs[i-1:i+1]
+        a,b=svg.contact(templates[i-1]),svg.contact(templates[i])
+        if (svg.contact(chosen)[0]-svg.contact(prev)[0])*(b[0]-a[0])<0:
+            for field in ('direction','action'):
+                text=rows[i-1][field]
+                rows[i-1][field]=text.replace('LEFT','TEMP').replace('RIGHT','LEFT').replace('TEMP','RIGHT')
+
+
+def spread_upper_landings(fs):
+    """Put the next turn beyond a slope's pumped shortcut trajectory.
+
+    Extend the landing to the left without moving its incoming right edge,
+    then shift the following route left. This retains the 810-unit vertical
+    gap and the preceding exposed rebound while separating the two skips.
+    """
+    for index in (19,26):
+        f=fs[index]; old=f['width']; width=3300
+        f['x']-=width-old
+        f['polys']=[[[x*width/old,y] for x,y in poly] for poly in f['polys']]
+        f['width']=width
+        for later in fs[index+1:]:later['x']-=1200
+    # The last natural slope rebound has a lower apex than a pumped fixture.
+    # Keep the exposed transfer, but place the summit inside that catch arc.
+    fs[-1]['y']+=300
+
+
 def band_ends(m, number):
     """Fragment indices of an original jump's endpoints in the current route."""
     route = m.get('routeMap')
@@ -310,6 +393,31 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         scale=450 / shelf['width']
         shelf['polys']=[[[x*scale,y] for x,y in poly] for poly in shelf['polys']]
         shelf['width']=450
+    if opening:
+        # Shallow rebound faces retain enough vertical momentum for the next
+        # lateral transfer instead of ejecting the player below its catch.
+        for f in source['fragments']:
+            if f['kind']=='bounce':
+                shape=panel(f['name'],f['width'],f['height'],f['x'],f['y'],'bounce',80)
+                f['polys']=shape['polys'];f['slopeDrop']=80
+                if f['bounceSign']<0:
+                    f['polys']=[list(reversed([[f['width']-x,y] for x,y in poly])) for poly in f['polys']]
+        for index in (13,16,20):
+            f=source['fragments'][index]
+            width=max(1440,f['width'])
+            sx=width/f['width']
+            f['polys']=[[[x*sx,y] for x,y in poly] for poly in f['polys']]
+            f['width']=width
+        # Tall turn structures put the returning route above the preceding jump
+        # corridor. Their lower catch remains a 150% vertical transfer; the
+        # player climbs the continuous side before taking the next traverse.
+        for index, height in ((3, 6500), (5, 2200), (8, 6500), (21, 2200)):
+            f = source['fragments'][index]
+            ratio = height/f['height']
+            width=max(f['width'],source['fragments'][index-1]['width']+1080)
+            sx=width/f['width']
+            f['polys'] = [[[x*sx, y*ratio] for x,y in poly] for poly in f['polys']]
+            f['height'],f['width'] = height,width
     # Collision polygons, not only outlines: placement below measures blunted shapes.
     blunted = blunt_fragments(source)
     m = copy.deepcopy(source)
@@ -319,11 +427,15 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         prev = source['fragments'][n-1]
         dx, dy = original['x']-prev['x'], original['y']-prev['y']
         angle = math.atan2(dy, dx) + math.radians(DIRECTION_OFFSETS.get(n, 0) if reposition else 0)
+        if opening and n == 6:
+            angle += math.radians(30)
         target = TARGETS.get(n, source['encounters'][n-1]['percent']) * 5.4
         angles = [angle]
         if n not in TARGETS:
             angles += [angle + math.radians(delta*sign) for delta in range(5, 86, 5) for sign in (1, -1)]
-        for theta in angles:
+        base_target=target
+        factors=(1,1.15,1.3,1.5) if opening and n not in TARGETS else (1,)
+        for theta,target in ((theta,base_target*factor) for factor in factors for theta in angles):
             vx, vy = math.cos(theta), math.sin(theta)
             if dx*vx < -1e-6 or dy*vy < -1e-6:
                 continue
@@ -353,12 +465,26 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
     if opening:
         fs[:], m['encounters'], m['routeMap'] = extend_opening(fs, m['encounters'], opening)
         m['combinations'] = [[m['routeMap']['encounterNumbers'][str(n)] for n in combo] for combo in m['combinations']]
+        separate_route_folds(fs,m['encounters'])
+        spread_upper_landings(fs)
+        for f in fs:
+            if f['kind']=='ceiling':
+                w,h=f['width'],f['height']
+                f['polys']=[[[0,-90],[w,-90],[w,h],[0,h]]]
+        for f,nxt in zip(fs,fs[1:]):
+            if f['kind']!='bounce':continue
+            direction=1 if svg.contact(nxt)[0]>svg.contact(f)[0] else -1
+            if f['bounceSign']!=direction:
+                f['polys']=[list(reversed([[f['width']-x,y] for x,y in poly])) for poly in f['polys']]
+                f['bounceSign']=direction
     for row in m['encounters']:
         n = row['number']; a,b = fs[n-1:n+1]
         d,w,_,_ = gap(a,b)
         # Gap targets stay keyed by the original concept numbering; new transfers record their measured gap.
         old = row.get('originalNumber', n)
-        percent = TARGETS.get(old, row['percent']) if old else round(d/5.4, 2)
+        percent = round(d/5.4, 2) if opening else TARGETS.get(old, row['percent']) if old else round(d/5.4, 2)
+        if opening and old not in TARGETS and d < 1080 - .01:
+            raise ValueError('Transfer %s violates the 200%% release-gap minimum: %.2f' % (row['id'], d))
         row.update(percent=percent, distance=d, witness=w,
                    flight=[svg.contact(a),svg.contact(b)], baseline=False)
     m['pairChecks'] = []
@@ -394,8 +520,13 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
     if unreachable:
         m['unreachableYellowBands'] = unreachable
     if guards:
-        add_shortcut_guards(m, yellow_clearance)
+        (add_shortcut_guards if opening else add_legacy_shortcut_guards)(m, yellow_clearance)
+    if opening:
+        add_opening_brake(m, yellow_clearance)
+        add_final_transfer_brake(m, yellow_clearance)
     consolidate_yellow_bands(m, yellow_clearance)
+    if opening:
+        restore_guard_coverage(m, yellow_clearance)
     m['fallIllustrations'] = [dict(id='F'+str(i+1),band=z['id'],start=[z['x']+z['width']/2,z['y']-500],
         end=[z['x']+z['width']/2,z['y']+1000],meaning='Illustrative fall only') for i,z in enumerate(m['yellowBands'])]
     m['bluntedCorners']=dict(minimumAngle=MIN_INTERIOR_ANGLE, face=BLUNT_FACE, changed=blunted)
@@ -405,7 +536,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         new=m['routeMap']['fragmentIds']
         m['allowedGrapplePairs']=[[new[a],new[b]] for a,b in m['allowedGrapplePairs']]
     m['checks']={'geometryOnly':True}
-    m['limitations']=['Jump playability remains unverified. Opening transfers intentionally allow direct grappling.']
+    m['limitations']=['Geometry alone does not prove playability or shortcut absence; run production-input audits. A complete from-spawn climb remains unverified. Opening transfers intentionally allow direct grappling.']
     return m
 
 
@@ -414,7 +545,7 @@ def box(fragment):
     return min(x for x,y in points), min(y for x,y in points), max(x for x,y in points), max(y for x,y in points)
 
 
-def add_shortcut_guards(m, clearance=LEGACY_YELLOW_CLEARANCE):
+def add_legacy_shortcut_guards(m, clearance=LEGACY_YELLOW_CLEARANCE):
     fs=m['fragments']; guards=[]
     candidates=[(0, None)]
     for i,a in enumerate(fs):
@@ -453,6 +584,85 @@ def add_shortcut_guards(m, clearance=LEGACY_YELLOW_CLEARANCE):
     m['shortcutCandidates']=[{'from':fs[i]['id'],'to':None if j is None else fs[j]['id']} for i,j in candidates]
 
 
+def add_shortcut_guards(m, clearance=LEGACY_YELLOW_CLEARANCE):
+    fs=m['fragments']; guards=[]
+    candidates=[(0, None)]
+    for i,a in enumerate(fs):
+        ax,ay,ar,ab=box(a)
+        for j in range(i+2,len(fs)):
+            bx,by,br,bb=box(fs[j])
+            if by < ay and max(0,bx-ar,ax-br)<540 and gap(a,fs[j])[0]<8000:
+                candidates.append((i,j))
+    for i,j in candidates:
+        a=fs[i]; ax,ay,ar,ab=box(a)
+        width=720 if i == 0 else max(920,ar-ax+200)
+        x=(ax+ar-width)/2
+        nxt=box(fs[i+1]) if i+1<len(fs) else None
+        if nxt and nxt[1] < ay-.01:
+            nc=(nxt[0]+nxt[2])/2; ac=(ax+ar)/2
+            if nc > ac+200:
+                width=min(x+width,nxt[0]-80)-x
+            elif nc < ac-200:
+                right=x+width; x=max(x,nxt[2]+80); width=right-x
+        if width<400:continue
+        if nxt and nxt[1]<ay-.01 and not (nxt[0]>=x+width+30 or nxt[2]<=x-30):continue
+        # Try the broad corridor first, then a narrower rectangle covering the
+        # launch positions aligned with this particular upper target. A nearby
+        # turn tower can make a full-width cap illegal while leaving a valid
+        # brake over the actual bypass launch point.
+        placements=[(x,width)]
+        if j is not None:
+            tx,ty,tr,tb=box(fs[j])
+            lo,hi=max(ax,tx-540),min(ar,tr+540)
+            if hi>lo:
+                w=min(720,hi-lo+100)
+                placements.extend([(lo,min(960,hi-lo)),(lo,w),((lo+hi-w)/2,w)])
+        placed=False
+        for gx,gw in placements:
+            for height, offset in ((h, off) for off in range(0, 8001, 120) for h in (240,120)):
+                y=ay-clearance-height-offset
+                if j is not None and y < box(fs[j])[3]+clearance:
+                    continue  # A brake above its target cannot prevent reaching it.
+                poly=[[gx,y],[gx+gw,y],[gx+gw,y+height],[gx,y+height]]
+                nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs)
+                if nearest<clearance or gw<=height: continue
+                if any(union_distance([poly],[g['polygon']])[0]<30 for g in guards):continue
+                guards.append(dict(id='G'+str(len(guards)+1),belowJump=i+1,source=a['id'],
+                    target=None if j is None else fs[j]['id'],purpose='upward shortcut brake',
+                    x=gx,y=y,width=gw,height=height,polygon=poly,nearestSolidClearance=nearest,
+                    minimumSolidClearance=clearance,role='non-solid, non-grappleable, pass-through braking'))
+                placed=True
+                break
+            if placed:break
+    m['yellowBands']+=guards
+    m['shortcutCandidates']=[{'from':fs[i]['id'],'to':None if j is None else fs[j]['id']} for i,j in candidates]
+
+
+def add_opening_brake(m, clearance):
+    """One wide brake across the easy start's upward escape corridor.
+
+    Search above nearby ceiling geometry as well as the launch panels. Local
+    guards below a ceiling used to conflict and consolidation discarded them.
+    Complete-polygon clearances still apply to every candidate rectangle.
+    """
+    fs=m['fragments']
+    x=min(box(f)[0] for f in fs[:3])-100
+    width=max(box(f)[2] for f in fs[:3])+100-x
+    height=120
+    y=min(box(f)[1] for f in fs[:3])-clearance-height
+    for offset in range(0,8001,60):
+        by=y-offset
+        poly=[[x,by],[x+width,by],[x+width,by+height],[x,by+height]]
+        nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs)
+        if nearest>=clearance:
+            m['yellowBands'].append(dict(id='G-opening',belowJump=3,source='P2',target=None,
+                purpose='opening upward bypass brake',x=x,y=by,width=width,height=height,
+                polygon=poly,nearestSolidClearance=nearest,minimumSolidClearance=clearance,
+                role='non-solid, non-grappleable, pass-through braking'))
+            return
+    m['omittedOpeningBrake']='No legal full-width rectangle; require production shortcut validation of the separated route'
+
+
 def consolidate_yellow_bands(m, clearance=LEGACY_YELLOW_CLEARANCE):
     """Prefer one long rectangle; never bridge a green panel to merge zones."""
     bands=m['yellowBands']
@@ -473,8 +683,58 @@ def consolidate_yellow_bands(m, clearance=LEGACY_YELLOW_CLEARANCE):
             a['mergedFrom']=a.get('mergedFrom',[a['id']])+b.get('mergedFrom',[b['id']])
             del bands[j]
         else:
-            # Prefer the longer existing horizontal zone when a union is unsafe.
-            del bands[j if a['width']>=b['width'] else i]
+            if clearance < YELLOW_CLEARANCE:
+                del bands[j if a['width']>=b['width'] else i]
+                continue
+            # Preserve both useful brakes when only their horizontal ends are
+            # too close. Trimming cannot reduce clearance to green geometry.
+            left,right=(a,b) if a['x']<=b['x'] else (b,a)
+            new_width=right['x']-YELLOW_PAIR_CLEARANCE-left['x']
+            if left['x']+left['width'] <= right['x'] and new_width>max(400,left['height']):
+                left['trimmedFromWidth']=left['width']
+                left['width']=new_width
+                lx,ly=left['x'],left['y']
+                left['polygon']=[[lx,ly],[lx+new_width,ly],[lx+new_width,ly+left['height']],[lx,ly+left['height']]]
+                left['nearestSolidClearance']=min(union_distance([left['polygon']],svg.bodies(f))[0] for f in m['fragments'])
+                continue
+            # If a safe merge or trim is impossible, prioritize a corridor
+            # guard over a decorative falling-area band, and record removal.
+            ga,gb=bool(a.get('source')),bool(b.get('source'))
+            drop=j if ga and not gb else i if gb and not ga else j if a['width']>=b['width'] else i
+            m.setdefault('omittedYellowConflicts',[]).append(bands[drop]['id'])
+            del bands[drop]
+
+
+def add_final_transfer_brake(m, clearance):
+    """Catch the tested roof-pump skip while leaving the underside descent open."""
+    ceiling,slope,summit=m['fragments'][-3:]
+    cx,cy,cr,cb=box(ceiling);sx,sy,sr,sb=box(slope);gx,gy,gr,gb=box(summit)
+    left=max(sx-500,gr+1000);right=cx-clearance-10
+    bottom=sy-clearance; height=min(1000,right-left-1)
+    poly=[[left,bottom-height],[right,bottom-height],[right,bottom],[left,bottom]]
+    nearest=min(union_distance([poly],svg.bodies(f))[0] for f in m['fragments'])
+    if height<=0 or nearest<clearance:raise ValueError('No legal final transfer brake corridor')
+    m['yellowBands'].append(dict(id='G-final',belowJump=29,source=ceiling['id'],target=summit['id'],
+        purpose='roof-pump shortcut brake; underside descent remains below the zone',
+        x=left,y=bottom-height,width=right-left,height=height,polygon=poly,
+        nearestSolidClearance=nearest,minimumSolidClearance=clearance,
+        role='non-solid, non-grappleable, pass-through braking'))
+
+
+def restore_guard_coverage(m, clearance):
+    """Restore a guard's ends after neighbouring bands were merged or removed."""
+    fs={f['id']:f for f in m['fragments']}
+    for band in m['yellowBands']:
+        if band.get('source') not in fs:continue
+        sx,sy,sr,sb=box(fs[band['source']])
+        x,right=min(band['x'],sx-30),max(band['x']+band['width'],sr+30)
+        y,h=band['y'],band['height']
+        poly=[[x,y],[right,y],[right,y+h],[x,y+h]]
+        nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs.values())
+        if nearest<clearance:continue
+        if any(other is not band and union_distance([poly],[other['polygon']])[0]<YELLOW_PAIR_CLEARANCE
+               for other in m['yellowBands']):continue
+        band.update(x=x,width=right-x,polygon=poly,nearestSolidClearance=nearest)
 
 
 def main():

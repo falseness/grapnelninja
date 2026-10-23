@@ -48,6 +48,7 @@
     let held=null,attached=null,last={x:ninja.x,y:ninja.y},maxStep=0;
     const c={log,origin:p,
       press(aim){pointer('mousedown',aim);held=aim;log.inputs.push({tick,type:'down',aim,state:state()});},
+      aim(aim){pointer('mousemove',aim);held=aim;log.inputs.push({tick,type:'move',aim,state:state()});},
       release(){pointer('mouseup',held||[ninja.x,ninja.y]);held=null;log.inputs.push({tick,type:'up',state:state()});},
       get held(){return held;},
       step(){
@@ -73,15 +74,15 @@
     const {inputs=[],budget=1500,stopOn=null,snapshotEvery=0}=options;
     const c=start(options);const queue=[...inputs].sort((a,b)=>a.tick-b.tick);let stop=null;
     while(c.tick<budget){
-      while(queue.length&&queue[0].tick===c.tick){const ev=queue.shift();ev.type==='down'?c.press(ev.aim):c.release();}
+      while(queue.length&&queue[0].tick===c.tick){const ev=queue.shift();ev.type==='down'?c.press(ev.aim):ev.type==='move'?c.aim(ev.aim):c.release();}
       const t=c.tick;const fresh=c.step();
       if(snapshotEvery&&t%snapshotEvery===0)c.log.snapshots.push({...state(),tick:t});
       if(stopOn)for(const k of fresh)
         if(k.id===stopOn.id+'-body0'&&(!stopOn.ny||(stopOn.ny==='down'?k.ny>0:k.ny<0))){stop=k;break;}
-      if(stop||Math.abs(ninja.y-c.origin.y)>6000)break;
+      if(stop||floors[0].climbStats.completed||Math.abs(ninja.y-c.origin.y)>6000)break;
     }
     if(c.held)c.release();
-    c.log.ticks=c.tick;c.log.final=state();c.log.stopped=stop;
+    c.log.ticks=c.tick;c.log.final=state();c.log.stopped=stop;c.log.completed=floors[0].climbStats.completed;
     return c.log;
   }
   window.OPENING_REPLAY={run,start,shipped,topAt};
