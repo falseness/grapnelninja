@@ -43,6 +43,16 @@ CLIMB_KEY = 'grapnelninja.grappleOver'
 BASE_REV = '8b9bbf6'
 UNCHANGED = ['physics.js', 'fixedlevel.js', 'collision', 'sprites', 'elements', 'respawn.js', 'moveScreen.js', 'render']
 
+# TASK-667: the only sprites/trampoline.js change (git diff -U0 lines): closePath
+# before fill/stroke in the ordinary draw path; vertices, curves and the bad branch untouched.
+TRAMPOLINE_CLOSE_DIFF = [
+    '+        // Closed before painting, so the stroke joins the closing corner',
+    '+        // (the last vertex) instead of ending there with two line caps',
+    '+        ctx.closePath()',
+    '+',
+    '-        ctx.closePath()',
+]
+
 # TASK-662: the only physics.js change since BASE_REV (git diff -U0 lines), plus
 # TASK-665's two long-fall detector calls (longfall.js; no physics change).
 PHYSICS_FALL_RECOVERY_DIFF = [
@@ -353,10 +363,11 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # the tutorial sprite (render/tutorialhint.js), which builds no world objects.
         # TASK-664 changed only the panel circuits (render/roledetail.js). TASK-666 added the
         # screen-space long-fall message (render/fallmessage.js): its script tag, the call in
-        # draw() and its fade advance next to the tutorial hint's in the game loop.
+        # draw() and its fade advance next to the tutorial hint's in the game loop. TASK-667
+        # moved Trampoline.draw's closePath before its fill/stroke (TRAMPOLINE_CLOSE_DIFF).
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
-                                                                                      ':!render/fallmessage.js'],
+                                                                                      ':!render/fallmessage.js', ':!sprites/trampoline.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
@@ -367,6 +378,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                                    '+function drawFallMessageLayer()', '+{', '+    FALL_MESSAGE.draw(ctx)', '+}', '+',
                                                    "+    if (version === 'grapple_over')", '+        drawFallMessageLayer()'])
         self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF)
+        self.assertEqual(lines('sprites/trampoline.js'), TRAMPOLINE_CLOSE_DIFF)
         changed = lines('index.html')
         self.assertEqual(changed, ['+        <script src = "longfall.js"></script>',
                                    '+        <script src = "render/fallmessage.js"></script>',

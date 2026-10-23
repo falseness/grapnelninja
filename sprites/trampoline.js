@@ -177,12 +177,15 @@ class Trampoline extends Element
                 ctx.lineTo(points[i].x + screen.x, points[i].y + screen.y)
         }
         
+        // Closed before painting, so the stroke joins the closing corner
+        // (the last vertex) instead of ending there with two line caps
+        ctx.closePath()
+
         ctx.fillStyle   = this.fill
         ctx.fill()
 
         strokeNeonPath(this.stroke)
 
-        ctx.closePath()
         ctx.restore()
     }
 }

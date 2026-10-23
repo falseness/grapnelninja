@@ -200,6 +200,13 @@ class LargePanelCircuitTests(unittest.TestCase):
         page.wait_for_function('!unTouch')
         page.evaluate(SETUP, Y0)
         page.evaluate(HELPERS)
+        if url == self.baseline_url:
+            # TASK-667 later closed every Trampoline outline before painting (a shared
+            # renderer change outside the circuits): the baseline gets this tree's
+            # Trampoline.draw so before/after differ only by the circuits under test
+            # (evaluated from the file: an extra page load would shift the backdrop's per-load state)
+            src = (ROOT / 'sprites' / 'trampoline.js').read_text()
+            page.evaluate('src => { Trampoline.prototype.draw = new Function(src + "; return Trampoline")().prototype.draw }', src)
         return page
 
     def frame(self, page):
@@ -252,6 +259,7 @@ class LargePanelCircuitTests(unittest.TestCase):
         ring = np.array(Image.fromarray((bounce * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(15))) > 0
         border_band = ring & ~grown
         checks = dict(viewport=VIEWPORT, dpr=1, clock_ms=4321, baseline=self.baseline_sha,
+                      baseline_outline_draw='Trampoline.draw of this tree (TASK-667)',
                       baseline_load_noise=dict(pixels=int((noise > 0).sum()), max_level=int(noise.max())),
                       changed_rule='differs from both baseline loads',
                       changed_pixels_inside_bounce_polygons=changed_inside,
