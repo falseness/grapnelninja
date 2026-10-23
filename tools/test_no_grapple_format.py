@@ -31,6 +31,8 @@ EVIDENCE = os.environ.get('NO_GRAPPLE_EVIDENCE_DIR')
 SHIPPED_SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 SHIPPED_LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
 SHIPPED_REFERENCE = ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json'
+# Checker revision before TASK-672 added the no-grapple rule; the shipped level must check identically.
+BASELINE_COMMIT = 'a7e528e'
 RESULTS = {'format': {}, 'spacing': {}}
 
 
@@ -409,8 +411,8 @@ class SpacingTests(unittest.TestCase):
         reference = json.loads(SHIPPED_REFERENCE.read_text())
         level = json.loads(SHIPPED_LEVEL.read_text())
         new = geometry.check(level, SHIPPED_SVG.read_bytes(), reference)
-        head = subprocess.run(['git', 'show', 'HEAD:tools/check_level_geometry.py'], cwd=ROOT, capture_output=True,
-                              text=True, check=True).stdout
+        head = subprocess.run(['git', 'show', BASELINE_COMMIT + ':tools/check_level_geometry.py'], cwd=ROOT,
+                              capture_output=True, text=True, check=True).stdout
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp, 'check_level_geometry_head.py')
             path.write_text(head)
@@ -435,7 +437,8 @@ class SpacingTests(unittest.TestCase):
             'minDragSolidClearance': new['summary']['minDragSolidClearance'],
             'minYellowPairClearance': new['summary']['minYellowPairClearance'],
             'noGrappleZones': 0, 'noGrappleInternalPairs': 0,
-            'identicalToHeadCheckerExceptAddedFields': True, 'headCommit': subprocess.run(
+            'identicalToBaselineCheckerExceptAddedFields': True, 'baselineCommit': BASELINE_COMMIT,
+            'headCommit': subprocess.run(
                 ['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()}
 
 
