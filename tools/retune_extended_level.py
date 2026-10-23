@@ -19,12 +19,16 @@ MIN_OPENING_SPAN = 720.0
 # a mostly horizontal transfer to the upward-turn departure. lift is the rise
 # of the new contact over the previous one (negative descends); gap is the
 # complete-polygon release gap reached by sliding the panel rightward.
+# Tuned with production physics and the 540-unit acquisition radius
+# (TASK-669): R2 sits 850 below the R1 catch and its face falls only 80 units
+# (5.1 degrees), so the rightward descent still rebounds up-right high enough
+# to land on R3; R3 is 1000 wide so no free slope rebound clears it onto R4.
 OPENING = dict(factor=3,
                right=[dict(kind='ceiling', width=960, height=240, lift=450, gap=700, share=.34,
                            surface='underside', direction='UP-RIGHT → CEILING HOLD'),
-                      dict(kind='bounce', width=900, height=520, lift=-650, gap=650, share=.22,
+                      dict(kind='bounce', width=900, height=520, lift=-850, gap=650, share=.22, drop=80,
                            surface='slope', direction='RELEASE → DOWN-RIGHT ONTO SLOPE'),
-                      dict(kind='platform', width=800, height=180, lift=450, gap=700, share=.22,
+                      dict(kind='platform', width=1000, height=180, lift=450, gap=700, share=.22,
                            surface='top', direction='BOUNCE → UP-RIGHT'),
                       dict(kind='platform', width=1000, height=260, lift=150, gap=810, share=.22,
                            surface='top', direction='RIGHT → UPWARD-TURN DEPARTURE')],
@@ -38,6 +42,9 @@ LEGACY_YELLOW_CLEARANCE = 1080
 YELLOW_PAIR_CLEARANCE = 540
 DIRECTION_OFFSETS = {13: -25, 15: 30}
 NONCONSECUTIVE_CLEARANCE = 1400
+# physics.js CLIMB_FALL_RECOVERY_DEPTH: a fall this far below the spawn returns
+# the player to the spawn, so a yellow brake whose top lies deeper never acts.
+FALL_RECOVERY_DEPTH = 1500
 # A truncated tip leaves a flat face about this wide; each cut stays within this
 # fraction of either adjacent edge so neighbouring corners keep their angles.
 BLUNT_FACE = 40.0
@@ -117,22 +124,25 @@ def section_spans(points):
                 sections=dict(rightward=[0, right_end], upward=[right_end, left_start], leftward=[left_start, left_end]))
 
 
-def panel(name, width, height, x, y, kind='platform'):
+def panel(name, width, height, x, y, kind='platform', drop=240):
     """A new green panel; svg.contact() gives its contact for each kind.
 
     platform: trapezoid, contact above the top-edge centre. ceiling: slab with
     a raised top (the concept's ceiling profile), contact below the underside
-    centre. bounce: the concept's sloped face falling 240 units to the right,
-    contact above the slope midpoint.
+    centre. bounce: the concept's sloped face falling drop (240) units to the
+    right, contact above the slope midpoint; another drop is kept as slopeDrop.
     """
     inset = round(width*.12, 3)
     polys = {'platform': [[0, 0], [width, 0], [width-inset, height], [inset, height]],
              'ceiling': [[0, 0], [width*.2, -90], [width*.8, -90], [width, 0], [width, height], [0, height]],
-             'bounce': [[0, 0], [width, 240], [width, height], [0, height-240]]}[kind]
+             'bounce': [[0, 0], [width, drop], [width, height], [0, height-drop]]}[kind]
     # The concept's face falling to the right redirects up-right (bounceSign 1).
-    return dict(id=None, name=name, x=x, y=y, width=width, height=height, kind=kind,
-                bounceSign=1 if kind == 'bounce' else 0,
-                surfaceRole='bounce', polys=[polys])
+    out = dict(id=None, name=name, x=x, y=y, width=width, height=height, kind=kind,
+               bounceSign=1 if kind == 'bounce' else 0,
+               surfaceRole='bounce', polys=[polys])
+    if kind == 'bounce' and drop != 240:
+        out['slopeDrop'] = drop
+    return out
 
 
 SURFACE_SIDE = {'platform': 1, 'bounce': 1, 'summit': 1, 'ceiling': -1}
@@ -200,7 +210,7 @@ def extend_opening(fs, rows, spec):
     added, prev = [], fs[right_end]
     total = sum(p['share'] for p in spec['right'])
     for k, p in enumerate(spec['right'], 1):
-        shape = panel('Rightward %s %d' % (p['kind'], k), p['width'], p['height'], 0, 0, p['kind'])
+        shape = panel('Rightward %s %d' % (p['kind'], k), p['width'], p['height'], 0, 0, p['kind'], p.get('drop', 240))
         if usable_span(dict(shape, id='R%d' % k)) < MIN_OPENING_SPAN:
             raise ValueError('Opening landing surface must span at least 720 units')
         desired_x = cx(prev)+(factor-1)*span_r*p['share']/total
@@ -346,7 +356,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         for b in fs[i+1:]:
             d = gap(a,b)[0]
             m['pairChecks'].append(dict(source=a['id'],target=b['id'],minimumGap=d,passOutsideRange=d-21.6>540))
-    placed_bands = []
+    placed_bands, kept, unreachable = [], [], []
     for band in m['yellowBands']:
         # A split original jump keeps its band centred between its original endpoints.
         a,b = [fs[i] for i in band_ends(m, band['belowJump'])]
@@ -361,9 +371,18 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
             nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs)
             if nearest>=yellow_clearance and all(union_distance([poly],[other])[0]>=120 for other in placed_bands):break
         else: raise ValueError('Cannot place '+band['id'])
+        # The frozen v5 reproduction (no opening) keeps its bands unchanged.
+        if opening and by >= svg.SPAWN[1]+FALL_RECOVERY_DEPTH:
+            unreachable.append(dict(id=band['id'], belowEncounter=band.get('belowEncounter'), y=by,
+                                    recoveryLine=svg.SPAWN[1]+FALL_RECOVERY_DEPTH))
+            continue
         placed_bands.append(poly)
+        kept.append(band)
         band.update(x=x,y=by,polygon=poly,nearestSolidClearance=nearest,minimumSolidClearance=yellow_clearance)
         band.pop('nominalRouteSampleCheck',None)
+    m['yellowBands'] = kept
+    if unreachable:
+        m['unreachableYellowBands'] = unreachable
     if guards:
         add_shortcut_guards(m, yellow_clearance)
     consolidate_yellow_bands(m, yellow_clearance)

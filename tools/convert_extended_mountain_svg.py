@@ -56,7 +56,7 @@ def contact(m):
     if m['kind'] == 'ceiling':
         return (m['x'] + m['width'] * .5, m['y'] + m['height'] + PLAYER_RADIUS)
     if m['kind'] == 'bounce':
-        return (m['x'] + m['width'] * .5, m['y'] + 120 - PLAYER_RADIUS)
+        return (m['x'] + m['width'] * .5, m['y'] + m.get('slopeDrop', 240) / 2 - PLAYER_RADIUS)
     return (m['x'] + m['width'] * .5, m['y'] - PLAYER_RADIUS)
 
 

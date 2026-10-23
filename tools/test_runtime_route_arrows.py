@@ -1,7 +1,7 @@
 """TASK-659: the production game draws the imported transfer guide arrows (render/routearrows.js).
 
 Boots the real index.html. The guided cases serve leveldata.js as the shipped
-extended-mountain-v6 SVG imported with a `guide` on every gn:transfer (the
+extended-mountain-v8 SVG imported with a `guide` on every gn:transfer (the
 TASK-657 injection of convert_extended_mountain_svg.guide()), which since
 TASK-660 is byte-identical to the shipped leveldata.js; the unguided cases
 serve the same SVG with every guide stripped. Draw calls are recorded from the
@@ -312,7 +312,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         info = self.setup(page)
         loaded = page.evaluate('() => ({layoutId: floors[0].level.layoutId, transfers: floors[0].level.svgFormat.transfers,'
                                ' arrows: routeArrowsFor(floors[0].level).map(a => ({id: a.id, curve: a.curve, tangent: a.tangent}))})')
-        self.assertEqual(loaded['layoutId'], 'extended-mountain-v6')
+        self.assertEqual(loaded['layoutId'], 'extended-mountain-v8')
         self.assertEqual(len(self.level['svgFormat']['fragments']), 31)
         self.assertEqual(loaded['transfers'], self.level['svgFormat']['transfers'])
         self.assertEqual(len(loaded['arrows']), 30)
@@ -509,7 +509,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         wx, wy, k = self.overview(info)
         state = page.evaluate('() => ({layoutId: floors[0].level.layoutId, guides: floors[0].level.svgFormat.transfers.filter(t => t.guide).length,'
                               ' arrows: routeArrowsFor(floors[0].level).length})')
-        self.assertEqual(state, {'layoutId': 'extended-mountain-v6', 'guides': 0, 'arrows': 0})
+        self.assertEqual(state, {'layoutId': 'extended-mountain-v8', 'guides': 0, 'arrows': 0})
         out = self.frame(page, wx, wy, k)
         self.assertEqual((out['rec']['drawn'], out['rec']['paths']), ([], []))
         partial = import_svg(guided_svg({'T01', 'T09', 'T17'}).encode())

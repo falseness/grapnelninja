@@ -102,10 +102,13 @@ class ShortcutReplayTests(unittest.TestCase):
         self.assertEqual(r['hit']['id'],target+'-body0')
 
     def test_added_opening_transfers(self):
-        # One added rightward (R1->R2) and one added leftward (L1->L2) transfer,
-        # each from a zero-speed drop onto the source panel.
+        # One added rightward and one added leftward (L1->L2) transfer, each from a
+        # zero-speed drop onto the source panel's top. Since TASK-669, R1 is a ceiling
+        # (caught from below) and R2 a slope; the top-to-top rightward transfer is
+        # R3->R4. The ceiling/slope transfers are replayed continuously in
+        # test_opening_jump_variety.CombinationReplayTests.
         added=ROUTE_MAP['addedFragments']
-        for name,aim in (('R1',.8),('L1',-.8)):
+        for name,aim in (('R3',.8),('L1',-.8)):
             source=added[name];target=successor(source)
             with self.subTest(source=source,target=target):
                 r=self.run_probe(source=source,target=target,fraction=.5,pumps=1,drop=300,aimOffset=aim,budget=1800)

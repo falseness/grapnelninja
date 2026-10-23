@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v6'
+LAYOUT_ID = 'extended-mountain-v8'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -281,7 +281,9 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         results = {}
         for name, raw in (('replacement-v1', saved['save']), ('no-layout-id', json.dumps(legacy)),
                           ('imported-v2', json.dumps(dict(legacy, layoutId='extended-mountain-v2'))),
-                          ('imported-v5', json.dumps(dict(legacy, layoutId='extended-mountain-v5')))):
+                          ('imported-v5', json.dumps(dict(legacy, layoutId='extended-mountain-v5'))),
+                          ('imported-v6', json.dumps(dict(legacy, layoutId='extended-mountain-v6'))),
+                          ('imported-v7', json.dumps(dict(legacy, layoutId='extended-mountain-v7')))):
             page = self.open(seed={CLIMB_KEY: raw})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
@@ -296,7 +298,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.record('incompatible_save_' + name, page, snap, seededLayoutId=json.loads(raw).get('layoutId'),
                         rewrittenLayoutId=LAYOUT_ID)
             results[name] = snap['notice']
-        self.assertEqual(len(results), 4)
+        self.assertEqual(len(results), 6)
 
     def test_04_current_layout_save(self):
         first = self.open()
