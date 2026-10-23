@@ -125,6 +125,19 @@ BOARDS = '''(ids) => {
         const vias = board.traces.flatMap(t => t.vias)
         const padCorners = board.pads.flatMap(p => [[-3, -1], [3, -1], [-3, 1], [3, 1]].map(([x, y]) => ({x: p.x + x * s, y: p.y + y * s})))
         const segLengths = board.traces.flatMap(t => t.points.slice(1).map((p, i) => Math.hypot(p.x - t.points[i].x, p.y - t.points[i].y)))
+        // Self-overlap: turns sharper than 90 degrees (incl. doubling back) and the gap between
+        // non-adjacent segments of the same trace
+        let sharpTurns = 0, minSelfGap = Infinity
+        for (const t of board.traces) {
+            const P = t.points
+            for (let i = 2; i < P.length; i++)
+                if ((P[i - 1].x - P[i - 2].x) * (P[i].x - P[i - 1].x) + (P[i - 1].y - P[i - 2].y) * (P[i].y - P[i - 1].y) < 0) sharpTurns++
+            // (the cd269b6 baseline predates circuitSegmentGap)
+            if (typeof circuitSegmentGap === 'function')
+                for (let i = 1; i < P.length; i++)
+                    for (let j = i + 2; j < P.length; j++)
+                        minSelfGap = Math.min(minSelfGap, circuitSegmentGap(P[i - 1], P[i], P[j - 1], P[j]))
+        }
         result[id] = {
             unit: +unit.toFixed(4), motifUnit: +s.toFixed(4), circuitScale: +(s / unit).toFixed(3),
             thin: board.thin, traces: board.traces.length, segments: segLengths.length,
@@ -137,6 +150,8 @@ BOARDS = '''(ids) => {
             minViaEdgeGapPx: vias.length ? +(Math.min(...vias.map(edgeGap)) / unit).toFixed(2) : null,
             allVerticesInside: vertices.every(inPoly), allPadCornersInside: padCorners.every(inPoly),
             viaRingsFit: vias.every(p => inPoly(p) && edgeGap(p) >= 1.45 * s),
+            sharpTurns, minSelfGapPx: minSelfGap === Infinity ? null : +(minSelfGap / unit).toFixed(2),
+            pathGapPx: +(4.5 * s / unit).toFixed(2),
             painted, paintedOutsidePolygon: outside,
             boardSha: T664.hash(new TextEncoder().encode(JSON.stringify(board.traces.map(t => t.points)) + JSON.stringify(board.pads))),
             materialPixelHash: T664.hash(detail),
@@ -299,6 +314,11 @@ class LargePanelCircuitTests(unittest.TestCase):
             self.assertTrue(n['allVerticesInside'] and n['allPadCornersInside'] and n['viaRingsFit'], k)
             self.assertGreaterEqual(n['traces'], 1, k)
             self.assertLess(n['traces'], o['traces'], k)
+            # No trace doubles back or bends sharper than 90 degrees, and its non-adjacent
+            # segments keep the same clear gap as separate paths
+            self.assertEqual(n['sharpTurns'], 0, k)
+            if n['minSelfGapPx'] is not None:
+                self.assertGreaterEqual(n['minSelfGapPx'], n['pathGapPx'] - 0.01, k)
         for k in ('broad', 'sloped', 'irregular'):
             self.assertGreaterEqual(new[k]['traces'], 2, k)
             self.assertGreater(new[k]['vias'], 0, k)
@@ -324,7 +344,13 @@ class LargePanelCircuitTests(unittest.TestCase):
         # +-2 level page-load raster noise, see test_01)
         frames = [p.evaluate('''(ids) => { const f = T664.frame()
             const masks = ids.map(id => T664.mask(T664.byId(id)))
-            return T664.hash(f.filter((v, i) => masks.some(m => m[i - i % 4 + 3]))) }''', list(SHAPES)) for p in pages]
+            return Array.from(f.filter((v, i) => masks.some(m => m[i - i % 4 + 3]))) }''', list(SHAPES)) for p in pages]
+        # The drawn material itself is compared exactly (boards[*].materialPixelHash);
+        # the composited first frames may differ by a level or two in a few channels
+        frameDiff = [abs(a - b) for a, b in zip(*frames)]
+        frameCompare = dict(panelChannels=len(frameDiff), lengthsEqual=len(frames[0]) == len(frames[1]), channelsDiffering=sum(1 for d in frameDiff if d),
+                            channelsDifferingOver2=sum(1 for d in frameDiff if d > 2), maxDiff=max(frameDiff, default=0))
+        frames = [hashlib.sha256(bytes(f)).hexdigest()[:16] for f in frames]
         page = pages[0]
         cache = page.evaluate('''(ids) => {
             const world = floors[0]
@@ -359,11 +385,12 @@ class LargePanelCircuitTests(unittest.TestCase):
                 motifUnitAtScale2: scale2, restoreScale3Builds: backBuilds,
                 restoreReusesCached: back.every((s, i) => s === first[i])}
         }''', list(SHAPES))
-        determinism = dict(boardsEqualAcrossPages=boards[0] == boards[1], frameHashes=frames,
+        determinism = dict(boardsEqualAcrossPages=boards[0] == boards[1], frameHashes=frames, frameCompare=frameCompare,
                            boardShas={k: boards[0][k]['boardSha'] for k in SHAPES},
                            materialPixelHashes={k: boards[0][k]['materialPixelHash'] for k in SHAPES})
         self.assertEqual(boards[0], boards[1])
-        self.assertEqual(frames[0], frames[1])
+        self.assertTrue(frameCompare['lengthsEqual'] and frameCompare['panelChannels'] > 0)
+        self.assertEqual(frameCompare['channelsDifferingOver2'], 0)
         self.assertEqual(cache['boardBuildsDuringFrames'], 0)
         self.assertTrue(cache['spritesReusedAfterFrames'])
         self.assertEqual(cache['cacheSizeBefore'], cache['cacheSizeAfter'])
@@ -376,7 +403,8 @@ class LargePanelCircuitTests(unittest.TestCase):
         self.pulse_and_cache = dict(determinism=determinism, cache=cache)
         self._merge('cache-pulse.json', dict(determinism=determinism, cache=cache))
         print(f'PASS cache: 0 board builds over 30 frames; scale 3->2 rebuilt {cache["scaleChangeBuilds"]}, '
-              f'back to 3 reused cached; two pages identical (frame {frames[0]})')
+              f'back to 3 reused cached; two pages identical (boards/material; frame channels differing {frameCompare["channelsDiffering"]}, '
+              f'max {frameCompare["maxDiff"]})')
 
     def test_04_pulse_alignment_and_timing(self):
         phases = (0.05, 0.3, 0.55, 0.8)

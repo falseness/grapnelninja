@@ -525,14 +525,19 @@ function bounceBoardDetail(points, box, seed, unit, circuit = 1)
     {
         const path = [sample()], wanted = thin ? 1 + Math.floor(random() * 2) : 2 + Math.floor(random() * 3)
         if (!inside(path[0], traceMargin) || !clear(path[0], path[0])) continue
+        let previous = null
         for (let j = 0; j < wanted; j++)
         {
             const d = thin ? (horizontal ? [1,0] : [0,1]) : directions[Math.floor(random() * 8)]
+            // No doubling back or acute bends: a trace turns at most 90 degrees
+            if (previous && d[0] * previous[0] + d[1] * previous[1] < 0) break
             const steps = d[0] && d[1] ? 1 + Math.floor(random() * 3) : 2 + Math.floor(random() * 4)
             const last = path[path.length - 1]
             const next = {x: last.x + d[0] * steps * grid, y: last.y + d[1] * steps * grid}
-            if (!inside(next, traceMargin) || !clear(last, next)) break
-            path.push(next)
+            // The new segment also keeps the gap from its own path, except the segment it joins
+            const own = path.slice(0, -2).every((p, i) => circuitSegmentGap(last, next, p, path[i + 1]) >= gap)
+            if (!inside(next, traceMargin) || !clear(last, next) || !own) break
+            path.push(next); previous = d
         }
         if (path.length < 2) continue
         // A via ring only where the whole ring fits
