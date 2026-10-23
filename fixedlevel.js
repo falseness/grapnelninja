@@ -64,7 +64,8 @@ function validateFixedLevel(data)
     for (const e of data.elements)
     {
         point(e, e.id)
-        if (!['bounce', 'solid', 'hazard', 'drag'].includes(e.role)) fail('InvalidSurfaceRole', e.id + '.role')
+        if (!['bounce', 'solid', 'hazard', 'drag', 'no-grapple'].includes(e.role)) fail('InvalidSurfaceRole', e.id + '.role')
+        if (e.role === 'no-grapple' && e.grapplable !== false) fail('InvalidNoGrappleZone', e.id + ': grapplable')
         const p = e.points
         if (!Array.isArray(p) || p.length < 3) fail('MalformedPolygon', e.id)
         p.forEach((v, i) => point(v, e.id + '.points[' + i + ']'))
@@ -85,6 +86,11 @@ function validateFixedLevel(data)
             }
         }
         if (!Number.isFinite(area) || area === 0) fail('MalformedPolygon', e.id + ': area')
+        // Convex, so a panel and its transfer segment are inside when their vertices are.
+        if (e.role === 'no-grapple' && p.some((b, i) => {
+            const a = p[(i+p.length-1)%p.length], c = p[(i+1)%p.length]
+            return cross(a, b, c) * area < 0
+        })) fail('InvalidNoGrappleZone', e.id + ': not convex')
     }
     const references = (items, key, targets) => {
         const targetIds = new Set(targets.map(e => e.id))
@@ -104,6 +110,7 @@ function validateFixedLevel(data)
         if (!element) fail('MissingReference', m.id + '.element -> ' + m.element)
         if (moving.has(m.element)) fail('InvalidMoverBounds', m.id + ': duplicate mover')
         if (element.role === 'drag') fail('InvalidMoverBounds', m.id + ': drag zones are static')
+        if (element.role === 'no-grapple') fail('InvalidNoGrappleZone', m.id + ': no-grapple zones are static')
         moving.add(m.element)
         if (!['x', 'y'].includes(m.axis) ||
             ![m.min, m.max, m.periodMs, m.phase].every(Number.isFinite) ||
@@ -150,7 +157,16 @@ class PersistentWorld extends Floor
             zone.grapplable = false
             return zone
         })
-        this.elements = this.level.elements.filter(model => model.role !== 'drag').map(model => {
+        // No-grapple zones are static regions, not surfaces: like drag zones they
+        // stay out of `elements` (and out of dragZones, they never slow).
+        this.noGrappleZones = this.level.elements.filter(model => model.role === 'no-grapple').map(model => {
+            const zone = new Trampoline(model)
+            zone.id = model.id
+            zone.surfaceRole = 'no-grapple'
+            zone.grapplable = false
+            return zone
+        })
+        this.elements = this.level.elements.filter(model => model.role !== 'drag' && model.role !== 'no-grapple').map(model => {
             const element = new Trampoline(model)
             if (model.role === 'hazard')
             {

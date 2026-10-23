@@ -11,6 +11,12 @@
   "change": "valid.svg plus guide on T01"
  },
  {
+  "file": "valid-no-grapple.svg",
+  "expect": "accept",
+  "expectedOutput": "valid-no-grapple.expected.json",
+  "change": "valid.svg plus a static 1200x600 no-grapple rect"
+ },
+ {
   "file": "invalid-transformed-gameplay.svg",
   "expect": "reject",
   "category": "TransformedGameplay",
@@ -99,5 +105,23 @@
   "expect": "reject",
   "category": "MissingReference",
   "change": "guided transfer from P9, which is not a fragment"
+ },
+ {
+  "file": "invalid-no-grapple-grapplable.svg",
+  "expect": "reject",
+  "category": "InvalidNoGrappleZone",
+  "change": "no-grapple zone marked data-grapplable=\"true\""
+ },
+ {
+  "file": "invalid-no-grapple-concave.svg",
+  "expect": "reject",
+  "category": "InvalidNoGrappleZone",
+  "change": "no-grapple zone is a concave polygon"
+ },
+ {
+  "file": "invalid-no-grapple-fragment.svg",
+  "expect": "reject",
+  "category": "InvalidNoGrappleZone",
+  "change": "no-grapple zone inside fragment P0"
  }
 ]

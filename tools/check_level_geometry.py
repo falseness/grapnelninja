@@ -16,10 +16,14 @@ Checks:
   gap-percent, the level JSON gapPercent and the reference percent within
   0.01 percentage point;
 - fragment pairs keep clearance - player diameter > 540, except explicitly
-  authored allowedGrapplePairs, which must have a positive gap below 540;
+  authored allowedGrapplePairs, which must have a positive gap below 540, and
+  internal no-grapple transfers: a route transfer whose two complete fragments
+  and witness segment lie inside one convex no-grapple zone needs
+  0 < gap <= 270 instead (any other pair keeps the 540 rule);
 - every polygon is simple, non-degenerate and has interior angles >= 20 degrees;
 - drag zones are axis-aligned horizontal non-grapplable rectangles with a
-  minimum solid clearance >= 1080.
+  minimum solid clearance >= 1080 (no-grapple zones are not solids or brakes);
+- no-grapple zones are non-grapplable convex polygons outside fragments.
 
 Exit 0 when every check passes, 1 on a failed check, 2 on usage errors.
 """
@@ -34,6 +38,8 @@ import xml.etree.ElementTree as ET
 GRAPPLE_RANGE = 540.0
 PLAYER_DIAMETER = 21.6
 COORD_TOL = 0.01
+# Largest edge-to-edge gap of a transfer inside one no-grapple zone (0.5 R).
+NO_GRAPPLE_INTERNAL_GAP = 270.0
 PERCENT_TOL = 0.01
 PERCENT_KEYS = ('svgGapPercent', 'levelGapPercent', 'referencePercent')
 SVG = '{http://www.w3.org/2000/svg}'
@@ -74,6 +80,27 @@ def inside(p, poly):
             if p[0] < x:
                 result = not result
     return result
+
+
+def convex_contains(poly, p, tol=1e-9):
+    """p inside or on the boundary of convex poly (either winding)."""
+    orientation = 1.0 if signed_area(poly) > 0 else -1.0
+    return all(orientation * cross(a, b, p) >= -tol * max(1.0, math.dist(a, b)) for a, b in edges(poly))
+
+
+def is_convex(poly):
+    turns = {cross(poly[i - 1], poly[i], poly[(i + 1) % len(poly)]) > 0 for i in range(len(poly))
+             if cross(poly[i - 1], poly[i], poly[(i + 1) % len(poly)]) != 0}
+    return len(turns) == 1
+
+
+def containing_zone(zones, polys, witness):
+    """Id of the first convex zone holding every vertex of polys and both witness ends, else None."""
+    for zid, zone in zones:
+        if all(convex_contains(zone, p) for poly in polys for p in poly) and \
+                all(convex_contains(zone, p) for p in witness):
+            return zid
+    return None
 
 
 def edges(poly):
@@ -252,6 +279,7 @@ def check(level, svg_data, reference):
     if fmt.get('grappleRange') != GRAPPLE_RANGE:
         fail('grappleRange %r != 540' % fmt.get('grappleRange'))
     fragments = {f['id']: f['elements'] for f in fmt['fragments']}
+    zones = [(eid, poly) for eid, (e, poly) in polys.items() if e['role'] == 'no-grapple']
     frag_polys = {fid: [polys[eid][1] for eid in eids] for fid, eids in fragments.items()}
 
     # Coordinates: level JSON vs SVG geometry layer.
@@ -341,18 +369,29 @@ def check(level, svg_data, reference):
     transfer_pairs = {frozenset((t['from'], t['to'])) for t in fmt['transfers']}
     pairs = []
     for a, b in itertools.combinations(sorted(fragments, key=lambda s: int(s[1:]) if s[1:].isdigit() else s), 2):
-        d, _, relation, _ = union_distance(frag_polys[a], frag_polys[b])
+        d, witness, relation, _ = union_distance(frag_polys[a], frag_polys[b])
         margin = d - PLAYER_DIAMETER
         ref_gap = ref_pairs.get(frozenset((a, b)))
         opening = frozenset((a, b)) in {frozenset(p) for p in reference.get('allowedGrapplePairs', [])}
-        ok = (d > 0 and d < GRAPPLE_RANGE) if opening else margin > GRAPPLE_RANGE
-        if not ok:
-            fail('pair %s/%s: clearance %.6f - %.1f = %.6f <= 540 (grapple shortcut)' % (
-                a, b, d, PLAYER_DIAMETER, margin))
+        is_transfer = frozenset((a, b)) in transfer_pairs
+        zone = None if opening or not is_transfer or witness is None else \
+            containing_zone(zones, frag_polys[a] + frag_polys[b], witness)
+        if zone is not None:
+            rule = 'noGrappleInternal'
+            ok = 0 < d <= NO_GRAPPLE_INTERNAL_GAP
+            if not ok:
+                fail('pair %s/%s: internal no-grapple transfer gap %.6f not in (0, %.0f] (%s)' % (
+                    a, b, d, NO_GRAPPLE_INTERNAL_GAP, zone))
+        else:
+            rule = 'opening' if opening else 'grappleClearance'
+            ok = (d > 0 and d < GRAPPLE_RANGE) if opening else margin > GRAPPLE_RANGE
+            if not ok:
+                fail('pair %s/%s: clearance %.6f - %.1f = %.6f <= 540 (grapple shortcut)' % (
+                    a, b, d, PLAYER_DIAMETER, margin))
         ref_err = None if ref_gap is None else abs(d - ref_gap)
         if ref_err is not None and ref_err > COORD_TOL:
             fail('pair %s/%s: clearance %.6f vs reference %.6f' % (a, b, d, ref_gap))
-        pairs.append({'a': a, 'b': b, 'transfer': frozenset((a, b)) in transfer_pairs, 'relation': relation,
+        pairs.append({'a': a, 'b': b, 'transfer': is_transfer, 'relation': relation, 'rule': rule, 'noGrappleZone': zone,
                       'clearance': r(d), 'clearanceMinusDiameter': r(margin), 'referenceGap': r(ref_gap),
                       'referenceError': r(ref_err, 9), 'pass': ok and (ref_err is None or ref_err <= COORD_TOL)})
 
@@ -369,7 +408,7 @@ def check(level, svg_data, reference):
 
     # Drag zones.
     ref_bands = {b['id'] + '-drag': b for b in reference.get('yellowBands', [])}
-    solid = [(eid, poly) for eid, (e, poly) in polys.items() if e['role'] != 'drag']
+    solid = [(eid, poly) for eid, (e, poly) in polys.items() if e['role'] not in ('drag', 'no-grapple')]
     drags = []
     for eid, (e, poly) in polys.items():
         if e['role'] != 'drag':
@@ -420,6 +459,18 @@ def check(level, svg_data, reference):
             if not passed:
                 fail('yellow pair %s/%s: clearance %.6f < %.6f' % (aid,bid,distance,GRAPPLE_RANGE))
 
+    # No-grapple zones: static convex regions outside fragments, never grapple targets.
+    in_fragment = {eid for eids in fragments.values() for eid in eids}
+    zone_rows = []
+    for zid, zone in zones:
+        problems = [p for p, bad in (('grapplable', polys[zid][0]['grapplable'] is not False),
+                                     ('not convex', not is_convex(zone)), ('inside a fragment', zid in in_fragment)) if bad]
+        for p in problems:
+            fail('%s: no-grapple zone %s' % (zid, p))
+        zone_rows.append({'id': zid, 'grapplable': polys[zid][0]['grapplable'], 'convex': is_convex(zone),
+                          'internalPairs': sorted([p['a'], p['b']] for p in pairs if p['noGrappleZone'] == zid),
+                          'pass': not problems})
+
     summary = {
         'pass': not failures, 'failures': len(failures),
         'transfers': len(transfers), 'transfersPass': sum(t['pass'] for t in transfers),
@@ -438,6 +489,8 @@ def check(level, svg_data, reference):
         'angleVertices': sum(len(a['angles']) for a in angle_rows),
         'minInteriorAngle': r(min((a['minAngle'] for a in angle_rows if a['minAngle'] is not None), default=None), 9),
         'solidElements': len(solid),
+        'noGrappleZones': len(zone_rows), 'noGrappleZonesPass': sum(z['pass'] for z in zone_rows),
+        'noGrappleInternalPairs': sum(p['rule'] == 'noGrappleInternal' for p in pairs),
         'solidBounceGrapplable': sum(polys[eid][0]['role'] == 'bounce' and polys[eid][0]['grapplable'] is True
                                      for eid, _ in solid),
         'maxBodiesPerFragment': max((len(eids) for eids in fragments.values()), default=0),
@@ -447,7 +500,8 @@ def check(level, svg_data, reference):
     return {'grappleRange': GRAPPLE_RANGE, 'playerDiameter': PLAYER_DIAMETER, 'coordTolerance': COORD_TOL,
             'percentTolerance': PERCENT_TOL, 'summary': summary, 'failureMessages': failures,
             'minInteriorAngle': MIN_INTERIOR_ANGLE, 'angleTolerance': ANGLE_TOL_DEG, 'angles': angle_rows,
-            'transfers': transfers, 'pairs': pairs, 'dragZones': drags, 'yellowPairs': drag_pairs, 'fragments': frag_rows}
+            'transfers': transfers, 'pairs': pairs, 'dragZones': drags, 'yellowPairs': drag_pairs, 'fragments': frag_rows,
+            'noGrappleZones': zone_rows, 'noGrappleInternalGap': NO_GRAPPLE_INTERNAL_GAP}
 
 
 def main(argv=None):

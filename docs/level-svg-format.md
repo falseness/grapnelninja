@@ -101,8 +101,8 @@ The geometry layer contains, in any mix:
 
 - **Fragments**: `<g id="P0" data-fragment="true">`. A fragment groups the
   shapes of one named route piece. Transfers (§4.5) refer to fragment IDs.
-  A fragment holds at least one element (`EmptyFragment`) and no drag
-  element (`InvalidDragZone`). Fragments do not nest (`UnsupportedShape`).
+  A fragment holds at least one element (`EmptyFragment`), no drag
+  element (`InvalidDragZone`) and no no-grapple zone (`InvalidNoGrappleZone`). Fragments do not nest (`UnsupportedShape`).
 - **Elements**: `<rect>` or `<polygon>`, either directly in the layer or
   inside a fragment.
 - `<title>`/`<desc>` children, which are ignored.
@@ -116,10 +116,10 @@ Element attributes:
 | Attribute | Required | Meaning |
 |---|---|---|
 | `id` | yes | Runtime element ID |
-| `data-role` | yes | `solid`, `bounce`, `hazard` or `drag`. Missing: `MissingMetadata`. Any other value: `InvalidSurfaceRole` |
-| `data-grapplable` | yes | exactly `true` or `false`. Missing: `MissingMetadata`. Other value, or `true` on a `hazard`: `InvalidGrapplable`. `true` on a `drag`: `InvalidDragZone` |
+| `data-role` | yes | `solid`, `bounce`, `hazard`, `drag` or `no-grapple`. Missing: `MissingMetadata`. Any other value: `InvalidSurfaceRole` |
+| `data-grapplable` | yes | exactly `true` or `false`. Missing: `MissingMetadata`. Other value, or `true` on a `hazard`: `InvalidGrapplable`. `true` on a `drag`: `InvalidDragZone`. `true` on a `no-grapple`: `InvalidNoGrappleZone` |
 | `x y width height` | `<rect>` | finite, `width > 0`, `height > 0`. `rx`/`ry` must be absent or `0` (`UnsupportedShape`) |
-| `points` | `<polygon>` | ≥ 3 vertices, an even count of numbers |
+| `points` | `<polygon>` | ≥ 3 vertices, an even count of numbers. A `no-grapple` polygon must also be convex (`InvalidNoGrappleZone`) |
 | `data-name` | no | Display label only, ignored |
 | `class fill stroke stroke-width style opacity` | no | Display only, ignored (but a CSS `transform` is still rejected) |
 
@@ -248,7 +248,7 @@ Output object, with keys in this order:
 | `finish` | finish rect → `{left:x, top:y, right:x+width, bottom:y+height}` | `bounds()` check. Never `null` in v1 |
 | `sections` | `gn:section` → `{id, encounters[, labelKey]}` | unique ID, `MissingReference` on encounters |
 | `encounters` | `gn:encounter` → `{id, elements}` | unique ID, `MissingReference` on elements |
-| `elements` | geometry shapes in document (pre-order) order → `{id, x, y, role, grapplable, points}` | unique ID, role in set, ≥ 3 finite points, no repeated consecutive vertex, no self-intersection, non-zero area |
+| `elements` | geometry shapes in document (pre-order) order → `{id, x, y, role, grapplable, points}` | unique ID, role in set, ≥ 3 finite points, no repeated consecutive vertex, no self-intersection, non-zero area; a `no-grapple` element is `grapplable: false`, convex and not moved (`InvalidNoGrappleZone`) |
 | `movers` | always `[]` (v1 has no movers) | collection must be an array |
 | `svgFormat` | `{version:1, grappleRange:540, fragments:[{id, elements}], transfers:[{id, from, to, encounter, gapPercent[, guide]}]}` | ignored by the loader. Kept so geometry checks (TASK-649) can test transfers. `guide`, present only when the SVG has one, is `[[x0,y0],[x1,y1],[x2,y2],[x3,y3]]` in world units. Integral values are written as integers (`plain()`) |
 
@@ -264,7 +264,7 @@ Element conversion:
   uses the same diagnostic names, so a file that imports always loads.
 
 Role semantics. These are the existing runtime behaviours; the format adds
-none.
+none, except the `no-grapple` contract below.
 
 - `solid`: collides, and the grapple can attach anywhere on its outline,
   undersides included, when `grapplable="true"`. A **ceiling hold** is not a
@@ -286,6 +286,26 @@ none.
   say `data-grapplable="false"` (`InvalidDragZone` otherwise), even though
   the runtime would force it to false anyway. That makes the file
   self-describing.
+- `no-grapple` (purple, TASK-672): a static convex region (rect or
+  convex polygon, any orientation) in world units, for example the default 5400 x 2700 (10R x 5R) rect. It is
+  not a surface. It never collides, never slows the player (it is not a drag
+  zone or yellow brake: momentum, gravity and bounce responses are
+  unchanged) and is never a grapple target, so it must say
+  `data-grapplable="false"` and sit directly in the geometry layer, outside
+  every fragment (`InvalidNoGrappleZone` otherwise). v1 has no movers, so a
+  zone is always static; a level JSON mover on one is rejected by the loader
+  (`InvalidNoGrappleZone`). `PersistentWorld` keeps zones in
+  `noGrappleZones`, out of `elements` (collision, rope, saves) and out of
+  `dragZones`. The zone acts on the **player's location**: the player is
+  inside while the player circle overlaps the zone, boundary and corner
+  tangency included. While inside, any attached or in-flight rope is
+  released immediately and no new rope can be acquired (held or repeated
+  input included) until the circle is completely outside every zone. Panels
+  inside the zone stay `grapplable="true"`: only acquisition is inhibited,
+  by player location. A player outside may fire a rope that crosses a zone
+  or attaches to a panel inside one. (Runtime membership, release and
+  drawing are TASK-673/674; this section is the contract they implement.)
+  Spacing inside a zone is relaxed only for route transfers, see §7.1.
 - `grapplable` is always written explicitly in the output. The loader's
   `grapplable !== false` default is never relied on.
 
@@ -340,6 +360,32 @@ gapPercent     = distance(A, B) / 540 * 100
 - A gap percentage describes clearance only. It does not mean the jump is
   feasible.
 
+### 7.1 Internal no-grapple transfers
+
+The independent checker (`tools/check_level_geometry.py`) normally requires
+every fragment pair to keep `clearance - 21.6 > 540` (no grapple shortcut).
+One narrow exception exists, and nothing else is relaxed:
+
+- A pair `(A, B)` is **internal** when `A -> B` (or `B -> A`) is a
+  `gn:transfer`, and one single `no-grapple` zone `Z` contains every vertex
+  of every polygon of `A` and of `B` and both ends of the minimum-distance
+  witness segment between them. Containment is inclusive (a vertex on `Z`'s
+  boundary is inside). Because `Z` is convex, this means both complete
+  panels and the intervening transfer segment are inside `Z`.
+- An internal pair must have `0 < distance <= 270` (0.5R). An internal
+  transfer with a larger gap fails, even if it would pass the 540 rule.
+- Every other pair keeps its existing rule: pairs that are not transfers
+  (even when both panels are inside the same zone), pairs that straddle the
+  zone boundary, pairs whose panels sit in two different zones, and pairs
+  outside any zone. `allowedGrapplePairs` keep their opening rule.
+- Yellow (drag) clearances are unchanged: at least 1620 (3R) to the nearest
+  green panel and at least 540 between yellow zones. A `no-grapple` zone is
+  neither a solid nor a brake for these checks.
+- Each pair in the report carries `rule` (`grappleClearance`, `opening` or
+  `noGrappleInternal`) and `noGrappleZone`; the summary counts
+  `noGrappleZones` and `noGrappleInternalPairs`
+  (`tools/test_no_grapple_format.py`).
+
 ## 8. Rejection summary
 
 | Category | Cause |
@@ -354,9 +400,10 @@ gapPercent     = distance(A, B) / 540 * 100
 | `UnsupportedShape` | anything but rect/polygon in geometry, rounded rect, nested fragment, `use`/`svg`/`symbol`/`switch` |
 | `UnknownAttribute` | an unrecognised attribute on gameplay or route nodes |
 | `InvalidId` / `DuplicateId` | §3 |
-| `InvalidSurfaceRole` | role not in `solid bounce hazard drag` |
+| `InvalidSurfaceRole` | role not in `solid bounce hazard drag no-grapple` |
 | `InvalidGrapplable` | not exactly `true`/`false`, or a hazard marked `true` |
 | `InvalidDragZone` | drag that is grapplable or inside a fragment |
+| `InvalidNoGrappleZone` | no-grapple zone that is grapplable, inside a fragment, not convex, or (level JSON) moved by a mover |
 | `EmptyFragment` | a fragment without elements |
 | `MalformedNumber` / `NonFiniteGeometry` | §2 |
 | `MalformedPolygon` | < 3 vertices, odd number count, repeated consecutive vertex, self-intersection, zero area |
@@ -376,6 +423,11 @@ gapPercent     = distance(A, B) / 540 * 100
 - `valid-guide.svg` / `valid-guide.expected.json`: `valid.svg` with a
   `guide` on T01. The output is `valid.expected.json` plus the transfer's
   `guide`.
+- `valid-no-grapple.svg` / `valid-no-grapple.expected.json`: `valid.svg`
+  plus a 1200 x 600 `no-grapple` rect; the output is `valid.expected.json`
+  plus that element (and its own layout id).
+- `invalid-no-grapple-{grapplable,concave,fragment}.svg`: a grapplable,
+  concave, or in-fragment no-grapple zone.
 - `invalid-guide-{count,nonnumeric,nonfinite,unknown-fragment}.svg`: bad
   guides, and a guided transfer whose `from` is not a fragment.
 - `invalid-*.svg`: each file breaks exactly one rule.

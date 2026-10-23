@@ -24,7 +24,7 @@ SVG = '{http://www.w3.org/2000/svg}'
 GN = '{urn:grapnelninja:level-svg:1}'
 FORMAT = 'grapnelninja-level'
 GRAPPLE_RANGE = 540
-ROLES = ('solid', 'bounce', 'hazard', 'drag')
+ROLES = ('solid', 'bounce', 'hazard', 'drag', 'no-grapple')
 NUMBER = re.compile(r'\s*[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?\s*$')
 NON_FINITE = re.compile(r'\s*[+-]?(nan|inf|infinity)\s*$', re.IGNORECASE)
 ID = re.compile(r'^[A-Za-z][A-Za-z0-9_.:-]*$')
@@ -309,6 +309,10 @@ class Importer:
             return self.error('InvalidDragZone', e, 'a drag zone can never be grappled; set data-grapplable="false"')
         if role == 'drag' and fragment is not None:
             return self.error('InvalidDragZone', e, 'drag zones may not be inside fragment %s; move it directly into the geometry layer' % fragment)
+        if role == 'no-grapple' and grapplable == 'true':
+            return self.error('InvalidNoGrappleZone', e, 'a no-grapple zone can never be grappled; set data-grapplable="false"')
+        if role == 'no-grapple' and fragment is not None:
+            return self.error('InvalidNoGrappleZone', e, 'no-grapple zones may not be inside fragment %s; move it directly into the geometry layer' % fragment)
         points = self.rect(e) if kind == 'rect' else self.polygon(e)
         if points is None:
             return None
@@ -316,6 +320,8 @@ class Importer:
         relative = [(px - x, py - y) for px, py in points]
         if not self.polygon_ok(e, relative):
             return None
+        if role == 'no-grapple' and not convex(relative):
+            return self.error('InvalidNoGrappleZone', e, 'a no-grapple zone must be a convex polygon (containment is checked against it)')
         el = {'id': e.get('id'), 'x': plain(x), 'y': plain(y), 'role': role, 'grapplable': grapplable == 'true',
               'points': [{'x': plain(px), 'y': plain(py)} for px, py in relative], 'fragment': fragment}
         elements.append(el)
@@ -500,6 +506,17 @@ class Importer:
             return None
         nums = [plain(float(v)) for v in values]
         return [nums[i:i + 2] for i in range(0, 8, 2)]
+
+
+def convex(points):
+    """True when a simple polygon turns one way at every vertex (collinear vertices allowed)."""
+    n, signs = len(points), set()
+    for i in range(n):
+        (ax, ay), (bx, by), (cx, cy) = points[i - 1], points[i], points[(i + 1) % n]
+        turn = (bx - ax) * (cy - by) - (by - ay) * (cx - bx)
+        if turn:
+            signs.add(turn > 0)
+    return len(signs) == 1
 
 
 def import_svg(data):

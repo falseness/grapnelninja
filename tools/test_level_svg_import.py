@@ -57,7 +57,7 @@ class ImportCase(unittest.TestCase):
 class FixtureTests(ImportCase):
     def test_manifest_fixtures(self):
         manifest = json.loads((FIXTURES / 'manifest.json').read_text())
-        self.assertEqual(len(manifest), 17)
+        self.assertEqual(len(manifest), 21)
         for entry in manifest:
             with self.subTest(fixture=entry['file']):
                 data = (FIXTURES / entry['file']).read_bytes()
@@ -130,6 +130,22 @@ class PositiveTests(ImportCase):
         inside = edit(VALID, '      <rect id="P0-shelf"', '      <rect id="frag-drag" x="0" y="100" width="10" height="10" '
                       'data-role="drag" data-grapplable="false"/>\n      <rect id="P0-shelf"')
         self.assertRejects(inside, 'InvalidDragZone', 'frag-drag')
+
+    def test_no_grapple_semantics(self):
+        level = import_svg((FIXTURES / 'valid-no-grapple.svg').read_bytes())
+        zones = [e for e in level['elements'] if e['role'] == 'no-grapple']
+        self.assertEqual([(e['id'], e['grapplable'], e['x'], e['y']) for e in zones], [('no-grapple-zone', False, -150, -1350)])
+        self.assertEqual([e for e in level['elements'] if e['role'] != 'no-grapple'], self.level['elements'])
+        self.assertNotIn('no-grapple-zone', {m for f in level['svgFormat']['fragments'] for m in f['elements']})
+        valid = (FIXTURES / 'valid-no-grapple.svg').read_text()
+        self.assertRejects(edit(valid, 'data-role="no-grapple" data-grapplable="false"', 'data-role="no-grapple" data-grapplable="true"'),
+                           'InvalidNoGrappleZone', 'no-grapple-zone')
+        concave = edit(valid, '<rect id="no-grapple-zone" x="-150" y="-1350" width="1200" height="600"',
+                       '<polygon id="no-grapple-zone" points="-150,-1350 1050,-1350 450,-1050 1050,-750 -150,-750"')
+        self.assertRejects(concave, 'InvalidNoGrappleZone', 'no-grapple-zone')
+        inside = edit(VALID, '      <rect id="P0-shelf"', '      <rect id="frag-zone" x="0" y="-400" width="10" height="10" '
+                      'data-role="no-grapple" data-grapplable="false"/>\n      <rect id="P0-shelf"')
+        self.assertRejects(inside, 'InvalidNoGrappleZone', 'frag-zone')
 
     def test_annotations_ignored(self):
         ids = {e['id'] for e in self.level['elements']}
