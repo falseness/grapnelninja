@@ -91,6 +91,8 @@ function drawLightsLayer(gameState)
 
 function drawWorldLayer()
 {
+    // Purple no-grapple zones under everything else in the world
+    drawNoGrappleZones(floors[0])
     // Transfer guide arrows under the range circle, grapnel, terrain and player
     drawRouteArrows(floors[0])
     drawAcquisitionCircle()

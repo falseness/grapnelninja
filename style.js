@@ -92,6 +92,14 @@ const STYLE = Object.freeze({
             fill: 'rgba(255, 196, 0, 0.13)',
             stroke: '#ffc400'
         }),
+        // Grapple Over purple no-grapple zones (render/nograpplezones.js): a
+        // translucent violet wash and thin edge, under every surface and the
+        // player; edgePx is a screen (CSS) pixel width
+        noGrapple: Object.freeze({
+            fill: 'rgba(168, 64, 255, 0.2)',
+            stroke: 'rgba(204, 128, 255, 0.75)',
+            edgePx: 1.5
+        }),
         // Classic floor/ceiling strips: same green neon edge as bad mode
         ground: Object.freeze({
             fill: '#06101c',

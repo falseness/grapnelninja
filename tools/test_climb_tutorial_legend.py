@@ -4,7 +4,8 @@ Boots the real index.html, switches modes through the menu and languages
 through the pause-screen language button, and reads what the production
 tutorial sprite (render/tutorialhint.js) drew. In Grapple Over the hint's
 objective is 'CLIMB TO THE TOP' with no arrow, over a legend: a green block
-'= BOUNCE' and a yellow strip '= LOSE SPEED'. Classic and bad keep 'MOVE
+'= BOUNCE', a yellow strip '= LOSE SPEED' and (TASK-674) a purple patch
+'= NO GRAPPLE'. Classic and bad keep 'MOVE
 RIGHT TO SCORE  →'. The legend follows the hint's lifecycle (shown until the
 first press, then the 2.5 s fade) and draws no world objects.
 
@@ -35,10 +36,10 @@ VIEWPORTS = {'desktop': dict(viewport={'width': 1280, 'height': 720}, device_sca
                               is_mobile=True, has_touch=True)}
 EXPECTED = {
     'en': {'hold': {'desktop': 'HOLD', 'touch': 'TOUCH & HOLD'}, 'grapple': 'TO GRAPPLE',
-           'objective': 'CLIMB TO THE TOP', 'legend': ['BOUNCE', 'LOSE SPEED'],
+           'objective': 'CLIMB TO THE TOP', 'legend': ['BOUNCE', 'LOSE SPEED', 'NO GRAPPLE'],
            'right': 'MOVE RIGHT TO SCORE  →'},
     'ru': {'hold': {'desktop': 'ДЕРЖИ', 'touch': 'КОСНИСЬ И ДЕРЖИ'}, 'grapple': '— ЗАЦЕПИШЬСЯ',
-           'objective': 'ПОДНИМИСЬ НА ВЕРШИНУ', 'legend': ['ОТСКОК', 'ЗАМЕДЛЕНИЕ'],
+           'objective': 'ПОДНИМИСЬ НА ВЕРШИНУ', 'legend': ['ОТСКОК', 'ЗАМЕДЛЕНИЕ', 'БЕЗ ЗАЦЕПА'],
            'right': 'ДВИГАЙСЯ ВПРАВО  →'},
 }
 HINT = '({visible: TUTORIAL_HINT.visible, alpha: TUTORIAL_HINT.alpha, done: TUTORIAL_HINT.done})'
@@ -164,15 +165,18 @@ class ClimbTutorialLegendTests(unittest.TestCase):
             icon = b['icon']
             px = page.evaluate(PIXEL, [icon['x'] + icon['w'] * 0.5, icon['y'] + icon['h'] * 0.1])
             colors.append(px)
-        g, y = colors
+        g, y, _ = colors
         self.assertTrue(g[1] > 120 and g[1] > g[0] + 40 and g[1] > g[2] + 40, g)
         edge = page.evaluate(PIXEL, [legend[1]['icon']['x'] + 1, legend[1]['icon']['y'] + legend[1]['icon']['h'] / 2])
         self.assertTrue(edge[0] > 100 and edge[0] > edge[1] > 2 * edge[2] and edge[2] < 60, edge)
+        # Purple patch edge: violet, blue and red over green
+        purple = page.evaluate(PIXEL, [legend[2]['icon']['x'] + 1, legend[2]['icon']['y'] + legend[2]['icon']['h'] / 2])
+        self.assertTrue(purple[2] > 100 and purple[2] > purple[0] > purple[1] + 30, purple)
         record = {'lines': state['lines'], 'hold': state['lines'][0], 'grapple': state['lines'][1],
                   'objective': state['lines'][2], 'objectiveHasArrow': '→' in state['lines'][2],
                   'legend': [{'label': b['label'], 'text': '= ' + b['label'],
                               'icon': {k: round(v, 1) for k, v in b['icon'].items()}} for b in legend],
-                  'iconPixels': {'bounceBody': g, 'dragEdge': edge}, 'canvas': state['canvas'],
+                  'iconPixels': {'bounceBody': g, 'dragEdge': edge, 'noGrappleEdge': purple}, 'canvas': state['canvas'],
                   'menuButton': {k: round(v, 1) for k, v in state['menuButton'].items()},
                   'rotated': state['rotated'], 'spriteKey': state['key'], 'noOverlap': True}
         self.text.setdefault(kind, {})[lang] = record
@@ -224,7 +228,7 @@ class ClimbTutorialLegendTests(unittest.TestCase):
         self.assertEqual(page.evaluate(HINT), {'visible': True, 'alpha': 1, 'done': False})
         page.evaluate('__frames(30)')
         self.assertEqual(page.evaluate(HINT), {'visible': True, 'alpha': 1, 'done': False})
-        self.assertEqual(page.evaluate('TUTORIAL_HINT.lines.length'), 5)
+        self.assertEqual(page.evaluate('TUTORIAL_HINT.lines.length'), 6)
         page.evaluate('''() => { const draw0 = TUTORIAL_HINT.draw; window.__hintDraws = 0
             TUTORIAL_HINT.draw = function(...a) { ++__hintDraws; return draw0.apply(this, a) } }''')
         # The first real press (mouse down / touch) throws the grapnel and starts the fade

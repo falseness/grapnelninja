@@ -2,9 +2,10 @@
 // outlined neon-tube main word, 'TO GRAPPLE' and the green score line on a
 // soft dark vignette. Grapple Over shows 'CLIMB TO THE TOP' instead of the
 // score line, over a legend of small drawings of its green (bounce) and
-// yellow (drag) obstacles; the drawings are sprite pixels only, not world
-// objects. The glow is baked once into an offscreen sprite in
-// device pixels; draw() only blits it, so a frame does no blur work.
+// yellow (drag) obstacles and its purple no-grapple zones; the drawings are
+// sprite pixels only, not world objects. The glow is baked once into an
+// offscreen sprite in device pixels; draw() only blits it, so a frame does no
+// blur work.
 const TUTORIAL_HINT = {
     visible: false,
     // Fade (0..1) and seconds of active game time since the first press
@@ -163,13 +164,14 @@ const TUTORIAL_HINT = {
         ++this.buildCount
     },
 
-    // One row centred at (cx, y): a green block '= BOUNCE', then a wide
-    // yellow strip '= LOSE SPEED', in the game's obstacle colours. Returns
-    // the two label strings
+    // One row centred at (cx, y): a green block '= BOUNCE', a wide yellow
+    // strip '= LOSE SPEED', then a purple patch '= NO GRAPPLE', in the game's
+    // colours. Returns the three label strings
     buildLegend(c, cx, y, u, W, font)
     {
         const items = [{label: I18N.t('tutorial.legend.bounce'), w: 3.2, h: 3.2, draw: this.drawBounce},
-                       {label: I18N.t('tutorial.legend.drag'), w: 6.4, h: 2, draw: this.drawDrag}]
+                       {label: I18N.t('tutorial.legend.drag'), w: 6.4, h: 2, draw: this.drawDrag},
+                       {label: I18N.t('tutorial.legend.noGrapple'), w: 4.4, h: 2.8, draw: this.drawNoGrapple}]
         const gap = 1.2, spacing = 4
         let size = 2.6 * u
         const measure = () =>
@@ -184,7 +186,7 @@ const TUTORIAL_HINT = {
                 item.tw = c.measureText(item.text).width
                 total += item.w * u * k + gap * u * k + item.tw
             }
-            return total + spacing * u * k
+            return total + (items.length - 1) * spacing * u * k
         }
         const total = measure()
         if (total > W * 0.8)
@@ -252,6 +254,17 @@ const TUTORIAL_HINT = {
             c.arc(x + w * fx, y + h * fy, s * 0.22, 0, Math.PI * 2)
             c.fill()
         }
+    },
+
+    // No-grapple zone: the world's translucent violet wash and thin edge
+    drawNoGrapple(c, x, y, w, h, s)
+    {
+        const colors = STYLE.colors.noGrapple
+        c.fillStyle = colors.fill
+        c.fillRect(x, y, w, h)
+        c.strokeStyle = colors.stroke
+        c.lineWidth = s * 0.25
+        c.strokeRect(x, y, w, h)
     },
 
     // Blits the sprite over the whole canvas, drifting up 1.2% of the view
