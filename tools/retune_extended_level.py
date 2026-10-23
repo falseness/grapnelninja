@@ -429,6 +429,128 @@ def extend_lower_catch_route(m):
         purpose='Earlier terrain beneath late leftward falls, with a rightward return to the climb')
 
 
+# Purple no-grapple extension (TASK-675): after the first right -> up -> left
+# sequence the route continues leftward from its arrival (original P4) to an
+# approach ledge, then through one 10R x 5R zone on rope-free bounces and out
+# to an exit ledge. The exit is a copy of the original departure, so the
+# upward transfer and every later panel keep their geometry, translated by
+# shift. shift keeps the three leftmost late panels above lower terrain.
+# Internal panels are zone-local rotated slabs: (name, contact point of the
+# player centre, surface angle in degrees (0 = horizontal, y down; positive
+# tilts the right end down), surface extent before/after the contact along the
+# surface, thickness, side) with side +1 for a top face, -1 for an underside.
+PURPLE = dict(shift=-7500, approachGap=1350, approach=(1200, 260), zone=(5400, 2700), zoneMargin=60,
+              panels=[('Kicker slope', (4468.535, 1608.966), -32.8, 502, 385, 305, 1),
+                      ('Low ceiling', (3993.895, 1467.495), 4.8, 962, 375, 149, -1),
+                      ('Chute floor', (3048.898, 1616.432), 0.0, 706, 369, 364, 1),
+                      ('Overhang', (1995.901, 1459.177), 0.6, 1309, 278, 283, -1),
+                      ('Launch ramp', (671.178, 1655.582), 33.5, 481, 946, 202, 1)])
+NO_GRAPPLE_INTERNAL_GAP = 270.0
+
+
+def slab(contact, angle, before, after, thickness, side):
+    """Rectangle whose face lies PLAYER_RADIUS from contact, on the side the player touches."""
+    ux, uy = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+    # Outward normal of the face: up for a top (side 1), down for an underside.
+    nx, ny = uy*side, -ux*side
+    fx, fy = contact[0]-nx*svg.PLAYER_RADIUS, contact[1]-ny*svg.PLAYER_RADIUS
+    a, b = (fx-ux*before, fy-uy*before), (fx+ux*after, fy+uy*after)
+    c, d = (b[0]-nx*thickness, b[1]-ny*thickness), (a[0]-nx*thickness, a[1]-ny*thickness)
+    poly = [a, b, c, d]
+    return poly if side > 0 else poly[::-1]
+
+
+def purple_panel(name, points, contact_point, surface, zx, zy):
+    pts = [(zx+x, zy+y) for x, y in points]
+    x0, y0 = min(p[0] for p in pts), min(p[1] for p in pts)
+    return dict(id=None, name=name, x=x0, y=y0, width=max(p[0] for p in pts)-x0, height=max(p[1] for p in pts)-y0,
+                kind='chute', bounceSign=0, surfaceRole='bounce', surface=surface,
+                contactPoint=[zx+contact_point[0]-x0, zy+contact_point[1]-y0],
+                polys=[[[px-x0, py-y0] for px, py in pts]])
+
+
+def zone_contains(zone, fragment):
+    x, y, w, h = zone['x'], zone['y'], zone['width'], zone['height']
+    return all(x <= px <= x+w and y <= py <= y+h for poly in svg.bodies(fragment) for px, py in poly)
+
+
+def extend_purple_route(m, spec):
+    fs, rows, route = m['fragments'], m['encounters'], m['routeMap']
+    k = next(i for i, f in enumerate(fs) if f['id'] == route['fragmentIds']['P4'])
+    up = rows[k]
+    if up['originalId'] != 'S07-03' or up['fromFragment'] != fs[k]['id']:
+        raise ValueError('Purple extension expects the first leftward arrival before S07-03')
+    dep = fs[k]
+    shift = spec['shift']
+    exit_ = dict(copy.deepcopy(dep), name='Purple exit ledge', x=dep['x']+shift, originalId=None, semanticId='NG-EXIT')
+    w, h = spec['approach']
+    approach = dict(panel('Purple approach ledge', w, h, 0, 0), originalId=None, semanticId='NG-APPROACH')
+    approach = place_along(dep, approach, -1, 0, spec['approachGap'], origin=(dep['x']-w, dep['y']))
+    # The zone ends just left of the approach and starts just below the exit
+    # ledge, which overhangs its upper-left part: the player leaves through the top.
+    zw, zh = spec['zone']
+    zx = approach['x']-spec['zoneMargin']-zw
+    zy = exit_['y']+exit_['height']+spec['zoneMargin']
+    zone = dict(id='NG1', x=zx, y=zy, width=zw, height=zh, polygon=[[zx, zy], [zx+zw, zy], [zx+zw, zy+zh], [zx, zy+zh]],
+                purpose='no-grapple bounce chute: rope-free momentum traversal')
+    internal = []
+    for n, (name, contact, angle, before, after, thickness, side) in enumerate(spec['panels'], 1):
+        f = purple_panel(name, slab(contact, angle, before, after, thickness, side), contact,
+                         'top' if side > 0 else 'underside', zx, zy)
+        f.update(originalId=None, semanticId='NG%d' % n, surfaceAngle=angle)
+        internal.append(f)
+    for f in [approach, exit_]:
+        if union_distance(svg.bodies(f), [zone['polygon']])[0] <= 0:
+            raise ValueError('%s must lie outside the purple zone' % f['semanticId'])
+    for f in internal:
+        if not zone_contains(zone, f):
+            raise ValueError('%s must lie completely inside the purple zone' % f['semanticId'])
+    for f in fs[k+1:]:
+        f['x'] += shift
+    added = [approach]+internal+[exit_]
+    fs[k+1:k+1] = added
+    old_ids = {f['id']: f for f in fs if f['id'] is not None and f.get('semanticId') not in [a['semanticId'] for a in added]}
+    for i, f in enumerate(fs):
+        f['id'] = 'P%d' % i
+    mapping = {old: f['id'] for old, f in old_ids.items()}
+    for r in rows:
+        r['fromFragment'], r['toFragment'] = mapping[r['fromFragment']], mapping[r['toFragment']]
+    up['fromFragment'] = exit_['id']
+    chain = [dep]+added
+    extra = []
+    for a, b in zip(chain, chain[1:]):
+        if b is approach:
+            rid, direction, action = 'NG-APPROACH', 'LEFT', 'Leftward release jump to the purple approach ledge'
+        elif a is approach:
+            rid, direction, action = 'NG-ENTRY', 'LEFT → MOMENTUM ENTRY', 'Carry momentum into the no-grapple zone'
+        elif b is exit_:
+            rid, direction, action = 'NG-EXIT', 'UP → EXIT LEDGE', 'Launch out of the zone top, then grapple the exit ledge'
+        else:
+            rid, direction, action = 'NG-%s-%s' % (a['semanticId'], b['semanticId']), 'BOUNCE', \
+                'Rope-free bounce off the %s %s' % (b['surface'], b['name'].lower())
+        extra.append(dict(id=rid, fromFragment=a['id'], toFragment=b['id'], direction=direction, action=action,
+                          baseline=False, originalNumber=None, originalId=None, percent=None,
+                          noGrappleZone=zone['id'] if a in internal and b in internal else None))
+    rows[k:k] = extra
+    for i, r in enumerate(rows, 1):
+        r['number'] = i
+    route['fragmentIds'] = {o: mapping[v] for o, v in route['fragmentIds'].items()}
+    route['addedFragments'] = {s: mapping.get(v, v) for s, v in route['addedFragments'].items()}
+    route['addedFragments'].update({f['semanticId']: f['id'] for f in added})
+    route['encounterNumbers'] = {str(r['originalNumber']): r['number'] for r in rows if r.get('originalNumber')}
+    route['addedEncounters'] += [r['id'] for r in extra]
+    first = k+1
+    m['combinations'] = [[n+len(extra) if n >= first else n for n in group] for group in m['combinations']]
+    ext = m['lowerCatchExtension']
+    ext['fragments'] = [mapping.get(f, f) for f in ext['fragments']]
+    ext['firstUpDeparture'] = mapping.get(ext['firstUpDeparture'], ext['firstUpDeparture'])
+    m['noGrappleZones'] = [zone]
+    m['purpleExtension'] = dict(zone=zone['id'], arrival=dep['id'], approach=approach['id'], exit=exit_['id'],
+                                internal=[f['id'] for f in internal], encounters=[r['id'] for r in extra],
+                                upperTranslation=[shift, 0], exitCopiesDeparture=dep['id'],
+                                purpose='Leftward rope-free bounce traversal after the first right -> up -> left sequence')
+
+
 def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE):
     source = copy.deepcopy(source)
     # The extra second polygon is the unwanted rectangular bump, not the shelf.
@@ -528,13 +650,18 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
                 f['polys']=[list(reversed([[f['width']-x,y] for x,y in poly])) for poly in f['polys']]
                 f['bounceSign']=direction
         extend_lower_catch_route(m)
+        extend_purple_route(m, PURPLE)
     for row in m['encounters']:
         n = row['number']; a,b = fs[n-1:n+1]
         d,w,_,_ = gap(a,b)
         # Gap targets stay keyed by the original concept numbering; new transfers record their measured gap.
         old = row.get('originalNumber', n)
         percent = round(d/5.4, 2) if opening else TARGETS.get(old, row['percent']) if old else round(d/5.4, 2)
-        if opening and old not in TARGETS and d < 1080 - .01:
+        if row.get('noGrappleZone'):
+            # Scoped exception: both panels lie inside one convex purple zone (level-guidelines.md).
+            if not 0 < d <= NO_GRAPPLE_INTERNAL_GAP:
+                raise ValueError('Internal no-grapple transfer %s gap %.2f not in (0, 270]' % (row['id'], d))
+        elif opening and old not in TARGETS and d < 1080 - .01:
             raise ValueError('Transfer %s violates the 200%% release-gap minimum: %.2f' % (row['id'], d))
         row.update(percent=percent, distance=d, witness=w,
                    flight=[svg.contact(a),svg.contact(b)], baseline=False)

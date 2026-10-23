@@ -53,6 +53,9 @@ def bodies(m):
 
 
 def contact(m):
+    # Purple chute panels carry their designed bounce point (fragment-local).
+    if 'contactPoint' in m:
+        return (m['x'] + m['contactPoint'][0], m['y'] + m['contactPoint'][1])
     if m['kind'] == 'ceiling':
         return (m['x'] + m['width'] * .5, m['y'] + m['height'] + PLAYER_RADIUS)
     if m['kind'] == 'bounce':
@@ -324,6 +327,7 @@ def build(meas, guides=False, arrows=False):
     frags = meas['fragments']
     rows = meas['encounters']
     bands = meas['yellowBands']
+    zones = meas.get('noGrappleZones', [])
     falls = meas['fallIllustrations']
     combos = [tuple(c) for c in meas['combinations']]
     # Counts follow the measurements: one transfer per consecutive fragment pair.
@@ -337,7 +341,7 @@ def build(meas, guides=False, arrows=False):
     assert float(meas['grappleRange']) == R
 
     allb = [p for m in frags for p in bodies(m)]
-    pts = [p for b in allb for p in b] + [tuple(p) for z in bands for p in z['polygon']] + [tuple(f['end']) for f in falls]
+    pts = [p for b in allb for p in b] + [tuple(p) for z in bands + zones for p in z['polygon']] + [tuple(f['end']) for f in falls]
     T, s, ox, oy = fit(pts, (70, 335, 1860, 3500), 1000)
     inv = f'matrix({num(1 / s)} 0 0 {num(1 / s)} {num(-ox / s)} {num(-oy / s)})'
     view = (-ox / s, -oy / s, CANVAS_W / s, CANVAS_H / s)
@@ -347,8 +351,8 @@ def build(meas, guides=False, arrows=False):
     goal = contact(summit)
     finish = (summit['x'] - FINISH_PAD[0], summit['y'] - FINISH_PAD[1],
               summit['width'] + 2 * FINISH_PAD[0], FINISH_PAD[1])
-    xs = [x for b in allb for x, _ in b] + [p[0] for z in bands for p in z['polygon']] + [SPAWN[0], finish[0], finish[0] + finish[2]]
-    ys = [y for b in allb for _, y in b] + [p[1] for z in bands for p in z['polygon']] + [SPAWN[1], finish[1], finish[1] + finish[3]]
+    xs = [x for b in allb for x, _ in b] + [p[0] for z in bands + zones for p in z['polygon']] + [SPAWN[0], finish[0], finish[0] + finish[2]]
+    ys = [y for b in allb for _, y in b] + [p[1] for z in bands + zones for p in z['polygon']] + [SPAWN[1], finish[1], finish[1] + finish[3]]
     import math
     bounds = (math.floor(min(xs) - BOUNDS_PAD), math.floor(min(ys) - BOUNDS_PAD),
               math.ceil(max(xs) + BOUNDS_PAD), math.ceil(max(ys) + BOUNDS_PAD))
@@ -380,6 +384,11 @@ def build(meas, guides=False, arrows=False):
     # Gameplay geometry in world units.
     sw = num(2 / s)
     out.append('<g id="geometry" data-layer="geometry">')
+    # Purple no-grapple zones: static, convex, outside fragments (docs/level-svg-format.md §5).
+    for z in zones:
+        out.append(f'<rect id="{z["id"]}" x="{num(z["x"])}" y="{num(z["y"])}" width="{num(z["width"])}" height="{num(z["height"])}"'
+                   f' data-role="no-grapple" data-grapplable="false" data-name="{z["id"]} no-grapple zone" fill="#8a4fd8"'
+                   f' fill-opacity="0.25" stroke="#cc80ff" stroke-width="{sw}"/>')
     for z in bands:
         out.append(f'<rect id="{z["id"]}-drag" x="{num(z["x"])}" y="{num(z["y"])}" width="{num(z["width"])}" height="{num(z["height"])}"'
                    f' data-role="drag" data-grapplable="false" data-name="{z["id"]} fall brake" fill="#66551f" stroke="#e8ce61" stroke-width="{sw}"/>')

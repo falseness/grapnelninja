@@ -266,15 +266,17 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         # route connectivity and the deliberate 150% turn, not old positions.
         up = next(r for r in self.m['encounters'] if r['id'] == 'S07-01')
         self.assertAlmostEqual(up['distance'],1.5*GRAPPLE_RANGE,delta=COORD_TOL)
-        self.assertEqual([r['id'] for r in self.m['encounters'][14:]],
+        # The purple extension (TASK-675) inserts NG-* encounters after the first leftward section.
+        self.assertEqual([r['id'] for r in self.m['encounters'][14:] if not r['id'].startswith('NG-')],
                          [r['id'] for r in self.before['encounters'][6:]])
         self.__class__.shift=None
 
     def test_08_geometry_rules(self):
         s = self.report['summary']
         self.assertTrue(s['pass'], self.report['failureMessages'])
-        self.assertEqual((s['fragments'], s['transfers'], s['fragmentPairs']), (39, 38, 741))
-        self.assertEqual(s['pairsPass'], 741)
+        n = len(self.m['fragments'])
+        self.assertEqual((s['fragments'], s['transfers'], s['fragmentPairs']), (n, n - 1, n * (n - 1) // 2))
+        self.assertEqual(s['pairsPass'], n * (n - 1) // 2)
         self.assertGreaterEqual(s['minInteriorAngle'], MIN_INTERIOR_ANGLE)
         self.assertGreaterEqual(s['minDragSolidClearance'], 1620)
         self.assertGreaterEqual(s['minYellowPairClearance'], 540)
@@ -282,7 +284,8 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         allowed = {frozenset(p) for p in self.m['allowedGrapplePairs']}
         self.assertEqual(allowed, set())
         for p in self.report['pairs']:
-            if frozenset((p['a'], p['b'])) not in allowed:
+            # Only the checker's scoped purple-internal transfers (0 < gap <= 270) are exempt.
+            if frozenset((p['a'], p['b'])) not in allowed and p['rule'] != 'noGrappleInternal':
                 self.assertGreater(p['clearanceMinusDiameter'], GRAPPLE_RANGE, p)
         rect = [d for d in self.report['dragZones'] if d['rect'][2] <= d['rect'][3]]
         self.assertEqual(rect, [])
@@ -380,7 +383,7 @@ def write_evidence(t, out):
     later = [dict(semantic=f['semanticId'], id=f['id'],
                   shapeSha=sha(json.dumps(f['polys']).encode()),
                   beforeShapeSha=sha(json.dumps(t.frag(t.before, t.before_ids[f['semanticId']])['polys']).encode()))
-             for f in t.m['fragments'][start:]]
+             for f in t.m['fragments'][start:] if f['semanticId'] in t.before_ids]
     dump('preservation.json', dict(
         before=dict(path=str(BEFORE), layoutId=t.before['layoutId'],
                     measurementsSha=sha((BEFORE / 'extended-mountain-measurements.json').read_bytes()),
