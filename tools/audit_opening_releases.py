@@ -11,7 +11,7 @@ def main():
     with ExitStack() as stack:
         url,b=start_browser_test(ROOT,stack.callback);page=b.new_page(viewport={'width':1280,'height':720})
         page.goto(url);wait_for_boot_run(page);page.add_script_tag(path=str(ROOT/'tools/opening_combination_replay.js'))
-        def run(es):return page.evaluate('o=>OPENING_REPLAY.run(o)',dict(level=level,fixture=dict(panel='P2',fraction=.5,drop=30),inputs=es,budget=2300))
+        def run(es):return page.evaluate('o=>OPENING_REPLAY.run(o)',dict(level=level,fixture=record.get('fixture',dict(panel='P2',fraction=.5,drop=30)),inputs=es,budget=2300))
         control=run(inputs)
         landing=next(c['tick'] for c in control['contacts'] if c['id']=='P4-body0')
         prefix=[e for e in inputs if e['tick']<landing]

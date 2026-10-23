@@ -20,18 +20,8 @@
     "lastAimOffset": 0.15
   },
   {
-    "source": "P6",
-    "target": "P7",
-    "pumps": 1,
-    "fraction": 0.2,
-    "aimOffset": 0,
-    "drop": 30,
-    "budget": 2400,
-    "lastAimOffset": 0.15
-  },
-  {
-    "source": "P7",
-    "target": "P8",
+    "source": "P15",
+    "target": "P16",
     "pumps": 1,
     "fraction": 0.2,
     "aimOffset": 0,
@@ -40,8 +30,8 @@
     "lastAimOffset": -0.15
   },
   {
-    "source": "P8",
-    "target": "P9",
+    "source": "P16",
+    "target": "P17",
     "pumps": 1,
     "fraction": 0.2,
     "aimOffset": 0,
@@ -50,8 +40,8 @@
     "lastAimOffset": -0.15
   },
   {
-    "source": "P9",
-    "target": "P10",
+    "source": "P17",
+    "target": "P18",
     "pumps": 1,
     "fraction": 0.2,
     "aimOffset": 0,
@@ -60,8 +50,8 @@
     "lastAimOffset": -0.15
   },
   {
-    "source": "P10",
-    "target": "P11",
+    "source": "P18",
+    "target": "P19",
     "pumps": 1,
     "fraction": 0.2,
     "aimOffset": 0,
@@ -70,8 +60,8 @@
     "lastAimOffset": -0.15
   },
   {
-    "source": "P11",
-    "target": "P12",
+    "source": "P19",
+    "target": "P20",
     "pumps": 2,
     "fraction": 0.2,
     "aimOffset": 0,
@@ -80,8 +70,8 @@
     "lastAimOffset": 0.15
   },
   {
-    "source": "P12",
-    "target": "P13",
+    "source": "P20",
+    "target": "P21",
     "pumps": 1,
     "fraction": 0.2,
     "aimOffset": 0,
@@ -90,34 +80,14 @@
     "lastAimOffset": 0.3
   },
   {
-    "source": "P13",
-    "target": "P14",
+    "source": "P21",
+    "target": "P22",
     "pumps": 1,
     "fraction": 0.2,
     "aimOffset": 0,
     "drop": 300,
     "budget": 2400,
     "lastAimOffset": 0.15
-  },
-  {
-    "source": "P14",
-    "target": "P15",
-    "pumps": 1,
-    "fraction": 0.2,
-    "aimOffset": 0,
-    "drop": 300,
-    "budget": 2400,
-    "lastAimOffset": -0.15
-  },
-  {
-    "source": "P15",
-    "target": "P16",
-    "pumps": 2,
-    "fraction": 0.2,
-    "aimOffset": 0,
-    "drop": 300,
-    "budget": 2400,
-    "lastAimOffset": -0.15
   },
   {
     "source": "P22",
@@ -130,13 +100,123 @@
     "lastAimOffset": -0.15
   },
   {
-    "source": "P26",
-    "target": "P27",
+    "source": "P23",
+    "target": "P24",
+    "pumps": 2,
+    "fraction": 0.2,
+    "aimOffset": 0,
+    "drop": 300,
+    "budget": 2400,
+    "lastAimOffset": -0.15
+  },
+  {
+    "source": "P30",
+    "target": "P31",
+    "pumps": 1,
+    "fraction": 0.2,
+    "aimOffset": 0,
+    "drop": 300,
+    "budget": 2400,
+    "lastAimOffset": -0.15
+  },
+  {
+    "source": "P34",
+    "target": "P35",
     "pumps": 1,
     "fraction": 0.2,
     "aimOffset": 0,
     "drop": 300,
     "budget": 2400,
     "lastAimOffset": 0.3
+  },
+  {
+    "source": "P6",
+    "target": "P7",
+    "pumps": 1,
+    "fraction": 0.9,
+    "lastAimOffset": 0.1,
+    "drop": 300,
+    "budget": 2400,
+    "targetWhenInRange": true
+  },
+  {
+    "source": "P7",
+    "target": "P8",
+    "pumps": 1,
+    "fraction": 0.9,
+    "lastAimOffset": 0.05,
+    "drop": 300,
+    "budget": 2400,
+    "targetWhenInRange": true
+  },
+  {
+    "source": "P8",
+    "target": "P9",
+    "pumps": 1,
+    "fraction": 0.9,
+    "lastAimOffset": 0.05,
+    "drop": 300,
+    "budget": 2400,
+    "targetWhenInRange": true
+  },
+  {
+    "source": "P9",
+    "target": "P10",
+    "pumps": 1,
+    "fraction": 0.9,
+    "lastAimOffset": 0.05,
+    "drop": 300,
+    "budget": 2400,
+    "targetWhenInRange": true
+  },
+  {
+    "source": "P10",
+    "target": "P11",
+    "pumps": 1,
+    "fraction": 0.9,
+    "lastAimOffset": 0.05,
+    "drop": 300,
+    "budget": 2400,
+    "targetWhenInRange": true
+  },
+  {
+    "source": "P11",
+    "target": "P12",
+    "pumps": 1,
+    "fraction": 0.9,
+    "lastAimOffset": 0.05,
+    "drop": 300,
+    "budget": 2400,
+    "targetWhenInRange": true
+  },
+  {
+    "source": "P12",
+    "target": "P13",
+    "pumps": 1,
+    "fraction": 0.9,
+    "lastAimOffset": 0.05,
+    "drop": 300,
+    "budget": 2400,
+    "targetWhenInRange": true
+  },
+  {
+    "source": "P13",
+    "target": "P14",
+    "pumps": 1,
+    "fraction": 0.9,
+    "lastAimOffset": 0.05,
+    "drop": 300,
+    "budget": 2400,
+    "targetWhenInRange": true
+  },
+  {
+    "source": "P14",
+    "target": "P15",
+    "pumps": 1,
+    "fraction": 0.9,
+    "lastAimOffset": 0.05,
+    "drop": 300,
+    "budget": 2400,
+    "targetWhenInRange": true
   }
 ]

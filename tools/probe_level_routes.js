@@ -61,9 +61,10 @@
       if(options.targetSurface==='underside'){const ps=dest.getPoints();q={x:Math.max(Math.min(...ps.map(p=>p.x))+2,Math.min(Math.max(...ps.map(p=>p.x))-2,ninja.x)),y:Math.max(...ps.map(p=>p.y))-2};}
       let aim=null,key='';
       if(tick<holdTicks || (count<pumps && ninja.speedY>0)){const last=count===pumps-1;aim=last?lastPumpAim:pumpAim;key=last&&lastAimOffset!==null?'last-pump':'pump';}
+      else if(options.targetWhenInRange && Math.hypot(q.x-ninja.x,q.y-ninja.y)>530){key='coast';}
       else {aim=q;key='target';}
-      if(key!==lastAim){pointer('mouseup',ninja);pointer('mousedown',aim);lastAim=key;}
-      else pointer('mousemove',aim);
+      if(key!==lastAim){pointer('mouseup',ninja);if(aim)pointer('mousedown',aim);lastAim=key;}
+      else if(aim)pointer('mousemove',aim);
       const before=events.length;physics();minY=Math.min(minY,ninja.y);
       for(const ev of events.slice(before)){
         if(ev.id===start.id){count++;lastBounce=tick;if(!arrival)arrival={...ev};}
