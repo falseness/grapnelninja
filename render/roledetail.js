@@ -446,7 +446,8 @@ function drawRoleDetailDots(color, radius, dots, alpha = 1)
 
 
 // Material-owned state only: no cache or render fields are added to colliders.
-const BOUNCE_MATERIAL = {sprites: new Map(), star: null}
+// circuitScale is the board motif scale in use (part of every sprite key).
+const BOUNCE_MATERIAL = {sprites: new Map(), star: null, circuitScale: GRAPPLE_OVER_ROLE_DETAIL.bounce.circuitScale}
 
 function bounceFreeEdges(element, world)
 {
@@ -467,80 +468,124 @@ function bounceFreeEdges(element, world)
     })
 }
 
-// Coordinates are local to the shape's first point, like the sprite itself.
-// Rejection keeps whole walks inside the convex collision polygon without
-// changing it; grid steps are 6..15 px axial or 4.24..12.73 px diagonal.
-function bounceBoardDetail(points, box, seed, unit)
+function circuitPointSegment(p, a, b)
 {
-    const width = (box.right - box.left) / unit, height = (box.bottom - box.top) / unit
+    const dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy
+    const t = length2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length2)) : 0
+    return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy)
+}
+
+function circuitSegmentGap(a, b, c, d)
+{
+    const cross = (o, p, q) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x)
+    if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0)
+        return 0
+    return Math.min(circuitPointSegment(a, c, d), circuitPointSegment(b, c, d),
+        circuitPointSegment(c, a, b), circuitPointSegment(d, a, b))
+}
+
+// Coordinates are local to the shape's first point, like the sprite itself.
+// Motifs are sized by s = circuit scale x one screen px: grid steps are 6..15 s
+// axial or 4.24..12.73 s diagonal. Every trace vertex, via ring and pad is kept
+// fully inside the polygon (no geometry change), and traces keep a clear gap,
+// so the board gets fewer, wider-spaced paths as the scale grows. A shape too
+// thin for a motif simply goes without it: the scale never shrinks to fit.
+function bounceBoardDetail(points, box, seed, unit, circuit = 1)
+{
+    const s = circuit * unit
+    const width = (box.right - box.left) / s, height = (box.bottom - box.top) / s
     const thin = Math.min(width, height) < 10, horizontal = width >= height
     let index = 100
     const random = () => roleDetailHash(seed, index++)
-    const grid = 3 * unit
-    const inside = p => pointInPolygon(points, p.x, p.y)
-    const sample = () => ({x: Math.round((box.left + random() * (box.right - box.left)) / grid) * grid,
-        y: Math.round((box.top + random() * (box.bottom - box.top)) / grid) * grid})
-    const traces = [], count = thin ? 2 + Math.floor(random() * 2) : 10 + Math.floor(random() * 11)
+    const grid = 3 * s
+    const edges = points.map((a, i) => [a, points[(i + 1) % points.length]])
+    const inside = (p, margin) => pointInPolygon(points, p.x, p.y) &&
+        edges.every(([a, b]) => circuitPointSegment(p, a, b) >= margin)
+    const traceMargin = 0.6 * s, viaMargin = 1.6 * s, gap = 1.5 * grid
+    const middle = horizontal ? (box.top + box.bottom) / 2 : (box.left + box.right) / 2
+    const sample = () =>
+    {
+        const p = {x: Math.round((box.left + random() * (box.right - box.left)) / grid) * grid,
+            y: Math.round((box.top + random() * (box.bottom - box.top)) / grid) * grid}
+        // Thin shapes run their traces down the middle of the strip
+        if (thin) horizontal ? p.y = middle : p.x = middle
+        return p
+    }
+    const area = Math.abs(points.reduce((a, p, i) =>
+    {
+        const q = points[(i + 1) % points.length]
+        return a + p.x * q.y - q.x * p.y
+    }, 0)) / 2 / (s * s)
+    const traces = [], segments = []
+    const count = thin ? 1 + Math.floor(random() * 2) :
+        Math.max(2, Math.min(6, Math.round(area / 3000))) + Math.floor(random() * 2)
     const directions = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
+    const clear = (a, b) => segments.every(([c, d]) => circuitSegmentGap(a, b, c, d) >= gap)
     for (let attempt = 0; traces.length < count && attempt < 4000; attempt++)
     {
-        const path = [sample()], segments = 3 + Math.floor(random() * 4)
-        if (!inside(path[0])) continue
-        for (let j = 0; j < segments; j++)
+        const path = [sample()], wanted = thin ? 1 + Math.floor(random() * 2) : 2 + Math.floor(random() * 3)
+        if (!inside(path[0], traceMargin) || !clear(path[0], path[0])) continue
+        for (let j = 0; j < wanted; j++)
         {
             const d = thin ? (horizontal ? [1,0] : [0,1]) : directions[Math.floor(random() * 8)]
             const steps = d[0] && d[1] ? 1 + Math.floor(random() * 3) : 2 + Math.floor(random() * 4)
             const last = path[path.length - 1]
             const next = {x: last.x + d[0] * steps * grid, y: last.y + d[1] * steps * grid}
-            if (!inside(next)) break
+            if (!inside(next, traceMargin) || !clear(last, next)) break
             path.push(next)
         }
-        if (path.length === segments + 1)
-            traces.push({points: path, vias: [path[0], path[path.length - 1]]})
+        if (path.length < 2) continue
+        // A via ring only where the whole ring fits
+        const vias = [path[0], path[path.length - 1]].filter(p => inside(p, viaMargin))
+        traces.push({points: path, vias})
+        for (let i = 1; i < path.length; i++) segments.push([path[i - 1], path[i]])
     }
     const pads = []
-    if (!thin)
-        for (let attempt = 0, count = 2 + Math.floor(random() * 4); pads.length < count && attempt < 1000; attempt++)
-        {
-            const p = sample()
-            if ([[-3,-1],[3,-1],[-3,1],[3,1]].every(([x,y]) => inside({x:p.x+x*unit,y:p.y+y*unit})))
-                pads.push(p)
-        }
+    for (let attempt = 0, count = thin ? 1 : 1 + Math.floor(random() * 3); pads.length < count && attempt < 1000; attempt++)
+    {
+        const p = sample()
+        if ([[-3,-1],[3,-1],[-3,1],[3,1]].every(([x,y]) => inside({x:p.x+x*s,y:p.y+y*s}, 0.3 * s)) &&
+            segments.every(([a, b]) => circuitPointSegment(p, a, b) >= 2.5 * s) &&
+            pads.every(q => Math.hypot(q.x - p.x, q.y - p.y) >= gap))
+            pads.push(p)
+    }
     let label = null
     if (!thin && width > 60)
         for (let attempt = 0; !label && attempt < 1000; attempt++)
         {
             const p = sample()
-            if ([[0,-3],[6,-3],[0,1],[6,1]].every(([x,y]) => inside({x:p.x+x*unit,y:p.y+y*unit})))
+            if ([[0,-3],[6,-3],[0,1],[6,1]].every(([x,y]) => inside({x:p.x+x*s,y:p.y+y*s}, 0)) &&
+                segments.every(([a, b]) => circuitPointSegment({x: p.x + 3 * s, y: p.y - s}, a, b) >= 4 * s))
                 label = {...p, text: 'R12'}
         }
-    return {thin, traces, pads, label}
+    return {thin, scale: s, traces, pads, label}
 }
 
-function paintBounceBoard(c, board, unit, config)
+function paintBounceBoard(c, board, config)
 {
+    const s = board.scale
     c.save(); c.lineJoin = c.lineCap = 'round'
-    c.strokeStyle = config.trace; c.globalAlpha = config.traceAlpha; c.lineWidth = 0.8 * unit
+    c.strokeStyle = config.trace; c.globalAlpha = config.traceAlpha; c.lineWidth = 0.8 * s
     for (const trace of board.traces)
     {
         c.beginPath()
         trace.points.forEach((p,i) => i ? c.lineTo(p.x,p.y) : c.moveTo(p.x,p.y))
         c.stroke()
     }
-    c.strokeStyle = config.via; c.fillStyle = config.baseDark; c.lineWidth = 0.5 * unit
+    c.strokeStyle = config.via; c.fillStyle = config.baseDark; c.lineWidth = 0.5 * s
     for (const trace of board.traces)
         for (const p of trace.vias)
         {
-            c.beginPath(); c.arc(p.x,p.y,1.2*unit,0,2*Math.PI)
+            c.beginPath(); c.arc(p.x,p.y,1.2*s,0,2*Math.PI)
             c.globalAlpha = 1; c.fill(); c.globalAlpha = config.viaAlpha; c.stroke()
         }
     c.fillStyle = config.pad; c.globalAlpha = config.padAlpha
     for (const p of board.pads)
-        for (const x of [-3,1]) c.fillRect(p.x+x*unit,p.y-unit,2*unit,2*unit)
+        for (const x of [-3,1]) c.fillRect(p.x+x*s,p.y-s,2*s,2*s)
     if (board.label)
     {
         c.fillStyle = config.label; c.globalAlpha = config.labelAlpha
-        c.font = 3*unit + 'px monospace'; c.fillText(board.label.text,board.label.x,board.label.y)
+        c.font = 3*s + 'px monospace'; c.fillText(board.label.text,board.label.x,board.label.y)
     }
     c.restore()
 }
@@ -552,7 +597,8 @@ function bounceMaterialSprite(element, world, sx, sy, unit)
         y: Math.round((p.y - origin.y) * 100) / 100}))
     const free = bounceFreeEdges(element, world)
     const shape = 'bounce|' + points.map(p => p.x + ',' + p.y).join(';')
-    const key = shape + '|' + [sx, sy, unit].join(',') + '|' + free.join(',')
+    const circuit = BOUNCE_MATERIAL.circuitScale
+    const key = shape + '|' + [sx, sy, unit, circuit].join(',') + '|' + free.join(',')
     const cache = BOUNCE_MATERIAL.sprites
     if (cache.has(key))
     {
@@ -597,10 +643,10 @@ function bounceMaterialSprite(element, world, sx, sy, unit)
             y: center.y * 0.35 + (e.a.y + (e.b.y - e.a.y) * t) * 0.65,
             period: 2400 + 1600 * roleDetailHash(seed, i * 3 + 2), phase: roleDetailHash(seed, i * 3 + 3)}
     })
-    const board = bounceBoardDetail(points, box, seed, unit)
-    paintBounceBoard(c, board, unit, config)
-    const sprite = {image, box, glints: board.thin ? [] : glints, free, board,
-        bright: cacheBounceContact(board, sx, sy, unit, config)}
+    const board = bounceBoardDetail(points, box, seed, unit, circuit)
+    paintBounceBoard(c, board, config)
+    const sprite = {image, box, glints: board.thin ? [] : glints, free, board, circuit,
+        bright: cacheBounceContact(board, sx, sy, config)}
     cache.set(key, sprite)
     if (cache.size > 128) cache.delete(cache.keys().next().value)
     return sprite
@@ -635,10 +681,12 @@ function drawBounceMaterial(element, world, clockMs)
     ctx.restore()
 }
 
-// Small cached bright copies of each trace segment and via. Animation only
-// changes their alpha; rasterization and the soft contact dot happen once.
-function cacheBounceContact(board, sx, sy, unit, config)
+// Small cached bright copies of each trace segment and via, at the board's
+// circuit scale. Animation only changes their alpha; rasterization and the
+// soft contact dot happen once.
+function cacheBounceContact(board, sx, sy, config)
 {
+    const unit = board.scale
     const parts = []
     for (const trace of board.traces)
     {
@@ -681,7 +729,7 @@ function bounceContactWave(element, world, sprite, unit)
         const {a,b} = part, dx=b.x-a.x, dy=b.y-a.y, length2=dx*dx+dy*dy
         const f=length2 ? Math.max(0,Math.min(1,((point.x-a.x)*dx+(point.y-a.y)*dy)/length2)) : 0
         const distance=Math.hypot(point.x-a.x-f*dx,point.y-a.y-f*dy)
-        return {distance,glow:active ? contact.strength*Math.max(0,1-Math.abs(distance-radius)/(18*unit))*(1-t) : 0}
+        return {distance,glow:active ? contact.strength*Math.max(0,1-Math.abs(distance-radius)/(18*sprite.board.scale))*(1-t) : 0}
     })
     return {point,radius,ageMs,parts,dot:active ? contact.strength*Math.max(0,1-ageMs/120) : 0}
 }
@@ -701,7 +749,7 @@ function drawBounceContact(element, world)
     if (wave.dot > 0)
     {
         ctx.globalAlpha=wave.dot
-        const r=8*unit
+        const r=8*sprite.board.scale
         ctx.drawImage(sprite.bright.dot,ox+wave.point.x-r,oy+wave.point.y-r,2*r,2*r)
     }
     ctx.restore()
