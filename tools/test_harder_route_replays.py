@@ -27,7 +27,7 @@ class HarderReplayTests(unittest.TestCase):
             cls.pages[script] = page
 
     def test_upper_combinations(self):
-        self.assertEqual([r['source'] for r in self.upper], [16,19,23,27])
+        self.assertEqual([r['source'] for r in self.upper], [24,27,31,35])
         page = self.pages['opening_combination_replay']
         for record in self.upper:
             n = record['source']
@@ -37,7 +37,7 @@ class HarderReplayTests(unittest.TestCase):
                     stopOn=dict(id='P'+str(n+3),ny='up')))
                 self.assertEqual(log['acquisitionRadius'],540)
                 self.assertLess(log['maxStep'],200)
-                if n==27:
+                if n==35:
                     self.assertTrue(log['completed'])
                     f=self.level['finish'];q=log['final']
                     self.assertTrue(f['left']<=q['x']<=f['right'] and f['top']<=q['y']<=f['bottom'])
@@ -47,13 +47,13 @@ class HarderReplayTests(unittest.TestCase):
                     index=int(c['id'].split('-')[0][1:])
                     self.assertLessEqual(index,high+1,c)
                     high=max(high,index)
-                self.assertGreaterEqual(high,n+2 if n==27 else n+3)
+                self.assertGreaterEqual(high,n+2 if n==35 else n+3)
                 ceiling=next(c for c in log['contacts'] if c['id']==f'P{n+1}-body0' and c['ny']>.9)
                 slope=next(c for c in log['contacts'] if c['id']==f'P{n+2}-body0' and c['ny']<-.9)
                 self.assertGreater(slope['vyIn'],0)
                 self.assertLess(slope['vyOut'],0)
                 self.assertLess(ceiling['tick'],slope['tick'])
-                arrival=log['final'] if n==27 else log['stopped']
+                arrival=log['final'] if n==35 else log['stopped']
                 self.assertLess(slope['tick'],arrival['tick'])
                 self.assertLess(arrival['y'],slope['y'])
 
@@ -69,6 +69,6 @@ class HarderReplayTests(unittest.TestCase):
         covered={2,3,4,5} # continuous opening replay in test_opening_jump_variety
         for r in self.upper: covered.update(range(r['source'],r['source']+3))
         covered.update(int(p['source'][1:]) for p in self.local)
-        self.assertEqual(covered,set(range(30)))
+        self.assertEqual(covered,set(range(38)))
 
 if __name__=='__main__':unittest.main()

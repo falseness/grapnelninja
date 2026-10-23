@@ -115,7 +115,7 @@ def opening_violations(report):
         out.append('leftward contacts not strictly decreasing in x')
     if not (c['upward']['dy'] < 0 and abs(c['upward']['dy']) > abs(c['upward']['dx'])):
         out.append('no upward section between rightward and leftward')
-    if c['rightwardTransfers'] != report['baseline']['rightwardTransfers'] + 4:
+    if c['rightwardTransfers'] != report['baseline']['rightwardTransfers'] + 12:
         out.append('rightward section has %d transfers' % c['rightwardTransfers'])
     if c['leftwardTransfers'] != report['baseline']['leftwardTransfers'] + 2:
         out.append('leftward section has %d transfers' % c['leftwardTransfers'])
@@ -178,24 +178,24 @@ class ExtendedOpeningTests(unittest.TestCase):
     def test_counts_and_ordered_connected_route(self):
         frags = self.level['svgFormat']['fragments']
         transfers = self.level['svgFormat']['transfers']
-        self.assertEqual(len(frags), 31)
-        self.assertEqual(len({f['id'] for f in frags}), 31)
-        self.assertEqual(len(transfers), 30)
-        self.assertEqual([t['id'] for t in transfers], ['T%02d' % n for n in range(1, 31)])
+        self.assertEqual(len(frags), 39)
+        self.assertEqual(len({f['id'] for f in frags}), 39)
+        self.assertEqual(len(transfers), 38)
+        self.assertEqual([t['id'] for t in transfers], ['T%02d' % n for n in range(1, 39)])
         for a, b in zip(transfers, transfers[1:]):
             self.assertEqual(a['to'], b['from'])
         order = [transfers[0]['from']] + [t['to'] for t in transfers]
-        self.assertEqual(len(set(order)), 31)
-        self.assertEqual(len(self.report['pairs']), 465)
+        self.assertEqual(len(set(order)), 39)
+        self.assertEqual(len(self.report['pairs']), 741)
         bodies = [e for e in self.level['elements'] if e['role'] != 'drag']
-        self.assertEqual(len(bodies), 31)
+        self.assertEqual(len(bodies), 39)
 
     def test_threefold_spans_directions_and_counts(self):
         self.assertEqual(opening_violations(self.opening), [])
         c = self.opening['candidate']
         self.assertGreaterEqual(c['rightwardRatio'], 3 - 1e-6)
         self.assertGreater(c['leftwardSpan'], 0)
-        self.assertEqual((c['rightwardTransfers'], c['leftwardTransfers']), (6, 3))
+        self.assertEqual((c['rightwardTransfers'], c['leftwardTransfers']), (14, 3))
 
     def test_mutations_are_rejected(self):
         right = self.opening['candidate']['sections']['rightward']['fragments'][1]
@@ -237,7 +237,7 @@ class ExtendedOpeningTests(unittest.TestCase):
         originals = [f['id'] for f in self.source['fragments']]
         self.assertEqual(sorted(route['fragmentIds']), sorted(originals))
         self.assertEqual(len(set(route['fragmentIds'].values())), 25)
-        self.assertEqual(sorted(route['addedFragments']), ['L1', 'L2', 'R1', 'R2', 'R3', 'R4'])
+        self.assertEqual(sorted(route['addedFragments']), ['L1', 'L2', 'R1', 'R2', 'R3', 'R4'] + ['X%d'%i for i in range(1,9)])
         for f in self.m['fragments']:
             if f['originalId']:
                 self.assertEqual(route['fragmentIds'][f['originalId']], f['id'])
@@ -246,10 +246,10 @@ class ExtendedOpeningTests(unittest.TestCase):
                 if f['id'] in ('P0','P1','P2'):
                     self.assertEqual(f['polys'], old['polys'])
         enc_ids = [r['id'] for r in self.m['encounters']]
-        self.assertEqual(len(set(enc_ids)), 30)
+        self.assertEqual(len(set(enc_ids)), 38)
         source_ids = [r['id'] for r in self.source['encounters']]
         self.assertTrue(set(source_ids) <= set(enc_ids))
-        self.assertEqual(len(route['addedEncounters']), 6)
+        self.assertEqual(len(route['addedEncounters']), 14)
         for old in self.source['encounters']:
             n = route['encounterNumbers'][str(old['number'])]
             self.assertEqual(self.m['encounters'][n - 1]['id'], old['id'])
@@ -262,7 +262,7 @@ class ExtendedOpeningTests(unittest.TestCase):
         t = self.report['transfers']
         self.assertEqual([(r['encounter'], r['from'], r['to']) for r in t[:2]],
                          [('S06-03', 'P0', 'P1'), ('S06-04', 'P1', 'P2')])
-        for row, pct in zip(t[:2], (160,240)):
+        for row, pct in zip(t[:2], (120,160)):
             self.assertAlmostEqual(row['computedPercent'], pct, places=5)
         up = self.opening['candidate']['sections']['upward']['fragments']
         row = next(r for r in t if (r['from'], r['to']) == tuple(up))

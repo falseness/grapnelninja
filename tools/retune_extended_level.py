@@ -10,9 +10,9 @@ import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
-EXTENDED_LAYOUT = 'extended-mountain-v11'
+EXTENDED_LAYOUT = 'extended-mountain-v12'
 OPENING_TARGETS = dict(TARGETS)
-OPENING_TARGETS.update({1:160, 2:240})
+OPENING_TARGETS.update({1:120, 2:160})
 # Rightward span is a minimum; usable surfaces and measured release gaps take
 # priority over fitting a fixed endpoint. Fold separation may change the leftward span.
 MIN_OPENING_SPAN = 720.0
@@ -27,14 +27,14 @@ MIN_OPENING_SPAN = 720.0
 # Original v5 P0-to-P2 contact span; increasing the first gaps must not
 # multiply the already-extended ceiling combination a second time.
 OPENING = dict(factor=3, baselineRightSpan=1836.2141822795545,
-               right=[dict(kind='ceiling', width=2700, height=240, lift=1250, gap=700, share=.52,
+               right=[dict(kind='ceiling', width=2700, height=240, lift=1250, gap=1620, share=.52,
                            surface='underside', direction='UP-RIGHT → CEILING HOLD'),
-                      dict(kind='bounce', width=900, height=520, lift=-1000, gap=1080, share=.22, drop=80,
+                      dict(kind='bounce', width=3600, height=700, lift=-1000, gap=1080, share=.22, drop=320,
                            surface='slope', direction='RELEASE → DOWN-RIGHT ONTO SLOPE'),
                       dict(kind='platform', width=1400, height=180, lift=650, gap=1080, share=.22,
                            surface='top', direction='BOUNCE → UP-RIGHT'),
-                      dict(kind='platform', width=1000, height=260, lift=400, gap=1620, share=.22,
-                           surface='top', direction='RIGHT → UPWARD-TURN DEPARTURE')],
+                      dict(kind='platform', width=1000, height=260, lift=400, gap=2160, share=.22,
+                           surface='top', direction='RIGHT → EXPOSED TRANSFER')],
                left=[dict(width=900, height=240, drop=0),
                      dict(width=1100, height=260, share=.52, drop=-160)])
 GUIDELINES = Path(__file__).resolve().parent.parent / 'artifacts/levels/level-guidelines.md'
@@ -383,6 +383,52 @@ def band_ends(m, number):
     return index[route['fragmentIds'][row['originalFrom']]], index[route['fragmentIds'][row['originalTo']]]
 
 
+def extend_lower_catch_route(m):
+    """Lengthen the opening below the late leftward route, preserving upper geometry.
+
+    Insert full-size landing structures after the original mixed combination.
+    Move the upper route with the new departure rather than leaving the summit
+    far to the left of all lower terrain. Distances remain measured release gaps.
+    """
+    fs=m['fragments']; rows=m['encounters']; route=m['routeMap']
+    specs=[(4200,350,1620),(5000,-650,1350),(3600,450,1890),
+           (4600,100,1620),(4000,-500,1350),(5000,600,1890),
+           (4400,-250,1620),(1000,300,1350)]
+    added=[]; prev=fs[6]
+    for i,(width,lift,distance) in enumerate(specs,1):
+        f=panel('Lower return catch %d'%i,width,300+(i%3)*80,0,0)
+        y=svg.contact(prev)[1]-lift
+        f=place_along(prev,f,1,0,distance,origin=(prev['x'],y))
+        f.update(semanticId='X%d'%i,originalId=None,surface='top')
+        added.append(f);prev=f
+    dx=prev['x']-fs[6]['x'];dy=prev['y']-fs[6]['y']
+    for f in fs[7:]:f['x']+=dx;f['y']+=dy
+    old_ids={f['id']:f for f in fs}
+    fs[7:7]=added
+    for i,f in enumerate(fs):f['id']='P%d'%i
+    mapping={old:f['id'] for old,f in old_ids.items()}
+    for r in rows:
+        r['fromFragment']=mapping[r['fromFragment']];r['toFragment']=mapping[r['toFragment']]
+    rows[6]['fromFragment']=added[-1]['id']
+    extra=[]
+    for i,f in enumerate(added,1):
+        a=fs[5+i]
+        extra.append(dict(id='RIGHT-EXT-%02d'%i,fromFragment=a['id'],toFragment=f['id'],
+            direction='RIGHT',action=('Rightward release jump to upward-turn departure' if i==len(added) else 'Rightward release jump; lower recovery terrain'),
+            baseline=False,originalNumber=None,originalId=None,percent=None))
+    rows[6:6]=extra
+    for i,r in enumerate(rows,1):r['number']=i
+    route['fragmentIds']={k:mapping[v] for k,v in route['fragmentIds'].items()}
+    route['addedFragments']={k:mapping[v] for k,v in route['addedFragments'].items()}
+    route['addedFragments'].update({f['semanticId']:f['id'] for f in added})
+    route['encounterNumbers']={str(r['originalNumber']):r['number'] for r in rows if r.get('originalNumber')}
+    route['addedEncounters'] += [r['id'] for r in extra]
+    m['combinations']=[[n+len(added) if n>=7 else n for n in group] for group in m['combinations']]
+    m['lowerCatchExtension']=dict(fragments=[f['id'] for f in added],
+        addedHorizontalSpan=dx,upperTranslation=[dx,dy],firstUpDeparture=added[-1]['id'],
+        purpose='Earlier terrain beneath late leftward falls, with a rightward return to the climb')
+
+
 def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE):
     source = copy.deepcopy(source)
     # The extra second polygon is the unwanted rectangular bump, not the shelf.
@@ -481,6 +527,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
             if f['bounceSign']!=direction:
                 f['polys']=[list(reversed([[f['width']-x,y] for x,y in poly])) for poly in f['polys']]
                 f['bounceSign']=direction
+        extend_lower_catch_route(m)
     for row in m['encounters']:
         n = row['number']; a,b = fs[n-1:n+1]
         d,w,_,_ = gap(a,b)
@@ -540,7 +587,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         new=m['routeMap']['fragmentIds']
         m['allowedGrapplePairs']=[[new[a],new[b]] for a,b in m['allowedGrapplePairs']]
     m['checks']={'geometryOnly':True}
-    m['limitations']=['Geometry alone does not prove playability or shortcut absence; run production-input audits. A complete from-spawn climb remains unverified. Opening transfers intentionally allow direct grappling.']
+    m['limitations']=['Geometry alone does not prove playability or shortcut absence; run production-input audits. A complete from-spawn climb remains unverified.']
     return m
 
 
@@ -714,11 +761,11 @@ def add_final_transfer_brake(m, clearance):
     ceiling,slope,summit=m['fragments'][-3:]
     cx,cy,cr,cb=box(ceiling);sx,sy,sr,sb=box(slope);gx,gy,gr,gb=box(summit)
     left=max(sx-500,gr+1000);right=cx-clearance-10
-    bottom=sy-clearance; height=min(1000,right-left-1)
+    bottom=sy-clearance-1; height=min(1000,right-left-1)
     poly=[[left,bottom-height],[right,bottom-height],[right,bottom],[left,bottom]]
     nearest=min(union_distance([poly],svg.bodies(f))[0] for f in m['fragments'])
     if height<=0 or nearest<clearance:raise ValueError('No legal final transfer brake corridor')
-    m['yellowBands'].append(dict(id='G-final',belowJump=29,source=ceiling['id'],target=summit['id'],
+    m['yellowBands'].append(dict(id='G-final',belowJump=len(m['fragments'])-2,source=ceiling['id'],target=summit['id'],
         purpose='roof-pump shortcut brake; underside descent remains below the zone',
         x=left,y=bottom-height,width=right-left,height=height,polygon=poly,
         nearestSolidClearance=nearest,minimumSolidClearance=clearance,
@@ -766,9 +813,9 @@ def main():
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);
     # the original opening stays the frozen v5 reproduction without them.
     text=svg.build(m, guides=bool(opening), arrows=bool(opening))
-    text=text.replace('01–10: preserved baseline geometry', 'Opening 160% / 240% · vertical transfers 150%')
+    text=text.replace('01–10: preserved baseline geometry', 'Opening 120% / 160% · vertical transfers 150%')
     text=text.replace('BASELINE PRESERVED', 'RELEASE JUMPS FROM THE START')
-    text=text.replace('original 01–10 unchanged','opening gaps 160% / 240%; vertical gaps 150%')
+    text=text.replace('original 01–10 unchanged','opening gaps 120% / 160%; vertical gaps 150%')
     text=text.replace('Geometric checks exclude direct fragment-to-fragment grappling.', 'Opening and later transfers require release jumps.')
     text=text.replace('No nominal illustrated arc enters a band.', 'Fall-band paths require gameplay testing.')
     text=text.replace('All 300 fragment pairs > grapple + player diameter.', 'All consecutive panels are beyond grapple range.')

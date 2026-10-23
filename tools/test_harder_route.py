@@ -27,7 +27,7 @@ class HarderRouteTests(unittest.TestCase):
         # the preserved source; arbitrary new transfers cannot self-exempt.
         source=json.loads((ROOT/'artifacts/level/extended-mountain-measurements.json').read_text())
         exceptions={source['encounters'][n-1]['id']:pct for n,pct in
-                    {1:160,2:240,3:150,5:150,8:150,14:150,18:150,21:150}.items()}
+                    {1:120,2:160,3:150,5:150,8:150,14:150,18:150,21:150}.items()}
         exposed=0
         for row in self.report['transfers']:
             if row['encounter'] in exceptions:
@@ -36,6 +36,14 @@ class HarderRouteTests(unittest.TestCase):
                 self.assertGreaterEqual(row['computedDistance'],1080-.01,row)
                 exposed+=row['computedDistance']>=1620-.01
         self.assertGreaterEqual(exposed,12,'Keep a substantial set of exposed 300%+ jumps')
+
+    def test_rightward_difficulty_after_easier_start(self):
+        transfers = self.report['transfers']
+        self.assertEqual([(r['from'],r['to']) for r in transfers[:6]],
+                         [(f'P{i}',f'P{i+1}') for i in range(6)])
+        for row, pct in zip(transfers[:6], (120,160,300,200,200,400)):
+            self.assertAlmostEqual(row['computedPercent'],pct,delta=.01)
+        self.assertAlmostEqual(transfers[14]['computedPercent'],150,delta=.01)
 
     def test_opening_shapes_preserved(self):
         # Frozen original-opening generation is the authority for the easy start.

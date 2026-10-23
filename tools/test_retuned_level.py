@@ -18,18 +18,18 @@ class RetunedLevelTests(unittest.TestCase):
         self.assertTrue(report['summary']['pass'], report)
         # Targets use the v5 encounter numbers; the route map gives the shipped number.
         numbers=ref['routeMap']['encounterNumbers']
-        targets={1:160,2:240,3:150,5:150,8:150,14:150,18:150,21:150}
+        targets={1:120,2:160,3:150,5:150,8:150,14:150,18:150,21:150}
         for n,pct in targets.items():
             row=report['transfers'][numbers[str(n)]-1]
             self.assertEqual(row['encounter'],ref['routeMap']['encounterIds'][str(n)])
             self.assertAlmostEqual(row['computedPercent'],pct,places=5)
-        self.assertEqual(len(report['transfers']),30)
-        self.assertEqual(len(report['pairs']),465)
+        self.assertEqual(len(report['transfers']),38)
+        self.assertEqual(len(report['pairs']),741)
         self.assertGreater(len(report['dragZones']),0)
         self.assertGreaterEqual(report['summary']['minYellowPairClearance'],540)
         self.assertEqual(report['summary']['yellowPairs'],report['summary']['yellowPairsPass'])
         bodies=[e for e in level['elements'] if e['role']!='drag']
-        self.assertEqual(len(bodies),31)
+        self.assertEqual(len(bodies),39)
         self.assertTrue(all(e['role']=='bounce' and e['grapplable'] for e in bodies))
         self.assertTrue(all(e['id'].endswith('-body0') for e in bodies))
         self.assertGreaterEqual(report['summary']['minDragSolidClearance'],1080)

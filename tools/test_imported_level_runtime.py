@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v11'
+LAYOUT_ID = 'extended-mountain-v12'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -190,9 +190,9 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(snap['world'], 'PersistentWorld')
         self.assertEqual(snap['layoutId'], LAYOUT_ID)
         self.assertEqual(snap['layoutId'], self.svg['layoutId'])
-        self.assertEqual(snap['fragments'], 31)
+        self.assertEqual(snap['fragments'], 39)
         self.assertEqual(snap['fragments'], self.svg['fragments'])
-        self.assertEqual(snap['transfers'], 30)
+        self.assertEqual(snap['transfers'], 38)
         self.assertEqual(len(snap['dragZones']), len(self.svg['drag']))
         self.assertEqual(sorted(snap['dragZones']), self.svg['drag'])
         self.assertEqual(snap['spawn'], self.svg['spawn'])
@@ -779,7 +779,7 @@ class Task651Tests(unittest.TestCase):
             self.assertLessEqual(abs(gap - enc['distance']), TOLERANCE, row)
             self.assertLessEqual(abs(gap / 540 * 100 - t['gapPercent']), TOLERANCE, row)
             rows.append(row)
-        self.assertEqual(len(rows), 30)
+        self.assertEqual(len(rows), 38)
         report['checks']['transfers'] = {'count': len(rows), 'endpointsChecked': 2 * len(rows),
                                          'maxEndpointOffset': max(max(r['endpointOffsets']) for r in rows),
                                          'maxGapError': max(abs(r['runtimeGap'] - r['measuredGap']) for r in rows),
