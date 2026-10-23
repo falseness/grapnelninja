@@ -5,20 +5,29 @@ import copy
 import json
 import math
 from pathlib import Path
-from check_level_geometry import MIN_INTERIOR_ANGLE, interior_angles, self_intersections, union_distance
+from check_level_geometry import MIN_INTERIOR_ANGLE, interior_angles, point_segment, self_intersections, union_distance
 import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
-EXTENDED_LAYOUT = 'extended-mountain-v6'
-# Opening lengthened threefold: four rightward panels before the upward turn and
-# two leftward panels after it. share splits the added rightward span (the last
-# panel lands exactly on the 3x span) and the leftward span after the first gap.
+EXTENDED_LAYOUT = 'extended-mountain-v8'
+# Rightward span is a minimum; usable surfaces and measured release gaps take
+# priority over fitting a fixed endpoint. Leftward span retains its 3x target.
+MIN_OPENING_SPAN = 720.0
+# After the two easy transfers the rightward run is one mixed combination:
+# ceiling underside catch, descent onto a sloped bounce face, rebound up, then
+# a mostly horizontal transfer to the upward-turn departure. lift is the rise
+# of the new contact over the previous one (negative descends); gap is the
+# complete-polygon release gap reached by sliding the panel rightward.
 OPENING = dict(factor=3,
-               right=[dict(width=200, height=130, share=.34, rise=360),
-                      dict(width=280, height=160, share=.22, rise=520),
-                      dict(width=200, height=120, share=.22, rise=360),
-                      dict(width=300, height=180, share=.22, rise=480)],
+               right=[dict(kind='ceiling', width=960, height=240, lift=450, gap=700, share=.34,
+                           surface='underside', direction='UP-RIGHT → CEILING HOLD'),
+                      dict(kind='bounce', width=900, height=520, lift=-650, gap=650, share=.22,
+                           surface='slope', direction='RELEASE → DOWN-RIGHT ONTO SLOPE'),
+                      dict(kind='platform', width=800, height=180, lift=450, gap=700, share=.22,
+                           surface='top', direction='BOUNCE → UP-RIGHT'),
+                      dict(kind='platform', width=1000, height=260, lift=150, gap=810, share=.22,
+                           surface='top', direction='RIGHT → UPWARD-TURN DEPARTURE')],
                left=[dict(width=900, height=240, drop=0),
                      dict(width=1100, height=260, share=.52, drop=-160)])
 GUIDELINES = Path(__file__).resolve().parent.parent / 'artifacts/levels/level-guidelines.md'
@@ -108,11 +117,47 @@ def section_spans(points):
                 sections=dict(rightward=[0, right_end], upward=[right_end, left_start], leftward=[left_start, left_end]))
 
 
-def panel(name, width, height, x, y):
-    """A new green trapezoid panel; its contact is the top-edge centre."""
+def panel(name, width, height, x, y, kind='platform'):
+    """A new green panel; svg.contact() gives its contact for each kind.
+
+    platform: trapezoid, contact above the top-edge centre. ceiling: slab with
+    a raised top (the concept's ceiling profile), contact below the underside
+    centre. bounce: the concept's sloped face falling 240 units to the right,
+    contact above the slope midpoint.
+    """
     inset = round(width*.12, 3)
-    return dict(id=None, name=name, x=x, y=y, width=width, height=height, kind='platform', bounceSign=0,
-                surfaceRole='bounce', polys=[[[0, 0], [width, 0], [width-inset, height], [inset, height]]])
+    polys = {'platform': [[0, 0], [width, 0], [width-inset, height], [inset, height]],
+             'ceiling': [[0, 0], [width*.2, -90], [width*.8, -90], [width, 0], [width, height], [0, height]],
+             'bounce': [[0, 0], [width, 240], [width, height], [0, height-240]]}[kind]
+    # The concept's face falling to the right redirects up-right (bounceSign 1).
+    return dict(id=None, name=name, x=x, y=y, width=width, height=height, kind=kind,
+                bounceSign=1 if kind == 'bounce' else 0,
+                surfaceRole='bounce', polys=[polys])
+
+
+SURFACE_SIDE = {'platform': 1, 'bounce': 1, 'summit': 1, 'ceiling': -1}
+
+
+def contact_surface(fragment):
+    """The intended collision edge under (or over) svg.contact() and the point on it.
+
+    Returns (edge, point): the polygon edge in world coordinates and the point
+    PLAYER_RADIUS from the contact towards the surface. Raises if no edge
+    carries that point, so a mislabelled kind cannot pass silently.
+    """
+    cx, cy = svg.contact(fragment)
+    point = (cx, cy + SURFACE_SIDE[fragment['kind']]*svg.PLAYER_RADIUS)
+    for poly in svg.bodies(fragment):
+        for a, b in zip(poly, poly[1:]+poly[:1]):
+            if point_segment(point, a, b)[0] <= 1e-6:
+                return (list(a), list(b)), point
+    raise ValueError('%s: contact is not on a %s surface' % (fragment['id'], fragment['kind']))
+
+
+def usable_span(fragment):
+    """Horizontal projection of the intended continuous contact edge."""
+    (a, b), _ = contact_surface(fragment)
+    return abs(b[0]-a[0])
 
 
 def moved(fragment, dx, dy):
@@ -150,14 +195,20 @@ def extend_opening(fs, rows, spec):
     left_row = by_pair[(fs[up_to]['id'], fs[left_end]['id'])]
     cx = lambda f: svg.contact(f)[0]
     span_r, span_l = cx(fs[right_end])-cx(fs[0]), cx(fs[up_to])-cx(fs[left_end])
-    # Rightward: contacts advance by weighted shares of the added span while rising.
+    # Each panel rises (or descends) by lift between contacts, then slides
+    # rightward until its complete-polygon gap to the previous panel is gap.
     added, prev = [], fs[right_end]
     total = sum(p['share'] for p in spec['right'])
-    x = cx(prev)
     for k, p in enumerate(spec['right'], 1):
-        x = cx(fs[0])+factor*span_r if k == len(spec['right']) else x+(factor-1)*span_r*p['share']/total
-        prev = dict(panel('Rightward ledge %d' % k, p['width'], p['height'], x-p['width']/2, prev['y']-p['rise']),
-                    semanticId='R%d' % k)
+        shape = panel('Rightward %s %d' % (p['kind'], k), p['width'], p['height'], 0, 0, p['kind'])
+        if usable_span(dict(shape, id='R%d' % k)) < MIN_OPENING_SPAN:
+            raise ValueError('Opening landing surface must span at least 720 units')
+        desired_x = cx(prev)+(factor-1)*span_r*p['share']/total
+        y = svg.contact(prev)[1]-p['lift']-(svg.contact(shape)[1]-shape['y'])
+        candidate = place_along(prev, shape, 1, 0, p['gap'], origin=(prev['x'], y))
+        x = max(desired_x, cx(candidate))
+        prev = dict(candidate, x=x-p['width']/2, semanticId='R%d' % k, surface=p['surface'],
+                    openingDirection=p['direction'])
         added.append(prev)
     # Upward: the original turn direction and gap target, now from the last new panel.
     dx, dy = fs[up_to]['x']-fs[right_end]['x'], fs[up_to]['y']-fs[right_end]['y']
@@ -199,14 +250,18 @@ def extend_opening(fs, rows, spec):
                        originalId=old['id'], originalFrom=old['fromFragment'], originalTo=old['toFragment'])
             numbers[str(old['number'])], ids[str(old['number'])] = n, old['id']
         else:
+            mixed = b['semanticId'].startswith('R')
             row = dict(number=n, id='OPEN-%s-%s' % (a['semanticId'], b['semanticId']), fromFragment=a['id'],
-                       toFragment=b['id'], direction='RIGHT + UP' if b['semanticId'].startswith('R') else 'LEFT',
-                       percent=None, action='Added opening release jump', baseline=False,
-                       originalNumber=None, originalId=None)
+                       toFragment=b['id'], direction=b['openingDirection'] if mixed else 'LEFT',
+                       percent=None, action=b['openingDirection'] if mixed else 'Added opening release jump',
+                       baseline=False, originalNumber=None, originalId=None)
+            if mixed:
+                row.update(departureSurface=a.get('surface', 'top'), arrivalSurface=b['surface'])
         out_rows.append(row)
     route_map = dict(factor=factor, fragmentIds=fragment_ids, encounterNumbers=numbers, encounterIds=ids,
                      addedFragments={f['semanticId']: f['id'] for f in out if f['originalId'] is None},
                      addedEncounters=[r['id'] for r in out_rows if r['originalId'] is None],
+                     openingCombination=[r['id'] for r in out_rows if 'arrivalSurface' in r],
                      baselineSpans=dict(rightward=span_r, leftward=span_l))
     return out, out_rows, route_map
 
@@ -409,6 +464,8 @@ def main():
         raise ValueError('Guidelines must specify the supported 300% panel and 100% yellow-pair clearances')
     if opening and b'3x the pre-change' not in guidelines:
         raise ValueError('Guidelines must specify the threefold opening rule')
+    if opening and b'ceiling underside catch' not in guidelines:
+        raise ValueError('Guidelines must specify the mixed opening combination')
     dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
     m=tune(json.loads(Path(args.source).read_text()), opening=opening, yellow_clearance=clearance)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}

@@ -16,6 +16,7 @@ root viewBox frames that same canvas, so the file looks like the concept.
 import argparse
 import html
 import json
+import math
 import os
 import tempfile
 from pathlib import Path
@@ -81,7 +82,9 @@ def curve(r, frags):
         c2 = (b[0] - dx * .12, b[1] + 650)
     elif dy > 0:
         c1 = (a[0] + dx * .45, a[1] + dy * .06)
-        c2 = (b[0] - dx * .15, b[1] - 650)
+        # A transfer marked as leaving an underside never rises back into it.
+        top = a[1] if r.get('departureSurface') == 'underside' else -math.inf
+        c2 = (b[0] - dx * .15, max(b[1] - 650, top))
     else:
         c1 = (a[0] + dx * .25, min(a[1], b[1]) - 700)
         c2 = (b[0] - dx * .2, b[1] - 500)

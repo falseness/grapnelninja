@@ -106,7 +106,8 @@ def opening_violations(report):
     c = report['candidate']
     out = []
     for side in ('rightward', 'leftward'):
-        if abs(c[side + 'Ratio'] - 3) > 3 * SPAN_TOLERANCE:
+        if (c[side + 'Ratio'] < 3 - 1e-6 if side == 'rightward' else
+                abs(c[side + 'Ratio'] - 3) > 3 * SPAN_TOLERANCE):
             out.append('%s span ratio %.6f not within 1%% of 3' % (side, c[side + 'Ratio']))
     xs = c['rightwardContactsX']
     if any(b <= a for a, b in zip(xs, xs[1:])):
@@ -194,7 +195,7 @@ class ExtendedOpeningTests(unittest.TestCase):
     def test_threefold_spans_directions_and_counts(self):
         self.assertEqual(opening_violations(self.opening), [])
         c = self.opening['candidate']
-        self.assertAlmostEqual(c['rightwardRatio'], 3, delta=.03)
+        self.assertGreaterEqual(c['rightwardRatio'], 3 - 1e-6)
         self.assertAlmostEqual(c['leftwardRatio'], 3, delta=.03)
         self.assertEqual((c['rightwardTransfers'], c['leftwardTransfers']), (6, 3))
 
@@ -202,8 +203,9 @@ class ExtendedOpeningTests(unittest.TestCase):
         right = self.opening['candidate']['sections']['rightward']['fragments'][1]
         left = self.opening['candidate']['sections']['leftward']['fragments'][1]
         span = self.opening['candidate']['rightwardSpan']
-        shorter = opening_report(move_fragment(self.level, right, -.05 * span), self.base_level)
-        self.assertTrue(any('rightward span' in v for v in opening_violations(shorter)))
+        shorter = opening_report(move_fragment(self.level, right,
+            2.9 * self.opening['baseline']['rightwardSpan'] - span), self.base_level)
+        self.assertNotEqual(opening_violations(shorter), [])
         shorter = opening_report(move_fragment(self.level, left, .05 * self.opening['candidate']['leftwardSpan']),
                                  self.base_level)
         self.assertTrue(any('leftward span' in v for v in opening_violations(shorter)))
@@ -211,13 +213,29 @@ class ExtendedOpeningTests(unittest.TestCase):
         order, pts = route_contacts(self.level)
         reversed_level = move_fragment(self.level, order[4], pts[2][0] - pts[4][0] - 300)
         self.assertNotEqual(opening_violations(opening_report(reversed_level, self.base_level)), [])
-        # A generator spec that only doubles the opening is also rejected.
-        spec = dict(retune.OPENING, factor=2)
-        fs, rows, _ = retune.extend_opening([dict(f) for f in self.base['fragments']], self.base['encounters'], spec)
-        pts = [retune.svg.contact(f) for f in fs]
-        r0, r1 = sections(pts)['rightward']
-        ratio = (pts[r1][0] - pts[r0][0]) / self.opening['baseline']['rightwardSpan']
-        self.assertGreater(abs(ratio - 3), 3 * SPAN_TOLERANCE)
+        # An oversized bounding box must not excuse an undersized landing face.
+        spec = copy.deepcopy(retune.OPENING)
+        spec['right'][0]['width'] = 719
+        with self.assertRaisesRegex(ValueError, '720'):
+            retune.extend_opening(self.base['fragments'], self.base['encounters'], spec)
+
+    def test_opening_has_full_size_landing_surfaces(self):
+        # Inspect the imported edge each transfer contact rests on (top, ceiling
+        # underside or slope), independently of declared width metadata.
+        from test_opening_jump_variety import surface_at
+        polys = fragment_polys(self.level)
+        order, pts = route_contacts(self.level)
+        end = sections(pts)['rightward'][1]
+        spans = {}
+        for r in self.m['encounters'][:end + 1]:
+            for fid, point in ((r['fromFragment'], r['flight'][0]), (r['toFragment'], r['flight'][1])):
+                if fid in order[:end + 1]:
+                    spans[fid] = max(spans.get(fid, 0), surface_at(polys[fid], point)['span'])
+        self.assertEqual(sorted(spans), sorted(order[:end + 1]))
+        for fid in spans:
+            self.assertGreaterEqual(spans[fid], 720, fid)
+        if EVIDENCE:
+            (Path(EVIDENCE) / 'usable-surfaces.json').write_text(json.dumps(spans))
 
     def test_semantic_mapping_is_complete(self):
         route = self.m['routeMap']
@@ -283,7 +301,7 @@ class ExtendedOpeningTests(unittest.TestCase):
         self.assertEqual(s['fragmentPairs'], s['expectedFragmentPairs'])
         self.assertGreaterEqual(s['minInteriorAngle'], MIN_INTERIOR_ANGLE)
         self.assertEqual(s['solidBounceGrapplable'], s['solidElements'])
-        self.assertGreaterEqual(s['minDragSolidClearance'], 1080)
+        self.assertGreaterEqual(s['minDragSolidClearance'], 1620)
         self.assertGreaterEqual(s['minYellowPairClearance'], 540)
         for p in self.report['pairs']:
             if frozenset((p['a'], p['b'])) not in {frozenset(x) for x in self.m['allowedGrapplePairs']}:
@@ -325,7 +343,7 @@ def write_evidence(t, out):
         candidate=c, baseline=dict(rightwardSpan=b['rightwardSpan'], leftwardSpan=b['leftwardSpan']),
         targets=dict(rightward=3 * b['rightwardSpan'], leftward=3 * b['leftwardSpan']),
         rightwardRatio=c['rightwardRatio'], leftwardRatio=c['leftwardRatio'],
-        withinOnePercent=dict(rightward=abs(c['rightwardRatio'] - 3) <= .03, leftward=abs(c['leftwardRatio'] - 3) <= .03),
+        spanRequirementsMet=dict(rightward=c['rightwardRatio'] >= 3 - 1e-6, leftward=abs(c['leftwardRatio'] - 3) <= .03),
         monotonic=dict(rightward=all(b2 > a for a, b2 in zip(c['rightwardContactsX'], c['rightwardContactsX'][1:])),
                        leftward=all(b2 < a for a, b2 in zip(c['leftwardContactsX'], c['leftwardContactsX'][1:]))),
         upwardBetween=c['upward']['dy'] < 0 and abs(c['upward']['dy']) > abs(c['upward']['dx']),
