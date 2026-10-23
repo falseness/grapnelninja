@@ -33,24 +33,31 @@ numbers; tests refer to old encounters through it. All panels, including
 ceilings, are green bounce surfaces; the ten separate rectangular top bumps are
 removed. Incompatible older saves (including v5) restart at the spawn. Physics playability is not established by geometry checks.
 
-Layout `extended-mountain-v8` (shipped) keeps that structure. After the two
+Layout `extended-mountain-v9` (shipped) keeps that structure. After the two
 80% transfers, the four rightward transfers form one mixed combination: a
-ceiling catch under R1, a release onto R2's sloped face (850 below the catch;
-the face falls 80 of 900 units, 5.1°), a right/up rebound onto R3 (1000 wide),
-and a mostly horizontal transfer to R4, the upward-turn departure. These values
-were tuned against production physics with the game's 540-unit acquisition
-radius. `tools/test_opening_jump_variety.py` replays the combination
-continuously with real mouse events from one zero-speed drop onto P2, probes
-the easy transfers and the upward turn, and runs a bounded local shortcut
-search. A yellow band that the 1,620-unit clearance would push below the
-fall-recovery line (1,500 below the spawn, `CLIMB_FALL_RECOVERY_DEPTH`) could
-never brake a fall, so the generator records it under `unreachableYellowBands`
-and does not emit it. v8 therefore has four yellow zones; the jumps S07-02,
-EXT-12 and EXT-15 have no reachable brake. Saves from v7 and earlier
-(including the v6 that was shipped before) restart at the spawn. Known limitation: with three or more pumps on a bounce
-panel the ball can still reach a panel two or more steps ahead (the same
-mechanism the pre-change layout has). The opening is not certified free of
-shortcuts, and the full climb is not proven playable.
+ceiling catch under R1 (1,250 above P2, 2,700 wide, its left end over P2's
+right end; the player crosses its underside hand over hand), a release onto
+R2's sloped face (650 below the catch; the face falls 80 of 900 units, 5.1°),
+a right/up rebound onto R3 (550 higher, 1,400 wide), and a mostly horizontal
+transfer to R4 (500 higher over a 1,000 release gap), the upward-turn
+departure. The later terrain hangs a fixed height above R4, so the combination
+ends high and right of v7's endpoint, and R1's underside shields P2: no panel
+beyond a source's successor lies within the pumped apex plus the 540-unit
+acquisition radius of P2, R1, R2 or R3. v8 (shipped before) let pumped bounces
+from P2, R1 and R2 reach L2, L1, R4 and P7. These values were tuned against
+production physics with the game's 540-unit acquisition radius.
+`tools/test_opening_jump_variety.py` replays the combination continuously with
+real mouse events from one zero-speed drop onto P2, probes the easy transfers
+and the upward turn, and runs a bounded local shortcut search (0-5 pumps) that
+must find no skip family beyond the pre-change v7 layout's. A yellow band must
+lie wholly above the fall-recovery line (1,500 below the spawn,
+`CLIMB_FALL_RECOVERY_DEPTH`) so a falling player passes through it before
+recovery; the generator records any other under `unreachableYellowBands` and
+does not emit it. v9 has five yellow zones; the jumps EXT-12 and EXT-15 have
+no reachable brake. Saves from v8 and earlier (including the v6 that was
+shipped before v8) restart at the spawn. The shortcut search is bounded: the
+opening is not certified free of shortcuts globally, and the full climb is not
+proven playable.
 
 Verify locally:
 

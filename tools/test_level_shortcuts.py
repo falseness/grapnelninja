@@ -106,9 +106,10 @@ class ShortcutReplayTests(unittest.TestCase):
         # zero-speed drop onto the source panel's top. Since TASK-669, R1 is a ceiling
         # (caught from below) and R2 a slope; the top-to-top rightward transfer is
         # R3->R4. The ceiling/slope transfers are replayed continuously in
-        # test_opening_jump_variety.CombinationReplayTests.
+        # test_opening_jump_variety.CombinationReplayTests. R3 is 1400 wide since v9,
+        # so its pump aims 0.3 of its width ahead of the drop (0.8 would pin it to the far end).
         added=ROUTE_MAP['addedFragments']
-        for name,aim in (('R3',.8),('L1',-.8)):
+        for name,aim in (('R3',.3),('L1',-.8)):
             source=added[name];target=successor(source)
             with self.subTest(source=source,target=target):
                 r=self.run_probe(source=source,target=target,fraction=.5,pumps=1,drop=300,aimOffset=aim,budget=1800)

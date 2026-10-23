@@ -10,7 +10,7 @@ import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
-EXTENDED_LAYOUT = 'extended-mountain-v8'
+EXTENDED_LAYOUT = 'extended-mountain-v9'
 # Rightward span is a minimum; usable surfaces and measured release gaps take
 # priority over fitting a fixed endpoint. Leftward span retains its 3x target.
 MIN_OPENING_SPAN = 720.0
@@ -20,17 +20,25 @@ MIN_OPENING_SPAN = 720.0
 # of the new contact over the previous one (negative descends); gap is the
 # complete-polygon release gap reached by sliding the panel rightward.
 # Tuned with production physics and the 540-unit acquisition radius
-# (TASK-669): R2 sits 850 below the R1 catch and its face falls only 80 units
-# (5.1 degrees), so the rightward descent still rebounds up-right high enough
-# to land on R3; R3 is 1000 wide so no free slope rebound clears it onto R4.
+# (TASK-669, v9). The later terrain hangs a fixed height above R4, so the
+# combination ends high and right of v7's endpoint. R1 is 1250 above P2 and
+# 2700 wide with its left end over P2's right end (share .52): a pumped P2 rise
+# catches its underside, the catch stays more rightward than upward, and the
+# underside shields P2 from the panels above. The player crosses it hand over
+# hand. R2 sits 650 below the catch, its face falling 80 units (5.1 degrees);
+# R3 rises 550 (its top below the release height, so the rebound lands on it)
+# and is 1400 wide; R4 rises 500 (0.24 of the horizontal flight) over a 1000
+# release gap. This keeps every non-successor panel out of the pumped apex
+# plus the acquisition radius of P2, R1, R2 and R3
+# (artifacts/TASK-669/clearance-sweep.json).
 OPENING = dict(factor=3,
-               right=[dict(kind='ceiling', width=960, height=240, lift=450, gap=700, share=.34,
+               right=[dict(kind='ceiling', width=2700, height=240, lift=1250, gap=700, share=.52,
                            surface='underside', direction='UP-RIGHT → CEILING HOLD'),
-                      dict(kind='bounce', width=900, height=520, lift=-850, gap=650, share=.22, drop=80,
+                      dict(kind='bounce', width=900, height=520, lift=-650, gap=650, share=.22, drop=80,
                            surface='slope', direction='RELEASE → DOWN-RIGHT ONTO SLOPE'),
-                      dict(kind='platform', width=1000, height=180, lift=450, gap=700, share=.22,
+                      dict(kind='platform', width=1400, height=180, lift=550, gap=700, share=.22,
                            surface='top', direction='BOUNCE → UP-RIGHT'),
-                      dict(kind='platform', width=1000, height=260, lift=150, gap=810, share=.22,
+                      dict(kind='platform', width=1000, height=260, lift=500, gap=1000, share=.22,
                            surface='top', direction='RIGHT → UPWARD-TURN DEPARTURE')],
                left=[dict(width=900, height=240, drop=0),
                      dict(width=1100, height=260, share=.52, drop=-160)])
@@ -43,7 +51,9 @@ YELLOW_PAIR_CLEARANCE = 540
 DIRECTION_OFFSETS = {13: -25, 15: 30}
 NONCONSECUTIVE_CLEARANCE = 1400
 # physics.js CLIMB_FALL_RECOVERY_DEPTH: a fall this far below the spawn returns
-# the player to the spawn, so a yellow brake whose top lies deeper never acts.
+# the player to the spawn, so a yellow brake must lie wholly above that line
+# (bottom plus the player radius): a falling player then passes through it
+# before recovery; one the line cuts is never traversed.
 FALL_RECOVERY_DEPTH = 1500
 # A truncated tip leaves a flat face about this wide; each cut stays within this
 # fraction of either adjacent edge so neighbouring corners keep their angles.
@@ -372,7 +382,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
             if nearest>=yellow_clearance and all(union_distance([poly],[other])[0]>=120 for other in placed_bands):break
         else: raise ValueError('Cannot place '+band['id'])
         # The frozen v5 reproduction (no opening) keeps its bands unchanged.
-        if opening and by >= svg.SPAWN[1]+FALL_RECOVERY_DEPTH:
+        if opening and by+band['height']+svg.PLAYER_RADIUS >= svg.SPAWN[1]+FALL_RECOVERY_DEPTH:
             unreachable.append(dict(id=band['id'], belowEncounter=band.get('belowEncounter'), y=by,
                                     recoveryLine=svg.SPAWN[1]+FALL_RECOVERY_DEPTH))
             continue

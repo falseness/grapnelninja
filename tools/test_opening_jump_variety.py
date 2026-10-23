@@ -13,8 +13,9 @@ leveldata.js and replay the four added transfers continuously with real mouse
 events and production physics() from one gravity-produced entry fixture (a
 zero-speed drop onto P2), with the game's 540-unit acquisition radius. They
 also probe the easy transfers and the upward turn, and run a bounded local
-shortcut search around the changed panels against the pre-change v7 baseline
-the untuned TASK-668 candidate and a pre-fix control (R3 800 wide).
+shortcut search around the changed panels: the v9 retune must add no skip
+family beyond those of the pre-change v7 baseline, and the frozen v8 control
+(the layout shipped before the retune) shows the families it fixes.
 Set OPENING_VARIETY_EVIDENCE_DIR to write contact-vectors.json, geometry.json,
 angles.json and preservation.json, plus combination-replay.json,
 route-regressions.json and local-shortcuts.json.
@@ -38,12 +39,10 @@ from check_level_geometry import (COORD_TOL, GRAPPLE_RANGE, MIN_INTERIOR_ANGLE, 
                                   inside, point_segment)
 from import_level_svg import import_svg  # noqa: E402
 import retune_extended_level as retune  # noqa: E402
-import convert_extended_mountain_svg as svgconv  # noqa: E402
 
 SOURCE = ROOT / 'artifacts/level/extended-mountain-measurements.json'
 GUIDELINES = ROOT / 'artifacts/levels/level-guidelines.md'
 BEFORE = ROOT / 'artifacts/TASK-668/before'
-UNTUNED = ROOT / 'artifacts/TASK-668/candidate-1/extended-mountain.level.json'
 SHIPPED = ROOT / 'artifacts/levels'
 EVIDENCE = os.environ.get('OPENING_VARIETY_EVIDENCE_DIR')
 RADIUS = PLAYER_DIAMETER / 2
@@ -433,31 +432,40 @@ FIXTURE = dict(panel='P2', fraction=.5, drop=30)
 SHORTCUT_PAIRS = [('P2', 'P4'), ('P2', 'P5'), ('P2', 'P6'), ('P3', 'P5'), ('P3', 'P6'),
                   ('P4', 'P6'), ('P4', 'P7'), ('P5', 'P7')]
 PUMPS, FRACTIONS = (0, 1, 2, 3, 5), (.2, .5, .8)
-# Pre-existing bypass mechanism, disclosed rather than claimed resolved: after
-# three or more pumps on a bounce panel the ball rises far enough to reach a
-# panel two or more steps ahead (the pre-change v7 layout shows it from R2 and
-# R3). TASK-669 does not change physics and does not fix it.
-PUMPED_ESCAPE_MIN_PUMPS = 3
+# The v8 layout shipped before the v9 retune (frozen generation): its grid
+# demonstrates the four skip families v9 fixes.
+BEFORE_V8 = ROOT / 'artifacts/TASK-669/before-v8'
+
+
+def surface_aim(bounds, panel, dx, dy=0.):
+    """World aim dx right of a panel's left edge: dy below its top (R1: below its underside)."""
+    b = bounds[panel]
+    return [b['x0'] + dx, (b['y1'] if panel == 'R1' else b['y0']) + dy]
 
 
 def catch_inputs(bounds):
-    """Two pumps on P2, then the ceiling catch (released at the R1 underside contact)."""
-    p2, r1 = bounds['P2'], bounds['R1']
-    pump = [p2['x0'] + .8 * (p2['x1'] - p2['x0']), p2['y0']]
-    return [dict(tick=1, type='down', aim=pump), dict(tick=21, type='up'),       # pump 1 (released at the bounce)
-            dict(tick=49, type='down', aim=pump), dict(tick=63, type='up'),      # pump 2
-            dict(tick=135, type='down', aim=[r1['x0'] + 150, r1['y1'] - 2]),    # grapple the R1 underside in range
-            dict(tick=213, type='up')]                                           # release at the ceiling catch
+    """Three pumps on P2, then the ceiling catch (released at the R1 underside contact)."""
+    a = lambda *k: surface_aim(bounds, *k)
+    return [dict(tick=1, type='down', aim=a('P2', 435)), dict(tick=13, type='up'),        # pump 1 (released at the bounce)
+            dict(tick=59, type='down', aim=a('P2', 548.714)), dict(tick=80, type='up'),   # pump 2
+            dict(tick=177, type='down', aim=a('P2', 730.579)), dict(tick=222, type='up'),  # pump 3
+            dict(tick=332, type='down', aim=a('R1', 150, -2)),   # rising past R1's left end: grapple its underside
+            dict(tick=344, type='up')]                           # release at the ceiling catch
 
 
 def combination_inputs(bounds):
     """The continuous four-transfer input script on the shipped geometry."""
-    r1, r3 = bounds['R1'], bounds['R3']
-    return catch_inputs(bounds) + [
-        dict(tick=215, type='down', aim=[(r1['x0'] + r1['x1']) / 2, r1['y1'] - 2]),  # hold the ceiling, swing right
-        dict(tick=229, type='up'),                                                  # release: fall down-right onto R2
-        dict(tick=531, type='down', aim=[r3['x0'] + .3 * (r3['x1'] - r3['x0']), r3['y0']]),  # brief pull onto R3
-        dict(tick=541, type='up')]                                                  # free hop R3 -> R4
+    a = lambda *k: surface_aim(bounds, *k)
+    # Hand over hand along the 2700-wide underside: each grapple is within reach ahead of the ball.
+    hold = [(347, 417, 344.688), (420, 491, 809.955), (494, 589, 1264.458), (592, 655, 1722.312),
+            (658, 712, 2195.7)]
+    return catch_inputs(bounds) + [e for down, up, dx in hold
+                                   for e in (dict(tick=down, type='down', aim=a('R1', dx, -2)), dict(tick=up, type='up'))] + [
+        # released near R1's right end: fall down-right onto the R2 face; after the rebound this press's line
+        # catches R3, the next panel, and pulls up-right
+        dict(tick=960, type='down', aim=a('R2', 880, 80.222)), dict(tick=990, type='up'),
+        dict(tick=1060, type='down', aim=a('R3', 414.908)), dict(tick=1093, type='up'),  # pull onto the R3 top
+        dict(tick=1241, type='down', aim=a('R3', 606.927)), dict(tick=1381, type='up')]  # pump forward: hop to R4
 
 
 def first_seq(contacts):
@@ -480,18 +488,8 @@ class CombinationReplayTests(unittest.TestCase):
         cls.m = json.loads((SHIPPED / 'extended-mountain-measurements.json').read_text())
         cls.ids = cls.m['routeMap']['addedFragments']
         cls.before_level = import_svg((BEFORE / 'extended-mountain.svg').read_bytes())
-        # The untuned TASK-668 candidate (R2 face drop 240, descent 650), informational baseline.
-        cls.untuned = json.loads(UNTUNED.read_text())
-        # Pre-fix control: the shipped spec with R3 at its TASK-668 width (800).
-        spec = copy.deepcopy(retune.OPENING)
-        spec['right'][2]['width'] = 800
-        old = svgconv.LAYOUT_ID
-        try:
-            control = retune.tune(json.loads(SOURCE.read_text()), opening=spec, yellow_clearance=retune.YELLOW_CLEARANCE)
-            svgconv.LAYOUT_ID = control['layoutId']
-            cls.control = import_svg(svgconv.build(control, guides=True, arrows=True).encode())
-        finally:
-            svgconv.LAYOUT_ID = old
+        # Control: the v8 layout shipped before the v9 retune (frozen generation).
+        cls.before_v8 = json.loads((BEFORE_V8 / 'extended-mountain.level.json').read_text())
         cls.pages = {}
         for name, script in (('replay', 'opening_combination_replay.js'), ('probe', 'probe_level_routes.js')):
             page = cls.browser.new_page(viewport={'width': 1280, 'height': 720})
@@ -521,7 +519,7 @@ class CombinationReplayTests(unittest.TestCase):
                             y0=min(y for _, y in pts), y1=max(y for _, y in pts))
         return out
 
-    def replay(self, inputs, level=None, budget=1200):
+    def replay(self, inputs, level=None, budget=2400):
         stop = dict(id=self.ids['R4'], ny='up')
         return self.pages['replay'].evaluate('o => OPENING_REPLAY.run(o)',
                                              dict(level=level, fixture=FIXTURE, inputs=inputs, budget=budget, stopOn=stop))
@@ -545,14 +543,14 @@ class CombinationReplayTests(unittest.TestCase):
         self.assertEqual(self.pages['replay'].errors, [])
         # Only document mouse events after the fixture; the replay moves continuously.
         self.assertEqual(log['acquisitionRadius'], 540)
-        self.assertEqual([e['type'] for e in log['inputs']], ['down', 'up'] * 5)
+        self.assertEqual([e['type'] for e in log['inputs']], ['down', 'up'] * 12)
         self.assertEqual(log['fixture']['vx'], 0)
         self.assertEqual(log['fixture']['vy'], 0)
         self.assertLess(log['maxStep'], 200)
-        # The first five inputs are the P2 pumps and the in-range ceiling shot.
-        early = [c['id'] for c in log['contacts'] if c['tick'] < 135]
+        # The first seven inputs are the P2 pumps and the in-range ceiling shot.
+        early = [c['id'] for c in log['contacts'] if c['tick'] < inputs[6]['tick']]
         self.assertEqual(early, ['P2-body0'] * len(early))
-        self.assertGreaterEqual(len(early), 2)
+        self.assertGreaterEqual(len(early), 3)
         after = [c for c in log['contacts'] if c['id'] != 'P2-body0']
         self.assertEqual(first_seq(after), [ids[k] for k in ('R1', 'R2', 'R3', 'R4')])
         by = lambda k: [c for c in after if c['id'] == ids[k] + '-body0']
@@ -581,9 +579,10 @@ class CombinationReplayTests(unittest.TestCase):
         self.assertGreater(r4['vxIn'], 0)
         self.assertEqual(log['stopped'], r4)
         attach = [(g['event'], g['id']) for g in log['grapple']]
-        self.assertEqual(attach, [('attach', 'P2-body0'), ('detach', 'P2-body0')] * 2 +
-                                 [('attach', ids['R1'] + '-body0'), ('detach', ids['R1'] + '-body0')] * 2 +
-                                 [('attach', ids['R3'] + '-body0'), ('detach', ids['R3'] + '-body0')])
+        pair = lambda pid: [('attach', pid + '-body0'), ('detach', pid + '-body0')]
+        # Three P2 pumps, the ceiling catch and five underside holds, then three R3 attachments (the press aimed
+        # at the R2 face catches R3 after the rebound). Never a panel beyond the next one.
+        self.assertEqual(attach, pair('P2') * 3 + pair(ids['R1']) * 6 + pair(ids['R3']) * 3)
         transitions = []
         for name, enc, c in (('ceiling catch', 'OPEN-P2-R1', catch), ('down-right slope landing', 'OPEN-R1-R2', slope),
                              ('right/up rebound arrival', 'OPEN-R2-R3', r3), ('horizontal arrival', 'OPEN-R3-R4', r4)):
@@ -661,57 +660,44 @@ class CombinationReplayTests(unittest.TestCase):
         return dict(entry=dict(catchTick=t1, inputs=i1), variants=out)
 
     def test_12_local_shortcuts(self):
-        shipped, before = self.grid(None), self.grid(self.before_level)
+        shipped, before, old = self.grid(None), self.grid(self.before_level), self.grid(self.before_v8)
         sem = lambda pid: next((k for k, v in self.ids.items() if v == pid), pid)
-        family = lambda h: (sem(h['source']), sem(h['hit']['id'].split('-')[0]))
-        before_families = {family(h) for h in before if h['beyond']}
-        found = [h for h in shipped if h['beyond']]
-        pumped = [h for h in found if h['pumps'] >= PUMPED_ESCAPE_MIN_PUMPS]
-        # Every remaining beyond-successor hit is the pre-existing pumped-escape mechanism.
-        self.assertEqual(found, pumped, [h for h in found if h not in pumped])
+        family = lambda h: [sem(h['source']), sem(h['hit']['id'].split('-')[0])]
+        families = lambda hits: sorted({tuple(family(h)) for h in hits if h['beyond']})
+        before_families = set(families(before))
+        new = [list(f) for f in families(shipped) if f not in before_families]
+        # No skip family beyond the v7 baseline's, at any pump count of the grid.
+        self.assertEqual(new, [], [h for h in shipped if h['beyond']])
+        self.assertEqual([h for h in shipped if h['beyond']], [])
+        # The control (v8 before the retune) shows the four families the retune fixes.
+        old_new = [list(f) for f in families(old) if f not in before_families]
+        self.assertEqual(old_new, [['P2', 'L2'], ['R1', 'L1'], ['R2', 'P7'], ['R2', 'R4']])
         flights = self.free_flights(None)
         free = flights['variants']
-        untuned = self.free_flights(self.untuned)
-        control = self.free_flights(self.control)['variants']
-        # Demonstrated with R3 800 wide: a free slope rebound flies over R3 onto the R4 top. Fixed when shipped.
-        self.assertTrue(any(f['r4TopBeforeR3'] for f in control))
+        # After the ceiling catch, no free slope rebound flies over R3 onto the R4 top.
+        self.assertEqual(len(free), 105)
         self.assertFalse(any(f['r4TopBeforeR3'] for f in free), [f for f in free if f['r4TopBeforeR3']])
-        self.assertEqual((len(free), len(control)), (105, 105))
-        # No beyond-successor contact or attachment with fewer than three pumps.
-        self.assertFalse([h for h in shipped if h['beyond'] and h['pumps'] < PUMPED_ESCAPE_MIN_PUMPS])
         self.assertEqual(self.pages['probe'].errors + self.pages['replay'].errors, [])
         self.__class__.evidence['local-shortcuts.json'] = dict(
             coverage='Bounded local policies only, not a proof of global shortcut absence and not a full-climb proof.',
             policies=dict(
-                probeGrid=dict(tool='tools/probe_level_routes.js ROUTE_PROBE', pairs=SHORTCUT_PAIRS, pumps=PUMPS,
-                               fractions=FRACTIONS, entry='zero-speed drop 30 above the source top at fraction',
+                probeGrid=dict(tool='tools/probe_level_routes.js ROUTE_PROBE (importedMountainLevel, 540 radius)',
+                               pairs=SHORTCUT_PAIRS, pumps=PUMPS, fractions=FRACTIONS,
+                               entry='zero-speed drop 30 above the source top at fraction',
                                skip='first contact or attachment on a panel beyond the successor'),
                 freeFlight=dict(entry=FIXTURE, prefix=flights['entry'],
                                 variants='3 hold delays x 5 ceiling-hold aims x 7 hold lengths after the R1 catch, '
                                          'then no input', skip='R4 top before R3 top')),
+            newFamiliesVersusV7=new,
+            shippedBeyondSuccessor=[dict(h, family=family(h)) for h in shipped if h['beyond']],
+            beforeV7Families=[list(f) for f in sorted(before_families)],
             demonstratedAndFixed=dict(
-                skip='free slope rebound from R2 flies over R3 and lands on the R4 top (R3 never touched)',
-                control=dict(change='R3 width 800 (TASK-668 value), otherwise the shipped spec',
-                             variants=len(control), skips=sum(f['r4TopBeforeR3'] for f in control),
-                             examples=[f for f in control if f['r4TopBeforeR3']]),
-                fix='R3 width 1000 (its gap and every later panel follow by placement)',
-                shippedSkips=sum(f['r4TopBeforeR3'] for f in free), variants=len(free)),
-            freeFlightResults=dict(
-                shipped=dict(variants=len(free), r4TopBeforeR3=sum(f['r4TopBeforeR3'] for f in free),
-                             outcomes=sorted({'>'.join(f['sequence'][:3]) for f in free}), runs=free),
-                untunedTask668=dict(level=str(UNTUNED), variants=len(untuned['variants']),
-                                    entry=untuned['entry'] if not untuned['variants'] else 'catch reached',
-                                    r4TopBeforeR3=sum(f['r4TopBeforeR3'] for f in untuned['variants']),
-                                    outcomes=sorted({'>'.join(f['sequence'][:3]) for f in untuned['variants']}))),
-            disclosedNotResolved=dict(
-                mechanism='pumped escape: >= %d pumps on a bounce panel raise the ball until a panel two or more '
-                          'steps ahead is within the 540-unit acquisition radius' % PUMPED_ESCAPE_MIN_PUMPS,
-                shipped=[dict(h, family=family(h)) for h in pumped],
-                beforeV7=[dict(h, family=family(h)) for h in before if h['beyond']],
-                newFamiliesVersusV7=sorted({family(h) for h in pumped} - before_families),
-                note='The v7 stair shows the same mechanism from R2 (to L1) and R3 (to P7). On the shipped layout it '
-                     'reaches L2 from P2 (contact, 5 pumps), L1 from R1, and R4/P7 from R2 (attachments, >= 3 pumps): '
-                     'new targets of the same mechanism, disclosed and not fixed (no physics change in scope). '
-                     'With 0-2 pumps no policy reaches beyond the successor.'),
-            probeGrid=dict(shipped=shipped, beforeV7=before))
-
+                control=dict(level=str(BEFORE_V8 / 'extended-mountain.level.json'), layoutId=self.before_v8['layoutId'],
+                             newFamiliesVersusV7=old_new, hits=[dict(h, family=family(h)) for h in old if h['beyond']]),
+                fix='v9 opening retune (tools/retune_extended_level.py OPENING): R1 lift 1250, width 2700, share .52; '
+                    'R2 lift -650; R3 lift 550, width 1400; R4 lift 500, gap 1000. Later terrain moves with R4, so '
+                    'L1/L2/P7 leave the pumped apex plus 540 radius of P2, R1, R2 and R3, and R1 shields P2',
+                shippedFamilies=families(shipped)),
+            freeFlightResults=dict(variants=len(free), r4TopBeforeR3=sum(f['r4TopBeforeR3'] for f in free),
+                                   outcomes=sorted({'>'.join(f['sequence'][:3]) for f in free}), runs=free),
+            probeGrid=dict(shipped=shipped, beforeV7=before, beforeV8=old))
