@@ -188,6 +188,12 @@ function drawTutorialHintLayer()
     TUTORIAL_HINT.draw(ctx, TUTORIAL_HINT.alpha, TUTORIAL_HINT.time)
 }
 
+// Long-fall reaction: screen space, over the hint and under the HUD it avoids
+function drawFallMessageLayer()
+{
+    FALL_MESSAGE.draw(ctx)
+}
+
 function drawUILayer(gameState)
 {
     visualEffects.ui.draw(gameState)
@@ -260,6 +266,8 @@ function draw()
     drawPlayerLayer()
     if (TUTORIAL_HINT.visible && !(version === 'grapple_over' && menu.gamePaused))
         drawTutorialHintLayer()
+    if (version === 'grapple_over')
+        drawFallMessageLayer()
     drawUILayer(gameState)
     drawFpsCounterLayer(gameState)
 

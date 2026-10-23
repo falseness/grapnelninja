@@ -1,4 +1,4 @@
-"""TASK-665: Grapple Over long-fall detection and message selection.
+"""TASK-665/666: Grapple Over long-fall detection, message selection and rendering.
 
 Boots the real index.html, freezes the frame loop and drives the production
 physics()/calcPhysics(), LONG_FALL.step() (called from calcPhysics) and the
@@ -6,12 +6,20 @@ real mouse/keyboard handlers. A continuous descent of strictly more than 4000
 world units emits one transient event; upward movement or a new grapple catch
 rearms the detector. Recovery, restart, reload and the spawn never count as falls.
 
+TASK-666 (LongFallRenderTests) drives the production render/fallmessage.js
+through the real gameLoop/draw(): layout of every phrase at every anchor and
+the rotation endpoints against the 16 CSS px margins and the HUD boxes, the
+max(0, 1 - t/3000)^2 fade in active time, the pause/hidden/restart/reload/
+completion/teleport/replace lifecycle, and noninteractive isolation.
+
 LONG_FALL_EVIDENCE_DIR=DIR writes compact fall-events.json, lifecycle.json,
-message-pool.json and isolation.json there.
+message-pool.json and isolation.json there, and for TASK-666 layout.json,
+timing.json, isolation.json's "render" entry and message-frames.png (needs PIL).
 
     python3 -m unittest discover -s tools -p test_long_fall_messages.py -v
 """
 from contextlib import ExitStack
+import io
 import json
 import os
 from pathlib import Path
@@ -103,6 +111,17 @@ STATE = '''() => {
 }'''
 
 
+EVIDENCE = {}
+
+
+def tearDownModule():
+    out = os.environ.get('LONG_FALL_EVIDENCE_DIR')
+    if out and EVIDENCE:
+        Path(out).mkdir(parents=True, exist_ok=True)
+        for key, data in EVIDENCE.items():
+            Path(out, key + '.json').write_text(json.dumps(data, separators=(',', ':'), sort_keys=True) + '\n')
+
+
 def compact(steps, keep):
     """Only the steps an assertion uses: first, last and listed indexes."""
     idx = sorted({0, len(steps) - 1, *[i for i in keep if 0 <= i < len(steps)]})
@@ -114,16 +133,13 @@ class LongFallMessageTests(unittest.TestCase):
     def setUpClass(cls):
         cls.stack = ExitStack()
         cls.url, cls.browser = start_browser_test(ROOT, cls.stack.callback)
-        cls.evidence = {'fall-events': {'threshold': THRESHOLD}, 'lifecycle': {}, 'message-pool': {}, 'isolation': {}}
+        cls.evidence = EVIDENCE
+        EVIDENCE.update({'fall-events': {'threshold': THRESHOLD}, 'lifecycle': {}, 'message-pool': {}})
+        EVIDENCE.setdefault('isolation', {})
 
     @classmethod
     def tearDownClass(cls):
         cls.stack.close()
-        out = os.environ.get('LONG_FALL_EVIDENCE_DIR')
-        if out:
-            Path(out).mkdir(parents=True, exist_ok=True)
-            for key, data in cls.evidence.items():
-                Path(out, key + '.json').write_text(json.dumps(data, separators=(',', ':'), sort_keys=True) + '\n')
 
     def open(self, context=None):
         if context is None:
@@ -646,6 +662,572 @@ class LongFallMessageTests(unittest.TestCase):
                     'saveKeys': sorted(json.loads(save)), 'saveIdentical': runs['inert']['end']['save'] == save,
                     'pageErrors': runs['inert']['pageErrors'] + runs['enabled']['pageErrors'] + page.errors})
         self.assertEqual(page.errors, [])
+
+
+# ---- TASK-666: rendering ----
+
+ANCHORS = [[0.25, 0.30], [0.75, 0.30], [0.25, 0.50], [0.75, 0.50], [0.25, 0.70], [0.75, 0.70]]
+MARGIN = 16
+VIEWPORTS = {'desktop': dict(viewport={'width': 1280, 'height': 720}, device_scale_factor=1),
+             # The 390x844 phone turned to landscape (upright, the run waits paused
+             # under the turn-the-phone prompt; see test_climb_tutorial_legend)
+             'touch': dict(viewport={'width': 844, 'height': 390}, device_scale_factor=2,
+                           is_mobile=True, has_touch=True)}
+
+# Freeze the loop, record blits of the message sprite on the game canvas, and
+# drive the real gameLoop at one physics step per frame.
+RENDER_SETUP = '''() => {
+    TUTORIAL_HINT.visible = false
+    window.BLITS = []
+    const blit = ctx.drawImage
+    ctx.drawImage = function(img) {
+        if (img === FALL_MESSAGE.sprite) {
+            const m = this.getTransform()
+            BLITS.push({alpha: this.globalAlpha, a: m.a, b: m.b, e: m.e, f: m.f})
+        }
+        return blit.apply(this, arguments)
+    }
+    window.FT = 1000
+    window.FRAMES = n => { for (let i = 0; i < n; i++) { FT += physicsStepMs; gameLoop(FT) } }
+    resetPhysicsTiming(); FRAMES(1)
+}'''
+
+# A real long fall in open air beside the level (production detector), then the
+# player back near the spawn; rf is the reaction (anchor, angle) source, msg the phrase pick.
+EMIT = '''([rf, msg]) => {
+    if (rf) { const s = rf.slice(); FALL_MESSAGE.setRandom(() => s.shift()) }
+    if (msg !== null) LONG_FALL.setRandom(() => msg)
+    const l = floors[0].level
+    ninja.x = l.bounds.right + 4000; ninja.y = l.spawn.y - 9000; ninja.speedX = 0; ninja.speedY = -1 - GRAVITY
+    Object.assign(grapnel, {throwed: false, grappled: false, pos: [], shotStep: null, aim: null, clip: null})
+    calcPhysics(); ninja.speedY = 0; ninja.y += 4001; calcPhysics()
+    ninja.x = l.spawn.x; ninja.y = l.spawn.y - 5; ninja.speedX = 0; ninja.speedY = 0
+    FALL_MESSAGE.sync()
+    LONG_FALL.setRandom(null); FALL_MESSAGE.setRandom(null)
+    return LONG_FALL.event
+}'''
+
+# Message state after one production draw().
+MSG = '''() => { BLITS.length = 0; draw(); const L = FALL_MESSAGE.layout
+    return {eventId: FALL_MESSAGE.event ? FALL_MESSAGE.event.id : null, longFallEventId: LONG_FALL.event ? LONG_FALL.event.id : null,
+        message: L ? L.text : null, anchorIndex: FALL_MESSAGE.anchorIndex, angle: FALL_MESSAGE.angle,
+        elapsedMs: FALL_MESSAGE.elapsedMs, expired: FALL_MESSAGE.expired, opacity: FALL_MESSAGE.opacity(),
+        visible: FALL_MESSAGE.visible(), blits: BLITS.slice(), layoutCount: FALL_MESSAGE.layoutCount,
+        layout: L && {x: L.x, y: L.y, size: L.size, anchorIndex: L.anchorIndex, bounds: L.bounds, viewport: L.viewport},
+        paused: menu.gamePaused, completed: !!floors[0].climbStats.completed} }'''
+
+# Every phrase x anchor x angle through the production layout against the real
+# HUD boxes, plus an independent check that a size reduction happened only
+# after every anchor failed at the larger size.
+LAYOUTS = '''([messages, angles]) => {
+    const F = FALL_MESSAGE, css = getCanvasCssRect(), reserved = F.reservedRects(canvas)
+    const W = css.width, H = css.height, m = F.marginCss, k = canvas.width / W
+    const base = Math.max(F.minSizeCss, H * F.sizeRatio), c = document.createElement('canvas').getContext('2d')
+    const hits = (b, r) => b.left < r.x + r.width && r.x < b.right && b.top < r.y + r.height && r.y < b.bottom
+    const anchorFails = (text, size, angle) => F.anchors.map(([ax, ay]) => {
+        const box = F.measure(c, text, size), rad = angle * Math.PI / 180
+        box.right = box.left + Math.ceil((box.right - box.left) * k) / k
+        box.bottom = box.top + Math.ceil((box.bottom - box.top) * k) / k
+        const pts = [[box.left, box.top], [box.right, box.top], [box.right, box.bottom], [box.left, box.bottom]]
+            .map(([x, y]) => [x * Math.cos(rad) - y * Math.sin(rad), x * Math.sin(rad) + y * Math.cos(rad)])
+        const l = Math.min(...pts.map(p => p[0])), r = Math.max(...pts.map(p => p[0]))
+        const t = Math.min(...pts.map(p => p[1])), b = Math.max(...pts.map(p => p[1]))
+        if (r - l > W - 2 * m || b - t > H - 2 * m) return 'size'
+        const x = Math.min(Math.max(ax * W, m - l), W - m - r), y = Math.min(Math.max(ay * H, m - t), H - m - b)
+        return reserved.some(q => hits({left: x + l, right: x + r, top: y + t, bottom: y + b}, q)) ? 'hud' : null })
+    const out = []
+    for (const text of messages) for (let a = 0; a < 6; a++) for (const angle of angles) {
+        const L = F.layoutFor(text, a, angle, canvas, reserved)
+        const xs = L.corners.map(p => p[0]), ys = L.corners.map(p => p[1])
+        const rect = {left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys)}
+        const smaller = L.size < base - 1e-9
+        out.push({text, preferred: a, angle, used: L.anchorIndex, size: +L.size.toFixed(3), center: [+L.x.toFixed(2), +L.y.toFixed(2)],
+            rect: Object.fromEntries(Object.entries(rect).map(([key, v]) => [key, +v.toFixed(2)])),
+            inMargins: rect.left >= m - 1e-6 && rect.top >= m - 1e-6 && rect.right <= W - m + 1e-6 && rect.bottom <= H - m + 1e-6,
+            hudClear: !reserved.some(q => hits(rect, q)), fitted: L.fitted, shifted: L.shifted, attempts: L.attempts,
+            reduced: smaller, allAnchorsFailedAtBase: smaller ? anchorFails(text, base, angle).every(f => f) : null,
+            preferredFailedIfMoved: L.anchorIndex === a ? null : anchorFails(text, L.size, angle)[a] !== null})
+    }
+    return {viewport: {width: W, height: H, canvas: [canvas.width, canvas.height], margin: m, baseSize: base},
+        reserved: reserved.map(r => ({kind: r.kind, name: r.name, x: +r.x.toFixed(1), y: +r.y.toFixed(1),
+            width: +r.width.toFixed(1), height: +r.height.toFixed(1)})), layouts: out}
+}'''
+
+# Ink of the production draw() of the current message on a blank canvas of the
+# game canvas's size at full opacity: alpha bounding box (CSS px), whether the
+# baked sprite's border is empty (no glyph or glow clipped), and sampled colours.
+INK = '''() => {
+    const F = FALL_MESSAGE, css = getCanvasCssRect(), c = document.createElement('canvas')
+    c.width = canvas.width; c.height = canvas.height
+    const keep = F.elapsedMs; F.elapsedMs = 0
+    F.draw(c.getContext('2d')); F.elapsedMs = keep
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, kx = c.width / css.width
+    let l = Infinity, r = -1, t = Infinity, b = -1, n = 0
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (d[(y * c.width + x) * 4 + 3] > 2) {
+        n++; if (x < l) l = x; if (x > r) r = x; if (y < t) t = y; if (y > b) b = y }
+    const s = F.sprite, sd = s.getContext('2d').getImageData(0, 0, s.width, s.height).data
+    let border = 0
+    for (let y = 0; y < s.height; y++) for (let x = 0; x < s.width; x++)
+        if ((x === 0 || y === 0 || x === s.width - 1 || y === s.height - 1) && sd[(y * s.width + x) * 4 + 3] > 2) border++
+    let face = null, halo = null
+    for (let i = 0; i < sd.length; i += 4) {
+        if (sd[i + 3] === 255 && sd[i] > 240 && !face) face = [sd[i], sd[i + 1], sd[i + 2]]
+        if (sd[i + 3] > 30 && sd[i + 3] < 120 && sd[i + 2] > sd[i + 1] + 30 && !halo) halo = [sd[i], sd[i + 1], sd[i + 2], sd[i + 3]]
+    }
+    return {inkPixels: n, ink: {left: l / kx, right: (r + 1) / kx, top: t / kx, bottom: (b + 1) / kx},
+        bounds: F.layout.bounds, viewport: {width: css.width, height: css.height}, spriteBorderInk: border,
+        sprite: [s.width, s.height], face, halo}
+}'''
+
+ISO_KEYS = '''() => ({dom: document.querySelectorAll('*').length, world: Object.keys(floors[0]).sort(),
+    ninja: Object.keys(ninja).sort(), grapnel: Object.keys(grapnel).sort(), elements: floors[0].elements.length,
+    dragZones: (floors[0].dragZones || []).length, byId: floors[0].byId ? floors[0].byId.size : null,
+    storage: Object.keys(localStorage).sort()})'''
+
+
+def within(inner, outer, tol):
+    return (inner['left'] >= outer['left'] - tol and inner['right'] <= outer['right'] + tol and
+            inner['top'] >= outer['top'] - tol and inner['bottom'] <= outer['bottom'] + tol)
+
+
+class LongFallRenderTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.stack = ExitStack()
+        cls.url, cls.browser = start_browser_test(ROOT, cls.stack.callback)
+        EVIDENCE.update({'layout': {}, 'timing': {}})
+        EVIDENCE.setdefault('isolation', {})['render'] = {}
+        cls.frames = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.stack.close()
+        out = os.environ.get('LONG_FALL_EVIDENCE_DIR')
+        if out and cls.frames:
+            cls.compose(Path(out))
+
+    @classmethod
+    def compose(cls, out):
+        from PIL import Image, ImageDraw, ImageFont
+        try:
+            font = ImageFont.truetype('DejaVuSans.ttf', 15)
+        except OSError:
+            font = ImageFont.load_default()
+        cell, label = (560, 315), 46
+        rows = [k for k in ('desktop', 'touch') if k in cls.frames]
+        concept = Image.open(ROOT / 'artifacts/concepts/big-fall-message-v2.png').convert('RGB')
+        concept.thumbnail((3 * cell[0], 10000))
+        sheet = Image.new('RGB', (3 * cell[0] + 20, len(rows) * (cell[1] + label) + concept.height + 3 * label), '#0b0a1e')
+        draw = ImageDraw.Draw(sheet)
+        y = 0
+        for kind in rows:
+            for i, (name, png, note) in enumerate(cls.frames[kind]):
+                img = Image.open(io.BytesIO(png)).convert('RGB')
+                img.thumbnail(cell)
+                sheet.paste(img, (10 + i * cell[0], y + label))
+                draw.text((10 + i * cell[0], y + 4), f'PRODUCTION {kind} {name}\n{note}', fill='#e8e0ff', font=font)
+            y += cell[1] + label
+        draw.text((10, y + 10), 'CONCEPT REFERENCE (artifacts/concepts/big-fall-message-v2.png) - not gameplay output',
+                  fill='#ffd27a', font=font)
+        sheet.paste(concept, (10, y + 2 * label))
+        Path(out).mkdir(parents=True, exist_ok=True)
+        sheet.save(Path(out) / 'message-frames.png', optimize=True)
+
+    def open(self, kind='desktop', context=None):
+        if context is None:
+            context = self.browser.new_context(locale='en-US', **VIEWPORTS[kind])
+            self.addCleanup(context.close)
+        page = context.new_page()
+        page.errors = []
+        page.on('pageerror', lambda e: page.errors.append('pageerror: %s' % e))
+        page.on('console', lambda m: m.type == 'error' and page.errors.append('console: %s' % m.text))
+        page.goto(self.url)
+        wait_for_boot_run(page)
+        if page.evaluate('menu.gamePaused'):
+            page.evaluate('menu.unPause()')
+        page.evaluate(SETUP)
+        page.evaluate(RENDER_SETUP)
+        return page
+
+    def emit(self, page, anchor=None, angle_r=None, msg=None):
+        rf = None if anchor is None else [(anchor + 0.5) / 6, angle_r]
+        return page.evaluate(EMIT, [rf, msg])
+
+    def msg(self, page):
+        return page.evaluate(MSG)
+
+    def resize(self, page, size):
+        page.set_viewport_size(size)
+        page.wait_for_function('''() => { const r = getCanvasCssRect()
+            return width === computeLogicalWidth() && Math.abs(parseFloat(canvas.style.width) - r.width) < 0.5 && Math.abs(parseFloat(canvas.style.height) - r.height) < 0.5 }''')
+
+    def test_09_layout_all_phrases_anchors_angles(self):
+        lay = EVIDENCE['layout']
+        for kind in VIEWPORTS:
+            page = self.open(kind)
+            res = page.evaluate(LAYOUTS, [MESSAGES, [-15, 0, 15]])
+            L = res['layouts']
+            self.assertEqual(len(L), 12 * 6 * 3)
+            self.assertEqual(sorted({x['text'] for x in L}), sorted(MESSAGES))
+            names = {r['name'] for r in res['reserved']}
+            self.assertTrue(any(n.startswith('Height') for n in names), names)
+            self.assertIn('button', {r['kind'] for r in res['reserved']})
+            for x in L:
+                self.assertTrue(x['inMargins'], x)
+                self.assertTrue(x['hudClear'], x)
+                self.assertTrue(x['fitted'], x)
+                if x['reduced']:
+                    self.assertTrue(x['allAnchorsFailedAtBase'], x)
+                if x['used'] != x['preferred']:
+                    self.assertTrue(x['preferredFailedIfMoved'], x)
+                if not x['shifted']:
+                    ax, ay = ANCHORS[x['used']]
+                    self.assertAlmostEqual(x['center'][0], ax * res['viewport']['width'], places=1)
+                    self.assertAlmostEqual(x['center'][1], ay * res['viewport']['height'], places=1)
+            longest = max(MESSAGES, key=len)
+            # Measured ink of real draws (longest phrase at every anchor and both
+            # endpoints, each phrase upright) inside the layout bounds and margins.
+            ink = []
+            cases = [(longest, a, r) for a in range(6) for r in (0.0, 1.0)] + [(m, 3, 0.5) for m in MESSAGES]
+            for text, a, r in cases:
+                self.emit(page, a, r, (MESSAGES.index(text) + 0.5) / 12)
+                st = self.msg(page)
+                self.assertEqual(st['message'], text)
+                self.assertEqual(st['anchorIndex'], a)
+                self.assertAlmostEqual(st['angle'], -15 + 30 * r, places=9)
+                self.assertEqual(len(st['blits']), 1)
+                i = page.evaluate(INK)
+                W, H = i['viewport']['width'], i['viewport']['height']
+                self.assertGreater(i['inkPixels'], 100)
+                self.assertEqual(i['spriteBorderInk'], 0)
+                self.assertTrue(within(i['ink'], i['bounds'], 1.0), i)
+                self.assertTrue(within(i['ink'], {'left': MARGIN, 'top': MARGIN, 'right': W - MARGIN, 'bottom': H - MARGIN}, 1.0), i)
+                hud = [q for q in res['reserved'] if i['ink']['left'] < q['x'] + q['width'] and q['x'] < i['ink']['right']
+                       and i['ink']['top'] < q['y'] + q['height'] and q['y'] < i['ink']['bottom']]
+                self.assertEqual(hud, [])
+                ink.append({'text': text, 'anchor': a, 'angle': st['angle'], 'used': st['layout']['anchorIndex'],
+                            'size': round(st['layout']['size'], 3), 'ink': {k: round(v, 2) for k, v in i['ink'].items()},
+                            'bounds': {k: round(v, 2) for k, v in i['bounds'].items()}, 'inkPixels': i['inkPixels'],
+                            'spriteBorderInk': i['spriteBorderInk']})
+            face, halo = i['face'], i['halo']
+            self.assertTrue(face and min(face) >= 220 and face[0] > face[2], face)
+            self.assertTrue(halo and halo[2] > halo[1] + 30, halo)
+            # Normal frames: no re-randomization, drift or re-layout.
+            self.emit(page, 1, 1.0, (MESSAGES.index(longest) + 0.5) / 12)
+            page.evaluate('FRAMES(3)')
+            before = self.msg(page)
+            page.evaluate('FRAMES(40)')
+            steady = self.msg(page)
+            self.assertEqual((steady['eventId'], steady['anchorIndex'], steady['angle'], steady['layout'], steady['layoutCount']),
+                             (before['eventId'], before['anchorIndex'], before['angle'], before['layout'], before['layoutCount']))
+            transforms = {(b['a'], b['b'], b['e'], b['f']) for b in before['blits'] + steady['blits']}
+            self.assertEqual(len(transforms), 1)
+            # Resize: same message, anchor and angle; safe bounds recomputed for the new size.
+            vp = VIEWPORTS[kind]['viewport']
+            small = {'width': vp['width'] * 3 // 4, 'height': vp['height']}
+            self.resize(page, small)
+            page.evaluate('FRAMES(1)')
+            resized = self.msg(page)
+            self.resize(page, vp)
+            page.evaluate('FRAMES(1)')
+            restored = self.msg(page)
+            self.assertEqual((resized['eventId'], resized['message'], resized['anchorIndex'], resized['angle']),
+                             (before['eventId'], before['message'], before['anchorIndex'], before['angle']))
+            self.assertGreater(resized['layoutCount'], before['layoutCount'])
+            self.assertNotEqual(resized['layout']['viewport'], before['layout']['viewport'])
+            rv = resized['layout']['viewport']
+            self.assertTrue(within(resized['layout']['bounds'], {'left': MARGIN, 'top': MARGIN, 'right': rv['width'] - MARGIN,
+                                                                 'bottom': rv['height'] - MARGIN}, 1e-6), resized)
+            self.assertEqual(restored['layout'], before['layout'])
+            self.assertEqual((restored['eventId'], restored['angle']), (before['eventId'], before['angle']))
+            self.assertGreater(restored['elapsedMs'], before['elapsedMs'])
+            lay[kind] = dict(res, inkChecks=ink, colors={'face': face, 'halo': halo},
+                             counts={'layouts': len(L), 'phrases': len({x['text'] for x in L}), 'anchors': 6, 'angles': [-15, 0, 15],
+                                     'inMargins': sum(x['inMargins'] for x in L), 'hudClear': sum(x['hudClear'] for x in L),
+                                     'reduced': sum(x['reduced'] for x in L), 'moved': sum(x['used'] != x['preferred'] for x in L),
+                                     'shifted': sum(x['shifted'] for x in L), 'inkChecks': len(ink)},
+                             resize={'before': before['layout'], 'steadyAfter40Frames': steady['layout'],
+                                     'steadyBlitTransforms': len(transforms), 'resizedTo': small,
+                                     'resized': resized['layout'], 'restored': restored['layout'],
+                                     'eventId': [before['eventId'], resized['eventId'], restored['eventId']],
+                                     'message': [before['message'], resized['message']],
+                                     'anchorIndex': [before['anchorIndex'], resized['anchorIndex'], restored['anchorIndex']],
+                                     'angle': [before['angle'], resized['angle'], restored['angle']],
+                                     'layoutCount': [before['layoutCount'], steady['layoutCount'], resized['layoutCount'],
+                                                     restored['layoutCount']]},
+                             pageErrors=page.errors)
+            self.assertEqual(page.errors, [])
+            print('PASS layout %s: %d layouts in margins and clear of %d HUD boxes, %d ink checks' %
+                  (kind, len(L), len(res['reserved']), len(ink)), flush=True)
+
+    def test_10_timing_and_lifecycle(self):
+        tm = EVIDENCE['timing']
+        page = self.open()
+        self.assertIsNotNone(self.emit(page, 2, 0.25, 0.5 / 12))
+        samples = {'0': self.msg(page)}
+        for target in (1000, 1500, 2983):
+            page.evaluate('t => { while (FALL_MESSAGE.elapsedMs < t - 1e-6) FRAMES(1) }', target)
+            samples[str(target)] = self.msg(page)
+        page.evaluate('FRAMES(1)')
+        samples['3000'] = self.msg(page)
+        exact = page.evaluate('[0, 1000, 1500, 3000, 4500].map(t => FALL_MESSAGE.opacity(t))')
+        self.assertEqual(exact[0], 1)
+        self.assertAlmostEqual(exact[1], 4 / 9, places=12)
+        self.assertAlmostEqual(exact[2], 1 / 4, places=12)
+        self.assertEqual(exact[3:], [0, 0])
+        for t, want in (('0', 1), ('1000', 4 / 9), ('1500', 1 / 4)):
+            s = samples[t]
+            self.assertAlmostEqual(s['elapsedMs'], float(t), places=6)
+            self.assertEqual(len(s['blits']), 1)
+            self.assertAlmostEqual(s['blits'][0]['alpha'], want, places=6)
+        self.assertEqual(len(samples['2983']['blits']), 1)
+        self.assertEqual((samples['3000']['elapsedMs'], samples['3000']['expired'], samples['3000']['blits']), (3000, True, []))
+        page.evaluate('FRAMES(30)')
+        self.assertEqual(self.msg(page)['blits'], [])
+        tm['fade'] = {'formula': 'max(0,1-elapsedMs/3000)^2', 'exact': dict(zip(['0', '1000', '1500', '3000', '4500'], exact)),
+                      'drawn': {t: {'elapsedMs': s['elapsedMs'], 'blitAlpha': s['blits'][0]['alpha'] if s['blits'] else None,
+                                    'blits': len(s['blits']), 'expired': s['expired']} for t, s in samples.items()},
+                      'blitsAfterExpiry30Frames': 0}
+
+        def frozen(freeze, unfreeze):
+            self.emit(page, 0, 0.5, 1.5 / 12)
+            page.evaluate('FRAMES(30)')
+            a = self.msg(page)
+            page.evaluate(freeze)
+            page.evaluate('FRAMES(120)')
+            b = page.evaluate('''() => { BLITS.length = 0; draw(); if (menu.gamePaused) menu.drawPauseScreen()
+                return {elapsedMs: FALL_MESSAGE.elapsedMs, blits: BLITS.length, paused: menu.gamePaused} }''')
+            page.evaluate(unfreeze)
+            page.evaluate('FRAMES(30)')
+            c = self.msg(page)
+            self.assertAlmostEqual(a['elapsedMs'], 500, places=6)
+            self.assertEqual(b['elapsedMs'], a['elapsedMs'])
+            self.assertAlmostEqual(c['elapsedMs'], 1000, places=6)
+            self.assertEqual(c['eventId'], a['eventId'])
+            self.assertEqual(len(c['blits']), 1)
+            return {'before': a['elapsedMs'], 'frozenFrames': 120, 'during': b['elapsedMs'], 'blitsWhileFrozen': b['blits'],
+                    'paused': b['paused'], 'after30Frames': c['elapsedMs'], 'sameEvent': True}
+
+        fr = {'paused': frozen('() => menu.startPause()', '() => menu.unPause()'),
+              'hidden': frozen('''() => { Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true})
+                  document.dispatchEvent(new Event('visibilitychange')) }''', '() => { delete document.visibilityState; menu.unPause() }'),
+              'hostPaused': frozen('() => { hostPaused = true }', '() => { hostPaused = false }'),
+              'hiddenNoPauseHandler': frozen('''() => Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true})''',
+                                             '() => { delete document.visibilityState }')}
+        self.assertEqual((fr['paused']['blitsWhileFrozen'], fr['hidden']['blitsWhileFrozen']), (0, 0))
+        self.assertTrue(fr['paused']['paused'] and fr['hidden']['paused'])
+        tm['frozen'] = fr
+        # Replacement: a second event replaces the first; never two blits in a frame.
+        self.emit(page, 0, 0.0, 0.5 / 12)
+        page.evaluate('FRAMES(60)')
+        first = self.msg(page)
+        self.emit(page, 5, 1.0, 1.5 / 12)
+        second = self.msg(page)
+        self.assertNotEqual(first['eventId'], second['eventId'])
+        self.assertEqual((second['message'], second['anchorIndex'], second['angle']), (MESSAGES[1], 5, 15))
+        self.assertEqual(second['elapsedMs'], 0)
+        self.assertEqual((len(first['blits']), len(second['blits'])), (1, 1))
+        self.assertAlmostEqual(second['blits'][0]['alpha'], 1, places=9)
+        keys = ('eventId', 'message', 'anchorIndex', 'angle', 'elapsedMs')
+        tm['replace'] = {'first': {k: first[k] for k in keys}, 'second': {k: second[k] for k in keys},
+                         'blitsPerFrame': [len(first['blits']), len(second['blits'])]}
+        # Recovery teleport keeps the message: a real fall to the -1500 recovery.
+        self.emit(page, 3, 0.5, 2.5 / 12)
+        pre = self.msg(page)
+        rec = page.evaluate('''() => { const l = floors[0].level; ninja.x = l.bounds.right + 4000; ninja.y = l.spawn.y + 1300
+            ninja.speedY = 0; RECOVERIES.length = 0; let n = 0; while (!RECOVERIES.length && n < 2000) { FRAMES(1); n++ }
+            return {frames: n, recoveries: RECOVERIES.length, y: ninja.y, spawnY: l.spawn.y} }''')
+        post = self.msg(page)
+        self.assertEqual(rec['recoveries'], 1)
+        self.assertLess(post['elapsedMs'], 3000)
+        self.assertEqual((post['eventId'], post['layout'], post['angle']), (pre['eventId'], pre['layout'], pre['angle']))
+        self.assertEqual(len(post['blits']), 1)
+        tm['teleport'] = {'recovery': rec, 'eventBefore': pre['eventId'], 'eventAfter': post['eventId'],
+                          'elapsedBefore': pre['elapsedMs'], 'elapsedAfter': post['elapsedMs'],
+                          'layoutUnchanged': post['layout'] == pre['layout'], 'blitsAfter': len(post['blits'])}
+        # Restart clears.
+        self.emit(page, 1, 0.5, 2.5 / 12)
+        page.evaluate('FRAMES(10)')
+        live = self.msg(page)
+        page.evaluate('() => { CLIMB_UI.restart(); window.requestAnimationFrame = () => 0; cancelAnimationFrame(game) }')
+        page.evaluate('FRAMES(5)')
+        after = self.msg(page)
+        self.assertEqual(len(live['blits']), 1)
+        self.assertEqual((after['eventId'], after['longFallEventId'], after['visible'], after['blits']), (None, None, False, []))
+        tm['restart'] = {'before': {'eventId': live['eventId'], 'blits': 1}, 'after': {'eventId': None, 'blits': 0, 'visible': False}}
+        # Completion clears; the completion screen draws no message.
+        self.emit(page, 4, 0.5, 3.5 / 12)
+        page.evaluate('FRAMES(10)')
+        live = self.msg(page)
+        page.evaluate('() => CLIMB_UI.complete()')
+        page.evaluate('FRAMES(10)')
+        done = self.msg(page)
+        self.assertEqual(len(live['blits']), 1)
+        self.assertTrue(done['completed'] and done['paused'])
+        self.assertEqual((done['eventId'], done['longFallEventId'], done['blits']), (None, None, []))
+        tm['completion'] = {'before': {'eventId': live['eventId'], 'blits': 1},
+                            'after': {'eventId': None, 'longFallEvent': None, 'blits': 0, 'completed': True}}
+        tm['pageErrors'] = page.errors
+        self.assertEqual(page.errors, [])
+        # Reload: a message on screen at save time does not come back.
+        context = self.browser.new_context(locale='en-US', **VIEWPORTS['desktop'])
+        self.addCleanup(context.close)
+        p1 = self.open(context=context)
+        self.emit(p1, 3, 0.5, 4.5 / 12)
+        p1.evaluate('FRAMES(10)')
+        live = self.msg(p1)
+        p1.evaluate('() => PROGRESS.flushClimb()')
+        p1.wait_for_function('k => { const v = localStorage.getItem(k); return v && JSON.parse(v).player.y === ninja.y }', arg=CLIMB_KEY)
+        saved = p1.evaluate('k => localStorage.getItem(k)', CLIMB_KEY)
+        errors = list(p1.errors)
+        p1.close()
+        p2 = self.open(context=context)
+        p2.evaluate('FRAMES(10)')
+        again = self.msg(p2)
+        self.assertEqual(len(live['blits']), 1)
+        self.assertEqual((again['eventId'], again['longFallEventId'], again['blits']), (None, None, []))
+        for word in MESSAGES + ['FALL_MESSAGE', 'fallMessage', 'anchor', 'angle']:
+            self.assertNotIn(word, saved)
+        tm['reload'] = {'before': {'eventId': live['eventId'], 'blits': 1}, 'after': {'eventId': None, 'blits': 0},
+                        'savedKeys': sorted(json.loads(saved)), 'savedContainsMessage': False}
+        tm['pageErrorsReload'] = errors + p2.errors
+        self.assertEqual(errors + p2.errors, [])
+        print('PASS timing: opacity 1, 4/9, 1/4, 0 at 0/1000/1500/3000 ms; frozen paused/hidden/host; '
+              'replace, teleport, restart, completion, reload', flush=True)
+
+    def test_11_isolation_controls_language(self):
+        iso = EVIDENCE['isolation']['render']
+        page = self.open()
+        before = page.evaluate(ISO_KEYS)
+        self.emit(page, 2, 0.5, 11.5 / 12)
+        page.evaluate('FRAMES(5)')
+        st = self.msg(page)
+        self.assertEqual(len(st['blits']), 1)
+        after = page.evaluate(ISO_KEYS)
+        self.assertEqual(before, after)
+        # Real input on top of the message: the press still throws the grapnel.
+        b = st['layout']['bounds']
+        p = page.evaluate('([x, y]) => { const r = canvas.getBoundingClientRect(); return {x: r.left + x, y: r.top + y} }',
+                          [(b['left'] + b['right']) / 2, (b['top'] + b['bottom']) / 2])
+        page.mouse.move(p['x'], p['y'])
+        page.mouse.down()
+        page.evaluate('FRAMES(2)')
+        press = page.evaluate('({pressHeld, throwed: grapnel.throwed, visible: FALL_MESSAGE.visible(), paused: menu.gamePaused})')
+        page.mouse.up()
+        page.evaluate('FRAMES(2)')
+        self.assertEqual(press, {'pressHeld': True, 'throwed': True, 'visible': True, 'paused': False})
+        page.keyboard.press('p')
+        paused = page.evaluate('menu.gamePaused')
+        page.keyboard.press('p')
+        self.assertTrue(paused)
+        self.assertFalse(page.evaluate('menu.gamePaused'))
+        iso['noninteractive'] = {'domNodesBefore': before['dom'], 'domNodesAfter': after['dom'],
+                                 'worldPlayerGrapnelKeysUnchanged': True, 'elements': after['elements'],
+                                 'dragZones': after['dragZones'], 'byId': after['byId'], 'storageKeys': after['storage'],
+                                 'pressOnMessage': press, 'pauseKeyToggles': True}
+        # Identical inputs with the renderer inert vs drawing: same physics and save.
+        runs = {}
+        for mode in ('inert', 'enabled'):
+            pg = self.open()
+            if mode == 'inert':
+                pg.evaluate('() => { FALL_MESSAGE.draw = function() {}; FALL_MESSAGE.advance = function() {} }')
+            pg.evaluate('''() => { let s = 777; const counted = Math.random
+                Math.random = function() { counted(); s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648 } }''')
+            pg.evaluate('''() => { const s = captureClimbState(), sp = floors[0].level.spawn
+                s.simulationTick = 0; s.stats = {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false}
+                Object.assign(s.player, {x: sp.x, y: sp.y, speedX: 0, speedY: 0})
+                s.upgrades.range = true; s.input = {pressHeld: false, stalePress: false}
+                s.grapple = {throwed: false, grappled: false, speedX: 0, speedY: 0, traveled: 0, shotStep: null, segments: []}
+                restoreClimbState(s); RECOVERIES.length = 0; GAMEPLAY_RNG_CALLS = 0
+                window.TICK = n => { for (let i = 0; i < n; i++) { physics(); FALL_MESSAGE.advance(physicsStepMs); FALL_MESSAGE.draw(ctx) } } }''')
+            out = pg.evaluate('''() => { const l = floors[0].level
+                ninja.x = l.bounds.right + 4000; ninja.y = l.spawn.y - 2600; ninja.speedY = 0
+                for (let i = 0; i < 2000 && !RECOVERIES.length; i++) TICK(1)
+                TICK(90)
+                return {events: LONG_FALL.emitted, blits: BLITS.length, recoveries: RECOVERIES.length} }''')
+            mid = pg.evaluate(STATE)
+            q = pg.evaluate('''() => canvasCoordsToViewportCoords({
+                x: (ninja.x + 80 + screen.x) * scale[version], y: (ninja.y - 160 + screen.y) * scale[version]})''')
+            pg.mouse.move(q['x'], q['y'])
+            pg.mouse.down()
+            pg.evaluate('TICK(60)')
+            pg.mouse.up()
+            pg.evaluate('TICK(30)')
+            end = pg.evaluate(STATE)
+            runs[mode] = {'out': out, 'mid': mid, 'end': end, 'errors': pg.errors}
+            self.assertEqual(pg.errors, [])
+        self.assertEqual(runs['inert']['out']['blits'], 0)
+        self.assertGreater(runs['enabled']['out']['blits'], 0)
+        self.assertEqual(runs['inert']['out']['events'], runs['enabled']['out']['events'])
+        self.assertGreaterEqual(runs['enabled']['out']['events'], 1)
+        self.assertNotEqual(runs['enabled']['mid']['player'], runs['enabled']['end']['player'])
+        for phase in ('mid', 'end'):
+            for key in runs['inert'][phase]:
+                self.assertEqual(runs['inert'][phase][key], runs['enabled'][phase][key], (phase, key))
+        iso['physics'] = {'scenario': 'fall from 2600 to recovery with the message drawn, 90 ticks, real grapple press 60 ticks, 30 ticks',
+                          'runs': {m: runs[m]['out'] for m in runs},
+                          'identical': {p: runs['inert'][p] == runs['enabled'][p] for p in ('mid', 'end')},
+                          'gameplayRngCalls': {m: runs[m]['end']['rngCalls'] for m in runs},
+                          'end': {k: v for k, v in runs['enabled']['end'].items() if k not in ('elements', 'save')},
+                          'saveIdentical': runs['inert']['end']['save'] == runs['enabled']['end']['save']}
+        # The default reaction source never touches the gameplay Math.random.
+        n = page.evaluate('GAMEPLAY_RNG_CALLS')
+        self.emit(page)
+        page.evaluate('() => FALL_MESSAGE.draw(ctx)')
+        self.assertEqual(page.evaluate('GAMEPLAY_RNG_CALLS'), n)
+        iso['gameplayRngCallsDuringDefaultReaction'] = 0
+        # Both languages draw only the approved English pool.
+        lang = {}
+        for code in ('ru', 'en'):
+            page.evaluate('c => setLanguage(c)', code)
+            if page.evaluate('menu.gamePaused'):
+                page.evaluate('menu.unPause()')
+            seen = []
+            for k in range(12):
+                self.emit(page, k % 6, 0.5, (k + 0.5) / 12)
+                s = self.msg(page)
+                self.assertEqual(len(s['blits']), 1)
+                seen.append(s['message'])
+            self.assertEqual(page.evaluate('I18N.language'), code)
+            self.assertEqual(seen, MESSAGES)
+            lang[code] = seen
+        iso['language'] = {'drawn': lang, 'onlyApprovedPool': True}
+        src = (ROOT / 'render/fallmessage.js').read_text(encoding='utf-8')
+        banned = ('addEventListener', 'Audio', 'shake', 'speedX', 'speedY', 'Math.random', 'localStorage', 'PROGRESS',
+                  'elements.push', 'appendChild', 'pointer', 'I18N')
+        iso['sideEffects'] = {'bannedTokensInRenderer': [w for w in banned if w in src], 'checked': list(banned)}
+        self.assertEqual(iso['sideEffects']['bannedTokensInRenderer'], [])
+        iso['pageErrors'] = page.errors + runs['inert']['errors'] + runs['enabled']['errors']
+        self.assertEqual(page.errors, [])
+        print('PASS isolation: noninteractive, controls work, physics identical inert vs enabled, English pool in en/ru', flush=True)
+
+    def test_12_production_captures(self):
+        cases = {'desktop': (1, 1.0, 'OOPS...'), 'touch': (4, 0.0, 'SEE YOU AT THE TOP.')}
+        caps = EVIDENCE['timing'].setdefault('captures', {})
+        for kind, (anchor, r, text) in cases.items():
+            page = self.open(kind)
+            self.emit(page, anchor, r, (MESSAGES.index(text) + 0.5) / 12)
+            frames, info = [], []
+            for name, target in (('appear 0 ms', 0), ('mid-fade 1500 ms', 1500), ('expiry 3000 ms', 3000)):
+                page.evaluate('t => { while (!FALL_MESSAGE.expired && FALL_MESSAGE.elapsedMs < t - 1e-6) FRAMES(1) }', target)
+                st = self.msg(page)
+                png = page.screenshot()
+                alpha = st['blits'][0]['alpha'] if st['blits'] else 0
+                note = (f"{st['message']} at {ANCHORS[st['layout']['anchorIndex']]} {st['angle']:+.0f} deg, alpha {alpha:.2f}"
+                        if st['blits'] else 'no message drawn (expired)')
+                frames.append((name, png, note))
+                info.append({'frame': name, 'elapsedMs': st['elapsedMs'], 'blits': len(st['blits']), 'alpha': alpha,
+                             'message': st['message'], 'anchorIndex': st['layout']['anchorIndex'] if st['layout'] else None,
+                             'angle': st['angle'], 'bounds': st['layout']['bounds'] if st['layout'] else None})
+            self.assertEqual([i['blits'] for i in info], [1, 1, 0])
+            self.assertAlmostEqual(info[0]['alpha'], 1)
+            self.assertAlmostEqual(info[1]['alpha'], 0.25, places=6)
+            self.assertEqual(info[2]['elapsedMs'], 3000)
+            self.assertEqual(abs(info[0]['angle']), 15)
+            self.__class__.frames[kind] = frames
+            caps[kind] = {'viewport': VIEWPORTS[kind]['viewport'], 'frames': info, 'pageErrors': page.errors}
+            self.assertEqual(page.errors, [])
+        print('PASS captures: desktop 1280x720 and touch 844x390 at 0/1500/3000 ms', flush=True)
 
 
 if __name__ == '__main__':

@@ -136,6 +136,7 @@
         
         <script src = "render/effects.js"></script>
         <script src = "render/tutorialhint.js"></script>
+        <script src = "render/fallmessage.js"></script>
         <script src = "render/backdrop.js"></script>
         <script src = "render/parallax.js"></script>
         <script src = "render/landmarks.js"></script>
@@ -572,7 +573,11 @@
                 else
                 {
                     const steps = runFixedPhysics(frameTime)
-                    if (activelyPlaying) TUTORIAL_HINT.advance(steps * physicsStepMs)
+                    if (activelyPlaying)
+                    {
+                        TUTORIAL_HINT.advance(steps * physicsStepMs)
+                        FALL_MESSAGE.advance(steps * physicsStepMs)
+                    }
                     draw()
                     if (activelyPlaying) PLATFORM.startup('first_gameplay_frame', version)
                 }

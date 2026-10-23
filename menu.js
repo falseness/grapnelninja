@@ -1014,6 +1014,7 @@ const CLIMB_UI = {
         const stats = floors[0].climbStats
         if (stats.completed) return
         stats.completed = true
+        FALL_MESSAGE.clear()
         runInProgress = false
         gameplayPressOwned = false
         stalePress = pressHeld

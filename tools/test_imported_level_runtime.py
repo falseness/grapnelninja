@@ -351,19 +351,31 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # script tag and the call in drawWorldLayer(). TASK-662 added only the Grapple Over
         # fall recovery to physics.js (PHYSICS_FALL_RECOVERY_DIFF below). TASK-663 changed only
         # the tutorial sprite (render/tutorialhint.js), which builds no world objects.
+        # TASK-664 changed only the panel circuits (render/roledetail.js). TASK-666 added the
+        # screen-space long-fall message (render/fallmessage.js): its script tag, the call in
+        # draw() and its fade advance next to the tutorial hint's in the game loop.
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
-                                                                                      ':!render/tutorialhint.js'],
+                                                                                      ':!render/tutorialhint.js', ':!render/roledetail.js',
+                                                                                      ':!render/fallmessage.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
                               text=True, check=True).stdout.splitlines() if l[:1] in '+-' and not l.startswith(('+++', '---'))]
         self.assertEqual(lines('render/draw.js'), ['+    // Transfer guide arrows under the range circle, grapnel, terrain and player',
-                                                   '+    drawRouteArrows(floors[0])'])
+                                                   '+    drawRouteArrows(floors[0])',
+                                                   '+// Long-fall reaction: screen space, over the hint and under the HUD it avoids',
+                                                   '+function drawFallMessageLayer()', '+{', '+    FALL_MESSAGE.draw(ctx)', '+}', '+',
+                                                   "+    if (version === 'grapple_over')", '+        drawFallMessageLayer()'])
         self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF)
         changed = lines('index.html')
         self.assertEqual(changed, ['+        <script src = "longfall.js"></script>',
+                                   '+        <script src = "render/fallmessage.js"></script>',
                                    '+        <script src = "render/routearrows.js"></script>',
-                                   '+                await loadGrappleOverLevelAsset()'])
+                                   '+                await loadGrappleOverLevelAsset()',
+                                   '-                    if (activelyPlaying) TUTORIAL_HINT.advance(steps * physicsStepMs)',
+                                   '+                    if (activelyPlaying)', '+                    {',
+                                   '+                        TUTORIAL_HINT.advance(steps * physicsStepMs)',
+                                   '+                        FALL_MESSAGE.advance(steps * physicsStepMs)', '+                    }'])
         self.evidence['cases']['modes'] = dict(seen, browserErrors=page.errors, unchangedSources=UNCHANGED,
                                                baseRev=BASE_REV, unchangedDiff=diff, indexHtmlChanges=changed)
 
