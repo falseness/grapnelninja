@@ -488,7 +488,7 @@ function circuitSegmentGap(a, b, c, d)
 // Motifs are sized by s = circuit scale x one screen px: grid steps are 6..15 s
 // axial or 4.24..12.73 s diagonal. Every trace vertex, via ring and pad is kept
 // fully inside the polygon (no geometry change), and traces keep a clear gap,
-// so the board gets fewer, wider-spaced paths as the scale grows. A shape too
+// so a larger scale packs fewer paths into the same panel. A shape too
 // thin for a motif simply goes without it: the scale never shrinks to fit.
 function bounceBoardDetail(points, box, seed, unit, circuit = 1)
 {
@@ -501,7 +501,9 @@ function bounceBoardDetail(points, box, seed, unit, circuit = 1)
     const edges = points.map((a, i) => [a, points[(i + 1) % points.length]])
     const inside = (p, margin) => pointInPolygon(points, p.x, p.y) &&
         edges.every(([a, b]) => circuitPointSegment(p, a, b) >= margin)
-    const traceMargin = 0.6 * s, viaMargin = 1.6 * s, gap = 1.5 * grid
+    // Away from thin strips, traces stay clear of the neon border stroke (2.5 s)
+    // so the denser boards never run a path into the panel edge
+    const traceMargin = thin ? 0.6 * s : 2.5 * s, viaMargin = 1.6 * s, gap = 1.5 * grid
     const middle = horizontal ? (box.top + box.bottom) / 2 : (box.left + box.right) / 2
     const sample = () =>
     {
@@ -517,8 +519,11 @@ function bounceBoardDetail(points, box, seed, unit, circuit = 1)
         return a + p.x * q.y - q.x * p.y
     }, 0)) / 2 / (s * s)
     const traces = [], segments = []
-    const count = thin ? 1 + Math.floor(random() * 2) :
-        Math.max(2, Math.min(6, Math.round(area / 3000))) + Math.floor(random() * 2)
+    // Dense boards: roughly one path per 700 s² (one per 30 s along a thin strip);
+    // the clear gap check below is what finally limits the count
+    const length = Math.max(width, height)
+    const count = thin ? Math.max(2, Math.min(8, Math.round(length / 30))) + Math.floor(random() * 2) :
+        Math.max(4, Math.min(18, Math.round(area / 700))) + Math.floor(random() * 3)
     const directions = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
     const clear = (a, b) => segments.every(([c, d]) => circuitSegmentGap(a, b, c, d) >= gap)
     for (let attempt = 0; traces.length < count && attempt < 4000; attempt++)
@@ -546,7 +551,7 @@ function bounceBoardDetail(points, box, seed, unit, circuit = 1)
         for (let i = 1; i < path.length; i++) segments.push([path[i - 1], path[i]])
     }
     const pads = []
-    for (let attempt = 0, count = thin ? 1 : 1 + Math.floor(random() * 3); pads.length < count && attempt < 1000; attempt++)
+    for (let attempt = 0, count = thin ? 2 : 3 + Math.floor(random() * 4); pads.length < count && attempt < 1000; attempt++)
     {
         const p = sample()
         if ([[-3,-1],[3,-1],[-3,1],[3,1]].every(([x,y]) => inside({x:p.x+x*s,y:p.y+y*s}, 0.3 * s)) &&
