@@ -258,19 +258,19 @@ class ExtendedOpeningTests(unittest.TestCase):
     def test_opening_transfers_and_targets_are_kept(self):
         for fid in ('P0', 'P1', 'P2'):
             new, old = self.frag(self.m, fid), self.frag(self.base, fid)
-            self.assertEqual((new['x'], new['y'], new['polys']), (old['x'], old['y'], old['polys']))
+            self.assertEqual(new['polys'], old['polys'])
         t = self.report['transfers']
         self.assertEqual([(r['encounter'], r['from'], r['to']) for r in t[:2]],
                          [('S06-03', 'P0', 'P1'), ('S06-04', 'P1', 'P2')])
-        for row in t[:2]:
-            self.assertAlmostEqual(row['computedPercent'], 80, places=5)
+        for row, pct in zip(t[:2], (160,240)):
+            self.assertAlmostEqual(row['computedPercent'], pct, places=5)
         up = self.opening['candidate']['sections']['upward']['fragments']
         row = next(r for r in t if (r['from'], r['to']) == tuple(up))
         self.assertEqual(row['encounter'], 'S07-01')
         self.assertAlmostEqual(row['computedPercent'], 150, places=5)
         # Every original numeric gap target resolves to the same semantic encounter.
         by_id = {r['encounter']: r for r in t}
-        for old_n, pct in retune.TARGETS.items():
+        for old_n, pct in retune.OPENING_TARGETS.items():
             eid = self.m['routeMap']['encounterIds'][str(old_n)]
             self.assertEqual(eid, self.source['encounters'][old_n - 1]['id'])
             self.assertAlmostEqual(by_id[eid]['computedPercent'], pct, places=5)
@@ -288,7 +288,7 @@ class ExtendedOpeningTests(unittest.TestCase):
             if band.get('belowEncounter'):
                 self.assertEqual(self.m['encounters'][band['belowJump'] - 1]['id'], band['belowEncounter'])
         allowed = {frozenset(p) for p in self.m['allowedGrapplePairs']}
-        self.assertEqual(allowed, {frozenset(('P0', 'P1')), frozenset(('P1', 'P2'))})
+        self.assertEqual(allowed, set())
         # Old number 4 (P3->P4) no longer names the same encounter; the map does.
         self.assertNotEqual(self.m['encounters'][3]['id'], self.source['encounters'][3]['id'])
 

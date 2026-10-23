@@ -10,11 +10,13 @@ import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
-EXTENDED_LAYOUT = 'extended-mountain-v10'
+EXTENDED_LAYOUT = 'extended-mountain-v11'
+OPENING_TARGETS = dict(TARGETS)
+OPENING_TARGETS.update({1:160, 2:240})
 # Rightward span is a minimum; usable surfaces and measured release gaps take
 # priority over fitting a fixed endpoint. Fold separation may change the leftward span.
 MIN_OPENING_SPAN = 720.0
-# After the two easy transfers the rightward run is one mixed combination:
+# After the two opening release jumps the rightward run is one mixed combination:
 # ceiling underside catch, descent onto a sloped bounce face, rebound up, then
 # a mostly horizontal transfer to the upward-turn departure. lift is the rise
 # of the new contact over the previous one (negative descends); gap is the
@@ -22,7 +24,9 @@ MIN_OPENING_SPAN = 720.0
 # The opening uses a ceiling catch, descending slope, rebound and exposed hop.
 # Geometry is only a candidate until the whole-route production audit and
 # continuous combination replay pass; an edge-gap check cannot prove this.
-OPENING = dict(factor=3,
+# Original v5 P0-to-P2 contact span; increasing the first gaps must not
+# multiply the already-extended ceiling combination a second time.
+OPENING = dict(factor=3, baselineRightSpan=1836.2141822795545,
                right=[dict(kind='ceiling', width=2700, height=240, lift=1250, gap=700, share=.52,
                            surface='underside', direction='UP-RIGHT → CEILING HOLD'),
                       dict(kind='bounce', width=900, height=520, lift=-1000, gap=1080, share=.22, drop=80,
@@ -205,7 +209,7 @@ def extend_opening(fs, rows, spec):
     up_row = by_pair[(fs[right_end]['id'], fs[up_to]['id'])]
     left_row = by_pair[(fs[up_to]['id'], fs[left_end]['id'])]
     cx = lambda f: svg.contact(f)[0]
-    span_r, span_l = cx(fs[right_end])-cx(fs[0]), cx(fs[up_to])-cx(fs[left_end])
+    span_r, span_l = spec.get('baselineRightSpan', cx(fs[right_end])-cx(fs[0])), cx(fs[up_to])-cx(fs[left_end])
     # Each panel rises (or descends) by lift between contacts, then slides
     # rightward until its complete-polygon gap to the previous panel is gap.
     added, prev = [], fs[right_end]
@@ -429,7 +433,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         angle = math.atan2(dy, dx) + math.radians(DIRECTION_OFFSETS.get(n, 0) if reposition else 0)
         if opening and n == 6:
             angle += math.radians(30)
-        target = TARGETS.get(n, source['encounters'][n-1]['percent']) * 5.4
+        target = (OPENING_TARGETS if opening else TARGETS).get(n, source['encounters'][n-1]['percent']) * 5.4
         angles = [angle]
         if n not in TARGETS:
             angles += [angle + math.radians(delta*sign) for delta in range(5, 86, 5) for sign in (1, -1)]
@@ -531,7 +535,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         end=[z['x']+z['width']/2,z['y']+1000],meaning='Illustrative fall only') for i,z in enumerate(m['yellowBands'])]
     m['bluntedCorners']=dict(minimumAngle=MIN_INTERIOR_ANGLE, face=BLUNT_FACE, changed=blunted)
     m['layoutId']=EXTENDED_LAYOUT if opening else LAYOUT
-    m['allowedGrapplePairs']=[['P0','P1'],['P1','P2']]
+    m['allowedGrapplePairs']=[] if opening else [['P0','P1'],['P1','P2']]
     if opening:
         new=m['routeMap']['fragmentIds']
         m['allowedGrapplePairs']=[[new[a],new[b]] for a,b in m['allowedGrapplePairs']]
@@ -762,15 +766,15 @@ def main():
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);
     # the original opening stays the frozen v5 reproduction without them.
     text=svg.build(m, guides=bool(opening), arrows=bool(opening))
-    text=text.replace('01–10: preserved baseline geometry', 'Opening 80% · vertical transfers 150%')
-    text=text.replace('BASELINE PRESERVED', 'EASIER OPENING / SHORTER CLIMBS')
-    text=text.replace('original 01–10 unchanged','opening gaps 80%; vertical gaps 150%')
-    text=text.replace('Geometric checks exclude direct fragment-to-fragment grappling.', 'Opening transfers allow grappling; later transfers remain beyond grapple range.')
+    text=text.replace('01–10: preserved baseline geometry', 'Opening 160% / 240% · vertical transfers 150%')
+    text=text.replace('BASELINE PRESERVED', 'RELEASE JUMPS FROM THE START')
+    text=text.replace('original 01–10 unchanged','opening gaps 160% / 240%; vertical gaps 150%')
+    text=text.replace('Geometric checks exclude direct fragment-to-fragment grappling.', 'Opening and later transfers require release jumps.')
     text=text.replace('No nominal illustrated arc enters a band.', 'Fall-band paths require gameplay testing.')
-    text=text.replace('All 300 fragment pairs > grapple + player diameter.', 'Opening pairs allow grappling; other pairs stay separated.')
+    text=text.replace('All 300 fragment pairs > grapple + player diameter.', 'All consecutive panels are beyond grapple range.')
     lines=text.splitlines(True)
     (dest/'extended-mountain.svg').write_text(''.join(lines))
     (dest/'extended-mountain-measurements.json').write_text(json.dumps(m,separators=(',',':'))+'\n')
-    print('Wrote',dest,'layout',m['layoutId'],'fragments',len(m['fragments']),'transfers',len(m['encounters']),'targets',TARGETS)
+    print('Wrote',dest,'layout',m['layoutId'],'fragments',len(m['fragments']),'transfers',len(m['encounters']),'targets',OPENING_TARGETS if opening else TARGETS)
 
 if __name__=='__main__':main()

@@ -18,7 +18,7 @@ class RetunedLevelTests(unittest.TestCase):
         self.assertTrue(report['summary']['pass'], report)
         # Targets use the v5 encounter numbers; the route map gives the shipped number.
         numbers=ref['routeMap']['encounterNumbers']
-        targets={1:80,2:80,3:150,5:150,8:150,14:150,18:150,21:150}
+        targets={1:160,2:240,3:150,5:150,8:150,14:150,18:150,21:150}
         for n,pct in targets.items():
             row=report['transfers'][numbers[str(n)]-1]
             self.assertEqual(row['encounter'],ref['routeMap']['encounterIds'][str(n)])
@@ -34,7 +34,7 @@ class RetunedLevelTests(unittest.TestCase):
         self.assertTrue(all(e['id'].endswith('-body0') for e in bodies))
         self.assertGreaterEqual(report['summary']['minDragSolidClearance'],1080)
         strict=copy.deepcopy(ref); strict.pop('allowedGrapplePairs')
-        self.assertFalse(check(level,svg,strict)['summary']['pass'])
+        self.assertTrue(check(level,svg,strict)['summary']['pass'])
 
 class YellowConsolidationTests(unittest.TestCase):
     def fixture(self, second_x):

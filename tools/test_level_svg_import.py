@@ -584,7 +584,7 @@ class GuideTests(ImportCase):
         self.assertEqual(runs[0].encode(), (ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json').read_bytes())
         self.assertEqual(runs[0], runs[1])
         level = json.loads(runs[0])
-        self.assertEqual(level['layoutId'], 'extended-mountain-v10')
+        self.assertEqual(level['layoutId'], 'extended-mountain-v11')
         fragments = {f['id'] for f in level['svgFormat']['fragments']}
         checks = []
         for t in level['svgFormat']['transfers']:
@@ -628,7 +628,7 @@ class GuideTests(ImportCase):
         """Guides are per transfer: unguided siblings keep the legacy shape."""
         text = Path(ROOT, 'artifacts', 'levels', 'extended-mountain.svg').read_text()
         text = re.sub(r'(<gn:transfer id="T\d+"[^>]*?) guide="[^"]*"', r'\1', text)  # shipped guides (TASK-660) off
-        text = edit(text, 'encounter="S06-04" gap-percent="80"/>', 'encounter="S06-04" gap-percent="80" guide="%s"/>' % self.GUIDE)
+        text = edit(text, 'encounter="S06-04" gap-percent="240"/>', 'encounter="S06-04" gap-percent="240" guide="%s"/>' % self.GUIDE)
         transfers = import_svg(text.encode())['svgFormat']['transfers']
         self.assertEqual([t['id'] for t in transfers if 'guide' in t], ['T02'])
         self.assertEqual(transfers[1]['guide'], [[300, -10], [500, -400], [700, -400], [924.5, -50]])

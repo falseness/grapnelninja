@@ -5,7 +5,7 @@
     "pumps": 1,
     "fraction": 0.2,
     "aimOffset": 0,
-    "drop": 30,
+    "drop": 300,
     "budget": 2400,
     "lastAimOffset": 0.15
   },
@@ -15,7 +15,7 @@
     "pumps": 1,
     "fraction": 0.2,
     "aimOffset": 0,
-    "drop": 30,
+    "drop": 300,
     "budget": 2400,
     "lastAimOffset": 0.15
   },

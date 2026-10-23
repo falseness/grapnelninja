@@ -255,18 +255,13 @@ class OpeningJumpVarietyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '720'):
                 retune.tune(src, opening=spec, yellow_clearance=retune.YELLOW_CLEARANCE)
 
-    def test_07_preserves_easy_opening_and_later_terrain(self):
-        keys = ('x', 'y', 'width', 'height', 'kind', 'polys')
+    def test_07_preserves_opening_shapes_and_later_connectivity(self):
+        keys = ('width', 'height', 'kind', 'polys')
         for fid in ('P0', 'P1', 'P2'):
             self.assertEqual({k: self.frag(self.m, fid)[k] for k in keys},
                              {k: self.frag(self.before, fid)[k] for k in keys}, fid)
-        els = lambda lvl: {e['id']: e for e in lvl['elements']}
-        for eid in ('P0-body0', 'P1-body0', 'P2-body0'):
-            self.assertEqual(json.dumps(els(self.level)[eid]), json.dumps(els(self.before_level)[eid]))
-        for n in (1, 2):
-            new, old = self.m['encounters'][n - 1], self.before['encounters'][n - 1]
-            self.assertEqual((new['id'], new['percent'], new['distance'], new['flight']),
-                             (old['id'], old['percent'], old['distance'], old['flight']))
+        for row, target in zip(self.m['encounters'][:2], (160,240)):
+            self.assertAlmostEqual(row['percent'], target, places=5)
         # Later terrain may be reshaped to remove bypasses; preserve semantic
         # route connectivity and the deliberate 150% turn, not old positions.
         up = next(r for r in self.m['encounters'] if r['id'] == 'S07-01')
@@ -285,7 +280,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         self.assertGreaterEqual(s['minYellowPairClearance'], 540)
         self.assertEqual(s['solidBounceGrapplable'], s['solidElements'])
         allowed = {frozenset(p) for p in self.m['allowedGrapplePairs']}
-        self.assertEqual(allowed, {frozenset(('P0', 'P1')), frozenset(('P1', 'P2'))})
+        self.assertEqual(allowed, set())
         for p in self.report['pairs']:
             if frozenset((p['a'], p['b'])) not in allowed:
                 self.assertGreater(p['clearanceMinusDiameter'], GRAPPLE_RANGE, p)
@@ -581,7 +576,7 @@ class CombinationReplayTests(unittest.TestCase):
 
     def test_11_route_regressions(self):
         ids = self.ids
-        cases = [('S06-03', 'P0', 'P1', dict(fraction=.8, pumps=1)), ('S06-04', 'P1', 'P2', dict(fraction=.8, pumps=1)),
+        cases = [('S06-03', 'P0', 'P1', dict(fraction=.2, pumps=1,drop=300,lastAimOffset=.15)), ('S06-04', 'P1', 'P2', dict(fraction=.2, pumps=1,drop=300,lastAimOffset=.15)),
                  ('S07-01 upward turn', ids['R4'], 'P7', dict(fraction=.2, pumps=1,lastAimOffset=.15))]
         out = []
         for name, source, target, policy in cases:
