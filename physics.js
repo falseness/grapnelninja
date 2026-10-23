@@ -66,6 +66,7 @@ function calcPhysics()
         stats.elapsedActiveMs += physicsStepMs / cyclesPerTick
         stats.currentHeight = world.level.spawn.y - ninja.y
         stats.maxHeight = Math.max(stats.maxHeight, stats.currentHeight)
+        LONG_FALL.step()
         if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)
         {
             recoverClimbFall()
@@ -109,6 +110,7 @@ function recoverClimbFall()
     gameplayPressOwned = false
     stalePress = pressHeld
     world.climbStats.currentHeight = 0
+    LONG_FALL.restartTracking()
     screen.trackGrappleOver(true)
     PROGRESS.flushClimb()
 }

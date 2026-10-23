@@ -43,7 +43,8 @@ CLIMB_KEY = 'grapnelninja.grappleOver'
 BASE_REV = '8b9bbf6'
 UNCHANGED = ['physics.js', 'fixedlevel.js', 'collision', 'sprites', 'elements', 'respawn.js', 'moveScreen.js', 'render']
 
-# TASK-662: the only physics.js change since BASE_REV (git diff -U0 lines).
+# TASK-662: the only physics.js change since BASE_REV (git diff -U0 lines), plus
+# TASK-665's two long-fall detector calls (longfall.js; no physics change).
 PHYSICS_FALL_RECOVERY_DIFF = [
     '+// Grapple Over: falling strictly below this many world units under the spawn',
     '+// returns the player to the spawn without restarting the run.',
@@ -56,6 +57,7 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+        recovered = calcPhysics()',
     '-    calcPhysics()',
     '+    if (!recovered) calcPhysics()',
+    '+        LONG_FALL.step()',
     '+        if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)',
     '+        {',
     '+            recoverClimbFall()',
@@ -79,6 +81,7 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+    gameplayPressOwned = false',
     '+    stalePress = pressHeld',
     '+    world.climbStats.currentHeight = 0',
+    '+    LONG_FALL.restartTracking()',
     '+    screen.trackGrappleOver(true)',
     '+    PROGRESS.flushClimb()',
     '+}',
@@ -358,7 +361,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                                    '+    drawRouteArrows(floors[0])'])
         self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF)
         changed = lines('index.html')
-        self.assertEqual(changed, ['+        <script src = "render/routearrows.js"></script>',
+        self.assertEqual(changed, ['+        <script src = "longfall.js"></script>',
+                                   '+        <script src = "render/routearrows.js"></script>',
                                    '+                await loadGrappleOverLevelAsset()'])
         self.evidence['cases']['modes'] = dict(seen, browserErrors=page.errors, unchangedSources=UNCHANGED,
                                                baseRev=BASE_REV, unchangedDiff=diff, indexHtmlChanges=changed)
