@@ -32,6 +32,10 @@ const DRAG_ZONE_HORIZONTAL_DAMPING = 0.8
 // rebounds to well under half the drop height instead of the release height.
 const DRAG_ZONE_VERTICAL_DAMPING = 0.985
 
+// World units by which a circle that only touches a no-grapple zone may miss
+// it through floating-point rounding and still count as tangent (inside).
+const NO_GRAPPLE_TANGENCY_TOLERANCE = 1e-6
+
 function validateFixedLevel(data)
 {
     const fail = (name, path) => {throw new Error(name + ': ' + path)}
@@ -207,6 +211,26 @@ class PersistentWorld extends Floor
             player.speedX *= DRAG_ZONE_HORIZONTAL_DAMPING
             player.speedY *= DRAG_ZONE_VERTICAL_DAMPING
         }
+    }
+    // The player is inside a no-grapple zone while its circle overlaps the
+    // zone, edge and corner tangency included (up to rounding).
+    playerInNoGrappleZone(player)
+    {
+        const r2 = Math.pow(player.radius + NO_GRAPPLE_TANGENCY_TOLERANCE, 2)
+        return this.noGrappleZones.some(zone => pointInPolygon(zone.getPoints(), player.x, player.y) ||
+            zone.getLines().some(line => segmentDistanceSquared(line, player.x, player.y) <= r2))
+    }
+    // Inside a zone any rope, attached or in flight, is dropped. Position and
+    // momentum are untouched. As after a fall recovery, a press held through
+    // the release cannot grapple again until it is released.
+    applyNoGrappleZones(player)
+    {
+        this.playerInNoGrapple = this.noGrappleZones.length > 0 && this.playerInNoGrappleZone(player)
+        if (!this.playerInNoGrapple || !grapnel.throwed) return
+        Object.assign(grapnel, {throwed: false, grappled: false, pos: [], shotStep: null,
+            aim: null, clip: null, traveled: 0})
+        gameplayPressOwned = false
+        stalePress = pressHeld
     }
     draw()
     {

@@ -96,6 +96,11 @@ function createEvents()
             }, STYLE.timing.inputUntouchMs)
             return
         }
+        // A press made inside a no-grapple zone never grapples, even once the
+        // player has left the zone while it is still held.
+        if (version === 'grapple_over' && !menu.opened() && !continueOffer.visible &&
+            floors[0].playerInNoGrappleZone(ninja))
+            stalePress = true
         if (!menu.opened() && !continueOffer.visible && !stalePress)
         {
             throwGrapnel(event)

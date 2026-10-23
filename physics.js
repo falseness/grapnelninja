@@ -48,6 +48,8 @@ function calcPhysics()
     if (continueOffer.visible)
         return
 
+    // Release in the step of entry, before this step's rope pull or acquisition.
+    if (version === 'grapple_over') floors[0].applyNoGrappleZones(ninja)
     grapnel.move()
     if (grapnel.throwed)
     {

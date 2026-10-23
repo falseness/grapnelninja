@@ -303,8 +303,15 @@ none, except the `no-grapple` contract below.
   input included) until the circle is completely outside every zone. Panels
   inside the zone stay `grapplable="true"`: only acquisition is inhibited,
   by player location. A player outside may fire a rope that crosses a zone
-  or attaches to a panel inside one. (Runtime membership, release and
-  drawing are TASK-673/674; this section is the contract they implement.)
+  or attaches to a panel inside one. Runtime (TASK-673):
+  `PersistentWorld.playerInNoGrappleZone` tests the circle (tangency within
+  `NO_GRAPPLE_TANGENCY_TOLERANCE`, 1e-6 world units), and `calcPhysics`
+  drops the rope right after the player moves, before that step's rope
+  pull or acquisition. Input ownership is unchanged: as after a fall
+  recovery, a press whose rope was dropped, or one made inside a zone, stays
+  stale until released. Held input therefore never attaches after exit
+  either; a fresh press is needed (`tools/test_no_grapple_physics.py`).
+  Drawing is TASK-674.
   Spacing inside a zone is relaxed only for route transfers, see §7.1.
 - `grapplable` is always written explicitly in the output. The loader's
   `grapplable !== false` default is never relied on.
