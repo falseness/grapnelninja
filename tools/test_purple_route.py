@@ -44,6 +44,8 @@ import retune_extended_level as retune  # noqa: E402
 
 EVIDENCE = os.environ.get('NO_GRAPPLE_EVIDENCE_DIR')
 MIN_SIDE_SCOPE = os.environ.get('PURPLE_ROUTE_MIN_SIDE_SCOPE', 'none')
+# PURPLE_ROUTE_MIDDLE=1: the candidate also has the middle encounter NGM (retune --middle-purple, TASK-682).
+MIDDLE = ['--middle-purple'] if os.environ.get('PURPLE_ROUTE_MIDDLE') == '1' else []
 SHIPPED = ROOT / 'artifacts' / 'levels'
 SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 INPUTS = TOOLS / 'fixtures' / 'purple-route-inputs.json'
@@ -149,7 +151,7 @@ class PurpleRouteGeometryTests(unittest.TestCase):
     def test_01_candidate_regenerates_byte_identically(self):
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run([sys.executable, str(TOOLS / 'retune_extended_level.py'), '--source', str(SOURCE),
-                            '--output-dir', tmp, '--min-side-scope', MIN_SIDE_SCOPE], check=True, capture_output=True,
+                            '--output-dir', tmp, '--min-side-scope', MIN_SIDE_SCOPE] + MIDDLE, check=True, capture_output=True,
                            cwd=TOOLS)
             subprocess.run([sys.executable, str(TOOLS / 'import_level_svg.py'), '--input', tmp + '/' + NAMES[0],
                             '--output', tmp + '/' + NAMES[2]], check=True, capture_output=True, cwd=TOOLS)
@@ -162,7 +164,8 @@ class PurpleRouteGeometryTests(unittest.TestCase):
     def test_02_zone_dimensions_and_leftward_placement(self):
         z, ext = self.zone, self.ext
         self.assertEqual((z['width'], z['height']), (5400, 2700))
-        self.assertEqual(len(self.m['noGrappleZones']), 1)
+        # One zone per purple encounter (a --middle-purple candidate has two; this class checks the first).
+        self.assertEqual(len(self.m['noGrappleZones']), len(retune.purple_extensions(self.m)))
         el = {e['id']: e for e in self.level['elements']}[z['id']]
         self.assertEqual((el['role'], el['grapplable']), ('no-grapple', False))
         pts = [(el['x'] + p['x'], el['y'] + p['y']) for p in el['points']]
@@ -268,8 +271,9 @@ class PurpleRouteGeometryTests(unittest.TestCase):
     def test_04_independent_checker_and_canonical_thresholds(self):
         s = self.check['summary']
         self.assertTrue(s['pass'], self.check['failureMessages'][:5])
-        self.assertEqual(s['noGrappleZones'], 1)
-        self.assertEqual(s['noGrappleInternalPairs'], len(self.ext['internal']) - 1)
+        exts = retune.purple_extensions(self.m)
+        self.assertEqual(s['noGrappleZones'], len(exts))
+        self.assertEqual(s['noGrappleInternalPairs'], sum(len(e['internal']) - 1 for e in exts))
         self.assertGreaterEqual(s['minDragSolidClearance'], 1620 - 1e-6)
         self.assertGreaterEqual(s['minYellowPairClearance'], 540 - 1e-6)
         self.assertGreaterEqual(s['minInteriorAngle'], 20)

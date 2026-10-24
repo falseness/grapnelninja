@@ -401,6 +401,17 @@ def band_ends(m, number):
     return index[route['fragmentIds'][row['originalFrom']]], index[route['fragmentIds'][row['originalTo']]]
 
 
+def band_endpoints(m, number):
+    """The fragments a band is centred under. A jump that a second purple encounter (TASK-682) moved to
+    leave its exit ledge keeps its band under the original departure and the target before the shift."""
+    a, b = [m['fragments'][i] for i in band_ends(m, number)]
+    for e in purple_extensions(m)[1:]:
+        if a['id'] == e['arrival'] and b['id'] != e['exit'] and any(
+                r.get('originalNumber') == number and r['fromFragment'] == e['exit'] for r in m['encounters']):
+            b = moved(b, -e['upperTranslation'][0], -e['upperTranslation'][1])
+    return a, b
+
+
 # Legacy lower catch chain (TASK-675 and earlier): eight platform tops. Only its
 # endpoint is still used: the upward-turn departure stays exactly where it was,
 # so the upper route, the purple extension and the late falls keep their geometry.
@@ -523,6 +534,18 @@ PURPLE = dict(shift=-7500, approachGap=1350, approach=(1200, 260), zone=(5400, 2
                       ('Overhang', (1995.901, 1459.177), 0.6, 1309, 278, 283, -1),
                       ('Launch ramp', (671.178, 1655.582), 33.5, 481, 946, 202, 1)])
 NO_GRAPPLE_INTERNAL_GAP = 270.0
+# TASK-682 (candidate, opt-in via --middle-purple): a second purple encounter in
+# the middle of the route, after the original chute and the normal grapple
+# transfers S07-03 .. S08-01 that follow it. It starts at P7 (the arrival of the
+# rightward S08-01, before the vertical S08-02) and is NG1's mirror image: an
+# approach ledge right of P7, a 10R x 5R zone right of that holding NG1's slabs
+# (and its post) reflected about the zone centre, at the same height below its
+# approach, and an exit ledge copying P7 7500 to the right, so S08-02 and every
+# later panel keep their geometry translated by +7500 (later falls stay above
+# lower terrain). Bounces run rightward; the exit overhangs the zone's upper right.
+PURPLE_MIDDLE = dict(PURPLE, departure='P7', upId='S08-02', prefix='NGM', zoneId='NGM', mirror=True,
+                     mirrorOf='NG1', shift=7500, label='Middle purple',
+                     purpose='Rightward rope-free bounce traversal (mirror of NG1) after S08-01, before the S08-02 climb')
 
 
 def slab(contact, angle, before, after, thickness, side):
@@ -551,30 +574,77 @@ def zone_contains(zone, fragment):
     return all(x <= px <= x+w and y <= py <= y+h for poly in svg.bodies(fragment) for px, py in poly)
 
 
+def mirror_fragment(f, cx):
+    """f reflected about the vertical line x = cx (vertex order reversed, so the winding is kept);
+    applying it twice restores f, vertex order included."""
+    w = f['width']
+    g = dict(f, x=2*cx-f['x']-w, polys=[[[w-x, y] for x, y in poly[::-1]] for poly in f['polys']])
+    if 'contactPoint' in f:
+        g['contactPoint'] = [w-f['contactPoint'][0], f['contactPoint'][1]]
+    if 'surfaceAngle' in f:
+        g['surfaceAngle'] = -f['surfaceAngle']
+    return g
+
+
+def in_mirror(f, cx, op, *others):
+    """Run op on f (and others) reflected about x = cx, then reflect f's new shape back; returns op's result."""
+    g = mirror_fragment(f, cx)
+    out = op(g, *[mirror_fragment(o, cx) for o in others])
+    f.update(mirror_fragment(g, cx))
+    return out
+
+
+def purple_extensions(m):
+    """Every purple encounter in route order (TASK-682); a layout with one keeps the singular key only."""
+    return m.get('purpleExtensions') or ([m['purpleExtension']] if m.get('purpleExtension') else [])
+
+
 def extend_purple_route(m, spec):
+    """Insert one purple encounter after spec's departure (default: the original P4 / S07-03 chute).
+
+    The chute (approach, zone, internal slabs, exit copying the departure) is
+    built leftward; spec['mirror'] reflects the approach side, the zone and its
+    slabs to the right of the departure (a rightward arrival) with a positive
+    shift, so the internal geometry is the mirror image of NG1's. Every later
+    panel moves by shift; ids, rows, combinations and earlier purple metadata
+    are remapped."""
     fs, rows, route = m['fragments'], m['encounters'], m['routeMap']
-    k = next(i for i, f in enumerate(fs) if f['id'] == route['fragmentIds']['P4'])
+    pre, zid, mirror = spec.get('prefix', 'NG'), spec.get('zoneId', 'NG1'), spec.get('mirror', False)
+    k = next(i for i, f in enumerate(fs) if f['id'] == route['fragmentIds'][spec.get('departure', 'P4')])
     up = rows[k]
-    if up['originalId'] != 'S07-03' or up['fromFragment'] != fs[k]['id']:
-        raise ValueError('Purple extension expects the first leftward arrival before S07-03')
+    if up['originalId'] != spec.get('upId', 'S07-03') or up['fromFragment'] != fs[k]['id']:
+        raise ValueError('Purple extension expects the arrival before %s' % spec.get('upId', 'S07-03'))
     dep = fs[k]
     shift = spec['shift']
-    exit_ = dict(copy.deepcopy(dep), name='Purple exit ledge', x=dep['x']+shift, originalId=None, semanticId='NG-EXIT')
+    side = 1 if mirror else -1
+    if side*shift <= 0:
+        raise ValueError('Purple shift must point to the chute side')
+    label = spec.get('label', 'Purple')
+    exit_ = dict(copy.deepcopy(dep), name='%s exit ledge' % label, x=dep['x']+shift, originalId=None, semanticId=pre+'-EXIT')
     w, h = spec['approach']
-    approach = dict(panel('Purple approach ledge', w, h, 0, 0), originalId=None, semanticId='NG-APPROACH')
-    approach = place_along(dep, approach, -1, 0, spec['approachGap'], origin=(dep['x']-w, dep['y']))
-    # The zone ends just left of the approach and starts just below the exit
-    # ledge, which overhangs its upper-left part: the player leaves through the top.
+    approach = dict(panel('%s approach ledge' % label, w, h, 0, 0), originalId=None, semanticId=pre+'-APPROACH')
+    approach = place_along(dep, approach, side, 0, spec['approachGap'],
+                           origin=(dep['x']+dep['width'] if mirror else dep['x']-w, dep['y']))
+    # The zone ends just past the approach and starts just below the exit
+    # ledge, which overhangs its far upper part: the player leaves through the top.
     zw, zh = spec['zone']
-    zx = approach['x']-spec['zoneMargin']-zw
+    zx = approach['x']+w+spec['zoneMargin'] if mirror else approach['x']-spec['zoneMargin']-zw
     zy = exit_['y']+exit_['height']+spec['zoneMargin']
-    zone = dict(id='NG1', x=zx, y=zy, width=zw, height=zh, polygon=[[zx, zy], [zx+zw, zy], [zx+zw, zy+zh], [zx, zy+zh]],
+    if 'zoneBelowApproach' in spec:
+        # A mirrored copy keeps the original zone's height relative to its approach (the momentum entry).
+        zy = approach['y']+spec['zoneBelowApproach']
+    zone = dict(id=zid, x=zx, y=zy, width=zw, height=zh, polygon=[[zx, zy], [zx+zw, zy], [zx+zw, zy+zh], [zx, zy+zh]],
                 purpose='no-grapple bounce chute: rope-free momentum traversal')
+    if mirror:
+        zone['mirrorOf'] = spec['mirrorOf']
     internal = []
-    for n, (name, contact, angle, before, after, thickness, side) in enumerate(spec['panels'], 1):
-        f = purple_panel(name, slab(contact, angle, before, after, thickness, side), contact,
-                         'top' if side > 0 else 'underside', zx, zy)
-        f.update(originalId=None, semanticId='NG%d' % n, surfaceAngle=angle)
+    for n, (name, contact, angle, before, after, thickness, side_) in enumerate(spec['panels'], 1):
+        f = purple_panel(name, slab(contact, angle, before, after, thickness, side_), contact,
+                         'top' if side_ > 0 else 'underside', zx, zy)
+        f.update(originalId=None, semanticId='%s%d' % (pre, n), surfaceAngle=angle)
+        if mirror:
+            f = mirror_fragment(f, zx+zw/2)
+            f['name'] = '%s %s' % (label, name[0].lower()+name[1:])
         internal.append(f)
     for f in [approach, exit_]:
         if union_distance(svg.bodies(f), [zone['polygon']])[0] <= 0:
@@ -594,17 +664,19 @@ def extend_purple_route(m, spec):
         r['fromFragment'], r['toFragment'] = mapping[r['fromFragment']], mapping[r['toFragment']]
     up['fromFragment'] = exit_['id']
     chain = [dep]+added
+    way = 'RIGHT' if mirror else 'LEFT'
     extra = []
     for a, b in zip(chain, chain[1:]):
         if b is approach:
-            rid, direction, action = 'NG-APPROACH', 'LEFT', 'Leftward release jump to the purple approach ledge'
+            rid, direction, action = pre+'-APPROACH', way, '%sward release jump to the %s approach ledge' % (
+                way.capitalize(), label.lower())
         elif a is approach:
-            rid, direction, action = 'NG-ENTRY', 'LEFT → MOMENTUM ENTRY', 'Carry momentum into the no-grapple zone'
+            rid, direction, action = pre+'-ENTRY', way+' → MOMENTUM ENTRY', 'Carry momentum into the no-grapple zone'
         elif b is exit_:
-            rid, direction, action = 'NG-EXIT', 'UP → EXIT LEDGE', 'Launch out of the zone top, then grapple the exit ledge'
+            rid, direction, action = pre+'-EXIT', 'UP → EXIT LEDGE', 'Launch out of the zone top, then grapple the exit ledge'
         else:
-            rid, direction, action = 'NG-%s-%s' % (a['semanticId'], b['semanticId']), 'BOUNCE', \
-                'Rope-free bounce off the %s %s' % (b['surface'], b['name'].lower())
+            rid, direction, action = '%s-%s-%s' % (pre, a['semanticId'], b['semanticId']), 'BOUNCE', \
+                'Rope-free bounce off the %s %s' % (b['surface'], (b['name'][len(label)+1:] if mirror else b['name']).lower())
         extra.append(dict(id=rid, fromFragment=a['id'], toFragment=b['id'], direction=direction, action=action,
                           baseline=False, originalNumber=None, originalId=None, percent=None,
                           noGrappleZone=zone['id'] if a in internal and b in internal else None))
@@ -621,11 +693,22 @@ def extend_purple_route(m, spec):
     ext = m['lowerCatchExtension']
     ext['fragments'] = [mapping.get(f, f) for f in ext['fragments']]
     ext['firstUpDeparture'] = mapping.get(ext['firstUpDeparture'], ext['firstUpDeparture'])
-    m['noGrappleZones'] = [zone]
-    m['purpleExtension'] = dict(zone=zone['id'], arrival=dep['id'], approach=approach['id'], exit=exit_['id'],
-                                internal=[f['id'] for f in internal], encounters=[r['id'] for r in extra],
-                                upperTranslation=[shift, 0], exitCopiesDeparture=dep['id'],
-                                purpose='Leftward rope-free bounce traversal after the first right -> up -> left sequence')
+    remap = lambda v: [mapping.get(x, x) for x in v] if isinstance(v, list) else mapping.get(v, v)
+    earlier = [{k_: remap(v) if k_ in ('arrival', 'approach', 'exit', 'internal', 'exitCopiesDeparture') else v
+                for k_, v in e.items()} for e in purple_extensions(m)]
+    new = dict(zone=zone['id'], arrival=dep['id'], approach=approach['id'], exit=exit_['id'],
+               internal=[f['id'] for f in internal], encounters=[r['id'] for r in extra],
+               upperTranslation=[shift, 0], exitCopiesDeparture=dep['id'],
+               purpose=spec.get('purpose', 'Leftward rope-free bounce traversal after the first right -> up -> left sequence'))
+    if not earlier:
+        m['noGrappleZones'] = [zone]
+        m['purpleExtension'] = new
+        return
+    # A second encounter (TASK-682): the singular keys stay the first encounter; the plural ones list all.
+    new.update(prefix=pre, mirror=mirror, mirrorOf=spec['mirrorOf'], departureSemanticId=dep['semanticId'])
+    m['noGrappleZones'] = m['noGrappleZones']+[zone]
+    m['purpleExtension'] = earlier[0]
+    m['purpleExtensions'] = earlier+[new]
 
 
 def measure_transfers(m, opening):
@@ -651,7 +734,8 @@ def measure_transfers(m, opening):
             m['pairChecks'].append(dict(source=a['id'],target=b['id'],minimumGap=d,passOutsideRange=d-21.6>540))
 
 
-def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE, min_sides=None):
+def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE, min_sides=None,
+         middle_purple=False):
     source = copy.deepcopy(source)
     # The extra second polygon is the unwanted rectangular bump, not the shelf.
     for n, fragment in enumerate(source['fragments']):
@@ -752,6 +836,9 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
                 f['bounceSign']=direction
         extend_lower_catch_route(m)
         extend_purple_route(m, PURPLE)
+        if middle_purple:
+            z1, a1 = m['noGrappleZones'][0], next(f for f in fs if f['semanticId'] == 'NG-APPROACH')
+            extend_purple_route(m, dict(PURPLE_MIDDLE, zoneBelowApproach=z1['y']-a1['y']))
         add_shortcut_shields(m, SHIELDS)
         if min_sides in ('opening', 'all'):
             resize_opening_sides(m)
@@ -759,7 +846,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
     placed_bands, kept, unreachable = [], [], []
     for band in m['yellowBands']:
         # A split original jump keeps its band centred between its original endpoints.
-        a,b = [fs[i] for i in band_ends(m, band['belowJump'])]
+        a,b = band_endpoints(m, band['belowJump'])
         if opening:
             band.update(belowEncounter=m['routeMap']['encounterIds'][str(band['belowJump'])],
                         belowJump=m['routeMap']['encounterNumbers'][str(band['belowJump'])])
@@ -783,14 +870,18 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
     m['yellowBands'] = kept
     if unreachable:
         m['unreachableYellowBands'] = unreachable
-    if guards:
-        (add_shortcut_guards if opening else add_legacy_shortcut_guards)(m, yellow_clearance)
+    # TASK-682: the middle chute above P4 makes P4 a guard source; guards keep clear of the later P4 shield.
+    reserved = planned_shield_bodies(m) if opening and min_sides in ('opening', 'all') and middle_purple else ()
+    if guards and opening:
+        add_shortcut_guards(m, yellow_clearance, reserved)
+    elif guards:
+        add_legacy_shortcut_guards(m, yellow_clearance)
     if opening:
         add_opening_brake(m, yellow_clearance)
         add_final_transfer_brake(m, yellow_clearance)
-    consolidate_yellow_bands(m, yellow_clearance)
+    consolidate_yellow_bands(m, yellow_clearance, reserved)
     if opening:
-        restore_guard_coverage(m, yellow_clearance)
+        restore_guard_coverage(m, yellow_clearance, reserved)
     if min_sides in ('opening', 'all'):
         add_opening_min_side_shields(m, yellow_clearance)
     if min_sides == 'all':
@@ -866,15 +957,27 @@ def add_shortcut_shields(m, spec):
         under = f['y']+f['height']
         fins.append(dict(fragment=f['id'], semanticId=sid, localX=[x0, x1], slot=top, y=[under+top, under+bottom]))
     # The post belongs to the purple chute; a layout generated without it (tests) has no post.
-    post = None
-    if m.get('noGrappleZones'):
+    post, posts = None, []
+    for ext, zone in zip(purple_extensions(m), m.get('noGrappleZones', [])):
         sid, width, height = spec['post']
-        post = dict(fragment=by[sid]['id'], semanticId=sid, width=width, height=height, **add_post(by[sid], width, height))
-        if not zone_contains(m['noGrappleZones'][0], by[sid]):
+        sid = ext.get('prefix', 'NG')+sid[2:]
+        f = by[sid]
+        if ext.get('mirror'):
+            # The mirrored chute gets NG1's post reflected: added on the reflected slab, then reflected back.
+            cx = zone['x']+zone['width']/2
+            made = in_mirror(f, cx, lambda g: add_post(g, width, height))
+            made = dict(foot=[2*cx-made['foot'][0], made['foot'][1]], top=made['top'], mirroredAbout=cx)
+        else:
+            made = add_post(f, width, height)
+        posts.append(dict(fragment=f['id'], semanticId=sid, width=width, height=height, **made))
+        if not zone_contains(zone, f):
             raise ValueError('%s post must stay inside the purple zone' % sid)
+    post = posts[0] if posts else None
     m['shortcutShields'] = dict(fins=fins, trim=dict(fragment=by[spec['trim'][0]]['id'], semanticId=spec['trim'][0],
                                                        trimmedLeft=trim), post=post,
                                 purpose='TASK-677: block demonstrated skips beneath R1, short of R4 onto X1 and over NG1')
+    if len(posts) > 1:
+        m['shortcutShields']['posts'] = posts
 
 
 # TASK-679 (candidate, opt-in via --min-side-scope opening): every edge of the
@@ -959,6 +1062,12 @@ def resize_opening_sides(m, spec=OPENING_MIN_SIDES, target=SIDE_TARGET):
 OPENING_MIN_SIDE_SHIELDS = [('P4', 298, 578, -2708, -2358)]
 
 
+def planned_shield_bodies(m, spec=OPENING_MIN_SIDE_SHIELDS):
+    by = {f['semanticId']: f for f in m['fragments']}
+    return [[[by[sid]['x']+x, by[sid]['y']+y] for x, y in [[x0, top], [x1, top], [x1, bottom], [x0, bottom]]]
+            for sid, x0, x1, top, bottom in spec]
+
+
 def add_opening_min_side_shields(m, clearance, spec=OPENING_MIN_SIDE_SHIELDS):
     fs = m['fragments']
     by = {f['semanticId']: f for f in fs}
@@ -1016,6 +1125,7 @@ def add_opening_min_side_shields(m, clearance, spec=OPENING_MIN_SIDE_SHIELDS):
 LATER_SLAB_TAPER = ('Low ceiling', 'Launch ramp')
 LATER_MIN_SIDES = [('NG-EXIT', 'extend-each', [(1, 2)]),
                    ('P7', 'extend-each', [(0, 3)]),
+                   ('NGM-EXIT', 'extend-each', [(0, 3)]),  # TASK-682: the middle exit copies P7
                    ('P9', 'set', [[0, 0], [980, 0], [980, 275], [372.4, 275], [372.4, 550], [0, 550]]),
                    ('P13', 'extend-each', [(0, 4)]),
                    ('P16', 'extend-each', [(0, 4), (1, 2)]),
@@ -1065,30 +1175,42 @@ def wide_post(f, width, height, approach, keep, target=SIDE_TARGET):
 
 
 def rebuild_purple_slabs(m, by):
-    """Rebuild the thin chute slabs with tapered end caps and NG1 with the wide post."""
-    if not m.get('noGrappleZones'):
-        return []
-    zone = m['noGrappleZones'][0]
+    """Rebuild the thin chute slabs with tapered end caps and NG1 with the wide post (each purple
+    encounter; a mirrored one is rebuilt reflected, then reflected back)."""
     out = []
-    for n, (name, contact, angle, before, after, thickness, side) in enumerate(PURPLE['panels'], 1):
-        sid = 'NG%d' % n
-        post = sid == SHIELDS['post'][0] and bool(m.get('shortcutShields', {}).get('post'))
-        if name not in LATER_SLAB_TAPER and not post:
-            continue
-        f = by[sid]
-        polys, height, x0, y0, width = copy.deepcopy(f['polys']), f['height'], f['x'], f['y'], f['width']
-        shape = (tapered_slab if name in LATER_SLAB_TAPER else slab)(contact, angle, before, after, thickness, side)
-        g = purple_panel(name, shape, contact, 'top' if side > 0 else 'underside', zone['x'], zone['y'])
-        f.update({k: g[k] for k in ('x', 'y', 'width', 'height', 'contactPoint', 'polys')})
-        if post:
-            approach = by['NG-APPROACH']
-            keep = gap(approach, dict(f, polys=polys, x=x0, y=y0))[0]
-            m['shortcutShields']['post'].update(wide_post(f, SHIELDS['post'][1], SHIELDS['post'][2], approach, keep))
-        if not zone_contains(zone, f):
-            raise ValueError('%s must stay inside the purple zone' % sid)
-        out.append(dict(fragment=f['id'], semanticId=sid, op='post' if post else 'taper', before=polys,
-                        after=copy.deepcopy(f['polys']), heightBefore=height, heightAfter=f['height'],
-                        boxBefore=[x0, y0, width, height], thickness=thickness))
+    posts = m.get('shortcutShields', {}).get('posts') or [m.get('shortcutShields', {}).get('post')]
+    for ext, zone, post_meta in zip(purple_extensions(m), m.get('noGrappleZones', []), posts):
+        pre = ext.get('prefix', 'NG')
+        cx = zone['x']+zone['width']/2
+        for n, (name, contact, angle, before, after, thickness, side) in enumerate(PURPLE['panels'], 1):
+            sid = '%s%d' % (pre, n)
+            post = 'NG%d' % n == SHIELDS['post'][0] and bool(post_meta)
+            if name not in LATER_SLAB_TAPER and not post:
+                continue
+            f = by[sid]
+            polys, height, x0, y0, width = copy.deepcopy(f['polys']), f['height'], f['x'], f['y'], f['width']
+            shape = (tapered_slab if name in LATER_SLAB_TAPER else slab)(contact, angle, before, after, thickness, side)
+            g = purple_panel(name, shape, contact, 'top' if side > 0 else 'underside', zone['x'], zone['y'])
+            if ext.get('mirror'):
+                g = mirror_fragment(g, cx)
+            f.update({k: g[k] for k in ('x', 'y', 'width', 'height', 'contactPoint', 'polys')})
+            if post:
+                approach = by[pre+'-APPROACH']
+                keep = gap(approach, dict(f, polys=polys, x=x0, y=y0))[0]
+                if ext.get('mirror'):
+                    made = in_mirror(f, cx, lambda g, a: wide_post(g, SHIELDS['post'][1], SHIELDS['post'][2], a, keep),
+                                     approach)
+                    made.update(foot=[2*cx-made['foot'][0], made['foot'][1]],
+                                topRight=[2*cx-made['topRight'][0], made['topRight'][1]], mirroredAbout=cx)
+                    made['topLeft'] = made.pop('topRight')
+                else:
+                    made = wide_post(f, SHIELDS['post'][1], SHIELDS['post'][2], approach, keep)
+                post_meta.update(made)
+            if not zone_contains(zone, f):
+                raise ValueError('%s must stay inside the purple zone' % sid)
+            out.append(dict(fragment=f['id'], semanticId=sid, op='post' if post else 'taper', before=polys,
+                            after=copy.deepcopy(f['polys']), heightBefore=height, heightAfter=f['height'],
+                            boxBefore=[x0, y0, width, height], thickness=thickness))
     return out
 
 
@@ -1229,7 +1351,8 @@ def add_legacy_shortcut_guards(m, clearance=LEGACY_YELLOW_CLEARANCE):
     m['shortcutCandidates']=[{'from':fs[i]['id'],'to':None if j is None else fs[j]['id']} for i,j in candidates]
 
 
-def add_shortcut_guards(m, clearance=LEGACY_YELLOW_CLEARANCE):
+def add_shortcut_guards(m, clearance=LEGACY_YELLOW_CLEARANCE, reserved=()):
+    """reserved: bodies added after the bands (the TASK-680 shields) that guards must also clear."""
     fs=m['fragments']; guards=[]
     candidates=[(0, None)]
     for i,a in enumerate(fs):
@@ -1271,6 +1394,7 @@ def add_shortcut_guards(m, clearance=LEGACY_YELLOW_CLEARANCE):
                 poly=[[gx,y],[gx+gw,y],[gx+gw,y+height],[gx,y+height]]
                 nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs)
                 if nearest<clearance or gw<=height: continue
+                if reserved and union_distance([poly],list(reserved))[0]<clearance: continue
                 if any(union_distance([poly],[g['polygon']])[0]<30 for g in guards):continue
                 guards.append(dict(id='G'+str(len(guards)+1),belowJump=i+1,source=a['id'],
                     target=None if j is None else fs[j]['id'],purpose='upward shortcut brake',
@@ -1308,7 +1432,7 @@ def add_opening_brake(m, clearance):
     m['omittedOpeningBrake']='No legal full-width rectangle; require production shortcut validation of the separated route'
 
 
-def consolidate_yellow_bands(m, clearance=LEGACY_YELLOW_CLEARANCE):
+def consolidate_yellow_bands(m, clearance=LEGACY_YELLOW_CLEARANCE, reserved=()):
     """Prefer one long rectangle; never bridge a green panel to merge zones."""
     bands=m['yellowBands']
     while True:
@@ -1322,6 +1446,8 @@ def consolidate_yellow_bands(m, clearance=LEGACY_YELLOW_CLEARANCE):
         bottom=max(a['y']+a['height'],b['y']+b['height'])
         poly=[[x,y],[right,y],[right,bottom],[x,bottom]]
         nearest=min(union_distance([poly],svg.bodies(f))[0] for f in m['fragments'])
+        if reserved and union_distance([poly],list(reserved))[0]<clearance:
+            nearest=-1  # TASK-682: a merge may not reach the later P4 shield either
         if right-x > bottom-y and nearest>=clearance:
             a.update(x=x,y=y,width=right-x,height=bottom-y,polygon=poly,
                      nearestSolidClearance=nearest,minimumSolidClearance=clearance)
@@ -1366,7 +1492,7 @@ def add_final_transfer_brake(m, clearance):
         role='non-solid, non-grappleable, pass-through braking'))
 
 
-def restore_guard_coverage(m, clearance):
+def restore_guard_coverage(m, clearance, reserved=()):
     """Restore a guard's ends after neighbouring bands were merged or removed."""
     fs={f['id']:f for f in m['fragments']}
     for band in m['yellowBands']:
@@ -1377,6 +1503,7 @@ def restore_guard_coverage(m, clearance):
         poly=[[x,y],[right,y],[right,y+h],[x,y+h]]
         nearest=min(union_distance([poly],svg.bodies(f))[0] for f in fs.values())
         if nearest<clearance:continue
+        if reserved and union_distance([poly],list(reserved))[0]<clearance:continue
         if any(other is not band and union_distance([poly],[other['polygon']])[0]<YELLOW_PAIR_CLEARANCE
                for other in m['yellowBands']):continue
         band.update(x=x,width=right-x,polygon=poly,nearestSolidClearance=nearest)
@@ -1392,7 +1519,11 @@ def main():
     ap.add_argument('--min-side-scope', choices=('none', 'opening', 'all'), default='none',
                     help='opening: candidate with opening green edges >= 0.5 R (TASK-679); all: every gameplay '
                          'polygon edge (TASK-681); none: the shipped layout')
+    ap.add_argument('--middle-purple', action='store_true',
+                    help='candidate: add the second (middle) purple no-grapple encounter NGM after S08-01 (TASK-682)')
     args=ap.parse_args()
+    if args.middle_purple and args.opening != 'extended':
+        raise ValueError('--middle-purple needs the extended opening')
     guidelines=Path(args.guidelines).read_bytes()
     opening = OPENING if args.opening == 'extended' else None
     # The extended layout follows the current 300% rule; original reproduces v5 (200%).
@@ -1405,7 +1536,7 @@ def main():
         raise ValueError('Guidelines must specify the mixed opening combination')
     dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
     m=tune(json.loads(Path(args.source).read_text()), opening=opening, yellow_clearance=clearance,
-         min_sides=None if args.min_side_scope == 'none' else args.min_side_scope)
+         min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);

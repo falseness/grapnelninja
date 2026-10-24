@@ -33,8 +33,12 @@ import convert_extended_mountain_svg as conv  # noqa: E402
 from import_level_svg import dumps, import_svg  # noqa: E402
 
 LEVELS = ROOT / 'artifacts' / 'levels'
-MEASUREMENTS = LEVELS / 'extended-mountain-measurements.json'
-SHIPPED_SVG = LEVELS / 'extended-mountain.svg'
+# ROUTE_ARROWS_LEVEL_DIR=DIR checks a generated candidate instead of the shipped level (TASK-682); its
+# regeneration then passes ROUTE_ARROWS_RETUNE_ARGS (e.g. "--min-side-scope all --middle-purple") to the retune.
+LEVEL_DIR = Path(os.environ.get('ROUTE_ARROWS_LEVEL_DIR') or LEVELS).resolve()
+RETUNE_ARGS = os.environ.get('ROUTE_ARROWS_RETUNE_ARGS', '').split()
+MEASUREMENTS = LEVEL_DIR / 'extended-mountain-measurements.json'
+SHIPPED_SVG = LEVEL_DIR / 'extended-mountain.svg'
 EVIDENCE = os.environ.get('ROUTE_ARROWS_EVIDENCE_DIR')
 SVG = '{http://www.w3.org/2000/svg}'
 NUM = r'-?\d+(?:\.\d+)?(?:e-?\d+)?'
@@ -325,7 +329,7 @@ class RouteArrowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run([sys.executable, str(TOOLS / 'retune_extended_level.py'), '--source',
                             str(ROOT / 'artifacts/level/extended-mountain-measurements.json'), '--output-dir', tmp,
-                            '--guidelines', str(LEVELS / 'level-guidelines.md')], check=True, capture_output=True)
+                            '--guidelines', str(LEVELS / 'level-guidelines.md')] + RETUNE_ARGS, check=True, capture_output=True)
             new = Path(tmp, 'extended-mountain.svg').read_text()
             new_meas = Path(tmp, 'extended-mountain-measurements.json').read_bytes()
         old = SHIPPED_SVG.read_text()
@@ -335,7 +339,7 @@ class RouteArrowTests(unittest.TestCase):
         imports = {'regenerated': dumps(import_svg(new.encode())), 'shipped': dumps(import_svg(old.encode())),
                    'noArrowsNoGuides': dumps(import_svg(strip(re.sub(r' guide="[^"]*"', '', old)).encode()))}
         self.assertEqual(imports['regenerated'], imports['shipped'])
-        self.assertEqual(imports['shipped'], (LEVELS / 'extended-mountain.level.json').read_text())
+        self.assertEqual(imports['shipped'], (LEVEL_DIR / 'extended-mountain.level.json').read_text())
         a, c = json.loads(imports['shipped']), json.loads(imports['noArrowsNoGuides'])
         elements = lambda lv: [(e['id'], e['role'], e['grapplable'], e['x'], e['y'], e['points']) for e in lv['elements']]
         same = {'elementsCollisionRoleGrapplable': elements(a) == elements(c),
