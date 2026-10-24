@@ -5,7 +5,8 @@ import copy
 import json
 import math
 from pathlib import Path
-from check_level_geometry import MIN_INTERIOR_ANGLE, interior_angles, point_segment, self_intersections, union_distance
+from check_level_geometry import (COORD_TOL, MIN_INTERIOR_ANGLE, MIN_SIDE_LENGTH, interior_angles, point_segment,
+                                  self_intersections, union_distance)
 import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
@@ -627,7 +628,7 @@ def extend_purple_route(m, spec):
                                 purpose='Leftward rope-free bounce traversal after the first right -> up -> left sequence')
 
 
-def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE):
+def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE, min_sides=None):
     source = copy.deepcopy(source)
     # The extra second polygon is the unwanted rectangular bump, not the shelf.
     for n, fragment in enumerate(source['fragments']):
@@ -729,6 +730,8 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         extend_lower_catch_route(m)
         extend_purple_route(m, PURPLE)
         add_shortcut_shields(m, SHIELDS)
+        if min_sides == 'opening':
+            resize_opening_sides(m)
     for row in m['encounters']:
         n = row['number']; a,b = fs[n-1:n+1]
         d,w,_,_ = gap(a,b)
@@ -862,6 +865,76 @@ def add_shortcut_shields(m, spec):
     m['shortcutShields'] = dict(fins=fins, trim=dict(fragment=by[spec['trim'][0]]['id'], semanticId=spec['trim'][0],
                                                        trimmedLeft=trim), post=post,
                                 purpose='TASK-677: block demonstrated skips beneath R1, short of R4 onto X1 and over NG1')
+
+
+# TASK-679 (candidate, opt-in via --min-side-scope opening): every edge of the
+# opening green bodies (P0 .. the first leftward arrival P4, with R1's fin and
+# X1's trim) reaches MIN_SIDE_LENGTH (0.5 R = 270). Short sides are lengthened
+# along their own lines ('extend': (anchor, moving) vertex pairs scaled by one
+# common factor, so a trapezoid's bottom stays level); the contact faces, the
+# vertex or edge line carrying each transfer's gap witness, and so every
+# measured transfer gap stay as they were. P2's 147-unit stem cannot hold three
+# 270 underside edges within its 820 width, so P2 becomes a slab ('slab'): the
+# same top, a right side of the given depth and a left corner at local x that
+# slides down until the gap to its route predecessor equals the previous gap.
+# SIDE_TARGET leaves margin above the checker's 270 - 0.01 threshold.
+SIDE_TARGET = 275.0
+OPENING_MIN_SIDES = [('P0', 'extend', [(1, 2), (0, 3)]),
+                     ('P1', 'extend', [(0, 3)]),
+                     ('P2', 'slab', dict(depth=300, cornerX=40)),
+                     ('R3', 'extend', [(0, 3), (1, 2)]),
+                     ('L1', 'extend', [(0, 3), (1, 2)]),
+                     ('P4', 'extend', [(1, 2)])]
+
+
+def opening_scope(m):
+    """Fragments from the spawn to the first leftward arrival (route P4), in route order."""
+    fs = m['fragments']
+    end = next(i for i, f in enumerate(fs) if f['id'] == m['routeMap']['fragmentIds']['P4'])
+    return fs[:end+1]
+
+
+def short_sides(fragment, minimum=MIN_SIDE_LENGTH):
+    return [dict(body=k, edge=e, length=math.dist(a, b)) for k, poly in enumerate(fragment['polys'])
+            for e, (a, b) in enumerate(zip(poly, poly[1:]+poly[:1])) if math.dist(a, b) < minimum-COORD_TOL]
+
+
+def resize_opening_sides(m, spec=OPENING_MIN_SIDES, target=SIDE_TARGET):
+    fs = m['fragments']
+    by = {f['semanticId']: f for f in fs}
+    index = {f['id']: i for i, f in enumerate(fs)}
+    changed = []
+    for sid, op, arg in spec:
+        f = by[sid]
+        before, height = copy.deepcopy(f['polys']), f['height']
+        poly = [list(p) for p in f['polys'][0]]
+        if op == 'extend':
+            scale = max(target/math.dist(poly[a], poly[b]) for a, b in arg)
+            for a, b in arg:
+                poly[b] = [poly[a][0]+(poly[b][0]-poly[a][0])*scale, poly[a][1]+(poly[b][1]-poly[a][1])*scale]
+        else:
+            prev = fs[index[f['id']]-1]
+            keep = gap(prev, f)[0]
+            w, x = f['width'], arg['cornerX']
+            lo, hi = 0., 2000.
+            for _ in range(80):
+                mid = (lo+hi)/2
+                probe = dict(f, polys=[[[0, 0], [w, 0], [w, arg['depth']], [x, mid]]])
+                if gap(prev, probe)[0] > keep: lo = mid
+                else: hi = mid
+            poly = [[0, 0], [w, 0], [w, arg['depth']], [x, lo]]
+        f['polys'] = [poly]+f['polys'][1:]
+        f['height'] = max(y for body in f['polys'] for _, y in body)
+        if min(interior_angles(poly)) < MIN_INTERIOR_ANGLE or self_intersections(poly):
+            raise ValueError('%s resize breaks the corner rules' % sid)
+        changed.append(dict(fragment=f['id'], semanticId=sid, op=op, before=before, after=copy.deepcopy(f['polys']),
+                            heightBefore=height, heightAfter=f['height']))
+    short = [dict(fragment=f['id'], semanticId=f['semanticId'], sides=s) for f in opening_scope(m) for s in [short_sides(f)] if s]
+    if short:
+        raise ValueError('Opening edges below %g: %s' % (MIN_SIDE_LENGTH, short))
+    m['minimumSides'] = dict(scope='opening', minimum=MIN_SIDE_LENGTH, target=target,
+                             fragments=[f['id'] for f in opening_scope(m)], changed=changed,
+                             purpose='TASK-679: opening green edges >= 0.5 R; later bodies are migrated separately')
 
 
 def box(fragment):
@@ -1068,6 +1141,8 @@ def main():
     ap.add_argument('--guidelines', default=str(GUIDELINES), help='Required current design guidelines')
     ap.add_argument('--opening', choices=('extended', 'original'), default='extended',
                     help='extended: threefold rightward/leftward opening (guidelines); original: the v5 layout')
+    ap.add_argument('--min-side-scope', choices=('none', 'opening'), default='none',
+                    help='opening: candidate with opening green edges >= 0.5 R (TASK-679); none: the shipped layout')
     args=ap.parse_args()
     guidelines=Path(args.guidelines).read_bytes()
     opening = OPENING if args.opening == 'extended' else None
@@ -1080,7 +1155,8 @@ def main():
     if opening and b'ceiling underside catch' not in guidelines:
         raise ValueError('Guidelines must specify the mixed opening combination')
     dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
-    m=tune(json.loads(Path(args.source).read_text()), opening=opening, yellow_clearance=clearance)
+    m=tune(json.loads(Path(args.source).read_text()), opening=opening, yellow_clearance=clearance,
+         min_sides=None if args.min_side_scope == 'none' else args.min_side_scope)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);

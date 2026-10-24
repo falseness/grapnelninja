@@ -62,6 +62,10 @@ BEFORE = ROOT / 'artifacts/TASK-668/before'
 SHIPPED = ROOT / 'artifacts/levels'
 EVIDENCE = os.environ.get('OPENING_VARIETY_EVIDENCE_DIR')
 NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json')
+# TASK-679: OPENING_VARIETY_MIN_SIDE_SCOPE=opening generates (and expects) the
+# minimum-side candidate; its recorded resizes are undone before shape comparisons.
+MIN_SIDE_SCOPE = os.environ.get('OPENING_VARIETY_MIN_SIDE_SCOPE', 'none')
+RESIZED = ['P0', 'P1', 'P2', 'R3', 'L1', 'P4']
 
 
 def candidate_dir():
@@ -97,7 +101,8 @@ def sha(data):
 
 def generate(dest):
     out = subprocess.run([sys.executable, str(TOOLS / 'retune_extended_level.py'), '--source', str(SOURCE),
-                          '--output-dir', str(dest), '--guidelines', str(GUIDELINES)],
+                          '--output-dir', str(dest), '--guidelines', str(GUIDELINES),
+                          '--min-side-scope', MIN_SIDE_SCOPE],
                          capture_output=True, text=True, cwd=str(TOOLS))
     if out.returncode:
         raise AssertionError(out.stdout + out.stderr)
@@ -260,10 +265,14 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         retune.add_shortcut_shields = lambda m, spec: None
         try:
             cls.unshielded = retune.tune(json.loads(SOURCE.read_text()), opening=retune.OPENING,
-                                         yellow_clearance=retune.YELLOW_CLEARANCE)
+                                         yellow_clearance=retune.YELLOW_CLEARANCE,
+                                         min_sides=None if MIN_SIDE_SCOPE == 'none' else MIN_SIDE_SCOPE)
         finally:
             retune.add_shortcut_shields = shields
         cls.before_ids = {f['semanticId']: f['id'] for f in cls.before['fragments']}
+        # The default (shipped) generation, for the minimum-side candidate's gap comparison.
+        cls.default = cls.m if MIN_SIDE_SCOPE == 'none' else retune.tune(
+            json.loads(SOURCE.read_text()), opening=retune.OPENING, yellow_clearance=retune.YELLOW_CLEARANCE)
 
     @classmethod
     def tearDownClass(cls):
@@ -271,6 +280,11 @@ class OpeningJumpVarietyTests(unittest.TestCase):
 
     def frag(self, m, fid):
         return next(f for f in m['fragments'] if f['id'] == fid)
+
+    def unresized(self, f):
+        """The fragment as generated before the recorded minimum-side resize (itself when not resized)."""
+        c = next((c for c in self.m.get('minimumSides', {}).get('changed', []) if c['semanticId'] == f['semanticId']), None)
+        return f if c is None else dict(f, polys=c['before'], height=c['heightBefore'])
 
     def test_01_generation_is_deterministic(self):
         self.assertEqual(self.runs[0], self.runs[1])
@@ -356,7 +370,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
     def test_07_preserves_opening_shapes_and_later_connectivity(self):
         keys = ('width', 'height', 'kind', 'polys')
         for fid in ('P0', 'P1', 'P2'):
-            self.assertEqual({k: self.frag(self.m, fid)[k] for k in keys},
+            self.assertEqual({k: self.unresized(self.frag(self.m, fid))[k] for k in keys},
                              {k: self.frag(self.before, fid)[k] for k in keys}, fid)
         for row, target in zip(self.m['encounters'][:2], (120,160)):
             self.assertAlmostEqual(row['percent'], target, places=5)
@@ -444,7 +458,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         self.assertEqual([round(r['gapPercent'], 3) for r in rows[:2]], [120, 160])
         keys = ('width', 'height', 'kind', 'polys')
         for fid in ('P0', 'P1', 'P2'):
-            self.assertEqual({k: self.frag(self.m, fid)[k] for k in keys}, {k: self.frag(self.before, fid)[k] for k in keys})
+            self.assertEqual({k: self.unresized(self.frag(self.m, fid))[k] for k in keys}, {k: self.frag(self.before, fid)[k] for k in keys})
         # The required ordered combination R1-R4 is intact.
         self.assertEqual([r['semantic'] for r in rows[2:6]], ['P2->R1', 'R1->R2', 'R2->R3', 'R3->R4'])
         self.assertEqual([r['pattern'] for r in rows[2:6]], list(MECHANICS))
@@ -482,7 +496,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
                           | {self.m['shortcutShields'][k]['semanticId'] for k in ('trim', 'post')})
         self.assertEqual(shielded, ['NG1', 'R1', 'X1'])
         self.assertEqual(sorted(s for s in order if any(new[s][k] != unshielded[s][k] for k in keys)), shielded)
-        same = lambda s: {k: unshielded[s][k] for k in keys} == {k: old[twin(s)][k] for k in keys}
+        same = lambda s: {k: self.unresized(unshielded[s])[k] for k in keys} == {k: old[twin(s)][k] for k in keys}
         # Easy opening, R1-R4, X10 and later terrain except the raised L1/L2 are identical.
         kept = [s for s in order[:7]] + [s for s in order[cut:] if s not in ('L1', 'L2')]
         changed = [s for s in kept if not same(s)]
@@ -500,7 +514,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
             self.assertLess(b[0], a[0], sem)
             self.assertGreaterEqual(a[1] - b[1], 700 - .01, sem)
             self.assertLess(a[1] - b[1], a[0] - b[0], sem)
-            self.assertEqual(new[sem]['polys'], old[sem]['polys'])
+            self.assertEqual(self.unresized(new[sem])['polys'], old[sem]['polys'])
         self.assertEqual(dep_old, 'X8')
         self.assertEqual(sorted(set(order) - set(old)), ['X10', 'X9'])
         self.assertEqual(sorted(set(old) - set(order)), [])
@@ -580,6 +594,33 @@ class OpeningJumpVarietyTests(unittest.TestCase):
                        pairsPass=s['pairsPass'], fragmentPairs=s['fragmentPairs'], transfersPass=s['transfersPass'],
                        transfers=s['transfers'], minDragSolidClearance=s['minDragSolidClearance'],
                        minYellowPairClearance=s['minYellowPairClearance']))
+
+    def test_18_minimum_sides(self):
+        """TASK-679: the opt-in candidate lengthens every short opening edge to 0.5 R; the default layout has no resize."""
+        if MIN_SIDE_SCOPE == 'none':
+            self.assertNotIn('minimumSides', self.m)
+            return
+        ms = self.m['minimumSides']
+        self.assertEqual([c['semanticId'] for c in ms['changed']], RESIZED)
+        scope = [f['id'] for f in retune.opening_scope(self.m)]
+        self.assertEqual(ms['fragments'], scope)
+        self.assertEqual(self.frag(self.m, scope[-1])['id'], self.m['routeMap']['fragmentIds']['P4'])
+        # Independent: the checker's per-edge inventory from the imported polygons.
+        rows = [r for r in self.report['sides'] if r['fragment'] in scope]
+        self.assertEqual(sorted({r['fragment'] for r in rows}), sorted(scope))
+        self.assertEqual([r for r in rows if r['length'] < retune.MIN_SIDE_LENGTH - COORD_TOL], [])
+        # Contact faces keep their positions: the top (or underside) edge is unchanged.
+        for c in ms['changed']:
+            self.assertEqual(c['after'][0][:2], c['before'][0][:2], c['semanticId'])
+            self.assertEqual(self.frag(self.m, c['fragment'])['width'],
+                             max(x for x, _ in c['before'][0]) - min(x for x, _ in c['before'][0]))
+        # Every transfer keeps its measured gap.
+        prev = {r['id']: r['distance'] for r in self.default['encounters']}
+        drift = {r['id']: abs(r['distance'] - prev[r['id']]) for r in self.m['encounters']}
+        self.assertLess(max(drift.values()), 1e-6, drift)
+        self.__class__.min_sides = dict(changed=[c['semanticId'] for c in ms['changed']], scope=scope,
+                                        openingEdges=len(rows), openingMinSide=min(r['length'] for r in rows),
+                                        maxTransferGapDrift=max(drift.values()))
 
     def test_zz_write_evidence(self):
         if not EVIDENCE:
