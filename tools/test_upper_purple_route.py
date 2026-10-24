@@ -121,7 +121,8 @@ class UpperPurpleTests(unittest.TestCase):
         self.assertEqual(self.m['purpleExtension'], self.exts[0])
         first, mid, up = self.exts
         zs = [self.zones[e['zone']] for e in self.exts]
-        self.assertTrue(all((z['width'], z['height']) == (zs[0]['width'], zs[0]['height']) for z in zs))
+        # NGM's TASK-686 right extension lies outside its NG1 mirror frame (mirrorWidth).
+        self.assertTrue(all((z.get('mirrorWidth', z['width']), z['height']) == (zs[0]['width'], zs[0]['height']) for z in zs))
         self.assertEqual((self.zones['NGU'].get('copyOf'), self.zones['NGU'].get('mirrorOf')), ('NG1', None))
         for i in range(3):
             for j in range(i + 1, 3):

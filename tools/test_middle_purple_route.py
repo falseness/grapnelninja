@@ -114,7 +114,9 @@ class MiddlePurpleTests(unittest.TestCase):
         self.assertEqual(self.m['purpleExtension'], self.exts[0])
         first, mid = self.exts
         z1, z2 = self.zones['NG1'], self.zones['NGM']
-        self.assertEqual((z2['width'], z2['height']), (z1['width'], z1['height']))
+        # TASK-686: NGM extends right past L2 (outside the NG1 mirror frame, which keeps NG1's width).
+        self.assertEqual((z2.get('mirrorWidth', z2['width']), z2['height']), (z1['width'], z1['height']))
+        self.assertEqual(z2['width'] - z2.get('mirrorWidth', z2['width']), retune.MIDDLE_ZONE_EXTEND_RIGHT)
         self.assertEqual(z2.get('mirrorOf'), 'NG1')
         self.assertGreater(geometry.union_distance([z1['polygon']], [z2['polygon']])[0], 0)
         # Semantic sequences: approach, entry, four rope-free bounces, exit.
@@ -169,7 +171,7 @@ class MiddlePurpleTests(unittest.TestCase):
 
     def test_03_mirror_of_ng1_and_containment(self):
         z1, z2 = self.zones['NG1'], self.zones['NGM']
-        rel = lambda f, z, mirror: [sorted((round(z['x'] + z['width'] - x if mirror else x - z['x'], 6), round(y - z['y'], 6))
+        rel = lambda f, z, mirror: [sorted((round(z['x'] + z.get('mirrorWidth', z['width']) - x if mirror else x - z['x'], 6), round(y - z['y'], 6))
                                            for x, y in b) for b in conv.bodies(f)]
         diffs = {}
         top = lambda shape: sorted(p for p in shape[0] if abs(p[1] - min(q[1] for q in shape[0])) < 1e-6)
@@ -218,7 +220,7 @@ class MiddlePurpleTests(unittest.TestCase):
         self.assertEqual([p['semanticId'] for p in posts], ['NG1', 'NGM1'])
         self.assertAlmostEqual(posts[0]['entryGap'], posts[1]['entryGap'], places=6)
         OUT['route.json']['middleZone'] = dict(
-            mirrorOf='NG1', reflectedAbout=z2['x'] + z2['width'] / 2, internalShapesEqualReflectedNG1=diffs,
+            mirrorOf='NG1', reflectedAbout=z2['x'] + z2.get('mirrorWidth', z2['width']) / 2, zoneExtendedRight=z2.get('extension'), internalShapesEqualReflectedNG1=diffs,
             approachZoneGap=[a1['x'] - (z1['x'] + z1['width']), z2['x'] - (a2['x'] + a2['width'])],
             approachAboveZoneTop=[z1['y'] - a1['y'], z2['y'] - a2['y']], transfers=internal,
             fragmentsTouchingZone=touching, posts=posts,
@@ -236,9 +238,20 @@ class MiddlePurpleTests(unittest.TestCase):
         dx, dy = self.exts[1]['upperTranslation']
         self.assertEqual((dx, dy), (7500, 0))
         same, moved = [], []
+        # TASK-686: P4 keeps its bodies and gains the second shield (below NGM) against the 5-pump bounces.
+        extra = [[[x0, top], [x1, top], [x1, bottom], [x0, bottom]] for _, x0, x1, top, bottom in retune.MIDDLE_PURPLE_SHIELDS
+                 if (_, x0, x1, top, bottom) not in retune.OPENING_MIN_SIDE_SHIELDS]
+        # ... and L2 is narrowed from its left end (minimumSides.narrowedFromLeft records its 'before').
+        nar = self.m['minimumSides']['narrowedFromLeft']
+        a = base[nar['semanticId']]
+        self.assertEqual(dict(x=a['x'], width=a['width'], polys=a['polys']), nar['before'])
         for k, s in enumerate(order):
             a, b = base[s], self.by[s]
-            self.assertEqual((a['polys'], a['width'], a['height'], a['kind']), (b['polys'], b['width'], b['height'], b['kind']), s)
+            if s == nar['semanticId']:
+                self.assertEqual((b['x'], b['width']), (a['x'] + nar['cut'], a['width'] - nar['cut']))
+                a = dict(a, x=b['x'], width=b['width'], polys=b['polys'])
+            want = a['polys'] + extra if s == 'P4' else a['polys']
+            self.assertEqual((want, a['width'], a['height'], a['kind']), (b['polys'], b['width'], b['height'], b['kind']), s)
             if k <= cut:
                 self.assertEqual((a['x'], a['y']), (b['x'], b['y']), s)
                 same.append(s)
@@ -251,7 +264,11 @@ class MiddlePurpleTests(unittest.TestCase):
         self.assertEqual((e['polys'], e['width'], e['height']), (p7['polys'], p7['width'], p7['height']))
         self.assertAlmostEqual(e['x'] - p7['x'], dx, places=9)
         rows_b = {r['id']: r for r in self.base['encounters']}
-        gaps = {i: abs(rows_b[i]['distance'] - self.rows[i]['distance']) for i in rows_b}
+        grown = {i for i in rows_b if nar['fragment'] in (self.rows[i]['fromFragment'], self.rows[i]['toFragment'])
+                 and abs(rows_b[i]['distance'] - self.rows[i]['distance']) > 1e-6}
+        self.assertEqual(sorted(grown), ['OPEN-L2-P4'])  # L2's left end moved away from P4; L1 -> L2 unchanged
+        self.assertGreater(self.rows['OPEN-L2-P4']['distance'], rows_b['OPEN-L2-P4']['distance'])
+        gaps = {i: abs(rows_b[i]['distance'] - self.rows[i]['distance']) for i in rows_b if i not in grown}
         self.assertLess(max(gaps.values()), 1e-6)
         self.assertEqual([r['id'] for r in self.m['encounters'] if r['id'] in rows_b], [r['id'] for r in self.base['encounters']])
         # Combinations keep their encounter ids.

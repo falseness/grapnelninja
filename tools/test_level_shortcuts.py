@@ -118,8 +118,10 @@ class ShortcutReplayTests(unittest.TestCase):
         source = ROUTE_MAP['addedFragments']['L2']
         target = panel('P4')
         self.assertEqual(successor(source), target)
-        r = self.run_probe(source=source, target=target, fraction=.2,
-                           pumps=1, drop=300, aimOffset=-.15,
+        # TASK-686: from L2's middle (the three-zone candidate narrows L2 from its left
+        # end, so a release from .2 now falls short; .5 / aim -.6 lands on both layouts).
+        r = self.run_probe(source=source, target=target, fraction=.5,
+                           pumps=1, drop=300, aimOffset=-.6,
                            targetWhenInRange=True, budget=2400)
         self.assertIsNotNone(r['arrival'])
         self.assertIsNotNone(r['hit'])

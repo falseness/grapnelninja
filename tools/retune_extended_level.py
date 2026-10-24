@@ -924,7 +924,10 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
     if opening:
         restore_guard_coverage(m, yellow_clearance, reserved)
     if min_sides in ('opening', 'all'):
-        add_opening_min_side_shields(m, yellow_clearance)
+        add_opening_min_side_shields(m, yellow_clearance, MIDDLE_PURPLE_SHIELDS if middle_purple else OPENING_MIN_SIDE_SHIELDS)
+        if middle_purple:
+            narrow_from_left(m, 'L2', MIDDLE_L2_LEFT_CUT, 'NGM5')
+            extend_middle_zone_right(m)
     if min_sides == 'all':
         resize_later_sides(m, opening, yellow_clearance)
         deepen_yellow_bands(m, yellow_clearance)
@@ -1005,7 +1008,7 @@ def add_shortcut_shields(m, spec):
         f = by[sid]
         if ext.get('mirror'):
             # The mirrored chute gets NG1's post reflected: added on the reflected slab, then reflected back.
-            cx = zone['x']+zone['width']/2
+            cx = zone['x']+zone.get('mirrorWidth', zone['width'])/2
             made = in_mirror(f, cx, lambda g: add_post(g, width, height))
             made = dict(foot=[2*cx-made['foot'][0], made['foot'][1]], top=made['top'], mirroredAbout=cx)
         else:
@@ -1101,6 +1104,31 @@ def resize_opening_sides(m, spec=OPENING_MIN_SIDES, target=SIDE_TARGET):
 # yellow bands are placed, so no band moves: every band must stay at least the
 # yellow clearance away. Every side is >= 270 and no transfer gap changes.
 OPENING_MIN_SIDE_SHIELDS = [('P4', 298, 578, -2708, -2358)]
+# TASK-686 (with --middle-purple): the whole-route matrix on the three-zone
+# candidate showed 5-pump vertical bounces from P4 (.5/.8) and L2 (.8) rising
+# ~6200 into the NGM encounter, which hangs above them: P4 struck NGM3's
+# underside, L2 grappled NGM5 on the way up or struck P8's underside. P4 keeps
+# its TASK-680 shield and gains a second, higher one right of it over the .8
+# column (the 3-pump apex, 2195 above the top, stays below both; the 4-pump
+# bounce, which reached NGM3, strikes it). It sits just below the NGM zone
+# (nothing but the slabs may touch the zone) and its lower-right corner is as
+# far right as the L2 -> P4 gap allows. Contacts with it are contacts with P4.
+MIDDLE_PURPLE_SHIELDS = OPENING_MIN_SIDE_SHIELDS + [('P4', 500, 770, -3103, -2833)]
+# L2 cannot be shielded: any body above its left part comes within the L2 -> P4
+# gap of P4's shields or the grapple range of NGM5, and a shield over its right
+# part becomes a rope anchor that swings the player left under the zone onto
+# NGM5 or over P4. Bounces from L2's left part are already safe: they rise into
+# the NGM zone, which drops the rope, so pumping stalls near the 3-pump apex.
+# The NGM zone therefore extends right (away from its approach, past L2's right
+# end) so the whole of L2 lies under it. Its slabs, approach, exit and NG1
+# mirror frame (the unextended width) are unchanged; nothing else lies in the
+# added strip. L2's left part also lay under NGM5's underside, only 2350 .. 2600
+# above it, which a 300 drop and 2 pumps from L2 .2 (rising ~3500 even under
+# the zone) struck: L2 also loses its left 560 (left half of its outline moves
+# right; its right end stays), so nothing lies above it lower than P8 (5640).
+# Only the L2 -> P4 gap grows.
+MIDDLE_ZONE_EXTEND_RIGHT = 550
+MIDDLE_L2_LEFT_CUT = 560
 
 
 def planned_shield_bodies(m, spec=OPENING_MIN_SIDE_SHIELDS):
@@ -1116,7 +1144,7 @@ def add_opening_min_side_shields(m, clearance, spec=OPENING_MIN_SIDE_SHIELDS):
     for sid, x0, x1, top, bottom in spec:
         f = by[sid]
         before = [gap(a, b)[0] for a, b in zip(fs, fs[1:])]
-        f['polys'] = f['polys'][:1]+[[[x0, top], [x1, top], [x1, bottom], [x0, bottom]]]
+        f['polys'] = f['polys']+[[[x0, top], [x1, top], [x1, bottom], [x0, bottom]]]
         body = [[f['x']+x, f['y']+y] for x, y in f['polys'][-1]]
         if short_sides(f) or [gap(a, b)[0] for a, b in zip(fs, fs[1:])] != before:
             raise ValueError('%s shield must keep sides >= %g and every transfer gap' % (sid, MIN_SIDE_LENGTH))
@@ -1145,6 +1173,53 @@ def add_opening_min_side_shields(m, clearance, spec=OPENING_MIN_SIDE_SHIELDS):
                             bandsWithNewNearestSolid=bands))
     m['minimumSides']['shields'] = dict(bodies=shields, purpose='TASK-680: block the demonstrated L2 -> NG-APPROACH '
                                         'flight over P4 found by the candidate opening probe grid')
+    if spec is MIDDLE_PURPLE_SHIELDS:
+        m['minimumSides']['shields']['middlePurple'] = ('TASK-686: a second P4 shield (body 2) against the demonstrated '
+                                                        '5-pump P4 bounces into NGM3; L2 is narrowed and covered by the NGM zone '
+                                                        'extension')
+
+
+def narrow_from_left(m, sid, cut, clear_of):
+    fs = m['fragments']
+    f = next(g for g in fs if g['semanticId'] == sid)
+    before = [gap(a, b)[0] for a, b in zip(fs, fs[1:])]
+    old = dict(x=f['x'], width=f['width'], polys=copy.deepcopy(f['polys']))
+    f['polys'] = [[[x, y] if x < f['width']/2 else [x-cut, y] for x, y in poly] for poly in f['polys']]
+    f['x'] += cut
+    f['width'] -= cut
+    after = [gap(a, b)[0] for a, b in zip(fs, fs[1:])]
+    if short_sides(f) or any(d < d0-COORD_TOL for d, d0 in zip(after, before)):
+        raise ValueError('%s narrowing must keep sides >= %g and not shorten a transfer gap' % (sid, MIN_SIDE_LENGTH))
+    other = next(g for g in fs if g['semanticId'] == clear_of)
+    right = max(x for b in svg.bodies(other) for x, _ in b)
+    if f['x'] <= right:
+        raise ValueError('%s must lie right of %s (%.1f <= %.1f)' % (sid, clear_of, f['x'], right))
+    m['minimumSides']['narrowedFromLeft'] = dict(
+        fragment=f['id'], semanticId=sid, cut=cut, before=old, x=f['x'], width=f['width'], clearOf=clear_of,
+        clearance=f['x']-right, grownTransferGaps={fs[i+1]['semanticId'] if fs[i] is f else fs[i]['semanticId']: [before[i], after[i]]
+                                                   for i in range(len(fs)-1) if abs(after[i]-before[i]) > COORD_TOL},
+        purpose='TASK-686: L2 no longer lies under NGM5 (L2 .2 drop-300 2-pump bounces struck its underside)')
+
+
+def extend_middle_zone_right(m, extend=MIDDLE_ZONE_EXTEND_RIGHT, under='L2'):
+    zone = next(z for z in m['noGrappleZones'] if z['id'] == 'NGM')
+    width = zone['width']+extend
+    poly = [[zone['x'], zone['y']], [zone['x']+width, zone['y']], [zone['x']+width, zone['y']+zone['height']],
+            [zone['x'], zone['y']+zone['height']]]
+    strip = [[zone['x']+zone['width'], zone['y']]]+poly[1:3]+[[zone['x']+zone['width'], zone['y']+zone['height']]]
+    for f in m['fragments']:
+        if union_distance(svg.bodies(f), [strip])[0] <= 0:
+            raise ValueError('%s lies in the NGM zone extension' % f['semanticId'])
+    for band in m['yellowBands']:
+        if union_distance([band['polygon']], [strip])[0] <= 0:
+            raise ValueError('yellow band %s lies in the NGM zone extension' % band['id'])
+    l2 = next(f for f in m['fragments'] if f['semanticId'] == under)
+    if not (zone['x'] < l2['x'] and l2['x']+l2['width'] < zone['x']+width):
+        raise ValueError('%s must lie under the extended NGM zone' % under)
+    zone.update(mirrorWidth=zone['width'], extendedRight=extend, width=width, polygon=poly)
+    zone['extension'] = dict(strip=strip, under=under, underRightMargin=zone['x']+width-(l2['x']+l2['width']),
+                             purpose='TASK-686: L2 lies under the NGM zone, so its pumped bounces lose the rope '
+                                     'before NGM5/P8 (the demonstrated 5-pump .8 skips)')
 
 
 # TASK-681 (candidate only, with --min-side-scope all): every remaining gameplay
@@ -1223,7 +1298,7 @@ def rebuild_purple_slabs(m, by):
     posts = m.get('shortcutShields', {}).get('posts') or [m.get('shortcutShields', {}).get('post')]
     for ext, zone, post_meta in zip(purple_extensions(m), m.get('noGrappleZones', []), posts):
         pre = ext.get('prefix', 'NG')
-        cx = zone['x']+zone['width']/2
+        cx = zone['x']+zone.get('mirrorWidth', zone['width'])/2  # the NG1 mirror frame (TASK-686 extends NGM)
         panels, taper = (PURPLE_MIDDLE['panels'], MIDDLE_SLAB_TAPER) if ext.get('mirror') else (PURPLE['panels'], LATER_SLAB_TAPER)
         for n, (name, contact, angle, before, after, thickness, side) in enumerate(panels, 1):
             sid = '%s%d' % (pre, n)

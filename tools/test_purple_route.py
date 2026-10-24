@@ -34,6 +34,7 @@ from contextlib import ExitStack
 import base64
 import hashlib
 import io
+import copy
 import json
 import math
 import os
@@ -321,7 +322,7 @@ class PurplePreservationTests(unittest.TestCase):
         retune.extend_purple_route = lambda m, spec: None
         # Without the purple extension P4 departs the upward turn itself, so the TASK-680 P4 shield
         # (which must keep every gap) is not generated; its body is added below for shape comparisons only.
-        retune.add_opening_min_side_shields = lambda m, clearance: None
+        retune.add_opening_min_side_shields = lambda m, clearance, spec=None: None
         try:
             cls.base = retune.tune(source, opening=retune.OPENING, yellow_clearance=retune.YELLOW_CLEARANCE,
                                    min_sides=None if MIN_SIDE_SCOPE == 'none' else MIN_SIDE_SCOPE)
@@ -329,8 +330,19 @@ class PurplePreservationTests(unittest.TestCase):
             retune.extend_purple_route, retune.add_opening_min_side_shields = saved, shields
         if MIN_SIDE_SCOPE != 'none':
             by = {f['semanticId']: f for f in cls.base['fragments']}
-            for sid, x0, x1, top, bottom in retune.OPENING_MIN_SIDE_SHIELDS:
-                by[sid]['polys'] = by[sid]['polys'][:1] + [[[x0, top], [x1, top], [x1, bottom], [x0, bottom]]]
+            # With the middle encounter P4 also carries the TASK-686 shield (MIDDLE_PURPLE_SHIELDS).
+            spec = retune.MIDDLE_PURPLE_SHIELDS if MIDDLE else retune.OPENING_MIN_SIDE_SHIELDS
+            for sid in {e[0] for e in spec}:
+                by[sid]['polys'] = by[sid]['polys'][:1]
+            for sid, x0, x1, top, bottom in spec:
+                by[sid]['polys'] = by[sid]['polys'] + [[[x0, top], [x1, top], [x1, bottom], [x0, bottom]]]
+        # TASK-686: with the middle encounter L2 is narrowed from its left end (recorded 'before').
+        cls.narrowed = cls.m.get('minimumSides', {}).get('narrowedFromLeft') if MIDDLE else None
+        if cls.narrowed:
+            f = {g['semanticId']: g for g in cls.base['fragments']}[cls.narrowed['semanticId']]
+            g = {g['semanticId']: g for g in cls.m['fragments']}[cls.narrowed['semanticId']]
+            assert dict(x=f['x'], width=f['width'], polys=f['polys']) == cls.narrowed['before']
+            f.update(x=g['x'], width=g['width'], polys=copy.deepcopy(g['polys']))
         cls.shipped = json.loads((SHIPPED / NAMES[1]).read_text())
         cls.out = {}
 
@@ -377,16 +389,22 @@ class PurplePreservationTests(unittest.TestCase):
         lower = [s for s in order[:cut + 1]]
         # The minimum-side candidate: the recorded opening resizes undone (TASK-679 'before' polygons).
         before = {c['semanticId']: c['before'] for c in self.m.get('minimumSides', {}).get('changed', [])}
+        nar = self.narrowed or {}
         for s in lower:
+            x = nar['before']['x'] if s == nar.get('semanticId') else new[s]['x']
             self.assertEqual((shipped[s]['x'], shipped[s]['y'], shipped[s]['polys']),
-                             (new[s]['x'], new[s]['y'], before.get(s, new[s]['polys'])), s)
+                             (x, new[s]['y'], before.get(s, nar['before']['polys'] if s == nar.get('semanticId') else new[s]['polys'])), s)
         catch = ['X%d' % i for i in range(1, 11)]  # TASK-676: X1..X10
         self.assertTrue(set(catch) <= set(lower))
         # Every pre-existing transfer keeps its measured gap (the upward turn now leaves the exit copy).
         rows_old = {r['id']: r for r in self.base['encounters']}
         rows_new = {r['id']: r for r in self.m['encounters']}
         self.assertEqual(set(rows_old) - set(rows_new), set())
-        gaps = {i: abs(rows_old[i]['distance'] - rows_new[i]['distance']) for i in rows_old}
+        # The TASK-686 narrowing only lengthens the transfers of the narrowed fragment.
+        grown = {i for i in rows_old if nar.get('fragment') in (rows_new[i]['fromFragment'], rows_new[i]['toFragment'])
+                 and abs(rows_new[i]['distance'] - rows_old[i]['distance']) > 1e-6}
+        self.assertTrue(all(rows_new[i]['distance'] > rows_old[i]['distance'] for i in grown))
+        gaps = {i: abs(rows_old[i]['distance'] - rows_new[i]['distance']) for i in rows_old if i not in grown}
         self.assertLess(max(gaps.values()), 1e-6)
         self.out['fragments'] = dict(identical=same, translated=moved, translation=[dx, dy],
                                      translationsByDeparture={order[c]: t for c, t in cuts},
