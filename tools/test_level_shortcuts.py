@@ -1,7 +1,9 @@
 """Finite production-input regression probes; these do not prove a full climb.
 
 ROUTE_REPLAY_EVIDENCE=FILE writes the compact probe results (setup, first
-source bounce, first later-panel contact) of every probe to FILE."""
+source bounce, first later-panel contact) of every probe to FILE.
+LEVEL_SHORTCUTS_LEVEL_DIR=DIR (TASK-680) probes that directory's level and route
+map instead of the shipped artifacts/levels (the control is unchanged)."""
 from contextlib import ExitStack
 import json
 import os
@@ -12,7 +14,9 @@ from import_level_svg import import_svg
 import convert_extended_mountain_svg as svg
 from retune_extended_level import tune, LAYOUT
 ROOT=Path(__file__).resolve().parent.parent
-ROUTE_MAP=json.loads((ROOT/'artifacts/levels/extended-mountain-measurements.json').read_text())['routeMap']
+LEVELS=Path(os.environ.get('LEVEL_SHORTCUTS_LEVEL_DIR',ROOT/'artifacts/levels'))
+ROUTE_MAP=json.loads((LEVELS/'extended-mountain-measurements.json').read_text())['routeMap']
+LEVEL=json.loads((LEVELS/'extended-mountain.level.json').read_text()) if os.environ.get('LEVEL_SHORTCUTS_LEVEL_DIR') else None
 
 def panel(original):
     """Shipped panel id for a pre-extension (v5) panel id."""
@@ -45,10 +49,12 @@ class ShortcutReplayTests(unittest.TestCase):
     replays=[]
 
     def run_probe(self,**options):
+        control='level' in options
+        if LEVEL and not control:options=dict(options,level=LEVEL)
         r=self.page.evaluate('o=>ROUTE_PROBE.run(o)',options)
         keep={k:r[k] for k in ('source','target','fraction','aimOffset','drop','pumps','budget','setup','arrival','hit','bounces','ticks','dragTicks')}
         keep['targetWhenInRange']=bool(options.get('targetWhenInRange'))
-        self.replays.append(dict(test=self.id().rsplit('.',1)[-1],control='level' in options,**keep))
+        self.replays.append(dict(test=self.id().rsplit('.',1)[-1],control=control,**keep))
         return r
 
     def test_fourth_obstacle_reproduced_and_fixed(self):
@@ -90,7 +96,9 @@ class ShortcutReplayTests(unittest.TestCase):
     def test_second_easy_opening_transfer(self):
         # The second 80% transfer (P1 -> P2) keeps its panels and position.
         self.assertEqual((panel('P1'),panel('P2')),('P1','P2'))
-        r=self.run_probe(source='P1',target='P2',fraction=.5,pumps=4,aimOffset=.6,targetWhenInRange=True,budget=1800)
+        # TASK-680: two pumps from 0.2 of P1 reach P2 on both v15 and the minimum-side
+        # candidate (its rebuilt P2 slab moves the nearest in-range point; four pumps from 0.5 miss it).
+        r=self.run_probe(source='P1',target='P2',fraction=.2,pumps=2,aimOffset=0,targetWhenInRange=True,budget=1800)
         self.assertIsNotNone(r['arrival'])
         self.assertEqual(r['hit']['id'],'P2-body0')
 

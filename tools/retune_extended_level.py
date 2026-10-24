@@ -786,6 +786,8 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
     consolidate_yellow_bands(m, yellow_clearance)
     if opening:
         restore_guard_coverage(m, yellow_clearance)
+    if min_sides == 'opening':
+        add_opening_min_side_shields(m, yellow_clearance)
     m['fallIllustrations'] = [dict(id='F'+str(i+1),band=z['id'],start=[z['x']+z['width']/2,z['y']-500],
         end=[z['x']+z['width']/2,z['y']+1000],meaning='Illustrative fall only') for i,z in enumerate(m['yellowBands'])]
     m['bluntedCorners']=dict(minimumAngle=MIN_INTERIOR_ANGLE, face=BLUNT_FACE, changed=blunted)
@@ -935,6 +937,56 @@ def resize_opening_sides(m, spec=OPENING_MIN_SIDES, target=SIDE_TARGET):
     m['minimumSides'] = dict(scope='opening', minimum=MIN_SIDE_LENGTH, target=target,
                              fragments=[f['id'] for f in opening_scope(m)], changed=changed,
                              purpose='TASK-679: opening green edges >= 0.5 R; later bodies are migrated separately')
+
+
+# TASK-680 (candidate only, with --min-side-scope opening): the opening probe grid
+# showed a fast pumped release from L2's right end flying ~2400 above P4's top
+# and landing first on NG-APPROACH, skipping P4 (the same flight exists in v15).
+# The shield is a second P4 body hanging high above P4 (fragment-local x0..x1
+# from P4's left end, top..bottom relative to P4's top) where that arc peaks;
+# the intended low arcs (L2 -> P4 descending onto P4 from the right, P4 ->
+# NG-APPROACH with an apex near -700) pass well below it. It is added after the
+# yellow bands are placed, so no band moves: every band must stay at least the
+# yellow clearance away. Every side is >= 270 and no transfer gap changes.
+OPENING_MIN_SIDE_SHIELDS = [('P4', 298, 578, -2708, -2358)]
+
+
+def add_opening_min_side_shields(m, clearance, spec=OPENING_MIN_SIDE_SHIELDS):
+    fs = m['fragments']
+    by = {f['semanticId']: f for f in fs}
+    shields = []
+    for sid, x0, x1, top, bottom in spec:
+        f = by[sid]
+        before = [gap(a, b)[0] for a, b in zip(fs, fs[1:])]
+        f['polys'] = f['polys'][:1]+[[[x0, top], [x1, top], [x1, bottom], [x0, bottom]]]
+        body = [[f['x']+x, f['y']+y] for x, y in f['polys'][-1]]
+        if short_sides(f) or [gap(a, b)[0] for a, b in zip(fs, fs[1:])] != before:
+            raise ValueError('%s shield must keep sides >= %g and every transfer gap' % (sid, MIN_SIDE_LENGTH))
+        bands = []
+        for band in m['yellowBands']:
+            d = union_distance([band['polygon']], [body])[0]
+            if d < clearance:
+                raise ValueError('%s shield is %.1f from yellow band %s' % (sid, d, band['id']))
+            if d < band['nearestSolidClearance']:
+                band['nearestSolidClearance'] = d
+                bands.append(band['id'])
+        # Pair clearances were measured before the bands; re-measure this fragment's pairs.
+        moved = []
+        for row in m['pairChecks']:
+            if f['id'] in (row['source'], row['target']):
+                other = next(g for g in fs if g['id'] == (row['target'] if row['source'] == f['id'] else row['source']))
+                d = gap(f, other)[0]
+                if d - 21.6 <= 540:
+                    raise ValueError('%s shield brings %s within grapple range' % (sid, other['semanticId']))
+                if abs(d - row['minimumGap']) > 1e-9:
+                    moved.append(other['semanticId'])
+                row.update(minimumGap=d, passOutsideRange=d-21.6 > 540)
+        shields.append(dict(fragment=f['id'], semanticId=sid, body=len(f['polys'])-1, pairsWithNewMinimumGap=moved, localX=[x0, x1], localY=[top, bottom],
+                            world=body, nearestYellowClearance=min(union_distance([b['polygon']], [body])[0]
+                                                                   for b in m['yellowBands']),
+                            bandsWithNewNearestSolid=bands))
+    m['minimumSides']['shields'] = dict(bodies=shields, purpose='TASK-680: block the demonstrated L2 -> NG-APPROACH '
+                                        'flight over P4 found by the candidate opening probe grid')
 
 
 def box(fragment):

@@ -25,7 +25,8 @@ upward rebound, exposed traverse) and requires no adjacent repeat after the
 first two; test_14 compares the candidate with the TASK-675 candidate by
 semantic id (purple extension and later route unchanged, lower terrain under
 the late route, original source, corner/clearance rules, opening span).
-test_15 replays tools/fixtures/opening-section-inputs.json from the spawn with
+test_15 replays tools/fixtures/opening-section-inputs.json (the -min-sides
+variant with OPENING_VARIETY_MIN_SIDE_SCOPE=opening) from the spawn with
 production inputs through the whole section to the upward-turn departure;
 test_16 drops the three leftmost late panels onto lower terrain; test_17 draws
 opening.png (candidate SVG vs runtime draw()).
@@ -81,7 +82,11 @@ CANDIDATE, SELECTED_BY = candidate_dir()
 # The TASK-675 candidate (purple extension, eight-platform lower chain): the
 # comparison point for what the varied section must preserve.
 PREVIOUS = ROOT / 'artifacts/TASK-675/candidate'
-SECTION_INPUTS = TOOLS / 'fixtures/opening-section-inputs.json'
+# TASK-680: the minimum-side candidate has its own recorded inputs (the shipped
+# inputs stay valid for the shipped layout); both were found by input search only.
+FIXTURE_SUFFIX = '' if MIN_SIDE_SCOPE == 'none' else '-min-sides'
+SECTION_INPUTS = TOOLS / ('fixtures/opening-section-inputs%s.json' % FIXTURE_SUFFIX)
+HARDER_INPUTS = TOOLS / ('fixtures/harder-opening-inputs%s.json' % FIXTURE_SUFFIX)
 # The preserved concept source, unchanged since TASK-650 (artifacts/TASK-650/hashes.json).
 ORIGINAL_SOURCE = {
     'artifacts/level/extended-mountain.svg': '0606d25f6afc903f7946a6441844654fae4701128ce48b6393b61c0afaf40756',
@@ -737,7 +742,7 @@ def write_evidence(t, out):
 # Inputs are real document mouse events at fixed ticks; aims are derived from
 # the shipped polygons. Nothing writes position, velocity or grapple state
 # after the fixture (tools/opening_combination_replay.js).
-FIXTURE = json.loads((TOOLS / 'fixtures/harder-opening-inputs.json').read_text())['fixture']
+FIXTURE = json.loads(HARDER_INPUTS.read_text())['fixture']
 # The added panels, the tested pairs (source -> beyond its successor) and the
 # ROUTE_PROBE policy grid (tools/probe_level_routes.js).
 SHORTCUT_PAIRS = [('P2', 'P4'), ('P2', 'P5'), ('P2', 'P6'), ('P3', 'P5'), ('P3', 'P6'),
@@ -755,7 +760,7 @@ def surface_aim(bounds, panel, dx, dy=0.):
 
 
 def catch_inputs(bounds):
-    record = json.loads((TOOLS / 'fixtures/harder-opening-inputs.json').read_text())
+    record = json.loads(HARDER_INPUTS.read_text())
     inputs = record['inputs']
     end = next(i for i,e in enumerate(inputs) if e['type']=='up' and e['tick']>record['ceilingCatchTick'])
     return inputs[:end+1]
@@ -765,7 +770,7 @@ def catch_inputs(bounds):
 def combination_inputs(bounds):
     # Recorded real inputs for the fixed v10 opening; geometry changes must
     # earn a new successful continuous replay rather than adapting the test.
-    return json.loads((TOOLS / 'fixtures/harder-opening-inputs.json').read_text())['inputs']
+    return json.loads(HARDER_INPUTS.read_text())['inputs']
 
 
 def first_seq(contacts):
@@ -830,7 +835,7 @@ class CombinationReplayTests(unittest.TestCase):
 
     def replay(self, inputs, level=None, budget=None):
         level = level or self.level
-        if budget is None: budget=json.loads((TOOLS / 'fixtures/harder-opening-inputs.json').read_text())['budget']
+        if budget is None: budget=json.loads(HARDER_INPUTS.read_text())['budget']
         stop = dict(id=self.ids['R4'], ny='up')
         return self.pages['replay'].evaluate('o => OPENING_REPLAY.run(o)',
                                              dict(level=level, fixture=FIXTURE, inputs=inputs, budget=budget, stopOn=stop))
@@ -1089,10 +1094,10 @@ class CombinationReplayTests(unittest.TestCase):
             method='Real index.html; the candidate goes through production importedMountainLevel() (540 acquisition). '
                    'tools/opening_combination_replay.js places the player once exactly as a new run (level spawn, zero '
                    'speed), then dispatches document mousedown/mousemove/mouseup at the recorded ticks '
-                   '(tools/fixtures/opening-section-inputs.json, aims in world units) and calls production physics() '
+                   '(tools/fixtures/%s, aims in world units) and calls production physics() '
                    'once per tick. Nothing writes position, velocity or grapple state afterwards; recoverClimbFall '
                    'calls are logged (recoveries) and must be empty. departureContact is the last contact on the '
-                   'departure panel at or before the arrival.',
+                   'departure panel at or before the arrival.' % SECTION_INPUTS.name,
             browser=self.browser_version,
             candidate=dict(path=os.path.relpath(CANDIDATE.resolve(), ROOT), selectedBy=SELECTED_BY,
                            levelSha=sha((CANDIDATE / NAMES[2]).read_bytes())),
