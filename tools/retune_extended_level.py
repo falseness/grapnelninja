@@ -557,6 +557,19 @@ PURPLE_MIDDLE = dict(PURPLE, departure='P7', upId='S08-02', prefix='NGM', zoneId
                      purpose='Rightward rope-free bounce traversal (mirror of NG1) after S08-01, before the S08-02 climb')
 
 
+# TASK-684 (candidate, opt-in via --upper-purple with --middle-purple): a third purple encounter higher and
+# later, in the leftward upper run after NGM, separated from it by the normal grapple transfers S08-02 ..
+# EXT-13. It starts at P13 (the arrival of the leftward EXT-13 rebound, before the EXT-14 ceiling hold) and
+# runs leftward with NG1's unmirrored slabs and post (the middle encounter runs rightward, mirrored): an
+# approach ledge left of P13, a 10R x 5R zone left of that at NG1's height below its approach, and an exit
+# ledge copying P13 7500 to the left, so EXT-14 and every later panel keep their geometry translated by
+# -7500 (the summit end then lies over the opening P2 .. R2, so late falls land on lower terrain).
+PURPLE_UPPER = dict(PURPLE, departure='P13', upId='EXT-14', prefix='NGU', zoneId='NGU', mirror=False,
+                    copyOf='NG1', shift=-7500, label='Upper purple',
+                    purpose='Leftward rope-free bounce traversal (NG1 orientation, opposite to NGM) after EXT-13, '
+                            'before the EXT-14 ceiling hold')
+
+
 def slab(contact, angle, before, after, thickness, side):
     """Rectangle whose face lies PLAYER_RADIUS from contact, on the side the player touches."""
     ux, uy = math.cos(math.radians(angle)), math.sin(math.radians(angle))
@@ -646,6 +659,8 @@ def extend_purple_route(m, spec):
                 purpose='no-grapple bounce chute: rope-free momentum traversal')
     if mirror:
         zone['mirrorOf'] = spec['mirrorOf']
+    if spec.get('copyOf'):
+        zone['copyOf'] = spec['copyOf']
     internal = []
     for n, (name, contact, angle, before, after, thickness, side_) in enumerate(spec['panels'], 1):
         f = purple_panel(name, slab(contact, angle, before, after, thickness, side_), contact,
@@ -653,6 +668,7 @@ def extend_purple_route(m, spec):
         f.update(originalId=None, semanticId='%s%d' % (pre, n), surfaceAngle=angle)
         if mirror:
             f = mirror_fragment(f, zx+zw/2)
+        if 'label' in spec:
             f['name'] = '%s %s' % (label, name[0].lower()+name[1:])
         internal.append(f)
     for f in [approach, exit_]:
@@ -685,7 +701,7 @@ def extend_purple_route(m, spec):
             rid, direction, action = pre+'-EXIT', 'UP → EXIT LEDGE', 'Launch out of the zone top, then grapple the exit ledge'
         else:
             rid, direction, action = '%s-%s-%s' % (pre, a['semanticId'], b['semanticId']), 'BOUNCE', \
-                'Rope-free bounce off the %s %s' % (b['surface'], (b['name'][len(label)+1:] if mirror else b['name']).lower())
+                'Rope-free bounce off the %s %s' % (b['surface'], (b['name'][len(label)+1:] if 'label' in spec else b['name']).lower())
         extra.append(dict(id=rid, fromFragment=a['id'], toFragment=b['id'], direction=direction, action=action,
                           baseline=False, originalNumber=None, originalId=None, percent=None,
                           noGrappleZone=zone['id'] if a in internal and b in internal else None))
@@ -714,7 +730,8 @@ def extend_purple_route(m, spec):
         m['purpleExtension'] = new
         return
     # A second encounter (TASK-682): the singular keys stay the first encounter; the plural ones list all.
-    new.update(prefix=pre, mirror=mirror, mirrorOf=spec['mirrorOf'], departureSemanticId=dep['semanticId'])
+    new.update(prefix=pre, mirror=mirror, **{k_: spec[k_] for k_ in ('mirrorOf', 'copyOf') if k_ in spec},
+               departureSemanticId=dep['semanticId'])
     m['noGrappleZones'] = m['noGrappleZones']+[zone]
     m['purpleExtension'] = earlier[0]
     m['purpleExtensions'] = earlier+[new]
@@ -744,7 +761,9 @@ def measure_transfers(m, opening):
 
 
 def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE, min_sides=None,
-         middle_purple=False):
+         middle_purple=False, upper_purple=False):
+    if upper_purple and not middle_purple:
+        raise ValueError('The upper purple encounter follows the middle one')
     source = copy.deepcopy(source)
     # The extra second polygon is the unwanted rectangular bump, not the shelf.
     for n, fragment in enumerate(source['fragments']):
@@ -848,6 +867,8 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         if middle_purple:
             z1, a1 = m['noGrappleZones'][0], next(f for f in fs if f['semanticId'] == 'NG-APPROACH')
             extend_purple_route(m, dict(PURPLE_MIDDLE, zoneBelowApproach=z1['y']-a1['y']))
+            if upper_purple:
+                extend_purple_route(m, dict(PURPLE_UPPER, zoneBelowApproach=z1['y']-a1['y']))
         add_shortcut_shields(m, SHIELDS)
         if min_sides in ('opening', 'all'):
             resize_opening_sides(m)
@@ -1135,6 +1156,7 @@ LATER_SLAB_TAPER = ('Low ceiling', 'Launch ramp')
 LATER_MIN_SIDES = [('NG-EXIT', 'extend-each', [(1, 2)]),
                    ('P7', 'extend-each', [(0, 3)]),
                    ('NGM-EXIT', 'extend-each', [(0, 3)]),  # TASK-682: the middle exit copies P7
+                   ('NGU-EXIT', 'extend-each', [(0, 4)]),  # TASK-684: the upper exit copies P13
                    ('P9', 'set', [[0, 0], [980, 0], [980, 275], [372.4, 275], [372.4, 550], [0, 550]]),
                    ('P13', 'extend-each', [(0, 4)]),
                    ('P16', 'extend-each', [(0, 4), (1, 2)]),
@@ -1533,7 +1555,11 @@ def main():
                          'polygon edge (TASK-681); none: the shipped layout')
     ap.add_argument('--middle-purple', action='store_true',
                     help='candidate: add the second (middle) purple no-grapple encounter NGM after S08-01 (TASK-682)')
+    ap.add_argument('--upper-purple', action='store_true',
+                    help='candidate (with --middle-purple): add the third (upper) purple encounter NGU after EXT-13 (TASK-684)')
     args=ap.parse_args()
+    if args.upper_purple and not args.middle_purple:
+        raise ValueError('--upper-purple needs --middle-purple')
     if args.middle_purple and args.opening != 'extended':
         raise ValueError('--middle-purple needs the extended opening')
     guidelines=Path(args.guidelines).read_bytes()
@@ -1548,7 +1574,8 @@ def main():
         raise ValueError('Guidelines must specify the mixed opening combination')
     dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
     m=tune(json.loads(Path(args.source).read_text()), opening=opening, yellow_clearance=clearance,
-         min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple)
+         min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple,
+         upper_purple=args.upper_purple)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);

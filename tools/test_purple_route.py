@@ -16,6 +16,9 @@ PURPLE_ROUTE_MIN_SIDE_SCOPE=opening|all (TASK-681) regenerates and compares the
 minimum-side candidate (retune --min-side-scope); the shipped lower route is then
 compared with the recorded opening resizes undone.
 
+PURPLE_ROUTE_UPPER=1 with PURPLE_ROUTE_MIDDLE=1 (TASK-684) regenerates with the third
+(upper) encounter NGU as well (retune --upper-purple).
+
 PURPLE_ROUTE_ENCOUNTER=NGM (TASK-683) replays the middle encounter of a
 --middle-purple candidate instead of NG1 (zone id; panels by semantic prefix, input
 fixture tools/fixtures/purple-route-inputs-ngm.json). The traversal class also
@@ -52,6 +55,8 @@ EVIDENCE = os.environ.get('NO_GRAPPLE_EVIDENCE_DIR')
 MIN_SIDE_SCOPE = os.environ.get('PURPLE_ROUTE_MIN_SIDE_SCOPE', 'none')
 # PURPLE_ROUTE_MIDDLE=1: the candidate also has the middle encounter NGM (retune --middle-purple, TASK-682).
 MIDDLE = ['--middle-purple'] if os.environ.get('PURPLE_ROUTE_MIDDLE') == '1' else []
+# PURPLE_ROUTE_UPPER=1 (with PURPLE_ROUTE_MIDDLE=1): also the upper encounter NGU (retune --upper-purple, TASK-684).
+MIDDLE += ['--upper-purple'] if MIDDLE and os.environ.get('PURPLE_ROUTE_UPPER') == '1' else []
 # PURPLE_ROUTE_ENCOUNTER=ZONE (TASK-683): the traversal class replays that encounter (purpleExtensions zone id,
 # default NG1), with the input fixture of its semantic prefix.
 ENCOUNTER = os.environ.get('PURPLE_ROUTE_ENCOUNTER', 'NG1')
