@@ -1,8 +1,10 @@
-"""Grapple Over green (bounce) panel circuits: 3x motif scale (TASK-664), denser paths (TASK-670).
+"""Grapple Over green (bounce) panel circuits: 3x motif scale (TASK-664), denser paths (TASK-670),
+size-proportional density on big panels (TASK-690/691).
 
-Renders one fixed test-only level holding thin, very thin, broad, sloped and
-irregular bounce panels next to solid, mover, hazard and drag controls, in the
-baseline revision (before: the pre-TASK-670 tree, already at 3x scale) and this
+Renders one fixed test-only level holding thin, very thin, broad, sloped,
+irregular, large (3000x840), huge (6000x1680) and long thin strip (8000x64)
+bounce panels next to solid, mover, hazard and drag controls, in the baseline
+revision (before: the tree just before TASK-690, camera scale 0.25) and this
 tree (after), at one camera, viewport and animation clock. Set
 LARGE_CIRCUITS_EVIDENCE_DIR (inside artifacts/) to write the captures and JSON
 proofs; without it they go to a temporary directory.
@@ -22,12 +24,17 @@ from browser_test_support import QuietHandler, start_browser_test, wait_for_boot
 from grapple_over_test_support import ROOT
 from perf_mobile import SEED_SCRIPT, export_rev
 
-BASELINE = os.environ.get('LARGE_CIRCUITS_BASELINE', '49cf58e')
-VIEWPORT = {'width': 1920, 'height': 1080}
-SHAPES = ('thin', 'very-thin', 'broad', 'sloped', 'irregular')
-SHAPE_CLASS = {'thin': 'thin', 'very-thin': 'thin', 'broad': 'wide', 'sloped': 'sloped', 'irregular': 'irregular'}
+BASELINE = os.environ.get('LARGE_CIRCUITS_BASELINE', 'b61eece')
+# Widest logical aspect (2:1), so the 8000-unit strip fits the 0.25 camera view
+VIEWPORT = {'width': 2160, 'height': 1080}
+SHAPES = ('thin', 'very-thin', 'broad', 'sloped', 'irregular', 'large', 'huge', 'strip')
+SHAPE_CLASS = {'thin': 'thin', 'very-thin': 'thin', 'broad': 'wide', 'sloped': 'sloped', 'irregular': 'irregular',
+               'large': 'wide', 'huge': 'wide', 'strip': 'thin'}
 # Shapes shown in before-after.png
-COMPARED = ('broad', 'thin', 'sloped')
+COMPARED = ('broad', 'large', 'huge', 'strip', 'thin', 'sloped')
+# Panels at or below the old 18 (8 thin) path boards keep their exact baseline boards;
+# the big ones get size-proportional density (TASK-690)
+SMALL, BIG = ('thin', 'very-thin', 'broad', 'sloped', 'irregular'), ('large', 'huge', 'strip')
 CONTROLS = ('solid', 'mover', 'hazard', 'drag')
 Y0 = -6000
 
@@ -36,7 +43,7 @@ Y0 = -6000
 # draw() runs. Returns frame pixels, device-px boxes and polygons per element.
 SETUP = '''(y0) => {
     const rect = (w, h) => [{x: 0, y: 0}, {x: w, y: 0}, {x: w, y: h}, {x: 0, y: h}]
-    const level = {version: 1, bounds: {left: -400, top: y0 - 4000, right: 6000, bottom: y0 + 3000},
+    const level = {version: 1, bounds: {left: -400, top: y0 - 4000, right: 9000, bottom: y0 + 4000},
         spawn: {x: 0, y: y0 - 3000},
         sections: [{id: GRAPPLE_OVER_LEVEL.sections[0].id, encounters: ['circuits']}],
         encounters: [{id: 'circuits', elements: ['c-broad']}], elements: [
@@ -48,11 +55,16 @@ SETUP = '''(y0) => {
             {id: 'c-irregular', x: 120, y: y0 + 640, role: 'bounce', grapplable: true,
                 points: [{x: 0, y: 140}, {x: 360, y: 0}, {x: 1300, y: 0}, {x: 1620, y: 130},
                     {x: 1620, y: 520}, {x: 0, y: 480}]},
+            {id: 'c-large', x: 5100, y: y0 - 60, role: 'bounce', grapplable: true, points: rect(3000, 840)},
+            {id: 'c-huge', x: 120, y: y0 + 1500, role: 'bounce', grapplable: true, points: rect(6000, 1680)},
+            {id: 'c-strip', x: 120, y: y0 - 400, role: 'bounce', grapplable: true, points: rect(8000, 64)},
             {id: 'c-solid', x: 2050, y: y0 + 700, role: 'solid', grapplable: true, points: rect(800, 200)},
             {id: 'c-mover', x: 3100, y: y0 + 700, role: 'solid', grapplable: true, points: rect(700, 140)},
             {id: 'c-hazard', x: 4100, y: y0 + 700, role: 'hazard', grapplable: false, points: rect(700, 180)},
             {id: 'c-drag', x: 2050, y: y0 + 1100, role: 'drag', grapplable: false, points: rect(2600, 260)}],
         movers: [{id: 'c-mover-x', element: 'c-mover', axis: 'x', min: 3000, max: 3200, periodMs: 4000, phase: 0.25}]}
+    // A real clock for build timings only; the game sees the fixed one
+    window.T664_NOW = performance.now.bind(performance)
     performance.now = () => 4321
     // Particles left by the title screen and the start (their count depends
     // on real frame timing) go, in both revisions alike
@@ -61,8 +73,8 @@ SETUP = '''(y0) => {
     floors = [loadFixedLevel(level)]
     ROLE_DETAIL.enabled = true
     for (let i = 0; i < 40; i++) floors[0].moveElements()
-    screen.x = width / scale[version] / 2 - 2500
-    screen.y = height / scale[version] / 2 - (y0 + 600)
+    screen.x = width / scale[version] / 2 - 4120
+    screen.y = height / scale[version] / 2 - (y0 + 1390)
     Object.assign(ninja, {x: -100000, y: y0 - 3000, speedX: 0, speedY: 0})
     return true
 }'''
@@ -280,25 +292,26 @@ class LargePanelCircuitTests(unittest.TestCase):
         self.assertEqual(checks['border_band_changed'], 0)
         for k, v in controls.items():
             self.assertEqual(v['differing_pixels'], 0, k)
-        # before-after.png: before | after production crops of the wide, thin and sloped panels,
-        # at the same camera and 2x nearest-neighbour zoom for both columns
+        # before-after.png: per panel, the BEFORE crop above the AFTER crop, production frames at
+        # the same camera and the same 2x nearest-neighbour zoom for every panel and both revisions
         rows = []
         for k in COMPARED:
             l, t, r, b = layout[k]['box']
             l, t, r, b = max(0, l - 24), max(0, t - 24), min(VIEWPORT['width'], r + 24), min(VIEWPORT['height'], b + 24)
             crop = lambda a: Image.fromarray(a[t:b, l:r]).resize(((r - l) * 2, (b - t) * 2), Image.NEAREST)
             rows.append((k, crop(before), crop(after)))
-        col = max(im.width for _, im, _ in rows)
-        height = 40 + sum(im.height + 34 for _, im, _ in rows) + 10
-        sheet = Image.new('RGB', (col * 2 + 30 + 20, height), (16, 16, 24))
+        sheet = Image.new('RGB', (max(im.width for _, im, _ in rows) + 20, 40 + sum(2 * im.height + 52 for _, im, _ in rows) + 10), (16, 16, 24))
         d = ImageDraw.Draw(sheet)
-        d.text((10, 12), f'PRODUCTION GAME CAPTURES  1920x1080 dpr1, clock 4321 ms, same camera, both 2x zoom.  '
-                         f'Left: BEFORE ({self.baseline_sha[:7]})   Right: AFTER (denser traces, same motif scale)', fill=(255, 255, 255))
+        d.text((10, 12), f'PRODUCTION GAME CAPTURES  {VIEWPORT["width"]}x{VIEWPORT["height"]} dpr1, clock 4321 ms, same camera, all 2x zoom.  '
+                         f'Per panel: BEFORE ({self.baseline_sha[:7]}) above AFTER (size-proportional circuits, same motif scale)', fill=(255, 255, 255))
         y = 40
         for k, b, a in rows:
-            d.text((10, y), f'{SHAPE_CLASS[k]} panel ({k})', fill=(200, 255, 200))
-            sheet.paste(b, (10, y + 16)); sheet.paste(a, (10 + col + 30, y + 16))
-            y += b.height + 34
+            d.text((10, y), f'{SHAPE_CLASS[k]} panel ({k}) BEFORE', fill=(255, 200, 200))
+            sheet.paste(b, (10, y + 14))
+            y += b.height + 18
+            d.text((10, y), f'{SHAPE_CLASS[k]} panel ({k}) AFTER', fill=(200, 255, 200))
+            sheet.paste(a, (10, y + 14))
+            y += a.height + 34
         sheet.save(self.out / 'before-after.png')
         print(f'PASS before/after: {changed_inside} px changed inside bounce polygons, 0 outside, '
               f'0 in border band, controls unchanged')
@@ -321,9 +334,6 @@ class LargePanelCircuitTests(unittest.TestCase):
             for f in same:
                 self.assertEqual(n[f], o[f], (k, f))
             self.assertAlmostEqual(n['circuitScale'], 3, places=2)
-            # Denser: more traces and more trace length on every panel
-            self.assertGreater(n['traces'], o['traces'], k)
-            self.assertGreater(n['traceLengthPx'], o['traceLengthPx'], k)
             self.assertEqual(n['areaPx2'], o['areaPx2'], k)
             # Clipping and containment
             self.assertEqual(n['paintedOutsidePolygon'], 0, k)
@@ -333,17 +343,38 @@ class LargePanelCircuitTests(unittest.TestCase):
             for g in ('minSelfGapPx', 'minPathGapPx'):
                 if n[g] is not None:
                     self.assertGreaterEqual(n[g], n['pathGapPx'] - 0.01, (k, g))
-        for k in COMPARED:
-            # The three compared shapes at least double their trace count and length
-            self.assertGreaterEqual(rows[k]['traceRatio'], 2, k)
-            self.assertGreaterEqual(rows[k]['traceLengthRatio'], 2, k)
-        for k in ('broad', 'sloped', 'irregular'):
+        for k in SMALL:
+            # Boards at or below the old cap are byte-identical to the baseline
+            self.assertEqual(new[k]['boardSha'], old[k]['boardSha'], k)
+        for k in BIG:
+            # Past the old 18 (8 thin) path plateau: more paths, length and vias than the baseline
+            self.assertGreater(new[k]['traces'], old[k]['traces'], k)
+            self.assertGreater(new[k]['traceLengthPx'], old[k]['traceLengthPx'], k)
             self.assertGreater(new[k]['vias'], old[k]['vias'], k)
-            # Denser paths still keep 2.5 motif units off the neon border
+        for k in ('broad', 'sloped', 'irregular', 'large', 'huge'):
+            # Paths keep 2.5 motif units off the neon border
             self.assertGreaterEqual(new[k]['minVertexEdgeGapPx'], 2.5 * new[k]['circuitScale'] - 0.01, k)
         self.assertEqual(new['very-thin']['vias'], 0)
         self.assertGreater(new['thin']['vias'], 0)
-        density = dict(fixed_camera=dict(viewport=VIEWPORT, dpr=1, cameraScale=0.375, clock_ms=4321), baseline=self.baseline_sha,
+        # Size scaling: paths per area stay flat from broad (1x) to large (4x) to huge (16x area);
+        # no plateau (the baseline stopped at 18-20 paths however big the panel)
+        per_area = {k: new[k]['traces'] / new[k]['areaPx2'] for k in ('broad', 'large', 'huge')}
+        scaling = dict(rule='traces/area of large and huge within 0.75-1.25x broad; huge > 18 traces; strip > 8 traces',
+                       tracesPer100kPx2={k: round(v * 1e5, 3) for k, v in per_area.items()},
+                       ratioToBroad={k: round(per_area[k] / per_area['broad'], 3) for k in ('large', 'huge')},
+                       areaRatioToBroad={k: round(new[k]['areaPx2'] / new['broad']['areaPx2'], 3) for k in ('large', 'huge')},
+                       traces={k: dict(old=old[k]['traces'], new=new[k]['traces']) for k in ('broad', 'large', 'huge', 'strip')},
+                       baselinePlateauRatioToBroad={k: round(old[k]['traces'] / old[k]['areaPx2'] / (old['broad']['traces'] / old['broad']['areaPx2']), 3)
+                                                    for k in ('large', 'huge')})
+        for k in ('large', 'huge'):
+            self.assertGreaterEqual(scaling['ratioToBroad'][k], 0.75, k)
+            self.assertLessEqual(scaling['ratioToBroad'][k], 1.25, k)
+        self.assertGreater(new['huge']['traces'], 18)
+        self.assertGreater(new['huge']['traces'], new['large']['traces'])
+        self.assertGreater(new['strip']['traces'], 8)
+        scaling['pass'] = True
+        density = dict(fixed_camera=dict(viewport=VIEWPORT, dpr=1, cameraScale=page.evaluate('scale[version]'), clock_ms=4321), baseline=self.baseline_sha,
+                       sizeScaling=scaling,
                        config=page.evaluate('GRAPPLE_OVER_ROLE_DETAIL.bounce.circuitScale'), panels=rows,
                        notes='px = logical screen px at the fixed camera; same page setup for both revisions')
         self.write('density.json', density)
@@ -352,7 +383,8 @@ class LargePanelCircuitTests(unittest.TestCase):
             viaRingsFit=new[k]['viaRingsFit'], minVertexEdgeGapPx=new[k]['minVertexEdgeGapPx'], sharpTurns=new[k]['sharpTurns'], minPathGapPx=new[k]['minPathGapPx'],
             minSelfGapPx=new[k]['minSelfGapPx'], pathGapPx=new[k]['pathGapPx']) for k in SHAPES}))
         print('PASS density: ' + ', '.join(f'{k} traces {old[k]["traces"]}->{new[k]["traces"]} '
-                                            f'length x{rows[k]["traceLengthRatio"]}' for k in SHAPES) + '; motif sizes unchanged')
+                                            f'length x{rows[k]["traceLengthRatio"]}' for k in SHAPES) + '; motif sizes unchanged; '
+              f'traces/area vs broad: large x{scaling["ratioToBroad"]["large"]}, huge x{scaling["ratioToBroad"]["huge"]} (no plateau)')
 
     def test_03_determinism_cache_and_invalidation(self):
         pages = [self.open(self.url), self.open(self.url)]
@@ -397,11 +429,22 @@ class LargePanelCircuitTests(unittest.TestCase):
             const back = ids.map(spriteFor)
             const backBuilds = builds
             bounceBoardDetail = original
-            return {repeatedDrawFrames: 30, boardBuildsDuringFrames: framesBuilds, spritesReusedAfterFrames: reused,
+            const restoreReusesCached = back.every((s, i) => s === first[i])
+            // Fresh material sprite build of the huge panel (board + raster), real clock
+            const hi = ids.indexOf('huge'), timesMs = []
+            for (let i = 0; i < 5; i++) {
+                for (const [k, v] of [...BOUNCE_MATERIAL.sprites]) if (v === first[hi]) BOUNCE_MATERIAL.sprites.delete(k)
+                const t0 = T664_NOW(), fresh = spriteFor('huge')
+                timesMs.push(+(T664_NOW() - t0).toFixed(2))
+                first[hi] = fresh
+            }
+            const hugeSpriteBuild = {runs: timesMs.length, timesMs, medianMs: [...timesMs].sort((a, b) => a - b)[2],
+                traces: first[hi].board.traces.length, spritePx: [first[hi].image.width, first[hi].image.height]}
+            return {hugeSpriteBuild, repeatedDrawFrames: 30, boardBuildsDuringFrames: framesBuilds, spritesReusedAfterFrames: reused,
                 cacheSizeBefore: size0, cacheSizeAfter: size1, keysIncludeCircuitScale: keys0.every(k => k.split('|')[2].endsWith(',3')),
                 sampleKeyTail: keys0[0].split('|')[2], scaleChangeBuilds: changedBuilds, scaleChangeNewSprites: scaledDistinct,
                 motifUnitAtScale2: scale2, restoreScale3Builds: backBuilds,
-                restoreReusesCached: back.every((s, i) => s === first[i])}
+                restoreReusesCached}
         }''', list(SHAPES))
         determinism = dict(boardsEqualAcrossPages=boards[0] == boards[1], frameHashes=frames, frameCompare=frameCompare,
                            boardShas={k: boards[0][k]['boardSha'] for k in SHAPES},
@@ -422,8 +465,11 @@ class LargePanelCircuitTests(unittest.TestCase):
         self.assertEqual(cache['motifUnitAtScale2'], 2)
         self.assertEqual(cache['restoreScale3Builds'], 0)
         self.assertTrue(cache['restoreReusesCached'])
+        self.assertEqual(cache['hugeSpriteBuild']['runs'], 5)
+        self.assertGreater(cache['hugeSpriteBuild']['medianMs'], 0)
+        self.assertGreater(cache['hugeSpriteBuild']['traces'], 18)
         print(f'PASS cache: 0 board builds over 30 frames; scale 3->2 rebuilt {cache["scaleChangeBuilds"]}, '
-              f'back to 3 reused cached; two pages identical (boards/material; frame channels differing {frameCompare["channelsDiffering"]}, '
+              f'back to 3 reused cached; huge sprite build median {cache["hugeSpriteBuild"]["medianMs"]} ms; two pages identical (boards/material; frame channels differing {frameCompare["channelsDiffering"]}, '
               f'max {frameCompare["maxDiff"]})')
 
     def test_04_pulse_alignment_and_timing(self):
