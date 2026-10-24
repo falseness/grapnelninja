@@ -16,12 +16,28 @@ also probe the easy transfers and the upward turn, and run a bounded local
 shortcut search around the changed panels: the v9 retune must add no skip
 family beyond those of the pre-change v7 baseline, and the frozen v8 control
 (the layout shipped before the retune) shows the families it fixes.
+TASK-676: the whole starting rightward section is varied. Candidate selection
+(recorded in opening-patterns.json): OPENING_VARIETY_CANDIDATE=DIR, else
+OPENING_VARIETY_EVIDENCE_DIR/candidate when it holds a generation, else the
+shipped artifacts/levels. test_13 classifies every rightward transfer from the
+imported polygons (release jump, ceiling catch, descending slope landing,
+upward rebound, exposed traverse) and requires no adjacent repeat after the
+first two; test_14 compares the candidate with the TASK-675 candidate by
+semantic id (purple extension and later route unchanged, lower terrain under
+the late route, original source, corner/clearance rules, opening span).
+test_15 replays tools/fixtures/opening-section-inputs.json from the spawn with
+production inputs through the whole section to the upward-turn departure;
+test_16 drops the three leftmost late panels onto lower terrain; test_17 draws
+opening.png (candidate SVG vs runtime draw()).
 Set OPENING_VARIETY_EVIDENCE_DIR to write contact-vectors.json, geometry.json,
 angles.json and preservation.json, plus combination-replay.json,
-route-regressions.json and local-shortcuts.json.
+route-regressions.json and local-shortcuts.json, and (TASK-676)
+opening-patterns.json, opening-replay.json and opening.png.
 """
+import base64
 import copy
 import hashlib
+import io
 import json
 import math
 import os
@@ -45,6 +61,30 @@ GUIDELINES = ROOT / 'artifacts/levels/level-guidelines.md'
 BEFORE = ROOT / 'artifacts/TASK-668/before'
 SHIPPED = ROOT / 'artifacts/levels'
 EVIDENCE = os.environ.get('OPENING_VARIETY_EVIDENCE_DIR')
+NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json')
+
+
+def candidate_dir():
+    """The layout under test: explicit candidate, the evidence candidate, else the shipped files."""
+    if os.environ.get('OPENING_VARIETY_CANDIDATE'):
+        return Path(os.environ['OPENING_VARIETY_CANDIDATE']), 'OPENING_VARIETY_CANDIDATE'
+    if EVIDENCE and all((Path(EVIDENCE) / 'candidate' / n).exists() for n in NAMES):
+        return Path(EVIDENCE) / 'candidate', 'OPENING_VARIETY_EVIDENCE_DIR/candidate'
+    return SHIPPED, 'shipped artifacts/levels'
+
+
+CANDIDATE, SELECTED_BY = candidate_dir()
+# The TASK-675 candidate (purple extension, eight-platform lower chain): the
+# comparison point for what the varied section must preserve.
+PREVIOUS = ROOT / 'artifacts/TASK-675/candidate'
+SECTION_INPUTS = TOOLS / 'fixtures/opening-section-inputs.json'
+# The preserved concept source, unchanged since TASK-650 (artifacts/TASK-650/hashes.json).
+ORIGINAL_SOURCE = {
+    'artifacts/level/extended-mountain.svg': '0606d25f6afc903f7946a6441844654fae4701128ce48b6393b61c0afaf40756',
+    'artifacts/level/extended-mountain-measurements.json':
+        '30bc5400d49b6e45b16a9c9d579eb622c7958ed28046d326ae799f1c924d5edc',
+}
+MECHANICS = ('ceiling-catch', 'descending-slope', 'upward-rebound', 'exposed-traverse')
 RADIUS = PLAYER_DIAMETER / 2
 MIN_SPAN = 720.0
 ADDED = ['OPEN-P2-R1', 'OPEN-R1-R2', 'OPEN-R2-R3', 'OPEN-R3-R4']
@@ -138,6 +178,16 @@ def combination_violations(m, level):
     return out, vectors
 
 
+def merge(intervals):
+    out = []
+    for a, b in sorted(intervals):
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
 def guide_end_tangent(guide):
     return (guide[3][0] - guide[2][0], guide[3][1] - guide[2][1])
 
@@ -150,6 +200,47 @@ def relabel(m):
             k = ADDED.index(r['id'])
             r['action'] = r['direction'] = retune.OPENING['right'][k]['direction']
     return m
+
+
+def classify(dep, arr, dx, dy):
+    """A rightward transfer's pattern from its departure/arrival surfaces and contact vector."""
+    if dx <= 0:
+        return 'not rightward'
+    if arr['kind'] == 'underside' and dy < 0:
+        return 'ceiling-catch'
+    if arr['kind'] == 'slope' and dy > 0:
+        return 'descending-slope'
+    if dep['kind'] == 'slope' and arr['kind'] == 'top' and dy < 0:
+        return 'upward-rebound'
+    if dep['kind'] == 'top' and arr['kind'] == 'top':
+        return 'exposed-traverse' if abs(dy) <= .25 * dx else 'release-jump' if dy < 0 else 'other'
+    return 'other'
+
+
+def section_patterns(m, level, report=None):
+    """Every transfer of the starting rightward section, classified from imported geometry."""
+    fs = m['fragments']
+    right_end, _, _ = retune.opening_sections([tuple(r['flight'][0]) for r in m['encounters']] +
+                                              [tuple(m['encounters'][-1]['flight'][1])])
+    polys = fragment_polys(level)
+    sem = {f['id']: f['semanticId'] for f in fs}
+    checker = {t['encounter']: t for t in (report or {}).get('transfers', [])}
+    out = []
+    for k, r in enumerate(m['encounters'][:right_end]):
+        a, b = r['flight']
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        dep, arr = surface_at(polys[r['fromFragment']], a), surface_at(polys[r['toFragment']], b)
+        t = checker.get(r['id'])
+        out.append(dict(index=k + 1, encounter=r['id'], semantic='%s->%s' % (sem[r['fromFragment']], sem[r['toFragment']]),
+                        fromFragment=r['fromFragment'], toFragment=r['toFragment'],
+                        pattern=classify(dep, arr, dx, dy), labelledPattern=r.get('pattern'),
+                        departureSurface=dep['kind'], arrivalSurface=arr['kind'], contactSurface=arr['edge'],
+                        arrivalSlopeDegrees=arr['slopeDegrees'], dx=dx, dy=dy, rise=-dy,
+                        absDyOverDx=abs(dy) / dx if dx else None,
+                        measuredGap=r['distance'], gapPercent=r['percent'],
+                        checkerGap=t and t['computedDistance'], usableSpan=arr['span'], departureSpan=dep['span'],
+                        departureContact=a, arrivalContact=b, action=r['action']))
+    return out, fs[right_end]['id']
 
 
 class OpeningJumpVarietyTests(unittest.TestCase):
@@ -179,10 +270,10 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         self.assertEqual(json.dumps(self.level), json.dumps(import_svg(self.runs[1][0])))
         self.assertEqual(self.m['layoutId'], retune.EXTENDED_LAYOUT)
         self.assertNotEqual(self.m['layoutId'], self.before['layoutId'])
-        # The shipped authoring files are this generation (TASK-669).
-        self.assertEqual(self.svg, (SHIPPED / 'extended-mountain.svg').read_bytes())
-        self.assertEqual(self.runs[0][1], (SHIPPED / 'extended-mountain-measurements.json').read_bytes())
-        self.assertEqual(self.level, json.loads((SHIPPED / 'extended-mountain.level.json').read_text()))
+        # The selected candidate (TASK-676; the shipped files when none is selected) is this generation.
+        self.assertEqual(self.svg, (CANDIDATE / NAMES[0]).read_bytes())
+        self.assertEqual(self.runs[0][1], (CANDIDATE / NAMES[1]).read_bytes())
+        self.assertEqual(self.level, json.loads((CANDIDATE / NAMES[2]).read_text()))
 
     def test_02_combination_follows_actual_geometry(self):
         violations, vectors = combination_violations(self.m, self.level)
@@ -266,8 +357,10 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         # route connectivity and the deliberate 150% turn, not old positions.
         up = next(r for r in self.m['encounters'] if r['id'] == 'S07-01')
         self.assertAlmostEqual(up['distance'],1.5*GRAPPLE_RANGE,delta=COORD_TOL)
-        # The purple extension (TASK-675) inserts NG-* encounters after the first leftward section.
-        self.assertEqual([r['id'] for r in self.m['encounters'][14:] if not r['id'].startswith('NG-')],
+        # The purple extension (TASK-675) inserts NG-* encounters after the first leftward section;
+        # the varied lower chain (TASK-676) changes the count before the upward turn.
+        ids = [r['id'] for r in self.m['encounters']]
+        self.assertEqual([i for i in ids[ids.index('S07-01'):] if not i.startswith('NG-')],
                          [r['id'] for r in self.before['encounters'][6:]])
         self.__class__.shift=None
 
@@ -325,6 +418,124 @@ class OpeningJumpVarietyTests(unittest.TestCase):
                 for fid in (r['fromFragment'], r['toFragment']):
                     self.assertFalse(any(inside(p, poly) for poly in polys[fid]), (eid, t, fid))
         self.__class__.guides = guides
+
+    def test_13_opening_patterns(self):
+        rows, departure = section_patterns(self.m, self.level, self.report)
+        sem = {f['id']: f['semanticId'] for f in self.m['fragments']}
+        # The section ends at the upward-turn departure (X10), the start of S07-01.
+        up = next(r for r in self.m['encounters'] if r['id'] == 'S07-01')
+        self.assertEqual(up['fromFragment'], departure)
+        self.assertEqual(sem[departure], 'X10')
+        self.assertEqual(rows[-1]['toFragment'], departure)
+        for r in rows:
+            self.assertEqual(r['pattern'], r['labelledPattern'], r)
+            self.assertGreater(r['dx'], 0, r)
+            self.assertGreaterEqual(r['usableSpan'], MIN_SPAN, r)
+        self.assertGreaterEqual(rows[0]['departureSpan'], MIN_SPAN)
+        # The first two stay the easier 120% / 160% release jumps between unchanged shapes.
+        self.assertEqual([r['pattern'] for r in rows[:2]], ['release-jump'] * 2)
+        self.assertEqual([round(r['gapPercent'], 3) for r in rows[:2]], [120, 160])
+        keys = ('width', 'height', 'kind', 'polys')
+        for fid in ('P0', 'P1', 'P2'):
+            self.assertEqual({k: self.frag(self.m, fid)[k] for k in keys}, {k: self.frag(self.before, fid)[k] for k in keys})
+        # The required ordered combination R1-R4 is intact.
+        self.assertEqual([r['semantic'] for r in rows[2:6]], ['P2->R1', 'R1->R2', 'R2->R3', 'R3->R4'])
+        self.assertEqual([r['pattern'] for r in rows[2:6]], list(MECHANICS))
+        rest = [r['pattern'] for r in rows[2:]]
+        repeats = [(rows[k + 1]['semantic'], rows[k + 2]['semantic']) for k in range(1, len(rows) - 2)
+                   if rows[k + 1]['pattern'] == rows[k + 2]['pattern']]
+        self.assertEqual(repeats, [])
+        self.assertTrue(set(MECHANICS) <= set(rest[4:]), rest)
+        self.assertEqual(set(rest), set(MECHANICS))
+        # Added gaps are measured release gaps >= 200% R; the checker measures the same polygons.
+        for r in rows[2:]:
+            self.assertGreaterEqual(r['measuredGap'], 2 * GRAPPLE_RANGE - .01, r)
+            self.assertAlmostEqual(r['checkerGap'], r['measuredGap'], delta=.01)
+        base = self.m['routeMap']['baselineSpans']['rightward']
+        span = rows[-1]['arrivalContact'][0] - rows[0]['departureContact'][0]
+        self.assertGreaterEqual(span / base, 3)
+        self.__class__.patterns = dict(transfers=rows, departure=dict(id=departure, semantic=sem[departure]),
+                                       rightwardContactSpan=span, baselineRightwardSpan=base, ratio=span / base,
+                                       adjacentRepeatsAfterFirstTwo=repeats, sequence=[r['pattern'] for r in rows])
+
+    def test_14_section_preservation(self):
+        prev = json.loads((PREVIOUS / NAMES[1]).read_text())
+        new, old = ({f['semanticId']: f for f in m['fragments']} for m in (self.m, prev))
+        order = [f['semanticId'] for f in self.m['fragments']]
+        cut = order.index('X10')
+        keys = ('x', 'y', 'width', 'height', 'kind', 'polys')
+        # The upward-turn departure: X10 now, X8 (the legacy endpoint) in the eight-platform chain.
+        dep_old = next(f['semanticId'] for f in prev['fragments'] if f['id'] == prev['lowerCatchExtension']['firstUpDeparture'])
+        twin = lambda s: dep_old if s == 'X10' else s
+        same = lambda s: {k: new[s][k] for k in keys} == {k: old[twin(s)][k] for k in keys}
+        # Easy opening and R1-R4, the departure X10 (legacy endpoint) and everything after it are identical.
+        kept = [s for s in order[:7]] + order[cut:]
+        changed = [s for s in kept if not same(s)]
+        self.assertEqual(changed, [])
+        self.assertEqual(dep_old, 'X8')
+        self.assertEqual(sorted(set(order) - set(old)), ['X10', 'X9'])
+        self.assertEqual(sorted(set(old) - set(order)), [])
+        # Route successors after the section keep their ids and measured gaps.
+        rows_new = {r['id']: r for r in self.m['encounters']}
+        ids_new = [r['id'] for r in self.m['encounters']]
+        ids_old = [r['id'] for r in prev['encounters']]
+        tail_new, tail_old = ids_new[ids_new.index('S07-01'):], ids_old[ids_old.index('S07-01'):]
+        self.assertEqual(tail_new, tail_old)
+        gaps = {r['id']: abs(r['distance'] - rows_new[r['id']]['distance']) for r in prev['encounters'] if r['id'] in tail_new}
+        self.assertLess(max(gaps.values()), 1e-6)
+        sem = lambda m, fid: next(f['semanticId'] for f in m['fragments'] if f['id'] == fid)
+        self.assertEqual([tuple(twin(sem(self.m, r[k])) for k in ('fromFragment', 'toFragment')) for r in self.m['encounters'] if r['id'] in tail_new],
+                         [(sem(prev, r['fromFragment']), sem(prev, r['toFragment'])) for r in prev['encounters'] if r['id'] in tail_old])
+        # Purple extension: the same zone, panels (semantic NG-*) and encounters.
+        self.assertEqual(self.m['noGrappleZones'], prev['noGrappleZones'])
+        pe, po = self.m['purpleExtension'], prev['purpleExtension']
+        self.assertEqual([sem(self.m, i) for i in [pe['approach'], pe['exit']] + pe['internal']],
+                         [sem(prev, i) for i in [po['approach'], po['exit']] + po['internal']])
+        self.assertEqual(pe['encounters'], po['encounters'])
+        self.assertEqual(pe['upperTranslation'], po['upperTranslation'])
+        ext, ext_old = self.m['lowerCatchExtension'], prev['lowerCatchExtension']
+        self.assertEqual(ext['upperTranslation'], ext_old['upperTranslation'])
+        # Lower terrain under the late route: the late route stays inside the lower extent.
+        fs = self.m['fragments']
+        fids = [f['id'] for f in fs]
+        lower = fs[:fids.index(ext['firstUpDeparture']) + 1]
+        late = fs[fids.index(pe['exit']) + 1:]
+        xs = lambda group: [x for f in group for b in retune.svg.bodies(f) for x, _ in b]
+        cover = lambda group, span: sum(max(0, min(b, span[1]) - max(a, span[0])) for a, b in
+                                        merge([(min(xs([f])), max(xs([f]))) for f in group]))
+        late_span = (min(xs(late)), max(xs(late)))
+        self.assertGreaterEqual(late_span[0], min(xs(lower)))
+        self.assertLessEqual(late_span[1], max(xs(lower)))
+        lower_old = prev['fragments'][:[f['id'] for f in prev['fragments']].index(ext_old['firstUpDeparture']) + 1]
+        coverage = dict(lateRouteSpan=late_span, lowerRouteSpan=(min(xs(lower)), max(xs(lower))),
+                        coveredByLowerPanels=cover(lower, late_span) / (late_span[1] - late_span[0]),
+                        previousCoveredByLowerPanels=cover(lower_old, late_span) / (late_span[1] - late_span[0]),
+                        lowerFragments=[f['semanticId'] for f in lower])
+        # Original concept source untouched.
+        now = {p: sha((ROOT / p).read_bytes()) for p in ORIGINAL_SOURCE}
+        self.assertEqual(now, ORIGINAL_SOURCE)
+        self.assertEqual(self.m['baselineSha256'], prev['baselineSha256'])
+        # Corner and clearance rules (independent checker on the candidate files).
+        s = self.report['summary']
+        self.assertTrue(s['pass'])
+        self.assertGreaterEqual(s['minInteriorAngle'], MIN_INTERIOR_ANGLE)
+        self.assertGreaterEqual(s['minDragSolidClearance'], 1620)
+        self.assertEqual(s['pairsPass'], s['fragmentPairs'])
+        self.__class__.section_preservation = dict(
+            comparedWith=dict(path=os.path.relpath(PREVIOUS, ROOT), measurementsSha=sha((PREVIOUS / NAMES[1]).read_bytes())),
+            identicalFragments=kept, departureTwin=dict(candidate='X10', previous=dep_old),
+            changedOrAdded=[s for s in order[7:cut]],
+            addedSemanticIds=sorted(set(order) - set(old)), removedSemanticIds=[],
+            routeSuccessorsAfterSection=tail_new, maxSuccessorGapChange=max(gaps.values()),
+            purpleExtension=dict(zone=self.m['noGrappleZones'], panels=[sem(self.m, i) for i in [pe['approach'], pe['exit']] + pe['internal']],
+                                 encounters=pe['encounters'], upperTranslation=pe['upperTranslation'], identicalToPrevious=True),
+            lowerCatch=dict(coverage, upperTranslation=ext['upperTranslation'],
+                            previousUpperTranslation=ext_old['upperTranslation'], patterns=ext['patterns']),
+            originalSource=dict(expected=ORIGINAL_SOURCE, now=now, unchanged=True, baselineSha256=self.m['baselineSha256']),
+            rules=dict(checkerPass=s['pass'], minInteriorAngle=s['minInteriorAngle'], minimumAngle=MIN_INTERIOR_ANGLE,
+                       pairsPass=s['pairsPass'], fragmentPairs=s['fragmentPairs'], transfersPass=s['transfersPass'],
+                       transfers=s['transfers'], minDragSolidClearance=s['minDragSolidClearance'],
+                       minYellowPairClearance=s['minYellowPairClearance']))
 
     def test_zz_write_evidence(self):
         if not EVIDENCE:
@@ -384,7 +595,35 @@ def write_evidence(t, out):
                   shapeSha=sha(json.dumps(f['polys']).encode()),
                   beforeShapeSha=sha(json.dumps(t.frag(t.before, t.before_ids[f['semanticId']])['polys']).encode()))
              for f in t.m['fragments'][start:] if f['semanticId'] in t.before_ids]
+    sp = t.section_preservation
+    falls = out / 'late-falls.json'
+    if falls.exists():  # written by CombinationReplayTests (test_16), whichever class runs first
+        sp['lowerCatch']['lateFallLandings'] = json.loads(falls.read_text())
+    candidate = dict(path=os.path.relpath(CANDIDATE.resolve(), ROOT), selectedBy=SELECTED_BY,
+                     hashes={n: sha((CANDIDATE / n).read_bytes()) for n in NAMES},
+                     generatorSha=sha((TOOLS / 'retune_extended_level.py').read_bytes()),
+                     guidelinesSha=sha(GUIDELINES.read_bytes()))
+    dump('opening-patterns.json', dict(
+        method='Rightward section = transfers before the first upward transfer (retune.opening_sections on the '
+               'measurement contacts). Each contact surface comes from the imported polygons (surface_at: nearest '
+               'edge, probed 0.5 above/below); the pattern is classified from departure/arrival surface and the '
+               'contact vector (world y down), then compared with the generator label. measuredGap is the generator\'s '
+               'complete-polygon gap, checkerGap the independent check_level_geometry distance; usableSpan is the '
+               'horizontal projection of the arrival contact edge.',
+        candidate=candidate, **t.patterns))
     dump('preservation.json', dict(
+        candidate=candidate,
+        purpleExtension=sp['purpleExtension'],
+        laterRoute=dict(comparedWith=sp['comparedWith'], identicalFragments=sp['identicalFragments'],
+                        departureTwin=sp['departureTwin'],
+                        changedOrAdded=sp['changedOrAdded'], addedSemanticIds=sp['addedSemanticIds'],
+                        removedSemanticIds=sp['removedSemanticIds'], routeSuccessorsAfterSection=sp['routeSuccessorsAfterSection'],
+                        maxSuccessorGapChange=sp['maxSuccessorGapChange']),
+        lowerCatch=sp['lowerCatch'], originalSource=sp['originalSource'], rules=sp['rules'],
+        openingSpan=dict(ratio=t.patterns['ratio'], rightwardContactSpan=t.patterns['rightwardContactSpan'],
+                         baseline=t.patterns['baselineRightwardSpan'], minimumRatio=3,
+                         minUsableSpan=min(r['usableSpan'] for r in t.patterns['transfers']), minimumUsableSpan=MIN_SPAN),
+        v7Comparison=dict(
         before=dict(path=str(BEFORE), layoutId=t.before['layoutId'],
                     measurementsSha=sha((BEFORE / 'extended-mountain-measurements.json').read_bytes()),
                     svgSha=sha(t.before_svg)),
@@ -405,7 +644,7 @@ def write_evidence(t, out):
         yellow=dict(before=ob, candidate=nb, removed=sorted(set(ob) - set(nb)), added=sorted(set(nb) - set(ob)),
                     moved=sorted(k for k in set(ob) & set(nb) if ob[k] != nb[k]),
                     note='Yellow zones are re-placed by the generator from route contacts and re-merged under the '
-                         '1620/540 rules; ids are regenerated per run.')))
+                         '1620/540 rules; ids are regenerated per run.'))))
 
 
 # TASK-669 production replay. Fixture: a zero-speed drop 30 units above the
@@ -460,9 +699,11 @@ class CombinationReplayTests(unittest.TestCase):
         cls.stack = ExitStack()
         cls.addClassCleanup(cls.stack.close)
         cls.url, cls.browser = start_browser_test(ROOT, cls.stack.callback)
-        cls.level = json.loads((SHIPPED / 'extended-mountain.level.json').read_text())
-        cls.m = json.loads((SHIPPED / 'extended-mountain-measurements.json').read_text())
+        cls.level = json.loads((CANDIDATE / NAMES[2]).read_text())
+        cls.m = json.loads((CANDIDATE / NAMES[1]).read_text())
         cls.ids = cls.m['routeMap']['addedFragments']
+        cls.sem = {f['id']: f['semanticId'] for f in cls.m['fragments']}
+        cls.browser_version = cls.browser.version
         cls.before_level = import_svg((BEFORE / 'extended-mountain.svg').read_bytes())
         # Control: the v8 layout shipped before the v9 retune (frozen generation).
         cls.before_v8 = json.loads((BEFORE_V8 / 'extended-mountain.level.json').read_text())
@@ -484,6 +725,12 @@ class CombinationReplayTests(unittest.TestCase):
             out.mkdir(parents=True, exist_ok=True)
             for name, data in cls.evidence.items():
                 (out / name).write_text(json.dumps(data, separators=(',', ':')) + '\n')
+            # Browser-measured lower-catch falls join the offline preservation proof.
+            pres = out / 'preservation.json'
+            if getattr(cls, 'late_falls', None) is not None and pres.exists():
+                data = json.loads(pres.read_text())
+                data['lowerCatch']['lateFallLandings'] = cls.late_falls
+                pres.write_text(json.dumps(data, separators=(',', ':')) + '\n')
 
     def bounds(self, level):
         polys = fragment_polys(level or self.level)
@@ -496,6 +743,7 @@ class CombinationReplayTests(unittest.TestCase):
         return out
 
     def replay(self, inputs, level=None, budget=None):
+        level = level or self.level
         if budget is None: budget=json.loads((TOOLS / 'fixtures/harder-opening-inputs.json').read_text())['budget']
         stop = dict(id=self.ids['R4'], ny='up')
         return self.pages['replay'].evaluate('o => OPENING_REPLAY.run(o)',
@@ -583,17 +831,19 @@ class CombinationReplayTests(unittest.TestCase):
     def test_11_route_regressions(self):
         ids = self.ids
         cases = [('S06-03', 'P0', 'P1', dict(fraction=.2, pumps=1,drop=300,lastAimOffset=.15)), ('S06-04', 'P1', 'P2', dict(fraction=.2, pumps=1,drop=300,lastAimOffset=.15)),
-                 ('S07-01 upward turn', 'P14', 'P15', dict(fraction=.9, pumps=1,drop=300,lastAimOffset=.05,targetWhenInRange=True))]
+                 ('S07-01 upward turn', self.m['lowerCatchExtension']['firstUpDeparture'], self.m['routeMap']['fragmentIds']['P3'],
+                  dict(fraction=.9, pumps=1,drop=300,lastAimOffset=.05,targetWhenInRange=True))]
         out = []
         for name, source, target, policy in cases:
-            r = self.probe(source=source, target=target, budget=1800, **policy)
+            # The selected candidate, not the page's shipped leveldata.js.
+            r = self.probe(level=self.level, source=source, target=target, budget=1800, **policy)
             self.assertIsNotNone(r['arrival'], name)
             self.assertIsNotNone(r['hit'], name)
             self.assertEqual(r['hit']['id'], target + '-body0', name)
             out.append(dict(case=name, intended=target, reached=r['hit']['id'], **r))
         # The replay's R4 arrival is the upward turn's departure surface.
         up = next(e for e in self.m['encounters'] if e['id'] == 'S07-01')
-        self.assertEqual(up['fromFragment'], 'P14')
+        self.assertEqual(up['fromFragment'], self.m['lowerCatchExtension']['firstUpDeparture'])
         self.assertEqual(self.pages['probe'].errors, [])
         self.__class__.evidence['route-regressions.json'] = dict(
             method='ROUTE_PROBE (tools/probe_level_routes.js): zero-speed drop on the source, real pointer events, '
@@ -641,7 +891,8 @@ class CombinationReplayTests(unittest.TestCase):
         return dict(entry=dict(catchTick=t1, inputs=i1), variants=out)
 
     def test_12_local_shortcuts(self):
-        shipped, before, old = self.grid(None), self.grid(self.before_level), self.grid(self.before_v8)
+        # The selected candidate (TASK-676), not the page's shipped leveldata.js.
+        shipped, before, old = self.grid(self.level), self.grid(self.before_level), self.grid(self.before_v8)
         sem = lambda pid: next((k for k, v in self.ids.items() if v == pid), pid)
         family = lambda h: [sem(h['source']), sem(h['hit']['id'].split('-')[0])]
         families = lambda hits: sorted({tuple(family(h)) for h in hits if h['beyond']})
@@ -653,7 +904,7 @@ class CombinationReplayTests(unittest.TestCase):
         # The control (v8 before the retune) shows the four families the retune fixes.
         old_new = [list(f) for f in families(old) if f not in before_families]
         self.assertTrue(any(h['beyond'] for h in old), 'The preserved control must reproduce a bypass')
-        flights = self.free_flights(None)
+        flights = self.free_flights(self.level)
         free = flights['variants']
         # After the ceiling catch, no free slope rebound flies over R3 onto the R4 top.
         self.assertEqual(len(free), 105)
@@ -682,3 +933,209 @@ class CombinationReplayTests(unittest.TestCase):
             freeFlightResults=dict(variants=len(free), r4TopBeforeR3=sum(f['r4TopBeforeR3'] for f in free),
                                    outcomes=sorted({'>'.join(f['sequence'][:3]) for f in free}), runs=free),
             probeGrid=dict(shipped=shipped, beforeV7=before, beforeV8=old))
+
+    def section(self):
+        return section_patterns(self.m, self.level)
+
+    def run_section(self, snapshot_every=0):
+        rec = json.loads(SECTION_INPUTS.read_text())
+        _, departure = self.section()
+        return self.pages['replay'].evaluate('o => OPENING_REPLAY.run(o)', dict(
+            level=self.level, fixture=rec['fixture'], inputs=rec['inputs'], budget=rec['budget'],
+            stopOn=dict(id=departure, ny='up'), maxDrift=20000, snapshotEvery=snapshot_every)), rec
+
+    def test_15_complete_section_replay(self):
+        rows, departure = self.section()
+        (log, rec), (again, _) = self.run_section(), self.run_section()
+        self.assertEqual(log, again)                                  # deterministic
+        self.assertEqual(self.pages['replay'].errors, [])
+        self.assertEqual(log['layoutId'], self.level['layoutId'])
+        self.assertEqual(log['acquisitionRadius'], 540)
+        # Initialization is a new run's spawn at rest; afterwards only document mouse events.
+        self.assertTrue(log['fixture']['spawn'])
+        self.assertEqual((log['fixture']['x'], log['fixture']['y']), (self.level['spawn']['x'], self.level['spawn']['y']))
+        self.assertEqual((log['fixture']['vx'], log['fixture']['vy']), (0, 0))
+        self.assertTrue(all(e['type'] in ('down', 'up', 'move') for e in log['inputs']))
+        self.assertEqual(log['recoveries'], [])
+        self.assertLess(log['maxStep'], 200)
+        order = [rows[0]['fromFragment']] + [r['toFragment'] for r in rows]
+        contacts = [c for c in log['contacts'] if c['id'].startswith('P')]
+        seq = first_seq(contacts)
+        self.assertEqual(seq, order)
+        # Every contact and attachment is on the current panel or its successor (no skip).
+        events = sorted([(c['tick'], c['id'].split('-')[0]) for c in contacts] +
+                        [(g['tick'], g['id'].split('-')[0]) for g in log['grapple'] if g['event'] == 'attach'])
+        pos = 0
+        for tick, pid in events:
+            k = order.index(pid)
+            self.assertIn(k, (pos, pos + 1), (tick, pid))
+            pos = max(pos, k)
+        self.assertEqual(log['stopped']['id'], departure + '-body0')
+        transitions = []
+        for k, r in enumerate(rows):
+            dep_id, arr_id = order[k] + '-body0', order[k + 1] + '-body0'
+            arrival = next(c for c in contacts if c['id'] == arr_id)
+            before = [c for c in contacts if c['tick'] <= arrival['tick'] and c['id'] == dep_id]
+            self.assertTrue(before, r['semantic'])
+            last, p = before[-1], r['pattern']
+            if p == 'ceiling-catch':
+                self.assertGreater(arrival['ny'], .99, r)
+                self.assertLess(arrival['vyIn'], 0, r)
+            elif p == 'descending-slope':
+                self.assertTrue(0 < arrival['nx'] < .2 and arrival['ny'] < -.98, (r['semantic'], arrival))
+                self.assertGreater(arrival['vyIn'], 0, r)
+                self.assertGreater(arrival['y'], last['y'], r)
+            elif p == 'upward-rebound':
+                self.assertTrue(0 < last['nx'] < .2 and last['ny'] < -.98, (r['semantic'], last))
+                self.assertLess(last['vyOut'], 0, r)
+                self.assertEqual((arrival['nx'], arrival['ny']), (0, -1), r)
+                self.assertLess(arrival['y'], last['y'], r)
+            else:
+                # The last departure contact may be the top or a panel end (recorded as departureContact).
+                self.assertEqual((arrival['nx'], arrival['ny']), (0, -1), r)
+                self.assertLess(last['ny'], 1, r)
+                self.assertGreater(arrival['x'], last['x'], r)
+                if p == 'exposed-traverse':
+                    self.assertLessEqual(abs(arrival['y'] - last['y']), .25 * (arrival['x'] - last['x']), r)
+            transitions.append(dict(encounter=r['encounter'], semantic=r['semantic'], pattern=p,
+                                    departureContact=last, arrivalContact=arrival))
+        self.__class__.evidence['opening-replay.json'] = dict(
+            method='Real index.html; the candidate goes through production importedMountainLevel() (540 acquisition). '
+                   'tools/opening_combination_replay.js places the player once exactly as a new run (level spawn, zero '
+                   'speed), then dispatches document mousedown/mousemove/mouseup at the recorded ticks '
+                   '(tools/fixtures/opening-section-inputs.json, aims in world units) and calls production physics() '
+                   'once per tick. Nothing writes position, velocity or grapple state afterwards; recoverClimbFall '
+                   'calls are logged (recoveries) and must be empty. departureContact is the last contact on the '
+                   'departure panel at or before the arrival.',
+            browser=self.browser_version,
+            candidate=dict(path=os.path.relpath(CANDIDATE.resolve(), ROOT), selectedBy=SELECTED_BY,
+                           levelSha=sha((CANDIDATE / NAMES[2]).read_bytes())),
+            inputsSha=sha(SECTION_INPUTS.read_bytes()), layoutId=log['layoutId'],
+            acquisitionRadius=log['acquisitionRadius'], fixture=log['fixture'], stateInjectionsAfterInit=0,
+            recoveries=log['recoveries'], maxStepPerTick=log['maxStep'], ticks=log['ticks'],
+            secondRunIdentical=log == again, intendedOrder=[self.sem[o] for o in order],
+            contactSequence=[self.sem[p.split('-')[0]] for p in seq],
+            departure=dict(id=departure, semantic=self.sem[departure]), stopped=log['stopped'],
+            transitions=transitions, inputs=log['inputs'], grapple=log['grapple'], contactCount=len(log['contacts']))
+
+    def test_16_late_falls_on_lower_terrain(self):
+        fs = self.m['fragments']
+        ids = [f['id'] for f in fs]
+        lower = set(ids[:ids.index(self.m['lowerCatchExtension']['firstUpDeparture']) + 1])
+        late = fs[ids.index(self.m['purpleExtension']['exit']) + 1:]
+        # The three leftmost late panels by contact point (semantic geometry, not frozen indices).
+        sources = sorted(late, key=lambda f: retune.svg.contact(f)[0])[:3]
+        out = []
+        for f in sources:
+            r = self.pages['replay'].evaluate(FALL, [self.level, f['id']])
+            self.assertIn('hit', r, r)
+            self.assertIn(r['hit']['id'].split('-')[0], lower, r)
+            self.assertLess(r['maxStep'], 200)
+            out.append(dict(r, semantic=f['semanticId'], landedSemantic=self.sem[r['hit']['id'].split('-')[0]]))
+        self.__class__.evidence['late-falls.json'] = self.__class__.late_falls = dict(
+            method='Gravity-only fall from just below each of the three leftmost late panels (no input), production '
+                   'physics; the first contact must be lower terrain (fragments up to the upward-turn departure).',
+            falls=out)
+
+    def test_17_opening_png(self):
+        from PIL import Image, ImageDraw
+        from browser_test_support import wait_for_boot_run
+        import re
+        rows, _ = self.section()
+        order = [rows[0]['fromFragment']] + [r['toFragment'] for r in rows]
+        frag = {f['id']: f for f in self.m['fragments']}
+        log, _ = self.run_section(snapshot_every=4)
+        path = [(p['x'], p['y']) for p in log['snapshots']]
+        art_svg = (CANDIDATE / NAMES[0]).read_text()
+        # Front labels are sized for the full-map canvas; at this zoom they would cover the geometry.
+        art_svg = art_svg.replace('<g id="annotations-front"', '<g id="annotations-front" display="none"', 1)
+        cw, ch = 1280, 360
+        groups = [order[:8], order[7:12], order[11:]]
+        shot = self.browser.new_page(viewport={'width': 1280, 'height': 720})
+        shot.errors = []
+        shot.on('pageerror', lambda e: shot.errors.append(str(e)))
+        shot.goto(self.url)
+        wait_for_boot_run(shot)
+        tiles, boxes = [], []
+        for g in groups:
+            pts = [p for fid in g for b in retune.svg.bodies(frag[fid]) for p in b]
+            x0, y0 = min(p[0] for p in pts) - 300, min(p[1] for p in pts) - 900
+            x1, y1 = max(p[0] for p in pts) + 300, max(p[1] for p in pts) + 300
+            k = min(cw / (x1 - x0), ch / (y1 - y0))
+            wx, wy = (x0 + x1) / 2 - cw / k / 2, (y0 + y1) / 2 - ch / k / 2
+            info = shot.evaluate(FRAME, [self.level, wx, wy, k, list(retune.svg.contact(frag[g[0]]))])
+            runtime = image(info['png'])
+            runtime = runtime.crop((0, 0, runtime.width, runtime.width * ch // cw)).resize((cw, ch))
+            head, rest = art_svg.split('>', 1)
+            head = re.sub(r' viewBox="[^"]*"', ' viewBox="%r %r %r %r"' % (wx, wy, cw / k, ch / k), head)
+            head = re.sub(r' width="[^"]*"', ' width="%d"' % cw, head, count=1)
+            head = re.sub(r' height="[^"]*"', ' height="%d"' % ch, head, count=1)
+            page = self.browser.new_page(viewport={'width': cw, 'height': ch})
+            page.set_content('<html><body style="margin:0;background:#09141e">' + head + '>' + rest + '</body></html>')
+            art = Image.open(io.BytesIO(page.screenshot(clip=dict(x=0, y=0, width=cw, height=ch)))).convert('RGB')
+            page.close()
+            d = ImageDraw.Draw(runtime)
+            to_px = lambda p: ((p[0] - wx) * k, (p[1] - wy) * k)
+            d.line([to_px(p) for p in path], fill=(0, 255, 255), width=1)
+            for fid in g:
+                c = to_px(retune.svg.contact(frag[fid]))
+                d.text((c[0] - 8, c[1] + 8), self.sem[fid], fill=(255, 255, 255))
+            tiles.append((art, runtime))
+            boxes.append([wx, wy, wx + cw / k, wy + ch / k])
+        self.assertEqual(shot.errors, [])
+        shot.close()
+        sheet = Image.new('RGB', (cw + 16, len(tiles) * (2 * ch + 40) + 40), (12, 12, 16))
+        d = ImageDraw.Draw(sheet)
+        d.text((8, 8), 'TASK-676 starting rightward section (%s): candidate SVG (upper) vs runtime draw() with the '
+                       'from-spawn replay path in cyan (lower), same world box per pair' % SELECTED_BY, fill=(235, 235, 235))
+        y = 32
+        for (art, runtime), box, g in zip(tiles, boxes, groups):
+            d.text((8, y), '%s .. %s  world box [%.0f, %.0f, %.0f, %.0f]' % ((self.sem[g[0]], self.sem[g[-1]]) + tuple(box)),
+                   fill=(200, 200, 200))
+            sheet.paste(art, (8, y + 14))
+            sheet.paste(runtime, (8, y + 18 + ch))
+            y += 2 * ch + 40
+        if EVIDENCE:
+            Path(EVIDENCE).mkdir(parents=True, exist_ok=True)
+            sheet.save(Path(EVIDENCE) / 'opening.png')
+        self.assertGreater(len(path), 100)
+        self.__class__.evidence['opening-png.json'] = dict(
+            image='opening.png', worldBoxes=boxes, groups=[[self.sem[f] for f in g] for g in groups],
+            replayPathPoints=len(path), svgLayersHidden=['annotations-front (labels sized for the full-map view)'])
+
+
+FALL = '''([level, id]) => {
+    const el = level.elements.find(e => e.id === id + '-body0')
+    const top = Math.min(...el.points.map(p => p.y)) + el.y, bottom = Math.max(...el.points.map(p => p.y)) + el.y
+    // Gravity-only fall from just below the source panel; no input or later writes.
+    const c = OPENING_REPLAY.start({level, fixture: {panel: id, fraction: .5, drop: top - bottom - 100}})
+    for (let i = 0; i < 6000; i++) {
+        const fresh = c.step()
+        const hit = fresh.find(k => k.id.split('-')[0] !== id)
+        if (hit) return {source: id, hit, ticks: c.tick, maxStep: c.log.maxStep, start: c.log.fixture}
+        if (c.log.maxStep > 200) return {source: id, recovered: true, ticks: c.tick}
+    }
+    return {source: id, timeout: true}
+}'''
+
+# A production draw() of the candidate at a fixed world box (the clock frozen).
+FRAME = '''([level, wx, wy, k, at]) => {
+    window.requestAnimationFrame = () => 0
+    cancelAnimationFrame(game)
+    floors = [loadFixedLevel(importedMountainLevel(structuredClone(level)))]
+    ninja.x = at[0]; ninja.y = at[1]; ninja.speedX = ninja.speedY = 0
+    menu.unPause()
+    const now = performance.now(); performance.now = () => now
+    TUTORIAL_HINT.visible = false
+    scale[version] = k * width / canvas.width
+    screen.x = -wx
+    screen.y = -wy
+    ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0)
+    draw()
+    return {png: canvas.toDataURL('image/png')}
+}'''
+
+
+def image(data_url):
+    from PIL import Image
+    return Image.open(io.BytesIO(base64.b64decode(data_url.split(',', 1)[1]))).convert('RGB')

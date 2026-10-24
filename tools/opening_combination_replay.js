@@ -32,19 +32,24 @@
     return {x,y:Math.min(...ys)};
   }
   const r=v=>+v.toFixed(3);
+  // Fall recoveries (the below-spawn reset) are logged, never hidden.
+  const recover=recoverClimbFall;
+  recoverClimbFall=function(){if(log)log.recoveries.push({tick,x:r(ninja.x),y:r(ninja.y)});return recover.apply(this,arguments);};
   function state(){return {tick,x:r(ninja.x),y:r(ninja.y),vx:r(ninja.speedX),vy:r(ninja.speedY)};}
   /* start(options) -> controller with press(aim), release(), step(); options:
      level (null = the shipped level), fixture {panel, fraction, drop}. */
   function start({level=null,fixture}){
     floors=[loadFixedLevel(level?importedMountainLevel(structuredClone(level)):structuredClone(shipped))];
     grapnel=new Grapnel({stroke:STYLE.colors.player.cyan});
-    const p=topAt(floors[0].byId.get(fixture.panel+'-body0'),fixture.fraction);
+    // fixture {spawn:true} starts exactly as a new run: at the level spawn, at rest.
+    const p=fixture.spawn?{...floors[0].level.spawn}:topAt(floors[0].byId.get(fixture.panel+'-body0'),fixture.fraction);
+    if(fixture.spawn)fixture={...fixture,drop:0};
     ninja=new Ninja({x:p.x,y:p.y-fixture.drop,radius:10.8,fill:STYLE.colors.player.cyan});
     ninja.speedX=ninja.speedY=0;
     pressHeld=stalePress=gameplayPressOwned=false;menu.gamePaused=false;hostPaused=false;unTouch=false;
     screen.trackGrappleOver(true);tick=0;
     log={layoutId:floors[0].level.layoutId,acquisitionRadius:grappleOverAcquisitionRadius(),
-      fixture:{...fixture,x:r(p.x),y:r(p.y-fixture.drop),vx:0,vy:0},inputs:[],contacts:[],grapple:[],snapshots:[]};
+      fixture:{...fixture,x:r(p.x),y:r(p.y-fixture.drop),vx:0,vy:0},inputs:[],contacts:[],grapple:[],snapshots:[],recoveries:[]};
     let held=null,attached=null,last={x:ninja.x,y:ninja.y},maxStep=0;
     const c={log,origin:p,
       press(aim){pointer('mousedown',aim);held=aim;log.inputs.push({tick,type:'down',aim,state:state()});},
@@ -71,7 +76,7 @@
      (aims in world units; while pressed the pointer follows the aim with
      mousemove every tick); stopOn {id, ny:'down'|'up'} ends at that contact. */
   function run(options){
-    const {inputs=[],budget=1500,stopOn=null,snapshotEvery=0}=options;
+    const {inputs=[],budget=1500,stopOn=null,snapshotEvery=0,maxDrift=6000}=options;
     const c=start(options);const queue=[...inputs].sort((a,b)=>a.tick-b.tick);let stop=null;
     while(c.tick<budget){
       while(queue.length&&queue[0].tick===c.tick){const ev=queue.shift();ev.type==='down'?c.press(ev.aim):ev.type==='move'?c.aim(ev.aim):c.release();}
@@ -79,7 +84,7 @@
       if(snapshotEvery&&t%snapshotEvery===0)c.log.snapshots.push({...state(),tick:t});
       if(stopOn)for(const k of fresh)
         if(k.id===stopOn.id+'-body0'&&(!stopOn.ny||(stopOn.ny==='down'?k.ny>0:k.ny<0))){stop=k;break;}
-      if(stop||floors[0].climbStats.completed||Math.abs(ninja.y-c.origin.y)>6000)break;
+      if(stop||floors[0].climbStats.completed||Math.abs(ninja.y-c.origin.y)>maxDrift)break;
     }
     if(c.held)c.release();
     c.log.ticks=c.tick;c.log.final=state();c.log.stopped=stop;c.log.completed=floors[0].climbStats.completed;

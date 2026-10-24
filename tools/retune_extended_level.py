@@ -28,13 +28,13 @@ MIN_OPENING_SPAN = 720.0
 # multiply the already-extended ceiling combination a second time.
 OPENING = dict(factor=3, baselineRightSpan=1836.2141822795545,
                right=[dict(kind='ceiling', width=2700, height=240, lift=1250, gap=1620, share=.52,
-                           surface='underside', direction='UP-RIGHT → CEILING HOLD'),
+                           surface='underside', direction='UP-RIGHT → CEILING HOLD', pattern='ceiling-catch'),
                       dict(kind='bounce', width=3600, height=700, lift=-1000, gap=1080, share=.22, drop=320,
-                           surface='slope', direction='RELEASE → DOWN-RIGHT ONTO SLOPE'),
+                           surface='slope', direction='RELEASE → DOWN-RIGHT ONTO SLOPE', pattern='descending-slope'),
                       dict(kind='platform', width=1400, height=180, lift=650, gap=1080, share=.22,
-                           surface='top', direction='BOUNCE → UP-RIGHT'),
+                           surface='top', direction='BOUNCE → UP-RIGHT', pattern='upward-rebound'),
                       dict(kind='platform', width=1000, height=260, lift=400, gap=2160, share=.22,
-                           surface='top', direction='RIGHT → EXPOSED TRANSFER')],
+                           surface='top', direction='RIGHT → EXPOSED TRANSFER', pattern='exposed-traverse')],
                left=[dict(width=900, height=240, drop=0),
                      dict(width=1100, height=260, share=.52, drop=-160)])
 GUIDELINES = Path(__file__).resolve().parent.parent / 'artifacts/levels/level-guidelines.md'
@@ -223,7 +223,7 @@ def extend_opening(fs, rows, spec):
         candidate = place_along(prev, shape, 1, 0, p['gap'], origin=(prev['x'], y))
         x = max(desired_x, cx(candidate))
         prev = dict(candidate, x=x-p['width']/2, semanticId='R%d' % k, surface=p['surface'],
-                    openingDirection=p['direction'])
+                    openingDirection=p['direction'], pattern=p['pattern'])
         added.append(prev)
     # Upward: the original turn direction and gap target, now from the last new panel.
     dx, dy = fs[up_to]['x']-fs[right_end]['x'], fs[up_to]['y']-fs[right_end]['y']
@@ -271,7 +271,7 @@ def extend_opening(fs, rows, spec):
                        percent=None, action=b['openingDirection'] if mixed else 'Added opening release jump',
                        baseline=False, originalNumber=None, originalId=None)
             if mixed:
-                row.update(departureSurface=a.get('surface', 'top'), arrivalSurface=b['surface'])
+                row.update(departureSurface=a.get('surface', 'top'), arrivalSurface=b['surface'], pattern=b['pattern'])
         out_rows.append(row)
     route_map = dict(factor=factor, fragmentIds=fragment_ids, encounterNumbers=numbers, encounterIds=ids,
                      addedFragments={f['semanticId']: f['id'] for f in out if f['originalId'] is None},
@@ -383,23 +383,73 @@ def band_ends(m, number):
     return index[route['fragmentIds'][row['originalFrom']]], index[route['fragmentIds'][row['originalTo']]]
 
 
+# Legacy lower catch chain (TASK-675 and earlier): eight platform tops. Only its
+# endpoint is still used: the upward-turn departure stays exactly where it was,
+# so the upper route, the purple extension and the late falls keep their geometry.
+LEGACY_LOWER_SPECS=[(4200,350,1620),(5000,-650,1350),(3600,450,1890),
+                    (4600,100,1620),(4000,-500,1350),(5000,600,1890),
+                    (4400,-250,1620),(1000,300,1350)]
+# TASK-676: the rest of the rightward run varies its mechanics after the R1-R4
+# combination (which ends with an exposed traverse). Each entry: (pattern, kind,
+# width, height, lift, gap, slope drop); lift is the contact rise over the
+# previous contact, gap the complete-polygon release gap. Patterns never repeat
+# back to back: exposed -> descent -> rebound -> ceiling -> descent -> rebound
+# -> exposed -> ceiling -> descent -> rebound -> exposed (the departure, which is
+# the legacy endpoint itself).
+LOWER_PATTERNS=[('descending-slope','bounce',4400,700,-1800,1350,320),
+                ('upward-rebound','platform',3400,300,650,1080,None),
+                ('ceiling-catch','ceiling',3000,240,1150,1620,None),
+                ('descending-slope','bounce',4400,700,-1350,1080,320),
+                ('upward-rebound','platform',3400,300,650,1080,None),
+                ('exposed-traverse','platform',5000,380,400,2700,None),
+                ('ceiling-catch','ceiling',3000,240,1150,1620,None),
+                ('descending-slope','bounce',4400,700,-1350,1080,320),
+                ('upward-rebound','platform',5100,300,650,1080,None),
+                ('exposed-traverse','platform',1000,460,None,None,None)]
+# Minimum horizontal contact advance of a descent: the slope starts below-right of
+# its departure, so a descent below a ceiling stays a diagonal drop.
+MIN_DESCENT_ADVANCE=2500
+PATTERN_TEXT={'ceiling-catch':('UP-RIGHT → CEILING HOLD','Grab the ceiling underside from below','underside'),
+              'descending-slope':('RELEASE → DOWN-RIGHT ONTO SLOPE','Drop down-right onto the sloped bounce face','slope'),
+              'upward-rebound':('BOUNCE → UP-RIGHT','Rebound up-right off the slope onto the top','top'),
+              'exposed-traverse':('RIGHT → EXPOSED TRANSFER','Exposed rightward release jump between tops','top')}
+
+
+def legacy_lower_end(start):
+    prev=start
+    for i,(width,lift,distance) in enumerate(LEGACY_LOWER_SPECS,1):
+        f=panel('Lower return catch %d'%i,width,300+(i%3)*80,0,0)
+        y=svg.contact(prev)[1]-lift
+        prev=place_along(prev,f,1,0,distance,origin=(prev['x'],y))
+    return prev
+
+
 def extend_lower_catch_route(m):
     """Lengthen the opening below the late leftward route, preserving upper geometry.
 
-    Insert full-size landing structures after the original mixed combination.
-    Move the upper route with the new departure rather than leaving the summit
-    far to the left of all lower terrain. Distances remain measured release gaps.
+    Insert full-size landing structures after the original mixed combination,
+    varying ceiling catches, descending slope landings, upward rebounds and
+    exposed traverses. The last structure (the upward-turn departure) keeps
+    the legacy endpoint, so the upper route moves exactly as before.
+    Distances remain measured release gaps.
     """
     fs=m['fragments']; rows=m['encounters']; route=m['routeMap']
-    specs=[(4200,350,1620),(5000,-650,1350),(3600,450,1890),
-           (4600,100,1620),(4000,-500,1350),(5000,600,1890),
-           (4400,-250,1620),(1000,300,1350)]
+    anchor=legacy_lower_end(fs[6])
     added=[]; prev=fs[6]
-    for i,(width,lift,distance) in enumerate(specs,1):
-        f=panel('Lower return catch %d'%i,width,300+(i%3)*80,0,0)
-        y=svg.contact(prev)[1]-lift
-        f=place_along(prev,f,1,0,distance,origin=(prev['x'],y))
-        f.update(semanticId='X%d'%i,originalId=None,surface='top')
+    for i,(pattern,kind,width,height,lift,distance,drop) in enumerate(LOWER_PATTERNS,1):
+        surface=PATTERN_TEXT[pattern][2]
+        if i==len(LOWER_PATTERNS):
+            f=dict(anchor,name='Lower return catch %d'%i)
+        else:
+            f=panel('Lower return catch %d'%i,width,height,0,0,kind,drop or 240)
+            y=svg.contact(prev)[1]-lift-(svg.contact(f)[1]-f['y'])
+            f=place_along(prev,f,1,0,distance,origin=(prev['x'],y))
+            # A descent below a ceiling would clear its gap vertically; keep it a diagonal drop.
+            advance=svg.contact(prev)[0]+MIN_DESCENT_ADVANCE-svg.contact(f)[0]
+            if pattern=='descending-slope' and advance>0:f['x']+=advance
+        if usable_span(dict(f,id='X%d'%i))<MIN_OPENING_SPAN:
+            raise ValueError('X%d landing surface must span at least 720 units'%i)
+        f.update(semanticId='X%d'%i,originalId=None,surface=surface,pattern=pattern)
         added.append(f);prev=f
     dx=prev['x']-fs[6]['x'];dy=prev['y']-fs[6]['y']
     for f in fs[7:]:f['x']+=dx;f['y']+=dy
@@ -413,10 +463,14 @@ def extend_lower_catch_route(m):
     extra=[]
     for i,f in enumerate(added,1):
         a=fs[5+i]
+        direction,action,_=PATTERN_TEXT[f['pattern']]
+        if i==len(added):action+=' to the upward-turn departure'
         extra.append(dict(id='RIGHT-EXT-%02d'%i,fromFragment=a['id'],toFragment=f['id'],
-            direction='RIGHT',action=('Rightward release jump to upward-turn departure' if i==len(added) else 'Rightward release jump; lower recovery terrain'),
+            direction=direction,action=action,pattern=f['pattern'],
+            departureSurface=a.get('surface','top'),arrivalSurface=f['surface'],
             baseline=False,originalNumber=None,originalId=None,percent=None))
     rows[6:6]=extra
+    for r in rows[:2]:r.setdefault('pattern','release-jump')
     for i,r in enumerate(rows,1):r['number']=i
     route['fragmentIds']={k:mapping[v] for k,v in route['fragmentIds'].items()}
     route['addedFragments']={k:mapping[v] for k,v in route['addedFragments'].items()}
@@ -424,7 +478,7 @@ def extend_lower_catch_route(m):
     route['encounterNumbers']={str(r['originalNumber']):r['number'] for r in rows if r.get('originalNumber')}
     route['addedEncounters'] += [r['id'] for r in extra]
     m['combinations']=[[n+len(added) if n>=7 else n for n in group] for group in m['combinations']]
-    m['lowerCatchExtension']=dict(fragments=[f['id'] for f in added],
+    m['lowerCatchExtension']=dict(fragments=[f['id'] for f in added],patterns=[f['pattern'] for f in added],
         addedHorizontalSpan=dx,upperTranslation=[dx,dy],firstUpDeparture=added[-1]['id'],
         purpose='Earlier terrain beneath late leftward falls, with a rightward return to the climb')
 
