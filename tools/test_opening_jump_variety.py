@@ -288,8 +288,17 @@ class OpeningJumpVarietyTests(unittest.TestCase):
 
     def unresized(self, f):
         """The fragment as generated before the recorded minimum-side resize (itself when not resized)."""
-        c = next((c for c in self.m.get('minimumSides', {}).get('changed', []) if c['semanticId'] == f['semanticId']), None)
-        return f if c is None else dict(f, polys=c['before'], height=c['heightBefore'])
+        ms = self.m.get('minimumSides', {})
+        c = next((c for c in ms.get('changed', []) if c['semanticId'] == f['semanticId']), None)
+        if c is not None:
+            return dict(f, polys=c['before'], height=c['heightBefore'])
+        # TASK-681 (scope all): later bodies record their whole box before the resize.
+        c = next((c for c in ms.get('laterChanged', []) if c['semanticId'] == f['semanticId']
+                  and c['after'] == f['polys']), None)
+        if c is None:
+            return f
+        x, y, w, h = c['boxBefore']
+        return dict(f, polys=c['before'], x=x, y=y, width=w, height=h)
 
     def test_01_generation_is_deterministic(self):
         self.assertEqual(self.runs[0], self.runs[1])
@@ -608,9 +617,11 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         ms = self.m['minimumSides']
         self.assertEqual([c['semanticId'] for c in ms['changed']], RESIZED)
         scope = [f['id'] for f in retune.opening_scope(self.m)]
-        self.assertEqual(ms['fragments'], scope)
+        self.assertEqual(ms['fragments'][:len(scope)] if MIN_SIDE_SCOPE == 'all' else ms['fragments'], scope)
         self.assertEqual(self.frag(self.m, scope[-1])['id'], self.m['routeMap']['fragmentIds']['P4'])
         # Independent: the checker's per-edge inventory from the imported polygons.
+        if MIN_SIDE_SCOPE == 'all':
+            self.assertEqual([r for r in self.report['sides'] if r['length'] < retune.MIN_SIDE_LENGTH - COORD_TOL], [])
         rows = [r for r in self.report['sides'] if r['fragment'] in scope]
         self.assertEqual(sorted({r['fragment'] for r in rows}), sorted(scope))
         self.assertEqual([r for r in rows if r['length'] < retune.MIN_SIDE_LENGTH - COORD_TOL], [])
@@ -619,9 +630,15 @@ class OpeningJumpVarietyTests(unittest.TestCase):
             self.assertEqual(c['after'][0][:2], c['before'][0][:2], c['semanticId'])
             self.assertEqual(self.frag(self.m, c['fragment'])['width'],
                              max(x for x, _ in c['before'][0]) - min(x for x, _ in c['before'][0]))
-        # Every transfer keeps its measured gap.
+        # Every transfer keeps its measured gap. TASK-681 (scope all): only the recorded
+        # purple-internal gaps may change, and they keep the internal (0, 270] rule.
         prev = {r['id']: r['distance'] for r in self.default['encounters']}
-        drift = {r['id']: abs(r['distance'] - prev[r['id']]) for r in self.m['encounters']}
+        moved = {c['id'] for c in ms.get('transfersChanged', [])}
+        enc = {r['id']: r for r in self.m['encounters']}
+        for i in moved:
+            self.assertTrue(enc[i].get('noGrappleZone') and 0 < enc[i]['distance'] <= retune.NO_GRAPPLE_INTERNAL_GAP, i)
+        self.assertEqual(moved, {i for i, r in enc.items() if abs(r['distance'] - prev[i]) > 1e-6})
+        drift = {r['id']: abs(r['distance'] - prev[r['id']]) for r in self.m['encounters'] if r['id'] not in moved}
         self.assertLess(max(drift.values()), 1e-6, drift)
         self.__class__.min_sides = dict(changed=[c['semanticId'] for c in ms['changed']], scope=scope,
                                         openingEdges=len(rows), openingMinSide=min(r['length'] for r in rows),

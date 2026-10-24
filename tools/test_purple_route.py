@@ -12,6 +12,10 @@ NO_GRAPPLE_EVIDENCE_DIR/candidate when it exists, else the shipped
 artifacts/levels data. DIR holds extended-mountain.svg,
 extended-mountain-measurements.json and extended-mountain.level.json.
 
+PURPLE_ROUTE_MIN_SIDE_SCOPE=opening|all (TASK-681) regenerates and compares the
+minimum-side candidate (retune --min-side-scope); the shipped lower route is then
+compared with the recorded opening resizes undone.
+
 NO_GRAPPLE_EVIDENCE_DIR=DIR writes route.json, traversal.json,
 preservation.json and purple-route.png.
 
@@ -39,6 +43,7 @@ import convert_extended_mountain_svg as conv  # noqa: E402
 import retune_extended_level as retune  # noqa: E402
 
 EVIDENCE = os.environ.get('NO_GRAPPLE_EVIDENCE_DIR')
+MIN_SIDE_SCOPE = os.environ.get('PURPLE_ROUTE_MIN_SIDE_SCOPE', 'none')
 SHIPPED = ROOT / 'artifacts' / 'levels'
 SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 INPUTS = TOOLS / 'fixtures' / 'purple-route-inputs.json'
@@ -144,13 +149,15 @@ class PurpleRouteGeometryTests(unittest.TestCase):
     def test_01_candidate_regenerates_byte_identically(self):
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run([sys.executable, str(TOOLS / 'retune_extended_level.py'), '--source', str(SOURCE),
-                            '--output-dir', tmp], check=True, capture_output=True, cwd=TOOLS)
+                            '--output-dir', tmp, '--min-side-scope', MIN_SIDE_SCOPE], check=True, capture_output=True,
+                           cwd=TOOLS)
             subprocess.run([sys.executable, str(TOOLS / 'import_level_svg.py'), '--input', tmp + '/' + NAMES[0],
                             '--output', tmp + '/' + NAMES[2]], check=True, capture_output=True, cwd=TOOLS)
             same = {n: sha(Path(tmp) / n) == sha(CANDIDATE / n) for n in NAMES}
         self.assertEqual(same, {n: True for n in NAMES})
-        self.route['regeneration'] = dict(command='retune_extended_level.py --source %s; import_level_svg.py'
-                                          % SOURCE.relative_to(ROOT), byteIdentical=same)
+        self.route['regeneration'] = dict(command='retune_extended_level.py --source %s --min-side-scope %s; '
+                                          'import_level_svg.py' % (SOURCE.relative_to(ROOT), MIN_SIDE_SCOPE),
+                                          byteIdentical=same)
 
     def test_02_zone_dimensions_and_leftward_placement(self):
         z, ext = self.zone, self.ext
@@ -290,12 +297,20 @@ class PurplePreservationTests(unittest.TestCase):
         cls.m, cls.level = load()
         source = json.loads(SOURCE.read_text())
         # The same generator with the purple extension switched off: the pre-ticket layout.
-        saved = retune.extend_purple_route
+        saved, shields = retune.extend_purple_route, retune.add_opening_min_side_shields
         retune.extend_purple_route = lambda m, spec: None
+        # Without the purple extension P4 departs the upward turn itself, so the TASK-680 P4 shield
+        # (which must keep every gap) is not generated; its body is added below for shape comparisons only.
+        retune.add_opening_min_side_shields = lambda m, clearance: None
         try:
-            cls.base = retune.tune(source, opening=retune.OPENING, yellow_clearance=retune.YELLOW_CLEARANCE)
+            cls.base = retune.tune(source, opening=retune.OPENING, yellow_clearance=retune.YELLOW_CLEARANCE,
+                                   min_sides=None if MIN_SIDE_SCOPE == 'none' else MIN_SIDE_SCOPE)
         finally:
-            retune.extend_purple_route = saved
+            retune.extend_purple_route, retune.add_opening_min_side_shields = saved, shields
+        if MIN_SIDE_SCOPE != 'none':
+            by = {f['semanticId']: f for f in cls.base['fragments']}
+            for sid, x0, x1, top, bottom in retune.OPENING_MIN_SIDE_SHIELDS:
+                by[sid]['polys'] = by[sid]['polys'][:1] + [[[x0, top], [x1, top], [x1, bottom], [x0, bottom]]]
         cls.shipped = json.loads((SHIPPED / NAMES[1]).read_text())
         cls.out = {}
 
@@ -338,8 +353,11 @@ class PurplePreservationTests(unittest.TestCase):
         # Shipped lower route (v13, v14 since TASK-677): the same coordinates as the candidate.
         shipped = self.by_semantic(self.shipped)
         lower = [s for s in order[:cut + 1]]
+        # The minimum-side candidate: the recorded opening resizes undone (TASK-679 'before' polygons).
+        before = {c['semanticId']: c['before'] for c in self.m.get('minimumSides', {}).get('changed', [])}
         for s in lower:
-            self.assertEqual((shipped[s]['x'], shipped[s]['y'], shipped[s]['polys']), (new[s]['x'], new[s]['y'], new[s]['polys']), s)
+            self.assertEqual((shipped[s]['x'], shipped[s]['y'], shipped[s]['polys']),
+                             (new[s]['x'], new[s]['y'], before.get(s, new[s]['polys'])), s)
         catch = ['X%d' % i for i in range(1, 11)]  # TASK-676: X1..X10
         self.assertTrue(set(catch) <= set(lower))
         # Every pre-existing transfer keeps its measured gap (the upward turn now leaves the exit copy).

@@ -628,6 +628,29 @@ def extend_purple_route(m, spec):
                                 purpose='Leftward rope-free bounce traversal after the first right -> up -> left sequence')
 
 
+def measure_transfers(m, opening):
+    fs = m['fragments']
+    for row in m['encounters']:
+        n = row['number']; a,b = fs[n-1:n+1]
+        d,w,_,_ = gap(a,b)
+        # Gap targets stay keyed by the original concept numbering; new transfers record their measured gap.
+        old = row.get('originalNumber', n)
+        percent = round(d/5.4, 2) if opening else TARGETS.get(old, row['percent']) if old else round(d/5.4, 2)
+        if row.get('noGrappleZone'):
+            # Scoped exception: both panels lie inside one convex purple zone (level-guidelines.md).
+            if not 0 < d <= NO_GRAPPLE_INTERNAL_GAP:
+                raise ValueError('Internal no-grapple transfer %s gap %.2f not in (0, 270]' % (row['id'], d))
+        elif opening and old not in TARGETS and d < 1080 - .01:
+            raise ValueError('Transfer %s violates the 200%% release-gap minimum: %.2f' % (row['id'], d))
+        row.update(percent=percent, distance=d, witness=w,
+                   flight=[svg.contact(a),svg.contact(b)], baseline=False)
+    m['pairChecks'] = []
+    for i,a in enumerate(fs):
+        for b in fs[i+1:]:
+            d = gap(a,b)[0]
+            m['pairChecks'].append(dict(source=a['id'],target=b['id'],minimumGap=d,passOutsideRange=d-21.6>540))
+
+
 def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE, min_sides=None):
     source = copy.deepcopy(source)
     # The extra second polygon is the unwanted rectangular bump, not the shelf.
@@ -730,27 +753,9 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         extend_lower_catch_route(m)
         extend_purple_route(m, PURPLE)
         add_shortcut_shields(m, SHIELDS)
-        if min_sides == 'opening':
+        if min_sides in ('opening', 'all'):
             resize_opening_sides(m)
-    for row in m['encounters']:
-        n = row['number']; a,b = fs[n-1:n+1]
-        d,w,_,_ = gap(a,b)
-        # Gap targets stay keyed by the original concept numbering; new transfers record their measured gap.
-        old = row.get('originalNumber', n)
-        percent = round(d/5.4, 2) if opening else TARGETS.get(old, row['percent']) if old else round(d/5.4, 2)
-        if row.get('noGrappleZone'):
-            # Scoped exception: both panels lie inside one convex purple zone (level-guidelines.md).
-            if not 0 < d <= NO_GRAPPLE_INTERNAL_GAP:
-                raise ValueError('Internal no-grapple transfer %s gap %.2f not in (0, 270]' % (row['id'], d))
-        elif opening and old not in TARGETS and d < 1080 - .01:
-            raise ValueError('Transfer %s violates the 200%% release-gap minimum: %.2f' % (row['id'], d))
-        row.update(percent=percent, distance=d, witness=w,
-                   flight=[svg.contact(a),svg.contact(b)], baseline=False)
-    m['pairChecks'] = []
-    for i,a in enumerate(fs):
-        for b in fs[i+1:]:
-            d = gap(a,b)[0]
-            m['pairChecks'].append(dict(source=a['id'],target=b['id'],minimumGap=d,passOutsideRange=d-21.6>540))
+    measure_transfers(m, opening)
     placed_bands, kept, unreachable = [], [], []
     for band in m['yellowBands']:
         # A split original jump keeps its band centred between its original endpoints.
@@ -786,8 +791,11 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
     consolidate_yellow_bands(m, yellow_clearance)
     if opening:
         restore_guard_coverage(m, yellow_clearance)
-    if min_sides == 'opening':
+    if min_sides in ('opening', 'all'):
         add_opening_min_side_shields(m, yellow_clearance)
+    if min_sides == 'all':
+        resize_later_sides(m, opening, yellow_clearance)
+        deepen_yellow_bands(m, yellow_clearance)
     m['fallIllustrations'] = [dict(id='F'+str(i+1),band=z['id'],start=[z['x']+z['width']/2,z['y']-500],
         end=[z['x']+z['width']/2,z['y']+1000],meaning='Illustrative fall only') for i,z in enumerate(m['yellowBands'])]
     m['bluntedCorners']=dict(minimumAngle=MIN_INTERIOR_ANGLE, face=BLUNT_FACE, changed=blunted)
@@ -987,6 +995,194 @@ def add_opening_min_side_shields(m, clearance, spec=OPENING_MIN_SIDE_SHIELDS):
                             bandsWithNewNearestSolid=bands))
     m['minimumSides']['shields'] = dict(bodies=shields, purpose='TASK-680: block the demonstrated L2 -> NG-APPROACH '
                                         'flight over P4 found by the candidate opening probe grid')
+
+
+# TASK-681 (candidate only, with --min-side-scope all): every remaining gameplay
+# polygon edge reaches MIN_SIDE_LENGTH. The end caps of purple chute slabs that
+# were too thin (NG2 Low ceiling 149, NG5 Launch ramp 202) tilt inward until
+# they are SIDE_TARGET long: the same contact face, contact point, angle and
+# thickness, and the new slab lies inside the old one, so no gap or clearance
+# shrinks (thickening would bring NG5 within 1620 of yellow band G2). NG1's
+# post keeps its left face and top-left corner (the route drops just left of
+# it; widening left lands the player on the post) and widens right to the
+# slab's lower-right corner, its top sloping down just enough that the entry
+# gap from the approach (whose witness was the post's top-right) stays. Later green bodies and the exit ledge (a copy of P4, so the
+# same P4 resize) lengthen short underside sides along their own lines
+# ('extend-each': each (anchor, moving) pair scaled on its own), take an
+# explicit underside ('set'), or ('tangent') turn the vertex that carries the
+# gap witness of the transfer from the route predecessor about the witness
+# point on the predecessor (downward), so the gap stays. Top faces are unchanged. Yellow bands thinner
+# than the target deepen away from their nearest solid (kept >= the clearance).
+LATER_SLAB_TAPER = ('Low ceiling', 'Launch ramp')
+LATER_MIN_SIDES = [('NG-EXIT', 'extend-each', [(1, 2)]),
+                   ('P7', 'extend-each', [(0, 3)]),
+                   ('P9', 'set', [[0, 0], [980, 0], [980, 275], [372.4, 275], [372.4, 550], [0, 550]]),
+                   ('P13', 'extend-each', [(0, 4)]),
+                   ('P16', 'extend-each', [(0, 4), (1, 2)]),
+                   ('P17', 'extend-each', [(0, 4)]),
+                   ('P20', 'extend-each', [(0, 4)]),
+                   ('P24', 'tangent', (1, 2))]
+
+
+def tapered_slab(contact, angle, before, after, thickness, side, target=SIDE_TARGET):
+    """slab() whose end caps lean inward to length target; the contact face is unchanged."""
+    a, b, c, d = slab(contact, angle, before, after, thickness, side)[::side]
+    ux, uy = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+    s = math.sqrt(max(0., target**2-thickness**2))
+    poly = [a, b, (c[0]-ux*s, c[1]-uy*s), (d[0]+ux*s, d[1]+uy*s)]
+    return poly if side > 0 else poly[::-1]
+
+
+def wide_post(f, width, height, approach, keep, target=SIDE_TARGET):
+    """add_post() whose top runs right to the slab's lower-right corner, sloping down until the
+    entry gap from the approach equals keep; the post's left face and top-left corner stay."""
+    pts = [(f['x']+x, f['y']+y) for x, y in f['polys'][0]]
+    a, b, c, d = pts
+    if f['surface'] != 'top' or not b[1] < a[1] or not b[0] > a[0]+width:
+        raise ValueError('%s post needs a top face rising to the right' % f['semanticId'])
+    t = (b[0]-width-a[0])/(b[0]-a[0])
+    foot = (b[0]-width, a[1]+(b[1]-a[1])*t)
+    tl = (foot[0], b[1]-height)
+    cx, cy = f['x']+f['contactPoint'][0], f['y']+f['contactPoint'][1]
+    def shape(drop):
+        q = [a, foot, tl, (c[0], tl[1]+drop), c, d]
+        x0, y0 = min(p[0] for p in q), min(p[1] for p in q)
+        return dict(f, x=x0, y=y0, width=max(p[0] for p in q)-x0, height=max(p[1] for p in q)-y0,
+                    contactPoint=[cx-x0, cy-y0], polys=[[[px-x0, py-y0] for px, py in q]])
+    lo, hi = 0., c[1]-tl[1]-target
+    if gap(approach, shape(hi))[0] < keep:
+        raise ValueError('%s wide post cannot keep the entry gap' % f['semanticId'])
+    for _ in range(100):
+        mid = (lo+hi)/2
+        if gap(approach, shape(mid))[0] < keep: lo = mid
+        else: hi = mid
+    g = shape(hi)
+    poly = g['polys'][0]
+    if short_sides(g) or min(interior_angles(poly)) < MIN_INTERIOR_ANGLE or self_intersections(poly):
+        raise ValueError('%s wide post breaks the side or corner rules' % f['semanticId'])
+    f.update({k: g[k] for k in ('x', 'y', 'width', 'height', 'contactPoint', 'polys')})
+    return dict(foot=list(foot), top=tl[1], topRight=[c[0], tl[1]+hi], width=c[0]-foot[0], entryGap=keep)
+
+
+def rebuild_purple_slabs(m, by):
+    """Rebuild the thin chute slabs with tapered end caps and NG1 with the wide post."""
+    if not m.get('noGrappleZones'):
+        return []
+    zone = m['noGrappleZones'][0]
+    out = []
+    for n, (name, contact, angle, before, after, thickness, side) in enumerate(PURPLE['panels'], 1):
+        sid = 'NG%d' % n
+        post = sid == SHIELDS['post'][0] and bool(m.get('shortcutShields', {}).get('post'))
+        if name not in LATER_SLAB_TAPER and not post:
+            continue
+        f = by[sid]
+        polys, height, x0, y0, width = copy.deepcopy(f['polys']), f['height'], f['x'], f['y'], f['width']
+        shape = (tapered_slab if name in LATER_SLAB_TAPER else slab)(contact, angle, before, after, thickness, side)
+        g = purple_panel(name, shape, contact, 'top' if side > 0 else 'underside', zone['x'], zone['y'])
+        f.update({k: g[k] for k in ('x', 'y', 'width', 'height', 'contactPoint', 'polys')})
+        if post:
+            approach = by['NG-APPROACH']
+            keep = gap(approach, dict(f, polys=polys, x=x0, y=y0))[0]
+            m['shortcutShields']['post'].update(wide_post(f, SHIELDS['post'][1], SHIELDS['post'][2], approach, keep))
+        if not zone_contains(zone, f):
+            raise ValueError('%s must stay inside the purple zone' % sid)
+        out.append(dict(fragment=f['id'], semanticId=sid, op='post' if post else 'taper', before=polys,
+                        after=copy.deepcopy(f['polys']), heightBefore=height, heightAfter=f['height'],
+                        boxBefore=[x0, y0, width, height], thickness=thickness))
+    return out
+
+
+def resize_later_sides(m, opening, clearance, spec=LATER_MIN_SIDES, target=SIDE_TARGET):
+    """Runs after the bands are placed, so no band moves; transfers and pairs are re-measured."""
+    fs = m['fragments']
+    by = {f['semanticId']: f for f in fs}
+    before_rows = {r['id']: (r['distance'], r['witness']) for r in m['encounters']}
+    changed = rebuild_purple_slabs(m, by)
+    # A layout generated without the purple extension (tests) has no exit ledge.
+    for sid, op, arg in [e for e in spec if e[0] in by]:
+        f = by[sid]
+        before, height, box0 = copy.deepcopy(f['polys']), f['height'], [f['x'], f['y'], f['width'], f['height']]
+        poly = [list(p) for p in f['polys'][0]]
+        if op == 'extend-each':
+            for a, b in arg:
+                scale = max(1., target/math.dist(poly[a], poly[b]))
+                poly[b] = [poly[a][0]+(poly[b][0]-poly[a][0])*scale, poly[a][1]+(poly[b][1]-poly[a][1])*scale]
+        elif op == 'tangent':
+            a, b = arg
+            prev = fs[fs.index(f)-1]
+            keep, (w, v) = gap(prev, f)[:2]
+            if math.dist(v, (f['x']+poly[b][0], f['y']+poly[b][1])) > 1e-6:
+                raise ValueError('%s tangent vertex must carry the gap witness' % sid)
+            # Rotate the vertex about the predecessor's witness point (downward), so the gap is exact.
+            rx, ry = v[0]-w[0], v[1]-w[1]
+            turn = 1 if rx*0-ry*-1 < 0 else -1
+            def at(t):
+                c, sn = math.cos(t*turn), math.sin(t*turn)
+                return [w[0]+rx*c-ry*sn-f['x'], w[1]+rx*sn+ry*c-f['y']]
+            if at(.01)[1] < poly[b][1]:
+                turn = -turn
+            lo, hi = 0., math.pi/4
+            for _ in range(80):
+                mid = (lo+hi)/2
+                if math.dist(poly[a], at(mid)) < target: lo = mid
+                else: hi = mid
+            poly[b] = [round(v, 9) for v in at(hi)]  # independent of the route's translation
+        else:
+            if arg[:2] != poly[:2]:
+                raise ValueError('%s explicit underside must keep the top face' % sid)
+            poly = [list(p) for p in arg]
+        f['polys'] = [poly]+f['polys'][1:]
+        f['height'] = max(y for body in f['polys'] for _, y in body)
+        if min(interior_angles(poly)) < MIN_INTERIOR_ANGLE or self_intersections(poly):
+            raise ValueError('%s resize breaks the corner rules' % sid)
+        changed.append(dict(fragment=f['id'], semanticId=sid, op=op, before=before, after=copy.deepcopy(f['polys']),
+                            heightBefore=height, heightAfter=f['height'], boxBefore=box0))
+    short = [dict(fragment=f['id'], semanticId=f['semanticId'], sides=s) for f in fs for s in [short_sides(f)] if s]
+    if short:
+        raise ValueError('Edges below %g: %s' % (MIN_SIDE_LENGTH, short))
+    measure_transfers(m, opening)
+    moved = [dict(id=r['id'], before=before_rows[r['id']][0], after=r['distance'],
+                  witnessBefore=before_rows[r['id']][1], witnessAfter=r['witness'])
+             for r in m['encounters'] if abs(r['distance']-before_rows[r['id']][0]) > 1e-6]
+    for band in m['yellowBands']:
+        band['nearestSolidClearance'] = min(union_distance([band['polygon']], svg.bodies(f))[0] for f in fs)
+        if band['nearestSolidClearance'] < clearance:
+            raise ValueError('Resize brings green within %.1f of yellow band %s' % (band['nearestSolidClearance'], band['id']))
+    m['minimumSides'].update(scope='all', fragments=[f['id'] for f in fs], laterChanged=changed, transfersChanged=moved,
+                             slabTaper=list(LATER_SLAB_TAPER),
+                             purpose='TASK-679/680/681: every gameplay polygon edge >= 0.5 R')
+
+
+def deepen_yellow_bands(m, clearance, target=SIDE_TARGET):
+    """Thicken drag bands below target away from their nearest solid; keep solid and pair clearances."""
+    fs, bands, changed = m['fragments'], m['yellowBands'], []
+    for band in bands:
+        if band['height'] >= target:
+            continue
+        x, y, w, h = band['x'], band['y'], band['width'], band['height']
+        grow = target-h
+        best = None
+        # Down (keep top), up (keep bottom), centred; a band squeezed between
+        # solids loses the fewest units from one end (at most 5% of its width).
+        for trim in range(0, int(w*.05)+1, 5):
+            for dy in (0., -grow, -grow/2):
+                for left, right in {(trim, 0), (0, trim)}:
+                    poly = [[x+left, y+dy], [x+w-right, y+dy], [x+w-right, y+dy+target], [x+left, y+dy+target]]
+                    nearest = min(union_distance([poly], svg.bodies(f))[0] for f in fs)
+                    pair = min((union_distance([poly], [o['polygon']])[0] for o in bands if o is not band),
+                               default=math.inf)
+                    if nearest >= clearance and pair >= YELLOW_PAIR_CLEARANCE and (best is None or nearest > best[1]):
+                        best = (dy, nearest, poly, left, right)
+            if best:
+                break
+        if best is None:
+            raise ValueError('Cannot deepen yellow band %s to %g' % (band['id'], target))
+        dy, nearest, poly, left, right = best
+        changed.append(dict(id=band['id'], before=[x, y, w, h], after=[x+left, y+dy, w-left-right, target],
+                            grew='down' if dy == 0 else 'up' if dy == -grow else 'both', trimmed=[left, right],
+                            nearestSolidBefore=band['nearestSolidClearance'], nearestSolidAfter=nearest))
+        band.update(x=x+left, y=y+dy, width=w-left-right, height=target, polygon=poly, nearestSolidClearance=nearest)
+    m['minimumSides']['yellowBands'] = changed
 
 
 def box(fragment):
@@ -1193,8 +1389,9 @@ def main():
     ap.add_argument('--guidelines', default=str(GUIDELINES), help='Required current design guidelines')
     ap.add_argument('--opening', choices=('extended', 'original'), default='extended',
                     help='extended: threefold rightward/leftward opening (guidelines); original: the v5 layout')
-    ap.add_argument('--min-side-scope', choices=('none', 'opening'), default='none',
-                    help='opening: candidate with opening green edges >= 0.5 R (TASK-679); none: the shipped layout')
+    ap.add_argument('--min-side-scope', choices=('none', 'opening', 'all'), default='none',
+                    help='opening: candidate with opening green edges >= 0.5 R (TASK-679); all: every gameplay '
+                         'polygon edge (TASK-681); none: the shipped layout')
     args=ap.parse_args()
     guidelines=Path(args.guidelines).read_bytes()
     opening = OPENING if args.opening == 'extended' else None
