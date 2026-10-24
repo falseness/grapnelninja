@@ -490,6 +490,8 @@ function circuitSegmentGap(a, b, c, d)
 // fully inside the polygon (no geometry change), and traces keep a clear gap,
 // so a larger scale packs fewer paths into the same panel. A shape too
 // thin for a motif simply goes without it: the scale never shrinks to fit.
+// Safety ceilings: the most paths and pads one board places, however huge the panel
+const BOUNCE_BOARD_MAX_TRACES = 400, BOUNCE_BOARD_MAX_PADS = 120
 function bounceBoardDetail(points, box, seed, unit, circuit = 1)
 {
     const s = circuit * unit
@@ -519,16 +521,39 @@ function bounceBoardDetail(points, box, seed, unit, circuit = 1)
         return a + p.x * q.y - q.x * p.y
     }, 0)) / 2 / (s * s)
     const traces = [], segments = []
-    // Dense boards: roughly one path per 700 s² (one per 30 s along a thin strip);
-    // the clear gap check below is what finally limits the count
+    // Dense boards: roughly one path per 700 s² (one per 30 s along a thin strip),
+    // at any panel size; the clear gap check below is what finally limits the count.
+    // grow is 1 up to the old 18 (8 thin) path boards, so those keep their exact
+    // boards, and scales pads, segments and the attempt budget above that
     const length = Math.max(width, height)
-    const count = thin ? Math.max(2, Math.min(8, Math.round(length / 30))) + Math.floor(random() * 2) :
-        Math.max(4, Math.min(18, Math.round(area / 700))) + Math.floor(random() * 3)
+    const base = Math.min(BOUNCE_BOARD_MAX_TRACES, thin ? Math.max(2, Math.round(length / 30)) :
+        Math.max(4, Math.round(area / 700)))
+    const grow = Math.max(1, thin ? length / 240 : area / 12600)
+    const count = base + Math.floor(random() * (thin ? 2 : 3))
+    const extraSegments = Math.floor(Math.log2(grow))
     const directions = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]
-    const clear = (a, b) => segments.every(([c, d]) => circuitSegmentGap(a, b, c, d) >= gap)
-    for (let attempt = 0; traces.length < count && attempt < 4000; attempt++)
+    // Segments are bucketed by cell, so a gap check only visits the segments
+    // whose cells come within the gap (the same answer as checking them all)
+    const cell = 16 * grid, buckets = new Map()
+    const cells = (a, b, pad, visit) =>
     {
-        const path = [sample()], wanted = thin ? 1 + Math.floor(random() * 2) : 2 + Math.floor(random() * 3)
+        for (let i = Math.floor((Math.min(a.x, b.x) - pad) / cell); i <= Math.floor((Math.max(a.x, b.x) + pad) / cell); i++)
+            for (let j = Math.floor((Math.min(a.y, b.y) - pad) / cell); j <= Math.floor((Math.max(a.y, b.y) + pad) / cell); j++)
+                if (visit(i + ',' + j) === false) return false
+        return true
+    }
+    const near = (a, b, pad, test) => cells(a, b, pad, id => (buckets.get(id) || []).every(test))
+    const clear = (a, b) => near(a, b, gap, ([c, d]) => circuitSegmentGap(a, b, c, d) >= gap)
+    const addSegment = segment => cells(segment[0], segment[1], 0, id =>
+    {
+        if (!buckets.has(id)) buckets.set(id, [])
+        buckets.get(id).push(segment)
+    })
+    const attempts = Math.round(4000 * Math.max(1, base / (thin ? 8 : 18)))
+    for (let attempt = 0; traces.length < count && attempt < attempts; attempt++)
+    {
+        const path = [sample()]
+        const wanted = (thin ? 1 : 2) + Math.floor(random() * ((thin ? 2 : 3) + extraSegments))
         if (!inside(path[0], traceMargin) || !clear(path[0], path[0])) continue
         let previous = null
         for (let j = 0; j < wanted; j++)
@@ -548,14 +573,18 @@ function bounceBoardDetail(points, box, seed, unit, circuit = 1)
         // A via ring only where the whole ring fits
         const vias = [path[0], path[path.length - 1]].filter(p => inside(p, viaMargin))
         traces.push({points: path, vias})
-        for (let i = 1; i < path.length; i++) segments.push([path[i - 1], path[i]])
+        for (let i = 1; i < path.length; i++)
+        {
+            segments.push([path[i - 1], path[i]]); addSegment(segments[segments.length - 1])
+        }
     }
     const pads = []
-    for (let attempt = 0, count = thin ? 2 : 3 + Math.floor(random() * 4); pads.length < count && attempt < 1000; attempt++)
+    const padCount = Math.min(BOUNCE_BOARD_MAX_PADS, Math.round((thin ? 2 : 3 + Math.floor(random() * 4)) * grow))
+    for (let attempt = 0, padAttempts = Math.round(1000 * grow); pads.length < padCount && attempt < padAttempts; attempt++)
     {
         const p = sample()
         if ([[-3,-1],[3,-1],[-3,1],[3,1]].every(([x,y]) => inside({x:p.x+x*s,y:p.y+y*s}, 0.3 * s)) &&
-            segments.every(([a, b]) => circuitPointSegment(p, a, b) >= 2.5 * s) &&
+            near(p, p, 2.5 * s, ([a, b]) => circuitPointSegment(p, a, b) >= 2.5 * s) &&
             pads.every(q => Math.hypot(q.x - p.x, q.y - p.y) >= gap))
             pads.push(p)
     }
