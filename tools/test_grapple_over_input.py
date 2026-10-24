@@ -324,7 +324,7 @@ class Task494Tests(unittest.TestCase):
         double = len(onsets) - len({t-1 for t in onsets} & starts) - sum(1 for t in onsets if t-1 not in starts)
         self.assertEqual((ghost, double), (0, 0), label)
         self.assertEqual(len(onsets), len(starts), label)
-        tolerance = 1.000001 * 1080 / viewport['height'] / 0.375
+        tolerance = 1.000001 * 1080 / viewport['height'] / 0.25
         self.assertLessEqual(max(errors), tolerance, label)
         acquired = [e['after']['rope'][0]['id'] for e in trace['events'] if e['type'] == 'acquisition']
         return dict(run=label, section=section, encounters=names, viewport=viewport, ticks=ticks, expected_exit=bounds,

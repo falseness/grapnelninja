@@ -3289,7 +3289,7 @@ class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
             viewport = m['metadata']['viewport']
             press = next(t for t in self.targets(trace, viewport) if t['tick']==400)
             # Client pixels per world unit: the 1080-unit logical height at the grapple_over camera scale.
-            k = viewport['height']/1080*0.375
+            k = viewport['height']/1080*0.25
             to_client = lambda x, y: (press['client']['x']+(x-press['world']['x'])*k, press['client']['y']+(y-press['world']['y'])*k)
             (l, t), (r, b) = to_client(hook['left'], hook['top']), to_client(hook['right'], hook['bottom'])
             # Cross-check of the mapping: the camera is clamped to the right map edge (x 6480) at the press.
@@ -3314,7 +3314,7 @@ class ViaductV3ToleranceChecks(SwitchbackV3ToleranceChecks):
             '(6330,-7500) (and the east pier top lowered from -7300 to -7000 so the pull clears it), so at the S03-03 press '
             'pose its drawn rectangle and the nominal aim point (the hook itself) are below the touch pause button; '
             'the tap acquires the hook on both viewports.',
-            aim_point=self.VC.CREST_V3, hook_world_rect=hook, client_px_per_world={'1280':720/1080*0.375, '844':390/1080*0.375},
+            aim_point=self.VC.CREST_V3, hook_world_rect=hook, client_px_per_world={'1280':720/1080*0.25, '844':390/1080*0.25},
             pause_button_client_rects={str(k): v for k, v in self.PAUSE_BUTTON.items()}, runs=rows))
 
     def test_02_mistimed_release_no_bounce_back(self):
@@ -4422,7 +4422,7 @@ class DeflectorV3ToleranceChecks(SwitchbackV3ToleranceChecks):
             for device in ('desktop','touch'):
                 trace, viewport, prefix, mechanics = clips[f'{name}-{device}-nominal']
                 layout = json.loads(self.evidence.path(prefix+'/layout-probe.json').read_text())['frames']
-                scale = viewport['height']/1080*0.375
+                scale = viewport['height']/1080*0.25
                 press_tick = self.SEGMENTS[k][0][0]
                 event = next(e for e in trace['events'] if e['type']=='input' and e['tick']==press_tick and e['event'] in ('mousedown','touchstart'))
                 anchor = next(e for e in trace['events'] if e['type']=='acquisition' and e['tick'] >= press_tick)
@@ -8773,7 +8773,7 @@ class Task544Tests(unittest.TestCase):
         baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())['modes']['classic']
         for key in ('gravity', 'pull', 'throwSpeed', 'cyclesPerTick', 'physicsStepMs'):
             self.assertEqual(constants[key], baseline['constants'][key])
-        self.assertEqual((constants['range'], constants['upgradedRange'], constants['scale']), (1080, 1620, 0.375))
+        self.assertEqual((constants['range'], constants['upgradedRange'], constants['scale']), (1080, 1620, 0.25))
         v2 = json.loads((ROOT / 'artifacts/TASK-503/calibration.json').read_text())['measured_envelopes']['540']
         out = {}
         for rng, upgraded in TASK544_RANGES.items():

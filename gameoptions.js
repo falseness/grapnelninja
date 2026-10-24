@@ -210,7 +210,7 @@ const MODE_DEFINITIONS = Object.freeze({
     bad: Object.freeze({cameraScale: 1 / 2.2, hudStyle: 'bad'}),
     // acquisitionRadius is the starting range; entering rangeUpgradeSection
     // grants upgradedAcquisitionRadius for the rest of the climb.
-    grapple_over: Object.freeze({cameraScale: 0.375, acquisitionRadius: 1080,
+    grapple_over: Object.freeze({cameraScale: 0.25, acquisitionRadius: 1080,
         upgradedAcquisitionRadius: 1620, rangeUpgradeSection: 'S05', hudStyle: 'classic'})
 })
 

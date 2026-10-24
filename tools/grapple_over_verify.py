@@ -234,7 +234,7 @@ def check_trace(manifest, trace):
         require(actual['tick'] == expected['tick'] and actual['event'] == expected['event']
                 and actual['trusted'], 'input mismatch')
         # Chromium mouse coordinates are integer CSS pixels: 1080/height logical
-        # pixels, i.e. 1080/height/cameraScale world units (4 at 720 and 0.375).
+        # pixels, i.e. 1080/height/cameraScale world units (6 at 720 and 0.25).
         if expected['event'] != 'touchend':
             tolerance = 1.000001 * 1080 / manifest['metadata']['viewport']['height'] / CAMERA_SCALE
             require(all(abs(actual['world'][k] - expected['world'][k]) <= tolerance for k in ('x', 'y')),

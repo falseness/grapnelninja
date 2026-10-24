@@ -584,7 +584,7 @@ class Task503Tests(unittest.TestCase):
         baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())['modes']['classic']
         for key in ('gravity', 'pull', 'throwSpeed', 'cyclesPerTick', 'physicsStepMs'):
             self.assertEqual(constants[key], baseline['constants'][key])
-        self.assertEqual((constants['range'], constants['upgradedRange'], constants['scale']), (1080, 1620, 0.375))
+        self.assertEqual((constants['range'], constants['upgradedRange'], constants['scale']), (1080, 1620, 0.25))
         out = {}
         for rng, upgraded in TASK503_RANGES.items():
             out[rng] = {}

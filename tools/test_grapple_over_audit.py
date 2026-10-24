@@ -268,7 +268,7 @@ class Task500Tests(unittest.TestCase):
         self.assertEqual(live['validation'], 'ok')
         self.assertEqual(live['checkpoint_keys'], [])
         self.assertEqual(live['recoveryPolicy'], 'Physical falls, nonlethal hazards, current-state saves; no automatic relocation')
-        self.assertEqual(live['definition'], dict(cameraScale=0.375, acquisitionRadius=1080, upgradedAcquisitionRadius=1620, rangeUpgradeSection='S05'))
+        self.assertEqual(live['definition'], dict(cameraScale=0.25, acquisitionRadius=1080, upgradedAcquisitionRadius=1620, rangeUpgradeSection='S05'))
         self.assertEqual(live['range'], dict(base=1080, upgraded=1620, upgradeBand='S05'))
         self.assertEqual(live['old_modes'], dict(classic=1, bad=1/2.2))
         self.assertEqual(live['boot'], dict(mode='grapple_over', run=True, paused=False))

@@ -1193,7 +1193,7 @@ TASK543_HELPERS = '''() => {
 
 
 class Task543Tests(unittest.TestCase):
-    """Doubled grapnel range (1080/1620) and the 0.375 Grapple Over camera that fits it."""
+    """Doubled grapnel range (1080/1620) and the Grapple Over camera that fits it (0.375 at TASK-543, 0.25 since TASK-688)."""
 
     @classmethod
     def setUpClass(cls):
@@ -1240,7 +1240,7 @@ class Task543Tests(unittest.TestCase):
         self.assertEqual((go['acquisitionRadius'], go['upgradedAcquisitionRadius'], go['rangeUpgradeSection']),
                          (1080, 1620, 'S05'))
         self.assertEqual(modes['manifestRange'], dict(base=1080, upgraded=1620, upgradeBand='S05'))
-        self.assertEqual(modes['scale'], dict(classic=1, bad=1 / 2.2, grapple_over=0.375))
+        self.assertEqual(modes['scale'], dict(classic=1, bad=1 / 2.2, grapple_over=0.25))
         self.assertEqual(modes['definitions']['classic'], dict(cameraScale=1, hudStyle='classic'))
         self.assertEqual(modes['definitions']['bad'], dict(cameraScale=1 / 2.2, hudStyle='bad'))
         # TASK-529: the S05 band no longer grants the range (the v3 S03/S04 routes climb through it); S05's
@@ -1295,7 +1295,7 @@ class Task543Tests(unittest.TestCase):
             physics();screen.trackGrappleOver(true);draw();return {x:ninja.x,y:ninja.y,height:floors[0].climbStats.currentHeight}}''')
         fit = page.evaluate('circleBox()')
         self.assertEqual(fit['radius'], 1080)
-        self.assertEqual(fit['cameraScale'], 0.375)
+        self.assertEqual(fit['cameraScale'], 0.25)
         self.assertTrue(fit['insideViewport'] and fit['insideCanvas'], fit)
         # Worst ordinary-tracking case: the ninja at the 0.4/0.6 vertical and 0.35/0.65
         # horizontal camera edges (world units of the visible area).
