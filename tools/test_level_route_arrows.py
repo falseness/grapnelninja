@@ -319,9 +319,9 @@ class RouteArrowTests(unittest.TestCase):
                 'elementCount': len(a['elements']), 'equal': same,
                 'geometryLayerSha256': {'withArrows': sha(geo(self.text)), 'without': sha(geo(self.plain))}}, indent=1) + '\n')
 
-    def test_shipped_regeneration_changes_only_arrows(self):
-        """The shipped generator with the new arrows vs the shipped SVG (t=0.25 arrows): only the
-        arrow groups differ, and the imported collision/role/contact data is byte-identical."""
+    def test_shipped_regeneration_is_byte_identical(self):
+        """Since TASK-677 the shipped SVG is the current generator's output: regeneration is byte-identical
+        (distance-based arrows included), and the arrows/guides carry no collision/role/contact data."""
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run([sys.executable, str(TOOLS / 'retune_extended_level.py'), '--source',
                             str(ROOT / 'artifacts/level/extended-mountain-measurements.json'), '--output-dir', tmp,
@@ -330,16 +330,13 @@ class RouteArrowTests(unittest.TestCase):
             new_meas = Path(tmp, 'extended-mountain-measurements.json').read_bytes()
         old = SHIPPED_SVG.read_text()
         strip = lambda s: re.sub(r'<g id="arrow-T\d+" class="transfer-arrow".*?\n</g>\n', '', s, flags=re.S)
-        # The guidelines hash follows the live requirements doc (TASK-672 edited it); the
-        # shipped measurements keep the hash they were generated with until regeneration.
-        unhash = lambda raw: re.sub(rb'("guidelines":\{"path":"[^"]*","sha256":")[0-9a-f]{64}"', rb'\1"', raw)
-        self.assertEqual(unhash(new_meas), unhash(MEASUREMENTS.read_bytes()))
-        self.assertNotEqual(new, old)
-        self.assertEqual(strip(new), strip(old))
-        imports = {'newArrows': dumps(import_svg(new.encode())), 'shippedOldArrows': dumps(import_svg(old.encode())),
+        self.assertEqual(new_meas, MEASUREMENTS.read_bytes())
+        self.assertEqual(new, old)
+        imports = {'regenerated': dumps(import_svg(new.encode())), 'shipped': dumps(import_svg(old.encode())),
                    'noArrowsNoGuides': dumps(import_svg(strip(re.sub(r' guide="[^"]*"', '', old)).encode()))}
-        self.assertEqual(imports['newArrows'], imports['shippedOldArrows'])
-        a, c = json.loads(imports['newArrows']), json.loads(imports['noArrowsNoGuides'])
+        self.assertEqual(imports['regenerated'], imports['shipped'])
+        self.assertEqual(imports['shipped'], (LEVELS / 'extended-mountain.level.json').read_text())
+        a, c = json.loads(imports['shipped']), json.loads(imports['noArrowsNoGuides'])
         elements = lambda lv: [(e['id'], e['role'], e['grapplable'], e['x'], e['y'], e['points']) for e in lv['elements']]
         same = {'elementsCollisionRoleGrapplable': elements(a) == elements(c),
                 **{k: a[k] == c[k] for k in ('layoutId', 'bounds', 'spawn', 'finish', 'movers', 'sections', 'encounters')},
@@ -347,19 +344,18 @@ class RouteArrowTests(unittest.TestCase):
                 'transfersWithoutGuide': [{k: v for k, v in t.items() if k != 'guide'} for t in a['svgFormat']['transfers']]
                 == c['svgFormat']['transfers']}
         self.assertTrue(all(same.values()), same)
+        groups = re.findall(r'<g id="arrow-T\d+".*?\n</g>', old, re.S)
+        self.assertEqual(len(groups), len(a['svgFormat']['transfers']))
         if EVIDENCE:
-            arrows_changed = sum(1 for x, y in zip(re.findall(r'<g id="arrow-T\d+".*?\n</g>', new, re.S),
-                                                   re.findall(r'<g id="arrow-T\d+".*?\n</g>', old, re.S)) if x != y)
             path = Path(EVIDENCE, 'physics-unchanged.json')
             prior = json.loads(path.read_text()) if path.exists() else {}
             prior['import'] = {
                 'command': 'tools/retune_extended_level.py --source artifacts/level/extended-mountain-measurements.json '
                            '--output-dir <tmp> --guidelines artifacts/levels/level-guidelines.md',
                 'shippedSvgSha256': sha(old), 'regeneratedSvgSha256': sha(new), 'measurementsByteIdentical': True,
-                'arrowGroupsChanged': arrows_changed, 'svgEqualOutsideArrowGroups': True,
+                'svgByteIdentical': True, 'arrowGroups': len(groups),
                 'importSha256': {k: sha(v) for k, v in imports.items()},
-                'importNewArrowsEqualsShippedOldArrows': True, 'elementCount': len(a['elements']),
-                'versusNoAnnotations': same}
+                'elementCount': len(a['elements']), 'versusNoAnnotations': same}
             path.write_text(json.dumps(prior, indent=1, sort_keys=True) + '\n')
 
     def test_cli_deterministic(self):

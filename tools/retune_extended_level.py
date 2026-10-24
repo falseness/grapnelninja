@@ -10,7 +10,7 @@ import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
-EXTENDED_LAYOUT = 'extended-mountain-v12'
+EXTENDED_LAYOUT = 'extended-mountain-v13'
 OPENING_TARGETS = dict(TARGETS)
 OPENING_TARGETS.update({1:120, 2:160})
 # Rightward span is a minimum; usable surfaces and measured release gaps take

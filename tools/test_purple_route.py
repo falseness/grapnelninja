@@ -335,12 +335,12 @@ class PurplePreservationTests(unittest.TestCase):
                 self.assertAlmostEqual(b['x'] - a['x'], dx, places=9)
                 self.assertAlmostEqual(b['y'] - a['y'], dy, places=9)
                 moved.append(s)
-        # Shipped v12 lower route (before this ticket): the same coordinates.
+        # Shipped lower route (v13 since TASK-677): the same coordinates as the candidate.
         shipped = self.by_semantic(self.shipped)
         lower = [s for s in order[:cut + 1]]
         for s in lower:
             self.assertEqual((shipped[s]['x'], shipped[s]['y'], shipped[s]['polys']), (new[s]['x'], new[s]['y'], new[s]['polys']), s)
-        catch = ['X%d' % i for i in range(1, 9)]
+        catch = ['X%d' % i for i in range(1, 11)]  # TASK-676: X1..X10
         self.assertTrue(set(catch) <= set(lower))
         # Every pre-existing transfer keeps its measured gap (the upward turn now leaves the exit copy).
         rows_old = {r['id']: r for r in self.base['encounters']}
@@ -379,7 +379,7 @@ class PurplePreservationTests(unittest.TestCase):
                                        note='Bands and guards are regenerated from the final geometry; every '
                                             'band keeps >= 1620 from green (independent checker in route.json).')
         OUT['preservation.json'] = dict(method='Candidate vs the same generator with the purple extension '
-                                               'disabled (pre-ticket layout) and the shipped v12 measurements.',
+                                               'disabled (pre-ticket layout) and the shipped measurements.',
                                         **self.out)
 
 

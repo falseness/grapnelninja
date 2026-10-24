@@ -225,10 +225,10 @@ class NoGrappleRenderTests(unittest.TestCase):
         page.wait_for_function('bootComplete && runInProgress')
         self.assertEqual(page.evaluate('[version, I18N.language, isTouchFirstDevice(), TUTORIAL_HINT.visible]'),
                          ['grapple_over', 'en', kind != 'desktop', True])
-        # The shipped level has no zones: the renderer returns at once
+        # The shipped level has one zone (NG1), far from the spawn view: culled, not drawn
         page.evaluate('draw()')
         shipped = page.evaluate('({zones: floors[0].noGrappleZones.length, drawn: NO_GRAPPLE_ZONES.drawn.length})')
-        self.assertEqual(shipped, {'zones': 0, 'drawn': 0})
+        self.assertEqual(shipped, {'zones': 1, 'drawn': 0})
         scene = page.evaluate(SCENE)
         self.assertEqual(scene['zones'], ['zoneA', 'zoneB', 'zoneFar'])
         self.assertEqual(scene['dragZones'], ['D1'])

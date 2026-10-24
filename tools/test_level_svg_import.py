@@ -593,14 +593,14 @@ class GuideTests(ImportCase):
         guided_svg = re.sub(r'(<gn:transfer id="(T\d+)"[^>]*?)/>',
                             lambda m: '%s guide="%s"/>' % (m.group(1), conv.guide(rows[m.group(2)], frags)), plain_svg)
         self.assertNotIn(' guide=', plain_svg)
-        self.assertEqual(guided_svg.count(' guide="'), 38)
+        self.assertEqual(guided_svg.count(' guide="'), 47)
         self.assertEqual(guided_svg, shipped_svg)
         plain_level = import_svg(plain_svg.encode())
         runs = [dumps(import_svg(guided_svg.encode())) for _ in range(2)]
         self.assertEqual(runs[0].encode(), (ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json').read_bytes())
         self.assertEqual(runs[0], runs[1])
         level = json.loads(runs[0])
-        self.assertEqual(level['layoutId'], 'extended-mountain-v12')
+        self.assertEqual(level['layoutId'], 'extended-mountain-v13')
         fragments = {f['id'] for f in level['svgFormat']['fragments']}
         checks = []
         for t in level['svgFormat']['transfers']:
@@ -614,7 +614,7 @@ class GuideTests(ImportCase):
             checks.append({'id': t['id'], 'from': t['from'], 'to': t['to'], 'encounter': t['encounter'], 'guide': t['guide'],
                            'equal': t['guide'] == expected, 'startIsFromContact': t['guide'][0] == list(r['flight'][0]),
                            'endIsToContact': t['guide'][-1] == list(r['flight'][1])})
-        self.assertEqual(len(checks), 38)
+        self.assertEqual(len(checks), 47)
         stripped = self.without_transfer_guides(level)
         self.assertEqual(stripped, plain_level)
         same = {k: level[k] == plain_level[k] for k in ('layoutId', 'bounds', 'spawn', 'finish', 'elements', 'movers', 'sections', 'encounters')}
@@ -648,7 +648,7 @@ class GuideTests(ImportCase):
         transfers = import_svg(text.encode())['svgFormat']['transfers']
         self.assertEqual([t['id'] for t in transfers if 'guide' in t], ['T02'])
         self.assertEqual(transfers[1]['guide'], [[300, -10], [500, -400], [700, -400], [924.5, -50]])
-        self.assertEqual(len(transfers), 38)
+        self.assertEqual(len(transfers), 47)
 
 
 class LoaderTests(unittest.TestCase):

@@ -47,6 +47,7 @@ class ShortcutReplayTests(unittest.TestCase):
     def run_probe(self,**options):
         r=self.page.evaluate('o=>ROUTE_PROBE.run(o)',options)
         keep={k:r[k] for k in ('source','target','fraction','aimOffset','drop','pumps','budget','setup','arrival','hit','bounces','ticks','dragTicks')}
+        keep['targetWhenInRange']=bool(options.get('targetWhenInRange'))
         self.replays.append(dict(test=self.id().rsplit('.',1)[-1],control='level' in options,**keep))
         return r
 
@@ -80,14 +81,16 @@ class ShortcutReplayTests(unittest.TestCase):
             self.assertTrue(r['hit'] is None or r['hit']['id']==target+'-body0',r)
 
     def test_opening_route_remains_accessible(self):
-        r=self.run_probe(source='P0',target='P1',fraction=.8,pumps=1,budget=1800)
+        # Since 49cf58e the opening transfers are wider than the 540 grapple range, so they need a
+        # release jump: the probe pumps, releases and only throws at the target once it is in range.
+        r=self.run_probe(source='P0',target='P1',fraction=.5,pumps=2,aimOffset=.3,targetWhenInRange=True,budget=1800)
         self.assertIsNotNone(r['arrival'])
         self.assertEqual(r['hit']['id'],'P1-body0')
 
     def test_second_easy_opening_transfer(self):
         # The second 80% transfer (P1 -> P2) keeps its panels and position.
         self.assertEqual((panel('P1'),panel('P2')),('P1','P2'))
-        r=self.run_probe(source='P1',target='P2',fraction=.8,pumps=1,budget=1800)
+        r=self.run_probe(source='P1',target='P2',fraction=.5,pumps=4,aimOffset=.6,targetWhenInRange=True,budget=1800)
         self.assertIsNotNone(r['arrival'])
         self.assertEqual(r['hit']['id'],'P2-body0')
 

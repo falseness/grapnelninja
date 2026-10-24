@@ -1,7 +1,7 @@
 """TASK-659: the production game draws the imported transfer guide arrows (render/routearrows.js).
 
 Boots the real index.html. The guided cases serve leveldata.js as the shipped
-extended-mountain-v12 SVG imported with a `guide` on every gn:transfer (the
+extended-mountain-v13 SVG imported with a `guide` on every gn:transfer (the
 TASK-657 injection of convert_extended_mountain_svg.guide()), which since
 TASK-660 is byte-identical to the shipped leveldata.js; the unguided cases
 serve the same SVG with every guide stripped. Draw calls are recorded from the
@@ -383,10 +383,10 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         loaded = page.evaluate('() => ({layoutId: floors[0].level.layoutId, transfers: floors[0].level.svgFormat.transfers,'
                                ' arrows: routeArrowsFor(floors[0].level).map(a => ({id: a.id, curve: a.curve, tangent: a.tangent,'
                                ' gap: a.gap, length: a.length, target: a.target, t: a.t}))})')
-        self.assertEqual(loaded['layoutId'], 'extended-mountain-v12')
-        self.assertEqual(len(self.level['svgFormat']['fragments']), 39)
+        self.assertEqual(loaded['layoutId'], 'extended-mountain-v13')
+        self.assertEqual(len(self.level['svgFormat']['fragments']), 48)
         self.assertEqual(loaded['transfers'], self.level['svgFormat']['transfers'])
-        self.assertEqual(len(loaded['arrows']), 38)
+        self.assertEqual(len(loaded['arrows']), 47)
         for a in loaded['arrows']:
             exp = self.expected(a['id'])
             self.assertLess(max(math.dist(p, q) for p, q in zip(a['curve'], exp['curve'])), 1e-9)
@@ -399,7 +399,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         out = self.frame(page, wx, wy, k)
         self.assertEqual(sorted(out['rec']['drawn']), sorted(self.guides))
         overview, worst = self.arrows(out, wx, wy, k, info)
-        self.assertEqual(len(overview), 38)
+        self.assertEqual(len(overview), 47)
         loaded_by = {a['id']: a for a in loaded['arrows']}
         lengths = {}
         for a in overview:
@@ -598,7 +598,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         wx, wy, k = self.overview(info)
         state = page.evaluate('() => ({layoutId: floors[0].level.layoutId, guides: floors[0].level.svgFormat.transfers.filter(t => t.guide).length,'
                               ' arrows: routeArrowsFor(floors[0].level).length})')
-        self.assertEqual(state, {'layoutId': 'extended-mountain-v12', 'guides': 0, 'arrows': 0})
+        self.assertEqual(state, {'layoutId': 'extended-mountain-v13', 'guides': 0, 'arrows': 0})
         out = self.frame(page, wx, wy, k)
         self.assertEqual((out['rec']['drawn'], out['rec']['paths']), ([], []))
         partial = import_svg(guided_svg({'T01', 'T09', 'T17'}).encode())

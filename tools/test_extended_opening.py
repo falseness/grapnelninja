@@ -115,9 +115,11 @@ def opening_violations(report):
         out.append('leftward contacts not strictly decreasing in x')
     if not (c['upward']['dy'] < 0 and abs(c['upward']['dy']) > abs(c['upward']['dx'])):
         out.append('no upward section between rightward and leftward')
-    if c['rightwardTransfers'] != report['baseline']['rightwardTransfers'] + 12:
+    # R1-R4 plus X1-X10 (TASK-676) rightward; L1/L2 plus the purple approach, entry and four
+    # internal bounces (TASK-675) leftward.
+    if c['rightwardTransfers'] != report['baseline']['rightwardTransfers'] + 14:
         out.append('rightward section has %d transfers' % c['rightwardTransfers'])
-    if c['leftwardTransfers'] != report['baseline']['leftwardTransfers'] + 2:
+    if c['leftwardTransfers'] != report['baseline']['leftwardTransfers'] + 8:
         out.append('leftward section has %d transfers' % c['leftwardTransfers'])
     return out
 
@@ -178,24 +180,24 @@ class ExtendedOpeningTests(unittest.TestCase):
     def test_counts_and_ordered_connected_route(self):
         frags = self.level['svgFormat']['fragments']
         transfers = self.level['svgFormat']['transfers']
-        self.assertEqual(len(frags), 39)
-        self.assertEqual(len({f['id'] for f in frags}), 39)
-        self.assertEqual(len(transfers), 38)
-        self.assertEqual([t['id'] for t in transfers], ['T%02d' % n for n in range(1, 39)])
+        self.assertEqual(len(frags), 48)
+        self.assertEqual(len({f['id'] for f in frags}), 48)
+        self.assertEqual(len(transfers), 47)
+        self.assertEqual([t['id'] for t in transfers], ['T%02d' % n for n in range(1, 48)])
         for a, b in zip(transfers, transfers[1:]):
             self.assertEqual(a['to'], b['from'])
         order = [transfers[0]['from']] + [t['to'] for t in transfers]
-        self.assertEqual(len(set(order)), 39)
-        self.assertEqual(len(self.report['pairs']), 741)
-        bodies = [e for e in self.level['elements'] if e['role'] != 'drag']
-        self.assertEqual(len(bodies), 39)
+        self.assertEqual(len(set(order)), 48)
+        self.assertEqual(len(self.report['pairs']), 48 * 47 // 2)
+        bodies = [e for e in self.level['elements'] if e['role'] not in ('drag', 'no-grapple')]
+        self.assertEqual(len(bodies), 48)
 
     def test_threefold_spans_directions_and_counts(self):
         self.assertEqual(opening_violations(self.opening), [])
         c = self.opening['candidate']
         self.assertGreaterEqual(c['rightwardRatio'], 3 - 1e-6)
         self.assertGreater(c['leftwardSpan'], 0)
-        self.assertEqual((c['rightwardTransfers'], c['leftwardTransfers']), (14, 3))
+        self.assertEqual((c['rightwardTransfers'], c['leftwardTransfers']), (16, 9))
 
     def test_mutations_are_rejected(self):
         right = self.opening['candidate']['sections']['rightward']['fragments'][1]
@@ -237,7 +239,9 @@ class ExtendedOpeningTests(unittest.TestCase):
         originals = [f['id'] for f in self.source['fragments']]
         self.assertEqual(sorted(route['fragmentIds']), sorted(originals))
         self.assertEqual(len(set(route['fragmentIds'].values())), 25)
-        self.assertEqual(sorted(route['addedFragments']), ['L1', 'L2', 'R1', 'R2', 'R3', 'R4'] + ['X%d'%i for i in range(1,9)])
+        purple = ['NG-APPROACH', 'NG-EXIT'] + ['NG%d' % i for i in range(1, 6)]
+        self.assertEqual(sorted(route['addedFragments']),
+                         sorted(['L1', 'L2', 'R1', 'R2', 'R3', 'R4'] + ['X%d' % i for i in range(1, 11)] + purple))
         for f in self.m['fragments']:
             if f['originalId']:
                 self.assertEqual(route['fragmentIds'][f['originalId']], f['id'])
@@ -246,10 +250,10 @@ class ExtendedOpeningTests(unittest.TestCase):
                 if f['id'] in ('P0','P1','P2'):
                     self.assertEqual(f['polys'], old['polys'])
         enc_ids = [r['id'] for r in self.m['encounters']]
-        self.assertEqual(len(set(enc_ids)), 38)
+        self.assertEqual(len(set(enc_ids)), 47)
         source_ids = [r['id'] for r in self.source['encounters']]
         self.assertTrue(set(source_ids) <= set(enc_ids))
-        self.assertEqual(len(route['addedEncounters']), 14)
+        self.assertEqual(len(route['addedEncounters']), 23)
         for old in self.source['encounters']:
             n = route['encounterNumbers'][str(old['number'])]
             self.assertEqual(self.m['encounters'][n - 1]['id'], old['id'])
@@ -301,11 +305,15 @@ class ExtendedOpeningTests(unittest.TestCase):
         self.assertGreaterEqual(s['minDragSolidClearance'], 1620)
         self.assertGreaterEqual(s['minYellowPairClearance'], 540)
         for p in self.report['pairs']:
-            if frozenset((p['a'], p['b'])) not in {frozenset(x) for x in self.m['allowedGrapplePairs']}:
+            # Purple internal transfers use the scoped noGrappleInternal rule (TASK-672/675).
+            if p.get('rule') == 'noGrappleInternal':
+                self.assertTrue(p['pass'] and 0 < p['clearance'] <= 270, p)
+            elif frozenset((p['a'], p['b'])) not in {frozenset(x) for x in self.m['allowedGrapplePairs']}:
                 self.assertGreater(p['clearanceMinusDiameter'], GRAPPLE, p)
         for d in self.report['dragZones']:
             self.assertTrue(d['axisAligned'] and d['rect'][2] > d['rect'][3], d)
-        added = set(self.m['routeMap']['addedEncounters'])
+        internal = {r['id'] for r in self.m['encounters'] if r.get('noGrappleZone')}
+        added = set(self.m['routeMap']['addedEncounters']) - internal
         for t in self.report['transfers']:
             if t['encounter'] in added:
                 self.assertGreater(t['computedDistance'] - DIAMETER, GRAPPLE, t)

@@ -59,6 +59,19 @@ shipped before v8) restart at the spawn. The shortcut search is bounded: the
 opening is not certified free of shortcuts globally, and the full climb is not
 proven playable.
 
+Layout `extended-mountain-v13` (shipped) is the current generator output: the
+varied lower rightward run X1-X10 (TASK-676), the purple no-grapple chute NG1
+after the first right-up-left sequence (TASK-675; the zone is a
+`data-role="no-grapple"` element in `world.noGrappleZones`, never a solid or
+drag zone), dense panel circuits and distance-based route arrows. It has 48
+panels and 47 transfers; only the four chute-internal transfers use the scoped
+0 < gap <= 270 rule. Saves from v12 and earlier restart at the spawn.
+`tools/test_route_shortcuts.py` runs a bounded whole-route policy matrix with
+production input and physics (pumps, panel-end releases, high drops, ceiling
+underside traversal and carried momentum) and fails on any first later-panel
+contact or attachment that is not the successor. It is finite: it does not
+certify the route free of shortcuts.
+
 Verify locally:
 
 ```sh

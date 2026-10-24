@@ -149,14 +149,18 @@ class FormatTests(unittest.TestCase):
     def test_03_legacy_levels_unchanged(self):
         shipped = json.loads(SHIPPED_LEVEL.read_text())
         rows = {}
+        # Since TASK-677 the shipped level (v13) carries one zone, NG1; the legacy fixture has none.
         for name, level in (('legacy-valid', self.legacy), ('shipped-level-json', shipped), ('shipped-bundle', None)):
             r = self.runtime[name]
             self.assertEqual(r['validate'], 'accept', r)
-            self.assertEqual(r['noGrappleZones'], [])
+            expected = [] if name == 'legacy-valid' else [{'id': 'NG1', 'role': 'no-grapple', 'grapplable': False, 'points': 4}]
+            self.assertEqual(r['noGrappleZones'], expected)
+            self.assertNotIn('NG1', r['elements'])
+            self.assertNotIn('NG1', r['dragZones'])
             rows[name] = {'validate': r['validate'], 'elements': len(r['elements']), 'dragZones': len(r['dragZones']),
-                          'noGrappleZones': 0, 'roles': r['roles']}
+                          'noGrappleZones': len(expected), 'roles': r['roles']}
         self.assertEqual(rows['legacy-valid']['elements'], 7)
-        self.assertEqual((rows['shipped-bundle']['elements'], rows['shipped-bundle']['dragZones']), (39, 13))
+        self.assertEqual((rows['shipped-bundle']['elements'], rows['shipped-bundle']['dragZones']), (48, 17))
         self.assertEqual(self.runtime['shipped-bundle'], self.runtime['shipped-level-json'])
         # Legacy imports are byte-identical to the committed expected outputs.
         for name in ('valid', 'valid-guide'):
@@ -408,9 +412,23 @@ class SpacingTests(unittest.TestCase):
             'pass': report['summary']['pass'] is False}
 
     def test_11_shipped_level_unchanged(self):
-        reference = json.loads(SHIPPED_REFERENCE.read_text())
-        level = json.loads(SHIPPED_LEVEL.read_text())
-        new = geometry.check(level, SHIPPED_SVG.read_bytes(), reference)
+        # The shipped level carries a zone since TASK-677, which the baseline checker cannot know.
+        # The comparison runs on the same generator's zone-free layout (purple extension switched
+        # off), and the shipped level's only differences are its noGrappleInternal pairs.
+        import convert_extended_mountain_svg as conv
+        import retune_extended_level as retune
+        saved, layout = retune.extend_purple_route, conv.LAYOUT_ID
+        try:
+            retune.extend_purple_route = lambda m, spec: None
+            reference = retune.tune(json.loads((ROOT / 'artifacts/level/extended-mountain-measurements.json').read_text()),
+                                    opening=retune.OPENING, yellow_clearance=retune.YELLOW_CLEARANCE)
+            conv.LAYOUT_ID = reference['layoutId']
+            svg_bytes = conv.build(reference, guides=True, arrows=True).encode()
+        finally:
+            retune.extend_purple_route, conv.LAYOUT_ID = saved, layout
+        level = import_svg(svg_bytes)
+        self.assertEqual([e for e in level['elements'] if e['role'] == 'no-grapple'], [])
+        new = geometry.check(level, svg_bytes, reference)
         head = subprocess.run(['git', 'show', BASELINE_COMMIT + ':tools/check_level_geometry.py'], cwd=ROOT,
                               capture_output=True, text=True, check=True).stdout
         with tempfile.TemporaryDirectory() as tmp:
@@ -419,7 +437,7 @@ class SpacingTests(unittest.TestCase):
             spec = importlib.util.spec_from_file_location('check_level_geometry_head', path)
             old_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(old_module)
-        old = old_module.check(level, SHIPPED_SVG.read_bytes(), reference)
+        old = old_module.check(level, svg_bytes, reference)
         self.assertTrue(new['summary']['pass'])
         self.assertEqual(new['failureMessages'], old['failureMessages'])
         strip = lambda p: {k: v for k, v in p.items() if k not in ('rule', 'noGrappleZone')}
@@ -429,7 +447,20 @@ class SpacingTests(unittest.TestCase):
         added = {'noGrappleZones', 'noGrappleZonesPass', 'noGrappleInternalPairs'}
         self.assertEqual({k: v for k, v in new['summary'].items() if k not in added}, old['summary'])
         self.assertEqual((new['summary']['noGrappleZones'], new['summary']['noGrappleInternalPairs']), (0, 0))
+        # Shipped v13: the scoped rule applies only inside NG1; every other pair keeps the 540+diameter rule.
+        shipped = geometry.check(json.loads(SHIPPED_LEVEL.read_text()), SHIPPED_SVG.read_bytes(),
+                                 json.loads(SHIPPED_REFERENCE.read_text()))
+        self.assertTrue(shipped['summary']['pass'])
+        internal = [p for p in shipped['pairs'] if p.get('rule') == 'noGrappleInternal']
+        self.assertEqual(shipped['summary']['noGrappleZones'], 1)
+        self.assertEqual(len(internal), shipped['summary']['noGrappleInternalPairs'])
+        self.assertTrue(internal and all(p.get('noGrappleZone') == 'NG1' for p in internal))
         RESULTS['spacing']['shipped'] = {
+            'comparedLevel': 'zone-free variant of the current generator (extend_purple_route off), imported from its SVG',
+            'comparedLayoutId': level['layoutId'], 'comparedSvgSha256': hashlib.sha256(svg_bytes).hexdigest(),
+            'shippedV13': {'level': str(SHIPPED_LEVEL.relative_to(ROOT)), 'pass': shipped['summary']['pass'],
+                           'noGrappleZones': 1, 'noGrappleInternalPairs': len(internal),
+                           'internalPairs': [[p.get('a'), p.get('b')] for p in internal]},
             'level': str(SHIPPED_LEVEL.relative_to(ROOT)), 'levelSha256': sha(SHIPPED_LEVEL), 'svgSha256': sha(SHIPPED_SVG),
             'referenceSha256': sha(SHIPPED_REFERENCE), 'pass': new['summary']['pass'],
             'pairs': '%d/%d' % (new['summary']['pairsPass'], new['summary']['fragmentPairs']),

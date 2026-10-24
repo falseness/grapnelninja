@@ -35,16 +35,30 @@
       ys.push(l.y1+(x-l.x1)*(l.y2-l.y1)/(l.x2-l.x1));
     return {x,y:Math.min(...ys)};
   }
+  function bottom(e,fraction){
+    const pts=e.getPoints();const lo=Math.min(...pts.map(p=>p.x)),hi=Math.max(...pts.map(p=>p.x));
+    const x=lo+(hi-lo)*Math.max(0,Math.min(1,fraction));
+    const ys=[];for(const l of e.getLines())if(x>=Math.min(l.x1,l.x2)&&x<=Math.max(l.x1,l.x2)&&l.x1!==l.x2)
+      ys.push(l.y1+(x-l.x1)*(l.y2-l.y1)/(l.x2-l.x1));
+    return {x,y:Math.max(...ys)};
+  }
   function run(options){
     recording=!!options.recordInputs;inputs=[];
     const {source,target,fraction=.5,aimOffset=0,lastAimOffset=null,drop=30,holdTicks=0,pumps=2,budget=1800,level=base,guard=true,initialState=null}=options;
     const model=level.svgFormat?importedMountainLevel(structuredClone(level)):structuredClone(level);if(!guard)model.elements=model.elements.filter(e=>!e.id.startsWith('G'));
     floors=[loadFixedLevel(model)];grapnel=new Grapnel({stroke:STYLE.colors.player.cyan});
     const start=floors[0].byId.get(source+'-body0'), dest=floors[0].byId.get(target+'-body0');
-    const launch=top(start,fraction);
-    const pumpAim=top(start,Math.max(.02,Math.min(.98,fraction+aimOffset)));
-    const lastPumpAim=lastAimOffset===null?pumpAim:top(start,Math.max(.02,Math.min(.98,fraction+lastAimOffset)));
-    ninja=new Ninja({x:launch.x,y:launch.y-drop,radius:10.8,fill:STYLE.colors.player.cyan});
+    // sourceSurface 'underside': the player starts drop units below a ceiling's underside and the
+    // hold/pump aims are on the underside; traverse {dir,steps,stride,ticks} then re-grabs the
+    // underside hand over hand (a fresh press per step) before the release toward the target.
+    const under=options.sourceSurface==='underside', surf=under?bottom:top;
+    const launch=surf(start,fraction);
+    const pumpAim=surf(start,Math.max(.02,Math.min(.98,fraction+aimOffset)));
+    const lastPumpAim=lastAimOffset===null?pumpAim:surf(start,Math.max(.02,Math.min(.98,fraction+lastAimOffset)));
+    const span=(()=>{const xs=start.getPoints().map(p=>p.x);return [Math.min(...xs),Math.max(...xs)];})();
+    const traverse=options.traverse||null;
+    const traverseEnd=traverse?holdTicks+traverse.steps*traverse.ticks:holdTicks;
+    ninja=new Ninja({x:launch.x,y:under?launch.y+drop:launch.y-drop,radius:10.8,fill:STYLE.colors.player.cyan});
     ninja.speedX=ninja.speedY=0;
     pressHeld=stalePress=gameplayPressOwned=false;menu.gamePaused=false;hostPaused=false;unTouch=false;
     if(initialState){
@@ -54,13 +68,18 @@
       menu.gamePaused=false;
     }
     screen.trackGrappleOver(true);events=[];tick=0;
-    let arrival=null,count=0,lastBounce=-1,lastAim='',minY=ninja.y,hit=null,dragTicks=0;
+    let arrival=null,count=0,lastBounce=-1,lastAim='',minY=ninja.y,hit=null,dragTicks=0,lastTraverseAim=null;
     const snapshots=[];
     for(tick=0;tick<budget;tick++){
       let q=nearest(dest);
       if(options.targetSurface==='underside'){const ps=dest.getPoints();q={x:Math.max(Math.min(...ps.map(p=>p.x))+2,Math.min(Math.max(...ps.map(p=>p.x))-2,ninja.x)),y:Math.max(...ps.map(p=>p.y))-2};}
       let aim=null,key='';
-      if(tick<holdTicks || (count<pumps && ninja.speedY>0)){const last=count===pumps-1;aim=last?lastPumpAim:pumpAim;key=last&&lastAimOffset!==null?'last-pump':'pump';}
+      if(traverse&&tick>=holdTicks&&tick<traverseEnd){
+        const k=Math.floor((tick-holdTicks)/traverse.ticks);
+        const x=Math.max(span[0]+2,Math.min(span[1]-2,ninja.x+traverse.dir*traverse.stride));
+        aim=k===Math.floor((tick-1-holdTicks)/traverse.ticks)&&tick>holdTicks?null:surf(start,(x-span[0])/(span[1]-span[0]));
+        key='traverse'+k;if(!aim)aim=lastTraverseAim;lastTraverseAim=aim;}
+      else if(tick<holdTicks || (count<pumps && ninja.speedY>0)){const last=count===pumps-1;aim=last?lastPumpAim:pumpAim;key=last&&lastAimOffset!==null?'last-pump':'pump';}
       else if(options.targetWhenInRange && Math.hypot(q.x-ninja.x,q.y-ninja.y)>530){key='coast';}
       else {aim=q;key='target';}
       if(key!==lastAim){pointer('mouseup',ninja);if(aim)pointer('mousedown',aim);lastAim=key;}
@@ -80,7 +99,8 @@
     }
     const finalState=hit?{save:captureClimbState(),owned:gameplayPressOwned,aim:grapnel.aim}:null;
     pointer('mouseup',ninja);
-    return {inputs:recording?inputs:undefined,finalState,source,target,fraction,aimOffset,lastAimOffset,drop,holdTicks,pumps,budget,guard,setup:{x:launch.x,y:launch.y-drop,vx:0,vy:0},arrival,
+    return {inputs:recording?inputs:undefined,finalState,source,target,fraction,aimOffset,lastAimOffset,drop,holdTicks,pumps,budget,guard,
+      sourceSurface:under?'underside':'top',traverse,setup:{x:launch.x,y:launch.y-drop,vx:0,vy:0},arrival,
       hit,bounces:count,ticks:tick,minY,dragTicks,events:events.slice(0,30),snapshots};
   }
   window.ROUTE_PROBE={run,base};

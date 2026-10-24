@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v12'
+LAYOUT_ID = 'extended-mountain-v13'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -67,6 +67,9 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+        recovered = calcPhysics()',
     '-    calcPhysics()',
     '+    if (!recovered) calcPhysics()',
+    # TASK-673: the no-grapple release hook (fixedlevel.js applyNoGrappleZones).
+    "+    // Release in the step of entry, before this step's rope pull or acquisition.",
+    "+    if (version === 'grapple_over') floors[0].applyNoGrappleZones(ninja)",
     '+        LONG_FALL.step()',
     '+        if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)',
     '+        {',
@@ -104,6 +107,7 @@ SNAPSHOT = '''() => {
         fragments: l.svgFormat ? l.svgFormat.fragments.length : null,
         transfers: l.svgFormat ? l.svgFormat.transfers.length : null,
         elementCount: w.elements.length, dragZones: w.dragZones.map(z => z.id),
+        noGrappleZones: (w.noGrappleZones || []).map(z => z.id),
         spawn: l.spawn, finish: l.finish, bounds: l.bounds,
         ninja: {x: ninja.x, y: ninja.y, speedX: ninja.speedX, speedY: ninja.speedY},
         tick: w.elapsedSteps, stats: w.climbStats,
@@ -190,9 +194,9 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(snap['world'], 'PersistentWorld')
         self.assertEqual(snap['layoutId'], LAYOUT_ID)
         self.assertEqual(snap['layoutId'], self.svg['layoutId'])
-        self.assertEqual(snap['fragments'], 39)
+        self.assertEqual(snap['fragments'], 48)
         self.assertEqual(snap['fragments'], self.svg['fragments'])
-        self.assertEqual(snap['transfers'], 38)
+        self.assertEqual(snap['transfers'], 47)
         self.assertEqual(len(snap['dragZones']), len(self.svg['drag']))
         self.assertEqual(sorted(snap['dragZones']), self.svg['drag'])
         self.assertEqual(snap['spawn'], self.svg['spawn'])
@@ -202,7 +206,10 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(snap['bounds'], self.level['bounds'])
         # Every authored element, unchanged, with no extra or missing ids.
         self.assertEqual(snap['levelElements'], self.level['elements'])
-        source = {e['id']: e for e in self.level['elements']}
+        # No-grapple zones (NG1 since v13) live in world.noGrappleZones, not in elements/dragZones.
+        source = {e['id']: e for e in self.level['elements'] if e['role'] != 'no-grapple'}
+        self.assertEqual(snap['noGrappleZones'], [e['id'] for e in self.level['elements'] if e['role'] == 'no-grapple'])
+        self.assertEqual(snap['noGrappleZones'], ['NG1'])
         self.assertEqual(sorted(e['id'] for e in snap['live']), sorted(source))
         for e in snap['live']:
             s = source[e['id']]
@@ -285,7 +292,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                           ('imported-v6', json.dumps(dict(legacy, layoutId='extended-mountain-v6'))),
                           ('imported-v7', json.dumps(dict(legacy, layoutId='extended-mountain-v7'))),
                           ('imported-v8', json.dumps(dict(legacy, layoutId='extended-mountain-v8'))),
-                          ('imported-v9', json.dumps(dict(legacy, layoutId='extended-mountain-v9')))):
+                          ('imported-v9', json.dumps(dict(legacy, layoutId='extended-mountain-v9'))),
+                          ('imported-v12', json.dumps(dict(legacy, layoutId='extended-mountain-v12')))):
             page = self.open(seed={CLIMB_KEY: raw})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
@@ -300,7 +308,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.record('incompatible_save_' + name, page, snap, seededLayoutId=json.loads(raw).get('layoutId'),
                         rewrittenLayoutId=LAYOUT_ID)
             results[name] = snap['notice']
-        self.assertEqual(len(results), 8)
+        self.assertEqual(len(results), 9)
 
     def test_04_current_layout_save(self):
         first = self.open()
@@ -369,14 +377,20 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # screen-space long-fall message (render/fallmessage.js): its script tag, the call in
         # draw() and its fade advance next to the tutorial hint's in the game loop. TASK-667
         # moved Trampoline.draw's closePath before its fill/stroke (TRAMPOLINE_CLOSE_DIFF).
+        # TASK-672/673 added the no-grapple zone role to fixedlevel.js (validation, world.noGrappleZones,
+        # applyNoGrappleZones) and its physics hook; TASK-674 added render/nograpplezones.js, its
+        # script tag and the call in drawWorldLayer(). These are covered by test_no_grapple_*.
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
-                                                                                      ':!render/fallmessage.js', ':!sprites/trampoline.js'],
+                                                                                      ':!render/fallmessage.js', ':!sprites/trampoline.js',
+                                                                                      ':!fixedlevel.js', ':!render/nograpplezones.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
                               text=True, check=True).stdout.splitlines() if l[:1] in '+-' and not l.startswith(('+++', '---'))]
-        self.assertEqual(lines('render/draw.js'), ['+    // Transfer guide arrows under the range circle, grapnel, terrain and player',
+        self.assertEqual(lines('render/draw.js'), ['+    // Purple no-grapple zones under everything else in the world',
+                                                   '+    drawNoGrappleZones(floors[0])',
+                                                   '+    // Transfer guide arrows under the range circle, grapnel, terrain and player',
                                                    '+    drawRouteArrows(floors[0])',
                                                    '+// Long-fall reaction: screen space, over the hint and under the HUD it avoids',
                                                    '+function drawFallMessageLayer()', '+{', '+    FALL_MESSAGE.draw(ctx)', '+}', '+',
@@ -386,6 +400,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         changed = lines('index.html')
         self.assertEqual(changed, ['+        <script src = "longfall.js"></script>',
                                    '+        <script src = "render/fallmessage.js"></script>',
+                                   '+        <script src = "render/nograpplezones.js"></script>',
                                    '+        <script src = "render/routearrows.js"></script>',
                                    '+                await loadGrappleOverLevelAsset()',
                                    '-                    if (activelyPlaying) TUTORIAL_HINT.advance(steps * physicsStepMs)',
@@ -400,7 +415,7 @@ CONCEPT = SVG
 MEASUREMENTS = ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json'
 TOLERANCE = 0.01
 TILE = (1280, 720)
-KIND_ROLE = {'platform': 'solid', 'ceiling': 'solid', 'summit': 'solid', 'bounce': 'bounce'}
+KIND_ROLE = {'platform': 'solid', 'ceiling': 'solid', 'summit': 'solid', 'bounce': 'bounce', 'chute': 'bounce'}
 
 # Freeze the loop and expose a fixed-camera production draw(). The HUD, tutorial
 # hint and FPS counter are screen-space overlays: hide them so tiles stitch.
@@ -730,7 +745,8 @@ class Task651Tests(unittest.TestCase):
         page, state = self.open()
         rt = self.runtime(page)
         report = {'startup': state, 'tolerance': TOLERANCE, 'checks': {}}
-        source = {e['id']: e for e in self.level['elements']}
+        # No-grapple zones are not live solids or drag zones (world.noGrappleZones).
+        source = {e['id']: e for e in self.level['elements'] if e['role'] != 'no-grapple'}
         live = rt['elements'] + rt['dragZones']
         self.assertEqual(sorted(e['id'] for e in live), sorted(source))
         # Against the imported level data.
@@ -779,7 +795,7 @@ class Task651Tests(unittest.TestCase):
             self.assertLessEqual(abs(gap - enc['distance']), TOLERANCE, row)
             self.assertLessEqual(abs(gap / 540 * 100 - t['gapPercent']), TOLERANCE, row)
             rows.append(row)
-        self.assertEqual(len(rows), 38)
+        self.assertEqual(len(rows), 47)
         report['checks']['transfers'] = {'count': len(rows), 'endpointsChecked': 2 * len(rows),
                                          'maxEndpointOffset': max(max(r['endpointOffsets']) for r in rows),
                                          'maxGapError': max(abs(r['runtimeGap'] - r['measuredGap']) for r in rows),
