@@ -6,9 +6,9 @@ gap-percent attributes and printed labels are only ever the expected side of
 a comparison, never the computed result (docs/level-svg-format.md §7).
 
     python3 tools/check_level_geometry.py --svg LEVEL.svg --level LEVEL.json --report REPORT.json \
-        [--reference MEASUREMENTS.json] [--min-side-length [270]]
+        [--reference MEASUREMENTS.json] [--min-side-length UNITS | --no-min-side-length]
     python3 tools/check_level_geometry.py --sides-only --level LEVEL.json --report REPORT.json \
-        [--min-side-length [270]]
+        [--min-side-length UNITS | --no-min-side-length]
 
 Checks:
 - level JSON polygons match the SVG geometry layer and the reference fragments
@@ -25,9 +25,10 @@ Checks:
 - every polygon is simple, non-degenerate and has interior angles >= 20 degrees;
 - every actual polygon edge of a gameplay element (solid/bounce/hazard bodies,
   extra bodies, posts and bevels, yellow drag and purple no-grapple zones) is
-  measured from the imported vertices and inventoried; with --min-side-length
-  (candidate rollout, default 270 = 0.5 R) an edge shorter than the minimum
-  minus COORD_TOL fails. This is unrelated to the 270 maximum internal
+  measured from the imported vertices and inventoried; an edge shorter than
+  the minimum (default 270 = 0.5 R, --min-side-length UNITS) minus COORD_TOL
+  fails. --no-min-side-length only inventories the sides (legacy layouts
+  before v16); the CLI enforces the rule by default since TASK-687. This is unrelated to the 270 maximum internal
   no-grapple transfer gap. Elements without a gameplay role are decorative and
   exempt. --sides-only checks sides, corners and self-intersections from the
   level JSON alone, so old levels stay checkable during candidate migration;
@@ -51,7 +52,7 @@ COORD_TOL = 0.01
 # Largest edge-to-edge gap of a transfer inside one no-grapple zone (0.5 R).
 NO_GRAPPLE_INTERNAL_GAP = 270.0
 PERCENT_TOL = 0.01
-# Shortest allowed polygon side for candidate layouts (0.5 R); opt-in via --min-side-length.
+# Shortest allowed polygon side (0.5 R); enforced by the CLI by default, check(min_side=None) only inventories.
 MIN_SIDE_LENGTH = 0.5 * GRAPPLE_RANGE
 # Roles whose polygon edges are collision/zone geometry; anything else is decorative.
 GAMEPLAY_ROLES = ('solid', 'bounce', 'hazard', 'drag', 'no-grapple')
@@ -594,9 +595,12 @@ def main(argv=None):
     parser.add_argument('--level', required=True, help='imported level JSON (tools/import_level_svg.py output)')
     parser.add_argument('--report', required=True, help='report JSON to write')
     parser.add_argument('--reference', default=DEFAULT_REFERENCE, help='reference measurements JSON')
-    parser.add_argument('--min-side-length', type=float, nargs='?', const=MIN_SIDE_LENGTH, default=None,
-                        metavar='UNITS', help='fail gameplay polygon edges shorter than UNITS (default %g when '
-                        'given without a value); omitted = inventory only' % MIN_SIDE_LENGTH)
+    sides = parser.add_mutually_exclusive_group()
+    sides.add_argument('--min-side-length', type=float, nargs='?', const=MIN_SIDE_LENGTH, default=MIN_SIDE_LENGTH,
+                       metavar='UNITS', help='fail gameplay polygon edges shorter than UNITS (default %g, also when '
+                       'given without a value)' % MIN_SIDE_LENGTH)
+    sides.add_argument('--no-min-side-length', dest='min_side_length', action='store_const', const=None,
+                       help='inventory sides only (legacy layouts before v16)')
     parser.add_argument('--sides-only', action='store_true',
                         help='only side, corner and self-intersection checks from --level (no SVG/reference)')
     args = parser.parse_args(argv)

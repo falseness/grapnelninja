@@ -619,14 +619,17 @@ class NoGrapplePhysicsTests(unittest.TestCase):
         blocked = self.snap(page)
         self.assertTrue(blocked['inside'] and not blocked['thrown'] and blocked['stale'])
         page.mouse.up()
-        # Reset: a fresh grapple_over run on the shipped level (one zone, NG1, far from the spawn)
+        # Reset: a fresh grapple_over run on the shipped level (its purple zones, v16: NG1/NGM/NGU, far from the spawn)
         # starts outside it, not stale, and grapples normally.
         page.evaluate("() => { startGame('grapple_over'); menu.unPause(); cancelAnimationFrame(game) }")
         page.wait_for_function('!unTouch')
         reset = page.evaluate('''() => { for (let i = 0; i < 3; i++) physics()
             return {zones: floors[0].noGrappleZones.length, ids: floors[0].noGrappleZones.map(z => z.id), inside: floors[0].playerInNoGrapple,
                     elements: floors[0].elements.length, layout: floors[0].level.layoutId || null, stale: stalePress} }''')
-        self.assertEqual((reset['zones'], reset['ids']), (1, ['NG1']))
+        shipped_zones = [e['id'] for e in json.loads((ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json')
+                         .read_text())['elements'] if e['role'] == 'no-grapple']
+        self.assertIn('NG1', shipped_zones)
+        self.assertEqual((reset['zones'], reset['ids']), (len(shipped_zones), shipped_zones))
         self.assertFalse(reset['inside'])
         self.assertFalse(reset['stale'])
         p = page.evaluate('''() => canvasCoordsToViewportCoords({x: (ninja.x + 0.6 * 300 + screen.x) * scale[version],

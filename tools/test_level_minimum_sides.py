@@ -4,7 +4,8 @@
     python3 tools/test_level_minimum_sides.py --write DIR   # boundary cases + real level inventory
 
 Expected lengths come from the fixture construction (closed-form), never from
-the helper under test. The rule (0.5 R = 270, opt-in via --min-side-length) is
+the helper under test. The rule (0.5 R = 270) is enforced by the CLI by default since v16 (TASK-687);
+--no-min-side-length only inventories. It is
 separate from the 270 maximum internal no-grapple transfer gap.
 """
 import argparse
@@ -199,6 +200,16 @@ class RealLevelTests(unittest.TestCase):
         self.assertTrue(rep['summary']['pass'], rep['failureMessages'])
         self.assertFalse(rep['summary']['minSideEnforced'])
 
+    def test_shipped_layout_passes_with_rule_on(self):
+        # v16 ships the rule: every gameplay edge of the shipped level is >= 270, none exempt.
+        rep = check(self.level, self.svg, self.ref, MIN_SIDE_LENGTH)
+        self.assertTrue(rep['summary']['pass'], rep['failureMessages'])
+        self.assertTrue(rep['summary']['minSideEnforced'])
+        self.assertEqual(rep['summary']['sideViolations'], 0)
+        self.assertGreaterEqual(rep['summary']['minMeasuredSide'], MIN_SIDE_LENGTH - COORD_TOL)
+        self.assertEqual({eid for eid, role, i, length in independent_inventory(self.level)
+                          if length < MIN_SIDE_LENGTH - COORD_TOL}, set())
+
     def test_rule_on_reports_exact_short_edges(self):
         rep = check(self.level, self.svg, self.ref, MIN_SIDE_LENGTH)
         short = {(eid, i) for eid, role, i, length in independent_inventory(self.level) if length < 270 - COORD_TOL}
@@ -226,14 +237,34 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(p.returncode, code, p.stderr)
                 self.assertIn('SIDES_RESULT %s' % ('PASS' if code == 0 else 'FAIL'), p.stdout)
                 self.assertIn('min_side_rule=270.0', p.stdout)
+        # The rule is the CLI default; --no-min-side-length is the explicit legacy inventory mode.
         p, rep = self.run_cli('--sides-only', '--level', str(FIXTURES / 'negative.level.json'))
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn('min_side_rule=270.0', p.stdout)
+        self.assertTrue(rep['summary']['minSideEnforced'])
+        p, rep = self.run_cli('--sides-only', '--level', str(FIXTURES / 'negative.level.json'), '--no-min-side-length')
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('min_side_rule=off', p.stdout)
+        self.assertGreater(rep['summary']['sideViolations'], 0)
+        p, rep = self.run_cli('--sides-only', '--level', str(FIXTURES / 'positive.level.json'))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('min_side_rule=270.0', p.stdout)
+
+    def test_default_rule_on_full_check(self):
+        # Default full check on the shipped level: every rule plus min side 270, exit 0.
+        p, rep = self.run_cli('--svg', str(LEVEL_SVG), '--level', str(LEVEL_JSON), '--reference', str(REFERENCE))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('GEOMETRY_RESULT PASS', p.stdout)
+        self.assertIn('min_side_rule=270.0', p.stdout)
+        self.assertEqual(rep['summary']['sideViolations'], 0)
+        self.assertGreater(rep['summary']['sideEdges'], 0)
 
     def test_usage_errors(self):
         self.assertEqual(self.run_cli('--level', str(FIXTURES / 'positive.level.json'))[0].returncode, 2)
         self.assertEqual(self.run_cli('--sides-only', '--level', str(FIXTURES / 'positive.level.json'),
                                       '--min-side-length', '-5')[0].returncode, 2)
+        self.assertEqual(self.run_cli('--sides-only', '--level', str(FIXTURES / 'positive.level.json'),
+                                      '--min-side-length', '300', '--no-min-side-length')[0].returncode, 2)
 
 
 def write_evidence(out):
@@ -268,13 +299,13 @@ def write_evidence(out):
                  'violations': [s for s in rep['sides'] if not s['pass']],
                  'edges': [{k: s[k] for k in ('element', 'role', 'fragment', 'body', 'semantic', 'edge', 'length',
                                               'pass')} for s in rep['sides']]}
-    (out / 'v15-side-inventory.json').write_text(json.dumps(inventory, indent=1) + '\n')
+    (out / ('%s-side-inventory.json' % lvl['layoutId'].rsplit('-', 1)[-1])).write_text(json.dumps(inventory, indent=1) + '\n')
     return cases, inventory
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--write', help='write boundary-cases.json and v15-side-inventory.json to this directory')
+    parser.add_argument('--write', help='write boundary-cases.json and <layout>-side-inventory.json to this directory')
     args, rest = parser.parse_known_args()
     if args.write:
         cases, inventory = write_evidence(args.write)

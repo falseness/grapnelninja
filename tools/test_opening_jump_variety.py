@@ -65,7 +65,12 @@ EVIDENCE = os.environ.get('OPENING_VARIETY_EVIDENCE_DIR')
 NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json')
 # TASK-679: OPENING_VARIETY_MIN_SIDE_SCOPE=opening generates (and expects) the
 # minimum-side candidate; its recorded resizes are undone before shape comparisons.
-MIN_SIDE_SCOPE = os.environ.get('OPENING_VARIETY_MIN_SIDE_SCOPE', 'none')
+# TASK-687: unset = the shipped v16 default (retune without layout flags = scope all with the middle and upper
+# purple encounters); an explicit scope (none/opening/all) selects that earlier candidate without them.
+SHIPPED_DEFAULT = not os.environ.get('OPENING_VARIETY_MIN_SIDE_SCOPE')
+MIN_SIDE_SCOPE = os.environ.get('OPENING_VARIETY_MIN_SIDE_SCOPE') or 'all'
+PURPLE = dict(middle_purple=True, upper_purple=True) if SHIPPED_DEFAULT else {}
+GENERATE_ARGS = [] if SHIPPED_DEFAULT else ['--min-side-scope', MIN_SIDE_SCOPE]
 RESIZED = ['P0', 'P1', 'P2', 'R3', 'L1', 'P4']
 
 
@@ -106,12 +111,15 @@ def sha(data):
 
 def generate(dest):
     out = subprocess.run([sys.executable, str(TOOLS / 'retune_extended_level.py'), '--source', str(SOURCE),
-                          '--output-dir', str(dest), '--guidelines', str(GUIDELINES),
-                          '--min-side-scope', MIN_SIDE_SCOPE],
+                          '--output-dir', str(dest), '--guidelines', str(GUIDELINES)] + GENERATE_ARGS,
                          capture_output=True, text=True, cwd=str(TOOLS))
     if out.returncode:
         raise AssertionError(out.stdout + out.stderr)
     return (dest / 'extended-mountain.svg').read_bytes(), (dest / 'extended-mountain-measurements.json').read_bytes()
+
+
+def pe_zone(m):
+    return m['purpleExtension']['zone']
 
 
 def fragment_polys(level):
@@ -277,7 +285,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         cls.before_ids = {f['semanticId']: f['id'] for f in cls.before['fragments']}
         # The default (shipped) generation, for the minimum-side candidate's gap comparison.
         cls.default = cls.m if MIN_SIDE_SCOPE == 'none' else retune.tune(
-            json.loads(SOURCE.read_text()), opening=retune.OPENING, yellow_clearance=retune.YELLOW_CLEARANCE)
+            json.loads(SOURCE.read_text()), opening=retune.OPENING, yellow_clearance=retune.YELLOW_CLEARANCE, **PURPLE)
 
     @classmethod
     def tearDownClass(cls):
@@ -303,7 +311,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
     def test_01_generation_is_deterministic(self):
         self.assertEqual(self.runs[0], self.runs[1])
         self.assertEqual(json.dumps(self.level), json.dumps(import_svg(self.runs[1][0])))
-        self.assertEqual(self.m['layoutId'], retune.EXTENDED_LAYOUT)
+        self.assertEqual(self.m['layoutId'], retune.SHIPPED_LAYOUT if SHIPPED_DEFAULT else retune.EXTENDED_LAYOUT)
         self.assertNotEqual(self.m['layoutId'], self.before['layoutId'])
         # The selected candidate (TASK-676; the shipped files when none is selected) is this generation.
         self.assertEqual(self.svg, (CANDIDATE / NAMES[0]).read_bytes())
@@ -395,7 +403,10 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         # The purple extension (TASK-675) inserts NG-* encounters after the first leftward section;
         # the varied lower chain (TASK-676) changes the count before the upward turn.
         ids = [r['id'] for r in self.m['encounters']]
-        self.assertEqual([i for i in ids[ids.index('S07-01'):] if not i.startswith('NG-')],
+        # Shipped v16 (TASK-687): the later purple encounters NGM-* / NGU-* are inserted the same way.
+        purple_ids = {i for e in retune.purple_extensions(self.m) for i in e['encounters']}
+        self.assertTrue(all(i.startswith('NG') for i in purple_ids))
+        self.assertEqual([i for i in ids[ids.index('S07-01'):] if i not in purple_ids],
                          [r['id'] for r in self.before['encounters'][6:]])
         self.__class__.shift=None
 
@@ -501,7 +512,22 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         keys = ('x', 'y', 'width', 'height', 'kind', 'polys')
         # The upward-turn departure: X10 now, X8 (the legacy endpoint) in the eight-platform chain.
         dep_old = next(f['semanticId'] for f in prev['fragments'] if f['id'] == prev['lowerCatchExtension']['firstUpDeparture'])
-        twin = lambda s: dep_old if s == 'X10' else s
+        sem_of = {f['id']: f['semanticId'] for f in self.m['fragments']}
+        # TASK-687 (shipped v16): the later purple encounters (NGM, NGU) add panels, translate everything after
+        # their departure and (TASK-686) reshape L2 and P4; their exits copy the departure. Those panels are
+        # compared by test_purple_route / test_middle_purple_route / test_upper_purple_route preservation; here
+        # they are left out, and each later exit stands for the departure it copies.
+        later_exts = retune.purple_extensions(self.m)[1:]
+        exit_twin = {sem_of[e['exit']]: sem_of[e['exitCopiesDeparture']] for e in later_exts}
+        twin = lambda s: dep_old if s == 'X10' else exit_twin.get(s, s)
+        later = set()
+        for e in later_exts:
+            later |= {sem_of[i] for i in [e['approach'], e['exit']] + e['internal']}
+            later |= set(order[order.index(sem_of[e['exitCopiesDeparture']]) + 1:])
+        if later_exts:
+            later |= {self.m['minimumSides']['narrowedFromLeft']['semanticId'], 'P4'}
+        self.assertEqual(bool(later), SHIPPED_DEFAULT)
+        compared = [s for s in order if s not in later]
         # TASK-677 shortcut shields (R1 fin, X1 trim, NG1 post) are the only reshaped panels: the same
         # generator without them reproduces the previous geometry, and the shipped layout differs from
         # that shield-free generation in exactly the shielded fragments.
@@ -509,10 +535,10 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         shielded = sorted({k['semanticId'] for k in self.m['shortcutShields']['fins']}
                           | {self.m['shortcutShields'][k]['semanticId'] for k in ('trim', 'post')})
         self.assertEqual(shielded, ['NG1', 'R1', 'X1'])
-        self.assertEqual(sorted(s for s in order if any(new[s][k] != unshielded[s][k] for k in keys)), shielded)
+        self.assertEqual(sorted(s for s in compared if any(new[s][k] != unshielded[s][k] for k in keys)), shielded)
         same = lambda s: {k: self.unresized(unshielded[s])[k] for k in keys} == {k: old[twin(s)][k] for k in keys}
         # Easy opening, R1-R4, X10 and later terrain except the raised L1/L2 are identical.
-        kept = [s for s in order[:7]] + [s for s in order[cut:] if s not in ('L1', 'L2')]
+        kept = [s for s in order[:7]] + [s for s in order[cut:] if s not in ('L1', 'L2') and s in compared]
         changed = [s for s in kept if not same(s)]
         self.assertEqual(changed, [])
         # v15 adds vertical variety within the existing right/left runs. The
@@ -528,16 +554,19 @@ class OpeningJumpVarietyTests(unittest.TestCase):
             self.assertLess(b[0], a[0], sem)
             self.assertGreaterEqual(a[1] - b[1], 700 - .01, sem)
             self.assertLess(a[1] - b[1], a[0] - b[0], sem)
-            self.assertEqual(self.unresized(new[sem])['polys'], old[sem]['polys'])
+            if sem in compared:
+                self.assertEqual(self.unresized(new[sem])['polys'], old[sem]['polys'])
         self.assertEqual(dep_old, 'X8')
-        self.assertEqual(sorted(set(order) - set(old)), ['X10', 'X9'])
+        self.assertEqual(sorted(set(order) - set(old) - later), ['X10', 'X9'])
         self.assertEqual(sorted(set(old) - set(order)), [])
         # Route successors after the section keep their ids and measured gaps.
         rows_new = {r['id']: r for r in self.m['encounters']}
         ids_new = [r['id'] for r in self.m['encounters']]
         ids_old = [r['id'] for r in prev['encounters']]
         tail_new, tail_old = ids_new[ids_new.index('S07-01'):], ids_old[ids_old.index('S07-01'):]
-        self.assertEqual(tail_new, tail_old)
+        added_later = {i for e in later_exts for i in e['encounters']}
+        self.assertEqual([i for i in tail_new if i not in added_later], tail_old)
+        tail_new = tail_old
         gaps = {r['id']: abs(r['distance'] - rows_new[r['id']]['distance']) for r in prev['encounters'] if r['id'] in tail_new}
         # Only shield transfers and the raised leftward ledges may change here; all keep the 200% minimum.
         ids_by_sem = {f['semanticId']: f['id'] for f in self.m['fragments']}
@@ -552,7 +581,7 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         self.assertEqual([tuple(twin(sem(self.m, r[k])) for k in ('fromFragment', 'toFragment')) for r in self.m['encounters'] if r['id'] in tail_new],
                          [(sem(prev, r['fromFragment']), sem(prev, r['toFragment'])) for r in prev['encounters'] if r['id'] in tail_old])
         # Purple extension: the same zone, panels (semantic NG-*) and encounters.
-        self.assertEqual(self.m['noGrappleZones'], prev['noGrappleZones'])
+        self.assertEqual([z for z in self.m['noGrappleZones'] if z['id'] == pe_zone(self.m)], prev['noGrappleZones'])
         pe, po = self.m['purpleExtension'], prev['purpleExtension']
         self.assertEqual([sem(self.m, i) for i in [pe['approach'], pe['exit']] + pe['internal']],
                          [sem(prev, i) for i in [po['approach'], po['exit']] + po['internal']])
@@ -635,10 +664,20 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         prev = {r['id']: r['distance'] for r in self.default['encounters']}
         moved = {c['id'] for c in ms.get('transfersChanged', [])}
         enc = {r['id']: r for r in self.m['encounters']}
+        # Shipped v16 (TASK-687): L2 narrowed from its left end (TASK-686) only lengthens its own transfers, and
+        # the shortened NGU exit (TASK-685) keeps the 200% outside-transfer minimum.
+        nar = ms.get('narrowedFromLeft') or {}
+        grown = {i for i, r in enc.items() if nar.get('fragment') in (r['fromFragment'], r['toFragment'])
+                 and r['distance'] > prev[i] + 1e-6}
+        self.assertEqual(bool(grown), bool(nar))
+        exits = {e['encounters'][-1] for e in retune.purple_extensions(self.m)[1:]}
         for i in moved:
-            self.assertTrue(enc[i].get('noGrappleZone') and 0 < enc[i]['distance'] <= retune.NO_GRAPPLE_INTERNAL_GAP, i)
-        self.assertEqual(moved, {i for i, r in enc.items() if abs(r['distance'] - prev[i]) > 1e-6})
-        drift = {r['id']: abs(r['distance'] - prev[r['id']]) for r in self.m['encounters'] if r['id'] not in moved}
+            internal = enc[i].get('noGrappleZone') and 0 < enc[i]['distance'] <= retune.NO_GRAPPLE_INTERNAL_GAP
+            outside = (i in grown or i in exits) and enc[i]['distance'] >= 2 * GRAPPLE_RANGE - COORD_TOL
+            self.assertTrue(internal or outside, i)
+        self.assertEqual(moved | grown, {i for i, r in enc.items() if abs(r['distance'] - prev[i]) > 1e-6})
+        drift = {r['id']: abs(r['distance'] - prev[r['id']]) for r in self.m['encounters']
+                 if r['id'] not in moved | grown}
         self.assertLess(max(drift.values()), 1e-6, drift)
         self.__class__.min_sides = dict(changed=[c['semanticId'] for c in ms['changed']], scope=scope,
                                         openingEdges=len(rows), openingMinSide=min(r['length'] for r in rows),

@@ -163,12 +163,21 @@ class ExtendedOpeningTests(unittest.TestCase):
     def frag(self, m, fid):
         return next(f for f in m['fragments'] if f['id'] == fid)
 
+    def unresized(self, f):
+        """Polygons before the recorded minimum-side resize (v16 extends short opening sides, TASK-679)."""
+        c = next((c for c in self.m.get('minimumSides', {}).get('changed', []) if c['fragment'] == f['id']), None)
+        if c is None:
+            return f['polys']
+        self.assertEqual(c['after'], f['polys'])
+        return c['before']
+
     def test_generation_and_import_are_deterministic(self):
         self.assertEqual(self.svg[0], self.svg[1])
         a, b = (json.dumps(m, separators=(',', ':')) for m in self.meas[:2])
         self.assertEqual(a, b)
         self.assertEqual(json.dumps(self.levels[0]), json.dumps(import_svg(self.svg[1])))
-        self.assertEqual(self.m['layoutId'], retune.EXTENDED_LAYOUT)
+        # The default generation is the shipped layout (v16 since TASK-687).
+        self.assertEqual(self.m['layoutId'], retune.SHIPPED_LAYOUT)
 
     def test_original_opening_reproduces_frozen_baseline(self):
         if not FROZEN.exists():
@@ -180,18 +189,22 @@ class ExtendedOpeningTests(unittest.TestCase):
     def test_counts_and_ordered_connected_route(self):
         frags = self.level['svgFormat']['fragments']
         transfers = self.level['svgFormat']['transfers']
-        self.assertEqual(len(frags), 48)
-        self.assertEqual(len({f['id'] for f in frags}), 48)
-        self.assertEqual(len(transfers), 47)
-        self.assertEqual([t['id'] for t in transfers], ['T%02d' % n for n in range(1, 48)])
+        # Counts follow the generated measurements (v16: 62 panels, 61 transfers); the route is one chain.
+        n = len(self.m['fragments'])
+        self.assertGreater(n, 1)
+        self.assertEqual(len(frags), n)
+        self.assertEqual(len({f['id'] for f in frags}), n)
+        self.assertEqual(len(transfers), n - 1)
+        self.assertEqual([t['id'] for t in transfers], ['T%02d' % k for k in range(1, n)])
         for a, b in zip(transfers, transfers[1:]):
             self.assertEqual(a['to'], b['from'])
         order = [transfers[0]['from']] + [t['to'] for t in transfers]
-        self.assertEqual(len(set(order)), 48)
-        self.assertEqual(len(self.report['pairs']), 48 * 47 // 2)
-        # 48 panels, one body each, plus R1's second body (the TASK-677 shortcut fin).
+        self.assertEqual(len(set(order)), n)
+        self.assertEqual(len(self.report['pairs']), n * (n - 1) // 2)
+        # One body per measured polygon: R1's TASK-677 fin and the P4 shields are extra bodies.
         bodies = [e for e in self.level['elements'] if e['role'] not in ('drag', 'no-grapple')]
-        self.assertEqual(len(bodies), 49)
+        self.assertEqual(len(bodies), sum(len(f['polys']) for f in self.m['fragments']))
+        self.assertEqual({e['id'].rsplit('-body', 1)[0] for e in bodies}, {f['id'] for f in frags})
 
     def test_threefold_spans_directions_and_counts(self):
         self.assertEqual(opening_violations(self.opening), [])
@@ -240,7 +253,12 @@ class ExtendedOpeningTests(unittest.TestCase):
         originals = [f['id'] for f in self.source['fragments']]
         self.assertEqual(sorted(route['fragmentIds']), sorted(originals))
         self.assertEqual(len(set(route['fragmentIds'].values())), 25)
-        purple = ['NG-APPROACH', 'NG-EXIT'] + ['NG%d' % i for i in range(1, 6)]
+        # Every purple encounter (v16: NG1, NGM, NGU) adds an approach, five internal panels and an exit.
+        purple = []
+        for ext in self.m['purpleExtensions']:
+            prefix = 'NG' if ext['zone'] == 'NG1' else ext['zone']
+            purple += [prefix + '-APPROACH', prefix + '-EXIT'] + ['%s%d' % (prefix, i) for i in range(1, 6)]
+        self.assertEqual([e['zone'] for e in self.m['purpleExtensions']], ['NG1', 'NGM', 'NGU'])
         self.assertEqual(sorted(route['addedFragments']),
                          sorted(['L1', 'L2', 'R1', 'R2', 'R3', 'R4'] + ['X%d' % i for i in range(1, 11)] + purple))
         for f in self.m['fragments']:
@@ -249,12 +267,14 @@ class ExtendedOpeningTests(unittest.TestCase):
                 old = self.frag(self.base, f['originalId'])
                 self.assertEqual(f['kind'], old['kind'])
                 if f['id'] in ('P0','P1','P2'):
-                    self.assertEqual(f['polys'], old['polys'])
+                    self.assertEqual(self.unresized(f), old['polys'])
         enc_ids = [r['id'] for r in self.m['encounters']]
-        self.assertEqual(len(set(enc_ids)), 47)
+        self.assertEqual(len(set(enc_ids)), len(self.m['fragments']) - 1)
         source_ids = [r['id'] for r in self.source['encounters']]
         self.assertTrue(set(source_ids) <= set(enc_ids))
-        self.assertEqual(len(route['addedEncounters']), 23)
+        # 23 opening/lower/NG1 encounters plus seven per later purple encounter (v16: 37).
+        self.assertEqual(len(route['addedEncounters']), 23 + 7 * (len(self.m['purpleExtensions']) - 1))
+        self.assertEqual(len(route['addedEncounters']), len(enc_ids) - len(source_ids))
         for old in self.source['encounters']:
             n = route['encounterNumbers'][str(old['number'])]
             self.assertEqual(self.m['encounters'][n - 1]['id'], old['id'])
@@ -263,7 +283,7 @@ class ExtendedOpeningTests(unittest.TestCase):
     def test_opening_transfers_and_targets_are_kept(self):
         for fid in ('P0', 'P1', 'P2'):
             new, old = self.frag(self.m, fid), self.frag(self.base, fid)
-            self.assertEqual(new['polys'], old['polys'])
+            self.assertEqual(self.unresized(new), old['polys'])
         t = self.report['transfers']
         self.assertEqual([(r['encounter'], r['from'], r['to']) for r in t[:2]],
                          [('S06-03', 'P0', 'P1'), ('S06-04', 'P1', 'P2')])
@@ -384,7 +404,7 @@ def write_evidence(t, out):
         encounterNumbers=route['encounterNumbers'], encounterIds=route['encounterIds'],
         addedEncounters=route['addedEncounters'], transferOrder=transfers,
         firstTwoUnchanged=dict(fragments={fid: [t.frag(t.m, fid)['x'], t.frag(t.m, fid)['y']] == [t.frag(t.base, fid)['x'], t.frag(t.base, fid)['y']]
-                                          and t.frag(t.m, fid)['polys'] == t.frag(t.base, fid)['polys'] for fid in ('P0', 'P1', 'P2')},
+                                          and t.unresized(t.frag(t.m, fid)) == t.frag(t.base, fid)['polys'] for fid in ('P0', 'P1', 'P2')},
                                percents=[transfers[0]['computedPercent'], transfers[1]['computedPercent']]),
         firstUpward=next(x for x in transfers if x['encounter'] == 'S07-01'),
         numericReferences=numeric))

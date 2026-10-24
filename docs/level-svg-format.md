@@ -393,9 +393,9 @@ One narrow exception exists, and nothing else is relaxed:
   `noGrappleZones` and `noGrappleInternalPairs`
   (`tools/test_no_grapple_format.py`).
 
-### 7.2 Minimum side length (candidate rollout)
+### 7.2 Minimum side length
 
-Candidate layouts must give every actual polygon edge a length of at least
+Every generated layout (shipped since v16) must give every actual polygon edge a length of at least
 **270 units (0.5R)**. The checker measures each edge `i -> i+1` (and the
 closing edge) with `hypot` from the imported world vertices, never from SVG
 widths, labels or recorded metadata.
@@ -406,8 +406,9 @@ widths, labels or recorded metadata.
   gameplay role (decorative strokes, annotations, route curves) are exempt.
 - An edge fails when `length < 270 - 0.01` (the coordinate tolerance), so
   270 and 269.991 pass while 269.989 and 269 fail.
-- The rule is opt-in while layouts migrate: `--min-side-length` (no value =
-  270) enforces it; without the option the report still lists every edge
+- The CLI enforces the rule by default (270; `--min-side-length UNITS` sets
+  another minimum). With `--no-min-side-length` (legacy layouts before v16)
+  or `check(..., min_side=None)` in Python the report still lists every edge
   (`sides[]`: element, role, fragment, body index, semantic id, edge, length)
   and `summary.sideViolations`, but the result is unaffected, so old levels
   stay checkable. `--sides-only --level LEVEL.json` runs only the side,

@@ -1,6 +1,33 @@
 # Generated level
 
-Layout `extended-mountain-v15` adds more height variation within the opening's
+Layout `extended-mountain-v16` (shipped, TASK-687) is the default generator
+output (`tools/retune_extended_level.py` with no layout flag =
+`--min-side-scope all --middle-purple --upper-purple`). Two rules are new:
+
+- Minimum side length: every actual polygon edge of a gameplay body or zone
+  (green bodies, extra bodies, posts and bevels, yellow drag and purple
+  no-grapple zones) is at least 270 units (0.5 R). Decorative strokes are
+  exempt. `tools/check_level_geometry.py` enforces this by default
+  (`--no-min-side-length` only inventories legacy layouts). It is a different
+  limit from the 270 maximum internal no-grapple gap. The resizes are recorded
+  under `minimumSides` in the measurements (TASK-679/681).
+- Three purple no-grapple encounters on the later route: NG1 (leftward, after
+  the first right-up-left sequence), NGM (rightward, NG1 mirrored at the S08-01
+  arrival, later panels +7500, TASK-682/683) and NGU (leftward, NG1 copied at
+  the EXT-13 arrival, later panels -7500, TASK-684/685). Each encounter is
+  `purpleExtensions[]` in the measurements and a `data-role="no-grapple"`
+  zone. Production-input traversals exist for all three
+  (`PURPLE_ROUTE_ENCOUNTER=NG1|NGM|NGU tools/test_purple_route.py`). The
+  shortcut shields under NGM (a second P4 body, L2 narrowed from the left and
+  the NGM zone extended over L2, TASK-686) keep the whole-route matrix free of
+  skips.
+
+v16 has 62 panels and 61 transfers. The geometry equals the TASK-686 candidate;
+only the layout id and the guidelines hash differ. Saves from v15 and earlier
+restart at the spawn. The explicit flags still reproduce the earlier
+candidates (`--min-side-scope none` = v15).
+
+Layout `extended-mountain-v15` (previous) adds more height variation within the opening's
 existing rightward and leftward runs. The rightward extension has higher
 diagonal rebounds between the existing ceiling catches and descents; L1/L2 form two
 up-left jumps followed by a down-left return. The easy first two jumps,
@@ -67,7 +94,7 @@ shipped before v8) restart at the spawn. The shortcut search is bounded: the
 opening is not certified free of shortcuts globally, and the full climb is not
 proven playable.
 
-Layout `extended-mountain-v14` (shipped) is the current generator output: the
+Layout `extended-mountain-v14` introduced the
 varied lower rightward run X1-X10 (TASK-676), the purple no-grapple chute NG1
 after the first right-up-left sequence (TASK-675; the zone is a
 `data-role="no-grapple"` element in `world.noGrappleZones`, never a solid or

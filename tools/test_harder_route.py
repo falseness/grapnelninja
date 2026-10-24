@@ -48,8 +48,11 @@ class HarderRouteTests(unittest.TestCase):
     def test_opening_shapes_preserved(self):
         # Frozen original-opening generation is the authority for the easy start.
         before=json.loads((ROOT/'artifacts/TASK-668/before/extended-mountain-measurements.json').read_text())
-        keys=('polys',)
+        # v16 (TASK-687) extends short opening sides to 0.5 R; compare the recorded pre-resize polygons.
+        resized={c['fragment']:c for c in self.m.get('minimumSides',{}).get('changed',[])}
         for a,b in zip(self.m['fragments'][:3],before['fragments'][:3]):
-            self.assertEqual({k:a[k] for k in keys},{k:b[k] for k in keys})
+            c=resized.get(a['id'])
+            if c:self.assertEqual(c['after'],a['polys'])
+            self.assertEqual(c['before'] if c else a['polys'],b['polys'])
 
 if __name__=='__main__':unittest.main()

@@ -149,19 +149,28 @@ class FormatTests(unittest.TestCase):
     def test_03_legacy_levels_unchanged(self):
         shipped = json.loads(SHIPPED_LEVEL.read_text())
         rows = {}
-        # Since TASK-677 the shipped level (v13, v14) carries one zone, NG1; the legacy fixture has none.
+        # Since TASK-677 the shipped level carries purple zones (v16: one per purpleExtensions entry, NG1/NGM/NGU);
+        # the legacy fixture has none.
+        zone_ids = [p['zone'] for p in json.loads(SHIPPED_REFERENCE.read_text())['purpleExtensions']]
+        self.assertIn('NG1', zone_ids)
         for name, level in (('legacy-valid', self.legacy), ('shipped-level-json', shipped), ('shipped-bundle', None)):
             r = self.runtime[name]
             self.assertEqual(r['validate'], 'accept', r)
-            expected = [] if name == 'legacy-valid' else [{'id': 'NG1', 'role': 'no-grapple', 'grapplable': False, 'points': 4}]
+            expected = [] if name == 'legacy-valid' else [{'id': z, 'role': 'no-grapple', 'grapplable': False, 'points': 4}
+                                                          for z in zone_ids]
             self.assertEqual(r['noGrappleZones'], expected)
-            self.assertNotIn('NG1', r['elements'])
-            self.assertNotIn('NG1', r['dragZones'])
+            for z in zone_ids:
+                self.assertNotIn(z, r['elements'])
+                self.assertNotIn(z, r['dragZones'])
             rows[name] = {'validate': r['validate'], 'elements': len(r['elements']), 'dragZones': len(r['dragZones']),
                           'noGrappleZones': len(expected), 'roles': r['roles']}
         self.assertEqual(rows['legacy-valid']['elements'], 7)
-        # 48 panel bodies plus R1's TASK-677 shortcut fin (a second R1 body).
-        self.assertEqual((rows['shipped-bundle']['elements'], rows['shipped-bundle']['dragZones']), (49, 17))
+        # Every non-zone, non-drag element of the shipped JSON (panel bodies, extra bodies such as R1's fin and the
+        # P4 shields) is a live element; every drag element is a drag zone.
+        roles = [e['role'] for e in shipped['elements']]
+        self.assertEqual((rows['shipped-bundle']['elements'], rows['shipped-bundle']['dragZones']),
+                         (sum(r not in ('drag', 'no-grapple') for r in roles), roles.count('drag')))
+        self.assertGreater(rows['shipped-bundle']['elements'], 0)
         self.assertEqual(self.runtime['shipped-bundle'], self.runtime['shipped-level-json'])
         # Legacy imports are byte-identical to the committed expected outputs.
         for name in ('valid', 'valid-guide'):
@@ -450,19 +459,22 @@ class SpacingTests(unittest.TestCase):
                  'sideEdges', 'sideExemptEdges', 'sideViolations', 'minMeasuredSide'}
         self.assertEqual({k: v for k, v in new['summary'].items() if k not in added}, old['summary'])
         self.assertEqual((new['summary']['noGrappleZones'], new['summary']['noGrappleInternalPairs']), (0, 0))
-        # Shipped v14: the scoped rule applies only inside NG1; every other pair keeps the 540+diameter rule.
-        shipped = geometry.check(json.loads(SHIPPED_LEVEL.read_text()), SHIPPED_SVG.read_bytes(),
-                                 json.loads(SHIPPED_REFERENCE.read_text()))
+        # Shipped: the scoped rule applies only inside the purple zones (v16: NG1, NGM, NGU, each with internal
+        # pairs); every other pair keeps the 540+diameter rule.
+        shipped_ref = json.loads(SHIPPED_REFERENCE.read_text())
+        zone_ids = [p['zone'] for p in shipped_ref['purpleExtensions']]
+        shipped = geometry.check(json.loads(SHIPPED_LEVEL.read_text()), SHIPPED_SVG.read_bytes(), shipped_ref)
         self.assertTrue(shipped['summary']['pass'])
         internal = [p for p in shipped['pairs'] if p.get('rule') == 'noGrappleInternal']
-        self.assertEqual(shipped['summary']['noGrappleZones'], 1)
+        self.assertEqual(shipped['summary']['noGrappleZones'], len(zone_ids))
         self.assertEqual(len(internal), shipped['summary']['noGrappleInternalPairs'])
-        self.assertTrue(internal and all(p.get('noGrappleZone') == 'NG1' for p in internal))
+        self.assertTrue(internal and all(p.get('noGrappleZone') in zone_ids for p in internal))
+        self.assertEqual({p.get('noGrappleZone') for p in internal}, set(zone_ids))
         RESULTS['spacing']['shipped'] = {
             'comparedLevel': 'zone-free variant of the current generator (extend_purple_route off), imported from its SVG',
             'comparedLayoutId': level['layoutId'], 'comparedSvgSha256': hashlib.sha256(svg_bytes).hexdigest(),
             'shippedV13': {'level': str(SHIPPED_LEVEL.relative_to(ROOT)), 'pass': shipped['summary']['pass'],
-                           'noGrappleZones': 1, 'noGrappleInternalPairs': len(internal),
+                           'noGrappleZones': len(zone_ids), 'noGrappleInternalPairs': len(internal),
                            'internalPairs': [[p.get('a'), p.get('b')] for p in internal]},
             'level': str(SHIPPED_LEVEL.relative_to(ROOT)), 'levelSha256': sha(SHIPPED_LEVEL), 'svgSha256': sha(SHIPPED_SVG),
             'referenceSha256': sha(SHIPPED_REFERENCE), 'pass': new['summary']['pass'],

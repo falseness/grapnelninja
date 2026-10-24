@@ -12,7 +12,10 @@ NO_GRAPPLE_EVIDENCE_DIR/candidate when it exists, else the shipped
 artifacts/levels data. DIR holds extended-mountain.svg,
 extended-mountain-measurements.json and extended-mountain.level.json.
 
-PURPLE_ROUTE_MIN_SIDE_SCOPE=opening|all (TASK-681) regenerates and compares the
+With none of PURPLE_ROUTE_MIN_SIDE_SCOPE/_MIDDLE/_UPPER set (TASK-687) the layout is
+the shipped v16 default (scope all, three encounters, regenerated without layout flags).
+
+PURPLE_ROUTE_MIN_SIDE_SCOPE=none|opening|all (TASK-681) regenerates and compares the
 minimum-side candidate (retune --min-side-scope); the shipped lower route is then
 compared with the recorded opening resizes undone.
 
@@ -53,11 +56,16 @@ import convert_extended_mountain_svg as conv  # noqa: E402
 import retune_extended_level as retune  # noqa: E402
 
 EVIDENCE = os.environ.get('NO_GRAPPLE_EVIDENCE_DIR')
-MIN_SIDE_SCOPE = os.environ.get('PURPLE_ROUTE_MIN_SIDE_SCOPE', 'none')
+# TASK-687: with none of the three scope variables set, the layout is the shipped v16 default (retune without
+# layout flags = --min-side-scope all --middle-purple --upper-purple); any of them selects an explicit candidate.
+SHIPPED_DEFAULT = not any(os.environ.get(k) for k in ('PURPLE_ROUTE_MIN_SIDE_SCOPE', 'PURPLE_ROUTE_MIDDLE',
+                                                      'PURPLE_ROUTE_UPPER'))
+MIN_SIDE_SCOPE = os.environ.get('PURPLE_ROUTE_MIN_SIDE_SCOPE', 'all' if SHIPPED_DEFAULT else 'none')
 # PURPLE_ROUTE_MIDDLE=1: the candidate also has the middle encounter NGM (retune --middle-purple, TASK-682).
-MIDDLE = ['--middle-purple'] if os.environ.get('PURPLE_ROUTE_MIDDLE') == '1' else []
+MIDDLE = ['--middle-purple'] if SHIPPED_DEFAULT or os.environ.get('PURPLE_ROUTE_MIDDLE') == '1' else []
 # PURPLE_ROUTE_UPPER=1 (with PURPLE_ROUTE_MIDDLE=1): also the upper encounter NGU (retune --upper-purple, TASK-684).
-MIDDLE += ['--upper-purple'] if MIDDLE and os.environ.get('PURPLE_ROUTE_UPPER') == '1' else []
+MIDDLE += ['--upper-purple'] if MIDDLE and (SHIPPED_DEFAULT or os.environ.get('PURPLE_ROUTE_UPPER') == '1') else []
+REGEN_ARGS = [] if SHIPPED_DEFAULT else ['--min-side-scope', MIN_SIDE_SCOPE] + MIDDLE
 # PURPLE_ROUTE_ENCOUNTER=ZONE (TASK-683): the traversal class replays that encounter (purpleExtensions zone id,
 # default NG1), with the input fixture of its semantic prefix.
 ENCOUNTER = os.environ.get('PURPLE_ROUTE_ENCOUNTER', 'NG1')
@@ -168,14 +176,14 @@ class PurpleRouteGeometryTests(unittest.TestCase):
     def test_01_candidate_regenerates_byte_identically(self):
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run([sys.executable, str(TOOLS / 'retune_extended_level.py'), '--source', str(SOURCE),
-                            '--output-dir', tmp, '--min-side-scope', MIN_SIDE_SCOPE] + MIDDLE, check=True, capture_output=True,
+                            '--output-dir', tmp] + REGEN_ARGS, check=True, capture_output=True,
                            cwd=TOOLS)
             subprocess.run([sys.executable, str(TOOLS / 'import_level_svg.py'), '--input', tmp + '/' + NAMES[0],
                             '--output', tmp + '/' + NAMES[2]], check=True, capture_output=True, cwd=TOOLS)
             same = {n: sha(Path(tmp) / n) == sha(CANDIDATE / n) for n in NAMES}
         self.assertEqual(same, {n: True for n in NAMES})
-        self.route['regeneration'] = dict(command='retune_extended_level.py --source %s --min-side-scope %s; '
-                                          'import_level_svg.py' % (SOURCE.relative_to(ROOT), MIN_SIDE_SCOPE),
+        self.route['regeneration'] = dict(command='retune_extended_level.py --source %s %s; '
+                                          'import_level_svg.py' % (SOURCE.relative_to(ROOT), ' '.join(REGEN_ARGS)),
                                           byteIdentical=same)
 
     def test_02_zone_dimensions_and_leftward_placement(self):
@@ -384,12 +392,14 @@ class PurplePreservationTests(unittest.TestCase):
                 self.assertAlmostEqual(b['x'] - a['x'], sum(t[0] for c, t in cuts if k > c), places=9)
                 self.assertAlmostEqual(b['y'] - a['y'], sum(t[1] for c, t in cuts if k > c), places=9)
                 moved.append(s)
-        # Shipped lower route (v13, v14 since TASK-677): the same coordinates as the candidate.
+        # Shipped lower route (v13+ since TASK-677): the same coordinates as the candidate.
         shipped = self.by_semantic(self.shipped)
         lower = [s for s in order[:cut + 1]]
-        # The minimum-side candidate: the recorded opening resizes undone (TASK-679 'before' polygons).
-        before = {c['semanticId']: c['before'] for c in self.m.get('minimumSides', {}).get('changed', [])}
-        nar = self.narrowed or {}
+        # The minimum-side candidate: the recorded opening resizes undone (TASK-679 'before' polygons). Since v16
+        # (TASK-687) the shipped level carries the same resizes and narrowing, so nothing is undone.
+        undo = 'minimumSides' not in self.shipped
+        before = {c['semanticId']: c['before'] for c in self.m.get('minimumSides', {}).get('changed', [])} if undo else {}
+        nar = (self.narrowed or {}) if undo else {}
         for s in lower:
             x = nar['before']['x'] if s == nar.get('semanticId') else new[s]['x']
             self.assertEqual((shipped[s]['x'], shipped[s]['y'], shipped[s]['polys']),
@@ -401,7 +411,7 @@ class PurplePreservationTests(unittest.TestCase):
         rows_new = {r['id']: r for r in self.m['encounters']}
         self.assertEqual(set(rows_old) - set(rows_new), set())
         # The TASK-686 narrowing only lengthens the transfers of the narrowed fragment.
-        grown = {i for i in rows_old if nar.get('fragment') in (rows_new[i]['fromFragment'], rows_new[i]['toFragment'])
+        grown = {i for i in rows_old if (self.narrowed or {}).get('fragment') in (rows_new[i]['fromFragment'], rows_new[i]['toFragment'])
                  and abs(rows_new[i]['distance'] - rows_old[i]['distance']) > 1e-6}
         self.assertTrue(all(rows_new[i]['distance'] > rows_old[i]['distance'] for i in grown))
         gaps = {i: abs(rows_old[i]['distance'] - rows_new[i]['distance']) for i in rows_old if i not in grown}

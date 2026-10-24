@@ -225,10 +225,13 @@ class NoGrappleRenderTests(unittest.TestCase):
         page.wait_for_function('bootComplete && runInProgress')
         self.assertEqual(page.evaluate('[version, I18N.language, isTouchFirstDevice(), TUTORIAL_HINT.visible]'),
                          ['grapple_over', 'en', kind != 'desktop', True])
-        # The shipped level has one zone (NG1), far from the spawn view: culled, not drawn
+        # The shipped level's zones (v16: NG1, NGM, NGU) are far from the spawn view: culled, not drawn
         page.evaluate('draw()')
         shipped = page.evaluate('({zones: floors[0].noGrappleZones.length, drawn: NO_GRAPPLE_ZONES.drawn.length})')
-        self.assertEqual(shipped, {'zones': 1, 'drawn': 0})
+        zones = [e['id'] for e in json.loads((ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json').read_text())
+                 ['elements'] if e['role'] == 'no-grapple']
+        self.assertGreaterEqual(len(zones), 1)
+        self.assertEqual(shipped, {'zones': len(zones), 'drawn': 0})
         scene = page.evaluate(SCENE)
         self.assertEqual(scene['zones'], ['zoneA', 'zoneB', 'zoneFar'])
         self.assertEqual(scene['dragZones'], ['D1'])

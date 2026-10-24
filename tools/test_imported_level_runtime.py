@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v15'
+LAYOUT_ID = 'extended-mountain-v16'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -194,9 +194,11 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(snap['world'], 'PersistentWorld')
         self.assertEqual(snap['layoutId'], LAYOUT_ID)
         self.assertEqual(snap['layoutId'], self.svg['layoutId'])
-        self.assertEqual(snap['fragments'], 48)
+        # Counts come from the shipped measurements (v16: 62 panels, 61 transfers), not fixed numbers.
+        meas = json.loads((ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json').read_text())
+        self.assertEqual(snap['fragments'], len(meas['fragments']))
         self.assertEqual(snap['fragments'], self.svg['fragments'])
-        self.assertEqual(snap['transfers'], 47)
+        self.assertEqual(snap['transfers'], len(meas['encounters']))
         self.assertEqual(len(snap['dragZones']), len(self.svg['drag']))
         self.assertEqual(sorted(snap['dragZones']), self.svg['drag'])
         self.assertEqual(snap['spawn'], self.svg['spawn'])
@@ -209,7 +211,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # No-grapple zones (NG1 since v13) live in world.noGrappleZones, not in elements/dragZones.
         source = {e['id']: e for e in self.level['elements'] if e['role'] != 'no-grapple'}
         self.assertEqual(snap['noGrappleZones'], [e['id'] for e in self.level['elements'] if e['role'] == 'no-grapple'])
-        self.assertEqual(snap['noGrappleZones'], ['NG1'])
+        self.assertEqual(snap['noGrappleZones'], [p['zone'] for p in meas['purpleExtensions']])
         self.assertEqual(sorted(e['id'] for e in snap['live']), sorted(source))
         for e in snap['live']:
             s = source[e['id']]
@@ -295,7 +297,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                           ('imported-v9', json.dumps(dict(legacy, layoutId='extended-mountain-v9'))),
                           ('imported-v12', json.dumps(dict(legacy, layoutId='extended-mountain-v12'))),
                           ('imported-v13', json.dumps(dict(legacy, layoutId='extended-mountain-v13'))),
-                          ('imported-v14', json.dumps(dict(legacy, layoutId='extended-mountain-v14')))):
+                          ('imported-v14', json.dumps(dict(legacy, layoutId='extended-mountain-v14'))),
+                          ('imported-v15', json.dumps(dict(legacy, layoutId='extended-mountain-v15')))):
             page = self.open(seed={CLIMB_KEY: raw})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
@@ -310,7 +313,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.record('incompatible_save_' + name, page, snap, seededLayoutId=json.loads(raw).get('layoutId'),
                         rewrittenLayoutId=LAYOUT_ID)
             results[name] = snap['notice']
-        self.assertEqual(len(results), 11)
+        self.assertEqual(len(results), 12)
 
     def test_04_current_layout_save(self):
         first = self.open()
@@ -797,7 +800,8 @@ class Task651Tests(unittest.TestCase):
             self.assertLessEqual(abs(gap - enc['distance']), TOLERANCE, row)
             self.assertLessEqual(abs(gap / 540 * 100 - t['gapPercent']), TOLERANCE, row)
             rows.append(row)
-        self.assertEqual(len(rows), 47)
+        self.assertEqual(len(rows), len(json.loads((ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json').read_text())['encounters']))
+        self.assertGreater(len(rows), 0)
         report['checks']['transfers'] = {'count': len(rows), 'endpointsChecked': 2 * len(rows),
                                          'maxEndpointOffset': max(max(r['endpointOffsets']) for r in rows),
                                          'maxGapError': max(abs(r['runtimeGap'] - r['measuredGap']) for r in rows),
