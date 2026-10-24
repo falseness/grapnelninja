@@ -6,7 +6,9 @@ gap-percent attributes and printed labels are only ever the expected side of
 a comparison, never the computed result (docs/level-svg-format.md §7).
 
     python3 tools/check_level_geometry.py --svg LEVEL.svg --level LEVEL.json --report REPORT.json \
-        [--reference MEASUREMENTS.json]
+        [--reference MEASUREMENTS.json] [--min-side-length [270]]
+    python3 tools/check_level_geometry.py --sides-only --level LEVEL.json --report REPORT.json \
+        [--min-side-length [270]]
 
 Checks:
 - level JSON polygons match the SVG geometry layer and the reference fragments
@@ -21,6 +23,14 @@ Checks:
   and witness segment lie inside one convex no-grapple zone needs
   0 < gap <= 270 instead (any other pair keeps the 540 rule);
 - every polygon is simple, non-degenerate and has interior angles >= 20 degrees;
+- every actual polygon edge of a gameplay element (solid/bounce/hazard bodies,
+  extra bodies, posts and bevels, yellow drag and purple no-grapple zones) is
+  measured from the imported vertices and inventoried; with --min-side-length
+  (candidate rollout, default 270 = 0.5 R) an edge shorter than the minimum
+  minus COORD_TOL fails. This is unrelated to the 270 maximum internal
+  no-grapple transfer gap. Elements without a gameplay role are decorative and
+  exempt. --sides-only checks sides, corners and self-intersections from the
+  level JSON alone, so old levels stay checkable during candidate migration;
 - drag zones are axis-aligned horizontal non-grapplable rectangles with a
   minimum solid clearance >= 1080 (no-grapple zones are not solids or brakes);
 - no-grapple zones are non-grapplable convex polygons outside fragments.
@@ -41,6 +51,10 @@ COORD_TOL = 0.01
 # Largest edge-to-edge gap of a transfer inside one no-grapple zone (0.5 R).
 NO_GRAPPLE_INTERNAL_GAP = 270.0
 PERCENT_TOL = 0.01
+# Shortest allowed polygon side for candidate layouts (0.5 R); opt-in via --min-side-length.
+MIN_SIDE_LENGTH = 0.5 * GRAPPLE_RANGE
+# Roles whose polygon edges are collision/zone geometry; anything else is decorative.
+GAMEPLAY_ROLES = ('solid', 'bounce', 'hazard', 'drag', 'no-grapple')
 PERCENT_KEYS = ('svgGapPercent', 'levelGapPercent', 'referencePercent')
 SVG = '{http://www.w3.org/2000/svg}'
 GN = '{urn:grapnelninja:level-svg:1}'
@@ -227,6 +241,86 @@ def self_intersections(poly):
     return found
 
 
+def side_lengths(poly):
+    """Euclidean length of every edge i -> i+1 (closing edge last), from vertices alone."""
+    return [math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in edges(poly)]
+
+
+def side_rows(polys, fragments=None, names=None, minimum=MIN_SIDE_LENGTH, tol=COORD_TOL):
+    """Per-edge inventory of gameplay polygons; decorative roles are listed as exempt.
+
+    polys: element id -> (element, absolute polygon). fragments: fragment id ->
+    element ids (body index = position). names: fragment id -> semantic label.
+    An edge passes when length >= minimum - tol.
+    """
+    owner = {eid: (fid, i) for fid, eids in (fragments or {}).items() for i, eid in enumerate(eids)}
+    rows = []
+    for eid in sorted(polys):
+        element, poly = polys[eid]
+        fid, body = owner.get(eid, (None, None))
+        exempt = element.get('role') not in GAMEPLAY_ROLES
+        for i, length in enumerate(side_lengths(poly)):
+            a, b = poly[i], poly[(i + 1) % len(poly)]
+            rows.append({'element': eid, 'role': element.get('role'), 'fragment': fid, 'body': body,
+                         'semantic': (names or {}).get(fid), 'edge': i, 'from': rp(a), 'to': rp(b),
+                         'length': r(length), 'exempt': exempt, 'pass': exempt or length >= minimum - tol})
+    return rows
+
+
+def side_summary(rows, minimum, enforced):
+    measured = [s for s in rows if not s['exempt']]
+    return {'minSideLength': minimum, 'minSideEnforced': enforced, 'sideEdges': len(measured),
+            'sideExemptEdges': len(rows) - len(measured), 'sideViolations': sum(not s['pass'] for s in rows),
+            'minMeasuredSide': min((s['length'] for s in measured), default=None)}
+
+
+def corner_rows(polys, fail):
+    """Angle and self-intersection rows for every polygon; failures go to fail()."""
+    angle_rows = []
+    for eid in sorted(polys):
+        report = angle_report(polys[eid][1])
+        crossings = self_intersections(polys[eid][1])
+        angles = [v['angle'] for v in report['vertices']]
+        row = {'id': eid, 'role': polys[eid][0]['role'], 'error': report['error'], 'selfIntersections': crossings,
+               'area': r(abs(signed_area(polys[eid][1]))), 'minAngle': r(min(angles, default=None), 9),
+               'angles': [r(a, 9) for a in angles], 'pass': report['ok'] and not crossings}
+        if report['error']:
+            fail('%s: degenerate polygon (%s)' % (eid, report['error']['reason']))
+        for v in report['vertices']:
+            if not v['ok']:
+                fail('%s vertex %d: interior angle %.6f < %.1f degrees' % (eid, v['vertex'], v['angle'],
+                                                                          MIN_INTERIOR_ANGLE))
+        if crossings:
+            fail('%s: self-intersecting edges %s' % (eid, crossings))
+        angle_rows.append(row)
+    return angle_rows
+
+
+def fail_sides(rows, minimum, fail):
+    for s in rows:
+        if not s['pass']:
+            fail('%s edge %d (%s %s): side length %.6f < %.1f' % (
+                s['element'], s['edge'], s['role'], s['semantic'] or s['fragment'] or '-', s['length'], minimum))
+
+
+def check_sides(level, minimum=MIN_SIDE_LENGTH, names=None):
+    """Sides + corners from the level JSON alone (no SVG/reference); minimum None = inventory only."""
+    failures = []
+    polys = level_polygons(level)
+    fragments = {f['id']: f['elements'] for f in level.get('svgFormat', {}).get('fragments', [])}
+    sides = side_rows(polys, fragments, names, MIN_SIDE_LENGTH if minimum is None else minimum)
+    if minimum is not None:
+        fail_sides(sides, minimum, failures.append)
+    angle_rows = corner_rows(polys, failures.append)
+    summary = {'pass': not failures, 'failures': len(failures), 'anglePolygons': len(angle_rows),
+               'anglePolygonsPass': sum(a['pass'] for a in angle_rows),
+               'minInteriorAngle': r(min((a['minAngle'] for a in angle_rows if a['minAngle'] is not None),
+                                         default=None), 9)}
+    summary.update(side_summary(sides, MIN_SIDE_LENGTH if minimum is None else minimum, minimum is not None))
+    return {'layoutId': level.get('layoutId'), 'coordTolerance': COORD_TOL, 'summary': summary,
+            'failureMessages': failures, 'sides': sides, 'angles': angle_rows}
+
+
 def max_point_error(p, q):
     if len(p) != len(q):
         return math.inf
@@ -270,7 +364,8 @@ def rp(p):
 
 # --- checks ---------------------------------------------------------------
 
-def check(level, svg_data, reference):
+def check(level, svg_data, reference, min_side=None):
+    """min_side None inventories sides without failing (shipped layouts); a number enforces it."""
     failures = []
     fail = failures.append
     polys = level_polygons(level)
@@ -293,23 +388,11 @@ def check(level, svg_data, reference):
             fail('%s: level vs SVG coordinate error %.6g > %.2g' % (eid, err, COORD_TOL))
 
     # Corners: every final polygon, computed from level coordinates alone.
-    angle_rows = []
-    for eid in sorted(polys):
-        report = angle_report(polys[eid][1])
-        crossings = self_intersections(polys[eid][1])
-        angles = [v['angle'] for v in report['vertices']]
-        row = {'id': eid, 'role': polys[eid][0]['role'], 'error': report['error'], 'selfIntersections': crossings,
-               'area': r(abs(signed_area(polys[eid][1]))), 'minAngle': r(min(angles, default=None), 9),
-               'angles': [r(a, 9) for a in angles], 'pass': report['ok'] and not crossings}
-        if report['error']:
-            fail('%s: degenerate polygon (%s)' % (eid, report['error']['reason']))
-        for v in report['vertices']:
-            if not v['ok']:
-                fail('%s vertex %d: interior angle %.6f < %.1f degrees' % (eid, v['vertex'], v['angle'],
-                                                                          MIN_INTERIOR_ANGLE))
-        if crossings:
-            fail('%s: self-intersecting edges %s' % (eid, crossings))
-        angle_rows.append(row)
+    angle_rows = corner_rows(polys, fail)
+    names = {f['id']: f.get('semanticId') or f.get('name') for f in reference.get('fragments', [])}
+    sides = side_rows(polys, fragments, names, MIN_SIDE_LENGTH if min_side is None else min_side)
+    if min_side is not None:
+        fail_sides(sides, min_side, fail)
 
     # Coordinates: level fragments vs reference fragments.
     ref_frags = {f['id']: f for f in reference['fragments']}
@@ -497,39 +580,59 @@ def check(level, svg_data, reference):
         'yellowMergedFrom': {b['id']: b.get('mergedFrom', [b['id']]) for b in reference.get('yellowBands', [])},
         'fragments': len(frag_rows), 'maxFragmentCoordError': r(frag_max, 9), 'maxSvgCoordError': r(svg_max, 9),
     }
+    summary.update(side_summary(sides, MIN_SIDE_LENGTH if min_side is None else min_side, min_side is not None))
     return {'grappleRange': GRAPPLE_RANGE, 'playerDiameter': PLAYER_DIAMETER, 'coordTolerance': COORD_TOL,
             'percentTolerance': PERCENT_TOL, 'summary': summary, 'failureMessages': failures,
             'minInteriorAngle': MIN_INTERIOR_ANGLE, 'angleTolerance': ANGLE_TOL_DEG, 'angles': angle_rows,
             'transfers': transfers, 'pairs': pairs, 'dragZones': drags, 'yellowPairs': drag_pairs, 'fragments': frag_rows,
-            'noGrappleZones': zone_rows, 'noGrappleInternalGap': NO_GRAPPLE_INTERNAL_GAP}
+            'noGrappleZones': zone_rows, 'noGrappleInternalGap': NO_GRAPPLE_INTERNAL_GAP, 'sides': sides}
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Recompute level geometry clearances and compare to references.')
-    parser.add_argument('--svg', required=True, help='level SVG (format v1)')
+    parser.add_argument('--svg', help='level SVG (format v1); required unless --sides-only')
     parser.add_argument('--level', required=True, help='imported level JSON (tools/import_level_svg.py output)')
     parser.add_argument('--report', required=True, help='report JSON to write')
     parser.add_argument('--reference', default=DEFAULT_REFERENCE, help='reference measurements JSON')
+    parser.add_argument('--min-side-length', type=float, nargs='?', const=MIN_SIDE_LENGTH, default=None,
+                        metavar='UNITS', help='fail gameplay polygon edges shorter than UNITS (default %g when '
+                        'given without a value); omitted = inventory only' % MIN_SIDE_LENGTH)
+    parser.add_argument('--sides-only', action='store_true',
+                        help='only side, corner and self-intersection checks from --level (no SVG/reference)')
     args = parser.parse_args(argv)
-    with open(args.svg, 'rb') as f:
-        svg_data = f.read()
+    if not args.sides_only and not args.svg:
+        parser.error('--svg is required unless --sides-only')
+    if args.min_side_length is not None and not (math.isfinite(args.min_side_length) and args.min_side_length > 0):
+        parser.error('--min-side-length must be a positive finite number')
     with open(args.level) as f:
         level = json.load(f)
-    with open(args.reference) as f:
-        reference = json.load(f)
-    report = check(level, svg_data, reference)
+    if args.sides_only:
+        report = check_sides(level, args.min_side_length)
+    else:
+        with open(args.svg, 'rb') as f:
+            svg_data = f.read()
+        with open(args.reference) as f:
+            reference = json.load(f)
+        report = check(level, svg_data, reference, args.min_side_length)
     with open(args.report, 'w') as f:
         json.dump(report, f, separators=(',', ':'))
         f.write('\n')
     s = report['summary']
     for message in report['failureMessages']:
         print('FAIL ' + message, file=sys.stderr)
-    print('GEOMETRY_RESULT %s transfers=%d/%d pairs=%d/%d drag=%d/%d fragments=%d max_percent_error=%s '
-          'min_pair_margin=%s min_drag_clearance=%s angles=%d/%d min_angle=%s' % (
-              'PASS' if s['pass'] else 'FAIL', s['transfersPass'], s['transfers'], s['pairsPass'],
-              s['fragmentPairs'], s['dragZonesPass'], s['dragZones'], s['fragments'], s['maxTransferPercentError'],
-              s['minPairClearanceMinusDiameter'], s['minDragSolidClearance'], s['anglePolygonsPass'],
-              s['anglePolygons'], s['minInteriorAngle']))
+    sides = 'sides=%d violations=%d min_side=%s min_side_rule=%s' % (
+        s['sideEdges'], s['sideViolations'], s['minMeasuredSide'],
+        s['minSideLength'] if s['minSideEnforced'] else 'off')
+    if args.sides_only:
+        print('SIDES_RESULT %s %s angles=%d/%d min_angle=%s' % (
+            'PASS' if s['pass'] else 'FAIL', sides, s['anglePolygonsPass'], s['anglePolygons'], s['minInteriorAngle']))
+    else:
+        print('GEOMETRY_RESULT %s transfers=%d/%d pairs=%d/%d drag=%d/%d fragments=%d max_percent_error=%s '
+              'min_pair_margin=%s min_drag_clearance=%s angles=%d/%d min_angle=%s %s' % (
+                  'PASS' if s['pass'] else 'FAIL', s['transfersPass'], s['transfers'], s['pairsPass'],
+                  s['fragmentPairs'], s['dragZonesPass'], s['dragZones'], s['fragments'], s['maxTransferPercentError'],
+                  s['minPairClearanceMinusDiameter'], s['minDragSolidClearance'], s['anglePolygonsPass'],
+                  s['anglePolygons'], s['minInteriorAngle'], sides))
     return 0 if s['pass'] else 1
 
 

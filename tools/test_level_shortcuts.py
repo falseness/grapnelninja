@@ -104,6 +104,19 @@ class ShortcutReplayTests(unittest.TestCase):
         self.assertIsNotNone(r['arrival'])
         self.assertEqual(r['hit']['id'],target+'-body0')
 
+    def test_leftward_diagonal_return(self):
+        # v15's two rising leftward jumps return diagonally down-left to the
+        # unchanged P4 endpoint. Use gravity and real grapple input to launch.
+        source = ROUTE_MAP['addedFragments']['L2']
+        target = panel('P4')
+        self.assertEqual(successor(source), target)
+        r = self.run_probe(source=source, target=target, fraction=.2,
+                           pumps=1, drop=300, aimOffset=-.15,
+                           targetWhenInRange=True, budget=2400)
+        self.assertIsNotNone(r['arrival'])
+        self.assertIsNotNone(r['hit'])
+        self.assertEqual(r['hit']['id'], target + '-body0')
+
     def test_added_opening_transfers(self):
         # One added rightward and one added leftward (L1->L2) transfer, each from a
         # zero-speed drop onto the source panel's top. Since TASK-669, R1 is a ceiling

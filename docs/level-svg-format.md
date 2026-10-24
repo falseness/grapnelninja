@@ -393,6 +393,31 @@ One narrow exception exists, and nothing else is relaxed:
   `noGrappleZones` and `noGrappleInternalPairs`
   (`tools/test_no_grapple_format.py`).
 
+### 7.2 Minimum side length (candidate rollout)
+
+Candidate layouts must give every actual polygon edge a length of at least
+**270 units (0.5R)**. The checker measures each edge `i -> i+1` (and the
+closing edge) with `hypot` from the imported world vertices, never from SVG
+widths, labels or recorded metadata.
+
+- Measured: every polygon of every gameplay role — `solid`, `bounce`,
+  `hazard` bodies including a fragment's extra bodies, posts and bevel facets,
+  yellow `drag` zones and purple `no-grapple` zones. Elements without a
+  gameplay role (decorative strokes, annotations, route curves) are exempt.
+- An edge fails when `length < 270 - 0.01` (the coordinate tolerance), so
+  270 and 269.991 pass while 269.989 and 269 fail.
+- The rule is opt-in while layouts migrate: `--min-side-length` (no value =
+  270) enforces it; without the option the report still lists every edge
+  (`sides[]`: element, role, fragment, body index, semantic id, edge, length)
+  and `summary.sideViolations`, but the result is unaffected, so old levels
+  stay checkable. `--sides-only --level LEVEL.json` runs only the side,
+  corner and self-intersection checks, without an SVG or reference file.
+- This is a **minimum side length**, unrelated to the **maximum internal
+  no-grapple transfer gap** of 270 in §7.1: one bounds a polygon's own edges
+  from below, the other bounds the distance between two fragments from above.
+- The 20 degree corner and self-intersection checks remain active in both modes
+  (`tools/test_level_minimum_sides.py`).
+
 ## 8. Rejection summary
 
 | Category | Cause |

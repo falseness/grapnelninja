@@ -1,5 +1,13 @@
 # Generated level
 
+Layout `extended-mountain-v15` adds more height variation within the opening's
+existing rightward and leftward runs. The rightward extension has higher
+diagonal rebounds between the existing ceiling catches and descents; L1/L2 form two
+up-left jumps followed by a down-left return. The easy first two jumps,
+R1–R4 combination, upward-turn endpoints, purple chute and later mountain
+panels stay in place. Yellow brakes are regenerated to retain their required
+clearances. Older layout saves restart at the base.
+
 Guidelines, authoring SVG, JSON, JavaScript copy and measurements live locally in
 `/root/grapnelninja/artifacts/levels/` (ignored by Git).
 The shipped runtime bundle is `/root/grapnelninja/leveldata.js`. Both HTTP

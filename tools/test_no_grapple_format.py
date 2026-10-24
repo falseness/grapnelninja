@@ -445,7 +445,9 @@ class SpacingTests(unittest.TestCase):
         self.assertEqual([strip(p) for p in new['pairs']], old['pairs'])
         self.assertEqual(new['dragZones'], old['dragZones'])
         self.assertEqual(new['yellowPairs'], old['yellowPairs'])
-        added = {'noGrappleZones', 'noGrappleZonesPass', 'noGrappleInternalPairs'}
+        # TASK-678 side-length inventory keys are new too; the rule is off here, so pass is unaffected.
+        added = {'noGrappleZones', 'noGrappleZonesPass', 'noGrappleInternalPairs', 'minSideLength', 'minSideEnforced',
+                 'sideEdges', 'sideExemptEdges', 'sideViolations', 'minMeasuredSide'}
         self.assertEqual({k: v for k, v in new['summary'].items() if k not in added}, old['summary'])
         self.assertEqual((new['summary']['noGrappleZones'], new['summary']['noGrappleInternalPairs']), (0, 0))
         # Shipped v14: the scoped rule applies only inside NG1; every other pair keeps the 540+diameter rule.

@@ -483,10 +483,24 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         self.assertEqual(shielded, ['NG1', 'R1', 'X1'])
         self.assertEqual(sorted(s for s in order if any(new[s][k] != unshielded[s][k] for k in keys)), shielded)
         same = lambda s: {k: unshielded[s][k] for k in keys} == {k: old[twin(s)][k] for k in keys}
-        # Easy opening and R1-R4, the departure X10 (legacy endpoint) and everything after it are identical.
-        kept = [s for s in order[:7]] + order[cut:]
+        # Easy opening, R1-R4, X10 and later terrain except the raised L1/L2 are identical.
+        kept = [s for s in order[:7]] + [s for s in order[cut:] if s not in ('L1', 'L2')]
         changed = [s for s in kept if not same(s)]
         self.assertEqual(changed, [])
+        # v15 adds vertical variety within the existing right/left runs. The
+        # upper turn, purple chute and all later panels remain frozen.
+        for sem in ('X2', 'X5', 'X9'):
+            row = next(r for r in self.m['encounters'] if r['toFragment'] == new[sem]['id'])
+            a, b = row['flight']
+            self.assertGreaterEqual(a[1] - b[1], 1000 - .01, sem)
+            self.assertGreater(b[0] - a[0], a[1] - b[1], sem)
+        for sem in ('L1', 'L2'):
+            row = next(r for r in self.m['encounters'] if r['toFragment'] == new[sem]['id'])
+            a, b = row['flight']
+            self.assertLess(b[0], a[0], sem)
+            self.assertGreaterEqual(a[1] - b[1], 700 - .01, sem)
+            self.assertLess(a[1] - b[1], a[0] - b[0], sem)
+            self.assertEqual(new[sem]['polys'], old[sem]['polys'])
         self.assertEqual(dep_old, 'X8')
         self.assertEqual(sorted(set(order) - set(old)), ['X10', 'X9'])
         self.assertEqual(sorted(set(old) - set(order)), [])
@@ -497,12 +511,12 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         tail_new, tail_old = ids_new[ids_new.index('S07-01'):], ids_old[ids_old.index('S07-01'):]
         self.assertEqual(tail_new, tail_old)
         gaps = {r['id']: abs(r['distance'] - rows_new[r['id']]['distance']) for r in prev['encounters'] if r['id'] in tail_new}
-        # Only transfers touching a shield fragment may change (NG-ENTRY: NG1's post), and they keep the 200% minimum.
+        # Only shield transfers and the raised leftward ledges may change here; all keep the 200% minimum.
         ids_by_sem = {f['semanticId']: f['id'] for f in self.m['fragments']}
-        touching = {r['id'] for r in self.m['encounters'] if {r['fromFragment'], r['toFragment']} & {ids_by_sem[s] for s in shielded}}
+        touching = {r['id'] for r in self.m['encounters'] if {r['fromFragment'], r['toFragment']} & {ids_by_sem[s] for s in shielded + ['L1', 'L2']}}
         moved_gaps = sorted(k for k, v in gaps.items() if v >= 1e-6)
         self.assertTrue(set(moved_gaps) <= touching, moved_gaps)
-        self.assertEqual(moved_gaps, ['NG-ENTRY'])
+        self.assertEqual(moved_gaps, ['NG-ENTRY', 'OPEN-L1-L2', 'OPEN-L2-P4'])
         for k in moved_gaps:
             self.assertGreaterEqual(rows_new[k]['distance'], 2 * GRAPPLE_RANGE - .01, k)
         self.assertLess(max(v for k, v in gaps.items() if k not in moved_gaps), 1e-6)
@@ -549,12 +563,14 @@ class OpeningJumpVarietyTests(unittest.TestCase):
             identicalFragments=kept, departureTwin=dict(candidate='X10', previous=dep_old),
             shortcutShields=dict(fragments=shielded, spec=self.m['shortcutShields'],
                                  rule='identical fragments compare the shield-free generation; shields reshape only these'),
-            changedOrAdded=[s for s in order[7:cut]],
+            changedOrAdded=[s for s in order[7:cut]] + ['L1', 'L2'],
             addedSemanticIds=sorted(set(order) - set(old)), removedSemanticIds=[],
             routeSuccessorsAfterSection=tail_new,
             maxSuccessorGapChange=max(v for k, v in gaps.items() if k not in moved_gaps),
             shieldGapChanges={k: dict(previous=next(r['distance'] for r in prev['encounters'] if r['id'] == k),
-                                      now=rows_new[k]['distance'], minimum=2 * GRAPPLE_RANGE) for k in moved_gaps},
+                                      now=rows_new[k]['distance'], minimum=2 * GRAPPLE_RANGE) for k in moved_gaps if k == 'NG-ENTRY'},
+            diagonalOpening=dict(raisedRightward=['X2', 'X5', 'X9'], raisedLeftward=['L1', 'L2'],
+                                 changedLeftwardGaps={k: gaps[k] for k in moved_gaps if k != 'NG-ENTRY'}),
             purpleExtension=dict(zone=self.m['noGrappleZones'], panels=[sem(self.m, i) for i in [pe['approach'], pe['exit']] + pe['internal']],
                                  encounters=pe['encounters'], upperTranslation=pe['upperTranslation'], identicalToPrevious=True),
             lowerCatch=dict(coverage, upperTranslation=ext['upperTranslation'],

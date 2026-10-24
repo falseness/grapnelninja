@@ -10,7 +10,7 @@ import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
-EXTENDED_LAYOUT = 'extended-mountain-v14'
+EXTENDED_LAYOUT = 'extended-mountain-v15'
 OPENING_TARGETS = dict(TARGETS)
 OPENING_TARGETS.update({1:120, 2:160})
 # Rightward span is a minimum; usable surfaces and measured release gaps take
@@ -355,6 +355,23 @@ def separate_route_folds(fs, rows, minimum=3400):
                 rows[i-1][field]=text.replace('LEFT','TEMP').replace('RIGHT','LEFT').replace('TEMP','RIGHT')
 
 
+def raise_opening_left_ledges(fs, rows):
+    """Add up-left/up-left/down-left jumps without moving the later mountain.
+
+    Keep the first leftward release gap and the departure/arrival turn panels.
+    Moving only L1/L2 after fold placement prevents an opening edit from
+    changing the purple chute or the upper route's calibrated geometry.
+    """
+    i = next(i for i, f in enumerate(fs) if f.get('semanticId') == 'L1')
+    turn, first, second = fs[i-1:i+2]
+    distance = gap(turn, first)[0]
+    fs[i] = place_along(turn, first, -1, 0, distance,
+                        origin=(turn['x'] - first['width'], first['y'] - 900))
+    second['y'] -= 1440
+    for k, text in ((i-1, 'UP-LEFT'), (i, 'UP-LEFT'), (i+1, 'DOWN-LEFT')):
+        rows[k].update(direction=text, action=text + ' diagonal release jump')
+
+
 def spread_upper_landings(fs):
     """Put the next turn beyond a slope's pumped shortcut trajectory.
 
@@ -451,6 +468,11 @@ def extend_lower_catch_route(m):
             raise ValueError('X%d landing surface must span at least 720 units'%i)
         f.update(semanticId='X%d'%i,originalId=None,surface=surface,pattern=pattern)
         added.append(f);prev=f
+    # Raise only the rebound landings, preserving the x positions and the
+    # ceiling/upper-route geometry. Reflowing the whole run moves ceilings
+    # under later mountain panels and introduces upward bypasses.
+    for f in added:
+        f['y'] -= {'X2': 350, 'X5': 350, 'X9': 450}.get(f['semanticId'], 0)
     dx=prev['x']-fs[6]['x'];dy=prev['y']-fs[6]['y']
     for f in fs[7:]:f['x']+=dx;f['y']+=dy
     old_ids={f['id']:f for f in fs}
@@ -693,6 +715,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
         m['combinations'] = [[m['routeMap']['encounterNumbers'][str(n)] for n in combo] for combo in m['combinations']]
         separate_route_folds(fs,m['encounters'])
         spread_upper_landings(fs)
+        raise_opening_left_ledges(fs, m['encounters'])
         for f in fs:
             if f['kind']=='ceiling':
                 w,h=f['width'],f['height']
