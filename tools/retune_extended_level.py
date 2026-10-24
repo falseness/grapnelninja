@@ -543,8 +543,17 @@ NO_GRAPPLE_INTERNAL_GAP = 270.0
 # approach, and an exit ledge copying P7 7500 to the right, so S08-02 and every
 # later panel keep their geometry translated by +7500 (later falls stay above
 # lower terrain). Bounces run rightward; the exit overhangs the zone's upper right.
+# TASK-683 tuning (production-input shortcut probes): NGM's chute floor (NGM3) is a thin tapered slab
+# (like the low ceiling) instead of NG1's 364-thick block. Its top face (the traversal contact), angle
+# and extents are unchanged. A player rolling off NGM1's lower arm falls out of the zone onto P4 below
+# at the capped fall speed, which rebounds it to a fixed apex about 4000 above P4 (y ~ -14410), under
+# NGM3; with the underside 150 below the top (-14495) that apex no longer reaches it (the NGM1 -> NGM3
+# skip). Rebuilt with tapered end caps in rebuild_purple_slabs (min-side scope all).
+MIDDLE_PURPLE_THICKNESS = {'Chute floor': 150}
+MIDDLE_SLAB_TAPER = ('Low ceiling', 'Chute floor', 'Launch ramp')
 PURPLE_MIDDLE = dict(PURPLE, departure='P7', upId='S08-02', prefix='NGM', zoneId='NGM', mirror=True,
                      mirrorOf='NG1', shift=7500, label='Middle purple',
+                     panels=[p[:5]+(MIDDLE_PURPLE_THICKNESS.get(p[0], p[5]),)+p[6:] for p in PURPLE['panels']],
                      purpose='Rightward rope-free bounce traversal (mirror of NG1) after S08-01, before the S08-02 climb')
 
 
@@ -1182,14 +1191,15 @@ def rebuild_purple_slabs(m, by):
     for ext, zone, post_meta in zip(purple_extensions(m), m.get('noGrappleZones', []), posts):
         pre = ext.get('prefix', 'NG')
         cx = zone['x']+zone['width']/2
-        for n, (name, contact, angle, before, after, thickness, side) in enumerate(PURPLE['panels'], 1):
+        panels, taper = (PURPLE_MIDDLE['panels'], MIDDLE_SLAB_TAPER) if ext.get('mirror') else (PURPLE['panels'], LATER_SLAB_TAPER)
+        for n, (name, contact, angle, before, after, thickness, side) in enumerate(panels, 1):
             sid = '%s%d' % (pre, n)
             post = 'NG%d' % n == SHIELDS['post'][0] and bool(post_meta)
-            if name not in LATER_SLAB_TAPER and not post:
+            if name not in taper and not post:
                 continue
             f = by[sid]
             polys, height, x0, y0, width = copy.deepcopy(f['polys']), f['height'], f['x'], f['y'], f['width']
-            shape = (tapered_slab if name in LATER_SLAB_TAPER else slab)(contact, angle, before, after, thickness, side)
+            shape = (tapered_slab if name in taper else slab)(contact, angle, before, after, thickness, side)
             g = purple_panel(name, shape, contact, 'top' if side > 0 else 'underside', zone['x'], zone['y'])
             if ext.get('mirror'):
                 g = mirror_fragment(g, cx)
@@ -1273,6 +1283,8 @@ def resize_later_sides(m, opening, clearance, spec=LATER_MIN_SIDES, target=SIDE_
     m['minimumSides'].update(scope='all', fragments=[f['id'] for f in fs], laterChanged=changed, transfersChanged=moved,
                              slabTaper=list(LATER_SLAB_TAPER),
                              purpose='TASK-679/680/681: every gameplay polygon edge >= 0.5 R')
+    if any(e.get('mirror') for e in purple_extensions(m)):
+        m['minimumSides'].update(middleSlabTaper=list(MIDDLE_SLAB_TAPER), middleThickness=MIDDLE_PURPLE_THICKNESS)
 
 
 def deepen_yellow_bands(m, clearance, target=SIDE_TARGET):

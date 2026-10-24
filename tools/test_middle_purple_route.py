@@ -6,7 +6,8 @@ and S08-01 between it and the original NG1 chute. NGM is NG1 mirrored: the
 approach is right of P7, the zone is right of the approach and holds NG1's slabs
 and post reflected about the zone centre, and the exit ledge copies P7 7500 to
 the right. The tests find everything by semantic ids (purpleExtensions,
-routeMap), never by numeric index.
+routeMap), never by numeric index. TASK-683 tunes one shape: NGM3 (chute floor)
+is a thinner tapered slab (retune MIDDLE_PURPLE_THICKNESS) with NG1's mirrored top face.
 
 MIDDLE_PURPLE_CANDIDATE=DIR (extended-mountain.svg, -measurements.json,
 .level.json, .level.js) selects the candidate. Without it, the candidate is
@@ -171,10 +172,19 @@ class MiddlePurpleTests(unittest.TestCase):
         rel = lambda f, z, mirror: [sorted((round(z['x'] + z['width'] - x if mirror else x - z['x'], 6), round(y - z['y'], 6))
                                            for x, y in b) for b in conv.bodies(f)]
         diffs = {}
+        top = lambda shape: sorted(p for p in shape[0] if abs(p[1] - min(q[1] for q in shape[0])) < 1e-6)
         for i in range(1, 6):
             a, b = self.by['NG%d' % i], self.by['NGM%d' % i]
-            self.assertEqual(rel(a, z1, False), rel(b, z2, True), i)
             self.assertEqual(b['surfaceAngle'], -a['surfaceAngle'])
+            name = retune.PURPLE['panels'][i - 1][0]
+            if name in retune.MIDDLE_PURPLE_THICKNESS:
+                # TASK-683 tune: a thinner tapered slab; the top face (the bounce contact) stays NG1's mirrored.
+                self.assertEqual(top(rel(a, z1, False)), top(rel(b, z2, True)), i)
+                self.assertAlmostEqual(b['height'], retune.MIDDLE_PURPLE_THICKNESS[name], places=6)
+                diffs['NGM%d' % i] = dict(tuned='thickness %g -> %g (tapered caps), top face unchanged'
+                                          % (a['height'], b['height']))
+                continue
+            self.assertEqual(rel(a, z1, False), rel(b, z2, True), i)
             diffs['NGM%d' % i] = 0.0
         a1, a2 = self.by['NG-APPROACH'], self.by['NGM-APPROACH']
         self.assertAlmostEqual(a1['x'] - (z1['x'] + z1['width']), z2['x'] - (a2['x'] + a2['width']), places=6)

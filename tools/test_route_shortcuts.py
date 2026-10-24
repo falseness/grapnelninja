@@ -262,7 +262,11 @@ class RouteShortcutMatrixTests(unittest.TestCase):
             Path(EVIDENCE).mkdir(parents=True, exist_ok=True)
             (Path(EVIDENCE) / 'shortcuts.json').write_text(json.dumps(evidence, separators=(',', ':')) + '\n')
         self.assertEqual(errors + errors2, [])
+        # A source filter without a ceiling source (e.g. the purple NGM neighbourhood) has no underside cases.
+        ceiling = any(kinds[p['source']] == 'ceiling' for p in pairs)
         for policy in ('pumped', 'panelEnd', 'highDrop', 'underside', 'carried'):
+            if policy == 'underside' and ONLY and not ceiling:
+                continue
             self.assertGreater(sum(by_policy.get(policy, {}).values()), 0, policy)
         if not ONLY:
             self.assertEqual(set(sources), set(order[:-2]))

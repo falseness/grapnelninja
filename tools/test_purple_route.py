@@ -16,6 +16,12 @@ PURPLE_ROUTE_MIN_SIDE_SCOPE=opening|all (TASK-681) regenerates and compares the
 minimum-side candidate (retune --min-side-scope); the shipped lower route is then
 compared with the recorded opening resizes undone.
 
+PURPLE_ROUTE_ENCOUNTER=NGM (TASK-683) replays the middle encounter of a
+--middle-purple candidate instead of NG1 (zone id; panels by semantic prefix, input
+fixture tools/fixtures/purple-route-inputs-ngm.json). The traversal class also
+checks rope cancellation on entry (fixture entryProbes) and that the zone
+changes no motion (same replay with the zone removed).
+
 NO_GRAPPLE_EVIDENCE_DIR=DIR writes route.json, traversal.json,
 preservation.json and purple-route.png.
 
@@ -46,9 +52,13 @@ EVIDENCE = os.environ.get('NO_GRAPPLE_EVIDENCE_DIR')
 MIN_SIDE_SCOPE = os.environ.get('PURPLE_ROUTE_MIN_SIDE_SCOPE', 'none')
 # PURPLE_ROUTE_MIDDLE=1: the candidate also has the middle encounter NGM (retune --middle-purple, TASK-682).
 MIDDLE = ['--middle-purple'] if os.environ.get('PURPLE_ROUTE_MIDDLE') == '1' else []
+# PURPLE_ROUTE_ENCOUNTER=ZONE (TASK-683): the traversal class replays that encounter (purpleExtensions zone id,
+# default NG1), with the input fixture of its semantic prefix.
+ENCOUNTER = os.environ.get('PURPLE_ROUTE_ENCOUNTER', 'NG1')
 SHIPPED = ROOT / 'artifacts' / 'levels'
 SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
-INPUTS = TOOLS / 'fixtures' / 'purple-route-inputs.json'
+INPUTS = {'NG': TOOLS / 'fixtures' / 'purple-route-inputs.json',
+          'NGM': TOOLS / 'fixtures' / 'purple-route-inputs-ngm.json'}
 NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json')
 # The preserved concept source, unchanged since TASK-650 (artifacts/TASK-650/hashes.json).
 ORIGINAL_SOURCE = {
@@ -62,7 +72,7 @@ CANONICAL_TRANSFER = 1080.0  # 200% R: every added outside transfer
 CLEARANCE = R + geometry.PLAYER_DIAMETER  # grapple clearance for every non-transfer pair
 SOURCES = ('tools/retune_extended_level.py', 'tools/convert_extended_mountain_svg.py', 'tools/import_level_svg.py',
            'tools/check_level_geometry.py', 'tools/test_purple_route.py', 'tools/opening_combination_replay.js',
-           'tools/fixtures/purple-route-inputs.json', 'fixedlevel.js', 'physics.js', 'events.js', 'sprites/grapnel.js',
+           'tools/fixtures/purple-route-inputs.json', 'tools/fixtures/purple-route-inputs-ngm.json', 'fixedlevel.js', 'physics.js', 'events.js', 'sprites/grapnel.js',
            'sprites/ninja.js', 'sprites/trampoline.js', 'artifacts/levels/level-guidelines.md')
 OUT = {}
 
@@ -334,14 +344,16 @@ class PurplePreservationTests(unittest.TestCase):
 
     def test_02_lower_route_identical_and_later_route_translated(self):
         new, old = self.by_semantic(self.m), self.by_semantic(self.base)
-        ext = self.m['purpleExtension']
-        added = {self.m['fragments'][i]['semanticId'] for i, f in enumerate(self.m['fragments'])
+        exts = retune.purple_extensions(self.m)
+        added = {f['semanticId'] for f in self.m['fragments'] for ext in exts
                  if f['id'] in [ext['approach'], ext['exit']] + ext['internal']}
         self.assertEqual(set(new) - set(old), added)
         self.assertEqual(set(old) - set(new), set())
         order = [f['semanticId'] for f in self.base['fragments']]
-        cut = order.index('P4')
-        dx, dy = ext['upperTranslation']
+        # Each encounter translates every panel after its departure (P4 for NG1, P7 for the middle NGM).
+        cuts = [(order.index(ext.get('departureSemanticId', 'P4')), ext['upperTranslation']) for ext in exts]
+        cut = cuts[0][0]
+        dx, dy = cuts[0][1]
         same, moved = [], []
         for k, s in enumerate(order):
             a, b = old[s], new[s]
@@ -351,8 +363,8 @@ class PurplePreservationTests(unittest.TestCase):
                 self.assertEqual((a['x'], a['y']), (b['x'], b['y']), s)
                 same.append(s)
             else:
-                self.assertAlmostEqual(b['x'] - a['x'], dx, places=9)
-                self.assertAlmostEqual(b['y'] - a['y'], dy, places=9)
+                self.assertAlmostEqual(b['x'] - a['x'], sum(t[0] for c, t in cuts if k > c), places=9)
+                self.assertAlmostEqual(b['y'] - a['y'], sum(t[1] for c, t in cuts if k > c), places=9)
                 moved.append(s)
         # Shipped lower route (v13, v14 since TASK-677): the same coordinates as the candidate.
         shipped = self.by_semantic(self.shipped)
@@ -371,6 +383,7 @@ class PurplePreservationTests(unittest.TestCase):
         gaps = {i: abs(rows_old[i]['distance'] - rows_new[i]['distance']) for i in rows_old}
         self.assertLess(max(gaps.values()), 1e-6)
         self.out['fragments'] = dict(identical=same, translated=moved, translation=[dx, dy],
+                                     translationsByDeparture={order[c]: t for c, t in cuts},
                                      lowerCatch=catch, lowerMatchesShippedV12=lower,
                                      added=sorted(added), maxPreexistingTransferGapChange=max(gaps.values()))
         ext_lower = self.m['lowerCatchExtension']
@@ -411,11 +424,17 @@ TRAVERSE = '''o => {
                                                       drop: o.fixture.drop}})
     const aim = a => { const p = OPENING_REPLAY.topAt(frag(a.panel), a.fraction); return [p.x, p.y + (a.dy || 0)] }
     const queue = [...o.inputs].sort((a, b) => a.tick - b.tick)
-    const boundary = [], presses = []
+    const boundary = [], presses = [], trace = []
+    // Every production calcPhysics() cycle of the current tick (unrounded), kept on boundary events.
+    let cycles = []
+    const snap = () => ({x: ninja.x, y: ninja.y, vx: ninja.speedX, vy: ninja.speedY,
+                         inside: floors[0].playerInNoGrapple === true, thrown: grapnel.throwed, attached: grapnel.grappled})
+    const calc = calcPhysics
+    calcPhysics = function() { const before = snap(), r = calc(); cycles.push({before, after: snap()}); return r }
     let inside = floors[0].playerInNoGrapple === true
     const start = {inside, ...c.state()}
     let insideTicks = 0, insideAttached = 0, insideThrown = 0, landed = null
-    const exitBody = ids['NG-EXIT'] + '-body0'
+    const exitBody = ids[o.exit] + '-body0'
     while (c.tick < o.budget) {
         while (queue.length && queue[0].tick === c.tick) {
             const ev = queue.shift()
@@ -425,18 +444,27 @@ TRAVERSE = '''o => {
                 presses.push({tick: c.tick, inside: where, stale: stalePress, thrown: grapnel.throwed})
             } else c.release()
         }
+        // Rope state before the step, so an entry records what the step of entry dropped.
+        const rope = {thrownBefore: grapnel.throwed, attachedBefore: grapnel.grappled}
+        cycles = []
         const fresh = c.step()
         const now = floors[0].playerInNoGrapple === true
-        if (now !== inside) { boundary.push({event: now ? 'enter' : 'exit', ...c.state()}); inside = now }
+        if (o.trace) { const s = c.state(); trace.push([s.x, s.y, s.vx, s.vy, now]) }
+        if (now !== inside) {
+            boundary.push({event: now ? 'enter' : 'exit', ...c.state(), ...rope,
+                           thrownAfter: grapnel.throwed, attachedAfter: grapnel.grappled, cycles})
+            inside = now
+        }
         if (now) { insideTicks++; if (grapnel.grappled) insideAttached++; if (grapnel.throwed) insideThrown++ }
         const land = fresh.find(k => k.id === exitBody && k.ny < -0.99)
         if (land && boundary.some(b => b.event === 'exit')) { landed = land; break }
     }
     if (c.held) c.release()
+    calcPhysics = calc
     return {start, boundary, presses, insideTicks, insideAttached, insideThrown, landed, ticks: c.tick,
             layoutId: c.log.layoutId, acquisitionRadius: c.log.acquisitionRadius, fixture: c.log.fixture,
             inputs: c.log.inputs, contacts: c.log.contacts, grapple: c.log.grapple, maxStep: c.log.maxStep,
-            final: c.state()}
+            recoveries: c.log.recoveries, final: c.state(), trace}
 }'''
 
 FALL = '''([level, id]) => {
@@ -486,9 +514,15 @@ class PurpleTraversalTests(unittest.TestCase):
     def setUpClass(cls):
         from browser_test_support import start_browser_test, wait_for_boot_run
         cls.m, cls.level = load()
-        cls.inputs = json.loads(INPUTS.read_text())
         route = cls.m['routeMap']
         cls.ids = dict(route['fragmentIds'], **route['addedFragments'])
+        # The replayed encounter by zone id; its panels by semantic prefix (NG-APPROACH / NGM-EXIT ...).
+        cls.ext = next(e for e in retune.purple_extensions(cls.m) if e['zone'] == ENCOUNTER)
+        cls.prefix = cls.ext.get('prefix', 'NG')
+        cls.inputs_path = INPUTS[cls.prefix]
+        cls.inputs = json.loads(cls.inputs_path.read_text())
+        # Leftward for NG1, rightward for a mirrored encounter.
+        cls.sign = 1 if cls.ext.get('mirror') else -1
         cls.stack = ExitStack()
         cls.addClassCleanup(cls.stack.close)
         cls.url, cls.browser = start_browser_test(ROOT, cls.stack.callback)
@@ -500,13 +534,14 @@ class PurpleTraversalTests(unittest.TestCase):
         cls.page.add_script_tag(path=str(TOOLS / 'opening_combination_replay.js'))
         cls.browser_version = cls.browser.version
 
-    def replay(self):
+    def replay(self, inputs=None, level=None, trace=False):
         rec = self.inputs
-        return self.page.evaluate(TRAVERSE, dict(level=self.level, ids=self.ids, fixture=rec['fixture'],
-                                                 inputs=rec['inputs'], budget=rec['budget']))
+        return self.page.evaluate(TRAVERSE, dict(level=level or self.level, ids=self.ids, fixture=rec['fixture'],
+                                                 inputs=rec['inputs'] if inputs is None else inputs,
+                                                 budget=rec['budget'], exit=self.prefix + '-EXIT', trace=trace))
 
     def test_01_continuous_traversal(self):
-        ext = self.m['purpleExtension']
+        ext = self.ext
         runs = [self.replay() for _ in range(2)]
         log = runs[0]
         self.assertEqual(runs[0], runs[1])
@@ -515,9 +550,10 @@ class PurpleTraversalTests(unittest.TestCase):
         self.assertEqual(log['acquisitionRadius'], 540)
         # Only the fixture places the player (zero speed above the approach); then real mouse events only.
         self.assertEqual((log['fixture']['vx'], log['fixture']['vy']), (0, 0))
-        self.assertEqual(log['fixture']['panel'], self.ids['NG-APPROACH'])
+        self.assertEqual(log['fixture']['panel'], self.ids[self.prefix + '-APPROACH'])
         self.assertTrue(all(e['type'] in ('down', 'up', 'move') for e in log['inputs']))
         self.assertLess(log['maxStep'], 200)
+        self.assertEqual(log['recoveries'], [])  # no fall reset (teleport) anywhere in the run
         self.assertFalse(log['start']['inside'])
         # One entry and one exit, in that order.
         self.assertEqual([b['event'] for b in log['boundary']], ['enter', 'exit'])
@@ -528,9 +564,9 @@ class PurpleTraversalTests(unittest.TestCase):
         after = [c for c in log['contacts'] if c['tick'] >= leave['tick']]
         self.assertTrue(before)
         self.assertEqual({body(c) for c in before}, {ext['approach']})
-        # Momentum earned outside: the zero-speed fixture leaves the approach moving left.
+        # Momentum earned outside: the zero-speed fixture leaves the approach moving left (right when mirrored).
         speed = math.hypot(enter['vx'], enter['vy'])
-        self.assertLess(enter['vx'], 0)
+        self.assertGreater(enter['vx'] * self.sign, 0)
         self.assertGreater(speed, 1.0)
         # Inside: every intended surface, in route order, and nothing else.
         seq = []
@@ -555,16 +591,24 @@ class PurpleTraversalTests(unittest.TestCase):
         blocked = [p for p in log['presses'] if p['inside']]
         self.assertTrue(blocked)
         self.assertTrue(all(p['stale'] and not p['thrown'] for p in blocked))
+        # A fresh press after exit grapples again (the exit ledge).
+        fresh = [g for g in log['grapple'] if g['event'] == 'attach' and g['tick'] >= leave['tick']]
+        self.assertTrue(fresh)
+        self.assertEqual(body(fresh[0]), ext['exit'])
         contacts = [dict(surface=self.m['fragments'][int(i[1:])]['surface'], fragment=i,
                          semantic=self.m['fragments'][int(i[1:])]['semanticId'], **first[i]) for i in ext['internal']]
         OUT['traversal.json'] = dict(
             method='Real index.html; tools/opening_combination_replay.js loads the candidate level through the '
                    'production importedMountainLevel() (acquisition radius 540), places the player once at zero '
                    'speed above the approach ledge, then dispatches document mousedown/mousemove/mouseup at the '
-                   'recorded ticks (tools/fixtures/purple-route-inputs.json, aims resolved on semantic panels) and '
+                   'recorded ticks (%s, aims resolved on semantic panels) and '
                    'calls production physics() once per tick. No position, velocity or grapple state is written '
-                   'after the fixture. Membership is the production floors[0].playerInNoGrapple.',
-            browser=self.browser_version, layoutId=log['layoutId'], acquisitionRadius=log['acquisitionRadius'],
+                   'after the fixture. Membership is the production floors[0].playerInNoGrapple.'
+                   % self.inputs_path.relative_to(ROOT),
+            encounter=dict(zone=ext['zone'], prefix=self.prefix, selectedBy='PURPLE_ROUTE_ENCOUNTER=%s' % ENCOUNTER,
+                           approach=ext['approach'], exit=ext['exit'], internal=ext['internal'],
+                           inputsSha256=sha(self.inputs_path)),
+            recoveries=log['recoveries'], freshAttachAfterExit=fresh[0], browser=self.browser_version, layoutId=log['layoutId'], acquisitionRadius=log['acquisitionRadius'],
             fixture=log['fixture'], inputs=log['inputs'], inputPolicy=self.inputs,
             boundary=log['boundary'], entrySpeed=speed, insideTicks=log['insideTicks'],
             insideAttachedTicks=log['insideAttached'], insideThrownTicks=log['insideThrown'],
@@ -572,6 +616,85 @@ class PurpleTraversalTests(unittest.TestCase):
             internalSequence=seq, intendedInternal=ext['internal'], firstInternalContacts=contacts,
             approachContacts=before, exitContacts=after, landedOnExit=log['landed'], ticks=log['ticks'],
             maxStepPerTick=log['maxStep'], secondRunIdentical=runs[0] == runs[1], allContacts=log['contacts'])
+
+    def test_04_entry_cancellation_and_unchanged_physics(self):
+        """Ropes attached or in flight at entry are dropped in the entry step; purple changes no motion."""
+        ext, rec = self.ext, self.inputs
+        base = self.replay()
+        enter = base['boundary'][0]
+        self.assertEqual(enter['event'], 'enter')
+        gravity = self.page.evaluate('GRAVITY')
+        body = lambda c: c['id'].split('-')[0]
+        probes = {}
+        self.assertEqual({p['name'] for p in rec['entryProbes']}, {'attachedOnEntry', 'inFlightOnEntry'})
+        for p in rec['entryProbes']:
+            press = enter['tick'] - p['ticksBeforeEntry']
+            inputs = [e for e in rec['inputs'] if e['tick'] < press] + [
+                dict(tick=press, type='down', panel=p['panel'], fraction=p['fraction']),
+                dict(tick=press + p['holdTicks'], type='up')] + [e for e in rec['inputs'] if e['tick'] > press + p['holdTicks']]
+            runs = [self.replay(inputs, trace=True) for _ in range(2)]
+            self.assertEqual(runs[0], runs[1], p['name'])
+            r = runs[0]
+            e = r['boundary'][0]
+            self.assertEqual(e['event'], 'enter')
+            if p['name'] == 'attachedOnEntry':
+                self.assertTrue(e['thrownBefore'] and e['attachedBefore'], e)
+                attach = next(g for g in r['grapple'] if g['event'] == 'attach' and g['tick'] >= press)
+                self.assertEqual(body(attach), self.ids[p['panel']])
+                detach = next(g for g in r['grapple'] if g['event'] == 'detach' and g['tick'] > attach['tick'])
+                self.assertEqual(detach['tick'], e['tick'] - 1)  # the step of entry (state ticks count after it)
+            else:
+                self.assertTrue(e['thrownBefore'] and not e['attachedBefore'], e)
+                self.assertFalse([g for g in r['grapple'] if press <= g['tick'] < e['tick']])
+            self.assertFalse(e['thrownAfter'] or e['attachedAfter'], e)
+            self.assertEqual((r['insideAttached'], r['insideThrown']), (0, 0))
+            self.assertEqual(r['recoveries'], [])
+            # The calcPhysics cycle of entry: the rope is gone before its pull, so velocity changes by gravity only.
+            step = next(c for c in e['cycles'] if c['after']['inside'])
+            self.assertFalse(step['before']['inside'])
+            self.assertTrue(step['before']['thrown'])
+            self.assertEqual(step['before']['attached'], p['name'] == 'attachedOnEntry')
+            self.assertFalse(step['after']['thrown'] or step['after']['attached'])
+            self.assertEqual(step['after']['vx'], step['before']['vx'])
+            self.assertAlmostEqual(step['after']['vy'], step['before']['vy'] + gravity, places=12)
+            later = e['cycles'][e['cycles'].index(step) + 1:]
+            self.assertTrue(all(c['after']['vx'] == c['before']['vx'] and not c['after']['thrown'] for c in later))
+            probes[p['name']] = dict(probe=p, pressTick=press, inputs=inputs, entry=e,
+                                     grapple=[g for g in r['grapple'] if g['tick'] >= press][:3],
+                                     entryCycle=dict(step, gravity=gravity, cycleIndex=e['cycles'].index(step)),
+                                     insideAttachedTicks=r['insideAttached'], insideThrownTicks=r['insideThrown'],
+                                     recoveries=r['recoveries'], secondRunIdentical=True)
+        # Unchanged motion: without the in-zone press, the candidate and the same level with this zone
+        # removed give the same trajectory tick for tick (no press inside; the fresh exit press is kept).
+        quiet = [e for e in rec['inputs'] if not (enter['tick'] <= e['tick'] < base['boundary'][1]['tick'])]
+        self.assertLess(len(quiet), len(rec['inputs']))
+        no_zone = dict(self.level, elements=[e for e in self.level['elements'] if e['id'] != ext['zone']])
+        self.assertEqual(len(no_zone['elements']), len(self.level['elements']) - 1)
+        with_press = self.replay(trace=True)
+        purple = self.replay(quiet, trace=True)
+        plain = self.replay(quiet, level=no_zone, trace=True)
+        n = len(purple['trace'])
+        self.assertEqual(n, with_press['ticks'])
+        xyv = lambda run: [s[:4] for s in run['trace'][:n]]
+        self.assertEqual(xyv(purple), xyv(plain))           # purple: no drag, gravity or bounce change
+        self.assertEqual(xyv(with_press), xyv(purple))      # the blocked press changes nothing either
+        self.assertEqual([c for c in plain['contacts'] if c['tick'] < n], purple['contacts'])
+        self.assertTrue(any(s[4] for s in purple['trace']) and not any(s[4] for s in plain['trace']))
+        inside = [(a, b) for a, b in zip(purple['trace'], purple['trace'][1:]) if a[4] and b[4]]
+        bounce_ticks = {c['tick'] for c in purple['contacts']}
+        free = [(a, b) for k, (a, b) in enumerate(zip(purple['trace'], purple['trace'][1:]))
+                if a[4] and b[4] and k + 1 not in bounce_ticks]
+        self.assertTrue(free)
+        cycles = self.page.evaluate('cyclesPerTick')
+        self.assertTrue(all(abs(b[3] - a[3] - cycles * gravity) < 2e-3 and abs(b[2] - a[2]) < 2e-3 for a, b in free))
+        OUT['traversal.json'] = dict(OUT.get('traversal.json', {}), entryCancellation=probes, unchangedPhysics=dict(
+            method='Same fixture and inputs minus the in-zone press, on the candidate and on the candidate with zone %s '
+                   'removed; [x, y, vx, vy] after every production physics() tick compared exactly, plus the run '
+                   'with the blocked in-zone press.' % ext['zone'],
+            ticks=n, ticksInside=sum(1 for s in purple['trace'] if s[4]), identicalTrajectoryPurpleVsNoZone=True,
+            identicalTrajectoryBlockedPressVsNone=True, identicalContacts=len(purple['contacts']),
+            insideGravityOnlyTicks=len(free), insideTickPairs=len(inside), gravity=gravity, cyclesPerTick=cycles,
+            contacts=[dict(tick=c['tick'], id=c['id'], nx=c['nx'], ny=c['ny']) for c in purple['contacts']]))
 
     def test_02_late_falls_land_on_lower_terrain(self):
         fs = self.m['fragments']
@@ -592,8 +715,8 @@ class PurpleTraversalTests(unittest.TestCase):
 
     def test_03_svg_runtime_comparison_png(self):
         from PIL import Image, ImageDraw
-        z = self.m['noGrappleZones'][0]
-        ext = self.m['purpleExtension']
+        ext = self.ext
+        z = next(z for z in self.m['noGrappleZones'] if z['id'] == ext['zone'])
         pts = [p for i in [ext['arrival'], ext['approach'], ext['exit']] + ext['internal']
                for b in conv.bodies(next(f for f in self.m['fragments'] if f['id'] == i)) for p in b] + z['polygon']
         x0, y0 = min(p[0] for p in pts) - 300, min(p[1] for p in pts) - 300
@@ -629,11 +752,13 @@ class PurpleTraversalTests(unittest.TestCase):
         page.close()
         to_px = lambda p: ((p[0] - wx) * k, (p[1] - wy) * k)
         # The purple tint raises red: a band inside the zone's lower part (below every
-        # internal panel) against the same rows just outside its left edge.
+        # internal panel) against the same rows just outside its far edge (left; right when mirrored,
+        # where the near side holds a yellow band).
         low = max(p[1] for i in ext['internal'] for b in conv.bodies(next(f for f in self.m['fragments'] if f['id'] == i))
                   for p in b) + 60
         inner = to_px((z['x'] + 100, low)) + to_px((z['x'] + z['width'] - 100, z['y'] + z['height'] - 60))
-        outer = to_px((x0, low)) + to_px((z['x'] - 60, z['y'] + z['height'] - 60))
+        outer = (to_px((z['x'] + z['width'] + 60, low)) + to_px((x1, z['y'] + z['height'] - 60)) if ext.get('mirror')
+                 else to_px((x0, low)) + to_px((z['x'] - 60, z['y'] + z['height'] - 60)))
         shares = {name: dict(insideRed=mean_red(img, inner), outsideRed=mean_red(img, outer))
                   for name, img in (('svg', artwork), ('runtime', runtime))}
         for v in shares.values():
@@ -643,17 +768,18 @@ class PurpleTraversalTests(unittest.TestCase):
         b = runtime.resize((int(cw * scale), int(ch * scale)))
         sheet = Image.new('RGB', (a.width + b.width + 24, a.height + 44), (12, 12, 16))
         d = ImageDraw.Draw(sheet)
-        d.text((8, 6), 'TASK-675 purple route: candidate SVG artwork (left) vs runtime draw() (right), same world box '
+        d.text((8, 6), 'Purple encounter ' + ext['zone'] + ': candidate SVG artwork (left) vs runtime draw() (right), same world box '
                        '[%.0f, %.0f, %.0f, %.0f]' % (wx, wy, wx + cw / k, wy + ch / k), fill=(235, 235, 235))
         sheet.paste(a, (8, 36))
         sheet.paste(b, (16 + a.width, 36))
         if EVIDENCE:
             Path(EVIDENCE).mkdir(parents=True, exist_ok=True)
-            sheet.save(Path(EVIDENCE) / 'purple-route.png')
+            sheet.save(Path(EVIDENCE) / ('purple-route.png' if ENCOUNTER == 'NG1' else 'purple-route-%s.png' % ENCOUNTER))
         self.assertGreater(shares['svg']['redGain'], 8, shares)
         self.assertGreater(shares['runtime']['redGain'], 8, shares)
         OUT['traversal.json'] = dict(OUT.get('traversal.json', {}), comparison=dict(
-            image='purple-route.png', worldBox=[wx, wy, wx + cw / k, wy + ch / k], scale=k,
+            image='purple-route.png' if ENCOUNTER == 'NG1' else 'purple-route-%s.png' % ENCOUNTER, encounter=ext['zone'],
+            worldBox=[wx, wy, wx + cw / k, wy + ch / k], scale=k,
             purpleTint=shares, svgLayersHidden=['annotations-front (labels sized for the full-map view)'], runtimeDrawnZones=frame['drawn']))
 
 
