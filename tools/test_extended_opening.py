@@ -189,8 +189,9 @@ class ExtendedOpeningTests(unittest.TestCase):
         order = [transfers[0]['from']] + [t['to'] for t in transfers]
         self.assertEqual(len(set(order)), 48)
         self.assertEqual(len(self.report['pairs']), 48 * 47 // 2)
+        # 48 panels, one body each, plus R1's second body (the TASK-677 shortcut fin).
         bodies = [e for e in self.level['elements'] if e['role'] not in ('drag', 'no-grapple')]
-        self.assertEqual(len(bodies), 48)
+        self.assertEqual(len(bodies), 49)
 
     def test_threefold_spans_directions_and_counts(self):
         self.assertEqual(opening_violations(self.opening), [])

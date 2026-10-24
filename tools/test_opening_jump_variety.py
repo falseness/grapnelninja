@@ -256,6 +256,13 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         cls.before_level = import_svg(cls.before_svg)
         cls.report = check(cls.level, cls.svg, cls.m)
         cls.ids = {f['semanticId']: f['id'] for f in cls.m['fragments']}
+        shields = retune.add_shortcut_shields
+        retune.add_shortcut_shields = lambda m, spec: None
+        try:
+            cls.unshielded = retune.tune(json.loads(SOURCE.read_text()), opening=retune.OPENING,
+                                         yellow_clearance=retune.YELLOW_CLEARANCE)
+        finally:
+            retune.add_shortcut_shields = shields
         cls.before_ids = {f['semanticId']: f['id'] for f in cls.before['fragments']}
 
     @classmethod
@@ -467,7 +474,15 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         # The upward-turn departure: X10 now, X8 (the legacy endpoint) in the eight-platform chain.
         dep_old = next(f['semanticId'] for f in prev['fragments'] if f['id'] == prev['lowerCatchExtension']['firstUpDeparture'])
         twin = lambda s: dep_old if s == 'X10' else s
-        same = lambda s: {k: new[s][k] for k in keys} == {k: old[twin(s)][k] for k in keys}
+        # TASK-677 shortcut shields (R1 fin, X1 trim, NG1 post) are the only reshaped panels: the same
+        # generator without them reproduces the previous geometry, and the shipped layout differs from
+        # that shield-free generation in exactly the shielded fragments.
+        unshielded = {f['semanticId']: f for f in self.unshielded['fragments']}
+        shielded = sorted({k['semanticId'] for k in self.m['shortcutShields']['fins']}
+                          | {self.m['shortcutShields'][k]['semanticId'] for k in ('trim', 'post')})
+        self.assertEqual(shielded, ['NG1', 'R1', 'X1'])
+        self.assertEqual(sorted(s for s in order if any(new[s][k] != unshielded[s][k] for k in keys)), shielded)
+        same = lambda s: {k: unshielded[s][k] for k in keys} == {k: old[twin(s)][k] for k in keys}
         # Easy opening and R1-R4, the departure X10 (legacy endpoint) and everything after it are identical.
         kept = [s for s in order[:7]] + order[cut:]
         changed = [s for s in kept if not same(s)]
@@ -482,7 +497,15 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         tail_new, tail_old = ids_new[ids_new.index('S07-01'):], ids_old[ids_old.index('S07-01'):]
         self.assertEqual(tail_new, tail_old)
         gaps = {r['id']: abs(r['distance'] - rows_new[r['id']]['distance']) for r in prev['encounters'] if r['id'] in tail_new}
-        self.assertLess(max(gaps.values()), 1e-6)
+        # Only transfers touching a shield fragment may change (NG-ENTRY: NG1's post), and they keep the 200% minimum.
+        ids_by_sem = {f['semanticId']: f['id'] for f in self.m['fragments']}
+        touching = {r['id'] for r in self.m['encounters'] if {r['fromFragment'], r['toFragment']} & {ids_by_sem[s] for s in shielded}}
+        moved_gaps = sorted(k for k, v in gaps.items() if v >= 1e-6)
+        self.assertTrue(set(moved_gaps) <= touching, moved_gaps)
+        self.assertEqual(moved_gaps, ['NG-ENTRY'])
+        for k in moved_gaps:
+            self.assertGreaterEqual(rows_new[k]['distance'], 2 * GRAPPLE_RANGE - .01, k)
+        self.assertLess(max(v for k, v in gaps.items() if k not in moved_gaps), 1e-6)
         sem = lambda m, fid: next(f['semanticId'] for f in m['fragments'] if f['id'] == fid)
         self.assertEqual([tuple(twin(sem(self.m, r[k])) for k in ('fromFragment', 'toFragment')) for r in self.m['encounters'] if r['id'] in tail_new],
                          [(sem(prev, r['fromFragment']), sem(prev, r['toFragment'])) for r in prev['encounters'] if r['id'] in tail_old])
@@ -524,9 +547,14 @@ class OpeningJumpVarietyTests(unittest.TestCase):
         self.__class__.section_preservation = dict(
             comparedWith=dict(path=os.path.relpath(PREVIOUS, ROOT), measurementsSha=sha((PREVIOUS / NAMES[1]).read_bytes())),
             identicalFragments=kept, departureTwin=dict(candidate='X10', previous=dep_old),
+            shortcutShields=dict(fragments=shielded, spec=self.m['shortcutShields'],
+                                 rule='identical fragments compare the shield-free generation; shields reshape only these'),
             changedOrAdded=[s for s in order[7:cut]],
             addedSemanticIds=sorted(set(order) - set(old)), removedSemanticIds=[],
-            routeSuccessorsAfterSection=tail_new, maxSuccessorGapChange=max(gaps.values()),
+            routeSuccessorsAfterSection=tail_new,
+            maxSuccessorGapChange=max(v for k, v in gaps.items() if k not in moved_gaps),
+            shieldGapChanges={k: dict(previous=next(r['distance'] for r in prev['encounters'] if r['id'] == k),
+                                      now=rows_new[k]['distance'], minimum=2 * GRAPPLE_RANGE) for k in moved_gaps},
             purpleExtension=dict(zone=self.m['noGrappleZones'], panels=[sem(self.m, i) for i in [pe['approach'], pe['exit']] + pe['internal']],
                                  encounters=pe['encounters'], upperTranslation=pe['upperTranslation'], identicalToPrevious=True),
             lowerCatch=dict(coverage, upperTranslation=ext['upperTranslation'],
@@ -737,7 +765,8 @@ class CombinationReplayTests(unittest.TestCase):
         ids = self.ids
         out = {}
         for sem, fid in [('P2', 'P2')] + [(k, ids[k]) for k in ('R1', 'R2', 'R3', 'R4')] + [('P7', 'P7')]:
-            pts = [p for poly in polys[fid] for p in poly]
+            # The panel body only: R1's second body is the TASK-677 shortcut fin below its underside.
+            pts = list(polys[fid][0])
             out[sem] = dict(id=fid, x0=min(x for x, _ in pts), x1=max(x for x, _ in pts),
                             y0=min(y for _, y in pts), y1=max(y for _, y in pts))
         return out

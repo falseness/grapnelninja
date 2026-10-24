@@ -10,7 +10,7 @@ import convert_extended_mountain_svg as svg
 
 TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
-EXTENDED_LAYOUT = 'extended-mountain-v13'
+EXTENDED_LAYOUT = 'extended-mountain-v14'
 OPENING_TARGETS = dict(TARGETS)
 OPENING_TARGETS.update({1:120, 2:160})
 # Rightward span is a minimum; usable surfaces and measured release gaps take
@@ -705,6 +705,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
                 f['bounceSign']=direction
         extend_lower_catch_route(m)
         extend_purple_route(m, PURPLE)
+        add_shortcut_shields(m, SHIELDS)
     for row in m['encounters']:
         n = row['number']; a,b = fs[n-1:n+1]
         d,w,_,_ = gap(a,b)
@@ -770,6 +771,74 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
     m['checks']={'geometryOnly':True}
     m['limitations']=['Geometry alone does not prove playability or shortcut absence; run production-input audits. A complete from-spawn climb remains unverified.']
     return m
+
+
+# TASK-677: the whole-route shortcut matrix showed carried-momentum flights that
+# pass beneath the R1 ceiling onto R2, a fall short of R4 that lands on (or
+# grapples from below) X1's left end, which sat under R4, and a high entry over
+# the purple approach that dives onto NG2's top past NG1. fins: a second body of
+# a panel hanging below its underside (fragment-local x0..x1, from top to bottom
+# below the underside). The ceiling-catch glide hugs R1's underside and passes
+# through the slot above the fin; a flight from P2 lower under R1 strikes R1's
+# fin itself and rebounds left. R1's fin stays right of its underside contact
+# span. trim: X1's sloped face loses its left trim units (its right end and
+# every later panel stay put). post: a wall of the given width and top height
+# rising from the high right end of NG1's top face, inside the zone; the route
+# drops almost vertically onto NG1 left of it, the diagonal dive strikes NG1.
+# Every transfer gap stays measured; NG internal gaps are unchanged.
+SHIELDS = dict(fins=[('R1', 1750, 2050, 300, 1600)], trim=('X1', 2100), post=('NG1', 80, 970))
+
+
+def add_post(f, width, height):
+    """Raise a wall from the right (high) end of a chute slab's top face; keeps fragment-local coordinates normalised."""
+    pts = [(f['x']+x, f['y']+y) for x, y in f['polys'][0]]
+    a, b = pts[0], pts[1]
+    if f['surface'] != 'top' or not b[1] < a[1] or not b[0] > a[0]+width:
+        raise ValueError('%s post needs a top face rising to the right' % f['semanticId'])
+    t = (b[0]-width-a[0])/(b[0]-a[0])
+    foot = (b[0]-width, a[1]+(b[1]-a[1])*t)
+    pts = [a, foot, (foot[0], b[1]-height), (b[0], b[1]-height)]+pts[1:]
+    cx, cy = f['x']+f['contactPoint'][0], f['y']+f['contactPoint'][1]
+    x0, y0 = min(p[0] for p in pts), min(p[1] for p in pts)
+    f.update(x=x0, y=y0, width=max(p[0] for p in pts)-x0, height=max(p[1] for p in pts)-y0,
+             contactPoint=[cx-x0, cy-y0], polys=[[[px-x0, py-y0] for px, py in pts]])
+    return dict(foot=list(foot), top=b[1]-height)
+
+
+def add_fin(f, x0, x1, top, bottom):
+    """Add a separate body below a panel's underside (fragment-local x0..x1, top..bottom below it)."""
+    h = f['height']
+    f['polys'] = f['polys'][:1]+[[[x0, h+top], [x1, h+top], [x1, h+bottom], [x0, h+bottom]]]
+
+
+def add_shortcut_shields(m, spec):
+    by = {f['semanticId']: f for f in m['fragments']}
+    sid, trim = spec['trim']
+    f = by[sid]
+    w, drop = f['width'], f['slopeDrop']
+    if f['kind'] != 'bounce' or f['bounceSign'] != 1 or w-trim < MIN_OPENING_SPAN:
+        raise ValueError('%s trim must keep a rightward slope at least 720 wide' % sid)
+    lost = drop*trim/w
+    f.update(x=f['x']+trim, y=f['y']+lost, width=w-trim, height=f['height']-lost, slopeDrop=drop-lost)
+    f['polys'] = [[[0, 0], [w-trim, drop-lost], [w-trim, f['height']], [0, f['height']-(drop-lost)]]]
+    fins = []
+    for sid, x0, x1, top, bottom in spec['fins']:
+        f = by[sid]
+        if f['kind'] == 'ceiling' and x0 < f['width']/2 + MIN_OPENING_SPAN/2:
+            raise ValueError('%s fin must hang right of the ceiling contact span' % sid)
+        add_fin(f, x0, x1, top, bottom)
+        under = f['y']+f['height']
+        fins.append(dict(fragment=f['id'], semanticId=sid, localX=[x0, x1], slot=top, y=[under+top, under+bottom]))
+    # The post belongs to the purple chute; a layout generated without it (tests) has no post.
+    post = None
+    if m.get('noGrappleZones'):
+        sid, width, height = spec['post']
+        post = dict(fragment=by[sid]['id'], semanticId=sid, width=width, height=height, **add_post(by[sid], width, height))
+        if not zone_contains(m['noGrappleZones'][0], by[sid]):
+            raise ValueError('%s post must stay inside the purple zone' % sid)
+    m['shortcutShields'] = dict(fins=fins, trim=dict(fragment=by[spec['trim'][0]]['id'], semanticId=spec['trim'][0],
+                                                       trimmedLeft=trim), post=post,
+                                purpose='TASK-677: block demonstrated skips beneath R1, short of R4 onto X1 and over NG1')
 
 
 def box(fragment):

@@ -23,7 +23,8 @@ This is a bounded policy matrix: not a proof of shortcut absence and not a full-
     ROUTE_SHORTCUTS_EVIDENCE_DIR=DIR python3 -m unittest discover -s tools -p test_route_shortcuts.py -v
 
 writes DIR/shortcuts.json (compact rows). ROUTE_SHORTCUTS_WORKERS sets the browser count (default 4);
-ROUTE_SHORTCUTS_SOURCES=P2,R3 limits the sources (semantic ids) for quick iteration.
+ROUTE_SHORTCUTS_SOURCES=P2,R3 limits the sources (semantic ids) for quick iteration;
+ROUTE_SHORTCUTS_LEVEL_DIR=DIR probes an unshipped candidate (default artifacts/levels).
 """
 from contextlib import ExitStack
 import hashlib
@@ -41,7 +42,7 @@ sys.path.insert(0, str(TOOLS))
 import check_level_geometry as geometry  # noqa: E402
 import convert_extended_mountain_svg as conv  # noqa: E402
 
-LEVELS = ROOT / 'artifacts/levels'
+LEVELS = Path(os.environ.get('ROUTE_SHORTCUTS_LEVEL_DIR', ROOT / 'artifacts/levels'))
 EVIDENCE = os.environ.get('ROUTE_SHORTCUTS_EVIDENCE_DIR')
 WORKERS = int(os.environ.get('ROUTE_SHORTCUTS_WORKERS', '4'))
 # Optional comma-separated semantic source ids for quick local iteration (the full run sets none).

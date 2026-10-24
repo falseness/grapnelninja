@@ -335,7 +335,7 @@ class PurplePreservationTests(unittest.TestCase):
                 self.assertAlmostEqual(b['x'] - a['x'], dx, places=9)
                 self.assertAlmostEqual(b['y'] - a['y'], dy, places=9)
                 moved.append(s)
-        # Shipped lower route (v13 since TASK-677): the same coordinates as the candidate.
+        # Shipped lower route (v13, v14 since TASK-677): the same coordinates as the candidate.
         shipped = self.by_semantic(self.shipped)
         lower = [s for s in order[:cut + 1]]
         for s in lower:

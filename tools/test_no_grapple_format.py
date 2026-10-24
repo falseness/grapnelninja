@@ -149,7 +149,7 @@ class FormatTests(unittest.TestCase):
     def test_03_legacy_levels_unchanged(self):
         shipped = json.loads(SHIPPED_LEVEL.read_text())
         rows = {}
-        # Since TASK-677 the shipped level (v13) carries one zone, NG1; the legacy fixture has none.
+        # Since TASK-677 the shipped level (v13, v14) carries one zone, NG1; the legacy fixture has none.
         for name, level in (('legacy-valid', self.legacy), ('shipped-level-json', shipped), ('shipped-bundle', None)):
             r = self.runtime[name]
             self.assertEqual(r['validate'], 'accept', r)
@@ -160,7 +160,8 @@ class FormatTests(unittest.TestCase):
             rows[name] = {'validate': r['validate'], 'elements': len(r['elements']), 'dragZones': len(r['dragZones']),
                           'noGrappleZones': len(expected), 'roles': r['roles']}
         self.assertEqual(rows['legacy-valid']['elements'], 7)
-        self.assertEqual((rows['shipped-bundle']['elements'], rows['shipped-bundle']['dragZones']), (48, 17))
+        # 48 panel bodies plus R1's TASK-677 shortcut fin (a second R1 body).
+        self.assertEqual((rows['shipped-bundle']['elements'], rows['shipped-bundle']['dragZones']), (49, 17))
         self.assertEqual(self.runtime['shipped-bundle'], self.runtime['shipped-level-json'])
         # Legacy imports are byte-identical to the committed expected outputs.
         for name in ('valid', 'valid-guide'):
@@ -447,7 +448,7 @@ class SpacingTests(unittest.TestCase):
         added = {'noGrappleZones', 'noGrappleZonesPass', 'noGrappleInternalPairs'}
         self.assertEqual({k: v for k, v in new['summary'].items() if k not in added}, old['summary'])
         self.assertEqual((new['summary']['noGrappleZones'], new['summary']['noGrappleInternalPairs']), (0, 0))
-        # Shipped v13: the scoped rule applies only inside NG1; every other pair keeps the 540+diameter rule.
+        # Shipped v14: the scoped rule applies only inside NG1; every other pair keeps the 540+diameter rule.
         shipped = geometry.check(json.loads(SHIPPED_LEVEL.read_text()), SHIPPED_SVG.read_bytes(),
                                  json.loads(SHIPPED_REFERENCE.read_text()))
         self.assertTrue(shipped['summary']['pass'])
