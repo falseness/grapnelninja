@@ -564,8 +564,14 @@ PURPLE_MIDDLE = dict(PURPLE, departure='P7', upId='S08-02', prefix='NGM', zoneId
 # approach ledge left of P13, a 10R x 5R zone left of that at NG1's height below its approach, and an exit
 # ledge copying P13 7500 to the left, so EXT-14 and every later panel keep their geometry translated by
 # -7500 (the summit end then lies over the opening P2 .. R2, so late falls land on lower terrain).
+# TASK-685 tuning (production-input shortcut probes): the exit keeps P13's left end and outline but is
+# 1700 wide instead of 3300 (x scaled), so like NG-EXIT it no longer overhangs NGU1 .. NGU3. The full
+# copy covered zone-top offsets 510 .. 3810: a capped-speed rebound off NGU3 landed on its top and a
+# carried NGU1 state grappled its right end (13 skips). Its right end stays right of P14, so EXT-14 keeps
+# its 810 vertical gap.
+UPPER_EXIT_WIDTH = 1700
 PURPLE_UPPER = dict(PURPLE, departure='P13', upId='EXT-14', prefix='NGU', zoneId='NGU', mirror=False,
-                    copyOf='NG1', shift=-7500, label='Upper purple',
+                    copyOf='NG1', shift=-7500, label='Upper purple', exitWidth=UPPER_EXIT_WIDTH,
                     purpose='Leftward rope-free bounce traversal (NG1 orientation, opposite to NGM) after EXT-13, '
                             'before the EXT-14 ceiling hold')
 
@@ -643,6 +649,11 @@ def extend_purple_route(m, spec):
         raise ValueError('Purple shift must point to the chute side')
     label = spec.get('label', 'Purple')
     exit_ = dict(copy.deepcopy(dep), name='%s exit ledge' % label, x=dep['x']+shift, originalId=None, semanticId=pre+'-EXIT')
+    if spec.get('exitWidth'):
+        # A shorter exit copy (TASK-685): the departure's outline scaled along x from its left end.
+        k_ = spec['exitWidth']/exit_['width']
+        exit_['polys'] = [[[px*k_, py] for px, py in poly] for poly in exit_['polys']]
+        exit_['width'] = spec['exitWidth']
     w, h = spec['approach']
     approach = dict(panel('%s approach ledge' % label, w, h, 0, 0), originalId=None, semanticId=pre+'-APPROACH')
     approach = place_along(dep, approach, side, 0, spec['approachGap'],

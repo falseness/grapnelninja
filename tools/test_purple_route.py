@@ -63,7 +63,8 @@ ENCOUNTER = os.environ.get('PURPLE_ROUTE_ENCOUNTER', 'NG1')
 SHIPPED = ROOT / 'artifacts' / 'levels'
 SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 INPUTS = {'NG': TOOLS / 'fixtures' / 'purple-route-inputs.json',
-          'NGM': TOOLS / 'fixtures' / 'purple-route-inputs-ngm.json'}
+          'NGM': TOOLS / 'fixtures' / 'purple-route-inputs-ngm.json',
+          'NGU': TOOLS / 'fixtures' / 'purple-route-inputs-ngu.json'}
 NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json')
 # The preserved concept source, unchanged since TASK-650 (artifacts/TASK-650/hashes.json).
 ORIGINAL_SOURCE = {
@@ -77,7 +78,7 @@ CANONICAL_TRANSFER = 1080.0  # 200% R: every added outside transfer
 CLEARANCE = R + geometry.PLAYER_DIAMETER  # grapple clearance for every non-transfer pair
 SOURCES = ('tools/retune_extended_level.py', 'tools/convert_extended_mountain_svg.py', 'tools/import_level_svg.py',
            'tools/check_level_geometry.py', 'tools/test_purple_route.py', 'tools/opening_combination_replay.js',
-           'tools/fixtures/purple-route-inputs.json', 'tools/fixtures/purple-route-inputs-ngm.json', 'fixedlevel.js', 'physics.js', 'events.js', 'sprites/grapnel.js',
+           'tools/fixtures/purple-route-inputs.json', 'tools/fixtures/purple-route-inputs-ngm.json', 'tools/fixtures/purple-route-inputs-ngu.json', 'fixedlevel.js', 'physics.js', 'events.js', 'sprites/grapnel.js',
            'sprites/ninja.js', 'sprites/trampoline.js', 'artifacts/levels/level-guidelines.md')
 OUT = {}
 

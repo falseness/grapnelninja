@@ -6,9 +6,10 @@ chute, with the normal grapple transfers S08-02 .. EXT-13 between them. NGU runs
 leftward with NG1's unmirrored slabs and post (NGM is NG1 mirrored, rightward):
 the approach is left of P13, the zone left of the approach at NG1's height below
 it, and the exit ledge copies P13 7500 to the left, so EXT-14 and every later
-panel keep their geometry translated by -7500. NG1 and NGM stay exactly as in
+panel keep their geometry translated by -7500 (TASK-685: the copy is shortened to
+UPPER_EXIT_WIDTH, P13's outline scaled from its left end). NG1 and NGM stay exactly as in
 the --middle-purple candidate (TASK-683). Everything is found by semantic ids
-(purpleExtensions, routeMap), never by numeric index. Traversal of NGU is later work.
+(purpleExtensions, routeMap), never by numeric index. Traversal of NGU: test_purple_route PURPLE_ROUTE_ENCOUNTER=NGU (TASK-685).
 
 UPPER_PURPLE_CANDIDATE=DIR (extended-mountain.svg, -measurements.json,
 .level.json, .level.js) selects the candidate. Without it, the candidate is
@@ -243,9 +244,10 @@ class UpperPurpleTests(unittest.TestCase):
             approachAboveZoneTop=[z1['y'] - a1['y'], zu['y'] - au['y']], transfers=internal,
             fragmentsTouchingZone=touching, posts=posts,
             note='NG1\'s bounce semantics (kicker slope, low ceiling, chute floor, overhang, launch ramp) in NG1\'s '
-                 'leftward orientation, the opposite of the rightward mirrored NGM. The exit ledge copies P13 (3300 x '
-                 '360), so it sits %.0f above the zone instead of NG1\'s 60 and NGU-EXIT is longer. Traversal and '
-                 'tuning are later work.' % (zu['y'] - bodies_box(self.by['NGU-EXIT'])[3]))
+                 'leftward orientation, the opposite of the rightward mirrored NGM. The exit ledge copies P13 (360 high), '
+                 'so it sits %.0f above the zone instead of NG1\'s 60; TASK-685 shortened it to %d wide (P13\'s outline '
+                 'scaled from its left end) so it no longer overhangs NGU1 .. NGU3.'
+                 % (zu['y'] - bodies_box(self.by['NGU-EXIT'])[3], retune.UPPER_EXIT_WIDTH))
 
     def test_04_earlier_route_preserved_later_translated(self):
         base = {f['semanticId']: f for f in self.base['fragments']}
@@ -270,7 +272,16 @@ class UpperPurpleTests(unittest.TestCase):
                 moved.append(s)
         self.assertTrue({'P0', 'P2', 'R1', 'X10', 'P4', 'NG1', 'NG5', 'NGM1', 'NGM5', 'P8', 'P13'} <= set(same))
         e, p13 = self.by['NGU-EXIT'], self.by['P13']
-        self.assertEqual((e['polys'], e['width'], e['height']), (p13['polys'], p13['width'], p13['height']))
+        # TASK-685 tune: P13's outline scaled along x from its left end to UPPER_EXIT_WIDTH (no NGU1 .. NGU3 overhang).
+        k = retune.UPPER_EXIT_WIDTH / p13['width']
+        self.assertEqual(e['width'], retune.UPPER_EXIT_WIDTH)
+        self.assertEqual(e['height'], p13['height'])
+        self.assertEqual(len(e['polys']), len(p13['polys']))
+        for pe, pp in zip(e['polys'], p13['polys']):
+            self.assertEqual(len(pe), len(pp))
+            for a, b in zip(pe, pp):
+                self.assertAlmostEqual(a[0], b[0] * k, places=9)
+                self.assertEqual(a[1], b[1])
         self.assertAlmostEqual(e['x'] - p13['x'], dx, places=9)
         self.assertEqual(e['y'], p13['y'])
         rows_b = {r['id']: r for r in self.base['encounters']}

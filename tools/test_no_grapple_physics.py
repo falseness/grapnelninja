@@ -398,6 +398,87 @@ class NoGrapplePhysicsTests(unittest.TestCase):
                          'held input needs a fresh press after exit'}
         print('PASS held through zone: no re-attach while held after exit (%d steps); fresh press attaches' % len(after))
 
+    def test_08_multi_zone_exit_keeps_grapple_blocked(self):
+        """TASK-685: leaving one of two overlapping zones keeps grapple blocked while the other still overlaps."""
+        page = self.open()
+        r = self.radius
+        zones = [['B', 1800, -1500, 400, 3000], ['C', 2100, -1500, 500, 3000]]
+        panels = [['inner', 2380, -200, 80, 20], ['anchor', 2900, -200, 80, 20]]
+        page.evaluate('s => NG.world(s)', {'zones': zones, 'panels': panels})
+        page.evaluate('NG.place(2150, 0, 4, 0)')
+        page.evaluate('NG.ticks(1)')
+        start = self.snap(page)
+        self.assertEqual(zones_containing(start['x'], start['y'], r, zones), ['B', 'C'])
+        self.assertTrue(start['inside'] and not start['thrown'])
+        # Exit B (circle clear of B) while C still overlaps the circle.
+        page.evaluate('''r => { NG.log = []; NG.ticks(80, () => ninja.x - r > 2200 + 1e-3) }''', r)
+        log = page.evaluate('NG.log')
+        self.check_membership(log, zones)
+        left_b = log[-1]
+        self.assertEqual(zones_containing(left_b['after']['x'], left_b['after']['y'], r, zones), ['C'])
+        self.assertIn('B', zones_containing(left_b['before']['x'], left_b['before']['y'], r, zones))
+        self.assertTrue(left_b['after']['inside'] and not left_b['after']['thrown'])
+        # A fresh press (nothing held before) aimed at a panel in range: blocked while C overlaps.
+        self.assertFalse(left_b['after']['held'] or left_b['after']['stale'])
+        here = self.snap(page)
+        d_inner = math.hypot(2420 - here['x'], -190 - here['y'])
+        self.assertLess(d_inner, self.constants['range'])
+        self.press(page, 2420, -190)
+        pressed = self.snap(page)
+        self.assertFalse(pressed['thrown'])
+        self.assertTrue(pressed['held'] and pressed['stale'] and not pressed['owned'])
+        page.evaluate('NG.log = []; NG.ticks(3)')
+        held = page.evaluate('NG.log')
+        self.check_membership(held, zones)
+        self.assertTrue(all(row['after']['inside'] and not row['after']['thrown'] for row in held))
+        # Repeated input (release + press again) while only C overlaps: still blocked.
+        page.mouse.up()
+        self.press(page, 2420, -190)
+        repress = self.snap(page)
+        self.assertEqual(zones_containing(repress['x'], repress['y'], r, zones), ['C'])
+        self.assertFalse(repress['thrown'])
+        self.assertTrue(repress['held'] and repress['stale'])
+        # Leave C with that press still held: outside every zone but the held press stays stale.
+        page.evaluate('NG.log = []; NG.ticks(120, () => !floors[0].playerInNoGrapple)')
+        page.evaluate('NG.ticks(2)')
+        log = page.evaluate('NG.log')
+        self.check_membership(log, zones)
+        sets = [zones_containing(row['after']['x'], row['after']['y'], r, zones) for row in log]
+        self.assertTrue(all(s == ['C'] for s in sets[:sets.index([])]))
+        self.assertTrue(all(row['after']['inside'] and not row['after']['thrown'] for row, s in zip(log, sets) if s))
+        outside = [row for row, s in zip(log, sets) if not s]
+        self.assertTrue(outside)
+        self.assertTrue(all(not row['after']['thrown'] and row['after']['held'] and row['after']['stale'] for row in outside))
+        exit_c = outside[0]
+        # Fresh input once fully outside all zones grapples normally.
+        page.mouse.up()
+        clear = self.snap(page)
+        self.assertEqual(zones_containing(clear['x'], clear['y'], r, zones), [])
+        d_anchor = math.hypot(2940 - clear['x'], -190 - clear['y'])
+        self.assertLess(d_anchor, self.constants['range'])
+        self.press(page, 2940, -190)
+        page.evaluate("NG.log = []; NG.ticks(10, () => grapnel.grappled)")
+        fresh = self.snap(page)
+        self.assertTrue(fresh['attached'] and fresh['owned'] and not fresh['inside'])
+        self.assertEqual(fresh['anchor'], 'anchor')
+        self.transitions['multiZone'] = {
+            'radius': r, 'zones': zones, 'panels': panels, 'start': start,
+            'startZones': zones_containing(start['x'], start['y'], r, zones),
+            'exitB': {'step': left_b['step'], 'before': left_b['before'], 'after': left_b['after'],
+                      'zonesBefore': zones_containing(left_b['before']['x'], left_b['before']['y'], r, zones),
+                      'zonesAfter': ['C']},
+            'freshPressInsideCOnly': {'state': pressed, 'targetDistance': d_inner, 'range': self.constants['range'],
+                                      'heldSteps': len(held), 'thrownAnyStep': False},
+            'repressInsideCOnly': repress,
+            'exitC': {'step': exit_c['step'], 'before': exit_c['before'], 'after': exit_c['after'],
+                      'stepsInsideCOnly': sum(1 for s in sets if s == ['C']),
+                      'heldStaleStepsOutside': len(outside), 'thrownWhileHeldOutside': False},
+            'freshPressOutsideAll': {'state': fresh, 'targetDistance': d_anchor},
+            'rule': 'membership is the union of zones: grapple stays blocked until the circle is clear of every '
+                    'zone; a press made inside stays stale until released; a fresh press outside all zones grapples'}
+        print('PASS multi-zone: exit B while C overlaps keeps grapple blocked (fresh + repeated press); '
+              'held press stale after leaving C; fresh press outside all zones attaches')
+
     # ---- physics.json -----------------------------------------------------
 
     def trajectory(self, page, spec, start, ticks, attach=None):
