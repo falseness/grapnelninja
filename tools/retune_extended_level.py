@@ -777,7 +777,9 @@ def measure_transfers(m, opening):
 
 
 def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LEGACY_YELLOW_CLEARANCE, min_sides=None,
-         middle_purple=False, upper_purple=False):
+         middle_purple=False, upper_purple=False, purple_rest=False):
+    if purple_rest and min_sides != 'all':
+        raise ValueError('The purple rest retilt rebuilds the slabs of min-side scope all')
     if upper_purple and not middle_purple:
         raise ValueError('The upper purple encounter follows the middle one')
     source = copy.deepcopy(source)
@@ -934,7 +936,7 @@ def tune(source, reposition=True, guards=True, opening=None, yellow_clearance=LE
             narrow_from_left(m, 'L2', MIDDLE_L2_LEFT_CUT, 'NGM5')
             extend_middle_zone_right(m)
     if min_sides == 'all':
-        resize_later_sides(m, opening, yellow_clearance)
+        resize_later_sides(m, opening, yellow_clearance, purple_rest=purple_rest)
         deepen_yellow_bands(m, yellow_clearance)
     m['fallIllustrations'] = [dict(id='F'+str(i+1),band=z['id'],start=[z['x']+z['width']/2,z['y']-500],
         end=[z['x']+z['width']/2,z['y']+1000],meaning='Illustrative fall only') for i,z in enumerate(m['yellowBands'])]
@@ -1296,9 +1298,48 @@ def wide_post(f, width, height, approach, keep, target=SIDE_TARGET):
     return dict(foot=list(foot), top=tl[1], topRight=[c[0], tl[1]+hi], width=c[0]-foot[0], entryGap=keep)
 
 
-def rebuild_purple_slabs(m, by):
+# TASK-696 (candidate, opt-in via --purple-rest): no upward face inside a purple zone may be flatter than
+# 15 deg (check_level_geometry.py --no-grapple-rest), so a ninja can never come to rest there. NG1's three flat
+# tops (and their NGM mirror / NGU copy) drain toward the zone's exit side (left in NG1's frame, the exit ledge
+# overhangs the zone's upper left): the Low ceiling and Overhang keep their underside (the traversal contact)
+# and left end cap, and their top rises rightward from the top-left corner at PURPLE_REST_ANGLE over the same x
+# extent; the Chute floor turns to -PURPLE_REST_ANGLE (left end down) about the face point PURPLE_REST_PIVOT
+# along the face from its contact foot (contact rotated with it, same extents and thickness), then moves by
+# PURPLE_REST_SHIFT. A rotation alone opens the NG3 -> NG4 gap past 270 or closes NG2 -> NG3 (fixed-grid search
+# over the shift, artifacts/TASK-696/search.py); further left brings NG3 within the 540 pair clearance of NG5.
+# (-420, -40): NG2 -> NG3 124, NG3 -> NG4 226 (were 218 / 189), NG3 / NG5 clearance 586. Already-steep faces
+# (kicker, post top, launch ramp, end caps) are unchanged.
+PURPLE_REST_ANGLE = 15.5
+PURPLE_REST_TOPS = ('Low ceiling', 'Overhang')
+PURPLE_REST_FLOOR = 'Chute floor'
+PURPLE_REST_PIVOT = 0.0
+PURPLE_REST_SHIFT = (-420.0, -40.0)
+
+
+def rest_floor(contact, angle, before, after, thickness, side, pivot=None, shift=None, rest=PURPLE_REST_ANGLE):
+    """(contact, angle) of a top slab turned to -rest (left end down) about the face point pivot units along
+    the face from the contact foot, then moved by shift."""
+    pivot = PURPLE_REST_PIVOT if pivot is None else pivot
+    shift = PURPLE_REST_SHIFT if shift is None else shift
+    ux, uy = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+    fx, fy = contact[0]-uy*svg.PLAYER_RADIUS, contact[1]+ux*svg.PLAYER_RADIUS
+    px, py = fx+ux*pivot, fy+uy*pivot
+    t = math.radians(-rest-angle)
+    rx, ry = contact[0]-px, contact[1]-py
+    return (px+rx*math.cos(t)-ry*math.sin(t)+shift[0], py+rx*math.sin(t)+ry*math.cos(t)+shift[1]), -rest
+
+
+def rest_top(poly, rest=PURPLE_REST_ANGLE):
+    """Underside slab [top-left, top-right, under-right, under-left] whose top rises rightward at rest
+    from the top-left corner (the right corner keeps its x); the underside and left cap are unchanged."""
+    d, c, b, a = poly
+    return [d, (c[0], d[1]-(c[0]-d[0])*math.tan(math.radians(rest))), b, a]
+
+
+def rebuild_purple_slabs(m, by, purple_rest=False):
     """Rebuild the thin chute slabs with tapered end caps and NG1 with the wide post (each purple
-    encounter; a mirrored one is rebuilt reflected, then reflected back)."""
+    encounter; a mirrored one is rebuilt reflected, then reflected back). purple_rest also retilts the
+    flat tops (TASK-696)."""
     out = []
     posts = m.get('shortcutShields', {}).get('posts') or [m.get('shortcutShields', {}).get('post')]
     for ext, zone, post_meta in zip(purple_extensions(m), m.get('noGrappleZones', []), posts):
@@ -1308,15 +1349,25 @@ def rebuild_purple_slabs(m, by):
         for n, (name, contact, angle, before, after, thickness, side) in enumerate(panels, 1):
             sid = '%s%d' % (pre, n)
             post = 'NG%d' % n == SHIELDS['post'][0] and bool(post_meta)
-            if name not in taper and not post:
+            rest = purple_rest and name in PURPLE_REST_TOPS+(PURPLE_REST_FLOOR,)
+            if name not in taper and not post and not rest:
                 continue
             f = by[sid]
             polys, height, x0, y0, width = copy.deepcopy(f['polys']), f['height'], f['x'], f['y'], f['width']
+            angle0 = f.get('surfaceAngle')
+            if rest and name == PURPLE_REST_FLOOR:
+                contact, angle = rest_floor(contact, angle, before, after, thickness, side)
             shape = (tapered_slab if name in taper else slab)(contact, angle, before, after, thickness, side)
+            if rest and name in PURPLE_REST_TOPS:
+                shape = rest_top(shape)
             g = purple_panel(name, shape, contact, 'top' if side > 0 else 'underside', zone['x'], zone['y'])
+            if rest:
+                g['surfaceAngle'] = angle
             if ext.get('mirror'):
                 g = mirror_fragment(g, cx)
             f.update({k: g[k] for k in ('x', 'y', 'width', 'height', 'contactPoint', 'polys')})
+            if rest:
+                f['surfaceAngle'] = g['surfaceAngle']
             if post:
                 approach = by[pre+'-APPROACH']
                 keep = gap(approach, dict(f, polys=polys, x=x0, y=y0))[0]
@@ -1331,18 +1382,20 @@ def rebuild_purple_slabs(m, by):
                 post_meta.update(made)
             if not zone_contains(zone, f):
                 raise ValueError('%s must stay inside the purple zone' % sid)
-            out.append(dict(fragment=f['id'], semanticId=sid, op='post' if post else 'taper', before=polys,
+            out.append(dict(fragment=f['id'], semanticId=sid, op='post' if post else 'rest' if rest else 'taper', before=polys,
                             after=copy.deepcopy(f['polys']), heightBefore=height, heightAfter=f['height'],
-                            boxBefore=[x0, y0, width, height], thickness=thickness))
+                            boxBefore=[x0, y0, width, height], thickness=thickness,
+                            **({'restAngle': PURPLE_REST_ANGLE, 'surfaceAngleBefore': angle0,
+                                'taper': name in taper} if rest else {})))
     return out
 
 
-def resize_later_sides(m, opening, clearance, spec=LATER_MIN_SIDES, target=SIDE_TARGET):
+def resize_later_sides(m, opening, clearance, spec=LATER_MIN_SIDES, target=SIDE_TARGET, purple_rest=False):
     """Runs after the bands are placed, so no band moves; transfers and pairs are re-measured."""
     fs = m['fragments']
     by = {f['semanticId']: f for f in fs}
     before_rows = {r['id']: (r['distance'], r['witness']) for r in m['encounters']}
-    changed = rebuild_purple_slabs(m, by)
+    changed = rebuild_purple_slabs(m, by, purple_rest)
     # A layout generated without the purple extension (tests) has no exit ledge.
     for sid, op, arg in [e for e in spec if e[0] in by]:
         f = by[sid]
@@ -1648,6 +1701,9 @@ def main():
                          'polygon edge (TASK-681); none: the v15 layout. Default (no layout flags): shipped v16 = all')
     ap.add_argument('--middle-purple', action=argparse.BooleanOptionalAction, default=None,
                     help='add the second (middle) purple no-grapple encounter NGM after S08-01 (TASK-682); shipped')
+    ap.add_argument('--purple-rest', action='store_true',
+                    help='candidate (TASK-696): retilt the flat tops in every purple zone to >= 15 deg, draining '
+                         'toward the exit side (needs min-side scope all; not a layout flag, so alone it retilts v16)')
     ap.add_argument('--upper-purple', action=argparse.BooleanOptionalAction, default=None,
                     help='(with --middle-purple) add the third (upper) purple encounter NGU after EXT-13 (TASK-684); shipped')
     args=ap.parse_args()
@@ -1674,7 +1730,7 @@ def main():
     dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
     m=tune(json.loads(Path(args.source).read_text()), opening=opening, yellow_clearance=clearance,
          min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple,
-         upper_purple=args.upper_purple)
+         upper_purple=args.upper_purple, purple_rest=args.purple_rest)
     if shipped:
         m['layoutId']=SHIPPED_LAYOUT
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
