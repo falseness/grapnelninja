@@ -9,11 +9,10 @@ polygon edge whose interior side matches the intended surface. The pre-change
 v7 generation frozen under artifacts/TASK-668/before is the comparison point;
 relabelling that stair with the new actions must fail the same checks.
 TASK-669: CombinationReplayTests boot the real index.html with the shipped
-leveldata.js and replay the four added transfers continuously with real mouse
-events and production physics() from one gravity-produced entry fixture (a
-zero-speed drop onto P2), with the game's 540-unit acquisition radius. They
-also probe the easy transfers and the upward turn, and run a bounded local
-shortcut search around the changed panels: the v9 retune must add no skip
+leveldata.js and production physics() with the game's 540-unit acquisition
+radius (the continuous four-transfer replay, test_10, was removed in TASK-693
+after the camera changes). They probe the easy transfers and the upward turn,
+and run a bounded local shortcut search around the changed panels: the v9 retune must add no skip
 family beyond those of the pre-change v7 baseline, and the frozen v8 control
 (the layout shipped before the retune) shows the families it fixes.
 TASK-676: the whole starting rightward section is varied. Candidate selection
@@ -25,15 +24,14 @@ upward rebound, exposed traverse) and requires no adjacent repeat after the
 first two; test_14 compares the candidate with the TASK-675 candidate by
 semantic id (purple extension and later route unchanged, lower terrain under
 the late route, original source, corner/clearance rules, opening span).
-test_15 replays tools/fixtures/opening-section-inputs.json (the -min-sides
-variant with OPENING_VARIETY_MIN_SIDE_SCOPE=opening) from the spawn with
-production inputs through the whole section to the upward-turn departure;
-test_16 drops the three leftmost late panels onto lower terrain; test_17 draws
+test_15 (the whole-section replay) was removed in TASK-693; test_17 still
+replays tools/fixtures/opening-section-inputs.json for its path; test_16
+drops the three leftmost late panels onto lower terrain; test_17 draws
 opening.png (candidate SVG vs runtime draw()).
 Set OPENING_VARIETY_EVIDENCE_DIR to write contact-vectors.json, geometry.json,
-angles.json and preservation.json, plus combination-replay.json,
+angles.json and preservation.json, plus
 route-regressions.json and local-shortcuts.json, and (TASK-676)
-opening-patterns.json, opening-replay.json and opening.png.
+opening-patterns.json and opening.png.
 """
 import base64
 import copy
@@ -823,12 +821,6 @@ def catch_inputs(bounds):
 
 
 
-def combination_inputs(bounds):
-    # Recorded real inputs for the fixed v10 opening; geometry changes must
-    # earn a new successful continuous replay rather than adapting the test.
-    return json.loads(HARDER_INPUTS.read_text())['inputs']
-
-
 def first_seq(contacts):
     seq = []
     for c in contacts:
@@ -904,76 +896,6 @@ class CombinationReplayTests(unittest.TestCase):
                                          options)
         return {k: r[k] for k in ('source', 'target', 'fraction', 'pumps', 'drop', 'aimOffset', 'budget', 'setup',
                                   'arrival', 'hit', 'bounces', 'ticks')}
-
-    def test_10_continuous_combination(self):
-        ids, b = self.ids, self.bounds(self.level)
-        inputs = combination_inputs(b)
-        runs = [self.replay(inputs) for _ in range(2)]
-        log = runs[0]
-        self.assertEqual(runs[0], runs[1])                     # deterministic
-        self.assertEqual(log['layoutId'], self.level['layoutId'])
-        self.assertEqual(self.pages['replay'].errors, [])
-        # Only document mouse events after the fixture; the replay moves continuously.
-        self.assertEqual(log['acquisitionRadius'], 540)
-        self.assertTrue(all(e['type'] in ('down','up','move') for e in log['inputs']))
-        self.assertEqual(log['fixture']['vx'], 0)
-        self.assertEqual(log['fixture']['vy'], 0)
-        self.assertLess(log['maxStep'], 200)
-        # The first seven inputs are the P2 pumps and the in-range ceiling shot.
-        early = [c['id'] for c in log['contacts'] if c['tick'] < next(c['tick'] for c in log['contacts'] if c['id']==ids['R1']+'-body0')]
-        self.assertEqual(early, ['P2-body0'] * len(early))
-        self.assertGreaterEqual(len(early), 1)
-        after = [c for c in log['contacts'] if c['id'] != 'P2-body0']
-        self.assertEqual(first_seq(after), [ids[k] for k in ('R1', 'R2', 'R3', 'R4')])
-        by = lambda k: [c for c in after if c['id'] == ids[k] + '-body0']
-        catch, slope, r3, r4 = by('R1')[0], by('R2')[0], by('R3')[0], by('R4')[0]
-        # 1 ceiling catch: moving up-right into the R1 underside (contact normal points down).
-        self.assertGreater(catch['ny'], .99)
-        self.assertGreater(catch['vxIn'], 0)
-        self.assertLess(catch['vyIn'], 0)
-        self.assertGreater(catch['y'], b['R1']['y1'])
-        # 2 release and down-right landing on the sloped face.
-        self.assertGreater(slope['vxIn'], 0)
-        self.assertGreater(slope['vyIn'], 0)
-        self.assertTrue(0 < slope['nx'] < .2 and slope['ny'] < -.98, slope)
-        self.assertGreater(slope['y'], catch['y'])
-        # 3 right/up rebound off the slope onto the R3 top.
-        self.assertGreater(slope['vxOut'], 0)
-        self.assertLess(slope['vyOut'], 0)
-        self.assertEqual((r3['nx'], r3['ny']), (0, -1))
-        self.assertLess(r3['y'], slope['y'])
-        # 4 mostly horizontal rightward arrival on the R4 top (the upward-turn departure).
-        last_r3 = by('R3')[-1]
-        dx, dy = r4['x'] - last_r3['x'], r4['y'] - last_r3['y']
-        self.assertEqual((r4['nx'], r4['ny']), (0, -1))
-        self.assertGreater(dx, 0)
-        self.assertLessEqual(abs(dy), .25 * dx)
-        self.assertGreater(r4['vxIn'], 0)
-        self.assertEqual(log['stopped'], r4)
-        # A new successful policy may use different pump counts. Contacts and
-        # attachments must still follow the intended sequence without skipping.
-        high = 2
-        events = [(c['tick'], c['id']) for c in log['contacts']] + [
-            (g['tick'], g['id']) for g in log['grapple'] if g['event']=='attach']
-        for tick, pid in sorted(events):
-            n = int(pid.split('-')[0][1:])
-            self.assertLessEqual(n, high+1, (tick,pid))
-            high = max(high,n)
-        transitions = []
-        for name, enc, c in (('ceiling catch', 'OPEN-P2-R1', catch), ('down-right slope landing', 'OPEN-R1-R2', slope),
-                             ('right/up rebound arrival', 'OPEN-R2-R3', r3), ('horizontal arrival', 'OPEN-R3-R4', r4)):
-            transitions.append(dict(transfer=name, encounter=enc, contact=c))
-        self.__class__.evidence['combination-replay.json'] = dict(
-            method='Real index.html with the shipped leveldata.js; tools/opening_combination_replay.js dispatches '
-                   'document mousedown/mousemove/mouseup at the listed ticks and calls production physics() once per '
-                   'tick. The fixture is the only placement; no position, velocity or grapple state is written later.',
-            fixture=dict(log['fixture'], note='recorded zero-speed drop above P2 (end of the easier '
-                                              'opening); the entry velocity is produced by gravity and a P2 bounce'),
-            layoutId=log['layoutId'], inputs=log['inputs'], transitions=transitions,
-            r3ToR4=dict(dx=dx, dy=dy, absDyOverDx=abs(dy) / dx), grapple=log['grapple'],
-            contacts=log['contacts'], ticks=log['ticks'], maxStepPerTick=log['maxStep'],
-            secondRunIdentical=runs[0] == runs[1], sequence=first_seq(after),
-            semantic=dict(R1=ids['R1'], R2=ids['R2'], R3=ids['R3'], R4=ids['R4']))
 
     def test_11_route_regressions(self):
         ids = self.ids
@@ -1090,80 +1012,6 @@ class CombinationReplayTests(unittest.TestCase):
         return self.pages['replay'].evaluate('o => OPENING_REPLAY.run(o)', dict(
             level=self.level, fixture=rec['fixture'], inputs=rec['inputs'], budget=rec['budget'],
             stopOn=dict(id=departure, ny='up'), maxDrift=20000, snapshotEvery=snapshot_every)), rec
-
-    def test_15_complete_section_replay(self):
-        rows, departure = self.section()
-        (log, rec), (again, _) = self.run_section(), self.run_section()
-        self.assertEqual(log, again)                                  # deterministic
-        self.assertEqual(self.pages['replay'].errors, [])
-        self.assertEqual(log['layoutId'], self.level['layoutId'])
-        self.assertEqual(log['acquisitionRadius'], 540)
-        # Initialization is a new run's spawn at rest; afterwards only document mouse events.
-        self.assertTrue(log['fixture']['spawn'])
-        self.assertEqual((log['fixture']['x'], log['fixture']['y']), (self.level['spawn']['x'], self.level['spawn']['y']))
-        self.assertEqual((log['fixture']['vx'], log['fixture']['vy']), (0, 0))
-        self.assertTrue(all(e['type'] in ('down', 'up', 'move') for e in log['inputs']))
-        self.assertEqual(log['recoveries'], [])
-        self.assertLess(log['maxStep'], 200)
-        order = [rows[0]['fromFragment']] + [r['toFragment'] for r in rows]
-        contacts = [c for c in log['contacts'] if c['id'].startswith('P')]
-        seq = first_seq(contacts)
-        self.assertEqual(seq, order)
-        # Every contact and attachment is on the current panel or its successor (no skip).
-        events = sorted([(c['tick'], c['id'].split('-')[0]) for c in contacts] +
-                        [(g['tick'], g['id'].split('-')[0]) for g in log['grapple'] if g['event'] == 'attach'])
-        pos = 0
-        for tick, pid in events:
-            k = order.index(pid)
-            self.assertIn(k, (pos, pos + 1), (tick, pid))
-            pos = max(pos, k)
-        self.assertEqual(log['stopped']['id'], departure + '-body0')
-        transitions = []
-        for k, r in enumerate(rows):
-            dep_id, arr_id = order[k] + '-body0', order[k + 1] + '-body0'
-            arrival = next(c for c in contacts if c['id'] == arr_id)
-            before = [c for c in contacts if c['tick'] <= arrival['tick'] and c['id'] == dep_id]
-            self.assertTrue(before, r['semantic'])
-            last, p = before[-1], r['pattern']
-            if p == 'ceiling-catch':
-                self.assertGreater(arrival['ny'], .99, r)
-                self.assertLess(arrival['vyIn'], 0, r)
-            elif p == 'descending-slope':
-                self.assertTrue(0 < arrival['nx'] < .2 and arrival['ny'] < -.98, (r['semantic'], arrival))
-                self.assertGreater(arrival['vyIn'], 0, r)
-                self.assertGreater(arrival['y'], last['y'], r)
-            elif p == 'upward-rebound':
-                self.assertTrue(0 < last['nx'] < .2 and last['ny'] < -.98, (r['semantic'], last))
-                self.assertLess(last['vyOut'], 0, r)
-                self.assertEqual((arrival['nx'], arrival['ny']), (0, -1), r)
-                self.assertLess(arrival['y'], last['y'], r)
-            else:
-                # The last departure contact may be the top or a panel end (recorded as departureContact).
-                self.assertEqual((arrival['nx'], arrival['ny']), (0, -1), r)
-                self.assertLess(last['ny'], 1, r)
-                self.assertGreater(arrival['x'], last['x'], r)
-                if p == 'exposed-traverse':
-                    self.assertLessEqual(abs(arrival['y'] - last['y']), .25 * (arrival['x'] - last['x']), r)
-            transitions.append(dict(encounter=r['encounter'], semantic=r['semantic'], pattern=p,
-                                    departureContact=last, arrivalContact=arrival))
-        self.__class__.evidence['opening-replay.json'] = dict(
-            method='Real index.html; the candidate goes through production importedMountainLevel() (540 acquisition). '
-                   'tools/opening_combination_replay.js places the player once exactly as a new run (level spawn, zero '
-                   'speed), then dispatches document mousedown/mousemove/mouseup at the recorded ticks '
-                   '(tools/fixtures/%s, aims in world units) and calls production physics() '
-                   'once per tick. Nothing writes position, velocity or grapple state afterwards; recoverClimbFall '
-                   'calls are logged (recoveries) and must be empty. departureContact is the last contact on the '
-                   'departure panel at or before the arrival.' % SECTION_INPUTS.name,
-            browser=self.browser_version,
-            candidate=dict(path=os.path.relpath(CANDIDATE.resolve(), ROOT), selectedBy=SELECTED_BY,
-                           levelSha=sha((CANDIDATE / NAMES[2]).read_bytes())),
-            inputsSha=sha(SECTION_INPUTS.read_bytes()), layoutId=log['layoutId'],
-            acquisitionRadius=log['acquisitionRadius'], fixture=log['fixture'], stateInjectionsAfterInit=0,
-            recoveries=log['recoveries'], maxStepPerTick=log['maxStep'], ticks=log['ticks'],
-            secondRunIdentical=log == again, intendedOrder=[self.sem[o] for o in order],
-            contactSequence=[self.sem[p.split('-')[0]] for p in seq],
-            departure=dict(id=departure, semantic=self.sem[departure]), stopped=log['stopped'],
-            transitions=transitions, inputs=log['inputs'], grapple=log['grapple'], contactCount=len(log['contacts']))
 
     def test_16_late_falls_on_lower_terrain(self):
         fs = self.m['fragments']
