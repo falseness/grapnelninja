@@ -313,6 +313,8 @@ none, except the `no-grapple` contract below.
   either; a fresh press is needed (`tools/test_no_grapple_physics.py`).
   Drawing is TASK-674.
   Spacing inside a zone is relaxed only for route transfers, see §7.1.
+  The player must not be able to come to rest inside a zone (it could not
+  grapple out); see the opt-in no-rest rule in §7.3.
 - `grapplable` is always written explicitly in the output. The loader's
   `grapplable !== false` default is never relied on.
 
@@ -418,6 +420,37 @@ widths, labels or recorded metadata.
   from below, the other bounds the distance between two fragments from above.
 - The 20 degree corner and self-intersection checks remain active in both modes
   (`tools/test_level_minimum_sides.py`).
+
+### 7.3 No rest inside purple (opt-in)
+
+Inside a `no-grapple` zone the player cannot fire a rope, so a spot where it
+comes to rest there is a softlock. The rule (TASK-694):
+
+- Every **upward-facing face** that overlaps a `no-grapple` zone slopes at
+  least **15 degrees from horizontal**. A face is a polygon edge of a `solid`
+  or `bounce` element whose outward normal points up (negative y, either
+  winding). It overlaps a zone when more than 0.01 unit of the edge lies inside
+  the convex zone (clipped, boundary inclusive), so a face that only partly
+  enters the zone is checked too. Vertical edges and downward faces are not
+  rest faces. `hazard` faces are exempt (contact kills, so it is no softlock),
+  and so are drag and no-grapple zones (they do not collide).
+- **No pockets**: no two such faces meet at a vertex (within 0.01 unit, same
+  or different polygon) where both slope down toward it from opposite sides,
+  even when both are steeper than 15 degrees: the player would settle in the V.
+- The slope is measured with `atan2(|dy|, |dx|)` from the imported world
+  vertices. 15 degrees passes, 14.9 fails (tolerance 1e-9 degrees).
+- **Opt-in**: `tools/check_level_geometry.py --no-grapple-rest` (Python:
+  `check(..., no_grapple_rest=True)`). Without the flag the check is not run
+  and the report is unchanged. With it the report gains `noGrappleRest`
+  (`minSlope`, `roles`, `faces[]`: element, fragment, semantic id, edge,
+  angle, zone, zones, a, b, pass; `pockets[]`: vertex, left/right element,
+  edge and angle, zones), the summary gains `noGrappleRestFaces`,
+  `noGrappleRestFaceViolations`, `noGrappleRestPockets` and
+  `minNoGrappleRestAngle`, and each violation is a failure ending in `(rest)`.
+- The shipped v16 level fails it: NG1's near-flat tops P23 (4.8 degrees),
+  P24 (0 degrees) and P25 (0.6 degrees), and their copies in NGM (P33-P35) and
+  NGU (P46-P48). That is why the rule is not on by default yet
+  (`tools/test_no_grapple_rest.py`).
 
 ## 8. Rejection summary
 

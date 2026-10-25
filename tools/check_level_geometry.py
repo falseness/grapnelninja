@@ -6,7 +6,7 @@ gap-percent attributes and printed labels are only ever the expected side of
 a comparison, never the computed result (docs/level-svg-format.md §7).
 
     python3 tools/check_level_geometry.py --svg LEVEL.svg --level LEVEL.json --report REPORT.json \
-        [--reference MEASUREMENTS.json] [--min-side-length UNITS | --no-min-side-length]
+        [--reference MEASUREMENTS.json] [--min-side-length UNITS | --no-min-side-length] [--no-grapple-rest]
     python3 tools/check_level_geometry.py --sides-only --level LEVEL.json --report REPORT.json \
         [--min-side-length UNITS | --no-min-side-length]
 
@@ -34,7 +34,11 @@ Checks:
   level JSON alone, so old levels stay checkable during candidate migration;
 - drag zones are axis-aligned horizontal non-grapplable rectangles with a
   minimum solid clearance >= 1080 (no-grapple zones are not solids or brakes);
-- no-grapple zones are non-grapplable convex polygons outside fragments.
+- no-grapple zones are non-grapplable convex polygons outside fragments;
+- opt-in --no-grapple-rest (off by default): every upward-facing solid/bounce
+  edge that overlaps a no-grapple zone slopes >= 15 degrees from horizontal,
+  and no two such edges meet in a pocket (a vertex both slope down toward), so
+  the player cannot come to rest where it cannot grapple (report noGrappleRest).
 
 Exit 0 when every check passes, 1 on a failed check, 2 on usage errors.
 """
@@ -322,6 +326,92 @@ def check_sides(level, minimum=MIN_SIDE_LENGTH, names=None):
             'failureMessages': failures, 'sides': sides, 'angles': angle_rows}
 
 
+# --- no rest inside purple (opt-in, --no-grapple-rest) ---------------------
+# Shallowest upward face allowed where it overlaps a no-grapple zone (docs/level-svg-format.md §7.3).
+NO_GRAPPLE_REST_SLOPE = 15.0
+# Roles the ninja can stand on; a hazard kills on contact, so resting on it is no softlock.
+REST_ROLES = ('solid', 'bounce')
+
+
+def zone_overlap(a, b, zone):
+    """Length of segment a-b inside convex zone (Cyrus-Beck clip, either winding)."""
+    o = 1.0 if signed_area(zone) > 0 else -1.0
+    t0, t1 = 0.0, 1.0
+    for p, q in edges(zone):
+        fa, fb = o * cross(p, q, a), o * cross(p, q, b)
+        if fa < 0 and fb < 0:
+            return 0.0
+        if fa < 0:
+            t0 = max(t0, fa / (fa - fb))
+        elif fb < 0:
+            t1 = min(t1, fa / (fa - fb))
+    return max(0.0, t1 - t0) * math.dist(a, b)
+
+
+def rest_faces(polys, zones, fragments=None, names=None, minimum=NO_GRAPPLE_REST_SLOPE):
+    """Upward-facing solid/bounce edges (y grows down) that overlap a no-grapple zone, with slope from horizontal."""
+    frag_of = {eid: (fid, i) for fid, eids in (fragments or {}).items() for i, eid in enumerate(eids)}
+    rows = []
+    for eid, (element, poly) in polys.items():
+        if element.get('role') not in REST_ROLES or len(poly) < 3:
+            continue
+        o = 1.0 if signed_area(poly) > 0 else -1.0
+        for i, (a, b) in enumerate(edges(poly)):
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            # Outward normal is o * (dy, -dx); the face looks up when its y component is negative.
+            if o * dx <= COORD_TOL:
+                continue
+            overlaps = sorted(((zone_overlap(a, b, z), zid) for zid, z in zones), reverse=True)
+            if not overlaps or overlaps[0][0] <= COORD_TOL:
+                continue
+            angle = math.degrees(math.atan2(abs(dy), abs(dx)))
+            fid = frag_of.get(eid, (None, None))[0]
+            rows.append({'element': eid, 'fragment': fid, 'semantic': (names or {}).get(fid), 'edge': i,
+                         'angle': r(angle, 6), 'zone': overlaps[0][1],
+                         'zones': [zid for length, zid in overlaps if length > COORD_TOL],
+                         'a': rp(a), 'b': rp(b), 'pass': angle >= minimum - ANGLE_TOL_DEG})
+    return rows
+
+
+def rest_pockets(faces):
+    """Vertices where two in-zone upward faces both slope down toward it from opposite sides."""
+    sloped = []
+    for f in faces:
+        a, b = f['a'], f['b']
+        if abs(a[1] - b[1]) <= COORD_TOL:
+            continue
+        low, high = (a, b) if a[1] > b[1] else (b, a)
+        sloped.append((f, low, high))
+    pockets = []
+    for (f, low, high), (g, low2, high2) in itertools.combinations(sloped, 2):
+        if max_point_error([low], [low2]) > COORD_TOL:
+            continue
+        if (high[0] - low[0]) * (high2[0] - low2[0]) >= 0:
+            continue
+        left, right = (f, g) if high[0] < low[0] else (g, f)
+        pockets.append({'vertex': low, 'left': {'element': left['element'], 'edge': left['edge'], 'angle': left['angle']},
+                        'right': {'element': right['element'], 'edge': right['edge'], 'angle': right['angle']},
+                        'zones': sorted(set(left['zones']) | set(right['zones'])), 'pass': False})
+    return pockets
+
+
+def check_rest(polys, zones, fragments, names, fail, minimum=NO_GRAPPLE_REST_SLOPE):
+    faces = rest_faces(polys, zones, fragments, names, minimum)
+    pockets = rest_pockets(faces)
+    for f in faces:
+        if not f['pass']:
+            fail('%s edge %d (%s) in no-grapple zone %s: upward face slopes %.6f deg < %.1f (rest)' % (
+                f['element'], f['edge'], f['semantic'] or f['fragment'] or '-', f['zone'], f['angle'], minimum))
+    for p in pockets:
+        fail('no-grapple zone %s: pocket at %s between %s edge %d and %s edge %d (rest)' % (
+            '/'.join(p['zones']), p['vertex'], p['left']['element'], p['left']['edge'], p['right']['element'],
+            p['right']['edge']))
+    summary = {'noGrappleRestSlope': minimum, 'noGrappleRestFaces': len(faces),
+               'noGrappleRestFaceViolations': sum(not f['pass'] for f in faces), 'noGrappleRestPockets': len(pockets),
+               'minNoGrappleRestAngle': min((f['angle'] for f in faces), default=None)}
+    return {'minSlope': minimum, 'roles': list(REST_ROLES), 'faces': faces, 'pockets': pockets}, summary
+
+
 def max_point_error(p, q):
     if len(p) != len(q):
         return math.inf
@@ -365,8 +455,11 @@ def rp(p):
 
 # --- checks ---------------------------------------------------------------
 
-def check(level, svg_data, reference, min_side=None):
-    """min_side None inventories sides without failing (shipped layouts); a number enforces it."""
+def check(level, svg_data, reference, min_side=None, no_grapple_rest=False):
+    """min_side None inventories sides without failing (shipped layouts); a number enforces it.
+
+    no_grapple_rest adds the opt-in no-rest-inside-purple rule (report key noGrappleRest); off, the report is unchanged.
+    """
     failures = []
     fail = failures.append
     polys = level_polygons(level)
@@ -582,11 +675,19 @@ def check(level, svg_data, reference, min_side=None):
         'fragments': len(frag_rows), 'maxFragmentCoordError': r(frag_max, 9), 'maxSvgCoordError': r(svg_max, 9),
     }
     summary.update(side_summary(sides, MIN_SIDE_LENGTH if min_side is None else min_side, min_side is not None))
-    return {'grappleRange': GRAPPLE_RANGE, 'playerDiameter': PLAYER_DIAMETER, 'coordTolerance': COORD_TOL,
+    rest = None
+    if no_grapple_rest:
+        rest, rest_summary = check_rest(polys, zones, fragments, names, fail)
+        summary.update(rest_summary)
+        summary['pass'], summary['failures'] = not failures, len(failures)
+    report = {'grappleRange': GRAPPLE_RANGE, 'playerDiameter': PLAYER_DIAMETER, 'coordTolerance': COORD_TOL,
             'percentTolerance': PERCENT_TOL, 'summary': summary, 'failureMessages': failures,
             'minInteriorAngle': MIN_INTERIOR_ANGLE, 'angleTolerance': ANGLE_TOL_DEG, 'angles': angle_rows,
             'transfers': transfers, 'pairs': pairs, 'dragZones': drags, 'yellowPairs': drag_pairs, 'fragments': frag_rows,
             'noGrappleZones': zone_rows, 'noGrappleInternalGap': NO_GRAPPLE_INTERNAL_GAP, 'sides': sides}
+    if rest is not None:
+        report['noGrappleRest'] = rest
+    return report
 
 
 def main(argv=None):
@@ -603,7 +704,12 @@ def main(argv=None):
                        help='inventory sides only (legacy layouts before v16)')
     parser.add_argument('--sides-only', action='store_true',
                         help='only side, corner and self-intersection checks from --level (no SVG/reference)')
+    parser.add_argument('--no-grapple-rest', action='store_true',
+                        help='also fail upward solid/bounce faces inside no-grapple zones sloped below %g deg, and '
+                        'pockets between two of them (opt-in)' % NO_GRAPPLE_REST_SLOPE)
     args = parser.parse_args(argv)
+    if args.sides_only and args.no_grapple_rest:
+        parser.error('--no-grapple-rest needs the full check (not --sides-only)')
     if not args.sides_only and not args.svg:
         parser.error('--svg is required unless --sides-only')
     if args.min_side_length is not None and not (math.isfinite(args.min_side_length) and args.min_side_length > 0):
@@ -617,7 +723,7 @@ def main(argv=None):
             svg_data = f.read()
         with open(args.reference) as f:
             reference = json.load(f)
-        report = check(level, svg_data, reference, args.min_side_length)
+        report = check(level, svg_data, reference, args.min_side_length, args.no_grapple_rest)
     with open(args.report, 'w') as f:
         json.dump(report, f, separators=(',', ':'))
         f.write('\n')
@@ -636,7 +742,10 @@ def main(argv=None):
                   'PASS' if s['pass'] else 'FAIL', s['transfersPass'], s['transfers'], s['pairsPass'],
                   s['fragmentPairs'], s['dragZonesPass'], s['dragZones'], s['fragments'], s['maxTransferPercentError'],
                   s['minPairClearanceMinusDiameter'], s['minDragSolidClearance'], s['anglePolygonsPass'],
-                  s['anglePolygons'], s['minInteriorAngle'], sides))
+                  s['anglePolygons'], s['minInteriorAngle'], sides)
+              + (' rest_faces=%d rest_violations=%d rest_pockets=%d min_rest_angle=%s' % (
+                  s['noGrappleRestFaces'], s['noGrappleRestFaceViolations'], s['noGrappleRestPockets'],
+                  s['minNoGrappleRestAngle']) if args.no_grapple_rest else ''))
     return 0 if s['pass'] else 1
 
 
