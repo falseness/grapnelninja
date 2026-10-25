@@ -27,8 +27,7 @@ class Screen
         this.borderX        = screenWidthPercent(GAMEPLAY.cameraBorderWidthPercent) / scale[version]
         this.deletionBorder = -width
     }
-    // Called once per fixed physics tick, after the player has moved. Speeds
-    // are world units per physics subcycle, not per rendered frame.
+    // Called once per fixed physics tick, after the player has moved.
     trackGrappleOver(snap = false)
     {
         const bounds = floors[0].level.bounds
@@ -37,25 +36,22 @@ class Screen
         const dt = physicsStepMs / 1000
         const alpha = -Math.expm1(-dt / 0.18)
         const clamp = (v, low, high) => Math.max(low, Math.min(high, v))
-        const track = (offset, position, speed, size, low, high, near, far) => {
+        // Ease the player toward the exact view center: no dead zone and no
+        // speed look-ahead.
+        const track = (offset, position, size, low, high) => {
             if (high - low <= size) return (size - low - high) / 2
-            const look = clamp(speed * cyclesPerTick / dt * 0.15,
-                -viewHeight * 0.2, viewHeight * 0.2)
-            const target = position + look + offset
-            const correction = clamp(target, size * near, size * far) - target
-            let next = snap ? size / 2 - position : offset + correction * alpha
+            const center = size / 2 - position
+            let next = snap ? center : offset + (center - offset) * alpha
             // Bound the lag by the player's full visible extent, even in a
             // fast fall. Ordinary tracking remains exponentially eased.
             next = clamp(next, ninja.radius - position, size - ninja.radius - position)
             return clamp(next, size - high, -low)
         }
-        this.x = track(this.x, ninja.x, ninja.speedX, viewWidth,
-            bounds.left, bounds.right, 0.35, 0.65)
+        this.x = track(this.x, ninja.x, viewWidth, bounds.left, bounds.right)
         const lead = bounds.topLead
         const top = lead ? Math.max(lead.limit, Math.min(bounds.top,
             bounds.top - lead.rate * (lead.from - ninja.y))) : bounds.top
-        this.y = track(this.y, ninja.y, ninja.speedY, viewHeight,
-            top, bounds.bottom, 0.4, 0.6)
+        this.y = track(this.y, ninja.y, viewHeight, top, bounds.bottom)
     }
     getDeletionBorder()
     {
