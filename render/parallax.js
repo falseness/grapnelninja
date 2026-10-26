@@ -27,6 +27,10 @@ function drawGrappleOverParallax(renderer, palette)
         const y = cameraY * layer.factor
         for (const [band, weight] of weights)
         {
+            // A band fading in or out at under a quarter of an 8-bit step
+            // changes no pixel: skip its tile copies
+            if (layer.alpha * weight * 255 < 0.25)
+                continue
             const tile = getGrappleOverParallaxTile(layer, band, pixelScale)
             context.globalAlpha = layer.alpha * weight
             drawParallaxTiles(context, bounds, m, tile, x, y, layer.tileWidth, layer.tileHeight)

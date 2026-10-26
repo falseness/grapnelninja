@@ -355,11 +355,33 @@ class BackgroundRenderer
         layerCanvas.height = Math.max(1, Math.round(height * pixelScale))
         const ctx = layerCanvas.getContext('2d')
         ctx.setTransform(layerCanvas.width / width, 0, 0, layerCanvas.height / height, 0, 0)
-        paint(ctx, width, height, config, this.getTileTools(ctx, width, config.seed))
+        const clear = paint(ctx, width, height, config, this.getTileTools(ctx, width, config.seed))
 
-        const layer = {key, canvas: layerCanvas, width, height}
+        const layer = {key, canvas: layerCanvas, width, height, strips: this.getLayerStrips(layerCanvas, height, clear)}
         this.layerCache[name] = layer
         return layer
+    }
+    // A tile whose paint left the rows between clear.clearTop and
+    // clear.clearBottom (logical) transparent is drawn as its top and bottom
+    // strips only, with two transparent rows kept past each cut so filtering
+    // reads the same pixels. Each frame then references fewer image bytes:
+    // Chromium redraws every tile when the frame's tiles outgrow its image
+    // cache (a band blend's four parallax tiles did).
+    getLayerStrips(layerCanvas, height, clear)
+    {
+        const ratio = layerCanvas.height / height
+        const top = clear ? Math.min(layerCanvas.height, Math.ceil(clear.clearTop * ratio) + 2) : 0
+        const bottom = clear ? Math.max(top, Math.floor(clear.clearBottom * ratio) - 2) : 0
+        if (!clear || bottom - top < layerCanvas.height / 4)
+            return [{y: 0, canvas: layerCanvas}]
+        return [[0, top], [bottom, layerCanvas.height]].map(([y0, y1]) =>
+        {
+            const strip = document.createElement('canvas')
+            strip.width = layerCanvas.width
+            strip.height = y1 - y0
+            strip.getContext('2d').drawImage(layerCanvas, 0, -y0)
+            return {y: y0, canvas: strip}
+        })
     }
     // Seeded random numbers and wrapped polygon drawing for a tile
     getTileTools(ctx, width, initialSeed)
@@ -493,8 +515,14 @@ class BackgroundRenderer
     {
         const colors = STYLE.colors.background
         const {random, between, wrapped, polygon} = tools
+        // Lowest point the top rocks reach and highest the bottom ones do
+        let topReach = height * 0.012, bottomReach = height * 0.988
         const boulder = (x, baseY, dir, h, w) =>
         {
+            if (dir > 0)
+                topReach = Math.max(topReach, baseY + h)
+            else
+                bottomReach = Math.min(bottomReach, baseY - h)
             const summit = [x + (random() - 0.5) * w * 0.5, baseY + dir * h]
             const leftShoulder = [x - w * (0.55 + random() * 0.2), baseY + dir * h * (0.45 + random() * 0.3)]
             const rightShoulder = [x + w * (0.45 + random() * 0.2), baseY + dir * h * (0.5 + random() * 0.3)]
@@ -528,6 +556,10 @@ class BackgroundRenderer
         ctx.fillStyle = colors.nearRock
         ctx.fillRect(0, 0, width, height * 0.012)
         ctx.fillRect(0, height * 0.988, width, height * 0.012)
+        // Nothing is painted between the two rows of rocks: the summits are
+        // their extreme points, plus the rim's miter (limit 10) and antialiasing
+        const margin = rocks.rimLineWidth / 2 * 10 + 2
+        return {clearTop: topReach + margin, clearBottom: bottomReach - margin}
     }
     // The base gradient and the haze are vertical, so they are baked into
     // the far tile with it (one drawImage instead of two full-frame gradient
@@ -569,11 +601,14 @@ class BackgroundRenderer
         const right = bounds.x + bounds.width
         let k = Math.floor((bounds.x - shift.x) / width)
         let left = fromDevice(toDevice(shift.x + k * width))
+        // Logical height of one tile pixel row
+        const unit = height / layer.canvas.height
 
         while (left < right)
         {
             const next = fromDevice(toDevice(shift.x + (k + 1) * width))
-            this.ctx.drawImage(layer.canvas, left, shift.y, next - left, height)
+            for (const strip of layer.strips)
+                this.ctx.drawImage(strip.canvas, left, shift.y + strip.y * unit, next - left, strip.canvas.height * unit)
             left = next
             ++k
         }
@@ -1923,10 +1958,15 @@ class AmbientGlowRenderer extends BloomRenderer
         sumCtx.globalAlpha = 1
         sumCtx.fillStyle = 'black'
         sumCtx.fillRect(0, 0, glow.width, glow.height)
-        sumCtx.globalCompositeOperation = 'lighter'
         sumCtx.imageSmoothingEnabled = true
-        for (let i = 0; i < this.levels.length; ++i)
+        // The smallest level goes first, over black: there source-over adds
+        // it as 'lighter' would (up to rounding, a few 8-bit steps in the
+        // halos) and costs less per upscaled pixel in Chromium. The others
+        // add in any order.
+        for (let k = 0; k < this.levels.length; ++k)
         {
+            const i = (k + this.levels.length - 1) % this.levels.length
+            sumCtx.globalCompositeOperation = k ? 'lighter' : 'source-over'
             sumCtx.globalAlpha = Math.max(0, Math.min(1, config.levelAlphas[i] * config.strength * neonPulse))
             sumCtx.drawImage(this.levels[i].canvas, 0, 0, glow.width, glow.height)
         }
