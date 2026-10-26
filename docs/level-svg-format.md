@@ -449,8 +449,9 @@ comes to rest there is a softlock. The rule (TASK-694):
   edge and angle, zones), the summary gains `noGrappleRestFaces`,
   `noGrappleRestFaceViolations`, `noGrappleRestPockets` and
   `minNoGrappleRestAngle`, and each violation is a failure ending in `(rest)`.
-- The shipped v17 level passes it (23 rest faces, minimum 15.5 degrees, no
-  pockets). The previous v16 fails it on the rest rule only: NG1's near-flat
+- The shipped v18 level passes it (53 rest faces including the BZ1..BZ3 slabs,
+  minimum 15 degrees, no pockets), as did v17 (23 rest faces, minimum 15.5
+  degrees). The earlier v16 fails it on the rest rule only: NG1's near-flat
   tops P23 (4.8 degrees), P24 (0 degrees) and P25 (0.6 degrees), and their
   copies in NGM (P33-P35) and NGU (P46-P48) (`tools/test_no_grapple_rest.py`).
 

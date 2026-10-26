@@ -202,7 +202,7 @@ class CameraScaleBrowserTests(unittest.TestCase):
             page.context.close()
         bounds = json.loads((ROOT / 'artifacts/levels/extended-mountain.level.json').read_text())['bounds']
         self.write('framing.json', dict(
-            level='extended-mountain-v17', levelBounds=bounds, scales=SCALES,
+            level='extended-mountain-v18', levelBounds=bounds, scales=SCALES,
             override='test-only: scale.grapple_over set in the page, then screen.updateWidthLayout() and layoutHud();'
                      ' shipped gameoptions.js stays 0.25',
             playerState='rest 30 units above the source panel top centre, speed 0, camera snapped by screen.trackGrappleOver(true)',
@@ -509,7 +509,7 @@ class CameraScaleBrowserTests(unittest.TestCase):
                 per_scale[str(s)] = dict(visible=sum(r['landingVisible'] for r in rows), sampled=len(rows),
                                          offScreen=[r['encounter'] for r in rows if not r['landingVisible']], rows=rows)
             old, new = per_scale[str(PREVIOUS_SCALE)], per_scale[str(SHIPPED_SCALE)]
-            self.assertEqual(new['sampled'], 61)
+            self.assertEqual(new['sampled'], len(json.loads((ROOT / 'artifacts/levels/extended-mountain.level.json').read_text())['encounters']))
             # The larger view never loses a landing the previous one showed.
             self.assertTrue(set(new['offScreen']) <= set(old['offScreen']), view['name'])
             views.append(dict(view=view, newlyVisible=sorted(set(old['offScreen']) - set(new['offScreen'])), scales=per_scale))

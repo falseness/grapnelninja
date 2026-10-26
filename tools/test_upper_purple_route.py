@@ -103,6 +103,10 @@ class UpperPurpleTests(unittest.TestCase):
         cls.rows = {r['id']: r for r in cls.m['encounters']}
         cls.exts = retune.purple_extensions(cls.m)
         cls.zones = {z['id']: z for z in cls.m['noGrappleZones']}
+        # SEC-ext-summit (v18, TASK-711): big zones and panels above the old summit, counted from the measurements.
+        xs = cls.m.get('extSummit', {})
+        cls.big_zones, cls.big = xs.get('zones', []), {f['semanticId'] for f in cls.m['fragments'] if f['id'] in xs.get('fragments', [])}
+        cls.old_summit = next((f['semanticId'] for f in cls.m['fragments'] if f['id'] == xs.get('oldSummit')), None)
         # The same generator without the upper encounter: the TASK-683 middle-purple candidate (cmp in commands.log).
         cls.base = retune.tune(json.loads(SOURCE.read_text()), opening=retune.OPENING,
                                yellow_clearance=retune.YELLOW_CLEARANCE, min_sides='all', middle_purple=True, purple_rest=REST)
@@ -120,8 +124,8 @@ class UpperPurpleTests(unittest.TestCase):
 
     def test_02_three_zones_in_route_order(self):
         self.assertEqual([e['zone'] for e in self.exts], ['NG1', 'NGM', 'NGU'])
-        self.assertEqual(sorted(self.zones), ['NG1', 'NGM', 'NGU'])
-        self.assertEqual([z['id'] for z in self.m['noGrappleZones']], ['NG1', 'NGM', 'NGU'])
+        self.assertEqual(sorted(self.zones), sorted(['NG1', 'NGM', 'NGU'] + self.big_zones))
+        self.assertEqual([z['id'] for z in self.m['noGrappleZones']], ['NG1', 'NGM', 'NGU'] + self.big_zones)
         self.assertEqual(self.m['purpleExtension'], self.exts[0])
         first, mid, up = self.exts
         zs = [self.zones[e['zone']] for e in self.exts]
@@ -258,7 +262,7 @@ class UpperPurpleTests(unittest.TestCase):
         base = {f['semanticId']: f for f in self.base['fragments']}
         order = [f['semanticId'] for f in self.base['fragments']]
         cut = order.index('P13')
-        added = sorted(set(self.by) - set(base))
+        added = sorted(set(self.by) - set(base) - self.big)
         self.assertEqual(added, sorted(UPPER))
         self.assertEqual(set(base) - set(self.by), set())
         dx, dy = self.exts[2]['upperTranslation']
@@ -267,7 +271,8 @@ class UpperPurpleTests(unittest.TestCase):
         same, moved = [], []
         for k, s in enumerate(order):
             a, b = base[s], self.by[s]
-            self.assertEqual((a['polys'], a['width'], a['height'], a['kind']), (b['polys'], b['width'], b['height'], b['kind']), s)
+            self.assertEqual((a['polys'], a['width'], a['height']), (b['polys'], b['width'], b['height']), s)
+            self.assertEqual(a['kind'], b['kind'] if s != self.old_summit else 'summit', s)  # v18: the old summit is a landing
             if k <= cut:
                 self.assertEqual((a['x'], a['y']), (b['x'], b['y']), s)
                 same.append(s)
@@ -307,7 +312,8 @@ class UpperPurpleTests(unittest.TestCase):
         self.assertEqual(ids(self.m), ids(self.base))
         fsl = self.m['fragments']; fid = [f['id'] for f in fsl]
         lower = fsl[:fid.index(self.m['lowerCatchExtension']['firstUpDeparture']) + 1]
-        late = fsl[fid.index(self.exts[2]['exit']) + 1:]
+        # The purple-era late route ends at the old summit; SEC-ext-summit (v18) climbs beyond it by design.
+        late = [f for f in fsl[fid.index(self.exts[2]['exit']) + 1:] if f['semanticId'] not in self.big]
         lx = [x for f in lower for b in conv.bodies(f) for x, _ in b]
         xs = [x for f in late for b in conv.bodies(f) for x, _ in b]
         self.assertGreaterEqual(min(xs), min(lx))
@@ -378,8 +384,10 @@ class UpperPurpleTests(unittest.TestCase):
     def test_06_geometry_min_sides_and_zone_rules(self):
         s = self.check['summary']
         self.assertTrue(s['pass'], self.check['failureMessages'][:5])
-        self.assertEqual((s['noGrappleZones'], s['noGrappleZonesPass']), (3, 3))
-        self.assertEqual(s['noGrappleInternalPairs'], 12)
+        zones = 3 + len(self.big_zones)
+        big_pairs = sum(r.get('noGrappleZone') in self.big_zones for r in self.m['encounters'])
+        self.assertEqual((s['noGrappleZones'], s['noGrappleZonesPass']), (zones, zones))
+        self.assertEqual(s['noGrappleInternalPairs'], 12 + big_pairs)
         rows = {z['id']: z for z in self.check['noGrappleZones']}
         for ext in self.exts:
             want = sorted(sorted(p) for p in zip(ext['internal'], ext['internal'][1:]))
@@ -396,7 +404,7 @@ class UpperPurpleTests(unittest.TestCase):
         outside = [p for p in self.check['pairs'] if p['rule'] != 'noGrappleInternal']
         self.assertTrue(outside and all(p['pass'] for p in outside))
         internal = [p for p in self.check['pairs'] if p['rule'] == 'noGrappleInternal']
-        self.assertEqual(len(internal), 12)
+        self.assertEqual(len(internal), 12 + big_pairs)
         self.assertTrue(all(p['pass'] for p in internal))
         OUT['geometry.json'].update(
             method='tools/check_level_geometry.check(level, svg, measurements, min_side=270) on the candidate '
@@ -424,8 +432,8 @@ class UpperPurpleTests(unittest.TestCase):
             wait_for_boot(page)
             r = page.evaluate(script, self.level)
         self.assertEqual(errors, [])
-        self.assertEqual(r['zones'], [dict(id=z, grapplable=False, points=4) for z in ('NG1', 'NGM', 'NGU')])
-        for z in ('NG1', 'NGM', 'NGU'):
+        self.assertEqual(r['zones'], [dict(id=z, grapplable=False, points=4) for z in ['NG1', 'NGM', 'NGU'] + self.big_zones])
+        for z in ['NG1', 'NGM', 'NGU'] + self.big_zones:
             self.assertNotIn(z, r['elements'] + r['grapplable'] + r['drag'])
         OUT['runtime.json'] = dict(method='production fixedlevel.js validateFixedLevel/loadFixedLevel in booted Chromium',
                                    zones=r['zones'], elements=len(r['elements']), pageErrors=errors)

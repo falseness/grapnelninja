@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v17'
+LAYOUT_ID = 'extended-mountain-v18'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -227,7 +227,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(snap['world'], 'PersistentWorld')
         self.assertEqual(snap['layoutId'], LAYOUT_ID)
         self.assertEqual(snap['layoutId'], self.svg['layoutId'])
-        # Counts come from the shipped measurements (v17: 62 panels, 61 transfers), not fixed numbers.
+        # Counts come from the shipped measurements (v18: 104 panels, 103 transfers), not fixed numbers.
         meas = json.loads((ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json').read_text())
         self.assertEqual(snap['fragments'], len(meas['fragments']))
         self.assertEqual(snap['fragments'], self.svg['fragments'])
@@ -244,7 +244,9 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # No-grapple zones (NG1 since v13) live in world.noGrappleZones, not in elements/dragZones.
         source = {e['id']: e for e in self.level['elements'] if e['role'] != 'no-grapple'}
         self.assertEqual(snap['noGrappleZones'], [e['id'] for e in self.level['elements'] if e['role'] == 'no-grapple'])
-        self.assertEqual(snap['noGrappleZones'], [p['zone'] for p in meas['purpleExtensions']])
+        # Purple encounters, then the SEC-ext-summit big zones (v18), counted from the measurements.
+        self.assertEqual(snap['noGrappleZones'], [p['zone'] for p in meas['purpleExtensions']] + meas.get('extSummit', {}).get('zones', []))
+        self.assertEqual(snap['noGrappleZones'], [z['id'] for z in meas['noGrappleZones']])
         self.assertEqual(sorted(e['id'] for e in snap['live']), sorted(source))
         for e in snap['live']:
             s = source[e['id']]
@@ -294,6 +296,35 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             ], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(output.read_bytes(), (ROOT / 'leveldata.js').read_bytes())
+
+    def test_03_incompatible_previous_layout_save(self):
+        # TASK-711: saves from v17 (and earlier imported layouts) restart at the spawn. The save is a real current one
+        # with the old layout id. A fresh start launches upward (TASK-704), so y may be up to the launch apex above.
+        first = self.open()
+        save = json.loads(first.evaluate('''() => {
+            window.requestAnimationFrame = () => 0; cancelAnimationFrame(game)
+            ninja.x += 600; ninja.y -= 200; for (let i = 0; i < 20; i++) physics()
+            return JSON.stringify(captureClimbState())
+        }'''))
+        self.assertEqual(save['layoutId'], LAYOUT_ID)
+        results = {}
+        for old in ('extended-mountain-v17', 'extended-mountain-v16', 'extended-mountain-v15'):
+            page = self.open(seed={CLIMB_KEY: json.dumps(dict(save, layoutId=old))})
+            snap = page.evaluate(SNAPSHOT)
+            self.assert_imported(snap)
+            self.assertEqual(snap['notice'], 'Climb save unavailable. Starting at the base.')
+            self.assertLess(abs(snap['ninja']['x'] - snap['spawn']['x']), 1)
+            self.assertTrue(snap['spawn']['y'] - 280 < snap['ninja']['y'] <= snap['spawn']['y'] + 1, snap['ninja'])
+            self.assertLess(snap['stats']['maxHeight'], 300)
+            self.assertFalse(snap['paused'])
+            # The next write replaces the rejected save with the new layout.
+            page.evaluate('PROGRESS.flushClimb(true)')
+            page.wait_for_function('k => JSON.parse(localStorage.getItem(k)).layoutId === "%s"' % LAYOUT_ID, arg=CLIMB_KEY)
+            self.assertEqual(first.errors + page.errors, [])
+            self.record('incompatible_save_' + old, page, snap, seededLayoutId=old, rewrittenLayoutId=LAYOUT_ID,
+                        savedPlayer={'x': save['player']['x'], 'y': save['player']['y']})
+            results[old] = snap['notice']
+        self.assertEqual(len(results), 3)
 
     def test_04_current_layout_save(self):
         first = self.open()

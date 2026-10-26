@@ -265,7 +265,11 @@ class ExtendedOpeningTests(unittest.TestCase):
             if f['originalId']:
                 self.assertEqual(route['fragmentIds'][f['originalId']], f['id'])
                 old = self.frag(self.base, f['originalId'])
-                self.assertEqual(f['kind'], old['kind'])
+                # v18 (TASK-711): the old summit is an ordinary landing below SEC-ext-summit.
+                if f['id'] == self.m.get('extSummit', {}).get('oldSummit'):
+                    self.assertEqual((old['kind'], f['kind']), ('summit', 'platform'))
+                else:
+                    self.assertEqual(f['kind'], old['kind'])
                 if f['id'] in ('P0','P1','P2'):
                     self.assertEqual(self.unresized(f), old['polys'])
         enc_ids = [r['id'] for r in self.m['encounters']]
@@ -274,7 +278,7 @@ class ExtendedOpeningTests(unittest.TestCase):
         self.assertTrue(set(source_ids) <= set(enc_ids))
         # 23 opening/lower/NG1 encounters plus seven per later purple encounter (v16: 37).
         self.assertEqual(len(route['addedEncounters']), 23 + 7 * (len(self.m['purpleExtensions']) - 1))
-        self.assertEqual(len(route['addedEncounters']), len(enc_ids) - len(source_ids))
+        self.assertEqual(len(route['addedEncounters']), len(enc_ids) - len(source_ids) - len(self.m.get('extSummit', {}).get('encounters', [])))
         for old in self.source['encounters']:
             n = route['encounterNumbers'][str(old['number'])]
             self.assertEqual(self.m['encounters'][n - 1]['id'], old['id'])

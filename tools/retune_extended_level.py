@@ -17,8 +17,11 @@ EXTENDED_LAYOUT = 'extended-mountain-v15'
 # (NG1, NGM, NGU); since TASK-698 also the --purple-rest chutes (no rest inside a purple zone). Only the default
 # CLI run (no layout flag) gets SHIPPED_LAYOUT; explicit flags and tune() keep EXTENDED_LAYOUT, so earlier
 # candidates still reproduce byte for byte. `--no-purple-rest` without layout flags is the previous shipped v16.
-SHIPPED_LAYOUT = 'extended-mountain-v17'
-PREVIOUS_SHIPPED_LAYOUT = 'extended-mountain-v16'
+# Since TASK-711 the shipped run also adds SEC-ext-summit (--ext-summit, three big zones above the old summit) as
+# v18; `--no-ext-summit` without layout flags is the previous shipped v17.
+SHIPPED_LAYOUT = 'extended-mountain-v18'
+PREVIOUS_SHIPPED_LAYOUT = 'extended-mountain-v17'
+NO_REST_SHIPPED_LAYOUT = 'extended-mountain-v16'
 SHIPPED_SCOPE = dict(min_side_scope='all', middle_purple=True, upper_purple=True)
 OPENING_TARGETS = dict(TARGETS)
 OPENING_TARGETS.update({1:120, 2:160})
@@ -2017,20 +2020,21 @@ def main():
     # their pre-TASK-687 values (none / off), so earlier candidate commands still reproduce their candidates.
     ap.add_argument('--min-side-scope', choices=('none', 'opening', 'all'), default=None,
                     help='opening: candidate with opening green edges >= 0.5 R (TASK-679); all: every gameplay '
-                         'polygon edge (TASK-681); none: the v15 layout. Default (no layout flags): shipped v17 = all')
+                         'polygon edge (TASK-681); none: the v15 layout. Default (no layout flags): shipped v18 = all')
     ap.add_argument('--middle-purple', action=argparse.BooleanOptionalAction, default=None,
                     help='add the second (middle) purple no-grapple encounter NGM after S08-01 (TASK-682); shipped')
     ap.add_argument('--purple-rest', action=argparse.BooleanOptionalAction, default=None,
                     help='retilt the flat tops in every purple zone to >= 15 deg (TASK-696/697; needs min-side scope '
-                         'all). Not a layout flag. Default: on for the shipped v17 run, off with explicit layout flags; '
-                         '--no-purple-rest without layout flags gives the previous shipped v16')
+                         'all). Not a layout flag. Default: on for the shipped run, off with explicit layout flags; '
+                         '--no-purple-rest without layout flags gives v16')
     ap.add_argument('--upper-purple', action=argparse.BooleanOptionalAction, default=None,
                     help='(with --middle-purple) add the third (upper) purple encounter NGU after EXT-13 (TASK-684); shipped')
     ap.add_argument('--big-zone-fixture', action='store_true',
                     help='write only the BIG_ZONE encounter template as a fixture level (TASK-706); --source is ignored')
-    ap.add_argument('--ext-summit', action='store_true',
-                    help='candidate: add SEC-ext-summit (three big zones, new finish 8640+ higher) above the shipped '
-                         'summit (TASK-708); only with the default shipped layout flags')
+    ap.add_argument('--ext-summit', action=argparse.BooleanOptionalAction, default=None,
+                    help='add SEC-ext-summit (three big zones, new finish 8640+ higher) above the old summit (TASK-708/'
+                         '710); only with the default shipped layout flags and --purple-rest. Default: on for the shipped '
+                         'v18 run; --no-ext-summit without layout flags gives the previous shipped v17')
     args=ap.parse_args()
     if args.big_zone_fixture:
         dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
@@ -2043,6 +2047,7 @@ def main():
         args.min_side_scope, args.middle_purple, args.upper_purple = (SHIPPED_SCOPE[k] for k in SHIPPED_SCOPE)
     args.min_side_scope=args.min_side_scope or 'none'
     args.purple_rest = shipped if args.purple_rest is None else args.purple_rest
+    args.ext_summit = shipped and args.purple_rest if args.ext_summit is None else args.ext_summit
     args.middle_purple=bool(args.middle_purple); args.upper_purple=bool(args.upper_purple)
     if args.upper_purple and not args.middle_purple:
         raise ValueError('--upper-purple needs --middle-purple')
@@ -2063,11 +2068,10 @@ def main():
          min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple,
          upper_purple=args.upper_purple, purple_rest=args.purple_rest)
     if shipped:
-        m['layoutId']=SHIPPED_LAYOUT if args.purple_rest else PREVIOUS_SHIPPED_LAYOUT
+        m['layoutId']=(SHIPPED_LAYOUT if args.ext_summit else PREVIOUS_SHIPPED_LAYOUT) if args.purple_rest else NO_REST_SHIPPED_LAYOUT
     if args.ext_summit:
         if not (shipped and args.purple_rest):
-            raise ValueError('--ext-summit extends the shipped v17 layout only')
-        # Candidate keeps the v17 layout id so the game can load it in place of leveldata.js; shipping bumps it.
+            raise ValueError('--ext-summit extends the v17 layout (default flags with --purple-rest) only')
         extend_summit(m)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']

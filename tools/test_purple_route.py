@@ -148,6 +148,12 @@ def tearDownModule():
         write(name, dict(provenance(), **body))
 
 
+def ext_summit(m):
+    """SEC-ext-summit (v18, TASK-711): big zone ids and the fragment ids above the old summit (empty before v18)."""
+    x = m.get('extSummit', {})
+    return x.get('zones', []), set(x.get('fragments', []))
+
+
 def load():
     m = json.loads((CANDIDATE / NAMES[1]).read_text())
     level = json.loads((CANDIDATE / NAMES[2]).read_text())
@@ -204,8 +210,9 @@ class PurpleRouteGeometryTests(unittest.TestCase):
     def test_02_zone_dimensions_and_leftward_placement(self):
         z, ext = self.zone, self.ext
         self.assertEqual((z['width'], z['height']), (5400, 2700))
-        # One zone per purple encounter (a --middle-purple candidate has two; this class checks the first).
-        self.assertEqual(len(self.m['noGrappleZones']), len(retune.purple_extensions(self.m)))
+        # One zone per purple encounter (a --middle-purple candidate has two; this class checks the first), then the
+        # SEC-ext-summit big zones (v18).
+        self.assertEqual(len(self.m['noGrappleZones']), len(retune.purple_extensions(self.m)) + len(ext_summit(self.m)[0]))
         el = {e['id']: e for e in self.level['elements']}[z['id']]
         self.assertEqual((el['role'], el['grapplable']), ('no-grapple', False))
         pts = [(el['x'] + p['x'], el['y'] + p['y']) for p in el['points']]
@@ -311,16 +318,20 @@ class PurpleRouteGeometryTests(unittest.TestCase):
     def test_04_independent_checker_and_canonical_thresholds(self):
         s = self.check['summary']
         self.assertTrue(s['pass'], self.check['failureMessages'][:5])
-        exts = retune.purple_extensions(self.m)
-        self.assertEqual(s['noGrappleZones'], len(exts))
-        self.assertEqual(s['noGrappleInternalPairs'], sum(len(e['internal']) - 1 for e in exts))
+        exts, big = retune.purple_extensions(self.m), ext_summit(self.m)[0]
+        self.assertEqual(s['noGrappleZones'], len(exts) + len(big))
+        self.assertEqual(s['noGrappleInternalPairs'], sum(len(e['internal']) - 1 for e in exts)
+                         + sum(r.get('noGrappleZone') in big for r in self.m['encounters']))
         self.assertGreaterEqual(s['minDragSolidClearance'], 1620 - 1e-6)
         self.assertGreaterEqual(s['minYellowPairClearance'], 540 - 1e-6)
         self.assertGreaterEqual(s['minInteriorAngle'], 20)
         outside = [p for p in self.check['pairs'] if p['rule'] != 'noGrappleInternal']
         self.assertTrue(all(p['pass'] for p in outside))
         # Outside the zone, every transfer added since the opening keeps the 200% release gap.
-        rows = [r for r in self.m['encounters'] if not r.get('noGrappleZone') and r.get('originalNumber') not in retune.TARGETS]
+        # SEC-ext-summit rows (v18) follow their own rules (zone entry/exit, 150% climb copies; TASK-708).
+        xs = set(self.m.get('extSummit', {}).get('encounters', []))
+        rows = [r for r in self.m['encounters'] if not r.get('noGrappleZone') and r.get('originalNumber') not in retune.TARGETS
+                and r['id'] not in xs]
         self.assertTrue(all(r['distance'] >= CANONICAL_TRANSFER - .01 for r in rows))
         self.route['checker'] = {k: s[k] for k in ('pass', 'failures', 'transfers', 'transfersPass', 'fragmentPairs',
                                                     'pairsPass', 'noGrappleZones', 'noGrappleInternalPairs',
@@ -388,6 +399,10 @@ class PurplePreservationTests(unittest.TestCase):
         exts = retune.purple_extensions(self.m)
         added = {f['semanticId'] for f in self.m['fragments'] for ext in exts
                  if f['id'] in [ext['approach'], ext['exit']] + ext['internal']}
+        # v18: SEC-ext-summit adds its panels above the old summit, which becomes an ordinary landing.
+        big = ext_summit(self.m)[1]
+        added |= {f['semanticId'] for f in self.m['fragments'] if f['id'] in big}
+        old_summit = {f['id']: f['semanticId'] for f in self.m['fragments']}.get(self.m.get('extSummit', {}).get('oldSummit'))
         self.assertEqual(set(new) - set(old), added)
         self.assertEqual(set(old) - set(new), set())
         order = [f['semanticId'] for f in self.base['fragments']]
@@ -399,7 +414,8 @@ class PurplePreservationTests(unittest.TestCase):
         for k, s in enumerate(order):
             a, b = old[s], new[s]
             self.assertEqual(a['polys'], b['polys'], s)
-            self.assertEqual((a['width'], a['height'], a['kind']), (b['width'], b['height'], b['kind']), s)
+            self.assertEqual((a['width'], a['height']), (b['width'], b['height']), s)
+            self.assertEqual(a['kind'], b['kind'] if s != old_summit else 'summit', s)
             if k <= cut:
                 self.assertEqual((a['x'], a['y']), (b['x'], b['y']), s)
                 same.append(s)
@@ -443,7 +459,8 @@ class PurplePreservationTests(unittest.TestCase):
         fs = self.m['fragments']
         ids = [f['id'] for f in fs]
         lower = fs[:ids.index(self.m['lowerCatchExtension']['firstUpDeparture']) + 1]
-        late = fs[ids.index(self.m['purpleExtension']['exit']) + 1:]
+        # The purple-era late route ends at the old summit; SEC-ext-summit (v18) climbs beyond it by design.
+        late = [f for f in fs[ids.index(self.m['purpleExtension']['exit']) + 1:] if f['id'] not in ext_summit(self.m)[1]]
         left = min(x for f in lower for b in conv.bodies(f) for x, _ in b)
         right = max(x for f in lower for b in conv.bodies(f) for x, _ in b)
         xs = [x for f in late for b in conv.bodies(f) for x, _ in b]
@@ -749,7 +766,7 @@ class PurpleTraversalTests(unittest.TestCase):
         fs = self.m['fragments']
         ids = [f['id'] for f in fs]
         lower = set(ids[:ids.index(self.m['lowerCatchExtension']['firstUpDeparture']) + 1])
-        late = fs[ids.index(self.m['purpleExtension']['exit']) + 1:]
+        late = [f for f in fs[ids.index(self.m['purpleExtension']['exit']) + 1:] if f['id'] not in ext_summit(self.m)[1]]
         # The three leftmost late panels by contact point (semantic geometry, not frozen indices).
         sources = sorted(late, key=lambda f: conv.contact(f)[0])[:3]
         results = []

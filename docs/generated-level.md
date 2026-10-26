@@ -1,9 +1,41 @@
 # Generated level
 
-Layout `extended-mountain-v17` (shipped, TASK-698) is the default generator
+Layout `extended-mountain-v18` (shipped, TASK-711) is the default generator
 output (`tools/retune_extended_level.py` with no layout flag =
-`--min-side-scope all --middle-purple --upper-purple --purple-rest`). It is
-v16 with no place to rest inside a purple zone:
+`--min-side-scope all --middle-purple --upper-purple --purple-rest
+--ext-summit`). It is v17 with SEC-ext-summit, a new section above the old
+summit (TASK-708..710):
+
+- The old summit (P61) is an ordinary landing. Above it, three zigzag grapple
+  climbs (translated copies of the final chain, all running leftward) lead into
+  three big no-grapple zones BZ1, BZ2 and BZ3. The last climb ends on the new
+  summit P103, whose finish is 19,882 units higher than the old one.
+- Big zones are 5,760 x 4,320 units (the TASK-706/707 big-zone template v2).
+  Each is entered from an approach ledge outside the zone with momentum. The
+  player crosses it rope-free on a descending staircase of mixed-tilt bounce
+  slabs and leaves through the side onto an exit ledge. The rope is grabbed again
+  on the exit ledge and then on the first panel of the next climb (for BZ3, the
+  summit). Slab 5 of every ext-summit zone is tilted to 30 degrees, so a high
+  drop cannot bounce over the exit ledge (TASK-710). The first panel after a zone
+  keeps the TASK-708 mirrored copy and position.
+- Production-input traversals: `tools/test_ext_summit_route.py` with the
+  `tools/fixtures/ext-summit-inputs-BZ1..3.json` fixtures. It runs on the shipped
+  level by default (`EXT_SUMMIT_CANDIDATE=DIR` for a candidate). The whole-route
+  shortcut matrix (`tools/test_route_shortcuts.py`) treats consecutive slabs
+  of one no-grapple zone as one route step (`zoneSlab-*` outcomes). It has no
+  skips.
+- Section label: `climb.section.SEC-ext-summit` in every locale of `i18n.js`.
+
+v18 has 104 panels, 103 transfers and six no-grapple zones (NG1, NGM, NGU,
+BZ1..BZ3). The geometry equals the TASK-710 candidate; only the layout id
+differs. All v17 elements below the old finish are unchanged. Saves from v17
+and earlier restart at the spawn. `--no-ext-summit` without layout flags
+reproduces v17, and `--no-purple-rest` reproduces v16.
+
+Layout `extended-mountain-v17` (previous, TASK-698) is the generator output with
+`--no-ext-summit` and no layout flag (= `--min-side-scope all --middle-purple
+--upper-purple --purple-rest`). It is v16 with no place to rest inside a purple
+zone:
 
 - No rest inside purple: every upward face of a solid or bounce body that
   overlaps a no-grapple zone slopes at least 15 degrees, and no two of them
