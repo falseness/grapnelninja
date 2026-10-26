@@ -1,27 +1,38 @@
 // Transfer direction arrows (TASK-659, distance-based since TASK-671), from the
 // imported level's optional svgFormat.transfers[].guide cubic (world units,
-// docs/level-svg-format.md). The same shape as the SVG annotation arrows
-// (tools/convert_extended_mountain_svg.py draw_arrow): the guide restricted to
-// t = 0..t*, where its arc length reaches min(gapFraction * G, L) (G: minimum
-// edge-to-edge gap between the transfer's complete fragment polygons, L: the
-// guide's arc length), and a triangular head along dB/dt at t*. Stroke and head
-// sizes are screen (CSS) pixels, so they shrink in world units as the camera
-// zooms in. Purely visual: no physics object, input or save field. A level
+// docs/level-svg-format.md). The guide is restricted to t = 0..t*, where its
+// arc length reaches min(gapFraction * G, L) (G: minimum edge-to-edge gap
+// between the transfer's complete fragment polygons, L: the guide's arc
+// length), as the SVG annotation arrows (tools/convert_extended_mountain_svg.py
+// draw_arrow). Since TASK-712 that sub-curve is drawn as a static run of open
+// chevrons: one every chevronGapPx of arc length, the last exactly at t* along
+// dB/dt there, the others along the local tangent; size, stroke width and alpha
+// grow from the first chevron to the last. Every size is in screen (CSS)
+// pixels, so it shrinks in world units as the camera zooms in. No time
+// dependence. Purely visual: no physics object, input or save field. A level
 // without guides draws nothing.
 const ROUTE_ARROWS =
 {
     gapFraction: 0.5,
     arcSamples: 1024,
     color: '#8bdde8',
-    opacity: 0.4,
-    strokePx: 1.5,
-    headPx: 6,
-    // level -> [{id, gap, length, target, t, curve, tangent, box}]; the guides never change after loading
+    // Screen px of arc length between chevrons; the last one sits at the tip
+    chevronGapPx: 16,
+    // First -> last chevron, linear in the run fraction (0 at the first, 1 at the tip)
+    halfSizePx: [4, 7],
+    strokePx: [1.6, 2.6],
+    alpha: [0.25, 0.95],
+    glowPx: 6,
+    // level -> [{id, gap, length, target, t, curve, tangent, box, arc, chevrons}]; the guides never
+    // change after loading. chevrons is {px, list} for the last world-per-screen-pixel factor.
     cache: new WeakMap(),
     // Levels whose arrows were computed (a cache hit does not count)
     builds: 0,
-    // Transfer ids drawn in the last frame (after culling)
-    drawn: []
+    // Chevron layouts computed (once per arrow and camera zoom)
+    layouts: 0,
+    // Transfer ids drawn in the last frame (after culling), and their chevron counts
+    drawn: [],
+    drawnChevrons: []
 }
 
 function routeArrowLerp(a, b, t)
@@ -57,8 +68,8 @@ function routeArrowTangent(p, t)
     }
 }
 
-// Parameter where the arc length of p reaches s, from a table of chord lengths
-function routeArrowParameter(p, s)
+// Cumulative chord lengths of p at arcSamples + 1 even parameters
+function routeArrowTable(p)
 {
     const n = ROUTE_ARROWS.arcSamples, table = [0]
     let prev = p[0]
@@ -68,12 +79,13 @@ function routeArrowParameter(p, s)
         table.push(table[i - 1] + Math.hypot(q[0] - prev[0], q[1] - prev[1]))
         prev = q
     }
-    const length = table[n]
-    const target = Math.min(s, length)
-    if (target <= 0 || length <= 0)
-        return {length, target: Math.max(target, 0), t: 0}
-    if (target >= length)
-        return {length, target, t: 1}
+    return table
+}
+
+// Parameter where the table's arc length reaches target (0 < target < length)
+function routeArrowInvert(table, target)
+{
+    const n = table.length - 1
     let lo = 0, hi = n
     while (hi - lo > 1)
     {
@@ -84,7 +96,20 @@ function routeArrowParameter(p, s)
             hi = mid
     }
     const span = table[hi] - table[lo]
-    return {length, target, t: (lo + (span > 0 ? (target - table[lo]) / span : 0)) / n}
+    return (lo + (span > 0 ? (target - table[lo]) / span : 0)) / n
+}
+
+// Parameter where the arc length of p reaches s, from a table of chord lengths
+function routeArrowParameter(p, s)
+{
+    const table = routeArrowTable(p)
+    const length = table[table.length - 1]
+    const target = Math.min(s, length)
+    if (target <= 0 || length <= 0)
+        return {length, target: Math.max(target, 0), t: 0}
+    if (target >= length)
+        return {length, target, t: 1}
+    return {length, target, t: routeArrowInvert(table, target)}
 }
 
 function routeArrowSegmentDistance(p, a, b)
@@ -134,8 +159,9 @@ function routeArrowGap(polysA, polysB)
 }
 
 // One arrow per guided transfer, computed once per level: its gap, the
-// sub-cubic for [0, t*], the unit tangent at t* and the box of the sub-curve's
-// control points (the curve stays inside their hull)
+// sub-cubic for [0, t*], the unit tangent at t*, the box of the sub-curve's
+// control points (the curve stays inside their hull) and the sub-curve's
+// chord table for placing chevrons
 function routeArrowsFor(level)
 {
     let arrows = ROUTE_ARROWS.cache.get(level)
@@ -158,16 +184,44 @@ function routeArrowsFor(level)
         const box = {left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity}
         for (const [x, y] of curve)
             addPointToBox(box, {x, y})
-        arrows.push({id: transfer.id, gap, length, target, t, curve, tangent: routeArrowTangent(p, t), box})
+        arrows.push({id: transfer.id, gap, length, target, t, curve, tangent: routeArrowTangent(p, t), box,
+            arc: routeArrowTable(curve), chevrons: null})
     }
     ROUTE_ARROWS.cache.set(level, arrows)
     return arrows
+}
+
+// Chevrons of an arrow for px world units per screen pixel: spaced chevronGapPx
+// back from the tip, which keeps the tip tangent. Kept with the arrow until the
+// zoom changes.
+function routeArrowChevrons(arrow, px)
+{
+    if (arrow.chevrons && arrow.chevrons.px === px)
+        return arrow.chevrons.list
+    ROUTE_ARROWS.layouts++
+    const R = ROUTE_ARROWS, gap = R.chevronGapPx * px, arc = arrow.arc[arrow.arc.length - 1]
+    const count = Math.floor(arrow.target / gap + 1e-6) + 1
+    const lerp = ([a, b], f) => a + (b - a) * f
+    const list = []
+    for (let i = 0; i < count; i++)
+    {
+        const last = i === count - 1, f = count > 1 ? i / (count - 1) : 1
+        // Arc position measured on the sub-curve, whose own length matches target
+        const s = arc - (count - 1 - i) * gap
+        const t = last ? 1 : s <= 0 ? 0 : routeArrowInvert(arrow.arc, s)
+        const [x, y] = last ? arrow.curve[3] : routeArrowPoint(arrow.curve, t)
+        const [ux, uy] = last ? arrow.tangent : routeArrowTangent(arrow.curve, t)
+        list.push({x, y, ux, uy, half: lerp(R.halfSizePx, f) * px, width: lerp(R.strokePx, f) * px, alpha: lerp(R.alpha, f)})
+    }
+    arrow.chevrons = {px, list}
+    return list
 }
 
 // World layer, under the grapnel, the player and the terrain
 function drawRouteArrows(world)
 {
     ROUTE_ARROWS.drawn = []
+    ROUTE_ARROWS.drawnChevrons = []
     if (version !== 'grapple_over' || !world || !world.level)
         return
     const arrows = routeArrowsFor(world.level)
@@ -175,39 +229,41 @@ function drawRouteArrows(world)
         return
 
     // World units per screen pixel, as drawAcquisitionCircle
-    const px = width / getCanvasCssRect().width / scale[version]
-    const head = ROUTE_ARROWS.headPx * px
-    // Culled by the curve's own box padded by the head, not by its source panel
+    const css = getCanvasCssRect().width
+    const px = width / css / scale[version]
+    // Culled by the curve's own box padded by the largest chevron and its glow, not by its source panel
+    const pad = (ROUTE_ARROWS.halfSizePx[1] * 2 + ROUTE_ARROWS.glowPx) * px
     const rect = getCullRect()
-    const view = {left: rect.left - head, top: rect.top - head, right: rect.right + head, bottom: rect.bottom + head}
+    const view = {left: rect.left - pad, top: rect.top - pad, right: rect.right + pad, bottom: rect.bottom + pad}
     const sx = screen.x, sy = screen.y
 
     ctx.save()
-    ctx.globalAlpha = ROUTE_ARROWS.opacity
     ctx.globalCompositeOperation = 'source-over'
-    ctx.shadowBlur = 0
+    // shadowBlur is in device pixels, unaffected by the transform
+    ctx.shadowColor = ROUTE_ARROWS.color
+    ctx.shadowBlur = ROUTE_ARROWS.glowPx * canvas.width / css
     ctx.shadowOffsetX = ctx.shadowOffsetY = 0
     ctx.setLineDash([])
-    ctx.strokeStyle = ctx.fillStyle = ROUTE_ARROWS.color
-    ctx.lineWidth = ROUTE_ARROWS.strokePx * px
+    ctx.lineCap = ctx.lineJoin = 'round'
+    ctx.strokeStyle = ROUTE_ARROWS.color
     for (const arrow of arrows)
     {
         if (!isBoxInCullRect(arrow.box, view))
             continue
+        const chevrons = routeArrowChevrons(arrow, px)
         ROUTE_ARROWS.drawn.push(arrow.id)
-        const [p0, p1, p2, tip] = arrow.curve
-        const [ux, uy] = arrow.tangent
-        ctx.beginPath()
-        ctx.moveTo(p0[0] + sx, p0[1] + sy)
-        ctx.bezierCurveTo(p1[0] + sx, p1[1] + sy, p2[0] + sx, p2[1] + sy, tip[0] + sx, tip[1] + sy)
-        ctx.stroke()
-        const bx = tip[0] - ux * head, by = tip[1] - uy * head, w = head / 2
-        ctx.beginPath()
-        ctx.moveTo(tip[0] + sx, tip[1] + sy)
-        ctx.lineTo(bx - uy * w + sx, by + ux * w + sy)
-        ctx.lineTo(bx + uy * w + sx, by - ux * w + sy)
-        ctx.closePath()
-        ctx.fill()
+        ROUTE_ARROWS.drawnChevrons.push(chevrons.length)
+        for (const {x, y, ux, uy, half, width, alpha} of chevrons)
+        {
+            const bx = x - ux * half + sx, by = y - uy * half + sy
+            ctx.globalAlpha = alpha
+            ctx.lineWidth = width
+            ctx.beginPath()
+            ctx.moveTo(bx - uy * half, by + ux * half)
+            ctx.lineTo(x + sx, y + sy)
+            ctx.lineTo(bx + uy * half, by - ux * half)
+            ctx.stroke()
+        }
     }
     ctx.restore()
 }

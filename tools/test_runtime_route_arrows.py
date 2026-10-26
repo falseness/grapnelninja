@@ -8,6 +8,9 @@ serve the same SVG with every guide stripped. Draw calls are recorded from the
 production drawRouteArrows() through the canvas transform and compared with
 the SVG arrow geometry (convert_extended_mountain_svg.arrow_geometry: the guide
 up to the parameter where its arc length reaches min(0.5 * G, L), TASK-671).
+Since TASK-712 the sub-curve is drawn as a static run of open chevrons; the
+recorded chevron apexes are compared with the arc positions on the SVG-side
+sub-curve and their sizes with the ROUTE_ARROWS screen-pixel ramps.
 FIXTURES from test_level_route_arrows (short, long, curved, capped, degenerate)
 are drawn by the production drawRouteArrows() on a synthetic level object.
 
@@ -43,7 +46,10 @@ MEASUREMENTS = ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.j
 LEVELDATA = ROOT / 'leveldata.js'
 EVIDENCE = os.environ.get('ROUTE_ARROWS_RUNTIME_EVIDENCE_DIR')
 VIEWPORT = {'width': 1280, 'height': 720}
-COLOR, OPACITY, STROKE_PX, HEAD_PX = '#8bdde8', 0.4, 1.5, 6
+COLOR = '#8bdde8'
+# TASK-712 chevron run: spacing, and first -> last half-size, stroke width and alpha (screen px)
+GAP_PX, HALF_PX, STROKE_PX, ALPHA, GLOW_PX = 16, (4, 7), (1.6, 2.6), (0.25, 0.95), 6
+ARC_SAMPLES = 1024
 # The canvas keeps its transform in float32: compare to 0.002 device pixels.
 DEVICE_EPS = 2e-3
 EXAMPLES = [('T03', 'opening (rightward)'), ('T09', 'leftward'), ('T17', 'ceiling catch'), ('T18', 'descending onto bounce')]
@@ -79,12 +85,14 @@ SETUP = '''() => {
         c.bezierCurveTo = function(a, b, d, e, x, y) { path.points.push(pt(a, b), pt(d, e), pt(x, y)); path.kinds.push('C'); return saved[2].apply(c, arguments) }
         c.stroke = function() { const m = c.getTransform(); path.op = 'stroke'; path.style = c.strokeStyle; path.alpha = c.globalAlpha
             path.width = c.lineWidth * Math.hypot(m.a, m.b); path.composite = c.globalCompositeOperation; path.blur = c.shadowBlur
+            path.shadow = c.shadowColor; path.cap = c.lineCap; path.join = c.lineJoin
             return saved[3].apply(c, arguments) }
         c.fill = function() { path.op = 'fill'; path.style = c.fillStyle; path.alpha = c.globalAlpha; path.blur = c.shadowBlur
             return saved[4].apply(c, arguments) }
         try { if (!T659.off) production(world) }
         finally { names.forEach((n, i) => c[n] = saved[i]); T659.rec = rec }
         rec.drawn = ROUTE_ARROWS.drawn.slice()
+        rec.chevrons = ROUTE_ARROWS.drawnChevrons.slice()
     }
     for (const [object, name] of [[grapnel, 'draw'], [grapnel, 'drawHook'], [floors[0], 'draw']])
     {
@@ -219,6 +227,50 @@ def box(points):
     return [min(x for x, _ in points), min(y for _, y in points), max(x for x, _ in points), max(y for _, y in points)]
 
 
+def arc_table(p):
+    """routeArrowTable: cumulative chord lengths at ARC_SAMPLES + 1 even parameters."""
+    table, prev = [0.0], p[0]
+    for i in range(1, ARC_SAMPLES + 1):
+        q = cubic(p, i / ARC_SAMPLES)
+        table.append(table[-1] + math.hypot(q[0] - prev[0], q[1] - prev[1]))
+        prev = q
+    return table
+
+
+def arc_invert(table, s):
+    """routeArrowInvert: the parameter where the table reaches arc length s."""
+    n = len(table) - 1
+    lo, hi = 0, n
+    while hi - lo > 1:
+        mid = (lo + hi) >> 1
+        lo, hi = (mid, hi) if table[mid] < s else (lo, mid)
+    span = table[hi] - table[lo]
+    return (lo + ((s - table[lo]) / span if span > 0 else 0)) / n
+
+
+def chevron_layout(curve, tangent, target, px):
+    """Expected chevrons of a sub-curve at px world units per screen px: apex, unit direction and the
+    half-size / stroke (screen px) and alpha ramps over the run fraction."""
+    table = arc_table(curve)
+    gap = GAP_PX * px
+    count = math.floor(target / gap + 1e-6) + 1
+    out = []
+    for i in range(count):
+        last, f = i == count - 1, i / (count - 1) if count > 1 else 1
+        s = table[-1] - (count - 1 - i) * gap
+        t = 1 if last else 0 if s <= 0 else arc_invert(table, s)
+        if last:
+            apex, u = list(curve[3]), list(tangent)
+        else:
+            apex = cubic(curve, t)
+            d = next(v for v in (conv.bezier_tangent(curve, t), [curve[3][0] - curve[0][0], curve[3][1] - curve[0][1]], [1, 0])
+                     if math.hypot(*v) > 1e-9)
+            u = unit(d)
+        out.append({'apex': apex, 'u': u, 'half': HALF_PX[0] + (HALF_PX[1] - HALF_PX[0]) * f,
+                    'stroke': STROKE_PX[0] + (STROKE_PX[1] - STROKE_PX[0]) * f, 'alpha': ALPHA[0] + (ALPHA[1] - ALPHA[0]) * f})
+    return out
+
+
 def overlaps(a, b):
     return not (a[2] < b[0] or a[0] > b[2] or a[3] < b[1] or a[1] > b[3])
 
@@ -275,7 +327,8 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                                    'unguidedLeveldataSha256': sha(cls.plain_js),
                                    'routearrowsJsSha256': sha((ROOT / 'render/routearrows.js').read_bytes()),
                                    'drawJsSha256': sha((ROOT / 'render/draw.js').read_bytes())},
-                        'style': {'gapFraction': conv.ARROW_GAP_FRACTION, 'color': COLOR, 'opacity': OPACITY, 'strokePx': STROKE_PX, 'headPx': HEAD_PX},
+                        'style': {'gapFraction': conv.ARROW_GAP_FRACTION, 'color': COLOR, 'chevronGapPx': GAP_PX, 'halfSizePx': HALF_PX,
+                                  'strokePx': STROKE_PX, 'alpha': ALPHA, 'glowPx': GLOW_PX},
                         'cases': {}}
 
     @classmethod
@@ -336,45 +389,57 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                 'samples': [cubic(g, geo['t'] * s / 10) for s in range(11)]}
 
     def arrows(self, out, wx, wy, k, info, level=None):
-        """Decode the recorded draw calls into world-space arrows, checking each against the metadata."""
+        """Decode the recorded draw calls into world-space chevron runs, checking each against the metadata:
+        one open stroked chevron (M L L) per arc position chevronGapPx apart, the last at the tip."""
         rec = out['rec']
         paths = rec['paths']
-        self.assertEqual(len(paths), 2 * len(rec['drawn']))
+        self.assertEqual(len(rec['chevrons']), len(rec['drawn']))
+        self.assertEqual(len(paths), sum(rec['chevrons']))
         world = lambda p: [p[0] / k + wx, p[1] / k + wy]
         dev_per_css = out['canvas'][0] / out['cssWidth']
-        result, worst = [], {'point': 0, 'sample': 0, 'tangent': 0, 'stroke': 0, 'head': 0}
-        for i, tid in enumerate(rec['drawn']):
-            shaft, head = paths[2 * i], paths[2 * i + 1]
-            self.assertEqual((shaft['kinds'], shaft['op'], head['kinds'], head['op']), (['M', 'C'], 'stroke', ['M', 'L', 'L'], 'fill'))
-            for p in (shaft, head):
-                self.assertEqual((p['style'], p['blur']), (COLOR, 0))
-                self.assertAlmostEqual(p['alpha'], OPACITY, places=6)
-            curve = [world(p) for p in shaft['points']]
+        px = dev_per_css / k
+        result, worst = [], {'apex': 0, 'tangent': 0, 'stroke': 0, 'half': 0, 'alpha': 0}
+        start = 0
+        for tid, n in zip(rec['drawn'], rec['chevrons']):
+            run, start = paths[start:start + n], start + n
             exp = self.expected(tid, level)
-            point_err = max(math.dist(a, b) for a, b in zip(curve, exp['curve']))
-            sample_err = max(math.dist(cubic(curve, s / 10), e) for s, e in zip(range(11), exp['samples']))
-            tip, b1, b2 = head['points']
-            base = lerp(b1, b2, .5)
-            tangent = unit([tip[0] - base[0], tip[1] - base[1]])
-            tangent_err = math.dist(tangent, exp['tangent'])
-            head_len = math.dist(tip, base) / dev_per_css
-            head_width = math.dist(b1, b2) / dev_per_css
-            stroke = shaft['width'] / dev_per_css
-            self.assertLess(point_err, DEVICE_EPS / k)
-            self.assertLess(sample_err, DEVICE_EPS / k)
-            self.assertLess(math.dist(world(tip), exp['curve'][3]), DEVICE_EPS / k)
-            self.assertLess(tangent_err, 1e-4)
-            self.assertAlmostEqual(head_len, HEAD_PX, delta=1e-3)
-            self.assertAlmostEqual(head_width, HEAD_PX, delta=1e-3)
-            self.assertAlmostEqual(stroke, STROKE_PX, delta=1e-4)
-            worst = {'point': max(worst['point'], point_err), 'sample': max(worst['sample'], sample_err),
-                     'tangent': max(worst['tangent'], tangent_err),
-                     'stroke': max(worst['stroke'], abs(stroke - STROKE_PX)),
-                     'head': max(worst['head'], abs(head_len - HEAD_PX), abs(head_width - HEAD_PX))}
-            result.append({'id': tid, 'curveWorld': curve, 'tipWorld': world(tip), 'tangent': tangent,
-                           'measuredShaftLength': arc_length(curve), 'expected': exp,
-                           'strokePx': stroke, 'headLengthPx': head_len, 'headWidthPx': head_width,
-                           'shaftDevice': shaft['points'], 'headDevice': head['points']})
+            layout = chevron_layout(exp['curve'], exp['tangent'], exp['target'], px)
+            self.assertEqual(n, len(layout), tid)
+            self.assertEqual(n, math.floor(exp['target'] / (GAP_PX * px) + 1e-6) + 1, tid)
+            chevrons = []
+            for p, e in zip(run, layout):
+                self.assertEqual((p['kinds'], p['op'], p['style'], p['shadow'], p['cap'], p['join'], p['composite']),
+                                 (['M', 'L', 'L'], 'stroke', COLOR, COLOR, 'round', 'round', 'source-over'))
+                self.assertAlmostEqual(p['blur'], GLOW_PX * dev_per_css, places=6)
+                a1, apex, a2 = p['points']
+                base = lerp(a1, a2, .5)
+                u = unit([apex[0] - base[0], apex[1] - base[1]])
+                # Arms at apex - h u +- h n: each arm is h * sqrt(2) long, the base h behind the apex
+                half = math.dist(apex, base) / dev_per_css
+                spread = math.dist(a1, a2) / 2 / dev_per_css
+                stroke = p['width'] / dev_per_css
+                errs = {'apex': math.dist(world(apex), e['apex']), 'tangent': math.dist(u, e['u']),
+                        'stroke': abs(stroke - e['stroke']), 'half': max(abs(half - e['half']), abs(spread - e['half'])),
+                        'alpha': abs(p['alpha'] - e['alpha'])}
+                self.assertLess(errs['apex'], DEVICE_EPS / k, tid)
+                self.assertLess(errs['tangent'], 1e-3, tid)
+                self.assertLess(errs['stroke'], 1e-4, tid)
+                self.assertLess(errs['half'], 1e-3, tid)
+                self.assertLess(errs['alpha'], 1e-6, tid)
+                worst = {key: max(worst[key], v) for key, v in errs.items()}
+                chevrons.append({'apexWorld': world(apex), 'tangent': u, 'halfPx': half, 'strokePx': stroke, 'alpha': p['alpha']})
+            tip = chevrons[-1]['apexWorld']
+            self.assertLess(math.dist(tip, exp['curve'][3]), DEVICE_EPS / k)
+            self.assertLess(math.dist(chevrons[-1]['tangent'], exp['tangent']), 1e-3)
+            # The run spans (n - 1) gaps of arc; consecutive apex chords never exceed the gap
+            span = sum(math.dist(chevrons[i]['apexWorld'], chevrons[i + 1]['apexWorld']) for i in range(n - 1))
+            self.assertLessEqual(span, (n - 1) * GAP_PX * px + n * DEVICE_EPS / k)
+            device = [q for p in run for q in p['points']]
+            result.append({'id': tid, 'tipWorld': tip, 'tangent': chevrons[-1]['tangent'], 'count': n, 'gapWorld': GAP_PX * px,
+                           'expected': exp, 'chevrons': chevrons, 'firstHalfPx': chevrons[0]['halfPx'],
+                           'lastHalfPx': chevrons[-1]['halfPx'], 'firstStrokePx': chevrons[0]['strokePx'],
+                           'lastStrokePx': chevrons[-1]['strokePx'], 'firstAlpha': chevrons[0]['alpha'],
+                           'lastAlpha': chevrons[-1]['alpha'], 'runChordLength': span, 'device': device})
         return result, worst
 
     def test_01_all_guides_loaded_and_drawn_match_metadata(self):
@@ -405,24 +470,23 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         lengths = {}
         for a in overview:
             exp = a['expected']
-            # The drawn shaft, measured from the recorded draw calls, against the SVG-side target and endpoint.
-            self.assertLess(abs(a['measuredShaftLength'] - exp['target']), WORLD_TOL, a['id'])
+            # The drawn tip chevron, from the recorded draw calls, against the SVG-side endpoint; its arc
+            # positions were checked against the SVG-side sub-curve and target by arrows().
             self.assertLess(math.dist(a['tipWorld'], exp['endpoint']), WORLD_TOL, a['id'])
             lengths[a['id']] = {'runtimeG': loaded_by[a['id']]['gap'], 'runtimeL': loaded_by[a['id']]['length'],
                                 'runtimeTarget': loaded_by[a['id']]['target'], 'runtimeT': loaded_by[a['id']]['t'],
                                 'svgG': exp['G'], 'svgL': exp['L'], 'svgTarget': exp['target'], 'svgT': exp['t'],
-                                'measuredDrawnShaftLength': a['measuredShaftLength'],
-                                'drawnLengthError': a['measuredShaftLength'] - exp['target'],
+                                'chevrons': a['count'], 'gapWorld': a['gapWorld'], 'runChordLength': a['runChordLength'],
                                 'drawnEndpoint': a['tipWorld'], 'svgEndpoint': exp['endpoint'],
-                                'endpointError': math.dist(a['tipWorld'], exp['endpoint']), 'headLengthPx': a['headLengthPx']}
+                                'endpointError': math.dist(a['tipWorld'], exp['endpoint']), 'lastHalfPx': a['lastHalfPx']}
         self.evidence['lengths'] = {'shipped': lengths}
         self.evidence['cases']['allGuides'] = {
             'fragments': len(self.level['svgFormat']['fragments']), 'loadedTransfers': len(loaded['transfers']),
             'loadedGuides': sum('guide' in t for t in loaded['transfers']), 'runtimeArrows': len(loaded['arrows']),
             'loadedEqualsImported': True, 'overviewCamera': {'wx': wx, 'wy': wy, 'k': k}, 'drawn': len(overview),
             'worstError': worst, 'arrows': [{'id': a['id'], 'guide': self.guides[a['id']], 'expected': a['expected'],
-                                             'drawnCurveWorld': a['curveWorld'], 'drawnTangent': a['tangent'],
-                                             'strokePx': a['strokePx'], 'headLengthPx': a['headLengthPx']} for a in overview]}
+                                             'drawnChevronsWorld': [c['apexWorld'] for c in a['chevrons']], 'drawnTangent': a['tangent'],
+                                             'lastStrokePx': a['lastStrokePx'], 'lastHalfPx': a['lastHalfPx']} for a in overview]}
 
     def test_02_translation_and_two_zooms_preserve_world_and_screen_sizes(self):
         page = self.open(self.js)
@@ -449,24 +513,30 @@ class RuntimeRouteArrowTests(unittest.TestCase):
             frames[name] = {'camera': {'wx': wx, 'wy': wy, 'k': k, 'screenPxPerWorld': k / info['devPerCss']},
                             'drawn': drawn, 'mustDraw': must, 'farCulled': far, 'worstError': worst,
                             'arrows': {a['id']: a for a in arrows}}
-        # The same guide sits at the same world points under every camera, with the same screen sizes.
+        # The same guide ends at the same world tip under every camera, with the same screen sizes; the
+        # chevron spacing is in screen px, so a closer zoom puts more chevrons on the same world curve.
         base = frames['normal']['arrows']['T09']
         comparison = {}
         for name, f in frames.items():
             a = f['arrows']['T09']
-            d = max(math.dist(p, q) for p, q in zip(a['curveWorld'], base['curveWorld']))
+            d = math.dist(a['tipWorld'], base['tipWorld'])
             self.assertLess(d, DEVICE_EPS / f['camera']['k'] + DEVICE_EPS / k0)
-            self.assertAlmostEqual(a['strokePx'], STROKE_PX, delta=1e-4)
-            self.assertAlmostEqual(a['headLengthPx'], HEAD_PX, delta=1e-3)
-            comparison[name] = {'worldDeltaVsNormal': d, 'strokePx': a['strokePx'], 'headLengthPx': a['headLengthPx'],
-                                'headWidthPx': a['headWidthPx'], 'tipDevice': a['headDevice'][0],
-                                'headWorldLength': HEAD_PX / f['camera']['screenPxPerWorld']}
+            self.assertAlmostEqual(a['firstStrokePx'], STROKE_PX[0] if a['count'] > 1 else STROKE_PX[1], delta=1e-4)
+            self.assertAlmostEqual(a['lastStrokePx'], STROKE_PX[1], delta=1e-4)
+            self.assertAlmostEqual(a['firstHalfPx'], HALF_PX[0] if a['count'] > 1 else HALF_PX[1], delta=1e-3)
+            self.assertAlmostEqual(a['lastHalfPx'], HALF_PX[1], delta=1e-3)
+            comparison[name] = {'worldDeltaVsNormal': d, 'count': a['count'], 'firstHalfPx': a['firstHalfPx'],
+                                'lastHalfPx': a['lastHalfPx'], 'firstStrokePx': a['firstStrokePx'], 'lastStrokePx': a['lastStrokePx'],
+                                'tipDevice': a['device'][-2], 'gapWorld': a['gapWorld'],
+                                'lastHalfWorld': HALF_PX[1] / f['camera']['screenPxPerWorld']}
         tx = [comparison['translated']['tipDevice'][i] - comparison['normal']['tipDevice'][i] for i in (0, 1)]
         self.assertAlmostEqual(tx[0], -137.5 * k0, delta=2 * DEVICE_EPS)
         self.assertAlmostEqual(tx[1], 91.25 * k0, delta=2 * DEVICE_EPS)
-        self.assertNotAlmostEqual(comparison['zoom1.6']['headWorldLength'], comparison['normal']['headWorldLength'])
+        self.assertNotAlmostEqual(comparison['zoom1.6']['lastHalfWorld'], comparison['normal']['lastHalfWorld'])
+        self.assertGreater(comparison['zoom1.6']['count'], comparison['zoom0.6']['count'])
         for f in frames.values():
-            f['arrows'] = {t: {k: v for k, v in a.items() if k in ('curveWorld', 'tangent', 'strokePx', 'headLengthPx', 'headWidthPx')}
+            f['arrows'] = {t: {k: v for k, v in a.items() if k in ('tipWorld', 'tangent', 'count', 'firstHalfPx', 'lastHalfPx',
+                                                                   'firstStrokePx', 'lastStrokePx', 'firstAlpha', 'lastAlpha')}
                            for t, a in f['arrows'].items()}
         self.evidence['cases']['cameras'] = {'frames': frames, 'T09': comparison, 'translationDeviceShift': tx,
                                             'expectedTranslationDeviceShift': [-137.5 * k0, 91.25 * k0]}
@@ -505,7 +575,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         self.assertIn(tid, out['rec']['drawn'])
         arrows, _ = self.arrows(out, view[0], view[1], k0, info)
         a = {x['id']: x for x in arrows}[tid]
-        on = [p for p in a['shaftDevice'] + a['headDevice'] if 0 <= p[0] < info['canvas'][0] and 0 <= p[1] < info['canvas'][1]]
+        on = [p for p in a['device'] if 0 <= p[0] < info['canvas'][0] and 0 <= p[1] < info['canvas'][1]]
         self.assertTrue(on)
         loaded_src = page.evaluate('''ids => floors[0].elements.filter(e => ids.includes(e.id)).map(e => e.getPoints().map(p => [p.x, p.y]))''',
                                    [e for f in self.level['svgFormat']['fragments'] if f['id'] == self.transfers[tid]['from'] for e in f['elements']])
@@ -518,7 +588,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
             without = image(page.evaluate(SHOT, [wx, wy, k0, True]))
             out = self.frame(page, wx, wy, k0)
             arrow = {x['id']: x for x in self.arrows(out, wx, wy, k0, info)[0]}[tid]
-            pts = arrow['shaftDevice'] + arrow['headDevice']
+            pts = arrow['device']
             x0, y0, x1, y1 = box(pts)
             region = (max(0, int(x0) - 3), max(0, int(y0) - 3), min(with_arrows.width, int(x1) + 4), min(with_arrows.height, int(y1) + 4))
             diff = ImageChops.difference(with_arrows.crop(region), without.crop(region)).convert('L')
@@ -550,15 +620,17 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         near = [(dx, dy) for dx in range(-4, 5) for dy in range(-4, 5) if dx * dx + dy * dy <= 16]
         delta = lambda a, b, d: max(abs(u - v) for u, v in zip(a.getpixel((c[0] + d[0], c[1] + d[1])), b.getpixel((c[0] + d[0], c[1] + d[1]))))
         # The ball body is slightly translucent: drawn under it the arrow moves its core by a few levels at most;
-        # drawn over it, the 0.4 cyan head would move it by about 0.4 * (arrow - ball), around 20 levels.
+        # drawn over it, the 0.95 cyan tip chevron would move it far more.
         under_delta = max(delta(under_on, under_off, d) for d in near)
-        self.assertLessEqual(under_delta, 4)
+        # TASK-712: the 0.95 tip chevron (was a 0.4 head, bound 4) shows through by up to 0.95 / 0.4 * 4 levels.
+        self.assertLessEqual(under_delta, 10)
         # Without the player there, the same pixels show the arrow head.
         page.evaluate('() => { ninja.x += 3000 }')
         away_on = image(page.evaluate(SHOT, [wx, wy, kz, False]))
         away_off = image(page.evaluate(SHOT, [wx, wy, kz, True]))
         away_delta = max(delta(away_on, away_off, d) for d in near)
         self.assertGreaterEqual(away_delta, 20)
+        self.assertLess(4 * under_delta, away_delta)
         first = order.index('drawRouteArrows')
         for name in ('drawAcquisitionCircle', 'draw', 'drawHook', 'drawPlayerLayer'):
             self.assertLess(first, order.index(name), order)
@@ -607,7 +679,8 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         self.setup(page2)
         out2 = self.frame(page2, wx, wy, k)
         self.assertEqual(sorted(out2['rec']['drawn']), ['T01', 'T09', 'T17'])
-        self.assertEqual(len(out2['rec']['paths']), 6)
+        self.assertEqual(len(out2['rec']['paths']), sum(out2['rec']['chevrons']))
+        self.assertEqual(len(out2['rec']['chevrons']), 3)
         # A legacy level object with no svgFormat at all draws nothing and throws nothing.
         legacy = page2.evaluate('() => { const l = {...floors[0].level}; delete l.svgFormat; return routeArrowsFor(l).length }')
         self.assertEqual(legacy, 0)
@@ -695,7 +768,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                                 'runtimeEndpoint': a['curve'][3], 'runtimeTangent': a['tangent'], 'svgG': exp['G'],
                                 'svgL': exp['L'], 'svgTarget': exp['target'], 'svgT': exp['t'], 'svgEndpoint': exp['endpoint'],
                                 'finite': True, 'zooms': {}}
-        # Each fixture centred at three zooms: same world shaft, same 6 px head and 1.5 px stroke.
+        # Each fixture centred at three zooms: same world tip, same 4 -> 7 px chevrons and 1.6 -> 2.6 px strokes.
         k0 = info['k0']
         for a in loaded:
             g = FIXTURES[a['id']]['guide']
@@ -706,16 +779,17 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                 out, drawn = self.fixture_frame(page, level, wx, wy, k, info)
                 self.assertIn(a['id'], out['rec']['drawn'])
                 d = {x['id']: x for x in drawn}[a['id']]
-                self.assertLess(abs(d['measuredShaftLength'] - d['expected']['target']), WORLD_TOL, a['id'])
-                self.assertTrue(finite(sum(d['curveWorld'], []) + d['tipWorld']), a['id'])
-                records[a['id']]['zooms'][str(zoom)] = {'k': k, 'measuredDrawnShaftLength': d['measuredShaftLength'],
-                                                        'drawnEndpoint': d['tipWorld'], 'headLengthPx': d['headLengthPx'],
-                                                        'headWidthPx': d['headWidthPx'], 'strokePx': d['strokePx']}
+                self.assertLess(math.dist(d['tipWorld'], d['expected']['endpoint']), WORLD_TOL, a['id'])
+                self.assertTrue(finite(sum((c['apexWorld'] for c in d['chevrons']), []) + d['tipWorld']), a['id'])
+                records[a['id']]['zooms'][str(zoom)] = {'k': k, 'chevrons': d['count'], 'drawnEndpoint': d['tipWorld'],
+                                                        'firstHalfPx': d['firstHalfPx'], 'lastHalfPx': d['lastHalfPx'],
+                                                        'firstStrokePx': d['firstStrokePx'], 'lastStrokePx': d['lastStrokePx']}
         self.evidence.setdefault('lengths', {})['fixtures'] = records
         self.evidence['lengths']['toleranceWorldUnits'] = WORLD_TOL
-        heads = [z['headLengthPx'] for r in records.values() for z in r['zooms'].values()]
+        heads = [z['lastHalfPx'] for r in records.values() for z in r['zooms'].values()]
         self.assertLess(max(heads) - min(heads), 2e-3)
-        self.evidence['cases']['fixtureZooms'] = {'zooms': [0.6, 1.0, 1.6], 'headLengthPxRange': [min(heads), max(heads)]}
+        self.assertAlmostEqual(heads[0], HALF_PX[1], delta=1e-3)
+        self.evidence['cases']['fixtureZooms'] = {'zooms': [0.6, 1.0, 1.6], 'lastHalfPxRange': [min(heads), max(heads)]}
 
     def test_07_arrows_png_short_and_long_at_matched_zoom(self):
         from PIL import Image, ImageDraw
@@ -741,9 +815,10 @@ class RuntimeRouteArrowTests(unittest.TestCase):
             tiles.append((n, shot.crop((max(0, int((x0 - wx) * k) - pad), max(0, int((y0 - wy) * k) - pad),
                                         min(shot.width, int((x1 - wx) * k) + pad), min(shot.height, int((y1 - wy) * k) + pad)))))
         by = drawn_by
-        heads = {n: (by[n]['headLengthPx'], by[n]['headWidthPx']) for n in names}
+        heads = {n: (by[n]['lastHalfPx'], by[n]['lastStrokePx']) for n in names}
         self.assertLess(max(h[0] for h in heads.values()) - min(h[0] for h in heads.values()), 2e-3)
-        self.assertGreater(by['long']['measuredShaftLength'], 10 * by['short']['measuredShaftLength'])
+        self.assertGreater(by['long']['expected']['target'], 10 * by['short']['expected']['target'])
+        self.assertGreater(by['long']['count'], by['short']['count'])
         # Shipped level: its shortest and longest shafts in production frames at the game zoom.
         lengths = {a['id']: a['target'] for a in page.evaluate('() => routeArrowsFor(floors[0].level).map(a => ({id: a.id, target: a.target}))')}
         short, long_ = min(lengths, key=lengths.get), max(lengths, key=lengths.get)
@@ -755,24 +830,25 @@ class RuntimeRouteArrowTests(unittest.TestCase):
             shot = image(page.evaluate(SHOT, [gx, gy, k0, False]))
             fo = self.frame(page, gx, gy, k0)
             a = {x['id']: x for x in self.arrows(fo, gx, gy, k0, info)[0]}[tid]
-            game[tid] = {'target': exp['target'], 'measuredDrawnShaftLength': a['measuredShaftLength'],
-                         'headLengthPx': a['headLengthPx'], 'headWidthPx': a['headWidthPx'], 'k': k0}
-            x0, y0, x1, y1 = box(a['shaftDevice'] + a['headDevice'])
+            game[tid] = {'target': exp['target'], 'chevrons': a['count'], 'lastHalfPx': a['lastHalfPx'],
+                         'lastStrokePx': a['lastStrokePx'], 'k': k0}
+            x0, y0, x1, y1 = box(a['device'])
             pad = 40
             crops.append((tid, shot.crop((max(0, int(x0) - pad), max(0, int(y0) - pad),
                                           min(shot.width, int(x1) + pad), min(shot.height, int(y1) + pad)))))
-        self.assertLess(abs(game[short]['headLengthPx'] - game[long_]['headLengthPx']), 2e-3)
+        self.assertLess(abs(game[short]['lastHalfPx'] - game[long_]['lastHalfPx']), 2e-3)
         self.assertGreater(game[long_]['target'], 2 * game[short]['target'])
-        rows = [[(n, c, '%s: G=%.0f shaft=%.0fu head %.3fpx (k=%.4f)' % (n, by[n]['expected']['G'], by[n]['measuredShaftLength'],
-                                                                         heads[n][0], k)) for n, c in tiles],
-                [(tid, c, 'game %s: %s shaft=%.0fu head %.3fpx (k=%.4f)' % ('shortest' if tid == short else 'longest', tid,
-                                                                             game[tid]['measuredDrawnShaftLength'],
-                                                                             game[tid]['headLengthPx'], k0)) for tid, c in crops]]
+        self.assertGreater(game[long_]['chevrons'], game[short]['chevrons'])
+        rows = [[(n, c, '%s: G=%.0f run=%.0fu %d chevrons, tip %.2fpx (k=%.4f)' % (n, by[n]['expected']['G'], by[n]['expected']['target'],
+                                                                                  by[n]['count'], heads[n][0], k)) for n, c in tiles],
+                [(tid, c, 'game %s: %s run=%.0fu %d chevrons, tip %.2fpx (k=%.4f)' % ('shortest' if tid == short else 'longest', tid,
+                                                                                    game[tid]['target'], game[tid]['chevrons'],
+                                                                                    game[tid]['lastHalfPx'], k0)) for tid, c in crops]]
         widths = [sum(max(c.width, 8 * len(t)) + 16 for _, c, t in r) for r in rows]
         heights = [max(c.height for _, c, _ in r) + 30 for r in rows]
         sheet = Image.new('RGB', (max(widths) + 16, sum(heights) + 40), (12, 12, 16))
         dr = ImageDraw.Draw(sheet)
-        dr.text((8, 6), 'Distance-based arrows: shaft = min(0.5 G, L); head is a constant 6 CSS px at any zoom', fill=(240, 240, 240))
+        dr.text((8, 6), 'Distance-based chevron runs: run = min(0.5 G, L); one chevron per 16 CSS px, 4 -> 7 px at any zoom', fill=(240, 240, 240))
         y = 28
         for r, h in zip(rows, heights):
             x = 8
@@ -786,7 +862,8 @@ class RuntimeRouteArrowTests(unittest.TestCase):
             sheet.save(Path(EVIDENCE, 'arrows.png'))
         self.evidence['cases']['arrowsPng'] = {
             'fixtureZoomK': k, 'fixtureHeadsPx': heads,
-            'fixtureShaftLengths': {n: by[n]['measuredShaftLength'] for n in names},
+            'fixtureChevrons': {n: by[n]['count'] for n in names},
+            'fixtureTargets': {n: by[n]['expected']['target'] for n in names},
             'gameShortest': short, 'gameLongest': long_, 'game': game}
 
     def test_08_culling_and_cache_reuse(self):
@@ -815,13 +892,21 @@ class RuntimeRouteArrowTests(unittest.TestCase):
                 culled['%s@%s' % (tid, zoom)] = {'drawn': len(drawn), 'mustDraw': len(must), 'farCulled': len(far)}
         after = page.evaluate('() => ({builds: ROUTE_ARROWS.builds, same: routeArrowsFor(floors[0].level) === routeArrowsFor(floors[0].level)})')
         self.assertEqual(after['builds'], before['builds'])
+        # Chevron layouts are kept with the arrow: repeated frames at one zoom compute none.
+        tip = self.expected('T09')['curve'][3]
+        wx, wy = tip[0] - info['canvas'][0] / k0 / 2, tip[1] - info['canvas'][1] / k0 / 2
+        self.frame(page, wx, wy, k0)
+        layouts = page.evaluate('() => ROUTE_ARROWS.layouts')
+        for _ in range(5):
+            self.frame(page, wx, wy, k0)
+        self.assertEqual(page.evaluate('() => ROUTE_ARROWS.layouts'), layouts)
         # A different level object is computed once, then reused.
         fresh = page.evaluate('l => { const b = ROUTE_ARROWS.builds; const a = routeArrowsFor(l); routeArrowsFor(l);'
                               ' return {added: ROUTE_ARROWS.builds - b, same: a === routeArrowsFor(l)} }', fixture_level())
         self.assertEqual(fresh, {'added': 1, 'same': True})
         self.evidence['cases']['cullingAndCache'] = {'frames': len(culled), 'culling': culled, 'buildsBefore': before['builds'],
                                                     'buildsAfterFrames': after['builds'], 'cacheIdentity': True,
-                                                    'newLevelBuildsOnce': fresh}
+                                                    'newLevelBuildsOnce': fresh, 'chevronLayoutsReusedOver5Frames': True}
 
     def test_09_zero_browser_errors(self):
         page = self.open(self.js)
