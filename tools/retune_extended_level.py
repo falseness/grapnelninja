@@ -583,6 +583,21 @@ PURPLE_UPPER = dict(PURPLE, departure='P13', upId='EXT-14', prefix='NGU', zoneId
                             'before the EXT-14 ceiling hold')
 
 
+# TASK-706 (template, fixture only via --big-zone-fixture): the big no-grapple zone, 5760 x 4320 world units
+# (3/4 width x full height of the 1920 x 1080 logical viewport at the Grapple Over camera scale 0.25; fixed
+# world units). Without a rope a bounce cannot gain net height, so the crossing is level or descending: the
+# player runs off the approach ledge into the zone's upper left, rolls/bounces down a staircase of green
+# slabs (zone-local, PURPLE panel format; every top >= 15 deg for the no-rest rule, consecutive gaps <= 270,
+# others > 540 + player diameter) and leaves through the right side onto a lower exit ledge outside the zone.
+# The approach top is y = 0 so the fixed SVG spawn (500, -30) stands on it; the zone top sits zoneAbove
+# higher, so the run-off starts inside the zone.
+BIG_ZONE_STEP = (1000, 420)
+BIG_ZONE = dict(zone=(5760, 4320), zoneMargin=60, zoneAbove=600, approach=(1200, 260), exit=(1200, 260), exitTop=2700,
+                layoutId='big-zone-fixture-v1', zoneId='NGB', prefix='NGB', label='Big zone',
+                panels=[('Bounce slab %d' % (i+1), (700+i*BIG_ZONE_STEP[0], 1400+i*BIG_ZONE_STEP[1]), 20.0, 450, 450, 280, 1)
+                        for i in range(5)])
+
+
 def slab(contact, angle, before, after, thickness, side):
     """Rectangle whose face lies PLAYER_RADIUS from contact, on the side the player touches."""
     ux, uy = math.cos(math.radians(angle)), math.sin(math.radians(angle))
@@ -753,6 +768,72 @@ def extend_purple_route(m, spec):
     m['noGrappleZones'] = m['noGrappleZones']+[zone]
     m['purpleExtension'] = earlier[0]
     m['purpleExtensions'] = earlier+[new]
+
+
+def big_zone_level(spec=BIG_ZONE):
+    """The BIG_ZONE encounter alone as a measurements dict (approach P0, internal slabs, exit summit)."""
+    pre, label = spec['prefix'], spec['label']
+    w, h = spec['approach']
+    approach = dict(panel('%s approach ledge' % label, w, h, 0, 0), originalId=None, semanticId=pre+'-APPROACH')
+    zw, zh = spec['zone']
+    zx, zy = w+spec['zoneMargin'], -spec['zoneAbove']
+    zone = dict(id=spec['zoneId'], x=zx, y=zy, width=zw, height=zh,
+                polygon=[[zx, zy], [zx+zw, zy], [zx+zw, zy+zh], [zx, zy+zh]],
+                purpose='big no-grapple zone: rope-free level-or-descending traversal')
+    ew, eh = spec['exit']
+    exit_ = dict(panel('%s exit ledge' % label, ew, eh, zx+zw+spec['zoneMargin'], spec['exitTop']), kind='summit',
+                 originalId=None, semanticId=pre+'-EXIT')
+    internal = []
+    for n, (name, contact, angle, before, after, thickness, side_) in enumerate(spec['panels'], 1):
+        f = purple_panel('%s %s' % (label, name[0].lower()+name[1:]), slab(contact, angle, before, after, thickness, side_),
+                         contact, 'top' if side_ > 0 else 'underside', zx, zy)
+        f.update(originalId=None, semanticId='%s%d' % (pre, n), surfaceAngle=angle)
+        internal.append(f)
+    for f in [approach, exit_]:
+        if union_distance(svg.bodies(f), [zone['polygon']])[0] <= 0:
+            raise ValueError('%s must lie outside the big zone' % f['semanticId'])
+    for f in internal:
+        if not zone_contains(zone, f):
+            raise ValueError('%s must lie completely inside the big zone' % f['semanticId'])
+    if exit_['y'] < approach['y']:
+        raise ValueError('A rope-free big-zone crossing cannot leave higher than it enters')
+    fs = [approach]+internal+[exit_]
+    for i, f in enumerate(fs):
+        f['id'] = 'P%d' % i
+    rows = []
+    for i, (a, b) in enumerate(zip(fs, fs[1:]), 1):
+        if a is approach:
+            rid, action = pre+'-ENTRY', 'Run off the approach ledge into the big no-grapple zone'
+        elif b is exit_:
+            rid, action = pre+'-EXIT', 'Bounce out of the zone side onto the lower exit ledge'
+        else:
+            rid, action = '%s-%s-%s' % (pre, a['semanticId'], b['semanticId']), 'Rope-free bounce down to the next slab'
+        rows.append(dict(id=rid, number=i, fromFragment=a['id'], toFragment=b['id'], direction='RIGHT', action=action,
+                         baseline=False, originalNumber=None, originalId=None, percent=None,
+                         noGrappleZone=zone['id'] if a in internal and b in internal else None))
+    m = dict(layoutId=spec['layoutId'], grappleRange=svg.R, fragments=fs, encounters=rows, yellowBands=[],
+             noGrappleZones=[zone], fallIllustrations=[], combinations=[],
+             bigZone=dict(zone=zone['id'], approach=approach['id'], internal=[f['id'] for f in internal], exit=exit_['id'],
+                          size=[zw, zh], viewport=[1920, 1080], cameraScale=0.25))
+    measure_transfers(m, None)
+    return m
+
+
+def write_big_zone_fixture(dest, spec=BIG_ZONE):
+    """--big-zone-fixture: SVG, measurements, imported level JSON and leveldata-style JS for BIG_ZONE alone."""
+    import import_level_svg
+    m = big_zone_level(spec)
+    svg.LAYOUT_ID = m['layoutId']
+    text = svg.build(m)
+    level = import_level_svg.import_svg(text.encode())
+    (dest/'big-zone.svg').write_text(text)
+    (dest/'big-zone-measurements.json').write_text(json.dumps(m, separators=(',', ':'))+'\n')
+    payload = import_level_svg.dumps(level)
+    (dest/'big-zone.level.json').write_text(payload)
+    (dest/'big-zone.level.js').write_text('// Generated by tools/retune_extended_level.py --big-zone-fixture; do not edit.\n'
+                                          'window.GRAPPLE_OVER_BUNDLED_LEVEL = '+payload.rstrip()+';\n')
+    print('Wrote big-zone fixture', dest, 'layout', m['layoutId'], 'fragments', len(m['fragments']),
+          'transfers', len(m['encounters']), 'elements', len(level['elements']))
 
 
 def measure_transfers(m, opening):
@@ -1777,7 +1858,7 @@ def restore_guard_coverage(m, clearance, reserved=()):
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--source',required=True)
+    ap.add_argument('--source',help='concept measurements JSON (required unless --big-zone-fixture)')
     ap.add_argument('--output-dir',required=True)
     ap.add_argument('--guidelines', default=str(GUIDELINES), help='Required current design guidelines')
     ap.add_argument('--opening', choices=('extended', 'original'), default='extended',
@@ -1795,7 +1876,14 @@ def main():
                          '--no-purple-rest without layout flags gives the previous shipped v16')
     ap.add_argument('--upper-purple', action=argparse.BooleanOptionalAction, default=None,
                     help='(with --middle-purple) add the third (upper) purple encounter NGU after EXT-13 (TASK-684); shipped')
+    ap.add_argument('--big-zone-fixture', action='store_true',
+                    help='write only the BIG_ZONE encounter template as a fixture level (TASK-706); --source is ignored')
     args=ap.parse_args()
+    if args.big_zone_fixture:
+        dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
+        return write_big_zone_fixture(dest)
+    if not args.source:
+        ap.error('--source is required')
     explicit=(args.min_side_scope, args.middle_purple, args.upper_purple) != (None, None, None)
     shipped = not explicit and args.opening == 'extended'
     if shipped:

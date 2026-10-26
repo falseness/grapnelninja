@@ -330,12 +330,13 @@ def build(meas, guides=False, arrows=False):
     zones = meas.get('noGrappleZones', [])
     falls = meas['fallIllustrations']
     combos = [tuple(c) for c in meas['combinations']]
-    # Counts follow the measurements: one transfer per consecutive fragment pair.
-    assert len(frags) >= 2 and len(rows) == len(frags) - 1 and len(bands) > 0 and len(combos) > 0
+    # Counts follow the measurements: one transfer per consecutive fragment pair. A single-encounter
+    # fixture (TASK-706 big zone) has no yellow bands or combinations; every mountain layout has both.
+    assert len(frags) >= 2 and len(rows) == len(frags) - 1 and (len(bands) > 0 and len(combos) > 0 or not meas.get('combinations'))
     assert [r['number'] for r in rows] == list(range(1, len(rows) + 1))
     jumps = len(rows)
     # The preserved concept baseline ends at original jump 10, wherever insertions moved it.
-    baseline_end = next((r['number'] for r in rows if r.get('originalNumber') == 10), 10)
+    baseline_end = next((r['number'] for r in rows if r.get('originalNumber') == 10), min(10, jumps))
     pitch = 99 if jumps <= 24 else (2850 - 443) / jumps
     combo_word = COUNT_WORDS.get(len(combos), str(len(combos)))
     assert float(meas['grappleRange']) == R
