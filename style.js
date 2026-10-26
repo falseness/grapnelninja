@@ -600,7 +600,7 @@ const STYLE = Object.freeze({
             cameraParallaxXRatio: 0.08,
             cameraParallaxYRatio: 0.015,
             // Highest offscreen pixels per logical unit
-            maxPixelScale: 1
+            maxPixelScale: 2
         }),
         // Near rocks: large dark low-poly boulders along the bottom edge with
         // a few tall outcrops, and short ones hanging from the top. Most of
@@ -621,7 +621,7 @@ const STYLE = Object.freeze({
             cameraParallaxXRatio: 0.25,
             cameraParallaxYRatio: 0.04,
             maxShiftYRatio: 0.03,
-            maxPixelScale: 1
+            maxPixelScale: 2
         }),
     }),
     visualStability: Object.freeze({

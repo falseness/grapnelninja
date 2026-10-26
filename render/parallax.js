@@ -12,7 +12,7 @@ function drawGrappleOverParallax(renderer, palette)
     const context = renderer.ctx
     const bounds = renderer.fillBounds()
     const m = context.getTransform()
-    const pixelScale = glowSpriteScale(Math.max(0.25, Math.min(1, renderer.canvas.width / LOGICAL_VIEWPORT.width || 1)))
+    const pixelScale = glowSpriteScale(Math.max(0.25, Math.min(2, renderer.canvas.width / LOGICAL_VIEWPORT.width || 1)))
     const cameraX = screen.x * scale[version]
     const cameraY = screen.y * scale[version]
     const weights = palette.t > 0 ? [[palette.from, 1 - palette.t], [palette.to, palette.t]] : [[palette.from, 1]]
