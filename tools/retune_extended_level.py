@@ -586,16 +586,23 @@ PURPLE_UPPER = dict(PURPLE, departure='P13', upId='EXT-14', prefix='NGU', zoneId
 # TASK-706 (template, fixture only via --big-zone-fixture): the big no-grapple zone, 5760 x 4320 world units
 # (3/4 width x full height of the 1920 x 1080 logical viewport at the Grapple Over camera scale 0.25; fixed
 # world units). Without a rope a bounce cannot gain net height, so the crossing is level or descending: the
-# player runs off the approach ledge into the zone's upper left, rolls/bounces down a staircase of green
-# slabs (zone-local, PURPLE panel format; every top >= 15 deg for the no-rest rule, consecutive gaps <= 270,
-# others > 540 + player diameter) and leaves through the right side onto a lower exit ledge outside the zone.
+# player runs off the approach ledge into the zone's upper left, bounces rope-free off green slabs
+# (zone-local, PURPLE panel format; every top >= 15 deg for the no-rest rule, consecutive gaps <= 270,
+# others > 540 + player diameter) and leaves through the right side above a lower exit ledge outside the zone.
 # The approach top is y = 0 so the fixed SVG spawn (500, -30) stands on it; the zone top sits zoneAbove
 # higher, so the run-off starts inside the zone.
-BIG_ZONE_STEP = (1000, 420)
-BIG_ZONE = dict(zone=(5760, 4320), zoneMargin=60, zoneAbove=600, approach=(1200, 260), exit=(1200, 260), exitTop=2700,
-                layoutId='big-zone-fixture-v1', zoneId='NGB', prefix='NGB', label='Big zone',
-                panels=[('Bounce slab %d' % (i+1), (700+i*BIG_ZONE_STEP[0], 1400+i*BIG_ZONE_STEP[1]), 20.0, 450, 450, 280, 1)
-                        for i in range(5)])
+# TASK-707 (v2): every surface the crossing uses stays above the production fall recovery (CLIMB_FALL_RECOVERY_DEPTH
+# 1500 below the spawn, world y 1470); v1's staircase (exit top 2700) sent every crossing back to the spawn. A
+# straight staircase cannot span 5760 at >= 15 deg inside that depth, so the slabs alternate tilt (negative =
+# top rising to the right) and the elastic bounces keep the player's height: the recorded crossing
+# (tools/fixtures/big-zone-inputs.json) runs off at full pull speed, bounces off NGB2 and NGB3 and leaves the
+# right side above the exit ledge (top 342), where a fresh press grapples it.
+BIG_ZONE_PANELS = [((918, 1579), 15.0, 525), ((2023, 1683), 15.0, 525), ((2941, 1580), -25.0, 300),
+                   ((3833, 1379), 25.0, 375), ((4929, 1614), 20.0, 525)]
+BIG_ZONE = dict(zone=(5760, 4320), zoneMargin=60, zoneAbove=600, approach=(1200, 260), exit=(1200, 260), exitTop=342,
+                layoutId='big-zone-fixture-v2', zoneId='NGB', prefix='NGB', label='Big zone',
+                panels=[('Bounce slab %d' % (i+1), contact, angle, extent, extent, 280, 1)
+                        for i, (contact, angle, extent) in enumerate(BIG_ZONE_PANELS)])
 
 
 def slab(contact, angle, before, after, thickness, side):

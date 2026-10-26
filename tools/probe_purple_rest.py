@@ -11,6 +11,7 @@ stepped with no input for --seconds of game time. Outcome per sample:
   left   - the player circle no longer overlaps any no-grapple zone
   moving - neither within the time budget
 Usage: python3 tools/probe_purple_rest.py LEVEL_DIR --output stuck.json [--violations report.json]
+       [--level-name big-zone.level.json --measurements-name big-zone-measurements.json]
 """
 import argparse, json, math
 from collections import Counter
@@ -40,9 +41,9 @@ def clip(a, b, zone):
     return (t0, t1) if t1 > t0 else None
 
 
-def samples(level_dir, spacing):
-    level = json.loads((level_dir / LEVEL).read_text())
-    ref_path = level_dir / MEASUREMENTS
+def samples(level_dir, spacing, level_name=LEVEL, measurements_name=MEASUREMENTS):
+    level = json.loads((level_dir / level_name).read_text())
+    ref_path = level_dir / measurements_name
     reference = json.loads(ref_path.read_text()) if ref_path.exists() else {}
     polys = geo.level_polygons(level)
     fragments = {f['id']: f['elements'] for f in level.get('svgFormat', {}).get('fragments', [])}
@@ -72,12 +73,15 @@ def main():
     ap.add_argument('level_dir', type=Path)
     ap.add_argument('--output', required=True, type=Path)
     ap.add_argument('--violations', type=Path, help='check_level_geometry --no-grapple-rest report to cross-check')
+    # TASK-707: other file names in LEVEL_DIR (the big-zone fixture writes big-zone.level.json ...).
+    ap.add_argument('--level-name', default=LEVEL)
+    ap.add_argument('--measurements-name', default=MEASUREMENTS)
     ap.add_argument('--spacing', type=float, default=150.0)
     ap.add_argument('--seconds', type=float, default=5.0)
     ap.add_argument('--still-speed', type=float, default=10.0)
     ap.add_argument('--still-seconds', type=float, default=1.0)
     a = ap.parse_args()
-    level, faces = samples(a.level_dir, a.spacing)
+    level, faces = samples(a.level_dir, a.spacing, a.level_name, a.measurements_name)
     opts = {'seconds': a.seconds, 'stillSpeed': a.still_speed, 'stillSeconds': a.still_seconds}
     rows = []
     with ExitStack() as stack:
