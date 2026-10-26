@@ -849,12 +849,18 @@ def write_big_zone_fixture(dest, spec=BIG_ZONE):
 # (EXT-21 .. EXT-24: vertical commitment, ceiling hold, release, bounce onto a summit-shaped landing, +4181), lead
 # into the big zones BZ1 .. BZ3 (BIG_ZONE template: approach ledge approachGap past the landing at its height, the
 # zone and its lower exit ledge), each zone running in its last climb's direction (leftward = mirrored template).
-# A zone is 4320 tall but one climb rises 4181, so after BZ1 the climbs zigzag (rightward back over the zone, then
-# leftward), +8362, which lifts BZ2 / BZ3 clear of the panels below them; a release jump from BZ3's exit reaches
-# the new summit (finish) at the exit's height. climbShifts moves a climb sideways from its start: C1 sits 1700
+# After BZ1 / BZ2 two climbs (+8362) lead to the next zone. TASK-708 zigzagged them (rightward back over the zone,
+# then leftward); TASK-710's shortcut matrix found that stacking skippable (pumps from a lower climb or an approach
+# reach the climb above), so every climb now runs leftward and nothing is stacked over an earlier panel or zone; the
+# b climbs sit 1700 left like C1. zoneFacingOffset moves the first panel after a zone (and all after it) by (dx, dy).
+# A release jump from BZ3's exit reaches the new summit (finish) at the exit's height. climbShifts moves a climb sideways from its start: C1 sits 1700
 # left so its first panel keeps the 300% yellow clearance from G-final (the roof-pump brake right of the old summit). Every new panel keeps > 540 + player diameter
 # from every other panel and margin from every zone it does not belong to.
-EXT_SUMMIT = dict(chain=('P20', 'P21', 'P22', 'P23', 'P24'), climbs=((-1,), (1, -1), (1, -1)), climbShifts=((-1700,), (0, 0), (0, 0)),
+EXT_SUMMIT = dict(chain=('P20', 'P21', 'P22', 'P23', 'P24'), climbs=((-1,), (-1, -1), (-1, -1)), climbShifts=((-1700,), (0, -1700), (0, -1700)),
+                  zoneFacingFirst=(False, True, True), zoneFacingOffset=(0, 0),
+                  # TASK-710: the last slab tilts 30 deg (template 20) so a high drop onto it bounces into the exit
+                  # ledge's side instead of over it onto the next climb / the summit (shortcut matrix highDrop skips).
+                  zoneSlabs={5: ('Bounce slab 5', BIG_ZONE_PANELS[4][0], 30.0, 525, 525, 280, 1)},
                   approachGap=1350, finishGap=1350,
                   zoneClearance=600, section='SEC-ext-summit', prefix='XS', zones=('BZ1', 'BZ2', 'BZ3'))
 
@@ -876,7 +882,8 @@ def ext_summit_climb(chain, start, direction, shift=0):
 
 def ext_summit_zone(landing, direction, n, spec=EXT_SUMMIT):
     """The BIG_ZONE template (approach, slabs, exit) past landing, in direction; returns (fragments, zone)."""
-    t = big_zone_level(dict(BIG_ZONE, zoneId=spec['zones'][n-1], prefix=spec['zones'][n-1], label='Big zone %d' % n))
+    panels = [spec['zoneSlabs'].get(k, p) for k, p in enumerate(BIG_ZONE['panels'], 1)]
+    t = big_zone_level(dict(BIG_ZONE, zoneId=spec['zones'][n-1], prefix=spec['zones'][n-1], label='Big zone %d' % n, panels=panels))
     fs, zone = [copy.deepcopy(f) for f in t['fragments']], copy.deepcopy(t['noGrappleZones'][0])
     if direction < 0:
         fs = [mirror_fragment(f, 0) for f in fs]
@@ -906,7 +913,15 @@ def extend_summit(m, spec=EXT_SUMMIT):
     zone_of = {}
     for n, directions in enumerate(spec['climbs'], 1):
         for c, direction in enumerate(directions):
-            climb = ext_summit_climb(chain, start, direction, spec['climbShifts'][n-1][c])
+            if c == 0 and spec['zoneFacingFirst'][n-1]:
+                # The first panel after a zone keeps the TASK-708 rightward (mirrored) copy, which faces the exit
+                # ledge (tools/fixtures/ext-summit-inputs-BZn.json aim at its underside); the rest runs leftward
+                # from it, so no climb is stacked over an earlier climb, approach or zone (TASK-710 shortcuts).
+                first = moved(ext_summit_climb(chain, start, 1)[0], *spec['zoneFacingOffset'])
+                climb = ext_summit_climb(chain, start, direction)
+                climb = [first]+[moved(f, first['x']-climb[0]['x'], first['y']-climb[0]['y']) for f in climb[1:]]
+            else:
+                climb = ext_summit_climb(chain, start, direction, spec['climbShifts'][n-1][c])
             for k, f in enumerate(climb, 1):
                 f.update(name='%s climb %d%s %s' % (pre, n, 'ab'[c], f['name']), originalId=None, kind=f['kind'] if k < 4 else 'platform',
                          semanticId='%s-C%d%s-%d' % (pre, n, 'ab'[c], k))

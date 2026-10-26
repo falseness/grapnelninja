@@ -4,7 +4,10 @@ Every probe is tools/probe_level_routes.js ROUTE_PROBE on importedMountainLevel(
 radius 540): the player is placed once at zero speed (or restored from a carried state), then
 only document mouse events and physics() run. A probe fails if its first contact or attachment
 on a panel later than the source is not the source's successor (a skip). Contacts with earlier
-panels (falling back) are not skips. A highDrop hit before the player first reaches the source is
+panels (falling back) are not skips. The chute slabs of one no-grapple zone are one route step (TASK-710: the
+big zones' rope-free crossing bounces off their slabs in any order): a hit on a later slab of the source's zone, or
+on the step after it, is reported as zoneSlab, not a skip; a hit beyond that step (a zone or transfer bypassed)
+is still a skip. A highDrop hit before the player first reaches the source is
 reported as preArrival (the fixture's approach), not counted as a source skip.
 
 Sources and targets are semantic: fragments are in route order, and for every source the
@@ -103,12 +106,34 @@ ROW_KEYS = ('policy', 'source', 'target', 'fraction', 'pumps', 'drop', 'targetWh
             'carriedFrom')
 
 
-def classify(r, successor, job):
+def route_steps(m):
+    """Route step per fragment: consecutive chute slabs inside the same no-grapple zone share one step."""
+    def zone(f):
+        if f['kind'] != 'chute':
+            return None
+        cx, cy = f['x'] + f['width'] / 2, f['y'] + f['height'] / 2
+        return next((z['id'] for z in m.get('noGrappleZones', [])
+                     if z['x'] <= cx <= z['x'] + z['width'] and z['y'] <= cy <= z['y'] + z['height']), None)
+    steps, prev, n = {}, None, -1
+    for f in m['fragments']:
+        z = zone(f)
+        if z is None or z != prev:
+            n += 1
+        steps[f['id']] = n
+        prev = z
+    return steps
+
+
+def classify(r, successor, job, steps=None):
     if not r['hit']:
         return 'noLaterContact'
     pid = r['hit']['id'].split('-')[0]
     if pid == successor:
         return 'successor-' + r['hit']['kind']
+    # One zone's slabs are one step: a later slab of the source's zone, or anything in the step after it,
+    # does not bypass the zone or a transfer.
+    if steps and steps.get(pid, 1 << 30) <= steps[job['source']] + 1:
+        return 'zoneSlab-' + r['hit']['kind']
     # A highDrop fixture starts up to 2000 above the source; a hit before the player first reaches
     # the source belongs to that approach, not to the source (e.g. a start above a purple zone, beside
     # its exit ledge). Reported as preArrival, never silently dropped.
@@ -118,7 +143,7 @@ def classify(r, successor, job):
 
 
 def worker(args):
-    jobs, order = args
+    jobs, order, steps = args
     from browser_test_support import start_browser_test, wait_for_boot_run
     level = json.loads((LEVELS / 'extended-mountain.level.json').read_text())
     index = {fid: k for k, fid in enumerate(order)}
@@ -139,7 +164,7 @@ def worker(args):
                               'return {hit: r.hit, ticks: r.ticks, bounces: r.bounces, arrival: !!r.arrival, '
                               'finalState: r.hit ? r.finalState : null} }', [opts, level])
             successor = order[index[job['source']] + 1]
-            outcome = classify(r, successor, job)
+            outcome = classify(r, successor, job, steps)
             row = {k: job[k] for k in ROW_KEYS if k in job and job[k] not in (None, False)}
             row.update(outcome=outcome, ticks=r['ticks'], bounces=r['bounces'])
             if r['hit']:
@@ -152,11 +177,11 @@ def worker(args):
     return rows
 
 
-def run_parallel(jobs, order):
+def run_parallel(jobs, order, steps):
     chunks = [jobs[k::WORKERS] for k in range(WORKERS)]
     ctx = multiprocessing.get_context('spawn')
     with ctx.Pool(WORKERS) as pool:
-        parts = pool.map(worker, [(c, order) for c in chunks if c])
+        parts = pool.map(worker, [(c, order, steps) for c in chunks if c])
     rows, errors = [], []
     for part in parts:
         for row, state in part:
@@ -177,7 +202,8 @@ class RouteShortcutMatrixTests(unittest.TestCase):
         if ONLY:  # the filtered sources plus their predecessors (which supply the carried states)
             pairs = [p for p in pairs if sem[p['source']] in ONLY or sem[order[order.index(p['source']) + 1]] in ONLY]
         jobs = policies(m, pairs)
-        first, errors = run_parallel(jobs, order)
+        steps = route_steps(m)
+        first, errors = run_parallel(jobs, order, steps)
         # Carried momentum: restore up to 3 successor arrivals per source, then probe from the successor.
         targets = {}
         for p in pairs:
@@ -203,7 +229,7 @@ class RouteShortcutMatrixTests(unittest.TestCase):
                         carried.append(dict(policy='carried', source=succ, target=t, pumps=pumps, fraction=.5,
                                             budget=BUDGET, targetWhenInRange=rng, initialState=state,
                                             carriedFrom='%s %s' % (row['source'], tag)))
-        second, errors2 = run_parallel(carried, order) if carried else ([], [])
+        second, errors2 = run_parallel(carried, order, steps) if carried else ([], [])
         rows = [r for r, _ in first] + [r for r, _ in second]
         for r in rows:
             r['sourceSemantic'] = sem[r['source']]
@@ -228,7 +254,11 @@ class RouteShortcutMatrixTests(unittest.TestCase):
                          'mouse events and production physics() only'),
             skipRule='The first contact or attachment on any panel later in route order than the source must be the '
                      'successor; anything else is a SKIP and fails the test. No pump-count exemptions. Earlier panels '
-                     '(falls back down the route) are not skips.',
+                     '(falls back down the route) are not skips. The chute slabs of one no-grapple zone are one route step: '
+                     'a hit on a later slab of the source zone or on the step after it is zoneSlab (listed in '
+                     'zoneSlab), not a skip.',
+            zoneSteps=[g for s in sorted(set(steps.values())) for g in [[sem[f] for f in order if steps[f] == s]] if len(g) > 1],
+            zoneSlab=[r for r in rows if r['outcome'].startswith('zoneSlab')],
             targetSelection=dict(rule='every panel beyond the successor whose complete-polygon gap to the source is '
                                       '<= %d units, plus the next two beyond the successor' % TARGET_REACH,
                                  pairs=len(pairs), sources=len({p['source'] for p in pairs}),
