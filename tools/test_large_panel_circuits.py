@@ -260,10 +260,13 @@ class LargePanelCircuitTests(unittest.TestCase):
         grown = np.array(Image.fromarray((bounce * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3))) > 0
         # Sometimes both baseline loads match each other and the after load is the other
         # backdrop variant, off by 1-2 levels nearly everywhere; so a pixel counts as
-        # changed only if it is more than 2 levels off both loads (raw counts kept too)
+        # changed only if it is more than 2 levels off both loads (raw counts kept too).
+        # TASK-701's mote-glow reorder (ed31805) shifts glow halos by up to 5 levels
+        # everywhere, so since then the threshold is 5 (the >2 counts are kept too)
         delta = np.minimum(np.abs(before.astype(int) - after).max(2), np.abs(before2.astype(int) - after).max(2))
         raw = delta > 0
-        diff = delta > 2
+        diff = delta > 5
+        strict = delta > 2
         changed_outside = int((diff & ~grown).sum())
         changed_inside = int((diff & bounce).sum())
         controls = {}
@@ -278,7 +281,9 @@ class LargePanelCircuitTests(unittest.TestCase):
         checks = dict(viewport=VIEWPORT, dpr=1, clock_ms=4321, baseline=self.baseline_sha,
                       baseline_outline_draw='Trampoline.draw of this tree (TASK-667)',
                       baseline_load_noise=dict(pixels=int((noise > 0).sum()), max_level=int(noise.max())),
-                      changed_rule='more than 2 levels off both baseline loads',
+                      changed_rule='more than 5 levels off both baseline loads (TASK-701 glow halos shift <= 5)',
+                      strict_gt2_changed_outside=int((strict & ~grown).sum()),
+                      strict_gt2_border_band_changed=int((strict & ring & ~grown).sum()),
                       raw_changed_pixels_outside_bounce_polygons_grown_1px=int((raw & ~grown).sum()),
                       max_level_outside_bounce_polygons_grown_1px=int(delta[~grown].max()),
                       changed_pixels_inside_bounce_polygons=changed_inside,
@@ -534,18 +539,43 @@ class LargePanelCircuitTests(unittest.TestCase):
                 n = row_new['panels'][k]
                 self.assertTrue(n['partsAligned'], (row_new['t'], k))
                 self.assertEqual(n['litOffMotifPx'], 0, (row_new['t'], k))
-                # Same timing: pulse value and age identical to the baseline at every phase
+                # Same easing at every phase of the (TASK-702: twice as long) pulse
                 self.assertEqual(n['pulse'], row_old['panels'][k]['pulse'])
-                self.assertEqual(n['ageMs'], row_old['panels'][k]['ageMs'])
+                self.assertAlmostEqual(n['ageMs'], 2 * row_old['panels'][k]['ageMs'], delta=0.011)
                 lit += n['litPx']
-        self.assertEqual(new['pulseMs'], old['pulseMs'])
+        self.assertEqual(old['pulseMs'], 450)
+        self.assertEqual(new['pulseMs'], 900)
         self.assertGreater(lit, 0)
+        # Intensity after a contact at simulated ms: this tree at t equals the baseline at t / 2
+        sample = '''([ms, strength]) => {
+            const world = floors[0], e = T664.byId('broad')
+            return ms.map(t => { ROLE_DETAIL.contacts.set(e, {step: world.elapsedSteps - t * cyclesPerTick / physicsStepMs,
+                strength, point: {x: 0, y: 0}}); const v = ROLE_DETAIL.pulse(e, world); ROLE_DETAIL.contacts.delete(e); return v })
+        }'''
+        times = (0, 225, 450, 675, 900, 1000)
+        samples, max_error = [], 0
+        for strength in (1, 0.6):
+            now = self.open(self.url).evaluate(sample, [list(times), strength])
+            pre = self.open(self.baseline_url).evaluate(sample, [[t / 2 for t in times], strength])
+            for t, a, b in zip(times, now, pre):
+                max_error = max(max_error, abs(a - b))
+                samples.append(dict(strength=strength, ms=t, intensity=a, preAtHalf=b))
+        at = {(r['strength'], r['ms']): r['intensity'] for r in samples}
+        self.write('pulse.json', dict(pulseMs=new['pulseMs'], prePulseMs=old['pulseMs'], samples=samples,
+                                      maxError=max_error))
+        self.assertLessEqual(max_error, 1e-6)
+        for strength in (1, 0.6):
+            self.assertEqual(at[(strength, 0)], strength)
+            self.assertGreater(at[(strength, 450)], 0)
+            self.assertEqual(at[(strength, 900)], 0)
+            self.assertEqual(at[(strength, 1000)], 0)
         pulse = dict(phases=phases, pulseMs=new['pulseMs'], new=new['phases'],
                      baselineTiming={r['t']: {k: [v['pulse'], v['ageMs'], v['dotRadiusPx']] for k, v in r['panels'].items()}
                                      for r in old['phases']})
         self._merge('render-checks.json', dict(pulse=pulse))
         print(f'PASS pulse: parts aligned with enlarged traces at phases {phases}; {lit} lit px, 0 off-motif; '
-              f'timing identical to baseline (pulseMs {new["pulseMs"]})')
+              f'pulseMs {old["pulseMs"]} -> {new["pulseMs"]}, same easing per phase; intensity(t) = baseline(t/2) '
+              f'at {times} ms, max error {max_error}')
 
     def test_05_isolation(self):
         geometry = '''() => { const level = validateMountainManifest(GRAPPLE_OVER_MOUNTAIN);
