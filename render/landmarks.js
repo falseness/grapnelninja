@@ -96,7 +96,7 @@ function drawGrappleOverLandmarks(renderer)
         const sprite = getGlowSprite('landmark|' + anchor.band + '|' + pixelScale, () =>
             buildGlowSprite(Math.round((config.width + 2 * config.pad) * pixelScale),
                 Math.round((config.height + 2 * config.pad) * pixelScale), config.pad * pixelScale,
-                pixelScale, pixelScale, 0, 0, 1, paintGrappleOverLandmark, [anchor.band]))
+                pixelScale, pixelScale, 0, 0, 1, paintGrappleOverLandmark, [anchor.band], true))
         context.globalAlpha = config.alpha * weight
         context.drawImage(sprite, left - config.pad, top - config.pad,
             config.width + 2 * config.pad, config.height + 2 * config.pad)
@@ -362,7 +362,7 @@ function drawReplacementLandmark(renderer)
     const id = summit ? 'summit-array' : crown ? 'exposed-crown' : tower ? 'counterweight-tower' : gallery ? 'cable-galleries' : viaduct ? 'broken-viaduct' : freight ? 'freight-crossing' : quarry ? 'terraced-quarry' : 'loading-yard'
     const sprite = getGlowSprite('replacement-' + id, () =>
         buildGlowSprite(config.width + 2 * config.pad, config.height + 2 * config.pad,
-            config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, summit ? [7] : crown ? [6] : tower ? [5] : gallery ? [4, replacementGalleryShape(config.width, config.height)] : viaduct ? [3, replacementViaductShape(config.width, config.height)] : freight ? [2, replacementFreightShape(config.width, config.height)] : quarry ? [1, replacementQuarryShape(config.width, config.height)] : [0]))
+            config.pad, 1, 1, 0, 0, 1, paintGrappleOverLandmark, summit ? [7] : crown ? [6] : tower ? [5] : gallery ? [4, replacementGalleryShape(config.width, config.height)] : viaduct ? [3, replacementViaductShape(config.width, config.height)] : freight ? [2, replacementFreightShape(config.width, config.height)] : quarry ? [1, replacementQuarryShape(config.width, config.height)] : [0], true))
     const left = ((summit ? 13400 : crown ? 12400 : tower ? 10100 : gallery ? 11000 : viaduct ? 7700 : freight ? 4320 : 2366) + screen.x) * k - config.width / 2
     const top = ((summit ? -3900 : crown ? -3200 : tower ? -2400 : gallery ? -1200 : viaduct ? -1200 : freight ? -800 : quarry ? -610 : -150) + screen.y) * k - config.height
     context.save()

@@ -351,7 +351,7 @@ def open_page(browser, url, dpr, query, init, errors):
     return context, page
 
 
-def measure(dprs, poses_only, configs_only):
+def measure(dprs, poses_only, configs_only, regions_from=None):
     result = {'viewport': VIEWPORT, 'blockAtDpr2': BLOCK, 'flatMaxHp': FLAT_MAX_HP, 'flatMaxSpan': FLAT_MAX_SPAN,
               'gridThreshold': GRID, 'cleanThreshold': CLEAN, 'rows': [], 'dither': {}, 'pageErrors': []}
     crops = {}
@@ -382,7 +382,10 @@ def measure(dprs, poses_only, configs_only):
                 result.setdefault('repeatability', []).append(
                     {'dpr': dpr, 'pose': pose['name'], 'maxAbsLumaDiff': round(float(np.abs(again - ref).max()), 4)})
                 twin, _, _ = frame(pages['float16'][0], dpr, 'float16')
-                regions = pick_regions(ref, twin, dpr)
+                # --regions-from (TASK-714): the boxes an earlier run picked, so a
+                # before/after pair scores the same pixels
+                regions = (regions_from[(dpr, pose['name'])] if regions_from is not None
+                           else pick_regions(ref, twin, dpr))
                 ref_blur = box5(ref)
                 for page, configs in pages.values():
                     for config in configs:
@@ -425,10 +428,16 @@ def main():
     parser.add_argument('--dpr', type=int, action='append')
     parser.add_argument('--pose', action='append')
     parser.add_argument('--config', action='append')
+    parser.add_argument('--regions-from', help='grid.json of an earlier run: reuse its flat regions')
     args = parser.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    result, crops = measure(args.dpr or DPRS, args.pose, args.config)
+    regions_from = None
+    if args.regions_from:
+        earlier = json.loads(Path(args.regions_from).read_text())
+        regions_from = {(r['dpr'], r['pose']): r['flatness'] for r in earlier['rows'] if r['config'] == 'default'}
+    result, crops = measure(args.dpr or DPRS, args.pose, args.config, regions_from)
+    result['regionsFrom'] = args.regions_from
     (out / 'grid.json').write_text(json.dumps(result, separators=(',', ':')))
     crop_dir = out / 'crops'
     crop_dir.mkdir(exist_ok=True)

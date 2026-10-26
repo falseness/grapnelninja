@@ -46,7 +46,7 @@ function getGrappleOverParallaxTile(layer, band, pixelScale)
 {
     return getGlowSprite('parallax|' + layer.name + '|' + band + '|' + pixelScale, () =>
         buildGlowSprite(Math.round(layer.tileWidth * pixelScale), Math.round(layer.tileHeight * pixelScale),
-            0, pixelScale, pixelScale, 0, 0, 1, paintGrappleOverParallaxTile, [layer, band]))
+            0, pixelScale, pixelScale, 0, 0, 1, paintGrappleOverParallaxTile, [layer, band], true))
 }
 
 // Repeats tile (w x h logical) across bounds from (x, y). Edges are snapped to

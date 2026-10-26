@@ -41,7 +41,11 @@ function grappleOverBackdropPalette(cameraY)
 // 'lighter': a blend adds both neighbours weighted by 1 - t and t, which
 // mixes them exactly (gradient stops would round each mixed colour to 8 bits
 // and step visibly during a slow climb).
-function drawGrappleOverPalette(context, bounds, palette)
+// With smooth (GRADIENT_DITHER, the game canvas) each palette's wash and glow
+// are one dithered full-resolution image (renderer.getSmoothImage), added at
+// the same weights: the last full-frame light, so its noise also dithers the
+// frame's rounding of the layers under it.
+function drawGrappleOverPalette(context, bounds, palette, smooth)
 {
     const theme = GRAPPLE_OVER_THEME
     let cache = drawGrappleOverPalette.cache
@@ -63,6 +67,19 @@ function drawGrappleOverPalette(context, bounds, palette)
     }
     const layers = palette.t > 0 ? [[palette.from, 1 - palette.t], [palette.to, palette.t]] : [[palette.from, 1]]
     const glowY = bounds.y + bounds.height * theme.glowTop
+    // One palette's light alone (opaque: black plus its wash and glow)
+    const paintLayer = (target, index) =>
+    {
+        target.fillStyle = '#000000'
+        target.fillRect(bounds.x, bounds.y, bounds.width, bounds.height)
+        target.globalCompositeOperation = 'lighter'
+        target.globalAlpha = theme.tintAlpha
+        target.fillStyle = gradients(index).wash
+        target.fillRect(bounds.x, bounds.y, bounds.width, bounds.height)
+        target.globalAlpha = theme.glowAlpha
+        target.fillStyle = gradients(index).glow
+        target.fillRect(bounds.x, glowY, bounds.width, bounds.y + bounds.height - glowY)
+    }
     context.save()
     context.shadowBlur = 0
     context.globalCompositeOperation = 'source-over'
@@ -70,6 +87,24 @@ function drawGrappleOverPalette(context, bounds, palette)
     context.fillStyle = '#000000'
     context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height)
     context.globalCompositeOperation = 'lighter'
+    if (smooth)
+    {
+        // frame-sized images: the 3 palettes used last are kept
+        const images = drawGrappleOverPalette.images || (drawGrappleOverPalette.images = new Map())
+        for (const [index, weight] of layers)
+        {
+            const owner = images.get(index) || {}
+            images.delete(index)
+            images.set(index, owner)
+            if (images.size > 3)
+                images.delete(images.keys().next().value)
+            context.globalAlpha = weight
+            context.drawImage(visualEffects.background.getSmoothImage(owner, 'image', bounds,
+                target => paintLayer(target, index), 'opaque'), bounds.x, bounds.y, bounds.width, bounds.height)
+        }
+        context.restore()
+        return
+    }
     for (const [index, weight] of layers)
     {
         context.globalAlpha = theme.tintAlpha * weight

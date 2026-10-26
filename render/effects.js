@@ -7,6 +7,8 @@ const WINDOW_BACKGROUND_SCALE = 0.25
 // once after a resize or a menu/game switch), which also spares the
 // compositor a texture upload on the frames in between
 const WINDOW_BARS_EVERY_FRAMES = 4
+// Resolution of the smooth baked layers (BackgroundRenderer.getSmoothImage)
+const SMOOTH_IMAGE_SCALE = 0.25
 
 // Each bar canvas reaches this far (CSS px) under the play rect, so the bars
 // stay opaque under the game canvas's antialiased (fractional) edge row and
@@ -131,7 +133,10 @@ class BackgroundRenderer
         for (const barCanvas of barCanvases)
         {
             const box = barCanvas.box
-            const ctx = barCanvas.getContext('2d')
+            // GRADIENT_DITHER: painted into a float16 copy (its gradient fills
+            // are not dithered) and copied in
+            const target = barCanvas.getContext('2d')
+            const ctx = GRADIENT_DITHER.enabled ? this.getBarScratch(barCanvas) : target
             const scaleX = barCanvas.width / box.width
             const scaleY = barCanvas.height / box.height
 
@@ -154,7 +159,28 @@ class BackgroundRenderer
                 this.ctx = gameCtx
                 this.bounds = null
             }
+            if (ctx !== target)
+            {
+                target.save()
+                target.setTransform(1, 0, 0, 1, 0, 0)
+                target.globalCompositeOperation = 'copy'
+                target.drawImage(ctx.canvas, 0, 0)
+                target.restore()
+            }
         }
+    }
+    // A float16 canvas the size of barCanvas (its own, kept on it)
+    getBarScratch(barCanvas)
+    {
+        let scratch = barCanvas.smoothCtx
+        if (!scratch)
+            scratch = barCanvas.smoothCtx = document.createElement('canvas').getContext('2d', {colorType: 'float16'})
+        if (scratch.canvas.width != barCanvas.width || scratch.canvas.height != barCanvas.height)
+        {
+            scratch.canvas.width = barCanvas.width
+            scratch.canvas.height = barCanvas.height
+        }
+        return scratch
     }
     paint()
     {
@@ -179,7 +205,7 @@ class BackgroundRenderer
         }
         this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks))
         if (this.palette)
-            drawGrappleOverPalette(this.ctx, this.fillBounds(), this.palette)
+            drawGrappleOverPalette(this.ctx, this.fillBounds(), this.palette, GRADIENT_DITHER.enabled && !this.bounds)
         if (this.palette)
             drawGrappleOverLandmarks(this)
         this.drawVignette(width, height)
@@ -299,8 +325,56 @@ class BackgroundRenderer
     }
     drawVignette(width, height)
     {
-        this.ctx.fillStyle = this.getGradients(width, height).vignette
+        const gradients = this.getGradients(width, height)
+        if (GRADIENT_DITHER.enabled && !this.bounds)
+        {
+            // The game canvas: the gradient baked once into a small image.
+            // The fast backdrop, enlarged into the frame, would leave its
+            // smooth edge steps undithered: there it is dithered at the
+            // backdrop resolution (the last soft layer carries the dither)
+            const bounds = this.fillBounds()
+            const fast = typeof BACKDROP != 'undefined' && BACKDROP.active
+            this.ctx.drawImage(this.getSmoothImage(gradients, fast ? 'vignetteFast' : 'vignetteImage', bounds,
+                (context, b) =>
+                {
+                    context.fillStyle = gradients.vignette
+                    context.fillRect(b.x, b.y, b.width, b.height)
+                }, fast ? 'alpha' : undefined), bounds.x, bounds.y, bounds.width, bounds.height)
+            return
+        }
+        this.ctx.fillStyle = gradients.vignette
         this.fillAll()
+    }
+    // GRADIENT_DITHER: a soft full-frame layer as an image, kept on
+    // owner[name]: paint(context, bounds) fills bounds (logical) in a float16
+    // canvas. Dithered (kind 'opaque' or 'alpha', GRADIENT_DITHER.paint8): at
+    // the device resolution with the dither noise, drawn 1:1; in the fast
+    // backdrop (enlarged into the frame) the noise is blue. Smooth (no kind):
+    // at SMOOTH_IMAGE_SCALE of the device resolution, rounded to 8 bits, drawn
+    // enlarged (bilinear). No gradient fill reaches the frame, so the browser
+    // adds no dither.
+    getSmoothImage(owner, name, bounds, paint, kind)
+    {
+        const m = this.ctx.getTransform()
+        const scale = kind ? 1 : SMOOTH_IMAGE_SCALE
+        const w = Math.max(1, Math.round(bounds.width * Math.abs(m.a) * scale))
+        const h = Math.max(1, Math.round(bounds.height * Math.abs(m.d) * scale))
+        const noise = kind && (typeof BACKDROP != 'undefined' && BACKDROP.active ? 'blue' : 'white')
+        const key = [w, h, bounds.x, bounds.y, bounds.width, bounds.height, noise].join()
+        const cached = owner[name]
+        if (cached && cached.key === key)
+            return cached.canvas
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        GRADIENT_DITHER.paint8(canvas, context =>
+        {
+            context.setTransform(w / bounds.width, 0, 0, h / bounds.height,
+                -bounds.x * w / bounds.width, -bounds.y * h / bounds.height)
+            paint(context, bounds)
+        }, noise, kind === 'alpha')
+        owner[name] = {key, canvas}
+        return canvas
     }
     // Motes retain their original mode-specific drift and twinkle clock.
     getAnimationTime()
@@ -340,8 +414,9 @@ class BackgroundRenderer
         }
     }
     // A crystal/rock tile for this viewport size, built once by paint
-    // (a resize builds a new one)
-    getLayerTile(name, width, height, config, paint)
+    // (a resize builds a new one). A smooth tile (gradient fills) is painted
+    // by GRADIENT_DITHER.
+    getLayerTile(name, width, height, config, paint, smooth)
     {
         const pixelScale = Math.max(0.25, Math.min(config.maxPixelScale, this.canvas.width / width || 1))
         const key = [width, height, pixelScale].join('|')
@@ -353,9 +428,13 @@ class BackgroundRenderer
         const layerCanvas = document.createElement('canvas')
         layerCanvas.width = Math.max(1, Math.round(width * pixelScale))
         layerCanvas.height = Math.max(1, Math.round(height * pixelScale))
-        const ctx = layerCanvas.getContext('2d')
-        ctx.setTransform(layerCanvas.width / width, 0, 0, layerCanvas.height / height, 0, 0)
-        const clear = paint(ctx, width, height, config, this.getTileTools(ctx, width, config.seed))
+        const paintTile = ctx =>
+        {
+            ctx.setTransform(layerCanvas.width / width, 0, 0, layerCanvas.height / height, 0, 0)
+            return paint(ctx, width, height, config, this.getTileTools(ctx, width, config.seed))
+        }
+        const clear = smooth ? GRADIENT_DITHER.paint8(layerCanvas, paintTile, 'white') :
+            paintTile(layerCanvas.getContext('2d'))
 
         const layer = {key, canvas: layerCanvas, width, height, strips: this.getLayerStrips(layerCanvas, height, clear)}
         this.layerCache[name] = layer
@@ -579,7 +658,7 @@ class BackgroundRenderer
                 ctx.drawImage(far.canvas, 0, 0, w, h)
                 ctx.fillStyle = gradients.haze
                 ctx.fillRect(0, 0, w, h)
-            })
+            }, true)
         this.drawLayerTile(baked, width, height, shift, STYLE.colors.background.crystalRock,
             this.getGradients(width, height).haze)
     }
