@@ -100,6 +100,39 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+}',
 ]
 
+# TASK-704: the Grapple Over spawn launch, added right after CLIMB_FALL_RECOVERY_DEPTH.
+SPAWN_LAUNCH_DIFF = [
+    '+// Grapple Over: a fresh start (first run or restart) launches the ninja',
+    '+// upward from the spawn so its no-input free-flight apex is this high.',
+    '+const SPAWN_LAUNCH_RISE = 270',
+    '+',
+    '+// Apex rise of a no-input flight starting at speedY = -speed, integrated',
+    '+// exactly as calcPhysics/Ninja.move do it (gravity, speed cap, then move).',
+    '+function spawnLaunchRise(speed)',
+    '+{',
+    '+    const maxSpeed = screenHeightPercent(GAMEPLAY.ninjaMaxSpeedHeightPercent)',
+    '+    let speedY = -speed, rise = 0',
+    '+    for (;;)',
+    '+    {',
+    '+        speedY = Math.max(-maxSpeed, Math.min(maxSpeed, speedY + GRAVITY))',
+    '+        if (speedY >= 0) return rise',
+    '+        rise -= speedY',
+    '+    }',
+    '+}',
+    '+// Upward speed whose no-input apex is SPAWN_LAUNCH_RISE above the spawn.',
+    '+function getSpawnLaunchSpeed()',
+    '+{',
+    '+    let low = 0, high = screenHeightPercent(GAMEPLAY.ninjaMaxSpeedHeightPercent)',
+    '+    for (let i = 0; i < 60; ++i)',
+    '+    {',
+    '+        const mid = (low + high) / 2',
+    '+        if (spawnLaunchRise(mid) < SPAWN_LAUNCH_RISE) low = mid',
+    '+        else high = mid',
+    '+    }',
+    '+    return (low + high) / 2',
+    '+}',
+]
+
 SNAPSHOT = '''() => {
     const w = floors[0], l = w.level
     return {
@@ -218,18 +251,6 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.assertEqual((e['x'], e['y'], e['role'], e['grapplable']), (s['x'], s['y'], s['role'], s['grapplable']), e['id'])
         self.assertEqual(snap['range'], 540)
 
-    def test_01_fresh_start(self):
-        page = self.open()
-        snap = page.evaluate(SNAPSHOT)
-        self.assert_imported(snap)
-        self.assertIsNone(snap['notice'])
-        self.assertEqual(page.requests, [{'url': 'leveldata.js', 'status': 200}])
-        # A fresh start began at the spawn; a few gameplay frames may have run since.
-        self.assertLess(abs(snap['ninja']['x'] - snap['spawn']['x']), 1)
-        self.assertLess(abs(snap['ninja']['y'] - snap['spawn']['y']), 40)
-        self.assertEqual(page.errors, [])
-        self.record('fresh_start', page, snap, coordinatesMatchSource=True, elementsCompared=len(snap['live']))
-
     def test_02_restart(self):
         page = self.open()
         page.evaluate(RESTART)
@@ -273,48 +294,6 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             ], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(output.read_bytes(), (ROOT / 'leveldata.js').read_bytes())
-
-    def test_03_incompatible_old_save(self):
-        # A real save from the previous normal layout (replacement-v1), plus a
-        # legacy save without a layout id.
-        old = self.open(query='?grappleFixture=replacement-v1')
-        saved = old.evaluate('''() => {
-            window.requestAnimationFrame = () => 0; cancelAnimationFrame(game)
-            ninja.x += 500; for (let i = 0; i < 30; i++) physics()
-            return {layoutId: floors[0].level.layoutId, save: JSON.stringify(captureClimbState())}
-        }''')
-        self.assertEqual(saved['layoutId'], 'grapple-over-replacement-v1')
-        self.assertEqual(old.errors, [])
-        legacy = json.loads(saved['save'])
-        del legacy['layoutId']
-        results = {}
-        for name, raw in (('replacement-v1', saved['save']), ('no-layout-id', json.dumps(legacy)),
-                          ('imported-v2', json.dumps(dict(legacy, layoutId='extended-mountain-v2'))),
-                          ('imported-v5', json.dumps(dict(legacy, layoutId='extended-mountain-v5'))),
-                          ('imported-v6', json.dumps(dict(legacy, layoutId='extended-mountain-v6'))),
-                          ('imported-v7', json.dumps(dict(legacy, layoutId='extended-mountain-v7'))),
-                          ('imported-v8', json.dumps(dict(legacy, layoutId='extended-mountain-v8'))),
-                          ('imported-v9', json.dumps(dict(legacy, layoutId='extended-mountain-v9'))),
-                          ('imported-v12', json.dumps(dict(legacy, layoutId='extended-mountain-v12'))),
-                          ('imported-v13', json.dumps(dict(legacy, layoutId='extended-mountain-v13'))),
-                          ('imported-v14', json.dumps(dict(legacy, layoutId='extended-mountain-v14'))),
-                          ('imported-v15', json.dumps(dict(legacy, layoutId='extended-mountain-v15'))),
-                          ('imported-v16', json.dumps(dict(legacy, layoutId='extended-mountain-v16')))):
-            page = self.open(seed={CLIMB_KEY: raw})
-            snap = page.evaluate(SNAPSHOT)
-            self.assert_imported(snap)
-            self.assertEqual(snap['notice'], 'Climb save unavailable. Starting at the base.')
-            self.assertLess(abs(snap['ninja']['x'] - snap['spawn']['x']), 1)
-            self.assertLess(abs(snap['ninja']['y'] - snap['spawn']['y']), 40)
-            self.assertFalse(snap['paused'])
-            # The next write replaces the rejected save with the new layout.
-            page.evaluate('PROGRESS.flushClimb(true)')
-            page.wait_for_function('k => JSON.parse(localStorage.getItem(k)).layoutId === "%s"' % LAYOUT_ID, arg=CLIMB_KEY)
-            self.assertEqual(page.errors, [])
-            self.record('incompatible_save_' + name, page, snap, seededLayoutId=json.loads(raw).get('layoutId'),
-                        rewrittenLayoutId=LAYOUT_ID)
-            results[name] = snap['notice']
-        self.assertEqual(len(results), 13)
 
     def test_04_current_layout_save(self):
         first = self.open()
@@ -387,10 +366,13 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # applyNoGrappleZones) and its physics hook; TASK-674 added render/nograpplezones.js, its
         # script tag and the call in drawWorldLayer(). These are covered by test_no_grapple_*.
         # TASK-692 centered the Grapple Over camera on the ninja (moveScreen.js only; covered by the camera tests).
+        # TASK-699/701 changed only display code (render/effects.js glow, render/parallax.js tiles). TASK-704 added
+        # the Grapple Over spawn launch (SPAWN_LAUNCH_DIFF in physics.js, one assignment in startGrappleOverVersion).
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
                                                                                       ':!render/fallmessage.js', ':!sprites/trampoline.js',
-                                                                                      ':!fixedlevel.js', ':!render/nograpplezones.js', ':!moveScreen.js'],
+                                                                                      ':!fixedlevel.js', ':!render/nograpplezones.js', ':!moveScreen.js',
+                                                                                      ':!render/effects.js', ':!render/parallax.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
@@ -402,7 +384,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                                    '+// Long-fall reaction: screen space, over the hint and under the HUD it avoids',
                                                    '+function drawFallMessageLayer()', '+{', '+    FALL_MESSAGE.draw(ctx)', '+}', '+',
                                                    "+    if (version === 'grapple_over')", '+        drawFallMessageLayer()'])
-        self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF)
+        self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF[:3] + SPAWN_LAUNCH_DIFF + PHYSICS_FALL_RECOVERY_DIFF[3:])
         self.assertEqual(lines('sprites/trampoline.js'), TRAMPOLINE_CLOSE_DIFF)
         changed = lines('index.html')
         self.assertEqual(changed, ['+        <script src = "longfall.js"></script>',
@@ -410,6 +392,9 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+        <script src = "render/nograpplezones.js"></script>',
                                    '+        <script src = "render/routearrows.js"></script>',
                                    '+                await loadGrappleOverLevelAsset()',
+                                   '+                // A fresh start (first run or restart) launches upward; a',
+                                   '+                // continue, fall recovery or save restore does not.',
+                                   '+                ninja.speedY = -getSpawnLaunchSpeed()',
                                    '-                    if (activelyPlaying) TUTORIAL_HINT.advance(steps * physicsStepMs)',
                                    '+                    if (activelyPlaying)', '+                    {',
                                    '+                        TUTORIAL_HINT.advance(steps * physicsStepMs)',

@@ -4,6 +4,35 @@ const GRAVITY = screenHeightPercent(GAMEPLAY.gravityHeightPercent) / Math.pow(cy
 // Grapple Over: falling strictly below this many world units under the spawn
 // returns the player to the spawn without restarting the run.
 const CLIMB_FALL_RECOVERY_DEPTH = 1500
+// Grapple Over: a fresh start (first run or restart) launches the ninja
+// upward from the spawn so its no-input free-flight apex is this high.
+const SPAWN_LAUNCH_RISE = 270
+
+// Apex rise of a no-input flight starting at speedY = -speed, integrated
+// exactly as calcPhysics/Ninja.move do it (gravity, speed cap, then move).
+function spawnLaunchRise(speed)
+{
+    const maxSpeed = screenHeightPercent(GAMEPLAY.ninjaMaxSpeedHeightPercent)
+    let speedY = -speed, rise = 0
+    for (;;)
+    {
+        speedY = Math.max(-maxSpeed, Math.min(maxSpeed, speedY + GRAVITY))
+        if (speedY >= 0) return rise
+        rise -= speedY
+    }
+}
+// Upward speed whose no-input apex is SPAWN_LAUNCH_RISE above the spawn.
+function getSpawnLaunchSpeed()
+{
+    let low = 0, high = screenHeightPercent(GAMEPLAY.ninjaMaxSpeedHeightPercent)
+    for (let i = 0; i < 60; ++i)
+    {
+        const mid = (low + high) / 2
+        if (spawnLaunchRise(mid) < SPAWN_LAUNCH_RISE) low = mid
+        else high = mid
+    }
+    return (low + high) / 2
+}
 
 function physics()
 {
