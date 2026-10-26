@@ -1300,27 +1300,68 @@ def wide_post(f, width, height, approach, keep, target=SIDE_TARGET):
 
 # TASK-696 (candidate, opt-in via --purple-rest): no upward face inside a purple zone may be flatter than
 # 15 deg (check_level_geometry.py --no-grapple-rest), so a ninja can never come to rest there. NG1's three flat
-# tops (and their NGM mirror / NGU copy) drain toward the zone's exit side (left in NG1's frame, the exit ledge
-# overhangs the zone's upper left): the Low ceiling and Overhang keep their underside (the traversal contact)
-# and left end cap, and their top rises rightward from the top-left corner at PURPLE_REST_ANGLE over the same x
-# extent; the Chute floor turns to -PURPLE_REST_ANGLE (left end down) about the face point PURPLE_REST_PIVOT
-# along the face from its contact foot (contact rotated with it, same extents and thickness), then moves by
-# PURPLE_REST_SHIFT. A rotation alone opens the NG3 -> NG4 gap past 270 or closes NG2 -> NG3 (fixed-grid search
-# over the shift, artifacts/TASK-696/search.py); further left brings NG3 within the 540 pair clearance of NG5.
-# (-420, -40): NG2 -> NG3 124, NG3 -> NG4 226 (were 218 / 189), NG3 / NG5 clearance 586. Already-steep faces
-# (kicker, post top, launch ramp, end caps) are unchanged.
+# tops (and their NGM mirror / NGU copy) are retilted: the Low ceiling and Overhang keep their underside (the
+# traversal contact) and left end cap, and their top rises rightward from the top-left corner at
+# PURPLE_REST_ANGLE over the same x extent; the Chute floor turns to -PURPLE_REST_FLOOR_TURN about the face point
+# PURPLE_REST_PIVOT along the face from its contact foot (contact rotated with it, same extents and thickness),
+# then moves by PURPLE_REST_SHIFT. Already-steep faces (kicker, post top, end caps) are unchanged.
+# TASK-697 re-route: TASK-696's floor (left end down, (-420, -40)) cannot be traversed. The ball leaves the Low
+# ceiling descending ~12 deg, shallower than the floor, so it only ever meets the floor's right cap and bounces
+# back (artifacts/TASK-697/search/search.py, rsearch.py: no production approach input gets past NG3). The floor now
+# rises leftward (right end down, drains toward the zone bottom right of NG2) and kicks the ball up ~42 deg into
+# the Overhang's underside, which turns it down onto a flatter Launch ramp that throws it up out of the zone
+# under the exit ledge. PURPLE_REST_PANELS moves the contact (dx, dy), turns the surface angle and trims /
+# extends the extents (before, after) of the Low ceiling (left end trimmed, so the Overhang can reach right
+# under the floor's rebound while keeping the 540 + diameter pair clearance), the Overhang (raised and tilted
+# left end up, shorter at the left and longer at the right) and the Launch ramp (33.5 -> 25.64 deg, raised,
+# left end trimmed so the NG-EXIT transfer keeps its 1080 minimum).
+# Every chain gap stays in (0, 270] (NG1 -> NG2 258, NG2 -> NG3 248, NG3 -> NG4 255, NG4 -> NG5 232) and every
+# other pair >= 570 apart. Found by a joint search over these offsets with the production replay
+# (artifacts/TASK-697/search/geo3.py, sample.py, grid3.py, evalp.py).
 PURPLE_REST_ANGLE = 15.5
 PURPLE_REST_TOPS = ('Low ceiling', 'Overhang')
 PURPLE_REST_FLOOR = 'Chute floor'
-PURPLE_REST_PIVOT = 0.0
-PURPLE_REST_SHIFT = (-420.0, -40.0)
+PURPLE_REST_FLOOR_TURN = -PURPLE_REST_ANGLE
+PURPLE_REST_PIVOT = 422.5
+PURPLE_REST_SHIFT = (-5.16, 72.61)
+# name: (contact offset, angle change, before change, after change), NG1 frame.
+PURPLE_REST_PANELS = {'Low ceiling': ((-121.92, -32.92), 0.4, -255.89, 0),
+                      'Overhang': ((67.88, -363.45), 9.27, -416.89, 146.72),
+                      'Launch ramp': ((200.0, -630.0), -7.86, -460, 0)}
+# Shortcut-matrix fixes (production-input neighbourhood matrices around NG1 / NGM / NGU, TASK-697). With tops
+# rising rightward, high drops onto the Low ceiling slid or bounced left onto the raised Overhang's ~860 tall
+# right end or into NG-EXIT, and the Overhang's top sat ~350 under the exit ledge: both tops fall rightward instead
+# (PURPLE_REST_DOWN_TOPS, from the top-left corner at PURPLE_REST_ANGLE, draining right toward the zone bottom),
+# thicker at the left cap so the right cap keeps the 270 minimum side (PURPLE_REST_THICKNESS). The Low ceiling's
+# tall left cap leans out PURPLE_REST_LEFT_OVERHANG past its underside, so a high floor rebound striking it turns
+# down instead of up toward the exit ledge (100 keeps it 540 + diameter from the Overhang).
+PURPLE_REST_DOWN_TOPS = ('Low ceiling', 'Overhang')
+PURPLE_REST_THICKNESS = {'Low ceiling': 550, 'Overhang': 410}
+PURPLE_REST_LEFT_OVERHANG = {'Low ceiling': 100}
+# The re-routed player leaves the zone top rising steeply about 1300 .. 1450 right of the zone's left edge (NG1
+# frame), just right of NG-EXIT's lower right corner. NGU-EXIT (P13's outline at 1700 wide) and NGM-EXIT (P7's
+# copy, inner end at 1437 .. 1560 in NG1's frame) hang over that path, so the player struck their underside and
+# fell back in. PURPLE_REST_EXIT_WIDTHS rescales the outlines in x (unmirrored from the left end, NGM from its
+# outer, right end); NG-EXIT and NGU-EXIT at 900 also keep a vertical rebound off the Overhang's top clear of
+# their lower right corner. NGU-EXIT then grows PURPLE_REST_EXIT_GROW at its outer (left) end: a high drop off
+# NGU5 carried onto the short ledge rolled off its left end and roped P15 before the EXT-14 hold P14. At 900 wide
+# its lower right side is shorter than 270 and is extended like NG-EXIT's (PURPLE_REST_MIN_SIDES).
+PURPLE_REST_EXIT_WIDTHS = {'NG-EXIT': 900, 'NGU-EXIT': 900, 'NGM-EXIT': 790}
+PURPLE_REST_EXIT_GROW = {'NGU-EXIT': 400}
+PURPLE_REST_MIN_SIDES = [('NGU-EXIT', 'extend-each', [(1, 2)])]
+# NGM3 only: the turned floor's low end reached over P4's pump columns below the middle zone, where five-pump
+# rebounds off P4 (apex ~4230 above its top) struck it (TASK-683 / TASK-686 skip P4 -> NGM3). It is 400 shorter
+# at that end (PURPLE_REST_MIDDLE_TRIM_AFTER, NG1 frame) and 200 thick; NGM2 -> NGM3 becomes 260 (NG1's 248).
+PURPLE_REST_MIDDLE_THICKNESS = {'Chute floor': 200}
+PURPLE_REST_MIDDLE_TRIM_AFTER = {'Chute floor': 400}
 
 
-def rest_floor(contact, angle, before, after, thickness, side, pivot=None, shift=None, rest=PURPLE_REST_ANGLE):
-    """(contact, angle) of a top slab turned to -rest (left end down) about the face point pivot units along
-    the face from the contact foot, then moved by shift."""
+def rest_floor(contact, angle, before, after, thickness, side, pivot=None, shift=None, rest=None):
+    """(contact, angle) of a top slab turned to -rest (default PURPLE_REST_FLOOR_TURN: right end down) about the
+    face point pivot units along the face from the contact foot, then moved by shift."""
     pivot = PURPLE_REST_PIVOT if pivot is None else pivot
     shift = PURPLE_REST_SHIFT if shift is None else shift
+    rest = PURPLE_REST_FLOOR_TURN if rest is None else rest
     ux, uy = math.cos(math.radians(angle)), math.sin(math.radians(angle))
     fx, fy = contact[0]-uy*svg.PLAYER_RADIUS, contact[1]+ux*svg.PLAYER_RADIUS
     px, py = fx+ux*pivot, fy+uy*pivot
@@ -1329,11 +1370,16 @@ def rest_floor(contact, angle, before, after, thickness, side, pivot=None, shift
     return (px+rx*math.cos(t)-ry*math.sin(t)+shift[0], py+rx*math.sin(t)+ry*math.cos(t)+shift[1]), -rest
 
 
-def rest_top(poly, rest=PURPLE_REST_ANGLE):
-    """Underside slab [top-left, top-right, under-right, under-left] whose top rises rightward at rest
-    from the top-left corner (the right corner keeps its x); the underside and left cap are unchanged."""
+def rest_top(poly, rest=PURPLE_REST_ANGLE, down=False, overhang=0):
+    """Underside slab [top-left, top-right, under-right, under-left] whose top rises (down: falls) rightward at
+    rest from the top-left corner (moved overhang further left; the right corner keeps its x); the underside is
+    unchanged."""
     d, c, b, a = poly
-    return [d, (c[0], d[1]-(c[0]-d[0])*math.tan(math.radians(rest))), b, a]
+    d = (d[0]-overhang, d[1])
+    c = (c[0], d[1]+(c[0]-d[0])*math.tan(math.radians(rest))*(1 if down else -1))
+    if c[1] >= b[1]:
+        raise ValueError('rest top meets the underside')
+    return [d, c, b, a]
 
 
 def rebuild_purple_slabs(m, by, purple_rest=False):
@@ -1349,17 +1395,26 @@ def rebuild_purple_slabs(m, by, purple_rest=False):
         for n, (name, contact, angle, before, after, thickness, side) in enumerate(panels, 1):
             sid = '%s%d' % (pre, n)
             post = 'NG%d' % n == SHIELDS['post'][0] and bool(post_meta)
-            rest = purple_rest and name in PURPLE_REST_TOPS+(PURPLE_REST_FLOOR,)
+            rest = purple_rest and name in PURPLE_REST_TOPS+(PURPLE_REST_FLOOR,)+tuple(PURPLE_REST_PANELS)
             if name not in taper and not post and not rest:
                 continue
             f = by[sid]
             polys, height, x0, y0, width = copy.deepcopy(f['polys']), f['height'], f['x'], f['y'], f['width']
             angle0 = f.get('surfaceAngle')
+            if rest and name in PURPLE_REST_PANELS:
+                (dx, dy), turn, grow_before, grow_after = PURPLE_REST_PANELS[name]
+                contact, angle = (contact[0]+dx, contact[1]+dy), angle+turn
+                before, after = before+grow_before, after+grow_after
+                thickness = PURPLE_REST_THICKNESS.get(name, thickness)
+            if rest and ext.get('mirror'):
+                thickness = PURPLE_REST_MIDDLE_THICKNESS.get(name, thickness)
+                after -= PURPLE_REST_MIDDLE_TRIM_AFTER.get(name, 0)
             if rest and name == PURPLE_REST_FLOOR:
                 contact, angle = rest_floor(contact, angle, before, after, thickness, side)
             shape = (tapered_slab if name in taper else slab)(contact, angle, before, after, thickness, side)
             if rest and name in PURPLE_REST_TOPS:
-                shape = rest_top(shape)
+                shape = rest_top(shape, down=name in PURPLE_REST_DOWN_TOPS,
+                                 overhang=PURPLE_REST_LEFT_OVERHANG.get(name, 0))
             g = purple_panel(name, shape, contact, 'top' if side > 0 else 'underside', zone['x'], zone['y'])
             if rest:
                 g['surfaceAngle'] = angle
@@ -1390,12 +1445,43 @@ def rebuild_purple_slabs(m, by, purple_rest=False):
     return out
 
 
+def rest_exit_ledges(m, by):
+    """TASK-697: PURPLE_REST_EXIT_WIDTHS (x-scaled outlines; a mirrored encounter keeps its outer, right end),
+    then PURPLE_REST_EXIT_GROW moves an unmirrored ledge's left end further left."""
+    out = []
+    mirrored = {e.get('prefix', 'NG')+'-EXIT' for e in purple_extensions(m) if e.get('mirror')}
+    for sid, width in PURPLE_REST_EXIT_WIDTHS.items():
+        if sid not in by:
+            continue
+        f = by[sid]
+        before, box0 = copy.deepcopy(f['polys']), [f['x'], f['y'], f['width'], f['height']]
+        k = width/f['width']
+        if sid in mirrored:
+            f['polys'] = [[[f['width']-(f['width']-px)*k, py] for px, py in poly] for poly in f['polys']]
+            x0 = min(px for poly in f['polys'] for px, _ in poly)
+            f['polys'] = [[[px-x0, py] for px, py in poly] for poly in f['polys']]
+            f['x'] += x0
+        else:
+            grow = PURPLE_REST_EXIT_GROW.get(sid, 0)
+            f['polys'] = [[[px*k+grow if px else 0., py] for px, py in poly] for poly in f['polys']]
+            f['x'] -= grow
+            width += grow
+        f['width'] = width
+        out.append(dict(fragment=f['id'], semanticId=sid, op='rest-exit', before=before,
+                        after=copy.deepcopy(f['polys']), heightBefore=f['height'], heightAfter=f['height'],
+                        boxBefore=box0, widthAfter=width))
+    return out
+
+
 def resize_later_sides(m, opening, clearance, spec=LATER_MIN_SIDES, target=SIDE_TARGET, purple_rest=False):
     """Runs after the bands are placed, so no band moves; transfers and pairs are re-measured."""
     fs = m['fragments']
     by = {f['semanticId']: f for f in fs}
     before_rows = {r['id']: (r['distance'], r['witness']) for r in m['encounters']}
     changed = rebuild_purple_slabs(m, by, purple_rest)
+    if purple_rest:
+        changed += rest_exit_ledges(m, by)
+        spec = spec+PURPLE_REST_MIN_SIDES
     # A layout generated without the purple extension (tests) has no exit ledge.
     for sid, op, arg in [e for e in spec if e[0] in by]:
         f = by[sid]

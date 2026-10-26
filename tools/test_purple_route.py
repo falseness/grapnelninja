@@ -22,6 +22,9 @@ compared with the recorded opening resizes undone.
 PURPLE_ROUTE_UPPER=1 with PURPLE_ROUTE_MIDDLE=1 (TASK-684) regenerates with the third
 (upper) encounter NGU as well (retune --upper-purple).
 
+PURPLE_ROUTE_REST=1 (TASK-697) adds retune --purple-rest to the regeneration (the retilted, re-routed
+slabs; with no scope variable set that is the shipped scope) and replays the *-rest.json input fixtures.
+
 PURPLE_ROUTE_ENCOUNTER=NGM (TASK-683) replays the middle encounter of a
 --middle-purple candidate instead of NG1 (zone id; panels by semantic prefix, input
 fixture tools/fixtures/purple-route-inputs-ngm.json). The traversal class also
@@ -66,6 +69,8 @@ MIDDLE = ['--middle-purple'] if SHIPPED_DEFAULT or os.environ.get('PURPLE_ROUTE_
 # PURPLE_ROUTE_UPPER=1 (with PURPLE_ROUTE_MIDDLE=1): also the upper encounter NGU (retune --upper-purple, TASK-684).
 MIDDLE += ['--upper-purple'] if MIDDLE and (SHIPPED_DEFAULT or os.environ.get('PURPLE_ROUTE_UPPER') == '1') else []
 REGEN_ARGS = [] if SHIPPED_DEFAULT else ['--min-side-scope', MIN_SIDE_SCOPE] + MIDDLE
+# PURPLE_ROUTE_REST=1 (TASK-697): the candidate has the retilted purple slabs (retune --purple-rest, TASK-696).
+REGEN_ARGS += ['--purple-rest'] if os.environ.get('PURPLE_ROUTE_REST') == '1' else []
 # PURPLE_ROUTE_ENCOUNTER=ZONE (TASK-683): the traversal class replays that encounter (purpleExtensions zone id,
 # default NG1), with the input fixture of its semantic prefix.
 ENCOUNTER = os.environ.get('PURPLE_ROUTE_ENCOUNTER', 'NG1')
@@ -74,6 +79,8 @@ SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 INPUTS = {'NG': TOOLS / 'fixtures' / 'purple-route-inputs.json',
           'NGM': TOOLS / 'fixtures' / 'purple-route-inputs-ngm.json',
           'NGU': TOOLS / 'fixtures' / 'purple-route-inputs-ngu.json'}
+if os.environ.get('PURPLE_ROUTE_REST') == '1':  # TASK-697: the re-routed --purple-rest chutes have their own inputs.
+    INPUTS = {k: v.with_name(v.stem + '-rest.json') for k, v in INPUTS.items()}
 NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json')
 # The preserved concept source, unchanged since TASK-650 (artifacts/TASK-650/hashes.json).
 ORIGINAL_SOURCE = {
@@ -87,7 +94,9 @@ CANONICAL_TRANSFER = 1080.0  # 200% R: every added outside transfer
 CLEARANCE = R + geometry.PLAYER_DIAMETER  # grapple clearance for every non-transfer pair
 SOURCES = ('tools/retune_extended_level.py', 'tools/convert_extended_mountain_svg.py', 'tools/import_level_svg.py',
            'tools/check_level_geometry.py', 'tools/test_purple_route.py', 'tools/opening_combination_replay.js',
-           'tools/fixtures/purple-route-inputs.json', 'tools/fixtures/purple-route-inputs-ngm.json', 'tools/fixtures/purple-route-inputs-ngu.json', 'fixedlevel.js', 'physics.js', 'events.js', 'sprites/grapnel.js',
+           'tools/fixtures/purple-route-inputs.json', 'tools/fixtures/purple-route-inputs-ngm.json', 'tools/fixtures/purple-route-inputs-ngu.json',
+           'tools/fixtures/purple-route-inputs-rest.json', 'tools/fixtures/purple-route-inputs-ngm-rest.json',
+           'tools/fixtures/purple-route-inputs-ngu-rest.json', 'fixedlevel.js', 'physics.js', 'events.js', 'sprites/grapnel.js',
            'sprites/ninja.js', 'sprites/trampoline.js', 'artifacts/levels/level-guidelines.md')
 OUT = {}
 

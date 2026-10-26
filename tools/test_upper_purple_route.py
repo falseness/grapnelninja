@@ -12,7 +12,7 @@ the --middle-purple candidate (TASK-683). Everything is found by semantic ids
 (purpleExtensions, routeMap), never by numeric index. Traversal of NGU: test_purple_route PURPLE_ROUTE_ENCOUNTER=NGU (TASK-685).
 
 UPPER_PURPLE_CANDIDATE=DIR (extended-mountain.svg, -measurements.json,
-.level.json, .level.js) selects the candidate. Without it, the candidate is
+.level.json, .level.js) selects the candidate (UPPER_PURPLE_REST=1: a --purple-rest one, TASK-697). Without it, the candidate is
 generated into a temporary directory. UPPER_PURPLE_EVIDENCE_DIR=DIR writes
 route.json, geometry.json and runtime.json.
 
@@ -43,6 +43,10 @@ import retune_extended_level as retune  # noqa: E402
 EVIDENCE = os.environ.get('UPPER_PURPLE_EVIDENCE_DIR')
 SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 ARGS = ['--min-side-scope', 'all', '--middle-purple', '--upper-purple']
+# UPPER_PURPLE_REST=1 (TASK-697): the retilted purple slabs (retune --purple-rest, TASK-696), base too.
+REST = os.environ.get('UPPER_PURPLE_REST') == '1'
+# The TASK-696 candidate is the default (v16) generation plus --purple-rest; the explicit scope flags give v15.
+ARGS = ['--purple-rest'] if REST else ARGS
 NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json',
          'extended-mountain.level.js')
 R = 540.0
@@ -101,7 +105,7 @@ class UpperPurpleTests(unittest.TestCase):
         cls.zones = {z['id']: z for z in cls.m['noGrappleZones']}
         # The same generator without the upper encounter: the TASK-683 middle-purple candidate (cmp in commands.log).
         cls.base = retune.tune(json.loads(SOURCE.read_text()), opening=retune.OPENING,
-                               yellow_clearance=retune.YELLOW_CLEARANCE, min_sides='all', middle_purple=True)
+                               yellow_clearance=retune.YELLOW_CLEARANCE, min_sides='all', middle_purple=True, purple_rest=REST)
         cls.check = geometry.check(cls.level, cls.svg, cls.m, min_side=geometry.MIN_SIDE_LENGTH)
 
     def test_01_deterministic_regeneration(self):
@@ -274,16 +278,26 @@ class UpperPurpleTests(unittest.TestCase):
         self.assertTrue({'P0', 'P2', 'R1', 'X10', 'P4', 'NG1', 'NG5', 'NGM1', 'NGM5', 'P8', 'P13'} <= set(same))
         e, p13 = self.by['NGU-EXIT'], self.by['P13']
         # TASK-685 tune: P13's outline scaled along x from its left end to UPPER_EXIT_WIDTH (no NGU1 .. NGU3 overhang).
-        k = retune.UPPER_EXIT_WIDTH / p13['width']
-        self.assertEqual(e['width'], retune.UPPER_EXIT_WIDTH)
+        # TASK-697 (REST): rescaled to the rest width from the left end, the left end then moved PURPLE_REST_EXIT_GROW
+        # further left, and the lower right side (1, 2) extended to SIDE_TARGET along itself.
+        width = retune.PURPLE_REST_EXIT_WIDTHS['NGU-EXIT'] if REST else retune.UPPER_EXIT_WIDTH
+        grow = retune.PURPLE_REST_EXIT_GROW.get('NGU-EXIT', 0) if REST else 0
+        k = width / p13['width']
+        self.assertEqual(e['width'], width + grow)
         self.assertEqual(e['height'], p13['height'])
         self.assertEqual(len(e['polys']), len(p13['polys']))
+        sx = lambda px: px * k + grow if px else 0.
         for pe, pp in zip(e['polys'], p13['polys']):
             self.assertEqual(len(pe), len(pp))
-            for a, b in zip(pe, pp):
-                self.assertAlmostEqual(a[0], b[0] * k, places=9)
+            for n, (a, b) in enumerate(zip(pe, pp)):
+                if REST and n == 2:
+                    (x1, y1), (x2, y2) = pe[1], (sx(b[0]), b[1])
+                    self.assertAlmostEqual((a[0] - x1) * (y2 - y1) - (a[1] - y1) * (x2 - x1), 0, places=6)
+                    self.assertAlmostEqual(math.dist(pe[1], a), retune.SIDE_TARGET, places=6)
+                    continue
+                self.assertAlmostEqual(a[0], sx(b[0]), places=9)
                 self.assertEqual(a[1], b[1])
-        self.assertAlmostEqual(e['x'] - p13['x'], dx, places=9)
+        self.assertAlmostEqual(e['x'] + grow - p13['x'], dx, places=9)
         self.assertEqual(e['y'], p13['y'])
         rows_b = {r['id']: r for r in self.base['encounters']}
         gaps = {i: abs(rows_b[i]['distance'] - self.rows[i]['distance']) for i in rows_b}

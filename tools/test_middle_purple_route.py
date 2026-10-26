@@ -10,7 +10,7 @@ routeMap), never by numeric index. TASK-683 tunes one shape: NGM3 (chute floor)
 is a thinner tapered slab (retune MIDDLE_PURPLE_THICKNESS) with NG1's mirrored top face.
 
 MIDDLE_PURPLE_CANDIDATE=DIR (extended-mountain.svg, -measurements.json,
-.level.json, .level.js) selects the candidate. Without it, the candidate is
+.level.json, .level.js) selects the candidate (MIDDLE_PURPLE_REST=1: a --purple-rest one, TASK-697). Without it, the candidate is
 generated into a temporary directory. MIDDLE_PURPLE_EVIDENCE_DIR=DIR writes
 route.json, geometry.json and runtime.json.
 
@@ -41,6 +41,9 @@ import retune_extended_level as retune  # noqa: E402
 EVIDENCE = os.environ.get('MIDDLE_PURPLE_EVIDENCE_DIR')
 SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 ARGS = ['--min-side-scope', 'all', '--middle-purple']
+# MIDDLE_PURPLE_REST=1 (TASK-697): the retilted purple slabs (retune --purple-rest, TASK-696), base too.
+REST = os.environ.get('MIDDLE_PURPLE_REST') == '1'
+ARGS += ['--purple-rest'] if REST else []
 NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json',
          'extended-mountain.level.js')
 R = 540.0
@@ -81,6 +84,18 @@ def rp(p):
     return [round(p[0], 6), round(p[1], 6)]
 
 
+def up_face(f, z, mirror):
+    """Zone-relative endpoints of the edge whose outward normal points most upward (NGM reflected)."""
+    poly = [(round(z['x'] + z.get('mirrorWidth', z['width']) - x if mirror else x - z['x'], 6), round(y - z['y'], 6))
+            for x, y in conv.bodies(f)[0]]
+    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(poly, poly[1:] + poly[:1]))
+    def ny(a, b):  # outward normal y (screen y down) of edge a -> b
+        n = math.hypot(b[0] - a[0], b[1] - a[1])
+        return (a[0] - b[0]) / n if area > 0 else (b[0] - a[0]) / n
+    a, b = min(zip(poly, poly[1:] + poly[:1]), key=lambda e: ny(*e))
+    return sorted([a, b])
+
+
 class MiddlePurpleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -95,7 +110,7 @@ class MiddlePurpleTests(unittest.TestCase):
         cls.zones = {z['id']: z for z in cls.m['noGrappleZones']}
         # The same generator without the middle encounter: the TASK-681 candidate (byte-identical, run.sh).
         cls.base = retune.tune(json.loads(SOURCE.read_text()), opening=retune.OPENING,
-                               yellow_clearance=retune.YELLOW_CLEARANCE, min_sides='all')
+                               yellow_clearance=retune.YELLOW_CLEARANCE, min_sides='all', purple_rest=REST)
         cls.check = geometry.check(cls.level, cls.svg, cls.m, min_side=geometry.MIN_SIDE_LENGTH)
 
     def test_01_deterministic_regeneration(self):
@@ -181,6 +196,19 @@ class MiddlePurpleTests(unittest.TestCase):
             name = retune.PURPLE['panels'][i - 1][0]
             if name in retune.MIDDLE_PURPLE_THICKNESS:
                 # TASK-683 tune: a thinner tapered slab; the top face (the bounce contact) stays NG1's mirrored.
+                if REST and name == retune.PURPLE_REST_FLOOR:
+                    # TASK-697: the retilted floor's bounding box is no thickness; compare the up-facing face, which
+                    # keeps NG3's mirrored left end (NG1 frame) and is PURPLE_REST_MIDDLE_TRIM_AFTER shorter at the right.
+                    (p0, p1), (q0, q1) = up_face(a, z1, False), up_face(b, z2, True)
+                    trim = retune.PURPLE_REST_MIDDLE_TRIM_AFTER.get(name, 0)
+                    for u, v in zip(p0, q0):
+                        self.assertAlmostEqual(u, v, places=5)
+                    self.assertAlmostEqual(math.dist(q0, q1), math.dist(p0, p1) - trim, places=5)
+                    self.assertAlmostEqual((q1[0] - p0[0]) * (p1[1] - p0[1]) - (q1[1] - p0[1]) * (p1[0] - p0[0]), 0, places=2)
+                    self.assertLess(b['height'], a['height'])
+                    diffs['NGM%d' % i] = dict(tuned='thinner tapered slab (box height %g -> %g), retilted up-facing '
+                                              'face kept, %g shorter at its low end' % (a['height'], b['height'], trim))
+                    continue
                 self.assertEqual(top(rel(a, z1, False)), top(rel(b, z2, True)), i)
                 self.assertAlmostEqual(b['height'], retune.MIDDLE_PURPLE_THICKNESS[name], places=6)
                 diffs['NGM%d' % i] = dict(tuned='thickness %g -> %g (tapered caps), top face unchanged'
@@ -209,7 +237,9 @@ class MiddlePurpleTests(unittest.TestCase):
                 self.assertEqual((r['noGrappleZone'], zone), ('NGM', 'NGM'))
                 self.assertTrue(0 < d <= retune.NO_GRAPPLE_INTERNAL_GAP)
                 twin = self.rows[rid.replace('NGM', 'NG')]
-                self.assertAlmostEqual(d, twin['distance'], places=6)
+                # TASK-697: the trimmed NGM3 (PURPLE_REST_MIDDLE_TRIM_AFTER) may differ from its twin, inside the limit.
+                if not (REST and 'NGM3' in rid):
+                    self.assertAlmostEqual(d, twin['distance'], places=6)
             else:
                 self.assertIsNone(zone, rid)
                 self.assertGreaterEqual(d, CANONICAL_TRANSFER - .01, rid)
@@ -261,8 +291,25 @@ class MiddlePurpleTests(unittest.TestCase):
                 moved.append(s)
         # The exit copies P7 (translated) after both are resized identically.
         e, p7 = self.by['NGM-EXIT'], self.by['P7']
-        self.assertEqual((e['polys'], e['width'], e['height']), (p7['polys'], p7['width'], p7['height']))
-        self.assertAlmostEqual(e['x'] - p7['x'], dx, places=9)
+        if REST:
+            # TASK-697: P7's outline scaled in x from its outer (right) end to the rest width.
+            w = retune.PURPLE_REST_EXIT_WIDTHS['NGM-EXIT']
+            k = w / p7['width']
+            self.assertEqual((e['width'], e['height'], len(e['polys'][0])), (w, p7['height'], len(p7['polys'][0])))
+            want = [(p7['x'] + dx + p7['width'] - (p7['width'] - px) * k, py) for px, py in p7['polys'][0]]
+            got = [(e['x'] + ex, ey) for ex, ey in e['polys'][0]]
+            for n, (g, w_) in enumerate(zip(got, want)):
+                if n == 3:  # LATER_MIN_SIDES then extends side (0, 3) along itself to SIDE_TARGET
+                    (x0, y0), (x1, y1) = got[0], w_
+                    self.assertAlmostEqual((g[0] - x0) * (y1 - y0) - (g[1] - y0) * (x1 - x0), 0, places=3)
+                    self.assertAlmostEqual(math.dist(got[0], g), max(retune.SIDE_TARGET, math.dist(want[0], w_)), places=6)
+                    continue
+                self.assertAlmostEqual(g[0], w_[0], places=6)
+                self.assertEqual(g[1], w_[1])
+            self.assertAlmostEqual(e['x'] + e['width'] - p7['x'] - p7['width'], dx, places=6)
+        else:
+            self.assertEqual((e['polys'], e['width'], e['height']), (p7['polys'], p7['width'], p7['height']))
+            self.assertAlmostEqual(e['x'] - p7['x'], dx, places=9)
         rows_b = {r['id']: r for r in self.base['encounters']}
         grown = {i for i in rows_b if nar['fragment'] in (self.rows[i]['fromFragment'], self.rows[i]['toFragment'])
                  and abs(rows_b[i]['distance'] - self.rows[i]['distance']) > 1e-6}
