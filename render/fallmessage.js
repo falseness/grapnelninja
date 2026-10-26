@@ -1,12 +1,12 @@
 // Grapple Over long-fall reaction (concept big-fall-message-v2): the phrase
 // of LONG_FALL.event in bold italic warm white with a lavender glow and a
 // dark shadow, tilted and placed off-centre in screen space, fading out over
-// 3000 ms of active game time. Each event draws its anchor and tilt once
+// 6000 ms of active game time. Each event draws its anchor and tilt once
 // from a reaction-only random source; a re-layout (resize) keeps both and
 // only refits the size and the safe-area position. The text and its glow
 // are baked into a sprite per layout; a frame only blits it rotated.
 const FALL_MESSAGE = {
-    durationMs: 3000,
+    durationMs: 6000,
     // Normalized canvas anchors, all off centre
     anchors: Object.freeze([[0.25, 0.30], [0.75, 0.30], [0.25, 0.50], [0.75, 0.50], [0.25, 0.70], [0.75, 0.70]]),
     maxAngle: 15,

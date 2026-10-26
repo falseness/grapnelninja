@@ -9,7 +9,7 @@ rearms the detector. Recovery, restart, reload and the spawn never count as fall
 TASK-666 (LongFallRenderTests) drives the production render/fallmessage.js
 through the real gameLoop/draw(): layout of every phrase at every anchor and
 the rotation endpoints against the 16 CSS px margins and the HUD boxes, the
-max(0, 1 - t/3000)^2 fade in active time, the pause/hidden/restart/reload/
+max(0, 1 - t/6000)^2 fade in active time, the pause/hidden/restart/reload/
 completion/teleport/replace lifecycle, and noninteractive isolation.
 
 LONG_FALL_EVIDENCE_DIR=DIR writes compact fall-events.json, lifecycle.json,
@@ -965,26 +965,36 @@ class LongFallRenderTests(unittest.TestCase):
         page = self.open()
         self.assertIsNotNone(self.emit(page, 2, 0.25, 0.5 / 12))
         samples = {'0': self.msg(page)}
-        for target in (1000, 1500, 2983):
+        for target in (1500, 3000, 4500, 5983):
             page.evaluate('t => { while (FALL_MESSAGE.elapsedMs < t - 1e-6) FRAMES(1) }', target)
             samples[str(target)] = self.msg(page)
         page.evaluate('FRAMES(1)')
-        samples['3000'] = self.msg(page)
-        exact = page.evaluate('[0, 1000, 1500, 3000, 4500].map(t => FALL_MESSAGE.opacity(t))')
+        samples['6000'] = self.msg(page)
+        # TASK-703: 6000 ms with the same (1 - t)^2 curve, so opacity at t equals
+        # the pre-TASK-703 3000 ms fade at t / 2.
+        self.assertEqual(page.evaluate('FALL_MESSAGE.durationMs'), 6000)
+        times = [0, 1500, 3000, 4500, 5999, 6000, 9000]
+        exact = page.evaluate('ts => ts.map(t => FALL_MESSAGE.opacity(t))', times)
+        pre = [max(0.0, 1 - (t / 2) / 3000) ** 2 for t in times]
+        errors = [abs(a - b) for a, b in zip(exact, pre)]
+        self.assertLessEqual(max(errors), 1e-9, list(zip(times, exact, pre)))
         self.assertEqual(exact[0], 1)
-        self.assertAlmostEqual(exact[1], 4 / 9, places=12)
-        self.assertAlmostEqual(exact[2], 1 / 4, places=12)
-        self.assertEqual(exact[3:], [0, 0])
-        for t, want in (('0', 1), ('1000', 4 / 9), ('1500', 1 / 4)):
+        self.assertEqual(exact[5:], [0, 0])
+        self.assertGreater(exact[4], 0)
+        for t, want in (('0', 1), ('1500', 9 / 16), ('3000', 1 / 4), ('4500', 1 / 16)):
             s = samples[t]
             self.assertAlmostEqual(s['elapsedMs'], float(t), places=6)
             self.assertEqual(len(s['blits']), 1)
             self.assertAlmostEqual(s['blits'][0]['alpha'], want, places=6)
-        self.assertEqual(len(samples['2983']['blits']), 1)
-        self.assertEqual((samples['3000']['elapsedMs'], samples['3000']['expired'], samples['3000']['blits']), (3000, True, []))
+        self.assertEqual(len(samples['5983']['blits']), 1)
+        self.assertAlmostEqual(samples['5983']['blits'][0]['alpha'], max(0.0, 1 - samples['5983']['elapsedMs'] / 6000) ** 2, places=9)
+        self.assertEqual((samples['6000']['elapsedMs'], samples['6000']['expired'], samples['6000']['blits']), (6000, True, []))
         page.evaluate('FRAMES(30)')
-        self.assertEqual(self.msg(page)['blits'], [])
-        tm['fade'] = {'formula': 'max(0,1-elapsedMs/3000)^2', 'exact': dict(zip(['0', '1000', '1500', '3000', '4500'], exact)),
+        after = self.msg(page)
+        self.assertEqual((after['blits'], after['visible']), ([], False))
+        tm['fade'] = {'formula': 'max(0,1-elapsedMs/6000)^2', 'durationMs': 6000,
+                      'exact': [{'t': t, 'opacity': o, 'preAtHalf': p, 'err': e} for t, o, p, e in zip(times, exact, pre, errors)],
+                      'maxError': max(errors),
                       'drawn': {t: {'elapsedMs': s['elapsedMs'], 'blitAlpha': s['blits'][0]['alpha'] if s['blits'] else None,
                                     'blits': len(s['blits']), 'expired': s['expired']} for t, s in samples.items()},
                       'blitsAfterExpiry30Frames': 0}
@@ -1039,7 +1049,7 @@ class LongFallRenderTests(unittest.TestCase):
             return {frames: n, recoveries: RECOVERIES.length, y: ninja.y, spawnY: l.spawn.y} }''')
         post = self.msg(page)
         self.assertEqual(rec['recoveries'], 1)
-        self.assertLess(post['elapsedMs'], 3000)
+        self.assertLess(post['elapsedMs'], 6000)
         self.assertEqual((post['eventId'], post['layout'], post['angle']), (pre['eventId'], pre['layout'], pre['angle']))
         self.assertEqual(len(post['blits']), 1)
         tm['teleport'] = {'recovery': rec, 'eventBefore': pre['eventId'], 'eventAfter': post['eventId'],
@@ -1092,7 +1102,7 @@ class LongFallRenderTests(unittest.TestCase):
                         'savedKeys': sorted(json.loads(saved)), 'savedContainsMessage': False}
         tm['pageErrorsReload'] = errors + p2.errors
         self.assertEqual(errors + p2.errors, [])
-        print('PASS timing: opacity 1, 4/9, 1/4, 0 at 0/1000/1500/3000 ms; frozen paused/hidden/host; '
+        print('PASS timing: opacity 1, 9/16, 1/4, 1/16, 0 at 0/1500/3000/4500/6000 ms; frozen paused/hidden/host; '
               'replace, teleport, restart, completion, reload', flush=True)
 
     def test_11_isolation_controls_language(self):
@@ -1208,7 +1218,7 @@ class LongFallRenderTests(unittest.TestCase):
             page = self.open(kind)
             self.emit(page, anchor, r, (MESSAGES.index(text) + 0.5) / 12)
             frames, info = [], []
-            for name, target in (('appear 0 ms', 0), ('mid-fade 1500 ms', 1500), ('expiry 3000 ms', 3000)):
+            for name, target in (('appear 0 ms', 0), ('mid-fade 3000 ms', 3000), ('expiry 6000 ms', 6000)):
                 page.evaluate('t => { while (!FALL_MESSAGE.expired && FALL_MESSAGE.elapsedMs < t - 1e-6) FRAMES(1) }', target)
                 st = self.msg(page)
                 png = page.screenshot()
@@ -1222,12 +1232,12 @@ class LongFallRenderTests(unittest.TestCase):
             self.assertEqual([i['blits'] for i in info], [1, 1, 0])
             self.assertAlmostEqual(info[0]['alpha'], 1)
             self.assertAlmostEqual(info[1]['alpha'], 0.25, places=6)
-            self.assertEqual(info[2]['elapsedMs'], 3000)
+            self.assertEqual(info[2]['elapsedMs'], 6000)
             self.assertEqual(abs(info[0]['angle']), 15)
             self.__class__.frames[kind] = frames
             caps[kind] = {'viewport': VIEWPORTS[kind]['viewport'], 'frames': info, 'pageErrors': page.errors}
             self.assertEqual(page.errors, [])
-        print('PASS captures: desktop 1280x720 and touch 844x390 at 0/1500/3000 ms', flush=True)
+        print('PASS captures: desktop 1280x720 and touch 844x390 at 0/3000/6000 ms', flush=True)
 
 
 if __name__ == '__main__':
