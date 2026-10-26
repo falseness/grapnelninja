@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import copy
+import itertools
 import json
 import math
 from pathlib import Path
@@ -841,6 +842,133 @@ def write_big_zone_fixture(dest, spec=BIG_ZONE):
                                           'window.GRAPPLE_OVER_BUNDLED_LEVEL = '+payload.rstrip()+';\n')
     print('Wrote big-zone fixture', dest, 'layout', m['layoutId'], 'fragments', len(m['fragments']),
           'transfers', len(m['encounters']), 'elements', len(level['elements']))
+
+
+# TASK-708 (candidate, opt-in via --ext-summit on the shipped run): SEC-ext-summit above the old summit. The old
+# summit (P61) becomes an ordinary landing; three grapple climbs, each a translated copy of the shipped final chain
+# (EXT-21 .. EXT-24: vertical commitment, ceiling hold, release, bounce onto a summit-shaped landing, +4181), lead
+# into the big zones BZ1 .. BZ3 (BIG_ZONE template: approach ledge approachGap past the landing at its height, the
+# zone and its lower exit ledge), each zone running in its last climb's direction (leftward = mirrored template).
+# A zone is 4320 tall but one climb rises 4181, so after BZ1 the climbs zigzag (rightward back over the zone, then
+# leftward), +8362, which lifts BZ2 / BZ3 clear of the panels below them; a release jump from BZ3's exit reaches
+# the new summit (finish) at the exit's height. climbShifts moves a climb sideways from its start: C1 sits 1700
+# left so its first panel keeps the 300% yellow clearance from G-final (the roof-pump brake right of the old summit). Every new panel keeps > 540 + player diameter
+# from every other panel and margin from every zone it does not belong to.
+EXT_SUMMIT = dict(chain=('P20', 'P21', 'P22', 'P23', 'P24'), climbs=((-1,), (1, -1), (1, -1)), climbShifts=((-1700,), (0, 0), (0, 0)),
+                  approachGap=1350, finishGap=1350,
+                  zoneClearance=600, section='SEC-ext-summit', prefix='XS', zones=('BZ1', 'BZ2', 'BZ3'))
+
+
+def ext_summit_climb(chain, start, direction, shift=0):
+    """Copies of chain[1:] placed so chain[0] coincides with start's top edge (leftward = shipped orientation)."""
+    c0 = chain[0]
+    if direction > 0:
+        cx = c0['x']+c0['width']/2
+        chain = [mirror_fragment(f, cx) for f in chain]
+        for f in chain:
+            f['bounceSign'] = -f['bounceSign']
+        c0 = chain[0]
+        dx = start['x']+start['width']-(c0['x']+c0['width'])
+    else:
+        dx = start['x']-c0['x']
+    return [moved(copy.deepcopy(f), dx+shift, start['y']-c0['y']) for f in chain[1:]]
+
+
+def ext_summit_zone(landing, direction, n, spec=EXT_SUMMIT):
+    """The BIG_ZONE template (approach, slabs, exit) past landing, in direction; returns (fragments, zone)."""
+    t = big_zone_level(dict(BIG_ZONE, zoneId=spec['zones'][n-1], prefix=spec['zones'][n-1], label='Big zone %d' % n))
+    fs, zone = [copy.deepcopy(f) for f in t['fragments']], copy.deepcopy(t['noGrappleZones'][0])
+    if direction < 0:
+        fs = [mirror_fragment(f, 0) for f in fs]
+        zone['x'] = -zone['x']-zone['width']
+        dx = landing['x']-spec['approachGap']
+    else:
+        dx = landing['x']+landing['width']+spec['approachGap']
+    fs = [moved(f, dx, landing['y']) for f in fs]
+    zone['x'] += dx; zone['y'] += landing['y']
+    x, y, w, h = zone['x'], zone['y'], zone['width'], zone['height']
+    zone['polygon'] = [[x, y], [x+w, y], [x+w, y+h], [x, y+h]]
+    zone['purpose'] = 'big no-grapple zone %s (SEC-ext-summit): rope-free level-or-descending traversal' % zone['id']
+    fs[-1]['kind'] = 'platform'
+    return fs, zone
+
+
+def extend_summit(m, spec=EXT_SUMMIT):
+    fs, rows = m['fragments'], m['encounters']
+    by_sem = {f.get('semanticId'): f for f in fs}
+    chain = [copy.deepcopy(by_sem[s]) for s in spec['chain']]
+    old = fs[-1]
+    if old['kind'] != 'summit':
+        raise ValueError('The extension starts at the current summit')
+    old['kind'] = 'platform'
+    pre, new, zones, steps = spec['prefix'], [], [], []
+    start = old
+    zone_of = {}
+    for n, directions in enumerate(spec['climbs'], 1):
+        for c, direction in enumerate(directions):
+            climb = ext_summit_climb(chain, start, direction, spec['climbShifts'][n-1][c])
+            for k, f in enumerate(climb, 1):
+                f.update(name='%s climb %d%s %s' % (pre, n, 'ab'[c], f['name']), originalId=None, kind=f['kind'] if k < 4 else 'platform',
+                         semanticId='%s-C%d%s-%d' % (pre, n, 'ab'[c], k))
+            steps += [(f, 'climb %d' % n) for f in climb]
+            start = climb[-1]
+        zfs, zone = ext_summit_zone(start, directions[-1], n)
+        steps += [(f, zone['id']) for f in zfs]
+        zone_of.update({id(f): zone['id'] for f in zfs[1:-1]})
+        zones.append(zone); start = zfs[-1]
+    summit = copy.deepcopy(chain[-1]); summit.update(name='%s summit' % pre, originalId=None, semanticId=pre+'-SUMMIT', kind='summit')
+    summit = moved(summit, (start['x']-spec['finishGap']-summit['width'] if spec['climbs'][-1][-1] < 0
+                            else start['x']+start['width']+spec['finishGap'])-summit['x'], start['y']-summit['y'])
+    steps.append((summit, 'finish'))
+    first = len(fs)
+    for i, (f, _) in enumerate(steps):
+        f['id'] = 'P%d' % (first+i)
+    zone_of = {f['id']: zone_of[id(f)] for f, _ in steps if id(f) in zone_of}
+    numbers = []
+    prev = old
+    for f, part in steps:
+        number = len(rows)+1
+        za, zb = zone_of.get(prev['id']), zone_of.get(f['id'])
+        sem_a, sem_b = prev.get('semanticId'), f['semanticId']
+        if za and za == zb:
+            rid, action = '%s-%s-%s' % (za, sem_a, sem_b), 'Rope-free bounce to the next slab'
+        elif zb:
+            rid, action = zb+'-ENTRY', 'Run off the approach ledge into big no-grapple zone '+zb
+        elif za:
+            rid, action = za+'-EXIT', 'Bounce out of the zone side onto the lower exit ledge'
+        elif f['semanticId'].endswith('-APPROACH'):
+            rid, action = f['semanticId'], 'Release jump onto the big-zone approach ledge'
+        elif part == 'finish':
+            rid, action = pre+'-FINISH', 'Release jump onto the new summit'
+        else:
+            rid, action = sem_b, 'Grapple climb %s' % part
+        d, w, _, _ = gap(prev, f)
+        rows.append(dict(id=rid, number=number, fromFragment=prev['id'], toFragment=f['id'],
+                         direction='RIGHT' if f['x'] > prev['x'] else 'LEFT', action=action, baseline=False,
+                         originalNumber=None, originalId=None, percent=round(d/5.4, 2), distance=d, witness=w,
+                         flight=[svg.contact(prev), svg.contact(f)], noGrappleZone=za if za and za == zb else None))
+        numbers.append(number)
+        fs.append(f); prev = f
+    m['noGrappleZones'] = m['noGrappleZones']+zones
+    close = ['%s/%s %.0f' % (f['id'], z['id'], d) for z in zones for f in fs if zone_of.get(f['id']) != z['id']
+             for d in [union_distance(svg.bodies(f), [z['polygon']])[0]]
+             if d < (60 if (f.get('semanticId') or '').startswith(z['id']+'-') else spec['zoneClearance'])]
+    close += ['%s/%s overlap' % (a['id'], b['id']) for a, b in itertools.combinations(m['noGrappleZones'], 2)
+              if union_distance([a['polygon']], [b['polygon']])[0] <= 0]
+    close += ['%s/%s yellow %.0f' % (f['id'], b['id'], d) for b in m['yellowBands'] for f, _ in steps
+              for d in [union_distance(svg.bodies(f), [b['polygon']])[0]] if d < b['nearestSolidClearance']]
+    if close:
+        raise ValueError('Panels too close to a big zone or yellow band: '+', '.join(close))
+    m['namedSections'] = [dict(id=spec['section'], encounters=numbers)]
+    m['extSummit'] = dict(oldSummit=old['id'], oldFinishTop=old['y']-svg.FINISH_PAD[1], summit=summit['id'],
+                          finishTop=summit['y']-svg.FINISH_PAD[1], zones=[z['id'] for z in zones],
+                          fragments=[f['id'] for f, _ in steps], encounters=[rows[n-1]['id'] for n in numbers])
+    m['pairChecks'] = []
+    for i, a in enumerate(fs):
+        for b in fs[i+1:]:
+            d = gap(a, b)[0]
+            m['pairChecks'].append(dict(source=a['id'], target=b['id'], minimumGap=d, passOutsideRange=d-21.6 > 540))
+    return m
 
 
 def measure_transfers(m, opening):
@@ -1885,6 +2013,9 @@ def main():
                     help='(with --middle-purple) add the third (upper) purple encounter NGU after EXT-13 (TASK-684); shipped')
     ap.add_argument('--big-zone-fixture', action='store_true',
                     help='write only the BIG_ZONE encounter template as a fixture level (TASK-706); --source is ignored')
+    ap.add_argument('--ext-summit', action='store_true',
+                    help='candidate: add SEC-ext-summit (three big zones, new finish 8640+ higher) above the shipped '
+                         'summit (TASK-708); only with the default shipped layout flags')
     args=ap.parse_args()
     if args.big_zone_fixture:
         dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
@@ -1918,6 +2049,11 @@ def main():
          upper_purple=args.upper_purple, purple_rest=args.purple_rest)
     if shipped:
         m['layoutId']=SHIPPED_LAYOUT if args.purple_rest else PREVIOUS_SHIPPED_LAYOUT
+    if args.ext_summit:
+        if not (shipped and args.purple_rest):
+            raise ValueError('--ext-summit extends the shipped v17 layout only')
+        # Candidate keeps the v17 layout id so the game can load it in place of leveldata.js; shipping bumps it.
+        extend_summit(m)
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);

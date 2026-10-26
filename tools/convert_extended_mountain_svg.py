@@ -468,9 +468,14 @@ def build(meas, guides=False, arrows=False):
     by_num = {r['number']: r for r in rows}
     in_combo = {n: k for k, combo in enumerate(combos, 1) for n in combo}
     sections = [('SEC-baseline', [n for n in range(1, baseline_end + 1)])]
+    # Explicitly named sections (TASK-708 SEC-ext-summit) hold consecutive jumps after the chains.
+    named = {sec['encounters'][0]: sec for sec in meas.get('namedSections', [])}
     n = baseline_end + 1
     while n <= jumps:
-        if n in in_combo:
+        if n in named:
+            sections.append((named[n]['id'], list(named[n]['encounters'])))
+            n = named[n]['encounters'][-1] + 1
+        elif n in in_combo:
             k = in_combo[n]
             sections.append((f'SEC-chain{k}', list(combos[k - 1])))
             n = combos[k - 1][-1] + 1
