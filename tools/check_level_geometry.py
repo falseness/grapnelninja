@@ -6,7 +6,8 @@ gap-percent attributes and printed labels are only ever the expected side of
 a comparison, never the computed result (docs/level-svg-format.md §7).
 
     python3 tools/check_level_geometry.py --svg LEVEL.svg --level LEVEL.json --report REPORT.json \
-        [--reference MEASUREMENTS.json] [--min-side-length UNITS | --no-min-side-length] [--no-grapple-rest]
+        [--reference MEASUREMENTS.json] [--min-side-length UNITS | --no-min-side-length]
+        [--no-grapple-rest | --allow-grapple-rest]
     python3 tools/check_level_geometry.py --sides-only --level LEVEL.json --report REPORT.json \
         [--min-side-length UNITS | --no-min-side-length]
 
@@ -35,10 +36,12 @@ Checks:
 - drag zones are axis-aligned horizontal non-grapplable rectangles with a
   minimum solid clearance >= 1080 (no-grapple zones are not solids or brakes);
 - no-grapple zones are non-grapplable convex polygons outside fragments;
-- opt-in --no-grapple-rest (off by default): every upward-facing solid/bounce
-  edge that overlaps a no-grapple zone slopes >= 15 degrees from horizontal,
-  and no two such edges meet in a pocket (a vertex both slope down toward), so
-  the player cannot come to rest where it cannot grapple (report noGrappleRest).
+- --no-grapple-rest (the CLI default for the full check since TASK-698 / v17;
+  --allow-grapple-rest turns it off for legacy layouts up to v16; the Python
+  check() API keeps it opt-in): every upward-facing solid/bounce edge that
+  overlaps a no-grapple zone slopes >= 15 degrees from horizontal, and no two
+  such edges meet in a pocket (a vertex both slope down toward), so the player
+  cannot come to rest where it cannot grapple (report noGrappleRest).
 
 Exit 0 when every check passes, 1 on a failed check, 2 on usage errors.
 """
@@ -704,12 +707,17 @@ def main(argv=None):
                        help='inventory sides only (legacy layouts before v16)')
     parser.add_argument('--sides-only', action='store_true',
                         help='only side, corner and self-intersection checks from --level (no SVG/reference)')
-    parser.add_argument('--no-grapple-rest', action='store_true',
-                        help='also fail upward solid/bounce faces inside no-grapple zones sloped below %g deg, and '
-                        'pockets between two of them (opt-in)' % NO_GRAPPLE_REST_SLOPE)
+    rest = parser.add_mutually_exclusive_group()
+    rest.add_argument('--no-grapple-rest', action='store_const', const=True, default=None,
+                      help='fail upward solid/bounce faces inside no-grapple zones sloped below %g deg, and pockets '
+                      'between two of them (default for the full check since v17)' % NO_GRAPPLE_REST_SLOPE)
+    rest.add_argument('--allow-grapple-rest', dest='no_grapple_rest', action='store_const', const=False,
+                      help='skip the no-rest-inside-purple rule (legacy layouts up to v16)')
     args = parser.parse_args(argv)
     if args.sides_only and args.no_grapple_rest:
         parser.error('--no-grapple-rest needs the full check (not --sides-only)')
+    if args.no_grapple_rest is None:
+        args.no_grapple_rest = not args.sides_only
     if not args.sides_only and not args.svg:
         parser.error('--svg is required unless --sides-only')
     if args.min_side_length is not None and not (math.isfinite(args.min_side_length) and args.min_side_length > 0):

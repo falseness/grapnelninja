@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v16'
+LAYOUT_ID = 'extended-mountain-v17'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -194,7 +194,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(snap['world'], 'PersistentWorld')
         self.assertEqual(snap['layoutId'], LAYOUT_ID)
         self.assertEqual(snap['layoutId'], self.svg['layoutId'])
-        # Counts come from the shipped measurements (v16: 62 panels, 61 transfers), not fixed numbers.
+        # Counts come from the shipped measurements (v17: 62 panels, 61 transfers), not fixed numbers.
         meas = json.loads((ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json').read_text())
         self.assertEqual(snap['fragments'], len(meas['fragments']))
         self.assertEqual(snap['fragments'], self.svg['fragments'])
@@ -298,7 +298,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                           ('imported-v12', json.dumps(dict(legacy, layoutId='extended-mountain-v12'))),
                           ('imported-v13', json.dumps(dict(legacy, layoutId='extended-mountain-v13'))),
                           ('imported-v14', json.dumps(dict(legacy, layoutId='extended-mountain-v14'))),
-                          ('imported-v15', json.dumps(dict(legacy, layoutId='extended-mountain-v15')))):
+                          ('imported-v15', json.dumps(dict(legacy, layoutId='extended-mountain-v15'))),
+                          ('imported-v16', json.dumps(dict(legacy, layoutId='extended-mountain-v16')))):
             page = self.open(seed={CLIMB_KEY: raw})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
@@ -313,7 +314,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.record('incompatible_save_' + name, page, snap, seededLayoutId=json.loads(raw).get('layoutId'),
                         rewrittenLayoutId=LAYOUT_ID)
             results[name] = snap['notice']
-        self.assertEqual(len(results), 12)
+        self.assertEqual(len(results), 13)
 
     def test_04_current_layout_save(self):
         first = self.open()
@@ -385,10 +386,11 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # TASK-672/673 added the no-grapple zone role to fixedlevel.js (validation, world.noGrappleZones,
         # applyNoGrappleZones) and its physics hook; TASK-674 added render/nograpplezones.js, its
         # script tag and the call in drawWorldLayer(). These are covered by test_no_grapple_*.
+        # TASK-692 centered the Grapple Over camera on the ninja (moveScreen.js only; covered by the camera tests).
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
                                                                                       ':!render/fallmessage.js', ':!sprites/trampoline.js',
-                                                                                      ':!fixedlevel.js', ':!render/nograpplezones.js'],
+                                                                                      ':!fixedlevel.js', ':!render/nograpplezones.js', ':!moveScreen.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,

@@ -1,4 +1,4 @@
-"""Opt-in no-rest-inside-purple rule of tools/check_level_geometry.py (TASK-694).
+"""No-rest-inside-purple rule of tools/check_level_geometry.py (TASK-694; CLI default since TASK-698).
 
     python3 -m unittest discover -s tools -p test_no_grapple_rest.py -v
 
@@ -148,28 +148,48 @@ class RestRuleTests(unittest.TestCase):
         self.assertEqual(bad(report)[0], [('A-body', 0, 0.0)])
 
     def test_06_shipped_cli(self):
+        # TASK-698: the rule is the CLI default for the full check. Shipped v17 passes it; the previous shipped v16
+        # (retune --no-purple-rest) fails on the rest rule only; --allow-grapple-rest drops the report key.
         with tempfile.TemporaryDirectory() as tmp:
+            v16 = Path(tmp) / 'v16'
+            subprocess.run([sys.executable, str(TOOLS / 'retune_extended_level.py'), '--source',
+                            str(ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'),
+                            '--output-dir', str(v16), '--no-purple-rest'], check=True, capture_output=True)
+            subprocess.run([sys.executable, str(TOOLS / 'import_level_svg.py'), '--input', str(v16 / 'extended-mountain.svg'),
+                            '--output', str(v16 / 'extended-mountain.level.json')], check=True, capture_output=True)
+            levels = {'v17': (SHIPPED_SVG, SHIPPED_LEVEL, SHIPPED_REFERENCE),
+                      'v16': (v16 / 'extended-mountain.svg', v16 / 'extended-mountain.level.json',
+                              v16 / 'extended-mountain-measurements.json')}
             out = {}
-            for name, extra in (('rest', ['--no-grapple-rest']), ('default', [])):
-                path = os.path.join(tmp, name + '.json')
-                proc = subprocess.run([sys.executable, str(TOOLS / 'check_level_geometry.py'), '--svg', str(SHIPPED_SVG),
-                                       '--level', str(SHIPPED_LEVEL), '--report', path] + extra,
-                                      capture_output=True, text=True)
-                out[name] = (proc.returncode, json.loads(Path(path).read_text()))
-        self.assertEqual(out['default'][0], 0)
-        self.assertNotIn('noGrappleRest', out['default'][1])
-        code, report = out['rest']
+            for layout, (svg_path, level_path, ref) in levels.items():
+                for name, extra in (('rest', ['--no-grapple-rest']), ('default', []), ('allow', ['--allow-grapple-rest'])):
+                    path = os.path.join(tmp, layout + name + '.json')
+                    proc = subprocess.run([sys.executable, str(TOOLS / 'check_level_geometry.py'), '--svg', str(svg_path),
+                                           '--level', str(level_path), '--reference', str(ref), '--report', path] + extra,
+                                          capture_output=True, text=True)
+                    out[layout, name] = (proc.returncode, json.loads(Path(path).read_text()))
+        self.assertEqual(json.loads(SHIPPED_LEVEL.read_text())['layoutId'], 'extended-mountain-v17')
+        for layout in levels:
+            self.assertEqual(out[layout, 'allow'][0], 0)
+            self.assertNotIn('noGrappleRest', out[layout, 'allow'][1])
+            self.assertEqual(out[layout, 'default'], out[layout, 'rest'])
+        code, report = out['v17', 'default']
+        self.assertEqual(code, 0)
+        self.assertEqual(report['summary']['noGrappleRestFaceViolations'], 0)
+        self.assertEqual(report['summary']['noGrappleRestPockets'], 0)
+        self.assertGreaterEqual(report['summary']['minNoGrappleRestAngle'], geometry.NO_GRAPPLE_REST_SLOPE)
+        code, report = out['v16', 'default']
         self.assertEqual(code, 1)
         flagged = {f['element']: f for f in report['noGrappleRest']['faces'] if not f['pass']}
         for eid in ('P23-body0', 'P24-body0', 'P25-body0'):
             self.assertEqual(flagged[eid]['zone'], 'NG1')
-        self.assertEqual({f['zone'] for f in flagged.values()}, {'NG1', 'NGM', 'NGU'})
         self.assertEqual(sorted(f['zone'] for f in flagged.values()), ['NG1'] * 3 + ['NGM'] * 3 + ['NGU'] * 3)
         # Only rest messages are new: every other check still passes.
+        self.assertTrue(report['failureMessages'])
         self.assertTrue(all(m.endswith('(rest)') for m in report['failureMessages']))
-        RESULTS['shipped'] = {'defaultExit': out['default'][0], 'restExit': code,
+        RESULTS['shipped'] = {'v17DefaultExit': out['v17', 'default'][0], 'v16DefaultExit': code,
+                              'allowExits': [out[k, 'allow'][0] for k in levels],
                               'flagged': {k: [f['zone'], f['edge'], f['angle']] for k, f in sorted(flagged.items())}}
-
 
 if __name__ == '__main__':
     unittest.main()

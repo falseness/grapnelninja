@@ -13,7 +13,8 @@ artifacts/levels data. DIR holds extended-mountain.svg,
 extended-mountain-measurements.json and extended-mountain.level.json.
 
 With none of PURPLE_ROUTE_MIN_SIDE_SCOPE/_MIDDLE/_UPPER set (TASK-687) the layout is
-the shipped v16 default (scope all, three encounters, regenerated without layout flags).
+the shipped default (scope all, three encounters, regenerated without layout flags); since
+TASK-698 that is v17, which includes the --purple-rest chutes and replays the *-rest.json fixtures.
 
 PURPLE_ROUTE_MIN_SIDE_SCOPE=none|opening|all (TASK-681) regenerates and compares the
 minimum-side candidate (retune --min-side-scope); the shipped lower route is then
@@ -23,7 +24,9 @@ PURPLE_ROUTE_UPPER=1 with PURPLE_ROUTE_MIDDLE=1 (TASK-684) regenerates with the 
 (upper) encounter NGU as well (retune --upper-purple).
 
 PURPLE_ROUTE_REST=1 (TASK-697) adds retune --purple-rest to the regeneration (the retilted, re-routed
-slabs; with no scope variable set that is the shipped scope) and replays the *-rest.json input fixtures.
+slabs) and replays the *-rest.json input fixtures. It defaults to 1 for the shipped default (v17) and to 0
+with a scope variable; PURPLE_ROUTE_REST=0 without scope variables replays the previous shipped v16
+(retune --no-purple-rest, the plain fixtures).
 
 PURPLE_ROUTE_ENCOUNTER=NGM (TASK-683) replays the middle encounter of a
 --middle-purple candidate instead of NG1 (zone id; panels by semantic prefix, input
@@ -59,8 +62,9 @@ import convert_extended_mountain_svg as conv  # noqa: E402
 import retune_extended_level as retune  # noqa: E402
 
 EVIDENCE = os.environ.get('NO_GRAPPLE_EVIDENCE_DIR')
-# TASK-687: with none of the three scope variables set, the layout is the shipped v16 default (retune without
-# layout flags = --min-side-scope all --middle-purple --upper-purple); any of them selects an explicit candidate.
+# TASK-687: with none of the three scope variables set, the layout is the shipped default (retune without
+# layout flags = --min-side-scope all --middle-purple --upper-purple, plus --purple-rest since v17 / TASK-698);
+# any of them selects an explicit candidate.
 SHIPPED_DEFAULT = not any(os.environ.get(k) for k in ('PURPLE_ROUTE_MIN_SIDE_SCOPE', 'PURPLE_ROUTE_MIDDLE',
                                                       'PURPLE_ROUTE_UPPER'))
 MIN_SIDE_SCOPE = os.environ.get('PURPLE_ROUTE_MIN_SIDE_SCOPE', 'all' if SHIPPED_DEFAULT else 'none')
@@ -70,7 +74,9 @@ MIDDLE = ['--middle-purple'] if SHIPPED_DEFAULT or os.environ.get('PURPLE_ROUTE_
 MIDDLE += ['--upper-purple'] if MIDDLE and (SHIPPED_DEFAULT or os.environ.get('PURPLE_ROUTE_UPPER') == '1') else []
 REGEN_ARGS = [] if SHIPPED_DEFAULT else ['--min-side-scope', MIN_SIDE_SCOPE] + MIDDLE
 # PURPLE_ROUTE_REST=1 (TASK-697): the candidate has the retilted purple slabs (retune --purple-rest, TASK-696).
-REGEN_ARGS += ['--purple-rest'] if os.environ.get('PURPLE_ROUTE_REST') == '1' else []
+# Default: on for the shipped v17 (already in its no-flag generation), off for explicit scopes.
+REST = os.environ.get('PURPLE_ROUTE_REST', '1' if SHIPPED_DEFAULT else '0') == '1'
+REGEN_ARGS += [] if SHIPPED_DEFAULT and REST else ['--purple-rest'] if REST else ['--no-purple-rest'] if SHIPPED_DEFAULT else []
 # PURPLE_ROUTE_ENCOUNTER=ZONE (TASK-683): the traversal class replays that encounter (purpleExtensions zone id,
 # default NG1), with the input fixture of its semantic prefix.
 ENCOUNTER = os.environ.get('PURPLE_ROUTE_ENCOUNTER', 'NG1')
@@ -79,7 +85,7 @@ SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 INPUTS = {'NG': TOOLS / 'fixtures' / 'purple-route-inputs.json',
           'NGM': TOOLS / 'fixtures' / 'purple-route-inputs-ngm.json',
           'NGU': TOOLS / 'fixtures' / 'purple-route-inputs-ngu.json'}
-if os.environ.get('PURPLE_ROUTE_REST') == '1':  # TASK-697: the re-routed --purple-rest chutes have their own inputs.
+if REST:  # TASK-697: the re-routed --purple-rest chutes have their own inputs.
     INPUTS = {k: v.with_name(v.stem + '-rest.json') for k, v in INPUTS.items()}
 NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json')
 # The preserved concept source, unchanged since TASK-650 (artifacts/TASK-650/hashes.json).

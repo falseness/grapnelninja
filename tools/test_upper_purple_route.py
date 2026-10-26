@@ -45,7 +45,7 @@ SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 ARGS = ['--min-side-scope', 'all', '--middle-purple', '--upper-purple']
 # UPPER_PURPLE_REST=1 (TASK-697): the retilted purple slabs (retune --purple-rest, TASK-696), base too.
 REST = os.environ.get('UPPER_PURPLE_REST') == '1'
-# The TASK-696 candidate is the default (v16) generation plus --purple-rest; the explicit scope flags give v15.
+# The rest candidate is the default (shipped v17 since TASK-698) generation; the explicit scope flags give v15.
 ARGS = ['--purple-rest'] if REST else ARGS
 NAMES = ('extended-mountain.svg', 'extended-mountain-measurements.json', 'extended-mountain.level.json',
          'extended-mountain.level.js')

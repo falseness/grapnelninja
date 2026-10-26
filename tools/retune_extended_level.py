@@ -13,9 +13,11 @@ TARGETS = {1: 80, 2: 80, 3: 150, 5: 150, 8: 150, 14: 150, 18: 150, 21: 150}
 LAYOUT = 'extended-mountain-v5'
 EXTENDED_LAYOUT = 'extended-mountain-v15'
 # Shipped since TASK-687: every gameplay polygon side >= 0.5 R (scope all) and three purple encounters
-# (NG1, NGM, NGU). Only the default CLI run (no layout flag) gets SHIPPED_LAYOUT; explicit flags and tune() keep
-# EXTENDED_LAYOUT, so earlier candidates still reproduce byte for byte.
-SHIPPED_LAYOUT = 'extended-mountain-v16'
+# (NG1, NGM, NGU); since TASK-698 also the --purple-rest chutes (no rest inside a purple zone). Only the default
+# CLI run (no layout flag) gets SHIPPED_LAYOUT; explicit flags and tune() keep EXTENDED_LAYOUT, so earlier
+# candidates still reproduce byte for byte. `--no-purple-rest` without layout flags is the previous shipped v16.
+SHIPPED_LAYOUT = 'extended-mountain-v17'
+PREVIOUS_SHIPPED_LAYOUT = 'extended-mountain-v16'
 SHIPPED_SCOPE = dict(min_side_scope='all', middle_purple=True, upper_purple=True)
 OPENING_TARGETS = dict(TARGETS)
 OPENING_TARGETS.update({1:120, 2:160})
@@ -1784,12 +1786,13 @@ def main():
     # their pre-TASK-687 values (none / off), so earlier candidate commands still reproduce their candidates.
     ap.add_argument('--min-side-scope', choices=('none', 'opening', 'all'), default=None,
                     help='opening: candidate with opening green edges >= 0.5 R (TASK-679); all: every gameplay '
-                         'polygon edge (TASK-681); none: the v15 layout. Default (no layout flags): shipped v16 = all')
+                         'polygon edge (TASK-681); none: the v15 layout. Default (no layout flags): shipped v17 = all')
     ap.add_argument('--middle-purple', action=argparse.BooleanOptionalAction, default=None,
                     help='add the second (middle) purple no-grapple encounter NGM after S08-01 (TASK-682); shipped')
-    ap.add_argument('--purple-rest', action='store_true',
-                    help='candidate (TASK-696): retilt the flat tops in every purple zone to >= 15 deg, draining '
-                         'toward the exit side (needs min-side scope all; not a layout flag, so alone it retilts v16)')
+    ap.add_argument('--purple-rest', action=argparse.BooleanOptionalAction, default=None,
+                    help='retilt the flat tops in every purple zone to >= 15 deg (TASK-696/697; needs min-side scope '
+                         'all). Not a layout flag. Default: on for the shipped v17 run, off with explicit layout flags; '
+                         '--no-purple-rest without layout flags gives the previous shipped v16')
     ap.add_argument('--upper-purple', action=argparse.BooleanOptionalAction, default=None,
                     help='(with --middle-purple) add the third (upper) purple encounter NGU after EXT-13 (TASK-684); shipped')
     args=ap.parse_args()
@@ -1798,6 +1801,7 @@ def main():
     if shipped:
         args.min_side_scope, args.middle_purple, args.upper_purple = (SHIPPED_SCOPE[k] for k in SHIPPED_SCOPE)
     args.min_side_scope=args.min_side_scope or 'none'
+    args.purple_rest = shipped if args.purple_rest is None else args.purple_rest
     args.middle_purple=bool(args.middle_purple); args.upper_purple=bool(args.upper_purple)
     if args.upper_purple and not args.middle_purple:
         raise ValueError('--upper-purple needs --middle-purple')
@@ -1818,7 +1822,7 @@ def main():
          min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple,
          upper_purple=args.upper_purple, purple_rest=args.purple_rest)
     if shipped:
-        m['layoutId']=SHIPPED_LAYOUT
+        m['layoutId']=SHIPPED_LAYOUT if args.purple_rest else PREVIOUS_SHIPPED_LAYOUT
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);

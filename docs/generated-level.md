@@ -1,8 +1,35 @@
 # Generated level
 
-Layout `extended-mountain-v16` (shipped, TASK-687) is the default generator
+Layout `extended-mountain-v17` (shipped, TASK-698) is the default generator
 output (`tools/retune_extended_level.py` with no layout flag =
-`--min-side-scope all --middle-purple --upper-purple`). Two rules are new:
+`--min-side-scope all --middle-purple --upper-purple --purple-rest`). It is
+v16 with no place to rest inside a purple zone:
+
+- No rest inside purple: every upward face of a solid or bounce body that
+  overlaps a no-grapple zone slopes at least 15 degrees, and no two of them
+  form a pocket (docs/level-svg-format.md §7.3). `tools/check_level_geometry.py`
+  enforces this by default (`--allow-grapple-rest` skips it for legacy layouts).
+  v17 passes it (23 rest faces, minimum 15.5 degrees). v16 fails it only on the
+  near-flat tops P23-P25 and their NGM/NGU copies.
+- The chutes of NG1, NGM and NGU are re-routed (TASK-696/697): the chute floor
+  rises leftward, the Overhang is raised, the Launch ramp is flatter (25.64
+  degrees), the tops of NG2/NG4 fall toward the exit, the exit ledges are
+  narrower and NGM3 is trimmed. The runtime rest-drop probe
+  (`tools/probe_purple_rest.py`, 20 s) finds no stuck sample in any zone.
+- Production-input traversals replay the `*-rest.json` input fixtures
+  (`tools/fixtures/purple-route-inputs{,-ngm,-ngu}-rest.json`). They are the
+  default of `tools/test_purple_route.py` on the shipped level. The plain fixtures
+  stay for v16 (`PURPLE_ROUTE_REST=0`).
+
+v17 has 62 panels and 61 transfers. The geometry equals the TASK-697 candidate;
+only the layout id differs. The whole-route shortcut matrix has no skips.
+Saves from v16 and earlier restart at the spawn. `--no-purple-rest` without
+layout flags reproduces v16; the explicit layout flags still reproduce the
+earlier candidates and default to no retilt.
+
+Layout `extended-mountain-v16` (previous, TASK-687) is the generator output
+with `--no-purple-rest` and no layout flag (= `--min-side-scope all
+--middle-purple --upper-purple`). Two rules were new:
 
 - Minimum side length: every actual polygon edge of a gameplay body or zone
   (green bodies, extra bodies, posts and bevels, yellow drag and purple
