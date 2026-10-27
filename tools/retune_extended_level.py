@@ -903,7 +903,43 @@ def ext_summit_zone(landing, direction, n, spec=EXT_SUMMIT):
     return fs, zone
 
 
+# TASK-723 (candidate, --ext-summit-fold): the same extension refolded inside the bottom run's x span
+# (FOLD_X_RANGE) so a failed jump lands on lower geometry instead of beside the map. The old summit is at the
+# left end of the map, so every section runs rightward twice and back leftward once into its zone (3 climbs a
+# section): each zone then sits over the previous section, about 632 right of the zone below it. Each big-zone unit
+# (approach, slabs, exit, zone) is the v18 unit moved RIGIDLY by a pure whole-unit translation (units[n] = (dx, dy),
+# recorded in extSummit.units; the approach gap is 1350 +- 0.5), so the TASK-709 crossing inputs only need their aims shifted; the climbs are untranslated
+# re-laid copies of the shipped chain (rightward = mirrored). The new summit keeps its v18 place relative to BZ3.
+# climbShifts: C1a 600 left keeps 1621 from G-final; the b / c climbs move 1900 / 900 right (their first panel still
+# overlaps the start ledge above it), so each section drifts right (unshifted ~1068 left per section), the C2a / C3a
+# first panels and the summit stay inside, and no drop point sits over a column the main level leaves empty.
+# C2a / C3a are unshifted, so their first panel is the v18 copy facing the exit ledge (ext-summit-inputs aims).
+# catchShelves: one flat body under C1b (hosted by XS-C1b-3, > 540 + player diameter from every panel) spans the
+# columns where the main level has nothing at any height (x 13965..15184, 16438..18243, 20638..21352), so a drop
+# from the lowest section lands there instead of the void.
+FOLD_X_RANGE = (-1100, 62534)
+EXT_SUMMIT_FOLD = dict(EXT_SUMMIT, climbs=((1, 1, -1),)*3, climbShifts=((-600, 1900, 900), (0, 1900, 900), (0, 1900, 900)),
+                       zoneFacingFirst=(False, False, False), rigidUnits=True,
+                       catchShelves=(('XS-C1b-3', 13700, 21600, -34500, 300),))
+
+
+def add_catch_shelf(f, x0, x1, top, thickness):
+    """Extra flat body (absolute x0..x1, top, thickness) on fragment f: catches drops where nothing lies below."""
+    f['polys'] = f['polys']+[[[x0-f['x'], top-f['y']], [x1-f['x'], top-f['y']], [x1-f['x'], top+thickness-f['y']],
+                              [x0-f['x'], top+thickness-f['y']]]]
+
+
+def rigid_moved(f, dx, dy):
+    """f moved by (dx, dy) with its polygons rebased on its absolute points, so each moved absolute point
+    (x + px) is exactly the original absolute point + (dx, dy) wherever that sum is a double."""
+    g = moved(copy.deepcopy(f), dx, dy)
+    g['polys'] = [[[(f['x']+px)-f['x'], (f['y']+py)-f['y']] for px, py in poly] for poly in f['polys']]
+    return g
+
+
 def extend_summit(m, spec=EXT_SUMMIT):
+    # A spec with rigidUnits moves each big-zone unit of the EXT_SUMMIT (v18) extension rigidly behind its landing.
+    reference = extend_summit(copy.deepcopy(m)) if spec.get('rigidUnits') else None
     fs, rows = m['fragments'], m['encounters']
     by_sem = {f.get('semanticId'): f for f in fs}
     chain = [copy.deepcopy(by_sem[s]) for s in spec['chain']]
@@ -911,7 +947,7 @@ def extend_summit(m, spec=EXT_SUMMIT):
     if old['kind'] != 'summit':
         raise ValueError('The extension starts at the current summit')
     old['kind'] = 'platform'
-    pre, new, zones, steps = spec['prefix'], [], [], []
+    pre, new, zones, steps, units = spec['prefix'], [], [], [], []
     start = old
     zone_of = {}
     for n, directions in enumerate(spec['climbs'], 1):
@@ -926,11 +962,22 @@ def extend_summit(m, spec=EXT_SUMMIT):
             else:
                 climb = ext_summit_climb(chain, start, direction, spec['climbShifts'][n-1][c])
             for k, f in enumerate(climb, 1):
-                f.update(name='%s climb %d%s %s' % (pre, n, 'ab'[c], f['name']), originalId=None, kind=f['kind'] if k < 4 else 'platform',
-                         semanticId='%s-C%d%s-%d' % (pre, n, 'ab'[c], k))
+                f.update(name='%s climb %d%s %s' % (pre, n, 'abc'[c], f['name']), originalId=None, kind=f['kind'] if k < 4 else 'platform',
+                         semanticId='%s-C%d%s-%d' % (pre, n, 'abc'[c], k))
             steps += [(f, 'climb %d' % n) for f in climb]
             start = climb[-1]
+        for host, x0, x1, top, thick in spec.get('catchShelves', ()) if n == 1 else ():
+            add_catch_shelf(next(f for f, _ in steps if f['semanticId'] == host), x0, x1, top, thick)
         zfs, zone = ext_summit_zone(start, directions[-1], n)
+        if reference:
+            ref = {f['semanticId']: f for f in reference['fragments']}
+            rz = next(z for z in reference['noGrappleZones'] if z['id'] == zone['id'])
+            land = reference['fragments'][[f['semanticId'] for f in reference['fragments']].index(zfs[0]['semanticId'])-1]
+            # Whole-unit offsets: the moved points keep their fractional digits, so the imported unit equals v18 + (dx, dy).
+            dx, dy = float(round(start['x']-land['x'])), float(round(start['y']-land['y']))
+            zfs = [rigid_moved(ref[f['semanticId']], dx, dy) for f in zfs]
+            zone = dict(copy.deepcopy(rz), x=rz['x']+dx, y=rz['y']+dy, polygon=[[x+dx, y+dy] for x, y in rz['polygon']])
+            units.append(dict(zone=zone['id'], dx=dx, dy=dy, fragments=[f['semanticId'] for f in zfs]))
         steps += [(f, zone['id']) for f in zfs]
         zone_of.update({id(f): zone['id'] for f in zfs[1:-1]})
         zones.append(zone); start = zfs[-1]
@@ -981,6 +1028,8 @@ def extend_summit(m, spec=EXT_SUMMIT):
     m['extSummit'] = dict(oldSummit=old['id'], oldFinishTop=old['y']-svg.FINISH_PAD[1], summit=summit['id'],
                           finishTop=summit['y']-svg.FINISH_PAD[1], zones=[z['id'] for z in zones],
                           fragments=[f['id'] for f, _ in steps], encounters=[rows[n-1]['id'] for n in numbers])
+    if units:
+        m['extSummit'].update(units=units, xRange=list(FOLD_X_RANGE))
     m['pairChecks'] = []
     for i, a in enumerate(fs):
         for b in fs[i+1:]:
@@ -2035,6 +2084,9 @@ def main():
                     help='add SEC-ext-summit (three big zones, new finish 8640+ higher) above the old summit (TASK-708/'
                          '710); only with the default shipped layout flags and --purple-rest. Default: on for the shipped '
                          'v18 run; --no-ext-summit without layout flags gives the previous shipped v17')
+    ap.add_argument('--ext-summit-fold', action='store_true',
+                    help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
+                         'moved rigidly (TASK-723)')
     args=ap.parse_args()
     if args.big_zone_fixture:
         dest=Path(args.output_dir); dest.mkdir(parents=True,exist_ok=True)
@@ -2072,7 +2124,9 @@ def main():
     if args.ext_summit:
         if not (shipped and args.purple_rest):
             raise ValueError('--ext-summit extends the v17 layout (default flags with --purple-rest) only')
-        extend_summit(m)
+        extend_summit(m, EXT_SUMMIT_FOLD if args.ext_summit_fold else EXT_SUMMIT)
+    elif args.ext_summit_fold:
+        raise ValueError('--ext-summit-fold needs --ext-summit')
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);
