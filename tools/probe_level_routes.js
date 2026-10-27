@@ -70,8 +70,12 @@
     screen.trackGrappleOver(true);events=[];tick=0;
     let arrival=null,count=0,lastBounce=-1,lastAim='',minY=ninja.y,hit=null,dragTicks=0,lastTraverseAim=null;
     const snapshots=[];
+    // untilFinish: keep the first later-panel hit, keep pressing the target and stop at climbStats.completed.
+    const untilFinish=!!options.untilFinish;let finish=null;
     for(tick=0;tick<budget;tick++){
-      let q=nearest(dest);
+      const first=untilFinish?hit:null;
+      // targetFraction: the target press aims at that fraction of the target's top (as a recorded summit press) instead of its nearest point.
+      let q=options.targetFraction==null?nearest(dest):top(dest,options.targetFraction);
       if(options.targetSurface==='underside'){const ps=dest.getPoints();q={x:Math.max(Math.min(...ps.map(p=>p.x))+2,Math.min(Math.max(...ps.map(p=>p.x))-2,ninja.x)),y:Math.max(...ps.map(p=>p.y))-2};}
       let aim=null,key='';
       if(traverse&&tick>=holdTicks&&tick<traverseEnd){
@@ -93,15 +97,17 @@
       if(grapnel.grappled){const id=grapnel.pos.at(-1)?.[2]?.id;
         if(id&&Number(id.match(/^P(\d+)/)?.[1])>Number(source.slice(1)))hit={kind:'attach',tick,id,x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY};}
       if(floors[0].climbStats.completed&&!hit)hit={kind:'finish',tick,id:model.svgFormat.fragments.at(-1).id+'-body0',x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY};
+      if(first)hit=first;
+      if(untilFinish&&floors[0].climbStats.completed&&!finish)finish={tick,x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY};
       if(floors[0].dragZones.some(z=>pointInPolygon(z.getPoints(),ninja.x,ninja.y)))dragTicks++;
       if(tick%60===0)snapshots.push({tick,x:ninja.x,y:ninja.y,vx:ninja.speedX,vy:ninja.speedY});
-      if(hit||ninja.y>launch.y+4000||Math.abs(ninja.x-launch.x)>12000)break;
+      if((untilFinish?finish:hit)||ninja.y>launch.y+4000||Math.abs(ninja.x-launch.x)>12000)break;
     }
     const finalState=hit?{save:captureClimbState(),owned:gameplayPressOwned,aim:grapnel.aim}:null;
     pointer('mouseup',ninja);
     return {inputs:recording?inputs:undefined,finalState,source,target,fraction,aimOffset,lastAimOffset,drop,holdTicks,pumps,budget,guard,
       sourceSurface:under?'underside':'top',traverse,setup:{x:launch.x,y:launch.y-drop,vx:0,vy:0},arrival,
-      hit,bounces:count,ticks:tick,minY,dragTicks,events:events.slice(0,30),snapshots};
+      hit,...(untilFinish?{finish,completed:floors[0].climbStats.completed===true}:{}),bounces:count,ticks:tick,minY,dragTicks,events:events.slice(0,30),snapshots};
   }
   window.ROUTE_PROBE={run,base};
 })();

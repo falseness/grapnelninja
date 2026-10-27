@@ -9,11 +9,19 @@ side, cross it touching only the zone's own slabs with no rope attached or throw
 far side above the fall-recovery depth and land on the exit ledge's top with no rope. Each case runs twice and both
 logs must be identical.
 
+test_climb_transfers replays the 27 safe-space climb transfers of tools/fixtures/gauntlet-climb-inputs.json (S0..S8: start
+ledge -> Sk-G1 -> Sk-G2 -> Z(k+1)-APPROACH, S8 -> XS-SUMMIT; at most 2 grapple panels per safe space) per transfer, as
+tools/test_ext_summit_route.py test_04 does: tools/probe_level_routes.js ROUTE_PROBE places the player at zero speed drop
+300 above the source top, then only document mouse events and physics(); the first contact/attach on a later panel must
+be the target. Each transfer runs twice and must be identical. test_zz_full_run is the chained proof: S0, Z1, S1, ..., Z8,
+S8 in order, each leg ending on the panel the next one starts from, every leg passing, and the last transfer
+(S8-G2 -> XS-SUMMIT) replayed on until climbStats.completed.
+
 Level: GAUNTLET_CANDIDATE=DIR (extended-mountain.level.json and extended-mountain-measurements.json). Without it the
 shipped artifacts/levels data is used when it has extSummit.gauntlet; otherwise the candidate is regenerated into a
 temporary directory (tools/retune_extended_level.py --ext-summit-gauntlet, then tools/import_level_svg.py).
 
-GAUNTLET_EVIDENCE_DIR=DIR writes traversals.json (compact). No default evidence directory.
+GAUNTLET_EVIDENCE_DIR=DIR writes traversals.json (compact) and climbs.json. No default evidence directory.
 
     python3 tools/test_gauntlet_route.py -v
 """
@@ -38,9 +46,20 @@ SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 NAMES = ('extended-mountain.level.json', 'extended-mountain-measurements.json')
 ZONES = ('Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7', 'Z8')
 INPUTS = {z: TOOLS / 'fixtures' / ('gauntlet-inputs-%s.json' % z) for z in ZONES}
+CLIMBS = TOOLS / 'fixtures' / 'gauntlet-climb-inputs.json'
+POLICY_KEYS = ('pumps', 'fraction', 'lastAimOffset', 'targetWhenInRange', 'targetFraction', 'drop', 'budget')
 RECOVERY_DEPTH = 1500  # physics.js CLIMB_FALL_RECOVERY_DEPTH
 REST_SPEED, REST_TICKS = 0.05, 30
 OUT = {}
+CLIMB_OUT = {}
+DONE = {}  # leg results of this run, reused by test_zz_full_run
+
+# One climb transfer on ROUTE_PROBE; hooks = attaches counted by physics() (climbStats.grapples).
+CLIMB = '''o => {
+    const r = ROUTE_PROBE.run(o)
+    return {hit: r.hit, setup: r.setup, ticks: r.ticks, bounces: r.bounces, minY: r.minY, hooks: floors[0].climbStats.grapples,
+            finish: r.finish === undefined ? null : r.finish, completed: r.completed === undefined ? null : r.completed}
+}'''
 
 LEG = '''o => {
     const ids = o.ids
@@ -112,6 +131,9 @@ def tearDownModule():
     if EVIDENCE and OUT:
         Path(EVIDENCE).mkdir(parents=True, exist_ok=True)
         (Path(EVIDENCE) / 'traversals.json').write_text(json.dumps(OUT, separators=(',', ':')) + '\n')
+    if EVIDENCE and CLIMB_OUT:
+        Path(EVIDENCE).mkdir(parents=True, exist_ok=True)
+        (Path(EVIDENCE) / 'climbs.json').write_text(json.dumps(CLIMB_OUT, indent=1) + '\n')
 
 
 class GauntletRouteTests(unittest.TestCase):
@@ -138,6 +160,72 @@ class GauntletRouteTests(unittest.TestCase):
                           'tools/fixtures/gauntlet-inputs-Zk.json; nothing written after the zero-speed fixture. path: [tick, x, y] every 5 ticks.',
                    level=source, levelDir=str(cls.dir), layoutId=cls.level['layoutId'],
                    levelHashes={n: sha(cls.dir / n) for n in NAMES}, zones={})
+
+    @classmethod
+    def probe_page(cls):
+        # Climb transfers run on their own page: ROUTE_PROBE patches applyBounce and rendering hooks.
+        if not hasattr(cls, 'probe'):
+            from browser_test_support import wait_for_boot_run
+            cls.probe = cls.browser.new_page()
+            cls.probe.errors = []
+            cls.probe.on('pageerror', lambda e: cls.probe.errors.append(str(e)))
+            cls.probe.goto(cls.url)
+            wait_for_boot_run(cls.probe)
+            cls.probe.add_script_tag(path=str(TOOLS / 'probe_level_routes.js'))
+        return cls.probe
+
+    def safe_spaces(self):
+        fs = {f['id']: f for f in self.m['fragments']}
+        out = []
+        for s in self.m['extSummit']['gauntlet']['safeSpaces']:
+            ids = [s['start']] + [p['id'] for p in s['grapplePanels']] + [s['end']]
+            out.append(dict(id=s['id'], side=s['side'], panels=[fs[p['id']]['semanticId'] for p in s['grapplePanels']],
+                            transfers=[[fs[a]['semanticId'], fs[b]['semanticId']] for a, b in zip(ids, ids[1:])]))
+        return out
+
+    def climb(self, t, finish=False):
+        page = self.probe_page()
+        pol = {k: t[k] for k in POLICY_KEYS if k in t}
+        self.assertEqual(pol['drop'], 300)
+        o = dict(pol, source=self.ids[t['source']], target=self.ids[t['target']], level=self.level, untilFinish=finish)
+        runs = [page.evaluate(CLIMB, o) for _ in range(2)]
+        self.assertEqual(runs[0], runs[1])
+        self.assertEqual(page.errors, [])
+        r = runs[0]
+        self.assertIsNotNone(r['hit'], t)
+        self.assertEqual(r['hit']['id'], self.ids[t['target']] + '-body0', t)
+        self.assertEqual((r['setup']['vx'], r['setup']['vy']), (0, 0))
+        row = dict(source=t['source'], target=t['target'], policy=pol, pumps=pol['pumps'], hooks=r['hooks'],
+                   hit=dict(kind=r['hit']['kind'], tick=r['hit']['tick'], id=r['hit']['id']), bounces=r['bounces'],
+                   ticks=r['ticks'], identicalSecondRun=runs[0] == runs[1])
+        if finish:
+            self.assertTrue(r['completed'], r)
+            f, q = self.level['finish'], r['finish']
+            self.assertAlmostEqual(f['top'], self.m['extSummit']['gauntlet']['finish']['finishTop'], places=6)
+            self.assertTrue(f['left'] <= q['x'] <= f['right'] and f['top'] <= q['y'] <= f['bottom'], (q, f))
+            self.assertGreater(q['tick'], r['hit']['tick'])
+            row['finish'] = dict(completed=r['completed'], tick=q['tick'], at=[q['x'], q['y']], finishRect=f, hooks=r['hooks'])
+        return row
+
+    def climb_transfers(self):
+        rec = json.loads(CLIMBS.read_text())
+        spaces = self.safe_spaces()
+        want = [tr for s in spaces for tr in s['transfers']]
+        self.assertEqual([[t['source'], t['target']] for t in rec['transfers']], want)
+        self.assertEqual(len(want), 27)
+        by = {(t['source'], t['target']): t for t in rec['transfers']}
+        out = []
+        for s in spaces:
+            self.assertLessEqual(len(s['panels']), 2, s)
+            rows = []
+            for a, b in s['transfers']:
+                with self.subTest(space=s['id'], source=a, target=b):
+                    rows.append(self.climb(by[(a, b)], finish=b == 'XS-SUMMIT'))
+            out.append(dict(space=s['id'], side=s['side'], grapplePanels=[self.ids[p] for p in s['panels']],
+                            grapplePanelSemanticIds=s['panels'], panelCount=len(s['panels']), transfers=rows,
+                            totalHooks=sum(r['hooks'] for r in rows), totalPumps=sum(r['pumps'] for r in rows)))
+        self.assertEqual(sum(len(s['transfers']) for s in out), 27)
+        return out
 
     def test_00_every_filled_zone_has_a_case(self):
         filled = sorted(z for z, g in self.gauntlet.items() if g['slabs'])
@@ -221,29 +309,69 @@ class GauntletRouteTests(unittest.TestCase):
                     recoveries=len(log['recoveries']), maxStepPerTick=log['maxStep'], ticks=log['ticks'],
                     secondRun=dict(identical=runs[0] == runs[1], ticks=runs[1]['ticks'], final=runs[1]['final']))
 
+    def test_climb_transfers(self):
+        spaces = self.climb_transfers()
+        DONE['climbs'] = spaces
+        last = spaces[-1]['transfers'][-1]
+        self.assertTrue(last['finish']['completed'])
+        CLIMB_OUT.update(inputs=str(CLIMBS.relative_to(ROOT)), inputsSha256=sha(CLIMBS), layoutId=self.level['layoutId'],
+                         levelHashes={n: sha(self.dir / n) for n in NAMES}, transfers=sum(len(s['transfers']) for s in spaces),
+                         method='ROUTE_PROBE per transfer: zero-speed fixture drop 300 above the source top, then only '
+                                'document mouse events and physics(); first later-panel contact/attach == target; run twice. '
+                                'hooks = attaches counted by physics() (climbStats.grapples), reported, not capped; '
+                                'S8-G2 -> XS-SUMMIT replayed on until climbStats.completed.',
+                         maxPanelsPerSafeSpace=max(s['panelCount'] for s in spaces), safeSpaces=spaces,
+                         finish=dict(completed=last['finish']['completed'], transfer=[last['source'], last['target']],
+                                     tick=last['finish']['tick'], at=last['finish']['at']))
+
     def test_z1_crossing(self):
-        OUT['zones']['Z1'] = self.crossing('Z1')
+        OUT['zones']['Z1'] = DONE['Z1'] = self.crossing('Z1')
 
     def test_z2_crossing(self):
-        OUT['zones']['Z2'] = self.crossing('Z2')
+        OUT['zones']['Z2'] = DONE['Z2'] = self.crossing('Z2')
 
     def test_z3_crossing(self):
-        OUT['zones']['Z3'] = self.crossing('Z3')
+        OUT['zones']['Z3'] = DONE['Z3'] = self.crossing('Z3')
 
     def test_z4_crossing(self):
-        OUT['zones']['Z4'] = self.crossing('Z4')
+        OUT['zones']['Z4'] = DONE['Z4'] = self.crossing('Z4')
 
     def test_z5_crossing(self):
-        OUT['zones']['Z5'] = self.crossing('Z5')
+        OUT['zones']['Z5'] = DONE['Z5'] = self.crossing('Z5')
 
     def test_z6_crossing(self):
-        OUT['zones']['Z6'] = self.crossing('Z6')
+        OUT['zones']['Z6'] = DONE['Z6'] = self.crossing('Z6')
 
     def test_z7_crossing(self):
-        OUT['zones']['Z7'] = self.crossing('Z7')
+        OUT['zones']['Z7'] = DONE['Z7'] = self.crossing('Z7')
 
     def test_z8_crossing(self):
-        OUT['zones']['Z8'] = self.crossing('Z8')
+        OUT['zones']['Z8'] = DONE['Z8'] = self.crossing('Z8')
+
+    def test_zz_full_run(self):
+        # The chained proof: S0, Z1, S1, ..., Z8, S8, each leg passing (reused from this run's cases when they ran) and
+        # each one ending on the panel the next starts from; the last transfer reaches the finish.
+        spaces = DONE.get('climbs') or self.climb_transfers()
+        legs, at = [], spaces[0]['transfers'][0]['source']
+        for k, s in enumerate(spaces):
+            for t in s['transfers']:
+                self.assertEqual(t['source'], at)
+                legs.append(dict(leg=s['space'], source=t['source'], target=t['target'], hooks=t['hooks'], hitTick=t['hit']['tick']))
+                at = t['target']
+            if k < len(ZONES):
+                z = ZONES[k]
+                self.assertEqual(at, z + '-APPROACH')
+                r = DONE.get(z) or self.crossing(z)
+                self.assertEqual(r['landing']['on'], z + '-EXIT')
+                legs.append(dict(leg=z, source=at, target=r['landing']['on'], landingTick=r['landing']['tick'],
+                                 rope=r['landing']['rope']))
+                at = r['landing']['on']
+        self.assertEqual(at, 'XS-SUMMIT')
+        self.assertEqual(len(legs), 27 + len(ZONES))
+        fin = spaces[-1]['transfers'][-1]['finish']
+        self.assertTrue(fin['completed'])
+        OUT['fullRun'] = CLIMB_OUT['fullRun'] = dict(legs=legs, count=len(legs), allPassed=True, completed=fin['completed'],
+                                                     finishTick=fin['tick'], hooksTotal=sum(l.get('hooks', 0) for l in legs))
 
 
 if __name__ == '__main__':
