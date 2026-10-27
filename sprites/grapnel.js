@@ -623,9 +623,13 @@ class Grapnel
             spark.addColorStop(0, look.sparkCore)
             spark.addColorStop(1, look.sparkEdge)
             ctx.fillStyle = spark
+            // Additive: every channel gains the same amount, so the spark's faint
+            // tail cannot round a floor pixel's hue into the rope's cyan band
+            ctx.globalCompositeOperation = 'lighter'
             ctx.beginPath()
             ctx.arc(x, y, radius, 0, 2 * Math.PI)
             ctx.fill()
+            ctx.globalCompositeOperation = 'source-over'
         }
         ctx.beginPath()
         for (const spread of look.prongAngles)
