@@ -1040,8 +1040,6 @@ const CLIMB_UI = {
         ctx.fillStyle = STYLE.colors.ui.pauseOverlay
         ctx.fillRect(0, 0, w, h)
         const title = this.confirming ? 'climb.confirm' : stats.completed ? 'climb.complete' : 'mode.grapple_over'
-        this.text(I18N.t(title), w/2, h*0.16, h*0.055)
-        this.text(I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)}), w/2, h*0.26, h*0.035)
         const actions = this.confirming ? [
             ['climb.yes', () => this.restart()],
             ['climb.cancel', () => {this.confirming=false; redrawOverlays()}]
@@ -1051,12 +1049,12 @@ const CLIMB_UI = {
             ['mode.bad', () => menu.selectMode('bad')],
             ['mode.classic', () => menu.selectMode('classic')]
         ]
-        const bh = Math.max(h*0.105, minTouchSize()), bw = Math.min(w*0.7, h*1.05)
-        this.buttons = actions.map(([key, action], i) => new Button(
-            {x:w/2, y:h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true},
-            {text:I18N.t(key), fill:STYLE.colors.ui.buttonText}, action))
-        this.buttons.forEach(b => b.draw())
-        // The pause screen's fps checkbox, centred under the action buttons
+        // The grapnel toggle goes last (button indexes 0-3 stay as they were);
+        // a run in progress keeps its position, time and best across a switch.
+        const grapnel = this.showsFps()
+        if (grapnel) actions.push([floors[0].grapnelMode === 'double' ? 'climb.grapnelDouble' : 'climb.grapnelSingle',
+            () => this.toggleGrapnel()])
+        const bh = Math.max(h*(grapnel ? 0.09 : 0.105), minTouchSize()), bw = Math.min(w*0.7, h*1.05)
         const check = menu.pauseFpsCounterCheckbox
         check.clickable = menu.gamePaused && this.showsFps()
         if (check.clickable)
@@ -1069,11 +1067,38 @@ const CLIMB_UI = {
             check.size = size
             check.fontSize = getArcadeFont(size)
             check.x = w/2 - (size * 1.55 + labelWidth) / 2
-            const last = this.buttons[this.buttons.length - 1].background
-            check.y = last.y + last.height + h*0.015 + check.hitRect().height / 2
+        }
+        // Under the toggle: single grapnel is the intended way to play
+        const note = I18N.t('climb.grapnelNote')
+        let noteSize = h*0.026
+        ctx.save()
+        ctx.font = noteSize + 'px ' + STYLE.ui.fontFamily
+        noteSize = Math.min(noteSize, noteSize * w*0.92 / ctx.measureText(note).width)
+        ctx.restore()
+        // With the toggle, the title, buttons, note and fps row share the
+        // height evenly, so the 44 CSS px touch floor still fits on phones.
+        const rows = grapnel ? stackRows(0, h, [h*0.055, h*0.035, ...actions.map(() => bh),
+            noteSize*1.2, check.hitRect().height]) : null
+        this.text(I18N.t(title), w/2, grapnel ? rows[0] : h*0.16, h*0.055)
+        this.text(I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)}), w/2, grapnel ? rows[1] : h*0.26, h*0.035)
+        this.buttons = actions.map(([key, action], i) => new Button(
+            {x:w/2, y:grapnel ? rows[2 + i] : h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true},
+            {text:I18N.t(key), fill:STYLE.colors.ui.buttonText}, action))
+        this.buttons.forEach(b => b.draw())
+        if (grapnel)
+            new Text({text:note, x:w/2, y:rows[rows.length - 2], fontSize:noteSize, fill:STYLE.colors.ui.mutedText}).draw()
+        // The pause screen's fps checkbox, centred under the action buttons
+        if (check.clickable)
+        {
+            check.y = rows[rows.length - 1]
             check.draw()
         }
         LANGUAGE_BUTTON.draw()
+    },
+    toggleGrapnel() {
+        setGrapnelMode(floors[0].grapnelMode === 'double' ? 'single' : 'double')
+        PROGRESS.flushClimb()
+        redrawOverlays()
     },
     // As on the Classic/Bad pause screen: not on the restart confirmation or the ending
     showsFps() {

@@ -202,7 +202,7 @@ class Task459Tests(unittest.TestCase):
                 page.evaluate('lang=>setLanguage(lang)',lang)
                 boxes = self.menu_boxes(page)
                 buttons = [b for b in boxes if b['kind']=='button']
-                self.assertEqual(len(buttons), 6)  # resume, three modes, FPS, language
+                self.assertEqual(len(buttons), 7)  # resume, restart, two modes, grapnel toggle (TASK-719), FPS, language
                 for i,b in enumerate(buttons):
                     self.assertGreaterEqual(b['width']+1e-6,44)
                     self.assertGreaterEqual(b['height']+1e-6,44)
