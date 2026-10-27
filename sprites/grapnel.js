@@ -3,6 +3,8 @@ const grappleSpeed = screenHeightPercent(GAMEPLAY.grapplePullHeightPercent) / Ma
 
 // Scratch box for the broad phase, refilled for every element
 const grapnelElementBounds = {left: 0, right: 0, top: 0, bottom: 0}
+// The Grapple Over helix stops twisting under prefers-reduced-motion: reduce.
+const grapnelReducedMotionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
 
 class Grapnel
 {
@@ -389,12 +391,143 @@ class Grapnel
         ctx.lineTo(ninja.x + screen.x, ninja.y + screen.y)
     }
     // Flat rope and anchor outline with no exterior halo.
-    strokeRope(width)
+    strokeRope(width, color = STYLE.colors.grapnel.rope)
     {
-        ctx.strokeStyle = STYLE.colors.grapnel.rope
+        ctx.strokeStyle = color
         ctx.globalAlpha = STYLE.alpha.full
         ctx.lineWidth = width
         ctx.stroke()
+    }
+    // Twist phase: one turn per second of game time, frozen for reduced motion.
+    helixPhase()
+    {
+        if (grapnelReducedMotionQuery && grapnelReducedMotionQuery.matches)
+            return 0
+        return 2 * Math.PI * STYLE.grapnelHelix.turnsPerSecond * performance.now() / 1000
+    }
+    // Both strands and the crossing nodes along the visible rope polyline (tip ->
+    // wrap points -> ninja), in canvas units before the camera scale. The phase is
+    // measured by arc length from the tip, so it runs on across wrap points, where
+    // the offset turns about the corner from one segment's normal to the next.
+    helixStrands(phase = this.helixPhase())
+    {
+        const look = STYLE.grapnelHelix
+        const unit = 1 / scale[version]
+        const tip = this.visibleTip()
+        const points = [[tip[0], tip[1]]]
+        for (let i = 1; i < this.pos.length; ++i)
+            points.push([this.pos[i][0], this.pos[i][1]])
+        points.push([ninja.x, ninja.y])
+
+        let total = 0
+        for (let i = 1; i < points.length; ++i)
+            total += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1])
+        const amplitude = look.amplitude * unit, waveRadius = look.waveRadius * unit
+        const damping = look.endDamping * unit, step = look.sampleStep * unit
+        const offsetAt = distance => amplitude * Math.sin(distance / waveRadius + phase) *
+            Math.max(0, Math.min(1, distance / damping, (total - distance) / damping))
+
+        const strands = [[], []], nodes = []
+        const push = (x, y, nx, ny, offset) =>
+        {
+            strands[0].push([x + nx * offset, y + ny * offset])
+            strands[1].push([x - nx * offset, y - ny * offset])
+        }
+        // First crossing (sin = 0) at or after the tip
+        let crossing = (Math.ceil(phase / Math.PI) * Math.PI - phase) * waveRadius
+        let start = 0, normal = null
+        for (let i = 1; i < points.length; ++i)
+        {
+            const [x0, y0] = points[i - 1], [x1, y1] = points[i]
+            const length = Math.hypot(x1 - x0, y1 - y0)
+            if (length === 0)
+                continue
+            const ux = (x1 - x0) / length, uy = (y1 - y0) / length
+            if (normal)
+            {
+                // Turn the offset about the wrap point by the shorter way
+                const offset = offsetAt(start)
+                const from = Math.atan2(normal[1], normal[0])
+                let turn = Math.atan2(ux, -uy) - from
+                turn -= 2 * Math.PI * Math.round(turn / (2 * Math.PI))
+                const count = Math.ceil(Math.abs(turn) / (Math.PI / 32))
+                for (let k = 1; k < count; ++k)
+                {
+                    const angle = from + turn * k / count
+                    push(x0, y0, Math.cos(angle), Math.sin(angle), offset)
+                }
+            }
+            normal = [-uy, ux]
+            const samples = Math.max(1, Math.ceil(length / step))
+            for (let k = 0; k <= samples; ++k)
+            {
+                const along = length * k / samples
+                push(x0 + ux * along, y0 + uy * along, normal[0], normal[1], offsetAt(start + along))
+            }
+            for (; crossing <= start + length; crossing += Math.PI * waveRadius)
+                if (crossing > damping * 2 / 3 && crossing < total - damping * 2 / 3)
+                    nodes.push([x0 + ux * (crossing - start), y0 + uy * (crossing - start)])
+            start += length
+        }
+        return {strands, nodes, total}
+    }
+    // Grapple Over rope: glow under both strands, the strands, then crossing nodes.
+    drawHelix()
+    {
+        const look = STYLE.grapnelHelix
+        const unit = 1 / scale[version]
+        const {strands, nodes} = this.helixStrands()
+        // The strands end under the player: keep their glow off the player's ring.
+        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+        for (const strand of strands)
+            for (const [x, y] of strand)
+            {
+                left = Math.min(left, x); right = Math.max(right, x)
+                top = Math.min(top, y); bottom = Math.max(bottom, y)
+            }
+        const margin = (look.glowWidth + look.nodeRadius) * unit
+        ctx.beginPath()
+        ctx.rect(left - margin + screen.x, top - margin + screen.y,
+                 right - left + 2 * margin, bottom - top + 2 * margin)
+        ctx.arc(ninja.x + screen.x, ninja.y + screen.y,
+                ninja.getRingOuterRadius() + look.playerClearance * unit, 0, 2 * Math.PI)
+        ctx.clip('evenodd')
+        const trace = strand =>
+        {
+            ctx.beginPath()
+            ctx.moveTo(strand[0][0] + screen.x, strand[0][1] + screen.y)
+            for (let i = 1; i < strand.length; ++i)
+                ctx.lineTo(strand[i][0] + screen.x, strand[i][1] + screen.y)
+        }
+        ctx.globalAlpha = STYLE.alpha.full
+        ctx.strokeStyle = look.glowColor
+        ctx.lineWidth = look.glowWidth * unit
+        for (const strand of strands)
+        {
+            trace(strand)
+            ctx.stroke()
+        }
+        // Lavender under white, as in the approved mock
+        for (let i = strands.length - 1; i >= 0; --i)
+        {
+            trace(strands[i])
+            ctx.strokeStyle = look.strandColors[i]
+            ctx.lineWidth = look.strandWidths[i] * unit
+            ctx.stroke()
+        }
+        const radius = look.nodeRadius * unit
+        for (const [x, y] of nodes)
+        {
+            const cx = x + screen.x, cy = y + screen.y
+            const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius)
+            glow.addColorStop(0, look.nodeCore)
+            glow.addColorStop(0.45, look.nodeMid)
+            glow.addColorStop(1, look.nodeEdge)
+            ctx.fillStyle = glow
+            ctx.beginPath()
+            ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
+            ctx.fill()
+        }
     }
     draw()
     {
@@ -404,8 +537,13 @@ class Grapnel
             ctx.lineCap = 'round'
             ctx.lineJoin = 'round'
 
-            this.tracePath()
-            this.strokeRope(this.getWidth())
+            if (version === 'grapple_over')
+                this.drawHelix()
+            else
+            {
+                this.tracePath()
+                this.strokeRope(this.getWidth())
+            }
             ctx.restore()
         }
     }
@@ -430,12 +568,13 @@ class Grapnel
             ctx.arc(hookX, hookY, width * look.anchorRadiusRatio, 0, 2 * Math.PI)
             ctx.fillStyle = colors.anchorFill
             ctx.fill()
-            this.strokeRope(width * look.anchorWidthRatio)
+            this.strokeRope(width * look.anchorWidthRatio,
+                version === 'grapple_over' ? STYLE.grapnelHelix.hookStroke : colors.rope)
         }
         else
         {
             ctx.arc(hookX, hookY, width * look.tipCoreRadiusRatio, 0, 2 * Math.PI)
-            ctx.fillStyle = colors.core
+            ctx.fillStyle = version === 'grapple_over' ? STYLE.grapnelHelix.tipCore : colors.core
             ctx.globalAlpha = STYLE.alpha.full
             ctx.fill()
         }

@@ -536,6 +536,30 @@ const STYLE = Object.freeze({
         tipRadiusRatio: 1.1,
         tipCoreRadiusRatio: 0.525
     }),
+    // Grapple Over rope: two smooth sine strands on opposite phases around the
+    // rope polyline. Lengths are screen px (divided by scale[version] when drawn).
+    grapnelHelix: Object.freeze({
+        strandColors: Object.freeze(['#ffffff', '#d9ccff']),
+        strandWidths: Object.freeze([1.8, 1.6]),
+        glowColor: 'rgba(210,190,255,0.3)',
+        glowWidth: 7,
+        amplitude: 6,
+        // Wavelength 2 * PI * waveRadius (about 63 px)
+        waveRadius: 10,
+        // Both strands meet the line over this length at the hook and the ninja
+        endDamping: 30,
+        // No strand or glow within the player's ring plus this anti-aliased edge
+        playerClearance: 1,
+        sampleStep: 3,
+        turnsPerSecond: 1,
+        nodeRadius: 5,
+        nodeCore: 'rgba(255,255,255,1)',
+        nodeMid: 'rgba(225,210,255,0.7)',
+        nodeEdge: 'rgba(210,190,255,0)',
+        // Today's hook drawing, recoloured so no cyan remains
+        hookStroke: '#d9ccff',
+        tipCore: '#ffffff'
+    }),
     // Fake-3D back face of rectangles, cubes and green blocks: one shared light
     // direction (back face up-right). The front face stays on the hitbox.
     // depth is in screen pixels (divided by scale[version] in world units).
