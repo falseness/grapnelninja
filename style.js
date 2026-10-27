@@ -555,10 +555,21 @@ const STYLE = Object.freeze({
         nodeRadius: 5,
         nodeCore: 'rgba(255,255,255,1)',
         nodeMid: 'rgba(225,210,255,0.7)',
-        nodeEdge: 'rgba(210,190,255,0)',
-        // Today's hook drawing, recoloured so no cyan remains
-        hookStroke: '#d9ccff',
-        tipCore: '#ffffff'
+        nodeEdge: 'rgba(210,190,255,0)'
+    }),
+    // Grapple Over hook end: three prongs from the tip (0 and +-0.9 rad off the
+    // rope direction, pointing away from the ninja), screen px.
+    grapnelClaw: Object.freeze({
+        prongAngles: Object.freeze([0, -0.9, 0.9]),
+        prongLength: 9,
+        width: 2,
+        color: '#ffffff',
+        outlineWidth: 4.5,
+        outline: '#1a1030',
+        // Soft white spark under the claw once hooked
+        sparkRadius: 14,
+        sparkCore: 'rgba(255,255,255,0.95)',
+        sparkEdge: 'rgba(217,204,255,0)'
     }),
     // Fake-3D back face of rectangles, cubes and green blocks: one shared light
     // direction (back face up-right). The front face stays on the hitbox.

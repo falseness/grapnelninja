@@ -315,9 +315,11 @@ class NoGrappleRenderTests(unittest.TestCase):
         self.assertTrue(est and all(0 < e < 0.35 for e in est), est)
         self.assertTrue(0 < alpha < 0.35)
         lum = lambda c: 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
-        # Brightest rope pixel near its midpoint against the wash
+        # Brightest rope pixel near its midpoint against the wash. The Grapple Over helix strands
+        # swing up to 6 px off the rope line with a clock-driven phase, so search +-7 screen px.
         near = page.evaluate('''([x, y]) => { PG.frame(); const out = []
-            for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1]) out.push(PG.pixel(x + dx, y + dy)); return out }''', pts['ropeMid'])
+            const u = 1 / scale[version]
+            for (let dx = -7; dx <= 7; ++dx) for (let dy = -7; dy <= 7; ++dy) out.push(PG.pixel(x + dx * u, y + dy * u)); return out }''', pts['ropeMid'])
         rope_contrast = max(lum(c) for c in near) - lum(z['zoneOnly'])
         self.assertGreater(rope_contrast, 40, (near, z['zoneOnly']))
         rec['pixels'] = {'points': {k: [round(v, 1) for v in xy] for k, xy in pts.items()}, 'zoned': z, 'plain': p,

@@ -553,6 +553,11 @@ class Grapnel
     {
         if (!this.throwed)
             return
+        if (version === 'grapple_over')
+        {
+            this.drawClaw()
+            return
+        }
 
         const look = STYLE.grapnelVisuals
         const colors = STYLE.colors.grapnel
@@ -568,17 +573,75 @@ class Grapnel
             ctx.arc(hookX, hookY, width * look.anchorRadiusRatio, 0, 2 * Math.PI)
             ctx.fillStyle = colors.anchorFill
             ctx.fill()
-            this.strokeRope(width * look.anchorWidthRatio,
-                version === 'grapple_over' ? STYLE.grapnelHelix.hookStroke : colors.rope)
+            this.strokeRope(width * look.anchorWidthRatio, colors.rope)
         }
         else
         {
             ctx.arc(hookX, hookY, width * look.tipCoreRadiusRatio, 0, 2 * Math.PI)
-            ctx.fillStyle = version === 'grapple_over' ? STYLE.grapnelHelix.tipCore : colors.core
+            ctx.fillStyle = colors.core
             ctx.globalAlpha = STYLE.alpha.full
             ctx.fill()
         }
 
+        ctx.restore()
+    }
+    // Unit direction the claw points: away from the ninja along the last rope
+    // segment once hooked, along the flight while flying.
+    clawDirection()
+    {
+        const tip = this.visibleTip()
+        if (!this.grappled)
+        {
+            const speed = Math.hypot(this.speedX, this.speedY)
+            if (speed > 0)
+                return [this.speedX / speed, this.speedY / speed]
+            if (this.aim)
+                return [this.aim.x, this.aim.y]
+        }
+        const next = this.pos.length > 1 ? this.pos[1] : [ninja.x, ninja.y]
+        const dx = tip[0] - next[0], dy = tip[1] - next[1]
+        const length = Math.hypot(dx, dy)
+        return length > 0 ? [dx / length, dy / length] : [0, -1]
+    }
+    // Grapple Over hook: a white three-prong claw over a dark outline, with a soft
+    // white spark under it once hooked. Sizes are screen px.
+    drawClaw()
+    {
+        const look = STYLE.grapnelClaw
+        const unit = 1 / scale[version]
+        const tip = this.visibleTip()
+        const x = tip[0] + screen.x, y = tip[1] + screen.y
+        const [ux, uy] = this.clawDirection()
+        const angle = Math.atan2(uy, ux)
+
+        ctx.save()
+        ctx.globalAlpha = STYLE.alpha.full
+        if (this.grappled)
+        {
+            const radius = look.sparkRadius * unit
+            const spark = ctx.createRadialGradient(x, y, 0, x, y, radius)
+            spark.addColorStop(0, look.sparkCore)
+            spark.addColorStop(1, look.sparkEdge)
+            ctx.fillStyle = spark
+            ctx.beginPath()
+            ctx.arc(x, y, radius, 0, 2 * Math.PI)
+            ctx.fill()
+        }
+        ctx.beginPath()
+        for (const spread of look.prongAngles)
+        {
+            ctx.moveTo(x, y)
+            ctx.lineTo(x + Math.cos(angle + spread) * look.prongLength * unit,
+                       y + Math.sin(angle + spread) * look.prongLength * unit)
+        }
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.strokeStyle = look.outline
+        ctx.lineWidth = look.outlineWidth * unit
+        ctx.stroke()
+        ctx.strokeStyle = look.color
+        ctx.lineWidth = look.width * unit
+        ctx.stroke()
         ctx.restore()
     }
 }
