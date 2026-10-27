@@ -1154,10 +1154,20 @@ GAUNTLET_SLABS = {
            ((2731, 1773), 20.0, 380, 380, 280), ((1797, 1662), -15.0, 380, 380, 280), ((966, 2352), -35.0, 380, 380, 280),
            ((302, 2718), -30.0, 280, 280, 280)],
 }
+# TASK-743 (shortcut audit): the scaffold's 4,500 pitch stacked every column ledge within pump reach of the next one
+# (a ledge or ceiling pumps ~6,440 up, artifacts/TASK-743/matrix). The pitch is now 7,600 (S8 7,942), the even zone units
+# shift evenShift right so their slabs near the exit side clear the odd approach ledge below and every column ledge
+# alternates sides, and each safe space zig-zags (panels placed from its start ledge): G1 dx 2500 (>= 600 across from
+# the approach above it), G2 dx 1800 (>= 600 across from the start ledge below it). S0 stacks both panels at dx 1800
+# (right edges 600 left of the old summit and Z1's approach) and S0-G1 reaches the map edge: the opening has no ground
+# at x < 0 or at x 731..1044, so a fall from a panel edge there would reach the void (gauntlet_fall_probe).
+# S0 rises 8,800 so Z1's exit and slabs stay out of pump reach of the main level's last panels (P22 sits 48 across
+# from Z1-EXIT).
 EXT_SUMMIT_GAUNTLET = dict(zones=8, zone=(5760, 4320), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=342,
-                           rise=4500, firstRise=6700, panels=((700, .35, 1440, 240), (1900, .70, 1440, 240)),
+                           rise=7600, firstRise=8800, evenShift=700, panels=((2500, .33, 1440, 240), (1800, .66, 1440, 240)),
                            zoneClearance=600, section='SEC-ext-summit', prefix='XS', zoneSlabs=GAUNTLET_SLABS,
-                           reach={'S0-G1': 700, 'S0-G2': FOLD_X_RANGE[0]}, catchers=dict(height=300, outer=600, depth=6000, step=10))
+                           spacePanels={'S0': ((1800, .33, 1440, 240), (1800, .66, 1440, 240))}, reach={'S0-G1': FOLD_X_RANGE[0]},
+                           catchers=dict(height=300, outer=600, depth=6000, step=10))
 
 
 def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
@@ -1174,9 +1184,9 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
     def safe_space(n, start, side, rise):
         # Two grapple panels between start (a ledge at the tower end `side`) and the next ledge `rise` higher.
         out = []
-        for k, (dx, frac, w, h) in enumerate(spec['panels'], 1):
-            lx = rx0 if side > 0 else lx0
-            x = lx+dx if side > 0 else 2*lx+lw-(lx+dx)-w
+        for k, (dx, frac, w, h) in enumerate(spec.get('spacePanels', {}).get('S%d' % n, spec['panels']), 1):
+            lx = start['x']
+            x = lx+dx if side > 0 else lx+lw-dx-w
             sid = 'S%d-G%d' % (n, k)
             if sid in spec.get('reach', {}):   # outer edge stretched (the right part keeps its place)
                 reach = spec['reach'][sid]
@@ -1193,9 +1203,10 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
         direction = 1 if n % 2 else -1       # odd: entered from the left side, run rightward
         safe_space(n-1, start, -direction if n > 1 else -1, start['y']-top)
         zid = 'Z%d' % n
-        ax = lx0 if direction > 0 else rx0
-        ex = rx0 if direction > 0 else lx0
-        zx = lx0+lw+spec['zoneMargin']
+        shift = 0 if n % 2 else spec.get('evenShift', 0)
+        ax = (lx0 if direction > 0 else rx0)+shift
+        ex = (rx0 if direction > 0 else lx0)+shift
+        zx = lx0+lw+spec['zoneMargin']+shift
         approach = dict(panel('%s approach ledge' % zid, lw, lh, ax, top), originalId=None, semanticId=zid+'-APPROACH')
         exit_ = dict(panel('%s exit ledge' % zid, lw, lh, ex, top+spec['exitTop']), originalId=None, semanticId=zid+'-EXIT')
         zy = top-spec['zoneAbove']
@@ -1329,10 +1340,11 @@ def add_gauntlet_catchers(m, spec, slots, spaces, old, zones):
     xs = [x for s in spaces for f in s['panels'] for b in svg.bodies(f) for x, _ in b]
     right_outer, left_outer = max(xs)+c['outer'], lo+50
 
-    def nearest(poly, items):
+    def nearest(poly, items, margin=YELLOW_CLEARANCE):
+        # margin prefilters by bounding box: enough for the legality test; the recorded clearance uses math.inf.
         x0, x1, y0, y1 = poly[0][0], poly[1][0], poly[0][1], poly[2][1]
-        near = [(i, p) for i, p, (a, b, cc, d) in items if a-YELLOW_CLEARANCE < x1 and b+YELLOW_CLEARANCE > x0
-                and cc-YELLOW_CLEARANCE < y1 and d+YELLOW_CLEARANCE > y0]
+        near = [(i, p) for i, p, (a, b, cc, d) in items if a-margin < x1 and b+margin > x0
+                and cc-margin < y1 and d+margin > y0]
         return min(((union_distance([poly], [p])[0], i) for i, p in near), default=(math.inf, None))
 
     def legal(x0, x1, y):
@@ -1385,7 +1397,7 @@ def add_gauntlet_catchers(m, spec, slots, spaces, old, zones):
         (x0, x1), y, _ = best
         x0, x1 = math.ceil(x0*1000)/1000, math.floor(x1*1000)/1000
         poly = [[x0, y], [x1, y], [x1, y+h], [x0, y+h]]
-        d, sid = nearest(poly, bodies)
+        d, sid = nearest(poly, bodies, math.inf)
         dy, yid = min(((union_distance([poly], [b['polygon']])[0], b['id']) for b in m['yellowBands']), default=(math.inf, None))
         band = dict(id=cid, belowJump=None, source=None, target=None, below=below_id, side=side,
                     purpose='gauntlet catcher: a failed jump falls through it (losing speed) onto lower geometry',
