@@ -1156,7 +1156,8 @@ GAUNTLET_SLABS = {
 }
 EXT_SUMMIT_GAUNTLET = dict(zones=8, zone=(5760, 4320), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=342,
                            rise=4500, firstRise=6700, panels=((700, .35, 1440, 240), (1900, .70, 1440, 240)),
-                           zoneClearance=600, section='SEC-ext-summit', prefix='XS', zoneSlabs=GAUNTLET_SLABS)
+                           zoneClearance=600, section='SEC-ext-summit', prefix='XS', zoneSlabs=GAUNTLET_SLABS,
+                           reach={'S0-G1': 700, 'S0-G2': FOLD_X_RANGE[0]}, catchers=dict(height=300, outer=600, depth=6000, step=10))
 
 
 def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
@@ -1176,8 +1177,12 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
         for k, (dx, frac, w, h) in enumerate(spec['panels'], 1):
             lx = rx0 if side > 0 else lx0
             x = lx+dx if side > 0 else 2*lx+lw-(lx+dx)-w
+            sid = 'S%d-G%d' % (n, k)
+            if sid in spec.get('reach', {}):   # outer edge stretched (the right part keeps its place)
+                reach = spec['reach'][sid]
+                x, w = (reach, x+w-reach) if side < 0 else (x, reach-x)
             f = panel('S%d grapple %d' % (n, k), w, h, x, start['y']-frac*rise, 'ceiling')
-            f.update(originalId=None, semanticId='S%d-G%d' % (n, k))
+            f.update(originalId=None, semanticId=sid)
             out.append(f)
         steps.extend((f, 'S%d' % n) for f in out)
         spaces.append(dict(id='S%d' % n, start=start, side='right' if side > 0 else 'left', panels=out))
@@ -1265,6 +1270,7 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
     if close:
         raise ValueError('Gauntlet: '+', '.join(sorted(set(close))))
     m['namedSections'] = [dict(id=spec['section'], encounters=numbers)]
+    catchers = add_gauntlet_catchers(m, spec, slots, spaces, old, zones) if spec.get('catchers') else []
 
     def rect(f):
         xs = [x for p in svg.bodies(f) for x, _ in p]; ys = [y for p in svg.bodies(f) for _, y in p]
@@ -1290,6 +1296,9 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
                          end=(slots[int(s['id'][1:])]['approach']['id'] if int(s['id'][1:]) < len(slots) else summit['id']),
                          grapplePanels=[rect(f) for f in s['panels']]) for s in spaces],
         finish=dict(rect(summit), finishTop=finish_top),
+        catchers=[{k: b[k] for k in ('id', 'below', 'side', 'x', 'y', 'width', 'height', 'nearestSolidClearance',
+                                     'nearestSolid', 'nearestYellowClearance', 'nearestYellow', 'cover', 'uncoveredStrip')}
+                  for b in catchers],
         purpleShare=dict(purpleHeight=purple, height=hi_y-lo_y, share=purple/(hi_y-lo_y)))
     m['extSummit'] = dict(oldSummit=old['id'], oldFinishTop=old['y']-svg.FINISH_PAD[1], summit=summit['id'],
                           finishTop=finish_top, zones=[z['id'] for z in zones], fragments=[f['id'] for f in new],
@@ -1300,6 +1309,106 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
             d = gap(a, b)[0]
             m['pairChecks'].append(dict(source=a['id'], target=b['id'], minimumGap=d, passOutsideRange=d-21.6 > 540))
     return m
+
+
+# TASK-742: yellow catchers under the gauntlet's falling areas (level-guidelines.md: horizontal pass-through rectangles
+# below falling areas, >= 1620 from every green panel incl. zone slabs, >= 540 from every other yellow, one long
+# rectangle per falling area). Each zone's exit side gets one catcher in its tower column below the exit ledge: it
+# reaches from the column's outer side (`outer` past the outermost safe-space panel; on the left the map edge + 50) to
+# as far in as the clearances allow, and must cover the exit ledge's outer end (a missed landing falls past it). It
+# hangs as close under the exit ledge as possible: the highest top (step `step`, within `depth`) that reaches the
+# furthest in. Falls from the safe space above that exit ledge (Sk sits on Zk's exit side) pass the same catcher. S0
+# (from the old summit) gets one on the map side of the old summit, under S0-G2, which reaches as far right as the
+# clearances allow. No catcher overlaps a purple zone.
+def add_gauntlet_catchers(m, spec, slots, spaces, old, zones):
+    c, fs = spec['catchers'], m['fragments']
+    h, step = c['height'], c['step']
+    lo, hi = FOLD_X_RANGE
+    bodies = [(f['id'], b, [min(p[0] for p in b), max(p[0] for p in b), min(p[1] for p in b), max(p[1] for p in b)])
+              for f in fs for b in svg.bodies(f)]
+    xs = [x for s in spaces for f in s['panels'] for b in svg.bodies(f) for x, _ in b]
+    right_outer, left_outer = max(xs)+c['outer'], lo+50
+
+    def nearest(poly, items):
+        x0, x1, y0, y1 = poly[0][0], poly[1][0], poly[0][1], poly[2][1]
+        near = [(i, p) for i, p, (a, b, cc, d) in items if a-YELLOW_CLEARANCE < x1 and b+YELLOW_CLEARANCE > x0
+                and cc-YELLOW_CLEARANCE < y1 and d+YELLOW_CLEARANCE > y0]
+        return min(((union_distance([poly], [p])[0], i) for i, p in near), default=(math.inf, None))
+
+    def legal(x0, x1, y):
+        poly = [[x0, y], [x1, y], [x1, y+h], [x0, y+h]]
+        if nearest(poly, bodies)[0] <= YELLOW_CLEARANCE or any(union_distance([poly], [z['polygon']])[0] <= 0 for z in zones):
+            return None
+        yellow = [(b['id'], b['polygon'], [b['x'], b['x']+b['width'], b['y'], b['y']+b['height']]) for b in m['yellowBands']]
+        return poly if all(union_distance([poly], [p])[0] >= YELLOW_PAIR_CLEARANCE for _, p, _ in yellow) else None
+
+    def place(cid, below_id, side, below, cover, limit):
+        # side 'right': x1 = right_outer, x0 searched inward down to `limit`, must be <= cover; 'left' mirrors it.
+        # When no legal rectangle reaches `cover`, the widest one at least `outer` wide is kept and the uncovered strip
+        # between it and `cover` is recorded.
+        best = search(side, below, cover, limit)
+        strip = None
+        if best is None:
+            least = right_outer-c['outer'] if side == 'right' else left_outer+c['outer']
+            best = search(side, below, least, limit)
+            if best is not None:
+                strip = [cover, best[0][0]] if side == 'right' else [best[0][1], cover]
+        return add(cid, below_id, side, best, strip, cover)
+
+    def search(side, below, cover, limit):
+        best = None
+        for y in range(int(math.ceil(below)), int(below+c['depth']), step):
+            if side == 'right':
+                if not legal(cover, right_outer, y):
+                    continue
+                a, b = limit, cover          # smallest legal x0 in [limit, cover]
+                while b-a > 1:
+                    mid = (a+b)/2
+                    a, b = (a, mid) if legal(mid, right_outer, y) else (mid, b)
+                cand = (b, right_outer)
+            else:
+                if not legal(left_outer, cover, y):
+                    continue
+                a, b = cover, limit          # largest legal x1 in [cover, limit]
+                while b-a > 1:
+                    mid = (a+b)/2
+                    a, b = (mid, b) if legal(left_outer, mid, y) else (a, mid)
+                cand = (left_outer, a)
+            width = cand[1]-cand[0]
+            if best is None or width > best[2]+1e-9:
+                best = (cand, y, width)
+        return best
+
+    def add(cid, below_id, side, best, strip, cover):
+        if best is None:
+            raise ValueError('No legal yellow catcher %s covering x %.0f' % (cid, cover))
+        (x0, x1), y, _ = best
+        x0, x1 = math.ceil(x0*1000)/1000, math.floor(x1*1000)/1000
+        poly = [[x0, y], [x1, y], [x1, y+h], [x0, y+h]]
+        d, sid = nearest(poly, bodies)
+        dy, yid = min(((union_distance([poly], [b['polygon']])[0], b['id']) for b in m['yellowBands']), default=(math.inf, None))
+        band = dict(id=cid, belowJump=None, source=None, target=None, below=below_id, side=side,
+                    purpose='gauntlet catcher: a failed jump falls through it (losing speed) onto lower geometry',
+                    x=x0, y=y, width=x1-x0, height=h, polygon=poly, nearestSolidClearance=d, nearestSolid=sid,
+                    nearestYellowClearance=dy, nearestYellow=yid, minimumSolidClearance=YELLOW_CLEARANCE,
+                    cover=cover, uncoveredStrip=strip,
+                    role='non-solid, non-grappleable, pass-through braking')
+        if d < YELLOW_CLEARANCE or dy < YELLOW_PAIR_CLEARANCE or not lo <= x0 < x1 <= hi:
+            raise ValueError('Yellow catcher %s clearance %.1f / %.1f' % (cid, d, dy))
+        m['yellowBands'].append(band)
+        return band
+
+    out = []
+    zx0, zx1 = min(z['x'] for z in zones), max(z['x']+z['width'] for z in zones)
+    for s in slots:
+        e, right = s['exit'], s['direction'] == 'RIGHT'
+        ex = [p[0] for b in svg.bodies(e) for p in b]
+        out.append(place('Y-%s' % s['zone']['id'], e['semanticId'], 'right' if right else 'left', max(p[1] for b in svg.bodies(e) for p in b),
+                         max(ex) if right else min(ex), zx1 if right else zx0))
+    g2 = next(f for f in spaces[0]['panels'] if f['semanticId'] == 'S0-G2')
+    ox = [p[0] for b in svg.bodies(old) for p in b]
+    out.append(place('Y-S0', g2['semanticId'], 'left', max(p[1] for b in svg.bodies(g2) for p in b), left_outer+YELLOW_PAIR_CLEARANCE, min(ox)))
+    return out
 
 
 def measure_transfers(m, opening):
