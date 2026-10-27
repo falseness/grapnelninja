@@ -137,6 +137,10 @@ class SpawnLaunchTests(unittest.TestCase):
                 recoverClimbFall = recover
                 return {recoveries, ticks, depth: CLIMB_FALL_RECOVERY_DEPTH} }''')
             self.assertEqual(fall['recoveries'], 1)
+            # TASK-721: the run's first recovery pauses on the double grapnel offer;
+            # Continue (menu.unPause) lets the launch play.
+            self.assertEqual(page.evaluate('[menu.gamePaused, CLIMB_UI.offering]'), [True, True])
+            page.evaluate('menu.unPause()')
             trace = page.evaluate(TRACE, 2000)
             self.assert_launch(trace)
             self.assertEqual(page.errors, [])

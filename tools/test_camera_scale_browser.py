@@ -139,6 +139,8 @@ class CameraScaleBrowserTests(unittest.TestCase):
         wait_for_boot_run(page)
         page.evaluate(HELPER)
         page.evaluate('T689.freeze()')
+        # TASK-721: tracking falls may recover; keep them past the first-death double grapnel offer
+        page.evaluate('floors[0].doubleOfferShown = true')
         state = page.evaluate('({version, scale: scale[version], layout: floors[0].level.layoutId ?? null,'
                               ' touchFirst: isTouchFirstDevice(), rotated: isViewRotated(), dpr: devicePixelRatio})')
         self.assertEqual(state['version'], 'grapple_over')

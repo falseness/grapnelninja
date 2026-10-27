@@ -35,6 +35,8 @@ SETUP = '''() => {
         return recover()
     }
     window.CAMERA_AT_SPAWN = {x: screen.x, y: screen.y}
+    // TASK-721: past the first-death double grapnel offer (test_double_offer covers it)
+    floors[0].doubleOfferShown = true
 }'''
 
 STATE = '''() => {

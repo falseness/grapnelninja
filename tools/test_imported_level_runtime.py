@@ -99,7 +99,13 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+    world.climbStats.currentHeight = 0',
     '+    LONG_FALL.restartTracking()',
     '+    screen.trackGrappleOver(true)',
+    # TASK-721: the run's first recovery in single mode opens the double grapnel offer.
+    "+    // The run's first recovery in single mode pauses on the double grapnel",
+    '+    // offer; the launch above plays once it is answered.',
+    "+    const offer = !world.doubleOfferShown && world.grapnelMode !== 'double'",
+    '+    world.doubleOfferShown = true',
     '+    PROGRESS.flushClimb()',
+    '+    if (offer) CLIMB_UI.offerDouble()',
     '+}',
 ]
 
@@ -402,7 +408,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # TASK-692 centered the Grapple Over camera on the ninja (moveScreen.js only; covered by the camera tests).
         # TASK-699/701 changed only display code (render/effects.js glow, render/parallax.js tiles). TASK-704 added
         # the Grapple Over spawn launch (SPAWN_LAUNCH_DIFF in physics.js, one assignment in startGrappleOverVersion);
-        # TASK-717 applied it to recoverClimbFall too. TASK-714/715/716 changed only display code
+        # TASK-717 applied it to recoverClimbFall too; TASK-721 opens the first-death offer from it. TASK-714/715/716 changed only display code
         # (render/glowsprites.js bakes, render/landmarks.js, the sprites/grapnel.js rope and claw drawing).
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
@@ -439,7 +445,10 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '-                    if (activelyPlaying) TUTORIAL_HINT.advance(steps * physicsStepMs)',
                                    '+                    if (activelyPlaying)', '+                    {',
                                    '+                        TUTORIAL_HINT.advance(steps * physicsStepMs)',
-                                   '+                        FALL_MESSAGE.advance(steps * physicsStepMs)', '+                    }'])
+                                   '+                        FALL_MESSAGE.advance(steps * physicsStepMs)', '+                    }',
+                                   # TASK-721: a step can open the first-death offer's pause screen.
+                                   '+                    // A step can open a pause screen (the first-death offer): keep it on top',
+                                   '+                    if (menu.gamePaused) menu.drawPauseScreen()'])
         self.evidence['cases']['modes'] = dict(seen, browserErrors=page.errors, unchangedSources=UNCHANGED,
                                                baseRev=BASE_REV, unchangedDiff=diff, indexHtmlChanges=changed)
 

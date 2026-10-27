@@ -822,6 +822,7 @@ class Menu
         if (version === 'grapple_over' && floors[0].climbStats.completed) return
         if (version === 'grapple_over' &&
             (hostPaused || isViewRotated() || document.visibilityState === 'hidden')) return
+        CLIMB_UI.offering = false
         menu.changeGamePause(false)
         // Over the death screen the run is over: its clock stays stopped and
         // there is no level to resume
@@ -955,6 +956,8 @@ class ContinueOffer
 // Climb statistics describe the current simulation; they never move the player.
 const CLIMB_UI = {
     confirming: false,
+    // The first-death double grapnel offer is up (a pause screen of its own)
+    offering: false,
     buttons: [],
     time(ms) { return I18N.t('climb.seconds', {value:(ms / 1000).toFixed(1)}) },
     text(text, x, y, size, alignX = 'center') {
@@ -1026,6 +1029,7 @@ const CLIMB_UI = {
     },
     restart() {
         this.confirming = false
+        this.offering = false
         PROGRESS.resetClimb()
         pressHeld = stalePress = gameplayPressOwned = false
         runOver = false
@@ -1039,8 +1043,12 @@ const CLIMB_UI = {
         const w = menu.width, h = menu.height, stats = floors[0].climbStats
         ctx.fillStyle = STYLE.colors.ui.pauseOverlay
         ctx.fillRect(0, 0, w, h)
-        const title = this.confirming ? 'climb.confirm' : stats.completed ? 'climb.complete' : 'mode.grapple_over'
-        const actions = this.confirming ? [
+        const title = this.offering ? 'climb.offerTitle' : this.confirming ? 'climb.confirm' :
+            stats.completed ? 'climb.complete' : 'mode.grapple_over'
+        const actions = this.offering ? [
+            ['climb.offerContinue', () => menu.unPause()],
+            ['climb.offerDouble', () => this.acceptDouble()]
+        ] : this.confirming ? [
             ['climb.yes', () => this.restart()],
             ['climb.cancel', () => {this.confirming=false; redrawOverlays()}]
         ] : [
@@ -1051,7 +1059,7 @@ const CLIMB_UI = {
         ]
         // The grapnel toggle goes last (button indexes 0-3 stay as they were);
         // a run in progress keeps its position, time and best across a switch.
-        const grapnel = this.showsFps()
+        const grapnel = this.showsFps(), note = this.offering || grapnel
         if (grapnel) actions.push([floors[0].grapnelMode === 'double' ? 'climb.grapnelDouble' : 'climb.grapnelSingle',
             () => this.toggleGrapnel()])
         const bh = Math.max(h*(grapnel ? 0.09 : 0.105), minTouchSize()), bw = Math.min(w*0.7, h*1.05)
@@ -1069,24 +1077,25 @@ const CLIMB_UI = {
             check.x = w/2 - (size * 1.55 + labelWidth) / 2
         }
         // Under the toggle: single grapnel is the intended way to play
-        const note = I18N.t('climb.grapnelNote')
+        // (and under the offer's two choices)
+        const noteText = I18N.t('climb.grapnelNote')
         let noteSize = h*0.026
         ctx.save()
         ctx.font = noteSize + 'px ' + STYLE.ui.fontFamily
-        noteSize = Math.min(noteSize, noteSize * w*0.92 / ctx.measureText(note).width)
+        noteSize = Math.min(noteSize, noteSize * w*0.92 / ctx.measureText(noteText).width)
         ctx.restore()
         // With the toggle, the title, buttons, note and fps row share the
         // height evenly, so the 44 CSS px touch floor still fits on phones.
-        const rows = grapnel ? stackRows(0, h, [h*0.055, h*0.035, ...actions.map(() => bh),
-            noteSize*1.2, check.hitRect().height]) : null
-        this.text(I18N.t(title), w/2, grapnel ? rows[0] : h*0.16, h*0.055)
-        this.text(I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)}), w/2, grapnel ? rows[1] : h*0.26, h*0.035)
+        const rows = note ? stackRows(0, h, [h*0.055, h*0.035, ...actions.map(() => bh),
+            noteSize*1.2, ...(grapnel ? [check.hitRect().height] : [])]) : null
+        this.text(I18N.t(title), w/2, note ? rows[0] : h*0.16, h*0.055)
+        this.text(I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)}), w/2, note ? rows[1] : h*0.26, h*0.035)
         this.buttons = actions.map(([key, action], i) => new Button(
-            {x:w/2, y:grapnel ? rows[2 + i] : h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true},
+            {x:w/2, y:note ? rows[2 + i] : h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true},
             {text:I18N.t(key), fill:STYLE.colors.ui.buttonText}, action))
         this.buttons.forEach(b => b.draw())
-        if (grapnel)
-            new Text({text:note, x:w/2, y:rows[rows.length - 2], fontSize:noteSize, fill:STYLE.colors.ui.mutedText}).draw()
+        if (note)
+            new Text({text:noteText, x:w/2, y:rows[2 + actions.length], fontSize:noteSize, fill:STYLE.colors.ui.mutedText}).draw()
         // The pause screen's fps checkbox, centred under the action buttons
         if (check.clickable)
         {
@@ -1095,6 +1104,20 @@ const CLIMB_UI = {
         }
         LANGUAGE_BUTTON.draw()
     },
+    // On the run's first fall recovery in single mode (recoverClimbFall):
+    // the run pauses, its clock stopped, until Continue or Try double.
+    offerDouble() {
+        this.offering = true
+        this.confirming = false
+        menu.startPause()
+    },
+    acceptDouble() {
+        this.offering = false
+        setGrapnelMode('double')
+        PROGRESS.flushClimb()
+        menu.unPause()
+        redrawOverlays()
+    },
     toggleGrapnel() {
         setGrapnelMode(floors[0].grapnelMode === 'double' ? 'single' : 'double')
         PROGRESS.flushClimb()
@@ -1102,6 +1125,6 @@ const CLIMB_UI = {
     },
     // As on the Classic/Bad pause screen: not on the restart confirmation or the ending
     showsFps() {
-        return !this.confirming && !floors[0]?.climbStats?.completed
+        return !this.confirming && !this.offering && !floors[0]?.climbStats?.completed
     }
 }

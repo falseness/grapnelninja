@@ -51,6 +51,8 @@ SETUP = '''() => {
     recoverClimbFall = function() {
         RECOVERIES.push({y: ninja.y, height: floors[0].climbStats.currentHeight,
             eventBefore: LONG_FALL.event ? LONG_FALL.event.id : null})
+        // TASK-721: past the first-death double grapnel offer (test_double_offer covers it)
+        floors[0].doubleOfferShown = true
         return recover()
     }
 }'''
@@ -486,7 +488,8 @@ class LongFallMessageTests(unittest.TestCase):
             self.assertNotIn(word, saved)
         self.assertEqual(sorted(json.loads(saved)), sorted(['version', 'levelVersion', 'layoutId', 'simulationTick', 'stats',
                                                              'player', 'input', 'upgrades', 'elements', 'grapple',
-                                                             'grapnelMode', 'usedDouble', 'fallHintShown']))
+                                                             'grapnelMode', 'usedDouble', 'fallHintShown',
+                                                             'doubleOfferShown']))
         lc['reload'] = {'eventBeforeReload': True, 'savedKeys': sorted(json.loads(saved)),
                         'savedContainsReaction': False, 'afterReload': reloaded, 'eventsIn60Ticks': 0,
                         'firstStepAfter': run['steps'][0] if run['steps'] else None}

@@ -583,6 +583,8 @@
                         FALL_MESSAGE.advance(steps * physicsStepMs)
                     }
                     draw()
+                    // A step can open a pause screen (the first-death offer): keep it on top
+                    if (menu.gamePaused) menu.drawPauseScreen()
                     if (activelyPlaying) PLATFORM.startup('first_gameplay_frame', version)
                 }
                 game = requestAnimationFrame(gameLoop)

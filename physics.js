@@ -145,5 +145,10 @@ function recoverClimbFall()
     world.climbStats.currentHeight = 0
     LONG_FALL.restartTracking()
     screen.trackGrappleOver(true)
+    // The run's first recovery in single mode pauses on the double grapnel
+    // offer; the launch above plays once it is answered.
+    const offer = !world.doubleOfferShown && world.grapnelMode !== 'double'
+    world.doubleOfferShown = true
     PROGRESS.flushClimb()
+    if (offer) CLIMB_UI.offerDouble()
 }
