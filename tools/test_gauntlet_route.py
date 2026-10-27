@@ -36,7 +36,7 @@ CANDIDATE = os.environ.get('GAUNTLET_CANDIDATE')
 SHIPPED = ROOT / 'artifacts' / 'levels'
 SOURCE = ROOT / 'artifacts' / 'level' / 'extended-mountain-measurements.json'
 NAMES = ('extended-mountain.level.json', 'extended-mountain-measurements.json')
-ZONES = ('Z1', 'Z2', 'Z3', 'Z4', 'Z5')
+ZONES = ('Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6')
 INPUTS = {z: TOOLS / 'fixtures' / ('gauntlet-inputs-%s.json' % z) for z in ZONES}
 RECOVERY_DEPTH = 1500  # physics.js CLIMB_FALL_RECOVERY_DEPTH
 REST_SPEED, REST_TICKS = 0.05, 30
@@ -235,6 +235,9 @@ class GauntletRouteTests(unittest.TestCase):
 
     def test_z5_crossing(self):
         OUT['zones']['Z5'] = self.crossing('Z5')
+
+    def test_z6_crossing(self):
+        OUT['zones']['Z6'] = self.crossing('Z6')
 
 
 if __name__ == '__main__':

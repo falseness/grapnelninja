@@ -1133,6 +1133,13 @@ GAUNTLET_SLABS = {
     'Z5': [((1014, 1485), 30.0, 160, 160, 280), ((1454, 1681), -15.0, 220, 220, 280), ((2076, 1831), -15.0, 160, 160, 280),
            ((2622, 1878), 35.0, 180, 180, 280), ((3097, 2044), -15.0, 220, 220, 280), ((3699, 1892), 35.0, 160, 160, 280),
            ((4201, 2160), 20.0, 160, 160, 280), ((4697, 2076), 15.0, 160, 160, 280), ((5203, 1820), 30.0, 180, 180, 280)],
+    # TASK-738 Z6 (leftward, 8 slabs): a long -20 deg lip, a -25/-35/-15 deg descending stair of short slabs, a 25 deg
+    # kicker, a -25/-25 deg pair and the short -30 deg catch slab under the left exit side. The run-off ricochets between
+    # Z6-B3 and Z6-B1 twice, skips over Z6-B4 and Z6-B5, leaves the left side high and drops onto the exit ledge
+    # (artifacts/TASK-738/search: browser-replayed random layouts).
+    'Z6': [((4726, 1029), -20.0, 450, 450, 280), ((3989, 1580), -25.0, 180, 180, 280), ((3396, 1752), -35.0, 260, 260, 280),
+           ((2834, 1792), -15.0, 260, 260, 280), ((2231, 1707), 25.0, 220, 220, 280), ((1595, 2075), -25.0, 260, 260, 280),
+           ((930, 2097), -25.0, 260, 260, 280), ((328, 2244), -30.0, 150, 150, 280)],
 }
 EXT_SUMMIT_GAUNTLET = dict(zones=8, zone=(5760, 4320), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=342,
                            rise=4500, firstRise=6700, panels=((700, .35, 1440, 240), (1900, .70, 1440, 240)),
