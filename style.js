@@ -569,7 +569,9 @@ const STYLE = Object.freeze({
         // Soft white spark under the claw once hooked
         sparkRadius: 14,
         sparkCore: 'rgba(255,255,255,0.95)',
-        sparkEdge: 'rgba(217,204,255,0)'
+        // White-transparent edge: Canvas interpolates unpremultiplied colour, a lavender
+        // edge tints the falloff and pushes teal floors into the rope's cyan hue
+        sparkEdge: 'rgba(255,255,255,0)'
     }),
     // Fake-3D back face of rectangles, cubes and green blocks: one shared light
     // direction (back face up-right). The front face stays on the hitbox.
