@@ -2,10 +2,12 @@
 
 Boots the real index.html with the frame loop frozen before boot, so the first
 run is observed at the spawn, then drives production physics() ticks with no
-input. A fresh start (the first run of a page load and every restart) leaves
-the spawn with an upward speed whose free-flight apex is 270 +- 10 world units
-above the spawn. A continue/respawn (respawnNinja), a fall recovery, a save
-restore (restoreClimbState) and the classic/bad modes start at rest.
+input. A fresh start (the first run of a page load and every restart) and,
+since TASK-717, a fall recovery (recoverClimbFall after a real fall below
+CLIMB_FALL_RECOVERY_DEPTH) leave the spawn with an upward speed whose
+free-flight apex is 270 +- 10 world units above the spawn. A continue/respawn
+(respawnNinja), a save restore (restoreClimbState) and the classic/bad modes
+start at rest.
 
 SPAWN_LAUNCH_EVIDENCE_DIR=DIR writes compact launch.json there.
 
@@ -40,7 +42,7 @@ TRACE = '''ticks => {
         minY = Math.min(minY, ninja.y)
         if (ninja.y > y0 + 1) break
     }
-    return {start, spawnY: spawn.y, apexRise: spawn.y - minY, apexTick: ys.indexOf(minY) + 1, ys,
+    return {start, spawnY: spawn.y, apexRise: spawn.y - minY, riseAboveStart: y0 - minY, apexTick: ys.indexOf(minY) + 1, ys,
         grappled: grapnel.throwed, pressHeld}
 }'''
 
@@ -57,7 +59,8 @@ def tearDownModule():
 def brief(trace):
     """The fields the assertions use; the full y trace only as a hash and its length."""
     ys = trace['ys']
-    return {'start': trace['start'], 'apexRise': trace['apexRise'], 'apexTick': trace['apexTick'],
+    return {'start': trace['start'], 'apexRise': trace['apexRise'], 'riseAboveStart': trace['riseAboveStart'],
+            'apexTick': trace['apexTick'],
             'ticks': len(ys), 'traceSha256': hashlib.sha256(json.dumps(ys).encode()).hexdigest(),
             'ysEvery10': ys[::10]}
 
@@ -119,19 +122,36 @@ class SpawnLaunchTests(unittest.TestCase):
                               'launchSpeed': page.evaluate('getSpawnLaunchSpeed()'),
                               'predictedRise': page.evaluate('spawnLaunchRise(getSpawnLaunchSpeed())')}
 
-    def test_02_respawn_and_fall_recovery_at_rest(self):
-        page = self.open()
-        # Fall recovery teleports to the spawn without a launch.
-        rec = page.evaluate('''() => { ninja.speedY = -5; recoverClimbFall()
-            return {speedX: ninja.speedX, speedY: ninja.speedY, atSpawn: ninja.y === floors[0].level.spawn.y} }''')
-        self.assertEqual((rec['speedX'], rec['speedY'], rec['atSpawn']), (0, 0, True))
+    def test_02_fall_recovery_launch_and_respawn_at_rest(self):
+        # TASK-717: a scripted fall below CLIMB_FALL_RECOVERY_DEPTH recovers through the
+        # production physics() and leaves the spawn with the fresh-start launch (was at rest).
+        traces = []
+        for _ in range(2):
+            page = self.open()
+            fall = page.evaluate('''() => {
+                const recover = recoverClimbFall, s = floors[0].level.spawn
+                let recoveries = 0, ticks = 0
+                recoverClimbFall = function() { recoveries++; return recover.apply(this, arguments) }
+                ninja.x = s.x; ninja.y = s.y + CLIMB_FALL_RECOVERY_DEPTH - 1; ninja.speedX = 3; ninja.speedY = 5
+                while (!recoveries && ticks < 200) { physics(); ticks++ }
+                recoverClimbFall = recover
+                return {recoveries, ticks, depth: CLIMB_FALL_RECOVERY_DEPTH} }''')
+            self.assertEqual(fall['recoveries'], 1)
+            trace = page.evaluate(TRACE, 2000)
+            self.assert_launch(trace)
+            self.assertEqual(page.errors, [])
+            traces.append((fall, trace))
+        (fa, a), (fb, b) = traces
+        self.assertEqual(fa, fb)
+        self.assertEqual(a['ys'], b['ys'])
+        EVIDENCE['fallRecovery'] = {'fall': fa, 'trace': brief(a), 'repeat': {'fall': fb, 'trace': brief(b)},
+                                    'identical': a['ys'] == b['ys'] and fa == fb}
         # Continue/respawn (respawn.js) in the mode it was built for.
         select_mode(page, 'classic')
         res = page.evaluate('''() => { ninja.speedX = 3; ninja.speedY = -5; const p = respawnNinja()
             return {speedX: ninja.speedX, speedY: ninja.speedY, x: p.x, y: p.y} }''')
         self.assertEqual((res['speedX'], res['speedY']), (0, 0))
         self.assertEqual(page.errors, [])
-        EVIDENCE['fallRecovery'] = {'initialSpeedY': rec['speedY'], 'speedX': rec['speedX']}
         EVIDENCE['continueRespawn'] = {'initialSpeedY': res['speedY'], 'speedX': res['speedX']}
 
     def test_03_save_restore_at_rest(self):
@@ -154,9 +174,15 @@ class SpawnLaunchTests(unittest.TestCase):
         got = page.evaluate('({speedX: ninja.speedX, speedY: ninja.speedY, y: ninja.y, spawnY: floors[0].level.spawn.y})')
         self.assertEqual((saved['player']['speedY'], got['speedY'], got['speedX']), (0, 0, 0))
         self.assertEqual(got['y'], got['spawnY'] - 100)
+        # Resumed with no input, the restored player only falls: no rise above the restored point.
+        page.evaluate('() => menu.unPause()')
+        trace = page.evaluate(TRACE, 2000)
+        self.assertEqual(trace['riseAboveStart'], 0)
+        self.assertGreater(trace['ys'][-1], got['y'])
         self.assertEqual(page.errors, [])
         EVIDENCE['saveRestore'] = {'initialSpeedY': got['speedY'], 'speedX': got['speedX'], 'restoredY': got['y'],
-                                   'spawnY': got['spawnY']}
+                                   'spawnY': got['spawnY'], 'riseAboveStart': trace['riseAboveStart'],
+                                   'ticks': len(trace['ys']), 'paused': page.evaluate('menu.gamePaused')}
 
     def test_04_classic_and_bad_at_rest(self):
         for mode in ('classic', 'bad'):

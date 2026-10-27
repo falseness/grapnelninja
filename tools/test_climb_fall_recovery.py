@@ -2,8 +2,8 @@
 
 Boots the real index.html, freezes the frame loop and drives the production
 physics()/calcPhysics() and the real mouse/keyboard handlers. Falling strictly
-below 1500 world units under the spawn teleports the player to the spawn,
-releases the grapple, drops press ownership and snaps the camera, while the
+below 1500 world units under the spawn teleports the player to the spawn
+with the fresh-start upward launch (TASK-717), releases the grapple, drops press ownership and snaps the camera, while the
 run (time, best height, upgrades, world and movers) continues.
 
 FALL_RECOVERY_EVIDENCE_DIR=DIR writes compact recovery.json, state.json and
@@ -49,7 +49,8 @@ STATE = '''() => {
             shotStep: g.shotStep ?? null, aim: g.aim ?? null, traveled: g.traveled ?? 0},
         input: {pressHeld, stalePress, gameplayPressOwned},
         camera: {x: screen.x, y: screen.y},
-        recoveries: window.RECOVERIES ? RECOVERIES.length : null
+        recoveries: window.RECOVERIES ? RECOVERIES.length : null,
+        launchSpeed: version === 'grapple_over' ? getSpawnLaunchSpeed() : null
     }
 }'''
 
@@ -116,7 +117,8 @@ class ClimbFallRecoveryTests(unittest.TestCase):
 
     def assert_recovered(self, s, camera):
         self.assertEqual((s['player']['x'], s['player']['y']), (s['spawn']['x'], s['spawn']['y']))
-        self.assertEqual((s['player']['speedX'], s['player']['speedY']), (0, 0))
+        # TASK-717: recovery launches upward like a fresh start (was at rest).
+        self.assertEqual((s['player']['speedX'], s['player']['speedY']), (0, -s['launchSpeed']))
         self.assertEqual(s['stats']['currentHeight'], 0)
         self.assertFalse(s['grapple']['throwed'])
         self.assertFalse(s['grapple']['grappled'])
@@ -198,12 +200,13 @@ class ClimbFallRecoveryTests(unittest.TestCase):
         after = self.state(page)
         self.assert_recovered(after, camera)
         self.assertEqual(after['recoveries'], 1)
-        # Later ticks are ordinary simulation again: gravity accelerates the player.
+        # Later ticks are ordinary simulation again: the launch carries the player up
+        # while gravity slows it (TASK-717; before, gravity pulled it down from rest).
         later = page.evaluate('''() => { const out = []
             for (let i = 0; i < 3; i++) { physics(); out.push({y: ninja.y, speedY: ninja.speedY}) }
             return out }''')
-        self.assertGreater(later[0]['speedY'], 0)
-        self.assertGreater(later[0]['y'], after['player']['y'])
+        self.assertGreater(later[0]['speedY'], after['player']['speedY'])
+        self.assertLess(later[0]['y'], after['player']['y'])
         self.assertEqual(self.state(page)['recoveries'], 1)
         self.evidence['recovery']['downwardCrossing'] = {
             'startDepth': DEPTH - 200, 'ticksRun': len(trace['ticks']), 'stepsRun': len(steps),
@@ -320,7 +323,9 @@ class ClimbFallRecoveryTests(unittest.TestCase):
         restored = reloaded.evaluate(STATE)
         self.assertTrue(restored['paused'])
         self.assertEqual((restored['player']['x'], restored['player']['y']), (after['spawn']['x'], after['spawn']['y']))
-        self.assertEqual((restored['player']['speedX'], restored['player']['speedY']), (0, 0))
+        # The save restore keeps the saved launch speed of the recovery; it adds no launch of its own.
+        self.assertEqual(saved['player']['speedY'], after['player']['speedY'])
+        self.assertEqual((restored['player']['speedX'], restored['player']['speedY']), (0, after['player']['speedY']))
         self.assertEqual(restored['stats'], after['stats'])
         self.assertEqual(restored['tick'], world_after['tick'])
         self.assertEqual(restored['upgrades'], {'range': True})

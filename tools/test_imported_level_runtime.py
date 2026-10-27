@@ -77,15 +77,18 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+            return true',
     '+        }',
     '+',
-    '+// Teleport a fallen Grapple Over player to the spawn. Time, best height,',
-    '+// upgrades and the world (movers included) are kept; only the player,',
-    '+// grapple, gameplay input ownership and camera are reset.',
+    # TASK-717: the recovery launches like a fresh start (comment and speedY below).
+    '+// Teleport a fallen Grapple Over player to the spawn and launch it upward',
+    '+// like a fresh start. Time, best height, upgrades and the world (movers',
+    '+// included) are kept; only the player, grapple, gameplay input ownership and',
+    '+// camera are reset.',
     '+function recoverClimbFall()',
     '+{',
     '+    const world = floors[0], spawn = world.level.spawn',
     '+    ninja.x = spawn.x',
     '+    ninja.y = spawn.y',
-    '+    ninja.speedX = ninja.speedY = 0',
+    '+    ninja.speedX = 0',
+    '+    ninja.speedY = -getSpawnLaunchSpeed()',
     '+    ninja.track.pos = []',
     '+    ninja.track.addPos(ninja.x, ninja.y, true)',
     '+    Object.assign(grapnel, {throwed: false, grappled: false, pos: [], shotStep: null,',
@@ -398,23 +401,30 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # script tag and the call in drawWorldLayer(). These are covered by test_no_grapple_*.
         # TASK-692 centered the Grapple Over camera on the ninja (moveScreen.js only; covered by the camera tests).
         # TASK-699/701 changed only display code (render/effects.js glow, render/parallax.js tiles). TASK-704 added
-        # the Grapple Over spawn launch (SPAWN_LAUNCH_DIFF in physics.js, one assignment in startGrappleOverVersion).
+        # the Grapple Over spawn launch (SPAWN_LAUNCH_DIFF in physics.js, one assignment in startGrappleOverVersion);
+        # TASK-717 applied it to recoverClimbFall too. TASK-714/715/716 changed only display code
+        # (render/glowsprites.js bakes, render/landmarks.js, the sprites/grapnel.js rope and claw drawing).
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
                                                                                       ':!render/fallmessage.js', ':!sprites/trampoline.js',
                                                                                       ':!fixedlevel.js', ':!render/nograpplezones.js', ':!moveScreen.js',
-                                                                                      ':!render/effects.js', ':!render/parallax.js'],
+                                                                                      ':!render/effects.js', ':!render/parallax.js',
+                                                                                      ':!render/glowsprites.js', ':!render/landmarks.js',
+                                                                                      ':!sprites/grapnel.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
                               text=True, check=True).stdout.splitlines() if l[:1] in '+-' and not l.startswith(('+++', '---'))]
-        self.assertEqual(lines('render/draw.js'), ['+    // Purple no-grapple zones under everything else in the world',
+        # TASK-714 also rewrote the palette wash in render/draw.js (display only, baked via float16), so the
+        # layer-order lines are checked as an ordered subsequence of the draw.js diff.
+        draw_lines = iter(lines('render/draw.js'))
+        self.assertTrue(all(l in draw_lines for l in ['+    // Purple no-grapple zones under everything else in the world',
                                                    '+    drawNoGrappleZones(floors[0])',
                                                    '+    // Transfer guide arrows under the range circle, grapnel, terrain and player',
                                                    '+    drawRouteArrows(floors[0])',
                                                    '+// Long-fall reaction: screen space, over the hint and under the HUD it avoids',
                                                    '+function drawFallMessageLayer()', '+{', '+    FALL_MESSAGE.draw(ctx)', '+}', '+',
-                                                   "+    if (version === 'grapple_over')", '+        drawFallMessageLayer()'])
+                                                   "+    if (version === 'grapple_over')", '+        drawFallMessageLayer()']))
         self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF[:3] + SPAWN_LAUNCH_DIFF + PHYSICS_FALL_RECOVERY_DIFF[3:])
         self.assertEqual(lines('sprites/trampoline.js'), TRAMPOLINE_CLOSE_DIFF)
         changed = lines('index.html')
@@ -423,8 +433,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+        <script src = "render/nograpplezones.js"></script>',
                                    '+        <script src = "render/routearrows.js"></script>',
                                    '+                await loadGrappleOverLevelAsset()',
-                                   '+                // A fresh start (first run or restart) launches upward; a',
-                                   '+                // continue, fall recovery or save restore does not.',
+                                   '+                // A fresh start (first run or restart) launches upward, as',
+                                   '+                // does a fall recovery; a continue or save restore does not.',
                                    '+                ninja.speedY = -getSpawnLaunchSpeed()',
                                    '-                    if (activelyPlaying) TUTORIAL_HINT.advance(steps * physicsStepMs)',
                                    '+                    if (activelyPlaying)', '+                    {',

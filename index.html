@@ -533,8 +533,8 @@
                 floors = [world]
                 ninja = new Ninja({...world.level.spawn, radius: 0.01 * height,
                     fill: STYLE.colors.player.fill, stroke: STYLE.colors.player.stroke})
-                // A fresh start (first run or restart) launches upward; a
-                // continue, fall recovery or save restore does not.
+                // A fresh start (first run or restart) launches upward, as
+                // does a fall recovery; a continue or save restore does not.
                 ninja.speedY = -getSpawnLaunchSpeed()
                 grapnel = new Grapnel({points: [0, 0, 0, 0], stroke: STYLE.colors.player.cyan})
                 screen.trackGrappleOver(true)

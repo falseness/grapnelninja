@@ -124,15 +124,17 @@ function calcPhysics()
     }
 }
 
-// Teleport a fallen Grapple Over player to the spawn. Time, best height,
-// upgrades and the world (movers included) are kept; only the player,
-// grapple, gameplay input ownership and camera are reset.
+// Teleport a fallen Grapple Over player to the spawn and launch it upward
+// like a fresh start. Time, best height, upgrades and the world (movers
+// included) are kept; only the player, grapple, gameplay input ownership and
+// camera are reset.
 function recoverClimbFall()
 {
     const world = floors[0], spawn = world.level.spawn
     ninja.x = spawn.x
     ninja.y = spawn.y
-    ninja.speedX = ninja.speedY = 0
+    ninja.speedX = 0
+    ninja.speedY = -getSpawnLaunchSpeed()
     ninja.track.pos = []
     ninja.track.addPos(ninja.x, ninja.y, true)
     Object.assign(grapnel, {throwed: false, grappled: false, pos: [], shotStep: null,
