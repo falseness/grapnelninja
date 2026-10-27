@@ -1109,6 +1109,11 @@ GAUNTLET_SLABS = {
     # right side high and drops onto the exit ledge (artifacts/TASK-733/search: browser-replayed random layouts).
     'Z1': [((829, 991), 25.0, 300, 300, 280), ((1607, 1190), 20.0, 300, 300, 280), ((2412, 1352), 15.0, 300, 300, 280),
            ((3032, 1446), -20.0, 250, 250, 280), ((3649, 1568), -30.0, 250, 250, 280), ((4482, 1525), 30.0, 450, 450, 280)],
+    # TASK-734 Z2 (leftward, 4 long slabs): a shallow -15 deg lip falling left, a 15 deg kicker that turns the fall back,
+    # a steep 40 deg ramp and the -30 deg catch slab under the left exit side. The run-off bounces off Z2-B1 and Z2-B2 and
+    # leaves the left side high onto the exit ledge (artifacts/TASK-734/search: browser-replayed random layouts).
+    'Z2': [((4286, 1133), -15.0, 550, 550, 280), ((3135, 1462), 15.0, 550, 550, 280), ((2015, 1262), 40.0, 450, 450, 280),
+           ((1066, 1490), -30.0, 450, 450, 280)],
 }
 EXT_SUMMIT_GAUNTLET = dict(zones=8, zone=(5760, 4320), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=342,
                            rise=4500, firstRise=6700, panels=((700, .35, 1440, 240), (1900, .70, 1440, 240)),
