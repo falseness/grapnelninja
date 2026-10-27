@@ -1088,6 +1088,143 @@ def extend_summit(m, spec=EXT_SUMMIT):
     return m
 
 
+# TASK-732 (candidate, --ext-summit-gauntlet, v20 scaffold): SEC-ext-summit rebuilt as a gauntlet. The v19 extension
+# is not added; the old summit stays an ordinary landing and S0 starts from it. Eight EMPTY big-zone slots Z1..Z8
+# (5760x4320, slabs come in later tickets) are stacked upward in a switchback tower over the old summit's column:
+# odd zones are entered from the left side and run rightward, even zones are entered from the right side and run
+# leftward, so the exit ledge of Zk sits under the approach ledge of Z(k+1) at the same tower end. Each zone keeps the
+# BIG_ZONE unit (approach ledge zoneMargin before the zone, zone top zoneAbove over the approach top, exit ledge
+# zoneMargin past it with its top exitTop below the approach top). Consecutive approaches rise `rise` (zones
+# zoneGap apart vertically). The green safe spaces Sk (S0 from the old summit, Sk from Zk's exit, S8 to the finish)
+# are each two ceiling panels on the tower's outer side: `panels` gives (dx from the start ledge's left edge on the
+# right side, fraction of the safe space's rise, width, height); the left side mirrors it about the ledge column.
+# S0 (from the old summit) rises firstRise so Z1 clears the top of the main level and G-final.
+EXT_SUMMIT_GAUNTLET = dict(zones=8, zone=(5760, 4320), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=342,
+                           rise=4500, firstRise=6700, panels=((700, .35, 1440, 240), (1900, .70, 1440, 240)),
+                           zoneClearance=600, section='SEC-ext-summit', prefix='XS')
+
+
+def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
+    fs, rows = m['fragments'], m['encounters']
+    old = fs[-1]
+    if old['kind'] != 'summit':
+        raise ValueError('The gauntlet starts at the current summit')
+    old['kind'] = 'platform'
+    lw, lh = spec['ledge']
+    zw, zh = spec['zone']
+    lx0, rx0 = old['x'], old['x']+lw+spec['zoneMargin']+zw+spec['zoneMargin']  # tower column ledge left edges
+    steps, zones, slots, spaces = [], [], [], []
+
+    def safe_space(n, start, side, rise):
+        # Two grapple panels between start (a ledge at the tower end `side`) and the next ledge `rise` higher.
+        out = []
+        for k, (dx, frac, w, h) in enumerate(spec['panels'], 1):
+            lx = rx0 if side > 0 else lx0
+            x = lx+dx if side > 0 else 2*lx+lw-(lx+dx)-w
+            f = panel('S%d grapple %d' % (n, k), w, h, x, start['y']-frac*rise, 'ceiling')
+            f.update(originalId=None, semanticId='S%d-G%d' % (n, k))
+            out.append(f)
+        steps.extend((f, 'S%d' % n) for f in out)
+        spaces.append(dict(id='S%d' % n, start=start, side='right' if side > 0 else 'left', panels=out))
+        return out
+
+    start, top = old, old['y']-spec['firstRise']
+    for n in range(1, spec['zones']+1):
+        direction = 1 if n % 2 else -1       # odd: entered from the left side, run rightward
+        safe_space(n-1, start, -direction if n > 1 else -1, start['y']-top)
+        zid = 'Z%d' % n
+        ax = lx0 if direction > 0 else rx0
+        ex = rx0 if direction > 0 else lx0
+        zx = lx0+lw+spec['zoneMargin']
+        approach = dict(panel('%s approach ledge' % zid, lw, lh, ax, top), originalId=None, semanticId=zid+'-APPROACH')
+        exit_ = dict(panel('%s exit ledge' % zid, lw, lh, ex, top+spec['exitTop']), originalId=None, semanticId=zid+'-EXIT')
+        zy = top-spec['zoneAbove']
+        zone = dict(id=zid, x=zx, y=zy, width=zw, height=zh, polygon=[[zx, zy], [zx+zw, zy], [zx+zw, zy+zh], [zx, zy+zh]],
+                    purpose='big no-grapple zone %s (SEC-ext-summit gauntlet slot, empty): rope-free crossing' % zid)
+        steps += [(approach, zid), (exit_, zid)]
+        zones.append(zone)
+        slots.append(dict(zone=zone, approach=approach, exit=exit_, side='left' if direction > 0 else 'right',
+                          direction='RIGHT' if direction > 0 else 'LEFT'))
+        start, top = exit_, top-spec['rise']
+    side = -1 if spec['zones'] % 2 == 0 else 1
+    rise = spec['rise']+spec['exitTop']
+    safe_space(spec['zones'], start, side, rise)
+    sw, sh = 1500, 500
+    summit = dict(panel('%s summit' % spec['prefix'], sw, sh, rx0 if side > 0 else lx0, start['y']-rise),
+                  kind='summit', originalId=None, semanticId=spec['prefix']+'-SUMMIT')
+    steps.append((summit, 'finish'))
+    first = len(fs)
+    for i, (f, _) in enumerate(steps):
+        f['id'] = 'P%d' % (first+i)
+    numbers, prev = [], old
+    for f, part in steps:
+        number = len(rows)+1
+        sem = f['semanticId']
+        if sem.endswith('-EXIT'):
+            rid, action = sem[:-5]+'-CROSS', 'Run off the approach ledge across big no-grapple zone %s onto its lower exit ledge' % part
+        elif sem.endswith('-APPROACH'):
+            rid, action = sem, 'Release jump onto the big-zone approach ledge'
+        elif part == 'finish':
+            rid, action = spec['prefix']+'-FINISH', 'Release jump onto the new summit'
+        else:
+            rid, action = sem, 'Grapple climb in safe space %s' % part
+        d, w, _, _ = gap(prev, f)
+        rows.append(dict(id=rid, number=number, fromFragment=prev['id'], toFragment=f['id'],
+                         direction='RIGHT' if f['x'] > prev['x'] else 'LEFT', action=action, baseline=False,
+                         originalNumber=None, originalId=None, percent=round(d/5.4, 2), distance=d, witness=w,
+                         flight=[svg.contact(prev), svg.contact(f)], noGrappleZone=None))
+        numbers.append(number)
+        fs.append(f); prev = f
+    m['noGrappleZones'] = m['noGrappleZones']+zones
+    new = [f for f, _ in steps]
+    close = ['%s/%s %.0f' % (f['id'], z['id'], d) for z in zones for f in fs
+             for d in [union_distance(svg.bodies(f), [z['polygon']])[0]]
+             if d < (spec['zoneMargin'] if (f.get('semanticId') or '').startswith(z['id']+'-') else spec['zoneClearance'])]
+    close += ['%s/%s overlap' % (a['id'], b['id']) for a, b in itertools.combinations(m['noGrappleZones'], 2)
+              if union_distance([a['polygon']], [b['polygon']])[0] <= 0]
+    close += ['%s/%s yellow %.0f' % (f['id'], b['id'], d) for b in m['yellowBands'] for f in new
+              for d in [union_distance(svg.bodies(f), [b['polygon']])[0]] if d < b['nearestSolidClearance']]
+    lo, hi = FOLD_X_RANGE
+    close += ['%s outside x %g..%g' % (f['id'], lo, hi) for f in new for p in svg.bodies(f) for x, _ in p if not lo <= x <= hi]
+    close += ['%s outside x %g..%g' % (z['id'], lo, hi) for z in zones for x, _ in z['polygon'] if not lo <= x <= hi]
+    if close:
+        raise ValueError('Gauntlet: '+', '.join(sorted(set(close))))
+    m['namedSections'] = [dict(id=spec['section'], encounters=numbers)]
+
+    def rect(f):
+        xs = [x for p in svg.bodies(f) for x, _ in p]; ys = [y for p in svg.bodies(f) for _, y in p]
+        return dict(id=f['id'], semanticId=f['semanticId'], top=f['y'], x0=min(xs), x1=max(xs), y0=min(ys), y1=max(ys))
+    finish_top = summit['y']-svg.FINISH_PAD[1]
+    bands = sorted([z['y'], z['y']+z['height']] for z in zones)
+    merged = []
+    for a, b in bands:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    lo_y, hi_y = finish_top, old['y']
+    purple = sum(max(0, min(b, hi_y)-max(a, lo_y)) for a, b in merged)
+    gauntlet = dict(
+        zones=[dict(id=s['zone']['id'], rect=dict(x=s['zone']['x'], y=s['zone']['y'], width=s['zone']['width'],
+                                                     height=s['zone']['height']),
+                    entrySide=s['side'], direction=s['direction'], slabs=[],
+                    approach=rect(s['approach']), exit=rect(s['exit'])) for s in slots],
+        safeSpaces=[dict(id=s['id'], side=s['side'], start=s['start']['id'],
+                         end=(slots[int(s['id'][1:])]['approach']['id'] if int(s['id'][1:]) < len(slots) else summit['id']),
+                         grapplePanels=[rect(f) for f in s['panels']]) for s in spaces],
+        finish=dict(rect(summit), finishTop=finish_top),
+        purpleShare=dict(purpleHeight=purple, height=hi_y-lo_y, share=purple/(hi_y-lo_y)))
+    m['extSummit'] = dict(oldSummit=old['id'], oldFinishTop=old['y']-svg.FINISH_PAD[1], summit=summit['id'],
+                          finishTop=finish_top, zones=[z['id'] for z in zones], fragments=[f['id'] for f in new],
+                          encounters=[rows[n-1]['id'] for n in numbers], xRange=list(FOLD_X_RANGE), gauntlet=gauntlet)
+    m['pairChecks'] = []
+    for i, a in enumerate(fs):
+        for b in fs[i+1:]:
+            d = gap(a, b)[0]
+            m['pairChecks'].append(dict(source=a['id'], target=b['id'], minimumGap=d, passOutsideRange=d-21.6 > 540))
+    return m
+
+
 def measure_transfers(m, opening):
     fs = m['fragments']
     for row in m['encounters']:
@@ -2138,6 +2275,9 @@ def main():
                     help='(with --ext-summit) SEC-ext-summit inside FOLD_X_RANGE with one riser turn (no stacked '
                          'return climbs), big-zone units moved rigidly (TASK-724). Default: on (shipped v19) unless '
                          '--ext-summit-fold; --no-ext-summit-riser gives the previous shipped v18')
+    ap.add_argument('--ext-summit-gauntlet', action='store_true',
+                    help='(with the shipped run) candidate: SEC-ext-summit rebuilt as the gauntlet scaffold, eight empty '
+                         'big-zone slots Z1..Z8 with green safe spaces S0..S8 (TASK-732, EXT_SUMMIT_GAUNTLET)')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -2183,9 +2323,14 @@ def main():
             raise ValueError('--ext-summit extends the v17 layout (default flags with --purple-rest) only')
         if args.ext_summit_fold and args.ext_summit_riser:
             raise ValueError('--ext-summit-fold and --ext-summit-riser are alternatives')
-        extend_summit(m, EXT_SUMMIT_FOLD if args.ext_summit_fold else EXT_SUMMIT_RISER if args.ext_summit_riser else EXT_SUMMIT)
-    elif args.ext_summit_fold or args.ext_summit_riser:
-        raise ValueError('--ext-summit-fold / --ext-summit-riser need --ext-summit')
+        if args.ext_summit_gauntlet:
+            if args.ext_summit_fold:
+                raise ValueError('--ext-summit-gauntlet and --ext-summit-fold are alternatives')
+            extend_gauntlet(m)
+        else:
+            extend_summit(m, EXT_SUMMIT_FOLD if args.ext_summit_fold else EXT_SUMMIT_RISER if args.ext_summit_riser else EXT_SUMMIT)
+    elif args.ext_summit_fold or args.ext_summit_riser or args.ext_summit_gauntlet:
+        raise ValueError('--ext-summit-fold / --ext-summit-riser / --ext-summit-gauntlet need --ext-summit')
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);

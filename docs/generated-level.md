@@ -39,6 +39,33 @@ old finish is unchanged from v18. Saves from v18 and earlier restart at the
 spawn. `--no-ext-summit-riser` without layout flags reproduces v18,
 `--no-ext-summit` reproduces v17 and `--no-purple-rest` reproduces v16.
 
+### Gauntlet (v20 candidate)
+
+`--ext-summit-gauntlet` (TASK-732, `EXT_SUMMIT_GAUNTLET`) is a candidate that
+rebuilds SEC-ext-summit as a gauntlet. The shipped level stays v19, and the
+candidate keeps the v19 layout id until it ships. The v19 extension is not
+added. The old summit (P61) stays an ordinary landing, and everything below it
+is identical to v19. Above it is a switchback tower over the old summit's
+column (x 2,102..10,382, inside -1,100..62,534):
+
+- Eight zone slots Z1..Z8, each an empty 5,760 x 4,320 purple no-grapple
+  rect. Slabs come in later tickets. Odd zones are entered from the left side
+  and run rightward. Even zones are entered from the right side and run
+  leftward. Each zone is stacked 4,500 above the previous one, with 180
+  between the zone rects.
+- Every zone has an approach ledge 60 before it and an exit ledge 60 past it,
+  both outside the zone. The exit ledge's top is 342 below the approach
+  ledge's top.
+- Green safe spaces S0..S8: S0 runs from the old summit to Z1's approach
+  (6,700 up). Sk runs from Zk's exit to Z(k+1)'s approach, and S8 runs from
+  Z8's exit to the new summit (4,842 up). Each one is two ceiling grapple
+  panels on the tower's outer side. Consecutive safe spaces on the same side
+  are 9,000 apart, so no climb is stacked within pump reach.
+- `extSummit.gauntlet` records the slots: zone rects, entry side and
+  direction, approach and exit ledges, the safe spaces' start/end fragments
+  and grapple panels, the finish and the purple share. Purple share is 0.80
+  (34,560 of 43,000 from the old summit top to the finish top).
+
 Layout `extended-mountain-v18` (previous, TASK-711) is the generator output with
 `--no-ext-summit-riser` and no layout flag. It is v17 with SEC-ext-summit, a
 new section above the old summit (TASK-708..710), running leftward past the
