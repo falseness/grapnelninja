@@ -11,14 +11,14 @@ logs must be identical.
 
 test_climb_transfers replays the 27 safe-space climb transfers of tools/fixtures/gauntlet-climb-inputs.json (S0..S8: start
 ledge -> Sk-G1 -> Sk-G2 -> Z(k+1)-APPROACH, S8 -> XS-SUMMIT; at most 2 grapple panels per safe space) per transfer, as
-tools/test_ext_summit_route.py test_04 does: tools/probe_level_routes.js ROUTE_PROBE places the player at zero speed drop
+the retired v19 tools/test_ext_summit_route.py test_04 did (TASK-744): tools/probe_level_routes.js ROUTE_PROBE places the player at zero speed drop
 300 above the source top, then only document mouse events and physics(); the first contact/attach on a later panel must
 be the target. Each transfer runs twice and must be identical. test_zz_full_run is the chained proof: S0, Z1, S1, ..., Z8,
 S8 in order, each leg ending on the panel the next one starts from, every leg passing, and the last transfer
 (S8-G2 -> XS-SUMMIT) replayed on until climbStats.completed.
 
 Level: GAUNTLET_CANDIDATE=DIR (extended-mountain.level.json and extended-mountain-measurements.json). Without it the
-shipped artifacts/levels data is used when it has extSummit.gauntlet; otherwise the candidate is regenerated into a
+shipped artifacts/levels data is used when it has extSummit.gauntlet (shipped v20 since TASK-744); otherwise the candidate is regenerated into a
 temporary directory (tools/retune_extended_level.py --ext-summit-gauntlet, then tools/import_level_svg.py).
 
 GAUNTLET_EVIDENCE_DIR=DIR writes traversals.json (compact) and climbs.json. No default evidence directory.

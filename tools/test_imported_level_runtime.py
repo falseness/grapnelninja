@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v19'
+LAYOUT_ID = 'extended-mountain-v20'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -77,6 +77,14 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+            return true',
     '+        }',
     '+',
+    # TASK-729: the display-only hook counter (climbStats.grapples), placed before recoverClimbFall.
+    '+// Count a Grapple Over hook: a transition into the grappled state, not a',
+    '+// throw or a rope wrap. Display only; never read by physics.',
+    '+function countClimbGrapple(wasGrappled)',
+    '+{',
+    "+    if (version === 'grapple_over' && !wasGrappled && floors[0]?.climbStats) floors[0].climbStats.grapples++",
+    '+}',
+    '+',
     # TASK-717: the recovery launches like a fresh start (comment and speedY below).
     '+// Teleport a fallen Grapple Over player to the spawn and launch it upward',
     '+// like a fresh start. Time, best height, upgrades and the world (movers',
@@ -97,6 +105,8 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+    gameplayPressOwned = false',
     '+    stalePress = pressHeld',
     '+    world.climbStats.currentHeight = 0',
+    # TASK-729: recoveries are counted (climbStats.falls).
+    '+    world.climbStats.falls++',
     '+    LONG_FALL.restartTracking()',
     '+    screen.trackGrappleOver(true)',
     # TASK-721: the run's first recovery in single mode opens the double grapnel offer.
@@ -307,7 +317,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), (ROOT / 'leveldata.js').read_bytes())
 
     def test_03_incompatible_previous_layout_save(self):
-        # TASK-711 / TASK-725: saves from v18 (and earlier imported layouts) restart at the spawn. The save is a real current one
+        # TASK-711 / TASK-725 / TASK-744: saves from v19 (and earlier imported layouts) restart at the spawn. The save is a real current one
         # with the old layout id. A fresh start launches upward (TASK-704), so y may be up to the launch apex above.
         first = self.open()
         save = json.loads(first.evaluate('''() => {
@@ -317,7 +327,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         }'''))
         self.assertEqual(save['layoutId'], LAYOUT_ID)
         results = {}
-        for old in ('extended-mountain-v18', 'extended-mountain-v17', 'extended-mountain-v16', 'extended-mountain-v15'):
+        for old in ('extended-mountain-v19', 'extended-mountain-v18', 'extended-mountain-v17', 'extended-mountain-v16', 'extended-mountain-v15'):
             page = self.open(seed={CLIMB_KEY: json.dumps(dict(save, layoutId=old))})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
@@ -333,7 +343,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.record('incompatible_save_' + old, page, snap, seededLayoutId=old, rewrittenLayoutId=LAYOUT_ID,
                         savedPlayer={'x': save['player']['x'], 'y': save['player']['y']})
             results[old] = snap['notice']
-        self.assertEqual(len(results), 4)
+        self.assertEqual(len(results), 5)
 
     def test_04_current_layout_save(self):
         first = self.open()
@@ -410,13 +420,16 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # the Grapple Over spawn launch (SPAWN_LAUNCH_DIFF in physics.js, one assignment in startGrappleOverVersion);
         # TASK-717 applied it to recoverClimbFall too; TASK-721 opens the first-death offer from it. TASK-714/715/716/726 changed only display code
         # (render/glowsprites.js bakes, render/landmarks.js, the sprites/grapnel.js rope and hook-end drawing).
+        # TASK-727/728 added the ?visualsPerf=1 freeze recorder (render/visualsperf.js) and moved the ?perf=1 layer
+        # table to a shared PERF_LAYERS (render/perfprofile.js): instrumentation only, nothing runs without the flags.
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
                                                                                       ':!render/fallmessage.js', ':!sprites/trampoline.js',
                                                                                       ':!fixedlevel.js', ':!render/nograpplezones.js', ':!moveScreen.js',
                                                                                       ':!render/effects.js', ':!render/parallax.js',
                                                                                       ':!render/glowsprites.js', ':!render/landmarks.js',
-                                                                                      ':!sprites/grapnel.js'],
+                                                                                      ':!sprites/grapnel.js', ':!render/perfprofile.js',
+                                                                                      ':!render/visualsperf.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
@@ -438,6 +451,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+        <script src = "render/fallmessage.js"></script>',
                                    '+        <script src = "render/nograpplezones.js"></script>',
                                    '+        <script src = "render/routearrows.js"></script>',
+                                   # TASK-727: the ?visualsPerf=1 freeze recorder (instrumentation only).
+                                   '+        <script src = "render/visualsperf.js"></script>',
                                    '+                await loadGrappleOverLevelAsset()',
                                    '+                // A fresh start (first run or restart) launches upward, as',
                                    '+                // does a fall recovery; a continue or save restore does not.',

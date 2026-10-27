@@ -449,7 +449,8 @@ comes to rest there is a softlock. The rule (TASK-694):
   edge and angle, zones), the summary gains `noGrappleRestFaces`,
   `noGrappleRestFaceViolations`, `noGrappleRestPockets` and
   `minNoGrappleRestAngle`, and each violation is a failure ending in `(rest)`.
-- The shipped v19 level passes it (53 rest faces including the BZ1..BZ3 slabs,
+- The shipped v20 level passes it (127 rest faces including the Z1..Z8 slabs,
+  minimum 15 degrees, no pockets). v19 passed it (53 rest faces including the BZ1..BZ3 slabs,
   minimum 15 degrees, no pockets), as did v18 and v17 (23 rest faces, minimum 15.5
   degrees). The earlier v16 fails it on the rest rule only: NG1's near-flat
   tops P23 (4.8 degrees), P24 (0 degrees) and P25 (0.6 degrees), and their
@@ -466,7 +467,7 @@ comes to rest there is a softlock. The rule (TASK-694):
   `--sides-only` it is opt-in. The report gains `maxXRange` (`min`, `max`,
   `checked`, `minX`, `maxX`, `violations[]` with each element's x extent) and
   the summary `maxXRangeViolations`.
-- v19 passes it. v18 fails it (the SEC-ext-summit panels from about x -80,450).
+- v20 and v19 pass it. v18 fails it (the SEC-ext-summit panels from about x -80,450).
 
 ## 8. Rejection summary
 

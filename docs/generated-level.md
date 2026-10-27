@@ -1,7 +1,43 @@
 # Generated level
 
-Layout `extended-mountain-v19` (shipped, TASK-725) is the default generator
+Layout `extended-mountain-v20` (shipped, TASK-744) is the default generator
 output (`tools/retune_extended_level.py` with no layout flag =
+`--min-side-scope all --middle-purple --upper-purple --purple-rest
+--ext-summit --ext-summit-gauntlet`). It is v19 with SEC-ext-summit rebuilt
+as the gauntlet (TASK-732..743, `EXT_SUMMIT_GAUNTLET`, described below):
+from the old summit up, eight purple no-grapple zones Z1..Z8 alternate with
+green safe spaces S0..S8 of two grapple panels each, with a yellow catcher
+under each zone's exit side and under S0.
+
+- The geometry is the TASK-743 candidate. Only the layout id (and the
+  guidelines hash) differ. Everything below the old summit is unchanged
+  from v19.
+- Tower pitch 7,600 (first rise 8,800). The purple share from the old
+  summit top to the finish is 0.494 (34,560 of 69,900). A share-0.60 pitch
+  (6,200 / 7,700) brings stacked column ledges back within pump reach: the
+  source-restricted shortcut matrix found 10 SKIPs there and 0 on v20
+  (artifacts/TASK-744/share-proof.md).
+- Production-input proofs: `tools/test_gauntlet_route.py` (zone crossings
+  `tools/fixtures/gauntlet-inputs-Z1..8.json`, the 27 safe-space climb
+  transfers `tools/fixtures/gauntlet-climb-inputs.json`, and the chained full
+  run to `climbStats.completed`). `tools/gauntlet_fall_probe.py` drops the
+  player from every ledge and panel end. No drop falls into the void.
+- The v19 High Summit proofs (`tools/test_ext_summit_route.py`,
+  `tools/fixtures/ext-summit-inputs-BZ1..3.json`,
+  `tools/fixtures/ext-summit-climb-inputs.json`) were retired with v19.
+  They described geometry that v20 no longer has.
+- Section label: the gauntlet stays in section `SEC-ext-summit`
+  (`climb.section.SEC-ext-summit`, "High Summit" / its ru label), so no new
+  section ids were added.
+
+v20 has 149 panels, 148 transfers and eleven no-grapple zones (NG1, NGM,
+NGU, Z1..Z8). Saves from v19 and earlier restart at the spawn.
+`--no-ext-summit-gauntlet` without layout flags reproduces v19 byte for
+byte, `--no-ext-summit-riser` reproduces v18, `--no-ext-summit` reproduces
+v17 and `--no-purple-rest` reproduces v16.
+
+Layout `extended-mountain-v19` (previous, TASK-725) is the generator output
+with `--no-ext-summit-gauntlet` and no layout flag (=
 `--min-side-scope all --middle-purple --upper-purple --purple-rest
 --ext-summit --ext-summit-riser`). It is v18 with SEC-ext-summit laid out again
 inside the bottom run's x span (TASK-722..724), so a failed jump falls onto
@@ -28,9 +64,9 @@ lower levels instead of beside the map:
   cover the columns where the bottom run has nothing under higher geometry,
   so a drop from them lands on the main level. The two over P17..P20 sit at
   y -37,500, out of pump reach of the main-level panels under them.
-- Climb transfers have per-transfer production inputs
+- Climb transfers had per-transfer production inputs
   (`tools/fixtures/ext-summit-climb-inputs.json`, `test_ext_summit_route`
-  test_04).
+  test_04; both retired in TASK-744).
 
 v19 has 118 panels, 117 transfers and six no-grapple zones. The geometry is
 the TASK-724 candidate plus the C1a riser and the two raised shelves
@@ -39,11 +75,13 @@ old finish is unchanged from v18. Saves from v18 and earlier restart at the
 spawn. `--no-ext-summit-riser` without layout flags reproduces v18,
 `--no-ext-summit` reproduces v17 and `--no-purple-rest` reproduces v16.
 
-### Gauntlet (v20 candidate)
+### Gauntlet (shipped v20)
 
-`--ext-summit-gauntlet` (TASK-732, `EXT_SUMMIT_GAUNTLET`) is a candidate that
-rebuilds SEC-ext-summit as a gauntlet. The shipped level stays v19, and the
-candidate keeps the v19 layout id until it ships. The v19 extension is not
+`--ext-summit-gauntlet` (TASK-732, `EXT_SUMMIT_GAUNTLET`; the default since
+TASK-744) rebuilds SEC-ext-summit as a gauntlet. The scaffold notes below
+date from TASK-732. TASK-743 changed the pitch to 7,600 (first rise 8,800),
+put the even zone units +700 across and placed the safe-space panels in a
+zig-zag. TASK-742 added the yellow catchers. The v19 extension is not
 added. The old summit (P61) stays an ordinary landing, and everything below it
 is identical to v19. Above it is a switchback tower over the old summit's
 column (x 2,102..10,382, inside -1,100..62,534):
@@ -53,13 +91,13 @@ column (x 2,102..10,382, inside -1,100..62,534):
   (`GAUNTLET_SLABS`; zones without an entry stay empty with one
   approach->exit `Zk-CROSS` transfer). Odd zones are entered from the left side
   and run rightward. Even zones are entered from the right side and run
-  leftward. Each zone is stacked 4,500 above the previous one, with 180
+  leftward. Each zone was stacked 4,500 (since TASK-743: 7,600) above the previous one, with 180
   between the zone rects.
 - Every zone has an approach ledge 60 before it and an exit ledge 60 past it,
   both outside the zone. The exit ledge's top is 342 below the approach
   ledge's top.
 - Green safe spaces S0..S8: S0 runs from the old summit to Z1's approach
-  (6,700 up). Sk runs from Zk's exit to Z(k+1)'s approach, and S8 runs from
+  (6,700 up; 8,800 since TASK-743). Sk runs from Zk's exit to Z(k+1)'s approach, and S8 runs from
   Z8's exit to the new summit (4,842 up). Each one is two ceiling grapple
   panels on the tower's outer side. Consecutive safe spaces on the same side
   are 9,000 apart, so no climb is stacked within pump reach.
@@ -73,8 +111,9 @@ column (x 2,102..10,382, inside -1,100..62,534):
 - `extSummit.gauntlet` records the slots (with each zone's slabs: contact,
   angle, extents, thickness and bounds): zone rects, entry side and
   direction, approach and exit ledges, the safe spaces' start/end fragments
-  and grapple panels, the finish and the purple share. Purple share is 0.80
-  (34,560 of 43,000 from the old summit top to the finish top).
+  and grapple panels, the finish and the purple share. Purple share was 0.80 at the
+  TASK-732 pitch (34,560 of 43,000 from the old summit top to the finish
+  top). It is 0.494 (34,560 of 69,900) at the shipped TASK-743 pitch.
 
 Layout `extended-mountain-v18` (previous, TASK-711) is the generator output with
 `--no-ext-summit-riser` and no layout flag. It is v17 with SEC-ext-summit, a
@@ -94,8 +133,8 @@ left edge of the bottom run (x down to about -80,450):
   drop cannot bounce over the exit ledge (TASK-710). The first panel after a zone
   keeps the TASK-708 mirrored copy and position.
 - Production-input traversals: `tools/test_ext_summit_route.py` with the
-  `tools/fixtures/ext-summit-inputs-BZ1..3.json` fixtures. It runs on the shipped
-  level by default (`EXT_SUMMIT_CANDIDATE=DIR` for a candidate). The whole-route
+  `tools/fixtures/ext-summit-inputs-BZ1..3.json` fixtures (retired in TASK-744).
+  It ran on the shipped level by default (`EXT_SUMMIT_CANDIDATE=DIR` for a candidate). The whole-route
   shortcut matrix (`tools/test_route_shortcuts.py`) treats consecutive slabs
   of one no-grapple zone as one route step (`zoneSlab-*` outcomes). It has no
   skips.

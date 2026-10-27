@@ -602,7 +602,7 @@ class GuideTests(ImportCase):
         self.assertEqual(runs[0].encode(), (ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json').read_bytes())
         self.assertEqual(runs[0], runs[1])
         level = json.loads(runs[0])
-        self.assertEqual(level['layoutId'], 'extended-mountain-v19')
+        self.assertEqual(level['layoutId'], 'extended-mountain-v20')
         fragments = {f['id'] for f in level['svgFormat']['fragments']}
         checks = []
         for t in level['svgFormat']['transfers']:

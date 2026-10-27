@@ -22,7 +22,11 @@ EXTENDED_LAYOUT = 'extended-mountain-v15'
 # v18; `--no-ext-summit` without layout flags is the previous shipped v17.
 # Since TASK-725 the shipped run lays SEC-ext-summit out inside the bottom run's x span (--ext-summit-riser,
 # EXT_SUMMIT_RISER) as v19; `--no-ext-summit-riser` is the previous shipped v18 (extension beyond the left edge).
-SHIPPED_LAYOUT = 'extended-mountain-v19'
+# Since TASK-744 the shipped run rebuilds SEC-ext-summit as the gauntlet (--ext-summit-gauntlet, EXT_SUMMIT_GAUNTLET:
+# purple zones Z1..Z8, green safe spaces S0..S8, yellow catchers) as v20; `--no-ext-summit-gauntlet` is the previous
+# shipped v19.
+SHIPPED_LAYOUT = 'extended-mountain-v20'
+EXT_SUMMIT_V19_LAYOUT = 'extended-mountain-v19'
 EXT_SUMMIT_V18_LAYOUT = 'extended-mountain-v18'
 PREVIOUS_SHIPPED_LAYOUT = 'extended-mountain-v17'
 NO_REST_SHIPPED_LAYOUT = 'extended-mountain-v16'
@@ -2468,14 +2472,16 @@ def main():
     ap.add_argument('--ext-summit', action=argparse.BooleanOptionalAction, default=None,
                     help='add SEC-ext-summit (three big zones, new finish 8640+ higher) above the old summit (TASK-708/'
                          '710); only with the default shipped layout flags and --purple-rest. Default: on for the shipped '
-                         'v19 run; --no-ext-summit without layout flags gives the previous shipped v17')
+                         'v19+ run; --no-ext-summit without layout flags gives the previous shipped v17')
     ap.add_argument('--ext-summit-riser', action=argparse.BooleanOptionalAction, default=None,
                     help='(with --ext-summit) SEC-ext-summit inside FOLD_X_RANGE with one riser turn (no stacked '
-                         'return climbs), big-zone units moved rigidly (TASK-724). Default: on (shipped v19) unless '
+                         'return climbs), big-zone units moved rigidly (TASK-724). Default: on (v19) unless '
                          '--ext-summit-fold; --no-ext-summit-riser gives the previous shipped v18')
-    ap.add_argument('--ext-summit-gauntlet', action='store_true',
-                    help='(with the shipped run) candidate: SEC-ext-summit rebuilt as the gauntlet scaffold, eight empty '
-                         'big-zone slots Z1..Z8 with green safe spaces S0..S8 (TASK-732, EXT_SUMMIT_GAUNTLET)')
+    ap.add_argument('--ext-summit-gauntlet', action=argparse.BooleanOptionalAction, default=None,
+                    help='(with --ext-summit) SEC-ext-summit rebuilt as the gauntlet: purple zones Z1..Z8 with green safe '
+                         'spaces S0..S8 and yellow catchers (TASK-732..743, EXT_SUMMIT_GAUNTLET). Default: on (shipped '
+                         'v20) unless --ext-summit-fold or --no-ext-summit-riser; --no-ext-summit-gauntlet gives the '
+                         'previous shipped v19')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -2492,6 +2498,8 @@ def main():
     args.min_side_scope=args.min_side_scope or 'none'
     args.purple_rest = shipped if args.purple_rest is None else args.purple_rest
     args.ext_summit = shipped and args.purple_rest if args.ext_summit is None else args.ext_summit
+    if args.ext_summit_gauntlet is None:
+        args.ext_summit_gauntlet = bool(args.ext_summit) and not args.ext_summit_fold and args.ext_summit_riser is not False
     if args.ext_summit_riser is None:
         args.ext_summit_riser = args.ext_summit and not args.ext_summit_fold
     args.middle_purple=bool(args.middle_purple); args.upper_purple=bool(args.upper_purple)
@@ -2514,7 +2522,8 @@ def main():
          min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple,
          upper_purple=args.upper_purple, purple_rest=args.purple_rest)
     if shipped:
-        m['layoutId']=(((SHIPPED_LAYOUT if args.ext_summit_riser else EXT_SUMMIT_V18_LAYOUT) if args.ext_summit
+        m['layoutId']=(((SHIPPED_LAYOUT if args.ext_summit_gauntlet else EXT_SUMMIT_V19_LAYOUT if args.ext_summit_riser
+                         else EXT_SUMMIT_V18_LAYOUT) if args.ext_summit
                         else PREVIOUS_SHIPPED_LAYOUT) if args.purple_rest else NO_REST_SHIPPED_LAYOUT)
     if args.ext_summit:
         if not (shipped and args.purple_rest):

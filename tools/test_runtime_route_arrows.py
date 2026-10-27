@@ -448,7 +448,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         loaded = page.evaluate('() => ({layoutId: floors[0].level.layoutId, transfers: floors[0].level.svgFormat.transfers,'
                                ' arrows: routeArrowsFor(floors[0].level).map(a => ({id: a.id, curve: a.curve, tangent: a.tangent,'
                                ' gap: a.gap, length: a.length, target: a.target, t: a.t}))})')
-        self.assertEqual(loaded['layoutId'], 'extended-mountain-v19')
+        self.assertEqual(loaded['layoutId'], 'extended-mountain-v20')
         meas = json.loads((ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json').read_text())
         self.assertEqual(len(self.level['svgFormat']['fragments']), len(meas['fragments']))
         self.assertEqual(loaded['transfers'], self.level['svgFormat']['transfers'])
@@ -671,7 +671,7 @@ class RuntimeRouteArrowTests(unittest.TestCase):
         wx, wy, k = self.overview(info)
         state = page.evaluate('() => ({layoutId: floors[0].level.layoutId, guides: floors[0].level.svgFormat.transfers.filter(t => t.guide).length,'
                               ' arrows: routeArrowsFor(floors[0].level).length})')
-        self.assertEqual(state, {'layoutId': 'extended-mountain-v19', 'guides': 0, 'arrows': 0})
+        self.assertEqual(state, {'layoutId': 'extended-mountain-v20', 'guides': 0, 'arrows': 0})
         out = self.frame(page, wx, wy, k)
         self.assertEqual((out['rec']['drawn'], out['rec']['paths']), ([], []))
         partial = import_svg(guided_svg({'T01', 'T09', 'T17'}).encode())
