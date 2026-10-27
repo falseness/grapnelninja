@@ -235,7 +235,18 @@ function grappleOverProfile()
 function grappleOverAcquisitionRadius()
 {
     const definition = grappleOverProfile()
-    return floors[0]?.rangeUpgraded ? definition.upgradedAcquisitionRadius : definition.acquisitionRadius
+    const radius = floors[0]?.rangeUpgraded ? definition.upgradedAcquisitionRadius : definition.acquisitionRadius
+    return floors[0]?.grapnelMode === 'double' ? radius * 2 : radius
+}
+
+// Double grapnel mode doubles the range for the run; usedDouble marks the run
+// once it has been double and stays set until a new climb world is made.
+function setGrapnelMode(mode)
+{
+    if (mode !== 'single' && mode !== 'double') throw new Error('InvalidGrapnelMode: ' + mode)
+    const world = floors[0]
+    world.grapnelMode = mode
+    if (mode === 'double') world.usedDouble = true
 }
 const scale = Object.fromEntries(Object.entries(MODE_DEFINITIONS)
     .map(([id, definition]) => [id, definition.cameraScale]))

@@ -150,6 +150,9 @@ class PersistentWorld extends Floor
         this.climbStats = {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false}
         // Earned once on entering the upgrade section; kept until a confirmed restart.
         this.rangeUpgraded = false
+        // 'single' (default) or 'double' range; see setGrapnelMode.
+        this.grapnelMode = 'single'
+        this.usedDouble = false
         // HUD notice time left after the upgrade; display only, never saved.
         this.rangeNoticeMs = 0
         // Drag zones are neither collidable nor grappleable: keep them out of
@@ -287,6 +290,7 @@ function captureClimbState()
         player: climbFields(ninja, CLIMB_PLAYER_FIELDS),
         input: {pressHeld, stalePress},
         upgrades: {range: world.rangeUpgraded},
+        grapnelMode: world.grapnelMode, usedDouble: world.usedDouble,
         elements: world.elements.map(e => ({id: e.id, ...climbFields(e, CLIMB_ELEMENT_FIELDS)})),
         grapple: {
             throwed: grapnel.throwed, grappled: grapnel.grappled,
@@ -329,6 +333,11 @@ function restoreClimbState(save)
     // Saves from before the range upgrade existed carry no upgrades.
     if (s.upgrades === undefined) s.upgrades = {range: false}
     shape(s.upgrades, {range: false})
+    // Saves from before double grapnel mode load as a single-mode run.
+    if (s.grapnelMode === undefined) s.grapnelMode = 'single'
+    if (s.usedDouble === undefined) s.usedDouble = false
+    if (s.grapnelMode !== 'single' && s.grapnelMode !== 'double') fail()
+    shape(s.usedDouble, false)
     if (s.player.radius <= 0 || s.player.hazardCooldownMs < 0 || s.player.invulnerableMs < 0 ||
         s.stats.elapsedActiveMs < 0 || s.stats.maxHeight < Math.max(0, s.stats.currentHeight)) fail()
     if (!Array.isArray(s.elements) || s.elements.length !== world.elements.length) fail()
@@ -360,6 +369,8 @@ function restoreClimbState(save)
     nextWorld.elapsedSteps = s.simulationTick
     nextWorld.climbStats = s.stats
     nextWorld.rangeUpgraded = s.upgrades.range
+    nextWorld.grapnelMode = s.grapnelMode
+    nextWorld.usedDouble = s.usedDouble || s.grapnelMode === 'double'
     s.elements.forEach(e => Object.assign(nextWorld.byId.get(e.id), e))
     const nextNinja = new Ninja({...s.player, fill:ninja.fill, stroke:ninja.stroke})
     Object.assign(nextNinja, s.player)

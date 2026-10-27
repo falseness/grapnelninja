@@ -989,12 +989,13 @@ const CLIMB_UI = {
             I18N.t('climb.max', {value:Math.floor(stats.maxHeight)}),
             I18N.t('climb.section', {value:I18N.t(section.labelKey || 'climb.section.' + section.id)}),
             I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)})]
+        if (floors[0].grapnelMode === 'double') rows.push(I18N.t('climb.doubleRange'))
         // Terrain or the player behind a HUD block fades it so targets stay readable
         ctx.save()
         ctx.font = size + 'px ' + STYLE.ui.fontFamily
         const textRight = size + Math.max(...rows.map(text => ctx.measureText(text).width))
         ctx.restore()
-        this.hudYield.text = this.yields(size, size * 0.6, textRight, size * (1.5 + 3 * 1.6 + 0.6), size * 0.5)
+        this.hudYield.text = this.yields(size, size * 0.6, textRight, size * (1.5 + (rows.length - 1) * 1.6 + 0.6), size * 0.5)
         ctx.save()
         if (this.hudYield.text) ctx.globalAlpha = this.yieldAlpha
         rows.forEach((text, i) => this.text(text, size, size * (1.5 + i * 1.6), size, 'left'))
