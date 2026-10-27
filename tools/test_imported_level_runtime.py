@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v18'
+LAYOUT_ID = 'extended-mountain-v19'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -307,7 +307,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), (ROOT / 'leveldata.js').read_bytes())
 
     def test_03_incompatible_previous_layout_save(self):
-        # TASK-711: saves from v17 (and earlier imported layouts) restart at the spawn. The save is a real current one
+        # TASK-711 / TASK-725: saves from v18 (and earlier imported layouts) restart at the spawn. The save is a real current one
         # with the old layout id. A fresh start launches upward (TASK-704), so y may be up to the launch apex above.
         first = self.open()
         save = json.loads(first.evaluate('''() => {
@@ -317,7 +317,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         }'''))
         self.assertEqual(save['layoutId'], LAYOUT_ID)
         results = {}
-        for old in ('extended-mountain-v17', 'extended-mountain-v16', 'extended-mountain-v15'):
+        for old in ('extended-mountain-v18', 'extended-mountain-v17', 'extended-mountain-v16', 'extended-mountain-v15'):
             page = self.open(seed={CLIMB_KEY: json.dumps(dict(save, layoutId=old))})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
@@ -333,7 +333,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.record('incompatible_save_' + old, page, snap, seededLayoutId=old, rewrittenLayoutId=LAYOUT_ID,
                         savedPlayer={'x': save['player']['x'], 'y': save['player']['y']})
             results[old] = snap['notice']
-        self.assertEqual(len(results), 3)
+        self.assertEqual(len(results), 4)
 
     def test_04_current_layout_save(self):
         first = self.open()

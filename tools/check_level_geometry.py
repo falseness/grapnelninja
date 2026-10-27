@@ -7,7 +7,7 @@ a comparison, never the computed result (docs/level-svg-format.md §7).
 
     python3 tools/check_level_geometry.py --svg LEVEL.svg --level LEVEL.json --report REPORT.json \
         [--reference MEASUREMENTS.json] [--min-side-length UNITS | --no-min-side-length]
-        [--no-grapple-rest | --allow-grapple-rest] [--max-x-range MIN:MAX]
+        [--no-grapple-rest | --allow-grapple-rest] [--max-x-range MIN:MAX | --no-max-x-range]
     python3 tools/check_level_geometry.py --sides-only --level LEVEL.json --report REPORT.json \
         [--min-side-length UNITS | --no-min-side-length] [--max-x-range MIN:MAX]
 
@@ -42,10 +42,12 @@ Checks:
   overlaps a no-grapple zone slopes >= 15 degrees from horizontal, and no two
   such edges meet in a pocket (a vertex both slope down toward), so the player
   cannot come to rest where it cannot grapple (report noGrappleRest).
-- --max-x-range MIN:MAX (opt-in, TASK-722): every element point, the spawn and
-  the finish region lie within [MIN, MAX] (e.g. -1100:62534, the bottom run's
-  span), so a failed jump never falls beside the map; each violating element
-  is reported with its x extent (report maxXRange).
+- --max-x-range MIN:MAX (TASK-722; default -1100:62534 = DEFAULT_X_RANGE, the
+  bottom run's span, for the full check since TASK-725 / v19; opt-in for
+  --sides-only; --no-max-x-range turns it off for legacy layouts up to v18):
+  every element point, the spawn and the finish region lie within [MIN, MAX],
+  so a failed jump never falls beside the map; each violating element is
+  reported with its x extent (report maxXRange).
 
 Exit 0 when every check passes, 1 on a failed check, 2 on usage errors.
 """
@@ -58,6 +60,8 @@ import sys
 import xml.etree.ElementTree as ET
 
 GRAPPLE_RANGE = 540.0
+# The bottom run's x span (v17 main level); the CLI full check keeps every element inside it since v19.
+DEFAULT_X_RANGE = (-1100.0, 62534.0)
 PLAYER_DIAMETER = 21.6
 COORD_TOL = 0.01
 # Largest edge-to-edge gap of a transfer inside one no-grapple zone (0.5 R).
@@ -756,9 +760,12 @@ def main(argv=None):
                       'between two of them (default for the full check since v17)' % NO_GRAPPLE_REST_SLOPE)
     rest.add_argument('--allow-grapple-rest', dest='no_grapple_rest', action='store_const', const=False,
                       help='skip the no-rest-inside-purple rule (legacy layouts up to v16)')
-    parser.add_argument('--max-x-range', type=x_range, metavar='MIN:MAX',
-                        help='fail any element point, the spawn or the finish region outside x in [MIN, MAX] '
-                        '(opt-in; e.g. -1100:62534)')
+    width = parser.add_mutually_exclusive_group()
+    width.add_argument('--max-x-range', type=x_range, metavar='MIN:MAX', default=None,
+                       help='fail any element point, the spawn or the finish region outside x in [MIN, MAX] '
+                       '(default %g:%g for the full check since v19; opt-in with --sides-only)' % DEFAULT_X_RANGE)
+    width.add_argument('--no-max-x-range', dest='max_x_range', action='store_const', const=False,
+                       help='skip the x range rule (legacy layouts up to v18)')
     argv = list(sys.argv[1:] if argv is None else argv)
     # argparse reads '-1100:62534' as an option; keep '--max-x-range -1100:62534' working.
     for i in range(len(argv) - 1):
@@ -770,6 +777,8 @@ def main(argv=None):
         parser.error('--no-grapple-rest needs the full check (not --sides-only)')
     if args.no_grapple_rest is None:
         args.no_grapple_rest = not args.sides_only
+    if args.max_x_range is None and not args.sides_only:
+        args.max_x_range = DEFAULT_X_RANGE
     if not args.sides_only and not args.svg:
         parser.error('--svg is required unless --sides-only')
     if args.min_side_length is not None and not (math.isfinite(args.min_side_length) and args.min_side_length > 0):

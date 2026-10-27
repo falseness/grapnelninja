@@ -16,7 +16,7 @@ TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
 sys.path.insert(0, str(TOOLS))
 
-from check_level_geometry import (apply_x_range, axis_rect, check, check_sides, check_x_range, inside,  # noqa: E402
+from check_level_geometry import (apply_x_range, axis_rect, check, check_sides, check_x_range, DEFAULT_X_RANGE, inside,  # noqa: E402
                                   polygon_distance, union_distance)
 from import_level_svg import import_svg  # noqa: E402
 
@@ -360,11 +360,33 @@ class MaxXRangeTests(unittest.TestCase):
         p, _ = self.run_cli(width_level(-1101), '--max-x-range=-1100:62534')
         self.assertEqual(p.returncode, 1)
 
-    def test_cli_rule_is_opt_in(self):
+    def test_cli_rule_is_opt_in_for_sides_only(self):
         p, report = self.run_cli(width_level(-5000, 70000))
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertNotIn('x_range', p.stdout)
         self.assertNotIn('maxXRange', report)
+
+    def test_cli_full_check_default(self):
+        # TASK-725: the full check applies DEFAULT_X_RANGE (-1100:62534) unless --no-max-x-range (legacy up to v18).
+        levels = ROOT / 'artifacts' / 'levels'
+        args = ['--svg', str(levels / 'extended-mountain.svg'), '--level', str(levels / 'extended-mountain.level.json'),
+                '--reference', str(levels / 'extended-mountain-measurements.json')]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = {}
+            for name, extra in (('default', []), ('off', ['--no-max-x-range'])):
+                rep = Path(tmp, name + '.json')
+                p = subprocess.run([sys.executable, str(CHECKER), '--report', str(rep)] + args + extra,
+                                   capture_output=True, text=True, timeout=300)
+                out[name] = p, json.loads(rep.read_text())
+        p, report = out['default']
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('x_range_violations=0', p.stdout)
+        self.assertEqual((report['maxXRange']['min'], report['maxXRange']['max']), (-1100, 62534))
+        p, report = out['off']
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertNotIn('x_range', p.stdout)
+        self.assertNotIn('maxXRange', report)
+        self.assertEqual(DEFAULT_X_RANGE, (-1100, 62534))
 
     def test_cli_bad_range_is_usage_error(self):
         for value in ('62534:-1100', '1:2:3', 'a:b', 'nan:1'):

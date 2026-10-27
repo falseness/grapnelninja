@@ -20,7 +20,10 @@ EXTENDED_LAYOUT = 'extended-mountain-v15'
 # candidates still reproduce byte for byte. `--no-purple-rest` without layout flags is the previous shipped v16.
 # Since TASK-711 the shipped run also adds SEC-ext-summit (--ext-summit, three big zones above the old summit) as
 # v18; `--no-ext-summit` without layout flags is the previous shipped v17.
-SHIPPED_LAYOUT = 'extended-mountain-v18'
+# Since TASK-725 the shipped run lays SEC-ext-summit out inside the bottom run's x span (--ext-summit-riser,
+# EXT_SUMMIT_RISER) as v19; `--no-ext-summit-riser` is the previous shipped v18 (extension beyond the left edge).
+SHIPPED_LAYOUT = 'extended-mountain-v19'
+EXT_SUMMIT_V18_LAYOUT = 'extended-mountain-v18'
 PREVIOUS_SHIPPED_LAYOUT = 'extended-mountain-v17'
 NO_REST_SHIPPED_LAYOUT = 'extended-mountain-v16'
 SHIPPED_SCOPE = dict(min_side_scope='all', middle_purple=True, upper_purple=True)
@@ -937,10 +940,13 @@ EXT_SUMMIT_FOLD = dict(EXT_SUMMIT, climbs=((1, 1, -1),)*3, climbShifts=((-600, 1
 # a landing on one is a fall back, never a skip) cover the columns where the bottom run has nothing under it; a drop
 # off either shelf end lands on the main level. Chosen by artifacts/TASK-724/sweep (calibrated stacking predictor:
 # 0 conflicts, 0 predicted void drops).
+# TASK-725: the rightward run starts with a riser too (C1a-1R, 5000 above C1a-1), so C1a-2..4 are more than a pump's
+# reach above the last main-level climb P18..P24 that runs leftward under them (from P21 / P22 the whole-route matrix
+# skipped onto C1a-4 / C1a-3), and the two shelves over P17..P20 sit at -37500 (at -34500 P18 pumped onto one).
 EXT_SUMMIT_RISER = dict(EXT_SUMMIT, climbs=((1,)*5+(-1,), (-1,), (-1,)), climbShifts=((-600,)+(2300,)*4+(1600,), (0,), (0,)),
-                        zoneFacingFirst=(False, True, True), rigidUnits=True, risers={(1, 5): (0, -5000)},
+                        zoneFacingFirst=(False, True, True), rigidUnits=True, risers={(1, 0): (0, -5000), (1, 5): (0, -5000)},
                         unitShifts=(750, 750, 750), offsets={(2, 0): (2000, 0), (3, 0): (2000, 0)},
-                        catchShelves=(('XS-C1a-1', 3506, 4306, -36500, 300), ('XS-C1a-1', 13935, 18237, -34500, 300), ('XS-C1a-1', 20369, 21387, -34500, 300)))
+                        catchShelves=(('XS-C1a-1', 3506, 4306, -36500, 300), ('XS-C1a-1', 13935, 18237, -37500, 300), ('XS-C1a-1', 20369, 21387, -37500, 300)))
 
 
 def add_catch_shelf(f, x0, x1, top, thickness):
@@ -2127,10 +2133,11 @@ def main():
     ap.add_argument('--ext-summit', action=argparse.BooleanOptionalAction, default=None,
                     help='add SEC-ext-summit (three big zones, new finish 8640+ higher) above the old summit (TASK-708/'
                          '710); only with the default shipped layout flags and --purple-rest. Default: on for the shipped '
-                         'v18 run; --no-ext-summit without layout flags gives the previous shipped v17')
-    ap.add_argument('--ext-summit-riser', action='store_true',
-                    help='(with the shipped run) candidate: SEC-ext-summit inside FOLD_X_RANGE with one riser turn '
-                         '(no stacked return climbs), big-zone units moved rigidly (TASK-724)')
+                         'v19 run; --no-ext-summit without layout flags gives the previous shipped v17')
+    ap.add_argument('--ext-summit-riser', action=argparse.BooleanOptionalAction, default=None,
+                    help='(with --ext-summit) SEC-ext-summit inside FOLD_X_RANGE with one riser turn (no stacked '
+                         'return climbs), big-zone units moved rigidly (TASK-724). Default: on (shipped v19) unless '
+                         '--ext-summit-fold; --no-ext-summit-riser gives the previous shipped v18')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -2147,6 +2154,8 @@ def main():
     args.min_side_scope=args.min_side_scope or 'none'
     args.purple_rest = shipped if args.purple_rest is None else args.purple_rest
     args.ext_summit = shipped and args.purple_rest if args.ext_summit is None else args.ext_summit
+    if args.ext_summit_riser is None:
+        args.ext_summit_riser = args.ext_summit and not args.ext_summit_fold
     args.middle_purple=bool(args.middle_purple); args.upper_purple=bool(args.upper_purple)
     if args.upper_purple and not args.middle_purple:
         raise ValueError('--upper-purple needs --middle-purple')
@@ -2167,7 +2176,8 @@ def main():
          min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple,
          upper_purple=args.upper_purple, purple_rest=args.purple_rest)
     if shipped:
-        m['layoutId']=(SHIPPED_LAYOUT if args.ext_summit else PREVIOUS_SHIPPED_LAYOUT) if args.purple_rest else NO_REST_SHIPPED_LAYOUT
+        m['layoutId']=(((SHIPPED_LAYOUT if args.ext_summit_riser else EXT_SUMMIT_V18_LAYOUT) if args.ext_summit
+                        else PREVIOUS_SHIPPED_LAYOUT) if args.purple_rest else NO_REST_SHIPPED_LAYOUT)
     if args.ext_summit:
         if not (shipped and args.purple_rest):
             raise ValueError('--ext-summit extends the v17 layout (default flags with --purple-rest) only')

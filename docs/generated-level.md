@@ -1,10 +1,48 @@
 # Generated level
 
-Layout `extended-mountain-v18` (shipped, TASK-711) is the default generator
+Layout `extended-mountain-v19` (shipped, TASK-725) is the default generator
 output (`tools/retune_extended_level.py` with no layout flag =
 `--min-side-scope all --middle-purple --upper-purple --purple-rest
---ext-summit`). It is v17 with SEC-ext-summit, a new section above the old
-summit (TASK-708..710):
+--ext-summit --ext-summit-riser`). It is v18 with SEC-ext-summit laid out again
+inside the bottom run's x span (TASK-722..724), so a failed jump falls onto
+lower levels instead of beside the map:
+
+- Map width: every element point, the spawn and the finish lie within
+  x -1,100..62,534. `tools/check_level_geometry.py` enforces this by default
+  for the full check (`--max-x-range`, default `-1100:62534`;
+  `--no-max-x-range` skips it for legacy layouts up to v18, which fail it).
+- From the old summit, five climbs run rightward along the top of the bottom
+  run to its right end. The first starts on a riser: XS-C1a-1 is copied 5,000
+  units straight up (C1a-1R), so the rest of C1a runs more than pump reach
+  above the main level's last climb P18..P24, which runs leftward under it
+  (without it the whole-route shortcut matrix found 84 skips, TASK-725). The
+  sixth turns on a riser: its first panel C1f-1 is
+  copied 5,000 units straight up (C1f-1R) and the rest of that climb runs
+  leftward from the copy. A turn never stacks a return climb within pump reach
+  of the climb below it (the TASK-723 fold did, and the shortcut matrix found
+  368 skips). Then BZ1, one leftward climb, BZ2, one leftward climb, BZ3 and
+  the new summit P117, whose finish is 42,426 units above the old one.
+- BZ1..BZ3 are the v18 big-zone units (approach, slabs, exit, zone) moved
+  rigidly by whole-unit (dx, dy), recorded in `extSummit.units`, so the BZ
+  input fixtures are unchanged. Three catch shelves (flat bodies of XS-C1a-1)
+  cover the columns where the bottom run has nothing under higher geometry,
+  so a drop from them lands on the main level. The two over P17..P20 sit at
+  y -37,500, out of pump reach of the main-level panels under them.
+- Climb transfers have per-transfer production inputs
+  (`tools/fixtures/ext-summit-climb-inputs.json`, `test_ext_summit_route`
+  test_04).
+
+v19 has 118 panels, 117 transfers and six no-grapple zones. The geometry is
+the TASK-724 candidate plus the C1a riser and the two raised shelves
+(TASK-725). Everything below the
+old finish is unchanged from v18. Saves from v18 and earlier restart at the
+spawn. `--no-ext-summit-riser` without layout flags reproduces v18,
+`--no-ext-summit` reproduces v17 and `--no-purple-rest` reproduces v16.
+
+Layout `extended-mountain-v18` (previous, TASK-711) is the generator output with
+`--no-ext-summit-riser` and no layout flag. It is v17 with SEC-ext-summit, a
+new section above the old summit (TASK-708..710), running leftward past the
+left edge of the bottom run (x down to about -80,450):
 
 - The old summit (P61) is an ordinary landing. Above it, three zigzag grapple
   climbs (translated copies of the final chain, all running leftward) lead into

@@ -449,11 +449,24 @@ comes to rest there is a softlock. The rule (TASK-694):
   edge and angle, zones), the summary gains `noGrappleRestFaces`,
   `noGrappleRestFaceViolations`, `noGrappleRestPockets` and
   `minNoGrappleRestAngle`, and each violation is a failure ending in `(rest)`.
-- The shipped v18 level passes it (53 rest faces including the BZ1..BZ3 slabs,
-  minimum 15 degrees, no pockets), as did v17 (23 rest faces, minimum 15.5
+- The shipped v19 level passes it (53 rest faces including the BZ1..BZ3 slabs,
+  minimum 15 degrees, no pockets), as did v18 and v17 (23 rest faces, minimum 15.5
   degrees). The earlier v16 fails it on the rest rule only: NG1's near-flat
   tops P23 (4.8 degrees), P24 (0 degrees) and P25 (0.6 degrees), and their
   copies in NGM (P33-P35) and NGU (P46-P48) (`tools/test_no_grapple_rest.py`).
+
+### 7.4 Map width (TASK-722, default since TASK-725 / v19)
+
+- Every element point, the spawn and the finish region lie within
+  `x -1100..62534`, the bottom run's span, so a failed jump falls onto lower
+  geometry instead of beside the map.
+- `tools/check_level_geometry.py` applies it on every full check
+  (`DEFAULT_X_RANGE`; `--max-x-range MIN:MAX` sets another span,
+  `--no-max-x-range` skips it for legacy layouts up to v18). With
+  `--sides-only` it is opt-in. The report gains `maxXRange` (`min`, `max`,
+  `checked`, `minX`, `maxX`, `violations[]` with each element's x extent) and
+  the summary `maxXRangeViolations`.
+- v19 passes it. v18 fails it (the SEC-ext-summit panels from about x -80,450).
 
 ## 8. Rejection summary
 

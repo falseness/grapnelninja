@@ -15,7 +15,7 @@ zone's approach ledge, one transfer at a time in the repo's per-transfer form (t
 tools/probe_level_routes.js ROUTE_PROBE places the player at zero speed `drop` above the source panel's top, then only
 document mouse events (pumps / fraction / lastAimOffset policy of tools/fixtures/ext-summit-climb-inputs.json) and
 physics() run; the first contact or attach on a later panel must be the target. Each is run twice (identical). The
-fixture belongs to one layout: a level whose extension transfers differ from it (e.g. the shipped v18) skips test_04.
+fixture belongs to one layout (shipped v19): a level whose extension transfers differ from it (e.g. v18) skips test_04.
 
 Level: EXT_SUMMIT_CANDIDATE=DIR (extended-mountain.level.json and extended-mountain-measurements.json, e.g. the
 retune --ext-summit output of artifacts/TASK-708/candidate), else the shipped artifacts/levels data. A level

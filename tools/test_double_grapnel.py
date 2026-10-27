@@ -9,6 +9,9 @@ restoreClimbState; older saves load as single/false. Double mode shows the
 DOUBLE_GRAPNEL_EVIDENCE_DIR=DIR writes range.json, save.json, badge.png and,
 when DOUBLE_GRAPNEL_BASELINE_ROOT names a checkout of the previous commit,
 single-identical.json (a scripted single-mode physics trace from both trees).
+When the commit ships a new layout, copy its leveldata.js and mountain.js into
+that checkout: the level bounds set the camera scale, so the scripted clicks
+(and the trace) differ between layouts even with identical code (TASK-725).
 
     python3 -m unittest discover -s tools -p test_double_grapnel.py -v
 """
@@ -238,7 +241,9 @@ class DoubleGrapnelTests(unittest.TestCase):
             'ticks': len(events), 'sha256': digest, 'identical': traces['head'] == traces['baseline'],
             'baselineRoot': BASELINE, 'grappledTicks': sum(1 for r in events if r[5]),
             'throwedTicks': sum(1 for r in events if r[4]), 'last': events[-1]}
-        self.assertEqual(traces['head'], traces['baseline'])
+        # Digests first: a full list diff of two 400-row traces takes difflib minutes.
+        first = next((i for i, (h, b) in enumerate(zip(traces['head'], traces['baseline'])) if h != b), None)
+        self.assertEqual(digest['head'], digest['baseline'], 'first differing tick %s' % first)
         # The script really grapples, so the comparison covers rope physics.
         self.assertGreater(EVIDENCE['singleIdentical']['grappledTicks'], 0)
 
