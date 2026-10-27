@@ -7,26 +7,30 @@
 // FPS, the frame count and the slowest entries, drawn after the HUD and
 // refreshed at most every REFRESH_MS (PERF_OVERLAY).
 // Without the flag nothing is wrapped and PERF_PROFILE stays undefined.
+
+// Every draw() layer by profile name: the global draw*Layer function it
+// times. Shared with the ?visualsPerf=1 freeze recorder (render/visualsperf.js).
+const PERF_LAYERS = Object.freeze({
+    background: 'drawBackgroundLayer',
+    lights: 'drawLightsLayer',
+    behindForegroundParticles: 'drawBehindForegroundParticlesLayer',
+    playerTrail: 'drawPlayerTrailLayer',
+    world: 'drawWorldLayer',
+    particlesAndTrails: 'drawParticlesAndTrailsLayer',
+    bloom: 'drawBloomLayer',
+    playerGlow: 'drawPlayerGlowLayer',
+    colorGrade: 'drawColorGradeLayer',
+    player: 'drawPlayerLayer',
+    tutorialHint: 'drawTutorialHintLayer',
+    ui: 'drawUILayer',
+    fpsCounter: 'drawFpsCounterLayer',
+})
+
 if (new URLSearchParams(location.search).get('perf') === '1')
 {
     (function()
     {
         const WINDOW = 120
-        const LAYERS = {
-            background: 'drawBackgroundLayer',
-            lights: 'drawLightsLayer',
-            behindForegroundParticles: 'drawBehindForegroundParticlesLayer',
-            playerTrail: 'drawPlayerTrailLayer',
-            world: 'drawWorldLayer',
-            particlesAndTrails: 'drawParticlesAndTrailsLayer',
-            bloom: 'drawBloomLayer',
-            playerGlow: 'drawPlayerGlowLayer',
-            colorGrade: 'drawColorGradeLayer',
-            player: 'drawPlayerLayer',
-            tutorialHint: 'drawTutorialHintLayer',
-            ui: 'drawUILayer',
-            fpsCounter: 'drawFpsCounterLayer',
-        }
         const entries = []
         const frameTimes = new Float64Array(WINDOW)
         let frames = 0
@@ -50,8 +54,8 @@ if (new URLSearchParams(location.search).get('perf') === '1')
             }
         }
 
-        for (const name in LAYERS)
-            wrap(name, LAYERS[name])
+        for (const name in PERF_LAYERS)
+            wrap(name, PERF_LAYERS[name])
         // Mote glow and copy of the reduced backdrop (render/backdrop.js);
         // no samples while the frame is at full quality
         wrap('backdrop', 'end', BACKDROP)
