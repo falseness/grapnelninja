@@ -16,7 +16,8 @@ TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
 sys.path.insert(0, str(TOOLS))
 
-from check_level_geometry import axis_rect, check, inside, polygon_distance, union_distance  # noqa: E402
+from check_level_geometry import (apply_x_range, axis_rect, check, check_sides, check_x_range, inside,  # noqa: E402
+                                  polygon_distance, union_distance)
 from import_level_svg import import_svg  # noqa: E402
 
 CHECKER = TOOLS / 'check_level_geometry.py'
@@ -289,6 +290,86 @@ class CliTests(unittest.TestCase):
     def test_cli_usage_error(self):
         p = subprocess.run([sys.executable, str(CHECKER), '--svg', 'x'], capture_output=True, text=True)
         self.assertEqual(p.returncode, 2)
+
+
+
+def width_level(*xs, spawn=500, finish=(1000, 2620)):
+    """Solid 600x600 squares at the given left x values, plus spawn and finish (TASK-722 fixtures)."""
+    sq = [{'x': 0, 'y': 0}, {'x': 600, 'y': 0}, {'x': 600, 'y': 600}, {'x': 0, 'y': 600}]
+    return {'spawn': {'x': spawn, 'y': -30},
+            'finish': {'left': finish[0], 'top': -2000, 'right': finish[1], 'bottom': -1700},
+            'elements': [{'id': 'E%d' % i, 'x': x, 'y': 0, 'role': 'solid', 'grapplable': True, 'points': sq}
+                         for i, x in enumerate(xs)]}
+
+
+class MaxXRangeTests(unittest.TestCase):
+    """TASK-722: opt-in --max-x-range MIN:MAX keeps the map within the bottom run's x span."""
+    LO, HI = -1100, 62534
+
+    def test_inside_and_on_bounds_passes(self):
+        result = check_x_range(width_level(-1100, 0, 61934), self.LO, self.HI)
+        self.assertTrue(result['pass'])
+        self.assertEqual(result['violations'], [])
+        self.assertEqual((result['checked'], result['minX'], result['maxX']), (5, -1100, 62534))
+
+    def test_elements_outside_listed_with_extents(self):
+        result = check_x_range(width_level(-1200, 0, 62000), self.LO, self.HI)
+        self.assertFalse(result['pass'])
+        self.assertEqual(result['violations'], [{'id': 'E0', 'minX': -1200, 'maxX': -600},
+                                                {'id': 'E2', 'minX': 62000, 'maxX': 62600}])
+
+    def test_spawn_and_finish_checked(self):
+        result = check_x_range(width_level(0, spawn=-2000, finish=(-80449, -78829)), self.LO, self.HI)
+        self.assertEqual(result['violations'], [{'id': 'spawn', 'minX': -2000, 'maxX': -2000},
+                                                {'id': 'finish', 'minX': -80449, 'maxX': -78829}])
+
+    def test_apply_updates_summary(self):
+        level = width_level(-1200, 0)
+        report = apply_x_range(check_sides(level), level, self.LO, self.HI)
+        self.assertFalse(report['summary']['pass'])
+        self.assertEqual(report['summary']['maxXRangeViolations'], 1)
+        self.assertEqual(report['failureMessages'],
+                         ['E0: x extent [-1200.0000, -600.0000] outside max x range [-1100, 62534]'])
+        level = width_level(0)
+        report = apply_x_range(check_sides(level), level, self.LO, self.HI)
+        self.assertTrue(report['summary']['pass'])
+        self.assertEqual(report['summary']['maxXRangeViolations'], 0)
+
+    def run_cli(self, level, *extra):
+        with tempfile.TemporaryDirectory() as tmp:
+            lvl, rep = Path(tmp, 'l.json'), Path(tmp, 'r.json')
+            lvl.write_text(json.dumps(level))
+            p = subprocess.run([sys.executable, str(CHECKER), '--sides-only', '--level', str(lvl),
+                                '--report', str(rep), *extra], capture_output=True, text=True, timeout=120)
+            return p, json.loads(rep.read_text()) if rep.exists() else None
+
+    def test_cli_passing_fixture(self):
+        p, report = self.run_cli(width_level(-1100, 61934), '--max-x-range', '-1100:62534')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('SIDES_RESULT PASS', p.stdout)
+        self.assertIn('x_range_violations=0', p.stdout)
+        self.assertTrue(report['maxXRange']['pass'])
+
+    def test_cli_failing_fixture(self):
+        p, report = self.run_cli(width_level(-1101, 0, 62000), '--max-x-range', '-1100:62534')
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn('x_range_violations=2', p.stdout)
+        self.assertIn('FAIL E0: x extent [-1101.0000, -501.0000]', p.stderr)
+        self.assertIn('FAIL E2: x extent [62000.0000, 62600.0000]', p.stderr)
+        self.assertEqual([v['id'] for v in report['maxXRange']['violations']], ['E0', 'E2'])
+        p, _ = self.run_cli(width_level(-1101), '--max-x-range=-1100:62534')
+        self.assertEqual(p.returncode, 1)
+
+    def test_cli_rule_is_opt_in(self):
+        p, report = self.run_cli(width_level(-5000, 70000))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertNotIn('x_range', p.stdout)
+        self.assertNotIn('maxXRange', report)
+
+    def test_cli_bad_range_is_usage_error(self):
+        for value in ('62534:-1100', '1:2:3', 'a:b', 'nan:1'):
+            p, _ = self.run_cli(width_level(0), '--max-x-range', value)
+            self.assertEqual(p.returncode, 2, value)
 
 
 if __name__ == '__main__':

@@ -7,9 +7,9 @@ a comparison, never the computed result (docs/level-svg-format.md §7).
 
     python3 tools/check_level_geometry.py --svg LEVEL.svg --level LEVEL.json --report REPORT.json \
         [--reference MEASUREMENTS.json] [--min-side-length UNITS | --no-min-side-length]
-        [--no-grapple-rest | --allow-grapple-rest]
+        [--no-grapple-rest | --allow-grapple-rest] [--max-x-range MIN:MAX]
     python3 tools/check_level_geometry.py --sides-only --level LEVEL.json --report REPORT.json \
-        [--min-side-length UNITS | --no-min-side-length]
+        [--min-side-length UNITS | --no-min-side-length] [--max-x-range MIN:MAX]
 
 Checks:
 - level JSON polygons match the SVG geometry layer and the reference fragments
@@ -42,6 +42,10 @@ Checks:
   overlaps a no-grapple zone slopes >= 15 degrees from horizontal, and no two
   such edges meet in a pocket (a vertex both slope down toward), so the player
   cannot come to rest where it cannot grapple (report noGrappleRest).
+- --max-x-range MIN:MAX (opt-in, TASK-722): every element point, the spawn and
+  the finish region lie within [MIN, MAX] (e.g. -1100:62534, the bottom run's
+  span), so a failed jump never falls beside the map; each violating element
+  is reported with its x extent (report maxXRange).
 
 Exit 0 when every check passes, 1 on a failed check, 2 on usage errors.
 """
@@ -693,6 +697,45 @@ def check(level, svg_data, reference, min_side=None, no_grapple_rest=False):
     return report
 
 
+def check_x_range(level, lo, hi):
+    """Rows for the --max-x-range rule: elements, spawn and finish whose x extent leaves [lo, hi]."""
+    items = [(e['id'], [e['x'] + p['x'] for p in e['points']]) for e in level['elements']]
+    items.append(('spawn', [level['spawn']['x']]))
+    if level.get('finish'):
+        items.append(('finish', [level['finish']['left'], level['finish']['right']]))
+    violations = []
+    for eid, xs in items:
+        left, right = min(xs), max(xs)
+        if left < lo - COORD_TOL or right > hi + COORD_TOL:
+            violations.append({'id': eid, 'minX': r(left, 4), 'maxX': r(right, 4)})
+    xs = [x for _, values in items for x in values]
+    return {'min': lo, 'max': hi, 'checked': len(items), 'minX': r(min(xs), 4), 'maxX': r(max(xs), 4),
+            'violations': violations, 'pass': not violations}
+
+
+def apply_x_range(report, level, lo, hi):
+    """Add the --max-x-range result to a check()/check_sides() report and update its summary."""
+    result = check_x_range(level, lo, hi)
+    for v in result['violations']:
+        report['failureMessages'].append('%s: x extent [%.4f, %.4f] outside max x range [%g, %g]' % (
+            v['id'], v['minX'], v['maxX'], lo, hi))
+    report['maxXRange'] = result
+    s = report['summary']
+    s['maxXRangeViolations'] = len(result['violations'])
+    s['pass'], s['failures'] = not report['failureMessages'], len(report['failureMessages'])
+    return report
+
+
+def x_range(text):
+    try:
+        lo, hi = (float(v) for v in text.split(':'))
+    except ValueError:
+        raise argparse.ArgumentTypeError('expected MIN:MAX, got %r' % text)
+    if not (math.isfinite(lo) and math.isfinite(hi) and lo < hi):
+        raise argparse.ArgumentTypeError('MIN:MAX must be finite with MIN < MAX, got %r' % text)
+    return lo, hi
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Recompute level geometry clearances and compare to references.')
     parser.add_argument('--svg', help='level SVG (format v1); required unless --sides-only')
@@ -713,6 +756,15 @@ def main(argv=None):
                       'between two of them (default for the full check since v17)' % NO_GRAPPLE_REST_SLOPE)
     rest.add_argument('--allow-grapple-rest', dest='no_grapple_rest', action='store_const', const=False,
                       help='skip the no-rest-inside-purple rule (legacy layouts up to v16)')
+    parser.add_argument('--max-x-range', type=x_range, metavar='MIN:MAX',
+                        help='fail any element point, the spawn or the finish region outside x in [MIN, MAX] '
+                        '(opt-in; e.g. -1100:62534)')
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # argparse reads '-1100:62534' as an option; keep '--max-x-range -1100:62534' working.
+    for i in range(len(argv) - 1):
+        if argv[i] == '--max-x-range' and argv[i + 1].startswith('-'):
+            argv[i:i + 2] = ['--max-x-range=' + argv[i + 1]]
+            break
     args = parser.parse_args(argv)
     if args.sides_only and args.no_grapple_rest:
         parser.error('--no-grapple-rest needs the full check (not --sides-only)')
@@ -732,6 +784,8 @@ def main(argv=None):
         with open(args.reference) as f:
             reference = json.load(f)
         report = check(level, svg_data, reference, args.min_side_length, args.no_grapple_rest)
+    if args.max_x_range:
+        apply_x_range(report, level, *args.max_x_range)
     with open(args.report, 'w') as f:
         json.dump(report, f, separators=(',', ':'))
         f.write('\n')
@@ -743,7 +797,8 @@ def main(argv=None):
         s['minSideLength'] if s['minSideEnforced'] else 'off')
     if args.sides_only:
         print('SIDES_RESULT %s %s angles=%d/%d min_angle=%s' % (
-            'PASS' if s['pass'] else 'FAIL', sides, s['anglePolygonsPass'], s['anglePolygons'], s['minInteriorAngle']))
+            'PASS' if s['pass'] else 'FAIL', sides, s['anglePolygonsPass'], s['anglePolygons'], s['minInteriorAngle'])
+              + (' x_range_violations=%d' % s['maxXRangeViolations'] if args.max_x_range else ''))
     else:
         print('GEOMETRY_RESULT %s transfers=%d/%d pairs=%d/%d drag=%d/%d fragments=%d max_percent_error=%s '
               'min_pair_margin=%s min_drag_clearance=%s angles=%d/%d min_angle=%s %s' % (
@@ -753,7 +808,8 @@ def main(argv=None):
                   s['anglePolygons'], s['minInteriorAngle'], sides)
               + (' rest_faces=%d rest_violations=%d rest_pockets=%d min_rest_angle=%s' % (
                   s['noGrappleRestFaces'], s['noGrappleRestFaceViolations'], s['noGrappleRestPockets'],
-                  s['minNoGrappleRestAngle']) if args.no_grapple_rest else ''))
+                  s['minNoGrappleRestAngle']) if args.no_grapple_rest else '')
+              + (' x_range_violations=%d' % s['maxXRangeViolations'] if args.max_x_range else ''))
     return 0 if s['pass'] else 1
 
 
