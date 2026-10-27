@@ -1088,8 +1088,8 @@ const CLIMB_UI = {
             ctx.fillStyle = STYLE.colors.ui.pauseOverlay
             ctx.fillRect(0, 0, w, h)
         }
-        const title = this.offering ? 'climb.offerTitle' : this.confirming ? 'climb.confirm' :
-            stats.completed ? 'climb.complete' : 'mode.grapple_over'
+        if (stats.completed && !this.confirming) return this.drawWin(w, h, stats)
+        const title = this.offering ? 'climb.offerTitle' : this.confirming ? 'climb.confirm' : 'mode.grapple_over'
         const actions = this.offering ? [
             ['climb.offerContinue', () => menu.unPause()],
             ['climb.offerDouble', () => this.acceptDouble()]
@@ -1148,6 +1148,224 @@ const CLIMB_UI = {
             check.draw()
         }
         LANGUAGE_BUTTON.draw()
+    },
+    // Summit screen colours (approved concept artifacts/win-art-3)
+    win: {
+        title: {default: '#2ee6d6', long: '#c9b8ff'},
+        label: '#9fb3e8',
+        value: '#ffffff',
+        divider: 'rgba(159, 179, 232, 0.35)',
+        single: '#3dff4a',
+        chipFill: 'rgba(6, 16, 28, 0.82)',
+        cta: '#3dff4a'
+    },
+    // m:ss.t, or h:mm:ss.t past an hour
+    winTime(ms) {
+        const tenths = Math.floor(ms / 100), s = Math.floor(tenths / 10), m = Math.floor(s / 60), hours = Math.floor(m / 60)
+        const ss = String(s % 60).padStart(2, '0') + '.' + tenths % 10
+        return hours ? hours + ':' + String(m % 60).padStart(2, '0') + ':' + ss : m + ':' + ss
+    },
+    // Bold HUD font of the size, letter spaced by spacing (em)
+    winFont(size, spacing = 0) {
+        ctx.font = 'bold ' + size + 'px ' + STYLE.ui.fontFamily
+        ctx.letterSpacing = size * spacing + 'px'
+    },
+    // The size (at most size) at which text fits maxWidth
+    winFit(text, size, maxWidth, spacing = 0) {
+        ctx.save()
+        this.winFont(size, spacing)
+        const width = ctx.measureText(text).width
+        ctx.restore()
+        return width > maxWidth ? size * maxWidth / width : size
+    },
+    // Letter-spaced text centred on x (the trailing spacing is not counted)
+    winText(text, x, y, size, spacing, fill) {
+        ctx.save()
+        this.winFont(size, spacing)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = fill
+        x += size * spacing / 2
+        ctx.fillText(text, x, y)
+        LAYOUT_PROBE.text(text, x, y)
+        ctx.restore()
+    },
+    // Neon title: wide faint, mid and core strokes in the colour, a thin white inner line
+    winTitle(text, x, y, size, spacing, color) {
+        ctx.save()
+        this.winFont(size, spacing)
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.lineJoin = 'round'
+        x += size * spacing / 2
+        const unit = size / 90
+        ctx.strokeStyle = color
+        for (const [width, alpha] of [[14, 0.16], [7, 0.4], [3, 1]])
+        {
+            ctx.globalAlpha = alpha
+            ctx.lineWidth = width * unit
+            ctx.strokeText(text, x, y)
+        }
+        ctx.globalAlpha = 1
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = unit
+        ctx.strokeText(text, x, y)
+        LAYOUT_PROBE.text(text, x, y)
+        ctx.restore()
+    },
+    // Neon chip: a glowing outline and the text in it
+    winChip(text, x, y, size, color, textColor) {
+        ctx.save()
+        this.winFont(size, 0.08)
+        const pad = size * 0.7, chipW = ctx.measureText(text).width + pad * 2, chipH = size * 1.9
+        ctx.restore()
+        const left = x - chipW / 2, top = y - chipH / 2
+        ctx.save()
+        ctx.fillStyle = this.win.chipFill
+        ctx.fillRect(left, top, chipW, chipH)
+        strokeNeonRect(left, top, chipW, chipH, color, STYLE.ui.neonUnit.small)
+        ctx.restore()
+        this.winText(text, x, y, size, 0.08, textColor)
+        LAYOUT_PROBE.rect('win', 'badge', left, top, chipW, chipH)
+    },
+    // Three chevrons pointing dir (-1 left, 1 right) from x towards the label
+    winChevrons(x, y, size, dir, color) {
+        ctx.save()
+        ctx.strokeStyle = color
+        ctx.lineWidth = Math.max(1, size * 0.12)
+        ctx.lineJoin = ctx.lineCap = 'round'
+        ctx.beginPath()
+        for (let i = 0; i < 3; i++)
+        {
+            const tip = x + dir * size * 0.6 * i
+            ctx.moveTo(tip - dir * size * 0.3, y - size * 0.45)
+            ctx.lineTo(tip, y)
+            ctx.lineTo(tip - dir * size * 0.3, y + size * 0.45)
+        }
+        ctx.globalAlpha = 0.35
+        ctx.lineWidth *= 3
+        ctx.stroke()
+        ctx.globalAlpha = 1
+        ctx.lineWidth /= 3
+        ctx.stroke()
+        ctx.restore()
+    },
+    // Long run only: back to the intended single grapnel, from a fresh climb
+    tryDefault() {
+        setGrapnelMode('single')
+        this.restart()
+    },
+    // The completed screen over the summit art: title, subtitle, stats,
+    // badge and (long) the try-default call, the end-menu buttons below
+    drawWin(w, h, stats) {
+        const long = !!floors[0].usedDouble, color = this.win.title[long ? 'long' : 'default']
+        // No fps row on the ending (showsFps)
+        menu.pauseFpsCounterCheckbox.clickable = false
+        // Small text keeps the CSS px legibility floor on phones
+        const floor = minCssFontPx * h / getCanvasCssRect().height
+        const lang = LANGUAGE_BUTTON.rect()
+        // Buttons: 2x2 on wide-ish screens, one row of four on phones in landscape
+        const bh = Math.max(h * 0.085, minTouchSize()), gap = bh * 0.25
+        const cols = w / h >= 2 ? 4 : 2
+        const gridW = Math.min(w * (cols === 4 ? 0.9 : 0.72), h * (cols === 4 ? 2.3 : 1.3))
+        const bw = (gridW - gap * (cols - 1)) / cols
+        const actions = [
+            ['climb.replay', () => this.restart()],
+            ['climb.restart', () => {this.confirming=true; redrawOverlays()}],
+            ['mode.bad', () => menu.selectMode('bad')],
+            ['mode.classic', () => menu.selectMode('classic')]
+        ]
+        const gridRows = 4 / cols, rows = gridRows + (long ? 1 : 0)
+        const bottom = Math.min(h - gap, lang.y - gap)
+        const gridTop = bottom - rows * bh - (rows - 1) * gap
+        const fitLabel = (b, text, width) => {
+            const size = this.winFit(text, b.background.height * 0.6, width)
+            b.text.fontSize = getArcadeFont(size)
+        }
+        this.buttons = actions.map(([key, action], i) => {
+            const x = w/2 - gridW/2 + bw/2 + (i % cols) * (bw + gap)
+            const y = gridTop + bh/2 + Math.floor(i / cols) * (bh + gap)
+            const b = new Button({x, y, width:bw, height:bh, neon:true},
+                {text:I18N.t(key), fill:STYLE.colors.ui.buttonText}, action)
+            fitLabel(b, b.text.text, bw - bh * STYLE.ui.buttonTextPaddingRatio * 2)
+            return b
+        })
+        let cta = null
+        if (long)
+        {
+            const ctaW = Math.min(w * 0.9, Math.max(gridW, h * 1.3)), y = bottom - bh/2
+            cta = new Button({x:w/2, y, width:ctaW, height:bh, neon:true, stroke:this.win.cta, fill:'rgba(4, 22, 12, 0.82)'},
+                {text:I18N.t('climb.winTryDefault'), fill:this.win.cta}, () => this.tryDefault())
+            this.ctaChevron = bh * 0.32
+            // Smaller than the other labels, as in the concept
+            const size = this.winFit(cta.text.text, bh * 0.45, ctaW - this.ctaChevron * 2 * 3.2 - bh * STYLE.ui.buttonTextPaddingRatio * 2)
+            cta.text.fontSize = getArcadeFont(size)
+            this.buttons.push(cta)
+        }
+        // Header as in the concept (title near 0.18 h, badge near 0.46 h), above
+        // the buttons; shrunk to fit short screens
+        const headTop = h * 0.07, headBottom = Math.min(h * 0.52, gridTop - gap)
+        const titleText = I18N.t('climb.winTitle'), subText = I18N.t(long ? 'climb.winSubLong' : 'climb.winSub')
+        let titleSize = this.winFit(titleText, h * 0.125, w * 0.86, 0.3)
+        let subSize = this.winFit(subText, Math.max(h * 0.03, floor), w * 0.9, 0.35)
+        let labelSize = Math.max(h * 0.018, floor), valueSize = Math.max(h * 0.036, floor * 1.3)
+        const badgeText = I18N.t(long ? 'climb.doubleRange' : 'climb.winSingle')
+        let badgeSize = Math.max(h * 0.022, floor)
+        const heights = () => [titleSize * 1.05, subSize * 1.2, labelSize * 1.3 + valueSize * 1.25, badgeSize * 1.9]
+        const sum = heights().reduce((a, b) => a + b, 0), room = (headBottom - headTop) * 0.86
+        if (sum > room)
+        {
+            const k = room / sum
+            titleSize *= k; subSize *= k; labelSize *= k; valueSize *= k; badgeSize *= k
+        }
+        const [titleY, subY, statsY, badgeY] = stackRows(headTop, headBottom, heights())
+        this.winTitle(titleText, w/2, titleY, titleSize, 0.3, color)
+        LAYOUT_PROBE.rect('win', 'title', ...this.winBox(titleText, w/2, titleY, titleSize, 0.3, 1.05))
+        this.winText(subText, w/2, subY, subSize, 0.35, '#ffffff')
+        LAYOUT_PROBE.rect('win', 'subtitle', ...this.winBox(subText, w/2, subY, subSize, 0.35, 1.2))
+        // Stats: three columns with thin dividers
+        const colW = Math.min(w * 0.17, h * 0.3), statsH = labelSize * 1.3 + valueSize * 1.25
+        const statsTop = statsY - statsH / 2
+        const cells = [['climb.statTime', this.winTime(stats.elapsedActiveMs)],
+            ['climb.statFalls', String(stats.falls)], ['climb.statGrapples', String(stats.grapples)]]
+        this.winValues = cells.map(c => c[1])
+        cells.forEach(([key, value], i) => {
+            const x = w/2 + (i - 1) * colW, label = I18N.t(key)
+            this.winText(label, x, statsTop + labelSize * 0.65, this.winFit(label, labelSize, colW * 0.9, 0.2), 0.2, this.win.label)
+            this.winText(value, x, statsTop + labelSize * 1.3 + valueSize * 0.62, this.winFit(value, valueSize, colW * 0.9), 0, this.win.value)
+        })
+        ctx.save()
+        ctx.strokeStyle = this.win.divider
+        ctx.lineWidth = Math.max(1, h * 0.0015)
+        ctx.beginPath()
+        for (const dx of [-0.5, 0.5])
+        {
+            ctx.moveTo(w/2 + dx * colW, statsTop)
+            ctx.lineTo(w/2 + dx * colW, statsTop + statsH)
+        }
+        ctx.stroke()
+        ctx.restore()
+        LAYOUT_PROBE.rect('win', 'stats', w/2 - colW * 1.5, statsTop, colW * 3, statsH)
+        // Badge: single grapnel (green) or the long range (lavender)
+        badgeSize = this.winFit(badgeText, badgeSize, w * 0.8 - badgeSize * 1.4, 0.08)
+        if (long) this.winChip(badgeText, w/2, badgeY, badgeSize, this.win.title.long, '#ffffff')
+        else this.winChip(badgeText, w/2, badgeY, badgeSize, this.win.single, this.win.single)
+        this.buttons.forEach(b => b.draw())
+        if (cta)
+        {
+            const r = cta.background, c = this.ctaChevron
+            this.winChevrons(r.x + bh * 0.3 + c * 0.3 + c * 1.2, r.y + r.height/2, c, -1, this.win.cta)
+            this.winChevrons(r.x + r.width - bh * 0.3 - c * 0.3 - c * 1.2, r.y + r.height/2, c, 1, this.win.cta)
+        }
+        LANGUAGE_BUTTON.draw()
+    },
+    // [x, y, width, height] of a letter-spaced line centred on (x, y), lineHeight in sizes
+    winBox(text, x, y, size, spacing, lineHeight) {
+        ctx.save()
+        this.winFont(size, spacing)
+        const width = ctx.measureText(text).width
+        ctx.restore()
+        return [x - width / 2, y - size * lineHeight / 2, width, size * lineHeight]
     },
     // On the run's first fall recovery in single mode (recoverClimbFall):
     // the run pauses, its clock stopped, until Continue or Try double.
