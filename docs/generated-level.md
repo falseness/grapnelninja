@@ -48,8 +48,10 @@ added. The old summit (P61) stays an ordinary landing, and everything below it
 is identical to v19. Above it is a switchback tower over the old summit's
 column (x 2,102..10,382, inside -1,100..62,534):
 
-- Eight zone slots Z1..Z8, each an empty 5,760 x 4,320 purple no-grapple
-  rect. Slabs come in later tickets. Odd zones are entered from the left side
+- Eight zone slots Z1..Z8, each a 5,760 x 4,320 purple no-grapple rect.
+  Each zone gets its own unique slab layout in its own ticket
+  (`GAUNTLET_SLABS`; zones without an entry stay empty with one
+  approach->exit `Zk-CROSS` transfer). Odd zones are entered from the left side
   and run rightward. Even zones are entered from the right side and run
   leftward. Each zone is stacked 4,500 above the previous one, with 180
   between the zone rects.
@@ -61,7 +63,15 @@ column (x 2,102..10,382, inside -1,100..62,534):
   Z8's exit to the new summit (4,842 up). Each one is two ceiling grapple
   panels on the tower's outer side. Consecutive safe spaces on the same side
   are 9,000 apart, so no climb is stacked within pump reach.
-- `extSummit.gauntlet` records the slots: zone rects, entry side and
+- Z1 (TASK-733) has 6 slabs Z1-B1..B6 tilted 25/20/15/-20/-30/30 deg: a
+  falling run, a rising pair that throws the player back up, and the 30 deg
+  catch slab under the exit side. Its transfers are `Z1-ENTRY`, the internal
+  `Z1-Bn-Bn+1` bounces (gaps <= 270) and `Z1-EXIT`. The recorded rope-free
+  crossing `tools/fixtures/gauntlet-inputs-Z1.json` is replayed by
+  `tools/test_gauntlet_route.py` (one case per filled zone; set
+  `GAUNTLET_CANDIDATE=DIR`, else it regenerates the candidate itself).
+- `extSummit.gauntlet` records the slots (with each zone's slabs: contact,
+  angle, extents, thickness and bounds): zone rects, entry side and
   direction, approach and exit ledges, the safe spaces' start/end fragments
   and grapple panels, the finish and the purple share. Purple share is 0.80
   (34,560 of 43,000 from the old summit top to the finish top).

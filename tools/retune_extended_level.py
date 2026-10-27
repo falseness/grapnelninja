@@ -1099,9 +1099,20 @@ def extend_summit(m, spec=EXT_SUMMIT):
 # are each two ceiling panels on the tower's outer side: `panels` gives (dx from the start ledge's left edge on the
 # right side, fraction of the safe space's rise, width, height); the left side mirrors it about the ledge column.
 # S0 (from the old summit) rises firstRise so Z1 clears the top of the main level and G-final.
+# Each filled zone's slabs (Zk-B1.., in route order): (contact relative to the zone's top-left corner, angle, before,
+# after, thickness), built with slab() on the top side and placed as written (no mirroring). Every zone has its own
+# layout (level-guidelines.md big zones: mixed tilts >= 15 deg, no pockets, consecutive slabs (0, 270] apart, every
+# other pair > 540 + player diameter, last slab 30 deg). Recorded crossings: tools/fixtures/gauntlet-inputs-Zk.json.
+GAUNTLET_SLABS = {
+    # TASK-733 Z1 (rightward, 6 slabs): a falling run 25/20/15 deg, a rising pair -20/-30 that throws the player back up,
+    # then the 30 deg catch slab under the exit side. The recorded run-off bounces off Z1-B2, Z1-B3 and Z1-B4, leaves the
+    # right side high and drops onto the exit ledge (artifacts/TASK-733/search: browser-replayed random layouts).
+    'Z1': [((829, 991), 25.0, 300, 300, 280), ((1607, 1190), 20.0, 300, 300, 280), ((2412, 1352), 15.0, 300, 300, 280),
+           ((3032, 1446), -20.0, 250, 250, 280), ((3649, 1568), -30.0, 250, 250, 280), ((4482, 1525), 30.0, 450, 450, 280)],
+}
 EXT_SUMMIT_GAUNTLET = dict(zones=8, zone=(5760, 4320), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=342,
                            rise=4500, firstRise=6700, panels=((700, .35, 1440, 240), (1900, .70, 1440, 240)),
-                           zoneClearance=600, section='SEC-ext-summit', prefix='XS')
+                           zoneClearance=600, section='SEC-ext-summit', prefix='XS', zoneSlabs=GAUNTLET_SLABS)
 
 
 def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
@@ -1113,7 +1124,7 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
     lw, lh = spec['ledge']
     zw, zh = spec['zone']
     lx0, rx0 = old['x'], old['x']+lw+spec['zoneMargin']+zw+spec['zoneMargin']  # tower column ledge left edges
-    steps, zones, slots, spaces = [], [], [], []
+    steps, zones, slots, spaces, internal = [], [], [], [], {}
 
     def safe_space(n, start, side, rise):
         # Two grapple panels between start (a ledge at the tower end `side`) and the next ledge `rise` higher.
@@ -1140,11 +1151,22 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
         exit_ = dict(panel('%s exit ledge' % zid, lw, lh, ex, top+spec['exitTop']), originalId=None, semanticId=zid+'-EXIT')
         zy = top-spec['zoneAbove']
         zone = dict(id=zid, x=zx, y=zy, width=zw, height=zh, polygon=[[zx, zy], [zx+zw, zy], [zx+zw, zy+zh], [zx, zy+zh]],
-                    purpose='big no-grapple zone %s (SEC-ext-summit gauntlet slot, empty): rope-free crossing' % zid)
-        steps += [(approach, zid), (exit_, zid)]
+                    purpose='big no-grapple zone %s (SEC-ext-summit gauntlet slot%s): rope-free crossing' % (
+                        zid, '' if zid in spec['zoneSlabs'] else ', empty'))
+        slabs = []
+        for k, (contact, angle, before, after, thickness) in enumerate(spec['zoneSlabs'].get(zid, ()), 1):
+            f = purple_panel('%s bounce slab %d' % (zid, k), slab(contact, angle, before, after, thickness, 1), contact,
+                             'top', zx, zy)
+            f.update(originalId=None, semanticId='%s-B%d' % (zid, k), surfaceAngle=angle)
+            if not zone_contains(zone, f):
+                raise ValueError('%s must lie completely inside zone %s' % (f['semanticId'], zid))
+            slabs.append(f)
+            internal[id(f)] = zid
+        steps += [(approach, zid)]+[(f, zid) for f in slabs]+[(exit_, zid)]
         zones.append(zone)
         slots.append(dict(zone=zone, approach=approach, exit=exit_, side='left' if direction > 0 else 'right',
-                          direction='RIGHT' if direction > 0 else 'LEFT'))
+                          direction='RIGHT' if direction > 0 else 'LEFT', slabs=slabs,
+                          spec=spec['zoneSlabs'].get(zid, ())))
         start, top = exit_, top-spec['rise']
     side = -1 if spec['zones'] % 2 == 0 else 1
     rise = spec['rise']+spec['exitTop']
@@ -1159,8 +1181,17 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
     numbers, prev = [], old
     for f, part in steps:
         number = len(rows)+1
-        sem = f['semanticId']
-        if sem.endswith('-EXIT'):
+        sem, zone_id = f['semanticId'], None
+        if id(f) in internal and id(prev) in internal:
+            rid, action, zone_id = '%s-%s-%s' % (part, prev['semanticId'][len(part)+1:], sem[len(part)+1:]), \
+                'Rope-free bounce to the next slab', part
+            if not 0 < gap(prev, f)[0] <= NO_GRAPPLE_INTERNAL_GAP:
+                raise ValueError('Internal no-grapple transfer %s gap %.2f not in (0, 270]' % (rid, gap(prev, f)[0]))
+        elif id(f) in internal:
+            rid, action = part+'-ENTRY', 'Run off the approach ledge into big no-grapple zone '+part
+        elif sem.endswith('-EXIT') and id(prev) in internal:
+            rid, action = part+'-EXIT', 'Bounce out of the zone side onto the lower exit ledge'
+        elif sem.endswith('-EXIT'):
             rid, action = sem[:-5]+'-CROSS', 'Run off the approach ledge across big no-grapple zone %s onto its lower exit ledge' % part
         elif sem.endswith('-APPROACH'):
             rid, action = sem, 'Release jump onto the big-zone approach ledge'
@@ -1172,12 +1203,12 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
         rows.append(dict(id=rid, number=number, fromFragment=prev['id'], toFragment=f['id'],
                          direction='RIGHT' if f['x'] > prev['x'] else 'LEFT', action=action, baseline=False,
                          originalNumber=None, originalId=None, percent=round(d/5.4, 2), distance=d, witness=w,
-                         flight=[svg.contact(prev), svg.contact(f)], noGrappleZone=None))
+                         flight=[svg.contact(prev), svg.contact(f)], noGrappleZone=zone_id))
         numbers.append(number)
         fs.append(f); prev = f
     m['noGrappleZones'] = m['noGrappleZones']+zones
     new = [f for f, _ in steps]
-    close = ['%s/%s %.0f' % (f['id'], z['id'], d) for z in zones for f in fs
+    close = ['%s/%s %.0f' % (f['id'], z['id'], d) for z in zones for f in fs if internal.get(id(f)) != z['id']
              for d in [union_distance(svg.bodies(f), [z['polygon']])[0]]
              if d < (spec['zoneMargin'] if (f.get('semanticId') or '').startswith(z['id']+'-') else spec['zoneClearance'])]
     close += ['%s/%s overlap' % (a['id'], b['id']) for a, b in itertools.combinations(m['noGrappleZones'], 2)
@@ -1207,7 +1238,9 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
     gauntlet = dict(
         zones=[dict(id=s['zone']['id'], rect=dict(x=s['zone']['x'], y=s['zone']['y'], width=s['zone']['width'],
                                                      height=s['zone']['height']),
-                    entrySide=s['side'], direction=s['direction'], slabs=[],
+                    entrySide=s['side'], direction=s['direction'],
+                    slabs=[dict(rect(f), contact=list(c), angle=a, before=b, after=e, thickness=t)
+                           for f, (c, a, b, e, t) in zip(s['slabs'], s['spec'])],
                     approach=rect(s['approach']), exit=rect(s['exit'])) for s in slots],
         safeSpaces=[dict(id=s['id'], side=s['side'], start=s['start']['id'],
                          end=(slots[int(s['id'][1:])]['approach']['id'] if int(s['id'][1:]) < len(slots) else summit['id']),
