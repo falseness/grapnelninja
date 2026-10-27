@@ -16,6 +16,11 @@
 // Composes with ?perf=1: both wrap the same globals, each wrapper calling
 // the previous one. Without the flag nothing is wrapped, no listener is
 // added and window.visualsPerf stays undefined.
+//
+// With the flag a fixed bottom-left panel (#visuals-perf-controls) has
+// Start / Stop / Export buttons (Export downloads visuals-performance.json)
+// and shows the live freeze count, the worst gap and the slowest layer of
+// the last freeze. Input on the panel never reaches the game.
 (function()
 {
     if (new URLSearchParams(location.search).get('visualsPerf') !== '1')
@@ -327,4 +332,72 @@
             return this.active ? this.stop() : lastReport
         },
     }
+
+    const PANEL_REFRESH_MS = 500
+
+    function createPanel()
+    {
+        const panel = document.createElement('section')
+        panel.id = 'visuals-perf-controls'
+        panel.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;background:#182333;' +
+            'color:white;padding:8px;font:12px sans-serif;max-width:calc(100vw - 32px)'
+        const line = text =>
+        {
+            const div = document.createElement('div')
+            div.textContent = text
+            panel.append(div)
+            return div
+        }
+        line('Visual capture: local diagnostics; device FPS unverified')
+        const state = line('Stopped')
+        const buttons = document.createElement('div')
+        panel.append(buttons)
+        const button = (text, action) =>
+        {
+            const b = document.createElement('button')
+            b.textContent = text
+            b.style.cssText = 'min-height:32px;padding:5px;margin:2px'
+            b.addEventListener('click', () =>
+            {
+                action()
+                b.blur()
+                refresh()
+            })
+            buttons.append(b)
+        }
+        button('Start', () => visualsPerf.start())
+        button('Stop', () => visualsPerf.stop())
+        button('Export', () =>
+        {
+            const blob = new Blob([JSON.stringify(visualsPerf.export(), null, 2)], {type: 'application/json'})
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = 'visuals-performance.json'
+            a.click()
+            setTimeout(() => URL.revokeObjectURL(url), 1000)
+        })
+        const freezes = line(''), worst = line(''), last = line('')
+
+        // start() replaces visualsPerf.live, so it is read on every refresh
+        function refresh()
+        {
+            const live = visualsPerf.live
+            state.textContent = visualsPerf.active ? 'Recording' : 'Stopped'
+            freezes.textContent = 'freezes ' + live.freezes + ' (>' + FREEZE_MS + ' ms)'
+            worst.textContent = 'worst ' + Math.round(live.worstMs) + ' ms'
+            last.textContent = live.last ? 'last: ' + live.last.layer + ' ' + Math.round(live.last.ms) + ' ms' : 'last: none'
+        }
+        refresh()
+        setInterval(refresh, PANEL_REFRESH_MS)
+
+        // The game listens on document: presses here must not throw or
+        // release the grapnel, nor keys on a focused button reach the game
+        for (const type of ['mousedown', 'mouseup', 'mousemove', 'click', 'pointerdown', 'pointerup',
+            'pointermove', 'touchstart', 'touchmove', 'touchend', 'touchcancel', 'wheel',
+            'keydown', 'keyup', 'keypress'])
+            panel.addEventListener(type, event => event.stopPropagation())
+        document.body.append(panel)
+    }
+    document.addEventListener('DOMContentLoaded', createPanel)
 })()
