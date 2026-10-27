@@ -1,93 +1,90 @@
-// Local platform adapter: no SDK, no network, no ads. Keeps the
-// PLATFORM API the game calls. Storage uses window.localStorage and falls
-// back to an in-memory map when it is missing or throws (a cross-origin
-// iframe with blocked storage raises SecurityError on access). With no ads
-// no interstitial is ever due, so every death restarts at once.
+// PLATFORM facade: the API the game calls. It holds no SDK or storage code;
+// every public method delegates to the same-named inner method of
+// PLATFORM_BACKEND (platform/backends/<id>.js, loaded by index.html right
+// before this file). To port to a portal (itch.io, GamePix, Y8, Playgama)
+// or add an SDK, replace the inner methods in ONE backend file and swap that
+// one script tag; nothing else changes. local.js is the default backend.
+//
+// delegate() catches a throwing, rejecting or missing inner method and
+// returns the method's safe default instead (one console.warn per method):
+//   now -> performance.now()        init -> {environment: 'local', language: 'en'}
+//   isInterstitialSupported -> false    isInterstitialDue -> false
+//   showInterstitial -> 'skipped'       sendMessage/sendLifecycle/gameReady -> undefined
+//   track/startup/onPause/onAudio/onAdState -> undefined
+//   readiness -> {state: 'local'}       isAudioEnabled -> true
+//   storage.remoteKnown -> true         storage.onRecovery -> undefined
+//   storage.getMany(keys) -> {key: null, ...}    storage.setMany -> false
+// Methods that return promises always resolve (never reject) to the default.
 const PLATFORM = (function()
 {
     let initPromise = null
-    let warned = false
-    const memory = new Map()
-    const listeners = {pause: [], audio: [], adState: []}
+    const warned = new Set()
 
-    function warn(message, e)
+    function backend()
     {
-        if (warned)
+        return typeof PLATFORM_BACKEND === 'undefined' ? null : PLATFORM_BACKEND
+    }
+
+    function fail(path, e)
+    {
+        if (warned.has(path))
             return
-        warned = true
-        console.warn('localStorage unavailable, keeping progress in memory:', message, e && e.message)
+        warned.add(path)
+        console.warn('PLATFORM_BACKEND.' + path + ' failed, using default:', e && e.message || e)
     }
 
-    function isoLanguage(value)
+    // Calls PLATFORM_BACKEND.<path>(...args); on a throw or missing method
+    // returns fallback(...args). isAsync methods always return a promise and
+    // resolve to fallback(...args) when the inner promise rejects.
+    function delegate(path, args, fallback, isAsync)
     {
-        const code = String(value || '').slice(0, 2).toLowerCase()
-        return /^[a-z]{2}$/.test(code) ? code : 'en'
-    }
-
-    function storage()
-    {
+        let result
         try
         {
-            return window.localStorage || null
-        }
-        catch (e)
-        {
-            warn('access failed', e)
-            return null
-        }
-    }
-
-    function localGet(key)
-    {
-        const local = storage()
-        if (local)
-        {
-            try
+            let owner = null
+            let fn = backend()
+            for (const part of path.split('.'))
             {
-                const value = local.getItem(key)
-                if (value !== null)
-                    return value
+                owner = fn
+                fn = fn == null ? undefined : fn[part]
             }
-            catch (e)
-            {
-                warn('read failed', e)
-            }
-        }
-        return memory.has(key) ? memory.get(key) : null
-    }
-
-    function localSet(key, value)
-    {
-        memory.set(key, value)
-        const local = storage()
-        if (!local)
-            return
-        try
-        {
-            local.setItem(key, value)
+            if (typeof fn !== 'function')
+                throw new Error('missing')
+            result = fn.apply(owner, args)
         }
         catch (e)
         {
-            warn('write failed', e)
+            fail(path, e)
+            const value = fallback(...args)
+            return isAsync ? Promise.resolve(value) : value
         }
+        if (!isAsync)
+            return result
+        return Promise.resolve(result).catch(e =>
+        {
+            fail(path, e)
+            return fallback(...args)
+        })
     }
 
-    function navigatorLanguage()
+    function platformId()
     {
         try
         {
-            return navigator.language
+            return backend().platformId || 'local'
         }
         catch (e)
         {
-            return null
+            return 'local'
         }
     }
+
+    const nothing = () => undefined
 
     const PLATFORM =
     {
         environment: 'pending',
-        platformId: 'local',
+        platformId: platformId(),
         language: 'en',
         buildVersion: '2026-10-14-sandbox-ads-gc',
         initTimeoutMs: 2900,
@@ -97,107 +94,113 @@ const PLATFORM = (function()
 
         now()
         {
-            return performance.now()
+            return delegate('now', [], () => performance.now())
         },
 
+        // Resolves the environment once language and environment are set
         init()
         {
             if (!initPromise)
             {
-                PLATFORM.language = isoLanguage(navigatorLanguage())
-                PLATFORM.environment = 'local'
-                initPromise = Promise.resolve(PLATFORM.environment)
+                const fallback = () => ({environment: 'local', language: 'en'})
+                initPromise = delegate('init', [], fallback, true).then(result =>
+                {
+                    PLATFORM.language = result && result.language || 'en'
+                    PLATFORM.environment = result && result.environment || 'local'
+                    return PLATFORM.environment
+                })
             }
             return initPromise
         },
 
-        // No ads locally: the death screen never waits for an interstitial
         isInterstitialSupported()
         {
-            return false
+            return delegate('isInterstitialSupported', [], () => false)
         },
 
-        isInterstitialDue()
+        isInterstitialDue(...args)
         {
-            return false
+            return delegate('isInterstitialDue', args, () => false)
         },
 
-        showInterstitial()
+        showInterstitial(...args)
         {
-            return Promise.resolve('skipped')
+            return delegate('showInterstitial', args, () => 'skipped', true)
         },
 
-        sendMessage()
+        sendMessage(...args)
         {
-            return Promise.resolve()
+            return delegate('sendMessage', args, nothing, true)
         },
 
-        sendLifecycle()
+        sendLifecycle(...args)
         {
-            return Promise.resolve()
+            return delegate('sendLifecycle', args, nothing, true)
         },
 
-        // Telemetry has nowhere to go locally
-        track()
+        track(...args)
         {
+            delegate('track', args, nothing)
         },
 
-        startup()
+        startup(...args)
         {
+            delegate('startup', args, nothing)
         },
 
         gameReady()
         {
-            return Promise.resolve()
+            return delegate('gameReady', [], nothing, true)
         },
 
         get readiness()
         {
-            return {state: 'local'}
+            return delegate('readiness', [], () => ({state: 'local'}))
         },
 
         isAudioEnabled()
         {
-            return true
+            return delegate('isAudioEnabled', [], () => true)
         },
 
         onPause(fn)
         {
-            listeners.pause.push(fn)
+            delegate('onPause', [fn], nothing)
         },
 
         onAudio(fn)
         {
-            listeners.audio.push(fn)
+            delegate('onAudio', [fn], nothing)
         },
 
         onAdState(fn)
         {
-            listeners.adState.push(fn)
+            delegate('onAdState', [fn], nothing)
         },
 
         storage:
         {
-            // Local storage is always read in full at boot
-            get remoteKnown() { return true },
-            // There is no late remote read to reconcile
-            onRecovery() {},
+            get remoteKnown()
+            {
+                return delegate('storage.remoteKnown', [], () => true)
+            },
+
+            onRecovery(fn)
+            {
+                delegate('storage.onRecovery', [fn], nothing)
+            },
 
             // Resolves {key: string | null}
-            async getMany(keys)
+            getMany(keys)
             {
-                const result = {}
-                for (const key of keys)
-                    result[key] = localGet(key)
-                return result
+                const fallback = keys => Object.fromEntries(Array.from(keys || [], key => [key, null]))
+                return delegate('storage.getMany', [keys], fallback, true)
             },
 
             // Saves {key: value} as strings; true once written
-            async setMany(obj)
+            setMany(obj)
             {
-                for (const key of Object.keys(obj))
-                    localSet(key, String(obj[key]))
-                return true
+                return delegate('storage.setMany', [obj], () => false, true)
             }
         }
     }

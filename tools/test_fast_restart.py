@@ -24,6 +24,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_test_support import start_browser_test, wait_for_boot
+from game_harness import switch_mode
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = Path(os.environ.get('FAST_RESTART_EVIDENCE_DIR', ROOT / 'artifacts/TASK-370'))
@@ -94,6 +95,8 @@ class FastRestartTests(unittest.TestCase):
 
     def test_fast_restart_when_no_ad_due(self):
         page = self.open()
+        # Boot starts Grapple Over; these checks are about the classic 'bad' run
+        switch_mode(page, 'bad')
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialSupported()'))
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialDue()'))
         page.evaluate('scoreText.count.bad = 7')
@@ -171,6 +174,7 @@ class FastRestartTests(unittest.TestCase):
 
     def test_paused_fast_restart_stays_paused(self):
         page = self.open()
+        switch_mode(page, 'bad')
         page.evaluate('menu.startPause()')
         self.assertTrue(page.evaluate('menu.gamePaused'))
         result = page.evaluate('''() => {
