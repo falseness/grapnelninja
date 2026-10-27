@@ -6,6 +6,7 @@ import itertools
 import json
 import math
 from pathlib import Path
+from fractions import Fraction
 from check_level_geometry import (COORD_TOL, MIN_INTERIOR_ANGLE, MIN_SIDE_LENGTH, interior_angles, point_segment,
                                   self_intersections, union_distance)
 import convert_extended_mountain_svg as svg
@@ -923,6 +924,25 @@ EXT_SUMMIT_FOLD = dict(EXT_SUMMIT, climbs=((1, 1, -1),)*3, climbShifts=((-600, 1
                        catchShelves=(('XS-C1b-3', 13700, 21600, -34500, 300),))
 
 
+# TASK-724 (candidate, --ext-summit-riser): the fold of TASK-723 stacked every leftward return climb within a pump's
+# reach (~5200) of the rightward climb under it (shortcut matrix: 368 SKIPs), and with chain climbs every such
+# reversal does at any shift. So the extension now turns once: five rightward climbs along the bottom to the right end
+# of the map (C1a 600 left as before; each later first panel 2300 right of the chain's right alignment, so it is clear
+# of the previous climb's a-3 bounce panel, which otherwise launches the player straight onto it), then a RISER TURN:
+# the turn climb's first panel (C1f-1, 1600 right, clear of that bounce too) is copied 5000 straight up (C1f-1R, its lowest point more than a
+# pump's reach above the landing below), and the leftward rest of the climb starts from that copy. Then everything
+# runs leftward as in v18: BZ1, one climb (its first panel the v18 copy facing the exit ledge, a-2..a-4 2000 nearer
+# to it), BZ2, one climb, BZ3, the summit. Each big-zone unit is the v18 unit moved rigidly by whole-unit (dx, dy)
+# (extSummit.units), 750 nearer its landing (approach release jump 600). Catch shelves (flat bodies of XS-C1a-1, so
+# a landing on one is a fall back, never a skip) cover the columns where the bottom run has nothing under it; a drop
+# off either shelf end lands on the main level. Chosen by artifacts/TASK-724/sweep (calibrated stacking predictor:
+# 0 conflicts, 0 predicted void drops).
+EXT_SUMMIT_RISER = dict(EXT_SUMMIT, climbs=((1,)*5+(-1,), (-1,), (-1,)), climbShifts=((-600,)+(2300,)*4+(1600,), (0,), (0,)),
+                        zoneFacingFirst=(False, True, True), rigidUnits=True, risers={(1, 5): (0, -5000)},
+                        unitShifts=(750, 750, 750), offsets={(2, 0): (2000, 0), (3, 0): (2000, 0)},
+                        catchShelves=(('XS-C1a-1', 3506, 4306, -36500, 300), ('XS-C1a-1', 13935, 18237, -34500, 300), ('XS-C1a-1', 20369, 21387, -34500, 300)))
+
+
 def add_catch_shelf(f, x0, x1, top, thickness):
     """Extra flat body (absolute x0..x1, top, thickness) on fragment f: catches drops where nothing lies below."""
     f['polys'] = f['polys']+[[[x0-f['x'], top-f['y']], [x1-f['x'], top-f['y']], [x1-f['x'], top+thickness-f['y']],
@@ -931,9 +951,22 @@ def add_catch_shelf(f, x0, x1, top, thickness):
 
 def rigid_moved(f, dx, dy):
     """f moved by (dx, dy) with its polygons rebased on its absolute points, so each moved absolute point
-    (x + px) is exactly the original absolute point + (dx, dy) wherever that sum is a double."""
+    (x + px) is exactly the original absolute point + (dx, dy) wherever that sum is a double, and that sum
+    correctly rounded elsewhere (TASK-724: a unit moved into a coarser binade)."""
     g = moved(copy.deepcopy(f), dx, dy)
-    g['polys'] = [[[(f['x']+px)-f['x'], (f['y']+py)-f['y']] for px, py in poly] for poly in f['polys']]
+
+    def rebased(origin, old_origin, p, d):
+        want = float(Fraction(old_origin+p)+Fraction(d))
+        q = (old_origin+p)-old_origin
+        if origin+q == want:
+            return q
+        q = want-origin
+        for _ in range(8):
+            if origin+q == want:
+                return q
+            q = math.nextafter(q, math.inf if origin+q < want else -math.inf)
+        raise ValueError('no rebased offset reaches the correctly rounded moved point')
+    g['polys'] = [[[rebased(g['x'], f['x'], px, dx), rebased(g['y'], f['y'], py, dy)] for px, py in poly] for poly in f['polys']]
     return g
 
 
@@ -961,9 +994,18 @@ def extend_summit(m, spec=EXT_SUMMIT):
                 climb = [first]+[moved(f, first['x']-climb[0]['x'], first['y']-climb[0]['y']) for f in climb[1:]]
             else:
                 climb = ext_summit_climb(chain, start, direction, spec['climbShifts'][n-1][c])
+            ox, oy = spec.get('offsets', {}).get((n, c), (0, 0))
+            climb = climb[:1]+[moved(f, ox, oy) for f in climb[1:]]
             for k, f in enumerate(climb, 1):
-                f.update(name='%s climb %d%s %s' % (pre, n, 'abc'[c], f['name']), originalId=None, kind=f['kind'] if k < 4 else 'platform',
-                         semanticId='%s-C%d%s-%d' % (pre, n, 'abc'[c], k))
+                f.update(name='%s climb %d%s %s' % (pre, n, 'abcdefgh'[c], f['name']), originalId=None, kind=f['kind'] if k < 4 else 'platform',
+                         semanticId='%s-C%d%s-%d' % (pre, n, 'abcdefgh'[c], k))
+            if (n, c) in spec.get('risers', {}):
+                # Riser turn: a second copy of the climb's first panel, (dx, dy) from it, and the rest of the climb
+                # re-based on it, so the return climb runs over the climb below more than a pump's reach higher.
+                rx, ry = spec['risers'][(n, c)]
+                riser = moved(copy.deepcopy(climb[0]), rx, ry)
+                riser.update(name=climb[0]['name']+' riser', semanticId=climb[0]['semanticId']+'R')
+                climb = [climb[0], riser]+[moved(f, rx, ry) for f in climb[1:]]
             steps += [(f, 'climb %d' % n) for f in climb]
             start = climb[-1]
         for host, x0, x1, top, thick in spec.get('catchShelves', ()) if n == 1 else ():
@@ -975,6 +1017,8 @@ def extend_summit(m, spec=EXT_SUMMIT):
             land = reference['fragments'][[f['semanticId'] for f in reference['fragments']].index(zfs[0]['semanticId'])-1]
             # Whole-unit offsets: the moved points keep their fractional digits, so the imported unit equals v18 + (dx, dy).
             dx, dy = float(round(start['x']-land['x'])), float(round(start['y']-land['y']))
+            # unitShifts moves a unit toward (+, for a leftward zone) its landing: a shorter release jump.
+            dx += float(spec.get('unitShifts', (0, 0, 0))[n-1])*(1 if directions[-1] < 0 else -1)
             zfs = [rigid_moved(ref[f['semanticId']], dx, dy) for f in zfs]
             zone = dict(copy.deepcopy(rz), x=rz['x']+dx, y=rz['y']+dy, polygon=[[x+dx, y+dy] for x, y in rz['polygon']])
             units.append(dict(zone=zone['id'], dx=dx, dy=dy, fragments=[f['semanticId'] for f in zfs]))
@@ -2084,6 +2128,9 @@ def main():
                     help='add SEC-ext-summit (three big zones, new finish 8640+ higher) above the old summit (TASK-708/'
                          '710); only with the default shipped layout flags and --purple-rest. Default: on for the shipped '
                          'v18 run; --no-ext-summit without layout flags gives the previous shipped v17')
+    ap.add_argument('--ext-summit-riser', action='store_true',
+                    help='(with the shipped run) candidate: SEC-ext-summit inside FOLD_X_RANGE with one riser turn '
+                         '(no stacked return climbs), big-zone units moved rigidly (TASK-724)')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -2124,9 +2171,11 @@ def main():
     if args.ext_summit:
         if not (shipped and args.purple_rest):
             raise ValueError('--ext-summit extends the v17 layout (default flags with --purple-rest) only')
-        extend_summit(m, EXT_SUMMIT_FOLD if args.ext_summit_fold else EXT_SUMMIT)
-    elif args.ext_summit_fold:
-        raise ValueError('--ext-summit-fold needs --ext-summit')
+        if args.ext_summit_fold and args.ext_summit_riser:
+            raise ValueError('--ext-summit-fold and --ext-summit-riser are alternatives')
+        extend_summit(m, EXT_SUMMIT_FOLD if args.ext_summit_fold else EXT_SUMMIT_RISER if args.ext_summit_riser else EXT_SUMMIT)
+    elif args.ext_summit_fold or args.ext_summit_riser:
+        raise ValueError('--ext-summit-fold / --ext-summit-riser need --ext-summit')
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
     # The shipped extended level carries display-only transfer guides and their arrows (TASK-660);

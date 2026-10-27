@@ -10,6 +10,13 @@ next climb, XS-C2a-1 / XS-C3a-1). The BZ3 leg ends with the last transfer: a gra
 XS-SUMMIT that pulls the player into the new finish (climbStats.completed). Each leg is replayed twice and must
 give identical logs.
 
+test_04 (TASK-724) proves every other transfer of the extension, from the old summit through every climb to each
+zone's approach ledge, one transfer at a time in the repo's per-transfer form (tools/fixtures/harder-transfer-inputs.json):
+tools/probe_level_routes.js ROUTE_PROBE places the player at zero speed `drop` above the source panel's top, then only
+document mouse events (pumps / fraction / lastAimOffset policy of tools/fixtures/ext-summit-climb-inputs.json) and
+physics() run; the first contact or attach on a later panel must be the target. Each is run twice (identical). The
+fixture belongs to one layout: a level whose extension transfers differ from it (e.g. the shipped v18) skips test_04.
+
 Level: EXT_SUMMIT_CANDIDATE=DIR (extended-mountain.level.json and extended-mountain-measurements.json, e.g. the
 retune --ext-summit output of artifacts/TASK-708/candidate), else the shipped artifacts/levels data. A level
 without the extension (extSummit in its measurements) skips every test, which is not a pass.
@@ -36,6 +43,8 @@ LEVEL_DIR = Path(os.environ.get('EXT_SUMMIT_CANDIDATE') or ROOT / 'artifacts' / 
 NAMES = ('extended-mountain.level.json', 'extended-mountain-measurements.json')
 ZONES = ('BZ1', 'BZ2', 'BZ3')
 INPUTS = {z: TOOLS / 'fixtures' / ('ext-summit-inputs-%s.json' % z) for z in ZONES}
+CLIMBS = TOOLS / 'fixtures' / 'ext-summit-climb-inputs.json'
+POLICY_KEYS = ('pumps', 'fraction', 'lastAimOffset', 'targetWhenInRange', 'drop', 'budget')
 RECOVERY_DEPTH = 1500  # physics.js CLIMB_FALL_RECOVERY_DEPTH
 OUT = {}
 
@@ -217,6 +226,47 @@ class ExtSummitTraversalTests(unittest.TestCase):
         out['finish'] = dict(completed=True, climbStatsCompleted=log['completed'], tick=q['tick'], at=[q['x'], q['y']], finish=f,
                              summit=self.ids['XS-SUMMIT'], summitAttachTick=log['next']['tick'])
         OUT['zones']['BZ3'] = out
+
+
+    def test_04_climb_transfers(self):
+        rec = json.loads(CLIMBS.read_text())
+        fs = {f['id']: f for f in self.m['fragments']}
+        seq = [fs[self.m['extSummit']['oldSummit']]]+[fs[i] for i in self.m['extSummit']['fragments']]
+        # Every transfer not replayed by a BZ leg: the leg covers approach -> zone -> exit -> next climb, BZ3 -> summit.
+        want = [[a['semanticId'], b['semanticId']] for a, b in zip(seq, seq[1:])
+                if not a['semanticId'].startswith('BZ') and b['semanticId'] != 'XS-SUMMIT'
+                and (not b['semanticId'].startswith('BZ') or b['semanticId'].endswith('-APPROACH'))]
+        have = [[t['source'], t['target']] for t in rec['transfers']]
+        if have != want:
+            self.skipTest('%s is for another layout than %s (extension transfers differ)' % (CLIMBS.name, LEVEL_DIR))
+        page = self.browser.new_page()
+        page.errors = []
+        page.on('pageerror', lambda e: page.errors.append(str(e)))
+        page.goto(self.url)
+        from browser_test_support import wait_for_boot_run
+        wait_for_boot_run(page)
+        page.add_script_tag(path=str(TOOLS / 'probe_level_routes.js'))
+        rows = []
+        for t in rec['transfers']:
+            with self.subTest(source=t['source'], target=t['target']):
+                pol = {k: t[k] for k in POLICY_KEYS if k in t}
+                self.assertEqual(pol['drop'], 300)
+                o = dict(pol, source=self.ids[t['source']], target=self.ids[t['target']], level=self.level)
+                runs = [page.evaluate('o => { const r = ROUTE_PROBE.run(o); return {hit: r.hit, setup: r.setup, ticks: r.ticks, '
+                                      'bounces: r.bounces, minY: r.minY} }', o) for _ in range(2)]
+                self.assertEqual(runs[0], runs[1])
+                hit = runs[0]['hit']
+                self.assertIsNotNone(hit, t)
+                self.assertEqual(hit['id'], self.ids[t['target']] + '-body0', t)
+                self.assertEqual((runs[0]['setup']['vx'], runs[0]['setup']['vy']), (0, 0))
+                rows.append(dict(source=t['source'], target=t['target'], policy=pol, hit=dict(kind=hit['kind'], tick=hit['tick'], id=hit['id']),
+                                 bounces=runs[0]['bounces'], identicalSecondRun=runs[0] == runs[1]))
+        self.assertEqual(page.errors, [])
+        self.assertEqual(len(rows), len(want))
+        OUT['climbs'] = dict(inputs=str(CLIMBS.relative_to(ROOT)), inputsSha256=sha(CLIMBS), transfers=len(rows),
+                             method='ROUTE_PROBE per transfer: zero-speed fixture drop 300 above the source top, then only '
+                                    'document mouse events and physics(); first later-panel contact/attach == target; run twice',
+                             rows=rows)
 
 
 if __name__ == '__main__':
