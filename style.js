@@ -557,21 +557,25 @@ const STYLE = Object.freeze({
         nodeMid: 'rgba(225,210,255,0.7)',
         nodeEdge: 'rgba(210,190,255,0)'
     }),
-    // Grapple Over hook end: three prongs from the tip (0 and +-0.9 rad off the
-    // rope direction, pointing away from the ninja), screen px.
-    grapnelClaw: Object.freeze({
-        prongAngles: Object.freeze([0, -0.9, 0.9]),
-        prongLength: 9,
-        width: 2,
-        color: '#ffffff',
-        outlineWidth: 4.5,
-        outline: '#1a1030',
-        // Soft white spark under the claw once hooked
-        sparkRadius: 14,
-        sparkCore: 'rgba(255,255,255,0.95)',
-        // White-transparent edge: Canvas interpolates unpremultiplied colour, a lavender
-        // edge tints the falloff and pushes teal floors into the rope's cyan hue
-        sparkEdge: 'rgba(255,255,255,0)'
+    // Grapple Over hook end (concept A, plasma knot), screen px. Flying: the core only.
+    grapnelKnot: Object.freeze({
+        coreRadius: 3.6,
+        coreColor: '#ffffff',
+        ringRadius: 7,
+        ringWidth: 1.4,
+        ringColor: '#d9ccff',
+        // Two broken arcs outside the ring, [from, to] in radians
+        arcRadius: 10.5,
+        arcWidth: 1,
+        arcColor: 'rgba(217,204,255,0.45)',
+        arcs: Object.freeze([Object.freeze([-0.6, 1.9]), Object.freeze([2.5, 5.0])]),
+        ringComposite: 'source-over',
+        // Soft glow under the knot, drawn additively. White-transparent edge: Canvas
+        // interpolates unpremultiplied colour, a lavender edge tints the falloff and
+        // pushes teal floors into the rope's cyan hue
+        glowRadius: 20,
+        glowCore: 'rgba(255,255,255,0.55)',
+        glowEdge: 'rgba(255,255,255,0)'
     }),
     // Fake-3D back face of rectangles, cubes and green blocks: one shared light
     // direction (back face up-right). The front face stays on the hitbox.

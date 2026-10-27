@@ -555,7 +555,7 @@ class Grapnel
             return
         if (version === 'grapple_over')
         {
-            this.drawClaw()
+            this.drawKnot()
             return
         }
 
@@ -585,67 +585,50 @@ class Grapnel
 
         ctx.restore()
     }
-    // Unit direction the claw points: away from the ninja along the last rope
-    // segment once hooked, along the flight while flying.
-    clawDirection()
+    // Grapple Over hook end: a solid white core on the visible tip; once hooked, a
+    // soft glow, a lavender ring and two broken outer arcs. Sizes are screen px.
+    drawKnot()
     {
-        const tip = this.visibleTip()
-        if (!this.grappled)
-        {
-            const speed = Math.hypot(this.speedX, this.speedY)
-            if (speed > 0)
-                return [this.speedX / speed, this.speedY / speed]
-            if (this.aim)
-                return [this.aim.x, this.aim.y]
-        }
-        const next = this.pos.length > 1 ? this.pos[1] : [ninja.x, ninja.y]
-        const dx = tip[0] - next[0], dy = tip[1] - next[1]
-        const length = Math.hypot(dx, dy)
-        return length > 0 ? [dx / length, dy / length] : [0, -1]
-    }
-    // Grapple Over hook: a white three-prong claw over a dark outline, with a soft
-    // white spark under it once hooked. Sizes are screen px.
-    drawClaw()
-    {
-        const look = STYLE.grapnelClaw
+        const look = STYLE.grapnelKnot
         const unit = 1 / scale[version]
         const tip = this.visibleTip()
         const x = tip[0] + screen.x, y = tip[1] + screen.y
-        const [ux, uy] = this.clawDirection()
-        const angle = Math.atan2(uy, ux)
 
         ctx.save()
         ctx.globalAlpha = STYLE.alpha.full
         if (this.grappled)
         {
-            const radius = look.sparkRadius * unit
-            const spark = ctx.createRadialGradient(x, y, 0, x, y, radius)
-            spark.addColorStop(0, look.sparkCore)
-            spark.addColorStop(1, look.sparkEdge)
-            ctx.fillStyle = spark
-            // Additive: every channel gains the same amount, so the spark's faint
+            const radius = look.glowRadius * unit
+            const glow = ctx.createRadialGradient(x, y, 0, x, y, radius)
+            glow.addColorStop(0, look.glowCore)
+            glow.addColorStop(1, look.glowEdge)
+            ctx.fillStyle = glow
+            // Additive: every channel gains the same amount, so the glow's faint
             // tail cannot round a floor pixel's hue into the rope's cyan band
             ctx.globalCompositeOperation = 'lighter'
             ctx.beginPath()
             ctx.arc(x, y, radius, 0, 2 * Math.PI)
             ctx.fill()
+            ctx.globalCompositeOperation = look.ringComposite
+            ctx.strokeStyle = look.ringColor
+            ctx.lineWidth = look.ringWidth * unit
+            ctx.beginPath()
+            ctx.arc(x, y, look.ringRadius * unit, 0, 2 * Math.PI)
+            ctx.stroke()
+            ctx.strokeStyle = look.arcColor
+            ctx.lineWidth = look.arcWidth * unit
+            for (const [from, to] of look.arcs)
+            {
+                ctx.beginPath()
+                ctx.arc(x, y, look.arcRadius * unit, from, to)
+                ctx.stroke()
+            }
             ctx.globalCompositeOperation = 'source-over'
         }
+        ctx.fillStyle = look.coreColor
         ctx.beginPath()
-        for (const spread of look.prongAngles)
-        {
-            ctx.moveTo(x, y)
-            ctx.lineTo(x + Math.cos(angle + spread) * look.prongLength * unit,
-                       y + Math.sin(angle + spread) * look.prongLength * unit)
-        }
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
-        ctx.strokeStyle = look.outline
-        ctx.lineWidth = look.outlineWidth * unit
-        ctx.stroke()
-        ctx.strokeStyle = look.color
-        ctx.lineWidth = look.width * unit
-        ctx.stroke()
+        ctx.arc(x, y, look.coreRadius * unit, 0, 2 * Math.PI)
+        ctx.fill()
         ctx.restore()
     }
 }

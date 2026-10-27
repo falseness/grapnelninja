@@ -408,8 +408,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # TASK-692 centered the Grapple Over camera on the ninja (moveScreen.js only; covered by the camera tests).
         # TASK-699/701 changed only display code (render/effects.js glow, render/parallax.js tiles). TASK-704 added
         # the Grapple Over spawn launch (SPAWN_LAUNCH_DIFF in physics.js, one assignment in startGrappleOverVersion);
-        # TASK-717 applied it to recoverClimbFall too; TASK-721 opens the first-death offer from it. TASK-714/715/716 changed only display code
-        # (render/glowsprites.js bakes, render/landmarks.js, the sprites/grapnel.js rope and claw drawing).
+        # TASK-717 applied it to recoverClimbFall too; TASK-721 opens the first-death offer from it. TASK-714/715/716/726 changed only display code
+        # (render/glowsprites.js bakes, render/landmarks.js, the sprites/grapnel.js rope and hook-end drawing).
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
                                                                                       ':!render/fallmessage.js', ':!sprites/trampoline.js',
