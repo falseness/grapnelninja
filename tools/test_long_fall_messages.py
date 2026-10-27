@@ -34,6 +34,10 @@ DEPTH = 1500
 MESSAGES = ['OOPS...', 'GG!', 'BRUH.', 'NOT AGAIN.', 'SO CLOSE...', 'GRAVITY WINS.', 'GOING DOWN!',
             'BACK SO SOON?', 'NICE SHORTCUT.', 'WRONG WAY.', 'ONE MORE TRY?', 'SEE YOU AT THE TOP.']
 EXCLUDED = ['I MEANT THAT.', 'DEJA VU.', 'WELP.']
+# TASK-720: the run's first long fall (single grapnel) shows this hint instead.
+HINT = 'Maybe you should try double grapnel mode'
+# Spend the run's first long fall, so the next one draws from MESSAGES.
+HINT_SPENT = '() => { floors[0].fallHintShown = true }'
 
 # Freeze the loop; count gameplay RNG use and recoveries through production functions.
 SETUP = '''() => {
@@ -180,7 +184,7 @@ class LongFallMessageTests(unittest.TestCase):
         self.assertGreater(above['tracking']['displacement'], THRESHOLD)
         self.assertEqual(above['emitted'], 1)
         self.assertEqual(above['event']['id'], 1)
-        self.assertIn(above['event']['message'], MESSAGES)
+        self.assertEqual((above['event']['message'], above['event']['hint']), (HINT, True))
         # Continued descent past 8000: still the same single event.
         page.evaluate(SHIFT, 4100)
         beyond = self.step(page, 'hold')
@@ -481,7 +485,8 @@ class LongFallMessageTests(unittest.TestCase):
         for word in ['LONG_FALL', 'longFall', 'reaction', 'message'] + MESSAGES:
             self.assertNotIn(word, saved)
         self.assertEqual(sorted(json.loads(saved)), sorted(['version', 'levelVersion', 'layoutId', 'simulationTick', 'stats',
-                                                             'player', 'input', 'upgrades', 'elements', 'grapple']))
+                                                             'player', 'input', 'upgrades', 'elements', 'grapple',
+                                                             'grapnelMode', 'usedDouble', 'fallHintShown']))
         lc['reload'] = {'eventBeforeReload': True, 'savedKeys': sorted(json.loads(saved)),
                         'savedContainsReaction': False, 'afterReload': reloaded, 'eventsIn60Ticks': 0,
                         'firstStepAfter': run['steps'][0] if run['steps'] else None}
@@ -584,6 +589,7 @@ class LongFallMessageTests(unittest.TestCase):
         # Injected source through production emission: every entry, consecutive repeats allowed.
         samples = [(k + 0.5) / 12 for k in range(12)] + [0.5 / 12, 0.5 / 12]
         page.evaluate('s => { let i = 0; LONG_FALL.setRandom(() => s[i++]) }', samples)
+        page.evaluate(HINT_SPENT)
         emitted = []
         for _ in samples:
             self.baseline_at(page, 9000)
@@ -638,6 +644,13 @@ class LongFallMessageTests(unittest.TestCase):
         self.assertEqual(runs['inert']['emitted'], 0)
         self.assertGreaterEqual(runs['enabled']['emitted'], 2)
         for phase in ('mid', 'end'):
+            # TASK-720: only the saved first-fall flag may differ (set by the enabled detector).
+            hint = {}
+            for mode in runs:
+                save = json.loads(runs[mode][phase]['save'])
+                hint[mode] = save.pop('fallHintShown')
+                runs[mode][phase]['save'] = json.dumps(save)
+            self.assertEqual(hint, {'inert': False, 'enabled': True}, phase)
             for key in runs['inert'][phase]:
                 self.assertEqual(runs['inert'][phase][key], runs['enabled'][phase][key], (phase, key))
         self.assertEqual(runs['enabled']['end']['recoveries'], 1)
@@ -865,6 +878,7 @@ class LongFallRenderTests(unittest.TestCase):
         lay = EVIDENCE['layout']
         for kind in VIEWPORTS:
             page = self.open(kind)
+            page.evaluate(HINT_SPENT)
             res = page.evaluate(LAYOUTS, [MESSAGES, [-15, 0, 15]])
             L = res['layouts']
             self.assertEqual(len(L), 12 * 6 * 3)

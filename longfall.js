@@ -4,6 +4,9 @@ const LONG_FALL_THRESHOLD = 4000
 const LONG_FALL_MESSAGES = Object.freeze(['OOPS...', 'GG!', 'BRUH.', 'NOT AGAIN.', 'SO CLOSE...',
     'GRAVITY WINS.', 'GOING DOWN!', 'BACK SO SOON?', 'NICE SHORTCUT.', 'WRONG WAY.',
     'ONE MORE TRY?', 'SEE YOU AT THE TOP.'])
+// The first long fall of a single-grapnel run suggests double grapnel mode
+// instead (climb.fallHint, shown in the current language).
+const LONG_FALL_HINT_KEY = 'climb.fallHint'
 
 const LONG_FALL = (function()
 {
@@ -54,7 +57,12 @@ const LONG_FALL = (function()
             else if (armed && y - startY > LONG_FALL_THRESHOLD)
             {
                 armed = false
-                event = {id: ++emitted, ...pick(random()), displacement: y - startY}
+                // The run's first long fall; world.fallHintShown is saved with the climb.
+                const first = !world.fallHintShown
+                world.fallHintShown = true
+                event = first && world.grapnelMode !== 'double'
+                    ? {id: ++emitted, index: -1, hint: true, message: I18N.t(LONG_FALL_HINT_KEY), displacement: y - startY}
+                    : {id: ++emitted, ...pick(random()), displacement: y - startY}
             }
             lastY = y
         },
@@ -75,6 +83,11 @@ const LONG_FALL = (function()
             return {startY, lastY, armed, wasGrappled, displacement: lastY - startY}
         },
         pick,
+        // Text of an event; the double grapnel hint follows the current language.
+        text(e)
+        {
+            return e.hint ? I18N.t(LONG_FALL_HINT_KEY) : e.message
+        },
         // Test hook: a function returning [0, 1), or null for the default source.
         setRandom(source)
         {

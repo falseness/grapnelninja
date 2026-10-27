@@ -929,7 +929,9 @@ class Task495Tests(unittest.TestCase):
             at_save = ref.evaluate('captureClimbState()')
             save_error = leaf_errors(self, at_save, restored)
             reference = ref.evaluate(RUN_495, CONTINUATION_TICKS)
-            errors = [leaf_errors(self, a, b) for a, b in zip(reference, continued)]
+            # TASK-720: fallHintShown follows the long-fall detector, which a reload restarts
+            # (the reference keeps tracking a descent begun before the save), so it may differ.
+            errors = [leaf_errors(self, a, b, skip=('fallHintShown',)) for a, b in zip(reference, continued)]
             self.assertLessEqual(save_error, 1e-6)
             self.assertLessEqual(max(errors), 1e-6)
             if kind == 'completed':

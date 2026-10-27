@@ -230,10 +230,11 @@ const FALL_MESSAGE = {
         if (!this.visible())
             return
         const target = context.canvas, css = getCanvasCssRect()
-        const key = [target.width, target.height, css.width, css.height, this.event.message].join('|')
+        const text = LONG_FALL.text(this.event)
+        const key = [target.width, target.height, css.width, css.height, text].join('|')
         if (key !== this.layoutKey)
         {
-            this.layout = this.layoutFor(this.event.message, this.anchorIndex, this.angle, target)
+            this.layout = this.layoutFor(text, this.anchorIndex, this.angle, target)
             this.layoutKey = key
             this.bake(this.layout, target.width / css.width)
             ++this.layoutCount

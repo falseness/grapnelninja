@@ -153,6 +153,8 @@ class PersistentWorld extends Floor
         // 'single' (default) or 'double' range; see setGrapnelMode.
         this.grapnelMode = 'single'
         this.usedDouble = false
+        // Set by the run's first long fall (LONG_FALL), which may show the double grapnel hint.
+        this.fallHintShown = false
         // HUD notice time left after the upgrade; display only, never saved.
         this.rangeNoticeMs = 0
         // Drag zones are neither collidable nor grappleable: keep them out of
@@ -290,7 +292,7 @@ function captureClimbState()
         player: climbFields(ninja, CLIMB_PLAYER_FIELDS),
         input: {pressHeld, stalePress},
         upgrades: {range: world.rangeUpgraded},
-        grapnelMode: world.grapnelMode, usedDouble: world.usedDouble,
+        grapnelMode: world.grapnelMode, usedDouble: world.usedDouble, fallHintShown: world.fallHintShown,
         elements: world.elements.map(e => ({id: e.id, ...climbFields(e, CLIMB_ELEMENT_FIELDS)})),
         grapple: {
             throwed: grapnel.throwed, grappled: grapnel.grappled,
@@ -338,6 +340,9 @@ function restoreClimbState(save)
     if (s.usedDouble === undefined) s.usedDouble = false
     if (s.grapnelMode !== 'single' && s.grapnelMode !== 'double') fail()
     shape(s.usedDouble, false)
+    // Saves from before the first-fall hint show it on the next long fall.
+    if (s.fallHintShown === undefined) s.fallHintShown = false
+    shape(s.fallHintShown, false)
     if (s.player.radius <= 0 || s.player.hazardCooldownMs < 0 || s.player.invulnerableMs < 0 ||
         s.stats.elapsedActiveMs < 0 || s.stats.maxHeight < Math.max(0, s.stats.currentHeight)) fail()
     if (!Array.isArray(s.elements) || s.elements.length !== world.elements.length) fail()
@@ -371,6 +376,7 @@ function restoreClimbState(save)
     nextWorld.rangeUpgraded = s.upgrades.range
     nextWorld.grapnelMode = s.grapnelMode
     nextWorld.usedDouble = s.usedDouble || s.grapnelMode === 'double'
+    nextWorld.fallHintShown = s.fallHintShown
     s.elements.forEach(e => Object.assign(nextWorld.byId.get(e.id), e))
     const nextNinja = new Ninja({...s.player, fill:ninja.fill, stroke:ninja.stroke})
     Object.assign(nextNinja, s.player)
