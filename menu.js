@@ -953,6 +953,47 @@ class ContinueOffer
     }
 }
 
+// The summit screen's picture (art/win-*.svg, made by tools/make_win_art.py;
+// all its text is drawn by CLIMB_UI). The SVGs load on the first Grapple Over
+// menu; each is rasterised once per canvas size into a cached canvas, which
+// the frames then copy. Until it has loaded the plain overlay is drawn.
+const WIN_ART = {
+    images: {},
+    rasters: {},
+    load() {
+        for (const variant of ['default', 'long'])
+        {
+            if (this.images[variant]) continue
+            const image = new Image()
+            image.onload = () => {
+                image.ready = true
+                if (version === 'grapple_over' && floors[0]?.climbStats?.completed) redrawOverlays()
+            }
+            image.src = 'art/win-' + variant + '.svg'
+            this.images[variant] = image
+        }
+    },
+    // Cover-fit over the whole menu (w, h); false while the image is loading
+    draw(w, h) {
+        const variant = floors[0].usedDouble ? 'long' : 'default'
+        this.load()
+        const image = this.images[variant]
+        if (!image.ready) return false
+        let raster = this.rasters[variant]
+        if (!raster || raster.width !== canvas.width || raster.height !== canvas.height)
+        {
+            raster = this.rasters[variant] = document.createElement('canvas')
+            raster.width = canvas.width
+            raster.height = canvas.height
+            const fit = Math.max(raster.width / image.width, raster.height / image.height)
+            const iw = image.width * fit, ih = image.height * fit
+            raster.getContext('2d').drawImage(image, (raster.width - iw) / 2, (raster.height - ih) / 2, iw, ih)
+        }
+        ctx.drawImage(raster, 0, 0, w, h)
+        return true
+    }
+}
+
 // Climb statistics describe the current simulation; they never move the player.
 const CLIMB_UI = {
     confirming: false,
@@ -1041,8 +1082,12 @@ const CLIMB_UI = {
     },
     drawMenu() {
         const w = menu.width, h = menu.height, stats = floors[0].climbStats
-        ctx.fillStyle = STYLE.colors.ui.pauseOverlay
-        ctx.fillRect(0, 0, w, h)
+        WIN_ART.load()
+        if (!(stats.completed && WIN_ART.draw(w, h)))
+        {
+            ctx.fillStyle = STYLE.colors.ui.pauseOverlay
+            ctx.fillRect(0, 0, w, h)
+        }
         const title = this.offering ? 'climb.offerTitle' : this.confirming ? 'climb.confirm' :
             stats.completed ? 'climb.complete' : 'mode.grapple_over'
         const actions = this.offering ? [
