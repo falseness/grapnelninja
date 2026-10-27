@@ -124,6 +124,13 @@ function calcPhysics()
     }
 }
 
+// Count a Grapple Over hook: a transition into the grappled state, not a
+// throw or a rope wrap. Display only; never read by physics.
+function countClimbGrapple(wasGrappled)
+{
+    if (version === 'grapple_over' && !wasGrappled && floors[0]?.climbStats) floors[0].climbStats.grapples++
+}
+
 // Teleport a fallen Grapple Over player to the spawn and launch it upward
 // like a fresh start. Time, best height, upgrades and the world (movers
 // included) are kept; only the player, grapple, gameplay input ownership and
@@ -143,6 +150,7 @@ function recoverClimbFall()
     gameplayPressOwned = false
     stalePress = pressHeld
     world.climbStats.currentHeight = 0
+    world.climbStats.falls++
     LONG_FALL.restartTracking()
     screen.trackGrappleOver(true)
     // The run's first recovery in single mode pauses on the double grapnel

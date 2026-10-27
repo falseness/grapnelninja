@@ -147,7 +147,7 @@ class PersistentWorld extends Floor
         super(source.bounds.top, source.bounds.bottom, {min: 0, max: 0}, [])
         this.level = structuredClone(source)
         this.elapsedSteps = 0
-        this.climbStats = {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false}
+        this.climbStats = {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false, falls: 0, grapples: 0}
         // Earned once on entering the upgrade section; kept until a confirmed restart.
         this.rangeUpgraded = false
         // 'single' (default) or 'double' range; see setGrapnelMode.
@@ -333,7 +333,12 @@ function restoreClimbState(save)
     const s = structuredClone(save), world = floors[0]
     if (!Number.isSafeInteger(s.simulationTick) || s.simulationTick < 0) fail()
     shape(s.player, climbFields(ninja, CLIMB_PLAYER_FIELDS))
-    shape(s.stats, {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false})
+    // Saves from before the run counters load them as 0.
+    if (s.stats && typeof s.stats === 'object')
+        for (const key of ['falls', 'grapples']) if (s.stats[key] === undefined) s.stats[key] = 0
+    shape(s.stats, {elapsedActiveMs: 0, currentHeight: 0, maxHeight: 0, completed: false, falls: 0, grapples: 0})
+    if (!Number.isSafeInteger(s.stats.falls) || s.stats.falls < 0 ||
+        !Number.isSafeInteger(s.stats.grapples) || s.stats.grapples < 0) fail()
     shape(s.input, {pressHeld: false, stalePress: false})
     // Saves from before the range upgrade existed carry no upgrades.
     if (s.upgrades === undefined) s.upgrades = {range: false}

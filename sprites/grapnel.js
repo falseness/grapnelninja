@@ -166,6 +166,7 @@ class Grapnel
         // Keep the actual surface contact; corner snapping could move
         // an otherwise valid contact outside the acquisition radius.
         this.pos = [[hit.x, hit.y, element]]
+        countClimbGrapple(this.grappled)
         this.grappled = true
         this.clip = null
     }
@@ -320,6 +321,7 @@ class Grapnel
             if (version === 'grapple_over' && this.pos.some(point =>
                 point[2] === element && Math.hypot(point[0] - coords.x, point[1] - coords.y) < 1e-7))
                 return
+            countClimbGrapple(this.grappled)
             this.grappled = true
             if  (
                     index == 1                                                          && 
