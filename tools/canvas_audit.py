@@ -4,7 +4,9 @@ Headless Chromium at the user's recording size (1706x932, DPR 1.5) in Grapple
 Over. An init script wraps document.createElement('canvas') (creator stack
 top + caller, size at the first getContext), getGlowSprite (misses, by key and
 cache: 'glyph|' keys are HUD glyph sprites in GLYPH_SPRITES)
-and BackgroundRenderer.prototype.getSmoothImage (palette image builds), and
+and BackgroundRenderer.prototype.getSmoothImage (palette image builds, in a
+draw or ahead by prebuildGrappleOverPalette, with the frame that first draws
+each build: smoothCheck), and
 counts rAF frames. The ninja is held (x, y, zero speed, re-set every 250 ms)
 for ~1.5 s at each tools/fixtures/freeze-walk.json point for 2 passes, then
 for ~1 s at each sweep point. Also reports the most canvases one frame
@@ -31,7 +33,7 @@ HOLD_STEPS = 6       # x 250 ms at each walk point
 SWEEP_STEPS = 4      # x 250 ms at each sweep point
 
 INIT = r'''
-window.__audit = {frame: 0, phase: 'boot', canvases: [], glowMisses: [], smoothBuilds: [], firstDraw: {}, smooth: null}
+window.__audit = {frame: 0, phase: 'boot', canvases: [], glowMisses: [], smoothBuilds: [], smooth: null, prebuilding: false}
 ;(() => {
   const audit = window.__audit
   const create = document.createElement
@@ -60,20 +62,32 @@ window.__audit = {frame: 0, phase: 'boot', canvases: [], glowMisses: [], smoothB
       if (!(store || GLOW_SPRITES).cache.has(key)) audit.glowMisses.push([audit.phase, String(key)])
       return glow.apply(this, arguments)
     }
+    // A palette build (in a draw, or ahead by prebuildGrappleOverPalette) and the
+    // frame that first draws that image after it
+    const prebuild = window.prebuildGrappleOverPalette
+    window.prebuildGrappleOverPalette = function() {
+      audit.prebuilding = true
+      try { return prebuild.apply(this, arguments) } finally { audit.prebuilding = false }
+    }
+    const pending = {}
     const smooth = BackgroundRenderer.prototype.getSmoothImage
     BackgroundRenderer.prototype.getSmoothImage = function(owner, name, bounds) {
       const images = typeof drawGrappleOverPalette != 'undefined' && drawGrappleOverPalette.images
       let index = null
       if (images) for (const [i, o] of images) if (o === owner) index = i
       if (index === null) return smooth.apply(this, arguments)
-      if (!(index in audit.firstDraw)) audit.firstDraw[index] = audit.frame
+      const drawing = !audit.prebuilding
+      if (drawing && pending[index]) { pending[index].firstDrawFrame = audit.frame; delete pending[index] }
       const outer = audit.smooth
       audit.smooth = {built: false}
       try {
         const canvas = smooth.apply(this, arguments)
-        if (audit.smooth.built)
-          audit.smoothBuilds.push({frame: audit.frame, phase: audit.phase, index, w: canvas.width, h: canvas.height,
-                                   firstDrawFrame: audit.firstDraw[index]})
+        if (audit.smooth.built) {
+          const entry = {frame: audit.frame, phase: audit.phase, index, w: canvas.width, h: canvas.height,
+                         prebuild: !drawing, firstDrawFrame: drawing ? audit.frame : null}
+          audit.smoothBuilds.push(entry)
+          if (!drawing) pending[index] = entry
+        }
         return canvas
       } finally { audit.smooth = outer }
     }
@@ -92,6 +106,19 @@ def hold(page, point, steps):
 
 def palette_index(page):
     return page.evaluate('() => { const p = visualEffects.background.palette; return p ? [p.from, p.to] : null }')
+
+
+def smooth_check(builds):
+    """Palette builds after boot: lead = firstDrawFrame - frame (None: not drawn yet)."""
+    per_frame = {}
+    for b in builds:
+        per_frame[b['frame']] = per_frame.get(b['frame'], 0) + 1
+    leads = [None if b['firstDrawFrame'] is None else b['firstDrawFrame'] - b['frame'] for b in builds]
+    drawn = [lead for lead in leads if lead is not None]
+    return {'builds': len(builds), 'prebuilds': sum(b['prebuild'] for b in builds),
+            'minLead': min(drawn, default=None), 'neverDrawn': leads.count(None),
+            'sameFrameDraws': sum(lead == 0 for lead in drawn), 'maxPerFrame': max(per_frame.values(), default=0),
+            'leadOk': all(lead >= 10 for lead in drawn)}
 
 
 def audit(mode):
@@ -131,6 +158,8 @@ def audit(mode):
     if raw['grapnelMode'] != mode:
         errors.append('grapnelMode %s, expected %s' % (raw['grapnelMode'], mode))
 
+    builds = [{k: b[k] for k in ('frame', 'phase', 'index', 'w', 'h', 'prebuild', 'firstDrawFrame')}
+              for b in raw['smoothBuilds'] if b['phase'] != 'boot']
     walked = [c for c in raw['canvases'] if c['phase'] != 'boot']
     creators, frames, by_file = {}, {}, {}
     contact = {'created': 0, 'materialBuilds': 0, 'frames': {}}
@@ -171,8 +200,8 @@ def audit(mode):
         'bounceContact': contact,
         'glowMisses': glow,
         'glowTextSample': text_keys,
-        'smoothBuilds': [{k: b[k] for k in ('frame', 'phase', 'index', 'w', 'h', 'firstDrawFrame')}
-                         for b in raw['smoothBuilds'] if b['phase'] != 'boot'],
+        'smoothBuilds': builds,
+        'smoothCheck': smooth_check(builds),
         'sweepPalettes': sweep_palettes,
         'caches': raw['caches'],
         'errors': errors,
@@ -189,6 +218,7 @@ def main():
     print('mode %s: perPass %s, maxPerFrame %d, glow text misses %s, glyph misses %s, smoothBuilds %d, errors %d -> %s' % (
         args.mode, result['perPass'], result['maxPerFrame'], result['glowMisses']['text'], result['glowMisses']['glyph'],
         len(result['smoothBuilds']), len(result['errors']), args.out))
+    print('smoothCheck %s; paletteImages %d' % (json.dumps(result['smoothCheck']), result['caches']['paletteImages']))
     print('bounce contact %s; maxPerFrameByFile %s' % (
         json.dumps(result['bounceContact']), json.dumps(result['maxPerFrameByFile'])))
     return 1 if result['errors'] else 0

@@ -8,8 +8,10 @@ function drawBackgroundLayer()
     // Grapple Over only: the section palette under the camera centre, painted
     // over the cave backdrop by the background renderer (also into the window
     // bars and the fast backdrop)
-    visualEffects.background.palette = version === 'grapple_over' ?
-        grappleOverBackdropPalette(height / scale[version] / 2 - screen.y) : null
+    const cameraY = height / scale[version] / 2 - screen.y
+    const palette = visualEffects.background.palette = version === 'grapple_over' ?
+        grappleOverBackdropPalette(cameraY) : null
+    visualEffects.background.paletteAhead = palette ? grappleOverPaletteAhead(cameraY, palette) : []
     visualEffects.background.draw()
 }
 
@@ -35,6 +37,41 @@ function grappleOverBackdropPalette(cameraY)
     return {from: boundary - 1, to: boundary, t: x * x * (3 - 2 * x)}
 }
 
+// How far (world units) before a neighbour band's blend zone its smooth palette
+// image is built: one screen height
+const GRAPPLE_OVER_PALETTE_LOOKAHEAD = LOGICAL_HEIGHT / scale.grapple_over
+// Frame-sized smooth palette images kept: the current pair plus one neighbour
+// built ahead (about 14 MB each at 2559x1398)
+const GRAPPLE_OVER_PALETTE_IMAGES = 4
+
+// Neighbour palettes (below palette.from, above palette.to) whose blend zone
+// starts within GRAPPLE_OVER_PALETTE_LOOKAHEAD of the camera, nearest first.
+function grappleOverPaletteAhead(cameraY, palette)
+{
+    const theme = GRAPPLE_OVER_THEME
+    const rise = Number.isFinite(cameraY) ? -cameraY : 0
+    const ahead = []
+    // the zone of boundary b spans b * bandHeight +- blendHalfSpan
+    if (palette.to < theme.palettes.length - 1)
+        ahead.push({index: palette.to + 1, distance: (palette.to + 1) * theme.bandHeight - theme.blendHalfSpan - rise})
+    if (palette.from > 0)
+        ahead.push({index: palette.from - 1, distance: rise - palette.from * theme.bandHeight - theme.blendHalfSpan})
+    return ahead.filter(n => n.distance <= GRAPPLE_OVER_PALETTE_LOOKAHEAD)
+        .sort((a, b) => a.distance - b.distance).map(n => n.index)
+}
+
+// Builds palette index's smooth image (images owner, LRU order) before its
+// first draw: getSmoothImage keeps it while the key holds.
+function prebuildGrappleOverPalette(images, index, bounds, paint)
+{
+    const owner = images.get(index) || {}
+    images.delete(index)
+    images.set(index, owner)
+    const before = owner.image
+    visualEffects.background.getSmoothImage(owner, 'image', bounds, paint, 'opaque')
+    return owner.image !== before
+}
+
 // Wash and horizon glow over bounds (logical units), from gradients built
 // once per palette (no shadowBlur). The wash is a source-over at tintAlpha,
 // done as a black fill at tintAlpha plus the palette colours added with
@@ -44,8 +81,10 @@ function grappleOverBackdropPalette(cameraY)
 // With smooth (GRADIENT_DITHER, the game canvas) each palette's wash and glow
 // are one dithered full-resolution image (renderer.getSmoothImage), added at
 // the same weights: the last full-frame light, so its noise also dithers the
-// frame's rounding of the layers under it.
-function drawGrappleOverPalette(context, bounds, palette, smooth)
+// frame's rounding of the layers under it. The images of the ahead palettes
+// (grappleOverPaletteAhead) are built early, at most one per frame and never
+// in a frame that built one it draws.
+function drawGrappleOverPalette(context, bounds, palette, smooth, ahead)
 {
     const theme = GRAPPLE_OVER_THEME
     let cache = drawGrappleOverPalette.cache
@@ -89,19 +128,34 @@ function drawGrappleOverPalette(context, bounds, palette, smooth)
     context.globalCompositeOperation = 'lighter'
     if (smooth)
     {
-        // frame-sized images: the 3 palettes used last are kept
+        // frame-sized images: the GRAPPLE_OVER_PALETTE_IMAGES palettes used last are kept
         const images = drawGrappleOverPalette.images || (drawGrappleOverPalette.images = new Map())
+        let built = false
         for (const [index, weight] of layers)
         {
             const owner = images.get(index) || {}
             images.delete(index)
             images.set(index, owner)
-            if (images.size > 3)
-                images.delete(images.keys().next().value)
+            const before = owner.image
             context.globalAlpha = weight
             context.drawImage(visualEffects.background.getSmoothImage(owner, 'image', bounds,
                 target => paintLayer(target, index), 'opaque'), bounds.x, bounds.y, bounds.width, bounds.height)
+            built = built || owner.image !== before
         }
+        for (const index of ahead || [])
+        {
+            // after a build this frame an ahead image is only kept (LRU), not built
+            if (!built)
+                built = prebuildGrappleOverPalette(images, index, bounds, target => paintLayer(target, index))
+            else if (images.has(index))
+            {
+                const owner = images.get(index)
+                images.delete(index)
+                images.set(index, owner)
+            }
+        }
+        while (images.size > GRAPPLE_OVER_PALETTE_IMAGES)
+            images.delete(images.keys().next().value)
         context.restore()
         return
     }
