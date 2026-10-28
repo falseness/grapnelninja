@@ -411,6 +411,7 @@
                 PLATFORM.gameplayStop('death', version)
                 if (PLATFORM.isInterstitialDue())
                 {
+                    ANALYTICS.design('death:' + version)
                     continueOffer.show()
                     return
                 }
@@ -429,6 +430,8 @@
             }
             function restartFromOffer()
             {
+                // Once per Restart: a click while the game over ad plays is ignored
+                if (!interstitialPending) ANALYTICS.design('restart:' + version)
                 leaveFinishedRun(function()
                 {
                     continueOffer.hide()

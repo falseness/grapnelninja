@@ -141,4 +141,11 @@ dropped; error messages <= 8000 chars), records it in `ANALYTICS.debugLog`
   `ad('show' | 'failed_show' | 'reward_received', 'interstitial' | 'rewarded',
   placement)` for 'closed' / 'failed' / 'rewarded' (nothing for 'skipped' /
   'unavailable').
+- Design counters: `design('best_height:<single|double>', bucket * 500)` once
+  per 500-unit best height bucket per Grapple Over run (a restored run keeps
+  its buckets); `design('fall:<sectionId>')` per counted fall, against the
+  section of the last grapple catch; `design('restart:<mode>')` on the Grapple
+  Over restart and the Classic/Bad death screen Restart;
+  `design('death:<mode>')` when the Classic/Bad death screen opens. Their
+  state is never saved (climbStats is unchanged).
   Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT

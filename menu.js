@@ -1129,6 +1129,7 @@ const CLIMB_UI = {
         resetPhysicsTiming()
         PLATFORM.sendLifecycle('level_started', {world:version})
         PLATFORM.gameplayStart(version)
+        ANALYTICS.design('restart:' + version)
         menu.unPause()
         draw()
     },

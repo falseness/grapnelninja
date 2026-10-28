@@ -96,7 +96,10 @@ function calcPhysics()
         const world = floors[0], stats = world.climbStats
         stats.elapsedActiveMs += physicsStepMs / cyclesPerTick
         stats.currentHeight = world.level.spawn.y - ninja.y
+        // Before the update, so a new run's buckets start from its saved best height
+        climbDesignRun(stats)
         stats.maxHeight = Math.max(stats.maxHeight, stats.currentHeight)
+        reportClimbHeight(stats)
         LONG_FALL.step()
         if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)
         {
@@ -128,7 +131,33 @@ function calcPhysics()
 // throw or a rope wrap. Display only; never read by physics.
 function countClimbGrapple(wasGrappled)
 {
-    if (version === 'grapple_over' && !wasGrappled && floors[0]?.climbStats) floors[0].climbStats.grapples++
+    if (version !== 'grapple_over' || wasGrappled || !floors[0]?.climbStats) return
+    floors[0].climbStats.grapples++
+    climbDesignRun(floors[0].climbStats).section = CLIMB_UI.currentSection().id
+}
+
+// Design telemetry of the run, never saved: the last 500-unit best height
+// bucket reported and the section of the last grapple catch, which the next
+// fall is counted against. A new climbStats object is a new or restored run;
+// a restored run starts from its saved best height, so no bucket repeats.
+const CLIMB_HEIGHT_BUCKET = 500
+const climbDesign = {stats: null, bucket: 0, section: null}
+function climbDesignRun(stats)
+{
+    if (climbDesign.stats !== stats)
+        Object.assign(climbDesign, {stats, bucket: Math.floor(stats.maxHeight / CLIMB_HEIGHT_BUCKET), section: null})
+    return climbDesign
+}
+
+// One design event per best height bucket reached for the first time this run
+function reportClimbHeight(stats)
+{
+    const run = climbDesignRun(stats), bucket = Math.floor(stats.maxHeight / CLIMB_HEIGHT_BUCKET)
+    while (run.bucket < bucket)
+    {
+        run.bucket++
+        ANALYTICS.design('best_height:' + floors[0].grapnelMode, run.bucket * CLIMB_HEIGHT_BUCKET)
+    }
 }
 
 // Teleport a fallen Grapple Over player to the spawn and launch it upward
@@ -138,6 +167,11 @@ function countClimbGrapple(wasGrappled)
 function recoverClimbFall()
 {
     const world = floors[0], spawn = world.level.spawn
+    // The fall counts against the section of the last catch (the spawn
+    // section when there was none since the launch)
+    const run = climbDesignRun(world.climbStats)
+    ANALYTICS.design('fall:' + (run.section ?? world.level.sections[0].id))
+    run.section = null
     ninja.x = spawn.x
     ninja.y = spawn.y
     ninja.speedX = 0
