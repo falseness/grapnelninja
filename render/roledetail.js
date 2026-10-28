@@ -447,7 +447,7 @@ function drawRoleDetailDots(color, radius, dots, alpha = 1)
 
 // Material-owned state only: no cache or render fields are added to colliders.
 // circuitScale is the board motif scale in use (part of every sprite key).
-const BOUNCE_MATERIAL = {sprites: new Map(), star: null, circuitScale: GRAPPLE_OVER_ROLE_DETAIL.bounce.circuitScale}
+const BOUNCE_MATERIAL = {sprites: new Map(), star: null, dot: null, scratch: null, circuitScale: GRAPPLE_OVER_ROLE_DETAIL.bounce.circuitScale}
 
 function bounceFreeEdges(element, world)
 {
@@ -720,12 +720,14 @@ function drawBounceMaterial(element, world, clockMs)
     ctx.restore()
 }
 
-// Small cached bright copies of each trace segment and via, at the board's
-// circuit scale. Animation only changes their alpha; rasterization and the
-// soft contact dot happen once.
+// Bright copies of each trace segment and via, at the board's circuit scale,
+// packed into one atlas canvas per board: each part sits at a whole device px
+// offset with a transparent gap so sampling never bleeds into a neighbour.
+// Animation only changes their alpha; rasterization happens once and the soft
+// contact dot is shared by every board.
 function cacheBounceContact(board, sx, sy, config)
 {
-    const unit = board.scale
+    const unit = board.scale, gap = 2
     const parts = []
     for (const trace of board.traces)
     {
@@ -733,27 +735,54 @@ function cacheBounceContact(board, sx, sy, config)
             parts.push({a: trace.points[i - 1], b: trace.points[i], via: false})
         for (const p of trace.vias) parts.push({a: p, b: p, via: true})
     }
+    let area = 0, widest = 0
     for (const part of parts)
     {
         const {a, b} = part, pad = 2 * unit
-        const left = Math.min(a.x,b.x)-pad, top = Math.min(a.y,b.y)-pad
-        const image = document.createElement('canvas')
-        image.width = Math.ceil((Math.abs(b.x-a.x)+2*pad)*sx)
-        image.height = Math.ceil((Math.abs(b.y-a.y)+2*pad)*sy)
-        const c = image.getContext('2d')
-        c.setTransform(sx,0,0,sy,-left*sx,-top*sy)
+        part.left = Math.min(a.x,b.x)-pad; part.top = Math.min(a.y,b.y)-pad
+        part.sw = Math.ceil((Math.abs(b.x-a.x)+2*pad)*sx)
+        part.sh = Math.ceil((Math.abs(b.y-a.y)+2*pad)*sy)
+        part.width = part.sw/sx; part.height = part.sh/sy
+        area += (part.sw + gap) * (part.sh + gap); widest = Math.max(widest, part.sw)
+    }
+    // Shelf packing, tallest first, rows about as wide as the atlas is tall
+    const rowWidth = Math.max(widest + 2 * gap, Math.ceil(Math.sqrt(area * 1.2)))
+    let x = gap, y = gap, row = 0, width = 1
+    for (const part of [...parts].sort((p, q) => q.sh - p.sh))
+    {
+        if (x > gap && x + part.sw + gap > rowWidth) {x = gap; y += row + gap; row = 0}
+        part.sx = x; part.sy = y
+        x += part.sw + gap; row = Math.max(row, part.sh); width = Math.max(width, x)
+    }
+    const image = document.createElement('canvas')
+    image.width = width; image.height = Math.max(1, y + row + gap)
+    const atlas = image.getContext('2d')
+    // Each part is rasterized on one shared scratch canvas of exactly its own
+    // size (the raster path of the per-part canvases this replaces) and
+    // copied 1:1 to its whole px cell
+    const scratch = BOUNCE_MATERIAL.scratch || (BOUNCE_MATERIAL.scratch = document.createElement('canvas'))
+    for (const part of parts)
+    {
+        const {a, b} = part
+        scratch.width = part.sw; scratch.height = part.sh
+        const c = scratch.getContext('2d')
+        c.setTransform(sx,0,0,sy,-part.left*sx,-part.top*sy)
         c.strokeStyle = config.pulseTrace; c.lineWidth = (part.via ? 0.5 : 0.8)*unit
         c.lineCap = 'round'; c.beginPath()
         if (part.via) c.arc(a.x,a.y,1.2*unit,0,2*Math.PI)
         else {c.moveTo(a.x,a.y); c.lineTo(b.x,b.y)}
         c.stroke()
-        Object.assign(part,{image,left,top,width:image.width/sx,height:image.height/sy})
+        atlas.drawImage(scratch, part.sx, part.sy)
     }
-    const dot = document.createElement('canvas'); dot.width = dot.height = 33
-    const c = dot.getContext('2d'), g = c.createRadialGradient(16.5,16.5,0,16.5,16.5,16.5)
-    g.addColorStop(0,config.pulseTrace); g.addColorStop(1,config.pulseDotFade)
-    c.fillStyle=g; c.fillRect(0,0,33,33)
-    return {parts,dot}
+    if (!BOUNCE_MATERIAL.dot)
+    {
+        const dot = document.createElement('canvas'); dot.width = dot.height = 33
+        const d = dot.getContext('2d'), g = d.createRadialGradient(16.5,16.5,0,16.5,16.5,16.5)
+        g.addColorStop(0,config.pulseTrace); g.addColorStop(1,config.pulseDotFade)
+        d.fillStyle=g; d.fillRect(0,0,33,33)
+        BOUNCE_MATERIAL.dot = dot
+    }
+    return {parts,image,dot:BOUNCE_MATERIAL.dot}
 }
 
 function bounceContactWave(element, world, sprite, unit)
@@ -783,7 +812,7 @@ function drawBounceContact(element, world)
     sprite.bright.parts.forEach((part,i) => {
         if (wave.parts[i].glow <= 0) return
         ctx.globalAlpha=wave.parts[i].glow
-        ctx.drawImage(part.image,ox+part.left,oy+part.top,part.width,part.height)
+        ctx.drawImage(sprite.bright.image,part.sx,part.sy,part.sw,part.sh,ox+part.left,oy+part.top,part.width,part.height)
     })
     if (wave.dot > 0)
     {

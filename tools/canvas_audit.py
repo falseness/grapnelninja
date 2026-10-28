@@ -7,7 +7,10 @@ cache: 'glyph|' keys are HUD glyph sprites in GLYPH_SPRITES)
 and BackgroundRenderer.prototype.getSmoothImage (palette image builds), and
 counts rAF frames. The ninja is held (x, y, zero speed, re-set every 250 ms)
 for ~1.5 s at each tools/fixtures/freeze-walk.json point for 2 passes, then
-for ~1 s at each sweep point. Counts only: headless timings mean nothing.
+for ~1 s at each sweep point. Also reports the most canvases one frame
+created per source file and the bounce contact canvases (cacheBounceContact)
+per bounce board build (bounceMaterialSprite). Counts only: headless timings
+mean nothing.
 
     python3 tools/canvas_audit.py [--mode single|double] [--out canvas-audit.json]
 """
@@ -129,12 +132,24 @@ def audit(mode):
         errors.append('grapnelMode %s, expected %s' % (raw['grapnelMode'], mode))
 
     walked = [c for c in raw['canvases'] if c['phase'] != 'boot']
-    creators, frames = {}, {}
+    creators, frames, by_file = {}, {}, {}
+    contact = {'created': 0, 'materialBuilds': 0, 'frames': {}}
     for c in walked:
         row = creators.setdefault(c['creator'], {'n': 0, 'px': 0, 'caller': c['caller']})
         row['n'] += 1
         row['px'] += c['w'] * c['h']
         frames[c['frame']] = frames.get(c['frame'], 0) + 1
+        source = c['creator'].split(' ')[-1].rsplit(':', 1)[0]
+        per_frame = by_file.setdefault(source, {})
+        per_frame[c['frame']] = per_frame.get(c['frame'], 0) + 1
+        # Bounce contact canvases against the board sprites they belong to
+        if c['creator'].startswith('cacheBounceContact '):
+            contact['created'] += 1
+            contact['frames'][c['frame']] = contact['frames'].get(c['frame'], 0) + 1
+        elif c['creator'].startswith('bounceMaterialSprite '):
+            contact['materialBuilds'] += 1
+    contact['perBuild'] = round(contact['created'] / contact['materialBuilds'], 3) if contact['materialBuilds'] else None
+    contact['maxPerFrame'] = max(contact.pop('frames').values(), default=0)
     glow = {kind: {'pass1': 0, 'pass2': 0} for kind in ('text', 'glyph', 'other')}
     text_keys = []
     for phase, key in raw['glowMisses']:
@@ -152,6 +167,8 @@ def audit(mode):
         'perPass': [sum(c['phase'] == p for c in walked) for p in ('pass1', 'pass2')],
         'sweepCreated': sum(c['phase'] == 'sweep' for c in walked),
         'maxPerFrame': max(frames.values(), default=0),
+        'maxPerFrameByFile': {f: max(v.values()) for f, v in sorted(by_file.items())},
+        'bounceContact': contact,
         'glowMisses': glow,
         'glowTextSample': text_keys,
         'smoothBuilds': [{k: b[k] for k in ('frame', 'phase', 'index', 'w', 'h', 'firstDrawFrame')}
@@ -172,6 +189,8 @@ def main():
     print('mode %s: perPass %s, maxPerFrame %d, glow text misses %s, glyph misses %s, smoothBuilds %d, errors %d -> %s' % (
         args.mode, result['perPass'], result['maxPerFrame'], result['glowMisses']['text'], result['glowMisses']['glyph'],
         len(result['smoothBuilds']), len(result['errors']), args.out))
+    print('bounce contact %s; maxPerFrameByFile %s' % (
+        json.dumps(result['bounceContact']), json.dumps(result['maxPerFrameByFile'])))
     return 1 if result['errors'] else 0
 
 
