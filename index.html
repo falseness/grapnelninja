@@ -209,7 +209,9 @@
             async function bootApplication()
             {
                 setLoadingProgress(I18N.t('loading.connecting'))
+                PLATFORM.loadingProgress(0)
                 await PLATFORM.init()
+                PLATFORM.loadingProgress(25)
                 ctx = canvas.getContext('2d', {alpha: false})
                 ctx.lineCap = 'butt'
                 fpsCounter = new FpsCounter()
@@ -219,13 +221,16 @@
                 I18N.language = I18N.pick(null, PLATFORM.language)
                 setLoadingProgress(I18N.t('loading.progress'))
                 PROGRESS.load(await PLATFORM.storage.getMany(PROGRESS.keys))
+                PLATFORM.loadingProgress(50)
                 I18N.language = I18N.pick(PROGRESS.getLang(), PLATFORM.language)
                 applyLanguage()
                 setLoadingProgress(I18N.t('loading.starting'))
                 await loadGrappleOverLevelAsset()
+                PLATFORM.loadingProgress(90)
                 await nextFrame()
                 start()
                 document.getElementById('loading').hidden = true
+                PLATFORM.loadingProgress(100)
                 createEvents()
                 bootComplete = true
                 // Every launch skips the title menu and opens the saved climb
@@ -290,6 +295,7 @@
                 
                 scoreText.count[version] = 0
                 PLATFORM.sendLifecycle('level_started', {world: version})
+                PLATFORM.gameplayStart(version)
                 runInProgress = true
                 TUTORIAL_HINT.runStarted()
                 
@@ -360,6 +366,7 @@
                 runOver = true
                 pauseTimeInGame()
                 PROGRESS.save()
+                PLATFORM.gameplayStop('death', version)
                 if (PLATFORM.isInterstitialDue())
                 {
                     continueOffer.show()

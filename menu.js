@@ -769,6 +769,7 @@ class Menu
 
         this.changeGamePause(true)
         PLATFORM.sendLifecycle('level_paused')
+        PLATFORM.gameplayStop('pause', version)
 
         // A fresh frame under the panel: over the death screen its buttons
         // would otherwise show through stale. (A pause during boot has no
@@ -834,6 +835,7 @@ class Menu
         }
         reuseTimeInGame()
         PLATFORM.sendLifecycle('level_resumed')
+        PLATFORM.gameplayStart(version)
     }
     opened()
     {
@@ -1065,6 +1067,9 @@ const CLIMB_UI = {
         stalePress = pressHeld
         pauseTimeInGame()
         PLATFORM.sendLifecycle('level_completed', {world:version, elapsedActiveMs:stats.elapsedActiveMs})
+        PLATFORM.gameplayStop('complete', version)
+        PLATFORM.happyMoment()
+        PLATFORM.submitScore('grapple_over_time', Math.round(stats.elapsedActiveMs))
         PROGRESS.flushClimb()
         menu.changeGamePause(true)
     },
@@ -1077,6 +1082,7 @@ const CLIMB_UI = {
         runInProgress = true
         resetPhysicsTiming()
         PLATFORM.sendLifecycle('level_started', {world:version})
+        PLATFORM.gameplayStart(version)
         menu.unPause()
         draw()
     },

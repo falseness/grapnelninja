@@ -191,8 +191,15 @@ class PlatformFacadeTests(unittest.TestCase):
         head = subprocess.run(['git', 'show', PRE_FACADE + ':platform.js'], cwd=ROOT, check=True,
                               capture_output=True, text=True).stdout
         self.assertNotIn('PLATFORM_BACKEND', head, 'the baseline must be the pre-facade platform.js')
-        serve_head = lambda route: route.fulfill(body=head, content_type='application/javascript')
-        before = self.boot([('**/platform.js', serve_head)]).evaluate(API)
+        # The game calls the TASK-746 methods since TASK-748: the baseline boots
+        # with no-op stand-ins, removed again before its API is read
+        shim = ';window.__shim = %s.filter(m => !(m in PLATFORM));' \
+               '__shim.forEach(m => { PLATFORM[m] = function () {} })' % json.dumps(NEW_METHODS)
+        serve_head = lambda route: route.fulfill(body=head + shim, content_type='application/javascript')
+        baseline = self.boot([('**/platform.js', serve_head)])
+        self.assertEqual(baseline.evaluate('__shim.splice(0).filter(m => delete PLATFORM[m])'),
+                         NEW_METHODS)
+        before = baseline.evaluate(API)
         after = self.boot().evaluate(API)
         self.assertGreater(len(after['members']), 20)
         added = sorted(set(after['members']) - set(before['members']))
@@ -283,16 +290,19 @@ class PlatformFacadeTests(unittest.TestCase):
         self.assertEqual(page.evaluate('PLATFORM.getPlatformId()'), 'facade-probe')
 
     def test_06_loading_progress_clamps(self):
-        # The inner method receives the clamped, never-decreasing integer
-        spy = [('**/platform/backends/local.js', self.append(SPY))]
+        # The inner method receives the clamped, never-decreasing integer. The
+        # boot reports its own milestones (TASK-748), so each sequence runs as
+        # platform.js loads, on a fresh clamp.
         got = {}
         for sequence in ([-5, 42.7, 150], [60, 30]):
-            page = self.boot(spy)
-            seen = page.evaluate('''values => values.map(v => {
-                window.__backendHits.loadingProgress = []
-                const result = PLATFORM.loadingProgress(v)
-                return [window.__backendHits.loadingProgress[0][0], result === undefined]
-            })''', sequence)
+            probe = ';window.__clamp = %s.map(v => {' \
+                    ' window.__backendHits.loadingProgress = [];' \
+                    ' const result = PLATFORM.loadingProgress(v);' \
+                    ' return [window.__backendHits.loadingProgress[0][0], result === undefined] })' \
+                    % json.dumps(sequence)
+            page = self.boot([('**/platform/backends/local.js', self.append(SPY)),
+                              ('**/platform.js', self.append(probe))])
+            seen = page.evaluate('__clamp')
             got[str(sequence)] = [s[0] for s in seen]
             self.assertTrue(all(s[1] for s in seen))
         self.assertEqual(got, {'[-5, 42.7, 150]': [0, 42, 100], '[60, 30]': [60, 60]})
