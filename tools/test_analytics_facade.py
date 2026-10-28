@@ -145,8 +145,9 @@ class AnalyticsFacadeTests(unittest.TestCase):
         self.assertEqual(order, ['platform/backends/local.js', 'platform.js',
                                  'analytics/backends/none.js', 'analytics.js'])
         self.assertEqual(self.page.evaluate('ANALYTICS_BACKEND.backendId'), 'none')
-        # No game call sites yet: nothing reached the backend during boot
-        self.assertEqual(self.page.evaluate('ANALYTICS.debugLog.length'), 0)
+        # Boot (TASK-750) sends only init + sessionStart
+        self.assertEqual(self.page.evaluate('ANALYTICS.debugLog.map(e => e.fn)'),
+                         ['initialize', 'startSession'])
 
     def test_02_sanitization_cases(self):
         for name, (fn, args, expected) in CASES.items():

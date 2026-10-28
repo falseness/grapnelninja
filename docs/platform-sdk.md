@@ -133,5 +133,12 @@ dropped; error messages <= 8000 chars), records it in `ANALYTICS.debugLog`
   e.g. `analytics/backends/gameanalytics.js`, fill each inner method from its
   `// REPLACE:` marker, load the GameAnalytics SDK and swap the
   `analytics/backends/none.js` script tag. Nothing else changes.
-- The game has no `ANALYTICS` call sites yet.
+- Call sites: boot sends `init({build: PLATFORM.buildVersion})` +
+  `sessionStart()` once after `PLATFORM.init()`; `pagehide` sends one
+  `sessionEnd()` per page; window `error` / `unhandledrejection` send
+  `error('error', '<message> @ <file>:<line>')`, deduplicated, at most 10 per
+  session; `PLATFORM.showInterstitial` / `showRewarded` results send
+  `ad('show' | 'failed_show' | 'reward_received', 'interstitial' | 'rewarded',
+  placement)` for 'closed' / 'failed' / 'rewarded' (nothing for 'skipped' /
+  'unavailable').
   Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT

@@ -88,6 +88,19 @@ const PLATFORM = (function()
 
     const nothing = () => undefined
     const REWARDED = ['rewarded', 'closed', 'failed', 'unavailable']
+    // Ad result -> ANALYTICS.ad action; 'skipped' and 'unavailable' send nothing
+    const AD_ACTIONS = {closed: 'show', failed: 'failed_show', rewarded: 'reward_received'}
+
+    // Reports a resolved ad result to ANALYTICS and passes it through
+    function reportAd(type, placement)
+    {
+        return result =>
+        {
+            if (Object.prototype.hasOwnProperty.call(AD_ACTIONS, result) && typeof ANALYTICS !== 'undefined')
+                ANALYTICS.ad(AD_ACTIONS[result], type, placement)
+            return result
+        }
+    }
 
     const PLATFORM =
     {
@@ -134,6 +147,7 @@ const PLATFORM = (function()
         showInterstitial(...args)
         {
             return delegate('showInterstitial', args, () => 'skipped', true)
+                .then(reportAd('interstitial', args[0]))
         },
 
         sendMessage(...args)
@@ -229,6 +243,7 @@ const PLATFORM = (function()
         {
             return delegate('showRewarded', [placement], () => 'unavailable', true)
                 .then(result => REWARDED.includes(result) ? result : 'unavailable')
+                .then(reportAd('rewarded', placement))
         },
 
         // showBanner(position) -> Promise<void>, never rejects

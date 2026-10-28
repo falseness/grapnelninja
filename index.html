@@ -185,7 +185,41 @@
             
             let bootPromise
             let bootComplete = false
+            let analyticsStarted = false
+            watchAnalytics()
             boot()
+
+            // Page errors -> ANALYTICS.error (10 unique messages per session);
+            // pagehide -> one ANALYTICS.sessionEnd per page
+            function watchAnalytics()
+            {
+                const MAX_ERRORS = 10
+                const reported = new Set()
+                let ended = false
+                function report(message, file, line)
+                {
+                    const name = String(file || '').split(/[?#]/)[0].split('/').pop() || 'unknown'
+                    const text = String(message) + ' @ ' + name + ':' + (line || 0)
+                    if (reported.size >= MAX_ERRORS || reported.has(text))
+                        return
+                    reported.add(text)
+                    ANALYTICS.error('error', text)
+                }
+                window.addEventListener('error', e =>
+                    report(e.message || (e.error && e.error.message) || 'error', e.filename, e.lineno))
+                window.addEventListener('unhandledrejection', e =>
+                {
+                    const reason = e.reason
+                    report(reason && reason.message || String(reason), 'promise', 0)
+                })
+                window.addEventListener('pagehide', () =>
+                {
+                    if (ended)
+                        return
+                    ended = true
+                    ANALYTICS.sessionEnd()
+                })
+            }
             
             // Platform init -> one storage read -> canvas setup -> hide the
             // loading overlay -> attach input -> start a main-version run ->
@@ -213,6 +247,12 @@
                 setLoadingProgress(I18N.t('loading.connecting'))
                 PLATFORM.loadingProgress(0)
                 await PLATFORM.init()
+                if (!analyticsStarted)
+                {
+                    analyticsStarted = true
+                    ANALYTICS.init({build: PLATFORM.buildVersion})
+                    ANALYTICS.sessionStart()
+                }
                 PLATFORM.loadingProgress(25)
                 ctx = canvas.getContext('2d', {alpha: false})
                 ctx.lineCap = 'butt'
