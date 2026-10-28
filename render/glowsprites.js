@@ -213,10 +213,10 @@ function glowSpriteScale(value)
     return Math.round(value * 1e4) / 1e4
 }
 
-// Least recently used sprites are dropped past GLOW_SPRITES.limit
-function getGlowSprite(key, build)
+// Least recently used sprites are dropped past store.limit
+function getGlowSprite(key, build, store = GLOW_SPRITES)
 {
-    const cache = GLOW_SPRITES.cache
+    const cache = store.cache
     let sprite = cache.get(key)
     if (sprite)
     {
@@ -227,7 +227,7 @@ function getGlowSprite(key, build)
 
     sprite = build()
     cache.set(key, sprite)
-    if (cache.size > GLOW_SPRITES.limit)
+    if (cache.size > store.limit)
         cache.delete(cache.keys().next().value)
     return sprite
 }
@@ -340,6 +340,113 @@ function drawGlowText(text, x, y, shadowColor, blur, stroke)
             ctx.strokeText(text, x, y)
         ctx.fillText(text, x, y)
     })
+}
+
+// HUD values that change (time, height, FPS, score) would build a sprite per
+// string. They are drawn from glyph sprites instead: one per character and
+// subpixel phase, in a cache of their own so a ticking counter never evicts
+// other glow sprites. Neighbouring glyph glows add up by source-over rather
+// than in one shadow, a near-identical result.
+const GLYPH_SPRITES =
+{
+    limit: 512,
+    // Glyph origins snap across to 1/phases of a canvas px
+    phases: 4,
+    cache: new Map(),
+    metrics: new Map()
+}
+if (document.fonts)
+    document.fonts.addEventListener('loadingdone', () => GLYPH_SPRITES.metrics.clear())
+
+// Advance and ink bounds of one character drawn left-aligned
+function measureGlyph(ch, font, baseline)
+{
+    const key = ch + '|' + font + '|' + baseline
+    let glyph = GLYPH_SPRITES.metrics.get(key)
+    if (!glyph)
+    {
+        ctx.save()
+        ctx.font = font
+        ctx.textAlign = 'left'
+        ctx.textBaseline = baseline
+        const m = ctx.measureText(ch)
+        ctx.restore()
+        glyph = {ch, advance: m.width, left: m.actualBoundingBoxLeft, right: m.actualBoundingBoxRight,
+            ascent: m.actualBoundingBoxAscent, descent: m.actualBoundingBoxDescent}
+        glyph.ink = glyph.left + glyph.right > 0 && glyph.ascent + glyph.descent > 0
+        if (GLYPH_SPRITES.metrics.size >= 1024)
+            GLYPH_SPRITES.metrics.clear()
+        GLYPH_SPRITES.metrics.set(key, glyph)
+    }
+    return glyph
+}
+
+// drawGlowText for a changing string: the same box (the string's left and top
+// snap to whole canvas px as its sprite did), glyphs at their measured
+// advances; textAlign left/start, center and right/end (left to right)
+function drawGlowGlyphs(text, x, y, shadowColor, blur, stroke)
+{
+    const font = ctx.font, align = ctx.textAlign, baseline = ctx.textBaseline
+    const fill = ctx.fillStyle, strokeStyle = ctx.strokeStyle, lineWidth = ctx.lineWidth
+    const glyphs = Array.from(text, ch => measureGlyph(ch, font, baseline))
+    if (!glyphs.length)
+        return
+    let width = 0, ascent = -Infinity
+    for (const glyph of glyphs)
+    {
+        width += glyph.advance
+        ascent = Math.max(ascent, glyph.ascent)
+    }
+    const start = align == 'center' ? x - width / 2 : align == 'right' || align == 'end' ? x - width : x
+
+    const m = ctx.getTransform()
+    const sx = glowSpriteScale(m.a), sy = glowSpriteScale(m.d)
+    const pad = glowSpritePad(blur, stroke ? lineWidth : 0, sx)
+    const q = GLYPH_SPRITES.phases
+    // Canvas px of the string's sprite origin; inside it glyphs sit at the
+    // sprite scale. The baseline keeps its exact phase (text rasterization
+    // snaps it to a whole px), one or two per HUD row.
+    const left = Math.round(m.a * (start - glyphs[0].left) + m.e)
+    const baselineY = Math.round(m.d * (y - ascent) + m.f) + ascent * sy
+    const iy = Math.floor(baselineY), phaseY = baselineY - iy
+    const alpha = ctx.globalAlpha
+    const style = '|' + font + '|left|' + baseline + '|' + fill + '|' + (stroke ? strokeStyle + '|' + lineWidth : '') +
+        '|' + shadowColor + '|' + blur + '|' + alpha + '|' + sx + '|' + sy + '|'
+
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.globalAlpha = 1
+    let originX = left + glyphs[0].left * sx
+    for (const glyph of glyphs)
+    {
+        if (glyph.ink)
+        {
+            const snapped = Math.round(originX * q) / q
+            const ix = Math.floor(snapped), phaseX = snapped - ix
+            // Canvas px from the sprite's top left to the glyph origin, less the phase
+            const offsetX = pad + Math.ceil(glyph.left * sx), offsetY = pad + Math.ceil(glyph.ascent * sy)
+            const sprite = getGlowSprite('glyph|' + glyph.ch + style + phaseX + '|' + phaseY, () =>
+                buildGlowSprite(Math.ceil((glyph.left + glyph.right) * sx) + 1 + pad * 2,
+                    Math.ceil((glyph.ascent + glyph.descent) * sy) + 1 + pad * 2, 0, sx, sy,
+                    -(offsetX + phaseX) / sx, -(offsetY + phaseY) / sy, alpha, () =>
+                {
+                    ctx.font = font
+                    ctx.textAlign = 'left'
+                    ctx.textBaseline = baseline
+                    ctx.fillStyle = fill
+                    ctx.strokeStyle = strokeStyle
+                    ctx.lineWidth = lineWidth
+                    ctx.shadowColor = shadowColor
+                    ctx.shadowBlur = blur
+                    if (stroke)
+                        ctx.strokeText(glyph.ch, 0, 0)
+                    ctx.fillText(glyph.ch, 0, 0)
+                }), GLYPH_SPRITES)
+            ctx.drawImage(sprite, ix - offsetX, iy - offsetY)
+        }
+        originX += glyph.advance * sx
+    }
+    ctx.restore()
 }
 
 // Splits the sprite after its middle pixel row/column; that pixel stretches

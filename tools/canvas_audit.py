@@ -2,7 +2,8 @@
 
 Headless Chromium at the user's recording size (1706x932, DPR 1.5) in Grapple
 Over. An init script wraps document.createElement('canvas') (creator stack
-top + caller, size at the first getContext), getGlowSprite (misses, by key)
+top + caller, size at the first getContext), getGlowSprite (misses, by key and
+cache: 'glyph|' keys are HUD glyph sprites in GLYPH_SPRITES)
 and BackgroundRenderer.prototype.getSmoothImage (palette image builds), and
 counts rAF frames. The ninja is held (x, y, zero speed, re-set every 250 ms)
 for ~1.5 s at each tools/fixtures/freeze-walk.json point for 2 passes, then
@@ -52,8 +53,8 @@ window.__audit = {frame: 0, phase: 'boot', canvases: [], glowMisses: [], smoothB
   window.requestAnimationFrame = cb => raf.call(window, t => { audit.frame++; cb(t) })
   document.addEventListener('DOMContentLoaded', () => {
     const glow = window.getGlowSprite
-    window.getGlowSprite = function(key, build) {
-      if (!GLOW_SPRITES.cache.has(key)) audit.glowMisses.push([audit.phase, String(key)])
+    window.getGlowSprite = function(key, build, store) {
+      if (!(store || GLOW_SPRITES).cache.has(key)) audit.glowMisses.push([audit.phase, String(key)])
       return glow.apply(this, arguments)
     }
     const smooth = BackgroundRenderer.prototype.getSmoothImage
@@ -120,6 +121,8 @@ def audit(mode):
         raw = page.evaluate('''() => ({canvases: __audit.canvases, glowMisses: __audit.glowMisses,
             smoothBuilds: __audit.smoothBuilds, frames: __audit.frame, grapnelMode: floors[0].grapnelMode,
             caches: {glow: GLOW_SPRITES.cache.size, glowLimit: GLOW_SPRITES.limit,
+                     glyph: typeof GLYPH_SPRITES != 'undefined' ? GLYPH_SPRITES.cache.size : null,
+                     glyphLimit: typeof GLYPH_SPRITES != 'undefined' ? GLYPH_SPRITES.limit : null,
                      bounce: typeof BOUNCE_MATERIAL != 'undefined' ? BOUNCE_MATERIAL.sprites.size : null,
                      paletteImages: drawGrappleOverPalette.images ? drawGrappleOverPalette.images.size : 0}})''')
     if raw['grapnelMode'] != mode:
@@ -132,12 +135,12 @@ def audit(mode):
         row['n'] += 1
         row['px'] += c['w'] * c['h']
         frames[c['frame']] = frames.get(c['frame'], 0) + 1
-    glow = {'text': {'pass1': 0, 'pass2': 0}, 'other': {'pass1': 0, 'pass2': 0}}
+    glow = {kind: {'pass1': 0, 'pass2': 0} for kind in ('text', 'glyph', 'other')}
     text_keys = []
     for phase, key in raw['glowMisses']:
         if phase not in ('pass1', 'pass2'):
             continue
-        kind = 'text' if key.startswith('text|') else 'other'
+        kind = key.split('|')[0] if key.startswith(('text|', 'glyph|')) else 'other'
         glow[kind][phase] += 1
         if kind == 'text' and len(text_keys) < 8:
             text_keys.append(key.split('|')[1])
@@ -166,8 +169,8 @@ def main():
     args = parser.parse_args()
     result = audit(args.mode)
     Path(args.out).write_text(json.dumps(result, separators=(',', ':')) + '\n')
-    print('mode %s: perPass %s, maxPerFrame %d, glow text misses %s, smoothBuilds %d, errors %d -> %s' % (
-        args.mode, result['perPass'], result['maxPerFrame'], result['glowMisses']['text'],
+    print('mode %s: perPass %s, maxPerFrame %d, glow text misses %s, glyph misses %s, smoothBuilds %d, errors %d -> %s' % (
+        args.mode, result['perPass'], result['maxPerFrame'], result['glowMisses']['text'], result['glowMisses']['glyph'],
         len(result['smoothBuilds']), len(result['errors']), args.out))
     return 1 if result['errors'] else 0
 

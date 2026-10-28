@@ -70,6 +70,8 @@ class Text
         this.glow       = object.glow
         this.fontSize   = object.fontSize + 'px ' + STYLE.ui.fontFamily
         this.text       = object.text
+        // A changing HUD value: glyph sprites instead of one per string
+        this.glyphs     = object.glyphs
         this.align      =
         {
             x: object.alignX || 'center',
@@ -85,7 +87,8 @@ class Text
         ctx.font        = this.fontSize
         if (this.glow)
             this.strokeNeonTube()
-        drawGlowText(this.text, this.x, this.y, this.glow || this.fill, STYLE.ui.textShadowBlur, false)
+        const drawText = this.glyphs ? drawGlowGlyphs : drawGlowText
+        drawText(this.text, this.x, this.y, this.glow || this.fill, STYLE.ui.textShadowBlur, false)
         LAYOUT_PROBE.text(this.text, this.x, this.y)
         ctx.restore()
     }
@@ -440,7 +443,7 @@ class FpsCounter
         ctx.fillStyle = STYLE.colors.ui.hudText
         ctx.strokeStyle = STYLE.colors.ui.hudGlow
         ctx.lineWidth = Math.max(1, STYLE.ui.fpsPanelLineWidth * 0.65)
-        drawGlowText(text, x, y, STYLE.colors.ui.hudGlow, STYLE.ui.textShadowBlur, true)
+        drawGlowGlyphs(text, x, y, STYLE.colors.ui.hudGlow, STYLE.ui.textShadowBlur, true)
         LAYOUT_PROBE.text(text, x, y)
         ctx.restore()
     }
@@ -1004,8 +1007,8 @@ const CLIMB_UI = {
     offering: false,
     buttons: [],
     time(ms) { return I18N.t('climb.seconds', {value:(ms / 1000).toFixed(1)}) },
-    text(text, x, y, size, alignX = 'center') {
-        new Text({text, x, y, fontSize:size, alignX, fill:STYLE.colors.ui.hudText}).draw()
+    text(text, x, y, size, alignX = 'center', glyphs = false) {
+        new Text({text, x, y, fontSize:size, alignX, fill:STYLE.colors.ui.hudText, glyphs}).draw()
     },
     yieldAlpha: 0.4,
     hudYield: {text: false, button: false},
@@ -1097,7 +1100,7 @@ const CLIMB_UI = {
         this.hudYield.text = this.yields(size, size * 0.6, textRight, size * (1.5 + (rows.length - 1) * 1.6 + 0.6), size * 0.5)
         ctx.save()
         if (this.hudYield.text) ctx.globalAlpha = this.yieldAlpha
-        rows.forEach((text, i) => this.text(text, size, size * (1.5 + i * 1.6), size, 'left'))
+        rows.forEach((text, i) => this.text(text, size, size * (1.5 + i * 1.6), size, 'left', true))
         ctx.restore()
         const b = button.background
         this.hudYield.button = this.yields(b.x, b.y, b.x + b.width, b.y + b.height, size * 0.5)

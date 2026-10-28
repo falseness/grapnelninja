@@ -88,7 +88,7 @@ let scoreText =
     drawHudText: function(text, x, y, align)
     {
         ctx.textAlign = align
-        drawGlowText(text, x, y, STYLE.colors.ui.hudGlow, STYLE.ui.textShadowBlur + STYLE.ui.hudExtraShadowBlur, true)
+        drawGlowGlyphs(text, x, y, STYLE.colors.ui.hudGlow, STYLE.ui.textShadowBlur + STYLE.ui.hudExtraShadowBlur, true)
         LAYOUT_PROBE.text(text, x, y)
     },
     drawStageIndicator: function(viewWidth, topY, fontSize)
