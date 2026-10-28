@@ -4,7 +4,10 @@
 // back to an in-memory map when it is missing or throws (a cross-origin
 // iframe with blocked storage raises SecurityError on access). With no ads
 // no interstitial is ever due, so every death restarts at once.
-const PLATFORM_BACKEND = (function()
+// LOCAL_PLATFORM_BACKEND is also the shared implementation the portal stubs
+// (itch.js, gamepix.js, y8.js, playgama.js) call until they are ported; a
+// portal tag loads after this file and redefines PLATFORM_BACKEND.
+const LOCAL_PLATFORM_BACKEND = (function()
 {
     let warned = false
     const memory = new Map()
@@ -255,3 +258,4 @@ const PLATFORM_BACKEND = (function()
         }
     }
 })()
+var PLATFORM_BACKEND = LOCAL_PLATFORM_BACKEND

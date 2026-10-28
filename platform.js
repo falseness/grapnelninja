@@ -3,7 +3,9 @@
 // PLATFORM_BACKEND (platform/backends/<id>.js, loaded by index.html right
 // before this file). To port to a portal (itch.io, GamePix, Y8, Playgama)
 // or add an SDK, replace the inner methods in ONE backend file and swap that
-// one script tag; nothing else changes. local.js is the default backend.
+// one script tag; nothing else changes. local.js is the default backend; the
+// portal stubs (itch/gamepix/y8/playgama.js) load after it and reuse it, see
+// docs/platform-sdk.md.
 //
 // delegate() catches a throwing, rejecting or missing inner method and
 // returns the method's safe default instead (one console.warn per method):
