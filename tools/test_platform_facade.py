@@ -6,8 +6,9 @@ one delegate helper that returns a documented default when the inner method
 throws, rejects or is missing.
 
 PLATFORM_FACADE_EVIDENCE_DIR, when set, receives api.json (public members
-of the pre-facade platform.js at eb3ab8a vs the working tree) and
-facade-results.json.
+of the pre-facade platform.js at eb3ab8a vs the working tree),
+facade-results.json and returns.json (every TASK-746 method called once on
+the local backend: {method: returnedValue}).
 """
 import json
 import os
@@ -49,7 +50,27 @@ CALLS = {
     'storage.onRecovery': ('PLATFORM.storage.onRecovery(() => {})', None),
     'storage.getMany': ('PLATFORM.storage.getMany(["%s"])' % PROBE_KEY, {PROBE_KEY: None}),
     'storage.setMany': ('PLATFORM.storage.setMany({})', False),
+    # TASK-746 cross-portal methods
+    'loadingProgress': ('PLATFORM.loadingProgress(42)', None),
+    'gameplayStart': ('PLATFORM.gameplayStart("classic")', None),
+    'gameplayStop': ('PLATFORM.gameplayStop("death", "classic")', None),
+    'happyMoment': ('PLATFORM.happyMoment()', None),
+    'isRewardedSupported': ('PLATFORM.isRewardedSupported()', False),
+    'showRewarded': ('PLATFORM.showRewarded("continue")', 'unavailable'),
+    'showBanner': ('PLATFORM.showBanner("bottom")', None),
+    'hideBanner': ('PLATFORM.hideBanner()', None),
+    'submitScore': ('PLATFORM.submitScore("height", 1234)', False),
+    'unlockAchievement': ('PLATFORM.unlockAchievement("summit")', False),
+    'getLanguage': ('PLATFORM.getLanguage()', 'en'),
+    'getPlatformId': ('PLATFORM.getPlatformId()', 'local'),
 }
+# Members added after the pre-facade baseline (TASK-746)
+NEW_METHODS = ['getLanguage', 'getPlatformId', 'gameplayStart', 'gameplayStop', 'happyMoment',
+               'hideBanner', 'isRewardedSupported', 'loadingProgress', 'showBanner', 'showRewarded',
+               'submitScore', 'unlockAchievement']
+# Local backend return values (same as the defaults; getLanguage is the
+# detected en-US -> 'en')
+LOCAL_RETURNS = {m: CALLS[m][1] for m in NEW_METHODS}
 METHODS = sorted(CALLS) + ['init']
 
 # Sorted public members: 'name:typeof' with getters read, storage.* nested,
@@ -125,7 +146,8 @@ BREAK = r'''async ([path, call, mode]) => {
 }'''
 
 ASYNC = {'showInterstitial', 'sendMessage', 'sendLifecycle', 'gameReady',
-         'storage.getMany', 'storage.setMany'}
+         'storage.getMany', 'storage.setMany',
+         'showRewarded', 'showBanner', 'hideBanner', 'submitScore', 'unlockAchievement'}
 
 
 class PlatformFacadeTests(unittest.TestCase):
@@ -164,6 +186,8 @@ class PlatformFacadeTests(unittest.TestCase):
         return handler
 
     def test_01_api_unchanged_from_pre_facade(self):
+        # The pre-facade members, values and return shapes are unchanged; the
+        # only additions are the TASK-746 methods
         head = subprocess.run(['git', 'show', PRE_FACADE + ':platform.js'], cwd=ROOT, check=True,
                               capture_output=True, text=True).stdout
         self.assertNotIn('PLATFORM_BACKEND', head, 'the baseline must be the pre-facade platform.js')
@@ -171,13 +195,19 @@ class PlatformFacadeTests(unittest.TestCase):
         before = self.boot([('**/platform.js', serve_head)]).evaluate(API)
         after = self.boot().evaluate(API)
         self.assertGreater(len(after['members']), 20)
-        self.assertEqual(before, after)
-        self.results['api'] = {'members': len(after['members']), 'equal': before == after}
+        added = sorted(set(after['members']) - set(before['members']))
+        self.assertEqual(added, sorted(m + ':function' for m in NEW_METHODS))
+        self.assertEqual(sorted(set(before['members']) - set(after['members'])), [])
+        self.assertEqual(before['values'], after['values'])
+        self.assertEqual(before['returns'], after['returns'])
+        equal = not set(before['members']) - set(after['members']) and \
+            before['values'] == after['values'] and before['returns'] == after['returns']
+        self.results['api'] = {'members': len(after['members']), 'equal': equal, 'added': added}
         if self.evidence:
             out = Path(self.evidence)
             out.mkdir(parents=True, exist_ok=True)
             (out / 'api.json').write_text(json.dumps(
-                {'before': before['members'], 'after': after['members'], 'equal': before == after,
+                {'before': before['members'], 'after': after['members'], 'equal': equal, 'added': added,
                  'valuesEqual': before['values'] == after['values'],
                  'returnsEqual': before['returns'] == after['returns'],
                  'values': after['values'], 'returns': after['returns']},
@@ -199,6 +229,9 @@ class PlatformFacadeTests(unittest.TestCase):
         self.assertEqual(hits['sendLifecycle'][-1], ['facade_probe', {'a': 1}])
         self.assertEqual(hits['storage.getMany'][-1], [[PROBE_KEY]])
         self.assertEqual(hits['onPause'][-1], ['function'])
+        self.assertEqual(hits['gameplayStop'][-1], ['death', 'classic'])
+        self.assertEqual(hits['submitScore'][-1], ['height', 1234])
+        self.assertEqual(hits['showRewarded'][-1], ['continue'])
         self.results['delegation'] = {m: len(hits[m]) for m in METHODS}
 
     def check_defaults(self, mode):
@@ -247,6 +280,41 @@ class PlatformFacadeTests(unittest.TestCase):
                            self.append(';PLATFORM_BACKEND.platformId = "facade-probe"'))])
         self.assertEqual(page.evaluate('PLATFORM.platformId'), 'facade-probe')
         self.assertEqual(page.evaluate('PLATFORM_BACKEND.platformId'), 'facade-probe')
+        self.assertEqual(page.evaluate('PLATFORM.getPlatformId()'), 'facade-probe')
+
+    def test_06_loading_progress_clamps(self):
+        # The inner method receives the clamped, never-decreasing integer
+        spy = [('**/platform/backends/local.js', self.append(SPY))]
+        got = {}
+        for sequence in ([-5, 42.7, 150], [60, 30]):
+            page = self.boot(spy)
+            seen = page.evaluate('''values => values.map(v => {
+                window.__backendHits.loadingProgress = []
+                const result = PLATFORM.loadingProgress(v)
+                return [window.__backendHits.loadingProgress[0][0], result === undefined]
+            })''', sequence)
+            got[str(sequence)] = [s[0] for s in seen]
+            self.assertTrue(all(s[1] for s in seen))
+        self.assertEqual(got, {'[-5, 42.7, 150]': [0, 42, 100], '[60, 30]': [60, 60]})
+        self.results['loadingProgress'] = got
+
+    def test_07_local_returns(self):
+        page = self.boot()
+        returns = {}
+        for method in NEW_METHODS:
+            result = page.evaluate('async () => { const r = await %s; return r === undefined ? null : r }'
+                                   % CALLS[method][0])
+            returns[method] = result
+        self.assertEqual(returns, LOCAL_RETURNS)
+        self.assertEqual(page.evaluate('[PLATFORM.getLanguage(), PLATFORM.language]'), ['en', 'en'])
+        de = self.boot(locale='de-DE')
+        self.assertEqual(de.evaluate('[PLATFORM.getLanguage(), PLATFORM.language]'), ['de', 'de'])
+        self.assertEqual(page.evaluate('PLATFORM.getPlatformId() === PLATFORM.platformId'), True)
+        self.results['returns'] = returns
+        if self.evidence:
+            out = Path(self.evidence)
+            out.mkdir(parents=True, exist_ok=True)
+            (out / 'returns.json').write_text(json.dumps(returns, separators=(',', ':')) + '\n')
 
 
 if __name__ == '__main__':

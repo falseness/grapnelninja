@@ -179,8 +179,9 @@ class ItchPlatformTests(unittest.TestCase):
     def test_d_no_ads_on_restart(self):
         page, _, _ = self.open()
         self.boot(page)
-        # Rewarded continues no longer exist (TASK-242, 8519216)
-        self.assertEqual(page.evaluate('typeof PLATFORM.isRewardedSupported'), 'undefined')
+        # Rewarded continues no longer exist (TASK-242, 8519216); the facade's
+        # isRewardedSupported (TASK-746) is false on the local backend
+        self.assertFalse(page.evaluate('PLATFORM.isRewardedSupported()'))
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialSupported()'))
         self.start_run(page)
         before, after = self.score_and_die(page, max(5, page.evaluate('CONTINUE_MIN_SCORE')))

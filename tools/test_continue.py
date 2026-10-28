@@ -66,8 +66,10 @@ INSTRUMENT_RUN = '''() => {
     }
 }'''
 
-# Neither the rewarded API, the per-run continue flag nor a Continue button exists
-NO_CONTINUE = '''() => [typeof PLATFORM.isRewardedSupported, typeof PLATFORM.requestRewarded,
+# No rewarded ad is supported (TASK-746 added the facade's
+# isRewardedSupported, false on the local backend) and neither the old
+# requestRewarded, the per-run continue flag nor a Continue button exists
+NO_CONTINUE = '''() => [PLATFORM.isRewardedSupported(), typeof PLATFORM.requestRewarded,
     typeof continueUsed, 'continueButton' in continueOffer]'''
 
 
@@ -95,7 +97,7 @@ class NoContinueTests(unittest.TestCase):
         page.wait_for_function('PLATFORM.environment === "local" && bootComplete && runInProgress'
                                ' && document.getElementById("loading").hidden', timeout=15000)
         page.evaluate('window.fakeNow = 1000000; PLATFORM.now = () => window.fakeNow')
-        self.assertEqual(page.evaluate(NO_CONTINUE), ['undefined', 'undefined', 'undefined', False])
+        self.assertEqual(page.evaluate(NO_CONTINUE), [False, 'undefined', 'undefined', False])
         self.assertFalse(page.evaluate('PLATFORM.isInterstitialSupported()'))
         # Boot runs 'bad'; the deaths below are classic deaths
         switch_mode(page, 'classic')

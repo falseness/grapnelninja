@@ -9,6 +9,7 @@ const PLATFORM_BACKEND = (function()
     let warned = false
     const memory = new Map()
     const listeners = {pause: [], audio: [], adState: []}
+    let language = null
 
     function warn(message, e)
     {
@@ -95,7 +96,8 @@ const PLATFORM_BACKEND = (function()
         // Resolves {environment, language} (2-letter ISO code)
         init()
         {
-            return Promise.resolve({environment: 'local', language: isoLanguage(navigatorLanguage())})
+            language = isoLanguage(navigatorLanguage())
+            return Promise.resolve({environment: 'local', language})
         },
 
         // No ads locally: the death screen never waits for an interstitial
@@ -161,6 +163,64 @@ const PLATFORM_BACKEND = (function()
         onAdState(fn)
         {
             listeners.adState.push(fn)
+        },
+
+        // No portal locally: lifecycle, ads, scores and achievements are no-ops
+        loadingProgress()
+        {
+        },
+
+        gameplayStart()
+        {
+        },
+
+        gameplayStop()
+        {
+        },
+
+        happyMoment()
+        {
+        },
+
+        isRewardedSupported()
+        {
+            return false
+        },
+
+        showRewarded()
+        {
+            return Promise.resolve('unavailable')
+        },
+
+        showBanner()
+        {
+            return Promise.resolve()
+        },
+
+        hideBanner()
+        {
+            return Promise.resolve()
+        },
+
+        submitScore()
+        {
+            return Promise.resolve(false)
+        },
+
+        unlockAchievement()
+        {
+            return Promise.resolve(false)
+        },
+
+        // The language init() detected
+        getLanguage()
+        {
+            return language
+        },
+
+        getPlatformId()
+        {
+            return this.platformId
         },
 
         storage:
