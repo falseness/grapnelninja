@@ -3,7 +3,8 @@
 Headless Chromium at the user's recording size (1706x932, DPR 1.5) in Grapple
 Over. An init script wraps document.createElement('canvas') (creator stack
 top + caller, size at the first getContext), getGlowSprite (misses, by key and
-cache: 'glyph|' keys are HUD glyph sprites in GLYPH_SPRITES)
+cache: 'glyph|' keys are HUD glyph sprites in GLYPH_SPRITES, cells of its
+atlas pages: glyphPages)
 and BackgroundRenderer.prototype.getSmoothImage (palette image builds, in a
 draw or ahead by prebuildGrappleOverPalette, with the frame that first draws
 each build: smoothCheck), and
@@ -153,6 +154,7 @@ def audit(mode):
             caches: {glow: GLOW_SPRITES.cache.size, glowLimit: GLOW_SPRITES.limit,
                      glyph: typeof GLYPH_SPRITES != 'undefined' ? GLYPH_SPRITES.cache.size : null,
                      glyphLimit: typeof GLYPH_SPRITES != 'undefined' ? GLYPH_SPRITES.limit : null,
+                     glyphPages: typeof GLYPH_SPRITES != 'undefined' && GLYPH_SPRITES.pages ? GLYPH_SPRITES.pages.length : null,
                      bounce: typeof BOUNCE_MATERIAL != 'undefined' ? BOUNCE_MATERIAL.sprites.size : null,
                      paletteImages: drawGrappleOverPalette.images ? drawGrappleOverPalette.images.size : 0}})''')
     if raw['grapnelMode'] != mode:

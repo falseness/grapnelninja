@@ -241,6 +241,13 @@ function buildGlowSprite(widthPx, heightPx, pad, scaleX, scaleY, originX, origin
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, widthPx)
     canvas.height = Math.max(1, heightPx)
+    paintGlowSprite(canvas, pad, scaleX, scaleY, originX, originY, alpha, drawShape, args, smooth)
+    return canvas
+}
+
+// buildGlowSprite's painting, into a canvas already sized
+function paintGlowSprite(canvas, pad, scaleX, scaleY, originX, originY, alpha, drawShape, args, smooth)
+{
     const build = spriteCtx =>
     {
         spriteCtx.setTransform(scaleX, 0, 0, scaleY, pad - originX * scaleX, pad - originY * scaleY)
@@ -261,7 +268,6 @@ function buildGlowSprite(widthPx, heightPx, pad, scaleX, scaleY, originX, origin
         GRADIENT_DITHER.paint8(canvas, build, false)
     else
         build(canvas.getContext('2d'))
-    return canvas
 }
 
 // drawShape draws with the global ctx in the current logical coordinates,
@@ -347,13 +353,23 @@ function drawGlowText(text, x, y, shadowColor, blur, stroke)
 // subpixel phase, in a cache of their own so a ticking counter never evicts
 // other glow sprites. Neighbouring glyph glows add up by source-over rather
 // than in one shadow, a near-identical result.
+// A glyph sprite is a cell of a shared atlas page, so a new glyph creates no
+// canvas: it is painted on one scratch canvas of exactly its own size (the
+// raster of a sprite canvas) and copied 1:1 into the page. A full page starts
+// the next one; past maxPages the oldest page and its cells are dropped.
 const GLYPH_SPRITES =
 {
     limit: 512,
     // Glyph origins snap across to 1/phases of a canvas px
     phases: 4,
     cache: new Map(),
-    metrics: new Map()
+    metrics: new Map(),
+    pageSize: 1024,
+    maxPages: 4,
+    // Transparent px around every cell
+    gap: 2,
+    pages: [],
+    scratch: null
 }
 if (document.fonts)
     document.fonts.addEventListener('loadingdone', () => GLYPH_SPRITES.metrics.clear())
@@ -381,6 +397,43 @@ function measureGlyph(ch, font, baseline)
     return glyph
 }
 
+// A width x height atlas cell {image, x, y, width, height} holding what
+// paint(canvas) draws on a canvas of that size
+function buildGlyphCell(width, height, paint)
+{
+    const store = GLYPH_SPRITES, gap = store.gap
+    let page = store.pages[store.pages.length - 1]
+    if (page && page.x + width + gap > store.pageSize)
+    {
+        page.x = gap
+        page.y += page.row + gap
+        page.row = 0
+    }
+    if (!page || page.y + height + gap > store.pageSize)
+    {
+        if (store.pages.length >= store.maxPages)
+        {
+            const oldest = store.pages.shift()
+            for (const [key, cell] of store.cache)
+                if (cell.image === oldest.canvas)
+                    store.cache.delete(key)
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = canvas.height = store.pageSize
+        page = {canvas, context: canvas.getContext('2d'), x: gap, y: gap, row: 0}
+        store.pages.push(page)
+    }
+    const scratch = store.scratch || (store.scratch = document.createElement('canvas'))
+    scratch.width = width
+    scratch.height = height
+    paint(scratch)
+    page.context.drawImage(scratch, page.x, page.y)
+    const cell = {image: page.canvas, x: page.x, y: page.y, width, height}
+    page.x += width + gap
+    page.row = Math.max(page.row, height)
+    return cell
+}
+
 // drawGlowText for a changing string: the same box (the string's left and top
 // snap to whole canvas px as its sprite did), glyphs at their measured
 // advances; textAlign left/start, center and right/end (left to right)
@@ -402,13 +455,14 @@ function drawGlowGlyphs(text, x, y, shadowColor, blur, stroke)
     const m = ctx.getTransform()
     const sx = glowSpriteScale(m.a), sy = glowSpriteScale(m.d)
     const pad = glowSpritePad(blur, stroke ? lineWidth : 0, sx)
-    const q = GLYPH_SPRITES.phases
+    const store = GLYPH_SPRITES, q = store.phases
     // Canvas px of the string's sprite origin; inside it glyphs sit at the
     // sprite scale. The baseline keeps its exact phase (text rasterization
     // snaps it to a whole px), one or two per HUD row.
     const left = Math.round(m.a * (start - glyphs[0].left) + m.e)
     const baselineY = Math.round(m.d * (y - ascent) + m.f) + ascent * sy
-    const iy = Math.floor(baselineY), phaseY = baselineY - iy
+    // Rounded: float noise from the row's height would key new sprites
+    const iy = Math.floor(baselineY), phaseY = Math.round((baselineY - iy) * 1e6) / 1e6
     const alpha = ctx.globalAlpha
     const style = '|' + font + '|left|' + baseline + '|' + fill + '|' + (stroke ? strokeStyle + '|' + lineWidth : '') +
         '|' + shadowColor + '|' + blur + '|' + alpha + '|' + sx + '|' + sy + '|'
@@ -425,10 +479,10 @@ function drawGlowGlyphs(text, x, y, shadowColor, blur, stroke)
             const ix = Math.floor(snapped), phaseX = snapped - ix
             // Canvas px from the sprite's top left to the glyph origin, less the phase
             const offsetX = pad + Math.ceil(glyph.left * sx), offsetY = pad + Math.ceil(glyph.ascent * sy)
-            const sprite = getGlowSprite('glyph|' + glyph.ch + style + phaseX + '|' + phaseY, () =>
-                buildGlowSprite(Math.ceil((glyph.left + glyph.right) * sx) + 1 + pad * 2,
-                    Math.ceil((glyph.ascent + glyph.descent) * sy) + 1 + pad * 2, 0, sx, sy,
-                    -(offsetX + phaseX) / sx, -(offsetY + phaseY) / sy, alpha, () =>
+            const cell = getGlowSprite('glyph|' + glyph.ch + style + phaseX + '|' + phaseY, () =>
+                buildGlyphCell(Math.min(store.pageSize - store.gap * 2, Math.ceil((glyph.left + glyph.right) * sx) + 1 + pad * 2),
+                    Math.min(store.pageSize - store.gap * 2, Math.ceil((glyph.ascent + glyph.descent) * sy) + 1 + pad * 2),
+                    canvas => paintGlowSprite(canvas, 0, sx, sy, -(offsetX + phaseX) / sx, -(offsetY + phaseY) / sy, alpha, () =>
                 {
                     ctx.font = font
                     ctx.textAlign = 'left'
@@ -441,8 +495,9 @@ function drawGlowGlyphs(text, x, y, shadowColor, blur, stroke)
                     if (stroke)
                         ctx.strokeText(glyph.ch, 0, 0)
                     ctx.fillText(glyph.ch, 0, 0)
-                }), GLYPH_SPRITES)
-            ctx.drawImage(sprite, ix - offsetX, iy - offsetY)
+                })), store)
+            ctx.drawImage(cell.image, cell.x, cell.y, cell.width, cell.height,
+                ix - offsetX, iy - offsetY, cell.width, cell.height)
         }
         originX += glyph.advance * sx
     }
