@@ -149,3 +149,11 @@ dropped; error messages <= 8000 chars), records it in `ANALYTICS.debugLog`
   `design('death:<mode>')` when the Classic/Bad death screen opens. Their
   state is never saved (climbStats is unchanged).
   Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
+- Mode time and quit (telemetry.js): active play seconds per grapnel mode
+  (playing frames only) go out as `design('mode_time:<single|double>',
+  wholeSeconds)` when `setGrapnelMode` changes the mode and on `pagehide`.
+  `TELEMETRY.mark(type, sectionId)` keeps the last fall / grapple / pause /
+  restart / death / section / complete. `pagehide` sends, once per page and
+  in this order: the mode time flush, `design('quit:<type>:<sectionId>')`,
+  `progression('Fail', mode, sectionId)` for a section in progress, then
+  `sessionEnd()` last.

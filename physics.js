@@ -133,7 +133,8 @@ function countClimbGrapple(wasGrappled)
 {
     if (version !== 'grapple_over' || wasGrappled || !floors[0]?.climbStats) return
     floors[0].climbStats.grapples++
-    climbDesignRun(floors[0].climbStats).section = CLIMB_UI.currentSection().id
+    const section = climbDesignRun(floors[0].climbStats).section = CLIMB_UI.currentSection().id
+    TELEMETRY.mark('grapple', section)
 }
 
 // Design telemetry of the run, never saved: the last 500-unit best height
@@ -170,7 +171,9 @@ function recoverClimbFall()
     // The fall counts against the section of the last catch (the spawn
     // section when there was none since the launch)
     const run = climbDesignRun(world.climbStats)
-    ANALYTICS.design('fall:' + (run.section ?? world.level.sections[0].id))
+    const fallSection = run.section ?? world.level.sections[0].id
+    ANALYTICS.design('fall:' + fallSection)
+    TELEMETRY.mark('fall', fallSection)
     run.section = null
     ninja.x = spawn.x
     ninja.y = spawn.y

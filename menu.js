@@ -770,6 +770,7 @@ class Menu
         this.changeGamePause(true)
         PLATFORM.sendLifecycle('level_paused')
         PLATFORM.gameplayStop('pause', version)
+        TELEMETRY.mark('pause')
 
         // A fresh frame under the panel: over the death screen its buttons
         // would otherwise show through stale. (A pause during boot has no
@@ -1061,6 +1062,14 @@ const CLIMB_UI = {
         p.index = index
         p.open = !p.completed.has(section.id)
         if (p.open) ANALYTICS.progression('Start', version, section.id)
+        TELEMETRY.mark('section', section.id)
+    },
+    // pagehide: the section in progress (Start sent, no Complete/Fail) fails
+    abandonProgression() {
+        const p = this.progression
+        if (!p.open) return
+        p.open = false
+        ANALYTICS.progression('Fail', version, p.id)
     },
     // Summit: the last section is complete
     completeProgression() {
@@ -1113,6 +1122,7 @@ const CLIMB_UI = {
         pauseTimeInGame()
         PLATFORM.sendLifecycle('level_completed', {world:version, elapsedActiveMs:stats.elapsedActiveMs})
         PLATFORM.gameplayStop('complete', version)
+        TELEMETRY.mark('complete', this.progression.id)
         PLATFORM.happyMoment()
         PLATFORM.submitScore('grapple_over_time', Math.round(stats.elapsedActiveMs))
         PROGRESS.flushClimb()
@@ -1130,6 +1140,7 @@ const CLIMB_UI = {
         PLATFORM.sendLifecycle('level_started', {world:version})
         PLATFORM.gameplayStart(version)
         ANALYTICS.design('restart:' + version)
+        TELEMETRY.mark('restart')
         menu.unPause()
         draw()
     },

@@ -245,6 +245,7 @@ function setGrapnelMode(mode)
 {
     if (mode !== 'single' && mode !== 'double') throw new Error('InvalidGrapnelMode: ' + mode)
     const world = floors[0]
+    if (world.grapnelMode !== mode) TELEMETRY.flushModeTime()
     world.grapnelMode = mode
     if (mode === 'double') world.usedDouble = true
 }

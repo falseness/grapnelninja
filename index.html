@@ -190,7 +190,8 @@
             boot()
 
             // Page errors -> ANALYTICS.error (10 unique messages per session);
-            // pagehide -> one ANALYTICS.sessionEnd per page
+            // pagehide -> once per page: mode time flush, quit:<last event>,
+            // Fail for the section in progress, then ANALYTICS.sessionEnd last
             function watchAnalytics()
             {
                 const MAX_ERRORS = 10
@@ -217,6 +218,9 @@
                     if (ended)
                         return
                     ended = true
+                    for (const step of [() => TELEMETRY.flushModeTime(), () => TELEMETRY.sendQuit(),
+                        () => CLIMB_UI.abandonProgression()])
+                        try { step() } catch (e) {}
                     ANALYTICS.sessionEnd()
                 })
             }
@@ -409,6 +413,7 @@
                 pauseTimeInGame()
                 PROGRESS.save()
                 PLATFORM.gameplayStop('death', version)
+                TELEMETRY.mark('death')
                 if (PLATFORM.isInterstitialDue())
                 {
                     ANALYTICS.design('death:' + version)
@@ -431,7 +436,11 @@
             function restartFromOffer()
             {
                 // Once per Restart: a click while the game over ad plays is ignored
-                if (!interstitialPending) ANALYTICS.design('restart:' + version)
+                if (!interstitialPending)
+                {
+                    ANALYTICS.design('restart:' + version)
+                    TELEMETRY.mark('restart')
+                }
                 leaveFinishedRun(function()
                 {
                     continueOffer.hide()
@@ -613,7 +622,7 @@
                 const activelyPlaying = bootComplete && !menu.gamePaused &&
                     !continueOffer.visible && !adOpen && !interstitialPending && !hostPaused &&
                     !isViewRotated() && document.visibilityState !== 'hidden'
-                TELEMETRY.frame(frameTime, activelyPlaying, version)
+                TELEMETRY.frame(frameTime, activelyPlaying, version, floors[0]?.grapnelMode)
 
                 if (menu.gamePaused)
                     resetPhysicsTiming()
