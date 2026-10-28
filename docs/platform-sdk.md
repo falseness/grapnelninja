@@ -106,3 +106,32 @@ route for all five backends.
   `addProgressionEvent` / `addDesignEvent` / `addErrorEvent` / `addAdEvent`
   inside that backend's `track` / `startup` inner methods only.
   Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
+
+## Telemetry facade (GameAnalytics backend)
+
+Telemetry goes through its own facade, `analytics.js` (`ANALYTICS`), over
+`ANALYTICS_BACKEND`. index.html loads `analytics/backends/none.js` and then
+`analytics.js`, right after `platform.js`. The facade sanitizes every call
+the GameAnalytics way (ids of 1-5 `:`-segments, `[A-Za-z0-9_.-]`, <= 32
+chars each; progression levels filled in order; unknown status/severity
+dropped; error messages <= 8000 chars), records it in `ANALYTICS.debugLog`
+(last 500) and never lets a backend throw into the game.
+
+| Facade | Inner method (`// REPLACE:` GameAnalytics call) |
+| --- | --- |
+| `init({build})` | `initialize(config)` -> `configureBuild` + `initialize(gameKey, secretKey)` |
+| `sessionStart()` / `sessionEnd()` | `startSession()` / `endSession()` |
+| `progression(status, l1, l2?, l3?, score?)` | `addProgressionEvent(status, p1, p2, p3, score)` |
+| `design(id, value?)` | `addDesignEvent(id, value)` |
+| `error(severity, message)` | `addErrorEvent(severity, message)` |
+| `ad(action, type, placement)` | `addAdEvent(action, type, sdkName, placement)` |
+
+- **GamePix and Playgama: the analytics backend must stay `none`.** Their
+  rules forbid third-party analytics (Playgama telemetry goes through
+  `bridge.analytics.send` in the platform backend's `track` instead).
+- **itch.io and Y8 may swap in a GameAnalytics backend**: copy `none.js` to
+  e.g. `analytics/backends/gameanalytics.js`, fill each inner method from its
+  `// REPLACE:` marker, load the GameAnalytics SDK and swap the
+  `analytics/backends/none.js` script tag. Nothing else changes.
+- The game has no `ANALYTICS` call sites yet.
+  Docs: https://github.com/GameAnalytics/GA-SDK-JAVASCRIPT
