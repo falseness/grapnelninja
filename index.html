@@ -630,6 +630,7 @@
                     const steps = runFixedPhysics(frameTime)
                     if (activelyPlaying)
                     {
+                        CLIMB_UI.trackSection()
                         TUTORIAL_HINT.advance(steps * physicsStepMs)
                         FALL_MESSAGE.advance(steps * physicsStepMs)
                     }

@@ -1023,14 +1023,58 @@ const CLIMB_UI = {
         return false
     },
     bounds: {left: 0, right: 0, top: 0, bottom: 0},
+    // The climb section the player is in: the HUD label and the progression
+    // telemetry share this lookup, cached per level, simulation step and
+    // player position (one lookup a frame)
+    sectionCache: {level: null, step: NaN, x: NaN, y: NaN, section: null},
+    currentSection() {
+        const level = floors[0].level, step = floors[0].elapsedSteps, cache = this.sectionCache
+        if (cache.level === level && cache.step === step && cache.x === ninja.x && cache.y === ninja.y) return cache.section
+        const section = GRAPPLE_OVER_REPLACEMENT_ACTIVE ? replacementSection() : level.sections.find(s => s.encounters.some(id =>
+            level.encounters.find(e => e.id === id)?.elements.some(id => {
+                const e = floors[0].byId.get(id)
+                return e && Math.abs(e.y - ninja.y) < 300
+            }))) || level.sections[0]
+        Object.assign(cache, {level, step, x: ninja.x, y: ninja.y, section})
+        return section
+    },
+    // Progression telemetry of the run, one attempt per section: 'Start' on
+    // entering a section not yet completed, 'Complete' (once per run) for the
+    // section left upward and at the summit, 'Fail' for the section left
+    // downward. open: a Start was sent for id with no Complete/Fail yet.
+    progression: {id: null, index: -1, open: false, completed: new Set()},
+    resetProgression() {
+        this.progression = {id: null, index: -1, open: false, completed: new Set()}
+    },
+    // Called once a frame while playing; sends events only on a section change
+    trackSection() {
+        if (version !== 'grapple_over' || !floors[0]?.level?.sections?.length || floors[0].climbStats?.completed) return
+        const sections = floors[0].level.sections, section = this.currentSection(), p = this.progression
+        if (section.id === p.id) return
+        const index = sections.indexOf(section)
+        if (p.id !== null && p.open)
+        {
+            if (index > p.index) p.completed.add(p.id)
+            ANALYTICS.progression(index > p.index ? 'Complete' : 'Fail', version, p.id)
+        }
+        p.id = section.id
+        p.index = index
+        p.open = !p.completed.has(section.id)
+        if (p.open) ANALYTICS.progression('Start', version, section.id)
+    },
+    // Summit: the last section is complete
+    completeProgression() {
+        this.trackSection()
+        const p = this.progression
+        if (!p.open) return
+        p.open = false
+        p.completed.add(p.id)
+        ANALYTICS.progression('Complete', version, p.id)
+    },
     drawHud(button) {
         const stats = floors[0].climbStats, h = height / scale[version]
         const size = Math.max(h * 0.025, 12 * h / getCanvasCssRect().height)
-        const section = GRAPPLE_OVER_REPLACEMENT_ACTIVE ? replacementSection() : floors[0].level.sections.find(s => s.encounters.some(id =>
-            floors[0].level.encounters.find(e => e.id === id)?.elements.some(id => {
-                const e = floors[0].byId.get(id)
-                return e && Math.abs(e.y - ninja.y) < 300
-            }))) || floors[0].level.sections[0]
+        const section = this.currentSection()
         const rows = [I18N.t('climb.height', {value:Math.floor(stats.currentHeight)}),
             I18N.t('climb.max', {value:Math.floor(stats.maxHeight)}),
             I18N.t('climb.section', {value:I18N.t(section.labelKey || 'climb.section.' + section.id)}),
@@ -1060,6 +1104,7 @@ const CLIMB_UI = {
     complete() {
         const stats = floors[0].climbStats
         if (stats.completed) return
+        this.completeProgression()
         stats.completed = true
         FALL_MESSAGE.clear()
         runInProgress = false
@@ -1077,6 +1122,7 @@ const CLIMB_UI = {
         this.confirming = false
         this.offering = false
         PROGRESS.resetClimb()
+        this.resetProgression()
         pressHeld = stalePress = gameplayPressOwned = false
         runOver = false
         runInProgress = true
