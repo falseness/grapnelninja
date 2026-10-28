@@ -12,8 +12,12 @@ counts rAF frames. The ninja is held (x, y, zero speed, re-set every 250 ms)
 for ~1.5 s at each tools/fixtures/freeze-walk.json point for 2 passes, then
 for ~1 s at each sweep point. Also reports the most canvases one frame
 created per source file and the bounce contact canvases (cacheBounceContact)
-per bounce board build (bounceMaterialSprite). Counts only: headless timings
-mean nothing.
+per bounce board build (bounceMaterialSprite). firstDraw: the first drawImage
+of each source on the page (likely a GPU upload of a CPU-backed canvas), in px
+(source width * height) after boot: the most in one frame, frames over 1 Mpx
+later than 2 s after boot, px by canvas creator, and every first draw of a
+Grapple Over palette image (all phases). Counts only: headless timings mean
+nothing.
 
     python3 tools/canvas_audit.py [--mode single|double] [--out canvas-audit.json]
 """
@@ -34,9 +38,13 @@ HOLD_STEPS = 6       # x 250 ms at each walk point
 SWEEP_STEPS = 4      # x 250 ms at each sweep point
 
 INIT = r'''
-window.__audit = {frame: 0, phase: 'boot', canvases: [], glowMisses: [], smoothBuilds: [], smooth: null, prebuilding: false}
+window.__audit = {frame: 0, frameT: 0, phase: 'boot', canvases: [], glowMisses: [], smoothBuilds: [], smooth: null,
+                  prebuilding: false, firstDraws: []}
 ;(() => {
   const audit = window.__audit
+  // canvas -> its canvases[] entry, palette image canvas -> palette index, sources drawn
+  const created = new WeakMap(), paletteOf = new WeakMap(), drawn = new WeakSet()
+  audit.paletteOf = paletteOf
   const create = document.createElement
   document.createElement = function(tag) {
     const el = create.apply(this, arguments)
@@ -46,6 +54,7 @@ window.__audit = {frame: 0, phase: 'boot', canvases: [], glowMisses: [], smoothB
       .map(s => s.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+\//, '').replace(/:\d+\)?$/, '').replace('(', ''))
     const entry = {frame: audit.frame, phase: audit.phase, creator: frames[0] || '?', caller: frames[1] || '', w: 0, h: 0}
     audit.canvases.push(entry)
+    created.set(el, entry)
     if (audit.smooth) audit.smooth.built = true
     const getContext = el.getContext
     el.getContext = function() {
@@ -56,7 +65,19 @@ window.__audit = {frame: 0, phase: 'boot', canvases: [], glowMisses: [], smoothB
     return el
   }
   const raf = window.requestAnimationFrame
-  window.requestAnimationFrame = cb => raf.call(window, t => { audit.frame++; cb(t) })
+  window.requestAnimationFrame = cb => raf.call(window, t => { audit.frame++; audit.frameT = performance.now(); cb(t) })
+  const drawImage = CanvasRenderingContext2D.prototype.drawImage
+  CanvasRenderingContext2D.prototype.drawImage = function(image) {
+    if (image && typeof image === 'object' && !drawn.has(image)) {
+      drawn.add(image)
+      const c = created.get(image)
+      const px = (image.naturalWidth || image.width || 0) * (image.naturalHeight || image.height || 0)
+      audit.firstDraws.push({frame: audit.frame, t: audit.frameT, phase: audit.phase, px,
+                             creator: c ? c.creator : (image.constructor && image.constructor.name) || '?',
+                             palette: paletteOf.has(image) ? paletteOf.get(image) : null})
+    }
+    return drawImage.apply(this, arguments)
+  }
   document.addEventListener('DOMContentLoaded', () => {
     const glow = window.getGlowSprite
     window.getGlowSprite = function(key, build, store) {
@@ -83,6 +104,7 @@ window.__audit = {frame: 0, phase: 'boot', canvases: [], glowMisses: [], smoothB
       audit.smooth = {built: false}
       try {
         const canvas = smooth.apply(this, arguments)
+        paletteOf.set(canvas, index)
         if (audit.smooth.built) {
           const entry = {frame: audit.frame, phase: audit.phase, index, w: canvas.width, h: canvas.height,
                          prebuild: !drawing, firstDrawFrame: drawing ? audit.frame : null}
@@ -122,6 +144,21 @@ def smooth_check(builds):
             'leadOk': all(lead >= 10 for lead in drawn)}
 
 
+def first_draw(draws, boot_end_t):
+    """Px first drawn per frame after boot (raw entries: frame, t, phase, px, creator, palette)."""
+    walked = [d for d in draws if d['phase'] != 'boot']
+    per_frame, frame_t, by_creator = {}, {}, {}
+    for d in walked:
+        per_frame[d['frame']] = per_frame.get(d['frame'], 0) + d['px']
+        frame_t[d['frame']] = d['t']
+        by_creator[d['creator']] = by_creator.get(d['creator'], 0) + d['px']
+    return {'maxPxPerFrame': max(per_frame.values(), default=0),
+            'framesOver1MpxAfter2s': sum(px > 1e6 and frame_t[f] > boot_end_t + 2000 for f, px in per_frame.items()),
+            'byCreator': dict(sorted(by_creator.items(), key=lambda kv: -kv[1])),
+            'paletteFirstDraws': [{'index': d['palette'], 'frame': d['frame'], 'phase': d['phase'], 'px': d['px']}
+                                  for d in draws if d['palette'] is not None]}
+
+
 def audit(mode):
     walk = json.loads(WALK.read_text())
     errors = []
@@ -134,6 +171,7 @@ def audit(mode):
         page.on('pageerror', lambda e: errors.append(str(e)[:300]))
         page.goto(url + 'index.html', wait_until='load')
         wait_for_boot_run(page)
+        boot_end_t = page.evaluate('performance.now()')
         if page.evaluate('version') != 'grapple_over':
             errors.append('not booted into grapple_over: ' + page.evaluate('version'))
         if mode == 'double':
@@ -150,7 +188,7 @@ def audit(mode):
             sweep_palettes.append(palette_index(page))
         page.evaluate("() => { __audit.phase = 'done' }")
         raw = page.evaluate('''() => ({canvases: __audit.canvases, glowMisses: __audit.glowMisses,
-            smoothBuilds: __audit.smoothBuilds, frames: __audit.frame, grapnelMode: floors[0].grapnelMode,
+            smoothBuilds: __audit.smoothBuilds, firstDraws: __audit.firstDraws, frames: __audit.frame, grapnelMode: floors[0].grapnelMode,
             caches: {glow: GLOW_SPRITES.cache.size, glowLimit: GLOW_SPRITES.limit,
                      glyph: typeof GLYPH_SPRITES != 'undefined' ? GLYPH_SPRITES.cache.size : null,
                      glyphLimit: typeof GLYPH_SPRITES != 'undefined' ? GLYPH_SPRITES.limit : null,
@@ -204,6 +242,7 @@ def audit(mode):
         'glowTextSample': text_keys,
         'smoothBuilds': builds,
         'smoothCheck': smooth_check(builds),
+        'firstDraw': first_draw(raw['firstDraws'], boot_end_t),
         'sweepPalettes': sweep_palettes,
         'caches': raw['caches'],
         'errors': errors,
@@ -221,6 +260,10 @@ def main():
         args.mode, result['perPass'], result['maxPerFrame'], result['glowMisses']['text'], result['glowMisses']['glyph'],
         len(result['smoothBuilds']), len(result['errors']), args.out))
     print('smoothCheck %s; paletteImages %d' % (json.dumps(result['smoothCheck']), result['caches']['paletteImages']))
+    fd = result['firstDraw']
+    print('firstDraw maxPxPerFrame %d, framesOver1MpxAfter2s %d, paletteFirstDraws %s, top creators %s' % (
+        fd['maxPxPerFrame'], fd['framesOver1MpxAfter2s'], json.dumps(fd['paletteFirstDraws']),
+        json.dumps(dict(list(fd['byCreator'].items())[:4]))))
     print('bounce contact %s; maxPerFrameByFile %s' % (
         json.dumps(result['bounceContact']), json.dumps(result['maxPerFrameByFile'])))
     return 1 if result['errors'] else 0

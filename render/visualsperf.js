@@ -13,6 +13,14 @@
 // never dropped, with its slowest entry, the time no layer accounts for and
 // the game state (context). start({ringSize}) is a test-only override.
 //
+// First draws (likely a GPU upload of a CPU-backed image): while recording,
+// CanvasRenderingContext2D.prototype.drawImage is wrapped (restored by
+// stop()) and a source never drawn before on this page counts once. A
+// sample's fd is the px (source width * height) first drawn in its interval,
+// omitted when 0; a freeze's context has the 3 largest (firstDraws: src is
+// the 'file:line' that created the canvas, else the image url or type) and
+// the Grapple Over palette of the last drawn frame ({from, to, t}, else null).
+//
 // Composes with ?perf=1: both wrap the same globals, each wrapper calling
 // the previous one. Without the flag nothing is wrapped, no listener is
 // added and window.visualsPerf stays undefined.
@@ -35,6 +43,9 @@
     let report = null, lastReport = null, ring = null, ringSize = RING_SIZE, next = 0
     let previousT = null, lastSection = null, longTaskObserver = null
     let sectionWorld = null, sectionBounds = null
+    let firstDrawPx = 0, firstDraws = []
+    // Sources already drawn and the creator of every canvas (kept across recordings)
+    const drawnSources = new WeakSet(), canvasCreators = new WeakMap()
 
     function resetInterval()
     {
@@ -45,6 +56,8 @@
         getContextCalls = 0
         fallRecoveries = 0
         sectionChanges = 0
+        firstDrawPx = 0
+        firstDraws = []
     }
 
     function timed(owner, globalName, record)
@@ -77,12 +90,29 @@
     // Mote glow and copy of the reduced backdrop (render/backdrop.js)
     timed(BACKDROP, 'end', ms => addLayer('backdrop', ms))
 
+    // 'file:line' of the first stack frame outside this file
+    function creatorOf(stack)
+    {
+        for (const line of String(stack || '').split('\n').slice(1))
+        {
+            const m = line.match(/(?:https?:\/\/[^/]+\/)?([^\s()]+):(\d+):\d+\)?\s*$/)
+            if (m && !m[1].endsWith('visualsperf.js'))
+                return m[1] + ':' + m[2]
+        }
+        return '?'
+    }
+
     const createElement = document.createElement
     document.createElement = function(tagName)
     {
-        if (report && String(tagName).toLowerCase() === 'canvas')
-            ++canvasesCreated
-        return createElement.apply(this, arguments)
+        const element = createElement.apply(this, arguments)
+        if (String(tagName).toLowerCase() === 'canvas')
+        {
+            if (report)
+                ++canvasesCreated
+            canvasCreators.set(element, creatorOf(new Error().stack))
+        }
+        return element
     }
     const getContext = HTMLCanvasElement.prototype.getContext
     HTMLCanvasElement.prototype.getContext = function()
@@ -90,6 +120,29 @@
         if (report)
             ++getContextCalls
         return getContext.apply(this, arguments)
+    }
+
+    // drawImage as it was at start(), put back by stop(); installed stays
+    // true while a later wrapper over drawImageFirst keeps it in the chain
+    let drawImage = CanvasRenderingContext2D.prototype.drawImage, installed = false
+    function drawImageFirst(image)
+    {
+        if (report && image && typeof image === 'object' && !drawnSources.has(image))
+        {
+            drawnSources.add(image)
+            const w = image.videoWidth || image.naturalWidth || image.width || 0
+            const h = image.videoHeight || image.naturalHeight || image.height || 0
+            firstDrawPx += w * h
+            const src = canvasCreators.get(image) || (image.currentSrc || image.src ?
+                new URL(image.currentSrc || image.src, location.href).pathname : image.constructor.name)
+            firstDraws.push({src, w, h})
+            if (firstDraws.length > 3)
+            {
+                firstDraws.sort((a, b) => b.w * b.h - a.w * a.h)
+                firstDraws.length = 3
+            }
+        }
+        return drawImage.apply(this, arguments)
     }
 
     // The game loop, its physics step and the fall recovery live in
@@ -186,6 +239,12 @@
             getContextCalls,
             fallRecoveries,
             sectionChanges,
+            firstDraws: firstDraws.slice().sort((a, b) => b.w * b.h - a.w * a.h),
+            palette: game(() =>
+            {
+                const p = version === 'grapple_over' ? visualEffects.background.palette : null
+                return p ? {from: p.from, to: p.to, t: p.t} : null
+            }),
         }
     }
 
@@ -199,6 +258,8 @@
         {
             const gapMs = t - previousT
             const entry = {t, gapMs, layers, physicsMs, physicsSteps, hidden: document.hidden}
+            if (firstDrawPx)
+                entry.fd = firstDrawPx
             if (ring.length < ringSize)
                 ring.push(entry)
             else
@@ -305,6 +366,12 @@
             document.addEventListener('visibilitychange', onVisibility)
             window.addEventListener('focus', onVisibility)
             window.addEventListener('blur', onVisibility)
+            if (!installed)
+            {
+                drawImage = CanvasRenderingContext2D.prototype.drawImage
+                CanvasRenderingContext2D.prototype.drawImage = drawImageFirst
+                installed = true
+            }
         },
         stop()
         {
@@ -320,6 +387,12 @@
             document.removeEventListener('visibilitychange', onVisibility)
             window.removeEventListener('focus', onVisibility)
             window.removeEventListener('blur', onVisibility)
+            // a later wrapper over ours keeps it (it passes through while stopped)
+            if (CanvasRenderingContext2D.prototype.drawImage === drawImageFirst)
+            {
+                CanvasRenderingContext2D.prototype.drawImage = drawImage
+                installed = false
+            }
             report.samples = ring.slice(next).concat(ring.slice(0, next))
             report.stoppedAtMs = performance.now()
             lastReport = report
