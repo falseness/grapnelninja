@@ -52,6 +52,14 @@ def bodies(m):
     return [[world(m, p) for p in poly] for poly in m['polys']]
 
 
+def body_id(m, i):
+    # Element id of body i of fragment m. A safe-space wall (TASK-779, an extra body listed in m['walls']) appends its
+    # semanticId (P91-body1-XS-S3-WALL, TASK-781), so the level data names it; the fragment-id prefix and '-body'
+    # stay, so hit.id.split('-')[0] and startswith(fid + '-body') still give the owner fragment.
+    sem = next((w['semanticId'] for w in m.get('walls', []) if w['body'] == i), None)
+    return f'{m["id"]}-body{i}' + (f'-{sem}' if sem else '')
+
+
 def contact(m):
     # Purple chute panels carry their designed bounce point (fragment-local).
     if 'contactPoint' in m:
@@ -400,7 +408,7 @@ def build(meas, guides=False, arrows=False):
         out.append(f'<g id="{m["id"]}" data-fragment="true">')
         ids = []
         for i, poly in enumerate(m['polys']):
-            eid = f'{m["id"]}-body{i}'
+            eid = body_id(m, i)
             ids.append(eid)
             pts_s = ' '.join(f'{num(m["x"] + px)},{num(m["y"] + py)}' for px, py in poly)
             out.append(f'<polygon id="{eid}" points="{pts_s}" data-role="{role}" data-grapplable="true"'

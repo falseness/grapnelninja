@@ -27,7 +27,10 @@ EXTENDED_LAYOUT = 'extended-mountain-v15'
 # shipped v19.
 # Since TASK-774 the shipped run adds SEC-sky-spire above the gauntlet finish (--sky-spire, SKY_SPIRE: tall purple zones
 # Y1..Y8, green safe spaces T0..T8, yellow catchers) as v21; `--no-sky-spire` is the previous shipped v20.
-SHIPPED_LAYOUT = 'extended-mountain-v21'
+# Since TASK-781 the shipped run adds a green wall on the outer side of every safe space S0..S8 / T0..T8 (--safe-walls,
+# SAFE_WALLS) as v22; `--no-safe-walls` is the previous shipped v21.
+SHIPPED_LAYOUT = 'extended-mountain-v22'
+SKY_SPIRE_V21_LAYOUT = 'extended-mountain-v21'
 GAUNTLET_V20_LAYOUT = 'extended-mountain-v20'
 EXT_SUMMIT_V19_LAYOUT = 'extended-mountain-v19'
 EXT_SUMMIT_V18_LAYOUT = 'extended-mountain-v18'
@@ -1704,7 +1707,7 @@ def extend_sky_spire(m, spec=SKY_SPIRE):
     return m
 
 
-# TASK-779 (--safe-walls, candidate, off by default): one green wall per safe space S0..S8 / T0..T8 on its outer side,
+# TASK-779 (--safe-walls, shipped v22 since TASK-781): one green wall per safe space S0..S8 / T0..T8 on its outer side,
 # so a swing or fall outward from the safe space is stopped instead of falling toward the map edge. Each wall is 240
 # wide and 2R = 1,080 tall, its inner face `clear` outward from the outermost panel's outer edge, covering the band
 # where the TASK-778 escape probe saw the most outward crossings (WALL_BANDS = artifacts/TASK-778/escapes.json bands).
@@ -2914,10 +2917,10 @@ def main():
                          'Y1..Y8 with green safe spaces T0..T8, yellow catchers and a new finish (TASK-762..773, '
                          'SKY_SPIRE). Default: on (shipped v21) with the gauntlet; --no-sky-spire gives the previous '
                          'shipped v20')
-    ap.add_argument('--safe-walls', action=argparse.BooleanOptionalAction, default=False,
-                    help='(with --ext-summit-gauntlet) candidate: a green wall on the outer side of every safe space '
-                         'S0..S8 / T0..T8, 240 x 1,080, covering the TASK-778 escape band (TASK-779, SAFE_WALLS, '
-                         'WALL_BANDS). Default: off (shipped layout unchanged)')
+    ap.add_argument('--safe-walls', action=argparse.BooleanOptionalAction, default=None,
+                    help='(with --sky-spire) a green wall on the outer side of every safe space S0..S8 / T0..T8, '
+                         '240 x 1,080, covering the TASK-778 escape band (TASK-779..781, SAFE_WALLS, WALL_BANDS). '
+                         'Default: on (shipped v22) with the Sky Spire; --no-safe-walls gives the previous shipped v21')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -2940,6 +2943,8 @@ def main():
         args.ext_summit_riser = args.ext_summit and not args.ext_summit_fold
     if args.sky_spire is None:
         args.sky_spire = bool(args.ext_summit_gauntlet)
+    if args.safe_walls is None:
+        args.safe_walls = bool(args.sky_spire)
     args.middle_purple=bool(args.middle_purple); args.upper_purple=bool(args.upper_purple)
     if args.upper_purple and not args.middle_purple:
         raise ValueError('--upper-purple needs --middle-purple')
@@ -2960,7 +2965,7 @@ def main():
          min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple,
          upper_purple=args.upper_purple, purple_rest=args.purple_rest)
     if shipped:
-        m['layoutId']=((((SHIPPED_LAYOUT if args.sky_spire else GAUNTLET_V20_LAYOUT) if args.ext_summit_gauntlet
+        m['layoutId']=(((((SHIPPED_LAYOUT if args.safe_walls else SKY_SPIRE_V21_LAYOUT) if args.sky_spire else GAUNTLET_V20_LAYOUT) if args.ext_summit_gauntlet
                           else EXT_SUMMIT_V19_LAYOUT if args.ext_summit_riser
                          else EXT_SUMMIT_V18_LAYOUT) if args.ext_summit
                         else PREVIOUS_SHIPPED_LAYOUT) if args.purple_rest else NO_REST_SHIPPED_LAYOUT)
@@ -2983,8 +2988,8 @@ def main():
                 add_safe_walls(m)
         else:
             extend_summit(m, EXT_SUMMIT_FOLD if args.ext_summit_fold else EXT_SUMMIT_RISER if args.ext_summit_riser else EXT_SUMMIT)
-    if args.safe_walls and not (args.ext_summit and args.ext_summit_gauntlet):
-        raise ValueError('--safe-walls needs the gauntlet (--ext-summit-gauntlet)')
+    if args.safe_walls and not (args.ext_summit and args.ext_summit_gauntlet and args.sky_spire):
+        raise ValueError('--safe-walls needs the gauntlet and the Sky Spire (--ext-summit-gauntlet --sky-spire)')
     if not args.ext_summit and (args.ext_summit_fold or args.ext_summit_riser or args.ext_summit_gauntlet):
         raise ValueError('--ext-summit-fold / --ext-summit-riser / --ext-summit-gauntlet need --ext-summit')
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}

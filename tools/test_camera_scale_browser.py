@@ -204,7 +204,7 @@ class CameraScaleBrowserTests(unittest.TestCase):
             page.context.close()
         bounds = json.loads((ROOT / 'artifacts/levels/extended-mountain.level.json').read_text())['bounds']
         self.write('framing.json', dict(
-            level='extended-mountain-v21', levelBounds=bounds, scales=SCALES,
+            level='extended-mountain-v22', levelBounds=bounds, scales=SCALES,
             override='test-only: scale.grapple_over set in the page, then screen.updateWidthLayout() and layoutHud();'
                      ' shipped gameoptions.js stays 0.25',
             playerState='rest 30 units above the source panel top centre, speed 0, camera snapped by screen.trackGrappleOver(true)',

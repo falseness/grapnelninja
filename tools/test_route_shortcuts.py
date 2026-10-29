@@ -85,7 +85,7 @@ def wall_pairs(m):
     pairs = []
     for k, f in enumerate(fs):
         for w in f.get('walls', []):
-            wall, body = [bodies[k][w['body']]], '%s-body%d' % (f['id'], w['body'])
+            wall, body = [bodies[k][w['body']]], conv.body_id(f, w['body'])
             for j in range(k + 2, len(fs)):
                 gap = geometry.union_distance(wall, bodies[j])[0]
                 if gap <= TARGET_REACH or j <= k + 3:

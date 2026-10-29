@@ -168,7 +168,7 @@ class RestRuleTests(unittest.TestCase):
                                            '--level', str(level_path), '--reference', str(ref), '--report', path] + extra,
                                           capture_output=True, text=True)
                     out[layout, name] = (proc.returncode, json.loads(Path(path).read_text()))
-        self.assertEqual(json.loads(SHIPPED_LEVEL.read_text())['layoutId'], 'extended-mountain-v21')
+        self.assertEqual(json.loads(SHIPPED_LEVEL.read_text())['layoutId'], 'extended-mountain-v22')
         for layout in levels:
             self.assertEqual(out[layout, 'allow'][0], 0)
             self.assertNotIn('noGrappleRest', out[layout, 'allow'][1])

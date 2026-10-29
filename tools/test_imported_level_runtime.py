@@ -33,11 +33,12 @@ import unittest
 import xml.etree.ElementTree as ET
 
 from browser_test_support import start_browser_test, wait_for_boot, wait_for_boot_run, select_mode
+import convert_extended_mountain_svg as svg_conv
 
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v21'
+LAYOUT_ID = 'extended-mountain-v22'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -358,7 +359,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), (ROOT / 'leveldata.js').read_bytes())
 
     def test_03_incompatible_previous_layout_save(self):
-        # TASK-711 / TASK-725 / TASK-744 / TASK-774: saves from v20 (and earlier imported layouts) restart at the spawn. The save is a real current one
+        # TASK-711 / TASK-725 / TASK-744 / TASK-774 / TASK-781: saves from v21 (and earlier imported layouts) restart at the spawn. The save is a real current one
         # with the old layout id. A fresh start launches upward (TASK-704), so y may be up to the launch apex above.
         first = self.open()
         save = json.loads(first.evaluate('''() => {
@@ -368,7 +369,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         }'''))
         self.assertEqual(save['layoutId'], LAYOUT_ID)
         results = {}
-        for old in ('extended-mountain-v20', 'extended-mountain-v19', 'extended-mountain-v18', 'extended-mountain-v17', 'extended-mountain-v16', 'extended-mountain-v15'):
+        for old in ('extended-mountain-v21', 'extended-mountain-v20', 'extended-mountain-v19', 'extended-mountain-v18', 'extended-mountain-v17', 'extended-mountain-v16', 'extended-mountain-v15'):
             page = self.open(seed={CLIMB_KEY: json.dumps(dict(save, layoutId=old))})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
@@ -384,7 +385,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.record('incompatible_save_' + old, page, snap, seededLayoutId=old, rewrittenLayoutId=LAYOUT_ID,
                         savedPlayer={'x': save['player']['x'], 'y': save['player']['y']})
             results[old] = snap['notice']
-        self.assertEqual(len(results), 6)
+        self.assertEqual(len(results), 7)
 
     def test_04_current_layout_save(self):
         first = self.open()
@@ -936,7 +937,7 @@ class Task651Tests(unittest.TestCase):
         by_id = {e['id']: e for e in live}
         for m in self.measurements['fragments']:
             for k, poly in enumerate(m['polys']):
-                e = by_id['%s-body%d' % (m['id'], k)]
+                e = by_id[svg_conv.body_id(m, k)]
                 self.assertEqual(e['role'], m.get('surfaceRole', KIND_ROLE[m['kind']]), e['id'])
                 self.assertTrue(e['grapplable'], e['id'])
                 self.assertEqual(e['collection'], 'elements')

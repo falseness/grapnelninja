@@ -1,9 +1,18 @@
 # Generated level
 
-Layout `extended-mountain-v21` (shipped, TASK-774) is the default generator
+Layout `extended-mountain-v22` (shipped, TASK-781) is the default generator
 output (`tools/retune_extended_level.py` with no layout flag =
 `--min-side-scope all --middle-purple --upper-purple --purple-rest
---ext-summit --ext-summit-gauntlet --sky-spire`). It is v20 with section
+--ext-summit --ext-summit-gauntlet --sky-spire --safe-walls`). It is v21 with
+a green wall (bounce + grapple, 240 x 1,080 = 2R) on the outer side of every
+safe space S0..S8 / T0..T8, so a player who swings or falls outward from a
+safe space hits the wall instead of falling toward the map edge (18 bodies
+`XS-Sk-WALL` / `SP-Tk-WALL`, see "Safe-space walls" below). No other body
+moved. `--no-safe-walls` gives the previous shipped v21 byte for byte (same
+guidelines file). v21 saves restart at the spawn.
+
+Layout `extended-mountain-v21` (previous, TASK-774) is the generator output
+with `--no-safe-walls` and no layout flag. It is v20 with section
 `SEC-sky-spire` ("Sky Spire" / "Небесный шпиль") added above the gauntlet
 finish (TASK-762..773, `SKY_SPIRE`, described below): eight tall purple zones
 Y1..Y8 with green safe spaces T0..T8 and a new finish `SP-SUMMIT`.
@@ -383,18 +392,23 @@ or a complete from-spawn climb. Failed intended-route searches are retained in
 `artifacts/levels/shortcut-review/`; lack of a found route is not a proof that
 a passage is impossible, and the level is not certified fully playable.
 
-### Safe-space walls (candidate, TASK-779)
+### Safe-space walls (TASK-779, shipped v22 in TASK-781)
 
-`--safe-walls` (off by default; the shipped v21 output is byte-identical without
-it) gives each safe space S0..S8 / T0..T8 one green wall body (bounce +
+`--safe-walls` (on by default with the Sky Spire since v22; `--no-safe-walls`
+reproduces v21) gives each safe space S0..S8 / T0..T8 one green wall body (bounce +
 grapple) on its outer side: 240 x 1,080 (2R), its inner face 600 outward from
 the outermost panel, covering the outward-escape band the TASK-778 probe found
 (`WALL_BANDS`). The wall is an extra body of the outermost panel, recorded as
 `safeSpaces[].wall {id XS-Sk-WALL / SP-Tk-WALL, fragment, x0, x1, y0, y1, band,
-adjusted}` and `safeWalls`. The top and bottom are bevelled (a 240 edge breaks
+adjusted}` and `safeWalls`. Since v22 the wall's level element id appends that
+semanticId to the body id (`P91-body1-XS-S3-WALL`, `convert_extended_mountain_svg.body_id`),
+so `leveldata.js` names all 18 walls. The top and bottom are bevelled (a 240 edge breaks
 the 270 side rule). S0, T0, T2, T6 and T8 have no room outward (their G1 ends
 within 840 of x = -1100). Their wall stands at the map edge, just above or below
 G1 (>= 600 clear), with its full-height face on the map edge. Walls keep >= 1,620
 from every yellow band and stay out of pump reach under later ledges and slabs.
 Transfers whose fragment union now includes a wall are re-measured
-(`safeWalls.transferChanges`; every gap is still >= 1,200).
+(`safeWalls.transferChanges`; every gap is still >= 1,200). The TASK-780 audit
+found no shortcut through or from any wall. Known gap: at the five map-edge
+spaces a fall off the outer end of G1 itself (flush with x = -1100) can still
+leave the map, because the wall cannot stand at G1's height.
