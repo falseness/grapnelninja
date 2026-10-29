@@ -11,11 +11,21 @@ contract, level-guidelines.md Sky Spire addendum: the slabs span >= 4,320 vertic
 the fall-recovery depth and land on the exit ledge's top with no rope. Each case runs twice and both logs must be
 identical.
 
+test_climb_transfers replays the 27 safe-space climb transfers of tools/fixtures/spire-climb-inputs.json (T0..T8: start
+ledge -> SP-Tk-G1 -> SP-Tk-G2 -> SP-Y(k+1)-APPROACH; T0 starts on the gauntlet finish ledge XS-SUMMIT, T8 ends on
+SP-SUMMIT; at most 2 grapple panels per safe space) per transfer, as tools/test_gauntlet_route.py does for S0..S8:
+tools/probe_level_routes.js ROUTE_PROBE places the player at zero speed drop 300 above the source top, then only document
+mouse events and physics(); the first contact/attach on a later panel must be the target. Each transfer runs twice and
+must be identical. test_full_spire_run is the chained run from the gauntlet finish ledge to the new finish: T0, Y1, T1,
+..., Y8, T8 in order (the zone legs are the spire-inputs-Yk.json crossings), each leg ending on the panel the next one
+starts from, every leg passing, and the last transfer (SP-T8-G2 -> SP-SUMMIT) replayed on until climbStats.completed
+inside the level's finish rectangle. Legs already run by test_climb_transfers / test_yk_crossing are reused.
+
 Level: SPIRE_CANDIDATE=DIR (extended-mountain.level.json and extended-mountain-measurements.json). Without it the
 shipped artifacts/levels data is used when it has skySpire (from TASK-774); otherwise the candidate is regenerated into a
 temporary directory (tools/retune_extended_level.py --sky-spire, then tools/import_level_svg.py; ~5 min).
 
-SPIRE_EVIDENCE_DIR=DIR writes traversals.json (compact). No default evidence directory.
+SPIRE_EVIDENCE_DIR=DIR writes traversals.json and climbs.json (compact). No default evidence directory.
 
     python3 tools/test_spire_route.py -v
     python3 tools/test_spire_route.py -k y1
@@ -24,6 +34,8 @@ SPIRE_EVIDENCE_DIR=DIR writes traversals.json (compact). No default evidence dir
     python3 tools/test_spire_route.py -k y4
     python3 tools/test_spire_route.py -k y5
     python3 tools/test_spire_route.py -k y6
+    python3 tools/test_spire_route.py -k climb
+    python3 tools/test_spire_route.py -k full_spire_run
 """
 from contextlib import ExitStack
 import hashlib
@@ -39,7 +51,7 @@ TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
 sys.path.insert(0, str(TOOLS))
 
-from test_gauntlet_route import LEG, NAMES, RECOVERY_DEPTH, REST_SPEED, REST_TICKS, SHIPPED, SOURCE, sha
+from test_gauntlet_route import CLIMB, LEG, NAMES, POLICY_KEYS, RECOVERY_DEPTH, REST_SPEED, REST_TICKS, SHIPPED, SOURCE, sha
 
 EVIDENCE = os.environ.get('SPIRE_EVIDENCE_DIR')
 CANDIDATE = os.environ.get('SPIRE_CANDIDATE')
@@ -47,8 +59,12 @@ PREFIX = 'SP-'
 ZONES = ('Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6', 'Y7', 'Y8')
 INPUTS = {z: TOOLS / 'fixtures' / ('spire-inputs-%s.json' % z) for z in ZONES}
 ZONE_SIZE = (6912, 8640)
+CLIMBS = TOOLS / 'fixtures' / 'spire-climb-inputs.json'
+START, FINISH = 'XS-SUMMIT', PREFIX + 'SUMMIT'  # the gauntlet finish ledge and the Sky Spire finish ledge
 DESCENT = 4320  # tall-zone contract: slabs span >= 4,320 vertically, the crossing goes down at least that far
 OUT = {}
+CLIMB_OUT = {}
+DONE = {}  # leg results of this run, shared by the per-leg tests and test_full_spire_run
 
 
 def level_dir(stack):
@@ -68,6 +84,9 @@ def tearDownModule():
     if EVIDENCE and OUT.get('zones'):
         Path(EVIDENCE).mkdir(parents=True, exist_ok=True)
         (Path(EVIDENCE) / 'traversals.json').write_text(json.dumps(OUT, separators=(',', ':')) + '\n')
+    if EVIDENCE and CLIMB_OUT:
+        Path(EVIDENCE).mkdir(parents=True, exist_ok=True)
+        (Path(EVIDENCE) / 'climbs.json').write_text(json.dumps(CLIMB_OUT, separators=(',', ':')) + '\n')
 
 
 class SpireRouteTests(unittest.TestCase):
@@ -94,6 +113,81 @@ class SpireRouteTests(unittest.TestCase):
                           'tools/fixtures/spire-inputs-Yk.json; nothing written after the zero-speed fixture. path: [tick, x, y] every 5 ticks.',
                    level=source, levelDir=str(cls.dir), layoutId=cls.level['layoutId'],
                    levelHashes={n: sha(cls.dir / n) for n in NAMES}, zones={})
+
+    @classmethod
+    def probe_page(cls):
+        # Climb transfers run on their own page: ROUTE_PROBE patches applyBounce and rendering hooks.
+        if not hasattr(cls, 'probe'):
+            from browser_test_support import wait_for_boot_run
+            cls.probe = cls.browser.new_page()
+            cls.probe.errors = []
+            cls.probe.on('pageerror', lambda e: cls.probe.errors.append(str(e)))
+            cls.probe.goto(cls.url)
+            wait_for_boot_run(cls.probe)
+            cls.probe.add_script_tag(path=str(TOOLS / 'probe_level_routes.js'))
+        return cls.probe
+
+    def safe_spaces(self):
+        fs = {f['id']: f for f in self.m['fragments']}
+        out = []
+        for s in self.m['skySpire']['safeSpaces']:
+            ids = [s['start']] + [p['id'] for p in s['grapplePanels']] + [s['end']]
+            out.append(dict(id=s['id'], side=s['side'], panels=[fs[p['id']]['semanticId'] for p in s['grapplePanels']],
+                            transfers=[[fs[a]['semanticId'], fs[b]['semanticId']] for a, b in zip(ids, ids[1:])]))
+        return out
+
+    def climb(self, t, finish=False):
+        page = self.probe_page()
+        pol = {k: t[k] for k in POLICY_KEYS if k in t}
+        self.assertEqual(pol['drop'], 300)
+        o = dict(pol, source=self.ids[t['source']], target=self.ids[t['target']], level=self.level, untilFinish=finish)
+        runs = [page.evaluate(CLIMB, o) for _ in range(2)]
+        self.assertEqual(runs[0], runs[1])
+        self.assertEqual(page.errors, [])
+        r = runs[0]
+        self.assertIsNotNone(r['hit'], t)
+        self.assertEqual(r['hit']['id'], self.ids[t['target']] + '-body0', t)
+        self.assertEqual((r['setup']['vx'], r['setup']['vy']), (0, 0))
+        row = dict(source=t['source'], target=t['target'], policy=pol, hooks=r['hooks'],
+                   hit=dict(kind=r['hit']['kind'], tick=r['hit']['tick']), ticks=r['ticks'])
+        if finish:
+            self.assertTrue(r['completed'], r)
+            f, q = self.level['finish'], r['finish']
+            self.assertAlmostEqual(f['top'], self.m['skySpire']['finish']['finishTop'], places=6)
+            self.assertTrue(f['left'] <= q['x'] <= f['right'] and f['top'] <= q['y'] <= f['bottom'], (q, f))
+            self.assertGreater(q['tick'], r['hit']['tick'])
+            row['finish'] = dict(completed=r['completed'], tick=q['tick'], at=[round(q['x'], 3), round(q['y'], 3)])
+        return row
+
+    def climb_transfers(self):
+        if 'climbs' in DONE:
+            return DONE['climbs']
+        rec = json.loads(CLIMBS.read_text())
+        spaces = self.safe_spaces()
+        self.assertEqual([s['id'] for s in spaces], ['T%d' % k for k in range(len(ZONES) + 1)])
+        self.assertEqual(spaces[0]['transfers'][0][0], START)
+        self.assertEqual(spaces[-1]['transfers'][-1][1], FINISH)
+        want = [tr for s in spaces for tr in s['transfers']]
+        self.assertEqual([[t['source'], t['target']] for t in rec['transfers']], want)
+        self.assertEqual(len(want), 27)
+        by = {(t['source'], t['target']): t for t in rec['transfers']}
+        out = []
+        for s in spaces:
+            self.assertLessEqual(len(s['panels']), 2, s)
+            rows = [self.climb(by[(a, b)], finish=b == FINISH) for a, b in s['transfers']]
+            # Grapple panels the rope hooks in this safe space (pump sources and targets; ledges are not panels).
+            used = sorted({p for r in rows for p in (r['source'], r['target'])} & set(s['panels']))
+            self.assertLessEqual(len(used), 2, used)
+            out.append(dict(space=s['id'], grapplePanels=s['panels'], panelCount=len(s['panels']), grapplePanelsUsed=used,
+                            transfers=rows, hooks=sum(r['hooks'] for r in rows)))
+        DONE['climbs'] = out
+        return out
+
+    def zone_leg(self, z):
+        if z not in DONE:
+            DONE[z] = self.crossing(z)
+        OUT['zones'][z] = DONE[z]
+        return DONE[z]
 
     def test_00_every_filled_zone_has_a_case(self):
         filled = sorted(z for z, g in self.spire.items() if g['slabs'])
@@ -189,28 +283,70 @@ class SpireRouteTests(unittest.TestCase):
                     secondRun=dict(identical=runs[0] == runs[1], ticks=runs[1]['ticks'], final=runs[1]['final']))
 
     def test_y1_crossing(self):
-        OUT['zones']['Y1'] = self.crossing('Y1')
+        self.zone_leg('Y1')
 
     def test_y2_crossing(self):
-        OUT['zones']['Y2'] = self.crossing('Y2')
+        self.zone_leg('Y2')
 
     def test_y3_crossing(self):
-        OUT['zones']['Y3'] = self.crossing('Y3')
+        self.zone_leg('Y3')
 
     def test_y4_crossing(self):
-        OUT['zones']['Y4'] = self.crossing('Y4')
+        self.zone_leg('Y4')
 
     def test_y5_crossing(self):
-        OUT['zones']['Y5'] = self.crossing('Y5')
+        self.zone_leg('Y5')
 
     def test_y6_crossing(self):
-        OUT['zones']['Y6'] = self.crossing('Y6')
+        self.zone_leg('Y6')
 
     def test_y7_crossing(self):
-        OUT['zones']['Y7'] = self.crossing('Y7')
+        self.zone_leg('Y7')
 
     def test_y8_crossing(self):
-        OUT['zones']['Y8'] = self.crossing('Y8')
+        self.zone_leg('Y8')
+
+    def test_climb_transfers(self):
+        spaces = self.climb_transfers()
+        fin = spaces[-1]['transfers'][-1]['finish']
+        self.assertTrue(fin['completed'])
+        CLIMB_OUT.update(inputs=str(CLIMBS.relative_to(ROOT)), inputsSha256=sha(CLIMBS), layoutId=self.level['layoutId'],
+                         levelHashes={n: sha(self.dir / n) for n in NAMES}, transfers=sum(len(s['transfers']) for s in spaces),
+                         method='ROUTE_PROBE per transfer: zero-speed fixture drop 300 above the source top, then only '
+                                'document mouse events and physics(); first later-panel contact/attach == target; run twice '
+                                '(identical). grapplePanelsPerSafeSpace = grapple panels the climb hooks in each safe space (<= 2, asserted); hooks = attaches counted '
+                                'by physics() (climbStats.grapples, pumps included), reported, not capped; '
+                                'SP-T8-G2 -> SP-SUMMIT replayed on until climbStats.completed.',
+                         grapplePanelsPerSafeSpace={s['space']: len(s['grapplePanelsUsed']) for s in spaces},
+                         maxPanelsPerSafeSpace=max(s['panelCount'] for s in spaces), safeSpaces=spaces,
+                         finish=dict(fin, transfer=spaces[-1]['transfers'][-1]['target']))
+
+    def test_full_spire_run(self):
+        # The chained run: T0 (from the gauntlet finish ledge), Y1, T1, ..., Y8, T8; each leg passing and ending on the
+        # panel the next one starts from; the last transfer reaches the Sky Spire finish.
+        spaces = self.climb_transfers()
+        legs, at = [], START
+        for k, s in enumerate(spaces):
+            for t in s['transfers']:
+                self.assertEqual(t['source'], at)
+                legs.append(dict(leg=s['space'], source=t['source'], target=t['target'], hooks=t['hooks'], hitTick=t['hit']['tick']))
+                at = t['target']
+            if k < len(ZONES):
+                z = ZONES[k]
+                self.assertEqual(at, PREFIX + z + '-APPROACH')
+                r = self.zone_leg(z)
+                self.assertEqual(r['landing']['on'], PREFIX + z + '-EXIT')
+                self.assertEqual(r['landing']['rope'], {'grappled': False, 'throwed': False})
+                legs.append(dict(leg=z, source=at, target=r['landing']['on'], landingTick=r['landing']['tick'],
+                                 descent=r['descentUnderApproach']))
+                at = r['landing']['on']
+        self.assertEqual(at, FINISH)
+        self.assertEqual(len(legs), 27 + len(ZONES))
+        fin = spaces[-1]['transfers'][-1]['finish']
+        self.assertTrue(fin['completed'])
+        OUT['fullRun'] = CLIMB_OUT['fullRun'] = dict(start=START, finish=FINISH, legs=legs, count=len(legs), allPassed=True,
+                                                     completed=fin['completed'], finishTick=fin['tick'], finishAt=fin['at'],
+                                                     hooksTotal=sum(l.get('hooks', 0) for l in legs))
 
 
 if __name__ == '__main__':
