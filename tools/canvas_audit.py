@@ -17,10 +17,19 @@ of each source on the page (likely a GPU upload of a CPU-backed canvas), in px
 (source width * height) after boot: the most in one frame, frames over 1 Mpx
 later than 2 s after boot, px by canvas creator, and every first draw of a
 Grapple Over palette strip (all phases), each with its strip's build frame:
-firstDrawsOk when every one is in boot or in that build frame. Counts only: headless timings mean
-nothing.
+firstDrawsOk when every one is in boot or in that build frame. large: every
+single first draw of >= 1 Mpx after boot (creator, px, frame, phase), and
+framesOver1MpxNotAllowlisted the frames later than 2 s after boot holding one
+not allowed by --allowlist (JSON [{creator, px, reason, phases?}]: a draw by
+that creator, in one of phases when given, e.g. ["resize"]). --resize
+adds a last phase: the viewport goes to 1280x720 and back, ~1.5 s each, so
+what a resize rebuilds shows up in large and resize; that phase is left out of
+perPass, maxPerFrame, maxPxPerFrame, framesOver1MpxAfter2s and
+smoothCheck.afterBoot, which stay comparable with runs without it. A canvas
+resized in place (same element) is not a new first draw. Counts only:
+headless timings mean nothing.
 
-    python3 tools/canvas_audit.py [--mode single|double] [--out canvas-audit.json]
+    python3 tools/canvas_audit.py [--mode single|double] [--resize] [--allowlist FILE] [--out canvas-audit.json]
 """
 import argparse
 import json
@@ -37,6 +46,7 @@ VIEWPORT = {'width': 1706, 'height': 932}
 DPR = 1.5
 HOLD_STEPS = 6       # x 250 ms at each walk point
 SWEEP_STEPS = 4      # x 250 ms at each sweep point
+RESIZE_VIEWPORT = {'width': 1280, 'height': 720}
 
 INIT = r'''
 window.__audit = {frame: 0, frameT: 0, phase: 'boot', canvases: [], glowMisses: [], smoothBuilds: [], smooth: null,
@@ -125,7 +135,7 @@ def palette_index(page):
 def smooth_check(all_builds, palette_draws):
     """Palette strip builds: after boot (expected 0), sizes, bytes; palette first draws before play or in
     their strip's build frame."""
-    after = [b for b in all_builds if b['phase'] != 'boot']
+    after = [b for b in all_builds if b['phase'] not in ('boot', 'resize')]
     sizes = sorted({(b['w'], b['h']) for b in all_builds})
     last = {}
     for b in all_builds:
@@ -135,9 +145,16 @@ def smooth_check(all_builds, palette_draws):
             'firstDrawsOk': all(d['phase'] == 'boot' or d['frame'] == d['buildFrame'] for d in palette_draws)}
 
 
-def first_draw(draws, boot_end_t):
-    """Px first drawn per frame after boot (raw entries: frame, t, phase, px, creator, palette)."""
-    walked = [d for d in draws if d['phase'] != 'boot']
+def allowlisted(draw, allowlist):
+    return any(e['creator'] == draw['creator'] and draw['phase'] in e.get('phases', [draw['phase']])
+               for e in allowlist)
+
+
+def first_draw(draws, boot_end_t, allowlist=()):
+    """Px first drawn per frame after boot (raw entries: frame, t, phase, px, creator, palette); first draws
+    of >= 1 Mpx and the frames holding one not allowed by allowlist."""
+    walked = [d for d in draws if d['phase'] not in ('boot', 'resize')]
+    large = [d for d in draws if d['phase'] != 'boot' and d['px'] >= 1e6]
     per_frame, frame_t, by_creator = {}, {}, {}
     for d in walked:
         per_frame[d['frame']] = per_frame.get(d['frame'], 0) + d['px']
@@ -146,12 +163,16 @@ def first_draw(draws, boot_end_t):
     return {'maxPxPerFrame': max(per_frame.values(), default=0),
             'framesOver1MpxAfter2s': sum(px > 1e6 and frame_t[f] > boot_end_t + 2000 for f, px in per_frame.items()),
             'byCreator': dict(sorted(by_creator.items(), key=lambda kv: -kv[1])),
+            'large': [{'creator': d['creator'], 'px': d['px'], 'frame': d['frame'], 'phase': d['phase'],
+                       'allowlisted': allowlisted(d, allowlist)} for d in large],
+            'framesOver1MpxNotAllowlisted': len({d['frame'] for d in large
+                                                 if d['t'] > boot_end_t + 2000 and not allowlisted(d, allowlist)}),
             'paletteFirstDraws': [{'index': d['palette'], 'frame': d['frame'], 'phase': d['phase'], 'px': d['px'],
                                    'buildFrame': d['buildFrame']}
                                   for d in draws if d['palette'] is not None]}
 
 
-def audit(mode):
+def audit(mode, resize=False, allowlist=()):
     walk = json.loads(WALK.read_text())
     errors = []
     with ExitStack() as stack:
@@ -178,6 +199,11 @@ def audit(mode):
         for point in walk['sweep']:
             hold(page, point, SWEEP_STEPS)
             sweep_palettes.append(palette_index(page))
+        if resize:
+            page.evaluate("() => { __audit.phase = 'resize' }")
+            for size in (RESIZE_VIEWPORT, VIEWPORT):
+                page.set_viewport_size(size)
+                hold(page, walk['points'][0], HOLD_STEPS)
         page.evaluate("() => { __audit.phase = 'done' }")
         raw = page.evaluate('''() => ({canvases: __audit.canvases, glowMisses: __audit.glowMisses,
             smoothBuilds: __audit.smoothBuilds, firstDraws: __audit.firstDraws, frames: __audit.frame, grapnelMode: floors[0].grapnelMode,
@@ -191,8 +217,9 @@ def audit(mode):
         errors.append('grapnelMode %s, expected %s' % (raw['grapnelMode'], mode))
 
     builds = [b for b in raw['smoothBuilds'] if b['phase'] != 'boot']
-    first = first_draw(raw['firstDraws'], boot_end_t)
-    walked = [c for c in raw['canvases'] if c['phase'] != 'boot']
+    first = first_draw(raw['firstDraws'], boot_end_t, allowlist)
+    walked = [c for c in raw['canvases'] if c['phase'] not in ('boot', 'resize')]
+    resized = [c for c in raw['canvases'] if c['phase'] == 'resize']
     creators, frames, by_file = {}, {}, {}
     contact = {'created': 0, 'materialBuilds': 0, 'frames': {}}
     for c in walked:
@@ -235,6 +262,8 @@ def audit(mode):
         'smoothBuilds': builds,
         'smoothCheck': smooth_check(raw['smoothBuilds'], first['paletteFirstDraws']),
         'firstDraw': first,
+        'resize': {'canvases': len(resized), 'paletteBuilds': sum(b['phase'] == 'resize' for b in raw['smoothBuilds']),
+                   'creators': sorted({c['creator'] for c in resized})} if resize else None,
         'sweepPalettes': sweep_palettes,
         'caches': raw['caches'],
         'errors': errors,
@@ -244,9 +273,12 @@ def audit(mode):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--mode', choices=('single', 'double'), default='single')
+    parser.add_argument('--resize', action='store_true', help='end with a resize to 1280x720 and back')
+    parser.add_argument('--allowlist', help='JSON [{creator, px, reason, phases?}] of allowed >= 1 Mpx first draws')
     parser.add_argument('--out', default='canvas-audit.json')
     args = parser.parse_args()
-    result = audit(args.mode)
+    allowlist = json.loads(Path(args.allowlist).read_text()) if args.allowlist else []
+    result = audit(args.mode, args.resize, allowlist)
     Path(args.out).write_text(json.dumps(result, separators=(',', ':')) + '\n')
     print('mode %s: perPass %s, maxPerFrame %d, glow text misses %s, glyph misses %s, smoothBuilds %d, errors %d -> %s' % (
         args.mode, result['perPass'], result['maxPerFrame'], result['glowMisses']['text'], result['glowMisses']['glyph'],
@@ -256,6 +288,8 @@ def main():
     print('firstDraw maxPxPerFrame %d, framesOver1MpxAfter2s %d, paletteFirstDraws %s, top creators %s' % (
         fd['maxPxPerFrame'], fd['framesOver1MpxAfter2s'], json.dumps(fd['paletteFirstDraws']),
         json.dumps(dict(list(fd['byCreator'].items())[:4]))))
+    print('large first draws %s; framesOver1MpxNotAllowlisted %d; resize %s' % (
+        json.dumps(fd['large']), fd['framesOver1MpxNotAllowlisted'], json.dumps(result['resize'])))
     print('bounce contact %s; maxPerFrameByFile %s' % (
         json.dumps(result['bounceContact']), json.dumps(result['maxPerFrameByFile'])))
     return 1 if result['errors'] else 0

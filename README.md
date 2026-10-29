@@ -56,11 +56,46 @@ caches created canvases during play:
    the tiles for all 8 bands together and keeps them out of the glow sprite
    LRU. That is about 120 MB, which a full climb already held before.
 
+### First draws (GPU uploads)
+
+A canvas painted on the CPU is probably uploaded to the GPU the first time it
+is drawn, so a large image first drawn mid-play can freeze a frame even when
+no canvas is created. Palette strips and parallax tiles are therefore built
+and drawn once into a 1x1 canvas ("warmed") right after they are built, at
+boot and after a resize. Crystal/rock layer tiles depend only on the
+viewport size, so they are built at boot and again only on a resize.
+
+`?visualsPerf=1` detects first draws while recording. It wraps `drawImage`
+and counts each source the first time it is drawn on the page. In the
+exported `visuals-performance.json`:
+
+- `samples[].fd` is the px (source width x height) first drawn in that
+  frame. It is left out when 0.
+- `freezes[].context.firstDraws` lists the 3 largest first draws of the
+  freeze frame as `{src, w, h}`. `src` is the `file:line` that created the
+  canvas, or an image url or type. Glow sprites and parallax tiles show as
+  `render/glowsprites.js:241`, and palette strips and layer tiles as
+  `render/effects.js:<line>`.
+  A freeze whose `firstDraws` holds a multi-Mpx canvas that is not a resize
+  points to an image that still needs building and warming ahead of time.
+  An empty list means the freeze was not a first draw.
+- `freezes[].context.palette` is the Grapple Over palette blend of the last
+  drawn frame, `{from, to, t}` (band indices and blend weight), or null
+  outside Grapple Over. A `t` between 0 and 1 means the freeze happened
+  inside a band blend zone.
+
+### Checking
+
 To check after changing render code, re-run
-`python3 tools/canvas_audit.py --mode single|double --out <file>`. It holds the
-ninja at the 12 recorded freeze points (tools/fixtures/freeze-walk.json) for 2
-passes plus a vertical sweep in headless Chromium and counts the canvases
-created. Expected: pass 2 total (`perPass[1]`) <= 3, `maxPerFrame` <= 4,
-`glowMisses.text` 0, `smoothCheck.afterBoot` 0, `smoothCheck.firstDrawsOk`
-true and `firstDraw.maxPxPerFrame` <= 500000. The audit counts canvases
-only; headless frame times say nothing about real freezes.
+`python3 tools/canvas_audit.py --mode single|double [--resize] [--allowlist <file>] --out <file>`.
+It holds the ninja at the 12 recorded freeze points (tools/fixtures/freeze-walk.json) for 2
+passes plus a vertical sweep in headless Chromium. It counts the canvases
+created and the px first drawn. Expected: pass 2 total (`perPass[1]`) <= 3,
+`maxPerFrame` <= 4, `glowMisses.text` 0, `smoothCheck.afterBoot` 0,
+`smoothCheck.firstDrawsOk` true, `firstDraw.maxPxPerFrame` <= 500000 and
+`firstDraw.framesOver1MpxNotAllowlisted` 0. `firstDraw.large` lists every
+single first draw of 1 Mpx or more after boot. `--resize` adds a last
+phase (1280x720 and back) whose rebuilds appear only in `large` and `resize`.
+The allowlist is a JSON list of `{creator, px, reason, phases}` for the
+first draws that are only expected on a resize. The audit counts canvases
+and px only; headless frame times say nothing about real freezes.
