@@ -1,13 +1,14 @@
-"""Palette images built ahead (TASK-757) draw the same frames as before.
+"""Palette strips (TASK-760) draw the same frames as the full-frame images.
 
 Frozen-clock Grapple Over frames with the camera at three heights (a band
 core, mid-blend between two bands, the next band core) are rendered at
-1706x932 DPR 1.5 by the worktree and by a git archive copy of the revision
-before the change (PALETTE_PREBUILD_BASELINE, default f4358c6). Each height is
-drawn twice in a row (the first draw may build or pre-build images, the
-second only reuses them); every frame's rgba sha256 must match the baseline.
-The worktree must also have built the neighbour palette ahead. Writes
-pixels.json to PALETTE_PREBUILD_EVIDENCE_DIR (default artifacts/TASK-757).
+1706x932 DPR 1.5 and 1280x720 DPR 1 (neither width a multiple of 256) by the
+worktree and by a git archive copy of the revision before the change
+(PALETTE_PREBUILD_BASELINE, default 07bcf62, full-frame palette images). Each
+height is drawn twice in a row; every frame's rgba sha256 must match the
+baseline. The worktree must hold one 256 px wide strip of the frame's device
+height per palette, all built before the frames (no build in them). Writes
+pixels.json to PALETTE_PREBUILD_EVIDENCE_DIR (default artifacts/TASK-760).
 
     cd tools && python3 -m unittest -v test_palette_prebuild
 """
@@ -28,10 +29,9 @@ from perf_mobile import export_rev
 from test_hud_glyphs import serve
 
 ROOT = Path(__file__).resolve().parent.parent
-BASELINE = os.environ.get('PALETTE_PREBUILD_BASELINE', 'f4358c6')
-EVIDENCE = Path(os.environ.get('PALETTE_PREBUILD_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-757'))
-VIEWPORT = {'width': 1706, 'height': 932}
-DPR = 1.5
+BASELINE = os.environ.get('PALETTE_PREBUILD_BASELINE', '07bcf62')
+EVIDENCE = Path(os.environ.get('PALETTE_PREBUILD_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-760'))
+VIEWPORTS = (({'width': 1706, 'height': 932}, 1.5), ({'width': 1280, 'height': 720}, 1))
 # camera rise as a share of bandHeight: band 1 core, boundary 1/2 (t 0.5), band 2 core
 HEIGHTS = (('core', 1.5), ('blend', 2.0), ('nextCore', 2.5))
 
@@ -55,6 +55,9 @@ RENDER = '''bands => {
     screen.trackGrappleOver(true)
     // camera centre exactly at -rise (drawBackgroundLayer's cameraY)
     screen.y = height / scale[version] / 2 + rise
+    const strips = () => drawGrappleOverPalette.images ?
+        [...drawGrappleOverPalette.images].map(([i, o]) => o.image ? [i, o.image.canvas.width, o.image.canvas.height] : [i]) : []
+    const before = strips()
     const shots = []
     for (let i = 0; i < 2; i++)
     {
@@ -62,9 +65,11 @@ RENDER = '''bands => {
         const p = visualEffects.background.palette
         shots.push({png: canvas.toDataURL('image/png'), palette: [p.from, p.to, Math.round(p.t * 1000) / 1000]})
     }
-    const images = drawGrappleOverPalette.images
-    return {shots, images: images ? [...images.keys()] : [],
-            ahead: visualEffects.background.paletteAhead || null}
+    // no strip is (re)built by the draws: same sizes and the same key before and after
+    const key = drawGrappleOverPalette.strips ? drawGrappleOverPalette.strips.key : null
+    return {shots, before, after: strips(), canvas: [canvas.width, canvas.height], same: JSON.stringify(before) === JSON.stringify(strips()) &&
+            key === (drawGrappleOverPalette.strips ? drawGrappleOverPalette.strips.key : null),
+            palettes: GRAPPLE_OVER_THEME.palettes.length}
 }'''
 
 
@@ -86,8 +91,8 @@ class PalettePrebuildTests(unittest.TestCase):
         root, cls.sha = export_rev(BASELINE, stack.callback)
         cls.baseline_url = serve(root, stack.callback)
 
-    def render(self, url):
-        context = self.browser.new_context(viewport=VIEWPORT, device_scale_factor=DPR)
+    def render(self, url, viewport, dpr):
+        context = self.browser.new_context(viewport=viewport, device_scale_factor=dpr)
         try:
             page = context.new_page()
             errors = []
@@ -103,27 +108,32 @@ class PalettePrebuildTests(unittest.TestCase):
 
     def test_01_frames_match_baseline(self):
         EVIDENCE.mkdir(parents=True, exist_ok=True)
-        new = self.render(self.url)
-        old = self.render(self.baseline_url)
-        frames = []
-        for (name, bands), a, b in zip(HEIGHTS, old, new):
-            for draw, (sa, sb) in enumerate(zip(a['shots'], b['shots'])):
-                pa, pb = decode(sa['png']), decode(sb['png'])
-                diff = np.abs(pa - pb)
-                frames.append({'height': name, 'rise': bands, 'draw': draw + 1, 'palette': sb['palette'],
-                               'oldSha': sha(pa), 'newSha': sha(pb), 'maxAbs': int(diff.max()),
-                               'same': sha(pa) == sha(pb) and sa['palette'] == sb['palette']})
-        summary = {'baseline': self.sha, 'viewport': [VIEWPORT['width'], VIEWPORT['height']], 'dpr': DPR,
-                   'frames': frames, 'images': [b['images'] for b in new], 'ahead': [b['ahead'] for b in new],
+        frames, strips = [], []
+        for viewport, dpr in VIEWPORTS:
+            new = self.render(self.url, viewport, dpr)
+            old = self.render(self.baseline_url, viewport, dpr)
+            for (name, bands), a, b in zip(HEIGHTS, old, new):
+                for draw, (sa, sb) in enumerate(zip(a['shots'], b['shots'])):
+                    pa, pb = decode(sa['png']), decode(sb['png'])
+                    diff = np.abs(pa - pb)
+                    frames.append({'viewport': [viewport['width'], viewport['height'], dpr], 'height': name,
+                                   'rise': bands, 'draw': draw + 1, 'palette': sb['palette'],
+                                   'oldSha': sha(pa), 'newSha': sha(pb), 'maxAbs': int(diff.max()),
+                                   'same': sha(pa) == sha(pb) and sa['palette'] == sb['palette']})
+                strips.append({'viewport': [viewport['width'], viewport['height'], dpr], 'height': name,
+                               'canvas': b['canvas'], 'strips': b['after'], 'noBuildInDraws': b['same'],
+                               'palettes': b['palettes']})
+        summary = {'baseline': self.sha, 'frames': frames, 'strips': strips,
                    'allSame': all(f['same'] for f in frames)}
         (EVIDENCE / 'pixels.json').write_text(json.dumps(summary, separators=(',', ':')) + '\n')
-        self.assertEqual([f['palette'] for f in frames if f['draw'] == 1], [[1, 1, 0], [1, 2, 0.5], [2, 2, 0]])
+        self.assertEqual([f['palette'] for f in frames if f['draw'] == 1], [[1, 1, 0], [1, 2, 0.5], [2, 2, 0]] * 2)
         for f in frames:
             self.assertTrue(f['same'], f)
-        # the band 1 core already holds its upper neighbour (2) and the blend its next one (3)
-        self.assertIn(2, new[0]['images'])
-        self.assertIn(3, new[1]['images'])
-        self.assertTrue(all(len(images) <= 4 for images in summary['images']), summary['images'])
+        for row in strips:
+            # one strip per palette, 256 px x the frame's device height, none built by the frames
+            self.assertEqual([s[0] for s in row['strips']], list(range(row['palettes'])), row)
+            self.assertTrue(all(s[1:] == [256, row['canvas'][1]] for s in row['strips']), row)
+            self.assertTrue(row['noBuildInDraws'], row)
 
 
 if __name__ == '__main__':

@@ -11,7 +11,6 @@ function drawBackgroundLayer()
     const cameraY = height / scale[version] / 2 - screen.y
     const palette = visualEffects.background.palette = version === 'grapple_over' ?
         grappleOverBackdropPalette(cameraY) : null
-    visualEffects.background.paletteAhead = palette ? grappleOverPaletteAhead(cameraY, palette) : []
     visualEffects.background.draw()
 }
 
@@ -37,39 +36,40 @@ function grappleOverBackdropPalette(cameraY)
     return {from: boundary - 1, to: boundary, t: x * x * (3 - 2 * x)}
 }
 
-// How far (world units) before a neighbour band's blend zone its smooth palette
-// image is built: one screen height
-const GRAPPLE_OVER_PALETTE_LOOKAHEAD = LOGICAL_HEIGHT / scale.grapple_over
-// Frame-sized smooth palette images kept: the current pair plus one neighbour
-// built ahead (about 14 MB each at 2559x1398)
-const GRAPPLE_OVER_PALETTE_IMAGES = 4
+// Width (device px) of a Grapple Over palette strip: the dither noise tile
+// (GRADIENT_DITHER), so strips tiled from the frame origin repeat the noise
+// exactly as one frame-wide image would
+const GRAPPLE_OVER_PALETTE_STRIP = 256
 
-// Neighbour palettes (below palette.from, above palette.to) whose blend zone
-// starts within GRAPPLE_OVER_PALETTE_LOOKAHEAD of the camera, nearest first.
-function grappleOverPaletteAhead(cameraY, palette)
+// Builds every palette's strip (paint(target, index)) for bounds in context's
+// device px: NOISE_SIZE wide, the frame's height, kept on
+// drawGrappleOverPalette.images (index -> getSmoothImage owner). Each new strip
+// is drawn once into a 1x1 canvas so its upload happens here, not in the
+// frame that first shows it. Rebuilt only when the frame size, transform or
+// noise kind change (resize, DPR, fast backdrop).
+function buildGrappleOverPaletteStrips(context, bounds, paint)
 {
-    const theme = GRAPPLE_OVER_THEME
-    const rise = Number.isFinite(cameraY) ? -cameraY : 0
-    const ahead = []
-    // the zone of boundary b spans b * bandHeight +- blendHalfSpan
-    if (palette.to < theme.palettes.length - 1)
-        ahead.push({index: palette.to + 1, distance: (palette.to + 1) * theme.bandHeight - theme.blendHalfSpan - rise})
-    if (palette.from > 0)
-        ahead.push({index: palette.from - 1, distance: rise - palette.from * theme.bandHeight - theme.blendHalfSpan})
-    return ahead.filter(n => n.distance <= GRAPPLE_OVER_PALETTE_LOOKAHEAD)
-        .sort((a, b) => a.distance - b.distance).map(n => n.index)
-}
-
-// Builds palette index's smooth image (images owner, LRU order) before its
-// first draw: getSmoothImage keeps it while the key holds.
-function prebuildGrappleOverPalette(images, index, bounds, paint)
-{
-    const owner = images.get(index) || {}
-    images.delete(index)
-    images.set(index, owner)
-    const before = owner.image
-    visualEffects.background.getSmoothImage(owner, 'image', bounds, paint, 'opaque')
-    return owner.image !== before
+    const m = context.getTransform()
+    const noise = typeof BACKDROP != 'undefined' && BACKDROP.active ? 'blue' : 'white'
+    const key = [m.a, m.d, m.e, m.f, bounds.x, bounds.y, bounds.width, bounds.height, noise].join()
+    const strips = drawGrappleOverPalette.strips
+    if (strips && strips.key === key)
+        return strips
+    const images = drawGrappleOverPalette.images || (drawGrappleOverPalette.images = new Map())
+    const warm = drawGrappleOverPalette.warm ||
+        (drawGrappleOverPalette.warm = document.createElement('canvas').getContext('2d'))
+    warm.canvas.width = warm.canvas.height = 1
+    const strip = {x: bounds.x, y: bounds.y, width: GRAPPLE_OVER_PALETTE_STRIP / Math.abs(m.a), height: bounds.height}
+    GRAPPLE_OVER_THEME.palettes.forEach((p, index) =>
+    {
+        const owner = images.get(index) || {}
+        images.set(index, owner)
+        warm.drawImage(visualEffects.background.getSmoothImage(owner, 'image', strip,
+            target => paint(target, index), 'opaque'), 0, 0, 1, 1)
+    })
+    return drawGrappleOverPalette.strips = {key, images,
+        x: Math.round(bounds.x * m.a + m.e), y: Math.round(bounds.y * m.d + m.f),
+        width: Math.max(1, Math.round(bounds.width * Math.abs(m.a)))}
 }
 
 // Wash and horizon glow over bounds (logical units), from gradients built
@@ -81,10 +81,11 @@ function prebuildGrappleOverPalette(images, index, bounds, paint)
 // With smooth (GRADIENT_DITHER, the game canvas) each palette's wash and glow
 // are one dithered full-resolution image (renderer.getSmoothImage), added at
 // the same weights: the last full-frame light, so its noise also dithers the
-// frame's rounding of the layers under it. The images of the ahead palettes
-// (grappleOverPaletteAhead) are built early, at most one per frame and never
-// in a frame that built one it draws.
-function drawGrappleOverPalette(context, bounds, palette, smooth, ahead)
+// frame's rounding of the layers under it. The paint is constant along x, so
+// the image is a GRAPPLE_OVER_PALETTE_STRIP wide strip drawn side by side in
+// device px from the frame origin; all palettes' strips are built together
+// (buildGrappleOverPaletteStrips), never in a frame of a band change.
+function drawGrappleOverPalette(context, bounds, palette, smooth)
 {
     const theme = GRAPPLE_OVER_THEME
     let cache = drawGrappleOverPalette.cache
@@ -128,34 +129,18 @@ function drawGrappleOverPalette(context, bounds, palette, smooth, ahead)
     context.globalCompositeOperation = 'lighter'
     if (smooth)
     {
-        // frame-sized images: the GRAPPLE_OVER_PALETTE_IMAGES palettes used last are kept
-        const images = drawGrappleOverPalette.images || (drawGrappleOverPalette.images = new Map())
-        let built = false
+        const strips = buildGrappleOverPaletteStrips(context, bounds, paintLayer)
+        context.setTransform(1, 0, 0, 1, 0, 0)
         for (const [index, weight] of layers)
         {
-            const owner = images.get(index) || {}
-            images.delete(index)
-            images.set(index, owner)
-            const before = owner.image
+            const image = strips.images.get(index).image.canvas
             context.globalAlpha = weight
-            context.drawImage(visualEffects.background.getSmoothImage(owner, 'image', bounds,
-                target => paintLayer(target, index), 'opaque'), bounds.x, bounds.y, bounds.width, bounds.height)
-            built = built || owner.image !== before
-        }
-        for (const index of ahead || [])
-        {
-            // after a build this frame an ahead image is only kept (LRU), not built
-            if (!built)
-                built = prebuildGrappleOverPalette(images, index, bounds, target => paintLayer(target, index))
-            else if (images.has(index))
+            for (let x = 0; x < strips.width; x += GRAPPLE_OVER_PALETTE_STRIP)
             {
-                const owner = images.get(index)
-                images.delete(index)
-                images.set(index, owner)
+                const w = Math.min(GRAPPLE_OVER_PALETTE_STRIP, strips.width - x)
+                context.drawImage(image, 0, 0, w, image.height, strips.x + x, strips.y, w, image.height)
             }
         }
-        while (images.size > GRAPPLE_OVER_PALETTE_IMAGES)
-            images.delete(images.keys().next().value)
         context.restore()
         return
     }

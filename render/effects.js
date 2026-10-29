@@ -80,8 +80,6 @@ class BackgroundRenderer
         this.lastGameGradients = null
         // Grapple Over section palette for this frame (drawBackgroundLayer)
         this.palette = null
-        // Neighbour palettes to build ahead (grappleOverPaletteAhead)
-        this.paletteAhead = []
         // Its parallax silhouettes (render/parallax.js), ?parallax=0 turns
         // them off for A/B measurements; what the last frame used
         this.parallaxEnabled = new URLSearchParams(location.search).get('parallax') !== '0'
@@ -207,8 +205,7 @@ class BackgroundRenderer
         }
         this.drawNearLayer(width, height, this.getLayerShift(width, height, caveLayers.nearRocks))
         if (this.palette)
-            drawGrappleOverPalette(this.ctx, this.fillBounds(), this.palette, GRADIENT_DITHER.enabled && !this.bounds,
-                this.paletteAhead)
+            drawGrappleOverPalette(this.ctx, this.fillBounds(), this.palette, GRADIENT_DITHER.enabled && !this.bounds)
         if (this.palette)
             drawGrappleOverLandmarks(this)
         this.drawVignette(width, height)

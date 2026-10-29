@@ -43,17 +43,20 @@ caches created canvases during play:
    (`BOUNCE_MATERIAL`).
 3. **Grapple Over palette images.** `BackgroundRenderer.getSmoothImage`
    (render/effects.js) rebuilt a full-frame (2559x1398) dithered palette image
-   in the frame that drew it, because `drawGrappleOverPalette`
-   (render/draw.js) kept only 3. It keeps 4 now, and `drawBackgroundLayer`
-   builds the next neighbour palette ahead (`grappleOverPaletteAhead`,
-   `prebuildGrappleOverPalette`). That is at most one build per frame, never
-   in a frame that built a drawn image, and about 25 frames before its first
-   draw.
+   in the frame that drew it. A CPU-backed image that size also uploads about
+   14 MB to the GPU on its first draw. The palette paint is constant along x
+   and the dither noise is a 256 px tile, so each palette is now a 256 px wide
+   strip drawn side by side from the frame origin (`drawGrappleOverPalette`,
+   render/draw.js). `buildGrappleOverPaletteStrips` builds all 8 strips
+   (about 11 MB at 1706x932 DPR 1.5) when the frame size is first known and
+   again after a resize or DPR change. It draws each strip once into a 1x1
+   canvas right away, so a band change builds and uploads nothing.
 
 To check after changing render code, re-run
 `python3 tools/canvas_audit.py --mode single|double --out <file>`. It holds the
 ninja at the 12 recorded freeze points (tools/fixtures/freeze-walk.json) for 2
 passes plus a vertical sweep in headless Chromium and counts the canvases
 created. Expected: pass 2 total (`perPass[1]`) <= 3, `maxPerFrame` <= 4,
-`glowMisses.text` 0, and `smoothCheck.leadOk` true. The audit counts canvases
+`glowMisses.text` 0, `smoothCheck.afterBoot` 0 and `smoothCheck.firstDrawsOk`
+true. The audit counts canvases
 only; headless frame times say nothing about real freezes.

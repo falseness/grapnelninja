@@ -5,9 +5,9 @@ Over. An init script wraps document.createElement('canvas') (creator stack
 top + caller, size at the first getContext), getGlowSprite (misses, by key and
 cache: 'glyph|' keys are HUD glyph sprites in GLYPH_SPRITES, cells of its
 atlas pages: glyphPages)
-and BackgroundRenderer.prototype.getSmoothImage (palette image builds, in a
-draw or ahead by prebuildGrappleOverPalette, with the frame that first draws
-each build: smoothCheck), and
+and BackgroundRenderer.prototype.getSmoothImage (Grapple Over palette strip
+builds by buildGrappleOverPaletteStrips: smoothCheck counts those after boot,
+expected 0, and the strip sizes), and
 counts rAF frames. The ninja is held (x, y, zero speed, re-set every 250 ms)
 for ~1.5 s at each tools/fixtures/freeze-walk.json point for 2 passes, then
 for ~1 s at each sweep point. Also reports the most canvases one frame
@@ -16,7 +16,8 @@ per bounce board build (bounceMaterialSprite). firstDraw: the first drawImage
 of each source on the page (likely a GPU upload of a CPU-backed canvas), in px
 (source width * height) after boot: the most in one frame, frames over 1 Mpx
 later than 2 s after boot, px by canvas creator, and every first draw of a
-Grapple Over palette image (all phases). Counts only: headless timings mean
+Grapple Over palette strip (all phases), each with its strip's build frame:
+firstDrawsOk when every one is in boot or in that build frame. Counts only: headless timings mean
 nothing.
 
     python3 tools/canvas_audit.py [--mode single|double] [--out canvas-audit.json]
@@ -39,11 +40,11 @@ SWEEP_STEPS = 4      # x 250 ms at each sweep point
 
 INIT = r'''
 window.__audit = {frame: 0, frameT: 0, phase: 'boot', canvases: [], glowMisses: [], smoothBuilds: [], smooth: null,
-                  prebuilding: false, firstDraws: []}
+                  firstDraws: []}
 ;(() => {
   const audit = window.__audit
   // canvas -> its canvases[] entry, palette image canvas -> palette index, sources drawn
-  const created = new WeakMap(), paletteOf = new WeakMap(), drawn = new WeakSet()
+  const created = new WeakMap(), paletteOf = new WeakMap(), builtAt = new WeakMap(), drawn = new WeakSet()
   audit.paletteOf = paletteOf
   const create = document.createElement
   document.createElement = function(tag) {
@@ -74,7 +75,8 @@ window.__audit = {frame: 0, frameT: 0, phase: 'boot', canvases: [], glowMisses: 
       const px = (image.naturalWidth || image.width || 0) * (image.naturalHeight || image.height || 0)
       audit.firstDraws.push({frame: audit.frame, t: audit.frameT, phase: audit.phase, px,
                              creator: c ? c.creator : (image.constructor && image.constructor.name) || '?',
-                             palette: paletteOf.has(image) ? paletteOf.get(image) : null})
+                             palette: paletteOf.has(image) ? paletteOf.get(image) : null,
+                             buildFrame: builtAt.has(image) ? builtAt.get(image) : null})
     }
     return drawImage.apply(this, arguments)
   }
@@ -84,32 +86,21 @@ window.__audit = {frame: 0, frameT: 0, phase: 'boot', canvases: [], glowMisses: 
       if (!(store || GLOW_SPRITES).cache.has(key)) audit.glowMisses.push([audit.phase, String(key)])
       return glow.apply(this, arguments)
     }
-    // A palette build (in a draw, or ahead by prebuildGrappleOverPalette) and the
-    // frame that first draws that image after it
-    const prebuild = window.prebuildGrappleOverPalette
-    window.prebuildGrappleOverPalette = function() {
-      audit.prebuilding = true
-      try { return prebuild.apply(this, arguments) } finally { audit.prebuilding = false }
-    }
-    const pending = {}
+    // A palette strip build and the frame it happened in
     const smooth = BackgroundRenderer.prototype.getSmoothImage
     BackgroundRenderer.prototype.getSmoothImage = function(owner, name, bounds) {
       const images = typeof drawGrappleOverPalette != 'undefined' && drawGrappleOverPalette.images
       let index = null
       if (images) for (const [i, o] of images) if (o === owner) index = i
       if (index === null) return smooth.apply(this, arguments)
-      const drawing = !audit.prebuilding
-      if (drawing && pending[index]) { pending[index].firstDrawFrame = audit.frame; delete pending[index] }
       const outer = audit.smooth
       audit.smooth = {built: false}
       try {
         const canvas = smooth.apply(this, arguments)
         paletteOf.set(canvas, index)
         if (audit.smooth.built) {
-          const entry = {frame: audit.frame, phase: audit.phase, index, w: canvas.width, h: canvas.height,
-                         prebuild: !drawing, firstDrawFrame: drawing ? audit.frame : null}
-          audit.smoothBuilds.push(entry)
-          if (!drawing) pending[index] = entry
+          builtAt.set(canvas, audit.frame)
+          audit.smoothBuilds.push({frame: audit.frame, phase: audit.phase, index, w: canvas.width, h: canvas.height})
         }
         return canvas
       } finally { audit.smooth = outer }
@@ -131,17 +122,17 @@ def palette_index(page):
     return page.evaluate('() => { const p = visualEffects.background.palette; return p ? [p.from, p.to] : null }')
 
 
-def smooth_check(builds):
-    """Palette builds after boot: lead = firstDrawFrame - frame (None: not drawn yet)."""
-    per_frame = {}
-    for b in builds:
-        per_frame[b['frame']] = per_frame.get(b['frame'], 0) + 1
-    leads = [None if b['firstDrawFrame'] is None else b['firstDrawFrame'] - b['frame'] for b in builds]
-    drawn = [lead for lead in leads if lead is not None]
-    return {'builds': len(builds), 'prebuilds': sum(b['prebuild'] for b in builds),
-            'minLead': min(drawn, default=None), 'neverDrawn': leads.count(None),
-            'sameFrameDraws': sum(lead == 0 for lead in drawn), 'maxPerFrame': max(per_frame.values(), default=0),
-            'leadOk': all(lead >= 10 for lead in drawn)}
+def smooth_check(all_builds, palette_draws):
+    """Palette strip builds: after boot (expected 0), sizes, bytes; palette first draws before play or in
+    their strip's build frame."""
+    after = [b for b in all_builds if b['phase'] != 'boot']
+    sizes = sorted({(b['w'], b['h']) for b in all_builds})
+    last = {}
+    for b in all_builds:
+        last[b['index']] = b
+    return {'builds': len(all_builds), 'afterBoot': len(after), 'stripSizes': [list(s) for s in sizes],
+            'strips': len(last), 'stripBytes': sum(b['w'] * b['h'] * 4 for b in last.values()),
+            'firstDrawsOk': all(d['phase'] == 'boot' or d['frame'] == d['buildFrame'] for d in palette_draws)}
 
 
 def first_draw(draws, boot_end_t):
@@ -155,7 +146,8 @@ def first_draw(draws, boot_end_t):
     return {'maxPxPerFrame': max(per_frame.values(), default=0),
             'framesOver1MpxAfter2s': sum(px > 1e6 and frame_t[f] > boot_end_t + 2000 for f, px in per_frame.items()),
             'byCreator': dict(sorted(by_creator.items(), key=lambda kv: -kv[1])),
-            'paletteFirstDraws': [{'index': d['palette'], 'frame': d['frame'], 'phase': d['phase'], 'px': d['px']}
+            'paletteFirstDraws': [{'index': d['palette'], 'frame': d['frame'], 'phase': d['phase'], 'px': d['px'],
+                                   'buildFrame': d['buildFrame']}
                                   for d in draws if d['palette'] is not None]}
 
 
@@ -198,8 +190,8 @@ def audit(mode):
     if raw['grapnelMode'] != mode:
         errors.append('grapnelMode %s, expected %s' % (raw['grapnelMode'], mode))
 
-    builds = [{k: b[k] for k in ('frame', 'phase', 'index', 'w', 'h', 'prebuild', 'firstDrawFrame')}
-              for b in raw['smoothBuilds'] if b['phase'] != 'boot']
+    builds = [b for b in raw['smoothBuilds'] if b['phase'] != 'boot']
+    first = first_draw(raw['firstDraws'], boot_end_t)
     walked = [c for c in raw['canvases'] if c['phase'] != 'boot']
     creators, frames, by_file = {}, {}, {}
     contact = {'created': 0, 'materialBuilds': 0, 'frames': {}}
@@ -241,8 +233,8 @@ def audit(mode):
         'glowMisses': glow,
         'glowTextSample': text_keys,
         'smoothBuilds': builds,
-        'smoothCheck': smooth_check(builds),
-        'firstDraw': first_draw(raw['firstDraws'], boot_end_t),
+        'smoothCheck': smooth_check(raw['smoothBuilds'], first['paletteFirstDraws']),
+        'firstDraw': first,
         'sweepPalettes': sweep_palettes,
         'caches': raw['caches'],
         'errors': errors,
