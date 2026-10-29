@@ -23,6 +23,7 @@ SPIRE_EVIDENCE_DIR=DIR writes traversals.json (compact). No default evidence dir
     python3 tools/test_spire_route.py -k y3
     python3 tools/test_spire_route.py -k y4
     python3 tools/test_spire_route.py -k y5
+    python3 tools/test_spire_route.py -k y6
 """
 from contextlib import ExitStack
 import hashlib
@@ -43,7 +44,7 @@ from test_gauntlet_route import LEG, NAMES, RECOVERY_DEPTH, REST_SPEED, REST_TIC
 EVIDENCE = os.environ.get('SPIRE_EVIDENCE_DIR')
 CANDIDATE = os.environ.get('SPIRE_CANDIDATE')
 PREFIX = 'SP-'
-ZONES = ('Y1', 'Y2', 'Y3', 'Y4', 'Y5')
+ZONES = ('Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6')
 INPUTS = {z: TOOLS / 'fixtures' / ('spire-inputs-%s.json' % z) for z in ZONES}
 ZONE_SIZE = (6912, 8640)
 DESCENT = 4320  # tall-zone contract: slabs span >= 4,320 vertically, the crossing goes down at least that far
@@ -201,6 +202,9 @@ class SpireRouteTests(unittest.TestCase):
 
     def test_y5_crossing(self):
         OUT['zones']['Y5'] = self.crossing('Y5')
+
+    def test_y6_crossing(self):
+        OUT['zones']['Y6'] = self.crossing('Y6')
 
 
 if __name__ == '__main__':
