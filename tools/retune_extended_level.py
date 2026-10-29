@@ -1517,6 +1517,18 @@ SKY_SPIRE_SLABS = {
            ((4993, 2842), 50.0, 320, 320, 280), ((4959, 3459), -30.0, 320, 320, 280), ((4373, 3801), -30.0, 220, 220, 280),
            ((3666, 4272), -20.0, 450, 450, 280), ((2975, 4801), -45.0, 220, 220, 280), ((2442, 5081), 20.0, 250, 250, 280),
            ((1993, 5083), 30.0, 150, 150, 280)],
+    # TASK-770 Y8 (leftward, 10 slabs): a -25/-20 deg lip pair under the approach side at zone-local x ~3,500..2,900, a
+    # narrow zig-zag column 50/-20/50 deg dropping to y ~3,300 around x ~2,800, then a falling-RIGHT stair 20/30/40/30 deg
+    # back across the zone to x ~5,400 (y ~5,550) and the -30 deg catch B10 at the lower right. The run-off free-falls onto
+    # SP-Y8-B6, bounces up off the underside of SP-Y8-B4, drops down-right to SP-Y8-B10 ~5,800 under the zone top and is
+    # thrown back up and left over the whole stair out of the zone's left side onto the exit ledge with no rope
+    # (artifacts/TASK-770/search: releases 49..50 cross in the search harness). Normalised signature differs from
+    # BZ1..BZ3, Z1..Z8 and Y1..Y7 (each also mirrored) in >= 9 slabs. Not stack-clean (column under Y7's slabs, like
+    # Y6): left for TASK-773.
+    'Y8': [((3471, 1342), -25.0, 350, 350, 280), ((2869, 1684), -20.0, 220, 220, 280), ((2911, 2209), 50.0, 450, 450, 280),
+           ((2914, 2763), -20.0, 320, 320, 280), ((2691, 3317), 50.0, 380, 380, 280), ((3340, 3920), 20.0, 320, 320, 280),
+           ((3990, 4321), 30.0, 320, 320, 280), ((4664, 4979), 40.0, 450, 450, 280), ((5386, 5536), 30.0, 300, 300, 280),
+           ((5937, 5778), -30.0, 250, 250, 280)],
 }
 SKY_SPIRE = dict(zones=8, zone=(6912, 8640), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=1080,
                  rise=9300, firstRise=9300, panels=((2500, .33, 1440, 240), (1900, .66, 1440, 240)),

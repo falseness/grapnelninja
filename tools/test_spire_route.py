@@ -44,7 +44,7 @@ from test_gauntlet_route import LEG, NAMES, RECOVERY_DEPTH, REST_SPEED, REST_TIC
 EVIDENCE = os.environ.get('SPIRE_EVIDENCE_DIR')
 CANDIDATE = os.environ.get('SPIRE_CANDIDATE')
 PREFIX = 'SP-'
-ZONES = ('Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6', 'Y7')
+ZONES = ('Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6', 'Y7', 'Y8')
 INPUTS = {z: TOOLS / 'fixtures' / ('spire-inputs-%s.json' % z) for z in ZONES}
 ZONE_SIZE = (6912, 8640)
 DESCENT = 4320  # tall-zone contract: slabs span >= 4,320 vertically, the crossing goes down at least that far
@@ -208,6 +208,9 @@ class SpireRouteTests(unittest.TestCase):
 
     def test_y7_crossing(self):
         OUT['zones']['Y7'] = self.crossing('Y7')
+
+    def test_y8_crossing(self):
+        OUT['zones']['Y8'] = self.crossing('Y8')
 
 
 if __name__ == '__main__':
