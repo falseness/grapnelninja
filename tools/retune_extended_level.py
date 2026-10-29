@@ -1451,6 +1451,16 @@ SKY_SPIRE_SLABS = {
            ((2100, 2759), 45.0, 220, 220, 280), ((2645, 3180), 35.0, 320, 320, 280), ((3142, 3752), 50.0, 220, 220, 280),
            ((3620, 4392), 45.0, 380, 380, 280), ((4230, 4972), 40.0, 320, 320, 280), ((4988, 5158), -15.0, 400, 400, 280),
            ((5726, 5291), 30.0, 200, 200, 280)],
+    # TASK-764 Y2 (leftward, 10 slabs): a falling-left staircase -35/-35/-40/-40/-25/-45/-50/-35 deg from x ~6,000
+    # under the right-hand approach down and across to x ~2,000 at zone-local y ~4,900, a 15 deg rebound slab near the left
+    # side and the short -30 deg catch slab (the 30 deg last slab, mirrored for a leftward zone). Its normalised signature
+    # differs from Y1 (also mirrored), BZ1..BZ3 and Z1..Z8 in >= 9 slabs. The run-off drops onto SP-Y2-B2, which kicks the
+    # player left; it falls ~4,400 under the approach top onto SP-Y2-B9, which throws it back up out of the zone's left
+    # side and down onto the exit ledge (artifacts/TASK-764/search: releases 35..38 cross in the search harness).
+    'Y2': [((5995, 1254), -35.0, 350, 350, 280), ((5267, 1881), -35.0, 380, 380, 280), ((4560, 2464), -40.0, 320, 320, 280),
+           ((3968, 3009), -40.0, 320, 320, 280), ((3418, 3508), -25.0, 260, 260, 280), ((2948, 3943), -45.0, 220, 220, 280),
+           ((2530, 4461), -50.0, 220, 220, 280), ((2032, 4916), -35.0, 220, 220, 280), ((1410, 5009), 15.0, 400, 400, 280),
+           ((672, 5151), -30.0, 200, 200, 280)],
 }
 SKY_SPIRE = dict(zones=8, zone=(6912, 8640), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=1080,
                  rise=9300, firstRise=9300, panels=((2500, .33, 1440, 240), (1900, .66, 1440, 240)),
