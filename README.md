@@ -196,3 +196,57 @@ phase (1280x720 and back) whose rebuilds appear only in `large` and `resize`.
 The allowlist is a JSON list of `{creator, px, reason, phases}` for the
 first draws that are only expected on a resize. The audit counts canvases
 and px only; headless frame times say nothing about real freezes.
+
+## Grapple Over: purple no-grapple zones ('Ion lattice')
+
+A purple zone is pass-through: the grapnel cannot hook inside it. It is drawn
+first in the world layer (`drawNoGrappleZones`, render/nograpplezones.js), so
+the route arrows, the rope, every surface and the player stay on top.
+All its tokens are in `STYLE.colors.noGrapple` (style.js):
+
+- **Base fill**: a faint violet (`fill`).
+- **Hex lattice**: pointy-top hexagons sized in world units (`hexRadius`,
+  `hexInset`, `latticeLineWorld`), drawn at `latticeAlpha`. They scale with
+  the camera zoom and are anchored to world coordinates, so they do not swim
+  when the camera moves.
+- **Inner glow**: a brighter band along the inside of the edges, `glowWorld`
+  wide, made of `glowSteps` clipped strokes that add up to `glowAlpha`.
+- **Double edge and brackets**: a hard edge (`stroke`, `edgePx`), a fainter
+  line `outerGapPx` outside it (`outerStroke`, `outerPx`) and L brackets at
+  every corner (`bracket`, `bracketPx`, `bracketLengthPx`, `bracketGapPx`).
+  These sizes are screen (CSS) px.
+- **Pulse**: a diagonal band (`pulseWorld` wide, every `pulsePeriodWorld`,
+  along `pulseDirection`) in which the lattice is drawn again at `pulseAlpha`.
+  It moves `pulseSpeed` world units per second of *simulated* time
+  (`world.elapsedSteps`). A pause freezes it, and seeded runs draw identical
+  frames.
+
+The tutorial legend's NO GRAPPLE icon (render/tutorialhint.js) uses the same
+tokens, but its lattice does not move.
+
+### Perf note: drawing the lattice
+
+The lattice tile (one hex period, about 31x54 px at 1706x932 DPR 1.5) is
+built at run start and warmed in `warmGlowSprites`, never during play. At
+that run-start zoom, a *sheet* of whole tiles (at least 512x512 px, also
+warmed at run start) is drawn with plain `drawImage`, unscaled and at a
+whole device pixel. At any other zoom the tile is filled as a
+world-anchored `CanvasPattern`.
+
+The reason: Chrome without a GPU fills a screen-sized image pattern much
+more slowly than it copies an image. In TASK-784 the headless
+`?visualsPerf=1` walk through Sky Spire zone Y2 (which fills the screen)
+measured this:
+
+- Before the fix, the frame interval median was 300 ms before the Ion
+  lattice look and 483-500 ms after it.
+- Turning parts off one at a time showed that the full-zone lattice fill cost
+  about 130 ms of that and the pulse about 30 ms.
+- The world-layer JS time hardly changed, because the canvas does the
+  raster work later, when it flushes.
+
+The sheet removes the lattice's share. The pulse still uses the pattern fill.
+Headless numbers can only be compared within one session on one host. To
+re-measure, record `?visualsPerf=1` while the player walks through Y2.
+Do this alternately for the old and the new tree, and compare the medians
+of `samples[].layers.world` and `samples[].gapMs`.

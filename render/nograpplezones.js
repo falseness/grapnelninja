@@ -9,7 +9,11 @@
 // tile canvas, built and warm-drawn at run start (warmGlowSprites), never per
 // frame, and drawn as a CanvasPattern anchored to world coordinates whose
 // transform maps tile pixels to world units, so a camera zoom rescales it
-// without a rebuild and a camera move does not make it swim. The pulse runs on
+// without a rebuild and a camera move does not make it swim. At the zoom the
+// tile was built for, the lattice is instead a sheet of whole tiles (built and
+// warmed with the tile) blitted unscaled at a whole device pixel, the same
+// lattice the pattern draws there (TASK-784: a software raster fills a
+// full-screen pattern far slower than it blits an image). The pulse runs on
 // simulated time (world.elapsedSteps), so a pause freezes it and a seeded run
 // draws identical frames. Culled by each zone's own polygon box. Purely
 // visual: no geometry, role or physics field is written. A level without
@@ -29,6 +33,11 @@ const NO_GRAPPLE_ZONES =
     // camera when the tile is built (a denser tile would alias, as a pattern
     // has no mipmaps); a later zoom or resize resamples it
     tilePxPerWorld: 0,
+    // Lattice sheet: whole tiles over at least SHEET_PX x SHEET_PX px
+    // (TASK-784: a software raster blits it far faster than it fills the
+    // pattern), built with the tile
+    sheet: null,
+    SHEET_PX: 512,
 
     // One period of the pointy-top hex lattice: centres on a rectangular grid
     // of sqrt(3) R by 3 R plus the same grid shifted by half of both. Null
@@ -78,6 +87,15 @@ const NO_GRAPPLE_ZONES =
         this.period = period
         this.matrix = new DOMMatrix()
         this.pattern = c.createPattern(tile, 'repeat')
+        // The same lattice repeated over at least SHEET_PX square, blitted
+        // unscaled with drawImage at the tile's own zoom (drawNoGrappleZones)
+        const sheet = document.createElement('canvas')
+        sheet.width = w * Math.ceil(this.SHEET_PX / w)
+        sheet.height = h * Math.ceil(this.SHEET_PX / h)
+        const sc = sheet.getContext('2d')
+        sc.fillStyle = this.pattern
+        sc.fillRect(0, 0, sheet.width, sheet.height)
+        this.sheet = sheet
         return this.pattern
     },
 
@@ -93,6 +111,7 @@ const NO_GRAPPLE_ZONES =
         context.globalAlpha = 1
         context.fillStyle = pattern
         context.fillRect(0, 0, 1, 1)
+        context.drawImage(this.sheet, 0, 0, 1, 1)
         context.restore()
     }
 }
@@ -139,6 +158,22 @@ function traceNoGrapplePolygon(points, sx, sy)
     ctx.closePath()
 }
 
+// Sheet copies anchored at device px (ox, oy) over the device rect of the
+// world-plus-screen-offset box [l, r] x [u, b] (t: the world transform),
+// inside the current clip
+function blitNoGrappleLattice(sheet, t, ox, oy, l, u, r, b)
+{
+    const x0 = Math.max(0, Math.floor(t.a * l + t.e)), x1 = Math.min(ctx.canvas.width, Math.ceil(t.a * r + t.e))
+    const y0 = Math.max(0, Math.floor(t.d * u + t.f)), y1 = Math.min(ctx.canvas.height, Math.ceil(t.d * b + t.f))
+    const SW = sheet.width, SH = sheet.height
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    for (let y = oy + Math.floor((y0 - oy) / SH) * SH; y < y1; y += SH)
+        for (let x = ox + Math.floor((x0 - ox) / SW) * SW; x < x1; x += SW)
+            ctx.drawImage(sheet, x, y)
+    ctx.restore()
+}
+
 const noGrappleOuterPoints = []
 const noGrappleBracketPoints = []
 
@@ -163,6 +198,22 @@ function drawNoGrappleZones(world)
     m.b = m.c = 0
     m.e = sx
     m.f = sy
+    // At the zoom the tile was built for (tile px within 2% of device px) the
+    // lattice is the sheet blitted unscaled at a whole device px anchor
+    // (blit): one tile px per device px, the hexes off hexRadius by the
+    // tile's rounding only. Any other zoom fills the pattern in world units,
+    // so the hexes still scale with the camera
+    const t = ctx.getTransform(), sheet = NO_GRAPPLE_ZONES.sheet
+    const blit = sheet && !t.b && !t.c && Math.abs(t.a * m.a - 1) < 0.02 && Math.abs(t.d * m.d - 1) < 0.02
+    // Device px of the world origin
+    const ox = Math.round(t.a * sx + t.e), oy = Math.round(t.d * sy + t.f)
+    if (blit)
+    {
+        m.a = 1 / t.a
+        m.d = 1 / t.d
+        m.e = (ox - t.e) / t.a
+        m.f = (oy - t.f) / t.d
+    }
     pattern.setTransform(m)
     // Pulse: centre of the band at u = phase (mod the period), u = p . dir
     const dir = colors.pulseDirection
@@ -193,7 +244,10 @@ function drawNoGrappleZones(world)
         ctx.fillRect(left, top, w, h)
         ctx.fillStyle = pattern
         ctx.globalAlpha = colors.latticeAlpha
-        ctx.fillRect(left, top, w, h)
+        if (blit)
+            blitNoGrappleLattice(sheet, t, ox, oy, left, top, left + w, top + h)
+        else
+            ctx.fillRect(left, top, w, h)
         // Inner glow: clipped strokes, wider ones fainter (alphas stack toward the edge)
         ctx.strokeStyle = colors.glow
         ctx.lineJoin = 'miter'

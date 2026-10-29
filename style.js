@@ -93,12 +93,21 @@ const STYLE = Object.freeze({
             stroke: '#ffc400'
         }),
         // Grapple Over purple no-grapple zones (render/nograpplezones.js), the
-        // 'Ion lattice' look: a faint violet base fill, a hexagon lattice
-        // (hexRadius in world units, so it scales with the camera), a brighter
-        // inner glow band (glowWorld wide, glowSteps clipped strokes), a hard
-        // edge with a fainter outer line and L corner brackets (*Px are screen
-        // (CSS) pixels), and a diagonal pulse (world units, speed per second of
-        // simulated time) in which the lattice is drawn again at pulseAlpha
+        // 'Ion lattice' look: a faint violet base fill, a pointy-top hexagon
+        // lattice at latticeAlpha (hexRadius, hexInset and latticeLineWorld in
+        // world units: one tile canvas built at run start and drawn as a
+        // world-anchored pattern, so the hexes scale with the camera zoom and
+        // do not swim when it moves), a brighter inner glow band (glowWorld
+        // wide, glowSteps clipped strokes stacking up to glowAlpha), a hard
+        // double edge (stroke at edgePx, then outerStroke at outerPx,
+        // outerGapPx outside it) with L corner brackets (bracketPx thick,
+        // bracketLengthPx arms, bracketGapPx out); *Px are screen (CSS) px.
+        // The pulse is a pulseWorld wide band along pulseDirection, repeating
+        // every pulsePeriodWorld and moving pulseSpeed world units per second
+        // of simulated time (world.elapsedSteps: a pause freezes it, a seeded
+        // run draws identical frames), in which the lattice is drawn again at
+        // pulseAlpha. The tutorial legend icon (render/tutorialhint.js) uses
+        // the same tokens, static
         noGrapple: Object.freeze({
             fill: 'rgba(70, 16, 130, 0.28)',
             lattice: 'rgb(200, 140, 255)',
