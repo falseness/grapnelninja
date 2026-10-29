@@ -28,6 +28,11 @@ This is a bounded policy matrix: not a proof of shortcut absence and not a full-
 writes DIR/shortcuts.json (compact rows). ROUTE_SHORTCUTS_WORKERS sets the browser count (default 4);
 ROUTE_SHORTCUTS_SOURCES=P2,R3 limits the sources (semantic ids) for quick iteration;
 ROUTE_SHORTCUTS_LEVEL_DIR=DIR probes an unshipped candidate (default artifacts/levels).
+ROUTE_SHORTCUTS_WALLS=1 (TASK-780) runs only the safe-space wall cases (fragment['walls'], extra bodies of a panel):
+every wall is a source (the probe starts on the wall body, targets = panels beyond the owner's successor within
+TARGET_REACH of the wall, plus the next two) and a target (every source before the owner's predecessor within
+TARGET_REACH of the wall, or up to three steps before it, aims at the wall body). A hit on a wall counts as a hit on
+its owner panel. The carried pass runs as usual. The whole-route source assertion is skipped.
 """
 from contextlib import ExitStack
 import hashlib
@@ -50,6 +55,7 @@ EVIDENCE = os.environ.get('ROUTE_SHORTCUTS_EVIDENCE_DIR')
 WORKERS = int(os.environ.get('ROUTE_SHORTCUTS_WORKERS', '4'))
 # Optional comma-separated semantic source ids for quick local iteration (the full run sets none).
 ONLY = [x for x in os.environ.get('ROUTE_SHORTCUTS_SOURCES', '').split(',') if x]
+WALLS = os.environ.get('ROUTE_SHORTCUTS_WALLS') == '1'
 TARGET_REACH = 5000
 BUDGET = 1800
 PUMPS, FRACTIONS = (0, 1, 2, 3, 5), (.2, .5, .8)
@@ -72,11 +78,33 @@ def route():
     return m, pairs
 
 
+def wall_pairs(m):
+    """TASK-780: pairs with a safe-space wall body as the source or the target."""
+    fs = m['fragments']
+    bodies = [conv.bodies(f) for f in fs]
+    pairs = []
+    for k, f in enumerate(fs):
+        for w in f.get('walls', []):
+            wall, body = [bodies[k][w['body']]], '%s-body%d' % (f['id'], w['body'])
+            for j in range(k + 2, len(fs)):
+                gap = geometry.union_distance(wall, bodies[j])[0]
+                if gap <= TARGET_REACH or j <= k + 3:
+                    pairs.append(dict(source=f['id'], target=fs[j]['id'], gap=round(gap, 1), sourceBody=body,
+                                      wall=w['semanticId'], role='source'))
+            for i in range(k - 1):
+                gap = geometry.union_distance(bodies[i], wall)[0]
+                if gap <= TARGET_REACH or i >= k - 4:
+                    pairs.append(dict(source=fs[i]['id'], target=f['id'], gap=round(gap, 1), targetBody=body,
+                                      wall=w['semanticId'], role='target'))
+    return pairs
+
+
 def policies(m, pairs):
     kinds = {f['id']: f['kind'] for f in m['fragments']}
     out = []
     for p in pairs:
         base = dict(source=p['source'], target=p['target'], budget=BUDGET)
+        base.update({k: p[k] for k in ('sourceBody', 'targetBody', 'wall') if k in p})
         for pumps in PUMPS:
             for f in FRACTIONS:
                 out.append(dict(base, policy='pumped', pumps=pumps, fraction=f))
@@ -90,7 +118,7 @@ def policies(m, pairs):
             for pumps in (0, 1):
                 for rng in (False, True):
                     out.append(dict(base, policy='highDrop', pumps=pumps, fraction=.5, drop=drop, targetWhenInRange=rng))
-        if kinds[p['source']] == 'ceiling':
+        if kinds[p['source']] == 'ceiling' and 'sourceBody' not in p:
             for f in FRACTIONS:
                 for trav in (None, dict(dir=1, steps=3, stride=300, ticks=40), dict(dir=-1, steps=3, stride=300, ticks=40)):
                     for rng in (False, True):
@@ -103,7 +131,7 @@ def policies(m, pairs):
 
 
 ROW_KEYS = ('policy', 'source', 'target', 'fraction', 'pumps', 'drop', 'targetWhenInRange', 'sourceSurface', 'traverse',
-            'carriedFrom')
+            'carriedFrom', 'sourceBody', 'targetBody', 'wall')
 
 
 def route_steps(m):
@@ -157,7 +185,7 @@ def worker(args):
         wait_for_boot_run(page)
         page.add_script_tag(path=str(TOOLS / 'probe_level_routes.js'))
         for job in jobs:
-            opts = {k: v for k, v in job.items() if k not in ('policy', 'carriedFrom', 'initialState')}
+            opts = {k: v for k, v in job.items() if k not in ('policy', 'carriedFrom', 'initialState', 'wall')}
             if job.get('initialState'):
                 opts['initialState'] = job['initialState']
             r = page.evaluate('([o, level]) => { const r = ROUTE_PROBE.run({...o, level}); '
@@ -196,10 +224,12 @@ class RouteShortcutMatrixTests(unittest.TestCase):
     def test_whole_route_policy_matrix(self):
         started = time.time()
         m, pairs = route()
+        if WALLS:
+            pairs = wall_pairs(m)
         order = [f['id'] for f in m['fragments']]
         sem = {f['id']: f['semanticId'] for f in m['fragments']}
         kinds = {f['id']: f['kind'] for f in m['fragments']}
-        if ONLY:  # the filtered sources plus their predecessors (which supply the carried states)
+        if ONLY and not WALLS:  # the filtered sources plus their predecessors (which supply the carried states)
             pairs = [p for p in pairs if sem[p['source']] in ONLY or sem[order[order.index(p['source']) + 1]] in ONLY]
         jobs = policies(m, pairs)
         steps = route_steps(m)
@@ -207,7 +237,7 @@ class RouteShortcutMatrixTests(unittest.TestCase):
         # Carried momentum: restore up to 3 successor arrivals per source, then probe from the successor.
         targets = {}
         for p in pairs:
-            targets.setdefault(p['source'], []).append(p['target'])
+            targets.setdefault(p['source'], []).append((p['target'], {k: p[k] for k in ('targetBody', 'wall') if k in p}))
         carried, seen = [], {}
         # Deterministic carried states: the first three successor arrivals per source in a fixed policy order,
         # independent of how the jobs were split across workers.
@@ -223,12 +253,12 @@ class RouteShortcutMatrixTests(unittest.TestCase):
                 continue
             seen[row['source']] = seen.get(row['source'], 0) + 1
             tag = '%s/%s/p%s/f%s' % (row['policy'], row['target'], row.get('pumps'), row.get('fraction'))
-            for t in targets[succ]:
+            for t, extra in targets[succ]:
                 for pumps in (0, 1):
                     for rng in (False, True):
                         carried.append(dict(policy='carried', source=succ, target=t, pumps=pumps, fraction=.5,
                                             budget=BUDGET, targetWhenInRange=rng, initialState=state,
-                                            carriedFrom='%s %s' % (row['source'], tag)))
+                                            carriedFrom='%s %s' % (row['source'], tag), **extra))
         second, errors2 = run_parallel(carried, order, steps) if carried else ([], [])
         rows = [r for r, _ in first] + [r for r, _ in second]
         for r in rows:
@@ -262,7 +292,9 @@ class RouteShortcutMatrixTests(unittest.TestCase):
             targetSelection=dict(rule='every panel beyond the successor whose complete-polygon gap to the source is '
                                       '<= %d units, plus the next two beyond the successor' % TARGET_REACH,
                                  pairs=len(pairs), sources=len({p['source'] for p in pairs}),
-                                 pairList=[[p['source'], p['target'], p['gap']] for p in pairs]),
+                                 pairList=[[p['source'], p['target'], p['gap']] for p in pairs],
+                                 wallPairs=[[p['wall'], p['role'], sem[p['source']], sem[p['target']], p['gap']]
+                                            for p in pairs if 'wall' in p] if WALLS else None),
             policies=dict(
                 pumped='pumps %s x fractions %s, throw at the target at once; pumps 1,2,3,5 x fractions with the '
                        'throw held until the target is within 530 (release jump)' % (list(PUMPS), list(FRACTIONS)),
@@ -298,7 +330,7 @@ class RouteShortcutMatrixTests(unittest.TestCase):
             if policy == 'underside' and ONLY and not ceiling:
                 continue
             self.assertGreater(sum(by_policy.get(policy, {}).values()), 0, policy)
-        if not ONLY:
+        if not ONLY and not WALLS:
             self.assertEqual(set(sources), set(order[:-2]))
         self.assertEqual(skips, [], json.dumps(skips[:20]))
 

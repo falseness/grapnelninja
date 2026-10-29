@@ -47,7 +47,8 @@
     const {source,target,fraction=.5,aimOffset=0,lastAimOffset=null,drop=30,holdTicks=0,pumps=2,budget=1800,level=base,guard=true,initialState=null}=options;
     const model=level.svgFormat?importedMountainLevel(structuredClone(level)):structuredClone(level);if(!guard)model.elements=model.elements.filter(e=>!e.id.startsWith('G'));
     floors=[loadFixedLevel(model)];grapnel=new Grapnel({stroke:STYLE.colors.player.cyan});
-    const start=floors[0].byId.get(source+'-body0'), dest=floors[0].byId.get(target+'-body0');
+    // sourceBody/targetBody (TASK-780): start on / aim at another body of the fragment (a safe-space wall), default body0.
+    const start=floors[0].byId.get(options.sourceBody||source+'-body0'), dest=floors[0].byId.get(options.targetBody||target+'-body0');
     // sourceSurface 'underside': the player starts drop units below a ceiling's underside and the
     // hold/pump aims are on the underside; traverse {dir,steps,stride,ticks} then re-grabs the
     // underside hand over hand (a fresh press per step) before the release toward the target.

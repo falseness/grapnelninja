@@ -28,6 +28,8 @@ slabs) and replays the *-rest.json input fixtures. It defaults to 1 for the ship
 with a scope variable; PURPLE_ROUTE_REST=0 without scope variables replays the previous shipped v16
 (retune --no-purple-rest, the plain fixtures).
 
+PURPLE_ROUTE_SAFE_WALLS=1 (TASK-780) adds retune --safe-walls to the test_01 regeneration (the TASK-779 wall candidate).
+
 PURPLE_ROUTE_ENCOUNTER=NGM (TASK-683) replays the middle encounter of a
 --middle-purple candidate instead of NG1 (zone id; panels by semantic prefix, input
 fixture tools/fixtures/purple-route-inputs-ngm.json). The traversal class also
@@ -77,6 +79,8 @@ REGEN_ARGS = [] if SHIPPED_DEFAULT else ['--min-side-scope', MIN_SIDE_SCOPE] + M
 # Default: on for the shipped v17 (already in its no-flag generation), off for explicit scopes.
 REST = os.environ.get('PURPLE_ROUTE_REST', '1' if SHIPPED_DEFAULT else '0') == '1'
 REGEN_ARGS += [] if SHIPPED_DEFAULT and REST else ['--purple-rest'] if REST else ['--no-purple-rest'] if SHIPPED_DEFAULT else []
+# PURPLE_ROUTE_SAFE_WALLS=1 (TASK-780): the candidate also has the safe-space walls (retune --safe-walls, TASK-779).
+REGEN_ARGS += ['--safe-walls'] if os.environ.get('PURPLE_ROUTE_SAFE_WALLS') == '1' else []
 # PURPLE_ROUTE_ENCOUNTER=ZONE (TASK-683): the traversal class replays that encounter (purpleExtensions zone id,
 # default NG1), with the input fixture of its semantic prefix.
 ENCOUNTER = os.environ.get('PURPLE_ROUTE_ENCOUNTER', 'NG1')
@@ -149,9 +153,12 @@ def tearDownModule():
 
 
 def ext_summit(m):
-    """SEC-ext-summit (v18, TASK-711): big zone ids and the fragment ids above the old summit (empty before v18)."""
-    x = m.get('extSummit', {})
-    return x.get('zones', []), set(x.get('fragments', []))
+    """SEC-ext-summit (v18, TASK-711): big zone ids and the fragment ids above the old summit (empty before v18).
+    Since v21 (TASK-774) SEC-sky-spire (m['skySpire']) climbs on above SEC-ext-summit by design; its zones and fragments
+    count here too (TASK-780: without them the 8 Sky Spire zones/118 fragments were taken for purple-era route)."""
+    x, sp = m.get('extSummit', {}), m.get('skySpire', {})
+    zones = x.get('zones', []) + [z['id'] if isinstance(z, dict) else z for z in sp.get('zones', [])]
+    return zones, set(x.get('fragments', [])) | set(sp.get('fragments', []))
 
 
 def load():
@@ -329,7 +336,8 @@ class PurpleRouteGeometryTests(unittest.TestCase):
         self.assertTrue(all(p['pass'] for p in outside))
         # Outside the zone, every transfer added since the opening keeps the 200% release gap.
         # SEC-ext-summit rows (v18) follow their own rules (zone entry/exit, 150% climb copies; TASK-708).
-        xs = set(self.m.get('extSummit', {}).get('encounters', []))
+        # SEC-sky-spire rows (v21) likewise (TASK-780).
+        xs = set(self.m.get('extSummit', {}).get('encounters', [])) | set(self.m.get('skySpire', {}).get('encounters', []))
         rows = [r for r in self.m['encounters'] if not r.get('noGrappleZone') and r.get('originalNumber') not in retune.TARGETS
                 and r['id'] not in xs]
         self.assertTrue(all(r['distance'] >= CANONICAL_TRANSFER - .01 for r in rows))
