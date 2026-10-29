@@ -382,3 +382,19 @@ The finite sweep tests sampled hold/release policies, not every possible input
 or a complete from-spawn climb. Failed intended-route searches are retained in
 `artifacts/levels/shortcut-review/`; lack of a found route is not a proof that
 a passage is impossible, and the level is not certified fully playable.
+
+### Safe-space walls (candidate, TASK-779)
+
+`--safe-walls` (off by default; the shipped v21 output is byte-identical without
+it) gives each safe space S0..S8 / T0..T8 one green wall body (bounce +
+grapple) on its outer side: 240 x 1,080 (2R), its inner face 600 outward from
+the outermost panel, covering the outward-escape band the TASK-778 probe found
+(`WALL_BANDS`). The wall is an extra body of the outermost panel, recorded as
+`safeSpaces[].wall {id XS-Sk-WALL / SP-Tk-WALL, fragment, x0, x1, y0, y1, band,
+adjusted}` and `safeWalls`. The top and bottom are bevelled (a 240 edge breaks
+the 270 side rule). S0, T0, T2, T6 and T8 have no room outward (their G1 ends
+within 840 of x = -1100). Their wall stands at the map edge, just above or below
+G1 (>= 600 clear), with its full-height face on the map edge. Walls keep >= 1,620
+from every yellow band and stay out of pump reach under later ledges and slabs.
+Transfers whose fragment union now includes a wall are re-measured
+(`safeWalls.transferChanges`; every gap is still >= 1,200).

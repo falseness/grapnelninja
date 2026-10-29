@@ -1704,6 +1704,156 @@ def extend_sky_spire(m, spec=SKY_SPIRE):
     return m
 
 
+# TASK-779 (--safe-walls, candidate, off by default): one green wall per safe space S0..S8 / T0..T8 on its outer side,
+# so a swing or fall outward from the safe space is stopped instead of falling toward the map edge. Each wall is 240
+# wide and 2R = 1,080 tall, its inner face `clear` outward from the outermost panel's outer edge, covering the band
+# where the TASK-778 escape probe saw the most outward crossings (WALL_BANDS = artifacts/TASK-778/escapes.json bands).
+# The wall is an extra body of the outermost panel (the SVG format keeps one fragment per route step and the summit
+# last; TASK-772's catch shelf is the same pattern), recorded as safeSpaces[].wall and in the fragment's `walls`.
+# A 240 top edge is shorter than the 0.5 R side rule (270), so the top and bottom are bevelled from one face: the
+# inner (tower-side) face keeps the full 1,080, the outer face is 1,080 - 2*bevel, the slanted edges are ~347. A
+# map-edge fallback wall (below) keeps the full face on the map edge instead, so nothing passes FOLD_X_RANGE[0]
+# beside it (with the bevel there a fall slipped past its corners, artifacts/TASK-779/escapes-compare.txt).
+# Rules per wall: >= clear from every other green body and purple zone, >= YELLOW_CLEARANCE from every yellow band,
+# inside FOLD_X_RANGE, and no later approach/exit ledge or zone slab within pump reach above it (the
+# artifacts/TASK-743/stack.py screen: < lateral across and -300..vertical above the wall top). A conflicting band moves
+# the wall up or down by at most `shift` (smallest move first, `adjusted` records it).
+# Map-edge fallback: S0-G1 reaches FOLD_X_RANGE[0] (EXT_SUMMIT_GAUNTLET reach), and SP-T0-G1, SP-T2/T6/T8-G1 end
+# within 600 + 240 of it, so there is no room outward. Their wall stands at the map-edge limit (x0 = FOLD_X_RANGE[0])
+# just above or below the outermost panel (>= clear), whichever covers more of the band (then nearer its centre);
+# below S0-G1 / SP-T0-G1 the Y-S0 / Y-SP-T0 catcher's 1,620 rule leaves no room, so those two stand above.
+WALL_BANDS = {'S0': (-35640, -34560), 'S1': (-43740, -42660), 'S2': (-51300, -50220), 'S3': (-58860, -57780),
+              'S4': (-66420, -65340), 'S5': (-73980, -72900), 'S6': (-81540, -80460), 'S7': (-89100, -88020),
+              'S8': (-96660, -95580), 'T0': (-104760, -103680), 'T1': (-114480, -113400), 'T2': (-125820, -124740),
+              'T3': (-141480, -140400), 'T4': (-150120, -149040), 'T5': (-166860, -165780), 'T6': (-177120, -176040),
+              'T7': (-187920, -186840), 'T8': (-194940, -193860)}
+SAFE_WALLS = dict(width=240, height=1080, bevel=250, clear=600, shift=540, step=10, lateral=600, vertical=7000,
+                  sections=(('extSummit', 'gauntlet', 'XS-'), ('skySpire', None, 'SP-')))
+
+
+def wall_body(x0, x1, y0, y1, full_left, bevel):
+    # full_left: the full-height face is x0 (else x1); the opposite face is bevelled top and bottom.
+    if full_left:
+        return [[x0, y0], [x1, y0+bevel], [x1, y1-bevel], [x0, y1]]
+    return [[x0, y0+bevel], [x1, y0], [x1, y1], [x0, y1-bevel]]
+
+
+def add_safe_walls(m, spec=SAFE_WALLS, bands=WALL_BANDS):
+    fs = m['fragments']
+    by = {f['id']: f for f in fs}
+    index = {f['id']: i for i, f in enumerate(fs)}
+    lo, hi = FOLD_X_RANGE
+    w, h, clear = spec['width'], spec['height'], spec['clear']
+
+    def bbox(poly):
+        return min(p[0] for p in poly), max(p[0] for p in poly), min(p[1] for p in poly), max(p[1] for p in poly)
+    # Later route bodies for the stack screen: approach/exit ledges and zone slabs (semanticIds -APPROACH/-EXIT/-Bk).
+    ledge_like = [(index[f['id']], f['id'], bbox(b)) for f in fs if f.get('semanticId')
+                  and (f['semanticId'].endswith(('-APPROACH', '-EXIT')) or f['kind'] == 'chute') for b in svg.bodies(f)]
+
+    def problems(poly, end, boxes):
+        x0, x1, y0, y1 = bbox(poly)
+        out = []
+        if not (lo <= x0 and x1 <= hi):
+            out.append('x range')
+        near = [f for f, (a0, a1, c0, c1) in boxes if a0-clear < x1 and a1+clear > x0 and c0-clear < y1 and c1+clear > y0]
+        d, sid = min(((union_distance([poly], svg.bodies(f))[0], f['id']) for f in near), default=(math.inf, None))
+        if d < clear-1e-6:
+            out.append('green %s %.0f' % (sid, d))
+        for z in m['noGrappleZones']:
+            if union_distance([poly], [z['polygon']])[0] < clear-1e-6:
+                out.append('zone %s' % z['id'])
+        for b in m['yellowBands']:
+            d = union_distance([poly], [b['polygon']])[0]
+            if d < YELLOW_CLEARANCE-1e-6:
+                out.append('yellow %s %.0f' % (b['id'], d))
+        for i, fid, (a0, a1, b0, b1) in ledge_like:
+            if i > end and max(0, a0-x1, x0-a1) < spec['lateral'] and -300 < y0-b1 < spec['vertical']:
+                out.append('pump reach %s' % fid)
+        return out
+
+    walls = []
+    for key, sub, prefix in spec['sections']:
+        rec = m.get(key, {})
+        rec = rec.get(sub, {}) if sub else rec
+        for s in rec.get('safeSpaces', []):
+            left = s['side'] == 'left'
+            panels = [by[p['id']] for p in s['grapplePanels']]
+            edge = (min if left else max)(x for f in panels for b in svg.bodies(f) for x, _ in b)
+            outer = next(f for f in panels if any(x == edge for b in svg.bodies(f) for x, _ in b))
+            b0, b1 = bands[s['id']]
+            if b1-b0 != h:
+                raise ValueError('Wall band %s must be %g tall' % (s['id'], h))
+            x1 = edge-clear if left else edge+clear+w
+            fallback = x1-w < lo if left else x1 > hi
+            if fallback:   # map-edge limit just above or below the outermost panel
+                x1 = lo+w if left else hi
+                _, _, py0, py1 = bbox([p for b in svg.bodies(outer) for p in b])
+                k = range(0, spec['shift']+1, spec['step'])
+                tops = [py0-clear-h-d for d in k]+[py1+clear+d for d in k]
+            else:
+                tops = sorted((b0+d for d in range(-spec['shift'], spec['shift']+1, spec['step'])), key=lambda y: (abs(y-b0), y))
+            end = index[s['end']]
+            boxes = [(f, bbox([p for b in svg.bodies(f) for p in b])) for f in fs]   # earlier walls included
+            legal, why = [], {}
+            for y0 in tops:
+                poly = wall_body(x1-w, x1, y0, y0+h, left == fallback, spec['bevel'])
+                bad = problems(poly, end, boxes)
+                if bad:
+                    why[y0] = bad
+                else:
+                    legal.append(y0)
+            if not legal:
+                raise ValueError('No legal wall for %s: %s' % (s['id'], why[tops[0]]))
+            if fallback:
+                y0 = min(legal, key=lambda y: (-max(0, min(y+h, b1)-max(y, b0)), abs(y+h/2-(b0+b1)/2)))
+            else:
+                y0 = legal[0]
+            wid = '%s%s-WALL' % (prefix, s['id'])
+            adjusted = None
+            if fallback:
+                adjusted = dict(reason='map edge: %s ends %.1f from FOLD_X_RANGE[0]; wall at the map-edge limit %s %s'
+                                % (outer['semanticId'], edge-lo, 'above' if y0 < b0 else 'below', outer['semanticId']),
+                                dy=y0-b0, bandOverlap=max(0, min(y0+h, b1)-max(y0, b0)),
+                                rejected={str(t): why[t] for t in (tops[0], tops[len(tops)//2]) if t in why})
+            elif y0 != b0:
+                adjusted = dict(reason='band conflict: %s' % '; '.join(why[b0]), dy=y0-b0)
+            poly = wall_body(x1-w, x1, y0, y0+h, left == fallback, spec['bevel'])
+            outer['polys'].append([[x-outer['x'], y-outer['y']] for x, y in poly])
+            outer.setdefault('walls', []).append(dict(semanticId=wid, body=len(outer['polys'])-1))
+            s['wall'] = dict(id=wid, fragment=outer['id'], x0=x1-w, x1=x1, y0=y0, y1=y0+h, band=[b0, b1], adjusted=adjusted)
+            walls.append(s['wall'])
+    # Gaps are measured between whole fragments (every body, as the checker does), so re-measure every quantity that
+    # reads the parents' bodies. A wall beside the other panel's height (or, as fallback, between the two panels)
+    # is nearer that panel than its own panel is: the transfer's recorded gap becomes the wall-to-panel distance
+    # (>= 1,200 here, still beyond grapple range; each change is listed in safeWalls.transferChanges).
+    parents = {wl['fragment'] for wl in walls}
+    changes = []
+    for row in m['encounters']:
+        if row['fromFragment'] in parents or row['toFragment'] in parents:
+            d, wit, _, _ = gap(by[row['fromFragment']], by[row['toFragment']])
+            if abs(d-row['distance']) > 1e-9:
+                changes.append(dict(id=row['id'], distance=[row['distance'], d], percent=[row['percent'], round(d/5.4, 2)]))
+                row.update(distance=d, witness=wit, percent=round(d/5.4, 2))
+    for pc in m['pairChecks']:
+        if pc['source'] in parents or pc['target'] in parents:
+            d = gap(by[pc['source']], by[pc['target']])[0]
+            pc.update(minimumGap=d, passOutsideRange=d-21.6 > 540)
+    records = [c for key, sub, _ in spec['sections'] for c in ((m.get(key, {}).get(sub, {}) if sub else m.get(key, {}))
+                                                                .get('catchers', []))]
+    for b in m['yellowBands']:
+        d, sid = min((union_distance(svg.bodies(by[p]), [b['polygon']])[0], p) for p in parents)
+        if d < b['nearestSolidClearance']:
+            b.update(nearestSolidClearance=d, nearestSolid=sid)
+            for c in records:
+                if c['id'] == b['id']:
+                    c.update(nearestSolidClearance=d, nearestSolid=sid)
+    m['safeWalls'] = dict(spec={k: v for k, v in spec.items() if k != 'sections'}, walls=[wl['id'] for wl in walls],
+                          transferChanges=changes,
+                          purpose='TASK-779: green walls on the outer side of every safe space stop outward escapes')
+    return walls
+
+
 def measure_transfers(m, opening):
     fs = m['fragments']
     for row in m['encounters']:
@@ -2764,6 +2914,10 @@ def main():
                          'Y1..Y8 with green safe spaces T0..T8, yellow catchers and a new finish (TASK-762..773, '
                          'SKY_SPIRE). Default: on (shipped v21) with the gauntlet; --no-sky-spire gives the previous '
                          'shipped v20')
+    ap.add_argument('--safe-walls', action=argparse.BooleanOptionalAction, default=False,
+                    help='(with --ext-summit-gauntlet) candidate: a green wall on the outer side of every safe space '
+                         'S0..S8 / T0..T8, 240 x 1,080, covering the TASK-778 escape band (TASK-779, SAFE_WALLS, '
+                         'WALL_BANDS). Default: off (shipped layout unchanged)')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -2825,9 +2979,13 @@ def main():
                 if b'Sky Spire' not in guidelines:
                     raise ValueError('Guidelines must specify the Sky Spire tall-zone contract')
                 extend_sky_spire(m)
+            if args.safe_walls:
+                add_safe_walls(m)
         else:
             extend_summit(m, EXT_SUMMIT_FOLD if args.ext_summit_fold else EXT_SUMMIT_RISER if args.ext_summit_riser else EXT_SUMMIT)
-    elif args.ext_summit_fold or args.ext_summit_riser or args.ext_summit_gauntlet:
+    if args.safe_walls and not (args.ext_summit and args.ext_summit_gauntlet):
+        raise ValueError('--safe-walls needs the gauntlet (--ext-summit-gauntlet)')
+    if not args.ext_summit and (args.ext_summit_fold or args.ext_summit_riser or args.ext_summit_gauntlet):
         raise ValueError('--ext-summit-fold / --ext-summit-riser / --ext-summit-gauntlet need --ext-summit')
     m['guidelines']={'path':str(Path(args.guidelines).resolve()),'sha256':hashlib.sha256(guidelines).hexdigest(),'yellowMinimumPercent':round(clearance/5.4),'yellowPairMinimumPercent':100}
     svg.LAYOUT_ID=m['layoutId']
