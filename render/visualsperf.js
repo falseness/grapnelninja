@@ -21,6 +21,16 @@
 // the 'file:line' that created the canvas, else the image url or type) and
 // the Grapple Over palette of the last drawn frame ({from, to, t}, else null).
 //
+// Attribution (schemaVersion 2), all only while recording and torn down by
+// stop(): long animation frames where supported (loafs, each freeze's
+// context.loafs = those overlapping its interval); a MessageChannel heartbeat
+// (at most one beat per HEARTBEAT_MS) whose longest silence inside a freeze
+// is mainThreadSilenceMs (close to gapMs: main thread blocked; small: it was
+// free, so GPU/compositor/vsync/OS); heapMB per sample (performance.memory)
+// with heapBeforeMB/heapAfterMB/heapDropMB per freeze; rafLagMs per sample
+// (callback start minus the rAF timestamp). start({heartbeat: false}) is a
+// test-only switch.
+//
 // Composes with ?perf=1: both wrap the same globals, each wrapper calling
 // the previous one. Without the flag nothing is wrapped, no listener is
 // added and window.visualsPerf stays undefined.
@@ -36,6 +46,8 @@
 
     const FREEZE_MS = 50
     const RING_SIZE = 18000
+    const LOAF_CAP = 2000
+    const HEARTBEAT_MS = 4
 
     // Work of the current interval; reset after every sample
     let layers = {}, physicsMs = 0, physicsSteps = 0
@@ -44,6 +56,9 @@
     let previousT = null, lastSection = null, longTaskObserver = null
     let sectionWorld = null, sectionBounds = null
     let firstDrawPx = 0, firstDraws = []
+    let loafObserver = null, heapMB = null
+    // Heartbeat: beat times since the previous sample, lifetime beat count
+    let heartbeat = null, beats = [], beatCount = 0
     // Sources already drawn and the creator of every canvas (kept across recordings)
     const drawnSources = new WeakSet(), canvasCreators = new WeakMap()
 
@@ -248,8 +263,99 @@
         }
     }
 
+    const round1 = ms => Math.round(ms * 10) / 10
+
+    function readHeapMB()
+    {
+        const memory = performance.memory
+        return memory ? round1(memory.usedJSHeapSize / 1048576) : null
+    }
+
+    // Longest time inside [from, to] with no heartbeat
+    function silence(from, to)
+    {
+        let longest = 0, last = from
+        for (const b of beats)
+            if (b > from && b < to)
+            {
+                longest = Math.max(longest, b - last)
+                last = b
+            }
+        return round1(Math.max(longest, to - last))
+    }
+
+    // A MessageChannel ping-pong; after a beat the next ping waits until
+    // HEARTBEAT_MS have passed, so it never spins
+    function startHeartbeat()
+    {
+        const channel = new MessageChannel()
+        let lastBeat = -Infinity, timer = null
+        const ping = () =>
+        {
+            timer = null
+            channel.port2.postMessage(0)
+        }
+        channel.port1.onmessage = () =>
+        {
+            if (heartbeat !== channel)
+                return
+            const now = performance.now()
+            if (now - lastBeat >= HEARTBEAT_MS)
+            {
+                lastBeat = now
+                beats.push(now)
+                ++beatCount
+            }
+            timer = setTimeout(ping, Math.max(0, HEARTBEAT_MS - (performance.now() - lastBeat)))
+        }
+        channel.stop = () =>
+        {
+            clearTimeout(timer)
+            channel.port1.onmessage = null
+            channel.port1.close()
+            channel.port2.close()
+        }
+        heartbeat = channel
+        ping()
+    }
+
+    function stopHeartbeat()
+    {
+        if (heartbeat)
+        {
+            const channel = heartbeat
+            heartbeat = null
+            channel.stop()
+        }
+        beats = []
+    }
+
+    function loafEntry(e)
+    {
+        return {
+            startTime: e.startTime,
+            duration: e.duration,
+            blockingDuration: e.blockingDuration,
+            renderStart: e.renderStart,
+            styleAndLayoutStart: e.styleAndLayoutStart,
+            scripts: [...(e.scripts || [])].sort((a, b) => b.duration - a.duration).slice(0, 3)
+                .map(s => ({sourceURL: s.sourceURL, sourceFunctionName: s.sourceFunctionName,
+                    invoker: s.invoker, duration: s.duration})),
+        }
+    }
+
+    function addLoafs(target, entries)
+    {
+        for (const e of entries)
+            if (target.loafs.length < LOAF_CAP)
+                target.loafs.push(loafEntry(e))
+    }
+
     function sample(t)
     {
+        const rafLagMs = round1(performance.now() - t)
+        const heapBeforeMB = heapMB
+        heapMB = readHeapMB()
         const section = game(currentSection)
         if (section !== lastSection && previousT !== null)
             ++sectionChanges
@@ -257,9 +363,11 @@
         if (previousT !== null)
         {
             const gapMs = t - previousT
-            const entry = {t, gapMs, layers, physicsMs, physicsSteps, hidden: document.hidden}
+            const entry = {t, gapMs, layers, physicsMs, physicsSteps, hidden: document.hidden, rafLagMs}
             if (firstDrawPx)
                 entry.fd = firstDrawPx
+            if (heapMB !== null)
+                entry.heapMB = heapMB
             if (ring.length < ringSize)
                 ring.push(entry)
             else
@@ -280,8 +388,17 @@
                         slowestLayer = name
                     }
                 }
-                report.freezes.push({t, gapMs, layers, physicsMs, physicsSteps, slowestLayer,
-                    unaccountedMs: gapMs - accounted, context: context()})
+                const freeze = {t, gapMs, layers, physicsMs, physicsSteps, slowestLayer,
+                    unaccountedMs: gapMs - accounted, rafLagMs,
+                    mainThreadSilenceMs: heartbeat ? silence(previousT, t) : null,
+                    context: context()}
+                if (heapMB !== null)
+                {
+                    freeze.heapBeforeMB = heapBeforeMB
+                    freeze.heapAfterMB = heapMB
+                    freeze.heapDropMB = heapBeforeMB === null ? 0 : round1(Math.max(0, heapBeforeMB - heapMB))
+                }
+                report.freezes.push(freeze)
                 const live = window.visualsPerf.live
                 ++live.freezes
                 live.worstMs = Math.max(live.worstMs, gapMs)
@@ -289,6 +406,7 @@
             }
         }
         previousT = t
+        beats = []
         resetInterval()
     }
 
@@ -316,6 +434,11 @@
             return report !== null
         },
         live: {freezes: 0, worstMs: 0, last: null},
+        // Heartbeats since page load (tests check that stop() ends them)
+        get beats()
+        {
+            return beatCount
+        },
         start(meta = {})
         {
             if (report)
@@ -325,10 +448,11 @@
             next = 0
             previousT = null
             lastSection = null
+            heapMB = null
             resetInterval()
             this.live = {freezes: 0, worstMs: 0, last: null}
             report = {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 environment: 'user-browser',
                 performanceStatus: 'user-device-performance-unverified',
                 meta,
@@ -348,6 +472,10 @@
                 freezes: [],
                 longTasksSupported: false,
                 longTasks: [],
+                loafSupported: false,
+                loafs: [],
+                heartbeat: meta.heartbeat !== false,
+                heartbeatMs: HEARTBEAT_MS,
                 visibility: [],
             }
             const target = report
@@ -363,6 +491,15 @@
                 })
                 longTaskObserver.observe({type: 'longtask'})
             }
+            if (typeof PerformanceObserver !== 'undefined' &&
+                (PerformanceObserver.supportedEntryTypes || []).includes('long-animation-frame'))
+            {
+                report.loafSupported = true
+                loafObserver = new PerformanceObserver(list => addLoafs(target, list.getEntries()))
+                loafObserver.observe({type: 'long-animation-frame', buffered: false})
+            }
+            if (report.heartbeat)
+                startHeartbeat()
             document.addEventListener('visibilitychange', onVisibility)
             window.addEventListener('focus', onVisibility)
             window.addEventListener('blur', onVisibility)
@@ -384,6 +521,17 @@
                 longTaskObserver.disconnect()
                 longTaskObserver = null
             }
+            if (loafObserver)
+            {
+                addLoafs(report, loafObserver.takeRecords())
+                loafObserver.disconnect()
+                loafObserver = null
+            }
+            stopHeartbeat()
+            // A frame's entry arrives after the frame, so freezes get theirs here
+            for (const freeze of report.freezes)
+                freeze.context.loafs = report.loafs.filter(e =>
+                    e.startTime < freeze.t && e.startTime + e.duration > freeze.t - freeze.gapMs)
             document.removeEventListener('visibilitychange', onVisibility)
             window.removeEventListener('focus', onVisibility)
             window.removeEventListener('blur', onVisibility)

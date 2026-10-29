@@ -24,6 +24,33 @@ Without the flag nothing is recorded and no panel is shown. Nothing is sent
 anywhere; the file stays on your device until you send it. `?visualsPerf=1`
 can be combined with `?perf=1`.
 
+### Telling freezes apart (`schemaVersion` 2)
+
+A freeze where the game's timed layers add up to a few ms has its cause
+outside the game's draw code. These fields help find it. All of them exist
+only while recording, and `stop()` (or Export) tears them down:
+
+- `loafs` (with `loafSupported`): Chrome's Long Animation Frames, up to 2000,
+  as `{startTime, duration, blockingDuration, renderStart,
+  styleAndLayoutStart, scripts}`. `scripts` holds the 3 longest scripts of the
+  frame, `{sourceURL, sourceFunctionName, invoker, duration}`. Each freeze's
+  `context.loafs` lists the entries that overlap it. `loafSupported` is false
+  outside Chromium, and then `loafs` stays empty.
+- `freezes[].mainThreadSilenceMs`: while recording, a `MessageChannel`
+  heartbeat runs on the main thread, at most one beat per 4 ms. This field is
+  the longest time inside the freeze with no beat.
+  - Close to `gapMs`: the main thread was blocked (script, style, layout or a
+    synchronous canvas operation). `context.loafs` usually names the script.
+  - Much smaller than `gapMs`: the main thread was free and the frame came
+    late anyway. That points to the GPU, compositor, vsync or the OS.
+- `samples[].heapMB`: JS heap in use (`performance.memory.usedJSHeapSize`,
+  0.1 MB steps). It exists only in Chromium browsers. A freeze has
+  `heapBeforeMB` (the previous sample), `heapAfterMB` and
+  `heapDropMB = max(0, before - after)`. A large drop during a freeze with a
+  long `mainThreadSilenceMs` points to garbage collection.
+- `samples[].rafLagMs` (also on each freeze): how late the frame callback
+  started after its `requestAnimationFrame` timestamp.
+
 ## Perf note: freezes from runtime canvas creation
 
 A Chrome recording (v20, 1706x932, DPR 1.5) showed 67-117 ms freezes with only

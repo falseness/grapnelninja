@@ -113,8 +113,11 @@ def shared_memory_launch_options():
     return {}
 
 
-def start_browser_test(root, add_cleanup, browser_name="chromium"):
-    """Return URL/browser; register acquired resources with a LIFO cleanup stack."""
+def start_browser_test(root, add_cleanup, browser_name="chromium", chromium_args=()):
+    """Return URL/browser; register acquired resources with a LIFO cleanup stack.
+
+    chromium_args are extra Chromium command-line switches.
+    """
     server = ThreadingHTTPServer(('127.0.0.1', 0),
                                  partial(QuietHandler, directory=str(root)))
     add_cleanup(server.server_close)
@@ -127,7 +130,7 @@ def start_browser_test(root, add_cleanup, browser_name="chromium"):
     add_cleanup(playwright.stop)
     if browser_name not in ('chromium', 'firefox', 'webkit'):
         raise ValueError('Unsupported test browser: ' + browser_name)
-    options = dict(args=['--no-sandbox'], **shared_memory_launch_options()) if browser_name == 'chromium' else {}
+    options = dict(args=['--no-sandbox', *chromium_args], **shared_memory_launch_options()) if browser_name == 'chromium' else {}
     browser = getattr(playwright, browser_name).launch(**options)
     add_cleanup(browser.close)
     return url, OfflineBrowser(browser)
