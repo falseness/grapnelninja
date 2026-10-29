@@ -1,4 +1,4 @@
-"""Freeze attribution in the ?visualsPerf=1 recorder (render/visualsperf.js, TASK-775).
+"""Freeze attribution in the ?visualsPerf=1 recorder (render/visualsperf.js, TASK-775/776).
 
 Headless Chromium has no GPU, so this checks structure and labels, never
 absolute timings. Every stall is injected by this test through
@@ -13,15 +13,26 @@ page.evaluate, never by shipped code:
   allocated and dropped, and samples must carry heapMB (a sample-to-sample
   drop >= 2 MB is reported when the collector ran inside the window);
 - teardown: after stop() the heartbeat beat count stays put for 500 ms and
-  the long-animation-frame observer is disconnected.
+  the long-animation-frame observer is disconnected;
+- freeze windows: with start({ringSize: 100}) and a busy stall after frame
+  300 of >= 600, the stall's freezeWindows entry still has 30 samples before
+  and 30 from the freeze on, although the ring dropped those frames;
+- live canvases: over a >= 20 s play session samples carry liveCanvasMB
+  about once per second, > 0, never below the first value after warm-up;
+- hashes: one sha256 per loaded script, equal to the file on disk, and
+  buildId recomputed here; from file:// every script fails on its own
+  (Chrome's fetch has no file scheme), which was the TASK-776 user report.
 
-Set VISUALSPERF_ATTRIBUTION_EVIDENCE_DIR=<dir> to write stalls.json and
-export-normal.json (a plain recording) there.
+Set VISUALSPERF_ATTRIBUTION_EVIDENCE_DIR=<dir> to write stalls.json,
+export-normal.json (a plain recording), windows.json, canvasmem.json and
+hashes.json there.
 """
 from contextlib import ExitStack
+import hashlib
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 import unittest
 
 from browser_test_support import start_browser_test, wait_for_boot
@@ -100,7 +111,7 @@ class VisualsPerfAttributionTest(unittest.TestCase):
             (cls.evidence / 'stalls.json').write_text(json.dumps(cls.stalls, indent=1) + '\n')
         cls.stack.close()
 
-    def open(self):
+    def open(self, start='{}', url=None):
         context = self.browser.new_context(viewport=VIEWPORT)
         self.addCleanup(context.close)
         context.add_init_script(OBSERVER_SPY)
@@ -108,15 +119,15 @@ class VisualsPerfAttributionTest(unittest.TestCase):
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
         self.addCleanup(lambda: self.assertEqual(errors, []))
-        page.goto(self.url + 'index.html?visualsPerf=1', wait_until='load')
+        page.goto(url or self.url + 'index.html?visualsPerf=1', wait_until='load')
         wait_for_boot(page)
-        page.evaluate('visualsPerf.start()')
+        page.evaluate(f'visualsPerf.start({start})')
         page.evaluate(FRAMES, 30)
         return page
 
     def stop(self, page):
         report = page.evaluate('visualsPerf.stop()')
-        self.assertEqual(report['schemaVersion'], 2)
+        self.assertEqual(report['schemaVersion'], 3)
         return report
 
     def stall_freeze(self, report, injected_at):
@@ -210,10 +221,12 @@ class VisualsPerfAttributionTest(unittest.TestCase):
             for key in ('mainThreadSilenceMs', 'heapBeforeMB', 'heapAfterMB', 'heapDropMB', 'rafLagMs'):
                 self.assertIn(key, f)
             self.assertIn('loafs', f['context'])
+            self.assertIsInstance(f['context']['liveCanvases'], int)
+            self.assertGreater(f['context']['liveCanvasMB'], 0)
             self.assertLessEqual(f['mainThreadSilenceMs'], f['gapMs'] + 0.1)
         if self.evidence:
             (self.evidence / 'export-normal.json').write_text(json.dumps(report, indent=1) + '\n')
-        print(f'PASS export: schemaVersion 2, {len(report["samples"])} samples with rafLagMs/heapMB, '
+        print(f'PASS export: schemaVersion 3, {len(report["samples"])} samples with rafLagMs/heapMB, '
               f'{len(report["freezes"])} freezes with attribution fields, {len(report["loafs"])} loafs', flush=True)
 
     def test_stop_teardown(self):
@@ -231,6 +244,122 @@ class VisualsPerfAttributionTest(unittest.TestCase):
         self.assertEqual(after['loaf'], [False])
         print(f'PASS teardown: beats {before} -> {after["beats"]} over 500 ms after stop(); '
               f'long-animation-frame observer connected={after["loaf"]}', flush=True)
+
+    def write(self, name, data):
+        if self.evidence:
+            (self.evidence / name).write_text(json.dumps(data, indent=1) + '\n')
+
+    def test_freeze_windows(self):
+        page = self.open('{ringSize: 100}')
+        page.evaluate(FRAMES, 300)
+        injected_at = page.evaluate('performance.now()')
+        page.evaluate(BUSY, STALL_MS)
+        page.evaluate(FRAMES, 300)
+        report = self.stop(page)
+        frames = len(report['samples']) + report['droppedSamples']
+        freeze = self.stall_freeze(report, injected_at)
+        index = report['freezes'].index(freeze)
+        windows = [w for w in report['freezeWindows'] if w['freezeIndex'] == index]
+        self.assertEqual(len(windows), 1, 'no window for the stall freeze')
+        window = windows[0]
+        samples = window['samples']
+        result = {'frames': frames, 'ringSize': report['ringSize'], 'ringSamples': len(report['samples']),
+                  'droppedSamples': report['droppedSamples'], 'droppedWindows': report['droppedWindows'],
+                  'freezes': len(report['freezes']), 'freezeWindows': len(report['freezeWindows']),
+                  'stallFreeze': {'index': index, 't': freeze['t'], 'gapMs': freeze['gapMs']},
+                  'window': {'freezeIndex': window['freezeIndex'], 'freezeAt': window['freezeAt'],
+                             'length': len(samples), 'before': window['freezeAt'],
+                             'after': len(samples) - window['freezeAt'],
+                             'firstT': samples[0]['t'], 'lastT': samples[-1]['t'],
+                             'freezeSampleT': samples[window['freezeAt']]['t']},
+                  'oldestRingT': report['samples'][0]['t']}
+        self.write('windows.json', result)
+        print('WINDOWS', json.dumps(result), flush=True)
+        self.assertGreaterEqual(frames, 600)
+        self.assertGreater(report['droppedSamples'], 0)
+        self.assertEqual(len(samples), 60)
+        self.assertEqual(window['freezeAt'], 30)
+        self.assertEqual(samples[30]['t'], freeze['t'])
+        self.assertEqual([s['t'] for s in samples], sorted(s['t'] for s in samples))
+        # The ring no longer holds these frames
+        self.assertLess(samples[-1]['t'], report['samples'][0]['t'])
+        for w in report['freezeWindows']:
+            self.assertLessEqual(len(w['samples']), 60)
+        print(f'PASS windows: {frames} frames, droppedSamples={report["droppedSamples"]}, stall window '
+              f'{len(samples)} samples (30 before, 30 from the freeze), t {samples[0]["t"]:.1f}..'
+              f'{samples[-1]["t"]:.1f} < oldest ring t {report["samples"][0]["t"]:.1f}', flush=True)
+
+    def test_live_canvas_mb(self):
+        page = self.open()
+        started = page.evaluate('performance.now()')
+        box = page.viewport_size
+        # A play session: run right, throw the grapnel now and then
+        page.keyboard.down('ArrowRight')
+        for i in range(21):
+            page.mouse.click(box['width'] * (0.55 + 0.04 * (i % 5)), box['height'] * (0.2 + 0.05 * (i % 3)))
+            page.wait_for_timeout(1000)
+        page.keyboard.up('ArrowRight')
+        report = self.stop(page)
+        series = [{'t': round(s['t'] - started, 1), 'liveCanvasMB': s['liveCanvasMB']}
+                  for s in report['samples'] if 'liveCanvasMB' in s]
+        values = [s['liveCanvasMB'] for s in series]
+        span = (report['samples'][-1]['t'] - report['samples'][0]['t']) / 1000
+        gaps = [b['t'] - a['t'] for a, b in zip(series, series[1:])]
+        first = values[0]
+        result = {'spanS': round(span, 1), 'samples': len(report['samples']), 'withLiveCanvasMB': len(series),
+                  'first': first, 'min': min(values), 'max': max(values), 'last': values[-1],
+                  'minGapMs': min(gaps), 'maxGapMs': max(gaps),
+                  'freezes': [{'t': round(f['t'] - started, 1), 'liveCanvases': f['context']['liveCanvases'],
+                               'liveCanvasMB': f['context']['liveCanvasMB']} for f in report['freezes']][:50],
+                  'series': series}
+        self.write('canvasmem.json', result)
+        print('CANVASMEM', json.dumps({k: v for k, v in result.items() if k not in ('series', 'freezes')}),
+              flush=True)
+        self.assertGreaterEqual(span, 20)
+        self.assertGreater(first, 0)
+        self.assertGreaterEqual(min(values[1:]), first)
+        self.assertGreaterEqual(min(gaps), 1000)
+        self.assertGreaterEqual(len(series), span * 0.8)
+        for f in report['freezes']:
+            self.assertGreater(f['context']['liveCanvases'], 0)
+        print(f'PASS canvas memory: {len(series)} samples with liveCanvasMB over {span:.1f} s, '
+              f'{first} -> {values[-1]} MB (min {min(values)})', flush=True)
+
+    def hashes(self, page):
+        page.wait_for_function('visualsPerf.export().sourceHashFailures !== null')
+        return page.evaluate('''() => { const r = visualsPerf.export();
+            return {sourceHashes: r.sourceHashes, buildId: r.buildId, sourceHashFailures: r.sourceHashFailures,
+                scripts: [...document.scripts].filter(s => s.src).map(s => s.src)} }''')
+
+    def test_source_hashes(self):
+        page = self.open()
+        result = self.hashes(page)
+        paths = [urlparse(src).path for src in result['scripts']]
+        hashes = result['sourceHashes']
+        self.assertEqual(sorted(hashes), sorted(set(paths)))
+        self.assertEqual(result['sourceHashFailures'], 0)
+        self.assertRegex(result['buildId'], r'^[0-9a-f]{64}$')
+        for path, digest in hashes.items():
+            self.assertEqual(digest, hashlib.sha256((ROOT / path.lstrip('/')).read_bytes()).hexdigest(), path)
+        lines = sorted(f'{p}:{h}' for p, h in hashes.items())
+        self.assertEqual(result['buildId'], hashlib.sha256('\n'.join(lines).encode()).hexdigest())
+        self.write('hashes.json', result)
+        print(f'PASS hashes: {len(hashes)} scripts hashed (each = sha256 of the file on disk), '
+              f'sourceHashFailures=0, buildId={result["buildId"]}', flush=True)
+
+    def test_file_scheme_fails_per_script(self):
+        page = self.open(url=(ROOT / 'index.html').as_uri() + '?visualsPerf=1')
+        result = self.hashes(page)
+        hashes = result['sourceHashes']
+        self.assertEqual(len(hashes), len(set(result['scripts'])))
+        self.assertEqual(result['sourceHashFailures'], len(hashes))
+        self.assertIsNone(result['buildId'])
+        for path, entry in hashes.items():
+            self.assertEqual(entry['error'], 'TypeError: Failed to fetch', path)
+            self.assertTrue(entry['url'].startswith('file://'))
+        self.write('hashes-file-scheme.json', result)
+        print(f'PASS file://: {len(hashes)} scripts, each its own {{error: TypeError: Failed to fetch}}, '
+              f'sourceHashFailures={result["sourceHashFailures"]}, buildId=None', flush=True)
 
 
 if __name__ == '__main__':

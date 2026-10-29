@@ -24,7 +24,7 @@ Without the flag nothing is recorded and no panel is shown. Nothing is sent
 anywhere; the file stays on your device until you send it. `?visualsPerf=1`
 can be combined with `?perf=1`.
 
-### Telling freezes apart (`schemaVersion` 2)
+### Telling freezes apart (`schemaVersion` 2+)
 
 A freeze where the game's timed layers add up to a few ms has its cause
 outside the game's draw code. These fields help find it. All of them exist
@@ -50,6 +50,41 @@ only while recording, and `stop()` (or Export) tears them down:
   long `mainThreadSilenceMs` points to garbage collection.
 - `samples[].rafLagMs` (also on each freeze): how late the frame callback
   started after its `requestAnimationFrame` timestamp.
+
+### Retention, canvas memory and build id (`schemaVersion` 3)
+
+- `freezeWindows`: each freeze keeps its own copy of the samples around it,
+  `{freezeIndex, freezeAt, samples}`. `samples` holds the 30 samples before
+  the freeze, then the freeze sample (`samples[freezeAt]`) and the 29 after
+  it, 60 in all. The after part fills over the next frames. A window is
+  kept outside the sample ring, so it survives even when `droppedSamples` has
+  dropped those frames. At most 200 windows are kept, and
+  `droppedWindows` counts the rest. `freezeIndex` is the index in `freezes`.
+- `freezes[].context.liveCanvases` / `liveCanvasMB`: every canvas made with
+  `document.createElement` (or in the page when Start is pressed) is held
+  weakly, and a collected canvas drops out. `liveCanvasMB` is the sum of
+  `width * height * 4` over the live ones / 2^20, rounded to 0.1. Samples
+  carry `liveCanvasMB` once per second and leave it out on the others. A
+  freeze where it rises fast points to canvas memory pressure, not the draw
+  code. A canvas made before render/visualsperf.js loads and never put in the
+  page is not seen.
+- `sourceHashes`: the sha256 of each loaded `<script src>`, by path, each
+  hashed on its own. A script that cannot be read maps to `{error, url}`.
+  `buildId` is the sha256 of the sorted `path:hash` lines of the scripts that
+  hashed, joined by newlines, so two reports with the same `buildId` ran the
+  same code. `sourceHashFailures` is the number of scripts that failed.
+
+**Why the first user report had `sourceHashes: {"error": "TypeError: Failed
+to fetch"}`.** Every `<script src>` in index.html, and `leveldata.js`
+(injected by mountain.js at boot), is a relative, same-origin path. There is
+no cross-origin script. Over HTTP (`python3 -m http.server`) all 51 hash.
+Opened as a file (`file:///.../index.html?visualsPerf=1`), Chrome's `fetch`
+does not support the `file:` scheme, and every script fails with exactly
+`TypeError: Failed to fetch`. The old code used one `Promise.all`, so that
+became the whole result. The report was most likely recorded from a
+double-clicked index.html. Now each script gets its own `{error}`,
+`sourceHashFailures` equals the script count and `buildId` is null. To get a
+`buildId`, serve the folder over HTTP (`python3 -m http.server 8000`).
 
 ## Perf note: freezes from runtime canvas creation
 

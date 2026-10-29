@@ -31,6 +31,17 @@
 // (callback start minus the rAF timestamp). start({heartbeat: false}) is a
 // test-only switch.
 //
+// Retention and memory (schemaVersion 3): each freeze (up to WINDOW_CAP,
+// droppedWindows counts the rest) gets freezeWindows[] = {freezeIndex,
+// freezeAt, samples}: the WINDOW_SAMPLES samples before it, then the freeze
+// sample (samples[freezeAt]) and the samples after it up to 2 *
+// WINDOW_SAMPLES, kept outside the ring so droppedSamples never loses them.
+// Every canvas from createElement (or in the DOM at start()) is held by a
+// WeakRef; freezes have context.liveCanvases/liveCanvasMB (width * height * 4
+// of the live ones) and a sample carries liveCanvasMB once per
+// CANVAS_SAMPLE_MS. sourceHashes hashes each script on its own (a failure is
+// {error, url}); buildId is the sha256 of the sorted 'path:hash' lines.
+//
 // Composes with ?perf=1: both wrap the same globals, each wrapper calling
 // the previous one. Without the flag nothing is wrapped, no listener is
 // added and window.visualsPerf stays undefined.
@@ -48,6 +59,9 @@
     const RING_SIZE = 18000
     const LOAF_CAP = 2000
     const HEARTBEAT_MS = 4
+    const WINDOW_SAMPLES = 30
+    const WINDOW_CAP = 200
+    const CANVAS_SAMPLE_MS = 1000
 
     // Work of the current interval; reset after every sample
     let layers = {}, physicsMs = 0, physicsSteps = 0
@@ -59,8 +73,45 @@
     let loafObserver = null, heapMB = null
     // Heartbeat: beat times since the previous sample, lifetime beat count
     let heartbeat = null, beats = [], beatCount = 0
+    // The newest WINDOW_SAMPLES samples and the freeze windows still filling
+    let recent = [], filling = []
+    let lastCanvasSampleT = -Infinity
     // Sources already drawn and the creator of every canvas (kept across recordings)
     const drawnSources = new WeakSet(), canvasCreators = new WeakMap()
+    // Every canvas seen (createElement, or in the DOM at start()), held weakly;
+    // a collected canvas drops out through the registry
+    const liveCanvases = new Set(), registeredCanvases = new WeakSet()
+    const canvasRegistry = typeof FinalizationRegistry === 'function' ?
+        new FinalizationRegistry(ref => liveCanvases.delete(ref)) : null
+
+    function registerCanvas(canvas)
+    {
+        if (typeof WeakRef !== 'function' || registeredCanvases.has(canvas))
+            return
+        registeredCanvases.add(canvas)
+        const ref = new WeakRef(canvas)
+        liveCanvases.add(ref)
+        if (canvasRegistry)
+            canvasRegistry.register(canvas, ref)
+    }
+
+    // {count, mb}: live canvases and their backing store (width * height * 4)
+    function canvasMemory()
+    {
+        let count = 0, bytes = 0
+        for (const ref of liveCanvases)
+        {
+            const canvas = ref.deref()
+            if (!canvas)
+            {
+                liveCanvases.delete(ref)
+                continue
+            }
+            ++count
+            bytes += canvas.width * canvas.height * 4
+        }
+        return {count, mb: Math.round(bytes / 1048576 * 10) / 10}
+    }
 
     function resetInterval()
     {
@@ -126,6 +177,7 @@
             if (report)
                 ++canvasesCreated
             canvasCreators.set(element, creatorOf(new Error().stack))
+            registerCanvas(element)
         }
         return element
     }
@@ -243,6 +295,7 @@
 
     function context()
     {
+        const canvases = canvasMemory()
         return {
             ninjaX: game(() => ninja.x),
             ninjaY: game(() => ninja.y),
@@ -254,6 +307,8 @@
             getContextCalls,
             fallRecoveries,
             sectionChanges,
+            liveCanvases: canvases.count,
+            liveCanvasMB: canvases.mb,
             firstDraws: firstDraws.slice().sort((a, b) => b.w * b.h - a.w * a.h),
             palette: game(() =>
             {
@@ -368,6 +423,14 @@
                 entry.fd = firstDrawPx
             if (heapMB !== null)
                 entry.heapMB = heapMB
+            if (t - lastCanvasSampleT >= CANVAS_SAMPLE_MS)
+            {
+                lastCanvasSampleT = t
+                entry.liveCanvasMB = canvasMemory().mb
+            }
+            for (const w of filling)
+                w.samples.push(entry)
+            filling = filling.filter(w => w.samples.length < w.freezeAt + WINDOW_SAMPLES)
             if (ring.length < ringSize)
                 ring.push(entry)
             else
@@ -399,28 +462,69 @@
                     freeze.heapDropMB = heapBeforeMB === null ? 0 : round1(Math.max(0, heapBeforeMB - heapMB))
                 }
                 report.freezes.push(freeze)
+                if (report.freezeWindows.length < WINDOW_CAP)
+                {
+                    const w = {freezeIndex: report.freezes.length - 1, freezeAt: recent.length,
+                        samples: recent.concat([entry])}
+                    report.freezeWindows.push(w)
+                    filling.push(w)
+                }
+                else
+                    ++report.droppedWindows
                 const live = window.visualsPerf.live
                 ++live.freezes
                 live.worstMs = Math.max(live.worstMs, gapMs)
                 live.last = {layer: slowestLayer, ms: slowestMs}
             }
+            recent.push(entry)
+            if (recent.length > WINDOW_SAMPLES)
+                recent.shift()
         }
         previousT = t
         beats = []
         resetInterval()
     }
 
-    // sha256 of every loaded script (pathname -> hex), resolved later
-    function sourceHashes()
+    async function sha256(bytes)
+    {
+        const digest = await crypto.subtle.digest('SHA-256', bytes)
+        return [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, '0')).join('')
+    }
+
+    // sha256 of every loaded script, each on its own (pathname -> hex, or
+    // {error, url} when that one fails), and buildId = sha256 of the sorted
+    // 'path:hash' lines of the scripts that hashed; resolved later
+    async function sourceHashes()
     {
         const scripts = [...document.scripts].filter(s => s.src)
-        return Promise.all(scripts.map(async script =>
+        const entries = await Promise.all(scripts.map(async script =>
         {
-            const bytes = await (await fetch(script.src)).arrayBuffer()
-            const digest = await crypto.subtle.digest('SHA-256', bytes)
-            return [new URL(script.src).pathname,
-                [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, '0')).join('')]
-        })).then(Object.fromEntries).catch(error => ({error: String(error)}))
+            const path = new URL(script.src).pathname
+            try
+            {
+                const response = await fetch(script.src)
+                if (!response.ok)
+                    throw new Error('HTTP ' + response.status)
+                return [path, await sha256(await response.arrayBuffer())]
+            }
+            catch (error)
+            {
+                return [path, {error: String(error), url: script.src}]
+            }
+        }))
+        const hashed = entries.filter(([, hash]) => typeof hash === 'string')
+        let buildId = null
+        try
+        {
+            if (hashed.length)
+                buildId = await sha256(new TextEncoder().encode(
+                    hashed.map(([path, hash]) => path + ':' + hash).sort().join('\n')))
+        }
+        catch (error)
+        {
+        }
+        return {sourceHashes: Object.fromEntries(entries), buildId,
+            sourceHashFailures: entries.length - hashed.length}
     }
 
     function onVisibility(event)
@@ -449,10 +553,15 @@
             previousT = null
             lastSection = null
             heapMB = null
+            recent = []
+            filling = []
+            lastCanvasSampleT = -Infinity
+            for (const canvas of document.querySelectorAll('canvas'))
+                registerCanvas(canvas)
             resetInterval()
             this.live = {freezes: 0, worstMs: 0, last: null}
             report = {
-                schemaVersion: 2,
+                schemaVersion: 3,
                 environment: 'user-browser',
                 performanceStatus: 'user-device-performance-unverified',
                 meta,
@@ -462,6 +571,8 @@
                 version: game(() => version),
                 levelId: game(() => version === 'grapple_over' ? floors[0].level.layoutId : null),
                 sourceHashes: null,
+                buildId: null,
+                sourceHashFailures: null,
                 freezeMs: FREEZE_MS,
                 ringSize,
                 startedAt: new Date().toISOString(),
@@ -470,6 +581,8 @@
                 samples: [],
                 droppedSamples: 0,
                 freezes: [],
+                freezeWindows: [],
+                droppedWindows: 0,
                 longTasksSupported: false,
                 longTasks: [],
                 loafSupported: false,
@@ -479,7 +592,8 @@
                 visibility: [],
             }
             const target = report
-            sourceHashes().then(hashes => target.sourceHashes = hashes)
+            sourceHashes().then(result => Object.assign(target, result),
+                error => target.sourceHashes = {error: String(error)})
             if (typeof PerformanceObserver !== 'undefined' &&
                 (PerformanceObserver.supportedEntryTypes || []).includes('longtask'))
             {
@@ -546,6 +660,8 @@
             lastReport = report
             report = null
             ring = null
+            recent = []
+            filling = []
             return lastReport
         },
         export()
