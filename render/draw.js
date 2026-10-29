@@ -303,6 +303,8 @@ function warmGlowSprites()
             menu.button.draw()
         }
         warmGroundGlowSprites()
+        // No-grapple lattice tile and pattern (render/nograpplezones.js)
+        NO_GRAPPLE_ZONES.warm(scratch)
     }
     finally
     {

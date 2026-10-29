@@ -9,8 +9,13 @@ production draw() of that state:
 - render/nograpplezones.js draws the zones first in the world layer, under
   the route arrows, the rope, the panels and the player (call order, and
   pixels of opaque panels and the player unchanged by the zones);
-- the wash is translucent (alpha from STYLE.colors.noGrapple, measured from
-  pixels), adds no yellow and changes nothing outside the zones;
+- the wash is translucent (base fill alpha from STYLE.colors.noGrapple.fill,
+  measured from the pixels between lattice lines), adds no yellow and changes
+  nothing outside the zones and their edge/bracket margin;
+- Ion lattice (TASK-782): a frame is a pure function of world.elapsedSteps and
+  the camera (sha of two renders), the pulse changes pixels inside a zone and
+  none outside, and the hex lattice period in device px scales with the camera
+  scale (world-unit hexes);
 - zones are culled by their own box (only visible ones are drawn) and a level
   without zones draws nothing;
 - zones stay pass-through: not in elements or dragZones, no drag motes, and a
@@ -160,6 +165,85 @@ DIFF = '''(pad) => {
         boxes}
 }'''
 
+# TASK-782: sha-256 of the canvas at given elapsedSteps and camera, and the pixels a
+# change of elapsedSteps changes inside / outside the zone boxes (pad in device px).
+# Other layers also run on elapsedSteps (role detail, drag motes), so outside the
+# boxes each zoned frame is compared with the same step without zones: zoneOut counts
+# outside pixels where a zoned frame differs from its plain twin (expected 0), and
+# changedOut those the step change moves in zoned frames but not in plain ones.
+PULSE = '''async ([s1, s2, pad]) => {
+    const W = canvas.width, H = canvas.height, world = floors[0]
+    const boxes = world.noGrappleZones.map(z => { const b = getElementCullBox(z)
+        const a = PG.dev(b.left, b.top), c = PG.dev(b.right, b.bottom)
+        return [a[0] - pad, a[1] - pad, c[0] + pad, c[1] + pad] })
+    const at = async steps => { world.elapsedSteps = steps; PG.frame(); const img = PG.image()
+        const sha = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', img)), b => b.toString(16).padStart(2, '0')).join('')
+        return {img, sha} }
+    const steps0 = world.elapsedSteps
+    const a = await at(s1), b = await at(s2), again = await at(s1)
+    const pa = PG.withoutZones(() => { world.elapsedSteps = s1; PG.frame(); return PG.image() })
+    const pb = PG.withoutZones(() => { world.elapsedSteps = s2; PG.frame(); return PG.image() })
+    world.elapsedSteps = steps0
+    const same = (u, v, i) => u[i] === v[i] && u[i + 1] === v[i + 1] && u[i + 2] === v[i + 2]
+    let changedIn = 0, changedOut = 0, zoneOut = 0, otherLayersOut = 0
+    for (let y = 0; y < H; ++y)
+        for (let x = 0; x < W; ++x) {
+            const i = (y * W + x) * 4
+            if (boxes.some(q => x >= q[0] && x <= q[2] && y >= q[1] && y <= q[3])) {
+                if (!same(a.img, b.img, i)) ++changedIn
+                continue
+            }
+            if (!same(a.img, pa, i) || !same(b.img, pb, i)) ++zoneOut
+            const moved = !same(a.img, b.img, i), plainMoved = !same(pa, pb, i)
+            if (moved && !plainMoved) ++changedOut
+            if (plainMoved) ++otherLayersOut
+        }
+    return {s1, s2, sha1: a.sha, sha1Again: again.sha, sha2: b.sha, changedIn, changedOut, zoneOut, otherLayersOut}
+}'''
+
+# Simulated steps that put the pulse centre at u = p . dir of a zone's centre (+ du)
+PULSE_STEPS = '''([id, du]) => { const c = STYLE.colors.noGrapple, d = c.pulseDirection, l = Math.hypot(d[0], d[1])
+    const b = getElementCullBox(floors[0].byId.get(id) || floors[0].noGrappleZones.find(z => z.id === id))
+    const u = (((b.left + b.right) / 2 * d[0] + (b.top + b.bottom) / 2 * d[1]) / l + du) % c.pulsePeriodWorld
+    return Math.round((u + c.pulsePeriodWorld) % c.pulsePeriodWorld / c.pulseSpeed * 1000 / (physicsStepMs / cyclesPerTick)) }'''
+
+# Zone-only luminance (zoned - plain) of rows across zoneA's interior at camera scale s
+LATTICE_ROWS = '''([s, steps]) => { const s0 = scale[version], world = floors[0], st0 = world.elapsedSteps
+    scale[version] = s; screen.x = 0; screen.y = 0; world.elapsedSteps = steps
+    try {
+        const z = world.noGrappleZones.find(z => z.id === 'zoneA'), b = getElementCullBox(z), m = STYLE.colors.noGrapple.glowWorld * 1.2
+        const a = PG.dev(b.left + m, (b.top + b.bottom) / 2), c = PG.dev(b.right - m, (b.top + b.bottom) / 2)
+        const rows = Math.round(3 * STYLE.colors.noGrapple.hexRadius * s * canvas.width / width)
+        PG.frame(); const zoned = ctx.getImageData(a[0], a[1], c[0] - a[0], rows).data
+        const plain = PG.withoutZones(() => { PG.frame(); return ctx.getImageData(a[0], a[1], c[0] - a[0], rows).data })
+        const lum = d => { const out = []; for (let i = 0; i < d.length; i += 4) out.push(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]); return out }
+        const zl = lum(zoned), pl = lum(plain)
+        return {width: c[0] - a[0], rows, k: canvas.width / width * s, delta: zl.map((v, i) => +(v - pl[i]).toFixed(2))}
+    } finally { scale[version] = s0; screen.x = 0; screen.y = 0; world.elapsedSteps = st0; PG.frame() } }'''
+
+
+def lattice_period(rec):
+    """Horizontal period (device px) of the zone-only luminance: the power spectrum summed over
+    the rows (each detrended, Hann-windowed and zero-padded to 16384), whose lowest-frequency
+    local maximum with >= 25% of the strongest power, above 3 cycles per row, is the
+    fundamental (refined by a parabola on log power). The period is rarely a whole pixel."""
+    import numpy as np
+    w, rows = rec['width'], rec['rows']
+    d = np.array(rec['delta'], dtype=float).reshape(rows, w)
+    xs = np.arange(w)
+    d = np.array([row - np.polyval(np.polyfit(xs, row, 1), xs) for row in d]) * np.hanning(w)
+    n = 16384
+    power = (np.abs(np.fft.rfft(d, n, axis=1)) ** 2).sum(axis=0)
+    lo = int(np.ceil(3 * n / w))
+    top = power[lo:].max()
+    i = next(i for i in range(lo + 1, len(power) - 1)
+             if power[i] >= 0.25 * top and power[i] >= power[i - 1] and power[i] >= power[i + 1])
+    y0, y1, y2 = np.log(power[i - 1:i + 2])
+    den = y0 - 2 * y1 + y2
+    f = (i + (0.5 * (y0 - y2) / den if den else 0)) / n
+    return float(1 / f), float(power[i] / top)
+
+
 # Pixels at named world points with and without the zones
 SAMPLES = '''(points) => {
     PG.frame()
@@ -263,7 +347,8 @@ class NoGrappleRenderTests(unittest.TestCase):
         bounce, drag, purple = (b['icon'] for b in legend)
         self.assertAlmostEqual(bounce['w'] / bounce['h'], 1, places=6)
         self.assertAlmostEqual(drag['w'] / drag['h'], 3.2, places=6)
-        edge = page.evaluate(SPRITE_PIXEL, [purple['x'] + 1, purple['y'] + purple['h'] / 2])
+        # On the icon's edge stroke (centred on its left side)
+        edge = page.evaluate(SPRITE_PIXEL, [purple['x'], purple['y'] + purple['h'] / 2])
         self.assertTrue(edge[2] > 100 and edge[2] > edge[0] > edge[1] + 30, edge)
         left, right = boxes[0]['x'], boxes[-1]['x'] + boxes[-1]['w']
         return {'labels': [b['label'] for b in legend], 'canvas': state['canvas'],
@@ -306,13 +391,26 @@ class NoGrappleRenderTests(unittest.TestCase):
         self.assertEqual(z['outside'], p['outside'])
         for name in ('panelP1', 'player'):
             self.assertTrue(all(abs(a - b) <= 2 for a, b in zip(z[name], p[name])), (name, z[name], p[name]))
-        # Estimated wash alpha per channel from base -> zoned toward the fill colour
+        # Estimated base-fill alpha from base -> zoned toward the fill colour (least squares over the
+        # three channels), the median over interior points past the glow band: most fall between
+        # lattice lines where only the base fill covers the backdrop (a lattice line adds to it, a
+        # bright mote or panel edge drawn over it takes it toward 0)
         fill = page.evaluate('STYLE.colors.noGrapple.fill')
         m = re.match(r'rgba\((\d+), (\d+), (\d+), ([\d.]+)\)', fill)
         target, alpha = [int(m.group(i)) for i in (1, 2, 3)], float(m.group(4))
-        est = [(z['zoneOnly'][i] - p['zoneOnly'][i]) / (target[i] - p['zoneOnly'][i]) for i in range(3)
-               if abs(target[i] - p['zoneOnly'][i]) > 40]
-        self.assertTrue(est and all(0 < e < 0.35 for e in est), est)
+        grid = {f'g{i}_{j}': [(0.15 + 0.03 * i) * W, (0.20 + 0.03 * j) * H] for i in range(6) for j in range(6)}
+        gs = page.evaluate(SAMPLES, grid)
+        def fit(n):
+            zc, pc = gs['zoned'][n], gs['plain'][n]
+            den = sum((target[c] - pc[c]) ** 2 for c in range(3))
+            return sum((zc[c] - pc[c]) * (target[c] - pc[c]) for c in range(3)) / den, den
+        # Points covered by an opaque panel, the player or a mote read the same with and without zones
+        usable = {n: fit(n)[0] for n in grid if fit(n)[1] >= 40 ** 2 and gs['zoned'][n] != gs['plain'][n]}
+        self.assertGreaterEqual(len(usable), 12, gs)
+        base = sorted(usable, key=usable.get)[len(usable) // 2]
+        bz, bp = gs['zoned'][base], gs['plain'][base]
+        est = [usable[base]]
+        self.assertTrue(abs(est[0] - alpha) < 0.03, (est, alpha, bz, bp, usable))
         self.assertTrue(0 < alpha < 0.35)
         lum = lambda c: 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
         # Brightest rope pixel near its midpoint against the wash. The Grapple Over helix strands
@@ -324,14 +422,46 @@ class NoGrappleRenderTests(unittest.TestCase):
         self.assertGreater(rope_contrast, 40, (near, z['zoneOnly']))
         rec['pixels'] = {'points': {k: [round(v, 1) for v in xy] for k, xy in pts.items()}, 'zoned': z, 'plain': p,
                          'fill': fill, 'fillAlpha': alpha, 'measuredAlpha': [round(e, 3) for e in est],
+                         'baseFillPixel': {'point': base, 'zoned': bz, 'plain': bp, 'usablePoints': len(usable)},
                          'ropeLuminanceContrastOverWash': round(rope_contrast, 1)}
-        diff = page.evaluate(DIFF, 4)
+        # Edge, outer line and corner brackets reach bracketGapPx + bracketPx CSS px outside the polygon
+        k = page.evaluate('canvas.width / getCanvasCssRect().width')
+        pad = int(page.evaluate('STYLE.colors.noGrapple.bracketGapPx + STYLE.colors.noGrapple.bracketPx') * k + 0.999) + 2
+        diff = page.evaluate(DIFF, pad)
         self.assertEqual(diff['unstable'], 0, diff)
         self.assertGreater(diff['changedIn'], 1000, diff)
         self.assertEqual(diff['changedOut'], 0, diff)
         self.assertEqual(diff['yellowShift'], 0, diff)
         self.assertGreater(diff['meanShift'][2], diff['meanShift'][1], diff)
-        rec['zoneDiff'] = diff
+        rec['zoneDiff'] = dict(diff, pad=pad)
+
+        # TASK-782 (a) determinism, (b) pulse: two elapsedSteps whose pulse centres cross zoneA
+        s1 = page.evaluate(PULSE_STEPS, ['zoneA', 0])
+        s2 = page.evaluate(PULSE_STEPS, ['zoneA', 600])
+        pulse = page.evaluate(PULSE, [s1, s2, pad])
+        self.assertEqual(pulse['sha1'], pulse['sha1Again'], pulse)
+        self.assertNotEqual(pulse['sha1'], pulse['sha2'], pulse)
+        self.assertGreater(pulse['changedIn'], 500, pulse)
+        self.assertEqual(pulse['changedOut'], 0, pulse)
+        self.assertEqual(pulse['zoneOut'], 0, pulse)
+        rec['determinism'] = {'elapsedSteps': s1, 'sha': pulse['sha1'], 'shaAgain': pulse['sha1Again'], 'identical': True}
+        rec['pulse'] = pulse
+        # (c) world-size hexes: the lattice period in device px follows the camera scale, with the pulse away
+        quiet = page.evaluate(PULSE_STEPS, ['zoneA', 3600])
+        scales = [scene['scale'], scene['scale'] * 1.5]
+        periods = []
+        for sc in scales:
+            per, peak = lattice_period(page.evaluate(LATTICE_ROWS, [sc, quiet]))
+            periods.append({'scale': sc, 'periodPx': round(per, 3), 'peak': round(peak, 3)})
+        ratio = periods[1]['periodPx'] / periods[0]['periodPx']
+        expect = scales[1] / scales[0]
+        hex_px = [3 ** 0.5 * page.evaluate('STYLE.colors.noGrapple.hexRadius') * sc * k * page.evaluate('getCanvasCssRect().width / width')
+                  for sc in scales]
+        self.assertLess(abs(ratio / expect - 1), 0.10, (periods, ratio, expect))
+        for pr, hp in zip(periods, hex_px):
+            self.assertLess(abs(pr['periodPx'] / hp - 1), 0.10, (periods, hex_px))
+        rec['latticePeriod'] = {'periods': periods, 'expectedHexPeriodPx': [round(h, 3) for h in hex_px],
+                                'ratio': round(ratio, 4), 'scaleRatio': expect, 'withinTenPercent': True}
         page.evaluate('TUTORIAL_HINT.visible = true')
 
         # Culling by each zone's own box as the camera moves (view left edge at world x = sx)
@@ -398,6 +528,8 @@ class NoGrappleRenderTests(unittest.TestCase):
         self.assertEqual(life['drawsAfterFade'], 0)
         rec['lifecycle'] = life
         self.proof.setdefault('viewports', {})[kind] = rec
+        print(f"PASS {kind}: pulse in={pulse['changedIn']} out={pulse['changedOut']} sha stable, lattice period "
+              f"{[p['periodPx'] for p in periods]} px ratio {ratio:.3f} (scale ratio {expect})", flush=True)
         print(f"PASS {kind}: order {o}, drawn {order['drawn']}, diff in={diff['changedIn']} out={diff['changedOut']} "
               f"yellow={diff['yellowShift']}, alpha {rec['pixels']['measuredAlpha']}, cull {cull}, legend en/ru ok", flush=True)
 

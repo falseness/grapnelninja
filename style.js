@@ -92,13 +92,38 @@ const STYLE = Object.freeze({
             fill: 'rgba(255, 196, 0, 0.13)',
             stroke: '#ffc400'
         }),
-        // Grapple Over purple no-grapple zones (render/nograpplezones.js): a
-        // translucent violet wash and thin edge, under every surface and the
-        // player; edgePx is a screen (CSS) pixel width
+        // Grapple Over purple no-grapple zones (render/nograpplezones.js), the
+        // 'Ion lattice' look: a faint violet base fill, a hexagon lattice
+        // (hexRadius in world units, so it scales with the camera), a brighter
+        // inner glow band (glowWorld wide, glowSteps clipped strokes), a hard
+        // edge with a fainter outer line and L corner brackets (*Px are screen
+        // (CSS) pixels), and a diagonal pulse (world units, speed per second of
+        // simulated time) in which the lattice is drawn again at pulseAlpha
         noGrapple: Object.freeze({
-            fill: 'rgba(168, 64, 255, 0.2)',
-            stroke: 'rgba(204, 128, 255, 0.75)',
-            edgePx: 1.5
+            fill: 'rgba(70, 16, 130, 0.28)',
+            lattice: 'rgb(200, 140, 255)',
+            latticeAlpha: 0.16,
+            hexRadius: 56,
+            hexInset: 6,
+            latticeLineWorld: 4,
+            glow: 'rgb(190, 110, 255)',
+            glowAlpha: 0.32,
+            glowWorld: 220,
+            glowSteps: 4,
+            stroke: 'rgba(220, 170, 255, 0.95)',
+            edgePx: 1.5,
+            outerStroke: 'rgba(200, 140, 255, 0.45)',
+            outerPx: 1,
+            outerGapPx: 5,
+            bracket: 'rgb(240, 220, 255)',
+            bracketPx: 3,
+            bracketGapPx: 9,
+            bracketLengthPx: 30,
+            pulseAlpha: 0.42,
+            pulseWorld: 520,
+            pulsePeriodWorld: 7200,
+            pulseSpeed: 600,
+            pulseDirection: Object.freeze([1, 0.6])
         }),
         // Classic floor/ceiling strips: same green neon edge as bad mode
         ground: Object.freeze({
