@@ -115,6 +115,33 @@ column (x 2,102..10,382, inside -1,100..62,534):
   TASK-732 pitch (34,560 of 43,000 from the old summit top to the finish
   top). It is 0.494 (34,560 of 69,900) at the shipped TASK-743 pitch.
 
+### Sky Spire (candidate, TASK-762..)
+
+`--sky-spire` (TASK-762, `SKY_SPIRE`, default off until TASK-774 ships v21) adds
+section `SEC-sky-spire` above the gauntlet finish. XS-SUMMIT (P148) becomes an
+ordinary landing, and everything below its top is identical to v20. Above it,
+the same switchback tower column (x -1,038..14,274, inside -1,100..62,534)
+holds eight tall purple zones Y1..Y8 of exactly 6,912 x 8,640 (2x the gauntlet
+height, 1.2x its width), odd zones entered from the left and run rightward,
+even ones from the right:
+
+- Tall-zone contract (Sky Spire addendum in `level-guidelines.md`): the
+  approach ledge (`SP-Yk-APPROACH`) sits 600 under the zone top on the entry
+  side, the exit ledge (`SP-Yk-EXIT`) on the far side 1,080 lower (allowed
+  342..4,320). The slabs (`SKY_SPIRE['zoneSlabs']`, one ticket per zone from
+  TASK-763; empty zones keep one `SP-Yk-CROSS` transfer) span >= 4,320
+  vertically, so the player ricochets down through the zone rope-free.
+- Green safe spaces T0..T8 (`SP-Tk-G1/G2`, two ceiling panels on the tower's
+  outer side): T0 from XS-SUMMIT to Y1's approach, Tk from Yk's exit to
+  Y(k+1)'s approach (10,380 up), T8 to the new finish `SP-SUMMIT`.
+- Pitch 9,300 per zone (zones 660 apart): a column's approach ledge sits 7,960
+  under the exit ledge two zones up, out of the ~6,440 pump reach; T0's first
+  panel sits 700 left of the gauntlet's S8-G2. The static stack screen
+  (`artifacts/TASK-743/stack.py`) reports no Sky Spire flag.
+- `skySpire` in the measurements records zones, ledges, safe spaces, the
+  finish and the section's fragments/encounters. Yellow catchers come with
+  TASK-772. The candidate keeps layout id `extended-mountain-v20`.
+
 Layout `extended-mountain-v18` (previous, TASK-711) is the generator output with
 `--no-ext-summit-riser` and no layout flag. It is v17 with SEC-ext-summit, a
 new section above the old summit (TASK-708..710), running leftward past the

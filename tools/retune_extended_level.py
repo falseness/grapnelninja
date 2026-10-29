@@ -1427,6 +1427,152 @@ def add_gauntlet_catchers(m, spec, slots, spaces, old, zones):
     return out
 
 
+# TASK-762 Sky Spire (candidate, --sky-spire): SEC-sky-spire above the gauntlet finish (XS-SUMMIT): purple zones Y1..Y8
+# of 6912 x 8640 (2x the gauntlet's height, 1.2x its width) in one tower column over the gauntlet, entered alternately
+# from the left (odd, run rightward) and the right (even), with green safe spaces T0..T8 (T0 from XS-SUMMIT, Tk from
+# Yk's exit, T8 to SP-SUMMIT), each two ceiling panels on the tower's outer side (`panels` as in EXT_SUMMIT_GAUNTLET:
+# dx from the start ledge, fraction of the rise, width, height). Tall-zone contract (level-guidelines.md, Sky Spire
+# addendum): the approach ledge sits zoneAbove under the zone top, the exit ledge on the far side exitTop (342..4320)
+# lower, so the slabs (zoneSlabs, filled by TASK-763..770) carry the player down through the zone rope-free.
+# Pitch: consecutive approaches rise `rise` = 9,300 (zones 660 apart vertically, every ledge >= 600 under the next
+# zone). A column ledge pumps up ~6,440 (TASK-743), and in each column an approach ledge sits under the exit ledge two
+# zones up: rise - exitTop - ledge height = 7,960 > 7,000 keeps them out of reach (artifacts/TASK-743/stack.py).
+# T0: G1 sits left of the gauntlet's S8-G2 (>= 600 across, it is 5,400 above it) and G2 700 across from XS-SUMMIT.
+SKY_SPIRE = dict(zones=8, zone=(6912, 8640), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=1080,
+                 rise=9300, firstRise=9300, panels=((2500, .33, 1440, 240), (1900, .66, 1440, 240)),
+                 spacePanels={'T0': ((3240, .33, 1100, 240), (1900, .66, 1440, 240))},
+                 zoneClearance=600, section='SEC-sky-spire', prefix='SP', zoneSlabs={})
+
+
+def extend_sky_spire(m, spec=SKY_SPIRE):
+    fs, rows = m['fragments'], m['encounters']
+    old = fs[-1]
+    if old['kind'] != 'summit' or old.get('semanticId') != 'XS-SUMMIT':
+        raise ValueError('The Sky Spire starts at the gauntlet finish (XS-SUMMIT)')
+    old['kind'] = 'platform'
+    px = spec['prefix']+'-'
+    lw, lh = spec['ledge']
+    zw, zh = spec['zone']
+    lx0, rx0 = old['x'], old['x']+lw+spec['zoneMargin']+zw+spec['zoneMargin']  # tower column ledge left edges
+    steps, zones, slots, spaces, internal = [], [], [], [], {}
+
+    def safe_space(n, start, side, rise):
+        out = []
+        for k, (dx, frac, w, h) in enumerate(spec.get('spacePanels', {}).get('T%d' % n, spec['panels']), 1):
+            x = start['x']+dx if side > 0 else start['x']+lw-dx-w
+            f = panel('Sky Spire T%d grapple %d' % (n, k), w, h, x, start['y']-frac*rise, 'ceiling')
+            f.update(originalId=None, semanticId=px+'T%d-G%d' % (n, k))
+            out.append(f)
+        steps.extend((f, 'T%d' % n) for f in out)
+        spaces.append(dict(id='T%d' % n, start=start, side='right' if side > 0 else 'left', panels=out))
+
+    start, top = old, old['y']-spec['firstRise']
+    for n in range(1, spec['zones']+1):
+        direction = 1 if n % 2 else -1       # odd: entered from the left side, run rightward
+        safe_space(n-1, start, -direction if n > 1 else -1, start['y']-top)
+        zid = 'Y%d' % n
+        ax, ex = (lx0, rx0) if direction > 0 else (rx0, lx0)
+        zx, zy = lx0+lw+spec['zoneMargin'], top-spec['zoneAbove']
+        approach = dict(panel('Sky Spire %s approach ledge' % zid, lw, lh, ax, top), originalId=None,
+                        semanticId=px+zid+'-APPROACH')
+        exit_ = dict(panel('Sky Spire %s exit ledge' % zid, lw, lh, ex, top+spec['exitTop']), originalId=None,
+                     semanticId=px+zid+'-EXIT')
+        zone = dict(id=zid, x=zx, y=zy, width=zw, height=zh, polygon=[[zx, zy], [zx+zw, zy], [zx+zw, zy+zh], [zx, zy+zh]],
+                    purpose='tall no-grapple zone %s (SEC-sky-spire)%s: rope-free descent from the approach to the exit '
+                            'ledge' % (zid, '' if zid in spec['zoneSlabs'] else ', empty'))
+        slabs = []
+        for k, (contact, angle, before, after, thickness) in enumerate(spec['zoneSlabs'].get(zid, ()), 1):
+            f = purple_panel('Sky Spire %s bounce slab %d' % (zid, k), slab(contact, angle, before, after, thickness, 1),
+                             contact, 'top', zx, zy)
+            f.update(originalId=None, semanticId='%s%s-B%d' % (px, zid, k), surfaceAngle=angle)
+            if not zone_contains(zone, f):
+                raise ValueError('%s must lie completely inside zone %s' % (f['semanticId'], zid))
+            slabs.append(f)
+            internal[id(f)] = zid
+        steps += [(approach, zid)]+[(f, zid) for f in slabs]+[(exit_, zid)]
+        zones.append(zone)
+        slots.append(dict(zone=zone, approach=approach, exit=exit_, side='left' if direction > 0 else 'right',
+                          direction='RIGHT' if direction > 0 else 'LEFT', slabs=slabs,
+                          spec=spec['zoneSlabs'].get(zid, ())))
+        start, top = exit_, top-spec['rise']
+    side = -1 if spec['zones'] % 2 == 0 else 1
+    rise = spec['rise']+spec['exitTop']
+    safe_space(spec['zones'], start, side, rise)
+    summit = dict(panel('Sky Spire summit', 1500, 500, rx0 if side > 0 else lx0, start['y']-rise),
+                  kind='summit', originalId=None, semanticId=px+'SUMMIT')
+    steps.append((summit, 'finish'))
+    first = len(fs)
+    for i, (f, _) in enumerate(steps):
+        f['id'] = 'P%d' % (first+i)
+    numbers, prev = [], old
+    for f, part in steps:
+        sem, zone_id = f['semanticId'], None
+        if id(f) in internal and id(prev) in internal:
+            rid, action, zone_id = '%s%s-%s-%s' % (px, part, prev['semanticId'].split('-')[-1], sem.split('-')[-1]), \
+                'Rope-free bounce to the next slab', part
+            if not 0 < gap(prev, f)[0] <= NO_GRAPPLE_INTERNAL_GAP:
+                raise ValueError('Internal no-grapple transfer %s gap %.2f not in (0, 270]' % (rid, gap(prev, f)[0]))
+        elif id(f) in internal:
+            rid, action = px+part+'-ENTRY', 'Run off the approach ledge into tall no-grapple zone '+part
+        elif sem.endswith('-EXIT') and id(prev) in internal:
+            rid, action = px+part+'-EXIT', 'Bounce out of the zone side onto the lower exit ledge'
+        elif sem.endswith('-EXIT'):
+            rid, action = px+part+'-CROSS', 'Run off the approach ledge down across tall no-grapple zone %s onto its lower exit ledge' % part
+        elif sem.endswith('-APPROACH'):
+            rid, action = sem, 'Release jump onto the tall-zone approach ledge'
+        elif part == 'finish':
+            rid, action = px+'FINISH', 'Release jump onto the Sky Spire summit'
+        else:
+            rid, action = sem, 'Grapple climb in safe space %s' % part
+        d, w, _, _ = gap(prev, f)
+        rows.append(dict(id=rid, number=len(rows)+1, fromFragment=prev['id'], toFragment=f['id'],
+                         direction='RIGHT' if f['x'] > prev['x'] else 'LEFT', action=action, baseline=False,
+                         originalNumber=None, originalId=None, percent=round(d/5.4, 2), distance=d, witness=w,
+                         flight=[svg.contact(prev), svg.contact(f)], noGrappleZone=zone_id))
+        numbers.append(len(rows))
+        fs.append(f); prev = f
+    m['noGrappleZones'] = m['noGrappleZones']+zones
+    new = [f for f, _ in steps]
+    close = ['%s/%s %.0f' % (f['id'], z['id'], d) for z in zones for f in fs if internal.get(id(f)) != z['id']
+             for d in [union_distance(svg.bodies(f), [z['polygon']])[0]]
+             if d < (spec['zoneMargin'] if (f.get('semanticId') or '').startswith(px+z['id']+'-') else spec['zoneClearance'])]
+    close += ['%s/%s overlap' % (a['id'], b['id']) for a, b in itertools.combinations(m['noGrappleZones'], 2)
+              if union_distance([a['polygon']], [b['polygon']])[0] <= 0]
+    # A new panel may not come closer to an existing yellow band than its recorded nearest solid.
+    close += ['%s/%s yellow %.0f' % (f['id'], b['id'], d) for b in m['yellowBands'] for f in new
+              for d in [union_distance(svg.bodies(f), [b['polygon']])[0]] if d < b['nearestSolidClearance']]
+    lo, hi = FOLD_X_RANGE
+    close += ['%s outside x %g..%g' % (f['id'], lo, hi) for f in new for p in svg.bodies(f) for x, _ in p if not lo <= x <= hi]
+    close += ['%s outside x %g..%g' % (z['id'], lo, hi) for z in zones for x, _ in z['polygon'] if not lo <= x <= hi]
+    if close:
+        raise ValueError('Sky Spire: '+', '.join(sorted(set(close))))
+    m['namedSections'] = m['namedSections']+[dict(id=spec['section'], encounters=numbers)]
+
+    def rect(f):
+        xs = [x for p in svg.bodies(f) for x, _ in p]; ys = [y for p in svg.bodies(f) for _, y in p]
+        return dict(id=f['id'], semanticId=f['semanticId'], top=f['y'], x0=min(xs), x1=max(xs), y0=min(ys), y1=max(ys))
+    m['skySpire'] = dict(
+        oldSummit=old['id'], oldFinishTop=old['y']-svg.FINISH_PAD[1], summit=summit['id'],
+        finishTop=summit['y']-svg.FINISH_PAD[1], section=spec['section'], xRange=list(FOLD_X_RANGE),
+        fragments=[f['id'] for f in new], encounters=[rows[n-1]['id'] for n in numbers],
+        zones=[dict(id=s['zone']['id'], rect=dict(x=s['zone']['x'], y=s['zone']['y'], width=s['zone']['width'],
+                                                  height=s['zone']['height']),
+                    entrySide=s['side'], direction=s['direction'],
+                    slabs=[dict(rect(f), contact=list(c), angle=a, before=b, after=e, thickness=t)
+                           for f, (c, a, b, e, t) in zip(s['slabs'], s['spec'])],
+                    approach=rect(s['approach']), exit=rect(s['exit'])) for s in slots],
+        safeSpaces=[dict(id=s['id'], side=s['side'], start=s['start']['id'],
+                         end=(slots[int(s['id'][1:])]['approach']['id'] if int(s['id'][1:]) < len(slots) else summit['id']),
+                         grapplePanels=[rect(f) for f in s['panels']]) for s in spaces],
+        finish=dict(rect(summit), finishTop=summit['y']-svg.FINISH_PAD[1]))
+    m['pairChecks'] = []
+    for i, a in enumerate(fs):
+        for b in fs[i+1:]:
+            d = gap(a, b)[0]
+            m['pairChecks'].append(dict(source=a['id'], target=b['id'], minimumGap=d, passOutsideRange=d-21.6 > 540))
+    return m
+
+
 def measure_transfers(m, opening):
     fs = m['fragments']
     for row in m['encounters']:
@@ -2482,6 +2628,10 @@ def main():
                          'spaces S0..S8 and yellow catchers (TASK-732..743, EXT_SUMMIT_GAUNTLET). Default: on (shipped '
                          'v20) unless --ext-summit-fold or --no-ext-summit-riser; --no-ext-summit-gauntlet gives the '
                          'previous shipped v19')
+    ap.add_argument('--sky-spire', action=argparse.BooleanOptionalAction, default=False,
+                    help='(with the shipped gauntlet run) candidate: add SEC-sky-spire above the gauntlet finish, tall '
+                         'purple zones Y1..Y8 with green safe spaces T0..T8 and a new finish (TASK-762.., SKY_SPIRE). '
+                         'Default: off (shipped v20)')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -2525,6 +2675,8 @@ def main():
         m['layoutId']=(((SHIPPED_LAYOUT if args.ext_summit_gauntlet else EXT_SUMMIT_V19_LAYOUT if args.ext_summit_riser
                          else EXT_SUMMIT_V18_LAYOUT) if args.ext_summit
                         else PREVIOUS_SHIPPED_LAYOUT) if args.purple_rest else NO_REST_SHIPPED_LAYOUT)
+    if args.sky_spire and not (args.ext_summit and args.ext_summit_gauntlet):
+        raise ValueError('--sky-spire extends the gauntlet (--ext-summit-gauntlet) only')
     if args.ext_summit:
         if not (shipped and args.purple_rest):
             raise ValueError('--ext-summit extends the v17 layout (default flags with --purple-rest) only')
@@ -2534,6 +2686,10 @@ def main():
             if args.ext_summit_fold:
                 raise ValueError('--ext-summit-gauntlet and --ext-summit-fold are alternatives')
             extend_gauntlet(m)
+            if args.sky_spire:
+                if b'Sky Spire' not in guidelines:
+                    raise ValueError('Guidelines must specify the Sky Spire tall-zone contract')
+                extend_sky_spire(m)
         else:
             extend_summit(m, EXT_SUMMIT_FOLD if args.ext_summit_fold else EXT_SUMMIT_RISER if args.ext_summit_riser else EXT_SUMMIT)
     elif args.ext_summit_fold or args.ext_summit_riser or args.ext_summit_gauntlet:
