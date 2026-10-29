@@ -15,7 +15,9 @@ the retired v19 tools/test_ext_summit_route.py test_04 did (TASK-744): tools/pro
 300 above the source top, then only document mouse events and physics(); the first contact/attach on a later panel must
 be the target. Each transfer runs twice and must be identical. test_zz_full_run is the chained proof: S0, Z1, S1, ..., Z8,
 S8 in order, each leg ending on the panel the next one starts from, every leg passing, and the last transfer
-(S8-G2 -> XS-SUMMIT) replayed on until climbStats.completed.
+(S8-G2 -> XS-SUMMIT) replayed on until climbStats.completed. Since TASK-774 (v21) SEC-sky-spire continues above XS-SUMMIT
+(m['skySpire']): XS-SUMMIT is then an ordinary landing, S8-G2 -> XS-SUMMIT must hit it like any transfer, and the chain to the
+level finish (SP-SUMMIT) is tools/test_spire_route.py test_full_spire_run.
 
 Level: GAUNTLET_CANDIDATE=DIR (extended-mountain.level.json and extended-mountain-measurements.json). Without it the
 shipped artifacts/levels data is used when it has extSummit.gauntlet (shipped v20 since TASK-744); otherwise the candidate is regenerated into a
@@ -146,6 +148,7 @@ class GauntletRouteTests(unittest.TestCase):
         cls.m = json.loads((cls.dir / NAMES[1]).read_text())
         cls.level = json.loads((cls.dir / NAMES[0]).read_text())
         cls.gauntlet = {z['id']: z for z in cls.m['extSummit']['gauntlet']['zones']}
+        cls.final = 'skySpire' not in cls.m  # XS-SUMMIT is the level finish (v20) unless the Sky Spire continues (v21)
         cls.ids = {f['semanticId']: f['id'] for f in cls.m['fragments'] if f.get('semanticId')}
         cls.zones = {z['id']: z for z in cls.m['noGrappleZones']}
         cls.url, cls.browser = start_browser_test(ROOT, cls.stack.callback)
@@ -220,7 +223,7 @@ class GauntletRouteTests(unittest.TestCase):
             rows = []
             for a, b in s['transfers']:
                 with self.subTest(space=s['id'], source=a, target=b):
-                    rows.append(self.climb(by[(a, b)], finish=b == 'XS-SUMMIT'))
+                    rows.append(self.climb(by[(a, b)], finish=self.final and b == 'XS-SUMMIT'))
             out.append(dict(space=s['id'], side=s['side'], grapplePanels=[self.ids[p] for p in s['panels']],
                             grapplePanelSemanticIds=s['panels'], panelCount=len(s['panels']), transfers=rows,
                             totalHooks=sum(r['hooks'] for r in rows), totalPumps=sum(r['pumps'] for r in rows)))
@@ -313,7 +316,9 @@ class GauntletRouteTests(unittest.TestCase):
         spaces = self.climb_transfers()
         DONE['climbs'] = spaces
         last = spaces[-1]['transfers'][-1]
-        self.assertTrue(last['finish']['completed'])
+        self.assertEqual((last['source'], last['target']), ('S8-G2', 'XS-SUMMIT'))
+        if self.final:
+            self.assertTrue(last['finish']['completed'])
         CLIMB_OUT.update(inputs=str(CLIMBS.relative_to(ROOT)), inputsSha256=sha(CLIMBS), layoutId=self.level['layoutId'],
                          levelHashes={n: sha(self.dir / n) for n in NAMES}, transfers=sum(len(s['transfers']) for s in spaces),
                          method='ROUTE_PROBE per transfer: zero-speed fixture drop 300 above the source top, then only '
@@ -322,7 +327,8 @@ class GauntletRouteTests(unittest.TestCase):
                                 'S8-G2 -> XS-SUMMIT replayed on until climbStats.completed.',
                          maxPanelsPerSafeSpace=max(s['panelCount'] for s in spaces), safeSpaces=spaces,
                          finish=dict(completed=last['finish']['completed'], transfer=[last['source'], last['target']],
-                                     tick=last['finish']['tick'], at=last['finish']['at']))
+                                     tick=last['finish']['tick'], at=last['finish']['at']) if self.final else
+                         dict(completed=None, transfer=[last['source'], last['target']], continues='SEC-sky-spire (tools/test_spire_route.py)'))
 
     def test_z1_crossing(self):
         OUT['zones']['Z1'] = DONE['Z1'] = self.crossing('Z1')
@@ -368,10 +374,12 @@ class GauntletRouteTests(unittest.TestCase):
                 at = r['landing']['on']
         self.assertEqual(at, 'XS-SUMMIT')
         self.assertEqual(len(legs), 27 + len(ZONES))
-        fin = spaces[-1]['transfers'][-1]['finish']
-        self.assertTrue(fin['completed'])
+        fin = spaces[-1]['transfers'][-1].get('finish') if self.final else dict(completed=None, tick=None)
+        if self.final:
+            self.assertTrue(fin['completed'])
         OUT['fullRun'] = CLIMB_OUT['fullRun'] = dict(legs=legs, count=len(legs), allPassed=True, completed=fin['completed'],
-                                                     finishTick=fin['tick'], hooksTotal=sum(l.get('hooks', 0) for l in legs))
+                                                     finishTick=fin['tick'], hooksTotal=sum(l.get('hooks', 0) for l in legs),
+                                                     **({} if self.final else {'continues': 'SEC-sky-spire'}))
 
 
 if __name__ == '__main__':

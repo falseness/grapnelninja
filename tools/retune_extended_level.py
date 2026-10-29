@@ -25,7 +25,10 @@ EXTENDED_LAYOUT = 'extended-mountain-v15'
 # Since TASK-744 the shipped run rebuilds SEC-ext-summit as the gauntlet (--ext-summit-gauntlet, EXT_SUMMIT_GAUNTLET:
 # purple zones Z1..Z8, green safe spaces S0..S8, yellow catchers) as v20; `--no-ext-summit-gauntlet` is the previous
 # shipped v19.
-SHIPPED_LAYOUT = 'extended-mountain-v20'
+# Since TASK-774 the shipped run adds SEC-sky-spire above the gauntlet finish (--sky-spire, SKY_SPIRE: tall purple zones
+# Y1..Y8, green safe spaces T0..T8, yellow catchers) as v21; `--no-sky-spire` is the previous shipped v20.
+SHIPPED_LAYOUT = 'extended-mountain-v21'
+GAUNTLET_V20_LAYOUT = 'extended-mountain-v20'
 EXT_SUMMIT_V19_LAYOUT = 'extended-mountain-v19'
 EXT_SUMMIT_V18_LAYOUT = 'extended-mountain-v18'
 PREVIOUS_SHIPPED_LAYOUT = 'extended-mountain-v17'
@@ -1430,7 +1433,7 @@ def add_gauntlet_catchers(m, spec, slots, spaces, old, zones, prefix='Y-', first
     return out
 
 
-# TASK-762 Sky Spire (candidate, --sky-spire): SEC-sky-spire above the gauntlet finish (XS-SUMMIT): purple zones Y1..Y8
+# TASK-762 Sky Spire (--sky-spire, shipped v21 since TASK-774): SEC-sky-spire above the gauntlet finish (XS-SUMMIT): purple zones Y1..Y8
 # of 6912 x 8640 (2x the gauntlet's height, 1.2x its width) in one tower column over the gauntlet, entered alternately
 # from the left (odd, run rightward) and the right (even), with green safe spaces T0..T8 (T0 from XS-SUMMIT, Tk from
 # Yk's exit, T8 to SP-SUMMIT), each two ceiling panels on the tower's outer side (`panels` as in EXT_SUMMIT_GAUNTLET:
@@ -2756,10 +2759,11 @@ def main():
                          'spaces S0..S8 and yellow catchers (TASK-732..743, EXT_SUMMIT_GAUNTLET). Default: on (shipped '
                          'v20) unless --ext-summit-fold or --no-ext-summit-riser; --no-ext-summit-gauntlet gives the '
                          'previous shipped v19')
-    ap.add_argument('--sky-spire', action=argparse.BooleanOptionalAction, default=False,
-                    help='(with the shipped gauntlet run) candidate: add SEC-sky-spire above the gauntlet finish, tall '
-                         'purple zones Y1..Y8 with green safe spaces T0..T8 and a new finish (TASK-762.., SKY_SPIRE). '
-                         'Default: off (shipped v20)')
+    ap.add_argument('--sky-spire', action=argparse.BooleanOptionalAction, default=None,
+                    help='(with --ext-summit-gauntlet) add SEC-sky-spire above the gauntlet finish: tall purple zones '
+                         'Y1..Y8 with green safe spaces T0..T8, yellow catchers and a new finish (TASK-762..773, '
+                         'SKY_SPIRE). Default: on (shipped v21) with the gauntlet; --no-sky-spire gives the previous '
+                         'shipped v20')
     ap.add_argument('--ext-summit-fold', action='store_true',
                     help='(with the shipped run) candidate: SEC-ext-summit refolded inside FOLD_X_RANGE, big-zone units '
                          'moved rigidly (TASK-723)')
@@ -2780,6 +2784,8 @@ def main():
         args.ext_summit_gauntlet = bool(args.ext_summit) and not args.ext_summit_fold and args.ext_summit_riser is not False
     if args.ext_summit_riser is None:
         args.ext_summit_riser = args.ext_summit and not args.ext_summit_fold
+    if args.sky_spire is None:
+        args.sky_spire = bool(args.ext_summit_gauntlet)
     args.middle_purple=bool(args.middle_purple); args.upper_purple=bool(args.upper_purple)
     if args.upper_purple and not args.middle_purple:
         raise ValueError('--upper-purple needs --middle-purple')
@@ -2800,7 +2806,8 @@ def main():
          min_sides=None if args.min_side_scope == 'none' else args.min_side_scope, middle_purple=args.middle_purple,
          upper_purple=args.upper_purple, purple_rest=args.purple_rest)
     if shipped:
-        m['layoutId']=(((SHIPPED_LAYOUT if args.ext_summit_gauntlet else EXT_SUMMIT_V19_LAYOUT if args.ext_summit_riser
+        m['layoutId']=((((SHIPPED_LAYOUT if args.sky_spire else GAUNTLET_V20_LAYOUT) if args.ext_summit_gauntlet
+                          else EXT_SUMMIT_V19_LAYOUT if args.ext_summit_riser
                          else EXT_SUMMIT_V18_LAYOUT) if args.ext_summit
                         else PREVIOUS_SHIPPED_LAYOUT) if args.purple_rest else NO_REST_SHIPPED_LAYOUT)
     if args.sky_spire and not (args.ext_summit and args.ext_summit_gauntlet):

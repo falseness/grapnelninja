@@ -37,7 +37,7 @@ from browser_test_support import start_browser_test, wait_for_boot, wait_for_boo
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / 'artifacts' / 'levels' / 'extended-mountain.svg'
 LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
-LAYOUT_ID = 'extended-mountain-v20'
+LAYOUT_ID = 'extended-mountain-v21'
 CLIMB_KEY = 'grapnelninja.grappleOver'
 # Tree before TASK-650: physics, collision and sprite sources must match it.
 BASE_REV = '8b9bbf6'
@@ -70,6 +70,10 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     # TASK-673: the no-grapple release hook (fixedlevel.js applyNoGrappleZones).
     "+    // Release in the step of entry, before this step's rope pull or acquisition.",
     "+    if (version === 'grapple_over') floors[0].applyNoGrappleZones(ninja)",
+    # TASK-752: design telemetry (best height buckets), never read by physics.
+    "+        // Before the update, so a new run's buckets start from its saved best height",
+    '+        climbDesignRun(stats)',
+    '+        reportClimbHeight(stats)',
     '+        LONG_FALL.step()',
     '+        if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)',
     '+        {',
@@ -82,7 +86,35 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+// throw or a rope wrap. Display only; never read by physics.',
     '+function countClimbGrapple(wasGrappled)',
     '+{',
-    "+    if (version === 'grapple_over' && !wasGrappled && floors[0]?.climbStats) floors[0].climbStats.grapples++",
+    # TASK-752/753: the hook also records the catch section for fall/quit telemetry (TELEMETRY.mark); display/telemetry only.
+    "+    if (version !== 'grapple_over' || wasGrappled || !floors[0]?.climbStats) return",
+    '+    floors[0].climbStats.grapples++',
+    '+    const section = climbDesignRun(floors[0].climbStats).section = CLIMB_UI.currentSection().id',
+    "+    TELEMETRY.mark('grapple', section)",
+    '+}',
+    '+',
+    '+// Design telemetry of the run, never saved: the last 500-unit best height',
+    '+// bucket reported and the section of the last grapple catch, which the next',
+    '+// fall is counted against. A new climbStats object is a new or restored run;',
+    '+// a restored run starts from its saved best height, so no bucket repeats.',
+    '+const CLIMB_HEIGHT_BUCKET = 500',
+    '+const climbDesign = {stats: null, bucket: 0, section: null}',
+    '+function climbDesignRun(stats)',
+    '+{',
+    '+    if (climbDesign.stats !== stats)',
+    '+        Object.assign(climbDesign, {stats, bucket: Math.floor(stats.maxHeight / CLIMB_HEIGHT_BUCKET), section: null})',
+    '+    return climbDesign',
+    '+}',
+    '+',
+    '+// One design event per best height bucket reached for the first time this run',
+    '+function reportClimbHeight(stats)',
+    '+{',
+    '+    const run = climbDesignRun(stats), bucket = Math.floor(stats.maxHeight / CLIMB_HEIGHT_BUCKET)',
+    '+    while (run.bucket < bucket)',
+    '+    {',
+    '+        run.bucket++',
+    "+        ANALYTICS.design('best_height:' + floors[0].grapnelMode, run.bucket * CLIMB_HEIGHT_BUCKET)",
+    '+    }',
     '+}',
     '+',
     # TASK-717: the recovery launches like a fresh start (comment and speedY below).
@@ -93,6 +125,14 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+function recoverClimbFall()',
     '+{',
     '+    const world = floors[0], spawn = world.level.spawn',
+    # TASK-752/753: fall:<section> design event and TELEMETRY.mark, telemetry only.
+    '+    // The fall counts against the section of the last catch (the spawn',
+    '+    // section when there was none since the launch)',
+    '+    const run = climbDesignRun(world.climbStats)',
+    '+    const fallSection = run.section ?? world.level.sections[0].id',
+    "+    ANALYTICS.design('fall:' + fallSection)",
+    "+    TELEMETRY.mark('fall', fallSection)",
+    '+    run.section = null',
     '+    ninja.x = spawn.x',
     '+    ninja.y = spawn.y',
     '+    ninja.speedX = 0',
@@ -263,8 +303,9 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # No-grapple zones (NG1 since v13) live in world.noGrappleZones, not in elements/dragZones.
         source = {e['id']: e for e in self.level['elements'] if e['role'] != 'no-grapple'}
         self.assertEqual(snap['noGrappleZones'], [e['id'] for e in self.level['elements'] if e['role'] == 'no-grapple'])
-        # Purple encounters, then the SEC-ext-summit big zones (v18), counted from the measurements.
-        self.assertEqual(snap['noGrappleZones'], [p['zone'] for p in meas['purpleExtensions']] + meas.get('extSummit', {}).get('zones', []))
+        # Purple encounters, then the SEC-ext-summit big zones (v18) and the SEC-sky-spire tall zones (v21), counted from the measurements.
+        self.assertEqual(snap['noGrappleZones'], [p['zone'] for p in meas['purpleExtensions']] + meas.get('extSummit', {}).get('zones', [])
+                         + [z['id'] for z in meas.get('skySpire', {}).get('zones', [])])
         self.assertEqual(snap['noGrappleZones'], [z['id'] for z in meas['noGrappleZones']])
         self.assertEqual(sorted(e['id'] for e in snap['live']), sorted(source))
         for e in snap['live']:
@@ -317,7 +358,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), (ROOT / 'leveldata.js').read_bytes())
 
     def test_03_incompatible_previous_layout_save(self):
-        # TASK-711 / TASK-725 / TASK-744: saves from v19 (and earlier imported layouts) restart at the spawn. The save is a real current one
+        # TASK-711 / TASK-725 / TASK-744 / TASK-774: saves from v20 (and earlier imported layouts) restart at the spawn. The save is a real current one
         # with the old layout id. A fresh start launches upward (TASK-704), so y may be up to the launch apex above.
         first = self.open()
         save = json.loads(first.evaluate('''() => {
@@ -327,7 +368,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         }'''))
         self.assertEqual(save['layoutId'], LAYOUT_ID)
         results = {}
-        for old in ('extended-mountain-v19', 'extended-mountain-v18', 'extended-mountain-v17', 'extended-mountain-v16', 'extended-mountain-v15'):
+        for old in ('extended-mountain-v20', 'extended-mountain-v19', 'extended-mountain-v18', 'extended-mountain-v17', 'extended-mountain-v16', 'extended-mountain-v15'):
             page = self.open(seed={CLIMB_KEY: json.dumps(dict(save, layoutId=old))})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
@@ -343,7 +384,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.record('incompatible_save_' + old, page, snap, seededLayoutId=old, rewrittenLayoutId=LAYOUT_ID,
                         savedPlayer={'x': save['player']['x'], 'y': save['player']['y']})
             results[old] = snap['notice']
-        self.assertEqual(len(results), 5)
+        self.assertEqual(len(results), 6)
 
     def test_04_current_layout_save(self):
         first = self.open()
@@ -422,6 +463,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         # (render/glowsprites.js bakes, render/landmarks.js, the sprites/grapnel.js rope and hook-end drawing).
         # TASK-727/728 added the ?visualsPerf=1 freeze recorder (render/visualsperf.js) and moved the ?perf=1 layer
         # table to a shared PERF_LAYERS (render/perfprofile.js): instrumentation only, nothing runs without the flags.
+        # TASK-755 drew the HUD text from glyph sprites (sprites/scoretext.js drawHudText -> drawGlowGlyphs): display only.
         diff = subprocess.run(['git', 'diff', '--stat', BASE_REV, '--'] + UNCHANGED + [':!render/routearrows.js', ':!render/draw.js', ':!physics.js',
                                                                                       ':!render/tutorialhint.js', ':!render/roledetail.js',
                                                                                       ':!render/fallmessage.js', ':!sprites/trampoline.js',
@@ -429,7 +471,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                                                                       ':!render/effects.js', ':!render/parallax.js',
                                                                                       ':!render/glowsprites.js', ':!render/landmarks.js',
                                                                                       ':!sprites/grapnel.js', ':!render/perfprofile.js',
-                                                                                      ':!render/visualsperf.js'],
+                                                                                      ':!render/visualsperf.js', ':!sprites/scoretext.js'],
                               cwd=ROOT, capture_output=True, text=True, check=True).stdout
         self.assertEqual(diff, '')
         lines = lambda path: [l for l in subprocess.run(['git', 'diff', '-U0', BASE_REV, '--', path], cwd=ROOT, capture_output=True,
@@ -447,20 +489,93 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF[:3] + SPAWN_LAUNCH_DIFF + PHYSICS_FALL_RECOVERY_DIFF[3:])
         self.assertEqual(lines('sprites/trampoline.js'), TRAMPOLINE_CLOSE_DIFF)
         changed = lines('index.html')
-        self.assertEqual(changed, ['+        <script src = "longfall.js"></script>',
+        # The full index.html diff since BASE_REV; TASK-774 re-pinned it after TASK-745..753 (platform/analytics wiring only).
+        self.assertEqual(changed, [
+                                   # TASK-745: the platform backend split
+                                   '+        <script src = "platform/backends/local.js"></script>',
+                                   # TASK-749..753: telemetry facade and its wiring (session/error/ad, progression, design, mode time, quit); covered by tools/test_analytics_*.py
+                                   '+        <script src = "analytics/backends/none.js"></script>',
+                                   '+        <script src = "analytics.js"></script>',
+                                   '+        <script src = "longfall.js"></script>',
                                    '+        <script src = "render/fallmessage.js"></script>',
                                    '+        <script src = "render/nograpplezones.js"></script>',
                                    '+        <script src = "render/routearrows.js"></script>',
                                    # TASK-727: the ?visualsPerf=1 freeze recorder (instrumentation only).
                                    '+        <script src = "render/visualsperf.js"></script>',
+                                   '+            let analyticsStarted = false',
+                                   '+            watchAnalytics()',
+                                   '+',
+                                   '+            // Page errors -> ANALYTICS.error (10 unique messages per session);',
+                                   '+            // pagehide -> once per page: mode time flush, quit:<last event>,',
+                                   '+            // Fail for the section in progress, then ANALYTICS.sessionEnd last',
+                                   '+            function watchAnalytics()',
+                                   '+            {',
+                                   '+                const MAX_ERRORS = 10',
+                                   '+                const reported = new Set()',
+                                   '+                let ended = false',
+                                   '+                function report(message, file, line)',
+                                   '+                {',
+                                   "+                    const name = String(file || '').split(/[?#]/)[0].split('/').pop() || 'unknown'",
+                                   "+                    const text = String(message) + ' @ ' + name + ':' + (line || 0)",
+                                   '+                    if (reported.size >= MAX_ERRORS || reported.has(text))',
+                                   '+                        return',
+                                   '+                    reported.add(text)',
+                                   "+                    ANALYTICS.error('error', text)",
+                                   '+                }',
+                                   "+                window.addEventListener('error', e =>",
+                                   "+                    report(e.message || (e.error && e.error.message) || 'error', e.filename, e.lineno))",
+                                   "+                window.addEventListener('unhandledrejection', e =>",
+                                   '+                {',
+                                   '+                    const reason = e.reason',
+                                   "+                    report(reason && reason.message || String(reason), 'promise', 0)",
+                                   '+                })',
+                                   "+                window.addEventListener('pagehide', () =>",
+                                   '+                {',
+                                   '+                    if (ended)',
+                                   '+                        return',
+                                   '+                    ended = true',
+                                   '+                    for (const step of [() => TELEMETRY.flushModeTime(), () => TELEMETRY.sendQuit(),',
+                                   '+                        () => CLIMB_UI.abandonProgression()])',
+                                   '+                        try { step() } catch (e) {}',
+                                   '+                    ANALYTICS.sessionEnd()',
+                                   '+                })',
+                                   '+            }',
+                                   # TASK-748/750: platform facade calls and the analytics boot
+                                   '+                PLATFORM.loadingProgress(0)',
+                                   '+                if (!analyticsStarted)',
+                                   '+                {',
+                                   '+                    analyticsStarted = true',
+                                   '+                    ANALYTICS.init({build: PLATFORM.buildVersion})',
+                                   '+                    ANALYTICS.sessionStart()',
+                                   '+                }',
+                                   '+                PLATFORM.loadingProgress(25)',
+                                   '+                PLATFORM.loadingProgress(50)',
                                    '+                await loadGrappleOverLevelAsset()',
+                                   '+                PLATFORM.loadingProgress(90)',
+                                   '+                PLATFORM.loadingProgress(100)',
+                                   '+                PLATFORM.gameplayStart(version)',
+                                   # TASK-748/752/753: death/restart platform and telemetry calls
+                                   "+                PLATFORM.gameplayStop('death', version)",
+                                   "+                TELEMETRY.mark('death')",
+                                   "+                    ANALYTICS.design('death:' + version)",
+                                   '+                // Once per Restart: a click while the game over ad plays is ignored',
+                                   '+                if (!interstitialPending)',
+                                   '+                {',
+                                   "+                    ANALYTICS.design('restart:' + version)",
+                                   "+                    TELEMETRY.mark('restart')",
+                                   '+                }',
                                    '+                // A fresh start (first run or restart) launches upward, as',
                                    '+                // does a fall recovery; a continue or save restore does not.',
                                    '+                ninja.speedY = -getSpawnLaunchSpeed()',
+                                   '-                TELEMETRY.frame(frameTime, activelyPlaying, version)',
+                                   '+                TELEMETRY.frame(frameTime, activelyPlaying, version, floors[0]?.grapnelMode)',
                                    '-                    if (activelyPlaying) TUTORIAL_HINT.advance(steps * physicsStepMs)',
-                                   '+                    if (activelyPlaying)', '+                    {',
+                                   '+                    if (activelyPlaying)',
+                                   '+                    {',
+                                   '+                        CLIMB_UI.trackSection()',
                                    '+                        TUTORIAL_HINT.advance(steps * physicsStepMs)',
-                                   '+                        FALL_MESSAGE.advance(steps * physicsStepMs)', '+                    }',
+                                   '+                        FALL_MESSAGE.advance(steps * physicsStepMs)',
+                                   '+                    }',
                                    # TASK-721: a step can open the first-death offer's pause screen.
                                    '+                    // A step can open a pause screen (the first-death offer): keep it on top',
                                    '+                    if (menu.gamePaused) menu.drawPauseScreen()'])

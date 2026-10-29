@@ -1,9 +1,26 @@
 # Generated level
 
-Layout `extended-mountain-v20` (shipped, TASK-744) is the default generator
+Layout `extended-mountain-v21` (shipped, TASK-774) is the default generator
 output (`tools/retune_extended_level.py` with no layout flag =
 `--min-side-scope all --middle-purple --upper-purple --purple-rest
---ext-summit --ext-summit-gauntlet`). It is v19 with SEC-ext-summit rebuilt
+--ext-summit --ext-summit-gauntlet --sky-spire`). It is v20 with section
+`SEC-sky-spire` ("Sky Spire" / "Небесный шпиль") added above the gauntlet
+finish (TASK-762..773, `SKY_SPIRE`, described below): eight tall purple zones
+Y1..Y8 with green safe spaces T0..T8 and a new finish `SP-SUMMIT`.
+Everything below XS-SUMMIT's top is identical to v20. `--no-sky-spire`
+gives the previous shipped v20 byte for byte when the v20 guidelines
+(`artifacts/TASK-762/guidelines-v20.md`) sit at the guidelines path, because
+the measurements embed their path and sha256. v20 saves restart at the spawn.
+
+- Production-input proofs: `tools/test_spire_route.py` (zone crossings
+  `tools/fixtures/spire-inputs-Y1..8.json`, the 27 climb transfers
+  `tools/fixtures/spire-climb-inputs.json` and the chained run from XS-SUMMIT
+  to `climbStats.completed` at SP-SUMMIT). `tools/test_gauntlet_route.py`
+  still proves Z1..Z8 and S0..S8, and its chain now ends on XS-SUMMIT as an
+  ordinary landing. `tools/spire_fall_probe.py` is the no-input fall probe.
+
+Layout `extended-mountain-v20` (previous, TASK-744) is the generator output
+with `--no-sky-spire` and no layout flag. It is v19 with SEC-ext-summit rebuilt
 as the gauntlet (TASK-732..743, `EXT_SUMMIT_GAUNTLET`, described below):
 from the old summit up, eight purple no-grapple zones Z1..Z8 alternate with
 green safe spaces S0..S8 of two grapple panels each, with a yellow catcher
@@ -117,7 +134,7 @@ column (x 2,102..10,382, inside -1,100..62,534):
 
 ### Sky Spire (candidate, TASK-762..)
 
-`--sky-spire` (TASK-762, `SKY_SPIRE`, default off until TASK-774 ships v21) adds
+`--sky-spire` (TASK-762, `SKY_SPIRE`, the default since TASK-774 shipped v21) adds
 section `SEC-sky-spire` above the gauntlet finish. XS-SUMMIT (P148) becomes an
 ordinary landing, and everything below its top is identical to v20. Above it,
 the same switchback tower column (x -1,038..14,274, inside -1,100..62,534)
@@ -139,8 +156,10 @@ even ones from the right:
   panel sits 700 left of the gauntlet's S8-G2. The static stack screen
   (`artifacts/TASK-743/stack.py`) reports no Sky Spire flag.
 - `skySpire` in the measurements records zones, ledges, safe spaces, the
-  finish and the section's fragments/encounters. Yellow catchers come with
-  TASK-772. The candidate keeps layout id `extended-mountain-v20`.
+  finish and the section's fragments/encounters. Yellow catchers Y-SP-Y1..Y8
+  and Y-SP-T0 come from TASK-772. The TASK-773 audit added `extraRise` to lift
+  Y2/Y4/Y5/Y6/Y8 out of stacked pump reach. Shipped as `extended-mountain-v21`
+  (TASK-774).
 
 Layout `extended-mountain-v18` (previous, TASK-711) is the generator output with
 `--no-ext-summit-riser` and no layout flag. It is v17 with SEC-ext-summit, a
