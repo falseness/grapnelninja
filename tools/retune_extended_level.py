@@ -1505,6 +1505,18 @@ SKY_SPIRE_SLABS = {
            ((4387, 3379), -50.0, 320, 320, 280), ((3874, 3986), -45.0, 220, 220, 280), ((3391, 4470), -50.0, 320, 320, 280),
            ((2891, 5155), -50.0, 380, 380, 280), ((2435, 5656), -40.0, 220, 220, 280), ((1890, 5926), 15.0, 250, 250, 280),
            ((1279, 6153), -30.0, 250, 250, 280)],
+    # TASK-769 Y7 (rightward, 10 slabs): a 20 deg lip at zone-local x ~3,350 then a steep 50/50/50 deg falling-right
+    # spine to x ~5,000 (y ~2,850), a falling-back-left return -30/-30/-20/-45 deg down to x ~3,000 at y ~4,800 (a
+    # hooked chevron, wider and shallower than Y3's), the 20 deg rebound slab B9 (2442, 5081) and the short 30 deg catch
+    # slab B10 further left. The run-off free-falls ~4,500 under the approach top left of the spine onto SP-Y7-B9, which
+    # throws the player up and right over the return arm (a graze on SP-Y7-B8) out of the zone's right side onto the exit
+    # ledge (artifacts/TASK-769/search: releases 29..30 cross in the search harness). Normalised signature differs from
+    # BZ1..BZ3, Z1..Z8 and Y1..Y6 (each also mirrored) in >= 8 slabs. Stack-clean: no slab sits < 600 across and < 7,000
+    # above Y6's fragments or under T7's (common.stack_ok while generating).
+    'Y7': [((3350, 1141), 20.0, 450, 450, 280), ((4043, 1698), 50.0, 320, 320, 280), ((4508, 2268), 50.0, 260, 260, 280),
+           ((4993, 2842), 50.0, 320, 320, 280), ((4959, 3459), -30.0, 320, 320, 280), ((4373, 3801), -30.0, 220, 220, 280),
+           ((3666, 4272), -20.0, 450, 450, 280), ((2975, 4801), -45.0, 220, 220, 280), ((2442, 5081), 20.0, 250, 250, 280),
+           ((1993, 5083), 30.0, 150, 150, 280)],
 }
 SKY_SPIRE = dict(zones=8, zone=(6912, 8640), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=1080,
                  rise=9300, firstRise=9300, panels=((2500, .33, 1440, 240), (1900, .66, 1440, 240)),
