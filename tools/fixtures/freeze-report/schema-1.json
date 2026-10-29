@@ -1,0 +1,56 @@
+{
+ "schemaVersion": 1,
+ "version": "grapple_over",
+ "levelId": "extended-mountain-v21",
+ "startedAtMs": 0,
+ "stoppedAtMs": 120000,
+ "freezeMs": 50,
+ "samples": [
+  {
+   "t": 1000,
+   "gapMs": 16.7,
+   "layers": {},
+   "physicsMs": 0,
+   "physicsSteps": 1,
+   "hidden": false
+  }
+ ],
+ "freezes": [
+  {
+   "t": 5000,
+   "gapMs": 346,
+   "layers": {
+    "background": 3
+   },
+   "physicsMs": 0.2,
+   "physicsSteps": 1,
+   "slowestLayer": "background",
+   "unaccountedMs": 342.8,
+   "context": {
+    "section": "SEC-baseline",
+    "canvasesCreated": 0,
+    "getContextCalls": 0
+   }
+  },
+  {
+   "t": 9000,
+   "gapMs": 100,
+   "layers": {
+    "background": 3
+   },
+   "physicsMs": 0.2,
+   "physicsSteps": 1,
+   "slowestLayer": "background",
+   "unaccountedMs": 96.8,
+   "context": {
+    "section": "SEC-baseline",
+    "canvasesCreated": 2,
+    "getContextCalls": 0
+   }
+  }
+ ],
+ "visibility": [],
+ "sourceHashes": {
+  "error": "TypeError: Failed to fetch"
+ }
+}

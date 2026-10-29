@@ -1,0 +1,65 @@
+{
+ "schemaVersion": 3,
+ "version": "grapple_over",
+ "levelId": "extended-mountain-v21",
+ "buildId": "abababababababababababababababababababababababababababababababab",
+ "startedAtMs": 0,
+ "stoppedAtMs": 60000,
+ "freezeMs": 50,
+ "samples": [
+  {
+   "t": 1000,
+   "gapMs": 16.7,
+   "layers": {},
+   "physicsMs": 0,
+   "physicsSteps": 1,
+   "hidden": false
+  }
+ ],
+ "freezes": [
+  {
+   "t": 10000,
+   "gapMs": 200,
+   "layers": {
+    "background": 2.0
+   },
+   "physicsMs": 0.5,
+   "physicsSteps": 1,
+   "slowestLayer": "background",
+   "unaccountedMs": 197.5,
+   "rafLagMs": 0.5,
+   "mainThreadSilenceMs": 150,
+   "heapBeforeMB": 20.0,
+   "heapAfterMB": 20.0,
+   "heapDropMB": 0,
+   "context": {
+    "section": "SEC-baseline",
+    "canvasesCreated": 0,
+    "getContextCalls": 0,
+    "firstDraws": [],
+    "liveCanvases": 40,
+    "liveCanvasMB": 13.3,
+    "loafs": [
+     {
+      "startTime": 9800,
+      "duration": 200,
+      "blockingDuration": 0,
+      "renderStart": 9850,
+      "styleAndLayoutStart": 9850,
+      "scripts": [
+       {
+        "sourceURL": "http://x/render/ui.js",
+        "sourceFunctionName": "x",
+        "invoker": "FrameRequestCallback",
+        "duration": 10
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "visibility": [],
+ "loafs": [],
+ "loafSupported": true
+}

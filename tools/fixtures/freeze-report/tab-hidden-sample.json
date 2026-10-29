@@ -1,0 +1,49 @@
+{
+ "schemaVersion": 3,
+ "version": "grapple_over",
+ "levelId": "extended-mountain-v21",
+ "buildId": "abababababababababababababababababababababababababababababababab",
+ "startedAtMs": 0,
+ "stoppedAtMs": 60000,
+ "freezeMs": 50,
+ "samples": [
+  {
+   "t": 30000,
+   "gapMs": 900,
+   "layers": {},
+   "physicsMs": 0,
+   "physicsSteps": 1,
+   "hidden": true
+  }
+ ],
+ "freezes": [
+  {
+   "t": 30000,
+   "gapMs": 900,
+   "layers": {
+    "background": 2.0
+   },
+   "physicsMs": 0.5,
+   "physicsSteps": 1,
+   "slowestLayer": "background",
+   "unaccountedMs": 897.5,
+   "rafLagMs": 0.5,
+   "mainThreadSilenceMs": 5.0,
+   "heapBeforeMB": 20.0,
+   "heapAfterMB": 20.0,
+   "heapDropMB": 0,
+   "context": {
+    "section": "SEC-baseline",
+    "canvasesCreated": 0,
+    "getContextCalls": 0,
+    "firstDraws": [],
+    "liveCanvases": 40,
+    "liveCanvasMB": 13.3,
+    "loafs": []
+   }
+  }
+ ],
+ "visibility": [],
+ "loafs": [],
+ "loafSupported": true
+}

@@ -86,6 +86,41 @@ double-clicked index.html. Now each script gets its own `{error}`,
 `sourceHashFailures` equals the script count and `buildId` is null. To get a
 `buildId`, serve the folder over HTTP (`python3 -m http.server 8000`).
 
+### Reading freezes
+
+Record with `?visualsPerf=1` (Start, play until a freeze, Stop, Export), then:
+
+    python3 tools/freeze_report.py visuals-performance.json [--json out.json]
+
+It reads schemaVersion 1 to 3 and skips any bytes before the first `{`. A
+field the recording does not have prints as `unknown`. The header gives the
+build (`buildId`, or `unknown`), the duration, and the freeze count and rate
+per minute without hidden periods (visibility events and samples with
+`hidden: true`). Then there is one line per freeze: t, gapMs, unaccountedMs,
+section, mainThreadSilenceMs, heapDropMB, liveCanvasMB, the top
+long-animation-frame script and a label. `--json` also writes
+`{summary, rows}`. The first label that matches wins:
+
+| Label | When | What to fix |
+| --- | --- | --- |
+| `tab-hidden` | the freeze overlaps a hidden period | nothing: the browser paused the page |
+| `first-draw` | `firstDraws` total >= 500,000 px | build and warm that image earlier (see First draws below) |
+| `canvas-churn` | `canvasesCreated` >= 5; any canvas when the recording has no `firstDraws` (older than TASK-759) | stop creating canvases during play: cache, atlas or prebuild them |
+| `main-thread-script` | a long-animation-frame entry's scripts take >= 50% of gapMs, or mainThreadSilenceMs >= 80% of gapMs while the timed layers take < 20% | the script named in the top-script column, or untimed JS (input handlers, timers) |
+| `gc-suspect` | heapDropMB >= 2 | allocate less per frame (temporary arrays, objects, strings) |
+| `render-or-present` | mainThreadSilenceMs < 50% of gapMs, or the long-animation-frame entry's renderStart-to-end >= 50% of gapMs | the main thread waited on the GPU or compositor: fewer or smaller full-screen layers, filters and big canvases |
+| `game-work` | timed layers + physics >= 50% of gapMs | the slowest layer of that freeze (`slowestLayer` in the export) |
+| `unknown` | none of the above | record again with a newer build (schemaVersion 3 has the heartbeat, heap and long-animation-frame fields) |
+
+`artifacts/rare_freezes.json` (schemaVersion 1) gives `unknown` for its 346 ms
+and 767 ms freezes: the game's layers took ~3 ms, no canvas was created, and
+that recorder had no heartbeat, heap or long-animation-frame data.
+`tools/test_freeze_report.py` checks each label on the fixtures in
+`tools/fixtures/freeze-report/`. `tools/freeze_report_synthetic.py <dir>`
+records headless exports with an injected busy stall, idle rAF delay and
+canvas burst, and checks they give `main-thread-script`, `render-or-present`
+and `canvas-churn`.
+
 ## Perf note: freezes from runtime canvas creation
 
 A Chrome recording (v20, 1706x932, DPR 1.5) showed 67-117 ms freezes with only
