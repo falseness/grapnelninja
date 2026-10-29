@@ -1335,8 +1335,11 @@ def extend_gauntlet(m, spec=EXT_SUMMIT_GAUNTLET):
 # furthest in. Falls from the safe space above that exit ledge (Sk sits on Zk's exit side) pass the same catcher. S0
 # (from the old summit) gets one on the map side of the old summit, under S0-G2, which reaches as far right as the
 # clearances allow. No catcher overlaps a purple zone.
-def add_gauntlet_catchers(m, spec, slots, spaces, old, zones):
+def add_gauntlet_catchers(m, spec, slots, spaces, old, zones, prefix='Y-', first=('Y-S0', 'S0-G2'),
+                          purpose='gauntlet catcher: a failed jump falls through it (losing speed) onto lower geometry'):
+    # catchers['widthTol']: a lower top must be this much wider to win (the bisection resolves x to ~1 unit).
     c, fs = spec['catchers'], m['fragments']
+    tol = c.get('widthTol', 1e-9)
     h, step = c['height'], c['step']
     lo, hi = FOLD_X_RANGE
     bodies = [(f['id'], b, [min(p[0] for p in b), max(p[0] for p in b), min(p[1] for p in b), max(p[1] for p in b)])
@@ -1391,7 +1394,7 @@ def add_gauntlet_catchers(m, spec, slots, spaces, old, zones):
                     a, b = (mid, b) if legal(left_outer, mid, y) else (a, mid)
                 cand = (left_outer, a)
             width = cand[1]-cand[0]
-            if best is None or width > best[2]+1e-9:
+            if best is None or width > best[2]+tol:
                 best = (cand, y, width)
         return best
 
@@ -1404,7 +1407,7 @@ def add_gauntlet_catchers(m, spec, slots, spaces, old, zones):
         d, sid = nearest(poly, bodies, math.inf)
         dy, yid = min(((union_distance([poly], [b['polygon']])[0], b['id']) for b in m['yellowBands']), default=(math.inf, None))
         band = dict(id=cid, belowJump=None, source=None, target=None, below=below_id, side=side,
-                    purpose='gauntlet catcher: a failed jump falls through it (losing speed) onto lower geometry',
+                    purpose=purpose,
                     x=x0, y=y, width=x1-x0, height=h, polygon=poly, nearestSolidClearance=d, nearestSolid=sid,
                     nearestYellowClearance=dy, nearestYellow=yid, minimumSolidClearance=YELLOW_CLEARANCE,
                     cover=cover, uncoveredStrip=strip,
@@ -1418,12 +1421,12 @@ def add_gauntlet_catchers(m, spec, slots, spaces, old, zones):
     zx0, zx1 = min(z['x'] for z in zones), max(z['x']+z['width'] for z in zones)
     for s in slots:
         e, right = s['exit'], s['direction'] == 'RIGHT'
-        ex = [p[0] for b in svg.bodies(e) for p in b]
-        out.append(place('Y-%s' % s['zone']['id'], e['semanticId'], 'right' if right else 'left', max(p[1] for b in svg.bodies(e) for p in b),
+        ex = [p[0] for p in svg.bodies(e)[0]]          # the ledge itself (SP-Y1-EXIT also carries a catch shelf)
+        out.append(place(prefix+s['zone']['id'], e['semanticId'], 'right' if right else 'left', max(p[1] for p in svg.bodies(e)[0]),
                          max(ex) if right else min(ex), zx1 if right else zx0))
-    g2 = next(f for f in spaces[0]['panels'] if f['semanticId'] == 'S0-G2')
+    g2 = next(f for f in spaces[0]['panels'] if f['semanticId'] == first[1])
     ox = [p[0] for b in svg.bodies(old) for p in b]
-    out.append(place('Y-S0', g2['semanticId'], 'left', max(p[1] for b in svg.bodies(g2) for p in b), left_outer+YELLOW_PAIR_CLEARANCE, min(ox)))
+    out.append(place(first[0], g2['semanticId'], 'left', max(p[1] for b in svg.bodies(g2) for p in b), left_outer+YELLOW_PAIR_CLEARANCE, min(ox)))
     return out
 
 
@@ -1533,7 +1536,9 @@ SKY_SPIRE_SLABS = {
 SKY_SPIRE = dict(zones=8, zone=(6912, 8640), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=1080,
                  rise=9300, firstRise=9300, panels=((2500, .33, 1440, 240), (1900, .66, 1440, 240)),
                  spacePanels={'T0': ((3240, .33, 1100, 240), (1900, .66, 1440, 240))},
-                 zoneClearance=600, section='SEC-sky-spire', prefix='SP', zoneSlabs=SKY_SPIRE_SLABS)
+                 zoneClearance=600, section='SEC-sky-spire', prefix='SP', zoneSlabs=SKY_SPIRE_SLABS,
+                 catchers=dict(height=300, outer=600, depth=6000, step=10, widthTol=1.0),
+                 catchShelf=dict(drop=3810, height=300))
 
 
 def extend_sky_spire(m, spec=SKY_SPIRE):
@@ -1593,6 +1598,18 @@ def extend_sky_spire(m, spec=SKY_SPIRE):
     summit = dict(panel('Sky Spire summit', 1500, 500, rx0 if side > 0 else lx0, start['y']-rise),
                   kind='summit', originalId=None, semanticId=px+'SUMMIT')
     steps.append((summit, 'finish'))
+    # TASK-772: the right tower column stands over nothing (the gauntlet's right panels end ~1,150 further left), so a
+    # miss right of T1/T3/T5/T7-G1 fell into the void (tools/spire_fall_probe.py). SP-Y1-EXIT gets a second body, a
+    # green catch shelf from under SP-T1-G1 to the catchers' outer side, `drop` under the exit top: >= 1620 under the
+    # Y-SP-Y1 catcher hanging 1620 under the exit ledge. From it the exit ledge is a grapple back up (recovery only).
+    shelf = None
+    if spec.get('catchShelf'):
+        e, cs = slots[0]['exit'], spec['catchShelf']
+        x0 = spaces[1]['panels'][0]['x']
+        x1 = max(p['x']+p['width'] for sp in spaces for p in sp['panels'])+spec['catchers']['outer']
+        e['polys'].append([[x0-e['x'], cs['drop']], [x1-e['x'], cs['drop']], [x1-e['x'], cs['drop']+cs['height']],
+                           [x0-e['x'], cs['drop']+cs['height']]])
+        shelf = dict(of=e['semanticId'], x0=x0, x1=x1, y0=e['y']+cs['drop'], y1=e['y']+cs['drop']+cs['height'])
     first = len(fs)
     for i, (f, _) in enumerate(steps):
         f['id'] = 'P%d' % (first+i)
@@ -1639,9 +1656,17 @@ def extend_sky_spire(m, spec=SKY_SPIRE):
     if close:
         raise ValueError('Sky Spire: '+', '.join(sorted(set(close))))
     m['namedSections'] = m['namedSections']+[dict(id=spec['section'], encounters=numbers)]
+    # TASK-772: yellow catchers as in the gauntlet (add_gauntlet_catchers): one under each zone's exit side in its
+    # tower column (it also catches falls from the safe space Tk above Yk's exit ledge), and one for T0 on the map
+    # side of XS-SUMMIT under SP-T0-G1 (T0's lowest panel; the room under SP-T0-G2 lies within 1620 of SP-T0-G1).
+    catchers = add_gauntlet_catchers(m, spec, slots, spaces, old, zones, prefix='Y-SP-', first=('Y-SP-T0', px+'T0-G1'),
+                                     purpose='Sky Spire catcher: a failed jump falls through it (losing speed) onto '
+                                             'lower geometry') if spec.get('catchers') else []
+    if shelf and not catchers[0]['y']+catchers[0]['height'] < shelf['y0']:
+        raise ValueError('Sky Spire catcher %s must hang above the catch shelf' % catchers[0]['id'])
 
-    def rect(f):
-        xs = [x for p in svg.bodies(f) for x, _ in p]; ys = [y for p in svg.bodies(f) for _, y in p]
+    def rect(f):  # the main body (SP-Y1-EXIT's catch shelf is recorded as catchShelf)
+        xs = [x for x, _ in svg.bodies(f)[0]]; ys = [y for _, y in svg.bodies(f)[0]]
         return dict(id=f['id'], semanticId=f['semanticId'], top=f['y'], x0=min(xs), x1=max(xs), y0=min(ys), y1=max(ys))
     m['skySpire'] = dict(
         oldSummit=old['id'], oldFinishTop=old['y']-svg.FINISH_PAD[1], summit=summit['id'],
@@ -1656,7 +1681,11 @@ def extend_sky_spire(m, spec=SKY_SPIRE):
         safeSpaces=[dict(id=s['id'], side=s['side'], start=s['start']['id'],
                          end=(slots[int(s['id'][1:])]['approach']['id'] if int(s['id'][1:]) < len(slots) else summit['id']),
                          grapplePanels=[rect(f) for f in s['panels']]) for s in spaces],
-        finish=dict(rect(summit), finishTop=summit['y']-svg.FINISH_PAD[1]))
+        finish=dict(rect(summit), finishTop=summit['y']-svg.FINISH_PAD[1]),
+        catchers=[{k: b[k] for k in ('id', 'below', 'side', 'x', 'y', 'width', 'height', 'nearestSolidClearance',
+                                     'nearestSolid', 'nearestYellowClearance', 'nearestYellow', 'cover', 'uncoveredStrip')}
+                  for b in catchers],
+        catchShelf=shelf)
     m['pairChecks'] = []
     for i, a in enumerate(fs):
         for b in fs[i+1:]:
