@@ -1471,6 +1471,18 @@ SKY_SPIRE_SLABS = {
            ((4557, 2950), -50.0, 260, 260, 280), ((4076, 3539), -45.0, 320, 320, 280), ((3604, 4029), -40.0, 260, 260, 280),
            ((3136, 4508), -50.0, 220, 220, 280), ((2725, 5030), -50.0, 220, 220, 280), ((2102, 5235), 20.0, 300, 300, 280),
            ((1519, 5279), 30.0, 200, 200, 280)],
+    # TASK-766 Y4 (leftward, 12 slabs): a high zig-zag spine (20/-50/35/50 deg) around zone-local x ~4,300..5,000, a
+    # long -50 deg kicker (B5) at y ~3,400, then a falling-left stair -35/-45/-50/-35/-45 deg down to x ~1,900 at
+    # zone-local y ~6,350 - the deepest Sky Spire layout so far (slab span ~6,140) - a 15 deg rebound slab near the left
+    # side and the short -30 deg catch slab. The run-off free-falls ~2,800 onto SP-Y4-B5, which kicks the player left; it
+    # falls ~6,000 under the approach top past the stair onto SP-Y4-B11, which throws it back up out of the zone's left
+    # side and onto the exit ledge (artifacts/TASK-766/search: releases 27..30 cross in the search harness). Normalised
+    # signature differs from BZ1..BZ3, Z1..Z8 and Y1..Y3 (each also mirrored) in >= 10 slabs. Not stack-clean: B5..B10, B12
+    # sit < 7,000 above Y3's slabs/approach (artifacts/TASK-766/stack.txt, left for TASK-773 with the Y2 flags).
+    'Y4': [((4319, 1094), 20.0, 250, 250, 280), ((4358, 1643), -50.0, 320, 320, 280), ((4414, 2272), 35.0, 380, 380, 280),
+           ((4953, 2723), 50.0, 220, 220, 280), ((4940, 3422), -50.0, 450, 450, 280), ((4125, 4197), -35.0, 450, 450, 280),
+           ((3433, 4704), -45.0, 220, 220, 280), ((3015, 5269), -50.0, 260, 260, 280), ((2471, 5785), -35.0, 320, 320, 280),
+           ((1941, 6352), -45.0, 260, 260, 280), ((1271, 6614), 15.0, 400, 400, 280), ((567, 6808), -30.0, 200, 200, 280)],
 }
 SKY_SPIRE = dict(zones=8, zone=(6912, 8640), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=1080,
                  rise=9300, firstRise=9300, panels=((2500, .33, 1440, 240), (1900, .66, 1440, 240)),
