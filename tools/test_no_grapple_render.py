@@ -347,14 +347,31 @@ class NoGrappleRenderTests(unittest.TestCase):
         bounce, drag, purple = (b['icon'] for b in legend)
         self.assertAlmostEqual(bounce['w'] / bounce['h'], 1, places=6)
         self.assertAlmostEqual(drag['w'] / drag['h'], 3.2, places=6)
-        # On the icon's edge stroke (centred on its left side)
-        edge = page.evaluate(SPRITE_PIXEL, [purple['x'], purple['y'] + purple['h'] / 2])
-        self.assertTrue(edge[2] > 100 and edge[2] > edge[0] > edge[1] + 30, edge)
+        # 'Ion lattice' icon (TASK-783), probed at its bottom centre (clear of the
+        # label's shadow and the bracket): the faint outer line, the bright edge
+        # 0.45 s inside it, the lattice between; the bracket on the top-left
+        # corner's left arm
+        s = purple['h'] / 2.8
+        mid = purple['y'] + purple['h'] / 2
+        cx, bottom = purple['x'] + purple['w'] / 2, purple['y'] + purple['h']
+        # Strongest of the pixels within 2 px (the 0.25 s stroke is antialiased at touch size)
+        edge = max((page.evaluate(SPRITE_PIXEL, [cx, bottom - 0.45 * s + d]) for d in range(-2, 3)),
+                   key=lambda p: (p[3], p[2]))
+        self.assertTrue(edge[2] > 200 and edge[2] > edge[0] > edge[1] + 30, edge)
+        outer = page.evaluate(SPRITE_PIXEL, [cx, bottom - 0.05 * s])
+        self.assertTrue(outer[2] > 100 and outer[2] > outer[0] > outer[1] + 30 and outer[3] < edge[3], (outer, edge))
+        bracket = page.evaluate(SPRITE_PIXEL, [purple['x'] + 0.15 * s, purple['y'] + 0.6 * s])
+        self.assertTrue(min(bracket[:3]) > 200, bracket)
+        row = [page.evaluate(SPRITE_PIXEL, [purple['x'] + 0.6 * s + i * (purple['w'] - 1.2 * s) / 40, mid])
+               for i in range(41)]
+        lattice = max(p[0] for p in row) - min(p[0] for p in row)
+        self.assertGreater(lattice, 25, row)
         left, right = boxes[0]['x'], boxes[-1]['x'] + boxes[-1]['w']
         return {'labels': [b['label'] for b in legend], 'canvas': state['canvas'],
                 'icons': [{k: round(v, 1) for k, v in b['icon'].items()} for b in legend],
                 'textRight': round(right, 1), 'textLeft': round(left, 1), 'insideView': True, 'noOverlap': True,
-                'clearOfMenuButton': True, 'noGrappleEdgePixel': edge,
+                'clearOfMenuButton': True, 'noGrappleEdgePixel': edge, 'noGrappleOuterPixel': outer,
+                'noGrappleBracketPixel': bracket, 'noGrappleLatticeRedRange': lattice,
                 'iconAspect': {'bounce': round(bounce['w'] / bounce['h'], 3), 'drag': round(drag['w'] / drag['h'], 3),
                                'noGrapple': round(purple['w'] / purple['h'], 3)}}
 

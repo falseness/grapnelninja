@@ -256,15 +256,65 @@ const TUTORIAL_HINT = {
         }
     },
 
-    // No-grapple zone: the world's translucent violet wash and thin edge
+    // No-grapple zone, 'Ion lattice' as in the world: a faint outer line on the
+    // icon box, the violet wash with a few static hexagons (pointy-top, at the
+    // brightness the pulse band gives them, so they read at icon size), the
+    // bright edge inside the outer line and one bracket on the top-left corner.
+    // Line widths follow the world's edgePx and outerPx; the bracket is thinned
+    // to fit the gap between the two lines
     drawNoGrapple(c, x, y, w, h, s)
     {
         const colors = STYLE.colors.noGrapple
+        const px = s * 0.25 / colors.edgePx
+        const g = s * 0.45
+        const ix = x + g, iy = y + g, iw = w - 2 * g, ih = h - 2 * g
+        c.save()
         c.fillStyle = colors.fill
-        c.fillRect(x, y, w, h)
+        c.fillRect(ix, iy, iw, ih)
+        if (colors.hexRadius > 0)
+        {
+            c.beginPath()
+            c.rect(ix, iy, iw, ih)
+            c.clip()
+            const r = ih * 0.36, hr = r * (1 - colors.hexInset / colors.hexRadius)
+            const px0 = Math.sqrt(3) * r, py0 = 1.5 * r
+            c.strokeStyle = colors.lattice
+            c.globalAlpha = colors.pulseAlpha
+            c.lineWidth = Math.max(px, colors.latticeLineWorld / colors.hexRadius * r)
+            c.lineJoin = 'miter'
+            c.beginPath()
+            for (let j = -1; j <= 2; ++j)
+                for (let i = -1; i * px0 <= iw + px0; ++i)
+                {
+                    const cx = ix + (i + (j & 1) / 2) * px0, cy = iy + ih / 2 + (j - 0.5) * py0
+                    for (let k = 0; k < 6; ++k)
+                    {
+                        const a = Math.PI / 3 * k + Math.PI / 6
+                        if (k)
+                            c.lineTo(cx + Math.cos(a) * hr, cy + Math.sin(a) * hr)
+                        else
+                            c.moveTo(cx + Math.cos(a) * hr, cy + Math.sin(a) * hr)
+                    }
+                    c.closePath()
+                }
+            c.stroke()
+        }
+        c.restore()
+        c.lineJoin = 'miter'
+        c.strokeStyle = colors.outerStroke
+        c.lineWidth = colors.outerPx * px
+        c.strokeRect(x + c.lineWidth / 2, y + c.lineWidth / 2, w - c.lineWidth, h - c.lineWidth)
         c.strokeStyle = colors.stroke
-        c.lineWidth = s * 0.25
-        c.strokeRect(x, y, w, h)
+        c.lineWidth = colors.edgePx * px
+        c.strokeRect(ix, iy, iw, ih)
+        const b = colors.bracketPx * px * 0.6, arm = Math.min(iw, ih) * 0.8
+        c.strokeStyle = colors.bracket
+        c.lineWidth = b
+        c.beginPath()
+        c.moveTo(x + b / 2, y + b / 2 + arm)
+        c.lineTo(x + b / 2, y + b / 2)
+        c.lineTo(x + b / 2 + arm, y + b / 2)
+        c.stroke()
     },
 
     // Blits the sprite over the whole canvas, drifting up 1.2% of the view
