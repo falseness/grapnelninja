@@ -51,12 +51,16 @@ caches created canvases during play:
    (about 11 MB at 1706x932 DPR 1.5) when the frame size is first known and
    again after a resize or DPR change. It draws each strip once into a 1x1
    canvas right away, so a band change builds and uploads nothing.
+   The parallax tiles (render/parallax.js, about 3.8 Mpx per band at that
+   size) work the same way: `buildGrappleOverParallaxTiles` builds and warms
+   the tiles for all 8 bands together and keeps them out of the glow sprite
+   LRU. That is about 120 MB, which a full climb already held before.
 
 To check after changing render code, re-run
 `python3 tools/canvas_audit.py --mode single|double --out <file>`. It holds the
 ninja at the 12 recorded freeze points (tools/fixtures/freeze-walk.json) for 2
 passes plus a vertical sweep in headless Chromium and counts the canvases
 created. Expected: pass 2 total (`perPass[1]`) <= 3, `maxPerFrame` <= 4,
-`glowMisses.text` 0, `smoothCheck.afterBoot` 0 and `smoothCheck.firstDrawsOk`
-true. The audit counts canvases
+`glowMisses.text` 0, `smoothCheck.afterBoot` 0, `smoothCheck.firstDrawsOk`
+true and `firstDraw.maxPxPerFrame` <= 500000. The audit counts canvases
 only; headless frame times say nothing about real freezes.

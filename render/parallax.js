@@ -1,8 +1,8 @@
 // Grapple Over parallax silhouettes (GRAPPLE_OVER_PARALLAX): far ridges and a
 // mid industrial skyline, one motif per section. Each motif is one tile built
 // once through the glow sprite builder (render/glowsprites.js: the only
-// shadowBlur, at build time) and kept in the glow sprite cache; a frame only
-// copies tiles. Tiles repeat on both axes, so any climb height is covered.
+// shadowBlur, at build time), all bands together and kept in
+// GRAPPLE_OVER_PARALLAX_TILES; a frame only copies tiles. Tiles repeat on both axes, so any climb height is covered.
 
 // Draws the layers into renderer.ctx over renderer.fillBounds() for this
 // frame's palette ({from, to, t}: the same band blend as the wash). Returns
@@ -42,11 +42,43 @@ function drawGrappleOverParallax(renderer, palette)
     return used
 }
 
+// Every band's tiles for one pixel scale, outside the glow sprite LRU so none
+// is dropped and rebuilt mid-climb
+const GRAPPLE_OVER_PARALLAX_TILES = {cache: new Map(), limit: Infinity, scale: null, warm: null}
+
 function getGrappleOverParallaxTile(layer, band, pixelScale)
 {
-    return getGlowSprite('parallax|' + layer.name + '|' + band + '|' + pixelScale, () =>
-        buildGlowSprite(Math.round(layer.tileWidth * pixelScale), Math.round(layer.tileHeight * pixelScale),
-            0, pixelScale, pixelScale, 0, 0, 1, paintGrappleOverParallaxTile, [layer, band], true))
+    buildGrappleOverParallaxTiles(pixelScale)
+    return getGlowSprite('parallax|' + layer.name + '|' + band + '|' + pixelScale,
+        () => buildGrappleOverParallaxTile(layer, band, pixelScale), GRAPPLE_OVER_PARALLAX_TILES)
+}
+
+function buildGrappleOverParallaxTile(layer, band, pixelScale)
+{
+    return buildGlowSprite(Math.round(layer.tileWidth * pixelScale), Math.round(layer.tileHeight * pixelScale),
+        0, pixelScale, pixelScale, 0, 0, 1, paintGrappleOverParallaxTile, [layer, band], true)
+}
+
+// Builds the tiles of every layer and band when the pixel scale is first
+// known or changes (resize, DPR), like the palette strips: each new tile is
+// drawn once into a 1x1 canvas so its upload happens here, not in the frame
+// a band change first shows it (2-4 Mpx per band at 1706x932 DPR 1.5)
+function buildGrappleOverParallaxTiles(pixelScale)
+{
+    const store = GRAPPLE_OVER_PARALLAX_TILES
+    if (store.scale === pixelScale)
+        return
+    store.scale = pixelScale
+    store.cache.clear()
+    const warm = store.warm || (store.warm = document.createElement('canvas').getContext('2d'))
+    warm.canvas.width = warm.canvas.height = 1
+    for (const layer of GRAPPLE_OVER_PARALLAX.layers)
+        layer.motifs.forEach((motif, band) =>
+        {
+            const tile = buildGrappleOverParallaxTile(layer, band, pixelScale)
+            store.cache.set('parallax|' + layer.name + '|' + band + '|' + pixelScale, tile)
+            warm.drawImage(tile, 0, 0, 1, 1)
+        })
 }
 
 // Repeats tile (w x h logical) across bounds from (x, y). Edges are snapped to

@@ -441,7 +441,7 @@ TILE_DRAWS_539 = '''() => {
     };
     try { draw(); } finally { CanvasRenderingContext2D.prototype.drawImage = original; }
     const names = new Map();
-    for (const [key, sprite] of GLOW_SPRITES.cache)
+    for (const [key, sprite] of GRAPPLE_OVER_PARALLAX_TILES.cache)
         if (key.startsWith('parallax|')) names.set(sprite, key);
     const groups = {};
     for (const d of draws) {
