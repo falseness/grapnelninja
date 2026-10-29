@@ -1461,6 +1461,16 @@ SKY_SPIRE_SLABS = {
            ((3968, 3009), -40.0, 320, 320, 280), ((3418, 3508), -25.0, 260, 260, 280), ((2948, 3943), -45.0, 220, 220, 280),
            ((2530, 4461), -50.0, 220, 220, 280), ((2032, 4916), -35.0, 220, 220, 280), ((1410, 5009), 15.0, 400, 400, 280),
            ((672, 5151), -30.0, 200, 200, 280)],
+    # TASK-765 Y3 (rightward, 10 slabs): a switchback chevron - 40/50/35 deg falling right from x ~3,300 to ~4,600, then
+    # -50/-45/-40/-50/-50 falling back left to x ~2,700 at zone-local y ~5,000 - a 20 deg rebound under the run-off's free
+    # fall and the 30 deg catch further left. Every slab is clear of the stack screen (none sits < 600 across and < 7,000
+    # above Y2's slabs or SP-Y2-EXIT). The run-off falls ~4,600 straight past the chevron onto SP-Y3-B9, which throws the
+    # player up and right over the chevron's lower arm (a graze on it) out of the zone's right side onto the exit ledge
+    # (artifacts/TASK-765/search: releases 23, 25, 27 cross in the search harness). Normalised signature differs in >= 6 slabs.
+    'Y3': [((3285, 1218), 40.0, 350, 350, 280), ((3932, 1869), 50.0, 380, 380, 280), ((4528, 2422), 35.0, 220, 220, 280),
+           ((4557, 2950), -50.0, 260, 260, 280), ((4076, 3539), -45.0, 320, 320, 280), ((3604, 4029), -40.0, 260, 260, 280),
+           ((3136, 4508), -50.0, 220, 220, 280), ((2725, 5030), -50.0, 220, 220, 280), ((2102, 5235), 20.0, 300, 300, 280),
+           ((1519, 5279), 30.0, 200, 200, 280)],
 }
 SKY_SPIRE = dict(zones=8, zone=(6912, 8640), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=1080,
                  rise=9300, firstRise=9300, panels=((2500, .33, 1440, 240), (1900, .66, 1440, 240)),
