@@ -1535,10 +1535,14 @@ SKY_SPIRE_SLABS = {
 }
 SKY_SPIRE = dict(zones=8, zone=(6912, 8640), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=1080,
                  rise=9300, firstRise=9300, panels=((2500, .33, 1440, 240), (1900, .66, 1440, 240)),
-                 spacePanels={'T0': ((3240, .33, 1100, 240), (1900, .66, 1440, 240))},
+                 # TASK-773: T4 (left column, 2,800 taller) moved 800 toward the tower: at the default dx the pump
+                 # swing hits the camera's left wall and peaks 3,369 above the panel, short of the next one.
+                 spacePanels={'T0': ((3240, .33, 1100, 240), (1900, .66, 1440, 240)),
+                              'T4': ((1700, .33, 1440, 240), (1100, .66, 1440, 240))},
                  zoneClearance=600, section='SEC-sky-spire', prefix='SP', zoneSlabs=SKY_SPIRE_SLABS,
                  catchers=dict(height=300, outer=600, depth=6000, step=10, widthTol=1.0),
-                 catchShelf=dict(drop=3810, height=300))
+                 catchShelf=dict(drop=3810, height=300),
+                 extraRise=dict(Y2=2900, Y4=4560, Y5=2800, Y6=3070, Y8=2500))
 
 
 def extend_sky_spire(m, spec=SKY_SPIRE):
@@ -1566,6 +1570,9 @@ def extend_sky_spire(m, spec=SKY_SPIRE):
     start, top = old, old['y']-spec['firstRise']
     for n in range(1, spec['zones']+1):
         direction = 1 if n % 2 else -1       # odd: entered from the left side, run rightward
+        # TASK-773: extraRise lifts zone n and everything above it rigidly (the safe space under it gets taller), so
+        # its low slabs clear the upper slabs/approach of zone n-1 by the stack screen's 7,000 pump reach.
+        top -= spec.get('extraRise', {}).get('Y%d' % n, 0)
         safe_space(n-1, start, -direction if n > 1 else -1, start['y']-top)
         zid = 'Y%d' % n
         ax, ex = (lx0, rx0) if direction > 0 else (rx0, lx0)
@@ -1685,7 +1692,7 @@ def extend_sky_spire(m, spec=SKY_SPIRE):
         catchers=[{k: b[k] for k in ('id', 'below', 'side', 'x', 'y', 'width', 'height', 'nearestSolidClearance',
                                      'nearestSolid', 'nearestYellowClearance', 'nearestYellow', 'cover', 'uncoveredStrip')}
                   for b in catchers],
-        catchShelf=shelf)
+        catchShelf=shelf, extraRise=dict(spec.get('extraRise', {})))
     m['pairChecks'] = []
     for i, a in enumerate(fs):
         for b in fs[i+1:]:
