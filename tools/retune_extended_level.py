@@ -1438,10 +1438,24 @@ def add_gauntlet_catchers(m, spec, slots, spaces, old, zones):
 # zone). A column ledge pumps up ~6,440 (TASK-743), and in each column an approach ledge sits under the exit ledge two
 # zones up: rise - exitTop - ledge height = 7,960 > 7,000 keeps them out of reach (artifacts/TASK-743/stack.py).
 # T0: G1 sits left of the gauntlet's S8-G2 (>= 600 across, it is 5,400 above it) and G2 700 across from XS-SUMMIT.
+# Each filled zone's slabs (SP-Yk-B1.., in route order), in the GAUNTLET_SLABS format: (contact relative to the zone's
+# top-left corner, angle, before, after, thickness). Every zone has its own layout (tall-zone contract above). Recorded
+# crossings: tools/fixtures/spire-inputs-Yk.json, proven by tools/test_spire_route.py.
+SKY_SPIRE_SLABS = {
+    # TASK-763 Y1 (rightward, 10 slabs): a steep falling-right staircase 35/40/40/45/35/50/45/40 deg from under the
+    # approach side down to zone-local y ~5,300 (slab span ~4,490), a -15 deg rebound slab and the short 30 deg catch slab.
+    # The run-off drops onto SP-Y1-B3, which kicks the player right; it falls ~4,450 under the approach top onto
+    # SP-Y1-B9, which throws it steeply back up the right part of the zone, out of the right side high and down onto the
+    # exit ledge (artifacts/TASK-763/search: browser-replayed random layouts; releases 31..35 all cross in the search harness).
+    'Y1': [((627, 1317), 35.0, 300, 300, 280), ((1140, 1816), 40.0, 260, 260, 280), ((1673, 2284), 40.0, 220, 220, 280),
+           ((2100, 2759), 45.0, 220, 220, 280), ((2645, 3180), 35.0, 320, 320, 280), ((3142, 3752), 50.0, 220, 220, 280),
+           ((3620, 4392), 45.0, 380, 380, 280), ((4230, 4972), 40.0, 320, 320, 280), ((4988, 5158), -15.0, 400, 400, 280),
+           ((5726, 5291), 30.0, 200, 200, 280)],
+}
 SKY_SPIRE = dict(zones=8, zone=(6912, 8640), zoneAbove=600, zoneMargin=60, ledge=(1200, 260), exitTop=1080,
                  rise=9300, firstRise=9300, panels=((2500, .33, 1440, 240), (1900, .66, 1440, 240)),
                  spacePanels={'T0': ((3240, .33, 1100, 240), (1900, .66, 1440, 240))},
-                 zoneClearance=600, section='SEC-sky-spire', prefix='SP', zoneSlabs={})
+                 zoneClearance=600, section='SEC-sky-spire', prefix='SP', zoneSlabs=SKY_SPIRE_SLABS)
 
 
 def extend_sky_spire(m, spec=SKY_SPIRE):
