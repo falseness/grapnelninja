@@ -10,7 +10,7 @@ backend file under `platform/backends/`:
 | `itch.js` | `itch` | stub, behaves like local |
 | `gamepix.js` | `gamepix` | stub, behaves like local |
 | `y8.js` | `y8` | stub, behaves like local |
-| `playgama.js` | `playgama` | stub, behaves like local |
+| `playgama.js` | `playgama` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.bridge.advertisement` when present |
 
 Each portal stub calls `LOCAL_PLATFORM_BACKEND` for every inner method (so the
 storage code exists once) and carries a `// REPLACE: <SDK call>` line plus the

@@ -3,13 +3,21 @@
 // bridge.advertisement; NO external analytics (no GameAnalytics) on Playgama.
 // Docs: https://wiki.playgama.com/playgama/bridge-sdk/setup.md
 // Script tag: <script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script> (before platform/backends/playgama.js)
-// For now every inner method behaves like local.js (localStorage storage,
+// Rewarded ads use the real SDK when window.bridge.advertisement exists.
+// Every other inner method behaves like local.js (localStorage storage,
 // no-op ads/lifecycle/leaderboards) by calling LOCAL_PLATFORM_BACKEND, which
 // must be loaded first; to port, replace each body with its REPLACE line.
 // See docs/platform-sdk.md.
 var PLATFORM_BACKEND = (function()
 {
     const base = LOCAL_PLATFORM_BACKEND
+
+    // The real SDK's ad module, or null to keep the base (stub) behaviour
+    function advertisement()
+    {
+        const bridge = typeof window === 'undefined' ? undefined : window.bridge
+        return bridge && bridge.advertisement ? bridge.advertisement : null
+    }
 
     return {
         platformId: 'playgama',
@@ -147,18 +155,55 @@ var PLATFORM_BACKEND = (function()
             return base.happyMoment()
         },
 
-        // REPLACE: return bridge.advertisement.isRewardedSupported
-        // https://wiki.playgama.com/playgama/bridge-sdk/setup.md
+        // https://wiki.playgama.com/playgama/bridge-sdk/api/advertisement/rewarded.md
         isRewardedSupported()
         {
-            return base.isRewardedSupported()
+            const ads = advertisement()
+            return ads ? ads.isRewardedSupported === true : base.isRewardedSupported()
         },
 
-        // REPLACE: bridge.advertisement.showRewarded(placement); reward only on REWARDED_STATE_CHANGED 'rewarded'
-        // https://wiki.playgama.com/playgama/bridge-sdk/setup.md
+        // Resolves on REWARDED_STATE_CHANGED: 'closed' -> 'rewarded' when
+        // 'rewarded' fired before it, else 'closed'; 'failed' -> 'failed'.
+        // The listener is removed once it settles.
+        // https://wiki.playgama.com/playgama/bridge-sdk/api/advertisement/rewarded.md
         showRewarded(placement)
         {
-            return base.showRewarded(placement)
+            const ads = advertisement()
+            if (!ads)
+                return base.showRewarded(placement)
+            return new Promise(resolve =>
+            {
+                const event = window.bridge.EVENT_NAME.REWARDED_STATE_CHANGED
+                let rewarded = false
+                let settled = false
+                const settle = result =>
+                {
+                    if (settled)
+                        return
+                    settled = true
+                    if (typeof ads.off === 'function')
+                        ads.off(event, onState)
+                    resolve(result)
+                }
+                const onState = state =>
+                {
+                    if (state === 'rewarded')
+                        rewarded = true
+                    else if (state === 'closed')
+                        settle(rewarded ? 'rewarded' : 'closed')
+                    else if (state === 'failed')
+                        settle('failed')
+                }
+                ads.on(event, onState)
+                try
+                {
+                    Promise.resolve(ads.showRewarded(placement)).catch(() => settle('failed'))
+                }
+                catch (e)
+                {
+                    settle('failed')
+                }
+            })
         },
 
         // REPLACE: bridge.advertisement.showBanner(position)
