@@ -38,7 +38,8 @@ function physics()
 {
     if (version === 'grapple_over' && (menu.gamePaused || floors[0].climbStats.completed || hostPaused)) return
     firstCycleInThisTick = true
-    // A fall recovery ends the tick at the spawn, so the recovery step is observable.
+    // A fall recovery ends the tick at the spawn, so the recovery step is
+    // observable; the go-back offer ends it at the step that opened it.
     let recovered = false
     for (cycle = 0; cycle < cyclesPerTick - 1 && !recovered; ++cycle)
     {
@@ -101,6 +102,14 @@ function calcPhysics()
         stats.maxHeight = Math.max(stats.maxHeight, stats.currentHeight)
         reportClimbHeight(stats)
         LONG_FALL.step()
+        // Before the spawn recovery: a fall long enough for both pauses on the
+        // 'Go back?' dialog first (the recovery follows if the player keeps falling).
+        const checkpoint = world.climbCheckpoint
+        if (checkpoint && checkpoint.anchorY < ninja.y && LONG_FALL.goBackDue())
+        {
+            CLIMB_UI.offerGoBack()
+            return true
+        }
         if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)
         {
             recoverClimbFall()

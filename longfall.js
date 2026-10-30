@@ -7,6 +7,10 @@ const LONG_FALL_MESSAGES = Object.freeze(['OOPS...', 'GG!', 'BRUH.', 'NOT AGAIN.
 // The first long fall of a single-grapnel run suggests double grapnel mode
 // instead (climb.fallHint, shown in the current language).
 const LONG_FALL_HINT_KEY = 'climb.fallHint'
+// Grapple Over: a fall longer than this (measured like LONG_FALL_THRESHOLD)
+// with the go-back checkpoint above the player pauses on the 'Go back?'
+// dialog (CLIMB_UI.offerGoBack), once per catch.
+const GO_BACK_FALL_THRESHOLD = 10000
 
 const LONG_FALL = (function()
 {
@@ -19,6 +23,8 @@ const LONG_FALL = (function()
     let world = null, body = null
     let startY = 0, lastY = 0, armed = true, wasGrappled = false
     let event = null, emitted = 0
+    // The go-back offer: armed by a new world and by each new catch
+    let goBackArmed = true
 
     function pick(r)
     {
@@ -42,6 +48,7 @@ const LONG_FALL = (function()
                 if (world !== null) event = null
                 world = floors[0]
                 body = ninja
+                goBackArmed = true
                 baseline()
                 return
             }
@@ -49,6 +56,7 @@ const LONG_FALL = (function()
             // Only the moment of a new catch counts; holding the rope does not.
             const caught = grappled && !wasGrappled
             wasGrappled = grappled
+            if (caught) goBackArmed = true
             if (caught || y < lastY)
             {
                 startY = y
@@ -71,6 +79,17 @@ const LONG_FALL = (function()
         {
             baseline()
         },
+        // The fall since the last catch (or the apex since it) is long enough
+        // for the go-back offer, which was not yet made for that catch.
+        goBackDue()
+        {
+            return goBackArmed && lastY - startY > GO_BACK_FALL_THRESHOLD
+        },
+        // armed: false after the offer (until the next catch), true after a go back
+        setGoBackArmed(armed)
+        {
+            goBackArmed = armed
+        },
         clearEvent()
         {
             event = null
@@ -78,6 +97,7 @@ const LONG_FALL = (function()
         // A replaced world (restart, reload, mode switch) owns no reaction.
         get event() { return floors[0] === world && ninja === body ? event : null },
         get emitted() { return emitted },
+        get goBackArmed() { return goBackArmed },
         tracking()
         {
             return {startY, lastY, armed, wasGrappled, displacement: lastY - startY}

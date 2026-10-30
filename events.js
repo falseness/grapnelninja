@@ -171,6 +171,13 @@ function createEvents()
     {
         if (scrollKeys.includes(event.key))
             event.preventDefault()
+        // The 'Go back?' dialog takes the keys; a pause key leaves it open
+        if (version === 'grapple_over' && CLIMB_UI.goBackOpen())
+        {
+            if (!isViewRotated() && !adOpen && !interstitialPending && !event.repeat) CLIMB_UI.goBackKey(event.key)
+            if (event.key === 'Enter' || pauseKeys.includes(event.key)) event.preventDefault()
+            return
+        }
         if (pauseKeys.includes(event.key) && !isViewRotated() && !continueOffer.visible && !adOpen && !interstitialPending)
         {
             event.preventDefault()

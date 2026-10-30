@@ -828,6 +828,7 @@ class Menu
         if (version === 'grapple_over' &&
             (hostPaused || isViewRotated() || document.visibilityState === 'hidden')) return
         CLIMB_UI.offering = false
+        CLIMB_UI.goingBack = false
         menu.changeGamePause(false)
         // Over the death screen the run is over: its clock stays stopped and
         // there is no level to resume
@@ -1005,6 +1006,10 @@ const CLIMB_UI = {
     confirming: false,
     // The first-death double grapnel offer is up (a pause screen of its own)
     offering: false,
+    // The 'Go back?' dialog after a long fall (offerGoBack) is up; goBackFocus
+    // is the keyboard-focused button (0 Go back, 1 Keep falling)
+    goingBack: false,
+    goBackFocus: 0,
     buttons: [],
     time(ms) { return I18N.t('climb.seconds', {value:(ms / 1000).toFixed(1)}) },
     text(text, x, y, size, alignX = 'center', glyphs = false) {
@@ -1134,6 +1139,7 @@ const CLIMB_UI = {
     restart() {
         this.confirming = false
         this.offering = false
+        this.goingBack = false
         PROGRESS.resetClimb()
         this.resetProgression()
         pressHeld = stalePress = gameplayPressOwned = false
@@ -1156,8 +1162,14 @@ const CLIMB_UI = {
             ctx.fillRect(0, 0, w, h)
         }
         if (stats.completed && !this.confirming) return this.drawWin(w, h, stats)
-        const title = this.offering ? 'climb.offerTitle' : this.confirming ? 'climb.confirm' : 'mode.grapple_over'
-        const actions = this.offering ? [
+        // A replaced run (restart, reload, mode switch) owns no go-back dialog
+        if (this.goingBack && this.goBackWorld !== floors[0]) this.goingBack = false
+        const title = this.goingBack ? 'climb.goBackTitle' : this.offering ? 'climb.offerTitle' :
+            this.confirming ? 'climb.confirm' : 'mode.grapple_over'
+        const actions = this.goingBack ? [
+            ['climb.goBack', () => this.goBack()],
+            ['climb.keepFalling', () => this.keepFalling()]
+        ] : this.offering ? [
             ['climb.offerContinue', () => menu.unPause()],
             ['climb.offerDouble', () => this.acceptDouble()]
         ] : this.confirming ? [
@@ -1206,6 +1218,16 @@ const CLIMB_UI = {
             {x:w/2, y:note ? rows[2 + i] : h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true},
             {text:I18N.t(key), fill:STYLE.colors.ui.buttonText}, action))
         this.buttons.forEach(b => b.draw())
+        // Keyboard focus: a light ring around the focused dialog button
+        const focused = this.goingBack && this.buttons[this.goBackFocus]
+        if (focused)
+        {
+            const r = focused.background, pad = h * 0.007
+            ctx.save()
+            strokeNeonRect(r.x - pad, r.y - pad, r.width + pad * 2, r.height + pad * 2,
+                STYLE.colors.ui.title, STYLE.ui.neonUnit.small)
+            ctx.restore()
+        }
         if (note)
             new Text({text:noteText, x:w/2, y:rows[2 + actions.length], fontSize:noteSize, fill:STYLE.colors.ui.mutedText}).draw()
         // The pause screen's fps checkbox, centred under the action buttons
@@ -1448,6 +1470,46 @@ const CLIMB_UI = {
         menu.unPause()
         redrawOverlays()
     },
+    // A fall of more than GO_BACK_FALL_THRESHOLD under the go-back checkpoint
+    // (calcPhysics, before the spawn recovery): the run pauses, its clock
+    // stopped, until Go back or Keep falling. Not offered again until a new catch.
+    offerGoBack() {
+        LONG_FALL.setGoBackArmed(false)
+        this.goingBack = true
+        this.goBackWorld = floors[0]
+        this.goBackFocus = 0
+        this.offering = false
+        this.confirming = false
+        menu.startPause()
+    },
+    // The dialog is up over the run it was offered in
+    goBackOpen() {
+        return this.goingBack && menu.gamePaused && this.goBackWorld === floors[0]
+    },
+    goBack() {
+        this.goingBack = false
+        // A press held through the answer cannot steer, release or throw
+        if (returnToCheckpoint()) LONG_FALL.setGoBackArmed(true)
+        menu.unPause()
+        redrawOverlays()
+    },
+    keepFalling() {
+        this.goingBack = false
+        gameplayPressOwned = false
+        stalePress = pressHeld
+        menu.unPause()
+        redrawOverlays()
+    },
+    // Dialog keys: arrows move the focus, Enter (or Space) presses the focused
+    // button, Escape keeps falling; every other key (P included) leaves it open.
+    goBackKey(key) {
+        if (['ArrowLeft', 'ArrowUp'].includes(key)) this.goBackFocus = 0
+        else if (['ArrowRight', 'ArrowDown'].includes(key)) this.goBackFocus = 1
+        else if (key === 'Enter' || key === ' ') return this.goBackFocus ? this.keepFalling() : this.goBack()
+        else if (key === 'Escape') return this.keepFalling()
+        else return
+        redrawOverlays()
+    },
     toggleGrapnel() {
         setGrapnelMode(floors[0].grapnelMode === 'double' ? 'single' : 'double')
         PROGRESS.flushClimb()
@@ -1455,6 +1517,6 @@ const CLIMB_UI = {
     },
     // As on the Classic/Bad pause screen: not on the restart confirmation or the ending
     showsFps() {
-        return !this.confirming && !this.offering && !floors[0]?.climbStats?.completed
+        return !this.confirming && !this.offering && !this.goingBack && !floors[0]?.climbStats?.completed
     }
 }

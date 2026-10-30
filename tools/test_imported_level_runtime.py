@@ -61,7 +61,9 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+// returns the player to the spawn without restarting the run.',
     '+const CLIMB_FALL_RECOVERY_DEPTH = 1500',
     '-    for (cycle = 0; cycle < cyclesPerTick - 1; ++cycle)',
-    '+    // A fall recovery ends the tick at the spawn, so the recovery step is observable.',
+    # TASK-792: the go-back offer also ends the tick (comment only).
+    '+    // A fall recovery ends the tick at the spawn, so the recovery step is',
+    '+    // observable; the go-back offer ends it at the step that opened it.',
     '+    let recovered = false',
     '+    for (cycle = 0; cycle < cyclesPerTick - 1 && !recovered; ++cycle)',
     '-        calcPhysics()',
@@ -76,6 +78,16 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+        climbDesignRun(stats)',
     '+        reportClimbHeight(stats)',
     '+        LONG_FALL.step()',
+    # TASK-792: the 'Go back?' dialog after a fall of more than GO_BACK_FALL_THRESHOLD, before the
+    # spawn recovery; it only pauses the run (CLIMB_UI.offerGoBack). Covered by tools/test_go_back_dialog.py.
+    '+        // Before the spawn recovery: a fall long enough for both pauses on the',
+    "+        // 'Go back?' dialog first (the recovery follows if the player keeps falling).",
+    '+        const checkpoint = world.climbCheckpoint',
+    '+        if (checkpoint && checkpoint.anchorY < ninja.y && LONG_FALL.goBackDue())',
+    '+        {',
+    '+            CLIMB_UI.offerGoBack()',
+    '+            return true',
+    '+        }',
     '+        if (stats.currentHeight < -CLIMB_FALL_RECOVERY_DEPTH)',
     '+        {',
     '+            recoverClimbFall()',
