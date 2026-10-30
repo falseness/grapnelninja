@@ -8,6 +8,11 @@ differ by a mean absolute channel difference <= 2/255 with >= 99% of pixels
 within 8/255. Writes hud-diff.json and hud-side-by-side.png to
 HUD_GLYPHS_EVIDENCE_DIR (default artifacts/TASK-755).
 
+Since TASK-796 the HUD has no Time row (the baseline still draws it), so
+each crop compares bands: the Height/Best/Section rows, plus the
+double-range row from its own place in each tree, drawn over a flat fill
+(that row moved up, so the scene behind it differs).
+
     cd tools && python3 -m unittest -v test_hud_glyphs
 """
 import base64
@@ -53,18 +58,31 @@ FREEZE = '''mode => {
 RENDER = '''([ms, value]) => {
     const s = floors[0].climbStats
     s.elapsedActiveMs = ms; s.currentHeight = value; s.maxHeight = value
-    let m = null
+    let m = null, flat = false
     const hud = CLIMB_UI.drawHud
-    CLIMB_UI.drawHud = function() { m = ctx.getTransform(); return hud.apply(this, arguments) }
-    try { draw() } finally { CLIMB_UI.drawHud = hud }
+    CLIMB_UI.drawHud = function() {
+        m = ctx.getTransform()
+        // flat: a plain fill under the HUD instead of the scene
+        if (flat) { ctx.save(); ctx.resetTransform(); ctx.fillStyle = '#20143a'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore() }
+        return hud.apply(this, arguments)
+    }
     const h = height / scale[version]
     const size = Math.max(h * 0.025, 12 * h / getCanvasCssRect().height)
-    const rows = floors[0].grapnelMode === 'double' ? 5 : 4
-    const w = Math.ceil(m.a * size * 16 + m.e), hh = Math.ceil(m.d * size * (1.5 + (rows - 1) * 1.6 + 1.4) + m.f)
-    const crop = document.createElement('canvas')
-    crop.width = w; crop.height = hh
-    crop.getContext('2d').drawImage(canvas, 0, 0, w, hh, 0, 0, w, hh)
-    return {png: crop.toDataURL('image/png'), box: [w, hh],
+    const rows = 5   // the baseline's most rows (double mode, with Time)
+    const grab = () => {
+        draw()
+        const w = Math.ceil(m.a * size * 16 + m.e), hh = Math.ceil(m.d * size * (1.5 + (rows - 1) * 1.6 + 1.4) + m.f)
+        const crop = document.createElement('canvas')
+        crop.width = w; crop.height = hh
+        crop.getContext('2d').drawImage(canvas, 0, 0, w, hh, 0, 0, w, hh)
+        return {png: crop.toDataURL('image/png'), box: [w, hh]}
+    }
+    let plain, flatShot
+    try {
+        flat = true; flatShot = grab()
+        flat = false; plain = grab()
+    } finally { CLIMB_UI.drawHud = hud }
+    return {png: plain.png, flatPng: flatShot.png, box: plain.box, unit: m.d * size, top: m.f,
             glyph: typeof GLYPH_SPRITES != 'undefined' ? GLYPH_SPRITES.cache.size : null,
             hudTextSprites: [...GLOW_SPRITES.cache.keys()].filter(k => /^text\\|(Time|Height|Best)/.test(k)).length}
 }'''
@@ -78,6 +96,26 @@ def serve(root, add_cleanup):
     add_cleanup(thread.join)
     add_cleanup(server.shutdown)
     return f'http://127.0.0.1:{server.server_port}/'
+
+
+def bands(shot, mode, last, shift=0):
+    # Rows 0-2 (Height, Best, Section) over the scene, then the double-range row at
+    # index last over the flat fill (shift: whole device px added to its band start)
+    y = lambda i: shot['top'] + shot['unit'] * (1.5 + i * 1.6)
+    parts = [decode(shot['png'])[:round(y(2) + shot['unit'] * 0.8)]]
+    if mode == 'double':
+        start = round(y(last) - shot['unit'] * 0.8) + shift
+        parts.append(decode(shot['flatPng'])[start:start + round(shot['unit'] * 1.6)])
+    return np.concatenate(parts)
+
+
+def aligned(a, b, mode):
+    # The baseline's double-range row follows its Time row (index 4), now it is index 3.
+    # Its 1.6-row move is fractional in device px, so the band start is rounded; take
+    # the whole-px offset (-1..1) that matches best.
+    pa = bands(a, mode, 4)
+    pb = min((bands(b, mode, 3, k) for k in (-1, 0, 1)), key=lambda p: np.abs(pa - p).mean())
+    return pa, pb
 
 
 def decode(data_url):
@@ -121,7 +159,7 @@ class HudGlyphTests(unittest.TestCase):
                 self.assertEqual(again['png'], new[1]['png'], 'frozen frame not repeatable')
                 for (ms, value), a, b in zip(CASES, old, new):
                     self.assertEqual(a['box'], b['box'])
-                    pa, pb = decode(a['png']), decode(b['png'])
+                    pa, pb = aligned(a, b, mode)
                     diff = np.abs(pa - pb)
                     within = float((diff.max(axis=2) <= WITHIN).mean())
                     row = {'dpr': dpr, 'mode': mode, 'timeS': ms / 1000, 'height': value, 'box': b['box'],
