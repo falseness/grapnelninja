@@ -1328,7 +1328,7 @@ class Task566Tests(unittest.TestCase):
             q = self.page({self.key: json.dumps(row['payload'])})
             result = q.evaluate('''() => ({state:captureClimbState(),spawn:floors[0].level.spawn,
                 range:grappleOverAcquisitionRadius(),notice:document.getElementById('climb-save-notice')?.textContent})''')
-            self.assertIn('Starting at the replacement base.', result['notice'])
+            self.assertIsNone(result['notice'])  # TASK-785: rejected saves restart silently, no popup
             self.assertEqual(result['state']['player']['x'], result['spawn']['x'])
             self.assertEqual(result['state']['player']['y'], result['spawn']['y'])
             self.assertEqual(result['state']['simulationTick'], 0)
@@ -12411,7 +12411,7 @@ class Task631Tests(unittest.TestCase):
                 notice:document.getElementById('climb-save-notice')?.textContent||null})''')
             self.assertEqual(row['state']['player'],base['player']);self.assertEqual(row['state']['simulationTick'],0)
             if kind!='unavailable':
-                self.assertIn('Starting at the replacement base.',row['notice'])
+                self.assertIsNone(row['notice'])  # TASK-785: rejected saves restart silently, no popup
                 row['records']=p.evaluate('keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)]))',list(self.legacy))
                 self.assertEqual(row['records'],self.legacy)
             else:
@@ -12422,7 +12422,7 @@ class Task631Tests(unittest.TestCase):
             self.assertGreater(row['after']['simulationTick'],0)
             rows.append(row);p.context.close()
         self.write('compatibility.json',dict(cases=rows,unrelatedRecords=self.legacy))
-        print('PASS compatibility old-layout/corrupt base + explanation; unavailable playable; unrelated records preserved')
+        print('PASS compatibility old-layout/corrupt base, no popup; unavailable playable; unrelated records preserved')
 
     def click(self,p,index):
         p.wait_for_function('!unTouch')

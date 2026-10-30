@@ -269,25 +269,32 @@ class Task457Tests(unittest.TestCase):
     def test_invalid_and_unavailable(self):
         for raw in ('{broken', '{"version":999}'):
             page=self.open_storage({'grapnelninja.grappleOver':raw,'grapnelninja.lang':'ru','grapnelninja.tutorialDone':'true'})
-            notice=page.locator('#climb-save-notice')
-            self.assertEqual(notice.inner_text(),'Сохранение недоступно. Начинаем у подножия.')
-            base=page.evaluate('({x:ninja.x,y:ninja.y,spawn:GRAPPLE_OVER_LEVEL.spawn})')
+            notice=page.evaluate("!!document.getElementById('climb-save-notice')")
+            self.assertFalse(notice)  # TASK-785: no popup, silent restart at the base
+            # TASK-785: the base is the live level's spawn (GRAPPLE_OVER_LEVEL is the old TEST-ONLY fixture).
+            base=page.evaluate('({x:ninja.x,y:ninja.y,spawn:floors[0].level.spawn})')
             self.assertEqual(base['x'],base['spawn']['x'])
-            self.assertEqual(base['y'],base['spawn']['y'])
+            # A fresh start launches upward (TASK-704), so y may be up to the launch apex above the spawn.
+            self.assertTrue(base['spawn']['y']-280<base['y']<=base['spawn']['y']+1,base)
             page.evaluate("TUTORIAL_HINT.press(version);TUTORIAL_HINT.advance(2500);draw()")
             page.screenshot(path=str(self.evidence.path('invalid-save.png')))
             page.evaluate('physics()')
             self.assertGreater(page.evaluate('floors[0].elapsedSteps'),0)
-            self.observe(page,'invalid',raw=raw,base=base,notice=notice.inner_text(),base_usable_pass=True)
+            # The next write replaces the rejected save with a current-layout one.
+            page.evaluate('PROGRESS.flushClimb(true)')
+            page.wait_for_function('''()=>{try{return JSON.parse(localStorage.getItem('grapnelninja.grappleOver')).layoutId===
+                floors[0].level.layoutId}catch(_){return false}}''',timeout=5000)
+            self.observe(page,'invalid',raw=raw,base=base,notice=notice,base_usable_pass=True)
         page=self.open_storage(unavailable=True)
-        page.evaluate('ninja.x=1100;physics();PROGRESS.flushClimb()')
+        # TASK-785: startGame re-enters the boot run's in-memory climb paused (restoreClimb), so resume it first.
+        page.evaluate('menu.unPause();ninja.x=1100;physics();PROGRESS.flushClimb()')
         page.wait_for_timeout(30)
         saved=page.evaluate("async()=>JSON.parse((await PLATFORM.storage.getMany(PROGRESS.keys))['grapnelninja.grappleOver'])")
         self.assertEqual(saved,page.evaluate('captureClimbState()'))
         page.evaluate('physics()')
         self.assertGreater(page.evaluate('floors[0].elapsedSteps'),saved['simulationTick'])
         self.observe(page,'unavailable',saved=saved,memory_fallback_pass=True)
-        print('PASS corrupt/incompatible saves: localized notice and usable base; unavailable storage keeps play and in-memory save')
+        print('PASS corrupt/incompatible saves: no notice and usable base; unavailable storage keeps play and in-memory save')
 
 
 class Task458Tests(unittest.TestCase):
@@ -975,8 +982,8 @@ class Task495Tests(unittest.TestCase):
         rows = []
         for name, raw in corrupt.items():
             page = self.page(seed={CLIMB_KEY: raw, **LEGACY_495}, start=False)
-            text = page.evaluate("document.getElementById('climb-save-notice')?.textContent ?? null")
-            self.assertIsNotNone(text, name)
+            text = page.evaluate("!!document.getElementById('climb-save-notice')")
+            self.assertFalse(text, name)  # TASK-785: rejected saves restart silently
             base = page.evaluate('({x:ninja.x,y:ninja.y,spawn:floors[0].level.spawn,tick:floors[0].elapsedSteps,'
                                  'completed:floors[0].climbStats.completed,grappled:grapnel.grappled})')
             self.assertEqual((base['x'], base['tick'], base['completed'], base['grappled']), (base['spawn']['x'], 0, False, False))
@@ -985,8 +992,8 @@ class Task495Tests(unittest.TestCase):
             self.wait_saved(page, page.evaluate('captureClimbState()'))
             rows.append(dict(name=name, raw_prefix=raw[:60], notice=text, start=base, started_at_base=True,
                              ticks_after=30, replaced_by_valid_save=True))
-        self.assertTrue(all(r['notice'] == 'Сохранение недоступно. Начинаем у подножия.' for r in rows))
-        print(f'PASS corrupt saves: {len(rows)} variants -> localized notice, start at base tick 0, playable, valid save written', flush=True)
+        self.assertTrue(all(r['notice'] is False for r in rows))
+        print(f'PASS corrupt saves: {len(rows)} variants -> no notice, start at base tick 0, playable, valid save written', flush=True)
         # Unavailable storage: boot, play, save, mode exit/return keep the in-memory climb.
         page = self.page(unavailable=True)
         unavailable = page.evaluate('''()=>{for(let i=0;i<40;i++)physics();PROGRESS.flushClimb();

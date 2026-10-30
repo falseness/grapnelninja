@@ -312,7 +312,6 @@
                 if (!Object.hasOwn(MODE_DEFINITIONS, _v))
                     throw new Error('Unknown game mode: ' + _v)
                 PROGRESS.flushClimb(true)
-                document.getElementById('climb-save-notice')?.remove()
                 reuseTimeInGame()
                 resetPhysicsTiming()
                 trackEnabled = true

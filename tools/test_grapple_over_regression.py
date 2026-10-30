@@ -105,10 +105,9 @@ SUPERSEDED = {
                    r'AssertionError: -?[\d.]+ != -?[\d.]+$'),
                   ('test_falling_throttle_pause_exit_pagehide_reload',
                    "self.assertGreater(current['player']['y'],first['player']['y'])",
-                   r'AssertionError: 300 not greater than 300$'),
-                  ('test_invalid_and_unavailable',
-                   "self.assertEqual(notice.inner_text(),'Сохранение недоступно. Начинаем у подножия.')",
-                   r'TimeoutError: Locator\.inner_text: Timeout 30000ms exceeded\.$')]),
+                   r'AssertionError: 300 not greater than 300$')]),
+    # TASK-785 dropped test_invalid_and_unavailable from this signature: with the save notice gone it checks
+    # the live level's spawn and passes.
     'Task458Tests': dict(commit='9f6506b', ticket='TASK-465 mountain replaced the TEST-ONLY fixture',
         failures=[('test_restore_resume_and_fresh_input', "page.evaluate('" "''kind=>{",
                    r"Error: Page\.evaluate: TypeError: Cannot read properties of undefined \(reading 'x'\)$")]),

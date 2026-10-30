@@ -209,7 +209,7 @@ SNAPSHOT = '''() => {
             grapplable: e.grapplable, points: e.points})),
         live: w.elements.concat(w.dragZones).map(e => ({id: e.id, x: e.x, y: e.y,
             role: e.surfaceRole, grapplable: e.grapplable})),
-        notice: document.getElementById('climb-save-notice')?.textContent ?? null,
+        notice: !!document.getElementById('climb-save-notice'),
         paused: menu.gamePaused
     }
 }'''
@@ -359,7 +359,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), (ROOT / 'leveldata.js').read_bytes())
 
     def test_03_incompatible_previous_layout_save(self):
-        # TASK-711 / TASK-725 / TASK-744 / TASK-774 / TASK-781: saves from v21 (and earlier imported layouts) restart at the spawn. The save is a real current one
+        # TASK-711 / TASK-725 / TASK-744 / TASK-774 / TASK-781: saves from v21 (and earlier imported layouts) restart at the spawn
+        # (silently since TASK-785). The save is a real current one
         # with the old layout id. A fresh start launches upward (TASK-704), so y may be up to the launch apex above.
         first = self.open()
         save = json.loads(first.evaluate('''() => {
@@ -373,7 +374,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
             page = self.open(seed={CLIMB_KEY: json.dumps(dict(save, layoutId=old))})
             snap = page.evaluate(SNAPSHOT)
             self.assert_imported(snap)
-            self.assertEqual(snap['notice'], 'Climb save unavailable. Starting at the base.')
+            self.assertFalse(snap['notice'])  # TASK-785: rejected saves restart silently, no popup
             self.assertLess(abs(snap['ninja']['x'] - snap['spawn']['x']), 1)
             self.assertTrue(snap['spawn']['y'] - 280 < snap['ninja']['y'] <= snap['spawn']['y'] + 1, snap['ninja'])
             self.assertLess(snap['stats']['maxHeight'], 300)
@@ -400,7 +401,7 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
         page = self.open(seed={CLIMB_KEY: save})
         snap = page.evaluate(SNAPSHOT)
         self.assert_imported(snap)
-        self.assertIsNone(snap['notice'])
+        self.assertFalse(snap['notice'])
         self.assertTrue(snap['paused'])
         self.assertEqual(snap['tick'], state['simulationTick'])
         self.assertEqual((snap['ninja']['x'], snap['ninja']['y']), (state['player']['x'], state['player']['y']))
@@ -554,6 +555,8 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                    '+                await loadGrappleOverLevelAsset()',
                                    '+                PLATFORM.loadingProgress(90)',
                                    '+                PLATFORM.loadingProgress(100)',
+                                   # TASK-785: the save-rejected popup is gone, so startGame no longer removes it
+                                   "-                document.getElementById('climb-save-notice')?.remove()",
                                    '+                PLATFORM.gameplayStart(version)',
                                    # TASK-748/752/753: death/restart platform and telemetry calls
                                    "+                PLATFORM.gameplayStop('death', version)",
