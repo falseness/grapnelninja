@@ -20,18 +20,25 @@ page.evaluate, never by shipped code:
 - live canvases: over a >= 20 s play session samples carry liveCanvasMB
   about once per second, > 0, never below the first value after warm-up;
 - hashes: one sha256 per loaded script, equal to the file on disk, and
-  buildId recomputed here; from file:// every script fails on its own
-  (Chrome's fetch has no file scheme), which was the TASK-776 user report.
+  buildId recomputed here (buildIdMethod 'fetch'); from file:// every script
+  fails on its own (Chrome's fetch has no file scheme), which was the
+  TASK-776 user report;
+- file:// buildId (TASK-787): there buildIdMethod is 'globals', buildId is
+  the same on a second boot of the same files and differs for a temp copy of
+  the game with one STYLE constant in style.js changed.
 
 Set VISUALSPERF_ATTRIBUTION_EVIDENCE_DIR=<dir> to write stalls.json,
-export-normal.json (a plain recording), windows.json, canvasmem.json and
-hashes.json there.
+export-normal.json (a plain recording), windows.json, canvasmem.json,
+hashes.json, hashes-file-scheme.json and fileurl.json there.
 """
 from contextlib import ExitStack
 import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 from urllib.parse import urlparse
 import unittest
 
@@ -304,7 +311,9 @@ class VisualsPerfAttributionTest(unittest.TestCase):
                   for s in report['samples'] if 'liveCanvasMB' in s]
         values = [s['liveCanvasMB'] for s in series]
         span = (report['samples'][-1]['t'] - report['samples'][0]['t']) / 1000
-        gaps = [b['t'] - a['t'] for a, b in zip(series, series[1:])]
+        # From the raw t: series t is rounded to 0.1 ms, which can turn a 1000 ms gap into 999.9999999999998
+        raw = [s['t'] for s in report['samples'] if 'liveCanvasMB' in s]
+        gaps = [b - a for a, b in zip(raw, raw[1:])]
         first = values[0]
         result = {'spanS': round(span, 1), 'samples': len(report['samples']), 'withLiveCanvasMB': len(series),
                   'first': first, 'min': min(values), 'max': max(values), 'last': values[-1],
@@ -328,7 +337,8 @@ class VisualsPerfAttributionTest(unittest.TestCase):
     def hashes(self, page):
         page.wait_for_function('visualsPerf.export().sourceHashFailures !== null')
         return page.evaluate('''() => { const r = visualsPerf.export();
-            return {sourceHashes: r.sourceHashes, buildId: r.buildId, sourceHashFailures: r.sourceHashFailures,
+            return {sourceHashes: r.sourceHashes, buildId: r.buildId, buildIdMethod: r.buildIdMethod,
+                sourceHashFailures: r.sourceHashFailures,
                 scripts: [...document.scripts].filter(s => s.src).map(s => s.src)} }''')
 
     def test_source_hashes(self):
@@ -339,6 +349,7 @@ class VisualsPerfAttributionTest(unittest.TestCase):
         self.assertEqual(sorted(hashes), sorted(set(paths)))
         self.assertEqual(result['sourceHashFailures'], 0)
         self.assertRegex(result['buildId'], r'^[0-9a-f]{64}$')
+        self.assertEqual(result['buildIdMethod'], 'fetch')
         for path, digest in hashes.items():
             self.assertEqual(digest, hashlib.sha256((ROOT / path.lstrip('/')).read_bytes()).hexdigest(), path)
         lines = sorted(f'{p}:{h}' for p, h in hashes.items())
@@ -353,13 +364,48 @@ class VisualsPerfAttributionTest(unittest.TestCase):
         hashes = result['sourceHashes']
         self.assertEqual(len(hashes), len(set(result['scripts'])))
         self.assertEqual(result['sourceHashFailures'], len(hashes))
-        self.assertIsNone(result['buildId'])
+        self.assertEqual(result['buildIdMethod'], 'globals')
+        self.assertRegex(result['buildId'], r'^[0-9a-f]{64}$')
         for path, entry in hashes.items():
             self.assertEqual(entry['error'], 'TypeError: Failed to fetch', path)
             self.assertTrue(entry['url'].startswith('file://'))
         self.write('hashes-file-scheme.json', result)
         print(f'PASS file://: {len(hashes)} scripts, each its own {{error: TypeError: Failed to fetch}}, '
-              f'sourceHashFailures={result["sourceHashFailures"]}, buildId=None', flush=True)
+              f'sourceHashFailures={result["sourceHashFailures"]}, buildIdMethod=globals', flush=True)
+
+    def file_build_id(self, root):
+        page = self.open(url=(Path(root) / 'index.html').as_uri() + '?visualsPerf=1')
+        result = self.hashes(page)
+        self.assertEqual(result['sourceHashFailures'], len(result['sourceHashes']))
+        return {'buildId': result['buildId'], 'buildIdMethod': result['buildIdMethod']}
+
+    def test_file_scheme_build_id(self):
+        first = self.file_build_id(ROOT)
+        second = self.file_build_id(ROOT)
+        with tempfile.TemporaryDirectory() as temp:
+            files = subprocess.run(['git', 'ls-files'], cwd=ROOT, capture_output=True, text=True,
+                                   check=True).stdout.split()
+            for name in files:
+                if name.split('/')[0] in ('tools', 'docs', 'screenshots'):
+                    continue
+                (Path(temp) / name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / name, Path(temp) / name)
+            style = Path(temp) / 'style.js'
+            text = style.read_text()
+            old, new = "canvas: 'white',", "canvas: 'whitesmoke',"
+            self.assertEqual(text.count(old), 1)
+            style.write_text(text.replace(old, new))
+            changed = self.file_build_id(temp)
+        result = {'first': first, 'second': second, 'changed': changed,
+                  'change': {'file': 'style.js', 'from': old, 'to': new}}
+        for entry in (first, second, changed):
+            self.assertEqual(entry['buildIdMethod'], 'globals')
+            self.assertRegex(entry['buildId'], r'^[0-9a-f]{64}$')
+        self.assertEqual(first['buildId'], second['buildId'])
+        self.assertNotEqual(first['buildId'], changed['buildId'])
+        self.write('fileurl.json', result)
+        print(f'PASS file:// buildId: boot 1 {first["buildId"]} == boot 2 {second["buildId"]} (globals); '
+              f'style.js {old!r} -> {new!r} gives {changed["buildId"]}', flush=True)
 
 
 if __name__ == '__main__':

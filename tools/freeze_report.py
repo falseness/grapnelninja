@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Read a ?visualsPerf=1 export and label each freeze (TASK-777, TASK-786).
+"""Read a ?visualsPerf=1 export and label each freeze (TASK-777, TASK-786, TASK-787).
 
     python3 tools/freeze_report.py <recording.json> [--json out.json]
 
 Accepts schemaVersion 1 to 4. Any bytes before the first '{' (a paste
 accident, e.g. artifacts/rare_freezes.json, artifacts/new_freezes.json) are
 skipped with a warning naming how many. A field the recorder did not have yet
-prints as 'unknown'. Hidden periods (visibility events and samples with
+prints as 'unknown'. The build line is buildId plus buildIdMethod ('fetch':
+sha256 of the fetched scripts; 'globals': the file:// fallback, see
+render/visualsperf.js; unknown in exports before TASK-787). Hidden periods (visibility events and samples with
 hidden true) are left out of the freeze count and the rate.
 
 sinceVisibleMs is the time from the last hidden-to-visible change to the
@@ -245,6 +247,7 @@ def analyse(report):
     summary = {
         'schemaVersion': report.get('schemaVersion'),
         'buildId': report.get('buildId') or None,
+        'buildIdMethod': report.get('buildIdMethod') or None,
         'version': report.get('version'),
         'levelId': report.get('levelId'),
         'durationMs': duration_ms,
@@ -276,7 +279,7 @@ def render(path, prefix, summary, rows):
     if schema not in (1, 2, 3, 4):
         lines.append(f'warning: schemaVersion {schema!r} is not 1-4; reading what is there')
     lines.append(f'schemaVersion: {schema if schema is not None else "unknown"}  version: {fmt(summary["version"])}  level: {fmt(summary["levelId"])}')
-    lines.append(f'build: {summary["buildId"] or "unknown"}')
+    lines.append(f'build: {summary["buildId"] or "unknown"}  buildIdMethod: {summary["buildIdMethod"] or "unknown"}')
     duration = summary['durationMs']
     lines.append(f'duration: {fmt(duration and duration / 1000, 1, " s")}  hidden: '
                  f'{fmt(summary["hiddenMs"] / 1000, 1, " s")}  visible: '

@@ -1,11 +1,13 @@
-"""tools/freeze_report.py on the hand-made exports in tools/fixtures/freeze-report/ (TASK-777, TASK-786).
+"""tools/freeze_report.py on the hand-made exports in tools/fixtures/freeze-report/ (TASK-777, TASK-786, TASK-787).
 
 One fixture per label (two for tab-hidden, after-tab-return, main-thread-script
 and render-or-present: each has two ways in), a schema-1 export without the
 schema 2/3 fields, and a schema-2 export with stray bytes before the first
 '{' and null fields. after-tab-return.json is schema 4 (the recorder's
 sinceVisibleMs and a canvasSnapshot with 11 creators); after-tab-return-schema3
-has only visibility events. No browser.
+has only visibility events. after-tab-return.json also carries buildIdMethod
+'globals' (the file:// fallback, TASK-787); the older fixtures have none.
+No browser.
 """
 import io
 import json
@@ -110,7 +112,20 @@ class FreezeReportTest(unittest.TestCase):
         code, text = run('main-thread-script')
         self.assertEqual(code, 0)
         self.assertIn('physics.js:step 160ms', text)
-        self.assertIn('build: ' + 'ab' * 32, text)
+        self.assertIn('build: ' + 'ab' * 32 + '  buildIdMethod: unknown', text)
+
+    def test_build_id_method(self):
+        code, text = run('after-tab-return')
+        self.assertEqual(code, 0)
+        self.assertIn('build: ' + 'ab' * 32 + '  buildIdMethod: globals', text)
+        summary, _ = rows('after-tab-return')
+        self.assertEqual(summary['buildIdMethod'], 'globals')
+        summary, _ = rows('main-thread-script')
+        self.assertIsNone(summary['buildIdMethod'])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'out.json'
+            self.assertEqual(run('after-tab-return', '--json', str(out))[0], 0)
+            self.assertEqual(json.loads(out.read_text())['summary']['buildIdMethod'], 'globals')
 
     def test_json_out(self):
         with tempfile.TemporaryDirectory() as tmp:

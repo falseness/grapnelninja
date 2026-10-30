@@ -42,6 +42,25 @@
 // CANVAS_SAMPLE_MS. sourceHashes hashes each script on its own (a failure is
 // {error, url}); buildId is the sha256 of the sorted 'path:hash' lines.
 //
+// buildIdMethod (TASK-787) says how buildId was made: 'fetch' is the above
+// (unchanged); 'globals' is the fallback when no script could be fetched
+// (file://: Chrome's fetch has no file scheme, and file pages can't read
+// another file's text either). It needs no fetch: the sha256 of the sorted
+// 'kind name:text' lines of the game's global bindings as the page sees them
+// - every non-native function on window, then every name found in those
+// sources (and in each newly found one, to a fixpoint) that resolves to a
+// global lexical binding: functions and classes by their source text, const
+// primitives by value, const frozen objects by a walk that only enters frozen
+// children (others are '<mutable>'). A lexical binding is const when 'x = x'
+// throws a TypeError; let bindings (game state), vars that are not functions
+// and unfrozen objects are left out, so the id is the same on every boot of
+// the same files. Limits: it fingerprints the code as parsed, not the files'
+// bytes (comments outside functions and whitespace between them don't count;
+// a function's own comments do), so it is never equal to the 'fetch' id; a
+// change only in top-level statements, in a let/var initial value, in an
+// unfrozen const object, or in a global no function names, is missed. null
+// (buildIdMethod null) when neither works.
+//
 // Canvas owners and tab return (schemaVersion 4): each freeze's context and
 // report.canvasSnapshot (taken by stop() and again by every export()) have
 // liveCanvasByCreator {creator: {count, mb}}, the live canvases grouped by
@@ -550,18 +569,122 @@
             }
         }))
         const hashed = entries.filter(([, hash]) => typeof hash === 'string')
-        let buildId = null
+        let buildId = null, buildIdMethod = null
         try
         {
             if (hashed.length)
+            {
                 buildId = await sha256(new TextEncoder().encode(
                     hashed.map(([path, hash]) => path + ':' + hash).sort().join('\n')))
+                buildIdMethod = 'fetch'
+            }
+            else
+            {
+                buildId = await sha256(new TextEncoder().encode(globalsFingerprint()))
+                buildIdMethod = 'globals'
+            }
         }
         catch (error)
         {
+            buildId = null
+            buildIdMethod = null
         }
-        return {sourceHashes: Object.fromEntries(entries), buildId,
+        return {sourceHashes: Object.fromEntries(entries), buildId, buildIdMethod,
             sourceHashFailures: entries.length - hashed.length}
+    }
+
+    // The 'globals' buildId input (see the header): sorted 'kind name:text'
+    // lines of the game's functions, classes, const primitives and const
+    // frozen objects, read without fetching anything
+    function globalsFingerprint()
+    {
+        const isNative = f => /\{\s*\[native code\]\s*\}\s*$/.test(Function.prototype.toString.call(f))
+        const source = f => Function.prototype.toString.call(f)
+        const lines = new Map(), queue = [], seen = new Set()
+        const harvest = text =>
+        {
+            for (const name of text.match(/[A-Za-z_$][\w$]*/g) || [])
+                if (!seen.has(name))
+                {
+                    seen.add(name)
+                    queue.push(name)
+                }
+        }
+        const frozen = (value, depth, stack) =>
+        {
+            if (typeof value === 'function')
+                return source(value)
+            if (value === null || typeof value !== 'object')
+                return typeof value === 'string' ? JSON.stringify(value) : String(value)
+            if (!Object.isFrozen(value))
+                return '<mutable>'
+            if (depth > 12 || stack.includes(value))
+                return '<cycle>'
+            stack.push(value)
+            const parts = Object.keys(value).map(key => JSON.stringify(key) + ':' + frozen(value[key], depth + 1, stack))
+            stack.pop()
+            return (Array.isArray(value) ? '[' : '{') + parts.join(',') + (Array.isArray(value) ? ']' : '}')
+        }
+        for (const name of Object.getOwnPropertyNames(window))
+        {
+            const descriptor = Object.getOwnPropertyDescriptor(window, name)
+            const value = descriptor && descriptor.value
+            if (typeof value === 'function' && !isNative(value) && value !== window.visualsPerf)
+            {
+                lines.set(name, 'function ' + name + ':' + source(value))
+                seen.add(name)
+                harvest(source(value))
+            }
+        }
+        while (queue.length)
+        {
+            const name = queue.shift()
+            if (name in window)
+                continue
+            let value
+            try
+            {
+                const read = new Function('return typeof ' + name + ' === "undefined" ? [false] : [true, ' + name + ']')()
+                if (!read[0])
+                    continue
+                value = read[1]
+            }
+            catch (error)
+            {
+                // A keyword, or a lexical binding still in its temporal dead zone
+                continue
+            }
+            if (typeof value === 'function')
+            {
+                if (isNative(value))
+                    continue
+                lines.set(name, (/^class\b/.test(source(value)) ? 'class ' : 'function ') + name + ':' + source(value))
+                harvest(source(value))
+                continue
+            }
+            let constant = false
+            try
+            {
+                new Function(name + ' = ' + name)()
+            }
+            catch (error)
+            {
+                constant = error instanceof TypeError
+            }
+            if (!constant)
+                continue
+            if (value !== null && typeof value === 'object')
+            {
+                if (!Object.isFrozen(value))
+                    continue
+                const text = frozen(value, 0, [])
+                lines.set(name, 'frozen ' + name + ':' + text)
+                harvest(text)
+            }
+            else
+                lines.set(name, 'const ' + name + ':' + (typeof value === 'string' ? JSON.stringify(value) : String(value)))
+        }
+        return [...lines.keys()].sort().map(name => lines.get(name)).join('\n')
     }
 
     function onVisibility(event)
@@ -614,6 +737,7 @@
                 levelId: game(() => version === 'grapple_over' ? floors[0].level.layoutId : null),
                 sourceHashes: null,
                 buildId: null,
+                buildIdMethod: null,
                 sourceHashFailures: null,
                 freezeMs: FREEZE_MS,
                 ringSize,

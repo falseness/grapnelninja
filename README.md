@@ -82,9 +82,18 @@ Opened as a file (`file:///.../index.html?visualsPerf=1`), Chrome's `fetch`
 does not support the `file:` scheme, and every script fails with exactly
 `TypeError: Failed to fetch`. The old code used one `Promise.all`, so that
 became the whole result. The report was most likely recorded from a
-double-clicked index.html. Now each script gets its own `{error}`,
-`sourceHashFailures` equals the script count and `buildId` is null. To get a
-`buildId`, serve the folder over HTTP (`python3 -m http.server 8000`).
+double-clicked index.html. Now each script gets its own `{error}` and
+`sourceHashFailures` equals the script count.
+
+**`buildIdMethod` (file:// fallback).** `'fetch'` is the `buildId` above.
+When no script could be fetched (file://), `buildId` falls back to
+`'globals'`: the sha256 of the game's global functions and classes (their
+source text), const primitives and const frozen objects such as `STYLE`, as
+the page sees them. It is the same on every boot of the same files and
+changes when that code changes. It is never equal to the `'fetch'` id, and it
+misses changes that only touch top-level statements, `let`/`var` initial
+values or unfrozen objects (details in the render/visualsperf.js header).
+`buildIdMethod` is null when neither works.
 
 ### Canvas owners and tab return (`schemaVersion` 4)
 
@@ -107,7 +116,7 @@ Record with `?visualsPerf=1` (Start, play until a freeze, Stop, Export), then:
 It reads schemaVersion 1 to 4. It skips any bytes before the first `{` and
 prints a warning that says how many bytes it skipped. A
 field the recording does not have prints as `unknown`. The header gives the
-build (`buildId`, or `unknown`), the duration, and the freeze count and rate
+build (`buildId` and `buildIdMethod`, or `unknown`), the duration, and the freeze count and rate
 per minute without hidden periods (visibility events and samples with
 `hidden: true`). Then there is one line per freeze: t, gapMs, unaccountedMs,
 section, mainThreadSilenceMs, heapDropMB, liveCanvasMB, sinceVisibleMs, the
