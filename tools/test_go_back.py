@@ -1,4 +1,4 @@
-"""TASK-790: Grapple Over go-back checkpoint.
+"""TASK-790/791: Grapple Over go-back checkpoint and returnToCheckpoint().
 
 Boots the real index.html, freezes the frame loop and throws the production
 grapnel (real mouse press, grapnel.move()/collision()) at chosen elements of
@@ -7,6 +7,9 @@ than the current checkpoint records world.climbCheckpoint = {anchorX, anchorY,
 ropeLength, section, bodyId}; movers never do. The checkpoint round-trips
 through the climb save, older saves and saves naming a missing body load
 without one, a restart clears it and the fall recovery keeps it.
+returnToCheckpoint() (TASK-791) hangs the player hooked and at rest under the
+checkpoint anchor, keeps time, best height and falls, counts goBacks, and a
+press held through it neither throws nor releases until pressed again.
 
 GO_BACK_EVIDENCE_DIR=DIR writes compact checkpoint.json there.
 
@@ -235,6 +238,124 @@ class GoBackCheckpointTests(unittest.TestCase):
             self.assertEqual(rows[mode]['version'], mode)
             self.assertIsNone(rows[mode]['checkpoint'])
         self.evidence['other_modes'] = rows
+
+    def go_back_setup(self):
+        """A shipped-level page with a real static catch as the checkpoint,
+        the rope dropped and the player falling far below it."""
+        page = self.open()
+        cp = self.catches(page, page.evaluate(CANDIDATES)['static'], 1)[0]['checkpoint']
+        page.evaluate('''() => {
+            window.DESIGN = []
+            const design = ANALYTICS.design
+            ANALYTICS.design = (...args) => { DESIGN.push(args); return design.apply(ANALYTICS, args) }
+            Object.assign(grapnel, {throwed: false, grappled: false, pos: [], shotStep: null, aim: null, clip: null, traveled: 0})
+            ninja.x += 300; ninja.y += 900; ninja.speedX = 7; ninja.speedY = 20
+            Object.assign(floors[0].climbStats, {elapsedActiveMs: 123456, maxHeight: 4321, falls: 3})
+        }''')
+        return page, cp
+
+    def test_07_return_hangs_at_rest(self):
+        page, cp = self.go_back_setup()
+        row = page.evaluate('''() => {
+            const s = floors[0].climbStats, before = {...s}
+            const returned = returnToCheckpoint()
+            const camera = {x: screen.x, y: screen.y}
+            screen.trackGrappleOver(true)
+            const after = {...s}, start = [ninja.x, ninja.y]
+            const g = grapnel, a = g.pos[0]
+            const at = {returned, before, after, ninja: start, speed: [ninja.speedX, ninja.speedY],
+                radius: ninja.radius, grappled: g.grappled, throwed: g.throwed, anchor: [a[0], a[1]], body: a[2].id, segments: g.pos.length,
+                track: ninja.track.pos.length, cameraSnapped: camera.x === screen.x && camera.y === screen.y,
+                input: {pressHeld, stalePress, gameplayPressOwned}, design: DESIGN.filter(d => d[0].startsWith('goback:')),
+                save: captureClimbState().stats}
+            let maxMove = 0
+            for (let i = 0; i < 600; i++) {
+                physics()
+                maxMove = Math.max(maxMove, Math.hypot(ninja.x - start[0], ninja.y - start[1]))
+            }
+            at.rest = {maxMove, grappled: grapnel.grappled, anchor: [grapnel.pos[0][0], grapnel.pos[0][1]],
+                falls: floors[0].climbStats.falls, final: [ninja.x, ninja.y]}
+            return at
+        }''')
+        self.assertTrue(row['returned'])
+        self.assertTrue(row['grappled'] and row['throwed'])
+        self.assertEqual(row['anchor'], [cp['anchorX'], cp['anchorY']])
+        self.assertEqual(row['body'], cp['bodyId'])
+        self.assertEqual(row['segments'], 1)
+        # Straight below the anchor, within the saved rope, not moving.
+        self.assertEqual(row['ninja'][0], cp['anchorX'])
+        self.assertGreater(row['ninja'][1], cp['anchorY'])
+        self.assertLessEqual(row['ninja'][1] - cp['anchorY'], max(cp['ropeLength'], row['radius']) + 1e-9)
+        self.assertEqual(row['speed'], [0, 0])
+        self.assertTrue(row['cameraSnapped'])
+        for key in ('elapsedActiveMs', 'maxHeight', 'falls', 'grapples', 'completed'):
+            self.assertEqual(row['after'][key], row['before'][key], key)
+        self.assertEqual(row['after']['goBacks'], row['before']['goBacks'] + 1)
+        self.assertEqual(row['save']['goBacks'], row['after']['goBacks'])
+        self.assertEqual(row['design'], [['goback:' + cp['section']]])
+        # At rest: 600 ticks with no input keep it hooked and in place.
+        self.assertTrue(row['rest']['grappled'])
+        self.assertEqual(row['rest']['anchor'], row['anchor'])
+        self.assertEqual(row['rest']['falls'], row['before']['falls'])
+        self.assertLessEqual(row['rest']['maxMove'], 50)
+        self.evidence['return'] = {'checkpoint': cp, **row}
+
+    def test_08_held_press(self):
+        page, cp = self.go_back_setup()
+        # A press made before the call (it throws a shot) and held through it.
+        page.mouse.move(100, 100)
+        page.mouse.down()
+        held = page.evaluate('''() => {
+            const thrown = grapnel.throwed && !grapnel.grappled
+            const returned = returnToCheckpoint()
+            const anchor = () => grapnel.pos.length ? [grapnel.pos[0][0], grapnel.pos[0][1]] : null
+            const input = {pressHeld, stalePress, gameplayPressOwned}
+            for (let i = 0; i < 60; i++) physics()
+            return {thrown, returned, input, grappled: grapnel.grappled, anchor: anchor()}
+        }''')
+        page.mouse.move(400, 300)
+        steered = page.evaluate('() => ({aim: grapnel.aim, grappled: grapnel.grappled})')
+        page.mouse.up()
+        released = page.evaluate('''() => { for (let i = 0; i < 30; i++) physics()
+            return {grappled: grapnel.grappled, throwed: grapnel.throwed,
+                anchor: [grapnel.pos[0][0], grapnel.pos[0][1]], input: {pressHeld, stalePress, gameplayPressOwned}} }''')
+        page.mouse.move(640, 100)
+        page.mouse.down()
+        pressed = page.evaluate('''() => ({grappled: grapnel.grappled, throwed: grapnel.throwed,
+            fromNinja: grapnel.pos[0][2].isEmpty(), owned: gameplayPressOwned})''')
+        page.mouse.up()
+        self.assertTrue(held['thrown'])
+        self.assertTrue(held['returned'])
+        self.assertEqual(held['input'], {'pressHeld': True, 'stalePress': True, 'gameplayPressOwned': False})
+        anchor = [cp['anchorX'], cp['anchorY']]
+        # Held: still hooked at the checkpoint, the move does not steer.
+        self.assertTrue(held['grappled'])
+        self.assertEqual(held['anchor'], anchor)
+        self.assertTrue(steered['grappled'])
+        self.assertIsNone(steered['aim'])
+        # The release of that press does not drop the rope.
+        self.assertTrue(released['grappled'] and released['throwed'])
+        self.assertEqual(released['anchor'], anchor)
+        self.assertEqual(released['input'], {'pressHeld': False, 'stalePress': False, 'gameplayPressOwned': False})
+        # The next press throws a new shot.
+        self.assertEqual(pressed, {'grappled': False, 'throwed': True, 'fromNinja': True, 'owned': True})
+        self.evidence['held_press'] = {'held': held, 'steered': steered, 'released': released, 'pressed': pressed}
+
+    def test_09_no_checkpoint(self):
+        page = self.open()
+        rows = page.evaluate('''() => {
+            const state = () => JSON.stringify([ninja.x, ninja.y, ninja.speedX, ninja.speedY, grapnel.throwed,
+                grapnel.grappled, floors[0].climbStats])
+            const before = state(), returned = returnToCheckpoint()
+            const out = {climb: {returned, unchanged: state() === before}}
+            if (!menu.gamePaused) menu.startPause()
+            menu.selectMode('classic')
+            out.classic = {version, returned: returnToCheckpoint()}
+            return out
+        }''')
+        self.assertEqual(rows, {'climb': {'returned': False, 'unchanged': True},
+                                'classic': {'version': 'classic', 'returned': False}})
+        self.evidence['no_checkpoint'] = rows
 
 
 if __name__ == '__main__':

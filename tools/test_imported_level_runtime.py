@@ -172,8 +172,79 @@ GO_BACK_CHECKPOINT_DIFF = [
     '+    if (world.byId.get(element?.id) !== element || world.level.movers.some(m => m.element === element.id)) return',
     '+    const current = world.climbCheckpoint',
     '+    if (current && anchorY >= current.anchorY) return',
-    '+    world.climbCheckpoint = {anchorX, anchorY, ropeLength: Math.hypot(ninja.x - anchorX, ninja.y - anchorY),',
-    '+        section: CLIMB_UI.currentSection().id, bodyId: element.id}',
+    '+    // Only an anchor the player can be put back under (climbCheckpointHang)',
+    '+    const ropeLength = Math.hypot(ninja.x - anchorX, ninja.y - anchorY)',
+    '+    if (!climbCheckpointHang(world, anchorX, anchorY, ropeLength)) return',
+    '+    world.climbCheckpoint = {anchorX, anchorY, ropeLength, section: CLIMB_UI.currentSection().id, bodyId: element.id}',
+    '+}',
+    '+',
+]
+
+
+# TASK-791: the go-back hang rule and returnToCheckpoint(), right before recoverClimbFall.
+RETURN_TO_CHECKPOINT_DIFF = [
+    '+// Go back: the rope is a constant pull toward its anchor, not a fixed length,',
+    "+// so the player only rests under a checkpoint touching the anchor's body: a",
+    '+// hang farther away is pulled up toward the anchor. The hang is straight below',
+    '+// the anchor at the shortest distance from the ninja radius where the body',
+    '+// overlaps no solid and no no-grapple zone, at most CLIMB_HANG_SLACK beyond the',
+    '+// radius (and within the saved rope length), with no solid on the rope between',
+    '+// it and the anchor. null when there is none: recordClimbCheckpoint then keeps',
+    '+// the previous checkpoint.',
+    '+const CLIMB_HANG_STEP = 0.25',
+    '+const CLIMB_HANG_SLACK = 4',
+    '+function climbCheckpointHang(world, anchorX, anchorY, ropeLength, radius = ninja.radius)',
+    '+{',
+    '+    const longest = Math.min(Math.max(ropeLength, radius), radius + CLIMB_HANG_SLACK)',
+    '+    const near = world.elements.filter(e => {',
+    '+        const b = elementBounds(e, {left: 0, right: 0, top: 0, bottom: 0})',
+    '+        return b.right >= anchorX - radius && b.left <= anchorX + radius &&',
+    '+            b.bottom >= anchorY - radius && b.top <= anchorY + longest + radius',
+    '+    })',
+    '+    const inSolid = (x, y) => near.some(e => pointInPolygon(e.getPoints(), x, y))',
+    '+    const clear = (x, y) => !inSolid(x, y) &&',
+    '+        !near.some(e => e.getLines().some(line => segmentDistanceSquared(line, x, y) <= radius * radius)) &&',
+    '+        !world.playerInNoGrappleZone({x, y, radius})',
+    '+    for (let rope = CLIMB_HANG_STEP; rope < radius; rope += CLIMB_HANG_STEP)',
+    '+        if (inSolid(anchorX, anchorY + rope)) return null',
+    '+    for (let d = radius; d <= longest; d += CLIMB_HANG_STEP)',
+    '+    {',
+    '+        if (inSolid(anchorX, anchorY + d)) return null',
+    '+        if (clear(anchorX, anchorY + d)) return {x: anchorX, y: anchorY + d}',
+    '+    }',
+    '+    return null',
+    '+}',
+    '+',
+    '+// Put the player hanging at rest under the go-back checkpoint. Time, best',
+    '+// height, falls, upgrades and the world are kept; like recoverClimbFall the',
+    '+// player, grapple, gameplay input ownership and camera are reset. Returns',
+    '+// false (nothing changes) without a usable checkpoint.',
+    '+function returnToCheckpoint()',
+    '+{',
+    '+    const world = floors[0], c = world?.climbCheckpoint',
+    "+    if (version !== 'grapple_over' || !c) return false",
+    '+    const element = world.byId.get(c.bodyId)',
+    '+    const hang = element && climbCheckpointHang(world, c.anchorX, c.anchorY, c.ropeLength)',
+    '+    if (!hang) return false',
+    '+    ninja.x = hang.x',
+    '+    ninja.y = hang.y',
+    '+    ninja.speedX = ninja.speedY = 0',
+    '+    ninja.track.pos = []',
+    '+    ninja.track.addPos(ninja.x, ninja.y, true)',
+    '+    Object.assign(grapnel, {throwed: true, grappled: true, pos: [[c.anchorX, c.anchorY, element]], shotStep: null,',
+    '+        aim: null, clip: null, traveled: 0, speedX: 0, speedY: 0})',
+    '+    // A press held through the call cannot release or throw until it is released.',
+    '+    gameplayPressOwned = false',
+    '+    stalePress = pressHeld',
+    '+    world.climbStats.currentHeight = world.level.spawn.y - ninja.y',
+    '+    world.climbStats.goBacks++',
+    "+    // The next fall counts against the checkpoint's section",
+    '+    climbDesignRun(world.climbStats).section = c.section',
+    "+    ANALYTICS.design('goback:' + c.section)",
+    '+    LONG_FALL.restartTracking()',
+    '+    screen.trackGrappleOver(true)',
+    '+    PROGRESS.flushClimb()',
+    '+    return true',
     '+}',
     '+',
 ]
@@ -507,8 +578,10 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                                    '+function drawFallMessageLayer()', '+{', '+    FALL_MESSAGE.draw(ctx)', '+}', '+',
                                                    "+    if (version === 'grapple_over')", '+        drawFallMessageLayer()']))
         design = PHYSICS_FALL_RECOVERY_DIFF.index('+// Design telemetry of the run, never saved: the last 500-unit best height')
+        teleport = PHYSICS_FALL_RECOVERY_DIFF.index('+// Teleport a fallen Grapple Over player to the spawn and launch it upward')
         self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF[:3] + SPAWN_LAUNCH_DIFF + PHYSICS_FALL_RECOVERY_DIFF[3:design]
-                         + GO_BACK_CHECKPOINT_DIFF + PHYSICS_FALL_RECOVERY_DIFF[design:])
+                         + GO_BACK_CHECKPOINT_DIFF + PHYSICS_FALL_RECOVERY_DIFF[design:teleport]
+                         + RETURN_TO_CHECKPOINT_DIFF + PHYSICS_FALL_RECOVERY_DIFF[teleport:])
         self.assertEqual(lines('sprites/trampoline.js'), TRAMPOLINE_CLOSE_DIFF)
         changed = lines('index.html')
         # The full index.html diff since BASE_REV; TASK-774 re-pinned it after TASK-745..753 (platform/analytics wiring only).
