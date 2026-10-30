@@ -1134,7 +1134,9 @@ class Task495Tests(unittest.TestCase):
         for name, y in routes.items():
             self.assertGreater(y, high['player']['y'] + 200, name)
         save_keys = sorted(stored.keys())
-        forbidden = [k for k in json.dumps(stored).split('"') if any(w in k.lower() for w in ('checkpoint', 'respawn', 'highest'))]
+        # TASK-790's climbCheckpoint is the go-back offer target: saved, never applied on load (routes above).
+        forbidden = [k for k in json.dumps(stored).split('"') if k != 'climbCheckpoint' and
+                     any(w in k.lower() for w in ('checkpoint', 'respawn', 'highest'))]
         self.assertEqual(forbidden, [])
         self.assertEqual(page.evaluate('PROGRESS.keys').count(CLIMB_KEY), 1)
         out['no_checkpoint'] = dict(high=brief(high), fallen=brief(fallen), stored_after_fall=brief(stored),

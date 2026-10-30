@@ -167,6 +167,7 @@ class Grapnel
         // an otherwise valid contact outside the acquisition radius.
         this.pos = [[hit.x, hit.y, element]]
         countClimbGrapple(this.grappled)
+        recordClimbCheckpoint(this.grappled, hit.x, hit.y, element)
         this.grappled = true
         this.clip = null
     }
@@ -322,6 +323,7 @@ class Grapnel
                 point[2] === element && Math.hypot(point[0] - coords.x, point[1] - coords.y) < 1e-7))
                 return
             countClimbGrapple(this.grappled)
+            recordClimbCheckpoint(this.grappled, coords.x, coords.y, element)
             this.grappled = true
             if  (
                     index == 1                                                          && 

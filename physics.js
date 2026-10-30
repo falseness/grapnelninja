@@ -137,6 +137,20 @@ function countClimbGrapple(wasGrappled)
     TELEMETRY.mark('grapple', section)
 }
 
+// Go-back checkpoint: the highest new catch of the run on a static body (a
+// fixed-level element that no mover drives). Climb only; a restart builds a
+// new world without one, a fall recovery keeps it. Never read by physics.
+function recordClimbCheckpoint(wasGrappled, anchorX, anchorY, element)
+{
+    const world = floors[0]
+    if (version !== 'grapple_over' || wasGrappled || !(world instanceof PersistentWorld)) return
+    if (world.byId.get(element?.id) !== element || world.level.movers.some(m => m.element === element.id)) return
+    const current = world.climbCheckpoint
+    if (current && anchorY >= current.anchorY) return
+    world.climbCheckpoint = {anchorX, anchorY, ropeLength: Math.hypot(ninja.x - anchorX, ninja.y - anchorY),
+        section: CLIMB_UI.currentSection().id, bodyId: element.id}
+}
+
 // Design telemetry of the run, never saved: the last 500-unit best height
 // bucket reported and the section of the last grapple catch, which the next
 // fall is counted against. A new climbStats object is a new or restored run;

@@ -157,6 +157,8 @@ class PersistentWorld extends Floor
         this.fallHintShown = false
         // Set by the run's first fall recovery, which may offer double grapnel mode (CLIMB_UI.offering).
         this.doubleOfferShown = false
+        // Highest static grapple catch of the run (recordClimbCheckpoint), or null.
+        this.climbCheckpoint = null
         // HUD notice time left after the upgrade; display only, never saved.
         this.rangeNoticeMs = 0
         // Drag zones are neither collidable nor grappleable: keep them out of
@@ -296,6 +298,7 @@ function captureClimbState()
         upgrades: {range: world.rangeUpgraded},
         grapnelMode: world.grapnelMode, usedDouble: world.usedDouble, fallHintShown: world.fallHintShown,
         doubleOfferShown: world.doubleOfferShown,
+        climbCheckpoint: world.climbCheckpoint ? {...world.climbCheckpoint} : null,
         elements: world.elements.map(e => ({id: e.id, ...climbFields(e, CLIMB_ELEMENT_FIELDS)})),
         grapple: {
             throwed: grapnel.throwed, grappled: grapnel.grappled,
@@ -354,6 +357,16 @@ function restoreClimbState(save)
     // Saves from before the first-death offer show it on the next recovery.
     if (s.doubleOfferShown === undefined) s.doubleOfferShown = false
     shape(s.doubleOfferShown, false)
+    // Saves from before the go-back checkpoint load with none; so does a
+    // checkpoint whose body is not a static element of the current level.
+    if (s.climbCheckpoint === undefined) s.climbCheckpoint = null
+    if (s.climbCheckpoint !== null) {
+        const c = s.climbCheckpoint
+        if (!c || typeof c !== 'object' || (typeof c.bodyId !== 'string' && !Number.isSafeInteger(c.bodyId))) fail()
+        shape({...c, bodyId: ''}, {anchorX: 0, anchorY: 0, ropeLength: 0, section: '', bodyId: ''})
+        if (c.ropeLength < 0) fail()
+        if (!world.byId.has(c.bodyId) || world.level.movers.some(m => m.element === c.bodyId)) s.climbCheckpoint = null
+    }
     if (s.player.radius <= 0 || s.player.hazardCooldownMs < 0 || s.player.invulnerableMs < 0 ||
         s.stats.elapsedActiveMs < 0 || s.stats.maxHeight < Math.max(0, s.stats.currentHeight)) fail()
     if (!Array.isArray(s.elements) || s.elements.length !== world.elements.length) fail()
@@ -389,6 +402,7 @@ function restoreClimbState(save)
     nextWorld.usedDouble = s.usedDouble || s.grapnelMode === 'double'
     nextWorld.fallHintShown = s.fallHintShown
     nextWorld.doubleOfferShown = s.doubleOfferShown
+    nextWorld.climbCheckpoint = s.climbCheckpoint
     s.elements.forEach(e => Object.assign(nextWorld.byId.get(e.id), e))
     const nextNinja = new Ninja({...s.player, fill:ninja.fill, stroke:ninja.stroke})
     Object.assign(nextNinja, s.player)

@@ -160,6 +160,24 @@ PHYSICS_FALL_RECOVERY_DIFF = [
     '+}',
 ]
 
+# TASK-790: the go-back checkpoint recorder (recordClimbCheckpoint), before the design telemetry; covered by tools/test_go_back.py.
+GO_BACK_CHECKPOINT_DIFF = [
+    '+// Go-back checkpoint: the highest new catch of the run on a static body (a',
+    '+// fixed-level element that no mover drives). Climb only; a restart builds a',
+    '+// new world without one, a fall recovery keeps it. Never read by physics.',
+    '+function recordClimbCheckpoint(wasGrappled, anchorX, anchorY, element)',
+    '+{',
+    '+    const world = floors[0]',
+    "+    if (version !== 'grapple_over' || wasGrappled || !(world instanceof PersistentWorld)) return",
+    '+    if (world.byId.get(element?.id) !== element || world.level.movers.some(m => m.element === element.id)) return',
+    '+    const current = world.climbCheckpoint',
+    '+    if (current && anchorY >= current.anchorY) return',
+    '+    world.climbCheckpoint = {anchorX, anchorY, ropeLength: Math.hypot(ninja.x - anchorX, ninja.y - anchorY),',
+    '+        section: CLIMB_UI.currentSection().id, bodyId: element.id}',
+    '+}',
+    '+',
+]
+
 # TASK-704: the Grapple Over spawn launch, added right after CLIMB_FALL_RECOVERY_DEPTH.
 SPAWN_LAUNCH_DIFF = [
     '+// Grapple Over: a fresh start (first run or restart) launches the ninja',
@@ -488,7 +506,9 @@ class ImportedLevelRuntimeTests(unittest.TestCase):
                                                    '+// Long-fall reaction: screen space, over the hint and under the HUD it avoids',
                                                    '+function drawFallMessageLayer()', '+{', '+    FALL_MESSAGE.draw(ctx)', '+}', '+',
                                                    "+    if (version === 'grapple_over')", '+        drawFallMessageLayer()']))
-        self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF[:3] + SPAWN_LAUNCH_DIFF + PHYSICS_FALL_RECOVERY_DIFF[3:])
+        design = PHYSICS_FALL_RECOVERY_DIFF.index('+// Design telemetry of the run, never saved: the last 500-unit best height')
+        self.assertEqual(lines('physics.js'), PHYSICS_FALL_RECOVERY_DIFF[:3] + SPAWN_LAUNCH_DIFF + PHYSICS_FALL_RECOVERY_DIFF[3:design]
+                         + GO_BACK_CHECKPOINT_DIFF + PHYSICS_FALL_RECOVERY_DIFF[design:])
         self.assertEqual(lines('sprites/trampoline.js'), TRAMPOLINE_CLOSE_DIFF)
         changed = lines('index.html')
         # The full index.html diff since BASE_REV; TASK-774 re-pinned it after TASK-745..753 (platform/analytics wiring only).
