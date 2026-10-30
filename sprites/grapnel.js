@@ -479,6 +479,9 @@ class Grapnel
         const look = STYLE.grapnelHelix
         const unit = 1 / scale[version]
         const {strands, nodes} = this.helixStrands()
+        // A rope with no length yet (a redraw between the press and its first step) draws nothing
+        if (strands.every(strand => strand.length === 0))
+            return
         // The strands end under the player: keep their glow off the player's ring.
         let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
         for (const strand of strands)

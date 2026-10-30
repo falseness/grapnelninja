@@ -96,21 +96,8 @@ SUPERSEDED = {
                    r'AssertionError: True != False : range_541_angle_0$'),
                   ('test_zero_aim_and_fresh_press', "self.assertEqual(row['attached'], expected, name)",
                    r'AssertionError: True != False : expired$')]),
-    # Keeping the boot run (as for 455/456) still fails: the invalid-save case expects the old fixture spawn
-    # (360 != the mountain's 2160) and the delayed read targets an untouched fresh start
-    # (artifacts/TASK-498/repin-attempts/Task457Tests-startup-repin.log).
-    'Task457Tests': dict(commit='4f509ed / 9f6506b',
-        ticket='TASK-459 Grapple Over at startup; TASK-465 mountain spawn replaced the fixture spawn',
-        failures=[('test_delayed_read_and_failed_writes', "self.assertEqual(page.evaluate('ninja.y'),old['player']['y'])",
-                   r'AssertionError: -?[\d.]+ != -?[\d.]+$'),
-                  ('test_falling_throttle_pause_exit_pagehide_reload',
-                   "self.assertGreater(current['player']['y'],first['player']['y'])",
-                   r'AssertionError: 300 not greater than 300$')]),
-    # TASK-785 dropped test_invalid_and_unavailable from this signature: with the save notice gone it checks
-    # the live level's spawn and passes.
-    'Task458Tests': dict(commit='9f6506b', ticket='TASK-465 mountain replaced the TEST-ONLY fixture',
-        failures=[('test_restore_resume_and_fresh_input', "page.evaluate('" "''kind=>{",
-                   r"Error: Page\.evaluate: TypeError: Cannot read properties of undefined \(reading 'x'\)$")]),
+    # TASK-785 re-specced Task457Tests/Task458Tests for the current tree (backend recovery hooks, the paused
+    # re-entered boot run, the layout-v3 selector, the climb pause Resume); both pass again and run as normal classes.
     'Task460Tests': dict(commit='9f6506b', ticket='TASK-465 mountain replaced the TEST-ONLY fixture',
         failures=[('test_climb_flow_and_localized_layout', "self.assertTrue(completed['stats']['completed'])",
                    r'AssertionError: False is not true$')]),
@@ -202,9 +189,8 @@ class Task455Tests(Repinned, _world.Task455Tests):
 
 
 class Task456Tests(Repinned, _save.Task456Tests):
-    open = repin(_save.Task456Tests, 'open',
-                 ("'m => {startGame(m);cancelAnimationFrame(game)}'",
-                  "'m => {if(version!==m||!runInProgress)startGame(m);cancelAnimationFrame(game)}'"))
+    # TASK-785: _save.Task456Tests.open itself now resumes the re-entered (paused) boot run, so it runs as is.
+    pass
 
 
 class Task459Tests(Repinned, _modes.Task459Tests):

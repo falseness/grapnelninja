@@ -49,9 +49,34 @@ REPLAY = '''() => {
 }'''
 
 
+def delayed_backend_source():
+    """platform/backends/local.js with an unknown remote and a test-callable recovery (window.recoverStorage)."""
+    source=(ROOT/'platform/backends/local.js').read_text()
+    old_known='remoteKnown()\n            {\n                return true\n            },'
+    old_recovery='onRecovery()\n            {\n            },'
+    assert source.count(old_known)==1 and source.count(old_recovery)==1
+    return (source.replace(old_known,'remoteKnown()\n            {\n                return false\n            },')
+            .replace(old_recovery,'onRecovery(fn)\n            {\n                window.recoverStorage = fn\n            },'))
+
+
+# gameoptions.js local selector that boots GRAPPLE_OVER_MOUNTAIN (layout v3), the mountain whose S02-S06 sections,
+# S04 exit pose and S05 range upgrade the Task495/Task502 cases use (normal boot is the imported level).
+LEGACY_V3_QUERY = '?grappleFixture=legacy-v3'
+
+
+def legacy_v3_setup(cls):
+    Task456Tests.setUpClass.__func__(cls)
+    cls.url += LEGACY_V3_QUERY
+
+
 class Task456Tests(unittest.TestCase):
     task_id='TASK-456'
-    open=Task447Tests.open
+
+    def open(self, mode='grapple_over'):
+        page=Task447Tests.open(self, mode)
+        # startGame re-enters the boot run's climb paused (restoreClimb); release input needs a running climb.
+        page.evaluate('menu.unPause();cancelAnimationFrame(game)')
+        return page
 
     @classmethod
     def setUpClass(cls):
@@ -184,8 +209,12 @@ class Task457Tests(unittest.TestCase):
         if unavailable:
             page.add_init_script("Object.defineProperty(window,'localStorage',{get(){throw Error('blocked storage')}})")
         if delayed:
-            source=(ROOT/'platform.js').read_text().replace('get remoteKnown() { return true }','get remoteKnown() { return false }').replace('onRecovery() {},','onRecovery(fn) { window.recoverStorage = fn },')
-            page.route('**/platform.js', lambda r:r.fulfill(body=source,content_type='application/javascript'))
+            # Boot now starts the run straight away; hold its game loop so no physics tick (a climb change)
+            # precedes the late recovery, which may only restore an untouched climb.
+            page.add_init_script('''(() => {const raf=window.requestAnimationFrame.bind(window);
+                window.requestAnimationFrame=cb=>cb&&cb.name==='gameLoop'?0:raf(cb)})()''')
+            source=delayed_backend_source()
+            page.route('**/platform/backends/local.js', lambda r:r.fulfill(body=source,content_type='application/javascript'))
         page.goto(self.url)
         wait_for_boot(page)
         page.evaluate('''() => {
@@ -197,8 +226,13 @@ class Task457Tests(unittest.TestCase):
                 if(window.failWrites) return false;
                 return set(values);
             };
-            startGame('grapple_over');cancelAnimationFrame(game);
         }''')
+        if delayed:
+            # Boot already entered the climb; a second startGame would flush (change) it before the late read.
+            page.evaluate("version==='grapple_over'||startGame('grapple_over');cancelAnimationFrame(game)")
+        else:
+            # startGame re-enters the boot run's climb paused (restoreClimb); these cases play it.
+            page.evaluate("startGame('grapple_over');cancelAnimationFrame(game);menu.unPause();cancelAnimationFrame(game)")
         return page
 
     def observe(self, page, name, **data):
@@ -250,7 +284,8 @@ class Task457Tests(unittest.TestCase):
         old['player']['y']-=200
         page.evaluate("s=>recoverStorage({'grapnelninja.grappleOver':JSON.stringify(s)})",old)
         self.assertEqual(page.evaluate('ninja.y'),old['player']['y'])
-        page.evaluate("failWrites='throw';ninja.x=1100;physics()")
+        # The recovered climb restores paused (restoreClimb); play it so physics() schedules a write.
+        page.evaluate("failWrites='throw';menu.unPause();cancelAnimationFrame(game);ninja.x=1100;physics()")
         page.wait_for_timeout(100)
         changed=page.evaluate('captureClimbState()')
         page.evaluate("s=>recoverStorage({'grapnelninja.grappleOver':JSON.stringify(s)})",old)
@@ -299,7 +334,7 @@ class Task457Tests(unittest.TestCase):
 
 class Task458Tests(unittest.TestCase):
     task_id = 'TASK-458'
-    setUpClass = classmethod(Task456Tests.setUpClass.__func__)
+    setUpClass = classmethod(legacy_v3_setup)
 
     def test_restore_resume_and_fresh_input(self):
         from browser_test_support import wait_for_boot
@@ -310,11 +345,7 @@ class Task458Tests(unittest.TestCase):
         page = context.new_page()
         errors=[]
         page.on('pageerror', lambda e: errors.append(str(e)))
-        # A real moving level fixture, retained across page reloads.
-        source=(ROOT/'fixedlevel.js').read_text()+'''\n
-GRAPPLE_OVER_LEVEL.movers=[{id:'step-motion',element:'right-step',axis:'x',min:550,max:650,periodMs:1700,phase:.25}];
-'''
-        page.route('**/fixedlevel.js',lambda r:r.fulfill(body=source,content_type='application/javascript'))
+        # A real moving level: the layout-v3 mountain (legacy-v3 selector, kept across reloads) and its S02-hoist mover.
         page.goto(self.url)
         wait_for_boot(page)
         self.proof['has_touch']=True
@@ -324,7 +355,10 @@ GRAPPLE_OVER_LEVEL.movers=[{id:'step-motion',element:'right-step',axis:'x',min:5
             return page.evaluate('captureClimbState()')
         def button(kind):
             page.wait_for_function('!unTouch')
-            coords=page.evaluate('canvasCoordsToViewportCoords({x:menu.resume.text.x,y:menu.resume.text.y})')
+            # The climb pause menu draws its own Resume button (CLIMB_UI.drawMenu); find it in the layout probe.
+            coords=page.evaluate('''()=>{LAYOUT_PROBE.boxes=[];menu.drawPauseScreen();const boxes=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;
+                const b=boxes.find(b=>b.kind==='button'&&b.name===I18N.t('pause.resume')),r=document.getElementById('canvas').getBoundingClientRect();
+                return {x:r.left+b.x+b.width/2,y:r.top+b.y+b.height/2}}''')
             page.evaluate('''({coords,kind})=>{
                 if(kind==='mouse') {
                     document.dispatchEvent(new MouseEvent('mousedown',{clientX:coords.x,clientY:coords.y,bubbles:true}));
@@ -337,11 +371,13 @@ GRAPPLE_OVER_LEVEL.movers=[{id:'step-motion',element:'right-step',axis:'x',min:5
             }''',dict(coords=coords,kind=kind))
         for kind in ('moving-attachment','free-fall'):
             page.evaluate('''kind=>{
-                startGame('grapple_over');cancelAnimationFrame(game);
-                ninja.x=1050;ninja.y=600;ninja.speedX=.3;ninja.speedY=1;
+                startGame('grapple_over');cancelAnimationFrame(game);menu.unPause();cancelAnimationFrame(game);
+                // In the air above the layout-v3 base (spawn-relative), so the camera frames it.
+                const spawn=floors[0].level.spawn;
+                ninja.x=spawn.x-1110;ninja.y=spawn.y-600;ninja.speedX=.3;ninja.speedY=1;
                 for(let i=0;i<7;i++)physics();
                 if(kind==='moving-attachment') {
-                    const e=floors[0].byId.get('right-step');
+                    const e=floors[0].byId.get('S02-hoist');
                     ninja.x=e.x+340;ninja.y=e.y+150;
                     grapnel.throwed=grapnel.grappled=true;pressHeld=true;
                     grapnel.pos=[[e.x+150,e.y,e]];
@@ -359,8 +395,8 @@ GRAPPLE_OVER_LEVEL.movers=[{id:'step-motion',element:'right-step',axis:'x',min:5
             frozen=state();self.assertEqual(frozen,restored)
             framing=page.evaluate('''()=>({x:(ninja.x+screen.x)*scale[version],
                 y:(ninja.y+screen.y)*scale[version],r:ninja.radius*scale[version],width,height})''')
-            self.assertTrue(framing['r']<=framing['x']<=framing['width']-framing['r'])
-            self.assertTrue(framing['r']<=framing['y']<=framing['height']-framing['r'])
+            self.assertTrue(framing['r']<=framing['x']<=framing['width']-framing['r'],(kind,framing))
+            self.assertTrue(framing['r']<=framing['y']<=framing['height']-framing['r'],(kind,framing))
             # Stop rAF only after observing a live paused loop. UI dispatch is
             # synchronous so exact momentum/rope comparisons precede physics.
             page.evaluate('cancelAnimationFrame(game)')
@@ -470,12 +506,17 @@ RANGE_HELPERS = '''() => {
             try{circle()}finally{ctx.arc=arc}};
         try{draw()}finally{window.drawAcquisitionCircle=circle}
         if(radii.length!==1)throw Error('range circle arcs: '+radii.length);return radii[0]};
-    // An attachable anchor straight above a free S04 point, exactly 600 units away.
-    window.findAnchor=()=>{const b=bandOf('S04');
+    // Base/upgraded acquisition radii (TASK-543 doubled them to 1080/1620 from the original 540/810).
+    window.rangeRadii=()=>({base:MODE_DEFINITIONS.grapple_over.acquisitionRadius,
+        upgraded:MODE_DEFINITIONS.grapple_over.upgradedAcquisitionRadius});
+    // Anchor distance between the two radii: 600 at the original 540/810, scaled with the base radius.
+    window.anchorDistance=()=>Math.round(rangeRadii().base*10/9);
+    // An attachable anchor straight above a free S04 point, exactly anchorDistance() units away.
+    window.findAnchor=()=>{const b=bandOf('S04'),dist=anchorDistance();
         for(let y=b.bottom-100;y>b.top+100;y-=40) for(let x=b.left+200;x<b.right-200;x+=40){
-            const hit=grapnel.nearestCrossing({x,y},[x,y-1000]);
+            const hit=grapnel.nearestCrossing({x,y},[x,y-dist-400]);
             if(!hit||grapnel.blocksShot(hit.element)) continue;
-            const sy=hit.hit.y+600;
+            const sy=hit.hit.y+dist;
             if(sy>b.bottom-60||sy<b.top+60) continue;
             const clear=grapnel.nearestCrossing({x,y:sy},[x,hit.hit.y-1]);
             const below=grapnel.nearestCrossing({x,y:sy},[x,sy+80]);
@@ -489,7 +530,7 @@ RANGE_HELPERS = '''() => {
 
 class Task502Tests(unittest.TestCase):
     task_id = 'TASK-502'
-    setUpClass = classmethod(Task456Tests.setUpClass.__func__)
+    setUpClass = classmethod(legacy_v3_setup)
 
     def open(self):
         page = Task447Tests.open(self)
@@ -501,8 +542,9 @@ class Task502Tests(unittest.TestCase):
         """Real mouse press toward the anchor; held while physics steps."""
         page.evaluate('s=>placeAt(s.x,s.y)', spot)
         page.wait_for_function('!unTouch')
+        # Aim at the anchor height: a whole-pixel aim 200 units up strayed ~2% sideways, too far at the doubled range.
         aim = page.evaluate('''s=>{const p=canvasCoordsToViewportCoords({x:(s.x+screen.x)*scale[version],
-            y:(s.y-200+screen.y)*scale[version]});return p}''', spot)
+            y:(s.y-anchorDistance()+screen.y)*scale[version]});return p}''', spot)
         page.mouse.move(aim['x'], aim['y'])
         page.mouse.down()
         rows = page.evaluate('''n=>{const rows=[];for(let i=0;i<n;i++){physics();rows.push({tick:floors[0].elapsedSteps,
@@ -516,44 +558,55 @@ class Task502Tests(unittest.TestCase):
         page = self.open()
         spot = page.evaluate('findAnchor()')
         self.assertIsNotNone(spot)
-        self.assertEqual(spot['y'] - spot['anchor']['y'], 600)
+        radii, dist = page.evaluate('rangeRadii()'), page.evaluate('anchorDistance()')
+        base, up = radii['base'], radii['upgraded']
+        self.assertTrue(base < dist < up, (radii, dist))
+        self.assertEqual(spot['y'] - spot['anchor']['y'], dist)
         before_state = page.evaluate('s=>{placeAt(s.x,s.y);return captureClimbState()}', spot)
         self.assertFalse(before_state['upgrades']['range'])
         circle_before = page.evaluate('drawnRadius()')
-        self.assertEqual(circle_before, 540)
-        miss = self.shoot(page, spot)
-        self.assertTrue(all(r['radius'] == 540 and not r['grappled'] for r in miss))
+        self.assertEqual(circle_before, base)
+        # 40 held ticks reached the original 600-unit anchor; the flight time scales with the distance.
+        shot_ticks = round(40 * dist / 600)
+        miss = self.shoot(page, spot, shot_ticks)
+        self.assertTrue(all(r['radius'] == base and not r['grappled'] for r in miss))
         self.assertTrue(miss[-1]['throwed'])  # held miss parked at the range edge
-        self.assertAlmostEqual(miss[-1]['traveled'], 540)
+        self.assertAlmostEqual(miss[-1]['traveled'], base)
         # Labeled test-only placement into S05, then physics decides the flip.
         placed = page.evaluate('placeInUpgradeBand()')
-        flip = page.evaluate('''()=>{const rows=[];const band=bandOf('S05');
+        # TASK-529: the upgrade triggers in S05.rangeUpgradeZone (on the S04 exit ledge) when set, else in the S05 band.
+        flip = page.evaluate('''()=>{const rows=[];const s5=floors[0].level.sections.find(s=>s.id==='S05');
+            const band=s5.rangeUpgradeZone||bandOf('S05');
             for(let i=0;i<5;i++){const pre=floors[0].rangeUpgraded;physics();
                 rows.push({tick:floors[0].elapsedSteps,before:pre,after:floors[0].rangeUpgraded,
-                    x:ninja.x,y:ninja.y,inBand:ninja.y>=band.top&&ninja.y<=band.bottom,
+                    x:ninja.x,y:ninja.y,inBand:ninja.y>=band.top&&ninja.y<=band.bottom&&
+                        (band.left===undefined||ninja.x>=band.left&&ninja.x<=band.right),
                     radius:activeRadius(),noticeMs:floors[0].rangeNoticeMs})}
             return {rows,band}}''')
         first = flip['rows'][0]
         self.assertFalse(first['before'])
-        self.assertTrue(first['after'] and first['inBand'] and first['radius'] == 810)
+        self.assertTrue(first['after'] and first['inBand'] and first['radius'] == up, (first, flip['band']))
         circle_after = page.evaluate('drawnRadius()')
-        self.assertEqual(circle_after, 810)
-        # Fall physically back below the S05 band bottom into S04.
-        fall = page.evaluate('''()=>{const b=bandOf('S05'),s4=bandOf('S04');let n=0;
-            while(ninja.y<=b.bottom+40&&n<2000){physics();n++}
+        self.assertEqual(circle_after, up)
+        # Back in S04. TASK-529 moved the trigger onto the S04 exit ledge (rangeUpgradeZone), where the player
+        # rests instead of falling below the S05 band, so it leaves with a labeled TEST-ONLY placement at the free
+        # S04 spot and falls there for 60 ticks; without a zone it falls physically below the S05 band bottom.
+        fall = page.evaluate('''s=>{const b=bandOf('S05'),s4=bandOf('S04');let n=0;
+            if(floors[0].level.sections.find(x=>x.id==='S05').rangeUpgradeZone){placeAt(s.x,s.y);for(;n<60;n++)physics()}
+            else while(ninja.y<=b.bottom+40&&n<2000){physics();n++}
             return {ticks:n,y:ninja.y,inS04:ninja.y>s4.top&&ninja.y<=s4.bottom,upgraded:floors[0].rangeUpgraded,
-                radius:activeRadius(),circle:drawnRadius()}}''')
-        self.assertTrue(fall['inS04'])
-        self.assertEqual((fall['radius'], fall['circle']), (810, 810))
+                radius:activeRadius(),circle:drawnRadius()}}''', spot)
+        self.assertTrue(fall['inS04'], (fall, placed))
+        self.assertEqual((fall['radius'], fall['circle']), (up, up))
         # Same shot from the same S04 spot, now with the earned range.
         upgraded_state = dict(before_state, upgrades={'range': True})
         page.evaluate('s=>restoreClimbState(s)', upgraded_state)
-        hit = self.shoot(page, spot)
+        hit = self.shoot(page, spot, shot_ticks)
         grabbed = [r for r in hit if r['grappled']]
-        self.assertTrue(grabbed)
+        self.assertTrue(grabbed, (spot, hit[:2], hit[-2:]))
         self.assertEqual(grabbed[0]['anchor'], spot['anchor']['id'])
-        self.assertTrue(all(r['radius'] == 810 for r in hit))
-        self.evidence.write('range.json', dict(self.proof, spot=spot, anchor_distance=spot['y']-spot['anchor']['y'],
+        self.assertTrue(all(r['radius'] == up for r in hit))
+        self.evidence.write('range.json', dict(self.proof, spot=spot, anchor_distance=spot['y']-spot['anchor']['y'], radii=radii,
             input='playwright page.mouse move/down/up toward the anchor; physics() stepped while held',
             before_upgrade=dict(circle_radius=circle_before, shot=miss, acquired=False),
             test_only_placement=dict(label='TEST-ONLY placeInUpgradeBand(); not a climb proof', position=placed),
@@ -563,12 +616,14 @@ class Task502Tests(unittest.TestCase):
             after_upgrade_shot=dict(shot=hit, acquired=True, first_grapple_tick=grabbed[0]['tick'],
                 anchor=grabbed[0]['anchor']),
             range_pass=True))
-        print(f"PASS range: 600-unit shot misses at 540, flag flips at tick {first['tick']}, circle 540->810, "
-              f"S04 after fall 810, same shot acquires {grabbed[0]['anchor']}")
+        print(f"PASS range: {dist}-unit shot misses at {base}, flag flips at tick {first['tick']}, circle {base}->{up}, "
+              f"S04 after fall {up}, same shot acquires {grabbed[0]['anchor']}")
 
     def test_02_persistence(self):
         from browser_test_support import wait_for_boot
         page = self.open()
+        radii = page.evaluate('rangeRadii()')
+        base, up = radii['base'], radii['upgraded']
         page.evaluate('placeInUpgradeBand();physics()')
         self.assertTrue(page.evaluate('floors[0].rangeUpgraded'))
         spot = page.evaluate('findAnchor()')
@@ -615,7 +670,7 @@ class Task502Tests(unittest.TestCase):
         # Legacy save without an upgrades field restores as not upgraded.
         legacy = {k: v for k, v in start.items() if k != 'upgrades'}
         legacy_radius = page.evaluate('s=>{restoreClimbState(s);return activeRadius()}', legacy)
-        self.assertEqual(legacy_radius, 540)
+        self.assertEqual(legacy_radius, base)
         # Restart through real mouse clicks on the pause menu buttons.
         page.evaluate('s=>{restoreClimbState(s);menu.startPause()}', start)
         def tap(key):
@@ -631,14 +686,14 @@ class Task502Tests(unittest.TestCase):
         tap('climb.cancel'); self.assertFalse(page.evaluate('CLIMB_UI.confirming'))
         cancelled = page.evaluate('({state:captureClimbState(),radius:activeRadius()})')
         self.assertEqual(cancelled['state'], start)
-        self.assertEqual(cancelled['radius'], 810)
+        self.assertEqual(cancelled['radius'], up)
         tap('climb.restart'); tap('climb.yes')
         page.wait_for_function("JSON.parse(localStorage.getItem('grapnelninja.grappleOver')).simulationTick===0")
         confirmed = page.evaluate('''()=>({state:captureClimbState(),radius:activeRadius(),circle:drawnRadius(),
             saved:JSON.parse(localStorage.getItem('grapnelninja.grappleOver'))})''')
         self.assertFalse(confirmed['state']['upgrades']['range'])
         self.assertFalse(confirmed['saved']['upgrades']['range'])
-        self.assertEqual((confirmed['radius'], confirmed['circle']), (540, 540))
+        self.assertEqual((confirmed['radius'], confirmed['circle']), (base, base))
         self.evidence.write('persistence.json', dict(self.proof, start=start, saved_state=saved,
             saved_upgrade_flag=saved['upgrades']['range'], uninterrupted_final=uninterrupted['trace'][-1],
             continuations=rows, intermediate_mode=bad_mode, legacy_save_radius=legacy_radius,
@@ -649,7 +704,7 @@ class Task502Tests(unittest.TestCase):
                 circle=confirmed['circle'], tick=confirmed['state']['simulationTick']),
             persistence_pass=True))
         print('PASS persistence: saved upgrades.range=true; restore/reload/pagehide/mode-switch continue equal to '
-              'uninterrupted 300 ticks at 810; cancelled restart keeps 810; confirmed restart resets to 540')
+              f'uninterrupted 300 ticks at {up}; cancelled restart keeps {up}; confirmed restart resets to {base}')
 
     def test_03_notice_once(self):
         rows = []
@@ -731,7 +786,7 @@ def brief(state):
 
 class Task495Tests(unittest.TestCase):
     task_id = 'TASK-495'
-    setUpClass = classmethod(Task456Tests.setUpClass.__func__)
+    setUpClass = classmethod(legacy_v3_setup)
 
     def page(self, seed=None, delayed=False, unavailable=False, start=True):
         from browser_test_support import wait_for_boot
@@ -761,9 +816,8 @@ class Task495Tests(unittest.TestCase):
         if unavailable:
             page.add_init_script("Object.defineProperty(window,'localStorage',{get(){throw Error('blocked storage')}})")
         if delayed:
-            source = (ROOT/'platform.js').read_text().replace('get remoteKnown() { return true }', 'get remoteKnown() { return false }').replace(
-                'onRecovery() {},', 'onRecovery(fn) { window.recoverStorage = fn },')
-            page.route('**/platform.js', lambda r: r.fulfill(body=source, content_type='application/javascript'))
+            source = delayed_backend_source()
+            page.route('**/platform/backends/local.js', lambda r: r.fulfill(body=source, content_type='application/javascript'))
         page.goto(self.url)
         wait_for_boot(page)
         page.evaluate(SEED_SCRIPT % 1)
@@ -951,7 +1005,8 @@ class Task495Tests(unittest.TestCase):
                 self.assertTrue(restored['grapple']['grappled'])
                 self.assertEqual(restored['grapple']['segments'], saved['grapple']['segments'])
                 ids = [g['id'] for g in restored['grapple']['segments']]
-                self.assertTrue(ids == ['S02-hoist'] if kind == 'moving-anchor' else len(ids) >= 2, ids)
+                # The rope to the mover may wrap a corner of S02-hoist itself (every segment on the mover).
+                self.assertTrue(set(ids) == {'S02-hoist'} if kind == 'moving-anchor' else len(ids) >= 2, ids)
             rows.append(dict(kind=kind, lifecycle=lifecycle, fixture=dict((k, v) for k, v in built.items() if k != 'state'),
                              raw_saved_snapshot=saved, restored_paused=paused, restored_equals_saved=True,
                              restored_input=restored['input'], live_at_build=brief(live),

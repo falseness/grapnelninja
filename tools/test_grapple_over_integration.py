@@ -27,7 +27,7 @@ class LifecycleBrowser:
     """
     SCRIPT = '''addEventListener('DOMContentLoaded', () => { const p = PLATFORM, send = p.sendLifecycle;
         p.sendLifecycle = function(name, data) {
-            console.log('GRAPPLE_LIFECYCLE ' + JSON.stringify({name, data, x: ninja.x, y: ninja.y}));
+            console.log('GRAPPLE_LIFECYCLE ' + JSON.stringify({name, data, x: typeof ninja === 'undefined' ? null : ninja.x, y: typeof ninja === 'undefined' ? null : ninja.y}));
             return send.apply(this, arguments) } })'''
 
     def __init__(self, browser):
