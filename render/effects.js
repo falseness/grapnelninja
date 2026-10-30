@@ -436,7 +436,7 @@ class BackgroundRenderer
         const clear = smooth ? GRADIENT_DITHER.paint8(layerCanvas, paintTile, 'white') :
             paintTile(layerCanvas.getContext('2d'))
 
-        const layer = {key, canvas: layerCanvas, width, height, strips: this.getLayerStrips(layerCanvas, height, clear)}
+        const layer = {key, heightPx: layerCanvas.height, width, height, strips: this.getLayerStrips(layerCanvas, height, clear)}
         this.layerCache[name] = layer
         return layer
     }
@@ -647,17 +647,20 @@ class BackgroundRenderer
     // the rock colour and the haze as before.
     drawCrystalLayer(width, height, shift)
     {
-        const far = this.getLayerTile('far', width, height, STYLE.caveLayers.crystals,
-            (...args) => this.paintCrystalTile(...args))
+        // The far crystals are only drawn into the baked tile: built for each
+        // bake and released after it (TASK-788)
         const baked = this.getLayerTile('farBaked', width, height, STYLE.caveLayers.crystals,
             (ctx, w, h) =>
             {
+                const far = this.getLayerTile('far', width, height, STYLE.caveLayers.crystals,
+                    (...args) => this.paintCrystalTile(...args))
                 const gradients = this.createVerticalGradients(ctx, h)
                 ctx.fillStyle = gradients.gradient
                 ctx.fillRect(0, 0, w, h)
-                ctx.drawImage(far.canvas, 0, 0, w, h)
+                ctx.drawImage(far.strips[0].canvas, 0, 0, w, h)
                 ctx.fillStyle = gradients.haze
                 ctx.fillRect(0, 0, w, h)
+                delete this.layerCache.far
             }, true)
         this.drawLayerTile(baked, width, height, shift, STYLE.colors.background.crystalRock,
             this.getGradients(width, height).haze)
@@ -681,7 +684,7 @@ class BackgroundRenderer
         let k = Math.floor((bounds.x - shift.x) / width)
         let left = fromDevice(toDevice(shift.x + k * width))
         // Logical height of one tile pixel row
-        const unit = height / layer.canvas.height
+        const unit = height / layer.heightPx
 
         while (left < right)
         {

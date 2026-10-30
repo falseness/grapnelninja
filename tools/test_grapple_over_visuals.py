@@ -435,19 +435,25 @@ TILE_DRAWS_539 = '''() => {
             const m = this.getTransform();
             const [x, y, w, h] = args;
             draws.push({image, rect: [m.a * x + m.e, m.d * y + m.f, m.a * (x + w) + m.e, m.d * (y + h) + m.f],
-                logical: [x, y], blur: this.shadowBlur, alpha: this.globalAlpha});
+                logical: [x, y, y + h], blur: this.shadowBlur, alpha: this.globalAlpha});
         }
         return original.call(this, image, ...args);
     };
     try { draw(); } finally { CanvasRenderingContext2D.prototype.drawImage = original; }
+    // A tile is drawn as parts (TASK-788): each copy's first part gives the
+    // copy's rect (its rows y .. y + rows of the tile's height rows)
     const names = new Map();
-    for (const [key, sprite] of GRAPPLE_OVER_PARALLAX_TILES.cache)
-        if (key.startsWith('parallax|')) names.set(sprite, key);
+    for (const [key, tile] of GRAPPLE_OVER_PARALLAX_TILES.cache)
+        if (key.startsWith('parallax|')) names.set(tile.parts[0].canvas, {key, tile, part: tile.parts[0]});
     const groups = {};
     for (const d of draws) {
-        const key = names.get(d.image);
-        if (!key) continue;
-        (groups[key] = groups[key] || []).push({rect: d.rect, logical: d.logical, blur: d.blur, alpha: d.alpha});
+        const owner = names.get(d.image);
+        if (!owner) continue;
+        const {key, tile, part} = owner, [x0, y0, x1, y1] = d.rect;
+        const unit = (y1 - y0) / part.rows, top = y0 - part.y * unit;
+        const logicalUnit = (d.logical[2] - d.logical[1]) / part.rows;
+        (groups[key] = groups[key] || []).push({rect: [x0, top, x1, top + tile.height * unit],
+            logical: [d.logical[0], d.logical[1] - part.y * logicalUnit], blur: d.blur, alpha: d.alpha});
     }
     return {groups, frame: visualEffects.background.parallaxFrame, palette: visualEffects.background.palette,
         width: canvas.width, height: canvas.height};

@@ -178,7 +178,43 @@ caches created canvases during play:
    The parallax tiles (render/parallax.js, about 3.8 Mpx per band at that
    size) work the same way: `buildGrappleOverParallaxTiles` builds and warms
    the tiles for all 8 bands together and keeps them out of the glow sprite
-   LRU. That is about 120 MB, which a full climb already held before.
+   LRU. Whole tiles took about 115 MB; they are now kept as parts (below),
+   about 62 MB.
+
+### Live canvas memory
+
+At 1706x932 DPR 1.5 the freeze-walk peaked at 222 MB of live canvases
+(`liveCanvasMB`) and now peaks at about 141 MB. Every resident image is still
+built at boot or on a resize, as above. What changed (TASK-788):
+
+- **Parallax tiles as parts** (render/parallax.js). Each tile keeps only the
+  rows its paint reaches: the transparent rows above the outline's glow are
+  not stored. Below the lowest glow of a ridges tile only the body's vertical
+  fade is left and every column is the same, so that part is a narrow strip
+  (`parallaxFillStrip`, 256-512 px, plus one strip for the rest of the width)
+  drawn side by side across the tile. A part is painted at the tile's own
+  transform, so its px equal the whole tile's px. The fill strips' canvases
+  are kept across rebuilds, so a resize creates one canvas per tile, as
+  before. With the browser's own gradient dither (no float16 canvas) the
+  columns differ, and ridges keep their lower rows whole.
+- **Crystal/rock layer tiles** (render/effects.js). The raw far crystal tile
+  is only drawn into the baked far tile, so it is built for each bake and
+  dropped after it. The near rock tile is drawn as its top and bottom strip
+  copies, so the whole tile is not kept.
+
+`python3 tools/canvas_memory_walk.py [--root <tree>] [--quick] --out <file>`
+measures this. It runs the same freeze-walk as `canvas_audit.py` with
+`?visualsPerf=1`, collects garbage after each point and reads the recorder's
+`canvasSnapshot`: peak and final `liveCanvasMB` and MB per creator. `--quick`
+takes about 2 minutes. `tools/test_parallax_tile_parts.py` checks that the
+parts equal the whole tiles at two sizes.
+
+Same picture: frames drawn with parts match the whole tiles exactly where a
+tile copy maps 1:1 to device px. Where a copy is 931 or 933 device px tall
+for a 932 px tile, Chromium resamples each part, and some px differ by 1 or 2
+levels from the resampled whole tile. A drawImage of a source rect, or a
+stretched 1 px column, under `globalAlpha` < 1 also rounds by +-1, so neither
+is used.
 
 ### First draws (GPU uploads)
 

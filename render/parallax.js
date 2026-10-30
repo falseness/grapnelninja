@@ -3,6 +3,17 @@
 // once through the glow sprite builder (render/glowsprites.js: the only
 // shadowBlur, at build time), all bands together and kept in
 // GRAPPLE_OVER_PARALLAX_TILES; a frame only copies tiles. Tiles repeat on both axes, so any climb height is covered.
+//
+// A tile is kept as the rows its paint reaches (TASK-788): the transparent
+// rows above the outline's glow are not stored. Below a ridge tile's lowest
+// glow only the body's vertical fade is left and every column is the same,
+// so a strip of it (parallaxFillStrip, and one strip of the rest of the
+// width) is stored and drawn side by side across the tile; not with the
+// browser's own gradient dither (no GRADIENT_DITHER), which differs per
+// column. Every part is drawn whole and maps its px as the whole tile did:
+// Chromium blends a drawImage of a source rect, or a stretched column, at
+// globalAlpha < 1 with +-1 level rounding. Same pixels in about half the
+// memory.
 
 // Draws the layers into renderer.ctx over renderer.fillBounds() for this
 // frame's palette ({from, to, t}: the same band blend as the wash). Returns
@@ -43,26 +54,128 @@ function drawGrappleOverParallax(renderer, palette)
 }
 
 // Every band's tiles for one pixel scale, outside the glow sprite LRU so none
-// is dropped and rebuilt mid-climb
-const GRAPPLE_OVER_PARALLAX_TILES = {cache: new Map(), limit: Infinity, scale: null, warm: null}
+// is dropped and rebuilt mid-climb. fills are the fill strips' canvases,
+// kept and resized by a rebuild, so a rebuild creates only the canvases the
+// whole tiles did.
+const GRAPPLE_OVER_PARALLAX_TILES = {cache: new Map(), scale: null, warm: null, fills: []}
+
+// Fill strip widths tried, in tile px: the widest strip sets the most copies
+// a tile row draws
+const PARALLAX_FILL_STRIP = [256, 512]
+
+// The strip width (in PARALLAX_FILL_STRIP, at most width) whose strip and
+// rest of width hold the fewest px; of equals, the widest
+function parallaxFillStrip(width)
+{
+    let best = width
+    for (let strip = Math.min(width, PARALLAX_FILL_STRIP[0]); strip <= Math.min(width, PARALLAX_FILL_STRIP[1]); ++strip)
+        if (strip + width % strip <= best + width % best)
+            best = strip
+    return best
+}
 
 function getGrappleOverParallaxTile(layer, band, pixelScale)
 {
     buildGrappleOverParallaxTiles(pixelScale)
-    return getGlowSprite('parallax|' + layer.name + '|' + band + '|' + pixelScale,
-        () => buildGrappleOverParallaxTile(layer, band, pixelScale), GRAPPLE_OVER_PARALLAX_TILES)
+    return GRAPPLE_OVER_PARALLAX_TILES.cache.get('parallax|' + layer.name + '|' + band + '|' + pixelScale)
 }
 
-function buildGrappleOverParallaxTile(layer, band, pixelScale)
+// {width, height (tile px), parts: [{canvas, y, rows, rest}]}: each part is
+// tile rows y .. y + rows, painted at the tile's transform; rows above the
+// first are transparent. The first part's canvas is built by buildGlowSprite.
+// A fill part (rest set) is its strip repeated across the tile, then rest,
+// the strip of the width left (null when none is): canvases from fill(),
+// resized.
+function buildGrappleOverParallaxTile(layer, band, pixelScale, fill)
 {
-    return buildGlowSprite(Math.round(layer.tileWidth * pixelScale), Math.round(layer.tileHeight * pixelScale),
-        0, pixelScale, pixelScale, 0, 0, 1, paintGrappleOverParallaxTile, [layer, band], true)
+    const {width, height, top, bottom} = parallaxTileRows(layer, band, pixelScale)
+    const paint = (canvas, x, y) => paintGlowSprite(canvas, 0, pixelScale, pixelScale, x / pixelScale, y / pixelScale, 1,
+        paintGrappleOverParallaxTile, [layer, band], true)
+    const parts = [{y: top, rows: bottom - top, canvas: buildGlowSprite(width, bottom - top, 0, pixelScale, pixelScale,
+        0, top / pixelScale, 1, paintGrappleOverParallaxTile, [layer, band], true)}]
+    if (bottom < height)
+    {
+        // The rest is painted at its own px of the tile: where the tile's
+        // width is not a whole px, its last column holds two copies' edges
+        const strip = parallaxFillStrip(width), [canvas, rest] = [fill(), width % strip ? fill() : null]
+        for (const [part, from] of [[canvas, 0], [rest, width - width % strip]])
+            if (part)
+            {
+                part.width = Math.min(strip, width - from)
+                part.height = height - bottom
+                paint(part, from, bottom)
+            }
+        parts.push({y: bottom, rows: height - bottom, canvas, rest})
+    }
+    return {width, height, parts}
+}
+
+// Tile px: the tile's size, the first painted row (top) and the first of the
+// rows that are the same in every column (bottom; height when none are)
+function parallaxTileRows(layer, band, pixelScale)
+{
+    const width = Math.round(layer.tileWidth * pixelScale), height = Math.round(layer.tileHeight * pixelScale)
+    const reach = parallaxTileReach(layer, band)
+    // Glow reach in tile px: the 4 sigma of the widest shadowBlur (device px,
+    // not scaled) plus the stroke. The top is on the 8 px grid, so a browser
+    // gradient dither (an 8 x 8 matrix from the canvas origin) keeps its phase.
+    const glow = 2 * PARALLAX_TILE_BLUR + PARALLAX_TILE_LINE * pixelScale + 2
+    const top = Math.max(0, Math.floor((reach.top * pixelScale - glow) / 8) * 8)
+    const bottom = reach.uniformBelow === null || !GRADIENT_DITHER.enabled ? height :
+        Math.max(top + 1, Math.min(height, Math.ceil(reach.uniformBelow * pixelScale + glow)))
+    return {width, height, top, bottom}
+}
+
+// shadowBlur (canvas px) and lineWidth (tile units) of the widest glowing line
+const PARALLAX_TILE_BLUR = 12, PARALLAX_TILE_LINE = 1.5
+
+// Tile units: top = the highest painted y but for glow, uniformBelow = the
+// y below which only the body's vertical fade is painted (null for the
+// skyline: its lit windows reach below the lowest roofs, so a fill part would
+// hold few rows)
+function parallaxTileReach(layer, band)
+{
+    const {outline} = parallaxTileOutline(layer, band)
+    let top = Infinity, lowest = -Infinity
+    for (const [, y] of outline)
+    {
+        top = Math.min(top, y)
+        lowest = Math.max(lowest, y)
+    }
+    if (layer.name == 'ridges')
+        return {top, uniformBelow: lowest}
+    // Crane and antenna masts reach up to 0.12 of the tile, plus an antenna's
+    // 3 unit ball; lit windows stay below the outline's lowest roof
+    const motif = layer.motifs[band]
+    if (motif == 'cranes' || motif == 'antennas')
+        top = Math.min(top, layer.tileHeight * 0.12 - 3)
+    return {top, uniformBelow: null}
+}
+
+// The seeded generator and the motif's outline, in tile units: the same on
+// every run and device, for the paint and for its reach
+function parallaxTileOutline(layer, band)
+{
+    const motif = layer.motifs[band]
+    const W = layer.tileWidth, H = layer.tileHeight
+    let seed = (layer.seed + band * 101) >>> 0
+    // mulberry32
+    const random = () =>
+    {
+        seed = (seed + 0x6D2B79F5) >>> 0
+        let t = seed
+        t = Math.imul(t ^ (t >>> 15), t | 1)
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    const outline = layer.name == 'ridges' ? ridgeOutline(motif, W, H, random) : skylineOutline(motif, W, H, random)
+    return {outline, random}
 }
 
 // Builds the tiles of every layer and band when the pixel scale is first
 // known or changes (resize, DPR), like the palette strips: each new tile is
 // drawn once into a 1x1 canvas so its upload happens here, not in the frame
-// a band change first shows it (2-4 Mpx per band at 1706x932 DPR 1.5)
+// a band change first shows it (1-2 Mpx per band at 1706x932 DPR 1.5)
 function buildGrappleOverParallaxTiles(pixelScale)
 {
     const store = GRAPPLE_OVER_PARALLAX_TILES
@@ -72,17 +185,23 @@ function buildGrappleOverParallaxTiles(pixelScale)
     store.cache.clear()
     const warm = store.warm || (store.warm = document.createElement('canvas').getContext('2d'))
     warm.canvas.width = warm.canvas.height = 1
+    let fills = 0
+    const fill = n => store.fills[n] || (store.fills[n] = document.createElement('canvas'))
     for (const layer of GRAPPLE_OVER_PARALLAX.layers)
         layer.motifs.forEach((motif, band) =>
         {
-            const tile = buildGrappleOverParallaxTile(layer, band, pixelScale)
+            const tile = buildGrappleOverParallaxTile(layer, band, pixelScale, () => fill(fills++))
             store.cache.set('parallax|' + layer.name + '|' + band + '|' + pixelScale, tile)
-            warm.drawImage(tile, 0, 0, 1, 1)
+            for (const part of tile.parts)
+                for (const image of [part.canvas, part.rest])
+                    if (image)
+                        warm.drawImage(image, 0, 0, 1, 1)
         })
 }
 
 // Repeats tile (w x h logical) across bounds from (x, y). Edges are snapped to
 // device pixels on both axes, so neighbours neither overlap nor leave a gap.
+// Each copy draws the tile's parts at their rows of it.
 function drawParallaxTiles(context, bounds, m, tile, x, y, w, h)
 {
     const toX = v => Math.round(m.a * v + m.e), fromX = p => (p - m.e) / m.a
@@ -96,12 +215,34 @@ function drawParallaxTiles(context, bounds, m, tile, x, y, w, h)
     while (top < bottom)
     {
         const nextTop = fromY(toY(y + (row + 1) * h))
+        // Part rows placed in device px, as the whole tile's rows were: a
+        // tile drawn 1:1 has its parts 1:1 too (an unfiltered copy)
+        const topPx = toY(y + row * h), unit = (toY(y + (row + 1) * h) - topPx) / tile.height
+        const parts = tile.parts.map(part =>
+            [part, fromY(topPx + part.y * unit), fromY(topPx + (part.y + part.rows) * unit)])
         let column = firstColumn
         let left = fromX(toX(x + column * w))
         while (left < right)
         {
             const nextLeft = fromX(toX(x + (column + 1) * w))
-            context.drawImage(tile, left, top, nextLeft - left, nextTop - top)
+            const leftPx = toX(x + column * w), across = (toX(x + (column + 1) * w) - leftPx) / tile.width
+            for (const [part, partTop, partBottom] of parts)
+                if (part.rest === undefined)
+                    context.drawImage(part.canvas, left, partTop, nextLeft - left, partBottom - partTop)
+                else
+                {
+                    // The fill strips side by side, each copy at its px of the
+                    // tile: x in device px (a logical x can miss a whole px by
+                    // float rounding, and a copy off the px grid is filtered)
+                    context.setTransform(1, 0, 0, m.d, 0, m.f)
+                    for (let from = 0; from < tile.width;)
+                    {
+                        const image = from + part.canvas.width <= tile.width ? part.canvas : part.rest
+                        context.drawImage(image, leftPx + from * across, partTop, image.width * across, partBottom - partTop)
+                        from += image.width
+                    }
+                    context.setTransform(m)
+                }
             left = nextLeft
             ++column
         }
@@ -119,22 +260,12 @@ function paintGrappleOverParallaxTile(layer, band)
     const palette = GRAPPLE_OVER_THEME.palettes[band]
     const motif = layer.motifs[band]
     const W = layer.tileWidth, H = layer.tileHeight
-    let seed = (layer.seed + band * 101) >>> 0
-    // mulberry32: the same tiles on every run and device
-    const random = () =>
-    {
-        seed = (seed + 0x6D2B79F5) >>> 0
-        let t = seed
-        t = Math.imul(t ^ (t >>> 15), t | 1)
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-    }
     const fill = ctx.createLinearGradient(0, H * 0.2, 0, H)
     fill.addColorStop(0, palette.top)
     fill.addColorStop(0.55, palette.top + 'bb')
     fill.addColorStop(1, palette.top + '00')
 
-    const outline = layer.name == 'ridges' ? ridgeOutline(motif, W, H, random) : skylineOutline(motif, W, H, random)
+    const {outline, random} = parallaxTileOutline(layer, band)
 
     // Body, then a thin glowing rim along the outline (shadowBlur here only:
     // this runs once per tile, inside buildGlowSprite)
@@ -151,8 +282,8 @@ function paintGrappleOverParallaxTile(layer, band)
     }
     ctx.strokeStyle = palette.glow
     ctx.shadowColor = palette.glow
-    ctx.shadowBlur = 12
-    ctx.lineWidth = 1.5
+    ctx.shadowBlur = PARALLAX_TILE_BLUR
+    ctx.lineWidth = PARALLAX_TILE_LINE
     ctx.lineJoin = 'round'
     ctx.globalAlpha = 0.55
     for (const dx of [-W, 0, W])
