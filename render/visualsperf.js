@@ -42,6 +42,15 @@
 // CANVAS_SAMPLE_MS. sourceHashes hashes each script on its own (a failure is
 // {error, url}); buildId is the sha256 of the sorted 'path:hash' lines.
 //
+// Canvas owners and tab return (schemaVersion 4): each freeze's context and
+// report.canvasSnapshot (taken by stop() and again by every export()) have
+// liveCanvasByCreator {creator: {count, mb}}, the live canvases grouped by
+// the 'file:line' that created them ('unknown' for canvases already in the
+// DOM); mb is rounded to 0.01 so the groups add up to liveCanvasMB. Each
+// freeze has sinceVisibleMs: ms since the last hidden-to-visible change while
+// recording (null if the tab never went hidden). Readers of older exports
+// treat the missing fields as unknown (tools/freeze_report.py).
+//
 // Composes with ?perf=1: both wrap the same globals, each wrapper calling
 // the previous one. Without the flag nothing is wrapped, no listener is
 // added and window.visualsPerf stays undefined.
@@ -76,6 +85,8 @@
     // The newest WINDOW_SAMPLES samples and the freeze windows still filling
     let recent = [], filling = []
     let lastCanvasSampleT = -Infinity
+    // performance.now() of the last hidden-to-visible change while recording
+    let visibleSince = null
     // Sources already drawn and the creator of every canvas (kept across recordings)
     const drawnSources = new WeakSet(), canvasCreators = new WeakMap()
     // Every canvas seen (createElement, or in the DOM at start()), held weakly;
@@ -95,10 +106,12 @@
             canvasRegistry.register(canvas, ref)
     }
 
-    // {count, mb}: live canvases and their backing store (width * height * 4)
-    function canvasMemory()
+    // {count, mb}: live canvases and their backing store (width * height * 4);
+    // byCreator also adds {creator: {count, mb}} (mb to 0.01)
+    function canvasMemory(byCreator = false)
     {
         let count = 0, bytes = 0
+        const creators = byCreator ? {} : null
         for (const ref of liveCanvases)
         {
             const canvas = ref.deref()
@@ -108,9 +121,31 @@
                 continue
             }
             ++count
-            bytes += canvas.width * canvas.height * 4
+            const size = canvas.width * canvas.height * 4
+            bytes += size
+            if (creators)
+            {
+                const creator = canvasCreators.get(canvas) || 'unknown'
+                const row = creators[creator] || (creators[creator] = {count: 0, mb: 0})
+                ++row.count
+                row.mb += size
+            }
         }
-        return {count, mb: Math.round(bytes / 1048576 * 10) / 10}
+        const memory = {count, mb: Math.round(bytes / 1048576 * 10) / 10}
+        if (creators)
+        {
+            for (const creator in creators)
+                creators[creator].mb = Math.round(creators[creator].mb / 1048576 * 100) / 100
+            memory.byCreator = creators
+        }
+        return memory
+    }
+
+    function canvasSnapshot()
+    {
+        const canvases = canvasMemory(true)
+        return {t: performance.now(), liveCanvases: canvases.count, liveCanvasMB: canvases.mb,
+            liveCanvasByCreator: canvases.byCreator}
     }
 
     function resetInterval()
@@ -295,7 +330,7 @@
 
     function context()
     {
-        const canvases = canvasMemory()
+        const canvases = canvasMemory(true)
         return {
             ninjaX: game(() => ninja.x),
             ninjaY: game(() => ninja.y),
@@ -309,6 +344,7 @@
             sectionChanges,
             liveCanvases: canvases.count,
             liveCanvasMB: canvases.mb,
+            liveCanvasByCreator: canvases.byCreator,
             firstDraws: firstDraws.slice().sort((a, b) => b.w * b.h - a.w * a.h),
             palette: game(() =>
             {
@@ -454,6 +490,7 @@
                 const freeze = {t, gapMs, layers, physicsMs, physicsSteps, slowestLayer,
                     unaccountedMs: gapMs - accounted, rafLagMs,
                     mainThreadSilenceMs: heartbeat ? silence(previousT, t) : null,
+                    sinceVisibleMs: visibleSince === null ? null : round1(Math.max(0, t - visibleSince)),
                     context: context()}
                 if (heapMB !== null)
                 {
@@ -529,7 +566,11 @@
 
     function onVisibility(event)
     {
-        report.visibility.push({t: performance.now(), type: event.type, hidden: document.hidden})
+        const t = performance.now()
+        // visibilitychange only fires on a change, so a visible one ends a hidden period
+        if (event.type === 'visibilitychange' && !document.hidden)
+            visibleSince = t
+        report.visibility.push({t, type: event.type, hidden: document.hidden})
     }
 
     window.visualsPerf = {
@@ -556,12 +597,13 @@
             recent = []
             filling = []
             lastCanvasSampleT = -Infinity
+            visibleSince = null
             for (const canvas of document.querySelectorAll('canvas'))
                 registerCanvas(canvas)
             resetInterval()
             this.live = {freezes: 0, worstMs: 0, last: null}
             report = {
-                schemaVersion: 3,
+                schemaVersion: 4,
                 environment: 'user-browser',
                 performanceStatus: 'user-device-performance-unverified',
                 meta,
@@ -590,6 +632,7 @@
                 heartbeat: meta.heartbeat !== false,
                 heartbeatMs: HEARTBEAT_MS,
                 visibility: [],
+                canvasSnapshot: null,
             }
             const target = report
             sourceHashes().then(result => Object.assign(target, result),
@@ -657,6 +700,7 @@
             }
             report.samples = ring.slice(next).concat(ring.slice(0, next))
             report.stoppedAtMs = performance.now()
+            report.canvasSnapshot = canvasSnapshot()
             lastReport = report
             report = null
             ring = null
@@ -666,7 +710,10 @@
         },
         export()
         {
-            return this.active ? this.stop() : lastReport
+            const exported = this.active ? this.stop() : lastReport
+            if (exported)
+                exported.canvasSnapshot = canvasSnapshot()
+            return exported
         },
     }
 

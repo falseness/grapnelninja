@@ -127,7 +127,7 @@ class VisualsPerfAttributionTest(unittest.TestCase):
 
     def stop(self, page):
         report = page.evaluate('visualsPerf.stop()')
-        self.assertEqual(report['schemaVersion'], 3)
+        self.assertEqual(report['schemaVersion'], 4)
         return report
 
     def stall_freeze(self, report, injected_at):
@@ -226,7 +226,7 @@ class VisualsPerfAttributionTest(unittest.TestCase):
             self.assertLessEqual(f['mainThreadSilenceMs'], f['gapMs'] + 0.1)
         if self.evidence:
             (self.evidence / 'export-normal.json').write_text(json.dumps(report, indent=1) + '\n')
-        print(f'PASS export: schemaVersion 3, {len(report["samples"])} samples with rafLagMs/heapMB, '
+        print(f'PASS export: schemaVersion 4, {len(report["samples"])} samples with rafLagMs/heapMB, '
               f'{len(report["freezes"])} freezes with attribution fields, {len(report["loafs"])} loafs', flush=True)
 
     def test_stop_teardown(self):

@@ -1,0 +1,118 @@
+{
+ "schemaVersion": 4,
+ "version": "grapple_over",
+ "levelId": "extended-mountain-v21",
+ "buildId": "abababababababababababababababababababababababababababababababab",
+ "startedAtMs": 0,
+ "stoppedAtMs": 60000,
+ "freezeMs": 50,
+ "samples": [
+  {
+   "t": 1000,
+   "gapMs": 16.7,
+   "layers": {},
+   "physicsMs": 0,
+   "physicsSteps": 1,
+   "hidden": false
+  }
+ ],
+ "freezes": [
+  {
+   "t": 10000,
+   "gapMs": 320,
+   "layers": {
+    "background": 2.0
+   },
+   "physicsMs": 0.5,
+   "physicsSteps": 1,
+   "slowestLayer": "background",
+   "unaccountedMs": 317.5,
+   "rafLagMs": 0.5,
+   "mainThreadSilenceMs": 30,
+   "heapBeforeMB": 20.0,
+   "heapAfterMB": 20.0,
+   "heapDropMB": 0,
+   "context": {
+    "section": "SEC-baseline",
+    "canvasesCreated": 0,
+    "getContextCalls": 0,
+    "firstDraws": [],
+    "liveCanvases": 40,
+    "liveCanvasMB": 13.3,
+    "loafs": [],
+    "liveCanvasByCreator": {
+     "render/c1.js:10": {
+      "count": 1,
+      "mb": 13.3
+     }
+    }
+   },
+   "sinceVisibleMs": 4000
+  }
+ ],
+ "visibility": [
+  {
+   "t": 4000,
+   "type": "visibilitychange",
+   "hidden": true
+  },
+  {
+   "t": 6000,
+   "type": "visibilitychange",
+   "hidden": false
+  }
+ ],
+ "loafs": [],
+ "loafSupported": true,
+ "canvasSnapshot": {
+  "t": 60000,
+  "liveCanvases": 57,
+  "liveCanvasMB": 70.7,
+  "liveCanvasByCreator": {
+   "render/c0.js:0": {
+    "count": 1,
+    "mb": 0.0
+   },
+   "render/c1.js:10": {
+    "count": 2,
+    "mb": 1.5
+   },
+   "render/c2.js:20": {
+    "count": 3,
+    "mb": 3.0
+   },
+   "render/c3.js:30": {
+    "count": 4,
+    "mb": 4.5
+   },
+   "render/c4.js:40": {
+    "count": 5,
+    "mb": 6.0
+   },
+   "render/c5.js:50": {
+    "count": 6,
+    "mb": 7.5
+   },
+   "render/c6.js:60": {
+    "count": 7,
+    "mb": 9.0
+   },
+   "render/c7.js:70": {
+    "count": 8,
+    "mb": 10.5
+   },
+   "render/c8.js:80": {
+    "count": 9,
+    "mb": 12.0
+   },
+   "render/c9.js:90": {
+    "count": 10,
+    "mb": 13.5
+   },
+   "unknown": {
+    "count": 2,
+    "mb": 3.2
+   }
+  }
+ }
+}

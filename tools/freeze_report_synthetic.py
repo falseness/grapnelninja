@@ -4,7 +4,7 @@
     python3 tools/freeze_report_synthetic.py <out_dir>
 
 Writes synthetic-busy.json, synthetic-idle.json and synthetic-canvas.json
-(full exports, schemaVersion 3) and synthetic-check.json: for each, the
+(full exports, schemaVersion 4) and synthetic-check.json: for each, the
 injected stall's freeze (the longest after the injection) and its label. The
 busy and idle stalls reuse BUSY / IDLE from tools/test_visualsperf_attribution.py;
 the canvas burst is a test page script that creates 8 canvases and holds the

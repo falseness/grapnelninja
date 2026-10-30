@@ -86,31 +86,49 @@ double-clicked index.html. Now each script gets its own `{error}`,
 `sourceHashFailures` equals the script count and `buildId` is null. To get a
 `buildId`, serve the folder over HTTP (`python3 -m http.server 8000`).
 
+### Canvas owners and tab return (`schemaVersion` 4)
+
+- `freezes[].context.liveCanvasByCreator` and `canvasSnapshot.liveCanvasByCreator`:
+  the live canvases grouped by the `file:line` that created them, each
+  `{count, mb}`. `mb` is rounded to 0.01, so the groups add up to
+  `liveCanvasMB`. A canvas that was already in the page when Start was pressed
+  is grouped under `unknown`. `canvasSnapshot` (`{t, liveCanvases,
+  liveCanvasMB, liveCanvasByCreator}`) is taken by Stop and taken again by
+  every Export.
+- `freezes[].sinceVisibleMs`: the ms since the tab last went from hidden to
+  visible while recording. It is null if the tab was never hidden.
+
 ### Reading freezes
 
 Record with `?visualsPerf=1` (Start, play until a freeze, Stop, Export), then:
 
     python3 tools/freeze_report.py visuals-performance.json [--json out.json]
 
-It reads schemaVersion 1 to 3 and skips any bytes before the first `{`. A
+It reads schemaVersion 1 to 4. It skips any bytes before the first `{` and
+prints a warning that says how many bytes it skipped. A
 field the recording does not have prints as `unknown`. The header gives the
 build (`buildId`, or `unknown`), the duration, and the freeze count and rate
 per minute without hidden periods (visibility events and samples with
 `hidden: true`). Then there is one line per freeze: t, gapMs, unaccountedMs,
-section, mainThreadSilenceMs, heapDropMB, liveCanvasMB, the top
-long-animation-frame script and a label. `--json` also writes
-`{summary, rows}`. The first label that matches wins:
+section, mainThreadSilenceMs, heapDropMB, liveCanvasMB, sinceVisibleMs, the
+top long-animation-frame script and a label. Recordings older than schema 4
+have no `sinceVisibleMs`, so the report works it out from the end of the last
+hidden period. After the freeze lines, the report lists the 8 creators with
+the most canvas MB. They come from `canvasSnapshot`, or from the last freeze
+when there is no snapshot. `--json` also writes `{summary, rows}`, and
+`summary.canvasByCreator` holds that list. The first label that matches wins:
 
 | Label | When | What to fix |
 | --- | --- | --- |
 | `tab-hidden` | the freeze overlaps a hidden period | nothing: the browser paused the page |
+| `after-tab-return` | sinceVisibleMs <= 10,000 (the first 10 s after the tab came back) | usually nothing: the browser is redrawing and re-uploading what it dropped while the tab was hidden. Check the canvas MB by creator if it happens often |
 | `first-draw` | `firstDraws` total >= 500,000 px | build and warm that image earlier (see First draws below) |
 | `canvas-churn` | `canvasesCreated` >= 5; any canvas when the recording has no `firstDraws` (older than TASK-759) | stop creating canvases during play: cache, atlas or prebuild them |
 | `main-thread-script` | a long-animation-frame entry's scripts take >= 50% of gapMs, or mainThreadSilenceMs >= 80% of gapMs while the timed layers take < 20% | the script named in the top-script column, or untimed JS (input handlers, timers) |
 | `gc-suspect` | heapDropMB >= 2 | allocate less per frame (temporary arrays, objects, strings) |
 | `render-or-present` | mainThreadSilenceMs < 50% of gapMs, or the long-animation-frame entry's renderStart-to-end >= 50% of gapMs | the main thread waited on the GPU or compositor: fewer or smaller full-screen layers, filters and big canvases |
 | `game-work` | timed layers + physics >= 50% of gapMs | the slowest layer of that freeze (`slowestLayer` in the export) |
-| `unknown` | none of the above | record again with a newer build (schemaVersion 3 has the heartbeat, heap and long-animation-frame fields) |
+| `unknown` | none of the above | record again with a newer build (schemaVersion 3+ has the heartbeat, heap and long-animation-frame fields) |
 
 `artifacts/rare_freezes.json` (schemaVersion 1) gives `unknown` for its 346 ms
 and 767 ms freezes: the game's layers took ~3 ms, no canvas was created, and
