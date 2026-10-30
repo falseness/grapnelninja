@@ -12,6 +12,23 @@ var PLATFORM_BACKEND = (function()
 {
     const base = LOCAL_PLATFORM_BACKEND
 
+    // The Y8 SDK object (window.y8.sdk()), or null without the SDK
+    function y8Sdk()
+    {
+        const y8 = typeof window === 'undefined' ? undefined : window.y8
+        if (!y8 || typeof y8.sdk !== 'function')
+            return null
+        try
+        {
+            const sdk = y8.sdk()
+            return sdk && typeof sdk.showAd === 'function' ? sdk : null
+        }
+        catch (e)
+        {
+            return null
+        }
+    }
+
     return {
         platformId: 'y8',
 
@@ -148,18 +165,59 @@ var PLATFORM_BACKEND = (function()
             return base.happyMoment()
         },
 
-        // REPLACE: return !!sdk && !sdk.isBlacklisted()
+        // True when the Y8 SDK object (window.y8.sdk()) exists
         // https://docs.y8.com/sdk/intro/
         isRewardedSupported()
         {
-            return base.isRewardedSupported()
+            return y8Sdk() ? true : base.isRewardedSupported()
         },
 
-        // REPLACE: await sdk.showAd({type: 'reward'}); resolve 'rewarded' only when the reward callback fired
-        // https://docs.y8.com/sdk/intro/
+        // sdk.showAd({type: 'reward'}) settles once the break is over
+        // (afterAd or adBreakDone): 'rewarded' only when adViewed fired,
+        // 'closed' when adDismissed fired (closed early), else 'failed' (no
+        // ad shown: noAdPreloaded, frequencyCapped, timeout, error, a throw or
+        // a rejected promise).
+        // https://docs.y8.com/sdk/advertising/
         showRewarded(placement)
         {
-            return base.showRewarded(placement)
+            const sdk = y8Sdk()
+            if (!sdk)
+                return base.showRewarded(placement)
+            return new Promise(resolve =>
+            {
+                let viewed = false
+                let dismissed = false
+                let settled = false
+                const settle = result =>
+                {
+                    if (settled)
+                        return
+                    settled = true
+                    resolve(result)
+                }
+                const finish = () => settle(viewed ? 'rewarded' : dismissed ? 'closed' : 'failed')
+                try
+                {
+                    Promise.resolve(sdk.showAd({
+                        type: 'reward',
+                        name: placement || 'reward',
+                        beforeReward: showAdFn => showAdFn(),
+                        adViewed: () => viewed = true,
+                        adDismissed: () => dismissed = true,
+                        afterAd: () => { if (viewed || dismissed) finish() },
+                        adBreakDone: info =>
+                        {
+                            if (info && info.breakStatus === 'dismissed' && !viewed)
+                                dismissed = true
+                            finish()
+                        },
+                    })).catch(() => settle('failed'))
+                }
+                catch (e)
+                {
+                    settle('failed')
+                }
+            })
         },
 
         // REPLACE: nothing: Y8 has no banner API

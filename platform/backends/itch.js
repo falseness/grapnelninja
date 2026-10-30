@@ -147,14 +147,15 @@ var PLATFORM_BACKEND = (function()
             return base.happyMoment()
         },
 
-        // REPLACE: nothing: return false
+        // itch.io has no ad SDK, so there are no rewarded ads: false, and
+        // the go-back dialog offers Go back for free (no ad marker).
         // https://itch.io/docs/creators/html5
         isRewardedSupported()
         {
             return base.isRewardedSupported()
         },
 
-        // REPLACE: nothing: resolve 'unavailable'
+        // itch.io has no ad SDK: resolves 'unavailable' (going back is free)
         // https://itch.io/docs/creators/html5
         showRewarded(placement)
         {

@@ -11,6 +11,14 @@ var PLATFORM_BACKEND = (function()
 {
     const base = LOCAL_PLATFORM_BACKEND
 
+    // GamePix.ads.reward bound to GamePix.ads, or null without the SDK
+    function rewardAd()
+    {
+        const gamePix = typeof window === 'undefined' ? undefined : window.GamePix
+        const ads = gamePix && gamePix.ads
+        return ads && typeof ads.reward === 'function' ? ads.reward.bind(ads) : null
+    }
+
     return {
         platformId: 'gamepix',
 
@@ -147,18 +155,32 @@ var PLATFORM_BACKEND = (function()
             return base.happyMoment()
         },
 
-        // REPLACE: return !!window.GamePix
+        // True when the GamePix SDK has GamePix.ads.reward()
         // https://partners.gamepix.com/sdk/doc/javascript
         isRewardedSupported()
         {
-            return base.isRewardedSupported()
+            return rewardAd() ? true : base.isRewardedSupported()
         },
 
-        // REPLACE: await GamePix.ads.reward() -> {success}; resolve success ? 'rewarded' : 'closed'
+        // GamePix.ads.reward() -> {success}: success -> 'rewarded', no
+        // success (closed early, no fill) -> 'closed'; a throw or a rejected
+        // promise -> 'failed'.
         // https://partners.gamepix.com/sdk/doc/javascript
         showRewarded(placement)
         {
-            return base.showRewarded(placement)
+            const reward = rewardAd()
+            if (!reward)
+                return base.showRewarded(placement)
+            try
+            {
+                return Promise.resolve(reward()).then(
+                    response => response && response.success === true ? 'rewarded' : 'closed',
+                    () => 'failed')
+            }
+            catch (e)
+            {
+                return Promise.resolve('failed')
+            }
         },
 
         // REPLACE: nothing: GamePix owns banner placement

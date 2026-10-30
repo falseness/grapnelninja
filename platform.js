@@ -231,14 +231,14 @@ const PLATFORM = (function()
         },
 
         // isRewardedSupported() -> boolean, false when no rewarded ads exist
-        // Playgama: bridge.advertisement.isRewardedSupported | GamePix: true when window.GamePix (ads.reward) | Y8: true when the SDK is ready (showAd reward) | itch: false
+        // Playgama: bridge.advertisement.isRewardedSupported | GamePix: true when GamePix.ads.reward exists | Y8: true when the SDK object exists (showAd reward) | itch: false (no ad SDK)
         isRewardedSupported()
         {
             return delegate('isRewardedSupported', [], () => false) === true
         },
 
         // showRewarded(placement) -> Promise<'rewarded' | 'closed' | 'failed' | 'unavailable'>, never rejects; grant only on 'rewarded'
-        // Playgama: bridge.advertisement.showRewarded(placement), 'rewarded' on state 'rewarded' | GamePix: GamePix.ads.reward() -> {success} | Y8: showAd({type: 'reward'}) | itch: 'unavailable'
+        // Playgama: bridge.advertisement.showRewarded(placement), 'rewarded' on state 'rewarded' | GamePix: GamePix.ads.reward() -> {success} | Y8: showAd({type: 'reward'}), 'rewarded' only after adViewed | itch: 'unavailable'
         showRewarded(placement)
         {
             return delegate('showRewarded', [placement], () => 'unavailable', true)

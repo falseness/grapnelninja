@@ -7,9 +7,9 @@ backend file under `platform/backends/`:
 | file | platformId | status |
 |---|---|---|
 | `local.js` | `local` | default; localStorage storage, no ads; also exposes `LOCAL_PLATFORM_BACKEND` |
-| `itch.js` | `itch` | stub, behaves like local |
-| `gamepix.js` | `gamepix` | stub, behaves like local |
-| `y8.js` | `y8` | stub, behaves like local |
+| `itch.js` | `itch` | stub, behaves like local; no ad SDK, so no rewarded ads (going back is free) |
+| `gamepix.js` | `gamepix` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.GamePix.ads.reward` when present |
+| `y8.js` | `y8` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.y8.sdk().showAd({type: 'reward'})` when present |
 | `playgama.js` | `playgama` | stub, behaves like local; rewarded ads (isRewardedSupported/showRewarded) use `window.bridge.advertisement` when present |
 
 Each portal stub calls `LOCAL_PLATFORM_BACKEND` for every inner method (so the
@@ -62,8 +62,8 @@ route for all five backends.
 | `gameplayStart` | - | `GamePix.lifecycle.gameStart()` | - | `bridge.platform.sendMessage('gameplay_started')` |
 | `gameplayStop` | - | - | - | `bridge.platform.sendMessage('gameplay_stopped')` |
 | `happyMoment` | - | `GamePix.happyMoment()` | - | - |
-| `isRewardedSupported` | `false` | `!!window.GamePix` | `!!sdk && !sdk.isBlacklisted()` | `bridge.advertisement.isRewardedSupported` |
-| `showRewarded` | `'unavailable'` | `GamePix.ads.reward()` -> `{success}` | `sdk.showAd({type:'reward'})` | `bridge.advertisement.showRewarded(placement)`; reward only on state `'rewarded'` |
+| `isRewardedSupported` | `false` | `typeof GamePix.ads.reward === 'function'` | `!!window.y8.sdk()` (SDK object exists) | `bridge.advertisement.isRewardedSupported` |
+| `showRewarded` | `'unavailable'` | `GamePix.ads.reward()` -> `{success}` | `sdk.showAd({type:'reward'})`; reward only when `adViewed` fired | `bridge.advertisement.showRewarded(placement)`; reward only on state `'rewarded'` |
 | `showBanner` / `hideBanner` | - | - | - | `bridge.advertisement.showBanner(position)` / `hideBanner()` |
 | `submitScore` | `false` | `false` | `sdk.saveLeaderboardScore(...)` (signed in) | `bridge.leaderboards.setScore(board, value)` |
 | `unlockAchievement` | `false` | `false` | `sdk.awardAchievement(...)` (signed in) | `bridge.achievements.unlock({id})` |
@@ -75,6 +75,28 @@ route for all five backends.
 | `storage.setMany` | `localStorage.setItem` | `localStorage.setItem` | `localStorage.setItem` (+ `sdk.saveData`, 1 write/key/5 s) | `bridge.storage.set(keys, values)` |
 
 `-` = no SDK call; keep the local no-op.
+
+## Rewarded go-back
+
+After a long fall in Grapple Over the 'Go back?' dialog offers to return to
+the go-back checkpoint (menu.js). With `PLATFORM.isRewardedSupported()` the
+Go back button carries the AD marker and calls `PLATFORM.showRewarded('go_back')`;
+without it Go back is free. Only `'closed'` (the player closed the ad early)
+keeps falling; every other result goes back.
+
+| platform | Go back | isRewardedSupported | showRewarded result mapping |
+|---|---|---|---|
+| local | free | `false` | `'unavailable'` |
+| itch.io | free (no ad SDK) | `false` | `'unavailable'` |
+| GamePix | rewarded when `GamePix.ads.reward` exists, else free | `typeof GamePix.ads.reward === 'function'` | `{success: true}` -> `'rewarded'`; `{success: false}` (closed early, no fill) -> `'closed'`; throw / rejection -> `'failed'` |
+| Y8 | rewarded when `window.y8.sdk()` exists, else free | SDK object exists | `showAd({type: 'reward', name: placement})`, settled on `afterAd` / `adBreakDone`: `adViewed` fired -> `'rewarded'`; `adDismissed` (or breakStatus `dismissed`) -> `'closed'`; no ad (noAdPreloaded, frequencyCapped, timeout, error, ...), throw / rejection -> `'failed'` |
+| Playgama | rewarded when `bridge.advertisement.isRewardedSupported`, else free | `bridge.advertisement.isRewardedSupported === true` | REWARDED_STATE_CHANGED: `'rewarded'` then `'closed'` -> `'rewarded'`; `'closed'` alone -> `'closed'`; `'failed'`, throw / rejection -> `'failed'` |
+
+Go-back outcome per result: `'rewarded'`, `'failed'`, `'unavailable'`, any
+other value and the 30 s timeout -> go back; `'closed'` -> keep falling.
+Without its SDK each portal backend falls back to the local stub (`false` /
+`'unavailable'`, free). Tests: tools/test_rewarded_backends.py (GamePix, Y8,
+itch.io), tools/test_playgama_rewarded.py, tools/test_go_back_ad.py.
 
 ## Publication must-haves per portal
 
