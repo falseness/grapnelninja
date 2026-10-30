@@ -1001,6 +1001,10 @@ const WIN_ART = {
     }
 }
 
+// Game audio state: muted while a rewarded ad plays (CLIMB_UI.goBack). The
+// game has no sound output yet; a future sound module reads muted.
+const GAME_AUDIO = {muted: false}
+
 // Climb statistics describe the current simulation; they never move the player.
 const CLIMB_UI = {
     confirming: false,
@@ -1010,6 +1014,10 @@ const CLIMB_UI = {
     // is the keyboard-focused button (0 Go back, 1 Keep falling)
     goingBack: false,
     goBackFocus: 0,
+    // Go back pressed with rewarded ads supported: the 'go_back' ad is up,
+    // the run stays paused and the dialog's buttons and keys are disabled
+    goBackAdPending: false,
+    goBackAdTimeoutMs: 30000,
     buttons: [],
     time(ms) { return I18N.t('climb.seconds', {value:(ms / 1000).toFixed(1)}) },
     text(text, x, y, size, alignX = 'center', glyphs = false) {
@@ -1215,9 +1223,15 @@ const CLIMB_UI = {
         this.text(I18N.t(title), w/2, note ? rows[0] : h*0.16, h*0.055)
         this.text(I18N.t('climb.time', {value:this.time(stats.elapsedActiveMs)}), w/2, note ? rows[1] : h*0.26, h*0.035)
         this.buttons = actions.map(([key, action], i) => new Button(
-            {x:w/2, y:note ? rows[2 + i] : h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true},
+            {x:w/2, y:note ? rows[2 + i] : h*0.35+i*(bh+h*0.02), width:bw, height:bh, neon:true,
+                clickable:!(this.goingBack && this.goBackAdPending)},
             {text:I18N.t(key), fill:STYLE.colors.ui.buttonText}, action))
+        ctx.save()
+        if (this.goingBack && this.goBackAdPending) ctx.globalAlpha = 0.4
         this.buttons.forEach(b => b.draw())
+        // Go back costs a rewarded ad where the platform has them
+        if (this.goingBack && PLATFORM.isRewardedSupported()) this.drawAdMarker(this.buttons[0])
+        ctx.restore()
         // Keyboard focus: a light ring around the focused dialog button
         const focused = this.goingBack && this.buttons[this.goBackFocus]
         if (focused)
@@ -1237,6 +1251,29 @@ const CLIMB_UI = {
             check.draw()
         }
         LANGUAGE_BUTTON.draw()
+    },
+    // The rewarded-ad marker at the right end of button: a video icon and 'AD'
+    drawAdMarker(button) {
+        const r = button.background, size = r.height * 0.26, label = I18N.t('climb.adMarker')
+        const right = r.x + r.width - r.height * 0.25, y = r.y + r.height / 2
+        ctx.save()
+        ctx.font = 'bold ' + size + 'px ' + STYLE.ui.fontFamily
+        const textWidth = ctx.measureText(label).width
+        const iw = size * 1.5, ih = size * 1.05, x = right - textWidth - size * 0.35 - iw
+        ctx.fillStyle = ctx.strokeStyle = STYLE.colors.ui.buttonText
+        ctx.lineWidth = Math.max(1, size * 0.12)
+        ctx.strokeRect(x, y - ih / 2, iw, ih)
+        ctx.beginPath()
+        ctx.moveTo(x + iw * 0.38, y - ih * 0.28)
+        ctx.lineTo(x + iw * 0.38, y + ih * 0.28)
+        ctx.lineTo(x + iw * 0.7, y)
+        ctx.closePath()
+        ctx.fill()
+        ctx.textAlign = 'right'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(label, right, y)
+        ctx.restore()
+        LAYOUT_PROBE.rect('adMarker', label, x, y - ih / 2, right - x, ih)
     },
     // Summit screen colours (approved concept artifacts/win-art-3)
     win: {
@@ -1486,7 +1523,29 @@ const CLIMB_UI = {
     goBackOpen() {
         return this.goingBack && menu.gamePaused && this.goBackWorld === floors[0]
     },
+    // Go back: free without rewarded ads; with them, after the 'go_back' ad
+    // unless it is closed early ('closed' keeps falling). 'failed',
+    // 'unavailable', any other value and no answer within goBackAdTimeoutMs
+    // go back; an answer after that is ignored. Game audio is muted meanwhile.
     goBack() {
+        if (this.goBackAdPending) return
+        if (!PLATFORM.isRewardedSupported()) return this.returnBack()
+        this.goBackAdPending = true
+        const world = this.goBackWorld, wasMuted = GAME_AUDIO.muted
+        GAME_AUDIO.muted = true
+        redrawOverlays()
+        let timer
+        const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('failed'), this.goBackAdTimeoutMs) })
+        Promise.race([PLATFORM.showRewarded('go_back'), timeout]).then(result => {
+            clearTimeout(timer)
+            this.goBackAdPending = false
+            GAME_AUDIO.muted = wasMuted
+            if (!this.goingBack || world !== floors[0]) return redrawOverlays()
+            if (result === 'closed') this.keepFalling()
+            else this.returnBack()
+        })
+    },
+    returnBack() {
         this.goingBack = false
         // A press held through the answer cannot steer, release or throw
         if (returnToCheckpoint()) LONG_FALL.setGoBackArmed(true)
@@ -1503,6 +1562,7 @@ const CLIMB_UI = {
     // Dialog keys: arrows move the focus, Enter (or Space) presses the focused
     // button, Escape keeps falling; every other key (P included) leaves it open.
     goBackKey(key) {
+        if (this.goBackAdPending) return
         if (['ArrowLeft', 'ArrowUp'].includes(key)) this.goBackFocus = 0
         else if (['ArrowRight', 'ArrowDown'].includes(key)) this.goBackFocus = 1
         else if (key === 'Enter' || key === ' ') return this.goBackFocus ? this.keepFalling() : this.goBack()

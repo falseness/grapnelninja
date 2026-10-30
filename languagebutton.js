@@ -27,7 +27,7 @@ const LANGUAGE_BUTTON =
     active()
     {
         return (menu.gamePaused || continueOffer.visible) &&
-            !continueOffer.adPending && !adOpen && !interstitialPending
+            !continueOffer.adPending && !adOpen && !interstitialPending && !CLIMB_UI.goBackAdPending
     },
     // coords: logical canvas coordinates; true when the click was taken
     click(coords)
