@@ -63,7 +63,8 @@ class Task453Tests(unittest.TestCase):
                         ctx.shadowBlur=7;ctx.shadowOffsetX=4;ctx.setLineDash([3,5]);
                         const before=snapshot();drawAcquisitionCircle();const restored=before===snapshot();
                         const cx=(ninja.x+screen.x)*sx,cy=(ninja.y+screen.y)*sy;
-                        const R=MODE_DEFINITIONS.grapple_over.acquisitionRadius;
+                        // The live climb range (the replacement profile since TASK-637)
+                        const R=grappleOverAcquisitionRadius();
                         const data=ctx.getImageData(0,0,probe.width,probe.height).data;
                         const x=Math.round(cx), hits=[];
                         for(let y=0;y<probe.height;y++) if(data[(y*probe.width+x)*4+3]) hits.push(y);
@@ -129,7 +130,7 @@ class Task453Tests(unittest.TestCase):
             page.screenshot(path=str(self.evidence.path(f'screenshots/{mode}.png')))
         page.evaluate("startGame('grapple_over');cancelAnimationFrame(game)")
         row=page.evaluate('''() => {
-            const R=MODE_DEFINITIONS.grapple_over.acquisitionRadius;
+            const R=grappleOverAcquisitionRadius();
             // Real flight clipping must stop at the same radius that is rendered.
             grapnel.throwed=true;grapnel.grappled=false;grapnel.traveled=R-2;
             grapnel.pos=[[ninja.x,ninja.y]];grapnel.speedX=10;grapnel.speedY=0;
@@ -2485,7 +2486,8 @@ class Task493Tests(unittest.TestCase):
         page.on('pageerror', lambda e: errors.append(str(e)))
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.add_init_script(SEED_SCRIPT % 1)
-        page.goto(self.url)
+        # 32 S0x encounters, recovery routes and TASK-529/530 climbs: the legacy layout-v3 mountain only
+        page.goto(self.url + '?grappleFixture=legacy-v3')
         wait_for_boot(page)
         page.evaluate("m => {startGame(m); cancelAnimationFrame(game)}", 'grapple_over')
         page.wait_for_function('!unTouch')
