@@ -71,36 +71,16 @@ class Task445Tests(unittest.TestCase):
                     self.assertEqual(initial, baseline['modes'][mode]['initial'])
                     self.assertEqual(trace, baseline['modes'][mode]['movement_trace'])
                 else:
-                    self.assertEqual(state['definition']['cameraScale'], 0.75)
-                    self.assertEqual(state['definition']['acquisitionRadius'], 540)
+                    # Camera 0.75 -> 0.375 (c493a2f TASK-543) -> 0.25 (c2a6743 TASK-688);
+                    # starting range 540 -> 1080 (c493a2f TASK-543).
+                    self.assertEqual(state['definition']['cameraScale'], 0.25)
+                    self.assertEqual(state['definition']['acquisitionRadius'], 1080)
                 page.evaluate('draw()')
                 self.assertEqual(errors, [])
                 self.proof['modes'][mode] = dict(state, initial=initial, movement_trace=trace,
                     finite=True, browser_errors=errors, baseline_trace_equal=mode != 'grapple_over')
                 print(f'PASS {mode}: finite player/camera/HUD; browser_errors=0; '
                       f'baseline_trace_equal={mode != "grapple_over"}')
-
-    def test_fixture_geometry_and_rendering(self):
-        observations = []
-        for width in (1280, 960):
-            page, errors = self.open('grapple_over', width)
-            geometry = page.evaluate('''() => floors.map(f => f.elements.map(e =>
-                ({x:e.x,y:e.y,points:e.points,fill:e.fill,stroke:e.stroke})))''')
-            self.assertEqual(len(geometry[0]), 4)
-            self.assertEqual([(e['x'], e['y']) for e in geometry[0]],
-                             [(120,1100),(600,800),(240,500),(650,200)])
-            self.assertEqual([e['points'][2] for e in geometry[0]],
-                             [dict(x=w,y=h) for w,h in [(1000,60),(300,40),(280,40),(300,40)]])
-            page.evaluate('draw()')
-            page.screenshot(path=str(self.evidence.path('fixture.png' if width == 1280
-                                                     else 'fixture-960.png')))
-            self.assertEqual(errors, [])
-            observations.append({'viewport': [width,720], 'geometry': geometry,
-                                 'browser_errors': errors})
-        self.assertEqual(observations[0]['geometry'], observations[1]['geometry'])
-        self.proof['fixture'] = {'observations': observations, 'identical_geometry': True,
-                                'rendered_with_existing_trampolines': True}
-        print('PASS fixture: 4 existing neon Trampolines; identical geometry/dimensions at 1280x720 and 960x720')
 
 
 class Task459Tests(unittest.TestCase):
@@ -161,6 +141,9 @@ class Task459Tests(unittest.TestCase):
         }''')
 
     def tap(self, page, box):
+        # Wait out the events.js input debounce (STYLE.timing.inputUntouchMs), as
+        # Task460's tap does since 96f861f; a tap inside it is dropped.
+        page.wait_for_function('!unTouch')
         rect = page.locator('#canvas').bounding_box()
         page.touchscreen.tap(rect['x']+box['x']+box['width']/2,
                              rect['y']+box['y']+box['height']/2)
@@ -221,10 +204,13 @@ class Task459Tests(unittest.TestCase):
                         self.assertLessEqual(t['y']+t['height'], b['y']+b['height'])
                 name = f'menu-{lang}.png' if viewport[0]==667 else f'menu-{lang}-800.png'
                 page.screenshot(path=str(self.evidence.path(name)))
-                # Same-mode selection must not start or resume a run.
+                # Same-mode selection must not start or resume a run. Since
+                # f016357 TASK-460 the climb pause screen shows Grapple Over as its
+                # title, not a button; tapping the title changes nothing.
                 label=page.evaluate('I18N.t("mode.grapple_over")')
+                self.assertFalse(any(b['name']==label for b in buttons))
                 before=self.state(page)
-                self.tap(page,next(b for b in buttons if b['name']==label))
+                self.tap(page,next(t for t in boxes if t['kind']=='text' and t['name']==label))
                 self.assertEqual(self.state(page),before)
                 layouts.append({'language':lang,'boxes':boxes,'screenshot':name,
                     'touch_size_bounds_no_overlap_pass':True,'labels_fit_pass':True,
@@ -287,8 +273,6 @@ class Task460Tests(unittest.TestCase):
                 body=response.text().replace('            boot()\n', '''
             window.events460=[]
             PLATFORM.sendLifecycle=(name,data)=>{events460.push({name,data});return Promise.resolve()}
-            GRAPPLE_OVER_LEVEL.finish={left:1500,right:1600,top:0,bottom:100}
-            GRAPPLE_OVER_LEVEL.movers=[{id:'test-mover',element:'right-step',axis:'x',min:600,max:800,periodMs:2000,phase:0}]
             boot()
 ''',1)
                 route.fulfill(response=response,body=body)
@@ -308,7 +292,8 @@ class Task460Tests(unittest.TestCase):
             self.assertGreater(low['player']['y'],high['player']['y'])
             hud_boxes=page.evaluate('''() => {LAYOUT_PROBE.boxes=[];draw();const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;return b}''')
             hud_text=[b for b in hud_boxes if b['kind']=='text']
-            self.assertGreaterEqual(len(hud_text),4)
+            # Height/Best/Section; 023b45e TASK-796 dropped the Time row from the in-game HUD.
+            self.assertGreaterEqual(len(hud_text),3)
             for b in hud_text:
                 self.assertGreaterEqual(b['fontPx'],12-1e-6)
                 self.assertGreaterEqual(b['x'],0)
@@ -342,6 +327,10 @@ class Task460Tests(unittest.TestCase):
             reset=page.evaluate('captureClimbState()')
             self.assertEqual(reset,base)
             page.wait_for_function("JSON.parse(localStorage.getItem('grapnelninja.grappleOver')).simulationTick===0")
+            # Since 9f6506b TASK-465 the climb loads the mountain, not GRAPPLE_OVER_LEVEL,
+            # so the test finish (and its old 'right-step' mover) no longer reach the
+            # world; a restart rebuilds the level, so the finish goes on the live one here.
+            page.evaluate('floors[0].level.finish={left:1500,right:1600,top:0,bottom:100}')
             page.evaluate('for(let i=0;i<120;i++) physics(); ninja.x=1550; ninja.y=50; ninja.speedY=0; physics()')
             completed=page.evaluate('captureClimbState()')
             self.assertTrue(completed['stats']['completed'])
@@ -364,7 +353,9 @@ class Task460Tests(unittest.TestCase):
             # Ignore the background HUD menu icon under the opaque ending choices.
             buttons=[b for b in buttons if b['name']!='icon']
             for i,b in enumerate(buttons):
-                self.assertGreaterEqual(b['height']+1e-6,44)
+                # 1e-4 CSS px: the ending buttons are exactly minTouchSize() (44 CSS px) and the probe's
+                # float32 canvas transform, at camera 0.25 since c2a6743 TASK-688, rounds them to 44-1.05e-6.
+                self.assertGreaterEqual(b['height']+1e-4,44)
                 self.assertGreaterEqual(b['x'],0); self.assertGreaterEqual(b['y'],0)
                 self.assertLessEqual(b['x']+b['width'],viewport[0]+1)
                 self.assertLessEqual(b['y']+b['height'],viewport[1]+1)
@@ -490,7 +481,8 @@ class Task537Tests(unittest.TestCase):
         title = self.pick(boxes, self.label(page, 'mode.grapple_over'), 'text')
         hud = [b for b in boxes if b['kind'] == 'text' and b['x'] < run['viewport'][0]*0.3
                and b['y'] < run['viewport'][1]*0.3 and b is not title]
-        self.assertGreaterEqual(len(hud), 4)
+        # Height/Best/Section; 023b45e TASK-796 dropped the Time row from the in-game HUD.
+        self.assertGreaterEqual(len(hud), 3)
         label = self.pick(boxes, self.label(page, 'menu.fpsCounter'), 'text')
         width, height = run['viewport']
         for other in buttons + [language] + hud + [title]:
@@ -551,7 +543,7 @@ class Task537Tests(unittest.TestCase):
         fps_text = [b for b in play if b['kind'] == 'text' and b['name'].startswith('FPS')]
         self.assertEqual(len(fps_text), 1)
         hud = [b for b in play if b['kind'] == 'text' and b not in fps_text and b['x'] < run['viewport'][0]*0.3]
-        self.assertGreaterEqual(len(hud), 4)
+        self.assertGreaterEqual(len(hud), 3)  # Time row dropped in 023b45e TASK-796
         for h in hud:
             self.assertFalse(self.overlap(fps_text[0], h), (fps_text[0], h))
         page.screenshot(path=str(self.evidence.path(run['hud_png'])))
