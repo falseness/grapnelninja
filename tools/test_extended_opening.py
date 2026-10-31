@@ -278,7 +278,12 @@ class ExtendedOpeningTests(unittest.TestCase):
         self.assertTrue(set(source_ids) <= set(enc_ids))
         # 23 opening/lower/NG1 encounters plus seven per later purple encounter (v16: 37).
         self.assertEqual(len(route['addedEncounters']), 23 + 7 * (len(self.m['purpleExtensions']) - 1))
-        self.assertEqual(len(route['addedEncounters']), len(enc_ids) - len(source_ids) - len(self.m.get('extSummit', {}).get('encounters', [])))
+        # SEC-ext-summit (v18+, gauntlet since v20 TASK-744) and SEC-sky-spire (v21, TASK-774) list their own
+        # encounters in extSummit/skySpire, not in routeMap.addedEncounters.
+        sectioned = [eid for key in ('extSummit', 'skySpire') for eid in self.m.get(key, {}).get('encounters', [])]
+        self.assertEqual(len(set(sectioned)), len(sectioned))
+        self.assertFalse(set(sectioned) & (set(route['addedEncounters']) | set(source_ids)))
+        self.assertEqual(len(route['addedEncounters']), len(enc_ids) - len(source_ids) - len(sectioned))
         for old in self.source['encounters']:
             n = route['encounterNumbers'][str(old['number'])]
             self.assertEqual(self.m['encounters'][n - 1]['id'], old['id'])
