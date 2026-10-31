@@ -9,17 +9,21 @@ Set FRAME_PACING_JSON=<path> to also write the old/new histograms to a file.
 """
 import json
 import os
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# /usr/bin/node is v12, which cannot parse optional chaining in gameoptions.js (TASK-558).
+NODE = os.environ.get('NODE') or shutil.which('node20') or 'node'
 
 NODE_SCRIPT = r'''
 const vm = require('vm')
 const fs = require('fs')
 const root = process.argv[1]
-const ctx = {window: {innerWidth: 844, innerHeight: 390, devicePixelRatio: 3}, Math, console}
+const ctx = {window: {innerWidth: 844, innerHeight: 390, devicePixelRatio: 3}, Math, console,
+    location: {hostname: '', search: ''}, URLSearchParams}  // gameoptions.js reads location at load
 vm.createContext(ctx)
 vm.runInContext(fs.readFileSync(root + '/gameoptions.js', 'utf8'), ctx)
 const stepMs = vm.runInContext('physicsStepMs', ctx)
@@ -82,7 +86,7 @@ process.stdout.write(JSON.stringify(result))
 
 
 def simulate():
-    out = subprocess.check_output(['node', '-e', NODE_SCRIPT, str(ROOT)], text=True)
+    out = subprocess.check_output([NODE, '-e', NODE_SCRIPT, str(ROOT)], text=True)
     return json.loads(out)
 
 
@@ -91,7 +95,7 @@ class FramePacingTest(unittest.TestCase):
     def setUpClass(cls):
         cls.result = simulate()
         for name, algos in cls.result.items():
-            print(f"{name}: old={algos['old']['histogram']} new={algos['new']['histogram']}")
+            print(f"{name}: old={algos['old']['histogram']} new={algos['new']['histogram']}", flush=True)
         if os.environ.get('FRAME_PACING_JSON'):
             Path(os.environ['FRAME_PACING_JSON']).write_text(json.dumps(
                 {name: {algo: v['histogram'] for algo, v in algos.items()}
@@ -106,7 +110,7 @@ class FramePacingTest(unittest.TestCase):
 
     def test_old_algorithm_judders_at_60hz_with_jitter(self):
         old = self.result['hz60_jitter']['old']['histogram']
-        print(f"old 60 Hz jitter: 0-step frames={old.get('0', 0)} 2-step frames={old.get('2', 0)}")
+        print(f"old 60 Hz jitter: 0-step frames={old.get('0', 0)} 2-step frames={old.get('2', 0)}", flush=True)
         self.assertGreater(old.get('0', 0), 0)
         self.assertGreater(old.get('2', 0), 0)
 
