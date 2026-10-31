@@ -39,10 +39,15 @@ class Task451Tests(unittest.TestCase):
         page.evaluate("mode => {startGame(mode);menu.unPause();cancelAnimationFrame(game)}", mode)
         page.wait_for_function('!unTouch')
         page.evaluate('''() => {
+            // MouseEvent client coordinates are whole pixels; since the 0.25
+            // camera (c2a6743 TASK-688) one pixel is 6 world units, so shift the
+            // camera until (x,y) is exactly a whole pixel and the press resolves to it.
             window.pressWorld=(x,y)=>{
                 const p=canvasCoordsToViewportCoords({x:(x+screen.x)*scale[version],
                     y:(y+screen.y)*scale[version]});
-                document.dispatchEvent(new MouseEvent('mousedown',{clientX:p.x,clientY:p.y}));
+                const c={x:Math.round(p.x),y:Math.round(p.y)},w=viewportCoordsToCanvasCoords(c);
+                screen.x=w.x/scale[version]-x;screen.y=w.y/scale[version]-y;
+                document.dispatchEvent(new MouseEvent('mousedown',{clientX:c.x,clientY:c.y}));
             };
             window.release=()=>document.dispatchEvent(new MouseEvent('mouseup'));
             window.prepare=c=>{
@@ -106,9 +111,11 @@ class Task451Tests(unittest.TestCase):
         self.assertTrue(row['finite'], name)
         self.assertGreater(row['steps'], 0)
         if page.evaluate('version') == 'grapple_over':
-            self.assertLessEqual(row['traveled_distance'], 540+1e-8, name)
+            # Live range: the imported level's SVG grappleRange (ba5ca11 TASK-650).
+            radius = page.evaluate('grappleOverAcquisitionRadius()')
+            self.assertLessEqual(row['traveled_distance'], radius+1e-8, name)
             if expected:
-                self.assertLessEqual(row['contact_distance'], 540+1e-8, name)
+                self.assertLessEqual(row['contact_distance'], radius+1e-8, name)
                 self.assertEqual(row['target'], config.get('expected_target','target'))
             else:
                 # Held through a miss: the same shot stays out, parked on the
@@ -116,8 +123,8 @@ class Task451Tests(unittest.TestCase):
                 self.assertTrue(row['active'], name)
                 self.assertTrue(row['parked'], name)
                 self.assertFalse(row['stale'], name)
-                self.assertAlmostEqual(row['traveled_distance'], 540, places=8, msg=name)
-                self.assertAlmostEqual(row['tip_distance'], 540, places=8, msg=name)
+                self.assertAlmostEqual(row['traveled_distance'], radius, places=8, msg=name)
+                self.assertAlmostEqual(row['tip_distance'], radius, places=8, msg=name)
                 blockers = [t for t in config.get('targets', []) if t.get('grapplable') is False]
                 if blockers:
                     # A blocker clips the held line where it crosses, never hooks.
@@ -131,6 +138,8 @@ class Task451Tests(unittest.TestCase):
 
     def test_range_occlusion_motion(self):
         page = self.open()
+        # The fixed distances below (530, 541, 550) are placed around this range.
+        self.assertEqual(page.evaluate('grappleOverAcquisitionRadius()'), 540)
         rows=[]
         for angle in (0, math.pi/4, -math.pi/4, 3*math.pi/4):
             for distance in (539,540,541):
@@ -270,8 +279,12 @@ class Task452Tests(unittest.TestCase):
         return page
 
     def press(self, page, x, y):
-        point = page.evaluate('''([x,y])=>canvasCoordsToViewportCoords({
-            x:(x+screen.x)*scale[version],y:(y+screen.y)*scale[version]})''',[x,y])
+        # Whole client pixel for (x,y): shift the camera (6 world units per pixel
+        # since the 0.25 camera, c2a6743 TASK-688) so the press resolves exactly.
+        point = page.evaluate('''([x,y])=>{const p=canvasCoordsToViewportCoords({
+            x:(x+screen.x)*scale[version],y:(y+screen.y)*scale[version]});
+            const c={x:Math.round(p.x),y:Math.round(p.y)},w=viewportCoordsToCanvasCoords(c);
+            screen.x=w.x/scale[version]-x;screen.y=w.y/scale[version]-y;return c}''',[x,y])
         page.mouse.move(point['x'],point['y'])
         page.mouse.down()
 
@@ -433,7 +446,9 @@ class Task534Tests(unittest.TestCase):
                     ninja:[ninja.x,ninja.y],angle:Math.atan2(w.y-ninja.y,w.x-ninja.x),
                     zero:w.x===ninja.x&&w.y===ninja.y});
             },true);
-            window.radius=MODE_DEFINITIONS.grapple_over.acquisitionRadius;
+            // The live range (the imported level's SVG grappleRange since ba5ca11
+            // TASK-650); MODE_DEFINITIONS holds the legacy-v3 1080 since c493a2f TASK-543.
+            window.radius=grappleOverAcquisitionRadius();
             // Distance from a point to the nearest edge of an element, this tick.
             window.edgeDistance=(p,e)=>Math.min(...e.getLines().map(l=>{
                 const dx=l.x2-l.x1,dy=l.y2-l.y1;
@@ -455,7 +470,9 @@ class Task534Tests(unittest.TestCase):
         }''')
         return page
 
-    def client_at(self, page, angle, reach=300):
+    # A client pixel is 6 world units since the 0.25 camera (c2a6743 TASK-688):
+    # at 300 the rounding error reached 0.012 rad, so aim 900 out (<= 0.005 rad).
+    def client_at(self, page, angle, reach=900):
         return page.evaluate('a=>client(ninja.x+Math.cos(a[0])*a[1],ninja.y+Math.sin(a[0])*a[1])',
                              [angle, reach])
 
@@ -647,6 +664,10 @@ class Task535Tests(unittest.TestCase):
             floors[0].level.movers=[];floors[0].byId=new Map();
             screen.leftWall=null;
             window.radius=MODE_DEFINITIONS.grapple_over.acquisitionRadius;
+            // Whole client pixel for a world press (see Task452Tests.press).
+            window.pressClient=(x,y)=>{const p=client(x,y),c={x:Math.round(p[0]),y:Math.round(p[1])};
+                const w=viewportCoordsToCanvasCoords(c);
+                screen.x=w.x/scale[version]-x;screen.y=w.y/scale[version]-y;return [c.x,c.y]};
             window.place=(x,y)=>{ninja.x=x;ninja.y=y;ninja.speedX=ninja.speedY=0;screen.trackGrappleOver(true)};
             window.rect=(id,x,y,w,h,extra)=>{
                 const e=new Rect({x,y,width:w,height:h});e.id=id;e.surfaceRole='solid';e.dx=e.dy=0;
@@ -786,7 +807,8 @@ class Task535Tests(unittest.TestCase):
         clipped_png = None
         if url == self.url:
             page.evaluate('tickRow();draw()')
-            clipped_png = str(self.evidence.path('clipped.png').relative_to(ROOT))
+            # Absolute: the suite runs with cwd tools/.
+            clipped_png = str(self.evidence.path('clipped.png'))
             page.screenshot(path=clipped_png)
         return page, dict(setup=setup, flight_ticks=len(flight), trace=rows, hazard_trace=hazard_rows,
                           screenshot=clipped_png, input=self.trusted(page))
@@ -796,7 +818,7 @@ class Task535Tests(unittest.TestCase):
         page.evaluate("place(600,700);rect('target',1100,500,30,400)")
         # Boot timing varies the absolute step count between page loads.
         since = page.evaluate('floors[0].elapsedSteps')
-        self.press(page, page.evaluate('client(1100,700)'))
+        self.press(page, page.evaluate('pressClient(1100,700)'))
         rows = self.ticks(page, 200, since=since)
         return page, dict(trace=rows, input=self.trusted(page))
 
@@ -881,9 +903,12 @@ class Task535Tests(unittest.TestCase):
 
     def pull_trace(self, url):
         page = self.open(url)
-        page.evaluate("place(800,700);rect('anchor',1100,680,30,40);rect('corner',900,800,80,50)")
+        # 1000 units above the original y=700 fixture: the swing reaches y~1490,
+        # past the fall recovery (> 1500 below the spawn, 3d15578 TASK-662), which
+        # teleports the ninja; the pre-change tree has no recovery.
+        page.evaluate("place(800,-300);rect('anchor',1100,-320,30,40);rect('corner',900,-200,80,50)")
         since = page.evaluate('floors[0].elapsedSteps')
-        self.press(page, page.evaluate('client(1100,700)'))
+        self.press(page, page.evaluate('pressClient(1100,-300)'))
         acquire = self.ticks(page, 100, since=since)
         self.assertTrue(acquire[-1]['grappled'])
         page.evaluate('ninja.speedY=3')
