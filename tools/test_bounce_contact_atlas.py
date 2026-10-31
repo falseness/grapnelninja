@@ -3,11 +3,20 @@
 Frozen-clock Grapple Over frames, centred on several bounce panels of the
 level, each with a forced contact pulse at its centroid at a few pulse ages,
 are rendered at 1706x932 DPR 1.5 by the worktree and by a git archive copy of
-the revision before the change (BOUNCE_ATLAS_BASELINE, default b151296). Each
-frame's rgba sha256 must match; a differing frame may differ by at most
-1/255 per channel. The worktree must build one atlas canvas per board, whose
-cells are byte-identical to the old per-part canvases with >= 2 px gaps, and
-share one contact dot. Writes pixels.json to BOUNCE_ATLAS_EVIDENCE_DIR
+BOUNCE_ATLAS_BASELINE (default 023b45e, TASK-796: the last commit that changed
+the game code before TASK-817). Each frame's rgba sha256 must match; a
+differing frame may differ by at most 1/255 per channel. The worktree must
+build one atlas canvas per board, whose cells are byte-identical to the old
+per-part canvases with >= 2 px gaps, and share one contact dot.
+
+The original pre-atlas baseline b151296 (TASK-756) no longer matches whole
+frames: later intended commits redraw them (palette strips TASK-760, layout
+v21 f720868 TASK-774 / v22 4da5278 TASK-781, ion lattice TASK-782..784,
+parallax rows 5d6458e TASK-788, HUD Time row dropped 023b45e TASK-796).
+The atlas-vs-per-part equality is still checked cell by cell in the worktree.
+Panels are picked in the baseline and addressed by element id, since layouts
+insert elements and shift element indices. Writes pixels.json to
+BOUNCE_ATLAS_EVIDENCE_DIR
 (default artifacts/TASK-756).
 
     cd tools && python3 -m unittest -v test_bounce_contact_atlas
@@ -29,7 +38,7 @@ from perf_mobile import export_rev
 from test_hud_glyphs import serve
 
 ROOT = Path(__file__).resolve().parent.parent
-BASELINE = os.environ.get('BOUNCE_ATLAS_BASELINE', 'b151296')
+BASELINE = os.environ.get('BOUNCE_ATLAS_BASELINE', '023b45e')
 EVIDENCE = Path(os.environ.get('BOUNCE_ATLAS_EVIDENCE_DIR', ROOT / 'artifacts' / 'TASK-756'))
 VIEWPORT = {'width': 1706, 'height': 932}
 DPR = 1.5
@@ -51,7 +60,7 @@ FREEZE = '''() => {
     s.elapsedActiveMs = 0; s.currentHeight = 0; s.maxHeight = 0
 }'''
 
-# Bounce panels with points, spread over the level's height, most trace parts first per band
+# Bounce panels with points, spread over the level's height, most trace parts first per band (ids)
 PICK = '''count => {
     const w = floors[0], unit = 1 / scale[version]
     const panels = w.elements.filter(e => e.surfaceRole === 'bounce' && e.points && e.points.length > 2)
@@ -62,13 +71,13 @@ PICK = '''count => {
         const band = panels.slice(Math.floor(i * panels.length / count), Math.floor((i + 1) * panels.length / count))
         const sized = band.map(e => [e, bounceMaterialSprite(e, w, 1, 1, unit).bright.parts.length])
         sized.sort((a, b) => b[1] - a[1])
-        out.push(w.elements.indexOf(sized[0][0]))
+        out.push(sized[0][0].id)
     }
     return out
 }'''
 
-RENDER = '''([index, age]) => {
-    const w = floors[0], e = w.elements[index]
+RENDER = '''([id, age]) => {
+    const w = floors[0], e = w.elements.find(e => e.id === id)
     const c = e.points.reduce((a, p) => ({x: a.x + p.x / e.points.length, y: a.y + p.y / e.points.length}), {x: 0, y: 0})
     ninja.x = e.x + c.x; ninja.y = e.y + c.y; ninja.speedX = 0; ninja.speedY = 0
     // Marker angle, trail and respawn blink keep how the boot run moved
@@ -93,13 +102,13 @@ RENDER = '''([index, age]) => {
 
 
 # Each atlas cell against the same part rasterized the old way, on its own canvas
-CELLS = '''indices => {
+CELLS = '''ids => {
     const w = floors[0], m = ctx.getTransform(), unit = 1 / scale[version]
     const sx = glowSpriteScale(m.a), sy = glowSpriteScale(m.d), config = GRAPPLE_OVER_ROLE_DETAIL.bounce
     let parts = 0, differing = 0, overlaps = 0, gapOk = true
-    for (const index of indices)
+    for (const id of ids)
     {
-        const {bright, board} = bounceMaterialSprite(w.elements[index], w, sx, sy, unit)
+        const {bright, board} = bounceMaterialSprite(w.elements.find(e => e.id === id), w, sx, sy, unit)
         const atlas = bright.image.getContext('2d')
         for (const part of bright.parts)
         {
@@ -155,9 +164,9 @@ class BounceContactAtlasTests(unittest.TestCase):
                 panels = page.evaluate(PICK, PANELS)
             # The first frame on a panel warms its sprites; every compared
             # frame is drawn again after that
-            for index in panels:
-                page.evaluate(RENDER, [index, AGES[0]])
-            shots = [page.evaluate(RENDER, [index, age]) for index in panels for age in AGES]
+            for panel in panels:
+                page.evaluate(RENDER, [panel, AGES[0]])
+            shots = [page.evaluate(RENDER, [panel, age]) for panel in panels for age in AGES]
             again = page.evaluate(RENDER, [panels[0], AGES[1]])
             self.cells = page.evaluate(CELLS, panels) if url == self.url else getattr(self, 'cells', None)
             self.assertEqual(errors, [])
@@ -167,8 +176,9 @@ class BounceContactAtlasTests(unittest.TestCase):
 
     def test_01_pulse_frames_match_baseline(self):
         EVIDENCE.mkdir(parents=True, exist_ok=True)
-        panels, new, again = self.render(self.url)
-        _, old, _ = self.render(self.baseline_url, panels)
+        # Pick in the baseline: its panels all exist (same id and geometry) in the worktree
+        panels, old, _ = self.render(self.baseline_url)
+        _, new, again = self.render(self.url, panels)
         self.assertEqual(again['png'], new[1]['png'], 'frozen frame not repeatable')
         frames = []
         for i, (a, b) in enumerate(zip(old, new)):
