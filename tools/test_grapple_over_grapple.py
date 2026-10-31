@@ -9,6 +9,8 @@ import unittest
 from browser_test_support import start_browser_test, wait_for_boot
 from grapple_over_test_support import ROOT, VIEWPORT, EvidenceWriter, source_hashes
 from perf_mobile import SEED_SCRIPT
+# TASK-463 calibration, also run by this suite (Task536Tests reruns it in a subprocess).
+from test_grapple_over_tools import Task463Tests  # noqa: F401
 
 
 class Task451Tests(unittest.TestCase):
@@ -940,6 +942,21 @@ TASK536_PRE_HELD = '15b55b5a08cc9070c675379febc5ae19355cdb51'
 TASK536_FAMILIES = ('launch', 'release', 'braking', 'angled_bounce', 'corner_wrap', 'moving_transfer')
 
 
+def task536_proof(path):
+    """The proof file at path, or its in-place zstd copy (path + '.zst'); None if neither exists."""
+    path = Path(path)
+    zst = path.with_name(path.name + '.zst')
+    return path if path.exists() else zst if zst.exists() else None
+
+
+def task536_load(name):
+    """JSON from a proof file, decompressing *.zst with the zstd CLI."""
+    if str(name).endswith('.zst'):
+        return json.loads(subprocess.run(['zstd', '-dcq', str(name)], check=True, capture_output=True).stdout)
+    with open(name) as stream:
+        return json.load(stream)
+
+
 def task536_scan(unit):
     """Presses in one recorded proof that stay held after their shot ended.
 
@@ -977,14 +994,13 @@ def task536_scan(unit):
 
     files = list(files)
     for name in files:
-        with open(name) as stream:
-            data = json.load(stream)
+        data = task536_load(name)
         # A summary may name its full trace file instead of embedding it.
         linked = data.get('trace') if isinstance(data, dict) else None
         if isinstance(linked, str) and linked.endswith('.json'):
-            path = os.path.join(os.path.dirname(name), linked)
-            if os.path.exists(path) and path not in files:
-                files.append(path)
+            path = task536_proof(Path(os.path.dirname(name)) / linked)
+            if path and str(path) not in files:
+                files.append(str(path))
         walk(data, None)
     rows = []
     if not inputs:
@@ -1025,7 +1041,7 @@ class Task536Tests(unittest.TestCase):
         cls.proof = dict(revision=subprocess.check_output(
             ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
             pre_held_revision=TASK536_PRE_HELD, source_hashes=hashes, viewport=VIEWPORT,
-            device_scale_factor=1, seed=1, range=540)
+            device_scale_factor=1, seed=1, range=1080)
         cls.evidence.log('CONFIG ' + json.dumps(cls.proof, sort_keys=True))
 
     def calibrate(self, root, out):
@@ -1069,7 +1085,8 @@ class Task536Tests(unittest.TestCase):
         previous = json.loads((ROOT / 'artifacts/TASK-463/calibration.json').read_text())
         held_before = json.loads(pre_calibration.read_text())
         self.assertTrue(current['all_six_families_pass'])
-        self.assertEqual(current['constants']['range'], 540)
+        # The calibration fixture's live range: MODE_DEFINITIONS 1080 since c493a2f TASK-543.
+        self.assertEqual(current['constants']['range'], 1080)
 
         def outline(run):
             return dict(dt=run['dt'], aim=run['aim'], negative=run['negative'], success=run['success'],
@@ -1120,16 +1137,21 @@ class Task536Tests(unittest.TestCase):
             task = artifacts / f'TASK-{number}'
             # A recorded attempt directory keeps its inputs and its trace apart;
             # its replay/ and result files repeat the same run.
-            runs = sorted({p.parent for d in ('encounters', 'attempts') for p in (task / d).rglob('input.json')})
+            # Older proofs were zstd-compressed in place by the artifact storage policy
+            # (name.json -> name.json.zst); task536_proof() finds either form.
+            runs = sorted({p.parent for d in ('encounters', 'attempts') for pattern in ('input.json', 'input.json.zst')
+                           for p in (task / d).rglob(pattern)})
             for run in runs:
-                files = [str(run / n) for n in ('input.json', 'trace.json') if (run / n).exists()]
+                files = [str(f) for f in map(task536_proof, (run / n for n in ('input.json', 'trace.json'))) if f]
                 units.append((task.name, str(run.relative_to(ROOT)) + '/', files))
-            for name in sorted((task / 'encounters').rglob('*.json')):
+            names = {Path(str(p).removesuffix('.zst')) for pattern in ('*.json', '*.json.zst')
+                     for p in (task / 'encounters').rglob(pattern)}
+            for name in sorted(names):
                 if not any(name.is_relative_to(run) for run in runs):
-                    units.append((task.name, str(name.relative_to(ROOT)), [str(name)]))
+                    units.append((task.name, str(name.relative_to(ROOT)), [str(task536_proof(name))]))
             for proof, extra in (('trace.json', 'inputs.json'), ('recovery.json', 'recovery-inputs.json')):
-                if (task / proof).exists():
-                    files = [str(task / proof)] + ([str(task / extra)] if (task / extra).exists() else [])
+                if task536_proof(task / proof):
+                    files = [str(f) for f in (task536_proof(task / proof), task536_proof(task / extra)) if f]
                     units.append((task.name, str((task / proof).relative_to(ROOT)), files))
         with ProcessPoolExecutor(8) as pool:
             scanned = list(pool.map(task536_scan, units))
@@ -1217,6 +1239,9 @@ TASK543_HELPERS = '''() => {
 }'''
 
 
+TASK543_LEGACY_V3 = '?grappleFixture=legacy-v3'
+
+
 class Task543Tests(unittest.TestCase):
     """Doubled grapnel range (1080/1620) and the Grapple Over camera that fits it (0.375 at TASK-543, 0.25 since TASK-688)."""
 
@@ -1240,7 +1265,7 @@ class Task543Tests(unittest.TestCase):
         if cls.fit:
             cls.evidence.write('fit.json', dict(cls.proof, **cls.fit))
 
-    def open(self, width, height, touch, lang='en'):
+    def open(self, width, height, touch, lang='en', query=''):
         context = self.browser.new_context(viewport=dict(width=width, height=height),
                                            device_scale_factor=1, has_touch=touch)
         self.addCleanup(context.close)
@@ -1249,7 +1274,7 @@ class Task543Tests(unittest.TestCase):
         page.on('pageerror', lambda e: errors.append(str(e)))
         self.addCleanup(lambda: self.assertEqual(errors, []))
         page.add_init_script(SEED_SCRIPT % 1)
-        page.goto(self.url)
+        page.goto(self.url + query)
         wait_for_boot(page)
         page.wait_for_function('runInProgress && !menu.gamePaused')
         page.evaluate("lang=>{setLanguage(lang);cancelAnimationFrame(game);window.requestAnimationFrame=()=>0}", lang)
@@ -1258,7 +1283,9 @@ class Task543Tests(unittest.TestCase):
         return page
 
     def test_01_range_and_camera_scales(self):
-        page = self.open(1280, 720, False)
+        # S03/S04/S05 and the S05 rangeUpgradeZone are legacy-v3 sections; normal starts play the
+        # imported SVG level since ba5ca11 TASK-650, so the 1080/1620 profile is the legacy-v3 fixture.
+        page = self.open(1280, 720, False, query=TASK543_LEGACY_V3)
         modes = page.evaluate('''()=>({definitions:JSON.parse(JSON.stringify(MODE_DEFINITIONS)),
             scale:{...scale},manifestRange:GRAPPLE_OVER_MOUNTAIN.range,levelUpgradeBand:MODE_DEFINITIONS.grapple_over.rangeUpgradeSection})''')
         go = modes['definitions']['grapple_over']
@@ -1313,7 +1340,7 @@ class Task543Tests(unittest.TestCase):
               f"-> 1620 (drawn {entry['drawn']}); scales {modes['scale']}; classic/bad equal TASK-444 baseline")
 
     def fit_case(self, key, width, height, touch, lang, png):
-        page = self.open(width, height, touch, lang)
+        page = self.open(width, height, touch, lang, query=TASK543_LEGACY_V3)
         # A mid-climb spot (S03 band centre) away from the world-edge camera clamps.
         spot = page.evaluate('''()=>{const b=bandOf('S03');TUTORIAL_HINT.visible=false;
             placeAt((b.left+b.right)/2,(b.top+b.bottom)/2);
@@ -1329,9 +1356,12 @@ class Task543Tests(unittest.TestCase):
         self.assertTrue(all(worst[s] >= 0 for s in ('top', 'bottom', 'left', 'right')), worst)
         hud = page.evaluate('''()=>{LAYOUT_PROBE.boxes=[];draw();const b=LAYOUT_PROBE.boxes;LAYOUT_PROBE.boxes=null;
             return b.filter(x=>x.kind==='text').map(x=>({text:x.name,x:x.x,y:x.y,width:x.width,fontPx:x.fontPx}))}''')
-        self.assertGreaterEqual(len(hud), 4)
+        # Height/Best/Section; 023b45e TASK-796 dropped the Time row from the in-game HUD.
+        self.assertGreaterEqual(len(hud), 3)
         for b in hud:
-            self.assertGreaterEqual(b['fontPx'], 12 - 1e-6)
+            # fontPx is read back from ctx.font, which keeps 6 significant digits: at the 0.25
+            # camera (c2a6743 TASK-688) the 844x390 size 132.92307.. reads as 132.923 (-5.8e-7 relative).
+            self.assertGreaterEqual(b['fontPx'], 12 * (1 - 1e-5))
             self.assertGreaterEqual(b['x'], 0)
             self.assertLessEqual(b['x'] + b['width'], width)
         if lang == 'ru':

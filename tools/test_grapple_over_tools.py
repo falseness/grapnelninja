@@ -250,6 +250,10 @@ class Task463Tests(unittest.TestCase):
         page.evaluate('GRAPPLE_OVER_TEST.attempts.length=0')
         page.evaluate('n=>GRAPPLE_OVER_TEST.begin(n)',family)
         page.evaluate('calibrationSetup',dict(family=family,negative=negative))
+        # The fall recovery (3d15578 TASK-662) returns a player more than 1500 below
+        # level.spawn (980 here) to it; the angled_bounce/corner_wrap landings are at
+        # y=2600. Move the recovery reference far below the fixture (test-only).
+        page.evaluate('floors[0].level.spawn={...floors[0].level.spawn,y:floors[0].level.spawn.y+10000}')
         if family=='angled_bounce':
             actions=[(0,'mousedown',700+aim,440),(3+dt,'mouseup',700,440)]
         elif family=='corner_wrap':
@@ -266,7 +270,12 @@ class Task463Tests(unittest.TestCase):
         tick=0
         for at,event,x,y in actions:
             page.evaluate('n=>GRAPPLE_OVER_TEST.step(n)',at-tick);tick=at
-            p=page.evaluate('GRAPPLE_OVER_TEST.client',dict(x=x,y=y))
+            # Client coordinates are whole pixels; since the 0.25 camera (c2a6743
+            # TASK-688) a pixel is 6 world units, so shift the camera until (x,y)
+            # is exactly a whole pixel and the press resolves to it.
+            p=page.evaluate('''p=>{const q=GRAPPLE_OVER_TEST.client(p),c={x:Math.round(q.x),y:Math.round(q.y)},
+                w=viewportCoordsToCanvasCoords(c);screen.x=w.x/scale[version]-p.x;screen.y=w.y/scale[version]-p.y;
+                return c}''',dict(x=x,y=y))
             page.mouse.move(p['x'],p['y'])
             if event=='mousedown': page.mouse.down()
             else: page.mouse.up()
@@ -287,14 +296,18 @@ class Task463Tests(unittest.TestCase):
         page=self.open()
         install_recorder(page)
         page.add_script_tag(path=str(ROOT/'tools/grapple_over_calibration.js'))
+        # Range is read live inside a calibration fixture: GRAPPLE_OVER_LEVEL has no
+        # profile, so it is MODE_DEFINITIONS' 1080 (c493a2f TASK-543); camera 0.25 (c2a6743 TASK-688).
+        page.evaluate("GRAPPLE_OVER_TEST.begin('range-probe')")
         constants=page.evaluate('''() => ({gravity:GRAVITY,pull:grappleSpeed,
             throwSpeed:grapnelSpeed,cyclesPerTick,physicsStepMs,radius:ninja.radius,
-            range:MODE_DEFINITIONS.grapple_over.acquisitionRadius,scale:scale.grapple_over})''')
+            range:calibrationSetup({family:'launch'}).range,scale:scale.grapple_over})''')
+        page.evaluate("GRAPPLE_OVER_TEST.finish('setup-only')")
         baseline=json.loads((ROOT/'artifacts/TASK-444/baseline.json').read_text())['modes']['classic']
         for key in ('gravity','pull','throwSpeed','cyclesPerTick','physicsStepMs'):
             self.assertEqual(constants[key],baseline['constants'][key])
         self.assertEqual(constants['radius'],baseline['initial']['radius'])
-        self.assertEqual((constants['range'],constants['scale']),(540,0.75))
+        self.assertEqual((constants['range'],constants['scale']),(1080,0.25))
         families={}
         for family in ('launch','release','braking','angled_bounce','corner_wrap','moving_transfer'):
             families[family]=[self.attempt(page,family,dt,aim) for dt,aim in
@@ -314,7 +327,7 @@ class Task463Tests(unittest.TestCase):
             'angled_bounce': {'x':[-650,-400],'y':[0,250]},
             'corner_wrap': {'x':[970,1090],'y':[2250,2380]},
             'moving_transfer': {'x':[780,840],'y':[645,690]}}
-        metrics=dict(hz=60,substeps=8,range=540,scale=0.75,exit_tick=100,
+        metrics=dict(hz=60,substeps=8,range=constants['range'],scale=constants['scale'],exit_tick=100,
             position_epsilon=1e-5,velocity_epsilon=1e-8,
             proof_convention={'critical_action_ticks':[-3,0,3],
                 'aim_tangent_offsets':[-10.8,0,10.8],
@@ -386,7 +399,7 @@ sliding contact is not a stable rest. Corner wrap's exit is a fall, not ascent.
 Timing endpoints are sampled, not a proof that every intermediate tick succeeds.
 These six fixtures are calibration, not base-start or full mountain route proof.
 Gravity, pull, throw speed, radius and timestep match artifacts/TASK-444/baseline.json;
-range is 540 and scale 0.75. No runtime, classic/bad, neon, saves or checkpoint changes.
+range is the live calibration-fixture range (1080) and scale 0.25. No runtime, classic/bad, neon, saves or checkpoint changes.
 
 Design targets: encounter proof must include nominal plus at least two distinct
 successful variants, testing critical action +/-3 ticks and aim +/-0.02R along
