@@ -13,6 +13,7 @@ gradient (TASK-184). Candidate: GRADIENT_REV (default worktree).
 """
 from contextlib import ExitStack
 import os
+import sys
 import unittest
 
 from browser_test_support import start_browser_test
@@ -118,16 +119,23 @@ class BackgroundGradientCacheTest(unittest.TestCase):
     def setUpClass(cls):
         cls.r = background_gradient_counts(os.environ.get('GRADIENT_REV', 'worktree'))
         print('rev', cls.r['rev'], 'load', cls.r['load'], 'game[:3]', cls.r['game'][:3], 'resized', cls.r['resized'],
-              'menu[:3]', cls.r['menu'][:3], 'game_all', cls.r['game_all'])
+              'menu[:3]', cls.r['menu'][:3], 'game_all', cls.r['game_all'],
+              file=sys.stderr, flush=True)  # before unittest's summary, so the log ends with OK
 
     def test_no_page_errors(self):
         self.assertEqual(self.r['page_errors'], [])
 
     def test_first_frame_builds_all(self):
         self.assertEqual(self.r['load'], 3)
-        # Base, haze, vignette, the baked far tile's base and haze, plus two
-        # warmed ninja sprites; no legacy washes.
-        self.assertEqual(self.r['load_all'], 7)
+        # Base, haze, vignette and the baked far tile's base and haze (5), the
+        # ninja glow sprite and the tutorial hint (2), plus 79 one-time Grapple
+        # Over bakes warmed at load (none per frame, see the after-warm-up test):
+        # 32 parallax tile rows (TASK-539 7f6af93, TASK-760 7be870b, TASK-788
+        # 5d6458e), 16 palette wash/glow strips (TASK-538 a428389, TASK-760
+        # 3990818), 25 bounce material sprites (TASK-639 b217437), 4 landmarks
+        # (TASK-541 1e2ad62), 1 bounce contact atlas (TASK-641 0e33913) and the
+        # tutorial bounce legend (TASK-663 cd269b6). No legacy washes.
+        self.assertEqual(self.r['load_all'], 86)
 
     def test_next_frames_build_none(self):
         self.assertEqual(self.r['menu'], [0] * FRAMES)
