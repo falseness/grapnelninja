@@ -118,8 +118,17 @@ def execute(manifest, browser, url, out, clip=False, filmstrip=False, on_frame=N
         page.add_init_script(SEED_SCRIPT % 1)
         page.goto(url)
         wait_for_boot(page)
+        if 'camera_scale' in manifest['metadata']:
+            # Legacy routes replay on the camera they were recorded at (0.375 before c2a6743 TASK-688): world
+            # aims map to the same whole CSS pixels. Display/input mapping only; physics is unchanged.
+            page.evaluate('k=>{scale.grapple_over=k}', manifest['metadata']['camera_scale'])
         page.evaluate("cancelAnimationFrame(game); window.requestAnimationFrame=()=>0; startGame('grapple_over'); CLIMB_UI.restart()")
         page.wait_for_function('!unTouch')
+        if manifest['metadata'].get('spawn_at_rest'):
+            # Routes recorded before the fresh-start upward launch (bfd38b0 TASK-704) start at rest:
+            # assert the launch, then stop it before the first snapshot.
+            require(page.evaluate('ninja.speedY+getSpawnLaunchSpeed()===0 && ninja.speedX===0'), 'spawn launch missing')
+            page.evaluate('ninja.speedY=0')
         page.mouse.up()
         install_recorder(page)
         page.evaluate("GRAPPLE_OVER_TEST.begin('replay')")
@@ -236,7 +245,7 @@ def check_trace(manifest, trace):
         # Chromium mouse coordinates are integer CSS pixels: 1080/height logical
         # pixels, i.e. 1080/height/cameraScale world units (6 at 720 and 0.25).
         if expected['event'] != 'touchend':
-            tolerance = 1.000001 * 1080 / manifest['metadata']['viewport']['height'] / CAMERA_SCALE
+            tolerance = 1.000001 * 1080 / manifest['metadata']['viewport']['height'] / manifest['metadata'].get('camera_scale', CAMERA_SCALE)
             require(all(abs(actual['world'][k] - expected['world'][k]) <= tolerance for k in ('x', 'y')),
                     'aim mismatch')
     player = rows[-1]['state']['simulation']['player']

@@ -9,6 +9,27 @@ from browser_test_support import start_browser_test, wait_for_boot
 from grapple_over_test_support import ROOT, VIEWPORT, EvidenceWriter, source_hashes
 from grapple_over_support import install_recorder, state_hash
 
+# The layout-v3 sections are the local legacy-v3 fixture: normal boot plays the imported level since
+# ba5ca11 TASK-650, so every section page and replay loads this selector.
+LEGACY_V3_QUERY = '?grappleFixture=legacy-v3'
+
+
+# Camera scale these routes were recorded at (before c2a6743 TASK-688 set 0.25): integer CSS-pixel aims
+# quantise to 1080/720/scale world units, so the recorded aims only reproduce on this camera.
+LEGACY_CAMERA_SCALE = 0.375
+
+
+def metadata(kind='base-start'):
+    """grapple_over_verify.metadata for these routes: replayed on their recording camera, and base-start routes
+    were recorded from rest, before the fresh-start upward launch (bfd38b0 TASK-704), so execute() asserts that
+    launch and then stops it."""
+    import grapple_over_verify
+    m = grapple_over_verify.metadata(kind)
+    m['camera_scale'] = LEGACY_CAMERA_SCALE
+    if kind == 'base-start':
+        m['spawn_at_rest'] = True
+    return m
+
 
 class V1Task465:
     """Shared section-suite harness (setUp, page, aim, source hashes).
@@ -16,12 +37,14 @@ class V1Task465:
     TASK-532: the v1 S01-S04 suites Task465Tests..Task476Tests now run their layout-v3
     counterparts (see LEGACY_V3_MAPPING at the end of this module); TASK-533 did the same for the v1
     S05-S08 suites Task477Tests..Task488Tests (LEGACY_V3_UPPER_MAPPING), so the other v1 helper holders
-    (V1Task467..V1Task476) had no users left and were removed.
+    (V1Task467..V1Task476) had no users left and were removed. TASK-846 retired those 24 alias
+    classes (they only repeated their counterparts' cases); the classes stay as empty stubs.
     """
     @classmethod
     def setUpClass(cls):
         cls.evidence = EvidenceWriter(getattr(cls, 'task_id', 'TASK-465'))
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
+        cls.url += LEGACY_V3_QUERY
         hashes = source_hashes()
         for name in ('tools/test_grapple_over_sections.py', 'tools/grapple_over_support.py',
                      'tools/grapple_over_injector.js', 'tools/grapple_over_verify.py'):
@@ -229,7 +252,7 @@ class FoundationsV3Checks:
               '; v2 solids', {x['id']:x['disposition'] for x in mapping}, '; overview.png')
 
     def replay_v3(self, name, plan, ticks, bounds, density_until=None):
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         m = dict(metadata=metadata('base-start'),
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
             ticks=ticks, expected_exit=bounds, required_events=['acquisition','release','bounce'])
@@ -719,7 +742,7 @@ class Task506Tests(FoundationsV3CompleteChecks, unittest.TestCase):
             snapshots=[dict(tick=r['tick'], sha256=r['sha256'], **pick(r['state'])) for r in trace['snapshots']], events=events)
 
     def replay(self, name, plan, ticks, bounds, kind='base-start', snapshot=None):
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         m = dict(metadata=metadata(kind), inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
             ticks=ticks, expected_exit=bounds, required_events=['acquisition','release'])
         if snapshot: m['initial_snapshot'] = snapshot
@@ -809,7 +832,6 @@ class FoundationsV3ToleranceChecks:
     V3_MOVERS = ('S01-hoist','S01-lift')
 
     def make_input(self, plan, ticks, bounds, device='desktop', snapshot=None):
-        from grapple_over_verify import metadata
         m = dict(metadata=metadata('isolated' if snapshot else 'base-start'), ticks=ticks, expected_exit=bounds,
             required_events=['acquisition','release'],
             inputs=[dict(tick=t, event=e if device=='desktop' else {'mousedown':'touchstart','mouseup':'touchend'}[e],
@@ -1174,7 +1196,7 @@ class SwitchbackV3Checks:
 
     def s01_v3_exit(self):
         """Real S01 v3 exit settled pose: a base-start real-input run of the v3 S01 route (no placement)."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         if hasattr(type(self), 'v3_start'): return type(self).v3_start
         m = dict(metadata=metadata('base-start'), ticks=self.S01_V3_TICKS, expected_exit=self.S01_V3_SETTLE,
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in self.S01_V3_ROUTE],
@@ -1220,7 +1242,7 @@ class SwitchbackV3Checks:
 
     def run_v3(self, name, plan, ticks, bounds, density_until=None):
         """Labeled placement of the real S01 exit pose, then trusted input; identical replay."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         start = self.s01_v3_exit()
         m = dict(metadata=metadata('isolated'), inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
             ticks=ticks, expected_exit=bounds, required_events=['acquisition','release','bounce'], initial_snapshot=start)
@@ -1515,7 +1537,7 @@ class Task508Tests(SwitchbackV3Checks, unittest.TestCase):
 
     def s01_exit(self):
         """Real S01 exit rest pose: a base-start real-input run of the v2 S01 route (no placement)."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         if hasattr(type(self), 'start'): return type(self).start
         m = dict(metadata=metadata('base-start'), ticks=1120, expected_exit=self.BOXES['S01-04'],
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in self.S01_ROUTE],
@@ -2317,7 +2339,7 @@ class ViaductV3Checks:
 
     def s02_v3_exit(self):
         """Real S02 v3 exit settled pose: one base-start real-input run of the v3 S01 and S02 routes (no placement)."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         if hasattr(type(self), 'v3_s02_start'): return type(self).v3_s02_start
         m = dict(metadata=metadata('base-start'), ticks=self.S02_V3_TICKS, expected_exit=self.S02_V3_SETTLE,
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in self.S02_V3_ROUTE],
@@ -2364,7 +2386,7 @@ class ViaductV3Checks:
 
     def run_s03(self, name, plan, ticks, bounds, density_until=None, folder='encounters'):
         """Labeled placement of the real S02 v3 exit pose, then trusted input; identical replay."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         start = self.s02_v3_exit()
         m = dict(metadata=metadata('isolated'), inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
             ticks=ticks, expected_exit=bounds, required_events=['acquisition','release','bounce'], initial_snapshot=start)
@@ -3003,7 +3025,7 @@ class Task511Tests(ViaductV3Checks, unittest.TestCase):
 
     def s02_exit(self):
         """Real S02 exit rest pose: one base-start real-input run of the v2 S01 and S02 routes (no placement)."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         if hasattr(type(self), 'start'): return type(self).start
         m = dict(metadata=metadata('base-start'), ticks=2120, expected_exit=self.BOXES['S02-04'],
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in self.BASE_ROUTE],
@@ -3513,7 +3535,7 @@ class DeflectorV3Checks:
 
     def s03_v3_exit(self):
         """Real S03 v3 exit settled pose: one base-start real-input run of the v3 S01, S02 and S03 routes (no placement)."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         if hasattr(type(self), 'v3_s03_start'): return type(self).v3_s03_start
         m = dict(metadata=metadata('base-start'), ticks=self.S03_V3_TICKS, expected_exit=self.S03_V3_SETTLE,
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in self.S03_V3_ROUTE],
@@ -3560,7 +3582,7 @@ class DeflectorV3Checks:
 
     def run_s04(self, name, plan, ticks, bounds, density_until=None, folder='encounters'):
         """Labeled placement of the real S03 v3 exit pose, then trusted input; identical replay."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         start = self.s03_v3_exit()
         m = dict(metadata=metadata('isolated'), inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
             ticks=ticks, expected_exit=bounds, required_events=['acquisition','release','bounce'], initial_snapshot=start)
@@ -4641,7 +4663,7 @@ class GalleriesV3Checks:
 
     def s04_v3_exit(self):
         """Real S04 v3 exit settled pose: one base-start real-input run of the v3 S01..S04 routes (no placement)."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         if hasattr(type(self), 'v3_s04_start'): return type(self).v3_s04_start
         m = dict(metadata=metadata('base-start'), ticks=self.S04_V3_TICKS, expected_exit=self.S04_V3_SETTLE,
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in self.S04_V3_ROUTE],
@@ -4706,7 +4728,7 @@ class GalleriesV3Checks:
 
     def run_s05(self, name, plan, ticks, bounds, density_until=None, folder='encounters', start=None, start_label=None):
         """Labeled placement of the real S04 v3 exit pose, then trusted input; identical replay."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         start = start or self.s04_v3_exit()
         m = dict(metadata=metadata('isolated'), inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in plan],
             ticks=ticks, expected_exit=bounds, required_events=[], initial_snapshot=start)
@@ -5853,7 +5875,7 @@ class LiftworksV3Checks:
         A single continuous S01..S05 run is not equivalent: the camera there differs from a restored pose, and the S05
         route's press pixels were calibrated from the restored S04 exit pose.
         """
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         if hasattr(type(self), 'v3_s05_start'): return type(self).v3_s05_start
         m = dict(metadata=metadata('base-start'), ticks=self.GV.S04_V3_TICKS, expected_exit=self.GV.S04_V3_SETTLE,
             inputs=[dict(tick=t,event=e,world=dict(x=x,y=y)) for t,e,x,y in self.GV.S04_V3_ROUTE],
@@ -6896,7 +6918,7 @@ class CrownV3Checks:
 
     def s06_v3_exit(self):
         """Real S06 v3 exit settled pose, by the chain that proves the S06 build (TASK-521 S06-full)."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         if hasattr(type(self), 'v3_s06_start'): return type(self).v3_s06_start
         start5 = self.s05_v3_exit()
         m = dict(metadata=metadata('isolated'), ticks=self.LC.S06_FULL_TICKS, expected_exit=self.S06_V3_SETTLE,
@@ -7906,7 +7928,7 @@ class SummitV3Checks(CrownV3CompleteChecks):
 
     def s07_v3_exit(self):
         """Real S07 v3 exit settled pose, by the chain that proves the S07 build (TASK-524 S07-full)."""
-        from grapple_over_verify import metadata, execute, check_trace
+        from grapple_over_verify import execute, check_trace
         if hasattr(type(self), 'v3_s07_start'): return type(self).v3_s07_start
         start6 = self.s06_v3_exit()
         CC = self.CC
@@ -9552,119 +9574,107 @@ LEGACY_V3_MAPPING = {
 }
 
 
-class Task465Tests(FoundationsV3Checks, unittest.TestCase):
+class Task465Tests(unittest.TestCase):
     """S01 opening, re-specced by TASK-532 from layout v1 to layout v3 (same cases as Task547Tests).
 
     v1 test_01_geometry (gray solid loading bay) -> test_01 v3 rules, zero gray solids, 918-972 gaps;
     v1 test_02_real_input_replays (crane beam onto the rest ledge) -> test_02/03 S01-01 hoist and S01-02
     lift + green deflector; v1 test_03_source_hashes -> test_04_source_hashes.
     """
+    # TASK-846: retired (no cases). It re-ran the FoundationsV3Checks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-465'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    open = V1Task465.open
-    test_04_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task466Tests(FoundationsV3CompleteChecks, unittest.TestCase):
+class Task466Tests(unittest.TestCase):
     """S01 complete, re-specced by TASK-532 from layout v1 to layout v3 (same cases as Task548Tests).
 
     v1 geometry/mouse route/touch lower-anchor recovery -> v3 geometry, S01-03/04 nominal, full traversal
     and the drag-zone fall with its physical rejoin; source hashes kept.
     """
+    # TASK-846: retired (no cases). It re-ran the FoundationsV3CompleteChecks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-466'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    open = V1Task465.open
-    test_06_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task467Tests(FoundationsV3ToleranceChecks, unittest.TestCase):
+class Task467Tests(unittest.TestCase):
     """S01 tolerance, re-specced by TASK-532: the v1 5-variant x 2-viewport matrix and outside-range
     negative control -> the v3 40-attempt matrix, negative control and drag-zone falls (Task549Tests)."""
+    # TASK-846: retired (no cases). It re-ran the FoundationsV3ToleranceChecks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-467'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    compact = Task506Tests.compact
-    test_03_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task468Tests(SwitchbackV3Checks, unittest.TestCase):
+class Task468Tests(unittest.TestCase):
     """S02 opening, re-specced by TASK-532: v1 geometry, nominal encounters and failure recovery ->
     v3 S02-01/02 from the real S01 v3 exit settled pose (same cases as Task550Tests)."""
+    # TASK-846: retired (no cases). It re-ran the SwitchbackV3Checks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-468'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    open = V1Task465.open
-    test_04_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task469Tests(SwitchbackV3CompleteChecks, unittest.TestCase):
+class Task469Tests(unittest.TestCase):
     """S02 complete, re-specced by TASK-532: v1 completed shaft (mouse/touch) and local miss recovery ->
     v3 S02-03/04, exit-ledge settle and drag-zone fall recovery (same cases as Task551Tests)."""
+    # TASK-846: retired (no cases). It re-ran the SwitchbackV3CompleteChecks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-469'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    open = V1Task465.open
-    test_06_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task470Tests(SwitchbackV3ToleranceChecks, unittest.TestCase):
+class Task470Tests(unittest.TestCase):
     """S02 tolerance, re-specced by TASK-532: v1 isolated-entrance matrix and recovery -> the v3
     40-attempt matrix and drag-zone falls (same cases as Task552Tests)."""
+    # TASK-846: retired (no cases). It re-ran the SwitchbackV3ToleranceChecks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-470'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    compact = Task506Tests.compact
-    test_03_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task471Tests(ViaductV3Checks, unittest.TestCase):
+class Task471Tests(unittest.TestCase):
     """S03 opening, re-specced by TASK-532: v1 geometry, nominal + shortcut and failure recovery ->
     v3 S03-01/02 from the real S02 v3 exit settled pose (same cases as Task553Tests)."""
+    # TASK-846: retired (no cases). It re-ran the ViaductV3Checks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-471'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    open = V1Task465.open
-    test_05_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task472Tests(ViaductV3CompleteChecks, unittest.TestCase):
+class Task472Tests(unittest.TestCase):
     """S03 complete, re-specced by TASK-532: v1 complete viaduct routes -> v3 S03-01..04, exit and
     fall recovery (same cases as Task554Tests)."""
+    # TASK-846: retired (no cases). It re-ran the ViaductV3CompleteChecks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-472'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    open = V1Task465.open
-    test_09_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task473Tests(ViaductV3ToleranceChecks, unittest.TestCase):
+class Task473Tests(unittest.TestCase):
     """S03 tolerance, re-specced by TASK-532: v1 matrix, recovery and shortcut -> the v3 40-attempt
     matrix and drag-zone falls (same cases as Task555Tests)."""
+    # TASK-846: retired (no cases). It re-ran the ViaductV3ToleranceChecks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-473'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    compact = Task506Tests.compact
-    test_03_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task474Tests(DeflectorV3Checks, unittest.TestCase):
+class Task474Tests(unittest.TestCase):
     """S04 opening, re-specced by TASK-532: v1 connected ascent and physical misses -> v3 S04-01/02
     from the real S03 v3 exit settled pose (same cases as Task556Tests)."""
+    # TASK-846: retired (no cases). It re-ran the DeflectorV3Checks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-474'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    open = V1Task465.open
-    test_05_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task475Tests(DeflectorV3CompleteChecks, unittest.TestCase):
+class Task475Tests(unittest.TestCase):
     """S04 complete, re-specced by TASK-532: v1 reflections, double-bounce exit and local miss recovery
     -> v3 S04-01..04, exit and fall/rejoin (same cases as Task515Tests)."""
+    # TASK-846: retired (no cases). It re-ran the DeflectorV3CompleteChecks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-475'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    open = V1Task465.open
-    test_09_source_hashes = V1Task465.test_03_source_hashes
 
 
-class Task476Tests(DeflectorV3ToleranceChecks, unittest.TestCase):
+class Task476Tests(unittest.TestCase):
     """S04 tolerance, re-specced by TASK-532: v1 isolated matrix, recovery and scoped geometry -> the
     v3 40-attempt matrix, HUD probe and drag-zone falls (same cases as Task516Tests)."""
+    # TASK-846: retired (no cases). It re-ran the DeflectorV3ToleranceChecks cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-476'
-    setUpClass = classmethod(V1Task465.setUpClass.__func__)
-    compact = Task506Tests.compact
-    test_03_source_hashes = V1Task465.test_03_source_hashes
 
 
 class Task532Tests(unittest.TestCase):
@@ -9749,75 +9759,99 @@ LEGACY_V3_UPPER_MAPPING = {
 }
 
 
-class Task477Tests(Task517Tests):
+class Task477Tests(unittest.TestCase):
     """S05 opening, re-specced by TASK-533: v1 corner wraps (projecting girder / deep overhang), connected
     ascent and falls -> v3 S05-01/02 from the real S04 v3 exit settled pose (same cases as Task517Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task517Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-477'
 
 
-class Task478Tests(Task518Tests):
+class Task478Tests(unittest.TestCase):
     """S05 complete, re-specced by TASK-533: v1 transfers, recessed ceiling and departure -> v3 S05-03/04,
     full traversal, fall/rejoin and the 1080 negative control (same cases as Task518Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task518Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-478'
 
 
-class Task479Tests(Task519Tests):
+class Task479Tests(unittest.TestCase):
     """S05 tolerance, re-specced by TASK-533: the v1 isolated-start matrix -> the v3 40-attempt matrix,
     HUD probe and drag-zone falls (same cases as Task519Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task519Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-479'
 
 
-class Task480Tests(Task520Tests):
+class Task480Tests(unittest.TestCase):
     """S06 opening, re-specced by TASK-533: v1 moving attachment and physical recovery -> v3 S06-01/02
     from the real S05 v3 exit settled pose (same cases as Task520Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task520Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-480'
 
 
-class Task481Tests(Task521Tests):
+class Task481Tests(unittest.TestCase):
     """S06 complete, re-specced by TASK-533: v1 phase release, alternating transfer and fall -> v3
     S06-03/04, exit and fall recovery (same cases as Task521Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task521Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-481'
 
 
-class Task482Tests(Task522Tests):
+class Task482Tests(unittest.TestCase):
     """S06 tolerance, re-specced by TASK-533: the v1 isolated-start matrix -> the v3 40-attempt matrix,
     HUD probe and drag-zone falls (same cases as Task522Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task522Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-482'
 
 
-class Task483Tests(Task523Tests):
+class Task483Tests(unittest.TestCase):
     """S07 opening, re-specced by TASK-533: v1 timed rotor, displacement catch and jib cut -> v3 S07-01/02
     from the real S06 v3 exit settled pose (same cases as Task523Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task523Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-483'
 
 
-class Task484Tests(Task524Tests):
+class Task484Tests(unittest.TestCase):
     """S07 complete, re-specced by TASK-533: v1 exposed launch, lower recovery and deep fall -> v3
     S07-03/04, exit and fall recovery (same cases as Task524Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task524Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-484'
 
 
-class Task485Tests(Task525Tests):
+class Task485Tests(unittest.TestCase):
     """S07 tolerance, re-specced by TASK-533: the v1 isolated-start matrix -> the v3 40-attempt matrix,
     HUD probe and drag-zone falls (same cases as Task525Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task525Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-485'
 
 
-class Task486Tests(Task526Tests):
+class Task486Tests(unittest.TestCase):
     """S08 opening, re-specced by TASK-533: v1 opposing-anchor brake and angled-bounce transfer -> v3
     S08-01/02 from the real S07 v3 exit settled pose (same cases as Task526Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task526Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-486'
 
 
-class Task487Tests(Task527Tests):
+class Task487Tests(unittest.TestCase):
     """S08 finish, re-specced by TASK-533: v1 moving overhang, final landing and summit exit -> v3 S08-03/04,
     summit finish and S08 fall recovery (same cases as Task527Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task527Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-487'
 
 
-class Task488Tests(Task528Tests):
+class Task488Tests(unittest.TestCase):
     """S08 tolerance, re-specced by TASK-533: the v1 isolated-start matrix -> the v3 40-attempt matrix,
     HUD probe and drag-zone falls (same cases as Task528Tests)."""
+    # TASK-846: retired (no cases). It re-ran the Task528Tests cases unchanged under its own task id; that
+    # coverage stays in the v3 counterparts (LEGACY_V3_MAPPING / LEGACY_V3_UPPER_MAPPING); see artifacts/TASK-846/retired.md.
     task_id = 'TASK-488'
 
 
