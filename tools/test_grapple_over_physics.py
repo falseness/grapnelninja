@@ -520,6 +520,10 @@ class Task503Tests(unittest.TestCase):
         page.evaluate('GRAPPLE_OVER_TEST.attempts.length=0')
         page.evaluate('n=>GRAPPLE_OVER_TEST.begin(n)', family)
         page.evaluate('calibrationSetup', dict(family=family, negative=negative, upgraded=upgraded))
+        # The fall recovery (3d15578 TASK-662) returns a player more than 1500 below
+        # level.spawn (980 here) to it; the angled_bounce/corner_wrap landings are at
+        # y=2600. Move the recovery reference far below the fixture (test-only, as TASK-833).
+        page.evaluate('floors[0].level.spawn={...floors[0].level.spawn,y:floors[0].level.spawn.y+10000}')
         omit = negative and family != 'drag_zone'
         if family == 'angled_bounce':
             actions = [(0, 'mousedown', 700 + aim, 440), (3 + dt, 'mouseup', 700, 440)]
