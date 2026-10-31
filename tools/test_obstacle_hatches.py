@@ -59,6 +59,11 @@ SCENE = r'''mode => {
 # Keep the shared SCENE/TRI_SCENE intact for vector-vs-bitmap suites.
 CUBE_REGRESSION_SCENE = SCENE.replace('const green=new Rect',
     'orange.drawDangerHatch=()=>{};const green=new Rect')
+# Pre-cube-hatch stand-in drawn by CLASSIC_BAD_BASELINE: same scene, no cube hatch.
+CUBE_BASELINE_SCENE = CUBE_REGRESSION_SCENE.replace('window.hatchFixture=',
+    'cube.drawDangerHatch=()=>{};window.hatchFixture=')
+assert CUBE_BASELINE_SCENE != CUBE_REGRESSION_SCENE
+CLASSIC_BAD_BASELINE = 'b151296'
 
 MOTION = r'''i => {
     const {cube,u}=hatchFixture;
@@ -136,8 +141,12 @@ class ObstacleHatchTests(unittest.TestCase):
     def test_rendered_hatches_controls_motion_and_vector_state(self):
         out=ROOT/os.environ.get('HATCH_EVIDENCE_DIR','artifacts/TASK-229')/'cube-regression'
         out.mkdir(parents=True,exist_ok=True)
-        # Retain TASK-228's pre-cube baseline and every original cube assertion.
-        base=resolve_baseline('2b7ba0d8017236ee0ec3b905f1b4cfa2b9283f04')
+        # Baseline is CLASSIC_BAD_BASELINE (classic/bad pinned there by TASK-807) with
+        # the cube hatch stubbed out, standing in for TASK-228's pre-cube tree
+        # 2b7ba0d: that tree predates the HUD glyph sprites (b151296 TASK-755) and
+        # the Grapple Over boot scale 0.25 (c2a6743 TASK-688), which moved
+        # 9.7k control pixels outside the hatch. Every cube assertion is kept.
+        base=resolve_baseline(CLASSIC_BAD_BASELINE)
         measurements={};settings={};pictures={};native={}
         for phase,rev in [('baseline',base),('final','worktree')]:
             with ExitStack() as stack:
@@ -150,7 +159,7 @@ class ObstacleHatchTests(unittest.TestCase):
                         try:
                             context.add_init_script(SEED_SCRIPT%1);context.add_init_script(CLOCK_SCRIPT)
                             page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-                            page.goto(url);boot_frozen(page);meta=page.evaluate(CUBE_REGRESSION_SCENE,mode);settings[key]=meta
+                            page.goto(url);boot_frozen(page);meta=page.evaluate(CUBE_REGRESSION_SCENE if phase=='final' else CUBE_BASELINE_SCENE,mode);settings[key]=meta
                             if phase=='final':self.assertEqual(meta,settings['baseline-'+name])
                             native[key]=Image.open(io.BytesIO(page.screenshot(path=str(out/f'{key}.png')))).convert('RGB')
                             full=decoded(page.evaluate('canvas.toDataURL()'));full.save(out/f'{key}-backing.png');pictures[key]=np.array(full).astype(int)
@@ -253,6 +262,10 @@ TRI_SCENE = SCENE.replace('window.hatchFixture={cube,orange,green,tri,u};', '''
         canvasBounds:canvas''')
 TRI_REGRESSION_SCENE = TRI_SCENE.replace('cube.y=height*.7/u;',
     'orange.drawDangerHatch=()=>{};cube.drawDangerHatch=()=>{};cube.y=height*.7/u;')
+# Pre-triangle-hatch stand-in drawn by CLASSIC_BAD_BASELINE: hatch variant off.
+TRI_BASELINE_SCENE = TRI_REGRESSION_SCENE.replace('cube.y=height*.7/u;',
+    "STYLE.dangerHatch.variant='off';cube.y=height*.7/u;")
+assert TRI_BASELINE_SCENE != TRI_REGRESSION_SCENE
 
 TRI_ISOLATE = r'''kind => {
     const original=ctx,lightOriginal=visualEffects.lightmap.ctx,scratch=document.createElement('canvas');
@@ -293,15 +306,16 @@ def triangle_clip(meta, shape):
     return mask
 
 
-TASK_229_PARENT='0b5a6f55ef710ca2cf5f5fba8f83ce4ed0dfc062'
 
 
 class TriangleHatchTests(unittest.TestCase):
     def test_triangles_rendered_controls_motion_vector_state(self):
         out=ROOT/os.environ.get('HATCH_EVIDENCE_DIR','artifacts/TASK-229');out.mkdir(parents=True,exist_ok=True)
-        # Default to TASK-229's own parent (a810250^): pre-triangle-hatch tree,
-        # so no uncommitted artifacts/TASK-229/BASE_REV is needed.
-        base=resolve_baseline(os.environ.get('HATCH_BASE_REV') or TASK_229_PARENT)
+        # Default to CLASSIC_BAD_BASELINE with the hatch variant off, standing in
+        # for TASK-229's own parent (a810250^, pre-triangle-hatch): that tree
+        # predates b151296 TASK-755 (HUD glyph sprites) and c2a6743 TASK-688
+        # (Grapple Over boot scale 0.25), which changed the object controls.
+        base=resolve_baseline(os.environ.get('HATCH_BASE_REV') or CLASSIC_BAD_BASELINE)
         measurements={};settings={};pictures={};native={};rows=[]
         for phase,rev in [('baseline',base),('final','worktree')]:
             with ExitStack() as stack:
@@ -313,7 +327,7 @@ class TriangleHatchTests(unittest.TestCase):
                         try:
                             context.add_init_script(SEED_SCRIPT%1);context.add_init_script(CLOCK_SCRIPT)
                             page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
-                            page.goto(url);boot_frozen(page);meta=page.evaluate(TRI_REGRESSION_SCENE,mode);settings[key]=meta
+                            page.goto(url);boot_frozen(page);meta=page.evaluate(TRI_REGRESSION_SCENE if phase=='final' else TRI_BASELINE_SCENE,mode);settings[key]=meta
                             if phase=='final':self.assertEqual(meta,settings['baseline-'+name])
                             native[key]=Image.open(io.BytesIO(page.screenshot(path=str(out/f'{key}.png')))).convert('RGB')
                             full=decoded(page.evaluate('canvas.toDataURL()'));full.save(out/f'{key}-backing.png');pictures[key]=np.array(full).astype(int)
