@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 # segments). Every current template exists there, so all are compared.
 BASELINE = 'd9b7129'
 BASELINE_FRAMES = list(frames)
+# Later intended geometry edits: fb42019 TASK-412 (Frame 14 right pillar) and
+# b398d65 TASK-413 (Frame 10 lower danger block) extend a block to the ground
+# top. Those frames compare against b398d65, the last elements/factory.js change.
+FRAME_BASELINES = {'frame10Elements': 'b398d65', 'frame14Rects': 'b398d65'}
 
 
 class FrameFixtureTests(unittest.TestCase):
@@ -24,7 +28,11 @@ class FrameFixtureTests(unittest.TestCase):
         files = subprocess.check_output(
             ['git', 'ls-tree', '-r', '--name-only', BASELINE],
             cwd=ROOT, text=True).splitlines()
-        cls.baseline = load_baseline_sources(BASELINE, files)
+        cls.baselines = {BASELINE: load_baseline_sources(BASELINE, files)}
+        for revision in set(FRAME_BASELINES.values()):
+            cls.baselines[revision] = load_baseline_sources(revision, subprocess.check_output(
+                ['git', 'ls-tree', '-r', '--name-only', revision],
+                cwd=ROOT, text=True).splitlines())
 
     def assert_members(self, members, types):
         self.assertEqual(len(members), len(types))
@@ -33,7 +41,7 @@ class FrameFixtureTests(unittest.TestCase):
             self.assertEqual(len(element['points']),
                              3 if element['type'] == 'Triangle' else 4)
 
-    def sample(self, frame, types, width, height, baseline=False):
+    def sample(self, frame, types, width, height, baseline=None):
         page = self.browser.new_page(viewport={'width': width, 'height': height})
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
@@ -41,7 +49,7 @@ class FrameFixtureTests(unittest.TestCase):
                 if message.type == 'error' else None)
         try:
             if baseline:
-                page.route('**/*', baseline_route(self.baseline))
+                page.route('**/*', baseline_route(self.baselines[baseline]))
             page.goto(self.url)
             wait_for_boot(page)
             row = page.evaluate(setup, frame)
@@ -89,7 +97,8 @@ class FrameFixtureTests(unittest.TestCase):
         for frame, types in zip(frames, expected):
             if frame not in BASELINE_FRAMES:
                 continue
-            row = self.sample(frame, types, 1920, 1080, baseline=True)
+            revision = FRAME_BASELINES.get(frame, BASELINE)
+            row = self.sample(frame, types, 1920, 1080, baseline=revision)
             # The overhaul intentionally changes fill/stroke. Compare every
             # geometry/physics field and exact object/polygon cardinality.
             def geometry(snapshot):
@@ -101,7 +110,7 @@ class FrameFixtureTests(unittest.TestCase):
             assert_near(geometry(row), geometry(current[frame]), frame, rel_tol=1e-12,
                         abs_tol=1e-10, require_finite=False)
             cases += 1
-            print(f'PASS baseline {BASELINE} 1920x1080 {frame}: initial/raw geometry match current; '
+            print(f'PASS baseline {revision} 1920x1080 {frame}: initial/raw geometry match current; '
                   'dynamic identity; 30 isolated motion samples; browser errors=0', flush=True)
         self.assertEqual(cases, len(BASELINE_FRAMES))
         print(f'PASS baseline frame fixture: {cases} cases', flush=True)
