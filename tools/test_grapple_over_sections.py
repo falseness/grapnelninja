@@ -9692,20 +9692,23 @@ class Task532Tests(unittest.TestCase):
         rows = {}
         for legacy, (checks, counterpart, intent) in LEGACY_V3_MAPPING.items():
             cls, mixin, peer = module[legacy], module[checks], module[counterpart]
-            self.assertTrue(issubclass(cls, mixin) and issubclass(cls, unittest.TestCase), legacy)
-            self.assertTrue(issubclass(peer, mixin), counterpart)
-            names = self.case_names(cls)
-            self.assertEqual(names, self.case_names(peer), legacy)
-            self.assertGreater(len(names), 1)
-            # Every case comes from the v3 checks except the unchanged source-hash case.
-            for name in names:
-                self.assertTrue(hasattr(mixin, name) or name.endswith('_source_hashes'), (legacy, name))
+            # TASK-846 retired the legacy aliases: each is an empty stub under its own task id; the
+            # coverage stays in the v3 counterpart, which still runs the v3 checks.
+            self.assertEqual(cls.__bases__, (unittest.TestCase,), legacy)
+            self.assertEqual(cls.task_id, 'TASK-'+legacy[4:7])
+            self.assertEqual({k for k in vars(cls) if not k.startswith('_')}, {'task_id'}, legacy)
+            self.assertEqual(self.case_names(cls), [], legacy)
+            self.assertTrue(issubclass(peer, mixin) and issubclass(peer, unittest.TestCase), counterpart)
+            peer_names = self.case_names(peer)
+            self.assertGreater(len(peer_names), 1, counterpart)
+            for name in peer_names:
+                self.assertTrue(hasattr(mixin, name) or name.endswith('_source_hashes'), (counterpart, name))
             rows[legacy] = dict(task='TASK-'+legacy[4:7], v3_checks=checks, v3_counterpart=counterpart,
-                v3_counterpart_task='TASK-'+counterpart[4:7], intent=intent, cases=names,
-                section='S0%d' % ((int(legacy[4:7])-465)//3+1))
+                v3_counterpart_task='TASK-'+counterpart[4:7], intent=intent, cases=[], retired_by='TASK-846',
+                counterpart_cases=peer_names, section='S0%d' % ((int(legacy[4:7])-465)//3+1))
         self.evidence.write('mapping.json', dict(revision=self.proof['revision'], classes=rows,
             verify_checks={'check_s0%d_mechanics' % n: 'check_s0%d_v3_mechanics' % n for n in range(1, 5)}))
-        print('PASS mapping: 12 legacy classes run their v3 checks; case lists equal the v3 counterparts')
+        print('PASS mapping: 12 legacy classes retired by TASK-846 (0 cases); their v3 counterparts run the v3 checks')
 
     def test_02_legacy_logs(self):
         import re
@@ -9872,18 +9875,26 @@ class Task533Tests(unittest.TestCase):
         for legacy, (kind, checks, counterpart, intent) in LEGACY_V3_UPPER_MAPPING.items():
             module = self.module(kind)
             cls, peer = module[legacy], module[counterpart]
-            # The legacy class is its v3 counterpart under its own task id, nothing added or dropped.
-            self.assertEqual(cls.__bases__, (peer,), legacy)
             self.assertEqual(cls.task_id, 'TASK-'+legacy[4:7])
             self.assertNotEqual(cls.task_id, peer.task_id)
             self.assertEqual({k for k in vars(cls) if not k.startswith('_')}, {'task_id'}, legacy)
-            if checks:
-                self.assertTrue(issubclass(peer, globals()[checks]), counterpart)
+            # Every legacy alias is now an empty stub under its own task id: the S05-S08 ones retired by
+            # TASK-846, the integration joins by TASK-835 (their v3 counterparts Task529/530 by TASK-836).
+            self.assertEqual(cls.__bases__, (unittest.TestCase,), legacy)
             names = self.case_names(cls)
-            self.assertEqual(names, self.case_names(peer), legacy)
-            self.assertGreater(len(names), 1)
+            self.assertEqual(names, [], legacy)
+            peer_names = self.case_names(peer)
+            if kind == 'sections':
+                # The coverage stays in the v3 counterpart, which still runs its v3 checks.
+                self.assertTrue(issubclass(peer, globals()[checks]), counterpart)
+                self.assertGreater(len(peer_names), 1, counterpart)
+                extra = dict(retired_by='TASK-846', counterpart_cases=peer_names)
+            else:
+                self.assertEqual(peer.__bases__, (unittest.TestCase,), counterpart)
+                self.assertEqual(peer_names, [], counterpart)
+                extra = dict(retired_by='TASK-835', counterpart_retired_by='TASK-836')
             rows[legacy] = dict(task=cls.task_id, file=f'tools/test_grapple_over_{kind}.py', v3_checks=checks,
-                v3_counterpart=counterpart, v3_counterpart_task=peer.task_id, intent=intent, cases=names,
+                v3_counterpart=counterpart, v3_counterpart_task=peer.task_id, intent=intent, cases=names, **extra,
                 section='S0%d' % ((int(legacy[4:7])-477)//3+5) if kind == 'sections' else
                 ('S01-S04 join' if legacy == 'Task489Tests' else 'S05-S08 join'))
         import grapple_over_verify as V
@@ -9891,7 +9902,7 @@ class Task533Tests(unittest.TestCase):
             self.assertIn(f'check_s0{n}_v3_mechanics', getattr(V, f'check_s0{n}_mechanics').__code__.co_names)
         self.evidence.write('mapping.json', dict(revision=self.proof['revision'], classes=rows,
             verify_checks={'check_s0%d_mechanics' % n: 'check_s0%d_v3_mechanics' % n for n in range(1, 9)}))
-        print('PASS mapping: 14 legacy classes are their v3 counterparts; case lists equal the v3 counterparts')
+        print('PASS mapping: 12 S05-S08 legacy classes retired by TASK-846 (0 cases, v3 counterparts kept); 2 joins retired by TASK-835/836')
 
     def test_02_legacy_logs(self):
         import re
