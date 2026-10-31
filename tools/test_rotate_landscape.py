@@ -5,7 +5,7 @@ the letterbox bars) so the logical viewport is laid out for the long side;
 canvas <-> window coordinates map through the rotation. Since 8d9b25e
 (TASK-244) the turned stage is hidden and inert behind #rotate-prompt: a
 portrait tap does not start a run, and turning the phone mid-run pauses it.
-Turning to landscape re-lays out with no errors and the same tap starts the
+Turning to landscape re-lays out with no errors and the same tap resumes the
 run. Desktop portrait windows and landscape phones are not rotated.
 """
 from pathlib import Path
@@ -32,6 +32,9 @@ STATE = '''() => {
 
 CENTER = '''(path) => { const b = eval(path).background
     return {x: b.x + b.width / 2, y: b.y + b.height / 2} }'''
+# The Grapple Over pause screen's first button (CLIMB_UI.buttons: Resume,
+# Restart climb, the mode switches, the grapnel toggle)
+RESUME = 'CLIMB_UI.buttons[0]'
 
 
 class RotateLandscapeTests(unittest.TestCase):
@@ -142,21 +145,23 @@ class RotateLandscapeTests(unittest.TestCase):
         self.assertGreater(corner['x'], PORTRAIT['width'] / 2)
         self.assertLess(corner['y'], PORTRAIT['height'] / 2)
 
-        # The boot run starts paused behind the prompt. Upright, a tap on the
-        # pause screen's mode switch lands on the rotate prompt: no switch
+        # The Grapple Over boot run (TASK-459) starts paused behind the
+        # prompt. Upright, a tap on the pause screen's Resume lands on the
+        # rotate prompt: still paused
         self.assert_rotate_prompt(page)
-        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
-        self.tap_button(page, 'menu.backToMenu')
+        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'grapple_over'])
+        self.assertEqual(page.evaluate(RESUME + '.text.text'), 'resume')
+        self.tap_button(page, RESUME)
         page.wait_for_timeout(500)
-        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
+        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'grapple_over'])
 
-        # Turned to landscape, the same switch starts a classic run
+        # Turned to landscape, the same Resume resumes the climb
         page.set_viewport_size(LANDSCAPE)
         page.wait_for_function('!isViewRotated() && !document.getElementById("stage").inert',
                                timeout=5000)
         page.wait_for_timeout(300)
-        self.tap_button(page, 'menu.backToMenu')
-        page.wait_for_function('!menu.gamePaused && version === "classic"', timeout=5000)
+        self.tap_button(page, RESUME)
+        page.wait_for_function('!menu.gamePaused && version === "grapple_over"', timeout=5000)
         self.assertEqual(errors, {'console': [], 'page': []})
 
     def test_turning_the_phone_mid_run(self):
@@ -174,9 +179,10 @@ class RotateLandscapeTests(unittest.TestCase):
         # Same screen in both orientations: the same logical viewport
         self.assertEqual(landscape['width'], portrait['width'])
         # The boot run waited paused behind the prompt: resume it
-        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
-        self.tap_button(page, 'menu.resume')
-        page.wait_for_function('!menu.gamePaused && version === "bad"', timeout=5000)
+        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'grapple_over'])
+        self.assertEqual(page.evaluate(RESUME + '.text.text'), 'resume')
+        self.tap_button(page, RESUME)
+        page.wait_for_function('!menu.gamePaused && version === "grapple_over"', timeout=5000)
 
         # Turned upright mid-run: re-laid out, the run pauses behind the prompt
         page.set_viewport_size(PORTRAIT)
@@ -185,7 +191,7 @@ class RotateLandscapeTests(unittest.TestCase):
         page.wait_for_timeout(300)
         self.assertEqual(page.evaluate(STATE)['width'], portrait['width'])
         self.assert_rotate_prompt(page)
-        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'bad'])
+        self.assertEqual(page.evaluate('[menu.gamePaused, version]'), [True, 'grapple_over'])
 
         page.set_viewport_size(LANDSCAPE)
         page.wait_for_function('!isViewRotated() && !document.getElementById("stage").inert',
