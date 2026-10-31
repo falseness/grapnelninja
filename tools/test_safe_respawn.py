@@ -26,7 +26,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from game_harness import open_game, start_game_test
+from game_harness import open_game, start_game_test, switch_mode
 
 ROOT = Path(__file__).resolve().parent.parent
 VIEWPORT = {'width': 1280, 'height': 720}
@@ -281,13 +281,15 @@ class SafeRespawnTests(unittest.TestCase):
                 draw.text((x + 4, y + 2), f't{info["ms"]}  alpha {info["blinkAlpha"]:.2f}', fill='white')
         sheet.save(out / 'contact.png')
 
-    def boot(self):
+    def boot(self, mode):
         context, page, errors = open_game(self.browser, self.url + 'index.html', VIEWPORT)
         self.addCleanup(context.close)
         self.errors.append((self.id(), errors))
         self.addCleanup(lambda: self.assertEqual((errors['console'], errors['page']), ([], [])))
-        page.wait_for_function('PLATFORM.environment === "disabled" && bootComplete && runInProgress'
+        page.wait_for_function('PLATFORM.environment === "local" && bootComplete && runInProgress'
                                ' && document.getElementById("loading").hidden')
+        # Boot starts Grapple Over (TASK-459); these cases are about the classic/bad runs
+        switch_mode(page, mode)
         page.evaluate(SETUP)
         return page
 
@@ -308,7 +310,7 @@ class SafeRespawnTests(unittest.TestCase):
         page.screenshot(path=str(path))
 
     def run_case(self, name, mode, template, seed, cause):
-        page = self.boot()
+        page = self.boot(mode)
         page.evaluate('([m, t, s]) => window.__rs.start(m, t, s)', [mode, template, seed])
         hold_y = 0.2 * 1080 if mode == 'classic' else 1.2 * 1080
         page.evaluate('([v, y]) => window.__rs.advance(90, v, y)', [0.8, hold_y])
@@ -400,7 +402,7 @@ class SafeRespawnTests(unittest.TestCase):
     # e882a5e (TASK-370): with no game over ad due a death restarts the same
     # mode at once (no offer, no respawnNinja): the new run must start clear.
     def fast_restart_case(self, name, mode, seed, cause):
-        page = self.boot()
+        page = self.boot(mode)
         page.evaluate('([m, s]) => window.__rs.start(m, null, s)', [mode, seed])
         hold_y = 0.2 * 1080 if mode == 'classic' else 1.2 * 1080
         page.evaluate('([v, y]) => window.__rs.advance(90, v, y)', [0.8, hold_y])
@@ -439,7 +441,7 @@ class SafeRespawnTests(unittest.TestCase):
         self.fast_restart_case('fast-restart-bad-side', 'bad', 55, 'side')
 
     def replenish_check(self, mode, seed, cause):
-        page = self.boot()
+        page = self.boot(mode)
         page.evaluate('([m, s]) => window.__rs.start(m, null, s)', [mode, seed])
         hold_y = 0.2 * 1080 if mode == 'classic' else 1.2 * 1080
         page.evaluate('([v, y]) => window.__rs.advance(90, v, y)', [0.8, hold_y])
