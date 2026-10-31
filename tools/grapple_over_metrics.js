@@ -13,10 +13,11 @@
  setup(c){
   const rect=(id,x,y,w,h)=>({id,x,y,role:'bounce',grapplable:true,points:[{x:0,y:0},{x:w,y:0},{x:w,y:h},{x:0,y:h}]});
   const m=structuredClone(GRAPPLE_OVER_REPLACEMENT);
-  m.sections=[{id:'S01',status:'built',encounters:['metrics']}];m.finish=null;
+  m.sections=[{id:'S01',status:'built',encounters:['metrics']}];m.finish=null;m.movers=[];
   m.elements=[rect('takeoff',0,1000,c.width,GRAPPLE_OVER_MOVEMENT.panelThickness),rect('landing',c.width+c.gap,1000,c.width,GRAPPLE_OVER_MOVEMENT.panelThickness),rect('anchor',c.width-80+c.dx,1000-ninja.radius-c.dy,GRAPPLE_OVER_MOVEMENT.anchorFace.width,GRAPPLE_OVER_MOVEMENT.anchorFace.height)];
   m.encounters=[{id:'metrics',elements:m.elements.map(e=>e.id)}];m.bounds={left:-2000,right:6000,top:-4000,bottom:8000};
-  floors=[loadMountainLevel(m)];floors[0].rangeUpgraded=c.radius===540;
+  // A falling candidate recovers at spawn; answer the first-fall double offer (91f7555 TASK-721) so it cannot pause later runs.
+  floors=[loadMountainLevel(m)];floors[0].doubleOfferShown=true;floors[0].rangeUpgraded=c.radius===540;
   Object.assign(ninja,{x:c.width-80,y:1000-ninja.radius-1,speedX:0,speedY:0});
   grapnel.endShot();pressHeld=false;stalePress=false;gameplayPressOwned=false;
   screen.leftWall=null;screen.trackGrappleOver(true);

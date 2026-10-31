@@ -17,7 +17,8 @@
   m.elements.push(rect('yellow',1600,200,160,300,'drag'));
   m.encounters=[{id:'mover-example',elements:m.elements.map(e=>e.id)}];
   m.movers=[{id:'long-'+axis,element:'blue',axis,min:horizontal?600:80,max:horizontal?1320:800,periodMs,phase}];
-  floors=[loadMountainLevel(m)];Object.assign(ninja,{x:horizontal?500:850,y:1040-ninja.radius-GAMEPLAY.cubeContactEpsilon,speedX:0,speedY:0});
+  // A falling candidate recovers at spawn; answer the first-fall double offer (91f7555 TASK-721) so it cannot pause later candidates.
+  floors=[loadMountainLevel(m)];floors[0].doubleOfferShown=true;Object.assign(ninja,{x:horizontal?500:850,y:1040-ninja.radius-GAMEPLAY.cubeContactEpsilon,speedX:0,speedY:0});
   grapnel.endShot();pressHeld=false;stalePress=false;gameplayPressOwned=false;screen.leftWall=null;screen.trackGrappleOver(true);
   this.axis=axis;this.periodMs=periodMs;return m;
  },
