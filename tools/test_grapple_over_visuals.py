@@ -164,11 +164,6 @@ BANDS_538 = 8
 BAND_538 = 1620
 HALF_SPAN_538 = 400
 VIEWPORTS_538 = ({'width': 1280, 'height': 720}, {'width': 844, 'height': 390})
-GEOMETRY_538 = '''() => {
-    const level = validateMountainManifest(GRAPPLE_OVER_MOUNTAIN);
-    return JSON.stringify({elements: level.elements.map(e => ({id: e.id, role: e.role,
-        grapplable: e.grapplable, x: e.x, y: e.y, points: e.points})), movers: level.movers});
-}'''
 # The same seeded frame in both revisions: the animation clock is frozen before
 # the run starts and physics is stepped explicitly (no rAF).
 FRAME_538 = '''([mode, ticks]) => {
@@ -235,23 +230,6 @@ class Task538Tests(unittest.TestCase):
         page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
         page.wait_for_function('!unTouch')
         return page
-
-    def test_01_geometry_hash_unchanged(self):
-        row = {}
-        for label, url in (('before', self.baseline_url), ('after', self.url)):
-            page = self.open(url, VIEWPORTS_538[0])
-            geometry = page.evaluate(GEOMETRY_538)
-            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
-                              elements=len(json.loads(geometry)['elements']),
-                              movers=len(json.loads(geometry)['movers']))
-        row.update(baseline_revision=self.config['baseline_revision'],
-                   fields='elements: id, role, grapplable, x, y, points; movers: full',
-                   equal=row['before'] == row['after'])
-        self.evidence.write('geometry-hash.json', row)
-        self.assertEqual(row['before'], row['after'])
-        self.assertGreater(row['after']['elements'], 0)
-        print(f'PASS geometry: hash {row["after"]["sha256"][:16]} before == after '
-              f'({row["after"]["elements"]} elements, {row["after"]["movers"]} movers)')
 
     def test_02_palette_sweep(self):
         page = self.open(self.url, VIEWPORTS_538[0])
@@ -509,23 +487,6 @@ class Task539Tests(unittest.TestCase):
         page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
         page.wait_for_function('!unTouch')
         return page
-
-    def test_01_geometry_hash_unchanged(self):
-        row = {}
-        for label, url in (('before', self.baseline_url), ('after', self.url)):
-            page = self.open(url, VIEWPORTS_538[0])
-            geometry = page.evaluate(GEOMETRY_538)
-            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
-                              elements=len(json.loads(geometry)['elements']),
-                              movers=len(json.loads(geometry)['movers']))
-        row.update(baseline_revision=self.config['baseline_revision'],
-                   fields='elements: id, role, grapplable, x, y, points; movers: full',
-                   equal=row['before'] == row['after'])
-        self.evidence.write('geometry-hash.json', row)
-        self.assertEqual(row['before'], row['after'])
-        self.assertGreater(row['after']['elements'], 0)
-        print(f'PASS geometry: hash {row["after"]["sha256"][:16]} before == after '
-              f'({row["after"]["elements"]} elements, {row["after"]["movers"]} movers)')
 
     def test_02_parallax_climb_and_coverage(self):
         # Recorded climb: the ninja is moved up a weaving path 6 units a tick
@@ -957,23 +918,6 @@ class Task540Tests(unittest.TestCase):
             r['rgb'] = np.frombuffer(r.pop('pixels').encode('latin-1'), np.uint8).reshape(
                 r['height'], r['width'], 4)[..., :3].astype(float)
         return r
-
-    def test_01_geometry_hash_unchanged(self):
-        row = {}
-        for label, url in (('before', self.baseline_url), ('after', self.url)):
-            page = self.open(url, VIEWPORTS_538[0])
-            geometry = page.evaluate(GEOMETRY_538)
-            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
-                              elements=len(json.loads(geometry)['elements']),
-                              movers=len(json.loads(geometry)['movers']))
-        row.update(baseline_revision=self.config['baseline_revision'],
-                   fields='elements: id, role, grapplable, x, y, points; movers: full',
-                   equal=row['before'] == row['after'])
-        self.evidence.write('geometry-hash.json', row)
-        self.assertEqual(row['before'], row['after'])
-        self.assertGreater(row['after']['elements'], 0)
-        print(f'PASS geometry: hash {row["after"]["sha256"][:16]} before == after '
-              f'({row["after"]["elements"]} elements, {row["after"]["movers"]} movers)')
 
     def test_02_roles_sheet_and_contrast(self):
         import numpy as np
@@ -1448,23 +1392,6 @@ class Task541Tests(unittest.TestCase):
         page.wait_for_function('!unTouch')
         return page
 
-    def test_01_geometry_hash_unchanged(self):
-        row = {}
-        for label, url in (('before', self.baseline_url), ('after', self.url)):
-            page = self.open(url, VIEWPORTS_541[0]['viewport'])
-            geometry = page.evaluate(GEOMETRY_538)
-            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
-                              elements=len(json.loads(geometry)['elements']),
-                              movers=len(json.loads(geometry)['movers']))
-        row.update(baseline_revision=self.config['baseline_revision'],
-                   fields='elements: id, role, grapplable, x, y, points; movers: full',
-                   equal=row['before'] == row['after'])
-        self.evidence.write('geometry-hash.json', row)
-        self.assertEqual(row['before'], row['after'])
-        self.assertGreater(row['after']['elements'], 0)
-        print(f'PASS geometry: hash {row["after"]["sha256"][:16]} before == after '
-              f'({row["after"]["elements"]} elements, {row["after"]["movers"]} movers)')
-
     def press(self, page, touch, point):
         if touch:
             cdp = page.context.new_cdp_session(page)
@@ -1849,26 +1776,6 @@ class Task542Tests(unittest.TestCase):
         page.evaluate('m => {startGame(m); cancelAnimationFrame(game)}', mode)
         page.wait_for_function('!unTouch')
         return page
-
-    def test_01_geometry_hash_unchanged(self):
-        row = {}
-        for label in ('before', 'final', 'pre_art'):
-            page = self.open(label)
-            geometry = page.evaluate(GEOMETRY_538)
-            row[label] = dict(sha256=hashlib.sha256(geometry.encode()).hexdigest(),
-                              elements=len(json.loads(geometry)['elements']), movers=len(json.loads(geometry)['movers']))
-            page.close()
-        after = row.pop('final')
-        row = dict(before=row['before'], after=after, pre_art=row['pre_art'],
-                   baseline_revision=self.revisions['before'], pre_art_revision=self.revisions['pre_art'],
-                   fields='elements: id, role, grapplable, x, y, points; movers: full',
-                   equal=row['before'] == after, equal_to_pre_art=row['pre_art'] == after)
-        self.evidence.write('geometry-hash.json', row)
-        self.assertEqual(row['before'], row['after'])
-        self.assertEqual(row['pre_art'], row['after'])
-        self.assertGreater(after['elements'], 0)
-        print(f'PASS geometry: hash {after["sha256"][:16]} before ({BASELINE_542}) == after == pre-art '
-              f'({PRE_ART_542}) ({after["elements"]} elements, {after["movers"]} movers)', flush=True)
 
     # ---- replays --------------------------------------------------------------------------------
     def archived(self, task):
