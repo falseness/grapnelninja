@@ -489,7 +489,7 @@ class LongFallMessageTests(unittest.TestCase):
         self.assertEqual(sorted(json.loads(saved)), sorted(['version', 'levelVersion', 'layoutId', 'simulationTick', 'stats',
                                                              'player', 'input', 'upgrades', 'elements', 'grapple',
                                                              'grapnelMode', 'usedDouble', 'fallHintShown',
-                                                             'doubleOfferShown']))
+                                                             'doubleOfferShown', 'climbCheckpoint']))
         lc['reload'] = {'eventBeforeReload': True, 'savedKeys': sorted(json.loads(saved)),
                         'savedContainsReaction': False, 'afterReload': reloaded, 'eventsIn60Ticks': 0,
                         'firstStepAfter': run['steps'][0] if run['steps'] else None}
