@@ -138,13 +138,18 @@ class Task446Tests(unittest.TestCase):
             } finally {for (const [proto,name,fn] of originals) proto[name]=fn}
         }''')
         self.assertEqual(trace['proceduralCalls'], 0)
+        # startGame('grapple_over') loads the shipped climb, not the 7-element
+        # GRAPPLE_OVER_LEVEL (9f6506b TASK-465; imported level since ba5ca11
+        # TASK-650), so the invariant is the live element count, kept on travel.
+        count = len(trace['before'])
+        self.assertGreater(count, 7)
         for row in trace['rows']:
-            self.assertEqual(row['count'], 7)
+            self.assertEqual(row['count'], count)
             self.assertTrue(row['sameGroup'] and row['sameArray'] and row['sameObjects'])
             self.assertEqual(row['geometry'], trace['before'])
         self.evidence.write('world-trace.json', dict(self.proof, **trace,
             constant_terrain_identity_count=True, no_procedural_spawning=True))
-        print('PASS travel: forward/backward/up/down/return; count=7; same objects and geometry; proceduralCalls=0')
+        print(f'PASS travel: forward/backward/up/down/return; count={count}; same objects and geometry; proceduralCalls=0')
 
     def test_classic_bad_baseline(self):
         baseline = json.loads((ROOT / 'artifacts/TASK-444/baseline.json').read_text())
@@ -163,13 +168,24 @@ class Task448Tests(unittest.TestCase):
     def test_fixed_boundaries_camera_backtracking_and_landings(self):
         page = self.open()
         observed = page.evaluate('''() => {
+            // The climb is the shipped level since 9f6506b TASK-465 (imported
+            // since ba5ca11 TASK-650); this test's subject is the authored
+            // GRAPPLE_OVER_LEVEL fixture and its bounds, so load it explicitly.
+            floors = [loadFixedLevel()];
+            // Climbs open paused (4f509ed TASK-459 / 97ea9d0 TASK-458) and
+            // physics() is a no-op while paused; resume for the landings.
+            menu.unPause(); cancelAnimationFrame(game);
             const world = floors[0], player = ninja, refs = world.elements.slice();
             const geometry = () => world.elements.map(e => ({id:e.id,x:e.x,y:e.y}));
             const initial = geometry(), camera = [], sides = [], landings = [];
             // A real hook into the base; moving only the camera must not move it.
             ninja.x=360; ninja.y=1000; ninja.speedX=ninja.speedY=0;
-            grapnel.throwed=true; grapnel.pos=[[360,1110,new Empty()]];
-            grapnel.collision();
+            // Grapple Over acquires only along a shot's swept step (bc2097f
+            // TASK-451), so fire one real 110-unit step down into the base.
+            grapnel.throwed=true; grapnel.grappled=false; grapnel.traveled=0;
+            grapnel.aim={x:0,y:1}; grapnel.speedX=0; grapnel.speedY=110;
+            grapnel.pos=[[360,1000,new Empty()]];
+            grapnel.move(); grapnel.collision();
             const anchorBefore=grapnel.pos.map(p=>[p[0],p[1],p[2].id]);
             for (let i=0;i<12;i++) {
                 screen.speedX=i%2 ? 20000 : -20000;
@@ -222,25 +238,37 @@ class Task448Tests(unittest.TestCase):
         self.assertEqual(observed['finalGeometry'], observed['initial'])
         shots = page.evaluate('''() => {
             const world=floors[0], rows=[];
+            // Real stepped shots (acquisition is swept, bc2097f TASK-451): a
+            // blocker clips the line and the shot ends once its range is used
+            // (c33200b TASK-535), so step until it ends or attaches.
+            const fire=(x,y,tx,ty)=>{
+                ninja.x=x; ninja.y=y; ninja.speedX=ninja.speedY=0;
+                const d=Math.hypot(tx-x,ty-y);
+                grapnel.throwed=true; grapnel.grappled=false; grapnel.traveled=0;
+                grapnel.aim={x:(tx-x)/d,y:(ty-y)/d}; grapnel.speedX=tx-x; grapnel.speedY=ty-y;
+                grapnel.pos=[[x,y,new Empty()]];
+                let clipped=false;
+                for(let i=0;i<20 && grapnel.throwed && !grapnel.isGrappled();i++) {
+                    grapnel.move(); grapnel.collision(); clipped=clipped||!!grapnel.clip;
+                }
+                return clipped;
+            };
             for(const [id,x,y,tx,ty] of [
                 ['left-bound',-900,0,-1200,0],['right-bound',1900,0,2200,0],
                 ['catch-floor',1500,1900,1500,2200]]) {
-                ninja.x=x; ninja.y=y;
-                grapnel.throwed=true; grapnel.grappled=false;
-                grapnel.pos=[[tx,ty,new Empty()]];
-                grapnel.collision();
-                rows.push({id,throwed:grapnel.throwed,attached:grapnel.isGrappled(),count:grapnel.pos.length});
+                const clipped=fire(x,y,tx,ty);
+                rows.push({id,clipped,throwed:grapnel.throwed,attached:grapnel.isGrappled(),count:grapnel.pos.length});
             }
             // Place a legitimate target behind a blocker, first in iteration order.
             const target=new Trampoline({x:-1250,y:-50,points:[{x:0,y:0},{x:40,y:0},{x:40,y:100},{x:0,y:100}]});
             target.id='occluded-target'; world.elements.unshift(target);
-            ninja.x=-900; ninja.y=0; grapnel.throwed=true; grapnel.grappled=false;
-            grapnel.pos=[[-1300,0,new Empty()]]; grapnel.collision();
-            rows.push({id:'occluded-target',throwed:grapnel.throwed,attached:grapnel.isGrappled(),count:grapnel.pos.length});
+            const clipped=fire(-900,0,-1300,0);
+            rows.push({id:'occluded-target',clipped,throwed:grapnel.throwed,attached:grapnel.isGrappled(),count:grapnel.pos.length});
             world.elements.shift();
             return rows;
         }''')
         for shot in shots:
+            self.assertTrue(shot['clipped'], shot)
             self.assertFalse(shot['throwed'] or shot['attached'])
             self.assertEqual(shot['count'], 0)
         self.evidence.write('boundaries.json', dict(self.proof, observations=observed, shots=shots,
@@ -377,7 +405,8 @@ class Task455Tests(unittest.TestCase):
             record_video_dir=str(self.evidence.path('video')),record_video_size={'width':1280,'height':720})
         self.addCleanup(context.close)
         page=context.new_page(); page.goto(self.url); wait_for_boot(page)
-        page.evaluate("() => {startGame('grapple_over');cancelAnimationFrame(game)}")
+        # Climbs open paused since 4f509ed TASK-459 / 97ea9d0 TASK-458.
+        page.evaluate("() => {startGame('grapple_over');menu.unPause();cancelAnimationFrame(game)}")
         page.wait_for_function('!unTouch')
         page.evaluate('window.moverFixture=' + MOVER_FIXTURE)
         point=page.evaluate('''() => {

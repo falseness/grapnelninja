@@ -83,12 +83,15 @@ class Task444Tests(unittest.TestCase):
                 self.assertNotEqual(resumed['y'], paused['y'])
                 page.keyboard.press('p')
                 page.wait_for_function('!unTouch')
-                point = page.evaluate('''() => {const b=menu.backToMenu.background,
+                other = 'bad' if mode == 'classic' else 'classic'
+                # The single backToMenu switch became one pause button per mode
+                # (menu.modeButtons, 4f509ed TASK-459); click the other mode's.
+                point = page.evaluate('''other => {const b=menu.modeButtons[
+                    ['grapple_over','bad','classic'].indexOf(other)].background,
                     r=canvas.getBoundingClientRect(); return {
                     x:r.x+(b.x+b.width/2)*r.width/width,
-                    y:r.y+(b.y+b.height/2)*r.height/height}}''')
+                    y:r.y+(b.y+b.height/2)*r.height/height}}''', other)
                 page.mouse.click(**point)
-                other = 'bad' if mode == 'classic' else 'classic'
                 page.wait_for_function('mode => version === mode && !menu.gamePaused', arg=other)
                 page.evaluate('cancelAnimationFrame(game)')
                 switched = page.evaluate(STATE)
