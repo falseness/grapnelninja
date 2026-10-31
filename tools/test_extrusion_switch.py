@@ -1,6 +1,6 @@
 """Frozen-clock extrusion call counts and flag-on parent pixel equivalence.
 
-Writes TASK-203 evidence by default; EXTRUSION_OUT and EXTRUSION_PARENT
+Writes TASK-203 evidence by default; EXTRUSION_EVIDENCE_DIR (alias EXTRUSION_OUT) and EXTRUSION_PARENT
 can override the evidence directory and reference revision for later use.
 """
 from contextlib import ExitStack
@@ -18,7 +18,8 @@ from perf_mobile import export_rev, SEED_SCRIPT
 import render_snapshot as snap
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = Path(os.environ.get('EXTRUSION_OUT', ROOT / 'artifacts/TASK-203'))
+# EXTRUSION_EVIDENCE_DIR (old name EXTRUSION_OUT still honoured) so run_regression.py sets it (TASK-815).
+OUT = Path(os.environ.get('EXTRUSION_EVIDENCE_DIR') or os.environ.get('EXTRUSION_OUT') or ROOT / 'artifacts/TASK-203')
 FORCE_ON = '''(() => {
     const freeze = Object.freeze
     Object.freeze = function(value) {

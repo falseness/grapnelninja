@@ -2,7 +2,7 @@
 
 The parent has a dormant world emitter: invoke it at its configured 160 ms
 cadence, explicitly, rather than claim its live game emits these particles.
-HEAD is driven through ParticleSystem.update. Evidence defaults to TASK-204.
+HEAD is driven through ParticleSystem.update. Evidence defaults to TASK-204 (EMBERS_EVIDENCE_DIR, alias EMBERS_OUT).
 """
 from contextlib import ExitStack
 import io
@@ -18,7 +18,8 @@ from perf_mobile import export_rev, SEED_SCRIPT
 import render_snapshot as snap
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = Path(os.environ.get('EMBERS_OUT', ROOT / 'artifacts/TASK-204'))
+# EMBERS_EVIDENCE_DIR (old name EMBERS_OUT still honoured) so run_regression.py sets it (TASK-815).
+OUT = Path(os.environ.get('EMBERS_EVIDENCE_DIR') or os.environ.get('EMBERS_OUT') or ROOT / 'artifacts/TASK-204')
 SETUP = r'''mode => {
     startGame(mode); version = mode; scale[mode] = 1; screen.x = screen.y = 0;
     const s = window.__emberTest = {spawns: {}, records: [], bloomOps: 0, offscreen: 0};

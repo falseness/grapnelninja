@@ -18,7 +18,8 @@ from perf_mobile import export_rev, SEED_SCRIPT
 import render_snapshot as snap
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = Path(os.environ.get('INNER_GLOW_OUT', ROOT / 'artifacts/TASK-206'))
+# INNER_GLOW_EVIDENCE_DIR (old name INNER_GLOW_OUT still honoured) so run_regression.py sets it (TASK-815).
+OUT = Path(os.environ.get('INNER_GLOW_EVIDENCE_DIR') or os.environ.get('INNER_GLOW_OUT') or ROOT / 'artifacts/TASK-206')
 SCENE = r'''mode => {
     startGame(mode); version = mode; scale[mode] = 1; screen.x = screen.y = 0;
 

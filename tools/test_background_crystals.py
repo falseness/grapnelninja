@@ -4,7 +4,9 @@ import colorsys
 from contextlib import ExitStack
 import json
 import hashlib
+import os
 from pathlib import Path
+import tempfile
 import unittest
 
 from browser_test_support import start_browser_test
@@ -12,7 +14,8 @@ from perf_mobile import export_rev, SEED_SCRIPT
 import render_snapshot as snap
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / 'artifacts/TASK-217/crystals.json'
+# CRYSTALS_EVIDENCE_DIR/crystals.json; unset -> a fresh tempdir, never artifacts/TASK-* (TASK-815).
+OUT = Path(os.environ.get('CRYSTALS_EVIDENCE_DIR') or tempfile.mkdtemp(prefix='crystals-')) / 'crystals.json'
 
 PROBE = r'''mode => {
     const b = visualEffects.background, w = LOGICAL_VIEWPORT.width, h = LOGICAL_VIEWPORT.height
@@ -42,8 +45,9 @@ PROBE = r'''mode => {
     // by the full-vs-background comparison.
     if (mode === 'pause') {
         const panel = menu.getPausePanel()
-        for (const item of [menu.getPauseTitle(panel),menu.resume,menu.backToMenu,
-            menu.pauseFpsCounterCheckbox,LANGUAGE_BUTTON]) item.draw()
+        // Mirrors menu.drawPauseScreen (backToMenu is gone since TASK-459).
+        for (const item of [menu.getPauseTitle(panel),menu.resume,...menu.modeButtons,
+            menu.pauseFpsCounterCheckbox,menu.timeInGame,LANGUAGE_BUTTON]) item.draw()
     }
     const foreground = ctx.getImageData(0,0,canvas.width,canvas.height)
     b.layerCache = {}
@@ -59,10 +63,16 @@ PROBE = r'''mode => {
     const samples=[]
     const geometry = STYLE.caveLayers || STYLE.backgroundGeometry
     const shift = layer => b.getLayerShift(w,h,geometry[layer==='far'?'crystals':'nearRocks'])
+    // Tiles are kept as painted strips (TASK-701/788) and the far tile is
+    // released once baked into farBaked: rebuild it, then join the strips.
+    b.getLayerTile('far', w, h, STYLE.caveLayers.crystals, (...args) => b.paintCrystalTile(...args))
     const tiles = Object.fromEntries(['far','near'].map(layer => {
-        const c=b.layerCache[layer].canvas
+        const tile=b.layerCache[layer], c=document.createElement('canvas')
+        c.width=tile.strips[0].canvas.width; c.height=tile.heightPx
+        for (const strip of tile.strips) c.getContext('2d').drawImage(strip.canvas,0,strip.y)
         return [layer,c.getContext('2d').getImageData(0,0,c.width,c.height)]
     }))
+    delete b.layerCache.far
     const at = (layer,lx,ly) => {
         const d=tiles[layer], sh=shift(layer)
         const x=Math.floor(((lx-sh.x)%w+w)%w*d.width/w), y=Math.floor((ly-sh.y)*d.height/h)

@@ -1,6 +1,8 @@
 """Frozen-clock landing ring geometry, lifecycle and bounce regression."""
 import json
+import os
 from pathlib import Path
+import tempfile
 import unittest
 
 from browser_test_support import start_browser_test
@@ -8,7 +10,8 @@ from perf_mobile import SEED_SCRIPT
 from render_snapshot import CLOCK_SCRIPT, boot_frozen, png_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'artifacts/landing-ring'
+# LANDING_RING_EVIDENCE_DIR; unset -> a fresh tempdir, never artifacts/ (TASK-815).
+OUT = Path(os.environ.get('LANDING_RING_EVIDENCE_DIR') or tempfile.mkdtemp(prefix='landing-ring-'))
 
 PROBE = '''mode => {
     startGame(mode)
