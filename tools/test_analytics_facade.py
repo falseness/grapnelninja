@@ -145,9 +145,15 @@ class AnalyticsFacadeTests(unittest.TestCase):
         self.assertEqual(order, ['platform/backends/local.js', 'platform.js',
                                  'analytics/backends/none.js', 'analytics.js'])
         self.assertEqual(self.page.evaluate('ANALYTICS_BACKEND.backendId'), 'none')
-        # Boot (TASK-750) sends only init + sessionStart
-        self.assertEqual(self.page.evaluate('ANALYTICS.debugLog.map(e => e.fn)'),
-                         ['initialize', 'startSession'])
+        # Boot (TASK-750) sends init + sessionStart; the first gameplay frame
+        # (TASK-751) sends the progression Start of the spawn section
+        boot = self.page.evaluate('''() => ({
+            log: ANALYTICS.debugLog.map(e => [e.fn, e.args.map(a => a === undefined ? null : a)]),
+            spawn: floors[0].level.sections[0].id, current: CLIMB_UI.currentSection().id})''')
+        self.assertEqual([fn for fn, _ in boot['log']],
+                         ['initialize', 'startSession', 'addProgressionEvent'])
+        self.assertEqual(boot['current'], boot['spawn'])
+        self.assertEqual(boot['log'][2][1][:3], ['Start', 'grapple_over', boot['spawn']])
 
     def test_02_sanitization_cases(self):
         for name, (fn, args, expected) in CASES.items():
