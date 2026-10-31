@@ -1085,9 +1085,15 @@ class Task540Tests(unittest.TestCase):
               f'dE76 >= {min_bg_de} (min {BACKGROUND_DE_540}); 0 detail pixels outside the elements')
 
     def test_03_contact_pulse_real_input(self):
+        import math
         from PIL import Image, ImageDraw
-        page = self.open(self.url, VIEWPORTS_538[0])
+        # S01-hoist/S01-floor exist on the legacy layout-v3 mountain only
+        page = self.open(self.url, VIEWPORTS_538[0], query='?grappleFixture=legacy-v3')
         page.evaluate('menu.unPause()')
+        pulse_ms = page.evaluate('GRAPPLE_OVER_ROLE_DETAIL.bounce.pulseMs')
+        # 60 physics ticks per second
+        pulse_ticks = math.ceil(pulse_ms * 60 / 1000)
+        film = tuple(round(k * pulse_ticks / 27) for k in (0, 2, 5, 9, 14, 20, 27))
         tick = '''() => {physics(); draw();
             const pad = floors[0].byId.get('S01-floor'), contact = ROLE_DETAIL.contacts.get(pad);
             const pulse = ROLE_DETAIL.frame.pulses.find(p => p.id === 'S01-floor');
@@ -1107,12 +1113,12 @@ class Task540Tests(unittest.TestCase):
         page.mouse.up()
         events.append(dict(tick=30, event='mouseup'))
         shots, contact_tick = {}, None
-        for i in range(30, 320):
+        for i in range(30, 480):
             row = page.evaluate(tick)
             rows.append(row)
             if contact_tick is None and row['contactStep'] is not None and row['strength'] > 0:
                 contact_tick = i
-            if contact_tick is not None and i - contact_tick in (0, 2, 5, 9, 14, 20, 27) or (
+            if contact_tick is not None and i - contact_tick in film or (
                     contact_tick is None and row['y'] > 40 and 'pre' not in shots):
                 key = 'pre' if contact_tick is None else i - contact_tick
                 box = page.evaluate('''() => {const r = getCanvasCssRect(), s = r.width / (width / scale[version]);
@@ -1120,22 +1126,22 @@ class Task540Tests(unittest.TestCase):
                 path = self.evidence.path(f'pulse-frames/{key}.png')
                 page.screenshot(path=str(path), clip=dict(x=box[0] - 90, y=box[1] - 60, width=180, height=100))
                 shots[key] = path
-            if contact_tick is not None and i - contact_tick > 30:
+            if contact_tick is not None and i - contact_tick > pulse_ticks + 3:
                 break
         self.assertIsNotNone(contact_tick)
         self.assertTrue(any(r['grappled'] for r in rows[:30]))
         c = contact_tick
         before, at = rows[c - 1], rows[c]
         # The pulse starts on the contact tick: dark before, brightest on it,
-        # then non-increasing and back to 0 within pulseMs (450 ms = 27 ticks)
+        # then non-increasing and back to 0 within pulseMs (pulse_ticks)
         self.assertEqual(before['pulse'], 0)
         self.assertGreater(before['speedY'], 0)
         self.assertLess(at['speedY'], 0)
         self.assertGreater(at['pulse'], 0)
-        after = [r['pulse'] for r in rows[c:c + 31]]
+        after = [r['pulse'] for r in rows[c:c + pulse_ticks + 4]]
         self.assertEqual(max(after), after[0])
         self.assertTrue(all(b <= a for a, b in zip(after, after[1:])), after)
-        self.assertEqual(after[28], 0)
+        self.assertEqual(after[pulse_ticks + 1], 0)
         ticks = [dict(tick=i, y=round(r['y'], 3), speedY=round(r['speedY'], 4), grappled=r['grappled'],
                       pulse=round(r['pulse'], 5), contact_step=r['contactStep'])
                  for i, r in enumerate(rows) if i >= c - 5]
@@ -1143,13 +1149,13 @@ class Task540Tests(unittest.TestCase):
             input='real Playwright mouse events (press at the S01-hoist, hold 30 physics ticks, release); '
                   'physics stepped one tick per evaluate, draw() after each tick',
             element='S01-floor (bounce)', events=events, contact_tick=c,
-            impact_strength=round(at['strength'], 4), pulse_ms=450, ticks_per_second=60,
+            impact_strength=round(at['strength'], 4), pulse_ms=pulse_ms, ticks_per_second=60,
             pulse_before_contact=before['pulse'], pulse_on_contact=round(at['pulse'], 5),
             pulse_zero_at_tick=c + after.index(0), monotonic_fade=True,
             samples=[dict(tick=i, y=round(r['y'], 2)) for i, r in enumerate(rows[:c - 5]) if i % 10 == 0],
             ticks=ticks, filmstrip_ticks_after_contact=[k for k in shots if k != 'pre']))
         # Filmstrip: the pre-contact frame then the pulse fading
-        frames = [('pre', 'before contact')] + [(k, f'contact +{k}') for k in (0, 2, 5, 9, 14, 20, 27)]
+        frames = [('pre', 'before contact')] + [(k, f'contact +{k}') for k in film]
         images = [Image.open(shots[k]).convert('RGB') for k, _ in frames]
         strip = Image.new('RGB', (sum(i.width for i in images), images[0].height + 18), (0, 0, 0))
         draw = ImageDraw.Draw(strip)
@@ -3240,7 +3246,7 @@ class Task641Tests(unittest.TestCase):
         page=self.open();page.evaluate(self.fixture)
         result=page.evaluate('''()=>{
             scale[version]=1;screen.x=screen.y=0;
-            const e=pad641,w=world641;
+            const e=pad641,w=world641,pulseMs=GRAPPLE_OVER_ROLE_DETAIL.bounce.pulseMs;
             // Resolve an end landing through the production contact/bounce path.
             ninja.x=e.x+10-ninja.radius+0.1;ninja.y=e.y+52.5;ninja.speedX=2;ninja.speedY=0;
             const line={x1:e.x+10,y1:e.y+85,x2:e.x+10,y2:e.y+20};
@@ -3253,20 +3259,20 @@ class Task641Tests(unittest.TestCase):
             ctx.fill=function(...args){fills++;return fill.apply(this,args)};
             ctx.drawImage=function(...args){if(this.globalCompositeOperation==='lighter')additive++;return drawImage.apply(this,args)};
             for(const [i,t] of [0.08,0.25,0.45,0.7].entries()){
-                w.elapsedSteps=contact.step+t*450*cyclesPerTick/physicsStepMs;
+                w.elapsedSteps=contact.step+t*pulseMs*cyclesPerTick/physicsStepMs;
                 ctx.setTransform(2,0,0,2,(i%2)*630-170,Math.floor(i/2)*340-140);
                 drawGrappleOverRoleDetail(w);
                 const wave=bounceContactWave(e,w,sprite,1);
                 samples.push({t,...wave,pulses:ROLE_DETAIL.frame.pulses});
             }
             ctx.fill=fill;ctx.drawImage=drawImage;
-            w.elapsedSteps=contact.step+450*cyclesPerTick/physicsStepMs;
+            w.elapsedSteps=contact.step+pulseMs*cyclesPerTick/physicsStepMs;
             const expired=bounceContactWave(e,w,sprite,1);
             ROLE_DETAIL.contacts.delete(e);ROLE_DETAIL.markContact(e,GRAPPLE_OVER_ROLE_DETAIL.bounce.pulseMinImpact/2,
                 {x:e.x+10,y:e.y+52.5});
             const micro=bounceContactWave(e,w,sprite,1);
             return {samples,expired,micro,fills,additive,unchanged:before===JSON.stringify(e),
-                contact,box:sprite.box,segments:sprite.bright.parts.map(p=>({a:p.a,b:p.b,via:p.via})),
+                contact,box:sprite.box,boardScale:sprite.board.scale,segments:sprite.bright.parts.map(p=>({a:p.a,b:p.b,via:p.via})),
                 png:canvas.toDataURL()};
         }''')
         self.evidence.path('glow-strip.png').write_bytes(base64.b64decode(result.pop('png').split(',')[1]))
@@ -3282,9 +3288,11 @@ class Task641Tests(unittest.TestCase):
                 f=max(0,min(1,((p['x']-a['x'])*dx+(p['y']-a['y'])*dy)/l)) if l else 0
                 distance=math.hypot(p['x']-a['x']-f*dx,p['y']-a['y']-f*dy)
                 self.assertAlmostEqual(part['distance'],distance)
-                expected=result['contact']['strength']*max(0,1-abs(distance-radius)/18)*(1-sample['t'])
+                # Glow band is 18 board units wide (scaled with the circuit motif since TASK-664)
+                band=18*result['boardScale']
+                expected=result['contact']['strength']*max(0,1-abs(distance-radius)/band)*(1-sample['t'])
                 self.assertAlmostEqual(part['glow'],expected)
-                if distance>=radius+18:self.assertEqual(part['glow'],0)
+                if distance>=radius+band:self.assertEqual(part['glow'],0)
             peaks.append(max(sample['parts'],key=lambda p:p['glow'])['distance'])
             self.assertEqual(set(sample['pulses'][0]),{'id','intensity'})
         self.assertEqual(peaks,sorted(peaks));self.assertEqual(len(set(peaks)),4)
