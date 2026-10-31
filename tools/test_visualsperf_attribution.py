@@ -326,7 +326,10 @@ class VisualsPerfAttributionTest(unittest.TestCase):
               flush=True)
         self.assertGreaterEqual(span, 20)
         self.assertGreater(first, 0)
-        self.assertGreaterEqual(min(values[1:]), first)
+        # TASK-788 frees bake sources after the first sample (raw far crystal tile dropped once baked),
+        # so live canvas memory may dip a little below the first sample
+        self.assertGreaterEqual(min(values[1:]), first - 2)
+        self.assertTrue(all(v > 0 for v in values))
         self.assertGreaterEqual(min(gaps), 1000)
         self.assertGreaterEqual(len(series), span * 0.8)
         for f in report['freezes']:
