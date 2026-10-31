@@ -3,6 +3,10 @@ Html 5 konva simple game
 
 Mobile play supports landscape orientation. Portrait shows a rotate prompt and pauses an active run; rotate back and tap Resume to continue.
 
+## Regression
+
+Every ticket runs the whole regression, not a hand-picked list of suites: `python3 tools/run_regression.py --out artifacts/TASK-NNN/regression --skip-slow`. It runs each suite with cwd `tools/`, points its evidence dirs at absolute paths under `OUT/ev/<suite>`, writes `OUT/<suite>.log` plus one JSON line per suite in `OUT/summary.jsonl`, and exits 1 when any suite fails. `--skip-slow` leaves out `test_grapple_over_visuals` (about 25 min); `--only NAME ...` runs just the named suites.
+
 ## Grapple Over: grapnel range
 
 Single grapnel is the intended way to play. Double grapnel mode (pause menu toggle "Grapnel: single / double range") doubles the grapple range as an easier option, both before and after the range upgrade. Switching keeps the run going (position, time and best height); a run that used double range stays marked as such.
