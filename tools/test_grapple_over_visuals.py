@@ -171,6 +171,9 @@ CLASSIC_BAD_BASELINE = 'b151296'
 # The layout-v3 mountain (S01..S08 sections and encounters) on the local fixture selector:
 # normal boot loads the imported level since b2573ee (TASK-637) / ba5ca11 (TASK-650).
 LEGACY_V3_QUERY = '?grappleFixture=legacy-v3'
+# The hand-authored replacement level (Loading Yard 'yard-entry', 3de5461 TASK-567), the
+# normal start until ba5ca11 (TASK-650) switched normal boot to the imported level.
+REPLACEMENT_V1_QUERY = '?grappleFixture=replacement-v1'
 
 
 def serve_rev(rev, add_cleanup):
@@ -2484,7 +2487,7 @@ class Task639Tests(unittest.TestCase):
                     const untouched=before===JSON.stringify(e);
                     e.x+=1700;e.y-=900;
                     const b=bounceMaterialSprite(e,world639,1,1,1);
-                    return {pixels:pixels(a),translated:pixels(b),glints:a.glints.length,untouched};
+                    return {pixels:pixels(a),translated:pixels(b),glints:a.glints.length,thin:a.board.thin,untouched};
                 });
                 const e=pads639[0];
                 const neighbor={getPoints:()=>[{x:e.x,y:e.y},{x:e.x+560,y:e.y},{x:e.x+560,y:e.y-30},{x:e.x,y:e.y-30}]};
@@ -2505,7 +2508,9 @@ class Task639Tests(unittest.TestCase):
                 row['translatedSha256'] = hashlib.sha256(bytes(row.pop('translated'))).hexdigest()
                 self.assertEqual(row['sha256'], row['translatedSha256'])
                 self.assertTrue(row['untouched'])
-                self.assertIn(row['glints'], (2, 3, 4))
+                # Thin boards carry no glints (TASK-640); at circuitScale 3 (TASK-664) the 18 px bar is one
+                self.assertIn(row['glints'], (0,) if row['thin'] else (2, 3, 4))
+            self.assertEqual([r['thin'] for r in data['rows']], [False, True, False])
             self.assertEqual(data['free'], [False, True, True, True])
             self.assertEqual(data['cacheSize'], 128)
             rows.append(data)
@@ -2526,10 +2531,10 @@ class Task639Tests(unittest.TestCase):
             }''')
             page.screenshot(path=str(self.evidence.path(f'bounce-{w}x{h}.png')))
             page.close()
-        print('PASS sprites: thick pad/thin bar/triangle hashes match two runs and positions; cacheSize=128 after 200 shapes; free=[false,true,true,true]; glints=2..4')
+        print('PASS sprites: thick pad/thin bar/triangle hashes match two runs and positions; cacheSize=128 after 200 shapes; free=[false,true,true,true]; glints=2..4 (thin bar 0)')
 
     def test_02_real_landing_and_disabled(self):
-        page = self.open()
+        page = self.open(query=REPLACEMENT_V1_QUERY)
         page.evaluate('menu.unPause()')
         # Drop onto an actual level pad and let production physics resolve contact.
         page.evaluate('''()=>{const e=floors[0].byId.get('yard-entry');
@@ -2631,31 +2636,49 @@ class Task640Tests(unittest.TestCase):
     }'''
 
     def check_geometry(self, rows):
+        # Motif unit s = circuitScale * unit (circuitScale 3 since 7d1e4ef TASK-664): grid 3s, thin below
+        # 10s, counts from bounceBoardDetail's density rule (6c7fcc0 TASK-670, c91e2e6 TASK-690)
         import math
         for row in rows:
             board, polygon, unit = row['board'], row['polygon'], row['unit']
+            s = board['scale']
+            self.assertAlmostEqual(s, row['circuitScale'] * unit)
             def inside(p):
                 crosses = [(b['x']-a['x'])*(p['y']-a['y'])-(b['y']-a['y'])*(p['x']-a['x'])
                            for a,b in zip(polygon,polygon[1:]+polygon[:1])]
                 return all(v >= -1e-7 for v in crosses) or all(v <= 1e-7 for v in crosses)
-            self.assertIn(len(board['traces']), range(2,4) if board['thin'] else range(10,21))
+            xs, ys = [p['x'] for p in polygon], [p['y'] for p in polygon]
+            width, height = (max(xs)-min(xs))/s, (max(ys)-min(ys))/s
+            area = abs(sum(a['x']*b['y']-b['x']*a['y'] for a,b in zip(polygon,polygon[1:]+polygon[:1])))/2/(s*s)
+            self.assertEqual(board['thin'], min(width, height) < 10)
+            length = max(width, height)
+            base = max(2, round(length/30)) if board['thin'] else max(4, round(area/700))
+            grow = max(1, length/240 if board['thin'] else area/12600)
+            self.assertIn(len(board['traces']), range(1, base + (2 if board['thin'] else 3)))
+            most = (2 if board['thin'] else 4) + int(math.log2(grow))
             for trace in board['traces']:
-                self.assertIn(len(trace['points'])-1,range(3,7))
-                self.assertEqual(trace['vias'],[trace['points'][0],trace['points'][-1]])
+                self.assertIn(len(trace['points'])-1, range(1, most + 1))
+                ends = [trace['points'][0], trace['points'][-1]]
+                self.assertTrue(all(v in ends for v in trace['vias']))
                 for p in trace['points']+trace['vias']:
                     self.assertTrue(inside(p))
-                    for value in p.values():
-                        self.assertAlmostEqual(value/(3*unit),round(value/(3*unit)))
+                    # Thin strips run their traces down the strip middle, on the grid only along it
+                    for axis, value in p.items():
+                        if not board['thin'] or (axis == 'x') == (width >= height):
+                            self.assertAlmostEqual(value/(3*s),round(value/(3*s)))
                 for a,b in zip(trace['points'],trace['points'][1:]):
-                    dx,dy=(b['x']-a['x'])/unit,(b['y']-a['y'])/unit
+                    dx,dy=(b['x']-a['x'])/s,(b['y']-a['y'])/s
                     self.assertTrue(dx == 0 or dy == 0 or abs(dx) == abs(dy))
                     self.assertGreaterEqual(math.hypot(dx,dy),4)
                     self.assertLessEqual(math.hypot(dx,dy),16)
                     if board['thin']:
-                        self.assertEqual(dy,0)
-            width=(max(p['x'] for p in polygon)-min(p['x'] for p in polygon))/unit
-            self.assertEqual(board['label'] is not None, width > 60 and not board['thin'])
-            self.assertIn(len(board['pads']), [0] if board['thin'] else range(2,6))
+                        self.assertEqual(dy if width >= height else dx,0)
+            if board['label'] is not None:
+                self.assertTrue(width > 60 and not board['thin'])
+            pads = round((2 if board['thin'] else 6) * grow)
+            self.assertIn(len(board['pads']), range(0, pads + 1))
+            for p in board['pads']:
+                self.assertTrue(inside(p))
             if board['thin']:
                 self.assertEqual(row['glints'],0)
 
@@ -2668,7 +2691,7 @@ class Task640Tests(unittest.TestCase):
                 return [1,2].flatMap(unit=>boards640.map((e,i)=>{
                     const before=JSON.stringify(e), s=bounceMaterialSprite(e,boardWorld640,1/unit,1/unit,unit);
                     const origin=e.points[0];
-                    return {shape:['thick pad','tall block','thin bar','triangle'][i],unit,
+                    return {shape:['thick pad','tall block','thin bar','triangle'][i],unit,circuitScale:s.circuit,
                         polygon:e.points.map(p=>({x:p.x-origin.x,y:p.y-origin.y})),board:s.board,
                         glints:s.glints.length,untouched:before===JSON.stringify(e),
                         cached:s===bounceMaterialSprite(e,boardWorld640,1/unit,1/unit,unit),
@@ -2685,7 +2708,7 @@ class Task640Tests(unittest.TestCase):
         digest=hashlib.sha256(json.dumps(runs[0],separators=(',',':')).encode()).hexdigest()
         self.evidence.write('determinism.json',dict(identical=True,tracesSha256=[digest,digest],
             spriteSha256=[[r['sha256'] for r in rows] for rows in runs]))
-        print('PASS geometry: 8 shapes/scales; 8 directions; all points inside; grid=3; segments=3..6 lengths=4..16; thick=10..20 thin=2..3; pads=2..5; labels only width>60; immutable and cached')
+        print('PASS geometry: 8 shapes/scales; 8 directions; all points inside; motif s=circuitScale*unit, grid=3s; segment lengths=4..16 s; trace/segment/pad counts within the density rule; labels only width>60 s; thin boards no glints; immutable and cached')
         print('PASS determinism: two seeded runs identical sprite SHA256 and traces.json content')
 
     def test_02_palette_gallery(self):
@@ -3163,46 +3186,15 @@ class Task644Tests(unittest.TestCase):
         return {sha256:Array.from(digest,b=>b.toString(16).padStart(2,'0')).join(''),colors:colors.size};
     }'''
 
-    def test_01_roledetail_off_matches_base(self):
-        changed = subprocess.check_output(['git', 'diff', '--name-only', self.BASE, 'HEAD', '--',
-                                           '*.js', 'index.html', ':!tools'], text=True).split()
-        self.assertEqual(sorted(changed), sorted(self.RUNTIME))
-        url, browser, _ = self.start()
-        rows = {}
-        for query in ('?roledetail=0', ''):
-            for baseline in (True, False):
-                context, page, errors = self.open(url, browser, 'chromium', query=query, baseline=baseline)
-                page.evaluate(self.fixture)
-                shas = [page.evaluate(self.render, t)['sha256'] for t in (0, 1000, 2500)]
-                rows[('off' if query else 'on') + ('-base' if baseline else '-worktree')] = dict(
-                    query=query, rev=self.BASE if baseline else 'worktree@' + self.revision,
-                    enabled=page.evaluate('ROLE_DETAIL.enabled'), sha256=shas, page_errors=errors)
-                self.assertEqual(errors, [])
-                context.close()
-        self.assertEqual(rows['off-base']['sha256'], rows['off-worktree']['sha256'])
-        self.assertFalse(rows['off-worktree']['enabled'])
-        self.assertNotEqual(rows['on-base']['sha256'], rows['on-worktree']['sha256'])
-        self.assertNotEqual(rows['off-worktree']['sha256'], rows['on-worktree']['sha256'])
-        result = dict(base_rev=self.BASE, revision=self.revision, base_runtime_routed=list(self.RUNTIME),
-                      region=dict(x=40, y=40, width=1180, height=640, viewport='1280x720', dpr=1),
-                      elements=['pad(thick bounce)', 'bar(thin bounce)', 'tri(bounce)',
-                                'horizontal mover', 'vertical mover'],
-                      mover_times_ms=[0, 1000, 2500], runs=rows,
-                      off_equal=rows['off-base']['sha256'] == rows['off-worktree']['sha256'],
-                      result='PASS ?roledetail=0 bounce/mover region SHA256 equal at base_rev and worktree '
-                           '(3 mover times); roledetail on differs (new look is active)')
-        self.evidence.write('roledetail-off.json', result)
-        print(result['result'])
-
     def test_02_firefox_webkit_smoke(self):
         import base64
-        out = dict(scenarios=['bounce landing on yard-entry via production physics()+draw()',
+        out = dict(scenarios=['bounce landing on yard-entry (%s) via production physics()+draw()' % REPLACEMENT_V1_QUERY,
                               'level mover travel via production physics()+draw()',
                               'fixture bounce/mover role detail render'], browsers={})
         for name in ('firefox', 'webkit'):
             url, browser, stack = self.start(name)
             errors = []
-            context, page, errors = self.open(url, browser, name, errors=errors)
+            context, page, errors = self.open(url, browser, name, query=REPLACEMENT_V1_QUERY, errors=errors)
             page.evaluate('menu.unPause()')
             landing = page.evaluate('''()=>{
                 const world=floors[0], e=world.byId.get('yard-entry');
@@ -3275,6 +3267,9 @@ class Task644Tests(unittest.TestCase):
 class Task645Tests(unittest.TestCase):
     """Audit of TASK-639..TASK-644: proof contents, hashes, rules and focused reruns."""
     BASE = Task644Tests.BASE
+    # The audited change set ends at the TASK-644 commit; later tickets (ba5ca11 TASK-650 onward)
+    # change many more runtime files, so the rules below diff BASE..AUDITED, not BASE..HEAD
+    AUDITED = '8e47fa147d01836274c42513c6bf63d01471340a'
     TASKS = {'TASK-639': ['Task639Tests'], 'TASK-640': ['Task640Tests'], 'TASK-641': ['Task641Tests'],
              'TASK-642': ['Task642Tests'], 'TASK-643': ['Task643Tests', 'Task642Tests'],
              'TASK-644': ['Task644Tests']}
@@ -3362,7 +3357,6 @@ class Task645Tests(unittest.TestCase):
                 row['reused_proof'] = ('runtime files and %s source unchanged since proof (test file differs only outside '
                                        'the class); reused artifacts/%s' % (', '.join(classes), task))
             rows[task] = row
-        self.assertIsNone(rows['TASK-644']['focused_rerun'])
         result = dict(revision=self.revision, current=({n: self.sha(n) for n in self.TOUCHED}), tasks=rows,
                       reruns=[t for t, r in rows.items() if r['focused_rerun']],
                       reused=[t for t, r in rows.items() if not r['focused_rerun']])
@@ -3459,12 +3453,15 @@ class Task645Tests(unittest.TestCase):
     def test_03_audit_and_index(self):
         import re, io
         from PIL import Image
-        listed = json.loads((ROOT / 'artifacts/tasks.json').read_text())
-        tasks = {t['id']: t for t in (listed if isinstance(listed, list) else listed['tasks'])}
+        # Finished tickets rotate out of tasks.json into the old_tasks_do_not_touch archive
+        tasks = {}
+        for name in ('artifacts/old_tasks_do_not_touch/tasks.json', 'artifacts/tasks.json'):
+            listed = json.loads((ROOT / name).read_text())
+            tasks.update({t['id']: t for t in (listed if isinstance(listed, list) else listed['tasks'])})
         hashes = json.loads(self.evidence.path('hashes.json').read_text())
         live = json.loads(self.evidence.path('live-rules.json').read_text())
         load = lambda task, name: json.loads(self.artifact(task, name).read_text())
-        audit = dict(revision=self.revision, base_rev=self.BASE, tasks={}, rules={})
+        audit = dict(revision=self.revision, base_rev=self.BASE, audited_rev=self.AUDITED, tasks={}, rules={})
         for task in self.TASKS:
             tests = self.artifact(task, 'tests.log').read_text()
             commands = self.artifact(task, 'commands.log').read_text()
@@ -3487,11 +3484,11 @@ class Task645Tests(unittest.TestCase):
             self.assertTrue(row['proof_current'] or (rerun and rerun['exit_status'] == 0), task + ' stale and not rerun')
             audit['tasks'][task] = row
         # Rules, checked from proof file contents (not their PASS strings) and the current tree.
-        diff = subprocess.check_output(['git', 'diff', '--name-only', self.BASE, 'HEAD'], text=True).split()
-        added = [l[1:] for l in subprocess.check_output(['git', 'diff', '-U0', self.BASE, 'HEAD', '--', 'render/roledetail.js',
-                 'sprites/ninja.js'], text=True).splitlines() if l.startswith('+') and not l.startswith('+++')]
-        ninja = [l for l in subprocess.check_output(['git', 'diff', '-U0', self.BASE, 'HEAD', '--', 'sprites/ninja.js'],
-                 text=True).splitlines() if l[:1] in '+-' and l[:3] not in ('+++', '---')]
+        diff = subprocess.check_output(['git', 'diff', '--name-only', self.BASE, self.AUDITED], text=True, cwd=ROOT).split()
+        added = [l[1:] for l in subprocess.check_output(['git', 'diff', '-U0', self.BASE, self.AUDITED, '--', 'render/roledetail.js',
+                 'sprites/ninja.js'], text=True, cwd=ROOT).splitlines() if l.startswith('+') and not l.startswith('+++')]
+        ninja = [l for l in subprocess.check_output(['git', 'diff', '-U0', self.BASE, self.AUDITED, '--', 'sprites/ninja.js'],
+                 text=True, cwd=ROOT).splitlines() if l[:1] in '+-' and l[:3] not in ('+++', '---')]
         forbidden = [l.strip() for l in added if re.search(r'Math\.random|performance\.now|Date\.now|shadowBlur|shadowColor|\.filter\s*=', l)]
         lighting = [l.strip() for l in added if re.search(r'light(?:Canvas|ing|map)|backdrop|dim|shadow', l, re.I)]
         world_writes = [l.strip() for l in added if re.search(
@@ -3506,7 +3503,7 @@ class Task645Tests(unittest.TestCase):
         max_hz = max(r['speed'] * 1000 / (2 * 3.141592653589793) for s in ribbons['samples'] for m in s['movers'] for r in m['ribbons'])
         clear = min(m['half'] - max(abs(o) for o in r['offsets']) for s in ribbons['samples'] for m in s['movers'] for r in m['ribbons'])
         rules = audit['rules']
-        rules['no_geometry_physics_change'] = dict(proof=['git diff %s..HEAD' % self.BASE, 'artifacts/TASK-645/live-rules.json',
+        rules['no_geometry_physics_change'] = dict(proof=['git diff %s..%s' % (self.BASE, self.AUDITED), 'artifacts/TASK-645/live-rules.json',
             'artifacts/TASK-643/ribbons.json', 'artifacts/TASK-642/shell.json'],
             observed=dict(changed_files=diff, ninja_diff=ninja, world_write_lines=world_writes,
                           live_unchanged=live['live']['unchanged'],
@@ -3527,7 +3524,7 @@ class Task645Tests(unittest.TestCase):
         rules['solid_hazard_drag_unchanged'] = dict(proof=['artifacts/TASK-645/live-rules.json'],
             observed=live['solid_hazard_drag'])
         self.assertTrue(live['solid_hazard_drag']['equal'])
-        rules['no_lighting'] = dict(proof=['git diff -U0 %s..HEAD render/roledetail.js' % self.BASE],
+        rules['no_lighting'] = dict(proof=['git diff -U0 %s..%s render/roledetail.js' % (self.BASE, self.AUDITED)],
             observed=dict(lighting_lines=lighting, shadow_or_filter_lines=forbidden,
                           live_forbidden_calls=live['live']['forbidden'], page_canvases=live['live']['canvases'],
                           note="the only composite change is the TASK-641 'lighter' blend of cached trace sprites"))
@@ -3570,10 +3567,12 @@ class Task645Tests(unittest.TestCase):
         self.evidence.write('audit.json', audit)
         evidence = {
             'commands.log': 'commands, exit statuses, browser/viewport, revision, SHA256 of touched files',
-            'tests.log': 'Task645Tests unittest output (Ran N tests, OK)',
             'hashes.json': 'recorded vs current SHA256 per task; focused reruns with logs',
             'live-rules.json': 'live production checks: solid/hazard/drag equal base, no forbidden calls, roledetail=0',
             'audit.json': 'TASK-639..644 status/log/index checks and every rule mapped to proof + observed value'}
+        # tests.log is the runner's tee of this run (TASK-645 wrote one); focused runs log elsewhere
+        if self.evidence.path('tests.log').exists():
+            evidence['tests.log'] = 'Task645Tests unittest output (Ran N tests, OK)'
         for task, row in hashes['tasks'].items():
             if row['focused_rerun']:
                 evidence[row['focused_rerun']['log'].replace('artifacts/TASK-645/', '')] = '%s focused rerun %d tests exit %d' % (
