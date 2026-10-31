@@ -18,6 +18,7 @@ tutorial-text.json there.
 """
 import json
 import os
+import re
 from pathlib import Path
 import unittest
 
@@ -62,6 +63,34 @@ WORLD = '''() => {
 }'''
 # Pixel colour at a sprite point (device px) from the hint sprite
 PIXEL = '''([x, y]) => Array.from(TUTORIAL_HINT.sprite.getContext('2d').getImageData(Math.round(x), Math.round(y), 1, 1).data)'''
+
+# STYLE.colors.noGrapple.fill drawn over the sprite's vignette (as built by
+# TUTORIAL_HINT) at a sprite point: the expected base fill pixel there
+FILL_OVER_VIGNETTE = '''([x, y]) => {
+    const s = TUTORIAL_HINT.sprite, W = s.width, H = s.height, colors = STYLE.colors.tutorial
+    const c = document.createElement('canvas')
+    c.width = c.height = 1
+    const g = c.getContext('2d')
+    g.translate(-Math.round(x), -Math.round(y))
+    const v = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.45)
+    v.addColorStop(0, colors.vignette)
+    v.addColorStop(1, colors.vignetteEdge)
+    g.fillStyle = v
+    g.fillRect(0, 0, W, H)
+    g.fillStyle = STYLE.colors.noGrapple.fill
+    g.fillRect(0, 0, W, H)
+    return Array.from(g.getImageData(0, 0, 1, 1).data)
+}'''
+
+
+def rgba(css):
+    """[r, g, b, a 0..255] of an 'rgb(...)' / 'rgba(...)' token."""
+    v = [float(n) for n in re.findall(r'[\d.]+', css)]
+    return [round(n) for n in v[:3]] + [round(255 * (v[3] if len(v) > 3 else 1))]
+
+
+def near(pixel, expected, tol=12):
+    return all(abs(a - b) <= tol for a, b in zip(pixel, expected))
 
 
 def overlaps(a, b):
@@ -169,14 +198,31 @@ class ClimbTutorialLegendTests(unittest.TestCase):
         self.assertTrue(g[1] > 120 and g[1] > g[0] + 40 and g[1] > g[2] + 40, g)
         edge = page.evaluate(PIXEL, [legend[1]['icon']['x'] + 1, legend[1]['icon']['y'] + legend[1]['icon']['h'] / 2])
         self.assertTrue(edge[0] > 100 and edge[0] > edge[1] > 2 * edge[2] and edge[2] < 60, edge)
-        # Purple patch edge: violet, blue and red over green
-        purple = page.evaluate(PIXEL, [legend[2]['icon']['x'] + 1, legend[2]['icon']['y'] + legend[2]['icon']['h'] / 2])
-        self.assertTrue(purple[2] > 100 and purple[2] > purple[0] > purple[1] + 30, purple)
+        # No-grapple patch in the 'Ion lattice' look (TASK-782/783), against the
+        # STYLE.colors.noGrapple tokens read from the page, each within +-12 per
+        # channel: the bracket on the icon's left edge, the bright edge stroke at
+        # the bottom centre (strongest within 2 px), and the base fill inside (the
+        # darkest interior pixel, off the lattice) over the vignette behind it
+        tokens = page.evaluate('STYLE.colors.noGrapple')
+        icon = legend[2]['icon']
+        s = icon['h'] / 2.8
+        purple = page.evaluate(PIXEL, [icon['x'] + 1, icon['y'] + icon['h'] / 2])
+        self.assertTrue(near(purple, rgba(tokens['bracket'])), (purple, tokens['bracket']))
+        cx, bottom = icon['x'] + icon['w'] / 2, icon['y'] + icon['h']
+        stroke = max((page.evaluate(PIXEL, [cx, bottom - 0.45 * s + d]) for d in range(-2, 3)),
+                     key=lambda p: (p[3], p[2]))
+        self.assertTrue(near(stroke, rgba(tokens['stroke'])), (stroke, tokens['stroke']))
+        inside = [(icon['x'] + 0.6 * s + i * (icon['w'] - 1.2 * s) / 20, icon['y'] + 0.6 * s + j * (icon['h'] - 1.2 * s) / 10)
+                  for i in range(21) for j in range(11)]
+        base, at = min(((page.evaluate(PIXEL, xy), xy) for xy in inside), key=lambda t: sum(t[0]))
+        fill = page.evaluate(FILL_OVER_VIGNETTE, list(at))
+        self.assertTrue(near(base, fill), (base, fill, tokens['fill']))
         record = {'lines': state['lines'], 'hold': state['lines'][0], 'grapple': state['lines'][1],
                   'objective': state['lines'][2], 'objectiveHasArrow': '→' in state['lines'][2],
                   'legend': [{'label': b['label'], 'text': '= ' + b['label'],
                               'icon': {k: round(v, 1) for k, v in b['icon'].items()}} for b in legend],
-                  'iconPixels': {'bounceBody': g, 'dragEdge': edge, 'noGrappleEdge': purple}, 'canvas': state['canvas'],
+                  'iconPixels': {'bounceBody': g, 'dragEdge': edge, 'noGrappleEdge': purple,
+                                 'noGrappleStroke': stroke, 'noGrappleFill': base, 'noGrappleFillExpected': fill}, 'canvas': state['canvas'],
                   'menuButton': {k: round(v, 1) for k, v in state['menuButton'].items()},
                   'rotated': state['rotated'], 'spriteKey': state['key'], 'noOverlap': True}
         self.text.setdefault(kind, {})[lang] = record
