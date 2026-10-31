@@ -3,11 +3,17 @@
 The runner must pass the menu-less boot wait (bootComplete && runInProgress),
 start each measured mode and record frames; only the probe's active duration
 is shortened (the probe lives in game_test_support.PROBE).
+
+Every arm load boots from an empty save: since TASK-459 (4f509ed) boot opens
+the Grapple Over climb, which saves, and since TASK-458 (97ea9d0) a saved climb
+is restored paused, so the next arm would boot paused and the runner's
+startGame(mode) would leave it paused ('START timed out in classic').
 """
 import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import unittest
 
@@ -40,6 +46,8 @@ class AndroidRunnerBootTests(unittest.TestCase):
         self.addCleanup(context.close)
         context.route(SDK, lambda route: route.fulfill(content_type='application/javascript', body=
             "const FAULT = 'normal'; const SAVED_LANGUAGE = 'en';\n" + FAKE))
+        # Fresh-install storage for each game document (arm iframes only).
+        context.add_init_script("if (/\\/(baseline|repair)\\/index\\.html$/.test(location.pathname)) localStorage.clear();")
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
@@ -51,14 +59,14 @@ class AndroidRunnerBootTests(unittest.TestCase):
         page.wait_for_function("!document.getElementById('download').disabled", timeout=600000)
         receipt = page.evaluate('receipt')
         status = page.text_content('#status')
-        print('status:', status)
-        print('error:', receipt.get('error'))
+        print('status:', status, file=sys.stderr)
+        print('error:', receipt.get('error'), file=sys.stderr)
         for run in receipt['runs']:
             starts = [t for t in run['transitions'] if 'state' in t]
             print(f"run mode={run['mode']} started_version={run['started_version']} pair={run['pair']} arm={run['arm']} frames={len(run['frames'])} "
                   f"inputs={len(run['inputs'])} active_ms={run['frames'][-1]['activeMs']:.0f} "
-                  f"first_state={json.dumps(starts[0]['state']) if starts else None}")
-        print('errors:', errors)
+                  f"first_state={json.dumps(starts[0]['state']) if starts else None}", file=sys.stderr)
+        print('errors:', errors, file=sys.stderr)
         self.assertNotIn('error', receipt)
         self.assertTrue(status.startswith('Capture complete'))
         self.assertEqual([(r['mode'], r['pair'], r['arm']) for r in receipt['runs']],
