@@ -33,6 +33,17 @@ SHIPPED_LEVEL = ROOT / 'artifacts' / 'levels' / 'extended-mountain.level.json'
 SHIPPED_REFERENCE = ROOT / 'artifacts' / 'levels' / 'extended-mountain-measurements.json'
 # Checker revision before TASK-672 added the no-grapple rule; the shipped level must check identically.
 BASELINE_COMMIT = 'a7e528e'
+
+
+def shipped_zone_ids(reference):
+    # purpleExtensions zones (NG1/NGM/NGU) first, then the SEC-ext-summit gauntlet Z1..Z8 (eb3ab8a TASK-744, v20)
+    # and the Sky Spire Y1..Y8 (f720868 TASK-774, v21); the reference's noGrappleZones lists them all in that order.
+    purple = [p['zone'] for p in reference['purpleExtensions']]
+    zones = [z['id'] for z in reference['noGrappleZones']]
+    assert zones == purple + ['Z%d' % n for n in range(1, 9)] + ['Y%d' % n for n in range(1, 9)], zones
+    return zones
+
+
 RESULTS = {'format': {}, 'spacing': {}}
 
 
@@ -150,8 +161,9 @@ class FormatTests(unittest.TestCase):
         shipped = json.loads(SHIPPED_LEVEL.read_text())
         rows = {}
         # Since TASK-677 the shipped level carries purple zones (v16: one per purpleExtensions entry, NG1/NGM/NGU);
-        # the legacy fixture has none.
-        zone_ids = [p['zone'] for p in json.loads(SHIPPED_REFERENCE.read_text())['purpleExtensions']]
+        # v20 (eb3ab8a TASK-744) adds the gauntlet zones Z1..Z8 and v21 (f720868 TASK-774) the Sky Spire zones
+        # Y1..Y8, all listed in the reference's noGrappleZones. The legacy fixture has none.
+        zone_ids = shipped_zone_ids(json.loads(SHIPPED_REFERENCE.read_text()))
         self.assertIn('NG1', zone_ids)
         for name, level in (('legacy-valid', self.legacy), ('shipped-level-json', shipped), ('shipped-bundle', None)):
             r = self.runtime[name]
@@ -459,10 +471,10 @@ class SpacingTests(unittest.TestCase):
                  'sideEdges', 'sideExemptEdges', 'sideViolations', 'minMeasuredSide'}
         self.assertEqual({k: v for k, v in new['summary'].items() if k not in added}, old['summary'])
         self.assertEqual((new['summary']['noGrappleZones'], new['summary']['noGrappleInternalPairs']), (0, 0))
-        # Shipped: the scoped rule applies only inside the purple zones (v16: NG1, NGM, NGU, each with internal
-        # pairs); every other pair keeps the 540+diameter rule.
+        # Shipped: the scoped rule applies only inside the purple zones (v16: NG1, NGM, NGU; v20 adds Z1..Z8, v21
+        # Y1..Y8; each with internal pairs); every other pair keeps the 540+diameter rule.
         shipped_ref = json.loads(SHIPPED_REFERENCE.read_text())
-        zone_ids = [p['zone'] for p in shipped_ref['purpleExtensions']]
+        zone_ids = shipped_zone_ids(shipped_ref)
         shipped = geometry.check(json.loads(SHIPPED_LEVEL.read_text()), SHIPPED_SVG.read_bytes(), shipped_ref)
         self.assertTrue(shipped['summary']['pass'])
         internal = [p for p in shipped['pairs'] if p.get('rule') == 'noGrappleInternal']
