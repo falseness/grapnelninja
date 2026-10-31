@@ -3,8 +3,11 @@
 Trampoline.draw starts its path at the last vertex and draws back to it. It
 used to call closePath only after strokeNeonPath, so that vertex (the
 bottom-left one of the starting green panel P0-body0) was stroked as two line
-ends instead of a join. The baseline revision (before) and this tree (after)
-are rendered at one viewport, camera and animation clock. Each element is
+ends instead of a join. The before tree is `git archive` of BASELINE (HEAD by
+default) with only that fix reverted in sprites/trampoline.js (TASK-828: the
+original 7296ca1 baseline predates every later layout, camera and spawn change,
+see artifacts/TASK-828/causes.md); this tree is after. Both are rendered at one
+viewport, camera and animation clock. Each element is
 compared against an independently built, explicitly closed reference path
 painted with the same fill and neon stroke.
 
@@ -27,12 +30,31 @@ from browser_test_support import QuietHandler, start_browser_test, wait_for_boot
 from grapple_over_test_support import ROOT
 from perf_mobile import SEED_SCRIPT, export_rev
 
-BASELINE = os.environ.get('PANEL_JOIN_BASELINE', '7296ca1')
+BASELINE = os.environ.get('PANEL_JOIN_BASELINE', 'HEAD')
+# ec7780d TASK-667 moved closePath before fill/stroke; the before tree gets it back after the stroke
+FIX = '''
+        // Closed before painting, so the stroke joins the closing corner
+        // (the last vertex) instead of ending there with two line caps
+        ctx.closePath()
+'''
+UNFIXED_TAIL = ('        strokeNeonPath(this.stroke)\n\n        ctx.restore()',
+                '        strokeNeonPath(this.stroke)\n\n        ctx.closePath()\n        ctx.restore()')
+
+
+def revert_join_fix(root):
+    """The pre-TASK-667 Trampoline.draw: closePath only after strokeNeonPath."""
+    path = Path(root) / 'sprites' / 'trampoline.js'
+    src = path.read_text()
+    if src.count(FIX) != 1 or src.count(UNFIXED_TAIL[0]) != 1:
+        raise AssertionError('TASK-667 closePath fix not found once in %s' % path)
+    path.write_text(src.replace(FIX, '').replace(*UNFIXED_TAIL))
 VIEWPORT = {'width': 1920, 'height': 1080}
 CLOCK_MS = 4321
 TOL = 2  # channel levels: headless AA jitter between page loads (see TASK-664)
-# A closed path's join pixels shift by a few levels with its start vertex (the
-# reference starts at points[0], production at the last vertex); a seam is ~255
+# Headless AA levels along a closed outline; a seam is ~255. The reference
+# starts at production's start vertex (the last one): since 16a6ec1 TASK-687
+# P0-body0 has a slanted edge with fractional ends, and starting at points[0]
+# instead flips a 1 px AA column along it by up to 255 (TASK-828)
 JOIN_TOL = 12
 # Background parallax silhouette edges flip between two rasterizations per page
 # load (the same 127 px, at most 8 levels at 1920x1080) in either revision
@@ -77,17 +99,17 @@ SETUP = '''(clockMs) => {
         try { fn() } finally { ctx = main }
         return c.getImageData(0, 0, probe.width, probe.height).data
     }
-    // Independent reference: starts at points[0], every segment (the closing
-    // one back to points[0] included) then an explicit closePath, same paint
+    // Independent reference: starts at the last vertex, every segment (the
+    // closing one back to it included) then an explicit closePath, same paint
     T667.reference = e => {
         const pts = e.getPoints(), seg = p => p.curvature
             ? ctx.quadraticCurveTo(p.curvature.x + screen.x, p.curvature.y + screen.y, p.x + screen.x, p.y + screen.y)
             : ctx.lineTo(p.x + screen.x, p.y + screen.y)
         ctx.save()
         ctx.beginPath()
-        ctx.moveTo(pts[0].x + screen.x, pts[0].y + screen.y)
-        for (let i = 1; i < pts.length; ++i) seg(pts[i])
-        seg(pts[0])
+        const last = pts[pts.length - 1]
+        ctx.moveTo(last.x + screen.x, last.y + screen.y)
+        for (let i = 0; i < pts.length; ++i) seg(pts[i])
         ctx.closePath()
         ctx.fillStyle = e.fill
         ctx.fill()
@@ -106,10 +128,16 @@ SETUP = '''(clockMs) => {
             }
         return String.fromCharCode(...out)
     }
-    // Production draw vs reference per vertex window, and outside all windows
+    // Distance from (x, y) to the device segment p-q
+    T667.segDist = (x, y, p, q) => { const dx = q[0] - p[0], dy = q[1] - p[1]
+        const t = Math.max(0, Math.min(1, ((x - p[0]) * dx + (y - p[1]) * dy) / (dx * dx + dy * dy || 1)))
+        return Math.hypot(x - p[0] - t * dx, y - p[1] - t * dy) }
+    // Production draw vs reference per vertex window, along the closing edge
+    // (last two vertices, outside the windows) and outside all of them
     T667.compare = (a, b, centers, r) => {
         const W = canvas.width, H = canvas.height
-        const win = centers.map(() => ({max: 0, over: 0}))
+        const win = centers.map(() => ({max: 0, over: 0})), edge = {max: 0, over: 0}
+        const p = centers[centers.length - 2], q = centers[centers.length - 1]
         let outMax = 0, outOver = 0
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
             const i = (y * W + x) * 4
@@ -118,9 +146,11 @@ SETUP = '''(clockMs) => {
             let hit = false
             centers.forEach((c, k) => { if (Math.abs(x - c[0]) <= r && Math.abs(y - c[1]) <= r) {
                 hit = true; win[k].max = Math.max(win[k].max, d); if (d > %TOL%) win[k].over++ } })
-            if (!hit) { outMax = Math.max(outMax, d); if (d > %TOL%) outOver++ }
+            if (hit) continue
+            if (T667.segDist(x, y, p, q) <= r) { edge.max = Math.max(edge.max, d); if (d > %TOL%) edge.over++ }
+            else { outMax = Math.max(outMax, d); if (d > %TOL%) outOver++ }
         }
-        return {windows: win, outside: {max: outMax, over: outOver}}
+        return {windows: win, closingEdge: edge, outside: {max: outMax, over: outOver}}
     }
     T667.element = (id, mode) => {
         const e = T667.byId(id), saved = version, s = T667.s()
@@ -175,10 +205,13 @@ ISOLATION = '''() => {
         physics()
         if (i % 100 === 0) trace.push([i, ninja.x, ninja.y, ninja.speedX, ninja.speedY])
     }
-    // (climbStats.currentHeight is display state refreshed from real frames; left out)
+    // (climbStats.currentHeight is display state refreshed from real frames; left out).
+    // restoreClimbState swaps in a new floors[0]: world still holds the boot
+    // frames' stats, which vary per load since bfd38b0 TASK-704's spawn launch
+    const live = floors[0]
     return {running, elements, methods, config, trace, end: {ninja: [ninja.x, ninja.y, ninja.speedX, ninja.speedY],
-        grapnel: [grapnel.throwed, grapnel.grappled], maxHeight: world.climbStats.maxHeight,
-        completed: world.climbStats.completed, rangeUpgraded: world.rangeUpgraded}}
+        grapnel: [grapnel.throwed, grapnel.grappled], maxHeight: live.climbStats.maxHeight,
+        completed: live.climbStats.completed, rangeUpgraded: live.rangeUpgraded}}
 }'''
 
 
@@ -197,6 +230,8 @@ class PanelOutlineJoinTests(unittest.TestCase):
         cls.out.mkdir(parents=True, exist_ok=True)
         cls.url, cls.browser = start_browser_test(ROOT, cls.addClassCleanup)
         base_root, cls.baseline_sha = export_rev(BASELINE, cls.addClassCleanup)
+        revert_join_fix(base_root)
+        cls.baseline_sha += ' with the ec7780d closePath fix reverted'
         server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(base_root)))
         cls.addClassCleanup(server.server_close)
         thread = Thread(target=server.serve_forever, daemon=True)
@@ -269,7 +304,7 @@ class PanelOutlineJoinTests(unittest.TestCase):
                 entry[rev] = {'closingWindow': cmp['windows'][k],
                               'otherWindowsMax': max(w['max'] for j, w in enumerate(cmp['windows']) if j != k),
                               'otherWindowsOver': sum(w['over'] for j, w in enumerate(cmp['windows']) if j != k),
-                              'outside': cmp['outside']}
+                              'closingEdge': cmp['closingEdge'], 'outside': cmp['outside']}
             # Cross-revision: unchanged non-closing corners
             r = a['radius']
             entry['beforeVsAfterOtherCornersMax'] = max(
@@ -280,12 +315,14 @@ class PanelOutlineJoinTests(unittest.TestCase):
             checks['elements'][i] = entry
             self.assertLessEqual(entry['after']['closingWindow']['max'], JOIN_TOL, i)
             self.assertLessEqual(entry['after']['otherWindowsMax'], JOIN_TOL, i)
+            self.assertEqual(entry['after']['closingEdge']['over'], 0, i)
             self.assertEqual(entry['after']['outside']['over'], 0, i)
             self.assertGreater(entry['before']['closingWindow']['over'], 5, i)
             self.assertGreater(entry['before']['closingWindow']['max'], 2 * JOIN_TOL, i)
             self.assertLessEqual(entry['before']['otherWindowsMax'], JOIN_TOL, i)
+            # Closing the contour moves AA levels along the final edge (since
+            # 16a6ec1 TASK-687 P2-body0's is slanted: up to 255 in a 1 px row)
             self.assertEqual(entry['before']['outside']['over'], 0, i)
-            # Closing the contour may move a few AA levels along the final edge
             self.assertLessEqual(entry['beforeVsAfterOtherCornersMax'], JOIN_TOL, i)
         # The starting panel's closing vertex is its bottom-left one
         v = checks['elements']['P0-body0']['vertices']
@@ -402,7 +439,7 @@ class PanelOutlineJoinTests(unittest.TestCase):
         tile = (2 * r + 1) * zoom
         rows = [('P0-body0', 'starting green panel P0-body0, bottom-left closing corner'),
                 ('P2-body0', 'second polygon P2-body0, closing corner'), ('curved', 'curved trampoline, closing corner')]
-        cols = ['before (7296ca1)', 'after', 'closed reference', '|before-ref| x4', '|after-ref| x4']
+        cols = ['before (fix reverted)', 'after', 'closed reference', '|before-ref| x4', '|after-ref| x4']
         fw, fh = 900, int(900 * VIEWPORT['height'] / VIEWPORT['width'])
         W = max(2 * fw + 30, 5 * (tile + 10) + 10)
         H = fh + 40 + (len(rows) + 1) * (tile + 40) + 10
