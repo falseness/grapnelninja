@@ -6,7 +6,10 @@ core, mid-blend between two bands, the next band core) are rendered at
 worktree and by a git archive copy of the revision before the change
 (PALETTE_PREBUILD_BASELINE, default 07bcf62, full-frame palette images). Each
 height is drawn twice in a row; every frame's rgba sha256 must match the
-baseline. The worktree must hold one 256 px wide strip of the frame's device
+baseline. Both trees load with ?parallax=0 and a stubbed CLIMB_UI.drawHud:
+the parallax silhouettes over the palette were re-cut by 5d6458e TASK-788
+(+-1/2 resampling) and the HUD lost its Time row in 023b45e TASK-796, neither
+of which is the palette (TASK-827). The worktree must hold one 256 px wide strip of the frame's device
 height per palette, all built before the frames (no build in them). Writes
 pixels.json to PALETTE_PREBUILD_EVIDENCE_DIR (default artifacts/TASK-760).
 
@@ -41,6 +44,8 @@ FREEZE = '''() => {
     floors[0].elapsedSteps = 600000 * cyclesPerTick / physicsStepMs
     if (typeof TUTORIAL_HINT != 'undefined') TUTORIAL_HINT.visible = false
     visualEffects.particles.drawAmbientMotes = () => {}
+    // HUD rows are not the palette (Time row dropped by 023b45e TASK-796)
+    CLIMB_UI.drawHud = () => {}
     // Particles left by the boot run (how far it got differs between loads)
     visualEffects.particles.particles.length = 0
     setGrapnelMode('single')
@@ -97,7 +102,8 @@ class PalettePrebuildTests(unittest.TestCase):
             page = context.new_page()
             errors = []
             page.on('pageerror', lambda e: errors.append(str(e)[:300]))
-            page.goto(url + 'index.html', wait_until='load')
+            # parallax layers are not the palette (re-cut with +-1/2 resampling by 5d6458e TASK-788)
+            page.goto(url + 'index.html?parallax=0', wait_until='load')
             wait_for_boot_run(page)
             page.evaluate(FREEZE)
             out = [page.evaluate(RENDER, bands) for _, bands in HEIGHTS]
