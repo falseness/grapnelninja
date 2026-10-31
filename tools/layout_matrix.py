@@ -149,10 +149,12 @@ def open_page(browser, url, size, touch, locale):
 def die(page):
     """A real lethal death that leaves the continue offer (death screen) up.
 
-    The offer shows when a game over interstitial is due; the fake bridge
-    has none, so it is switched on just before the kill (INSTRUMENT_RUN).
+    The offer shows when a game over interstitial is due (onLethalDeath in
+    index.html). The local backend never has one (no SDK since c232782), so
+    PLATFORM.isInterstitialDue is switched on just before the kill
+    (INSTRUMENT_RUN), as test_analytics_design does.
     """
-    page.evaluate('() => { bridge.advertisement.isInterstitialSupported = true; window.__kill = true }')
+    page.evaluate('() => { PLATFORM.isInterstitialDue = () => true; window.__kill = true }')
     page.wait_for_function('continueOffer.visible && !window.__kill && !menu.gamePaused')
 
 
