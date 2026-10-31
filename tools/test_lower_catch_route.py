@@ -1,8 +1,12 @@
 """Verify the longer opening catches falls from the formerly empty left side.
 
 Panels are selected semantically: the lower route runs up to the upward-turn
-departure (lowerCatchExtension.firstUpDeparture), and the late route is everything
-after the purple exit (purpleExtension.exit). LOWER_CATCH_EVIDENCE_DIR=DIR writes
+departure (lowerCatchExtension.firstUpDeparture), and the late route runs from after
+the purple exit (purpleExtension.exit) to the old summit (extSummit.oldSummit, or the
+last panel when there is no extSummit). SEC-ext-summit (v18+, gauntlet since v20
+eb3ab8a TASK-744) and SEC-sky-spire (v21 f720868 TASK-774) stack against the map's
+left edge and catch their own falls on safe spaces S0..S8/T0..T8 (test_gauntlet_route,
+test_spire_route), so they are not part of this route. LOWER_CATCH_EVIDENCE_DIR=DIR writes
 DIR/fall-landings.json (nothing is written without it)."""
 import json
 import os
@@ -19,7 +23,9 @@ LEVELS = ROOT / 'artifacts/levels'
 def routes(m):
     fs = m['fragments']; ids = [f['id'] for f in fs]
     lower = fs[:ids.index(m['lowerCatchExtension']['firstUpDeparture']) + 1]
-    late = fs[ids.index(m['purpleExtension']['exit']) + 1:]
+    summit = m.get('extSummit', {}).get('oldSummit')
+    end = ids.index(summit) + 1 if summit else len(fs)
+    late = fs[ids.index(m['purpleExtension']['exit']) + 1:end]
     return lower, late
 
 
@@ -81,7 +87,7 @@ class LowerCatchRouteTests(unittest.TestCase):
             Path(out).mkdir(parents=True, exist_ok=True)
             (Path(out) / 'fall-landings.json').write_text(json.dumps(dict(
                 layoutId=level['layoutId'], lowerRoute=[f['id'] for f in lower], lateRoute=[f['id'] for f in late],
-                selection='three leftmost late panels by contact x; late = after purpleExtension.exit',
+                selection='three leftmost late panels by contact x; late = after purpleExtension.exit through extSummit.oldSummit',
                 falls=results), indent=1) + '\n')
 
 
